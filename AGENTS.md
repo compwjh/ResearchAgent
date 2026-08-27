@@ -71,23 +71,41 @@
 - **闭环必须主动复盘（不必询问用户）**：每个任务/缺陷闭环后，架构师**主动**做一次复盘：提炼本轮踩坑与可复用经验，并落盘到对应文档（如 spec 的"变更日志"段或独立复盘文档），**不要停下来问用户"要不要复盘"**。复盘属于流程强制环节，不是可选项。
 - **查看思考**：前台 `ollama run` 流式输出混有终端转义符，但能看清推理过程与质量；需干净产出落盘时用非流式 curl。
 
-## 分支与 PR 流程（Trunk-Based 轻量变体）
+## Git 规范（参考大厂标准）
 
-本项目采用 Trunk-Based 轻量分支模型（中小团队、Agent 主导交付）：
+### 分支模型：Trunk-Based 轻量变体
 
-- `main` 为唯一长线主干，始终处于可部署状态。
-- 每个 spec/Bug 对应一条**短生命周期分支**：
-  - 功能：`spec/NNN-kebab-case`
-  - 修复：`fix/NNN-kebab-case`
-- 分支寿命控制在数天内；完成并通过 PR 后 **squash 合回 `main` 并删除分支**。不引入 `develop`/`release` 等长线分支。
-- **PR 模板**见 `docs/sdd/pr-template.md`，须包含：关联 spec 链接、变更摘要、自测结果（lint/test/覆盖率）、需求评审与技术评审结论引用。
+- `main` 为唯一长线主干，**始终处于可部署状态**，受保护（禁止直接 push、禁止 force）。
+- 每个 spec / Bug 对应一条**短生命周期特性分支**，完成并经 PR 后 squash 合回 `main` 并删除分支；不引入 `develop`/`release` 等长线分支。
+- 分支命名（kebab-case，带 spec 编号）：
+  - 功能：`feature/spec-NNN-kebab-case`
+  - 修复：`fix/spec-NNN-kebab-case`
+  - 重构/琐事：`chore/...`、`refactor/...`
+- 分支寿命控制在数天内；长时间不活跃的分支应 rebase 到最新 `main` 后再提 PR。
+
+### Commit Message 规范（Conventional Commits）
+
+- 格式：`<type>(<scope>): <subject>`，例如 `feat(models): 模型库卡片高亮当前模型`、`fix(css): 修正非法 media query`。
+- type 取值：`feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `style`。
+- subject 用祈使句、简洁（≤ 50 字），正文可换行说明**为什么**而非仅仅做了什么。
+- 单个 commit 应**原子化**：一个关注点一条 commit；避免把无关改动捏在一起，也避免一个文件改一行就一条 commit 的碎片化。
+- 提交信息须**关联 spec 编号**（在 subject 或正文 footer 写 `Refs: spec-007`），便于追溯。
+
+### 提交与推送纪律（Agent 职责边界）
+
+- 每个 spec / Bug **闭环后**，在对应分支上做 `git commit`，**不要等用户提醒**。
+- 提交前先 `git status` 确认范围，避免误包含 `.env`、`*.log`、`.idea/`、`.DS_Store`、`.codebuddy/` 等；用 `.gitignore` 兜底。
+- **Agent 只做本地 commit；不主动 `git push`、不主动合到 `main`、不 force push**。涉及远端或强操作的动作必须经过用户确认。
+- 首次建仓/长期无提交时，尽快把现有结构纳入版本控制，避免改动游离在 git 之外。
+
+### PR 与合并门禁
+
+- 提 PR 前先在本地 `git rebase main` 保持线性，解决冲突后再提；PR 标题沿用 commit 风格并引用 spec。
+- **PR 模板**见 `docs/sdd/pr-template.md`，须含：关联 spec 链接、变更摘要、自测结果（lint/test/覆盖率）、需求评审与技术评审结论引用。
 - **强制 Code Review**：PR 必须由**开发主管**（或另一 Agent）审查并批准，至少 1 个 approval 才可合并。
+- **合并方式**：默认 **squash merge**（把分支 commits 压成一条再到 `main`），保持主干线性、可追溯。
 - **合并门禁**：必须同时满足 ① CI 全绿 ② 测试覆盖率 ≥ 80% ③ 至少 1 个 approval，才允许合并；任一不满足则阻断，不得绕过。
-- **提交纪律（何时 commit）**：
-  - 每个 spec / Bug **闭环后**，在对应分支上做一次 `git commit`（关联 spec 编号与摘要），**不要等用户提醒**。
-  - 提交前先 `git status` 确认改动范围，避免误包含 `.env`、`*.log`、`.idea/`、`.DS_Store` 等大或无关注释文件；用 `.gitignore` 忽略无关项。
-  - Agent **只负责本地 commit，不主动 `git push`、不主动合到 main、不强制 push**（这些涉及远端，须经用户确认）。
-  - 首次建仓或长期无提交时，也应尽快把已有结构纳入版本控制，避免改动游离在 git 之外。
+- 合并后删除源分支；保留上一个 `main` 的 commit 以支持回滚。
 
 ## CI/CD 与质量门禁（规则说明，非真实 workflow）
 
