@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+frontend/.DS_Store
+.DS_Store
+.idea/
+*.log
+.codebuddy/
+data/articles/
+data/article_settings.json
+data/agent_tasks.sqlite3
