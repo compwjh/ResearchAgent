@@ -18,6 +18,34 @@ const downloadUrls = document.querySelector('#download-urls');
 const downloadDir = document.querySelector('#download-dir');
 const settingsStatus = document.querySelector('#settings-status');
 let activeModel = 'Ollama';
+let currentModels = [];
+
+// ===== 模型别名（spec-008）：前端 localStorage 偏好 =====
+const ALIAS_KEY = 'model_aliases';
+function loadAliases() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ALIAS_KEY));
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (e) {
+    try { localStorage.removeItem(ALIAS_KEY); } catch (_) {}
+    return {};
+  }
+}
+function saveAliases(map) {
+  try { localStorage.setItem(ALIAS_KEY, JSON.stringify(map || {})); } catch (e) {}
+}
+function displayName(model) {
+  const aliases = loadAliases();
+  return (aliases && aliases[model]) || model;
+}
+function isEmptyModels() {
+  const empty = document.querySelector('#model-empty');
+  return empty && !empty.hidden;
+}
+function toggleAliasButton() {
+  const btn = document.querySelector('#edit-aliases');
+  if (btn) btn.hidden = isEmptyModels();
+}
 let recommendedCount = 0;
 
 settingsButton.addEventListener('click', async () => {
@@ -63,14 +91,26 @@ fetch('/api/health')
   .then((response) => response.json())
   .then((data) => {
     const models = data.models || [];
+    currentModels = models;
     activeModel = models.includes(data.model) ? data.model : models[0] || data.model;
-    modelSelect.innerHTML = models.length
-      ? models.map((model) => `<option value="${model}">${model}</option>`).join('')
-      : '<option value="">没有发现模型</option>';
+    while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
+    if (models.length) {
+      for (const model of models) {
+        const opt = document.createElement('option');
+        opt.value = model;
+        opt.textContent = displayName(model);
+        modelSelect.appendChild(opt);
+      }
+    } else {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '没有发现模型';
+      modelSelect.appendChild(opt);
+    }
     modelSelect.value = activeModel;
     modelSelect.disabled = models.length === 0;
     document.querySelector('#model-count').textContent = models.length;
-    modelLabel.textContent = activeModel;
+    modelLabel.textContent = displayName(activeModel);
     statusDot.classList.add('ready');
     if (typeof renderModelList === 'function') renderModelList(models, activeModel);
   })
@@ -135,7 +175,7 @@ modeSelect.addEventListener('change', () => {
 
 modelSelect.addEventListener('change', () => {
   activeModel = modelSelect.value;
-  modelLabel.textContent = activeModel;
+  modelLabel.textContent = displayName(activeModel);
 });
 
 form.addEventListener('submit', async (event) => {
@@ -282,13 +322,14 @@ function renderModelList(models, current) {
   list.innerHTML = '';
   if (models.length === 0 && empty) empty.textContent = '暂无可用模型';
   empty.hidden = models.length > 0;
+  toggleAliasButton();
   for (const name of models) {
     const li = document.createElement('li');
     li.className = `model-item${name === current ? ' current' : ''}`;
     li.innerHTML = '';
     const nameSpan = document.createElement('span');
     nameSpan.className = 'model-name';
-    nameSpan.textContent = name;
+    nameSpan.textContent = displayName(name);
     const badge = document.createElement('span');
     badge.className = `model-badge${name === current ? ' current' : ''}`;
     badge.textContent = name === current ? '当前' : '可用';
@@ -300,7 +341,7 @@ function renderModelList(models, current) {
         modelSelect.value =  name;
         modelSelect.disabled = false;
       }
-      if (modelLabel) modelLabel.textContent = name;
+      if (modelLabel) modelLabel.textContent = displayName(name);
       list.querySelectorAll('.model-item').forEach((node) => {
         node.classList.remove('current');
         const b = node.querySelector('.model-badge');
@@ -313,3 +354,63 @@ function renderModelList(models, current) {
     list.appendChild(li);
   }
 }
+
+// ===== 编辑别名弹层（spec-008）=====
+function openAliasEditor() {
+  const existing = document.querySelector('#alias-dialog');
+  if (existing) existing.remove();
+  const aliases = loadAliases();
+  const dialog = document.createElement('dialog');
+  dialog.id = 'alias-dialog';
+  dialog.className = 'settings-dialog';
+  const rows = currentModels.map((m) => {
+    const val = (aliases[m] || '').replace(/"/g, '&quot;');
+    return `<label class="alias-row"><span class="alias-real">${m}</span><input class="alias-input" data-model="${m}" maxlength="40" value="${val}" placeholder="别名（留空用原名）"></label>`;
+  }).join('');
+  dialog.innerHTML = `<form method="dialog" class="settings-form">
+    <div class="settings-title"><h2>模型别名</h2><button type="submit" class="secondary-button" value="cancel" formnovalidate>✕</button></div>
+    <div class="alias-list">${rows}</div>
+    <div class="settings-actions">
+      <button type="button" class="secondary-button" id="alias-reset">重置全部</button>
+      <button type="submit" class="send-button" value="save">保存</button>
+    </div>
+  </form>`;
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  const form = dialog.querySelector('form');
+  form.addEventListener('submit', (e) => {
+    const btn = e.submitter;
+    if (btn && btn.value === 'save') {
+      const next = {};
+      dialog.querySelectorAll('.alias-input').forEach((inp) => {
+        const v = inp.value.trim();
+        if (v) next[inp.dataset.model] = v;
+      });
+      saveAliases(next);
+      if (modelSelect) {
+        const sel = modelSelect.value;
+        while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
+        for (const m of currentModels) {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = displayName(m);
+          modelSelect.appendChild(opt);
+        }
+        modelSelect.value = sel;
+      }
+      if (modelLabel) modelLabel.textContent = displayName(activeModel);
+      renderModelList(currentModels, activeModel);
+    } else if (btn && btn.value === 'cancel') {
+      // 仅关闭
+    }
+    dialog.close();
+    dialog.remove();
+  });
+  dialog.querySelector('#alias-reset').addEventListener('click', () => {
+    saveAliases({});
+    dialog.querySelectorAll('.alias-input').forEach((inp) => { inp.value = ''; });
+  });
+}
+
+const editAliasBtn = document.querySelector('#edit-aliases');
+if (editAliasBtn) editAliasBtn.addEventListener('click', openAliasEditor);
