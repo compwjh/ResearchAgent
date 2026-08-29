@@ -44,6 +44,9 @@
   - **禁止**在 spec 或模型库中填写未经 `ollama list` 核实的本地模型名（如凭记忆写的 `qwen2.5-coder:32b` 等示例名一律无效）。
   - 本机未安装 Ollama 或目标模型不存在时，相关角色回退到线上模型（见 `MODEL_REGISTRY.md` 选型速查），并在执行配置备注回退原因。
 - **架构师角色由当前执行任务的 Agent 自身承担**：执行配置中"架构师"的选用模型应填该 Agent 实际使用的模型（即"自己"），不引用模型库中的其它名字。
+- **⚠️ 不要硬编码模型代号**：写执行配置/评审记录/报告时，架构师应记为**「自身」**（或"当前执行任务的 Agent 自身"），**不要写死模型代号**（如 Hy3/Hy4）。
+  - 原因：模型代号随版本迭代变化，硬编码必然过期失真（2026-08-28 修正：此前文档误标 `Hy3`，实际为 `Hy4`，共 17 处需更正）。
+  - 历史文档中已写代号的，以"自身"为准；如需标注版本，写成「自身（Hy4）」形式，但主体仍是"自身"。
 - 选型优先级：**本地 Ollama 模型能胜任的中低复杂度角色（初级开发、测试、PM）优先用本地模型以省成本**；架构师、开发主管等需要强推理/全局视野的角色用线上旗舰模型。
 - 分工的成本依据：最贵的是线上大模型的**输出** token。架构师（贵模型）只花在不可替代的"读上下文 + 决策 + 把上下文压缩后调度"上；评审、编码等长文本产出交给**零成本的本地模型**。任务产出规模越大，此分工越省（调度摩擦仅在极碎任务下可能抵消优势）。
 - 每个角色选定的模型、上下文窗口都要写进 spec 的"执行配置"段，落盘可查。
@@ -74,11 +77,78 @@
 - **技能库**：`.codebuddy/skills/<name>/SKILL.md`，沉淀角色 checklist、模板与行为边界，供 agent 自动加载。
 - **编排**：支持显式调用（"使用 tester 子代理验收"）、自动委派（description 写 `Use PROACTIVELY`）、Agent Teams 并行、后台任务、按 `agentId` 恢复。
 
+<<<<<<< HEAD
 **实践结论与限制（2026-08-28 实测）**：
 - 本地模型**确实能稳定产出 function call**：`oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU`、`qwen3.8:27b`、`qwen3.5:9b` 均 3/3 通过，参数 JSON 合法、工具选择正确；`deepseek-coder` 系列**不支持 tools**（Ollama 直接返回 `does not support tools`）。详见 `docs/sdd/TOOLCALL_BENCHMARK.md`，新增模型须重新实测再入库。
 - `ollama show` 的 Capabilities 与实际能力**不完全一致**（有模型未声明 tools 但实测可用），**不能只看声明**。
 - **经 `Task` 工具调用的是内置 `code-explorer` 子代理（只读，无 Bash/写文件）**，它**不会**套用我们自定义的 `.codebuddy/agents/*.md` 配置。要让自定义 agent 真正生效，需通过**显式自然语言调用**（如"使用 tester 子代理做验收"）或依赖自动委派。
 - 自定义 agent 若需落盘文档或跑命令，`tools` 必须包含 `Bash`（只读子代理无法写报告，需由架构师代落盘）。
+=======
+#### 编排方式（多角色协同）
+
+- **编排顾问 agent**：`.codebuddy/agents/sdd-orchestrator.md`，按 SDD 门禁顺序产出「分派计划」（每角色的任务、最小上下文、产出路径、行为边界）。
+- **⚠️ 实测：子代理拿不到 `Agent`/`Task` 分派工具**，即使 front matter 写 `tools: ..., Agent` 也不生效（orchestrator 实际只拿到 Read/Grep/Glob）。因此**嵌套分派不可行，编排由主会话（架构师 Hy4）执行**：orchestrator 出计划 → 主会话用 Task 逐个分派 → 汇总。
+- 已铺开的角色 agent：`pm`、`tech-lead`、`junior-dev`、`tester`；配套技能 `sdd-pm-steps`、`sdd-review`、`sdd-coding`、`sdd-acceptance`。
+- 调用方式：`Task` 工具的 `subagent_name` 指定角色名（如 `tester`）；也可自然语言显式调用（"使用 tech-lead 子代理评审"）或靠 `description` 里的 `Use PROACTIVELY` 触发自动委派。
+- 也可用 **Agent Teams** 做并行编排（`team_create` + 具名成员 + `send_message` 通信）。
+
+**实践结论与限制（2026-08-28 实测）**：
+- 本地模型**确实能稳定产出 function call**：`oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU`、`qwen3.8:27b`、`qwen3.5:9b` 均 3/3 通过，参数 JSON 合法、工具选择正确；`deepseek-coder` 系列**不支持 tools**（Ollama 直接返回 `does not support tools`）。详见 `docs/sdd/TOOLCALL_BENCHMARK.md`，新增模型须重新实测再入库。
+- `ollama show` 的 Capabilities 与实际能力**不完全一致**（有模型未声明 tools 但实测可用），**不能只看声明**。
+- **⚠️ `model` 字段必须填「已注册」的模型名，自定义 ID 会被拒绝**：曾给 tester 填自定义 ID `local-qwen38-27b-tools`，调用时报 `Subagent model config is invalid! Model ... not found`。
+  - 框架当前读取**用户级 `~/.codebuddy/models.json`**（其中已注册 `qwen3.8:27b`，vendor=user，Ollama 端点，`supportsToolCall: true`）；项目级 `.codebuddy/models.json` 的自定义 ID 未被识别。
+  - 因此角色 agent 的 `model` 直接填 `ollama list` 中**已注册**的真实模型名。要为不同角色分配不同本地模型，需先在用户级 `models.json` 注册（属用户全局配置，改动前须经用户同意）。
+- **`Task` 工具调用内置 `code-explorer` 时是只读的**（无 Bash/写文件），无法落盘报告；而调用自定义 agent（如 `tester`）时，其 `tools` 生效，可用 Bash 真实执行命令与写文件——已实测：tester 用 Bash 跑 curl 并自行写回验收报告。
+- 自定义 agent 若需落盘文档或跑命令，`tools` 必须包含 `Bash`（只读子代理无法写报告，需由架构师代落盘）。
+- 新建的 agent 文件**即时生效**（实测新建 `sdd-orchestrator.md` 后同一会话即可调用），无需重启。
+- **本地模型驱动子代理较慢**：实测单次分派 3–8 分钟（27B 量化模型），属正常成本，不要误判为卡死；追求速度可改用 `qwen3.5:9b`（需先在用户级 `models.json` 注册）。
+#### 角色模型分配（2026-08-28 定稿，依据 `docs/sdd/TOOLCALL_BENCHMARK.md` 实测）
+
+| 角色 agent | 模型 | 理由 |
+|---|---|---|
+| `pm` / `tester` | `qwen3.5:9b` | 文案/判定类任务，快（tool call 1.7–7.4s）；实测单次任务 ~90s |
+| `junior-dev` | `qwen3.8:27b` | **编码质量优先**（用户要求），27B 级；复测满足全部约束（29.2s） |
+| `tech-lead` | `qwen3.8:27b` | 评审需强推理；**用户决策：工作重要，质量优先，不降速**（实测 ~26 分钟/次完整评审） |
+| `code-drafter` | `deepseek-coder-v2:16b` | **极快（3.6s）**，仅用于独立小函数/片段初稿；该模型不支持 tools，产出由主会话落盘，需人工复核 |
+
+**编码任务的模型选择依据**（实测，详见 `TOOLCALL_BENCHMARK.md`）：
+- **简单独立小函数**：9b 与 27B 质量相当，9b 快 3 倍（14.6s vs 45.4s）。
+- **复杂/并发/边界要求高的代码**：**必须用 27B 级**——9b 会出现"在锁内调用用户函数"这类真实并发缺陷，27B 会做锁外计算与双重检查。
+- 判断不准时按复杂任务处理，选 27B（质量优先）。
+- **任务复杂度判断标准已写入技能 `sdd-coding`**：`junior-dev` 动手前需自评（简单=单函数/无并发/≤1 文件；复杂=涉及锁/多文件/状态/复杂边界），简单任务可建议转 `code-drafter` 出草稿后复核，复杂任务须按「复杂任务自检清单」（锁范围、可哈希、双重检查、容量上限、异常边界）逐项核对。
+
+- 为不同角色分配不同模型，须先在**用户级 `~/.codebuddy/models.json`** 注册（项目级的自定义 ID 不识别）。已注册上表模型并备份原配置。
+- **⚠️ 子代理 `model` 字段不能用含 `/` 的命名空间 ID**：实测 `oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU` 虽已注册，仍报 `Subagent model config is invalid! Model ... not found`；改用不含 `/` 的 `qwen3.8:27b` 即正常。
+  → **规则：agent 的 `model` 一律用不含 `/` 的已注册模型名**（`qwen3.8:27b`、`qwen3.5:9b`、`deepseek-coder-v2:16b`）。文档中的分配表必须与 `.codebuddy/agents/*.md` 实际值一致，否则照抄即踩坑（此坑由 tech-lead 评审发现）。
+- **deepseek-coder 系列不可用**：`deepseek-coder:33b`、`deepseek-coder-v2:16b` 均不支持 tools（Ollama 返回 `does not support tools`），且编码正确率不如 `qwen3.5:9b`（漏"冒号前"约束，33b 还返回超长串）。
+
+#### 本地模型的正确用法（2026-08-28 踩坑修正，务必遵守）
+
+用本地模型产出代码/文本时，下面三条会直接决定结果好坏，**曾因忽略它们得出错误结论**：
+
+1. **区分 base 模型与 instruct 模型**
+   - 用 `ollama show <model>` 看 Capabilities：只有 `completion`/`insert` 而**无 chat** 的是 **base 模型**（如 `deepseek-coder:33b`、`deepseek-coder-v2:16b`）。
+   - **base 模型擅长"补全/续写"**，不擅长"按指令实现"。用 base 模型时应给**函数签名 + docstring 让它续写**，而不是下"请实现 XX 函数"的指令。
+   - 反过来，对 chat/instruct 模型才适合下指令。
+2. **thinking 模型必须关掉思考，否则输出为空**
+   - `qwen3.8:27b`、量化 27B、`qwen3.5:9b` 均为 thinking 模型。默认开启时推理会**耗尽 `num_predict` 预算，导致最终代码输出为空**（实测 27b 首轮输出空白、耗时 45.9s 却无内容）。
+   - API 传 `"think": false`，或命令行 `ollama run --hidethinking`。
+3. **注意量化格式差异，对比时要控制变量**
+   - `Q4_0` 是最粗糙的 4bit 量化，质量明显低于 `Q4_K_M`（分组量化）。`ollama show` 可看 `quantization` 字段。
+   - 同参数量下 Q4_0 模型表现差，可能不是模型本身不行，而是量化太狠。
+4. **代码生成温度调低**（推荐 `temperature=0.2`），输出更确定、更少跑偏。
+
+> 完整实测对比见 `docs/sdd/TOOLCALL_BENCHMARK.md`。
+
+#### 子代理"思考不可见"的解决方案
+
+子代理的推理过程默认不对外可见（尤其本地模型会先长篇 thinking 再输出）。解决办法：
+
+- **进展日志落盘（已落地，推荐）**：各角色 agent 的 system prompt 要求**每完成一步就追加写日志**到 `.codebuddy/agent-logs/<role>-<spec>-<时间戳>.md`，格式为 `[时间] 步骤 N / 观察 / 判断 / 下一步`。外部可用 `tail -f <日志路径>` **实时观察思考轨迹**（已实测：日志含每步时间戳、读到的内容、判断依据与行号）。
+- 日志属运行产物，已在 `.gitignore` 忽略；回传摘要必须给出日志路径。
+- 备选：Ollama 的 `/v1` 接口思考内容在 `reasoning_content` 字段，需框架透传才可见；纯 `ollama run` 场景可用 `--hidethinking` 反向关闭思考输出。
+- 若需更强的实时交互，可试用 Agent Teams（具名成员 + `send_message` 主动汇报进度）。
+>>>>>>> feature/spec-009-agent-roles
 
 #### 范式二：`ollama run` 裸调用（无 tool-call 场景的降级手段）
 

@@ -9,7 +9,7 @@
 | 纯前端 | ✅ | 仅 app.js + 一个弹层 + localStorage，零后端改动、零依赖 |
 | 不影响真实模型名链路 | ✅ | `activeModel`/`modelSelect.value` 保持真实名，`displayName()` 仅用于 textContent 渲染 |
 | localStorage 容错 | ⚠ 需补 | 必须 try/catch JSON.parse，失败时回退 `{}` 并清脏数据；封装 safeStore/safeLoad 降级内存 Map |
-| 模型/上下文预算 | ✅ | 本 spec 不引入 LLM 调用；架构师=Hy3 自身，其余 ollama 已核实 |
+| 模型/上下文预算 | ✅ | 本 spec 不引入 LLM 调用；架构师=Hy4 自身，其余 ollama 已核实 |
 
 ## 强制约束（已纳入 spec §5）
 1. **XSS 安全**：别名渲染必须 `textContent`，禁止 `innerHTML`；弹层回显用 `input.value`。

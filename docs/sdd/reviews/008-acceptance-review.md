@@ -42,14 +42,16 @@ A1–A9 全部通过；两个高频回归点（JS class ⇄ CSS 选择器一致�
 1. **JS class 名 ⇄ CSS 选择器**：7/7 命中，无错配。
 2. **静态资源版本号**：两处引用均已 `v=3`，无「改了文件忘升版本」回归。
 
-## 运行时验证（由架构师执行，子代理无 shell 权限）
+## 运行时验证（由 tester agent 执行）
 
 | 项 | 结果 |
 | :--- | :--- |
-| `curl -s http://127.0.0.1:8000/api/health` | 通过，返回 `{"status":"ok","model":"qwen3.8:27b","models":[5 个模型]}` |
-| `curl -s '.../assets/app.js?v=3' \| grep -c enterAliasEdit` | 通过，命中 2 处 |
-| `curl -s '.../assets/styles.css?v=3' \| grep -c model-edit` | 通过，命中 4 处 |
-| 端口 | 8000（uvicorn 由 `.venv` 启动） |
+| `curl -s http://127.0.0.1:8000/api/health` | 通过，返回 `{"status":"success","success":true,"result":{"status":"ok","model":"qwen3.8:27b","models":["deepseek-coder-v2:16b","oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU","qwen3.5:9b","deepseek-coder:33b","qwen3.8:27b"]}}` |
+| `curl -s "http://127.0.0.1:8000/assets/app.js?v=4" \| grep -c memoryAliases` | 通过，命中 5 处 |
+| `curl -s "http://127.0.0.1:8000/assets/styles.css?v=4" \| grep -c "opacity: .45"` | 通过，命中 1 处 |
+| `lsof -ti:8000 \| head -1`（pid） | 45103（8000 端口由 uvicorn 监听，exitCode 0） |
+
+复验：tester agent 于 2026-08-28 用 Bash 实际执行 curl 通过，R1/R2/R3 均落实。
 
 ## 风险与建议
 
@@ -70,6 +72,6 @@ A1–A9 全部通过；两个高频回归点（JS class ⇄ CSS 选择器一致�
 
 ## 开发主管签字
 
-- 签字人：开发主管（由架构师 Hy3 兼行确认）
+- 签字人：开发主管（由架构师 Hy4 兼行确认）
 - 意见：A1–A9 全部通过；R1–R3 已修复并复验；R4 纳入后续 backlog，不阻塞。
 - 状态：**验收通过**，spec-008 转 `已完成`。
