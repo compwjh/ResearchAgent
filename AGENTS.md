@@ -57,9 +57,32 @@
 
 - 每个角色启动时应先读 `docs/sdd/ROLE-ONBOARDING.md` 中自己那一段，只加载该段指向的少数文件，**不要全项目扫描**，避免无关上下文挤占 token 与上下文窗口。
 
-### 如何指挥子模型执行（本地 Ollama 调用范式）
+### 如何指挥子模型执行
 
-架构师/开发主管产出"指令"，子模型（本地 Ollama）负责长文本产出（评审、代码）。经实测，以下范式最稳：
+子模型（本地 Ollama）承担长文本产出（评审、代码）。有**两种范式**，优先用 Agent 模式。
+
+#### 范式一：Agent 模式（首选，带 tools / skill / 独立上下文 / 可编排）
+
+本项目已接入 CodeBuddy 的 agent 框架，把角色固化为**子代理**，而非临时拼 prompt：
+
+- **本地模型注册**：`.codebuddy/models.json`（Ollama 走 `http://localhost:11434/v1/chat/completions`，`apiKey: ollama`，`supportsToolCall` 按实测填）。
+- **角色子代理**：`.codebuddy/agents/<role>.md`，YAML front matter 支持：
+  - `tools`（function call 白名单，如 `Read, Grep, Glob, Bash`）
+  - `skills`（启动时自动加载的技能，如 `sdd-acceptance`）
+  - `model`（可为每个角色绑定不同模型，含本地模型 ID）
+  - `permissionMode` / `maxTurns` / `memory` / `mcpServers` 等
+- **技能库**：`.codebuddy/skills/<name>/SKILL.md`，沉淀角色 checklist、模板与行为边界，供 agent 自动加载。
+- **编排**：支持显式调用（"使用 tester 子代理验收"）、自动委派（description 写 `Use PROACTIVELY`）、Agent Teams 并行、后台任务、按 `agentId` 恢复。
+
+**实践结论与限制（2026-08-28 实测）**：
+- 本地模型**确实能稳定产出 function call**：`oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU`、`qwen3.8:27b`、`qwen3.5:9b` 均 3/3 通过，参数 JSON 合法、工具选择正确；`deepseek-coder` 系列**不支持 tools**（Ollama 直接返回 `does not support tools`）。详见 `docs/sdd/TOOLCALL_BENCHMARK.md`，新增模型须重新实测再入库。
+- `ollama show` 的 Capabilities 与实际能力**不完全一致**（有模型未声明 tools 但实测可用），**不能只看声明**。
+- **经 `Task` 工具调用的是内置 `code-explorer` 子代理（只读，无 Bash/写文件）**，它**不会**套用我们自定义的 `.codebuddy/agents/*.md` 配置。要让自定义 agent 真正生效，需通过**显式自然语言调用**（如"使用 tester 子代理做验收"）或依赖自动委派。
+- 自定义 agent 若需落盘文档或跑命令，`tools` 必须包含 `Bash`（只读子代理无法写报告，需由架构师代落盘）。
+
+#### 范式二：`ollama run` 裸调用（无 tool-call 场景的降级手段）
+
+纯文本产出、不需要工具调用时可用此方式：
 
 - **调用方式**：优先 `ollama run <model> < /path/to/prompt.md`（文件喂入 + 前台流式），可实时观察思考；后台落盘用 `curl -s http://localhost:11434/api/generate -d '{"model":..,"prompt":..,"stream":false}'`（注意用独立 python 脚本写 body，避免 shell 吞掉花括号导致 `missing request body`）。
 - **上下文压缩原则**：只给子模型完成本角色所需的**最小信息**，不要塞整项目。

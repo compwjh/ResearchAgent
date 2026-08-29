@@ -22,29 +22,35 @@ let currentModels = [];
 
 // ===== 模型别名（spec-008）：前端 localStorage 偏好 =====
 const ALIAS_KEY = 'model_aliases';
+// 隐私模式/存储禁用时的降级存储（仅本次会话有效）
+const memoryAliases = new Map();
+
 function loadAliases() {
   try {
     const parsed = JSON.parse(localStorage.getItem(ALIAS_KEY));
-    return (parsed && typeof parsed === 'object') ? parsed : {};
+    if (parsed && typeof parsed === 'object') return parsed;
   } catch (e) {
     try { localStorage.removeItem(ALIAS_KEY); } catch (_) {}
-    return {};
   }
+  const fallback = {};
+  memoryAliases.forEach((value, key) => { fallback[key] = value; });
+  return fallback;
 }
+
 function saveAliases(map) {
-  try { localStorage.setItem(ALIAS_KEY, JSON.stringify(map || {})); } catch (e) {}
+  const data = map || {};
+  try {
+    localStorage.setItem(ALIAS_KEY, JSON.stringify(data));
+    memoryAliases.clear();
+  } catch (e) {
+    // localStorage 不可用时降级为内存 Map，保证本次会话内可用
+    memoryAliases.clear();
+    Object.keys(data).forEach((key) => memoryAliases.set(key, data[key]));
+  }
 }
 function displayName(model) {
   const aliases = loadAliases();
   return (aliases && aliases[model]) || model;
-}
-function isEmptyModels() {
-  const empty = document.querySelector('#model-empty');
-  return empty && !empty.hidden;
-}
-function toggleAliasButton() {
-  const btn = document.querySelector('#edit-aliases');
-  if (btn) btn.hidden = isEmptyModels();
 }
 let recommendedCount = 0;
 
@@ -93,22 +99,8 @@ fetch('/api/health')
     const models = data.models || [];
     currentModels = models;
     activeModel = models.includes(data.model) ? data.model : models[0] || data.model;
-    while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
-    if (models.length) {
-      for (const model of models) {
-        const opt = document.createElement('option');
-        opt.value = model;
-        opt.textContent = displayName(model);
-        modelSelect.appendChild(opt);
-      }
-    } else {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = '没有发现模型';
-      modelSelect.appendChild(opt);
-    }
+    refreshModelOptions();
     modelSelect.value = activeModel;
-    modelSelect.disabled = models.length === 0;
     document.querySelector('#model-count').textContent = models.length;
     modelLabel.textContent = displayName(activeModel);
     statusDot.classList.add('ready');
@@ -315,30 +307,116 @@ document.querySelectorAll('.nav-item').forEach((item) => {
   });
 });
 
+function refreshModelOptions() {
+  if (!modelSelect) return;
+  const selected = modelSelect.value;
+  while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
+  if (currentModels.length) {
+    for (const m of currentModels) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = displayName(m);
+      modelSelect.appendChild(opt);
+    }
+  } else {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '没有发现模型';
+    modelSelect.appendChild(opt);
+  }
+  modelSelect.value = selected;
+  modelSelect.disabled = currentModels.length === 0;
+}
+
+function setAlias(model, alias) {
+  const aliases = loadAliases();
+  const value = (alias || '').trim();
+  if (value) aliases[model] = value; else delete aliases[model];
+  saveAliases(aliases);
+}
+
+function renderModelText(textWrap, model) {
+  const alias = loadAliases()[model];
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'model-name';
+  nameSpan.textContent = alias || model;
+  const realSpan = document.createElement('span');
+  realSpan.className = 'model-real';
+  realSpan.textContent = model;
+  realSpan.hidden = !alias;
+  textWrap.replaceChildren(nameSpan, realSpan);
+}
+
+// 行内编辑：卡片内名字原地变输入框（Enter/失焦保存，Esc 取消）
+function enterAliasEdit(textWrap, model) {
+  if (textWrap.querySelector('.alias-input')) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'alias-input';
+  input.maxLength = 40;
+  input.value = loadAliases()[model] || '';
+  input.placeholder = '别名（留空用原名）';
+  let saved = false;
+  const finish = (commit) => {
+    if (saved) return;
+    saved = true;
+    if (commit) setAlias(model, input.value);
+    renderModelText(textWrap, model);
+    refreshModelOptions();
+    if (modelLabel) modelLabel.textContent = displayName(activeModel);
+  };
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+    else if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  textWrap.replaceChildren(input);
+  input.focus();
+  input.select();
+}
+
 function renderModelList(models, current) {
   const list = document.querySelector('#model-list');
   const empty = document.querySelector('#model-empty');
   if (!list) return;
-  list.innerHTML = '';
+  list.replaceChildren();
+  currentModels = models;
   if (models.length === 0 && empty) empty.textContent = '暂无可用模型';
   empty.hidden = models.length > 0;
-  toggleAliasButton();
   for (const name of models) {
     const li = document.createElement('li');
     li.className = `model-item${name === current ? ' current' : ''}`;
-    li.innerHTML = '';
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'model-name';
-    nameSpan.textContent = displayName(name);
+    li.dataset.model = name;
+
+    const textWrap = document.createElement('div');
+    textWrap.className = 'model-text';
+    renderModelText(textWrap, name);
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'model-edit';
+    editBtn.title = '编辑别名';
+    editBtn.setAttribute('aria-label', '编辑别名');
+    editBtn.textContent = '✎';
+    editBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      enterAliasEdit(textWrap, name);
+    });
+
     const badge = document.createElement('span');
     badge.className = `model-badge${name === current ? ' current' : ''}`;
     badge.textContent = name === current ? '当前' : '可用';
-    li.appendChild(nameSpan);
+
+    li.appendChild(textWrap);
+    li.appendChild(editBtn);
     li.appendChild(badge);
+
     li.addEventListener('click', () => {
       activeModel = name;
       if (modelSelect) {
-        modelSelect.value =  name;
+        modelSelect.value = name;
         modelSelect.disabled = false;
       }
       if (modelLabel) modelLabel.textContent = displayName(name);
@@ -355,62 +433,3 @@ function renderModelList(models, current) {
   }
 }
 
-// ===== 编辑别名弹层（spec-008）=====
-function openAliasEditor() {
-  const existing = document.querySelector('#alias-dialog');
-  if (existing) existing.remove();
-  const aliases = loadAliases();
-  const dialog = document.createElement('dialog');
-  dialog.id = 'alias-dialog';
-  dialog.className = 'settings-dialog';
-  const rows = currentModels.map((m) => {
-    const val = (aliases[m] || '').replace(/"/g, '&quot;');
-    return `<label class="alias-row"><span class="alias-real">${m}</span><input class="alias-input" data-model="${m}" maxlength="40" value="${val}" placeholder="别名（留空用原名）"></label>`;
-  }).join('');
-  dialog.innerHTML = `<form method="dialog" class="settings-form">
-    <div class="settings-title"><h2>模型别名</h2><button type="submit" class="secondary-button" value="cancel" formnovalidate>✕</button></div>
-    <div class="alias-list">${rows}</div>
-    <div class="settings-actions">
-      <button type="button" class="secondary-button" id="alias-reset">重置全部</button>
-      <button type="submit" class="send-button" value="save">保存</button>
-    </div>
-  </form>`;
-  document.body.appendChild(dialog);
-  dialog.showModal();
-  const form = dialog.querySelector('form');
-  form.addEventListener('submit', (e) => {
-    const btn = e.submitter;
-    if (btn && btn.value === 'save') {
-      const next = {};
-      dialog.querySelectorAll('.alias-input').forEach((inp) => {
-        const v = inp.value.trim();
-        if (v) next[inp.dataset.model] = v;
-      });
-      saveAliases(next);
-      if (modelSelect) {
-        const sel = modelSelect.value;
-        while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
-        for (const m of currentModels) {
-          const opt = document.createElement('option');
-          opt.value = m;
-          opt.textContent = displayName(m);
-          modelSelect.appendChild(opt);
-        }
-        modelSelect.value = sel;
-      }
-      if (modelLabel) modelLabel.textContent = displayName(activeModel);
-      renderModelList(currentModels, activeModel);
-    } else if (btn && btn.value === 'cancel') {
-      // 仅关闭
-    }
-    dialog.close();
-    dialog.remove();
-  });
-  dialog.querySelector('#alias-reset').addEventListener('click', () => {
-    saveAliases({});
-    dialog.querySelectorAll('.alias-input').forEach((inp) => { inp.value = ''; });
-  });
-}
-
-const editAliasBtn = document.querySelector('#edit-aliases');
-if (editAliasBtn) editAliasBtn.addEventListener('click', openAliasEditor);
