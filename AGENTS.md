@@ -77,13 +77,6 @@
 - **技能库**：`.codebuddy/skills/<name>/SKILL.md`，沉淀角色 checklist、模板与行为边界，供 agent 自动加载。
 - **编排**：支持显式调用（"使用 tester 子代理验收"）、自动委派（description 写 `Use PROACTIVELY`）、Agent Teams 并行、后台任务、按 `agentId` 恢复。
 
-<<<<<<< HEAD
-**实践结论与限制（2026-08-28 实测）**：
-- 本地模型**确实能稳定产出 function call**：`oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU`、`qwen3.8:27b`、`qwen3.5:9b` 均 3/3 通过，参数 JSON 合法、工具选择正确；`deepseek-coder` 系列**不支持 tools**（Ollama 直接返回 `does not support tools`）。详见 `docs/sdd/TOOLCALL_BENCHMARK.md`，新增模型须重新实测再入库。
-- `ollama show` 的 Capabilities 与实际能力**不完全一致**（有模型未声明 tools 但实测可用），**不能只看声明**。
-- **经 `Task` 工具调用的是内置 `code-explorer` 子代理（只读，无 Bash/写文件）**，它**不会**套用我们自定义的 `.codebuddy/agents/*.md` 配置。要让自定义 agent 真正生效，需通过**显式自然语言调用**（如"使用 tester 子代理做验收"）或依赖自动委派。
-- 自定义 agent 若需落盘文档或跑命令，`tools` 必须包含 `Bash`（只读子代理无法写报告，需由架构师代落盘）。
-=======
 #### 编排方式（多角色协同）
 
 - **编排顾问 agent**：`.codebuddy/agents/sdd-orchestrator.md`，按 SDD 门禁顺序产出「分派计划」（每角色的任务、最小上下文、产出路径、行为边界）。
@@ -148,7 +141,6 @@
 - 日志属运行产物，已在 `.gitignore` 忽略；回传摘要必须给出日志路径。
 - 备选：Ollama 的 `/v1` 接口思考内容在 `reasoning_content` 字段，需框架透传才可见；纯 `ollama run` 场景可用 `--hidethinking` 反向关闭思考输出。
 - 若需更强的实时交互，可试用 Agent Teams（具名成员 + `send_message` 主动汇报进度）。
->>>>>>> feature/spec-009-agent-roles
 
 #### 范式二：`ollama run` 裸调用（无 tool-call 场景的降级手段）
 
