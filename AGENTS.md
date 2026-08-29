@@ -200,6 +200,19 @@
 - 仓库早期（spec-006/007）的改动因历史原因已直接合入 `main`（提交 `ff8a911`、`12f0ee8`），属**已合入基线**，不再拆分为独立分支。
 - 自此后，**所有新 spec / Bug 必须走分支开发，闭环后经 PR 合入 `main`**（PR 流程、门禁、squash 规则见 `docs/github.md`），不得在 `main` 上直接提交。
 
+## 部署（简单形式）
+
+前端为纯静态资源，由 FastAPI 直接挂载，无需独立构建。详见 **`deploy/README.md`**，核心命令：
+
+```bash
+python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：建环境与装依赖
+./deploy/start.sh            # 前台启动（Ctrl+C 停止）
+./deploy/start.sh -d         # 后台启动，日志见 deploy/run.log
+./deploy/stop.sh             # 停止后台进程
+```
+
+启动后访问 `http://127.0.0.1:8000`；聊天/模型能力依赖本机 Ollama（`localhost:11434`）。当前为单进程简单部署，未含守护进程 / HTTPS / 容器化。
+
 ## 三道评审门禁（未过门禁不得进入下一阶段）
 
 所有评审文档落盘到 `docs/sdd/reviews/`，编号 `NNN` 与对应 spec 一致；任一审评打回则 spec 退回 `待确认`，由架构师修订后重新评审。
