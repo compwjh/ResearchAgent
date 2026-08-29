@@ -1,74 +1,77 @@
-# 技术评审：spec-010 后端测试覆盖率提升至 80%
+# 技术评审（实现后复审）：spec-010 后端测试覆盖率提升至 80%
 
 - 评审角色：开发主管（tech-lead）
-- 评审对象：`docs/sdd/specs/010-backend-coverage-80.md`
+- 评审类型：**实现后技术复审（Tech Review / Re-audit）**——非「实现前可行性评审」
+- 评审对象：已合入的 `tests/test_api_routes_coverage.py`（41 用例）+ `.gitignore` 改动
 - 评审时间：2026-08-29
-- 评审方式：基于真实代码核对（Read routes.py / chat.py / main.py / 服务层 + 现有测试 test_api.py）
+- 评审方式：**基于真实代码 + 实测**（Read 测试全文、pytest --cov 实跑、grep 断言/mock 统计、git status 核对业务零改动）
+- 前置文档：本文件上一版为「实现前可行性评审」，本次已按真实落地代码重写为复审结论。
 
-## 结论：通过（附意见）
+## 结论：**通过（附意见）**
 
-## 达标可行性判定：**能到 80%（余量充足）**
+核心验收点全部经实测达标：覆盖率 69%→**87%**（≥80%，余量 7pt）、**85 passed**、**零业务代码改动**、**离线可重复**（本机无 Ollama 在线仍全绿）。发现的唯一隐患（`.gitignore` 残留合并冲突标记）属工程卫生问题，不阻断本 spec 达标，列为**非阻塞强制约束**要求后续清理。
 
-缺口 = 88 条语句。经逐函数核对，未覆盖语句主要来自「从未被执行过的端点入口」，补测收益明确：
+## 验收点逐条实测核对（对照 spec 验收 V1–V4）
 
-| 目标 | 可触达/未覆盖 | 补测手法 | 预估新增覆盖 |
-| :--- | :--- | :--- | :--- |
-| `routes.py` 未触达端点 | health / get_settings(GET) / put_settings(PUT) / get_task / probe / login_completed / chat 共 7 端点 | TestClient + patch 外部依赖 | ~55–65 |
-| `routes.py` run_agent 内部 generate 分支 | 模型不存在 error / search 异常 502 / 无候选 / 全低置信度 4 个 return 分支 | patch build_task + search_articles + get_available_models | ~15–20 |
-| `chat.py` build_chat_graph + ask_model | 15 未覆盖 | mock model.stream 返回若干 chunk | ~13 |
-| `main.py`（backend/main.py） | 5 未覆盖 | `import backend.main` 即覆盖 | ~5 |
-| **合计** | | | **~90–100** |
+| 验收点 | 要求 | 实测结论 | 判定 |
+| :-- | :-- | :-- | :-- |
+| V1 | `pytest tests` 全通过、无新增失败 | `85 passed, 1 warning in 36.40s`（本机 macOS/Python3.9，无 Ollama 在线） | ✅ |
+| V2 | `--cov=backend` TOTAL ≥ 80% | **TOTAL 818 / Miss 104 / Cover 87%**；主攻 routes.py 94%、chat.py 100%、article_agent 95% | ✅ 达标（87%，落在目标区间上沿之上） |
+| V3 | 新用例含真实断言 + 离线可重复 | 41 用例 / 95 assert，无 `assert True`/空用例；全部外部依赖 mock，本机无 Ollama 仍全绿 | ✅ |
+| V4 | 业务代码零改动 | `git status` 干净、非活跃合并；`backend/app/**` 无工作树改动；本 spec 仅新增 `tests/` + 改 `.gitignore` | ✅ |
 
-即仅「未触达端点 + chat.py + main.py」就足以覆盖 88 条缺口并留 50% 余量；异常分支补测进一步扩大安全垫。**结论：达标可行，且无需依赖最难的强耦合模块。**
+> 说明：V5（门禁复检）为「解除 spec-008/009 合并阻断」的流程动作，属 spec 状态/流程变更，不在本技术复审的代码事实范围内，由验收评审与门禁表更新承接（见 `010-acceptance-review.md` / `009-pr-review.md`）。
 
-## 评审意见
+## 评审意见（针对测试代码维度）
 
-| 维度 | 判定 | 说明 |
-| :--- | :--- | :--- |
-| 改动面 | ✅ | 仅新增 `tests/**`，零业务改动。测试组织为 2 个新文件 + 并入既有文件，合理。 |
-| 补测路线可行性 | ✅ | routes.py 144 未覆盖中约 70% 是「未触达端点」，TestClient + patch 可高收益覆盖；非强耦合死结。 |
-| 可控 vs 强耦合分支 | ⚠️ 已识别 | 见下方「难测分支清单」。可测性整体良好，无不可测死结。 |
-| 离线 mock 策略 | ✅ 合理 | 用 `unittest.mock.patch` 打 `routes` 模块命名空间下的 `get_available_models`/`search_articles`/`probe_pdf_url`/`skill_status`/`build_chat_graph`/`download_article`/`download_under_skill`，与现有 test_api.py 一致做法，天然离线。 |
-| 兼容性 | ✅ | 只读调用现有路由，不改请求链路；patch 在测试进程内生效，不影响生产。 |
-| 容错 | ✅ | spec 要求异常路径断言错误类型/状态码，覆盖 run_agent 的 4 个 return、download 的 503/502/404/PermissionError 分支。 |
-| 安全 | ✅ | 纯测试，无 innerHTML / 密钥 / 新输入面；mock 隔离后不产生真实网络请求。 |
-| 模型与上下文预算 | ✅ | 执行配置沿用本地 Ollama 已注册名（qwen3.8:27b / qwen3.5:9b），无含 `/` 非法名，符合 AGENTS.md。 |
+| 维度 | 判定 | 说明（基于代码事实） |
+| :-- | :-- | :-- |
+| 覆盖率提升真实性 | ✅ | 非凑数。41 个用例逐一到端点/分支：health、GET/PUT settings、get_task、probe、chat 正常+异常、search 各 return、download 503/502/404/PermissionError、login_completed、run_agent 4 分支、chat.py `ask_model` content 累加、backend.main 入口。断言命中**具体状态码 + 响应字段**（body["status"]、detail、SSE event.message），符合 spec §3「禁止无断言」。 |
+| 断言质量 | ✅ | 95 处 assert 全有业务含义。异常路径断言错误语义（`"搜索关键词" in detail`、`status=="failed"`、`"50%" in error`、`download_outcome=="rate_limited"`）。无 `assert True`/裸调用。 |
+| 外部依赖 mock | ✅ | 全部 patch 目标为 `backend.app.api.routes.<symbol>` 命名空间（`get_available_models`/`search_articles`/`probe_pdf_url`/`download_article`/`skill_status`/`build_chat_graph`/`create_chat_model`），未打到 httpx/subprocess 内部实现。Ollama 不可达用 `side_effect=httpx.HTTPError` 模拟，天然离线。 |
+| 离线可重复 | ✅（已实测） | 在无 Ollama 服务的本机环境跑通 85 passed，验证不依赖在线模型/真实网络/真实子进程。 |
+| 兼容性 | ✅ | 纯新增 `tests/**`，不改请求链路；`TestClient(app)` 只读调用现有路由。 |
+| 容错/边界 | ✅ | 覆盖 400 校验（空/超长 question、非下载意图）、404（task/candidate 缺失）、502（上游/网络/限流）、waiting_login/login_required 边界，边界路径处理到位。 |
+| 安全 | ✅ | 纯测试侧，无 innerHTML/密钥/新输入面；mock 隔离后不产生真实请求。 |
+| 高频回归点：前端 class⇄CSS | **N/A** | 本次改动不涉及前端（spec「明确不做」），无 JS/CSS 变更。 |
+| 高频回归点：静态资源 `?v=N` | **N/A** | 本次无 `frontend/` 变更，`index.html` 未动。 |
 
-## 难测分支清单（需重点关注 / 优先 mock，不得真跑）
+## ⚠️ 工程卫生隐患（非阻塞，需后续清理）
 
-| 函数/端点 | 难测原因 | 建议 mock 点 |
-| :--- | :--- | :--- |
-| `routes.py:download_under_skill`（download_paper_skill.py） | 内部走 `subprocess` 子进程调用本地 skill 脚本，且 SKILL_DIR 硬编码为 `/Users/wjh/.codex/skills/download-paper` | **必须** patch `routes.download_under_skill` / `routes.skill_status`，绝不真执行子进程 |
-| `routes.py:download_article_endpoint` → `probe_pdf_url` / `download_article` | `httpx.stream` 真实网络 + 递归探测 | patch `routes.probe_pdf_url` 返回预设 `(status,url)`；patch `routes.download_article` 返回迭代器 |
-| `routes.py:chat` / `run_agent(chat)` → `build_chat_graph` | langgraph `get_stream_writer` + ChatOllama 流式 | patch `routes.build_chat_graph` 返回一个 `graph.stream()` 可迭代的假对象（或用 mock 的 model.stream） |
-| `chat.py:ask_model` | `get_stream_writer()` 需 graph 运行上下文 | 直接测 `build_chat_graph(model).stream(...)`，model 用 mock；或 patch `chat.get_stream_writer` |
-| `routes.py:login_completed` | 内部再次调用 `download_article_endpoint` | patch `routes.download_article_endpoint` 或复用其 mock 链，避免真实下载 |
+- **`.gitignore` 含 6 个未解决的 git 合并冲突标记**（`<<<<<<< HEAD` / `=======` / `>>>>>>> feature/spec-009-agent-roles`，见 `.gitignore:9-15, 21-24`）。
+  - 事实核对：`git status` 干净且非活跃合并，说明这些是**已提交进仓库的死标记**，不是进行中的合并。
+  - 影响：`.coverage`/`.coverage.*`/`htmlcov/`/`.pytest_cache/` 的忽略规则被夹在冲突块内，语义上仍有效（这些行在 `=======` 与 `>>>>>>>` 之间，属「本分支新增」一侧，保留即生效），但**残留冲突标记是配置卫生缺陷**，后续任意一次真正合并/编辑该文件都可能引发混淆。
+  - 定性：属工程卫生问题，**不阻断 spec-010 达标**（忽略规则实际生效，测试产物未入库——`git status` 无 `.coverage`/`htmlcov` 待提交项即为佐证）。列为**非阻塞强制约束 T-NEW**。
 
-## 建议补测优先级（供实现侧排序）
+## 强制约束（合并后必须保持 / 需落实）
 
-1. **P0 高收益低风险**：health / GET settings / PUT settings / get_task / probe —— 全是无外部依赖或轻 mock，直接抬升覆盖率。
-2. **P1 chat.py + main.py**：`import backend.main`（+5）、`test_chat_graph` 用 mock model（+13），性价比最高。
-3. **P2 routes 剩余端点**：chat 端点、login_completed、run_agent 各 return 分支（用 P0 同款 patch 手法）。
-4. **P3 异常分支**：download 的 503/502/PermissionError/404、search 的 502，逐一对断言状态码。
-5. **P4 兜底**：article_search 纯函数（`_score` / `_candidate_from_payload`）/ article_download（`safe_filename`）若仍未达标再补。
+- **T1（已有）**：所有 patch 目标保持 `backend.app.api.routes.<symbol>` 命名空间，禁止下沉 patch 到 httpx/subprocess 内部实现。
+- **T2（已有）**：涉及 `download_under_skill`/`download_article`/`probe_pdf_url`/`build_chat_graph` 的用例必须「先 mock 再调用」，运行期不得出现真实子进程/真实 HTTP/真实 Ollama 调用。
+- **T3（已有）**：`login_completed` 用例必须一并 mock 下游 `download_article_endpoint`/`skill_status`/`get_available_models`，不得触发真实下载（现有 `test_login_completed_resumes_download` 已做到）。
+- **T4（已有）**：chat 用例 mock model 须返回**多个非空 content chunk** 并断言 `answer` 拼接正确（现有 `test_build_chat_graph_streams_content_chunks` 断言 `answer=="你好"`，含空 chunk 分支，达标）。
+- **T5（新，非阻塞）**：**清理 `.gitignore` 中残留的 6 个合并冲突标记**（`<<<<<<<`/`=======`/`>>>>>>>`），保留 `.coverage`/`.coverage.*`/`htmlcov/`/`.pytest_cache/` 忽略规则，消除配置卫生缺陷。此为本复审唯一新增待办。
+- **T6（新，长期）**：新增覆盖率用例须断言**具体状态码 + 响应字段/错误语义**，禁止 `assert True` 或「调用即结束」的空用例（防止未来为凑覆盖率回退）。
 
-## 强制约束（实现必须遵守）
+## 判定统计
 
-- **T1**：所有 patch 目标必须是 `backend.app.api.routes.<symbol>` 命名空间（与现有 test_api.py 一致），禁止 patch 到 httpx / subprocess 内部实现。
-- **T2**：任何涉及 `download_under_skill`、`download_article`、`probe_pdf_url`、`build_chat_graph` 的用例，**先 mock 再调用**，测试运行期间不得出现真实子进程、真实 HTTP、真实 Ollama 调用（可用 `unittest.mock` 的 `assert_called` / 断网复跑来验证）。
-- **T3**：`login_completed` 用例必须把其下游 `download_article_endpoint` 一并 mock（或走 mock 链），不得触发真实下载。
-- **T4**：chat.py 用例的 mock model 必须返回**至少 2 个非空 content chunk**（覆盖 `ask_model` 的 `answer_parts` 累加分支），并断言最终 `answer` 拼接正确，禁止只断言「不报错」。
-- **T5**：`main.py` 覆盖用例允许「import 即覆盖」，但须额外断言 `backend.main.app is backend.app.main.app` 或 `hasattr(app, "routes")` 之类的真实结构断言，避免纯 import 空用例（满足 C2「必须含真实断言」）。
-- **T6**：新增用例须断言**具体状态码与响应字段**（如 `assertEqual(response.status_code, 503)` + 断言 `detail`），不得仅 `assertEqual(200)` 后结束。
+- 验收点 V1–V4：**4/4 通过（全部实测）**；V5 为流程动作，另行承接。
+- 评审维度命中：**核心维度全部 ✅ / N/A（2 项高频回归点因不涉及前端标注 N/A）**。
+- 强制约束条数：**6**（T1–T4 既有 + T5、T6 新增；其中 **T5 为本复审新发现待办**）。
+- 阻塞项：**0（无阻塞）**；非阻塞待办 1 项（T5 `.gitignore` 冲突标记清理）。
 
-## 风险定级：低（含 2 个受控点）
+## 风险定级：**低**
 
-| 风险 | 等级 | 缓解 |
-| :--- | :--- | :--- |
-| 误执行真实子进程/网络导致测试不可重复 | 中（已控） | T2/T3 强制 mock；验收 V3「断网可跑」复验 |
-| `skill_status` 依赖本地 `/Users/wjh/.codex/skills` 真实文件存在 | 低（已控） | 一律 patch `routes.skill_status`，不依赖真实文件 |
-| 为凑覆盖率写无断言空测试 | 低（已控） | C2 + T4/T5/T6 + V3 多重锁定 |
-| 覆盖率因环境差异波动（如 cov 版本） | 低 | 目标区间 80%–85% 留余量，88 条缺口 vs ~90–100 预估收益 |
+| 风险 | 等级 | 缓解/现状 |
+| :-- | :-- | :-- |
+| 为凑覆盖率写无断言空测试 | 低（已控） | 41 用例 95 assert 全有业务语义；T6 长期锁定 |
+| mock 不彻底导致测试不可重复 | 低（已控） | 无 Ollama 环境实跑 85 passed；patch 目标统一在 routes 命名空间 |
+| `.gitignore` 冲突标记残留 | 低（卫生） | 已列 T5 非阻塞待办；忽略规则实际生效，未污染仓库 |
+| 覆盖率随环境/cov 版本波动 | 很低 | 87% 对 80% 阈值留 7pt 余量 |
 
 ## 阻塞项
-无。可进入实现阶段。
+
+**无。可维持 spec-010「已完成」状态。** 唯一遗留为 T5 工程卫生待办（清理 `.gitignore` 冲突标记），建议纳入后续技术债清单，不阻断当前门禁解除。
+
+---
+*评审文档路径：`docs/sdd/reviews/010-tech-review.md`*
+*进展日志：`.codebuddy/agent-logs/tech-lead-010-20260829-124400.md`*
