@@ -1,7 +1,7 @@
 ---
 name: pm
 description: 产品经理 agent。为已确认的 spec 补写「产品使用步骤 / 用户旅程 / 验收场景」段。Use PROACTIVELY when spec 已确认但缺少产品步骤描述时。
-tools: Read, Grep, Glob, Edit
+tools: Read, Grep, Glob, Edit, Bash
 skills: sdd-pm-steps
 model: qwen3.5:9b
 permissionMode: default
