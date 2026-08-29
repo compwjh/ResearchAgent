@@ -335,6 +335,18 @@ function setAlias(model, alias) {
   saveAliases(aliases);
 }
 
+// 重名检测：除当前 model 外，是否已有其它模型使用同一别名（R4）
+function findAliasConflict(model, alias) {
+  const v = (alias || '').trim();
+  if (!v) return null;
+  const aliases = loadAliases();
+  for (const key of Object.keys(aliases)) {
+    if (key === model) continue;
+    if (aliases[key] === v) return key;
+  }
+  return null;
+}
+
 function renderModelText(textWrap, model) {
   const alias = loadAliases()[model];
   const nameSpan = document.createElement('span');
@@ -357,8 +369,31 @@ function enterAliasEdit(textWrap, model) {
   input.value = loadAliases()[model] || '';
   input.placeholder = '别名（留空用原名）';
   let saved = false;
+  // 重名提示节点（R4）：作为 input 的兄弟节点，用 textContent 保证 XSS 安全
+  const warning = document.createElement('span');
+  warning.className = 'alias-warn';
+  warning.textContent = '已有其它模型使用此别名';
+  warning.hidden = true;
+  // 点到提示文字时不让事件冒泡到卡片，且把焦点拉回输入框（保持编辑态）
+  warning.addEventListener('click', (event) => {
+    event.stopPropagation();
+    input.focus();
+  });
+  warning.addEventListener('blur', () => input.focus());
+  const showWarning = (show) => {
+    warning.hidden = !show;
+    if (show) input.focus();
+  };
   const finish = (commit) => {
     if (saved) return;
+    if (commit) {
+      // R4：提交前检测是否与其它模型重名
+      const conflict = findAliasConflict(model, input.value);
+      if (conflict) {
+        showWarning(true);
+        return; // 保留编辑态：不置 saved、不渲染，等待用户改掉或 Esc 取消
+      }
+    }
     saved = true;
     if (commit) setAlias(model, input.value);
     renderModelText(textWrap, model);
@@ -371,8 +406,10 @@ function enterAliasEdit(textWrap, model) {
     if (event.key === 'Enter') { event.preventDefault(); finish(true); }
     else if (event.key === 'Escape') { event.preventDefault(); finish(false); }
   });
+  // 输入变化时清掉旧提示，让提示始终反映当前输入
+  input.addEventListener('input', () => { if (!warning.hidden) warning.hidden = true; });
   input.addEventListener('blur', () => finish(true));
-  textWrap.replaceChildren(input);
+  textWrap.replaceChildren(input, warning);
   input.focus();
   input.select();
 }
