@@ -3,6 +3,10 @@
 # 用法：
 #   ./deploy/start.sh            # 前台运行（Ctrl+C 停止）
 #   ./deploy/start.sh -d         # 后台运行，日志写到 deploy/run.log
+#
+# 注意：知识库（spec-011）的向量库是 Qdrant「本地文件模式」（data/kb/qdrant），
+# 同一目录不允许被多个进程同时打开。请保持单 worker 启动，
+# 不要加 --workers N（N>1），否则会造成向量库数据损坏。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -116,9 +116,9 @@
 > 选型依据：纯前端 localStorage 偏好，复杂度低。本地模型名以 `ollama list` 实际输出为准（已核对）。架构师角色由当前 Agent 自身承担（代号随版本变化，不硬编码）。
 
 ## 评审记录
-- 需求评审：`docs/sdd/reviews/008-requirement-review.md`（结论：/）
+- 需求评审：`docs/sdd/reviews/008-requirement-review.md`（结论：**通过（附意见，不阻塞）**）
 - 技术评审：`docs/sdd/reviews/008-tech-review.md`（结论：通过，附意见已采纳）
-- 验收评审：`docs/sdd/reviews/008-acceptance-review.md`（结论：/）
+- 验收评审：`docs/sdd/reviews/008-acceptance-review.md`（结论：**通过**；覆盖 v2 行内编辑 A1–A9）
 
 ## 变更日志（Changelog）
 | 时间 | 角色 | 动作 |

@@ -89,9 +89,11 @@ TOTAL                                            818    251    69%
 > 选型依据：本地模型名以 `ollama list` 实测为准（已核对）。**agent 的 `model` 一律用不含 `/` 的已注册名**（含 `/` 会报 invalid model，见 `AGENTS.md`）。架构师角色由当前 Agent 自身承担。
 
 ## 评审记录
-- 需求评审：`docs/sdd/reviews/010-requirement-review.md`（结论：/）
-- 技术评审：`docs/sdd/reviews/010-tech-review.md`（结论：/）
-- 验收评审：`docs/sdd/reviews/010-acceptance-review.md`（结论：/）
+- 需求评审：`docs/sdd/reviews/010-requirement-review.md`（结论：**通过（附意见）**）
+- 技术评审：`docs/sdd/reviews/010-tech-review.md`（结论：**通过（附意见）**；实现后复审，覆盖率 69%→87%、85 passed、零业务改动、离线可重复）
+- 验收评审：`docs/sdd/reviews/010-acceptance-review.md`（结论：**通过**；5 项验证点全部通过）
+
+> 回填说明：上述三份评审文档此前均已产出且含结论，但本 spec 的评审记录长期留「结论：/」占位 —— 属台账失真，2026-08-30 依 `SDD-GATE-CHECKLIST.md` 收口清单回填。
 
 ## 变更日志（Changelog）
 | 时间 | 角色 | 动作 |
