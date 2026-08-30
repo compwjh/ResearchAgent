@@ -4,18 +4,35 @@ import uuid
 from typing import List
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from backend.app.api.schemas import ChatRequest
+from backend.app.api.schemas import ChatRequest, KBAskRequest
 from backend.app.agents.article_agent import build_task
 from backend.app.core.article_settings import ArticleSettings, load_article_settings, save_article_settings
-from backend.app.core.config import MODEL_NAME
+from backend.app.core.config import KB_MAX_UPLOAD_MB, MODEL_NAME
 from backend.app.domain.article import ArticleCandidate, ArticleTask
 from backend.app.graphs.chat import build_chat_graph
 from backend.app.services.article_download import download_article, probe_pdf_url
 from backend.app.services.article_search import search_articles
 from backend.app.services.download_paper_skill import SKILL_NAME, build_skill_plan, download_under_skill, skill_status
+from backend.app.services.kb import (
+    build_prompt,
+    citation_payloads,
+    count_points,
+    delete_paper,
+    ensure_collection,
+    get_client,
+    hybrid_search,
+    index_paper,
+    load_papers,
+    new_record,
+    remove_paper,
+    reranker_available,
+    save_upload,
+    upsert_paper,
+)
+from backend.app.services.kb.embed import embed_texts
 from backend.app.services.ollama import create_chat_model, get_available_models
 from backend.app.services.task_store import TaskStore
 
@@ -334,6 +351,120 @@ def chat(request: ChatRequest):
 
         if request.mode == "developer":
             yield stream_event("debug", debug={"mode": request.mode, "input_length": len(question), "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1), "graph_node": "ask_model"})
+        yield stream_event("done")
+
+    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ==================== 知识库 / RAG（spec-011）====================
+
+def kb_component_status() -> dict:
+    status = {
+        "qdrant": False,
+        "embedding": False,
+        "reranker": reranker_available(),
+        "papers": len(load_papers()),
+        "chunks": 0,
+    }
+    try:
+        client = get_client()
+        ensure_collection(client)
+        status["qdrant"] = True
+        status["chunks"] = count_points(client)
+    except Exception:
+        status["qdrant"] = False
+    try:
+        embed_texts(["健康检查"])
+        status["embedding"] = True
+    except Exception:
+        status["embedding"] = False
+    return status
+
+
+@router.get("/kb/health")
+def kb_health() -> dict:
+    return kb_component_status()
+
+
+@router.get("/kb/papers")
+def list_kb_papers() -> dict:
+    return {"papers": load_papers()}
+
+
+@router.post("/kb/upload")
+async def upload_kb_paper(file: UploadFile = File(...)) -> dict:
+    file_name = (file.filename or "").strip()
+    if not file_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="只支持上传 PDF 文件")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="文件内容为空")
+    if len(content) > KB_MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"文件超过 {KB_MAX_UPLOAD_MB}MB 上限")
+    if not content.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="文件内容不是合法的 PDF")
+
+    record = new_record(file_name)
+    _, path = save_upload(file_name, content, paper_id=record.paper_id)
+    upsert_paper(record)
+    return index_paper(record, path)
+
+
+@router.delete("/kb/papers/{paper_id}")
+def delete_kb_paper(paper_id: str) -> dict:
+    if not remove_paper(paper_id):
+        raise HTTPException(status_code=404, detail="论文不存在")
+    vectors_removed = True
+    try:
+        delete_paper(paper_id)
+    except Exception:
+        vectors_removed = False
+    return {"deleted": True, "vectors_removed": vectors_removed}
+
+
+@router.post("/kb/ask")
+def kb_ask(request: KBAskRequest):
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="问题不能为空")
+    if len(question) > 2_000:
+        raise HTTPException(status_code=400, detail="问题最多支持 2000 个字符")
+    try:
+        available_models: List[str] = get_available_models()
+    except httpx.HTTPError as error:
+        raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
+    if request.model not in available_models:
+        raise HTTPException(status_code=400, detail=f"模型 {request.model} 不存在，请从已安装模型中选择")
+
+    top_k = max(1, min(int(request.top_k or 5), 20))
+
+    def generate():
+        started_at = time.perf_counter()
+        yield stream_event("meta", model=request.model, top_k=top_k)
+        yield stream_event("stage", name="retrieving", message="正在检索知识库")
+        try:
+            hits = hybrid_search(question, top_k=top_k)
+        except Exception as error:
+            yield stream_event("error", message=f"知识库检索失败：{error}")
+            return
+        yield stream_event("citations", citations=citation_payloads(hits))
+        if not hits:
+            yield stream_event("token", content="知识库中没有找到相关内容，请先上传论文或换个问法。")
+            yield stream_event("done")
+            return
+        chat_model = create_chat_model(request.model)
+        try:
+            for chunk in chat_model.stream(build_prompt(question, hits)):
+                content = getattr(chunk, "content", "") or ""
+                if content:
+                    yield stream_event("token", content=content)
+        except Exception as error:
+            yield stream_event("error", message=f"生成失败：{error}")
+            return
+        yield stream_event(
+            "debug",
+            debug={"elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1), "hits": len(hits)},
+        )
         yield stream_event("done")
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

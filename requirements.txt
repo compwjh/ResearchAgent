@@ -1,6 +1,11 @@
 langgraph>=0.2.0
 langchain-ollama>=0.2.0
-httpx[socks]>=0.27.0
+httpx[s, socks]>=0.27.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.0
+python-multipart>=0.0.9
+# 本机 .venv 为 Python 3.9，qdrant-client 在 3.9 下最高可用 1.16.1
+qdrant-client>=1.9,<1.17
+pymupdf>=1.24.0
+jieba>=0.42.1
