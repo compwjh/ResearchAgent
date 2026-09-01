@@ -7,29 +7,38 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from backend.app.api.schemas import ChatRequest, KBAskRequest
+from backend.app.api.schemas import ChatRequest, KBAskRequest, KBReindexRequest
 from backend.app.agents.article_agent import build_task
 from backend.app.core.article_settings import ArticleSettings, load_article_settings, save_article_settings
-from backend.app.core.config import KB_MAX_UPLOAD_MB, MODEL_NAME
+from backend.app.core.config import CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR, MODEL_NAME
 from backend.app.domain.article import ArticleCandidate, ArticleTask
 from backend.app.graphs.chat import build_chat_graph
 from backend.app.services.article_download import download_article, probe_pdf_url
 from backend.app.services.article_search import search_articles
 from backend.app.services.download_paper_skill import SKILL_NAME, build_skill_plan, download_under_skill, skill_status
 from backend.app.services.kb import (
+    CHUNKERS,
+    CHUNKER_V1,
+    CHUNKER_V2,
+    STATUS_INDEXING,
     build_prompt,
     citation_payloads,
     count_points,
     delete_paper,
     ensure_collection,
     get_client,
+    get_paper,
     hybrid_search,
     index_paper,
+    index_paper_chunker,
     load_papers,
     new_record,
     remove_paper,
     reranker_available,
+    run_index_task_sync,
     save_upload,
+    submit_index_task,
+    update_chunker_state,
     upsert_paper,
 )
 from backend.app.services.kb.embed import embed_texts
@@ -365,7 +374,17 @@ def kb_component_status() -> dict:
         "reranker": reranker_available(),
         "papers": len(load_papers()),
         "chunks": 0,
+        # spec-012：v2 结构分析模型是否可用（不可用时 v2 会降级为规则切分）
+        "v2_llm": {"model": CHUNK_V2_LLM_MODEL, "available": False},
     }
+    try:
+        installed = get_available_models()
+        # Ollama 对未显式带 tag 的模型返回 `<name>:latest`，故两种写法都要认
+        status["v2_llm"]["available"] = (
+            CHUNK_V2_LLM_MODEL in installed or f"{CHUNK_V2_LLM_MODEL}:latest" in installed
+        )
+    except Exception:
+        pass
     try:
         client = get_client()
         ensure_collection(client)
@@ -407,7 +426,49 @@ async def upload_kb_paper(file: UploadFile = File(...)) -> dict:
     record = new_record(file_name)
     _, path = save_upload(file_name, content, paper_id=record.paper_id)
     upsert_paper(record)
-    return index_paper(record, path)
+    # v1 同步建索引：完成后立即返回，用户可马上用 v1 提问（spec-012）。
+    # R1：经同一单线程池排队，避免与后台 v2 任务争抢 bge-m3 / 27B 显存。
+    result = run_index_task_sync(
+        record.paper_id,
+        CHUNKER_V1,
+        lambda progress: index_paper_chunker(record, path, CHUNKER_V1, progress=progress),
+    )
+    # v2 异步提交：27B 结构分析较慢，进度由 GET /api/kb/papers 轮询
+    _submit_index_task(record.paper_id, path, CHUNKER_V2)
+    return result
+
+
+def _submit_index_task(paper_id: str, path, chunker: str) -> bool:
+    """提交一个异步索引任务；已在跑则返回 False（去重，不重复跑）。
+
+    先把状态置为 `indexing`，这样任务在线程池排队时前端就能看到「索引中 0%」，
+    而不是停留在旧状态。
+    """
+    update_chunker_state(paper_id, chunker, status=STATUS_INDEXING, progress=0, error=None)
+
+    def _runner(progress) -> dict:
+        data = get_paper(paper_id) or {"paper_id": paper_id, "file_name": "", "uploaded_at": ""}
+        return index_paper_chunker(data, path, chunker, progress=progress)
+
+    return submit_index_task(paper_id, chunker, _runner)
+
+
+@router.post("/kb/papers/{paper_id}/reindex")
+def reindex_kb_paper(paper_id: str, request: KBReindexRequest = KBReindexRequest()) -> dict:
+    """重建指定论文的索引（spec-012）。
+
+    `chunker` 为 `all`（默认）时重建 v1 + v2 两个版本。
+    提交后异步执行，用 `GET /api/kb/papers` 轮询进度。
+    """
+    if not get_paper(paper_id):
+        raise HTTPException(status_code=404, detail="论文不存在")
+    path = KB_PAPERS_DIR / f"{paper_id}.pdf"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="论文原件已丢失，无法重建索引")
+
+    targets = CHUNKERS if request.chunker == "all" else (request.chunker,)
+    submitted = {name: _submit_index_task(paper_id, path, name) for name in targets}
+    return {"paper_id": paper_id, "submitted": submitted, "paper": get_paper(paper_id)}
 
 
 @router.delete("/kb/papers/{paper_id}")
@@ -438,18 +499,27 @@ def kb_ask(request: KBAskRequest):
 
     top_k = max(1, min(int(request.top_k or 5), 20))
 
+    chunker = request.chunker or CHUNKER_V1
+
     def generate():
         started_at = time.perf_counter()
-        yield stream_event("meta", model=request.model, top_k=top_k)
+        yield stream_event("meta", model=request.model, top_k=top_k, chunker=chunker)
         yield stream_event("stage", name="retrieving", message="正在检索知识库")
         try:
-            hits = hybrid_search(question, top_k=top_k)
+            hits = hybrid_search(question, top_k=top_k, chunker=chunker)
         except Exception as error:
             yield stream_event("error", message=f"知识库检索失败：{error}")
             return
         yield stream_event("citations", citations=citation_payloads(hits))
         if not hits:
-            yield stream_event("token", content="知识库中没有找到相关内容，请先上传论文或换个问法。")
+            # v2 未就绪时明确提示，**不回退到 v1**（spec-012 边界）
+            message = "知识库中没有找到相关内容，请先上传论文或换个问法。"
+            if chunker == CHUNKER_V2:
+                message = (
+                    "所选切分版本（v2 结构感知）尚未就绪或没有命中内容。"
+                    "可先切回 v1 提问，或在论文列表点「重建索引」生成 v2。"
+                )
+            yield stream_event("token", content=message)
             yield stream_event("done")
             return
         chat_model = create_chat_model(request.model)

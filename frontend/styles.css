@@ -193,7 +193,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #kb-view .kb-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 360px minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
   height: calc(100vh - 130px);
@@ -292,34 +292,103 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #kb-view .kb-item:last-child { margin-bottom: 0; }
 
+#kb-view .kb-item:hover { border-color: #d3d4da; }
+
 #kb-view .kb-item.status-failed { border-color: #f0b4b4; }
 #kb-view .kb-item.status-indexed_partial { border-color: #f0d8a8; }
 
+/* 标题整行独占并完整换行显示，不再截断（Bug 修复：标题展示不完全） */
+#kb-view .kb-item-head {
+  display: block;
+}
+
 #kb-view .kb-item-name {
+  display: block;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.45;
   color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding-right: 44px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 #kb-view .kb-item-meta {
+  display: block;
+  margin-top: 2px;
   font-family: 'DM Mono', monospace;
   font-size: 10px;
   color: var(--muted);
 }
 
+/* 双版本状态与进度（spec-012） */
+#kb-view .kb-item-versions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+#kb-view .kb-chunker-badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+#kb-view .kb-chunker-badge.status-indexed { background: #eaf7ee; color: #1e7d3a; }
+#kb-view .kb-chunker-badge.status-indexing { background: #eef0fd; color: var(--accent); }
+#kb-view .kb-chunker-badge.status-failed { background: #fdecec; color: #c0392b; }
+#kb-view .kb-chunker-badge.status-pending { background: var(--paper); color: var(--muted); }
+
+/* 进度条独占一行，避免挤占徽章与操作按钮的横向空间 */
+#kb-view .kb-progress {
+  width: 100%;
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+#kb-view .kb-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* 操作按钮与版本徽章同行、右对齐，随卡片一起可见（Bug 修复：按钮被裁看不到） */
+#kb-view .kb-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+#kb-view .kb-item-rebuild,
 #kb-view .kb-item-remove {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   padding: 3px 8px;
+  border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--paper);
   color: var(--muted);
   font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+#kb-view .kb-item-rebuild:hover {
+  background: #eef0fd;
+  color: var(--accent);
+}
+
+#kb-view .kb-item-rebuild:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 #kb-view .kb-item-remove:hover {
@@ -508,6 +577,30 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #kb-view .kb-model select {
   max-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--ink);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+}
+
+/* 切分版本选择（spec-012）：与模型选择同排，视觉上弱化一级 */
+#kb-view .kb-chunker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+#kb-view .kb-chunker-symbol {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#kb-view .kb-chunker select {
+  max-width: 150px;
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 8px 10px;

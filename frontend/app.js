@@ -510,8 +510,10 @@ const kbForm = document.querySelector('#kb-ask-form');
 const kbQuestion = document.querySelector('#kb-question');
 const kbSend = document.querySelector('#kb-send');
 const kbModelSelect = document.querySelector('#kb-model-select');
+const kbChunkerSelect = document.querySelector('#kb-chunker-select');
 
 const KB_STATUS_TEXT = {
+  pending: '待索引',
   indexing: '索引中',
   indexed: '已索引',
   indexed_partial: '部分索引',
@@ -626,15 +628,57 @@ if (modelSelect) {
   });
 }
 
+// 轮询：仅在存在「索引中」的版本时按 2.5s 刷新，全部完成后自动停止（spec-012）
+let kbPollTimer = null;
+
+function stopKbPoll() {
+  if (kbPollTimer) {
+    window.clearInterval(kbPollTimer);
+    kbPollTimer = null;
+  }
+}
+
+function scheduleKbPoll() {
+  if (kbPollTimer) return;
+  kbPollTimer = window.setInterval(() => {
+    loadKbPapers();
+  }, 2500);
+}
+
 async function loadKbPapers() {
-  if (!kbList) return;
+  if (!kbList) return false;
   try {
     const response = await fetch('/api/kb/papers');
     const data = await response.json();
-    renderKbPapers(data.papers || []);
+    return renderKbPapers(data.papers || []);
   } catch (error) {
     if (kbStatus) kbStatus.textContent = `列表加载失败：${error.message}`;
+    return false;
   }
+}
+
+function chunkerBadgeText(name, state) {
+  const label = KB_STATUS_TEXT[state.status] || state.status || '未知';
+  if (state.status === 'indexing') return `${name} ${label} ${state.progress || 0}%`;
+  if (state.chunk_count) return `${name} ${label} · ${state.chunk_count} 片段`;
+  return `${name} ${label}`;
+}
+
+async function rebuildKbPaper(paper, button) {
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch(`/api/kb/papers/${encodeURIComponent(paper.paper_id)}/reindex`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chunker: 'all' }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || '重建失败');
+    if (kbStatus) kbStatus.textContent = `已提交重建：${paper.file_name || '未命名论文'}（v1 + v2）`;
+  } catch (error) {
+    if (kbStatus) kbStatus.textContent = `重建失败：${error.message}`;
+  }
+  await loadKbPapers();
 }
 
 function renderKbPapers(papers) {
@@ -642,18 +686,61 @@ function renderKbPapers(papers) {
   if (kbCount) kbCount.textContent = String(papers.length);
   if (kbNavCount) kbNavCount.textContent = String(papers.length);
   kbEmpty.hidden = papers.length > 0;
+
+  let hasRunning = false;
   for (const paper of papers) {
     const item = document.createElement('li');
     item.className = `kb-item status-${paper.status || 'unknown'}`;
+    if (paper.error) item.title = paper.error;
+
+    const head = document.createElement('div');
+    head.className = 'kb-item-head';
 
     const name = document.createElement('span');
     name.className = 'kb-item-name';
     name.textContent = paper.file_name || '未命名论文';
+    head.appendChild(name);
 
     const meta = document.createElement('span');
     meta.className = 'kb-item-meta';
-    meta.textContent = `${KB_STATUS_TEXT[paper.status] || paper.status || '未知'} · ${paper.page_count || 0} 页 · ${paper.chunk_count || 0} 片段`;
-    if (paper.error) item.title = paper.error;
+    meta.textContent = `${KB_STATUS_TEXT[paper.status] || paper.status || '未知'} · ${paper.page_count || 0} 页`;
+
+    // 双版本状态与百分比进度（spec-012）
+    const versions = document.createElement('div');
+    versions.className = 'kb-item-versions';
+    const chunkers = paper.chunkers || {};
+    const bars = [];
+    for (const key of ['v1', 'v2']) {
+      const state = chunkers[key] || { status: 'pending', progress: 0, chunk_count: 0 };
+      if (state.status === 'indexing') hasRunning = true;
+      const badge = document.createElement('span');
+      badge.className = `kb-chunker-badge status-${state.status}`;
+      badge.textContent = chunkerBadgeText(key, state);
+      versions.appendChild(badge);
+      if (state.status === 'indexing') {
+        const bar = document.createElement('div');
+        bar.className = 'kb-progress';
+        bar.setAttribute('role', 'progressbar');
+        bar.setAttribute('aria-valuenow', String(state.progress || 0));
+        bar.setAttribute('aria-valuemin', '0');
+        bar.setAttribute('aria-valuemax', '100');
+        const fill = document.createElement('div');
+        fill.className = 'kb-progress-fill';
+        fill.style.width = `${Math.max(0, Math.min(100, state.progress || 0))}%`;
+        bar.appendChild(fill);
+        bars.push(bar);
+      }
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'kb-item-actions';
+
+    const rebuild = document.createElement('button');
+    rebuild.type = 'button';
+    rebuild.className = 'kb-item-rebuild';
+    rebuild.textContent = '重建索引';
+    rebuild.setAttribute('aria-label', `重建索引 ${paper.file_name || '论文'}`);
+    rebuild.addEventListener('click', () => rebuildKbPaper(paper, rebuild));
 
     const remove = document.createElement('button');
     remove.type = 'button';
@@ -676,9 +763,15 @@ function renderKbPapers(papers) {
       loadKbHealth();
     });
 
-    item.append(name, meta, remove);
+    actions.append(rebuild, remove);
+    versions.appendChild(actions);
+    item.append(head, meta, versions, ...bars);
     kbList.appendChild(item);
   }
+
+  if (hasRunning) scheduleKbPoll();
+  else stopKbPoll();
+  return hasRunning;
 }
 
 async function loadKbHealth() {
@@ -686,7 +779,8 @@ async function loadKbHealth() {
   try {
     const response = await fetch('/api/kb/health');
     const data = await response.json();
-    kbHealth.textContent = `Qdrant ${data.qdrant ? '就绪' : '不可用'} · Embedding ${data.embedding ? '就绪' : '不可用'} · 重排 ${data.reranker ? '启用' : '未启用（RRF 直出）'} · ${data.chunks ?? 0} 个片段`;
+    const v2llm = data.v2_llm || {};
+    kbHealth.textContent = `Qdrant ${data.qdrant ? '就绪' : '不可用'} · Embedding ${data.embedding ? '就绪' : '不可用'} · 重排 ${data.reranker ? '启用' : '未启用（RRF 直出）'} · ${data.chunks ?? 0} 个片段 · v2 结构分析 ${v2llm.available ? '就绪' : '不可用（将降级为规则切分）'}`;
   } catch (error) {
     kbHealth.textContent = `组件状态读取失败：${error.message}`;
   }
@@ -737,7 +831,11 @@ function renderKbCitations(container, citations) {
   container.appendChild(title);
   // 编号与提示词里上下文的 [1]/[2] 一一对应（citations 顺序 == build_context 的枚举顺序）
   citations.forEach((cite, position) => {
-    const label = `[${position + 1}] ${cite.file_name} p.${cite.page}`;
+    // spec-012：v2 跨页合并片段显示为 p.3-4，单页仍为 p.3
+    const startPage = Number(cite.page);
+    const endPage = Number(cite.page_end);
+    const pageText = endPage > startPage ? `p.${startPage}-${endPage}` : `p.${startPage}`;
+    const label = `[${position + 1}] ${cite.file_name} ${pageText}`;
     // 用 button 而非 span：可点击、可 Tab 聚焦、可用键盘展开（无障碍）
     const tag = document.createElement('button');
     tag.type = 'button';
@@ -792,7 +890,13 @@ if (kbForm) {
       const response = await fetch('/api/kb/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, model: kbModelSelect ? kbModelSelect.value : activeModel, top_k: 5 }),
+        body: JSON.stringify({
+          question,
+          model: kbModelSelect ? kbModelSelect.value : activeModel,
+          top_k: 5,
+          // spec-012：切分版本每次提问时选择，默认 v1
+          chunker: kbChunkerSelect ? kbChunkerSelect.value : 'v1',
+        }),
       });
       if (!response.ok) {
         const data = await response.json();

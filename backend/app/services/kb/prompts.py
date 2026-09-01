@@ -3,11 +3,20 @@
 from typing import List
 
 
+def _page_label(hit) -> str:
+    """出处页码文案（spec-012）：跨页片段显示 `第 3-4 页`，单页仍为 `第 3 页`。"""
+    start = int(getattr(hit, "page", 0) or 0)
+    end = int(getattr(hit, "page_end", 0) or 0)
+    if end and end > start:
+        return f"第 {start}-{end} 页"
+    return f"第 {start} 页"
+
+
 def build_context(hits) -> str:
     """把命中片段拼成带编号与出处的上下文。"""
     blocks = []
     for position, hit in enumerate(hits, start=1):
-        blocks.append(f"[{position}] 来源：{hit.file_name} 第 {hit.page} 页\n{hit.text}")
+        blocks.append(f"[{position}] 来源：{hit.file_name} {_page_label(hit)}\n{hit.text}")
     return "\n\n".join(blocks)
 
 
@@ -28,6 +37,8 @@ def citation_payloads(hits: List) -> List[dict]:
         {
             "file_name": hit.file_name,
             "page": hit.page,
+            # spec-012：v2 跨页合并片段的结束页，前端据此显示 `p.3-4`
+            "page_end": int(getattr(hit, "page_end", 0) or 0) or int(hit.page or 0),
             "chunk_index": hit.chunk_index,
             "paper_id": hit.paper_id,
             "score": round(hit.score, 6),

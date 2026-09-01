@@ -395,5 +395,177 @@ class PromptTests(unittest.TestCase):
         self.assertEqual(prompts.citation_payloads(hits)[0]["text"], "<b>加粗</b> & <script>")
 
 
+class DualChunkerIndexTests(unittest.TestCase):
+    """spec-012：point_id 与 payload 必须带 chunker 维度，否则两版本会互相覆盖。"""
+
+    def test_point_id_includes_chunker(self):
+        self.assertNotEqual(
+            index_module.point_id("p1", 0, "v1"), index_module.point_id("p1", 0, "v2")
+        )
+
+    def test_point_id_defaults_to_v1(self):
+        self.assertEqual(index_module.point_id("p1", 0), index_module.point_id("p1", 0, "v1"))
+
+    def test_point_id_is_deterministic_per_version(self):
+        self.assertEqual(index_module.point_id("p1", 3, "v2"), index_module.point_id("p1", 3, "v2"))
+
+    def test_upsert_writes_new_payload_fields(self):
+        client = Mock()
+        client.collection_exists.return_value = True
+        chunks = [index_module.Chunk(text="正文", page=1, chunk_index=0, section="1 Intro")]
+        with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
+            index_module.upsert_chunks("p1", "a.pdf", chunks, "2026-01-01", client=client,
+                                       chunker="v2")
+        payload = client.upsert.call_args.kwargs["points"][0].payload
+        self.assertEqual(payload["chunker"], "v2")
+        self.assertEqual(payload["section"], "1 Intro")
+        self.assertEqual(payload["page_end"], 1)
+        self.assertFalse(payload["is_citation"])
+
+    def test_upsert_marks_citation_when_reference_zone_known(self):
+        client = Mock()
+        client.collection_exists.return_value = True
+        # 两条 `[数字]` 条目即判定为参考文献区
+        text = "[1] A. Author, \"T,\" in ICML, 2023.\n[2] B. Author, \"T2,\" in NeurIPS, 2022."
+        chunks = [index_module.Chunk(text=text, page=9, chunk_index=0)]
+        with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
+            index_module.upsert_chunks("p1", "a.pdf", chunks, client=client, chunker="v1",
+                                       ref_start_page=8)
+        self.assertTrue(client.upsert.call_args.kwargs["points"][0].payload["is_citation"])
+
+    def test_upsert_keeps_citation_false_before_reference_zone(self):
+        client = Mock()
+        client.collection_exists.return_value = True
+        text = "[1] A. Author, 2023.\n[2] B. Author, 2022."
+        chunks = [index_module.Chunk(text=text, page=3, chunk_index=0)]
+        with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
+            index_module.upsert_chunks("p1", "a.pdf", chunks, client=client, chunker="v1",
+                                       ref_start_page=8)
+        self.assertFalse(client.upsert.call_args.kwargs["points"][0].payload["is_citation"])
+
+    def test_upsert_without_reference_zone_leaves_citation_false(self):
+        client = Mock()
+        client.collection_exists.return_value = True
+        chunks = [index_module.Chunk(text="[1] A. Author, 2023.", page=9, chunk_index=0)]
+        with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
+            index_module.upsert_chunks("p1", "a.pdf", chunks, client=client, chunker="v1")
+        self.assertFalse(client.upsert.call_args.kwargs["points"][0].payload["is_citation"])
+
+    def test_delete_paper_chunker_filters_by_both_keys(self):
+        """T3：重建前必须按 paper_id + chunker 删除，否则残留旧点污染检索。"""
+        client = Mock()
+        client.collection_exists.return_value = True
+        index_module.delete_paper_chunker("p1", "v2", client=client)
+        conditions = client.delete.call_args.kwargs["points_selector"].filter.must
+        self.assertEqual({cond.key for cond in conditions}, {"paper_id", "chunker"})
+
+    def test_delete_paper_chunker_skips_missing_collection(self):
+        client = Mock()
+        client.collection_exists.return_value = False
+        index_module.delete_paper_chunker("p1", "v2", client=client)
+        client.delete.assert_not_called()
+
+
+class RetrieveFilterTests(unittest.TestCase):
+    def test_build_filter_by_chunker(self):
+        self.assertEqual([c.key for c in retrieve_module.build_filter(chunker="v2").must],
+                         ["chunker"])
+
+    def test_build_filter_excludes_citations(self):
+        flt = retrieve_module.build_filter(chunker="v1", include_citations=False)
+        self.assertEqual([c.key for c in flt.must], ["chunker", "is_citation"])
+
+    def test_build_filter_none_when_empty(self):
+        self.assertIsNone(retrieve_module.build_filter())
+
+    def test_citation_intent_positive(self):
+        for text in ["这篇论文的参考文献有哪些", "列出参考书目", "list of references",
+                     "bibliography", "which papers are cited"]:
+            self.assertTrue(retrieve_module.looks_like_citation_query(text), text)
+
+    def test_citation_intent_negative(self):
+        for text in ["reference implementation 是什么", "这个方法的复杂度",
+                     "实验结果怎么样", ""]:
+            self.assertFalse(retrieve_module.looks_like_citation_query(text), text)
+
+    def test_rrf_fuse_keeps_versions_apart(self):
+        """T1：归并 key 缺 chunker 会让 v1/v2 静默混召回。"""
+        def point(chunker):
+            return SimpleNamespace(
+                score=1.0,
+                payload={"paper_id": "p1", "file_name": "a.pdf", "page": 1,
+                         "chunk_index": 0, "text": "t", "chunker": chunker},
+            )
+
+        fused = retrieve_module.rrf_fuse([[point("v1"), point("v2")]])
+        self.assertEqual(len(fused), 2)
+
+    def test_hybrid_search_filters_both_routes(self):
+        """T2：两路都必须带同一个 filter，否则稀疏路会漏掉过滤。"""
+        client = Mock()
+        client.collection_exists.return_value = True
+        client.query_points.return_value = Mock(points=[])
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1]]):
+            with patch.object(retrieve_module, "encode_sparse", return_value=Mock()):
+                retrieve_module.hybrid_search("问题", client=client, chunker="v2")
+        calls = client.query_points.call_args_list
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertIn("chunker", [c.key for c in call.kwargs["query_filter"].must])
+
+    def test_hit_defaults_page_end_to_page(self):
+        hit = Hit("p1", "a.pdf", 3, 0, "t", 1.0)
+        self.assertEqual(hit.page_end, 3)
+
+
+class BackfillTests(unittest.TestCase):
+    """旧点缺 chunker 字段会导致按版本过滤后完全检索不到，迁移必须补上。"""
+
+    def test_backfills_missing_chunker_field(self):
+        client = Mock()
+        client.collection_exists.return_value = True
+        stale = SimpleNamespace(id="1", payload={"page": 4})
+        client.scroll.return_value = ([stale], None)
+        count = index_module.backfill_chunker_defaults(client=client)
+        self.assertEqual(count, 1)
+        written = [call.kwargs["payload"] for call in client.set_payload.call_args_list]
+        self.assertTrue(any("chunker" in payload for payload in written))
+
+    def test_backfill_skips_already_migrated(self):
+        client = Mock()
+        client.collection_exists.return_value = True
+        client.scroll.return_value = ([SimpleNamespace(id="1", payload={"chunker": "v1"})], None)
+        self.assertEqual(index_module.backfill_chunker_defaults(client=client), 0)
+
+    def test_backfill_skips_missing_collection(self):
+        client = Mock()
+        client.collection_exists.return_value = False
+        self.assertEqual(index_module.backfill_chunker_defaults(client=client), 0)
+
+
+class CitationPageRangeTests(unittest.TestCase):
+    """spec-012：v2 跨页合并片段的引用显示为 `p.3-4`，单页仍为 `p.3`。"""
+
+    def test_payload_carries_page_end(self):
+        hits = [Hit("p1", "a.pdf", 3, 0, "跨页片段", 1.0, page_end=4)]
+        payload = prompts.citation_payloads(hits)[0]
+        self.assertEqual(payload["page"], 3)
+        self.assertEqual(payload["page_end"], 4)
+
+    def test_payload_falls_back_to_page_when_not_cross_page(self):
+        hits = [Hit("p1", "a.pdf", 3, 0, "单页片段", 1.0)]
+        self.assertEqual(prompts.citation_payloads(hits)[0]["page_end"], 3)
+
+    def test_context_shows_range_for_cross_page_hit(self):
+        hits = [Hit("p1", "a.pdf", 3, 0, "跨页片段", 1.0, page_end=4)]
+        self.assertIn("第 3-4 页", prompts.build_context(hits))
+
+    def test_context_shows_single_page(self):
+        hits = [Hit("p1", "a.pdf", 3, 0, "单页片段", 1.0)]
+        context = prompts.build_context(hits)
+        self.assertIn("第 3 页", context)
+        self.assertNotIn("3-4", context)
+
+
 if __name__ == "__main__":
     unittest.main()

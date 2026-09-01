@@ -7,19 +7,40 @@
 import json
 import threading
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from backend.app.core.config import KB_META_PATH, KB_PAPERS_DIR
 
+STATUS_PENDING = "pending"
 STATUS_INDEXING = "indexing"
 STATUS_INDEXED = "indexed"
 STATUS_PARTIAL = "indexed_partial"
 STATUS_FAILED = "failed"
 
+# 切分版本（spec-012）：上传时 v1 同步、v2 异步，两版各自维护状态与进度。
+CHUNKER_V1 = "v1"
+CHUNKER_V2 = "v2"
+CHUNKERS = (CHUNKER_V1, CHUNKER_V2)
+
 _lock = threading.RLock()
+
+# 用于区分"不更新 error"与"把 error 置为 None"
+_UNSET = object()
+
+
+def default_chunkers() -> Dict[str, Any]:
+    """双版本初始状态：v1 立即开始，v2 排队等待异步任务。"""
+    return {
+        CHUNKER_V1: {"status": STATUS_INDEXING, "chunk_count": 0, "progress": 0, "error": None},
+        CHUNKER_V2: {"status": STATUS_PENDING, "chunk_count": 0, "progress": 0, "error": None},
+    }
+
+
+def default_chunker_state(status: str = STATUS_PENDING) -> Dict[str, Any]:
+    return {"status": status, "chunk_count": 0, "progress": 0, "error": None}
 
 
 @dataclass
@@ -31,6 +52,8 @@ class PaperRecord:
     chunk_count: int = 0
     uploaded_at: str = ""
     error: Optional[str] = None
+    # spec-012：双版本状态。顶层 status/chunk_count 保留以兼容既有接口与前端。
+    chunkers: Dict[str, Any] = field(default_factory=default_chunkers)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -43,6 +66,12 @@ def ensure_dirs(papers_dir: Optional[Path] = None, meta_path: Optional[Path] = N
 
 
 def load_papers(meta_path: Optional[Path] = None) -> List[dict]:
+    """读取全部论文元数据。
+
+    spec-012：对**缺少 `chunkers` 字段的旧记录**在内存中补齐双版本状态，
+    使所有读取路径（列表接口、单条查询、状态更新）都无需各自处理兼容问题。
+    仅改内存，不即刻写盘。
+    """
     meta = Path(meta_path or KB_META_PATH)
     if not meta.exists():
         return []
@@ -50,7 +79,12 @@ def load_papers(meta_path: Optional[Path] = None) -> List[dict]:
         data = json.loads(meta.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
-    return data if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    for item in data:
+        if isinstance(item, dict):
+            ensure_chunkers(item)
+    return data
 
 
 def save_papers(papers: List[dict], meta_path: Optional[Path] = None) -> None:
@@ -122,3 +156,127 @@ def new_record(file_name: str, uploaded_at: Optional[str] = None) -> PaperRecord
         file_name=file_name,
         uploaded_at=uploaded_at or datetime.now().isoformat(timespec="seconds"),
     )
+
+
+# ---------------------------------------------------------------------------
+# 双版本切分状态（spec-012）
+# ---------------------------------------------------------------------------
+
+
+def ensure_chunkers(item: dict) -> Dict[str, Any]:
+    """补齐旧记录（无 chunkers 字段）的双版本状态，返回规范化后的 dict。
+
+    **对 spec-011 遗留记录必须沿用其顶层 `status`**：
+    若一律按 `indexing` 补 v1，启动时的 `mark_interrupted_tasks` 会把这些
+    本已 `indexed` 的论文误判为"中断任务"并标记 failed，导致旧论文全部失效。
+    v2 一律 `pending`——旧数据没有 v2，需由用户点「重建索引」补建。
+    """
+    states = item.get("chunkers") if isinstance(item, dict) else None
+    if not isinstance(states, dict):
+        states = {}
+
+    if isinstance(item, dict):
+        legacy_status = item.get("status") or STATUS_INDEXING
+        legacy_count = int(item.get("chunk_count", 0) or 0)
+    else:
+        legacy_status = STATUS_INDEXING
+        legacy_count = 0
+
+    merged = {
+        CHUNKER_V1: {
+            "status": legacy_status,
+            "chunk_count": legacy_count,
+            "progress": 100 if legacy_status in (STATUS_INDEXED, STATUS_PARTIAL) else 0,
+            "error": (item.get("error") if isinstance(item, dict) else None),
+        },
+        CHUNKER_V2: default_chunker_state(),
+    }
+
+    # 记录里已有的显式状态优先，逐字段覆盖
+    for name in CHUNKERS:
+        current = states.get(name)
+        if isinstance(current, dict):
+            base = dict(merged[name])
+            base.update({key: current[key] for key in base if key in current})
+            merged[name] = base
+
+    if isinstance(item, dict):
+        item["chunkers"] = merged
+    return merged
+
+
+def get_chunker_state(paper_id: str, chunker: str, meta_path: Optional[Path] = None) -> Optional[dict]:
+    """读取某论文某切分版本的状态；论文不存在返回 None。"""
+    for item in load_papers(meta_path):
+        if item.get("paper_id") == paper_id:
+            return ensure_chunkers(item).get(chunker)
+    return None
+
+
+def update_chunker_state(
+    paper_id: str,
+    chunker: str,
+    *,
+    status: Optional[str] = None,
+    progress: Optional[int] = None,
+    chunk_count: Optional[int] = None,
+    error: Any = _UNSET,
+    meta_path: Optional[Path] = None,
+) -> Optional[dict]:
+    """局部更新某论文某切分版本的状态，返回更新后的状态；论文不存在返回 None。
+
+    同时维护顶层 `status` / `chunk_count` 兼容字段（取 v1 的值），
+    使既有接口与前端无需改动即可继续工作。
+    """
+    with _lock:
+        papers = load_papers(meta_path)
+        for item in papers:
+            if item.get("paper_id") != paper_id:
+                continue
+            states = ensure_chunkers(item)
+            state = dict(states.get(chunker) or default_chunker_state())
+            if status is not None:
+                state["status"] = status
+            if progress is not None:
+                state["progress"] = max(0, min(100, int(progress)))
+            if chunk_count is not None:
+                state["chunk_count"] = max(0, int(chunk_count))
+            if error is not _UNSET:
+                state["error"] = error
+            states[chunker] = state
+            item["chunkers"] = states
+            # 顶层兼容字段跟随 v1
+            primary = states.get(CHUNKER_V1) or {}
+            item["status"] = primary.get("status", item.get("status"))
+            item["chunk_count"] = primary.get("chunk_count", item.get("chunk_count", 0))
+            save_papers(papers, meta_path)
+            return state
+    return None
+
+
+def mark_interrupted_tasks(meta_path: Optional[Path] = None, reason: str = "服务重启导致中断") -> int:
+    """启动时把仍为 `indexing` 的版本标记失败，返回被标记的数量。
+
+    异步任务无法跨进程存活，残留的 `indexing` 会永远卡住进度条，
+    因此启动时统一置为 `failed`，由用户点「重建索引」重新触发。
+    """
+    marked = 0
+    with _lock:
+        papers = load_papers(meta_path)
+        changed = False
+        for item in papers:
+            states = ensure_chunkers(item)
+            for name in CHUNKERS:
+                state = states.get(name)
+                if isinstance(state, dict) and state.get("status") == STATUS_INDEXING:
+                    state["status"] = STATUS_FAILED
+                    state["progress"] = 0
+                    state["error"] = reason
+                    marked += 1
+                    changed = True
+            item["chunkers"] = states
+            if isinstance(states.get(CHUNKER_V1), dict):
+                item["status"] = states[CHUNKER_V1].get("status", item.get("status"))
+        if changed:
+            save_papers(papers, meta_path)
+    return marked

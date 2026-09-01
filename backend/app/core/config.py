@@ -31,3 +31,14 @@ KB_CANDIDATE_POOL = int(os.getenv("KB_CANDIDATE_POOL", "30"))
 # 留空表示不启用重排（本机 reranker 模型暂不可用，自动降级为 RRF 结果）
 RERANKER_MODEL = os.getenv("RERANKER_MODEL", "")
 KB_MAX_UPLOAD_MB = int(os.getenv("KB_MAX_UPLOAD_MB", "50"))
+
+# ---------- 知识库切分 v2（spec-012）----------
+# v2 结构边界分析模型（用户 2026-09-01 拍板：量化 27B 换取更准的边界判定）。
+# 它是 thinking 模型，调用必须 think:false，否则输出为空。
+CHUNK_V2_LLM_MODEL = os.getenv("CHUNK_V2_LLM_MODEL", "qwen3.8-27b-q4")
+# chunk 硬上限（字符）：上限内由 LLM 决定边界，超上限强制再切。
+CHUNK_V2_MAX_CHARS = int(os.getenv("CHUNK_V2_MAX_CHARS", "1200"))
+# 每批送给 LLM 判定的候选边界数量（越大调用越少，但单个 prompt 越长）。
+CHUNK_V2_LLM_BATCH = int(os.getenv("CHUNK_V2_LLM_BATCH", "8"))
+# 单次 LLM 调用超时（秒）；27B 较慢，超时即降级为纯规则切分，不阻塞上传。
+CHUNK_V2_LLM_TIMEOUT = float(os.getenv("CHUNK_V2_LLM_TIMEOUT", "180"))

@@ -73,17 +73,25 @@ class UploadTests(unittest.TestCase):
                 mock_new.return_value = Mock(paper_id="paper-1", file_name="paper.pdf")
                 with patch("backend.app.api.routes.save_upload", return_value=("paper-1", Path(tmp) / "paper-1.pdf")) as mock_save:
                     with patch("backend.app.api.routes.upsert_paper") as mock_upsert:
-                        with patch("backend.app.api.routes.index_paper", return_value=record_payload) as mock_index:
-                            response = self.client.post(
-                                "/api/kb/upload", files={"file": ("paper.pdf", PDF_BYTES, "application/pdf")}
-                            )
+                        # spec-012：v1 同步建索引（且按 R1 走单线程池排队），v2 提交异步任务
+                        with patch("backend.app.api.routes.run_index_task_sync", return_value=record_payload) as mock_sync:
+                            with patch("backend.app.api.routes.submit_index_task", return_value=True) as mock_submit:
+                                with patch("backend.app.api.routes.update_chunker_state"):
+                                    response = self.client.post(
+                                        "/api/kb/upload", files={"file": ("paper.pdf", PDF_BYTES, "application/pdf")}
+                                    )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["status"], "indexed")
         self.assertEqual(body["chunk_count"], 12)
         mock_upsert.assert_called_once()
         self.assertEqual(mock_save.call_args.kwargs["paper_id"], "paper-1")
-        mock_index.assert_called_once()
+        # v1 同步等待一次（R1：与 v2 共用同一队列，避免显存竞争）
+        mock_sync.assert_called_once()
+        self.assertEqual(mock_sync.call_args.args[1], "v1")
+        # v2 走异步提交
+        mock_submit.assert_called_once()
+        self.assertEqual(mock_submit.call_args.args[1], "v2")
 
 
 class PaperListTests(unittest.TestCase):
@@ -223,6 +231,139 @@ class HealthTests(unittest.TestCase):
         body = response.json()
         self.assertFalse(body["qdrant"])
         self.assertFalse(body["embedding"])
+
+
+class AskChunkerTests(unittest.TestCase):
+    """spec-012：切分版本每次提问时选择，默认 v1。"""
+
+    def setUp(self):
+        self.client = TestClient(app)
+        self.hits = [Hit("p1", "paper.pdf", 4, 0, "混合检索提升召回", 0.9)]
+
+    def _ask(self, payload, hits=None, reply="回答内容"):
+        chat = Mock()
+        token = Mock()
+        token.content = reply
+        chat.stream.return_value = [token]
+        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
+            with patch("backend.app.api.routes.hybrid_search",
+                       return_value=self.hits if hits is None else hits) as search:
+                with patch("backend.app.api.routes.create_chat_model", return_value=chat):
+                    response = self.client.post("/api/kb/ask", json=payload)
+        return response, search
+
+    def test_defaults_to_v1(self):
+        response, search = self._ask({"question": "核心贡献？", "model": "qwen3.5:9b"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(search.call_args.kwargs["chunker"], "v1")
+
+    def test_passes_selected_chunker(self):
+        response, search = self._ask(
+            {"question": "核心贡献？", "model": "qwen3.5:9b", "chunker": "v2"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(search.call_args.kwargs["chunker"], "v2")
+
+    def test_rejects_unknown_chunker(self):
+        response = self.client.post(
+            "/api/kb/ask", json={"question": "x", "model": "qwen3.5:9b", "chunker": "v3"}
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_meta_event_carries_chunker(self):
+        response, _ = self._ask(
+            {"question": "核心贡献？", "model": "qwen3.5:9b", "chunker": "v2"}
+        )
+        meta = [event for event in sse_events(response) if event["type"] == "meta"][0]
+        self.assertEqual(meta["chunker"], "v2")
+
+    def test_v2_not_ready_hint_does_not_fall_back_to_v1(self):
+        """v2 无命中时给出明确提示，且不回退到 v1（spec-012 边界）。"""
+        response, _ = self._ask(
+            {"question": "核心贡献？", "model": "qwen3.5:9b", "chunker": "v2"}, hits=[]
+        )
+        tokens = [e["content"] for e in sse_events(response) if e["type"] == "token"]
+        joined = "".join(tokens)
+        self.assertIn("尚未就绪", joined)
+        self.assertIn("v1", joined)
+
+
+class ReindexTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        self.tmp = TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        (self.dir / "p1.pdf").write_bytes(b"%PDF-1.4 fake")
+        self.paper = {
+            "paper_id": "p1",
+            "file_name": "p1.pdf",
+            "status": "indexed",
+            "chunkers": {
+                "v1": {"status": "indexed", "chunk_count": 3, "progress": 100, "error": None},
+                "v2": {"status": "failed", "chunk_count": 0, "progress": 0, "error": "x"},
+            },
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_missing_paper_returns_404(self):
+        with patch("backend.app.api.routes.get_paper", return_value=None):
+            response = self.client.post("/api/kb/papers/nope/reindex", json={"chunker": "all"})
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("论文不存在", response.json()["detail"])
+
+    def test_missing_source_file_returns_404(self):
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir(exist_ok=True)
+        with patch("backend.app.api.routes.get_paper", return_value=self.paper):
+            with patch("backend.app.api.routes.KB_PAPERS_DIR", empty):
+                response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "all"})
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("原件", response.json()["detail"])
+
+    def test_reindex_all_submits_both_versions(self):
+        with patch("backend.app.api.routes.get_paper", return_value=self.paper), patch(
+            "backend.app.api.routes.KB_PAPERS_DIR", self.dir
+        ), patch("backend.app.api.routes.submit_index_task", return_value=True) as submit, patch(
+            "backend.app.api.routes.update_chunker_state"
+        ):
+            response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "all"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(submit.call_count, 2)
+        self.assertEqual(sorted(c.args[1] for c in submit.call_args_list), ["v1", "v2"])
+
+    def test_reindex_single_version(self):
+        with patch("backend.app.api.routes.get_paper", return_value=self.paper), patch(
+            "backend.app.api.routes.KB_PAPERS_DIR", self.dir
+        ), patch("backend.app.api.routes.submit_index_task", return_value=True) as submit, patch(
+            "backend.app.api.routes.update_chunker_state"
+        ):
+            response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "v2"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(submit.call_count, 1)
+        self.assertEqual(submit.call_args.args[1], "v2")
+
+
+class PaperListChunkerTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+
+    def test_returns_per_version_state_and_progress(self):
+        papers = [{
+            "paper_id": "p1",
+            "file_name": "a.pdf",
+            "status": "indexed",
+            "chunkers": {
+                "v1": {"status": "indexed", "chunk_count": 3, "progress": 100, "error": None},
+                "v2": {"status": "indexing", "chunk_count": 0, "progress": 45, "error": None},
+            },
+        }]
+        with patch("backend.app.api.routes.load_papers", return_value=papers):
+            response = self.client.get("/api/kb/papers")
+        chunkers = response.json()["papers"][0]["chunkers"]
+        self.assertEqual(chunkers["v2"]["status"], "indexing")
+        self.assertEqual(chunkers["v2"]["progress"], 45)
 
 
 if __name__ == "__main__":
