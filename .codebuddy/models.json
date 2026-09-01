@@ -1,37 +1,37 @@
 {
   "models": [
     {
-      "id": "local-qwen38-27b-tools",
-      "name": "Qwen3.8 27B (量化, 支持 tools)",
-      "vendor": "Ollama",
+      "id": "qwen3.8:27b",
+      "name": "qwen3.8:27b",
+      "vendor": "user",
       "url": "http://localhost:11434/v1/chat/completions",
-      "apiKey": "ollama",
       "maxInputTokens": 32768,
-      "maxOutputTokens": 4096,
+      "maxOutputTokens": 32768,
       "supportsToolCall": true,
-      "supportsImages": false
+      "supportsImages": true,
+      "supportsReasoning": true
     },
     {
-      "id": "local-qwen35-9b-tools",
-      "name": "Qwen3.5 9B (实测支持 tools)",
-      "vendor": "Ollama",
+      "id": "qwen3.5:9b",
+      "name": "qwen3.5:9b",
+      "vendor": "user",
       "url": "http://localhost:11434/v1/chat/completions",
-      "apiKey": "ollama",
       "maxInputTokens": 32768,
-      "maxOutputTokens": 4096,
+      "maxOutputTokens": 32768,
       "supportsToolCall": true,
-      "supportsImages": false
+      "supportsImages": true,
+      "supportsReasoning": true
     },
     {
-      "id": "local-qwen38-27b",
-      "name": "Qwen3.8 27B",
-      "vendor": "Ollama",
+      "id": "qwen3.8-27b-q4",
+      "name": "qwen3.8-27b-q4",
+      "vendor": "user",
       "url": "http://localhost:11434/v1/chat/completions",
-      "apiKey": "ollama",
       "maxInputTokens": 32768,
-      "maxOutputTokens": 4096,
+      "maxOutputTokens": 32768,
       "supportsToolCall": true,
-      "supportsImages": false
+      "supportsImages": true,
+      "supportsReasoning": true
     }
   ]
 }

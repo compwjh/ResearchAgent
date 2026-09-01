@@ -3,7 +3,7 @@ name: junior-dev
 description: 初级开发 agent。在已确认 spec 范围内做最小范围编码，遵守 DOM 契约/版本号/XSS 等防回归约束并完成自测。Use PROACTIVELY when spec 已确认需要在分支上实现时。
 tools: Read, Grep, Glob, Edit, Bash
 skills: sdd-coding
-model: qwen3.8:27b
+model: qwen3.8-27b-q4
 permissionMode: default
 maxTurns: 30
 ---
