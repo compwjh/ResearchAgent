@@ -226,6 +226,31 @@ class StoreTests(unittest.TestCase):
 
 
 class RetrievalTests(unittest.TestCase):
+    def _hybrid_with_hits(self, hits, *, top_k, candidates=20, enabled=True, effect=None):
+        client = Mock()
+        client.collection_exists.return_value = True
+        client.query_points.return_value = SimpleNamespace(points=[])
+
+        def passthrough(_question, selected, **_kwargs):
+            return SimpleNamespace(
+                hits=list(selected), used=False, degraded=True,
+                reason="disabled", scores_by_original_index=None,
+            )
+
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1]]):
+            with patch.object(retrieve_module, "encode_sparse", return_value=Mock()):
+                with patch.object(retrieve_module, "rrf_fuse", return_value=hits):
+                    with patch.object(retrieve_module, "KB_RERANK_CANDIDATES", candidates):
+                        with patch.object(retrieve_module, "RERANKER_ENABLED", enabled):
+                            with patch.object(
+                                retrieve_module, "rerank_hits",
+                                side_effect=effect or passthrough,
+                            ) as mock_rerank:
+                                result = retrieve_module.hybrid_search(
+                                    "问题", top_k=top_k, client=client
+                                )
+        return result, mock_rerank
+
     def test_rrf_fuse_prefers_items_ranked_high_in_both_lists(self):
         shared = make_point("p1", 0, 0.9, text="共享片段")
         only_dense = make_point("p1", 1, 0.8)
@@ -242,7 +267,10 @@ class RetrievalTests(unittest.TestCase):
             SimpleNamespace(points=[make_point("p1", 2, 0.7)]),
         ]
         with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]):
-            hits = retrieve_module.hybrid_search("问题", top_k=2, client=client)
+            with patch.object(retrieve_module, "rerank_hits", side_effect=lambda _, hits, **__: SimpleNamespace(
+                hits=list(hits), used=False, scores_by_original_index=None
+            )):
+                hits = retrieve_module.hybrid_search("问题", top_k=2, client=client)
         self.assertEqual(len(hits), 2)
         self.assertEqual(client.query_points.call_count, 2)
         usings = [call.kwargs["using"] for call in client.query_points.call_args_list]
@@ -254,16 +282,51 @@ class RetrievalTests(unittest.TestCase):
         with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]):
             self.assertEqual(retrieve_module.hybrid_search("问题", client=client), [])
 
-    def test_rerank_degrades_to_original_order_on_failure(self):
-        hits = [Hit("p1", "a.pdf", 1, 0, "第一", 0.5), Hit("p1", "a.pdf", 2, 1, "第二", 0.4)]
-        with patch.object(retrieve_module, "RERANKER_MODEL", "missing-reranker"):
-            with patch("backend.app.services.ollama.create_chat_model", side_effect=RuntimeError("模型不可用")):
-                self.assertEqual(retrieve_module.rerank("问题", hits), hits)
+    def test_rerank_can_promote_rrf_twentieth_hit_and_maps_fields(self):
+        hits = [Hit("p1", "a.pdf", 1, i, f"片段{i}", 1.0 - i / 100) for i in range(20)]
+        scores = tuple(float(i) for i in range(20))
 
-    def test_rerank_skipped_when_model_not_configured(self):
-        hits = [Hit("p1", "a.pdf", 1, 0, "第一", 0.5)]
-        with patch.object(retrieve_module, "RERANKER_MODEL", ""):
-            self.assertEqual(retrieve_module.rerank("问题", hits), hits)
+        def rank_reverse(_question, selected, **_kwargs):
+            return SimpleNamespace(
+                hits=list(reversed(selected)), used=True, degraded=False,
+                reason=None, scores_by_original_index=scores,
+            )
+
+        result, mock_rerank = self._hybrid_with_hits(hits, top_k=5, effect=rank_reverse)
+        self.assertEqual([hit.chunk_index for hit in result], [19, 18, 17, 16, 15])
+        self.assertEqual(len(mock_rerank.call_args.args[1]), 20)
+        for index, hit in enumerate(hits):
+            self.assertEqual(hit.rerank_score, scores[index])
+            self.assertEqual(hit.rerank_rank, 20 - index)
+
+    def test_rerank_degraded_or_disabled_keeps_rrf_top_k(self):
+        for enabled, reason in ((True, "timeout"), (False, "disabled")):
+            with self.subTest(enabled=enabled):
+                hits = [Hit("p1", "a.pdf", 1, i, f"片段{i}", 1.0 - i / 100) for i in range(8)]
+
+                def degrade(_question, selected, **_kwargs):
+                    return SimpleNamespace(
+                        hits=list(selected), used=False, degraded=True,
+                        reason=reason, scores_by_original_index=None,
+                    )
+
+                result, mock_rerank = self._hybrid_with_hits(
+                    hits, top_k=5, enabled=enabled, effect=degrade
+                )
+                self.assertEqual(result, hits[:5])
+                self.assertEqual(mock_rerank.call_args.kwargs["enabled"], enabled)
+                self.assertTrue(all(hit.rerank_score is None for hit in hits))
+
+    def test_rerank_candidate_count_handles_shortage_and_large_top_k(self):
+        cases = ((3, 5, 20, 3), (10, 7, 3, 7))
+        for hit_count, top_k, candidates, expected in cases:
+            with self.subTest(hit_count=hit_count, top_k=top_k, candidates=candidates):
+                hits = [Hit("p1", "a.pdf", 1, i, f"片段{i}", 1.0) for i in range(hit_count)]
+                result, mock_rerank = self._hybrid_with_hits(
+                    hits, top_k=top_k, candidates=candidates
+                )
+                self.assertEqual(len(mock_rerank.call_args.args[1]), expected)
+                self.assertEqual(result, hits[:expected])
 
 
 class IndexTests(unittest.TestCase):
@@ -507,7 +570,10 @@ class RetrieveFilterTests(unittest.TestCase):
         client.query_points.return_value = Mock(points=[])
         with patch.object(retrieve_module, "embed_texts", return_value=[[0.1]]):
             with patch.object(retrieve_module, "encode_sparse", return_value=Mock()):
-                retrieve_module.hybrid_search("问题", client=client, chunker="v2")
+                with patch.object(retrieve_module, "rerank_hits", side_effect=lambda _, hits, **__: SimpleNamespace(
+                    hits=list(hits), used=False, scores_by_original_index=None
+                )):
+                    retrieve_module.hybrid_search("问题", client=client, chunker="v2")
         calls = client.query_points.call_args_list
         self.assertEqual(len(calls), 2)
         for call in calls:

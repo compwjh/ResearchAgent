@@ -34,7 +34,6 @@ from backend.app.services.kb import (
     load_papers,
     new_record,
     remove_paper,
-    reranker_available,
     run_index_task_sync,
     save_upload,
     submit_index_task,
@@ -42,6 +41,7 @@ from backend.app.services.kb import (
     upsert_paper,
 )
 from backend.app.services.kb.embed import embed_texts
+from backend.app.services.kb.retrieve import reranker_health
 from backend.app.services.ollama import create_chat_model, get_available_models
 from backend.app.services.task_store import TaskStore
 
@@ -368,10 +368,12 @@ def chat(request: ChatRequest):
 # ==================== 知识库 / RAG（spec-011）====================
 
 def kb_component_status() -> dict:
+    reranker_detail = reranker_health()
     status = {
         "qdrant": False,
         "embedding": False,
-        "reranker": reranker_available(),
+        "reranker": bool(reranker_detail["enabled"] and reranker_detail["available"]),
+        "reranker_detail": reranker_detail,
         "papers": len(load_papers()),
         "chunks": 0,
         # spec-012：v2 结构分析模型是否可用（不可用时 v2 会降级为规则切分）
