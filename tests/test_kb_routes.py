@@ -167,7 +167,7 @@ class AskTests(unittest.TestCase):
         chat.stream.return_value = [Mock(content="混合检索"), Mock(content="效果更好")]
         with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
             with patch("backend.app.api.routes.hybrid_search", return_value=self.hits):
-                with patch("backend.app.services.ollama.create_chat_model", return_value=chat):
+                with patch("backend.app.services.ollama.create_chat_model", return_value=chat) as mock_create:
                     response = self.client.post(
                         "/api/kb/ask", json={"question": "核心贡献？", "model": "qwen3.5:9b"}
                     )
@@ -179,6 +179,7 @@ class AskTests(unittest.TestCase):
         self.assertEqual(citations[0][0]["file_name"], "paper.pdf")
         self.assertEqual(citations[0][0]["page"], 4)
         self.assertIn("done", [event["type"] for event in events])
+        mock_create.assert_called_once_with("qwen3.5:9b", reasoning=False)
 
     def test_reports_retrieval_failure(self):
         with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):

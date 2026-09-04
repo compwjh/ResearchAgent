@@ -598,7 +598,7 @@ def kb_ask(request: KBAskRequest):
                 yield stream_event("done")
                 return
             prompt = build_prompt(question, hits)
-            run = run_chat(question, request.model, prompt=prompt)
+            run = run_chat(question, request.model, prompt=prompt, think=False)
             kb_metadata = {
                 "top_k": top_k,
                 "chunker": chunker,

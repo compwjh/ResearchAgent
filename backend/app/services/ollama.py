@@ -19,7 +19,7 @@ def get_available_models() -> List[str]:
     return [item["name"] for item in response.json().get("models", [])]
 
 
-def create_chat_model(model_name: str) -> ChatOllama:
+def create_chat_model(model_name: str, *, reasoning: bool = True) -> ChatOllama:
     """创建本地 Ollama 会话模型。
 
     `trust_env=False` 是必须的：httpx 默认会读取 macOS 系统代理配置，
@@ -31,6 +31,7 @@ def create_chat_model(model_name: str) -> ChatOllama:
         client_kwargs={"trust_env": False},
         async_client_kwargs={"trust_env": False},
         sync_client_kwargs={"trust_env": False},
+        reasoning=reasoning,
     )
 
 
@@ -54,7 +55,7 @@ class ChatRun:
         return next(self.events)
 
 
-def _langchain_drive(run: "ChatRun", model: str, prompt: str):
+def _langchain_drive(run: "ChatRun", model: str, prompt: str, reasoning: bool):
     """默认链路驱动器：事件产出与改动前完全一致，并在结束后合成 OllamaChatResult。
 
     `prompt` 是实际发给模型的文本（KB 链路传入 build_prompt 的结果，否则等于原始问题）；
@@ -68,7 +69,8 @@ def _langchain_drive(run: "ChatRun", model: str, prompt: str):
     # 命名空间，导致单测的 mock 全部失效、意外打到真实模型（曾让 9 个单测耗时 42 秒）。
     from backend.app.graphs.chat import build_chat_graph
 
-    graph = build_chat_graph(create_chat_model(model))
+    chat_model = create_chat_model(model) if reasoning else create_chat_model(model, reasoning=False)
+    graph = build_chat_graph(chat_model)
     start = time.perf_counter()
     first_token_ms = 0.0
     first_seen = False
@@ -133,6 +135,5 @@ def run_chat(
         return run
 
     run = ChatRun(route="langchain")
-    run.events = iter(_langchain_drive(run, model, text))
+    run.events = iter(_langchain_drive(run, model, text, think))
     return run
-

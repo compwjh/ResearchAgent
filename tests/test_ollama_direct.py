@@ -16,6 +16,7 @@ from backend.app.services.ollama_direct import (
     chat_direct,
     chat_direct_stream,
 )
+from backend.app.services.ollama import run_chat
 
 
 class _FakeResponse:
@@ -93,6 +94,28 @@ class TimingsParsingTests(unittest.TestCase):
 
         self.assertEqual(result.timings.prompt_tokens, 15)
         self.assertEqual(result.timings.completion_tokens, 27)
+
+
+class LangchainReasoningCompatibilityTests(unittest.TestCase):
+    def test_default_langchain_call_keeps_legacy_factory_signature(self):
+        graph = mock.Mock()
+        graph.stream.return_value = [{"type": "token", "content": "ok"}]
+        with mock.patch("backend.app.services.ollama.create_chat_model") as create_model, mock.patch(
+            "backend.app.graphs.chat.build_chat_graph", return_value=graph
+        ):
+            list(run_chat("q", "m", route="langchain").events)
+
+        create_model.assert_called_once_with("m")
+
+    def test_disabled_reasoning_is_explicit_for_langchain_call(self):
+        graph = mock.Mock()
+        graph.stream.return_value = [{"type": "token", "content": "ok"}]
+        with mock.patch("backend.app.services.ollama.create_chat_model") as create_model, mock.patch(
+            "backend.app.graphs.chat.build_chat_graph", return_value=graph
+        ):
+            list(run_chat("q", "m", route="langchain", think=False).events)
+
+        create_model.assert_called_once_with("m", reasoning=False)
 
 
 class ThinkingSeparationTests(unittest.TestCase):
@@ -173,6 +196,16 @@ class LatencyRecordingTests(unittest.TestCase):
             chat_direct([{"role": "user", "content": "q"}], "m")
 
         self.assertFalse(capture.get("trust_env", True), "httpx 调用必须传 trust_env=False")
+
+    def test_think_flag_is_sent_to_ollama(self):
+        capture = {}
+        with mock.patch(
+            "backend.app.services.ollama_direct.httpx.stream",
+            _stream_patch(_FakeResponse([_done_event()]), capture=capture),
+        ):
+            chat_direct([{"role": "user", "content": "q"}], "m", think=False)
+
+        self.assertIs(capture["json"]["think"], False)
 
 
 class ErrorHandlingTests(unittest.TestCase):

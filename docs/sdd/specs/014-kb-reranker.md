@@ -19,6 +19,13 @@
 4. Qwen3-Reranker 应使用 yes/no 分类 logits 或兼容的专用 rerank 接口。本 spec 采用 llama.cpp 原生 `/v1/rerank`，目标模型为 `ggml-org/Qwen3-reranker-0.6B-Q8_0-GGUF:Q8_0`。
 5. spec-013 正由另一 Agent 在独立任务中开发。本 spec 先从共同基线独立推进，待 spec-013 完成后再接入其 KB 阶段观测，避免互相覆盖未提交文件。
 
+### 收口阻塞 Bug（2026-09-04）
+
+- 复现：`LANGFUSE_ENABLED=false`、`RERANKER_ENABLED=false` 下，真实 `POST /api/kb/ask` 使用 `qwen3.5:9b` 时持续输出 `thinking`，在 120/330 秒观察窗口内没有 `done`；改用 `deepseek-coder-v2:16b` 则在 `citations` 后返回 Ollama `/api/chat` HTTP 400。
+- 根因定位：`kb_ask` 调用 `run_chat(..., prompt=prompt)` 未显式关闭 thinking；LangChain `ChatOllama` 创建也没有把 `reasoning` 设为与调用意图一致的值，导致回答阶段可能长期消耗在隐藏推理，阻塞真实 SSE 完成。
+- 修复范围：仅调整回答模型调用的 reasoning/think 传递，不改变 Reranker 协议、检索排序、Langfuse 字段或对外 SSE 事件类型。
+- 修复验收：在支持的本地聊天模型上，四种 Langfuse/Reranker 组合的真实 KB ask 均应出现 `meta → stage → citations → token → debug → done`（降级组合允许 `kb.rerank status=degraded`）；恢复 Reranker 后再次问答必须产生新的 `status=ok` rerank 事件。若模型本身不支持聊天协议，必须记录为环境阻塞，不伪造通过。
+
 ## 回滚点（Rollback Baseline）
 
 | 项 | 值 |
