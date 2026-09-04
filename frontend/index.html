@@ -3,18 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ollama Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=5">
+  <title>ResearchAgent</title>
+  <link rel="stylesheet" href="/assets/styles.css?v=13">
 </head>
 <body>
   <main class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">O</span><span>Ollama Studio</span></div>
+      <div class="brand"><span class="brand-mark">R</span><span>ResearchAgent</span></div>
       <button class="new-chat" type="button"><span class="plus">+</span> 新建对话</button>
       <nav class="side-nav" aria-label="主导航">
         <p class="nav-label">工作区</p>
         <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
         <a class="nav-item" data-view="models" role="button" tabindex="0"><span class="nav-icon">◈</span> 模型库 <span class="nav-count" id="model-count">0</span></a>
+        <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count">0</span></a>
       </nav>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="status-dot"></span><div><strong>本地服务</strong><small id="model-label">连接中</small></div></div>
@@ -74,6 +75,45 @@
         <p class="model-empty" id="model-empty" hidden>没有发现模型</p>
       </section>
     </section>
+
+    <section class="main-area" id="kb-view" hidden>
+      <header class="topbar">
+        <div class="breadcrumb"><span>知识库</span><span class="slash">/</span><strong>论文 RAG</strong></div>
+      </header>
+      <section class="workspace kb-workspace" aria-label="论文知识库">
+        <div class="kb-layout">
+          <aside class="kb-side">
+            <input type="file" id="kb-file" accept="application/pdf" hidden>
+            <button class="kb-drop" id="kb-drop" type="button">
+              <span class="kb-drop-icon">＋</span>
+              <span class="kb-drop-text">点击上传 PDF 论文</span>
+              <span class="kb-drop-sub">本地解析 · 本地向量化 · 不出本机</span>
+            </button>
+            <p class="kb-status" id="kb-status"></p>
+            <div class="kb-list-head">已上传论文 <span id="kb-count">0</span></div>
+            <ul class="kb-list" id="kb-list"></ul>
+            <p class="kb-empty" id="kb-empty">还没有论文，先上传一篇 PDF。</p>
+            <p class="kb-health" id="kb-health">组件状态加载中…</p>
+          </aside>
+          <section class="kb-chat">
+            <div class="kb-answers" id="kb-answers">
+              <p class="kb-welcome">上传论文后即可基于本地知识库提问，回答会给出页码引用。</p>
+            </div>
+            <form class="kb-ask-form" id="kb-ask-form">
+              <textarea id="kb-question" rows="2" placeholder="基于知识库提问，例如：这篇论文的核心贡献是什么？" aria-label="知识库问题"></textarea>
+              <div class="kb-ask-footer">
+                <label class="kb-model" for="kb-model-select"><span class="model-symbol">◈</span><select id="kb-model-select" aria-label="选择生成模型"></select></label>
+                <label class="kb-chunker" for="kb-chunker-select"><span class="kb-chunker-symbol">切分</span><select id="kb-chunker-select" aria-label="选择切分版本">
+                  <option value="v1">v1 按页递归</option>
+                  <option value="v2">v2 结构感知</option>
+                </select></label>
+                <button type="submit" id="kb-send">发送</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </section>
   </main>
   <dialog class="settings-dialog" id="settings-dialog">
     <form method="dialog" class="settings-form" id="settings-form">
@@ -85,6 +125,8 @@
       <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" id="save-settings" value="default">保存设置</button></div>
     </form>
   </dialog>
-  <script src="/assets/app.js?v=5"></script>
+  <script src="/assets/vendor/purify.min.js?v=13"></script>
+  <script src="/assets/vendor/marked.min.js?v=13"></script>
+  <script src="/assets/app.js?v=13"></script>
 </body>
 </html>

@@ -1,0 +1,221 @@
+{
+  "model": "qwen3.5:9b",
+  "routes": [
+    "direct"
+  ],
+  "runs_per_category": 1,
+  "generated_at": "2026-09-03T11:53:46+0800",
+  "notes": [
+    "已用 --skip-cold，冷样本实际不是冷启动"
+  ],
+  "summary": {
+    "cold": {
+      "count": 1,
+      "avg_ttft_ms": 2776.378,
+      "avg_load_ms": 2620.904,
+      "avg_client_wall_ms": 3469.678,
+      "avg_tokens_per_sec": 43.291,
+      "cold_start_hits": 1
+    },
+    "hot": {
+      "count": 1,
+      "avg_ttft_ms": 156.814,
+      "avg_load_ms": 9.616,
+      "avg_client_wall_ms": 1061.463,
+      "avg_tokens_per_sec": 40.892,
+      "cold_start_hits": 0
+    },
+    "short": {
+      "count": 1,
+      "avg_ttft_ms": 141.961,
+      "avg_load_ms": 8.592,
+      "avg_client_wall_ms": 858.018,
+      "avg_tokens_per_sec": 41.884,
+      "cold_start_hits": 0
+    },
+    "long": {
+      "count": 1,
+      "avg_ttft_ms": 4488.177,
+      "avg_load_ms": 12.499,
+      "avg_client_wall_ms": 5754.256,
+      "avg_tokens_per_sec": 41.864,
+      "cold_start_hits": 0
+    },
+    "chat": {
+      "count": 1,
+      "avg_ttft_ms": 23058.757,
+      "avg_load_ms": 9.739,
+      "avg_client_wall_ms": 23807.428,
+      "avg_tokens_per_sec": 40.682,
+      "cold_start_hits": 0
+    },
+    "kb": {
+      "count": 1,
+      "avg_ttft_ms": 122693.476,
+      "avg_load_ms": 12.477,
+      "avg_client_wall_ms": 136076.698,
+      "avg_tokens_per_sec": 39.562,
+      "cold_start_hits": 0
+    },
+    "failure": {
+      "count": 2,
+      "note": "无可用数值指标"
+    }
+  },
+  "samples": {
+    "cold": [
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "cold",
+          "short",
+          "chat",
+          "direct"
+        ],
+        "name": "ollama-chat",
+        "client_wall_ms": 3469.678,
+        "ttft_ms": 2776.378,
+        "load_ms": 2620.904,
+        "prompt_eval_ms": 148.738,
+        "eval_ms": 692.979,
+        "total_ms": 3464.139,
+        "overhead_ms": 5.54,
+        "tokens_per_sec": 43.291,
+        "is_cold_start": 1.0
+      }
+    ],
+    "hot": [
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "hot",
+          "short",
+          "chat",
+          "direct"
+        ],
+        "name": "ollama-chat",
+        "client_wall_ms": 1061.463,
+        "ttft_ms": 156.814,
+        "load_ms": 9.616,
+        "prompt_eval_ms": 99.342,
+        "eval_ms": 904.812,
+        "total_ms": 1047.2,
+        "overhead_ms": 14.263,
+        "tokens_per_sec": 40.892,
+        "is_cold_start": 0.0
+      }
+    ],
+    "short": [
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "short",
+          "chat",
+          "direct"
+        ],
+        "name": "ollama-chat",
+        "client_wall_ms": 858.018,
+        "ttft_ms": 141.961,
+        "load_ms": 8.592,
+        "prompt_eval_ms": 84.776,
+        "eval_ms": 716.257,
+        "total_ms": 844.781,
+        "overhead_ms": 13.237,
+        "tokens_per_sec": 41.884,
+        "is_cold_start": 0.0
+      }
+    ],
+    "long": [
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "long",
+          "chat",
+          "direct"
+        ],
+        "name": "ollama-chat",
+        "client_wall_ms": 5754.256,
+        "ttft_ms": 4488.177,
+        "load_ms": 12.499,
+        "prompt_eval_ms": 4418.514,
+        "eval_ms": 1266.013,
+        "total_ms": 5741.424,
+        "overhead_ms": 12.832,
+        "tokens_per_sec": 41.864,
+        "is_cold_start": 0.0
+      }
+    ],
+    "chat": [
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "chat",
+          "direct"
+        ],
+        "name": "ollama-chat",
+        "client_wall_ms": 23807.428,
+        "ttft_ms": 23058.757,
+        "load_ms": 9.739,
+        "prompt_eval_ms": 42.889,
+        "eval_ms": 23695.894,
+        "total_ms": 23794.245,
+        "overhead_ms": 13.183,
+        "tokens_per_sec": 40.682,
+        "is_cold_start": 0.0
+      }
+    ],
+    "kb": [
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "kb",
+          "direct"
+        ],
+        "name": "kb.generation",
+        "client_wall_ms": 136076.698,
+        "ttft_ms": 122693.476,
+        "load_ms": 12.477,
+        "prompt_eval_ms": 3725.218,
+        "eval_ms": 132298.776,
+        "total_ms": 136070.849,
+        "overhead_ms": 5.849,
+        "tokens_per_sec": 39.562,
+        "is_cold_start": 0.0
+      }
+    ],
+    "failure": [
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "chat",
+          "failure",
+          "direct"
+        ],
+        "name": "ollama-chat",
+        "success": false,
+        "error_type": "RuntimeError",
+        "client_wall_ms": 13.236
+      },
+      {
+        "route": "direct",
+        "tags": [
+          "sample",
+          "chat",
+          "failure",
+          "direct"
+        ],
+        "name": "ollama-chat",
+        "success": false,
+        "error_type": "RuntimeError",
+        "client_wall_ms": 12.755
+      }
+    ]
+  }
+}

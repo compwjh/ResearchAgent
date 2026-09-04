@@ -1,6 +1,15 @@
 langgraph>=0.2.0
 langchain-ollama>=0.2.0
-httpx[socks]>=0.27.0
+httpx[s, socks]>=0.27.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.0
+python-multipart>=0.0.9
+# 运行环境：Python 3.11（spec-013 从 3.9.7 升级）
+# 上限 1.17 沿用自 3.9 时代的约束；3.11 下 1.16.2 实测可用，未做放开评估
+qdrant-client>=1.9,<1.17
+pymupdf>=1.24.0
+jieba>=0.42.1
+# Langfuse 观测 SDK（spec-013）
+# v4 server 要求 SDK >=4.7.0 才能实时写入，否则数据走 dual-write 管道延迟约 15 分钟
+langfuse>=4.7.0

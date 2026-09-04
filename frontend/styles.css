@@ -182,3 +182,545 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #models-view .alias-input:has(+ .alias-warn:not([hidden])) {
   border-color: #b45309;
 }
+
+/* ===== 知识库视图（spec-011 v6） ===== */
+#kb-view .workspace.kb-workspace {
+  max-width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 26px 30px;
+  min-height: calc(100vh - 68px);
+}
+
+#kb-view .kb-layout {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  height: calc(100vh - 130px);
+  min-height: 520px;
+}
+
+#kb-view .kb-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 18px 50px #272a3510;
+}
+
+#kb-view .kb-drop {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 18px 14px;
+  border: 1px dashed #cfd0da;
+  border-radius: 10px;
+  background: #fafaff;
+  text-align: left;
+  transition: border-color .18s ease, background .18s ease;
+}
+
+#kb-view .kb-drop:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+#kb-view .kb-drop-icon {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--accent);
+}
+
+#kb-view .kb-drop-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+#kb-view .kb-drop-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+#kb-view .kb-status {
+  margin: 0;
+  min-height: 16px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--accent);
+  word-break: break-word;
+}
+
+#kb-view .kb-list-head {
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+#kb-view .kb-list-head span {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+#kb-view .kb-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+#kb-view .kb-item {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  position: relative;
+}
+
+#kb-view .kb-item:last-child { margin-bottom: 0; }
+
+#kb-view .kb-item:hover { border-color: #d3d4da; }
+
+#kb-view .kb-item.status-failed { border-color: #f0b4b4; }
+#kb-view .kb-item.status-indexed_partial { border-color: #f0d8a8; }
+
+/* 标题整行独占并完整换行显示，不再截断（Bug 修复：标题展示不完全） */
+#kb-view .kb-item-head {
+  display: block;
+}
+
+#kb-view .kb-item-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+#kb-view .kb-item-meta {
+  display: block;
+  margin-top: 2px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* 双版本状态与进度（spec-012） */
+#kb-view .kb-item-versions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+#kb-view .kb-chunker-badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+#kb-view .kb-chunker-badge.status-indexed { background: #eaf7ee; color: #1e7d3a; }
+#kb-view .kb-chunker-badge.status-indexing { background: #eef0fd; color: var(--accent); }
+#kb-view .kb-chunker-badge.status-failed { background: #fdecec; color: #c0392b; }
+#kb-view .kb-chunker-badge.status-pending { background: var(--paper); color: var(--muted); }
+
+/* 进度条独占一行，避免挤占徽章与操作按钮的横向空间 */
+#kb-view .kb-progress {
+  width: 100%;
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+#kb-view .kb-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* 操作按钮与版本徽章同行、右对齐，随卡片一起可见（Bug 修复：按钮被裁看不到） */
+#kb-view .kb-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+#kb-view .kb-item-rebuild,
+#kb-view .kb-item-remove {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+#kb-view .kb-item-rebuild:hover {
+  background: #eef0fd;
+  color: var(--accent);
+}
+
+#kb-view .kb-item-rebuild:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#kb-view .kb-item-remove:hover {
+  background: #fdecec;
+  color: #c0392b;
+}
+
+#kb-view .kb-empty {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  text-align: center;
+}
+
+#kb-view .kb-health {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#kb-view .kb-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 18px 50px #272a3510;
+}
+
+#kb-view .kb-answers {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 24px;
+}
+
+#kb-view .kb-welcome {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#kb-view .kb-message {
+  display: flex;
+  margin-bottom: 16px;
+  animation: rise .3s ease-out;
+}
+
+#kb-view .kb-message.user { justify-content: flex-end; }
+
+#kb-view .kb-bubble {
+  max-width: 82%;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#kb-view .kb-message.user .kb-bubble {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+#kb-view .kb-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#kb-view .kb-cite-title {
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  align-self: center;
+}
+
+#kb-view .kb-cite-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+
+#kb-view .kb-cite {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+
+#kb-view .kb-cite::before {
+  content: '▸ ';
+  opacity: .65;
+}
+
+#kb-view .kb-cite:hover,
+#kb-view .kb-cite:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  outline: 0;
+}
+
+#kb-view .kb-cite.expanded {
+  background: var(--accent);
+  color: #fff;
+}
+
+#kb-view .kb-cite.expanded::before {
+  content: '▾ ';
+}
+
+/* 展开的召回原文：占满整行，可滚动，保留 PDF 抽取的换行 */
+#kb-view .kb-cite-detail {
+  flex-basis: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafd;
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#kb-view .kb-ask-form {
+  display: grid;
+  gap: 10px;
+  padding: 14px 18px 16px;
+  border-top: 1px solid var(--line);
+}
+
+#kb-view .kb-ask-form textarea {
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fafafd;
+  outline: 0;
+  resize: vertical;
+}
+
+#kb-view .kb-ask-form textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+#kb-view .kb-ask-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#kb-view .kb-model {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+}
+
+#kb-view .kb-model select {
+  max-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--ink);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+}
+
+/* 切分版本选择（spec-012）：与模型选择同排，视觉上弱化一级 */
+#kb-view .kb-chunker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+#kb-view .kb-chunker-symbol {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#kb-view .kb-chunker select {
+  max-width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--ink);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+}
+
+#kb-view .kb-ask-footer button {
+  margin-left: auto;
+  border-radius: 7px;
+  padding: 9px 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#kb-view .kb-ask-footer button:hover { background: #5949ed; }
+#kb-view .kb-ask-footer button:disabled { background: #c6c1f5; cursor: default; }
+
+/* ===== Markdown 渲染通用样式（spec-011 v7）：知识库回答与聊天回答共用 =====
+   用共享类 .md-body 而非视图前缀，属有意的复用；仅在 .kb-answer / .answer 两处挂载。
+   覆盖 .kb-bubble 的 pre-wrap：marked 输出的 HTML 自带换行，pre-wrap 会把它渲染成多余空行。 */
+.md-body {
+  display: block;
+  white-space: normal;
+  line-height: 1.7;
+}
+
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+
+.md-body p { margin: 0 0 8px; }
+
+.md-body h1,
+.md-body h2,
+.md-body h3 {
+  margin: 14px 0 8px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.md-body h1 { font-size: 17px; }
+.md-body h2 { font-size: 16px; }
+.md-body h3 { font-size: 14px; }
+
+.md-body ul,
+.md-body ol { margin: 0 0 8px; padding-left: 20px; }
+.md-body li { margin: 3px 0; }
+.md-body li > ul,
+.md-body li > ol { margin: 3px 0; }
+
+.md-body strong { font-weight: 700; }
+.md-body em { font-style: italic; }
+.md-body del { color: var(--muted); }
+
+.md-body code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--paper);
+  color: #c7254e;
+  font-family: 'DM Mono', monospace;
+  font-size: 12.5px;
+}
+
+.md-body pre {
+  margin: 0 0 10px;
+  padding: 11px 13px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafd;
+}
+.md-body pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  white-space: pre;
+}
+
+.md-body blockquote {
+  margin: 0 0 10px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--accent-soft);
+  color: var(--muted);
+}
+
+.md-body table {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 10px;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.md-body th,
+.md-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.md-body th { background: var(--accent-soft); font-weight: 700; }
+
+.md-body a { color: var(--accent); text-decoration: none; }
+.md-body a:hover { text-decoration: underline; }
+
+.md-body hr {
+  height: 0;
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  #kb-view .workspace.kb-workspace { padding: 16px; }
+  #kb-view .kb-layout { grid-template-columns: 1fr; height: auto; }
+  #kb-view .kb-side { max-height: 320px; }
+  #kb-view .kb-chat { min-height: 420px; }
+  #kb-view .kb-bubble { max-width: 92%; }
+}

@@ -18,4 +18,14 @@ htmlcov/
 .codebuddy/agent-logs/
 data/articles/
 data/article_settings.json
+data/kb/
 data/agent_tasks.sqlite3
+
+# Langfuse vendor runtime/dependency artefacts; source code remains tracked.
+vendor/langfuse/.env
+vendor/langfuse/node_modules/
+vendor/langfuse/**/node_modules/
+vendor/langfuse/**/.next/
+vendor/langfuse/**/coverage/
+vendor/langfuse/**/dist/
+.pnpm-store/

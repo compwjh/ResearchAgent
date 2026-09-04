@@ -90,7 +90,7 @@
 
 - 需求评审：`docs/sdd/reviews/007-requirement-review.md`（结论：通过，附带 2 澄清已采纳）
 - 技术评审：`docs/sdd/reviews/007-tech-review.md`（结论：通过）
-- 验收评审：`docs/sdd/reviews/007-acceptance-review.md`（结论：/）
+- 验收评审：`docs/sdd/reviews/007-acceptance-review.md`（结论：**通过**；5 项验收标准全部满足）
 
 ## 变更日志（Changelog）
 
