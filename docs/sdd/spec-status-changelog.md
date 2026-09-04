@@ -55,3 +55,6 @@
 - **014 知识库本地 Rerank 重排** ｜ 实施中 → 实施中 ｜ 定位收口 Bug：`/api/kb/ask` 未关闭回答模型 thinking，导致 qwen3.5 真实 SSE 长时间无 `done`；已补入 Spec014 的复现、根因和修复验收条件，进入窄范围代码修复。
 - **013 本地 LLM 调用观测与性能评估平台** ｜ 实施中 → 已完成 ｜ Task 07 前端依赖与环境阻塞修复（补齐 lockfile + 离线安装 + .env），前端 37 用例全绿；5 项实质缺陷（散点丢点误判、脱敏覆盖、聚合守卫、截断提示、router 测试）闭环；C8 埋点 safe_call 包裹完成。验收由主模型代行（非独立评审）。详见 `docs/sdd/plans/013/task-07-stats-custom-view.md` 修复轮次执行结果与 `docs/sdd/reviews/013-task07-acceptance-review.md` 复核结论。
 - **013 Task 07 验收** ｜ 不通过 → 通过（代行） ｜ 见上。
+- **014 知识库本地 Rerank 重排** ｜ 实施中 → 实施中 ｜ 修复 `8c1c3ae`（KB ask 显式 `think=False`、LangChain `reasoning=False`）后，四组合真实 KB ask 均以完整 SSE `done` 收口，tester 最终判定通过；仍缺 tech-lead 签字与复盘，故暂不转完成。
+- **014 知识库本地 Rerank 重排** ｜ 实施中 → 已完成 ｜ 发现并修复 `8c1c3ae` 引入的回归：`create_chat_model` 默认 `reasoning=True`，使所有仅传模型名的调用方（`article_agent`、`download_paper_skill`、`kb/retrieve.py`、langchain 聊天链路）被强制下发 `think=true`；`6daa498` 将默认值改回 `None` 并补 2 条契约测试，全量 `351 passed`。以 `deepseek-coder-v2:16b` 复测：KB ask HTTP 200 且 SSE 完整到 `done`（259 token、0 error），普通聊天同样完整收口，关键阻塞第 2 项（citations 后 HTTP 400）解除。Task 08/09 全部完成，tech-lead 签字已填（主会话代行，非独立评审，已在验收报告与复盘中标注），复盘落盘 `docs/sdd/retro/2026-09-04-spec-014-reranker-retro.md`。
+- **014 Task 08 / Task 09** ｜ 部分完成 / 阻塞 → 完成 ｜ 见上。

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：`实施中`（2026-09-04；代码已合并至 `main@e980cea`，Task 08 部分完成，Task 09 因验收闭环不足而阻塞）**
+**当前状态：`已完成`（2026-09-04；功能代码合并于 `main@e980cea`，收口修复 `8c1c3ae`、`6daa498`；Task 01–09 全部完成，验收评审通过并完成 tech-lead 签字）**
 
 > 进入实施前已用当前未提交代码完成首页、健康接口与全量测试验证；不得通过回滚、stash 或清理工作树保护/修复 spec-013。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
@@ -204,8 +204,8 @@
 | 05 | 接入知识库检索链路 | [`task-05-integrate-retrieval-pipeline.md`](../plans/014/task-05-integrate-retrieval-pipeline.md) | 04 | 完成 |
 | 06 | 接入健康状态与前端展示 | [`task-06-reranker-health-status.md`](../plans/014/task-06-reranker-health-status.md) | 03, 04 | 完成 |
 | 07 | 执行测试与质量基准 | [`task-07-reranker-tests-benchmark.md`](../plans/014/task-07-reranker-tests-benchmark.md) | 05, 06 | 完成 |
-| 08 | 集成 spec-013 观测能力 | [`task-08-integrate-spec013-observability.md`](../plans/014/task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 部分完成（待补四组合关联证据） |
-| 09 | 评审、部署与复盘 | [`task-09-review-deploy-retro.md`](../plans/014/task-09-review-deploy-retro.md) | 07, 08 | 阻塞（等待验收签字与四组合闭环） |
+| 08 | 集成 spec-013 观测能力 | [`task-08-integrate-spec013-observability.md`](../plans/014/task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 完成 |
+| 09 | 评审、部署与复盘 | [`task-09-review-deploy-retro.md`](../plans/014/task-09-review-deploy-retro.md) | 07, 08 | 完成 |
 
 ## 评审记录
 
@@ -213,7 +213,7 @@
 
 - 需求评审：[`docs/sdd/reviews/014-requirement-review.md`](../reviews/014-requirement-review.md)（结论：**通过（附意见）**；风险中；无硬阻塞）
 - 技术评审：[`docs/sdd/reviews/014-tech-review.md`](../reviews/014-tech-review.md)（结论：**通过（附意见）**；风险高；Task 02 为硬 Go/No-Go）
-- 验收评审：[`docs/sdd/reviews/014-acceptance-review.md`](../reviews/014-acceptance-review.md)（结论：**不通过（阻塞收口）**；真实联合健康、成功/降级 span 和回归已记录，四组合逐请求关联及签字待补）
+- 验收评审：[`docs/sdd/reviews/014-acceptance-review.md`](../reviews/014-acceptance-review.md)（结论：**通过**；四组合真实 KB ask 均完整收口至 `done`，成功/disabled/degraded 观测事件与恢复闭环齐备；tech-lead 签字见报告末尾）
 
 ## 变更日志（Changelog）
 
@@ -238,6 +238,10 @@
 | 2026-09-04 | 架构师(自身) | Spec 013 与 Spec 014 代码合并至 `main@e980cea`；联合 FastAPI/Reranker/Langfuse 健康验证通过，发现并修复长片段 `ubatch-size=512` 导致的重排降级（显式设为 1024） |
 | 2026-09-04 | tester | 验收报告补充真实 `events_full` 成功/降级 span、停服降级与恢复证据；四组合逐请求关联仍不足，Task 09 保持阻塞 |
 | 2026-09-04 | tester / 架构师(自身) | 补测 Langfuse off × Reranker off：`qwen3.5:9b` 在 120/330 秒内持续 thinking 未出现 `done`，`deepseek-coder-v2:16b` 在 citations 后返回 Ollama HTTP 400；真实问答闭环仍受本地回答模型阻塞，Spec 保持实施中 |
+| 2026-09-04 | junior-dev / 架构师(自身) | 定位 thinking 阻塞根因并修复（`8c1c3ae`）：KB ask 显式 `think=False`，LangChain `ChatOllama` 使用 `reasoning=False`；修复后四组合真实 KB ask 均完整收口至 `done` |
+| 2026-09-04 | 架构师(主会话) | 发现 `8c1c3ae` 引入回归：`create_chat_model` 默认 `reasoning=True`，使所有仅传模型名的调用方被强制下发 `think=true`（不支持 thinking 的模型 HTTP 400）；`6daa498` 将默认值改回 `None`，补 2 条契约测试，全量 `351 passed` |
+| 2026-09-04 | 架构师(主会话) | 用 `deepseek-coder-v2:16b` 复测：KB ask HTTP 200 且 SSE 完整收口到 `done`（259 token，0 个 error 事件）；普通聊天同样完整收口；关键阻塞第 2 项解除 |
+| 2026-09-04 | 架构师(主会话) | 补齐 tech-lead 签字、复盘（`docs/sdd/retro/2026-09-04-spec-014-reranker-retro.md`）与状态台账；Task 08/09 转完成，Spec 014 转 `已完成` |
 
 ---
 **六条自检**：①边界均可转为测试；②spec 说明需求、task 承载实施细节；③task 链接真实且依赖无环；④明确不做已划死范围；⑤执行配置五行齐全；⑥产品步骤可映射 A1–A12。

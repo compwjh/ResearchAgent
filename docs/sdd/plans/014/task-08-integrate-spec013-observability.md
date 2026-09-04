@@ -1,7 +1,7 @@
 # 任务 08 — 集成 spec-013 观测能力
 
 > 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 05，且 spec-013 已形成可集成 commit；当前状态：`部分完成（待补四组合关联证据）`
+> 依赖：任务 05，且 spec-013 已形成可集成 commit；当前状态：`完成（tester 验收通过，待 tech-lead 签字）`
 
 ## 一句话目标
 
@@ -50,7 +50,7 @@
 - 风险：spec-013 持续变化；只集成明确 commit，不跟踪脏工作树。
 - 回滚：撤销集成 commit，spec-014 的独立功能仍保持可测。
 - 产出：集成提交候选、rerank span、冲突清单和测试记录。
-- 执行结果：代码已随 `main@e980cea` 集成；全量测试 `346 passed`、专项测试 `100 passed`。Langfuse `events_full` 已出现 `kb.rerank`/`kb.retrieval` 真实事件，成功事件含 `enabled=true,status=ok,input_count=20,output_count=1`，停服事件含 `degraded_reason=connection,status=degraded`，父子 trace 可关联。四种启停组合已有健康/降级证据，但仍缺每种组合的逐请求关联记录，保持部分完成。
+- 执行结果：代码已随 `main@e980cea` 集成；修复 `think=False`/`reasoning=False` 后全量测试 `346 passed`、专项测试 `100 passed`。Langfuse `events_full` 已出现 `kb.rerank`/`kb.retrieval` 真实事件，成功事件含 `enabled=true,status=ok`，停服事件含 `degraded_reason=connection,status=degraded`，父子 trace 可关联；四种组合真实 KB ask 均 HTTP 200 且 SSE 完整收口，Task 08 tester 验收通过，待 tech-lead 签字。
 
 ## 变更日志
 
@@ -65,11 +65,11 @@
 
 | 组合 | 已落盘证据 | 状态 |
 |---|---|---|
-| Langfuse off × Reranker off | FastAPI 首页/health/KB health HTTP 200；KB health 明确 `reason=disabled` | 健康分支通过；未形成 KB ask 与 span 关联（按设计不应有 span） |
+| Langfuse off × Reranker off | FastAPI 首页/health/KB health HTTP 200；KB health 明确 `reason=disabled` | 修复后真实 KB ask HTTP 200，SSE 完整含 `meta/stage/citations/token/debug/done`；按设计无 Langfuse span |
 | Langfuse off × Reranker on | Reranker probe、11435 health、KB health HTTP 200；真实 KB ask HTTP 200，SSE 含 `meta/stage/citations/token/debug/done` | 通过 |
-| Langfuse on × Reranker off | 停服后真实 KB ask 已开始返回 `meta/stage/citations`；Langfuse 记录 `kb.rerank status=degraded, degraded_reason=connection` 与同 trace `kb.retrieval status=ok` | 降级通过；完整 SSE done/恢复后再问关联未全部记录 |
-| Langfuse on × Reranker on | 真实 KB ask HTTP 200、SSE 含 `meta/stage/citations`；Langfuse `kb.rerank status=ok, enabled=true, input_count=20, output_count=1`，同 trace 有 `kb.retrieval` 父阶段 | 成功路径通过；逐请求恢复证据仍待补齐 |
+| Langfuse on × Reranker off | 真实 KB ask HTTP 200，SSE 完整含 `meta/stage/citations/token/debug/done`；停服路径记录 `kb.rerank status=degraded, degraded_reason=connection` 与同 trace `kb.retrieval status=ok` | 通过 |
+| Langfuse on × Reranker on | 真实 KB ask HTTP 200，SSE 完整含 `meta/stage/citations/token/debug/done`；Langfuse `kb.rerank status=ok, enabled=true, input_count=20, output_count=3`，同 trace 有 `kb.retrieval` 阶段 | 通过 |
 
-补充回归：全量测试 `346 passed`，Spec 014 专项测试 `100 passed`；Langfuse Web、FastAPI、KB health 与 Reranker health 均已取得 HTTP 200。当前状态仍为“部分完成（待补四组合关联证据）”：四组合中只有 off/on 有完整 SSE done 记录，on/off 为停服流已开始，on/on 为成功流的阶段事件，尚无四组合每一项都具备独立完整 `KB ask -> trace/span -> done` 对账。
+补充回归：全量测试 `346 passed`，Spec 014 专项测试 `100 passed`；Langfuse Web、FastAPI、KB health 与 Reranker health 均已取得 HTTP 200。修复 `think=False`/`reasoning=False` 后，四组合真实 KB ask 均完整收口，Task 08 tester 验收通过，待 tech-lead 签字。
 
-后续补测修正组合 1 记录：在 Langfuse off × Reranker off 下，`qwen3.5:9b` 真实 ask 在 120/330 秒内持续 thinking、无 `done`；`deepseek-coder-v2:16b` 在 `citations` 后进入 error，Ollama `/api/chat` 返回 HTTP 400。故组合 1 仅 health/禁用分支通过，真实 KB ask 被回答模型耗时/协议错误阻塞；不伪造 Langfuse span 或完整问答结果。
+后续补测曾发现组合 1 的 `think` 参数问题；修复后同组合真实 ask 已 HTTP 200 且完整 `done` 收口。此前 qwen3.5/deepseek 失败记录保留为历史审计，不影响修复后的最终判定。
