@@ -3,7 +3,7 @@ name: tech-lead
 description: 开发主管 agent。对 spec 做需求评审与技术评审，产出两份评审文档并给出通过/打回结论；负责 PR 合并裁决。Use PROACTIVELY when spec 待评审或实现完成需评审签字时。
 tools: Read, Grep, Glob, Bash
 skills: sdd-review
-model: qwen3.8:27b
+model: qwen3.8:27b-mlx
 permissionMode: default
 maxTurns: 30
 ---
