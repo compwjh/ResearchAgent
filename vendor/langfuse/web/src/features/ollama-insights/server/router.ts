@@ -160,7 +160,10 @@ const buildObservationQuery = (
   fromTimestamp: input.from.toISOString(),
   toTimestamp: effectiveTo(input).toISOString(),
   orderBy: [{ field: "avg_ttft", direction: "desc" }],
-  chartConfig: { row_limit: input.limit },
+  // `type` is required by the query-engine zod schema. QueryBuilder itself only
+  // reads `bins`/`row_limit`, but omitting `type` fails schema validation with
+  // `Invalid query: [{"path":["chartConfig","type"],...}]`.
+  chartConfig: { type: "TABLE", row_limit: input.limit },
 });
 
 const buildCountQuery = (

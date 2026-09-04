@@ -1181,8 +1181,24 @@ export const scoresListableCountViewV2: ViewDeclarationType =
 const eventsObservationMetadataValueSql = (key: string): string =>
   `nullIf(arrayElement(events_observations.metadata_values, indexOf(events_observations.metadata_names, '${key}')), '')`;
 
-const eventsObservationMetadataNumberSql = (key: string): string =>
-  `toFloat64OrNull(${eventsObservationMetadataValueSql(key)})`;
+/**
+ * Numeric metadata measure for the events-observations view.
+ *
+ * Wrapped in the `@@AGG@@` template on purpose: the query builder emits
+ * `metric.sql` verbatim in the inner per-row SELECT of a two-level query, which
+ * is grouped by (project_id, span_id). A bare `metadata_values` reference there
+ * makes ClickHouse reject the query with "Column ... is not under aggregate
+ * function and not in GROUP BY keys". The marker resolves to `any(...)` in
+ * two-level mode (one value per observation) and is stripped in single-level
+ * mode so the caller's avg()/quantile() applies to the raw expression.
+ *
+ * Every measure built with this helper MUST declare `aggs: { agg: "any" }`,
+ * otherwise the marker is never substituted.
+ */
+const eventsObservationMetadataNumberSql = (key: string): string => {
+  const value = `toFloat64OrNull(${eventsObservationMetadataValueSql(key)})`;
+  return `@@AGG@@(if(isFinite(${value}) AND ${value} >= 0, ${value}, CAST(NULL AS Nullable(Float64))))`;
+};
 
 const eventsObservationMetadataBooleanSql = (key: string): string => {
   const value = eventsObservationMetadataValueSql(key);
@@ -1550,6 +1566,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     ttft: {
       sql: eventsObservationMetadataNumberSql("ttft_ms"),
+      aggs: { agg: "any" },
       alias: "ttft",
       type: "decimal",
       description: "Client-observed time to first token from metadata.",
@@ -1557,6 +1574,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     load: {
       sql: eventsObservationMetadataNumberSql("load_ms"),
+      aggs: { agg: "any" },
       alias: "load",
       type: "decimal",
       description: "Ollama model load duration from metadata.",
@@ -1564,6 +1582,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     prompt_eval: {
       sql: eventsObservationMetadataNumberSql("prompt_eval_ms"),
+      aggs: { agg: "any" },
       alias: "prompt_eval",
       type: "decimal",
       description: "Ollama prompt evaluation duration from metadata.",
@@ -1571,6 +1590,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     eval: {
       sql: eventsObservationMetadataNumberSql("eval_ms"),
+      aggs: { agg: "any" },
       alias: "eval",
       type: "decimal",
       description: "Ollama generation evaluation duration from metadata.",
@@ -1578,6 +1598,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     overhead: {
       sql: eventsObservationMetadataNumberSql("overhead_ms"),
+      aggs: { agg: "any" },
       alias: "overhead",
       type: "decimal",
       description: "Client/network overhead duration from metadata.",
@@ -1585,6 +1606,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     tokens_per_sec: {
       sql: eventsObservationMetadataNumberSql("tokens_per_sec"),
+      aggs: { agg: "any" },
       alias: "tokens_per_sec",
       type: "decimal",
       description: "Generated tokens per second from metadata.",
@@ -1592,6 +1614,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     is_cold_start: {
       sql: eventsObservationMetadataNumberSql("is_cold_start"),
+      aggs: { agg: "any" },
       alias: "is_cold_start",
       type: "decimal",
       description: "Numeric cold-start flag from observation metadata.",
@@ -1599,6 +1622,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     input_chars: {
       sql: eventsObservationMetadataNumberSql("input_chars"),
+      aggs: { agg: "any" },
       alias: "input_chars",
       type: "decimal",
       description: "Input character count from observation metadata.",
@@ -1606,6 +1630,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     prompt_tokens: {
       sql: eventsObservationMetadataNumberSql("prompt_tokens"),
+      aggs: { agg: "any" },
       alias: "prompt_tokens",
       type: "decimal",
       description: "Prompt token count from observation metadata.",
@@ -1613,6 +1638,7 @@ export const eventsObservationsView: ViewDeclarationType = {
     },
     total_ms: {
       sql: eventsObservationMetadataNumberSql("total_ms"),
+      aggs: { agg: "any" },
       alias: "total_ms",
       type: "decimal",
       description: "Server total duration from observation metadata.",
