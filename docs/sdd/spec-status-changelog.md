@@ -5,8 +5,15 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-03
+
+- **016 可移植 Task 账本与自动执行协议** ｜ 新建 → 待确认 ｜ 为跨 Codex、CodeBuddy 和其他 Agent IDE 的研发交接建立“Git 跟踪 Markdown 为长期事实源、SQLite 为可重建运行层”的流程；Task 将包含机器元数据、完整子 Agent Prompt、统一结果协议、执行轨迹和指标。已按 spec-013 格式建立 spec 与 `docs/sdd/plans/016/` Task 02–09；当前只落盘文档，不执行实现，等待用户确认。
+- **015 安全顶会论文检索与知识库导入** ｜ 新建 → 待确认 ｜ 新增独立论文检索 Tab 的规划：默认检索 CCS、USENIX Security、IEEE S&P、NDSS 最近五个完整年份，支持搜索添加会议、语义排序、单篇/批量实际下载并按“年份-会议-标题”命名后导入知识库；ACM Digital Library 与 IEEE Xplore 采用项目内 Playwright 完成合法登录续传。已按 spec-014 格式建立 spec 与 `docs/sdd/plans/015/` 任务 02–09；当前只落盘文档，不执行任务，且必须等待 spec-013/014 形成稳定基线。
+
 ## 2026-09-02
 
+- **014 知识库本地 Rerank 重排** ｜ 新建 → 待确认 ｜ 为个人知识库增加本地 Qwen3-Reranker 批量重排；现有 Ollama 包实测不适合专用 rerank，计划改用 llama.cpp `/v1/rerank` 与兼容 Q8_0 模型。已按 spec-013 格式建立完整 spec，并在 `docs/sdd/plans/014/` 拆分任务 02–09；当前仅文档落盘，等待用户确认。
+- **014 知识库本地 Rerank 重排** ｜ 待确认 → 已确认 ｜ 用户授权“当前未提交代码能运行则进行 spec-014”。已先创建 `/tmp` 安全快照并在不回滚、不 stash、不清理工作树的前提下验证：FastAPI 首页/health/KB health、Langfuse 正常，全量测试 `253 passed`；需求与技术评审均通过（附意见），条件满足，进入实施门禁。
 - **012 知识库召回质量与切分 v2** ｜ 状态不变（已完成） ｜ **交付后缺陷修复**（同功能范围，不新建编号）：用户反馈论文卡片「标题展示不完全、重建/删除按钮看不到」。根因是纯前端布局——标题 `nowrap+ellipsis` 被截断；卡片因 spec-012 新增双版本徽章与进度条而增高，在固定高度侧栏的滚动区里把 `actions` 裁掉。修复：标题独占一行完整换行、meta 独立成行、侧栏 320→360px；`actions` 移入徽章行右对齐、进度条独占一行，单卡高度 110px→约 80px；按钮补边框。静态资源 `?v=13`，全量回归 `253 passed`。复盘见 `docs/sdd/retro/2026-09-02-kb-card-layout-retro.md`（教训：固定高度容器内新增内容须核算容量；DOM 契约校验需升级为可见性校验）。
 
 ## 2026-09-01
@@ -38,3 +45,10 @@
 - **004 完全由 download-paper Skill 主导下载** ｜ 待确认 → 已完成 ｜ skill 主导下载编排与后端执行，放宽 003 约束允许 Cookie/浏览器/科研通；保留 Crossref/OpenAlex 发现链路；新增 `decide_download_method`/`fetch_cookies_via_opencli`/`download_under_skill`/`build_skill_plan`。
 - **005 前端候选展示限制与 Skill 选取提示** ｜ 待确认 → 已完成 ｜ 后端候选过滤为 confidence>0.5 且 ≤3、intent 事件对 download_paper 携带 skill；前端在意图识别后显示灰色"已选取 download_paper 技能"提示。
 - **001 文章检索与下载 Agent** ｜ 已完成（意图识别缺陷，Errata 待确认） → 已完成（意图识别修订 Errata 已实施） ｜ 19:37 确认；20:30 实施完成 ｜ 意图识别由脆弱的关键词匹配改为大模型判断（`classify_intent` LLM 路径 + `qwen3.5:9b`，强下载词短路跳过模型），`chat` 作为兜底分支，移除 `unsupported` 路由；修复"生成一个300字的小故事"被误判为"无法识别"的问题，已在运行时经 `/api/agent/run` 验证 chat 兜底与 download_paper+skill。
+| 2026-09-03 | Spec 013 本地 LLM 调用观测与性能评估平台 | 待确认 → 已确认 | 用户明确要求修复阻塞并继续后续开发；MinIO/OTLP 上报阻塞已定位，采用 v4 events_only 验收口径。 |
+| 2026-09-03 | Spec 013 本地 LLM 调用观测与性能评估平台 | 实施中 → 实施中 | Task 07 继续推进：补齐全量聚合、model/route/cold-hot 维度、chain_type 生产字段和默认折叠详情脱敏；前端依赖下的类型、组件测试和验收仍待执行。 |
+
+## 2026-09-04
+
+- **013 本地 LLM 调用观测与性能评估平台** ｜ 实施中 → 已完成 ｜ Task 07 前端依赖与环境阻塞修复（补齐 lockfile + 离线安装 + .env），前端 37 用例全绿；5 项实质缺陷（散点丢点误判、脱敏覆盖、聚合守卫、截断提示、router 测试）闭环；C8 埋点 safe_call 包裹完成。验收由主模型代行（非独立评审）。详见 `docs/sdd/plans/013/task-07-stats-custom-view.md` 修复轮次执行结果与 `docs/sdd/reviews/013-task07-acceptance-review.md` 复核结论。
+- **013 Task 07 验收** ｜ 不通过 → 通过（代行） ｜ 见上。

@@ -109,7 +109,7 @@ def test_health_returns_model_list(self, _mock_models):
 
 | 字段 | 值 |
 |------|-----|
-| 报告路径 | `/Users/wjh/PyCharmMiscProject/docs/sdd/reviews/010-acceptance-review.md` |
+| 报告路径 | `/Users/wjh/ResearchAgent/docs/sdd/reviews/010-acceptance-review.md` |
 | 日志路径 | `.codebuddy/agent-logs/tester-010-xxx.md`（实际路径略） |
 | 评审日期 | $(date +%Y-%m-%d %H:%M) |
 

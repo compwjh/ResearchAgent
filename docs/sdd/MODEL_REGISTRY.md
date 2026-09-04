@@ -19,12 +19,13 @@
 
 ## 本地 Ollama 模型（零边际成本，优先用于中低复杂度角色）
 
-> 以下为本机 `ollama list` 实测结果（2026-08-27），非示例值。新增/更换模型请用 `ollama pull <模型名>`。
+> 以下为本机 `ollama list` 实测结果（2026-09-03 复核），非示例值。新增/更换模型请用 `ollama pull <模型名>`。
 
 | 模型（ollama 名） | 能力档位 | 本地上下文 | 适用角色 |
 |-------------------|----------|-----------|----------|
-| qwen3.8:27b | 中高通用/推理（全精度，需大显存） | 32k | 开发主管、复杂实现（本机显存足够时） |
-| oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU | 中高通用/推理（q4 量化，显存占用低） | 32k | 开发主管、初级开发、复杂实现（推荐，本机实测可跑） |
+| **qwen3.8:27b-mlx** | 中高通用/推理（**MLX 版，27B 首选**） | 32k | 开发主管、初级开发、复杂实现（**2026-09-03 起 27B 统一使用**；实测解码 24.3 tok/s） |
+| qwen3.8:27b | 中高通用/推理（GGUF 全精度，需大显存） | 32k | ~~开发主管、复杂实现~~ **已弃用**：2026-09-03 起改用 `qwen3.8:27b-mlx`（GGUF 仅 13.8 tok/s，易致子代理超时） |
+| oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU | 中高通用/推理（q4 量化，显存占用低） | 32k | ~~开发主管、初级开发~~ **已弃用**：含 `/` 的命名空间 ID 不被子代理框架识别（报 `model not found`），改用 `qwen3.8:27b-mlx` |
 | deepseek-coder:33b | 中高代码（全精度，需大显存，本机可能跑不动） | 32k | 备选；若显存不足改用量化 27B |
 | deepseek-coder-v2:16b | 专门代码（DeepSeek，16B，约 11GB 显存） | 32k | 初级开发（代码专精，拉取中，优于 33B 且显存友好） |
 | qwen2.5-coder:14b | 专门代码（阿里，14B，约 10GB 显存） | 32k | 初级开发首选 coder（需 `ollama pull`） |
@@ -35,6 +36,10 @@
 
 ## 选型速查
 
-- 架构师 / 开发主管 → 线上旗舰（Opus / GPT-5.1 / Gemini 2.5 Pro）；本机有 Ollama 时开发主管可优先本地 `qwen3.8:27b`。
-- 初级开发 / 测试 → **优先专门的 coder 模型**：`qwen2.5-coder:14b`（约 10GB，首选）或 `deepseek-coder-v2:16b`（约 11GB，拉取中）；本机已实测可跑时也可用 `oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU`（量化 27B）兜底；显存极紧时退回 `qwen3.5:9b`；本机无 Ollama 时回退线上 `*-mini` / `*-flash`。
+- 架构师 / 开发主管 → 线上旗舰（Opus / GPT-5.1 / Gemini 2.5 Pro）；本机有 Ollama 时开发主管用本地 **`qwen3.8:27b-mlx`**（27B 首选，**不是** `qwen3.8:27b`）。
+- 初级开发 / 测试 → **需要 27B 时统一用 `qwen3.8:27b-mlx`**；简单任务可用专门的 coder 模型 `qwen2.5-coder:14b`（约 10GB）或 `deepseek-coder-v2:16b`（约 11GB）；显存极紧时退回 `qwen3.5:9b`；本机无 Ollama 时回退线上 `*-mini` / `*-flash`。
 - 产品经理 → 本地 `qwen3.5:9b` 即可胜任产品使用步骤写作。
+
+> ⚠️ **27B 一律选 MLX 版 `qwen3.8:27b-mlx`（注意是「冒号」），不要用 GGUF 版**：mlx 解码 24.3 tok/s、预填充 0.30s，GGUF 仅 13.8 tok/s、预填充 1.15s，mlx 解码快 76%、预填充快近 4 倍；GGUF 吞吐过低是子代理超时的主因。详见 `docs/sdd/retro/2026-09-02-subagent-timeout-mlx.md`。
+> ⚠️ 子代理 `model` 字段**不能用含 `/` 的命名空间 ID**（如 `oamazonasgabriel/...`），会被判为 `model not found`；改用不含 `/` 的 `qwen3.8:27b-mlx`。
+> ⚠️ 已弃用的 `qwen3.8-27b-q4` / `qwen3.8:27b`（GGUF）不再作为分派选项，仅保留记录以便回溯。
