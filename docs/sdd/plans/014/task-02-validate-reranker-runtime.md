@@ -1,7 +1,7 @@
 # 任务 02 — 验证 Reranker 运行时（Go/No-Go）
 
-> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 01；当前状态：`待执行`
+> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
+> 依赖：任务 01；当前状态：`已完成（Go）`
 
 ## 一句话目标
 
@@ -77,10 +77,29 @@ ps aux | grep '[l]lama-server'
 ## 产出物与执行结果
 
 - 产出：本文中的环境、命令、探针输入输出、延迟/内存与 Go/No-Go 结论。
-- 执行结果：待执行后填写。
+
+### 执行结果（2026-09-02）
+
+| 项目 | 实测结果 | 结论 |
+|---|---|---|
+| 现有 Ollama blob | SHA-256 `ad693e485b0b193e1fa84c92c1fc195c05958d7b836fcb201c3828a31a3eb8ea`，直接 rerank 曾产生恒定分数 | 不采用，模型保留 |
+| 兼容 GGUF | 639,153,184 字节；SHA-256 `22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48` | 与官方文件一致 |
+| 下载来源 | Hugging Face 美国 CDN 过慢；改由返回相同 `X-Linked-Etag` 的 ModelScope `ggml-org` 镜像断点续传 | 完整哈希校验通过 |
+| llama-server | Ollama App 内置版 `0.3.0-dev`，build 1，commit `d222767c7` | 支持 `/v1/rerank` |
+| 启动 | `-m <绝对GGUF> --embedding --reranking --pooling rank --host 127.0.0.1 --port 11435 --ctx-size 8192 --no-webui` | 约 0.56 秒 ready |
+| 英文探针 | 强相关 index 1=`0.9977`，弱相关 index 2=`0.0275`，无关 index 0=`0.000071` | 通过 |
+| 中文探针 | 强相关 index 0=`0.99994`，弱相关 index 2=`0.98112`，无关 index 1=`0.000154` | 强相关第一且分数可区分 |
+| 稳定性 | 三次结果顺序与分数一致；耗时 `0.078/0.056/0.057s` | 通过 |
+| 20 候选 | 相关 index 3=`0.99978`、index 10=`0.99720` 排前二；总耗时 `0.417s` | 通过 |
+| 资源 | RSS `2,083,904 KiB`（约 1.99 GiB），无 OOM | 通过 |
+| API model | 请求省略 `model` 可成功；响应 model 为加载文件绝对路径 | `RERANKER_API_MODEL` 默认空且不发送 |
+| 停止 | Ctrl+C 正常清理，11435 无监听残留 | 通过 |
+
+**Go/No-Go：Go。** 允许进入任务 03–09。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-02 | 架构师(自身) | 创建任务计划，状态为待执行 |
+| 2026-09-02 | 架构师(自身) | 下载并校验兼容 GGUF，完成中英文、稳定性、20 候选和资源探针；结论 Go |

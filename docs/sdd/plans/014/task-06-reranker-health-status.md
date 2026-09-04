@@ -1,7 +1,7 @@
 # 任务 06 — 接入健康状态与前端展示
 
-> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 03、04；当前状态：`待执行`
+> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
+> 依赖：任务 03、04；当前状态：`完成`
 
 ## 一句话目标
 
@@ -68,10 +68,18 @@
 - 风险：探针增加 health 延迟；通过短超时和缓存限制。
 - 回滚：移除 detail 展示并保留原布尔字段，不影响检索。
 - 产出：health 扩展、前端状态、测试和执行记录。
-- 执行结果：待执行后填写。
+- 执行结果：
+  - 健康探针实现 HTTP ready + 三文档质量验证，并对 URL、JSON、index、score 做严格校验。
+  - 使用 monotonic 30 秒 TTL 与 single-flight 并发缓存；禁用时零网络请求，异常仅返回安全原因。
+  - `/api/kb/health` 保留旧 `reranker` 布尔字段并增加 `reranker_detail`；前端状态栏兼容旧响应并显示降级原因，`app.js` 版本更新为 v14。
+  - 统一启动后实测 `/api/kb/health` 返回 `reranker=true` 、`available=true`、`backend=llama.cpp`、`reason=null`；停服降级时返回 `reason=connection`。
+  - 相关回归 `115 passed`（含 29 个 subtests），JavaScript `node --check` 、Python 编译与 diff 校验通过。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-02 | 架构师(自身) | 创建任务计划，状态为待执行 |
+| 2026-09-02 | 架构师(自身) | Task 05 配置与检索集成验证通过，分派 Task 06 健康与前端小任务 |
+| 2026-09-02 | Luna 高推理协作 Agent | 完成健康探针、路由扩展与前端降级状态展示 |
+| 2026-09-02 | 架构师(自身) | 相关回归与静态检查通过，任务转完成 |

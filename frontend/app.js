@@ -780,7 +780,20 @@ async function loadKbHealth() {
     const response = await fetch('/api/kb/health');
     const data = await response.json();
     const v2llm = data.v2_llm || {};
-    kbHealth.textContent = `Qdrant ${data.qdrant ? '就绪' : '不可用'} · Embedding ${data.embedding ? '就绪' : '不可用'} · 重排 ${data.reranker ? '启用' : '未启用（RRF 直出）'} · ${data.chunks ?? 0} 个片段 · v2 结构分析 ${v2llm.available ? '就绪' : '不可用（将降级为规则切分）'}`;
+    const detail = data.reranker_detail;
+    let rerankerStatus = data.reranker ? '启用' : '未启用（RRF 直出）';
+    if (detail && typeof detail === 'object') {
+      if (detail.enabled === false) {
+        rerankerStatus = '未启用（RRF 直出）';
+      } else if (detail.enabled === true && detail.available === true) {
+        rerankerStatus = '启用';
+      } else if (detail.enabled === true && detail.available === false) {
+        const reason = typeof detail.reason === 'string' ? detail.reason.trim() : '';
+        const safeReason = /^[a-z][a-z0-9_]{0,39}$/.test(reason) ? reason : 'unavailable';
+        rerankerStatus = `不可用：${safeReason}`;
+      }
+    }
+    kbHealth.textContent = `Qdrant ${data.qdrant ? '就绪' : '不可用'} · Embedding ${data.embedding ? '就绪' : '不可用'} · 重排 ${rerankerStatus} · ${data.chunks ?? 0} 个片段 · v2 结构分析 ${v2llm.available ? '就绪' : '不可用（将降级为规则切分）'}`;
   } catch (error) {
     kbHealth.textContent = `组件状态读取失败：${error.message}`;
   }
@@ -943,4 +956,3 @@ if (kbQuestion && kbForm) {
     kbForm.requestSubmit();
   });
 }
-

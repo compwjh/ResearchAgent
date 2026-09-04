@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：`已确认`（2026-09-02；用户条件确认“当前代码能运行则进行 spec-014”，运行门禁已通过）**
+**当前状态：`实施中`（2026-09-02；Task 03–07 已完成，Task 08 等待 spec-013 明确 commit）**
 
 > 进入实施前已用当前未提交代码完成首页、健康接口与全量测试验证；不得通过回滚、stash 或清理工作树保护/修复 spec-013。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
@@ -39,8 +39,8 @@
 |---|---|---|---|
 | `RERANKER_ENABLED` | bool | `true` | `false` 时完全跳过探针和重排请求 |
 | `RERANKER_BASE_URL` | str | `http://127.0.0.1:11435` | 仅允许本机服务；末尾 `/` 需规范化 |
-| `RERANKER_MODEL_SOURCE` | str | `ggml-org/Qwen3-reranker-0.6B-Q8_0-GGUF:Q8_0` | llama-server 启动时使用的 HF 来源或已验证 GGUF 绝对路径 |
-| `RERANKER_API_MODEL` | str | Task 02 实测后回填 | `/v1/rerank` 请求中实际接受的模型标识；不得与模型来源混用 |
+| `RERANKER_MODEL_PATH` | str | `<项目>/data/models/qwen3-reranker-0.6b-q8_0.gguf` | llama-server 启动使用的已校验本地 GGUF；不得传给 API model 字段 |
+| `RERANKER_API_MODEL` | str | 空 | Task 02 实测请求可省略 `model`；配置非空时才发送，不得与模型来源混用 |
 | `KB_RERANK_CANDIDATES` | int | `20` | 最小 1；实际不超过 RRF 返回数量 |
 | `RERANKER_CONNECT_TIMEOUT_SECONDS` | float | `2` | 非正值回退默认值并告警 |
 | `RERANKER_READ_TIMEOUT_SECONDS` | float | `60` | 非正值回退默认值并告警 |
@@ -179,8 +179,8 @@
 | 架构师 | 自身（当前执行任务的 Agent，不写死模型代号） | 200k | 主会话 | 编写/修订 spec、运行时选型、编排与落地校验 |
 | 产品经理 | `qwen3.5:9b`（本地 Ollama） | 32k | `Task(pm)` | 补产品使用步骤与验收场景 |
 | 开发主管 | `qwen3.8:27b`（本地 Ollama） | 32k | `Task(tech-lead)` | 需求/技术/验收评审、任务拆分与合并裁决 |
-| 初级开发 | `qwen3.8:27b-mlx`（本地 Ollama） | 32k | `Task(junior-dev)` | 已确认范围内编码；每次最多 2 文件、150 行 |
-| 测试 | `qwen3.5:9b`（本地 Ollama） | 32k | `Task(tester)` | 测试、真实运行时基准、验收报告与 Bug 复现 |
+| 初级开发 | `gpt-5.6-luna` | 32k | `Task(junior-dev, reasoning=high)` | 剩余任务编码；每次最多 2 文件、150 行 |
+| 测试 | `gpt-5.6-luna` | 32k | `Task(tester, reasoning=high)` | 剩余任务测试、基准、验收与 Bug 复现 |
 
 > 业务 Reranker（非角色模型）：`ggml-org/Qwen3-reranker-0.6B-Q8_0-GGUF:Q8_0`，由 llama.cpp 专用 `/v1/rerank` 服务承载。
 
@@ -191,12 +191,12 @@
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-014 | 本文件 | — | 完成 |
-| 02 | 验证 Reranker 运行时（Go/No-Go） | [`task-02-validate-reranker-runtime.md`](../plans/014/task-02-validate-reranker-runtime.md) | 01 | 待执行 |
-| 03 | 管理 Reranker 服务生命周期 | [`task-03-reranker-service-lifecycle.md`](../plans/014/task-03-reranker-service-lifecycle.md) | 02 | 待执行 |
-| 04 | 实现 Reranker 客户端 | [`task-04-reranker-client.md`](../plans/014/task-04-reranker-client.md) | 02 | 待执行 |
-| 05 | 接入知识库检索链路 | [`task-05-integrate-retrieval-pipeline.md`](../plans/014/task-05-integrate-retrieval-pipeline.md) | 04 | 待执行 |
-| 06 | 接入健康状态与前端展示 | [`task-06-reranker-health-status.md`](../plans/014/task-06-reranker-health-status.md) | 03, 04 | 待执行 |
-| 07 | 执行测试与质量基准 | [`task-07-reranker-tests-benchmark.md`](../plans/014/task-07-reranker-tests-benchmark.md) | 05, 06 | 待执行 |
+| 02 | 验证 Reranker 运行时（Go/No-Go） | [`task-02-validate-reranker-runtime.md`](../plans/014/task-02-validate-reranker-runtime.md) | 01 | 完成（Go） |
+| 03 | 管理 Reranker 服务生命周期 | [`task-03-reranker-service-lifecycle.md`](../plans/014/task-03-reranker-service-lifecycle.md) | 02 | 完成 |
+| 04 | 实现 Reranker 客户端 | [`task-04-reranker-client.md`](../plans/014/task-04-reranker-client.md) | 02 | 完成 |
+| 05 | 接入知识库检索链路 | [`task-05-integrate-retrieval-pipeline.md`](../plans/014/task-05-integrate-retrieval-pipeline.md) | 04 | 完成 |
+| 06 | 接入健康状态与前端展示 | [`task-06-reranker-health-status.md`](../plans/014/task-06-reranker-health-status.md) | 03, 04 | 完成 |
+| 07 | 执行测试与质量基准 | [`task-07-reranker-tests-benchmark.md`](../plans/014/task-07-reranker-tests-benchmark.md) | 05, 06 | 完成 |
 | 08 | 集成 spec-013 观测能力 | [`task-08-integrate-spec013-observability.md`](../plans/014/task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 待执行 |
 | 09 | 评审、部署与复盘 | [`task-09-review-deploy-retro.md`](../plans/014/task-09-review-deploy-retro.md) | 07, 08 | 待执行 |
 
@@ -222,6 +222,12 @@
 | 2026-09-02 | 开发主管(独立协作 Agent) | 需求与技术评审均通过（附意见），无当前硬阻塞；将 R1–R6/T1–T12 固化为本 spec 强制约束 |
 | 2026-09-02 | 架构师(自身) | 条件已满足，按用户授权将 spec 从 `待确认` 转为 `已确认` |
 | 2026-09-02 | 产品经理（当前协作 Agent） | 基于 A1–A12 补充正常启动、自动重排、停服降级、恢复及空候选等边界的产品使用步骤与可观察验收结果 |
+| 2026-09-02 | 架构师(自身) | 创建隔离 worktree `/private/tmp/PyCharmMiscProject-spec014`，仅搬运 014 文档与评审；spec 转为 `实施中`，启动 Task 02 |
+| 2026-09-02 | 架构师(自身) | Task 02 Go：官方兼容 GGUF 哈希验证通过；中英文与 20 候选探针通过，三次热排序稳定；临时服务已停止且 11435 端口释放 |
+| 2026-09-02 | 架构师(自身) | 将运行契约固化为本地 `RERANKER_MODEL_PATH` 与可选 `RERANKER_API_MODEL`，启动 Task 03 生命周期实现 |
+| 2026-09-02 | 架构师(自身) | Task 03 完成：真实模型通过质量探针、动态端口、幂等启停、禁用模式和 FastAPI 联合启停验证 |
+| 2026-09-02 | 架构师(自身) | Task 04 完成：批量客户端及 25 个 mock HTTP 子场景通过，启动 Task 05 检索集成 |
+| 2026-09-02 | 用户 | 指定剩余任务使用 Luna 模型、高推理强度 |
 
 ---
 **六条自检**：①边界均可转为测试；②spec 说明需求、task 承载实施细节；③task 链接真实且依赖无环；④明确不做已划死范围；⑤执行配置五行齐全；⑥产品步骤可映射 A1–A12。

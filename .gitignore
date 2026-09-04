@@ -19,7 +19,10 @@ htmlcov/
 data/articles/
 data/article_settings.json
 data/kb/
+data/models/
 data/agent_tasks.sqlite3
+deploy/reranker/.runtime/
+deploy/run.pid
 
 # Langfuse vendor runtime/dependency artefacts; source code remains tracked.
 vendor/langfuse/.env

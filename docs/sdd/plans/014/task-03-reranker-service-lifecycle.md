@@ -1,7 +1,7 @@
 # 任务 03 — 管理 Reranker 服务生命周期
 
-> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 02 Go；当前状态：`待执行`
+> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
+> 依赖：任务 02 Go；当前状态：`完成`
 
 ## 一句话目标
 
@@ -9,7 +9,7 @@
 
 ## 数据、配置与接口
 
-- 输入：`RERANKER_SERVER_BIN`、`RERANKER_MODEL`、`RERANKER_BASE_URL`。
+- 输入：`RERANKER_SERVER_BIN`、`RERANKER_MODEL_PATH`、`RERANKER_BASE_URL`；API 请求模型另由可选 `RERANKER_API_MODEL` 控制。
 - 运行产物：PID 文件和日志文件，均不得进入 Git。
 - 健康判定包含 HTTP ready 和固定排序质量探针。
 - 默认监听 `127.0.0.1:11435`；端口冲突时选择可用端口并输出实际 URL。
@@ -60,10 +60,17 @@ ps -p "$(cat deploy/reranker/run.pid 2>/dev/null)" -o pid,etime,command
 - 风险：内置二进制升级后参数变化；由启动前版本/帮助探针及清晰错误兜底。
 - 回滚：撤销部署脚本集成并单独停止 reranker，不影响数据。
 - 产出：`deploy/reranker/` 脚本、环境示例、忽略规则及部署集成。
-- 执行结果：待执行后填写。
+- 执行结果：
+  - 已交付 `deploy/reranker/{start,stop,probe}.sh` 与 `env.example`，脚本语法和 `git diff --check` 通过。
+  - 真实 Q8_0 模型验证了默认端口、质量探针、`start/start/stop/stop` 幂等；11435 被占用时自动切换到 11436。
+  - 统一 `deploy/start.sh` / `deploy/stop.sh` 已完成集成：FastAPI 获取动态 URL，一次 stop 同时停止两个进程，第二次 stop 幂等。
+  - `RERANKER_ENABLED=false` 实测零 Reranker 启动/探针，FastAPI 首页仍返回 200。
+  - 模型、`.runtime/` 和 PID 运行产物均已加入 `.gitignore`。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-02 | 架构师(自身) | 创建任务计划，状态为待执行 |
+| 2026-09-02 | 初级开发（协作 Agent） | 分三个小分派交付生命周期、探针和统一启停集成 |
+| 2026-09-02 | 架构师(自身) | 用真实模型完成默认/动态端口、幂等、禁用与联合启停验证，任务转完成 |

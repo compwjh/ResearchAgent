@@ -15,12 +15,12 @@
 | 编号 | 任务 | 文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-014 | [spec-014](../../specs/014-kb-reranker.md) | — | 完成 |
-| 02 | 验证 Reranker 运行时（Go/No-Go） | [task-02](./task-02-validate-reranker-runtime.md) | 01 | 待执行 |
-| 03 | 管理 Reranker 服务生命周期 | [task-03](./task-03-reranker-service-lifecycle.md) | 02 | 待执行 |
-| 04 | 实现 Reranker 客户端 | [task-04](./task-04-reranker-client.md) | 02 | 待执行 |
-| 05 | 接入知识库检索链路 | [task-05](./task-05-integrate-retrieval-pipeline.md) | 04 | 待执行 |
-| 06 | 接入健康状态与前端展示 | [task-06](./task-06-reranker-health-status.md) | 03, 04 | 待执行 |
-| 07 | 执行测试与质量基准 | [task-07](./task-07-reranker-tests-benchmark.md) | 05, 06 | 待执行 |
+| 02 | 验证 Reranker 运行时（Go/No-Go） | [task-02](./task-02-validate-reranker-runtime.md) | 01 | 完成（Go） |
+| 03 | 管理 Reranker 服务生命周期 | [task-03](./task-03-reranker-service-lifecycle.md) | 02 | 完成 |
+| 04 | 实现 Reranker 客户端 | [task-04](./task-04-reranker-client.md) | 02 | 完成 |
+| 05 | 接入知识库检索链路 | [task-05](./task-05-integrate-retrieval-pipeline.md) | 04 | 完成 |
+| 06 | 接入健康状态与前端展示 | [task-06](./task-06-reranker-health-status.md) | 03, 04 | 完成 |
+| 07 | 执行测试与质量基准 | [task-07](./task-07-reranker-tests-benchmark.md) | 05, 06 | 完成 |
 | 08 | 集成 spec-013 观测能力 | [task-08](./task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 待执行 |
 | 09 | 评审、部署与复盘 | [task-09](./task-09-review-deploy-retro.md) | 07, 08 | 待执行 |
 

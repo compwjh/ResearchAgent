@@ -4,27 +4,50 @@
 量纲不可比；RRF 只利用排名，无需归一化调参（见 011-tech-review §四）。
 """
 
+import math
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
+import httpx
 from qdrant_client import models
 
 from backend.app.core.config import (
     KB_CANDIDATE_POOL,
     KB_COLLECTION,
+    KB_RERANK_CANDIDATES,
     KB_TOP_K,
-    RERANKER_MODEL,
+    RERANKER_API_MODEL,
+    RERANKER_BASE_URL,
+    RERANKER_CONNECT_TIMEOUT_SECONDS,
+    RERANKER_ENABLED,
+    RERANKER_READ_TIMEOUT_SECONDS,
 )
 from backend.app.observability import record_event
 from backend.app.observability.safe import safe_call
 from backend.app.services.kb.embed import embed_texts, encode_sparse
 from backend.app.services.kb.index import DENSE_VECTOR, SPARSE_VECTOR, get_client
+from backend.app.services.kb.reranker import _url as _reranker_url
+from backend.app.services.kb.reranker import rerank_hits
 from backend.app.services.kb.store import CHUNKER_V1
 
 RRF_K = 60
 _SCORE_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
+_RERANKER_MODEL_ID = "ggml-org/Qwen3-reranker-0.6B-Q8_0-GGUF:Q8_0"
+_RERANKER_HEALTH_TTL = 30.0
+_RERANKER_HEALTH_PROBE = (
+    "What is the capital of France?",
+    (
+        "Whales are marine mammals that breathe air.",
+        "Paris is the capital and most populous city of France.",
+        "The Moon orbits Earth approximately every 27 days.",
+    ),
+)
+_health_condition = threading.Condition()
+_health_cache = {}
+_health_inflight = set()
 
 # 参考文献意图识别（spec-012）：用**短语**而非单词，避免正文里出现
 # 单个 "reference"（如 reference implementation）就误判为问参考文献。
@@ -55,6 +78,8 @@ class Hit:
     page_end: int = 0
     section: str = ""
     is_citation: bool = False
+    rerank_score: Optional[float] = None
+    rerank_rank: Optional[int] = None
 
     def __post_init__(self) -> None:
         if not self.page_end or int(self.page_end) <= 0:
@@ -122,7 +147,7 @@ def hybrid_search(
         "top_k": effective_top_k,
         "candidate_pool": limit,
         "chunker": chunker,
-        "reranker_enabled": reranker_available(),
+        "reranker_enabled": RERANKER_ENABLED,
      }
     try:
        target = client or get_client()
@@ -159,20 +184,47 @@ def hybrid_search(
          ).points
 
        hits = rrf_fuse([dense_points, sparse_points])
-       hits = hits[:effective_top_k]
-       result = rerank(question, hits)
-       safe_call(record_event,
+       candidate_count = max(effective_top_k, KB_RERANK_CANDIDATES)
+       candidates = hits[:candidate_count]
+       rerank_result = rerank_hits(
+           question,
+           candidates,
+           base_url=RERANKER_BASE_URL,
+           api_model=RERANKER_API_MODEL,
+           enabled=RERANKER_ENABLED,
+           connect_timeout=RERANKER_CONNECT_TIMEOUT_SECONDS,
+           read_timeout=RERANKER_READ_TIMEOUT_SECONDS,
+       )
+       if rerank_result.used and rerank_result.scores_by_original_index is not None:
+           for hit, score in zip(candidates, rerank_result.scores_by_original_index):
+               hit.rerank_score = score
+           for rank, hit in enumerate(rerank_result.hits, start=1):
+               hit.rerank_rank = rank
+       result = rerank_result.hits[:effective_top_k]
+       _record_rerank_result(
+           rerank_result,
+           input_count=len(candidates),
+           output_count=len(result),
+       )
+       safe_call(
+           record_event,
            name="kb.retrieval",
-           metadata={**metadata, "hit_count": len(result), "status": "ok"},
+           metadata={
+               **metadata,
+               "rerank_candidate_count": len(candidates),
+               "hit_count": len(result),
+               "status": "ok",
+           },
            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
-         )
+       )
        return result
-    except Exception as error:    # 记录后原样抛出，绝不吞、绝不改变异常类型
-       safe_call(record_event,
+    except Exception as error:  # 记录后原样抛出，绝不吞、绝不改变异常类型
+       safe_call(
+           record_event,
            name="kb.retrieval",
            metadata={**metadata, "status": "error", "error_type": type(error).__name__},
            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
-         )
+       )
        raise
 
 
@@ -189,21 +241,152 @@ def looks_like_citation_query(question: str) -> bool:
 
 
 def reranker_available() -> bool:
-    """reranker 为可插拔能力：未配置模型即视为不可用，主链路不受影响。"""
-    return bool(RERANKER_MODEL)
+    """Return the real, cached readiness state used by the health endpoint."""
+    state = reranker_health()
+    return bool(state["enabled"] and state["available"])
+
+
+def _health_detail(enabled: bool, available: bool, model: str, reason: Optional[str]) -> dict:
+    return {
+        "enabled": bool(enabled),
+        "available": bool(available),
+        "backend": "llama.cpp",
+        "model": model,
+        "reason": None if available else reason,
+    }
+
+
+def _health_probe(
+    endpoint: Optional[str], model: str, connect_timeout: float, read_timeout: float,
+    transport=None,
+) -> dict:
+    if endpoint is None:
+        return _health_detail(True, False, model, "connection")
+    timeout = httpx.Timeout(
+        min(max(float(connect_timeout), 0.001), 2.0),
+        connect=min(max(float(connect_timeout), 0.001), 2.0),
+        read=min(max(float(read_timeout), 0.001), 2.0),
+    )
+    kwargs = {"timeout": timeout, "trust_env": False}
+    if transport is not None:
+        kwargs["transport"] = transport
+    try:
+        with httpx.Client(**kwargs) as client:
+            ready = client.get(f"{endpoint}/health")
+            if not ready.is_success:
+                return _health_detail(True, False, model, "model_not_prepared")
+            try:
+                health_payload = ready.json()
+            except (ValueError, UnicodeError):
+                return _health_detail(True, False, model, "quality_probe_failed")
+            if not isinstance(health_payload, dict):
+                return _health_detail(True, False, model, "quality_probe_failed")
+
+            payload = {"query": _RERANKER_HEALTH_PROBE[0], "documents": list(_RERANKER_HEALTH_PROBE[1])}
+            if model != _RERANKER_MODEL_ID:
+                payload["model"] = model
+            response = client.post(f"{endpoint}/v1/rerank", json=payload)
+            if not response.is_success:
+                return _health_detail(True, False, model, "quality_probe_failed")
+            try:
+                data = response.json()
+            except (ValueError, UnicodeError):
+                return _health_detail(True, False, model, "quality_probe_failed")
+            scores, invalid_reason = _probe_scores(data)
+            if invalid_reason or scores is None or scores[1] <= max(scores[0], scores[2]):
+                return _health_detail(True, False, model, "quality_probe_failed")
+            return _health_detail(True, True, model, None)
+    except httpx.TimeoutException:
+        return _health_detail(True, False, model, "timeout")
+    except httpx.ConnectError:
+        return _health_detail(True, False, model, "connection")
+    except httpx.HTTPError:
+        return _health_detail(True, False, model, "connection")
+    except (TypeError, ValueError, OverflowError):
+        return _health_detail(True, False, model, "quality_probe_failed")
+    except Exception:
+        return _health_detail(True, False, model, "quality_probe_failed")
+
+
+def _probe_scores(data: object):
+    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+        return None, "schema"
+    results = data["results"]
+    if len(results) != 3:
+        return None, "index"
+    scores = {}
+    for item in results:
+        if not isinstance(item, dict):
+            return None, "schema"
+        index, score = item.get("index"), item.get("relevance_score")
+        if isinstance(index, bool) or not isinstance(index, int) or index not in (0, 1, 2) or index in scores:
+            return None, "index"
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            return None, "score"
+        score = float(score)
+        if not math.isfinite(score):
+            return None, "score"
+        scores[index] = score
+    if set(scores) != {0, 1, 2}:
+        return None, "index"
+    return (scores[0], scores[1], scores[2]), None
+
+
+def reranker_health(
+    *, enabled: Optional[bool] = None, base_url: Optional[str] = None,
+    api_model: Optional[str] = None, connect_timeout: Optional[float] = None,
+    read_timeout: Optional[float] = None, transport=None, clock=None,
+) -> dict:
+    """Probe loopback readiness and ranking quality, with a 30-second single-flight cache."""
+    enabled = RERANKER_ENABLED if enabled is None else enabled
+    base_url = RERANKER_BASE_URL if base_url is None else base_url
+    api_model = RERANKER_API_MODEL if api_model is None else api_model
+    connect_timeout = (
+        RERANKER_CONNECT_TIMEOUT_SECONDS if connect_timeout is None else connect_timeout
+    )
+    read_timeout = RERANKER_READ_TIMEOUT_SECONDS if read_timeout is None else read_timeout
+    model = (api_model or "").strip() or _RERANKER_MODEL_ID
+    if not enabled:
+        return _health_detail(False, False, model, "disabled")
+    endpoint = _reranker_url(base_url)
+    # Test transports are isolated from the process-wide production cache; the
+    # live path remains keyed only by the configured loopback endpoint/model.
+    key = (endpoint or "", model, id(transport) if transport is not None else None)
+    now_fn = clock or time.monotonic
+    while True:
+        now = now_fn()
+        with _health_condition:
+            cached = _health_cache.get(key)
+            if cached is not None and cached[1] > now:
+                return dict(cached[0])
+            if key not in _health_inflight:
+                _health_inflight.add(key)
+                break
+            _health_condition.wait(timeout=0.1)
+    detail = _health_detail(True, False, model, "quality_probe_failed")
+    try:
+        detail = _health_probe(endpoint, model, connect_timeout, read_timeout, transport)
+    except Exception:
+        detail = _health_detail(True, False, model, "quality_probe_failed")
+    finally:
+        with _health_condition:
+            _health_cache[key] = (detail, now_fn() + _RERANKER_HEALTH_TTL)
+            _health_inflight.discard(key)
+            _health_condition.notify_all()
+    return dict(detail)
 
 
 def rerank(question: str, hits: List[Hit], model: Optional[str] = None) -> List[Hit]:
-    """生成式重排；任何异常都降级为原顺序返回。"""
+    """兼容旧调用方的逐条模型重排；主检索链路使用本机批量 reranker。"""
     started_at = time.perf_counter()
-    name = model or RERANKER_MODEL
+    name = (model or "").strip()
     enabled = bool(name)
     if not name:
         _record_rerank_event(
             status="disabled",
             input_count=len(hits),
             output_count=len(hits),
-            enabled=enabled,
+            enabled=False,
             degraded_reason="model_not_configured",
             started_at=started_at,
         )
@@ -236,7 +419,7 @@ def rerank(question: str, hits: List[Hit], model: Optional[str] = None) -> List[
             status="ok",
             input_count=len(hits),
             output_count=len(result),
-            enabled=enabled,
+            enabled=True,
             started_at=started_at,
         )
         return result
@@ -245,12 +428,33 @@ def rerank(question: str, hits: List[Hit], model: Optional[str] = None) -> List[
             status="degraded",
             input_count=len(hits),
             output_count=len(hits),
-            enabled=enabled,
+            enabled=True,
             degraded_reason="rerank_exception",
             error_type=type(error).__name__,
             started_at=started_at,
         )
         return hits
+
+
+def _record_rerank_result(result, *, input_count: int, output_count: int) -> None:
+    """Emit Spec 013's event while preserving Spec 014's fail-open result."""
+    used = bool(getattr(result, "used", False))
+    reason = getattr(result, "reason", None)
+    elapsed_ms = getattr(result, "elapsed_ms", 0.0)
+    if used:
+        status, degraded_reason = "ok", None
+    elif reason == "disabled":
+        status, degraded_reason = "disabled", reason
+    else:
+        status, degraded_reason = "degraded", reason
+    _record_rerank_event(
+        status=status,
+        input_count=input_count,
+        output_count=output_count,
+        enabled=RERANKER_ENABLED,
+        degraded_reason=degraded_reason,
+        started_at=time.perf_counter() - (max(float(elapsed_ms or 0.0), 0.0) / 1000.0),
+    )
 
 
 def _record_rerank_event(

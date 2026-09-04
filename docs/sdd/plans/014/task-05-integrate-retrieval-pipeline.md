@@ -1,7 +1,7 @@
 # 任务 05 — 接入知识库检索链路
 
-> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 04；当前状态：`待执行`
+> 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
+> 依赖：任务 04；当前状态：`进行中`
 
 ## 一句话目标
 
@@ -57,10 +57,16 @@ dense 30 + sparse 30 → RRF/去重 → rerank candidates 20
 - 风险：候选增多导致文档传输和推理变慢；以 20 为固定默认并通过 Task 07 基准验证。
 - 回滚：设置 `RERANKER_ENABLED=false`；必要时移除调用恢复 RRF。
 - 产出：配置、检索接入、回归测试和执行记录。
-- 执行结果：待执行后填写。
+- 执行结果：
+  - 配置新增 enabled/base URL/model path/API model/candidates/timeout/server bin，非法值告警并回退默认；删除旧 `RERANKER_MODEL` 聊天打分开关。
+  - 检索改为 RRF 后候选、20 条为上限调用一次批量客户，最后才截 `top_k`；`Hit` 新增默认为 `None` 的当请求重排字段。
+  - 特定测试、客户端测试、路由测试和配置测试共 `269 passed` （含 29 个 subtests）；`py_compile` 与 `git diff --check` 通过。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-02 | 架构师(自身) | 创建任务计划，状态为待执行 |
+| 2026-09-02 | 架构师(自身) | Task 04 通过独立测试后启动配置与检索集成 |
+| 2026-09-02 | 初级开发（协作 Agent） | 交付 Reranker 配置、候选池接入和重排字段映射 |
+| 2026-09-02 | 架构师(自身) | 隔离分支全量回归通过 269 个测试，任务转完成 |
