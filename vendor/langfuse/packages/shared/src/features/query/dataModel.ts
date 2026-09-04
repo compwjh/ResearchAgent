@@ -1359,6 +1359,13 @@ export const eventsObservationsView: ViewDeclarationType = {
       type: "boolean",
       description: "Whether the application observation completed successfully.",
     },
+    isColdStart: {
+      sql: eventsObservationMetadataBooleanSql("is_cold_start"),
+      alias: "isColdStart",
+      type: "boolean",
+      description:
+        "Whether the observation incurred a cold model start, when recorded in metadata.",
+    },
     promptName: {
       sql: "nullIf(events_observations.prompt_name, '')",
       alias: "promptName",

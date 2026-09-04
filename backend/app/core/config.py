@@ -42,3 +42,22 @@ CHUNK_V2_MAX_CHARS = int(os.getenv("CHUNK_V2_MAX_CHARS", "1200"))
 CHUNK_V2_LLM_BATCH = int(os.getenv("CHUNK_V2_LLM_BATCH", "8"))
 # 单次 LLM 调用超时（秒）；27B 较慢，超时即降级为纯规则切分，不阻塞上传。
 CHUNK_V2_LLM_TIMEOUT = float(os.getenv("CHUNK_V2_LLM_TIMEOUT", "180"))
+
+# ---------- 观测与评估（spec-013）----------
+# Langfuse v4 自托管（本机非 Docker 部署，启停脚本见 deploy/langfuse/）。
+# 默认关闭：未部署 Langfuse 时项目行为完全不变，埋点失败也不得影响业务。
+LANGFUSE_ENABLED = os.getenv("LANGFUSE_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "http://127.0.0.1:3000")
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY", "")
+# 采样率：1.0 全量上报，0 全不上报。越界值（<0 或 >1 或非数字）回退到 1.0 并告警。
+LANGFUSE_SAMPLE_RATE_RAW = os.getenv("LANGFUSE_SAMPLE_RATE", "1.0")
+# 上报超时（秒）：观测不得拖慢业务，超时即放弃本次上报。
+LANGFUSE_TIMEOUT = int(os.getenv("LANGFUSE_TIMEOUT", "5"))
+# 对话链路：langchain（默认，保持既有行为）| direct（直连 Ollama 以采集原生 timings）
+OLLAMA_ROUTE = os.getenv("OLLAMA_ROUTE", "langchain").strip().lower()
+# 冷启动判定阈值（毫秒）：load_duration 超过该值即标记为冷启动
+OBS_COLD_START_THRESHOLD_MS = float(os.getenv("OBS_COLD_START_THRESHOLD_MS", "200"))
+# 上报内容截断阈值（字符）：避免超长输入/输出/思考过程撑爆单事件大小限制
+OBS_MAX_INPUT_CHARS = int(os.getenv("OBS_MAX_INPUT_CHARS", "20000"))
+OBS_MAX_OUTPUT_CHARS = int(os.getenv("OBS_MAX_OUTPUT_CHARS", "20000"))

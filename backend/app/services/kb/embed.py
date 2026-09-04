@@ -7,6 +7,7 @@
 
 import math
 import re
+import time
 import zlib
 from typing import Dict, List, Optional, Sequence
 
@@ -19,6 +20,8 @@ from backend.app.core.config import (
     KB_EMBED_NUM_BATCH,
     OLLAMA_BASE_URL,
 )
+from backend.app.observability import record_event
+from backend.app.observability.safe import safe_call
 
 # 稀疏向量槽位数量（约 100 万），个人知识库量级下碰撞概率可忽略
 SPARSE_DIM = 1 << 20
@@ -86,11 +89,26 @@ def embed_texts(
     注意：`num_batch` 必须 ≥ 单条输入的 token 数，否则 Ollama 会静默截断（HTTP 200 但向量无效）。
     因此这里**不做**减半重试——降低 num_batch 只会让情况更糟；网络类错误才重试一次。
     """
-    vectors: List[List[float]] = []
-    batch_size = max(1, KB_EMBED_BATCH_SIZE)
-    for start in range(0, len(texts), batch_size):
-        vectors.extend(_embed_batch(texts[start : start + batch_size], model, num_batch))
-    return vectors
+    started_at = time.perf_counter()
+    metadata = {"model": model or EMBED_MODEL, "text_count": len(texts)}
+    try:
+        vectors: List[List[float]] = []
+        batch_size = max(1, KB_EMBED_BATCH_SIZE)
+        for start in range(0, len(texts), batch_size):
+            vectors.extend(_embed_batch(texts[start : start + batch_size], model, num_batch))
+        safe_call(record_event,
+            name="kb.embedding",
+            metadata={**metadata, "status": "ok"},
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+        )
+        return vectors
+    except Exception as error:  # 记录后原样抛出，绝不吞、绝不改变异常类型
+        safe_call(record_event,
+            name="kb.embedding",
+            metadata={**metadata, "status": "error", "error_type": type(error).__name__},
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+        )
+        raise
 
 
 def _embed_batch(

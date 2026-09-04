@@ -5,6 +5,7 @@
 """
 
 import re
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
@@ -16,6 +17,8 @@ from backend.app.core.config import (
     KB_TOP_K,
     RERANKER_MODEL,
 )
+from backend.app.observability import record_event
+from backend.app.observability.safe import safe_call
 from backend.app.services.kb.embed import embed_texts, encode_sparse
 from backend.app.services.kb.index import DENSE_VECTOR, SPARSE_VECTOR, get_client
 from backend.app.services.kb.store import CHUNKER_V1
@@ -109,41 +112,68 @@ def hybrid_search(
     spec-012：
     - `chunker` 非空时按切分版本过滤（v1/v2 隔离）；
     - `include_citations` 为 False 时排除参考文献片段；**默认按问题意图自动判定**
-      （为 None 时调 `looks_like_citation_query`）——参考文献仍入库，只是默认不召回。
+     （为 None 时调 `looks_like_citation_query`）——参考文献仍入库，只是默认不召回。
     - **两路都必须带同一个 filter**（T2），否则稀疏路会漏掉过滤条件。
     """
-    target = client or get_client()
+    started_at = time.perf_counter()
+    effective_top_k = max(1, int(top_k or KB_TOP_K))
     limit = max(1, int(candidate_pool or KB_CANDIDATE_POOL))
-    dense_vector = embed_texts([question])[0]
+    metadata = {
+        "top_k": effective_top_k,
+        "candidate_pool": limit,
+        "chunker": chunker,
+        "reranker_enabled": reranker_available(),
+     }
+    try:
+       target = client or get_client()
+       dense_vector = embed_texts([question])[0]
 
-    if not target.collection_exists(KB_COLLECTION):
-        return []
+       if not target.collection_exists(KB_COLLECTION):
+           safe_call(record_event,
+               name="kb.retrieval",
+               metadata={**metadata, "hit_count": 0, "status": "ok"},
+               duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+            )
+           return []
 
-    allow_citations = (
-        looks_like_citation_query(question) if include_citations is None else bool(include_citations)
-    )
-    query_filter = build_filter(
-        paper_id=paper_id, chunker=chunker, include_citations=allow_citations
-    )
+       allow_citations = (
+           looks_like_citation_query(question) if include_citations is None else bool(include_citations)
+         )
+       query_filter = build_filter(
+           paper_id=paper_id, chunker=chunker, include_citations=allow_citations
+         )
 
-    dense_points = target.query_points(
-        collection_name=KB_COLLECTION,
-        query=dense_vector,
-        using=DENSE_VECTOR,
-        limit=limit,
-        query_filter=query_filter,
-    ).points
-    sparse_points = target.query_points(
-        collection_name=KB_COLLECTION,
-        query=encode_sparse(question),
-        using=SPARSE_VECTOR,
-        limit=limit,
-        query_filter=query_filter,
-    ).points
+       dense_points = target.query_points(
+           collection_name=KB_COLLECTION,
+           query=dense_vector,
+           using=DENSE_VECTOR,
+           limit=limit,
+           query_filter=query_filter,
+         ).points
+       sparse_points = target.query_points(
+           collection_name=KB_COLLECTION,
+           query=encode_sparse(question),
+           using=SPARSE_VECTOR,
+           limit=limit,
+           query_filter=query_filter,
+         ).points
 
-    hits = rrf_fuse([dense_points, sparse_points])
-    hits = hits[: max(1, int(top_k or KB_TOP_K))]
-    return rerank(question, hits)
+       hits = rrf_fuse([dense_points, sparse_points])
+       hits = hits[:effective_top_k]
+       result = rerank(question, hits)
+       safe_call(record_event,
+           name="kb.retrieval",
+           metadata={**metadata, "hit_count": len(result), "status": "ok"},
+           duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+         )
+       return result
+    except Exception as error:    # 记录后原样抛出，绝不吞、绝不改变异常类型
+       safe_call(record_event,
+           name="kb.retrieval",
+           metadata={**metadata, "status": "error", "error_type": type(error).__name__},
+           duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+         )
+       raise
 
 
 def looks_like_citation_query(question: str) -> bool:
@@ -165,8 +195,28 @@ def reranker_available() -> bool:
 
 def rerank(question: str, hits: List[Hit], model: Optional[str] = None) -> List[Hit]:
     """生成式重排；任何异常都降级为原顺序返回。"""
+    started_at = time.perf_counter()
     name = model or RERANKER_MODEL
-    if not name or len(hits) <= 1:
+    enabled = bool(name)
+    if not name:
+        _record_rerank_event(
+            status="disabled",
+            input_count=len(hits),
+            output_count=len(hits),
+            enabled=enabled,
+            degraded_reason="model_not_configured",
+            started_at=started_at,
+        )
+        return hits
+    if len(hits) <= 1:
+        _record_rerank_event(
+            status="disabled",
+            input_count=len(hits),
+            output_count=len(hits),
+            enabled=enabled,
+            degraded_reason="insufficient_candidates",
+            started_at=started_at,
+        )
         return hits
     try:
         from backend.app.services.ollama import create_chat_model
@@ -181,9 +231,57 @@ def rerank(question: str, hits: List[Hit], model: Optional[str] = None) -> List[
             raw = str(getattr(chat.invoke(prompt), "content", "") or "")
             match = _SCORE_PATTERN.search(raw)
             scored.append((float(match.group()) if match else 0.0, hit))
-        return [hit for _, hit in sorted(scored, key=lambda item: item[0], reverse=True)]
-    except Exception:
+        result = [hit for _, hit in sorted(scored, key=lambda item: item[0], reverse=True)]
+        _record_rerank_event(
+            status="ok",
+            input_count=len(hits),
+            output_count=len(result),
+            enabled=enabled,
+            started_at=started_at,
+        )
+        return result
+    except Exception as error:
+        _record_rerank_event(
+            status="degraded",
+            input_count=len(hits),
+            output_count=len(hits),
+            enabled=enabled,
+            degraded_reason="rerank_exception",
+            error_type=type(error).__name__,
+            started_at=started_at,
+        )
         return hits
+
+
+def _record_rerank_event(
+    *,
+    status: str,
+    input_count: int,
+    output_count: int,
+    enabled: bool,
+    started_at: float,
+    degraded_reason: Optional[str] = None,
+    error_type: Optional[str] = None,
+) -> None:
+    metadata = {
+        "status": status,
+        "input_count": input_count,
+        "output_count": output_count,
+        "enabled": enabled,
+    }
+    if degraded_reason:
+        metadata["degraded_reason"] = degraded_reason
+    if error_type:
+        metadata["error_type"] = error_type
+    try:
+        safe_call(record_event,
+            name="kb.rerank",
+            metadata=metadata,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+        )
+    except Exception:
+        # 观测故障不得改变检索结果或降级语义。
+        return
 
 
 def build_filter(

@@ -19,17 +19,16 @@
 | 04 | 实现直连 Ollama 采集器与埋点封装层 | [task-04](./task-04-ollama-direct.md) | 03 | 完成（events_only 上报已验证） |
 | 05 | 接入聊天与知识库 RAG 链路埋点 | [task-05](./task-05-instrument-chat-kb.md) | 04, 02 | 完成 |
 | 06 | 统计路径 A：原生 Dashboard + numeric score | [task-06](./task-06-stats-native.md) | 05 | 完成 |
-| 07 | 导入 Langfuse 源码并实现 Ollama 专用视图 | [task-07](./task-07-stats-custom-view.md) | 05 | 实施中（查询层、页面、分布、阶段与散点视图完成） |
-| 08 | 评审验收与复盘 | [task-08](./task-08-review-retro.md) | 06, 07 | 待执行 |
+| 07 | 导入 Langfuse 源码并实现 Ollama 专用视图 | [task-07](./task-07-stats-custom-view.md) | 05 | 完成 |
+| 08 | 评审验收与复盘 | [task-08](./task-08-review-retro.md) | 06, 07 | 完成 |
 
 ## 2026-09-03 进度核对结论
 
 - Task 02、03 的任务文档已记录完整执行结果。
 - Task 04 的采集器、埋点封装和真实 Langfuse events_only 上报已完成；旧 `traces/observations` 视图为空不再作为失败条件。
-- Task 05 已完成聊天/KB 接入、`kb.rerank` 事件和故障隔离测试；全量回归为 `322 passed`，仍待一次真实聊天与一次真实 KB 事件证据。
-- Task 05 已完成聊天/KB 接入、`kb.rerank` 事件和故障隔离测试；全量回归为 `322 passed`，并已取得真实聊天/KB 事件证据。
+- Task 05 已完成聊天/KB 接入、`kb.rerank` 事件和故障隔离测试；全量回归为 `330 passed`，并已取得真实聊天/KB 事件证据。
 - Task 06 已补齐固定样本生成器、20 条真实 fixture 和六项 Dashboard 配置；未来事件过滤验证通过。
-- Task 07 已导入 Langfuse v4.27.0 到 `vendor/langfuse/`，完成 Ollama Insights tRPC router、events 字段声明、过滤、页面、阶段时间线、冷/热分布摘要和输入规模散点组件，并已接通输入规模字段；趋势图与完整前端测试仍在开发。
+- Task 07 已导入 Langfuse v4.27.0 到 `vendor/langfuse/`，完成 Ollama Insights tRPC router、events 字段声明、过滤、全量分布摘要、页面、阶段时间线、输入规模散点和默认折叠详情脱敏，并已接通输入规模字段；前端依赖下的类型/组件测试和最终验收仍在进行。
 - Task 08 的三份 013 评审、产品步骤、验收签字、复盘、部署与稳定 commit 均未完成。
 
 ## 回滚

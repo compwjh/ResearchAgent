@@ -16,20 +16,23 @@ export type InputLatencyScatterPoint = {
   inputSize: number;
   inputSizeSource: "input_chars" | "prompt_tokens";
   latencyMs: number;
+  latencyMetric: InputLatencyScatterMetric;
   model: string | null;
   route: string | null;
 };
 
+type InputLatencyScatterDisplayMetric = InputLatencyScatterMetric | "mixed";
+
 export type InputLatencyScatterData = {
   points: InputLatencyScatterPoint[];
-  metric: InputLatencyScatterMetric;
+  metric: InputLatencyScatterDisplayMetric;
   invalidRows: number;
   missingRows: number;
 };
 
 export type InputLatencyScatterProps = {
   rows: readonly InputLatencyScatterRow[];
-  /** Select a y-axis metric, or choose TTFT unless it has no finite values. */
+  /** Select a y-axis metric, or choose TTFT per row with total duration fallback. */
   yMetric?: InputLatencyScatterMetric | "auto";
   className?: string;
   ariaLabel?: string;
@@ -47,6 +50,21 @@ function metricValue(
   return isFiniteNonNegative(value) ? value : null;
 }
 
+function getAutoMetric(row: InputLatencyScatterRow) {
+  if (metricValue(row, "ttft") !== null) return "ttft";
+  if (metricValue(row, "total_ms") !== null) return "total_ms";
+  return null;
+}
+
+function getDisplayMetric(
+  metrics: ReadonlySet<InputLatencyScatterMetric>,
+): InputLatencyScatterDisplayMetric {
+  if (metrics.has("ttft") && metrics.has("total_ms")) return "mixed";
+  if (metrics.has("ttft")) return "ttft";
+  if (metrics.has("total_ms")) return "total_ms";
+  return "total_ms";
+}
+
 /**
  * Keep only finite, non-negative points while preserving zero values.
  * Input character counts take precedence over token counts on each row.
@@ -56,13 +74,16 @@ export function normalizeInputLatencyScatterRows(
   requestedMetric: InputLatencyScatterMetric | "auto" = "auto",
 ): InputLatencyScatterData {
   const safeRows = Array.isArray(rows) ? rows : [];
+  const points: InputLatencyScatterPoint[] = [];
+  const availableMetrics = new Set<InputLatencyScatterMetric>();
+  safeRows.forEach((row) => {
+    const autoMetric = getAutoMetric(row);
+    if (autoMetric) availableMetrics.add(autoMetric);
+  });
   const metric =
     requestedMetric === "auto"
-      ? safeRows.some((row) => metricValue(row, "ttft") !== null)
-        ? "ttft"
-        : "total_ms"
+      ? getDisplayMetric(availableMetrics)
       : requestedMetric;
-  const points: InputLatencyScatterPoint[] = [];
   let invalidRows = 0;
   let missingRows = 0;
 
@@ -77,17 +98,22 @@ export function normalizeInputLatencyScatterRows(
     const inputSizeSource = isFiniteNonNegative(inputChars)
       ? "input_chars"
       : "prompt_tokens";
-    const latencyMs = metricValue(row, metric);
+    const latencyMetric =
+      requestedMetric === "auto" ? getAutoMetric(row) : requestedMetric;
+    const latencyMs = latencyMetric ? metricValue(row, latencyMetric) : null;
 
-    if (inputSize === null || latencyMs === null) {
+    if (inputSize === null || latencyMetric === null || latencyMs === null) {
       const hasInvalidValue =
-        (inputChars !== null && inputChars !== undefined && !isFiniteNonNegative(inputChars)) ||
+        (inputChars !== null &&
+          inputChars !== undefined &&
+          !isFiniteNonNegative(inputChars)) ||
         (promptTokens !== null &&
           promptTokens !== undefined &&
           !isFiniteNonNegative(promptTokens)) ||
-        ((metric === "ttft" ? row.ttft : row.total_ms) !== null &&
-          (metric === "ttft" ? row.ttft : row.total_ms) !== undefined &&
-          latencyMs === null);
+        (latencyMetric === null &&
+          ((row.ttft !== null && row.ttft !== undefined) ||
+            (row.total_ms !== null && row.total_ms !== undefined))) ||
+        (latencyMetric !== null && latencyMs === null);
       if (hasInvalidValue) invalidRows += 1;
       else missingRows += 1;
       return;
@@ -98,10 +124,23 @@ export function normalizeInputLatencyScatterRows(
       inputSize,
       inputSizeSource,
       latencyMs,
+      latencyMetric,
       model: row.model ?? null,
       route: row.route ?? null,
     });
   });
+
+  if (requestedMetric === "auto") {
+    const pointMetrics = new Set(points.map((point) => point.latencyMetric));
+    return {
+      points,
+      metric: getDisplayMetric(
+        pointMetrics.size > 0 ? pointMetrics : availableMetrics,
+      ),
+      invalidRows,
+      missingRows,
+    };
+  }
 
   return { points, metric, invalidRows, missingRows };
 }
@@ -110,8 +149,17 @@ function formatNumber(value: number): string {
   return value === 0 ? "0" : value.toFixed(1);
 }
 
-function metricLabel(metric: InputLatencyScatterMetric): string {
-  return metric === "ttft" ? "TTFT" : "Total duration";
+function metricLabel(metric: InputLatencyScatterDisplayMetric): string {
+  if (metric === "ttft") return "TTFT";
+  if (metric === "total_ms") return "Total duration";
+  return "Latency (TTFT / total duration)";
+}
+
+function metricLegend(metric: InputLatencyScatterDisplayMetric): string {
+  if (metric === "mixed") {
+    return "Y-axis: TTFT when available for a row; total duration otherwise.";
+  }
+  return `Y-axis: ${metricLabel(metric)}.`;
 }
 
 function percentage(value: number, min: number, max: number): number {
@@ -122,13 +170,14 @@ function percentage(value: number, min: number, max: number): number {
 
 function pointDescription(
   point: InputLatencyScatterPoint,
-  metric: InputLatencyScatterMetric,
   index: number,
 ): string {
   const metadata = [point.model, point.route].filter(Boolean).join(", ");
   return `Point ${index + 1}: ${formatNumber(point.inputSize)} ${
-    point.inputSizeSource === "input_chars" ? "input characters" : "prompt tokens"
-  }, ${metricLabel(metric)} ${formatNumber(point.latencyMs)} ms${
+    point.inputSizeSource === "input_chars"
+      ? "input characters"
+      : "prompt tokens"
+  }, ${metricLabel(point.latencyMetric)} ${formatNumber(point.latencyMs)} ms${
     metadata ? ` (${metadata})` : ""
   }`;
 }
@@ -157,6 +206,12 @@ export function InputLatencyScatter({
           {rows.length === 0
             ? "No input latency data available."
             : "No finite input-size and latency points available."}
+        </p>
+        <p
+          className="text-muted-foreground text-xs"
+          data-testid="input-latency-scatter-legend"
+        >
+          {metricLegend(data.metric)}
         </p>
         {rows.length > 0 ? (
           <p
@@ -187,11 +242,19 @@ export function InputLatencyScatter({
       data-y-metric={data.metric}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-medium">Input size vs {metricLabel(data.metric)}</h3>
+        <h3 className="font-medium">
+          Input size vs {metricLabel(data.metric)}
+        </h3>
         <span className="text-muted-foreground text-sm">
           {data.points.length} point{data.points.length === 1 ? "" : "s"}
         </span>
       </div>
+      <p
+        className="text-muted-foreground text-xs"
+        data-testid="input-latency-scatter-legend"
+      >
+        {metricLegend(data.metric)}
+      </p>
 
       <div
         className="bg-muted/30 relative h-48 w-full rounded border"
@@ -208,6 +271,7 @@ export function InputLatencyScatter({
               data-input-size={point.inputSize}
               data-input-size-source={point.inputSizeSource}
               data-latency-ms={point.latencyMs}
+              data-latency-metric={point.latencyMetric}
               style={{
                 left: `${percentage(point.inputSize, minInputSize, maxInputSize)}%`,
                 bottom: `${percentage(point.latencyMs, minLatency, maxLatency)}%`,
@@ -218,7 +282,7 @@ export function InputLatencyScatter({
         <span className="text-muted-foreground absolute bottom-1 left-2 text-[10px]">
           {formatNumber(minInputSize)} input size
         </span>
-        <span className="text-muted-foreground absolute right-2 top-1 text-[10px]">
+        <span className="text-muted-foreground absolute top-1 right-2 text-[10px]">
           {formatNumber(maxLatency)} ms
         </span>
       </div>
@@ -230,7 +294,7 @@ export function InputLatencyScatter({
       >
         {data.points.map((point, index) => (
           <li key={`${point.rowIndex}-description`}>
-            {pointDescription(point, data.metric, index)}
+            {pointDescription(point, index)}
           </li>
         ))}
       </ol>
@@ -241,8 +305,8 @@ export function InputLatencyScatter({
           data-testid="input-latency-scatter-omitted"
         >
           {data.invalidRows + data.missingRows} row
-          {data.invalidRows + data.missingRows === 1 ? "" : "s"} omitted because its
-          input size or latency was unavailable or invalid.
+          {data.invalidRows + data.missingRows === 1 ? "" : "s"} omitted because
+          its input size or latency was unavailable or invalid.
         </p>
       ) : null}
     </section>

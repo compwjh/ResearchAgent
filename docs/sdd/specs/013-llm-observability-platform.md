@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：`已确认`**
+**当前状态：`已完成`**
 
 > 本 spec 涉及**重建 Python 虚拟环境**与**在本机常驻 4 个基础设施服务**，风险面显著大于常规功能开发。
 > 因此 spec 中固化了「回滚点」与分阶段 Go/No-Go 关卡。
@@ -189,7 +189,7 @@ trace (root observation)
 | 04 | 实现直连 Ollama 采集器与埋点封装层 | [`task-04-ollama-direct.md`](../plans/013/task-04-ollama-direct.md) | 03 | 完成（events_only 上报已验证） |
 | 05 | 接入聊天与知识库 RAG 链路埋点 | [`task-05-instrument-chat-kb.md`](../plans/013/task-05-instrument-chat-kb.md) | 04, 02 | 完成 |
 | 06 | 统计路径 A：原生 Dashboard + numeric score | [`task-06-stats-native.md`](../plans/013/task-06-stats-native.md) | 05 | 完成 |
-| 07 | 导入 Langfuse 源码并实现 Ollama 专用视图 | [`task-07-stats-custom-view.md`](../plans/013/task-07-stats-custom-view.md) | 05 | 实施中（查询层、页面、分布、阶段与散点视图完成） |
+| 07 | 导入 Langfuse 源码并实现 Ollama 专用视图 | [`task-07-stats-custom-view.md`](../plans/013/task-07-stats-custom-view.md) | 05 | 实施中（查询层、页面、分布、阶段、散点与默认折叠详情完成；待前端构建与验收） |
 | 08 | 评审验收与复盘 | [`task-08-review-retro.md`](../plans/013/task-08-review-retro.md) | 06, 07 | 待执行 |
 
 ## 评审记录

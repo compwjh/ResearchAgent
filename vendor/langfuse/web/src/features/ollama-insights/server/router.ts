@@ -7,26 +7,37 @@ import {
   protectedProjectProcedure,
 } from "@/src/server/api/trpc";
 
-const OllamaInsightsListInput = z
-  .object({
-    projectId: z.string(),
-    from: z.coerce.date(),
-    to: z.coerce.date(),
-    model: z.string().trim().min(1).optional(),
-    route: z.string().trim().min(1).optional(),
-    chainType: z.string().trim().min(1).optional(),
-    success: z.boolean().optional(),
-    limit: z.coerce.number().int().positive().lte(100).default(100),
-  })
-  .refine((input) => input.from < input.to, {
+export const OllamaInsightsFilterInput = z.object({
+  projectId: z.string(),
+  from: z.coerce.date(),
+  to: z.coerce.date(),
+  model: z.string().trim().min(1).optional(),
+  route: z.string().trim().min(1).optional(),
+  chainType: z.string().trim().min(1).optional(),
+  success: z.boolean().optional(),
+});
+
+export const OllamaInsightsListInput = OllamaInsightsFilterInput.extend({
+  limit: z.coerce.number().int().positive().lte(100).default(100),
+}).refine((input) => input.from < input.to, {
+  message: "from must be before to",
+  path: ["from"],
+});
+
+export const OllamaInsightsSummaryInput = OllamaInsightsFilterInput.refine(
+  (input) => input.from < input.to,
+  {
     message: "from must be before to",
     path: ["from"],
-  });
+  },
+);
 
 type OllamaInsightsRow = {
   id: string;
+  traceId: string | null;
   name: string;
   timestamp: string | null;
+  startTime: string | null;
   model: string | null;
   route: string | null;
   chainType: string | null;
@@ -46,7 +57,7 @@ type OllamaInsightsRow = {
 const toNumberOrNull = (value: unknown): number | null => {
   if (value === null || value === undefined || value === "") return null;
   const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : null;
+  return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : null;
 };
 
 const toStringOrNull = (value: unknown): string | null => {
@@ -64,12 +75,14 @@ const toBooleanOrNull = (value: unknown): boolean | null => {
   return numberValue === null ? null : numberValue !== 0;
 };
 
-const effectiveTo = (input: z.infer<typeof OllamaInsightsListInput>): Date => {
+type OllamaInsightsFilter = z.infer<typeof OllamaInsightsFilterInput>;
+
+export const effectiveTo = (input: OllamaInsightsFilter): Date => {
   const now = new Date();
   return input.to < now ? input.to : now;
 };
 
-const buildFilters = (input: z.infer<typeof OllamaInsightsListInput>) => {
+export const buildFilters = (input: OllamaInsightsFilter) => {
   const to = effectiveTo(input);
   if (input.from >= to) {
     throw new TRPCError({
@@ -128,13 +141,14 @@ const buildFilters = (input: z.infer<typeof OllamaInsightsListInput>) => {
   return filters;
 };
 
-const buildObservationQuery = (
-  input: z.infer<typeof OllamaInsightsListInput>,
+export const buildObservationQuery = (
+  input: OllamaInsightsFilter & { limit: number },
   filters: QueryType["filters"],
 ): QueryType => ({
   view: "observations",
   dimensions: [
     { field: "id" },
+    { field: "traceId" },
     { field: "name" },
     { field: "timestamp" },
     { field: "startTime" },
@@ -166,6 +180,34 @@ const buildObservationQuery = (
   chartConfig: { type: "TABLE", row_limit: input.limit },
 });
 
+export const buildSummaryQuery = (
+  input: OllamaInsightsFilter,
+  filters: QueryType["filters"],
+): QueryType => ({
+  view: "observations",
+  dimensions: [
+    { field: "providedModelName" },
+    { field: "route" },
+    { field: "chainType" },
+    { field: "isColdStart" },
+  ],
+  metrics: [
+    { measure: "count", aggregation: "sum" },
+    { measure: "ttft", aggregation: "p50" },
+    { measure: "ttft", aggregation: "p95" },
+    { measure: "ttft", aggregation: "p99" },
+    { measure: "load", aggregation: "p50" },
+    { measure: "load", aggregation: "p95" },
+    { measure: "load", aggregation: "p99" },
+    { measure: "tokens_per_sec", aggregation: "avg" },
+  ],
+  filters,
+  timeDimension: null,
+  fromTimestamp: input.from.toISOString(),
+  toTimestamp: effectiveTo(input).toISOString(),
+  orderBy: null,
+});
+
 const buildCountQuery = (
   input: z.infer<typeof OllamaInsightsListInput>,
   filters: QueryType["filters"],
@@ -182,8 +224,10 @@ const buildCountQuery = (
 
 const mapRow = (row: Record<string, unknown>): OllamaInsightsRow => ({
   id: String(row.id ?? ""),
+  traceId: toStringOrNull(row.traceId),
   name: String(row.name ?? ""),
   timestamp: toStringOrNull(row.timestamp ?? row.startTime),
+  startTime: toStringOrNull(row.startTime),
   model: toStringOrNull(row.providedModelName),
   route: toStringOrNull(row.route),
   chainType: toStringOrNull(row.chainType),
@@ -200,13 +244,49 @@ const mapRow = (row: Record<string, unknown>): OllamaInsightsRow => ({
   total_ms: toNumberOrNull(row.avg_total_ms),
 });
 
+type OllamaInsightsSummaryRow = {
+  model: string | null;
+  route: string | null;
+  chainType: string | null;
+  isColdStart: boolean | null;
+  count: number;
+  ttft_p50: number | null;
+  ttft_p95: number | null;
+  ttft_p99: number | null;
+  load_p50: number | null;
+  load_p95: number | null;
+  load_p99: number | null;
+  tokens_per_sec_avg: number | null;
+};
+
+const mapSummaryRow = (
+  row: Record<string, unknown>,
+): OllamaInsightsSummaryRow => ({
+  model: toStringOrNull(row.providedModelName),
+  route: toStringOrNull(row.route),
+  chainType: toStringOrNull(row.chainType),
+  isColdStart: toBooleanOrNull(row.isColdStart),
+  count: toNumberOrNull(row.sum_count) ?? 0,
+  ttft_p50: toNumberOrNull(row.p50_ttft),
+  ttft_p95: toNumberOrNull(row.p95_ttft),
+  ttft_p99: toNumberOrNull(row.p99_ttft),
+  load_p50: toNumberOrNull(row.p50_load),
+  load_p95: toNumberOrNull(row.p95_load),
+  load_p99: toNumberOrNull(row.p99_load),
+  tokens_per_sec_avg: toNumberOrNull(row.avg_tokens_per_sec),
+});
+
 export const ollamaInsightsRouter = createTRPCRouter({
   list: protectedProjectProcedure
     .input(OllamaInsightsListInput)
     .query(async ({ input }) => {
       const filters = buildFilters(input);
       const [rows, countRows] = await Promise.all([
-        executeQuery(input.projectId, buildObservationQuery(input, filters), "v2"),
+        executeQuery(
+          input.projectId,
+          buildObservationQuery(input, filters),
+          "v2",
+        ),
         executeQuery(input.projectId, buildCountQuery(input, filters), "v2"),
       ]);
 
@@ -214,5 +294,17 @@ export const ollamaInsightsRouter = createTRPCRouter({
         rows: rows.map(mapRow),
         total: toNumberOrNull(countRows[0]?.sum_count) ?? 0,
       };
+    }),
+  summary: protectedProjectProcedure
+    .input(OllamaInsightsSummaryInput)
+    .query(async ({ input }) => {
+      const filters = buildFilters(input);
+      const rows = await executeQuery(
+        input.projectId,
+        buildSummaryQuery(input, filters),
+        "v2",
+      );
+
+      return rows.map(mapSummaryRow);
     }),
 });

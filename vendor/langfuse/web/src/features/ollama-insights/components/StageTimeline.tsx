@@ -57,7 +57,10 @@ function stageValue(stage: StageTimelineStage): number | null | undefined {
   );
 }
 
-function normalizeStage(stage: StageTimelineStage, index: number): NormalizedStage {
+function normalizeStage(
+  stage: StageTimelineStage,
+  index: number,
+): NormalizedStage {
   const key = stageKey(stage, index);
   const rawValue = stageValue(stage);
   const label = stage.label ?? STAGE_LABELS[key] ?? key;
@@ -122,10 +125,14 @@ export function StageTimeline({
               className="h-full shrink-0"
               data-testid="stage-timeline-segment"
               data-stage={stage.key}
-              data-status={stage.status === "available" ? undefined : stage.status}
+              data-status={
+                stage.status === "available" ? undefined : stage.status
+              }
               role="img"
               aria-label={`${stage.label}: ${
-                stage.value === null ? "missing" : formatStageDuration(stage.value)
+                stage.value === null
+                  ? "missing"
+                  : formatStageDuration(stage.value)
               }`}
               style={{ width: `${widthPercent}%` }}
             />
@@ -133,14 +140,19 @@ export function StageTimeline({
         })}
       </div>
 
-      <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2" data-testid="stage-timeline-legend">
+      <div
+        className="grid gap-x-4 gap-y-1 sm:grid-cols-2"
+        data-testid="stage-timeline-legend"
+      >
         {normalizedStages.map((stage, index) => (
           <div
             key={`${stage.key}-legend-${index}`}
             className="flex items-center justify-between gap-2 text-xs"
             data-testid="stage-timeline-label"
             data-stage={stage.key}
-            data-status={stage.status === "available" ? undefined : stage.status}
+            data-status={
+              stage.status === "available" ? undefined : stage.status
+            }
           >
             <span className="text-muted-foreground">{stage.label}</span>
             <span className="tabular-nums">

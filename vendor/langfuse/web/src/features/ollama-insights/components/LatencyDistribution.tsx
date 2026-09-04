@@ -8,7 +8,22 @@ export type LatencyDistributionRow = {
   route?: string | null;
 };
 
-export type LatencyDistributionGroupKey = "cold" | "hot";
+export type LatencyDistributionAggregate = {
+  model: string | null;
+  route: string | null;
+  chainType: string | null;
+  isColdStart: boolean | null;
+  count: number;
+  ttft_p50: number | null;
+  ttft_p95: number | null;
+  ttft_p99: number | null;
+  load_p50: number | null;
+  load_p95: number | null;
+  load_p99: number | null;
+  tokens_per_sec_avg: number | null;
+};
+
+export type LatencyDistributionGroupKey = "cold" | "hot" | "unknown";
 
 export type LatencyDistributionGroup = {
   key: LatencyDistributionGroupKey;
@@ -30,6 +45,7 @@ export type LatencyDistributionSummary = {
 
 export type LatencyDistributionProps = {
   rows: readonly LatencyDistributionRow[];
+  aggregates?: readonly LatencyDistributionAggregate[];
   className?: string;
   ariaLabel?: string;
 };
@@ -37,9 +53,12 @@ export type LatencyDistributionProps = {
 const GROUP_LABELS: Record<LatencyDistributionGroupKey, string> = {
   cold: "Cold starts",
   hot: "Hot starts",
+  unknown: "Unknown cold/hot classification",
 };
 
-const emptyGroup = (key: LatencyDistributionGroupKey): LatencyDistributionGroup => ({
+const emptyGroup = (
+  key: LatencyDistributionGroupKey,
+): LatencyDistributionGroup => ({
   key,
   label: GROUP_LABELS[key],
   count: 0,
@@ -65,20 +84,23 @@ export function calculatePercentile(
   const sorted = [...values].sort((a, b) => a - b);
   if (sorted.length === 1) return sorted[0];
 
-  const rank = Math.max(0, Math.min(percentile, 100)) / 100 * (sorted.length - 1);
+  const rank =
+    (Math.max(0, Math.min(percentile, 100)) / 100) * (sorted.length - 1);
   const lowerIndex = Math.floor(rank);
   const upperIndex = Math.ceil(rank);
   if (lowerIndex === upperIndex) return sorted[lowerIndex];
 
   const weight = rank - lowerIndex;
-  return (
-    sorted[lowerIndex] * (1 - weight) + sorted[upperIndex] * weight
-  );
+  return sorted[lowerIndex] * (1 - weight) + sorted[upperIndex] * weight;
 }
 function summarizeGroup(
   key: LatencyDistributionGroupKey,
   rows: readonly LatencyDistributionRow[],
-): { group: LatencyDistributionGroup; invalidTtftCount: number; invalidThroughputCount: number } {
+): {
+  group: LatencyDistributionGroup;
+  invalidTtftCount: number;
+  invalidThroughputCount: number;
+} {
   const ttftValues: number[] = [];
   const throughputValues: number[] = [];
   let invalidTtftCount = 0;
@@ -123,6 +145,99 @@ function summarizeGroup(
   };
 }
 
+export type LatencyDistributionAggregateGroup = {
+  key: LatencyDistributionGroupKey;
+  label: string;
+  model: string | null;
+  route: string | null;
+  chainType: string | null;
+  count: number;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  loadP50: number | null;
+  loadP95: number | null;
+  loadP99: number | null;
+  averageTokensPerSecond: number | null;
+  invalidMetricCount: number;
+};
+
+function validCount(value: unknown): { value: number; invalid: boolean } {
+  if (value === null || value === undefined)
+    return { value: 0, invalid: false };
+  const count = validNonNegativeNumber(value);
+  return count === null
+    ? { value: 0, invalid: true }
+    : { value: Math.floor(count), invalid: false };
+}
+
+function normalizeDimension(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function normalizedMetric(value: unknown): {
+  value: number | null;
+  invalid: boolean;
+} {
+  if (value === null || value === undefined)
+    return { value: null, invalid: false };
+  const metric = validNonNegativeNumber(value);
+  return { value: metric, invalid: metric === null };
+}
+
+function aggregateKey(
+  isColdStart: boolean | null,
+): LatencyDistributionGroupKey {
+  return isColdStart === true
+    ? "cold"
+    : isColdStart === false
+      ? "hot"
+      : "unknown";
+}
+
+export function summarizeLatencyAggregates(
+  aggregates: readonly LatencyDistributionAggregate[],
+): LatencyDistributionAggregateGroup[] {
+  return aggregates.map((aggregate) => {
+    const count = validCount(aggregate.count);
+    const ttftP50 = normalizedMetric(aggregate.ttft_p50);
+    const ttftP95 = normalizedMetric(aggregate.ttft_p95);
+    const ttftP99 = normalizedMetric(aggregate.ttft_p99);
+    const loadP50 = normalizedMetric(aggregate.load_p50);
+    const loadP95 = normalizedMetric(aggregate.load_p95);
+    const loadP99 = normalizedMetric(aggregate.load_p99);
+    const throughput = normalizedMetric(aggregate.tokens_per_sec_avg);
+    const invalidMetricCount = [
+      count,
+      ttftP50,
+      ttftP95,
+      ttftP99,
+      loadP50,
+      loadP95,
+      loadP99,
+      throughput,
+    ].filter((metric) => metric.invalid).length;
+    const key = aggregateKey(aggregate.isColdStart);
+
+    return {
+      key,
+      label: GROUP_LABELS[key],
+      model: normalizeDimension(aggregate.model),
+      route: normalizeDimension(aggregate.route),
+      chainType: normalizeDimension(aggregate.chainType),
+      count: count.value,
+      p50: ttftP50.value,
+      p95: ttftP95.value,
+      p99: ttftP99.value,
+      loadP50: loadP50.value,
+      loadP95: loadP95.value,
+      loadP99: loadP99.value,
+      averageTokensPerSecond: throughput.value,
+      invalidMetricCount,
+    };
+  });
+}
+
 export function summarizeLatencyDistribution(
   rows: readonly LatencyDistributionRow[],
 ): LatencyDistributionSummary {
@@ -154,6 +269,10 @@ function formatMilliseconds(value: number | null): string {
 
 function formatThroughput(value: number | null): string {
   return value === null ? "—" : `${value.toFixed(2)} tokens/s`;
+}
+
+function formatDimension(value: string | null): string {
+  return value ?? "Unknown";
 }
 
 function DistributionMetric({
@@ -190,22 +309,28 @@ function DistributionMetric({
 function GroupSummary({
   group,
   maxP99,
+  headingId,
 }: {
   group: LatencyDistributionGroup;
   maxP99: number;
+  headingId?: string;
 }) {
+  const id = headingId ?? `latency-distribution-${group.key}`;
   return (
     <section
       className="rounded-md border p-4"
       data-testid="latency-distribution-group"
       data-group={group.key}
-      aria-labelledby={`latency-distribution-${group.key}`}
+      aria-labelledby={id}
     >
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 id={`latency-distribution-${group.key}`} className="font-medium">
+        <h3 id={id} className="font-medium">
           {group.label}
         </h3>
-        <span className="text-muted-foreground text-sm" data-testid="latency-distribution-count">
+        <span
+          className="text-muted-foreground text-sm"
+          data-testid="latency-distribution-count"
+        >
           Count: {group.count}
         </span>
       </div>
@@ -228,18 +353,150 @@ function GroupSummary({
           maxValue={maxP99}
           formatter={formatMilliseconds}
         />
-        <div className="flex items-center justify-between gap-2 text-xs" data-testid="latency-distribution-throughput">
+        <div
+          className="flex items-center justify-between gap-2 text-xs"
+          data-testid="latency-distribution-throughput"
+        >
           <dt className="text-muted-foreground">Average throughput</dt>
-          <dd className="tabular-nums">{formatThroughput(group.averageTokensPerSecond)}</dd>
+          <dd className="tabular-nums">
+            {formatThroughput(group.averageTokensPerSecond)}
+          </dd>
         </div>
       </dl>
       {group.count > 0 && group.p50 === null ? (
-        <p className="text-muted-foreground mt-3 text-xs" data-testid="latency-distribution-missing-ttft">
+        <p
+          className="text-muted-foreground mt-3 text-xs"
+          data-testid="latency-distribution-missing-ttft"
+        >
           TTFT data unavailable for this group.
         </p>
       ) : null}
       {group.count > 0 && group.averageTokensPerSecond === null ? (
-        <p className="text-muted-foreground mt-1 text-xs" data-testid="latency-distribution-missing-throughput">
+        <p
+          className="text-muted-foreground mt-1 text-xs"
+          data-testid="latency-distribution-missing-throughput"
+        >
+          Throughput data unavailable for this group.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function AggregateGroupSummary({
+  group,
+  maxP99,
+  maxLoadP99,
+  index,
+}: {
+  group: LatencyDistributionAggregateGroup;
+  maxP99: number;
+  maxLoadP99: number;
+  index: number;
+}) {
+  return (
+    <section
+      className="rounded-md border p-4"
+      data-testid="latency-distribution-group"
+      data-aggregate-group="true"
+      data-group={group.key}
+      data-model={group.model ?? "unknown"}
+      data-route={group.route ?? "unknown"}
+      data-chain-type={group.chainType ?? "unknown"}
+      aria-labelledby={`latency-distribution-aggregate-${index}`}
+    >
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <div>
+          <h3
+            id={`latency-distribution-aggregate-${index}`}
+            className="font-medium"
+          >
+            {group.label}
+          </h3>
+          <p
+            className="text-muted-foreground text-xs"
+            data-testid="latency-distribution-dimensions"
+          >
+            Model: {formatDimension(group.model)} · Route:{" "}
+            {formatDimension(group.route)} · Chain type:{" "}
+            {formatDimension(group.chainType)}
+          </p>
+        </div>
+        <span
+          className="text-muted-foreground text-sm"
+          data-testid="latency-distribution-count"
+        >
+          Count: {group.count}
+        </span>
+      </div>
+      <dl className="space-y-3">
+        <DistributionMetric
+          label="P50 TTFT"
+          value={group.p50}
+          maxValue={maxP99}
+          formatter={formatMilliseconds}
+        />
+        <DistributionMetric
+          label="P95 TTFT"
+          value={group.p95}
+          maxValue={maxP99}
+          formatter={formatMilliseconds}
+        />
+        <DistributionMetric
+          label="P99 TTFT"
+          value={group.p99}
+          maxValue={maxP99}
+          formatter={formatMilliseconds}
+        />
+        <DistributionMetric
+          label="P50 Load"
+          value={group.loadP50}
+          maxValue={maxLoadP99}
+          formatter={formatMilliseconds}
+        />
+        <DistributionMetric
+          label="P95 Load"
+          value={group.loadP95}
+          maxValue={maxLoadP99}
+          formatter={formatMilliseconds}
+        />
+        <DistributionMetric
+          label="P99 Load"
+          value={group.loadP99}
+          maxValue={maxLoadP99}
+          formatter={formatMilliseconds}
+        />
+        <div
+          className="flex items-center justify-between gap-2 text-xs"
+          data-testid="latency-distribution-throughput"
+        >
+          <dt className="text-muted-foreground">Average throughput</dt>
+          <dd className="tabular-nums">
+            {formatThroughput(group.averageTokensPerSecond)}
+          </dd>
+        </div>
+      </dl>
+      {group.count > 0 && group.p50 === null ? (
+        <p
+          className="text-muted-foreground mt-3 text-xs"
+          data-testid="latency-distribution-missing-ttft"
+        >
+          TTFT data unavailable for this group.
+        </p>
+      ) : null}
+      {group.count > 0 && group.loadP50 === null ? (
+        <p
+          className="text-muted-foreground mt-1 text-xs"
+          data-testid="latency-distribution-missing-load"
+        >
+          Load data unavailable for this group.
+        </p>
+      ) : null}
+      {group.count > 0 && group.averageTokensPerSecond === null ? (
+        <p
+          className="text-muted-foreground mt-1 text-xs"
+          data-testid="latency-distribution-missing-throughput"
+        >
           Throughput data unavailable for this group.
         </p>
       ) : null}
@@ -249,32 +506,106 @@ function GroupSummary({
 
 export function LatencyDistribution({
   rows,
+  aggregates,
   className,
   ariaLabel = "Ollama latency distribution",
 }: LatencyDistributionProps) {
   const summary = summarizeLatencyDistribution(rows);
-  const maxP99 = Math.max(summary.cold.p99 ?? 0, summary.hot.p99 ?? 0);
+  const aggregateMode = aggregates !== undefined;
+  const aggregateGroups = aggregateMode
+    ? summarizeLatencyAggregates(aggregates)
+    : [];
+  const groups = aggregateMode ? aggregateGroups : [summary.cold, summary.hot];
+  const maxP99 = Math.max(...groups.map((group) => group.p99 ?? 0), 0);
+  const maxLoadP99 = Math.max(
+    ...aggregateGroups.map((group) => group.loadP99 ?? 0),
+    0,
+  );
   const classNames = className ? `space-y-3 ${className}` : "space-y-3";
 
   return (
-    <div className={classNames} data-testid="latency-distribution" role="group" aria-label={ariaLabel}>
-      <div className="grid gap-3 md:grid-cols-2">
-        <GroupSummary group={summary.cold} maxP99={maxP99} />
-        <GroupSummary group={summary.hot} maxP99={maxP99} />
-      </div>
-      {rows.length === 0 ? (
-        <p className="text-muted-foreground rounded-md border p-4 text-sm" data-testid="latency-distribution-empty" role="status">
+    <div
+      className={classNames}
+      data-testid="latency-distribution"
+      role="group"
+      aria-label={ariaLabel}
+    >
+      {aggregateMode ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          {aggregateGroups.map((group, index) => (
+            <AggregateGroupSummary
+              key={`${group.model ?? "unknown"}-${group.route ?? "unknown"}-${group.chainType ?? "unknown"}-${group.key}-${index}`}
+              group={group}
+              maxP99={maxP99}
+              maxLoadP99={maxLoadP99}
+              index={index}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          <GroupSummary group={summary.cold} maxP99={maxP99} />
+          <GroupSummary group={summary.hot} maxP99={maxP99} />
+        </div>
+      )}
+      {aggregateMode && aggregates.length === 0 ? (
+        <p
+          className="text-muted-foreground rounded-md border p-4 text-sm"
+          data-testid="latency-distribution-empty"
+          role="status"
+        >
+          No latency distribution aggregates available.
+        </p>
+      ) : null}
+      {!aggregateMode && rows.length === 0 ? (
+        <p
+          className="text-muted-foreground rounded-md border p-4 text-sm"
+          data-testid="latency-distribution-empty"
+          role="status"
+        >
           No latency distribution data available.
         </p>
       ) : null}
-      {summary.unknownCount > 0 ? (
-        <p className="text-muted-foreground text-xs" data-testid="latency-distribution-missing-group" role="status">
-          {summary.unknownCount} row{summary.unknownCount === 1 ? "" : "s"} omitted because cold/hot classification is unavailable.
+      {aggregateMode &&
+      aggregateGroups.some((group) => group.key === "unknown") ? (
+        <p
+          className="text-muted-foreground text-xs"
+          data-testid="latency-distribution-missing-group"
+          role="status"
+        >
+          One or more aggregate groups have no cold/hot classification.
         </p>
       ) : null}
-      {summary.invalidTtftCount > 0 || summary.invalidThroughputCount > 0 ? (
-        <p className="text-muted-foreground text-xs" data-testid="latency-distribution-invalid" role="status">
-          Invalid negative or non-finite metric values were excluded from the summary.
+      {!aggregateMode && summary.unknownCount > 0 ? (
+        <p
+          className="text-muted-foreground text-xs"
+          data-testid="latency-distribution-missing-group"
+          role="status"
+        >
+          {summary.unknownCount} row{summary.unknownCount === 1 ? "" : "s"}{" "}
+          omitted because cold/hot classification is unavailable.
+        </p>
+      ) : null}
+      {aggregateMode &&
+      aggregateGroups.some((group) => group.invalidMetricCount > 0) ? (
+        <p
+          className="text-muted-foreground text-xs"
+          data-testid="latency-distribution-invalid"
+          role="status"
+        >
+          Invalid negative or non-finite aggregate metric values were excluded
+          from the summary.
+        </p>
+      ) : null}
+      {!aggregateMode &&
+      (summary.invalidTtftCount > 0 || summary.invalidThroughputCount > 0) ? (
+        <p
+          className="text-muted-foreground text-xs"
+          data-testid="latency-distribution-invalid"
+          role="status"
+        >
+          Invalid negative or non-finite metric values were excluded from the
+          summary.
         </p>
       ) : null}
     </div>

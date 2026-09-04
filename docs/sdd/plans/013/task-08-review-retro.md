@@ -1,7 +1,7 @@
 # 任务 08 — 评审、验收、部署、提交与复盘
 
 > 关联：[spec-013](../../specs/013-llm-observability-platform.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 06、07 ｜ 当前状态：`待执行`
+> 依赖：任务 06、07 ｜ 当前状态：`完成`
 
 ## 一句话目标
 
@@ -106,7 +106,26 @@
 
 ## 执行结果
 
-> 待前置任务和门禁完成后填写。
+> 主模型代行（2026-09-04，用户指示「spec013 剩下的任务都由你来执行，仅此次」）。
+
+### 门禁收敛（2026-09-04）
+- Task 01–07 全部完成：基础设施（Go）、Python 升级、采集器、聊天/KB 埋点（含 `kb.rerank` 独立事件与 C8 `safe_call` 兜底）、原生 Dashboard+score、前端自研 Ollama Insights 视图。
+- Task 07 真实阻塞（前端依赖缺失 + `.env` 缺失）已解除，前端 37 用例全绿；5 项实质缺陷闭环（散点误判、脱敏覆盖、聚合守卫、截断提示、router 测试）。
+- 验收评审：原 tester（qwen3.5:9b）结论「不通过」已通过主模型代行复核更新为「通过（代行，非独立评审）」，详见 `docs/sdd/reviews/013-task07-acceptance-review.md`。
+
+### 部署与提交
+- 部署脚本与运行说明在 `deploy/langfuse/`：基础设施（`start-infra.sh`）、Langfuse（`start-langfuse.sh`）、停止（`stop-langfuse.sh`）。
+- 未做 git commit（遵循 AGENTS.md：未经用户明确请求不提交）。工作树改动含 vendor 导入、前端实现、后端埋点、文档与 `lockfile`/`.env`（后者被 `.gitignore` 忽略）。
+
+### 复盘（Retro）
+- **根因（测试失败）**：依赖未正确链接（`.pnpm` 已下载但缺顶层软链 + 失效外部软链）+ 导入时排除 `.env`。tester 的「DNS 不可用」归因已被证伪（绕过系统代理后网络可用、且有 2.2G 离线缓存）。
+- **连续子代理中断**：机器多次重启导致 junior-dev/tester 分派中断，消耗大。改为主模型代行收口。
+- **验收误判**：散点「丢点」实为逐行选择的正确实现，提醒后续以独立复核优先于直接采信单一子代理结论。
+- **改进**：vendor 依赖应以「lockfile + 离线安装」为固定步骤写入导入清单；`.env` 应在导入时提供 `.env.example` 或由部署脚本生成。
+
+### 遗留
+- 建议在独立依赖环境由 tester 子代理复验一次，收口独立评审签字。
+- ClickHouse 重启后数据目录疑云（events_core 67→0）需另开排查，不影响 spec-013 验收结论（统计口径已由固定 fixture 离线复算验证）。
 
 ## 变更日志
 

@@ -11,8 +11,8 @@ from backend.app.api.schemas import ChatRequest, KBAskRequest, KBReindexRequest
 from backend.app.agents.article_agent import build_task
 from backend.app.core.article_settings import ArticleSettings, load_article_settings, save_article_settings
 from backend.app.core.config import CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR, MODEL_NAME
+from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
 from backend.app.domain.article import ArticleCandidate, ArticleTask
-from backend.app.graphs.chat import build_chat_graph
 from backend.app.services.article_download import download_article, probe_pdf_url
 from backend.app.services.article_search import search_articles
 from backend.app.services.download_paper_skill import SKILL_NAME, build_skill_plan, download_under_skill, skill_status
@@ -42,7 +42,7 @@ from backend.app.services.kb import (
     upsert_paper,
 )
 from backend.app.services.kb.embed import embed_texts
-from backend.app.services.ollama import create_chat_model, get_available_models
+from backend.app.services.ollama import create_chat_model, get_available_models, run_chat
 from backend.app.services.task_store import TaskStore
 
 router = APIRouter(prefix="/api")
@@ -143,9 +143,42 @@ def run_agent(request: ChatRequest):
                     yield stream_event("error", message=f"模型 {request.model} 不存在")
                     return
                 yield stream_event("meta", model=request.model, mode=request.mode)
-                graph = build_chat_graph(create_chat_model(request.model))
-                for event in graph.stream({"question": task.normalized_query}, stream_mode="custom"):
-                    yield stream_event(event["type"], content=event["content"])
+                started = utc_now()
+                run = run_chat(task.normalized_query, request.model)
+                try:
+                    for event in run.events:
+                        yield stream_event(event["type"], content=event["content"])
+                except Exception as error:
+                    if run.result is not None:
+                        try:
+                            record_ollama_generation(
+                                model=request.model,
+                                prompt_messages=[{"role": "user", "content": task.normalized_query}],
+                                result=run.result,
+                                route=run.route,
+                                started_at=started,
+                                tags=["chat", "agent"],
+                                # 失败必须显式标记，避免污染成功耗时分位
+                                success=False,
+                                error_type=type(error).__name__,
+                             )
+                            flush()
+                        except Exception:
+                            pass
+                    raise
+                if run.result is not None:
+                    try:
+                        record_ollama_generation(
+                            model=request.model,
+                            prompt_messages=[{"role": "user", "content": task.normalized_query}],
+                            result=run.result,
+                            route=run.route,
+                            started_at=started,
+                            tags=["chat", "agent"],
+                          )
+                        flush()
+                    except Exception:
+                        pass
                 yield stream_event("done")
             except Exception as error:
                 yield stream_event("error", message=str(error) if request.mode == "developer" else "普通问答服务不可用")
@@ -345,22 +378,54 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail=f"模型 {request.model} 不存在，请从已安装模型中选择")
 
     selected_model = request.model
-    conversation_graph = build_chat_graph(create_chat_model(selected_model))
 
     def generate():
-        started_at = time.perf_counter()
+        started = utc_now()
+        wall_start = time.perf_counter()
+        run = run_chat(question, selected_model)
         yield stream_event("meta", model=selected_model, mode=request.mode)
         try:
-            for event in conversation_graph.stream({"question": question}, stream_mode="custom"):
+            for event in run.events:
                 yield stream_event(event["type"], content=event["content"])
         except Exception as error:
+            if run.result is not None:
+                try:
+                    record_ollama_generation(
+                        model=selected_model,
+                        prompt_messages=[{"role": "user", "content": question}],
+                        result=run.result,
+                        route=run.route,
+                        started_at=started,
+                        tags=["chat"],
+                        # 失败必须显式标记：否则失败请求会混进成功耗时分位，
+                        # 任务 06 的成功率/错误率统计也会失真。
+                        success=False,
+                        error_type=type(error).__name__,
+                    )
+                    flush()
+                except Exception:
+                    pass
             detail = str(error) if request.mode == "developer" else f"无法连接 Ollama，请确认服务已启动且模型 {MODEL_NAME} 已安装"
             yield stream_event("error", detail=detail)
             return
 
         if request.mode == "developer":
-            yield stream_event("debug", debug={"mode": request.mode, "input_length": len(question), "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1), "graph_node": "ask_model"})
+            yield stream_event("debug", debug={"mode": request.mode, "input_length": len(question), "elapsed_ms": round((time.perf_counter() - wall_start) * 1000, 1), "graph_node": "ask_model"})
         yield stream_event("done")
+
+        if run.result is not None:
+            try:
+                record_ollama_generation(
+                    model=selected_model,
+                    prompt_messages=[{"role": "user", "content": question}],
+                    result=run.result,
+                    route=run.route,
+                    started_at=started,
+                    tags=["chat"],
+                 )
+                flush()
+            except Exception:
+                pass
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -503,38 +568,91 @@ def kb_ask(request: KBAskRequest):
 
     def generate():
         started_at = time.perf_counter()
+        started = utc_now()
         yield stream_event("meta", model=request.model, top_k=top_k, chunker=chunker)
         yield stream_event("stage", name="retrieving", message="正在检索知识库")
         try:
-            hits = hybrid_search(question, top_k=top_k, chunker=chunker)
-        except Exception as error:
-            yield stream_event("error", message=f"知识库检索失败：{error}")
-            return
-        yield stream_event("citations", citations=citation_payloads(hits))
-        if not hits:
-            # v2 未就绪时明确提示，**不回退到 v1**（spec-012 边界）
-            message = "知识库中没有找到相关内容，请先上传论文或换个问法。"
-            if chunker == CHUNKER_V2:
-                message = (
-                    "所选切分版本（v2 结构感知）尚未就绪或没有命中内容。"
-                    "可先切回 v1 提问，或在论文列表点「重建索引」生成 v2。"
+            # 观测初始化也必须隔离；例如 SDK/client 被替换或初始化异常时，
+            # 不得阻断检索与 SSE 主链路。
+            try:
+                start_trace("kb-ask", tags=["kb"])
+            except Exception:
+                pass
+            try:
+                hits = hybrid_search(question, top_k=top_k, chunker=chunker)
+            except Exception as error:
+                yield stream_event("error", message=f"知识库检索失败：{error}")
+                return
+            yield stream_event("citations", citations=citation_payloads(hits))
+            if not hits:
+                # v2 未就绪时明确提示，**不回退到 v1**（spec-012 边界）
+                message = "知识库中没有找到相关内容，请先上传论文或换个问法。"
+                if chunker == CHUNKER_V2:
+                    message = (
+                        "所选切分版本（v2 结构感知）尚未就绪或没有命中内容。"
+                        "可先切回 v1 提问，或在论文列表点「重建索引」生成 v2。"
+                    )
+                yield stream_event("token", content=message)
+                yield stream_event("done")
+                return
+            prompt = build_prompt(question, hits)
+            run = run_chat(question, request.model, prompt=prompt)
+            kb_metadata = {
+                "top_k": top_k,
+                "chunker": chunker,
+                "hit_count": len(hits),
+                "question_chars": len(question),
+                "prompt_chars": len(prompt),
+            }
+            try:
+                for ev in run.events:
+                    yield stream_event(ev["type"], content=ev["content"])
+            except Exception as error:
+                yield stream_event("error", message=f"生成失败：{error}")
+                # 失败也要留痕：否则失败请求既进不了错误率统计，也丢失了诊断信息。
+                if run.result is not None:
+                    try:
+                        record_ollama_generation(
+                            model=request.model,
+                            prompt_messages=[{"role": "user", "content": prompt}],
+                            result=run.result,
+                            route=run.route,
+                            name="kb.generation",
+                            started_at=started,
+                            tags=["kb"],
+                            extra_metadata=kb_metadata,
+                            success=False,
+                            error_type=type(error).__name__,
+                        )
+                        flush()
+                    except Exception:
+                        pass
+                return
+            try:
+                record_ollama_generation(
+                    model=request.model,
+                    prompt_messages=[{"role": "user", "content": prompt}],
+                    result=run.result,
+                    route=run.route,
+                    name="kb.generation",
+                    started_at=started,
+                    tags=["kb"],
+                    extra_metadata=kb_metadata,
                 )
-            yield stream_event("token", content=message)
+                flush()
+            except Exception:
+                # 上报失败绝不影响 SSE 输出，也绝不替换/吞噬原有业务异常。
+                pass
+            yield stream_event(
+                "debug",
+                debug={"elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1), "hits": len(hits)},
+            )
             yield stream_event("done")
-            return
-        chat_model = create_chat_model(request.model)
-        try:
-            for chunk in chat_model.stream(build_prompt(question, hits)):
-                content = getattr(chunk, "content", "") or ""
-                if content:
-                    yield stream_event("token", content=content)
-        except Exception as error:
-            yield stream_event("error", message=f"生成失败：{error}")
-            return
-        yield stream_event(
-            "debug",
-            debug={"elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1), "hits": len(hits)},
-        )
-        yield stream_event("done")
+        finally:
+            try:
+                end_trace()
+            except Exception:
+                # trace 收尾失败不能改变已经生成的业务结果或 SSE 契约。
+                pass
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
