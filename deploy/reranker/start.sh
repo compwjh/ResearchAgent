@@ -60,7 +60,7 @@ fi
 BASE_URL="http://$URL_HOST:$PORT"
 
 nohup "$SERVER_BIN" -m "$MODEL_PATH" --embedding --reranking --pooling rank \
-  --host "$HOST" --port "$PORT" --ctx-size 8192 --no-webui >"$LOG_FILE" 2>&1 &
+  --host "$HOST" --port "$PORT" --ctx-size 8192 --ubatch-size 1024 --no-webui >"$LOG_FILE" 2>&1 &
 STARTED_PID=$!
 printf '%s\n' "$STARTED_PID" >"$PID_FILE"
 printf 'RERANKER_BASE_URL=%s\nRERANKER_MODEL_PATH=%s\n' "$BASE_URL" "$MODEL_PATH" >"$ENV_FILE"

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：`实施中`（2026-09-02；Task 03–07 已完成，Task 08 等待 spec-013 明确 commit）**
+**当前状态：`实施中`（2026-09-04；代码已合并至 `main@e980cea`，Task 08 部分完成，Task 09 因验收闭环不足而阻塞）**
 
 > 进入实施前已用当前未提交代码完成首页、健康接口与全量测试验证；不得通过回滚、stash 或清理工作树保护/修复 spec-013。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
@@ -178,7 +178,7 @@
 |---|---|---|---|---|
 | 架构师 | 自身（当前执行任务的 Agent，不写死模型代号） | 200k | 主会话 | 编写/修订 spec、运行时选型、编排与落地校验 |
 | 产品经理 | `qwen3.5:9b`（本地 Ollama） | 32k | `Task(pm)` | 补产品使用步骤与验收场景 |
-| 开发主管 | `qwen3.8:27b`（本地 Ollama） | 32k | `Task(tech-lead)` | 需求/技术/验收评审、任务拆分与合并裁决 |
+| 开发主管 | `qwen3.8:27b-mlx`（本地 Ollama） | 32k | `Task(tech-lead)` | 需求/技术/验收评审、任务拆分与合并裁决 |
 | 初级开发 | `gpt-5.6-luna` | 32k | `Task(junior-dev, reasoning=high)` | 剩余任务编码；每次最多 2 文件、150 行 |
 | 测试 | `gpt-5.6-luna` | 32k | `Task(tester, reasoning=high)` | 剩余任务测试、基准、验收与 Bug 复现 |
 
@@ -197,8 +197,8 @@
 | 05 | 接入知识库检索链路 | [`task-05-integrate-retrieval-pipeline.md`](../plans/014/task-05-integrate-retrieval-pipeline.md) | 04 | 完成 |
 | 06 | 接入健康状态与前端展示 | [`task-06-reranker-health-status.md`](../plans/014/task-06-reranker-health-status.md) | 03, 04 | 完成 |
 | 07 | 执行测试与质量基准 | [`task-07-reranker-tests-benchmark.md`](../plans/014/task-07-reranker-tests-benchmark.md) | 05, 06 | 完成 |
-| 08 | 集成 spec-013 观测能力 | [`task-08-integrate-spec013-observability.md`](../plans/014/task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 待执行 |
-| 09 | 评审、部署与复盘 | [`task-09-review-deploy-retro.md`](../plans/014/task-09-review-deploy-retro.md) | 07, 08 | 待执行 |
+| 08 | 集成 spec-013 观测能力 | [`task-08-integrate-spec013-observability.md`](../plans/014/task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 部分完成（待补四组合关联证据） |
+| 09 | 评审、部署与复盘 | [`task-09-review-deploy-retro.md`](../plans/014/task-09-review-deploy-retro.md) | 07, 08 | 阻塞（等待验收签字与四组合闭环） |
 
 ## 评审记录
 
@@ -206,7 +206,7 @@
 
 - 需求评审：[`docs/sdd/reviews/014-requirement-review.md`](../reviews/014-requirement-review.md)（结论：**通过（附意见）**；风险中；无硬阻塞）
 - 技术评审：[`docs/sdd/reviews/014-tech-review.md`](../reviews/014-tech-review.md)（结论：**通过（附意见）**；风险高；Task 02 为硬 Go/No-Go）
-- 验收评审：待评审（未执行）
+- 验收评审：[`docs/sdd/reviews/014-acceptance-review.md`](../reviews/014-acceptance-review.md)（结论：**不通过（阻塞收口）**；真实联合健康、成功/降级 span 和回归已记录，四组合逐请求关联及签字待补）
 
 ## 变更日志（Changelog）
 
@@ -228,6 +228,9 @@
 | 2026-09-02 | 架构师(自身) | Task 03 完成：真实模型通过质量探针、动态端口、幂等启停、禁用模式和 FastAPI 联合启停验证 |
 | 2026-09-02 | 架构师(自身) | Task 04 完成：批量客户端及 25 个 mock HTTP 子场景通过，启动 Task 05 检索集成 |
 | 2026-09-02 | 用户 | 指定剩余任务使用 Luna 模型、高推理强度 |
+| 2026-09-04 | 架构师(自身) | Spec 013 与 Spec 014 代码合并至 `main@e980cea`；联合 FastAPI/Reranker/Langfuse 健康验证通过，发现并修复长片段 `ubatch-size=512` 导致的重排降级（显式设为 1024） |
+| 2026-09-04 | tester | 验收报告补充真实 `events_full` 成功/降级 span、停服降级与恢复证据；四组合逐请求关联仍不足，Task 09 保持阻塞 |
+| 2026-09-04 | tester / 架构师(自身) | 补测 Langfuse off × Reranker off：`qwen3.5:9b` 在 120/330 秒内持续 thinking 未出现 `done`，`deepseek-coder-v2:16b` 在 citations 后返回 Ollama HTTP 400；真实问答闭环仍受本地回答模型阻塞，Spec 保持实施中 |
 
 ---
 **六条自检**：①边界均可转为测试；②spec 说明需求、task 承载实施细节；③task 链接真实且依赖无环；④明确不做已划死范围；⑤执行配置五行齐全；⑥产品步骤可映射 A1–A12。

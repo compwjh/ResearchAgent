@@ -51,5 +51,6 @@
 
 ## 2026-09-04
 
+- **014 知识库本地 Rerank 重排** ｜ 实施中 → 实施中 ｜ 收口验收补充了四组合运行对账、真实成功/降级 `kb.rerank` 事件、`--ubatch-size 1024` 长输入修复和禁用组合真实问答尝试；tester 仍判定不通过，tech-lead 尚不可签字，故保持实施中。
 - **013 本地 LLM 调用观测与性能评估平台** ｜ 实施中 → 已完成 ｜ Task 07 前端依赖与环境阻塞修复（补齐 lockfile + 离线安装 + .env），前端 37 用例全绿；5 项实质缺陷（散点丢点误判、脱敏覆盖、聚合守卫、截断提示、router 测试）闭环；C8 埋点 safe_call 包裹完成。验收由主模型代行（非独立评审）。详见 `docs/sdd/plans/013/task-07-stats-custom-view.md` 修复轮次执行结果与 `docs/sdd/reviews/013-task07-acceptance-review.md` 复核结论。
 - **013 Task 07 验收** ｜ 不通过 → 通过（代行） ｜ 见上。

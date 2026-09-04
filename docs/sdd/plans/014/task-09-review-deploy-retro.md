@@ -1,7 +1,7 @@
 # 任务 09 — 评审、部署与复盘
 
 > 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 07、08；当前状态：`待执行`
+> 依赖：任务 07、08；当前状态：`阻塞（等待验收签字与四组合闭环）`
 
 ## 一句话目标
 
@@ -61,7 +61,7 @@
 - 任一门禁失败：保持真实状态，退回对应任务，不强行收口。
 - 运行时阻塞：写明具体错误与可执行解决命令，不声称已部署。
 - 产出：三份评审、运行记录、更新后的 spec/changelog、复盘与本地 commit。
-- 执行结果：待执行后填写。
+- 执行结果：已完成联合启动和健康验证（FastAPI `8000`、Reranker `11435`、Langfuse `3000` 均可达），并验证 Reranker 长片段 `ubatch-size=1024` 修复、启用与停服降级。验收报告仍为不通过：完整四组合 KB ask/恢复关联、验收签字和复盘尚未齐全，因此未将 Spec 014 标记完成。
 
 ## 变更日志
 
@@ -69,3 +69,14 @@
 |---|---|---|
 | 2026-09-02 | 架构师(自身) | 创建任务计划，状态为待执行 |
 | 2026-09-02 | 用户 | 指定剩余任务使用 Luna 高推理，等待 Task 08 前置满足 |
+
+## 补充执行结果（2026-09-04）
+
+验收报告已由 tester 更新，真实证据包括：
+
+- 全量回归 `346 passed`，Spec 014 专项回归 `100 passed`。
+- Reranker 启动参数加入 `--ubatch-size 1024` 后，真实 KB ask HTTP 200；SSE 已观察到 `meta/stage/citations`。
+- Langfuse `events_full` 已读到真实成功和降级 `kb.rerank` 事件，并能与 `kb.retrieval` 父阶段按 trace 关联；成功样本 `input_count=20/output_count=1`，停服样本 `degraded_reason=connection`。
+- Langfuse Web、FastAPI `/api/health`、`/api/kb/health` 和 Reranker `/health` 均已取得 HTTP 200；停服期间 KB ask 仍开始返回 SSE，恢复后 probe/health 通过。
+
+收口判定仍为**阻塞**：off/off 两次真实 KB ask 分别在 120/330 秒内未出现 `done`、以及在 citations 后因 Ollama HTTP 400 进入 error；四种组合没有全部形成独立完整的 `KB ask -> trace/span -> done` 证据，缺少 tech-lead 验收签字和 Spec 014 复盘文档。因此不将 Spec 014 改为 `已完成`，不执行本任务要求的最终本地提交。
