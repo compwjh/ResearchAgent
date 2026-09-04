@@ -117,6 +117,26 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
 
         create_model.assert_called_once_with("m", reasoning=False)
 
+    def test_factory_does_not_force_thinking_by_default(self):
+        """默认不得下发 reasoning，否则 langchain 会发 think=true。
+
+        ChatOllama 把 reasoning 映射为请求体 think 字段；不支持 thinking 的模型
+        （如 deepseek-coder-v2:16b）收到 think=true 会返回 HTTP 400
+        `does not support thinking`。改动前默认即为 None（think: null）。
+        """
+        from backend.app.services.ollama import create_chat_model
+
+        self.assertIsNone(
+            create_chat_model("m").reasoning,
+            "默认必须保持 reasoning=None，避免对非思考模型强制 think=true",
+        )
+
+    def test_factory_forwards_explicit_reasoning(self):
+        from backend.app.services.ollama import create_chat_model
+
+        self.assertIs(create_chat_model("m", reasoning=False).reasoning, False)
+        self.assertIs(create_chat_model("m", reasoning=True).reasoning, True)
+
 
 class ThinkingSeparationTests(unittest.TestCase):
     def test_thinking_and_content_are_accumulated_separately(self):

@@ -19,11 +19,18 @@ def get_available_models() -> List[str]:
     return [item["name"] for item in response.json().get("models", [])]
 
 
-def create_chat_model(model_name: str, *, reasoning: bool = True) -> ChatOllama:
+def create_chat_model(model_name: str, *, reasoning: Optional[bool] = None) -> ChatOllama:
     """创建本地 Ollama 会话模型。
 
     `trust_env=False` 是必须的：httpx 默认会读取 macOS 系统代理配置，
     把指向 localhost:11434 的请求也送去代理，代理返回 503，表现为「无法连接 Ollama」。
+
+    `reasoning` 默认 **None（不下发开关）**，保持改动前行为：ChatOllama 会把该参数
+    映射为请求体的 `think` 字段（langchain_ollama 中 `"think": kwargs.pop("reasoning",
+    self.reasoning)`）。对不支持 thinking 的模型（如 `deepseek-coder-v2:16b`），下发
+    `think: true` 会让 Ollama 返回 HTTP 400 `does not support thinking`；对思考模型
+    （如 `qwen3.5:9b`）则会强制开启思维链、拖长响应。因此只有显式传入 True/False 时
+    才下发该开关——KB 问答经 `run_chat(..., think=False)` 显式关闭思维链。
     """
     return ChatOllama(
         model=model_name,
