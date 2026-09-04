@@ -21,8 +21,8 @@
 | 05 | 接入知识库检索链路 | [task-05](./task-05-integrate-retrieval-pipeline.md) | 04 | 完成 |
 | 06 | 接入健康状态与前端展示 | [task-06](./task-06-reranker-health-status.md) | 03, 04 | 完成 |
 | 07 | 执行测试与质量基准 | [task-07](./task-07-reranker-tests-benchmark.md) | 05, 06 | 完成 |
-| 08 | 集成 spec-013 观测能力 | [task-08](./task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 部分完成（四组合逐请求关联仍待补齐） |
-| 09 | 评审、部署与复盘 | [task-09](./task-09-review-deploy-retro.md) | 07, 08 | 阻塞（验收未通过，待恢复后问答与签字） |
+| 08 | 集成 spec-013 观测能力 | [task-08](./task-08-integrate-spec013-observability.md) | 05，且 spec-013 完成 | 完成 |
+| 09 | 评审、部署与复盘 | [task-09](./task-09-review-deploy-retro.md) | 07, 08 | 完成 |
 
 ## 分支与回滚
 
