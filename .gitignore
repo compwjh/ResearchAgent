@@ -17,6 +17,9 @@ htmlcov/
 .codebuddy/agent-memory/
 .codebuddy/agent-logs/
 data/articles/
+data/browser-profile/
+data/paper_search/
+**/.profile.lock
 data/article_settings.json
 data/kb/
 data/models/

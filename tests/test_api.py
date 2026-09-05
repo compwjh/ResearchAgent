@@ -92,9 +92,10 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(body["download_method"], "public_https")
         mock_plan.assert_called_once_with(candidate, "deepseek-coder:33b")
 
+    @patch("backend.app.api.routes.get_available_models", return_value=["deepseek-coder:33b"])
     @patch("backend.app.api.routes.skill_status")
     @patch("backend.app.api.routes.download_under_skill")
-    def test_download_with_use_skill_records_skill_name(self, mock_skill_exec, mock_status):
+    def test_download_with_use_skill_records_skill_name(self, mock_skill_exec, mock_status, _mock_models):
         mock_status.return_value = {"available": True, "worker_model": "deepseek-coder:33b"}
         mock_skill_exec.return_value = iter(
             [{"type": "result", "file_path": "/tmp/x.pdf", "file_size": 10, "checksum": "abc", "skill_name": SKILL_NAME}]

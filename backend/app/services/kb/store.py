@@ -10,7 +10,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from backend.app.core.config import KB_META_PATH, KB_PAPERS_DIR
 
@@ -54,6 +54,17 @@ class PaperRecord:
     error: Optional[str] = None
     # spec-012：双版本状态。顶层 status/chunk_count 保留以兼容既有接口与前端。
     chunkers: Dict[str, Any] = field(default_factory=default_chunkers)
+    # spec-015：论文检索导入的可选元数据。None 保持旧上传记录兼容。
+    title: Optional[str] = None
+    authors: Optional[List[str]] = None
+    year: Optional[int] = None
+    conference_id: Optional[str] = None
+    conference_name: Optional[str] = None
+    doi: Optional[str] = None
+    dblp_key: Optional[str] = None
+    source_url: Optional[str] = None
+    import_source: Optional[str] = None
+    stored_name: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -118,15 +129,45 @@ def get_paper(paper_id: str, meta_path: Optional[Path] = None) -> Optional[dict]
     return None
 
 
+def resolve_paper_path(
+    paper: Union[str, Mapping[str, Any], PaperRecord],
+    papers_dir: Optional[Path] = None,
+) -> Path:
+    """Resolve a paper's physical path with legacy filename compatibility.
+
+    New imports may store a readable basename in ``stored_name``. Records
+    written before spec-015 have no such field and continue using the legacy
+    ``{paper_id}.pdf`` layout. Invalid path-like metadata is ignored rather
+    than allowing a record to escape the configured papers directory.
+    """
+    if isinstance(paper, str):
+        paper_id = paper
+        stored_name = None
+    elif isinstance(paper, Mapping):
+        paper_id = str(paper.get("paper_id") or "")
+        stored_name = paper.get("stored_name")
+    else:
+        paper_id = str(getattr(paper, "paper_id", "") or "")
+        stored_name = getattr(paper, "stored_name", None)
+
+    candidate = str(stored_name or "").strip()
+    if candidate:
+        candidate_path = Path(candidate)
+        if candidate_path.name == candidate and candidate not in {".", ".."}:
+            return Path(papers_dir or KB_PAPERS_DIR) / candidate
+    return Path(papers_dir or KB_PAPERS_DIR) / f"{paper_id}.pdf"
+
+
 def remove_paper(paper_id: str, meta_path: Optional[Path] = None, papers_dir: Optional[Path] = None) -> bool:
     """删除元数据与原件；返回是否命中。"""
     with _lock:
         papers = load_papers(meta_path)
+        record = next((item for item in papers if item.get("paper_id") == paper_id), None)
         remaining = [item for item in papers if item.get("paper_id") != paper_id]
         if len(remaining) == len(papers):
             return False
         save_papers(remaining, meta_path)
-        target = Path(papers_dir or KB_PAPERS_DIR) / f"{paper_id}.pdf"
+        target = resolve_paper_path(record or paper_id, papers_dir)
         try:
             if target.exists():
                 target.unlink()
@@ -150,11 +191,35 @@ def save_upload(
     return identifier, target
 
 
-def new_record(file_name: str, uploaded_at: Optional[str] = None) -> PaperRecord:
+def new_record(
+    file_name: str,
+    uploaded_at: Optional[str] = None,
+    *,
+    title: Optional[str] = None,
+    authors: Optional[List[str]] = None,
+    year: Optional[int] = None,
+    conference_id: Optional[str] = None,
+    conference_name: Optional[str] = None,
+    doi: Optional[str] = None,
+    dblp_key: Optional[str] = None,
+    source_url: Optional[str] = None,
+    import_source: Optional[str] = None,
+    stored_name: Optional[str] = None,
+) -> PaperRecord:
     return PaperRecord(
         paper_id=uuid.uuid4().hex,
         file_name=file_name,
         uploaded_at=uploaded_at or datetime.now().isoformat(timespec="seconds"),
+        title=title,
+        authors=authors,
+        year=year,
+        conference_id=conference_id,
+        conference_name=conference_name,
+        doi=doi,
+        dblp_key=dblp_key,
+        source_url=source_url,
+        import_source=import_source,
+        stored_name=stored_name,
     )
 
 

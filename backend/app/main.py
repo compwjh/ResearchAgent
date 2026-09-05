@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi import Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api.routes import router
+from backend.app.api.routes import paper_request_validation_error_response, router
 from backend.app.core.config import FRONTEND_DIR
 from backend.app.services.kb import backfill_chunker_defaults, mark_interrupted_on_startup
 
@@ -38,6 +41,15 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Research Agent", lifespan=lifespan)
 app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")
 app.include_router(router)
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(request: Request, exc: RequestValidationError):
+    """保持论文检索接口的错误体契约，同时不改变其他接口行为。"""
+    response = paper_request_validation_error_response(request, exc)
+    if response is not None:
+        return response
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.get("/")

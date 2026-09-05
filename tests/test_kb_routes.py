@@ -345,6 +345,20 @@ class ReindexTests(unittest.TestCase):
         self.assertEqual(submit.call_count, 1)
         self.assertEqual(submit.call_args.args[1], "v2")
 
+    def test_reindex_uses_stored_name_for_new_record(self):
+        paper = dict(self.paper, stored_name="2025-CCS-Paper.pdf")
+        (self.dir / "p1.pdf").unlink()
+        readable = self.dir / paper["stored_name"]
+        readable.write_bytes(b"%PDF-1.4 fake")
+        with patch("backend.app.api.routes.get_paper", return_value=paper), patch(
+            "backend.app.api.routes.KB_PAPERS_DIR", self.dir
+        ), patch("backend.app.api.routes.submit_index_task", return_value=True) as submit, patch(
+            "backend.app.api.routes.update_chunker_state"
+        ):
+            response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "v1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(submit.call_args.args[0], "p1")
+
 
 class PaperListChunkerTests(unittest.TestCase):
     def setUp(self):

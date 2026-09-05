@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=13">
+  <link rel="stylesheet" href="/assets/styles.css?v=14">
 </head>
 <body>
   <main class="app-shell">
@@ -16,6 +16,7 @@
         <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
         <a class="nav-item" data-view="models" role="button" tabindex="0"><span class="nav-icon">◈</span> 模型库 <span class="nav-count" id="model-count">0</span></a>
         <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count">0</span></a>
+        <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
       </nav>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="status-dot"></span><div><strong>本地服务</strong><small id="model-label">连接中</small></div></div>
@@ -114,7 +115,100 @@
         </div>
       </section>
     </section>
+
+    <section class="main-area" id="papers-view" hidden aria-labelledby="papers-title">
+      <header class="topbar">
+        <div class="breadcrumb"><span>论文检索</span><span class="slash">/</span><strong>安全顶会</strong></div>
+      </header>
+      <section class="workspace paper-workspace" aria-label="论文检索工作区">
+        <header class="paper-page-header">
+          <p class="eyebrow">SECURITY PAPER DISCOVERY</p>
+          <h1 id="papers-title">论文检索</h1>
+          <p class="subtitle">按研究方向查找安全顶会论文，并将选中的论文导入知识库。</p>
+        </header>
+
+        <form class="paper-search-form" id="paper-search-form">
+          <div class="paper-query-field">
+            <label for="paper-query">研究方向</label>
+            <textarea id="paper-query" name="query" rows="2" maxlength="500" required
+              placeholder="例如：LLM Agent 安全" aria-describedby="paper-query-help"></textarea>
+            <p class="field-help" id="paper-query-help">请输入 1–500 个字符的研究方向。</p>
+          </div>
+
+          <fieldset class="paper-conference-fieldset">
+            <legend>会议</legend>
+            <p class="field-help" id="paper-conference-help">选择至少一个已启用会议。</p>
+            <div class="paper-conference-list" id="paper-conference-list" role="group" aria-describedby="paper-conference-help"></div>
+            <p class="paper-empty" id="paper-conference-empty" hidden>暂无可用会议配置。</p>
+            <div class="paper-conference-actions">
+              <label for="paper-conference-search">搜索会议</label>
+              <input id="paper-conference-search" type="search" autocomplete="off" placeholder="输入会议名称或简称" aria-controls="paper-conference-search-results">
+              <button class="secondary-button" id="paper-conference-search-button" type="button">搜索</button>
+              <button class="secondary-button" id="paper-conference-manage-button" type="button" aria-haspopup="dialog">管理会议</button>
+            </div>
+            <ul class="paper-conference-search-results" id="paper-conference-search-results" role="listbox" aria-label="会议搜索结果"></ul>
+            <p class="paper-status" id="paper-conference-status" role="status" aria-live="polite"></p>
+          </fieldset>
+
+          <fieldset class="paper-year-fieldset">
+            <legend>发表年份</legend>
+            <div class="paper-year-range">
+              <label for="paper-year-from">从 <input id="paper-year-from" name="year_from" type="number" inputmode="numeric" min="1900" step="1"></label>
+              <span aria-hidden="true">—</span>
+              <label for="paper-year-to">到 <input id="paper-year-to" name="year_to" type="number" inputmode="numeric" min="1900" step="1"></label>
+            </div>
+            <p class="field-help" id="paper-year-help">默认检索最近五个完整发表年份。</p>
+          </fieldset>
+
+          <button class="send-button" id="paper-search-button" type="submit">开始检索</button>
+        </form>
+
+        <section class="paper-results-panel" aria-labelledby="paper-results-title">
+          <header class="paper-section-header">
+            <div>
+              <h2 id="paper-results-title">检索结果</h2>
+              <p class="paper-status" id="paper-search-status" role="status" aria-live="polite"></p>
+            </div>
+            <span class="paper-result-count" id="paper-result-count" aria-live="polite"></span>
+          </header>
+          <div class="paper-results-toolbar" id="paper-results-toolbar" hidden>
+            <label><input id="paper-select-all" type="checkbox" aria-controls="paper-results"> 全选结果</label>
+            <span id="paper-selected-count" aria-live="polite">已选 0 篇</span>
+            <button class="send-button" id="paper-import-selected" type="button" disabled>批量导入</button>
+          </div>
+          <p class="paper-empty" id="paper-results-empty">输入研究方向并开始检索。</p>
+          <ol class="paper-results" id="paper-results" aria-live="polite" aria-busy="false"></ol>
+          <p class="paper-error" id="paper-search-error" role="alert" hidden></p>
+        </section>
+
+        <section class="paper-import-panel" id="paper-import-panel" aria-labelledby="paper-import-title" hidden>
+          <header class="paper-section-header">
+            <div>
+              <h2 id="paper-import-title">导入进度</h2>
+              <p class="paper-status" id="paper-import-status" role="status" aria-live="polite"></p>
+            </div>
+            <span id="paper-import-summary"></span>
+          </header>
+          <ul class="paper-import-items" id="paper-import-items"></ul>
+          <section class="paper-login-queue" id="paper-login-queue" aria-labelledby="paper-login-title" hidden>
+            <h3 id="paper-login-title">需要登录后继续</h3>
+            <ul id="paper-login-items"></ul>
+          </section>
+        </section>
+      </section>
+    </section>
   </main>
+  <dialog class="paper-conference-dialog" id="paper-conference-dialog" aria-labelledby="paper-conference-dialog-title">
+    <form method="dialog" class="settings-form" id="paper-conference-form">
+      <div class="settings-title">
+        <div><span class="conversation-kicker">CONFERENCE SOURCES</span><h2 id="paper-conference-dialog-title">管理会议</h2></div>
+        <button class="icon-button" value="cancel" aria-label="关闭会议管理">×</button>
+      </div>
+      <p class="paper-status" id="paper-conference-dialog-status" role="status" aria-live="polite"></p>
+      <ul class="paper-managed-conferences" id="paper-managed-conferences"></ul>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">关闭</button></div>
+    </form>
+  </dialog>
   <dialog class="settings-dialog" id="settings-dialog">
     <form method="dialog" class="settings-form" id="settings-form">
       <div class="settings-title"><div><span class="conversation-kicker">AGENT CONFIGURATION</span><h2>Agent 系统设置</h2></div><button class="icon-button" value="cancel" aria-label="关闭设置">×</button></div>

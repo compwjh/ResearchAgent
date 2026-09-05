@@ -209,6 +209,46 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(papers[0]["status"], store_module.STATUS_INDEXED)
         self.assertEqual(papers[0]["chunk_count"], 7)
 
+    def test_record_metadata_is_optional_and_serialized(self):
+        record = store_module.new_record(
+            "readable.pdf",
+            title="A Paper",
+            authors=["A. Author"],
+            year=2025,
+            conference_id="ccs",
+            conference_name="CCS",
+            doi="10.1234/example",
+            source_url="https://example.test/paper",
+            import_source="paper-discovery",
+            stored_name="2025-CCS-A-Paper.pdf",
+        )
+        payload = record.to_dict()
+        self.assertEqual(payload["title"], "A Paper")
+        self.assertEqual(payload["authors"], ["A. Author"])
+        self.assertEqual(payload["stored_name"], "2025-CCS-A-Paper.pdf")
+
+    def test_resolve_paper_path_supports_new_and_legacy_records(self):
+        current = {"paper_id": "new", "stored_name": "2025-CCS-Paper.pdf"}
+        legacy = {"paper_id": "old", "file_name": "old.pdf"}
+        self.assertEqual(
+            store_module.resolve_paper_path(current, self.papers_dir),
+            self.papers_dir / "2025-CCS-Paper.pdf",
+        )
+        self.assertEqual(
+            store_module.resolve_paper_path(legacy, self.papers_dir),
+            self.papers_dir / "old.pdf",
+        )
+
+    def test_load_papers_keeps_legacy_record_without_metadata(self):
+        self.meta.write_text(
+            '[{"paper_id":"old","file_name":"old.pdf","status":"indexed"}]',
+            encoding="utf-8",
+        )
+        papers = store_module.load_papers(self.meta)
+        self.assertEqual(papers[0]["paper_id"], "old")
+        self.assertNotIn("stored_name", papers[0])
+        self.assertEqual(store_module.resolve_paper_path(papers[0], self.papers_dir), self.papers_dir / "old.pdf")
+
     def test_remove_paper_deletes_file_and_metadata(self):
         record = store_module.new_record("b.pdf")
         _, path = store_module.save_upload(
@@ -219,6 +259,15 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertEqual(store_module.load_papers(self.meta), [])
         self.assertFalse(store_module.remove_paper(record.paper_id, self.meta, self.papers_dir))
+
+    def test_remove_paper_uses_stored_name(self):
+        record = store_module.new_record("display.pdf", stored_name="readable-paper.pdf")
+        target = self.papers_dir / record.stored_name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"%PDF-1")
+        store_module.upsert_paper(record, meta_path=self.meta)
+        self.assertTrue(store_module.remove_paper(record.paper_id, self.meta, self.papers_dir))
+        self.assertFalse(target.exists())
 
     def test_load_papers_tolerates_corrupt_file(self):
         self.meta.write_text("{ not json", encoding="utf-8")

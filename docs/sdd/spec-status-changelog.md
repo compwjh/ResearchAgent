@@ -5,6 +5,14 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-05
+
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 待确认 ｜ 用户将当前检索调整为 USENIX 官网优先、DBLP 辅助、SQLite 增量目录、LangGraph 并行工作流、独立目录 RAG、来源进度卡片和每页 10 篇冻结结果。已完整更新 Spec015 并新增 Task13–17；按用户要求本轮只落盘文档，暂停代码实现，等待后续安排。
+- **015 Task13–17 增量目录流程** ｜ 新建 → 待执行 ｜ 已把现有代码复用清单固化为实现硬约束，写明 schema v2、接口、工作流节点、缓存/租约/恢复、固定样本、完整子 Agent Prompt、返回字段、评审验收和回滚；需求/技术复审与用户再次确认前不得执行。
+- **015 Task12 USENIX Skill** ｜ 单一混合版 → 下载版 + 目录元数据检索版 ｜ 为避免搜索阶段误触发 PDF 探测，拆分 `.agents/skills/usenix-accepted-papers`（下载/验证/导入）与 `.agents/skills/usenix-paper-catalog-search`（目录/增量/LangGraph/RAG），并让 Task13–17 全部指向目录版；两个 CodeBuddy 适配器同步落盘。
+- **017 后端限界上下文彻底重构** ｜ 新建 → 待确认 ｜ 用户要求彻底整理整个后端：按论文发现、知识库、文章助手、聊天和平台能力重组；明确不保留旧内部 import 兼容层，对外 HTTP/JSON/环境变量与数据位置保持不变。已建立 Spec017 与 Task02–08，等待评审与确认门禁。
+- **015 Task06 浏览器运行时依赖** ｜ 环境阻塞 → 条件解除 ｜ 因项目目录由 `PyCharmMiscProject` 改名为 `ResearchAgent`，`.venv` 脚本指向旧绝对路径；已修复 Python 3.11 虚拟环境，安装并锁定 Playwright 1.52.0 与对应 Chromium，运行时浏览器健康接口恢复 `available=true`。真实 ACM/IEEE 登录仍需用户合法账号参与。
+
 ## 2026-09-03
 
 - **016 可移植 Task 账本与自动执行协议** ｜ 新建 → 待确认 ｜ 为跨 Codex、CodeBuddy 和其他 Agent IDE 的研发交接建立“Git 跟踪 Markdown 为长期事实源、SQLite 为可重建运行层”的流程；Task 将包含机器元数据、完整子 Agent Prompt、统一结果协议、执行轨迹和指标。已按 spec-013 格式建立 spec 与 `docs/sdd/plans/016/` Task 02–09；当前只落盘文档，不执行实现，等待用户确认。
@@ -51,6 +59,18 @@
 
 ## 2026-09-04
 
+- **015 安全顶会论文检索与知识库导入** ｜ 待确认 → 已确认 ｜ 用户明确要求“spec014 已由其他 Agent 收尾后继续开发 spec015”；当前 `main@c17c7f4` 已包含 Spec014 收口提交，开始执行 Task02 Go/No-Go。
+- **015 安全顶会论文检索与知识库导入** ｜ 已确认 → 实施中 ｜ 创建并切换至 `feature/spec-015-security-paper-discovery`，启动 tester 执行 Task02 基线、数据源、Reranker 与 Playwright 验证；业务代码暂不修改。
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中 ｜ 用户授权跳过 Spec013/014 基线核对与 Reranker 判断，Task02 收窄为 DBLP/OpenAlex 数据源、降级策略与 Playwright 桥接验证；跳过项记录为 deferred，不阻塞后续。
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中 ｜ Task02 tester/tech-lead 条件放行内置会议 publication search 与 OpenAlex 补全；DBLP Venue Search 因 429/503 无成功样本保持 blocked，Task03 收窄启动内置会议与 OpenAlex 实现。
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中 ｜ Task03 内置会议召回、OpenAlex 补全、SQLite 持久化和搜索 API 已完成并通过最终验收/技术签核（41 个定向测试通过）；Venue Search/custom conference 保持 blocked，导入 FK/TTL 移交 Task05。
+- **015 Task05 安全下载、规范命名与知识库导入** ｜ 实施中 → 已完成 ｜ 固定服务端 allowlist、失败补偿、DBLP key 和 Content-Type 安全修复通过 Tech Lead 复核与 tester 验收；定向回归 150 passed，修复项精确回归 11 passed，并发幂等 10/10 轮，批量/登录续传移交 Task06。
+- **015 Task06 批量任务与登录续传** ｜ 待执行 → 实施中 ｜ Task05 收口后启动批次/条目 SQLite 状态机实现，先建立可条件迁移、可租约恢复的持久化基础。
+- **015 Task06 批量状态机切片** ｜ 实施中 → 实施中 ｜ 批次/条目持久化、批量编排、登录项隔离、租约恢复和并发幂等通过 Tech Lead/tester 最终切片复核；指定测试连续 3 次均 22 passed，继续进入浏览器与站点解析切片。
+- **015 Task06 浏览器管理器切片** ｜ 实施中 → 实施中 ｜ headed persistent profile、单 profile/站点锁、ACM/IEEE exact origin allowlist、敏感产物禁用和健康契约完成；10 项 fake Playwright 测试通过，继续实现 ACM/IEEE 解析与登录续传 API。
+- **015 Task06 ACM/IEEE 解析切片** ｜ 实施中 → 实施中 ｜ ACM 解析 7 passed、IEEE 解析 10 passed；均拒绝非受控 origin、认证参数和 Cookie/Authorization，登录/resume API 继续实现。
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中 ｜ Task05 已启动：安全 URL 校验切片完成并通过 6 项安全边界测试，开始规范命名与论文身份去重；实际下载和知识库导入尚未开始。
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中 ｜ Task05 规范命名与论文身份去重已完成，开始实际 HTTP 安全下载适配；知识库导入、批量任务和登录续传仍待执行。
 - **014 知识库本地 Rerank 重排** ｜ 实施中 → 实施中 ｜ 收口验收补充了四组合运行对账、真实成功/降级 `kb.rerank` 事件、`--ubatch-size 1024` 长输入修复和禁用组合真实问答尝试；tester 仍判定不通过，tech-lead 尚不可签字，故保持实施中。
 - **014 知识库本地 Rerank 重排** ｜ 实施中 → 实施中 ｜ 定位收口 Bug：`/api/kb/ask` 未关闭回答模型 thinking，导致 qwen3.5 真实 SSE 长时间无 `done`；已补入 Spec014 的复现、根因和修复验收条件，进入窄范围代码修复。
 - **013 本地 LLM 调用观测与性能评估平台** ｜ 实施中 → 已完成 ｜ Task 07 前端依赖与环境阻塞修复（补齐 lockfile + 离线安装 + .env），前端 37 用例全绿；5 项实质缺陷（散点丢点误判、脱敏覆盖、聚合守卫、截断提示、router 测试）闭环；C8 埋点 safe_call 包裹完成。验收由主模型代行（非独立评审）。详见 `docs/sdd/plans/013/task-07-stats-custom-view.md` 修复轮次执行结果与 `docs/sdd/reviews/013-task07-acceptance-review.md` 复核结论。
@@ -58,3 +78,15 @@
 - **014 知识库本地 Rerank 重排** ｜ 实施中 → 实施中 ｜ 修复 `8c1c3ae`（KB ask 显式 `think=False`、LangChain `reasoning=False`）后，四组合真实 KB ask 均以完整 SSE `done` 收口，tester 最终判定通过；仍缺 tech-lead 签字与复盘，故暂不转完成。
 - **014 知识库本地 Rerank 重排** ｜ 实施中 → 已完成 ｜ 发现并修复 `8c1c3ae` 引入的回归：`create_chat_model` 默认 `reasoning=True`，使所有仅传模型名的调用方（`article_agent`、`download_paper_skill`、`kb/retrieve.py`、langchain 聊天链路）被强制下发 `think=true`；`6daa498` 将默认值改回 `None` 并补 2 条契约测试，全量 `351 passed`。以 `deepseek-coder-v2:16b` 复测：KB ask HTTP 200 且 SSE 完整到 `done`（259 token、0 error），普通聊天同样完整收口，关键阻塞第 2 项（citations 后 HTTP 400）解除。Task 08/09 全部完成，tech-lead 签字已填（主会话代行，非独立评审，已在验收报告与复盘中标注），复盘落盘 `docs/sdd/retro/2026-09-04-spec-014-reranker-retro.md`。
 - **014 Task 08 / Task 09** ｜ 部分完成 / 阻塞 → 完成 ｜ 见上。
+- **015 Task06 真实登录验收** ｜ 实施中 → 实施中 ｜ 最新离线安全复核通过（Tech Lead/tester；定向 212、全量 502），但当前虚拟环境未安装 Playwright 且无合法 ACM/IEEE 账号样本，真实 headed 登录续传暂保持环境阻塞；继续推进不依赖真实账号的 Task07。
+- **015 Task07 论文检索 Tab** ｜ 实施中 → 实施中 ｜ HTML/JS/CSS、会议搜索 API、开关竞态、稳定去重排序与批次隔离已完成；Tech Lead/QA 离线复核通过。A3 自定义会议仍受 DBLP Venue Search 前置阻塞，真实 GUI/窄屏和 ACM/IEEE 登录需受控环境，继续推进 Task08。
+- **015 Task08 测试与安全回归** ｜ 待执行 → 实施中 ｜ QA 盘点完成；已补齐 SSRF/PDF 安全矩阵、加密 PDF 拒绝和回归稳定性，当前全量 521 passed。冻结排序集/nDCG、Task04 质量证据及真实 GUI/公开 PDF/ACM-IEEE 登录仍待受控环境。
+- **015 Task09 收口与部署** ｜ 待执行 → 实施中 ｜ 本地服务在受控权限下启动并验证首页/健康/会议接口成功，Reranker 按既定策略降级；全量回归通过。外部数据源、自定义会议、真实 GUI/登录和排序质量证据仍阻塞，等待 QA/Tech Lead 收口报告。
+- **015 Task09 收口复核** ｜ 实施中 → 实施中 ｜ Tech Lead 与 QA 报告已落盘，离线回归和受控部署证据通过；A3/A4/A10/A11/A14、真实 GUI/公开 PDF/旧 KB 端到端仍无可复核证据，Spec015 保持实施中并完成阶段复盘。
+- **015 Task08 旧 KB 兼容补测** ｜ 实施中 → 实施中 ｜ 新增真实旧 JSON/PDF/FakeQdrant 集成测试，覆盖列表、检索、重建、删除及异常隔离；全量回归升至 525 passed，排序质量与真实外部证据仍阻塞。
+- **015 论文发现目录架构变更** ｜ 实施中 → 待确认 ｜ 用户指出论文相关实现散落在 `domain/` 与 `services/`；已提出统一迁移到 `backend/app/paper_discovery/` 的限界上下文方案，暂停代码移动和后续实现，等待确认。
+- **015 USENIX accepted papers 第二来源** ｜ 待确认 → 待确认 ｜ 用户要求不新建 Spec，将 USENIX Security accepted-papers 官网检索、USENIX PDF/prepublication PDF 和 arXiv 严格匹配兜底纳入 Spec015；已完成官方页面/API 调研并新增 Task11–12，等待用户确认补充范围。
+- **015 USENIX accepted papers 第二来源** ｜ 待确认 → 实施中 ｜ 用户确认按补充后的 Spec015 执行；Task11/12 开始实现，主 Agent 与子 Agent 临时使用 gpt-5.6-luna high。
+- **015 Task11 USENIX accepted + arXiv** ｜ 待执行 → 已完成 ｜ 来源解析、严格匹配、缓存/节流、PDF 安全探测、候选字段/SQLite、搜索/API 接线和跨来源去重均通过 Tech Lead 最终复评与 QA 验收；全仓回归 552 passed。
+- **015 Task12 项目级 USENIX Skill** ｜ 待执行 → 已完成 ｜ 创建 `.agents/skills/usenix-accepted-papers/SKILL.md`、CodeBuddy 适配器，并将适用角色明确为 ResearchAgent 主 Agent、项目 Agent、PM、Tech Lead、QA、调度器和执行 Agent；静态与跨 IDE 验收通过。
+- **015 Task12 Skill 适用范围澄清** ｜ 已完成 → 已完成 ｜ 用户明确“项目的 agent”指 ResearchAgent 本身；已在 Skill 与 `AGENTS.md` 中固定主 Agent/项目级 Agent 的触发和执行协议，保持本次临时 Luna high 模型选择不进入长期模型规则。
