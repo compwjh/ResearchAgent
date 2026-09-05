@@ -1,7 +1,7 @@
 # 任务 13 — 固化全局目录协议与复用审计
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03、05、11、12；被依赖：任务 14、17；当前状态：`待执行`
+> 依赖：任务 03、05、11、12；被依赖：任务 14、17；当前状态：`已完成`
 > 主 Skill：`.agents/skills/usenix-paper-catalog-search/SKILL.md`（本任务不调用下载版 Skill）
 
 ## 一句话目标
@@ -135,10 +135,24 @@ tail -f .codebuddy/agent-logs/junior-dev-spec015-task13-*.md
 
 ## 执行结果
 
-待执行后填写。
+已完成（2026-09-05），实现提交 `fe17e71`（Spec015 检查点基线 `b76cda1`）。
+
+- **子任务A（tech-lead 复用审计）**：结论「通过（附意见）」，产出 `docs/sdd/reviews/015-task13-reuse-audit.md`。逐项审计 11 个服务模块 + domain 层，确认**无第二套**下载/安全/导入/批任务/身份/embedding 实现；落定 C-1~C-6 强制约束与 G-1~G-4 实现层缺口；schema v2 设计自洽、无未决问题。
+- **子任务B（领域模型与迁移）**：`domain/paper_discovery.py` 新增 v2 七领域类型与状态枚举常量；`paper_discovery_store.py` 实现 v1→v2 **单事务幂等迁移**（先建七表、后升 `schema_meta=2`，失败整体回滚），新增外键统一 `ON DELETE RESTRICT`（C-3），v1 表与旧数据原地保留。
+- **子任务C（仓储行为与测试）**：新增 `acquire_fetch_unit`（单语句条件 UPDATE + `rowcount` 原子领取，含租约过期恢复）、`renew_lease`、`release_lease`、`get_search_results_page`（`ORDER BY rank` 固定 10 条分页）；修复 `upsert_catalog_paper` 在 `metadata_hash` 变化时误返回 `False` 的缺陷；补齐 5 个用例。
+- **验证**：
+  - `tests/test_paper_discovery_store.py` → **10 passed**（并发领取 10 轮、租约恢复、21 条分页 10/10/1、来源追溯、metadata_hash 语义）
+  - 旧导入回归 `test_paper_import_batch_store.py` + `test_paper_import.py` → **22 passed**
+  - 聚焦回归（paper discovery + 导入相关）→ **84 passed, 9 subtests**
+  - 主 Agent 回填校验：v1→v2 升级、重复启动幂等、旧会议/候选数据保留、迁移中断事务回滚（不留半张表）均通过
+- **文档**：`015-task13-schema-implementation.md`、`015-task13-store-implementation.md`。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-05 | 架构师（自身） | 根据用户确认的文档计划创建 Task13，固定复用审计、schema v2 与仓储门禁；未执行代码 |
+| 2026-09-05 | tech-lead（qwen3.8:27b-mlx） | 子任务A：完成只读复用审计，落定 C-1~C-6 约束与 G-1~G-4 缺口 |
+| 2026-09-05 | junior-dev（qwen3.8:27b-mlx） | 子任务B：实现 v2 领域类型与 v1→v2 单事务幂等迁移；修复缩进与单例索引容错缺陷 |
+| 2026-09-05 | junior-dev（qwen3.8:27b-mlx） | 子任务C：实现原子领取/租约/冻结分页；补 5 用例；修复 upsert metadata_hash 返回缺陷 |
+| 2026-09-05 | 架构师（自身） | 创建基线 commit b76cda1（排除 017）；执行回填校验；代行撰写 store 实现文档；提交 fe17e71 |
