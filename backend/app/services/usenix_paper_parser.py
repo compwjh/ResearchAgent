@@ -28,6 +28,8 @@ class UsenixAcceptedPaper:
     prepublication_pdf_url: str | None = None
     publication_stage: str = "accepted"
     source_kind: str = "usenix_accepted"
+    abstract: str = ""
+    keywords: tuple[str, ...] = ()
 
     @property
     def pdf_url(self) -> str | None:
@@ -161,6 +163,173 @@ def parse_usenix_detail(markup: str, *, page_url: str) -> UsenixAcceptedPaper:
     return UsenixAcceptedPaper(article, title, authors, int(year_match.group(1)), official, prepublication)
 
 
+_PRESENTATION_RE = re.compile(r"^/conference/[^/]+/presentation/[^/]+/?$", re.I)
+_CONFERENCE_RE = re.compile(r"^/conference/([^/]+)/")
+
+
+class _Blocks(HTMLParser):
+    """Collect per-paper metadata from accepted-paper schedule blocks.
+
+    Only ``<article class="node node-paper view-mode-schedule">`` blocks are
+    considered. Within each block the title comes from the first ``<h2>``,
+    authors from ``.field-paper-people-text`` and the abstract from
+    ``.field-paper-description-long``. The most specific presentation href is
+    recorded but is never turned into a PDF path.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[dict[str, Any]] = []
+        self._stack: list[dict[str, Any]] = []
+
+    def _current_block(self) -> dict[str, str] | None:
+        for frame in reversed(self._stack):
+            if frame["kind"] == "article":
+                return frame["block"]
+        return None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key.casefold(): value or "" for key, value in attrs}
+        tag = tag.casefold()
+        if tag == "article":
+            classes = (values.get("class", "") + " " + values.get("itemprop", "")).casefold()
+            if "node-paper" in classes and "view-mode-schedule" in classes:
+                block = {"title": "", "authors": "", "abstract": "", "presentation": None}
+                self.blocks.append(block)
+                self._stack.append({"kind": "article", "block": block})
+            return
+        if tag == "h2":
+            self._stack.append({"kind": "title", "data": []})
+            return
+        if tag == "a" and values.get("href"):
+            block = self._current_block()
+            if block is not None and block["presentation"] is None:
+                href = html.unescape(values["href"].strip())
+                if _PRESENTATION_RE.match(href):
+                    block["presentation"] = values["href"]
+            return
+        if tag == "p":
+            classes = values.get("class", "").casefold()
+            if "field-paper-people-text" in classes:
+                self._stack.append({"kind": "people", "data": []})
+            elif "field-paper-description-long" in classes:
+                self._stack.append({"kind": "desc", "data": []})
+
+    def handle_data(self, data: str) -> None:
+        if not data.strip():
+            return
+        for frame in reversed(self._stack):
+            if frame["kind"] in ("title", "people", "desc"):
+                frame["data"].append(data)
+                return
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.casefold()
+        if tag == "article":
+            while self._stack and self._stack[-1]["kind"] != "article":
+                self._stack.pop()
+            if self._stack and self._stack[-1]["kind"] == "article":
+                self._stack.pop()
+            return
+        if tag == "h2" and self._stack and self._stack[-1]["kind"] == "title":
+            frame = self._stack.pop()
+            block = self._current_block()
+            if block is not None and not block["title"]:
+                block["title"] = " ".join("".join(frame["data"]).split())
+            return
+        if tag == "p" and self._stack and self._stack[-1]["kind"] in ("people", "desc"):
+            frame = self._stack.pop()
+            block = self._current_block()
+            if block is not None:
+                text = " ".join("".join(frame["data"]).split())
+                if frame["kind"] == "people":
+                    block["authors"] = text
+                else:
+                    block["abstract"] = text
+
+
+def _blocks(markup: str) -> _Blocks:
+    if not isinstance(markup, str) or not markup.strip():
+        raise UsenixPaperParseError()
+    parser = _Blocks()
+    try:
+        parser.feed(markup)
+        parser.close()
+    except Exception as error:
+        raise UsenixPaperParseError() from error
+    return parser
+
+
+def _conference_code(page_url: str) -> str | None:
+    try:
+        match = _CONFERENCE_RE.match(urlsplit(page_url).path)
+    except (TypeError, ValueError):
+        return None
+    return match.group(1) if match else None
+
+
+def _year_from_page_url(page_url: str, *, markup: str) -> int | None:
+    code = _conference_code(page_url)
+    if code:
+        digits = re.findall(r"\d{2}", code)
+        if digits:
+            candidate = 2000 + int(digits[-1])
+            if 1990 <= candidate <= 2100:
+                return candidate
+    text_match = re.search(r"\b(19|20)\d{2}\b", markup)
+    if text_match:
+        return int(text_match.group(0))
+    return None
+
+
+def _split_authors(text: str) -> tuple[str, ...]:
+    names: list[str] = []
+    for group in re.split(r"\s*;\s*|\s+and\s+", text):
+        name = " ".join(group.split(",", 1)[0].split())
+        if name:
+            names.append(name)
+    return tuple(names)
+
+
+def parse_accepted_papers(markup: str, *, page_url: str) -> tuple[UsenixAcceptedPaper, ...]:
+    """Extract per-paper metadata from an accepted-paper listing page.
+
+    Supports the cycle / summer / fall schedule layouts. The listing pages do
+    not carry an explicit PDF href or an official keywords field, so the
+    returned papers keep ``official_pdf_url`` / ``prepublication_pdf_url`` as
+    ``None`` and ``keywords`` as an empty tuple; keywords are never inferred.
+    """
+    listing = _safe_url(page_url, USENIX_ORIGIN + "/")
+    if not listing:
+        raise UsenixPaperParseError()
+    blocks = _blocks(markup)
+    year = _year_from_page_url(listing, markup=markup)
+    if year is None:
+        raise UsenixPaperParseError()
+    listing_code = _conference_code(listing)
+    papers: list[UsenixAcceptedPaper] = []
+    for block in blocks.blocks:
+        if not block["title"] or block["presentation"] is None:
+            continue
+        article = _safe_url(block["presentation"], listing, presentation=True)
+        if not article:
+            continue
+        if listing_code is not None:
+            paper_code = _conference_code(article)
+            if paper_code is None or paper_code != listing_code:
+                continue
+        papers.append(
+            UsenixAcceptedPaper(
+                article,
+                block["title"],
+                _split_authors(block["authors"]),
+                year,
+                abstract=block["abstract"],
+            )
+        )
+    return tuple(papers)
+
+
 parse_usenix_accepted_list = parse_accepted_listing
 
 
@@ -171,5 +340,8 @@ class UsenixAcceptedParser:
     def parse_detail(self, markup: str, *, page_url: str) -> UsenixAcceptedPaper:
         return parse_usenix_detail(markup, page_url=page_url)
 
+    def parse_papers(self, markup: str, *, page_url: str) -> tuple[UsenixAcceptedPaper, ...]:
+        return parse_accepted_papers(markup, page_url=page_url)
 
-__all__ = ["USENIX_ORIGIN", "USENIX_PARSE_FAILED", "UsenixPaperParseError", "UsenixAcceptedPaper", "UsenixAcceptedParser", "parse_accepted_listing", "parse_usenix_accepted_list", "parse_usenix_detail"]
+
+__all__ = ["USENIX_ORIGIN", "USENIX_PARSE_FAILED", "UsenixPaperParseError", "UsenixAcceptedPaper", "UsenixAcceptedParser", "parse_accepted_listing", "parse_usenix_accepted_list", "parse_usenix_detail", "parse_accepted_papers"]

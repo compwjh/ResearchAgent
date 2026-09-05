@@ -1,12 +1,19 @@
+import pathlib
+import textwrap
+
 import pytest
 
 from backend.app.services.usenix_paper_parser import (
     USENIX_PARSE_FAILED,
+    UsenixAcceptedPaper,
     UsenixAcceptedParser,
     UsenixPaperParseError,
     parse_accepted_listing,
+    parse_accepted_papers,
     parse_usenix_detail,
 )
+
+FIXTURE_DIR = pathlib.Path(__file__).parent / "fixtures" / "usenix"
 
 
 LISTING_URL = "https://www.usenix.org/conference/usenixsecurity26/cycle1-accepted-papers"
@@ -83,3 +90,97 @@ def test_object_parser_matches_functional_entry_points():
     parser = UsenixAcceptedParser()
     assert parser.parse_listing(LISTING_HTML, page_url=LISTING_URL) == (DETAIL_URL,)
     assert parser.parse_detail(DETAIL_HTML, page_url=DETAIL_URL).title == "A Secure Accepted Paper"
+    assert parser.parse_papers(FIXTURE_DIR.joinpath("cycle1-accepted-papers.html").read_text("utf-8"),
+                                page_url="https://www.usenix.org/conference/usenixsecurity26/cycle1-accepted-papers")
+
+
+def _load(name: str) -> str:
+    return textwrap.dedent(FIXTURE_DIR.joinpath(name).read_text("utf-8")).strip()
+
+
+def test_cycle1_papers_extract_title_authors_abstract_and_year():
+    papers = parse_accepted_papers(
+        _load("cycle1-accepted-papers.html"),
+        page_url="https://www.usenix.org/conference/usenixsecurity26/cycle1-accepted-papers",
+    )
+    assert [paper.title for paper in papers] == ["Cycle One Title", "Carol On Networks"]
+    first = papers[0]
+    assert first.article_url == "https://www.usenix.org/conference/usenixsecurity26/presentation/alice-secure"
+    assert first.authors == ("Alice Example", "Bob Researcher")
+    assert first.abstract == (
+        "This paper studies secure systems and mentions keywords in the abstract text."
+    )
+    assert first.year == 2026
+    assert papers[1].authors == ("Carol Danvers",)
+
+
+def test_listing_papers_have_no_pdf_and_empty_keywords():
+    papers = parse_accepted_papers(
+        _load("cycle1-accepted-papers.html"),
+        page_url="https://www.usenix.org/conference/usenixsecurity26/cycle1-accepted-papers",
+    )
+    for paper in papers:
+        assert paper.official_pdf_url is None
+        assert paper.prepublication_pdf_url is None
+        assert paper.pdf_url is None
+        assert paper.pdf_access == "unknown"
+        assert paper.keywords == ()
+
+
+@pytest.mark.parametrize(
+    "name,page_url,title,year",
+    [
+        (
+            "usenixsecurity25-cycle1-accepted-papers.html",
+            "https://www.usenix.org/conference/usenixsecurity25/cycle1-accepted-papers",
+            "Dave Accepted In 2025",
+            2025,
+        ),
+        (
+            "usenixsecurity24-summer-accepted-papers.html",
+            "https://www.usenix.org/conference/usenixsecurity24/summer-accepted-papers",
+            "Summer One",
+            2024,
+        ),
+        (
+            "usenixsecurity24-fall-accepted-papers.html",
+            "https://www.usenix.org/conference/usenixsecurity24/fall-accepted-papers",
+            "Fall First",
+            2024,
+        ),
+    ],
+)
+def test_cycle_summer_and_fall_layouts_parse(name, page_url, title, year):
+    papers = parse_accepted_papers(_load(name), page_url=page_url)
+    assert papers[0].title == title
+    assert papers[0].year == year
+    assert papers[0].abstract
+    assert papers[0].keywords == ()
+
+
+def test_cross_year_presentation_link_is_skipped():
+    markup = textwrap.dedent(
+        """
+        <main>
+        <article class="node node-paper view-mode-schedule">
+        <h2><a href="/conference/usenixsecurity25/presentation/stale">Stale Reference</a></h2>
+        <p class="field-paper-people-text">Old Guard</p>
+        <p class="field-paper-description-long">A paper that must not be picked up.</p>
+        </article>
+        </main>
+        """
+    )
+    papers = parse_accepted_papers(
+        markup, page_url="https://www.usenix.org/conference/usenixsecurity26/cycle1-accepted-papers"
+    )
+    assert papers == ()
+
+
+def test_non_usenix_listing_page_raises_without_echoing_token():
+    with pytest.raises(UsenixPaperParseError) as error:
+        parse_accepted_papers(
+            _load("cycle1-accepted-papers.html"),
+            page_url="https://www.usenix.org/conference/usenixsecurity26/cycle1-accepted-papers?token=secret",
+        )
+    assert error.value.code == USENIX_PARSE_FAILED
+    assert "secret" not in repr(error.value)
