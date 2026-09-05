@@ -1,32 +1,609 @@
 ---
 name: backend-patterns
-description: 本项目后端（Python/FastAPI/SQLite/Qdrant）实现模式：分层边界、store 规范、并发领用、UTC 时间、安全复用、常用验证命令。backend-dev / backend-reviewer / backend-tester 必读。
+description: Backend architecture patterns, API design, database optimization, and server-side best practices for Node.js, Express, and Next.js API routes. Use when building or reviewing Node.js, Express, or Next.js API routes and their data access.
 ---
 
-# 后端实现模式
+# Backend Development Patterns
 
-## 分层
+Backend architecture patterns and best practices for scalable server-side applications.
 
-`backend/app/api/routes.py`（HTTP 装配）→ `backend/app/services/`（业务）→ `backend/app/domain/`（纯数据契约）。
-**领域层禁止 import FastAPI / httpx / Qdrant**，以保证可单测、可迁移。
+## When to Activate
 
-## SQLite store 规范（以 `services/paper_discovery_store.py` 为范本）
+- Designing REST or GraphQL API endpoints
+- Implementing repository, service, or controller layers
+- Optimizing database queries (N+1, indexing, connection pooling)
+- Adding caching (Redis, in-memory, HTTP cache headers)
+- Setting up background jobs or async processing
+- Structuring error handling and validation for APIs
+- Building middleware (auth, logging, rate limiting)
 
-- 连接固定 `PRAGMA journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=5000`，**不另建连接层**。
-- 版本存 `schema_meta` 单行表（表达式唯一索引 `ON schema_meta((1))` 防多行）。
-- 升版流程：**单事务内**先建表/加列 → 再升 `schema_meta.version`；DDL 全用 `IF NOT EXISTS`、加列用 `PRAGMA table_info` 判存在，保证**幂等**；任一失败**整体回滚**。
-- 并发领用（如 `acquire_fetch_unit`）用**单条条件 UPDATE + `cursor.rowcount`** 判定成功，禁止 SELECT-then-UPDATE（存在检查与写入之间的竞态）。租约过期（`lease_expires_at < now`）允许被其他 owner 恢复领取。
-- 时间统一 `_utcnow()`（RFC3339 UTC，带 `Z`）；UTC 字符串可直接字典序比较。
-- 冻结结果类的写入用 `ON CONFLICT ... DO NOTHING`，保证不可改写。
+## API Design Patterns
 
-## 安全
+### RESTful API Structure
 
-URL 校验与下载一律复用 `paper_download_security.py` + `paper_download.py`，不重写、不旁路。
+```typescript
+// PASS: Resource-based URLs
+GET    /api/markets                 # List resources
+GET    /api/markets/:id             # Get single resource
+POST   /api/markets                 # Create resource
+PUT    /api/markets/:id             # Replace resource
+PATCH  /api/markets/:id             # Update resource
+DELETE /api/markets/:id             # Delete resource
 
-## 常用验证命令
-
-```bash
-.venv/bin/python -m py_compile <改动文件>
-.venv/bin/python -m pytest -q tests/<相关后端测试>
-cd /Users/wjh/ResearchAgent && git diff --check
+// PASS: Query parameters for filtering, sorting, pagination
+GET /api/markets?status=active&sort=volume&limit=20&offset=0
 ```
+
+### Repository Pattern
+
+```typescript
+// Abstract data access logic
+interface MarketRepository {
+  findAll(filters?: MarketFilters): Promise<Market[]>
+  findById(id: string): Promise<Market | null>
+  create(data: CreateMarketDto): Promise<Market>
+  update(id: string, data: UpdateMarketDto): Promise<Market>
+  delete(id: string): Promise<void>
+}
+
+class SupabaseMarketRepository implements MarketRepository {
+  async findAll(filters?: MarketFilters): Promise<Market[]> {
+    let query = supabase.from('markets').select('*')
+
+    if (filters?.status) {
+      query = query.eq('status', filters.status)
+    }
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit)
+    }
+
+    const { data, error } = await query
+
+    if (error) throw new Error(error.message)
+    return data
+  }
+
+  // Other methods...
+}
+```
+
+### Service Layer Pattern
+
+```typescript
+// Business logic separated from data access
+class MarketService {
+  constructor(private marketRepo: MarketRepository) {}
+
+  async searchMarkets(query: string, limit: number = 10): Promise<Market[]> {
+    // Business logic
+    const embedding = await generateEmbedding(query)
+    const results = await this.vectorSearch(embedding, limit)
+
+    // Fetch full data
+    const markets = await this.marketRepo.findByIds(results.map(r => r.id))
+
+    // Sort by similarity
+    return markets.sort((a, b) => {
+      const scoreA = results.find(r => r.id === a.id)?.score || 0
+      const scoreB = results.find(r => r.id === b.id)?.score || 0
+      return scoreA - scoreB
+    })
+  }
+
+  private async vectorSearch(embedding: number[], limit: number) {
+    // Vector search implementation
+  }
+}
+```
+
+### Middleware Pattern
+
+```typescript
+// Request/response processing pipeline
+export function withAuth(handler: NextApiHandler): NextApiHandler {
+  return async (req, res) => {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    try {
+      const user = await verifyToken(token)
+      req.user = user
+      return handler(req, res)
+    } catch (error) {
+      return res.status(401).json({ error: 'Invalid token' })
+    }
+  }
+}
+
+// Usage
+export default withAuth(async (req, res) => {
+  // Handler has access to req.user
+})
+```
+
+## Database Patterns
+
+### Query Optimization
+
+```typescript
+// PASS: GOOD: Select only needed columns
+const { data } = await supabase
+  .from('markets')
+  .select('id, name, status, volume')
+  .eq('status', 'active')
+  .order('volume', { ascending: false })
+  .limit(10)
+
+// FAIL: BAD: Select everything
+const { data } = await supabase
+  .from('markets')
+  .select('*')
+```
+
+### N+1 Query Prevention
+
+```typescript
+// FAIL: BAD: N+1 query problem
+const markets = await getMarkets()
+for (const market of markets) {
+  market.creator = await getUser(market.creator_id)  // N queries
+}
+
+// PASS: GOOD: Batch fetch
+const markets = await getMarkets()
+const creatorIds = markets.map(m => m.creator_id)
+const creators = await getUsers(creatorIds)  // 1 query
+const creatorMap = new Map(creators.map(c => [c.id, c]))
+
+markets.forEach(market => {
+  market.creator = creatorMap.get(market.creator_id)
+})
+```
+
+### Transaction Pattern
+
+```typescript
+async function createMarketWithPosition(
+  marketData: CreateMarketDto,
+  positionData: CreatePositionDto
+) {
+  // Use Supabase transaction
+  const { data, error } = await supabase.rpc('create_market_with_position', {
+    market_data: marketData,
+    position_data: positionData
+  })
+
+  if (error) throw new Error('Transaction failed')
+  return data
+}
+
+// SQL function in Supabase
+CREATE OR REPLACE FUNCTION create_market_with_position(
+  market_data jsonb,
+  position_data jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Start transaction automatically
+  INSERT INTO markets VALUES (market_data);
+  INSERT INTO positions VALUES (position_data);
+  RETURN jsonb_build_object('success', true);
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Rollback happens automatically
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+```
+
+## Caching Strategies
+
+### Redis Caching Layer
+
+```typescript
+class CachedMarketRepository implements MarketRepository {
+  constructor(
+    private baseRepo: MarketRepository,
+    private redis: RedisClient
+  ) {}
+
+  async findById(id: string): Promise<Market | null> {
+    // Check cache first
+    const cached = await this.redis.get(`market:${id}`)
+
+    if (cached) {
+      return JSON.parse(cached)
+    }
+
+    // Cache miss - fetch from database
+    const market = await this.baseRepo.findById(id)
+
+    if (market) {
+      // Cache for 5 minutes
+      await this.redis.setex(`market:${id}`, 300, JSON.stringify(market))
+    }
+
+    return market
+  }
+
+  async invalidateCache(id: string): Promise<void> {
+    await this.redis.del(`market:${id}`)
+  }
+}
+```
+
+### Cache-Aside Pattern
+
+```typescript
+async function getMarketWithCache(id: string): Promise<Market> {
+  const cacheKey = `market:${id}`
+
+  // Try cache
+  const cached = await redis.get(cacheKey)
+  if (cached) return JSON.parse(cached)
+
+  // Cache miss - fetch from DB
+  const market = await db.markets.findUnique({ where: { id } })
+
+  if (!market) throw new Error('Market not found')
+
+  // Update cache
+  await redis.setex(cacheKey, 300, JSON.stringify(market))
+
+  return market
+}
+```
+
+## Error Handling Patterns
+
+### Centralized Error Handler
+
+```typescript
+class ApiError extends Error {
+  constructor(
+    public statusCode: number,
+    public message: string,
+    public isOperational = true
+  ) {
+    super(message)
+    Object.setPrototypeOf(this, ApiError.prototype)
+  }
+}
+
+export function errorHandler(error: unknown, req: Request): Response {
+  if (error instanceof ApiError) {
+    return NextResponse.json({
+      success: false,
+      error: error.message
+    }, { status: error.statusCode })
+  }
+
+  if (error instanceof z.ZodError) {
+    return NextResponse.json({
+      success: false,
+      error: 'Validation failed',
+      details: error.errors
+    }, { status: 400 })
+  }
+
+  // Log unexpected errors
+  console.error('Unexpected error:', error)
+
+  return NextResponse.json({
+    success: false,
+    error: 'Internal server error'
+  }, { status: 500 })
+}
+
+// Usage
+export async function GET(request: Request) {
+  try {
+    const data = await fetchData()
+    return NextResponse.json({ success: true, data })
+  } catch (error) {
+    return errorHandler(error, request)
+  }
+}
+```
+
+### Retry with Exponential Backoff
+
+```typescript
+async function fetchWithRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3
+): Promise<T> {
+  let lastError: Error
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error as Error
+
+      if (i < maxRetries - 1) {
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = Math.pow(2, i) * 1000
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+  }
+
+  throw lastError!
+}
+
+// Usage
+const data = await fetchWithRetry(() => fetchFromAPI())
+```
+
+## Authentication & Authorization
+
+### JWT Token Validation
+
+```typescript
+import jwt from 'jsonwebtoken'
+
+interface JWTPayload {
+  userId: string
+  email: string
+  role: 'admin' | 'user'
+}
+
+export function verifyToken(token: string): JWTPayload {
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload
+    return payload
+  } catch (error) {
+    throw new ApiError(401, 'Invalid token')
+  }
+}
+
+export async function requireAuth(request: Request) {
+  const token = request.headers.get('authorization')?.replace('Bearer ', '')
+
+  if (!token) {
+    throw new ApiError(401, 'Missing authorization token')
+  }
+
+  return verifyToken(token)
+}
+
+// Usage in API route
+export async function GET(request: Request) {
+  const user = await requireAuth(request)
+
+  const data = await getDataForUser(user.userId)
+
+  return NextResponse.json({ success: true, data })
+}
+```
+
+### Role-Based Access Control
+
+```typescript
+type Permission = 'read' | 'write' | 'delete' | 'admin'
+
+interface User {
+  id: string
+  role: 'admin' | 'moderator' | 'user'
+}
+
+const rolePermissions: Record<User['role'], Permission[]> = {
+  admin: ['read', 'write', 'delete', 'admin'],
+  moderator: ['read', 'write', 'delete'],
+  user: ['read', 'write']
+}
+
+export function hasPermission(user: User, permission: Permission): boolean {
+  return rolePermissions[user.role].includes(permission)
+}
+
+export function requirePermission(permission: Permission) {
+  return (handler: (request: Request, user: User) => Promise<Response>) => {
+    return async (request: Request) => {
+      const user = await requireAuth(request)
+
+      if (!hasPermission(user, permission)) {
+        throw new ApiError(403, 'Insufficient permissions')
+      }
+
+      return handler(request, user)
+    }
+  }
+}
+
+// Usage - HOF wraps the handler
+export const DELETE = requirePermission('delete')(
+  async (request: Request, user: User) => {
+    // Handler receives authenticated user with verified permission
+    return new Response('Deleted', { status: 200 })
+  }
+)
+```
+
+## Rate Limiting
+
+### Simple In-Memory Rate Limiter
+
+```typescript
+class RateLimiter {
+  private requests = new Map<string, number[]>()
+
+  async checkLimit(
+    identifier: string,
+    maxRequests: number,
+    windowMs: number
+  ): Promise<boolean> {
+    const now = Date.now()
+    const requests = this.requests.get(identifier) || []
+
+    // Remove old requests outside window
+    const recentRequests = requests.filter(time => now - time < windowMs)
+
+    if (recentRequests.length >= maxRequests) {
+      return false  // Rate limit exceeded
+    }
+
+    // Add current request
+    recentRequests.push(now)
+    this.requests.set(identifier, recentRequests)
+
+    return true
+  }
+}
+
+const limiter = new RateLimiter()
+
+export async function GET(request: Request) {
+  const ip = request.headers.get('x-forwarded-for') || 'unknown'
+
+  const allowed = await limiter.checkLimit(ip, 100, 60000)  // 100 req/min
+
+  if (!allowed) {
+    return NextResponse.json({
+      error: 'Rate limit exceeded'
+    }, { status: 429 })
+  }
+
+  // Continue with request
+}
+```
+
+## Background Jobs & Queues
+
+### Simple Queue Pattern
+
+```typescript
+class JobQueue<T> {
+  private queue: T[] = []
+  private processing = false
+
+  async add(job: T): Promise<void> {
+    this.queue.push(job)
+
+    if (!this.processing) {
+      this.process()
+    }
+  }
+
+  private async process(): Promise<void> {
+    this.processing = true
+
+    while (this.queue.length > 0) {
+      const job = this.queue.shift()!
+
+      try {
+        await this.execute(job)
+      } catch (error) {
+        console.error('Job failed:', error)
+      }
+    }
+
+    this.processing = false
+  }
+
+  private async execute(job: T): Promise<void> {
+    // Job execution logic
+  }
+}
+
+// Usage for indexing markets
+interface IndexJob {
+  marketId: string
+}
+
+const indexQueue = new JobQueue<IndexJob>()
+
+export async function POST(request: Request) {
+  const { marketId } = await request.json()
+
+  // Add to queue instead of blocking
+  await indexQueue.add({ marketId })
+
+  return NextResponse.json({ success: true, message: 'Job queued' })
+}
+```
+
+## Logging & Monitoring
+
+### Structured Logging
+
+```typescript
+interface LogContext {
+  userId?: string
+  requestId?: string
+  method?: string
+  path?: string
+  [key: string]: unknown
+}
+
+class Logger {
+  log(level: 'info' | 'warn' | 'error', message: string, context?: LogContext) {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      ...context
+    }
+
+    console.log(JSON.stringify(entry))
+  }
+
+  info(message: string, context?: LogContext) {
+    this.log('info', message, context)
+  }
+
+  warn(message: string, context?: LogContext) {
+    this.log('warn', message, context)
+  }
+
+  error(message: string, error: Error, context?: LogContext) {
+    this.log('error', message, {
+      ...context,
+      error: error.message,
+      stack: error.stack
+    })
+  }
+}
+
+const logger = new Logger()
+
+// Usage
+export async function GET(request: Request) {
+  const requestId = crypto.randomUUID()
+
+  logger.info('Fetching markets', {
+    requestId,
+    method: 'GET',
+    path: '/api/markets'
+  })
+
+  try {
+    const markets = await fetchMarkets()
+    return NextResponse.json({ success: true, data: markets })
+  } catch (error) {
+    logger.error('Failed to fetch markets', error as Error, { requestId })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+```
+
+**Remember**: Backend patterns enable scalable, maintainable server-side applications. Choose patterns that fit your complexity level.
+---
+
+## Project Addendum — ResearchAgent 后端技术约定（FastAPI / SQLite / Qdrant）
+
+- **分层边界**：API 层只做校验与编排，业务逻辑在 service，数据访问在 store，禁止跨层直调。
+- **store 规范**：所有 DB 访问经 `store.py`，SQL 用参数化；迁移脚本放 `backend/migrations`，单事务幂等。
+- **并发领用**：抢锁用单条条件 `UPDATE ... WHERE claimed_by IS NULL ... RETURNING`，锁内只做必要写，计算移到锁外。
+- **UTC 时间**：所有时间戳存 UTC（带时区或 naive UTC），展示层再转本地。
+- **常用验证命令**：
+  - `cd backend && python -m pytest -q`
+  - `cd backend && ruff check .`
+  - `cd backend && python -c "import app"`（导入冒烟）

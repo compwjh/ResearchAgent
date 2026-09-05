@@ -26,8 +26,8 @@
 | 角色 | 核心职责 | 落盘交付物（交接物） | 决策权 | 倾向模型档位 |
 |------|----------|----------------------|--------|--------------|
 | 架构师（Architect） | 编写/修订 spec、技术决策、划模块与边界、定模型与上下文预算 | spec（`docs/sdd/specs/NNN-*.md`）+ 执行配置 | spec 内容 R，模型预算 A | 旗舰/最强推理 |
-| 产品经理（PM） | 基于已确认 spec 梳理产品使用步骤、用户旅程、验收场景 | spec 的"产品使用步骤"段 | 产品可操作性 R | 中等推理/写作 |
-| 开发主管（Tech Lead） | 需求/技术评审**总控**、拆任务、合并裁决 | 评审文档、任务拆分、PR 批准 | 评审通过与合并 A | 强推理/代码 |
+| 文档更新（Doc Updater） | 基于已确认 spec 梳理产品使用步骤、用户旅程、验收场景 | spec 的"产品使用步骤"段 | 产品可操作性 R | 中等推理/写作 |
+| 架构师（评审/合并） | 需求/技术评审**总控**、拆任务、合并裁决 | 评审文档、任务拆分、PR 批准 | 评审通过与合并 A | 强推理/代码 |
 | **后端开发（Backend Dev）** | **只改 `backend/**`**：API / 服务 / 数据层 / 迁移 | 后端代码、自测结果 | 后端实现 R | 27B 级（含并发/事务/边界） |
 | **前端开发（Frontend Dev）** | **只改 `frontend/**`**：界面 / 交互 / 样式 | 前端代码、三项自查结论 | 前端实现 R | 9b（规则明确，优先速度） |
 | **后端评审（Backend Reviewer）** | **只评 `backend/**` | 后端评审报告 | 后端评审 R | 27B 级（强推理） |
@@ -53,7 +53,7 @@
 - **⚠️ 不要硬编码模型代号**：写执行配置/评审记录/报告时，架构师应记为**「自身」**（或"当前执行任务的 Agent 自身"），**不要写死模型代号**（如 Hy3/Hy4）。
   - 原因：模型代号随版本迭代变化，硬编码必然过期失真（2026-08-28 修正：此前文档误标 `Hy3`，实际为 `Hy4`，共 17 处需更正）。
   - 历史文档中已写代号的，以"自身"为准；如需标注版本，写成「自身（Hy4）」形式，但主体仍是"自身"。
-- 选型优先级：**本地 Ollama 模型能胜任的中低复杂度角色（初级开发、测试、PM）优先用本地模型以省成本**；架构师、开发主管等需要强推理/全局视野的角色用线上旗舰模型。
+- 选型优先级：**本地 Ollama 模型能胜任的中低复杂度角色（doc-updater、backend-tester / frontend-tester）优先用本地模型以省成本**；架构师、planner 等需要强推理/全局视野的角色用线上旗舰模型。
 - 分工的成本依据：最贵的是线上大模型的**输出** token。架构师（贵模型）只花在不可替代的"读上下文 + 决策 + 把上下文压缩后调度"上；评审、编码等长文本产出交给**零成本的本地模型**。任务产出规模越大，此分工越省（调度摩擦仅在极碎任务下可能抵消优势）。
 - 每个角色选定的模型、上下文窗口都要写进 spec 的"执行配置"段，落盘可查。
 
@@ -77,7 +77,7 @@
 - **本地模型注册**：`.codebuddy/models.json`（Ollama 走 `http://localhost:11434/v1/chat/completions`，`apiKey: ollama`，`supportsToolCall` 按实测填）。
 - **角色子代理**：`.codebuddy/agents/<role>.md`，YAML front matter 支持：
   - `tools`（function call 白名单，如 `Read, Grep, Glob, Bash`）
-  - `skills`（启动时自动加载的技能，如 `sdd-acceptance`）
+  - `skills`（启动时自动加载的技能，如 `verification-loop`）
   - `model`（可为每个角色绑定不同模型，含本地模型 ID）
   - `permissionMode` / `maxTurns` / `memory` / `mcpServers` 等
 - **技能库**：`.codebuddy/skills/<name>/SKILL.md`，沉淀角色 checklist、模板与行为边界，供 agent 自动加载。
@@ -85,10 +85,10 @@
 
 #### 编排方式（多角色协同）
 
-- **编排顾问 agent**：`.codebuddy/agents/sdd-orchestrator.md`，按 SDD 门禁顺序产出「分派计划」（每角色的任务、最小上下文、产出路径、行为边界）。
-- **⚠️ 实测：子代理拿不到 `Agent`/`Task` 分派工具**，即使 front matter 写 `tools: ..., Agent` 也不生效（orchestrator 实际只拿到 Read/Grep/Glob）。因此**嵌套分派不可行，编排由主会话（架构师 Hy4）执行**：orchestrator 出计划 → 主会话用 Task 逐个分派 → 汇总。
-- 已铺开的角色 agent：`pm`、`tech-lead`、`junior-dev`、`tester`；配套技能 `sdd-pm-steps`、`sdd-review`、`sdd-coding`、`sdd-acceptance`。
-- 调用方式：`Task` 工具的 `subagent_name` 指定角色名（如 `tester`）；也可自然语言显式调用（"使用 tech-lead 子代理评审"）或靠 `description` 里的 `Use PROACTIVELY` 触发自动委派。
+- **编排顾问 agent**：`.codebuddy/agents/planner.md`，按 SDD 门禁顺序产出「分派计划」（每角色的任务、最小上下文、产出路径、行为边界）。
+- **⚠️ 实测：子代理拿不到 `Agent`/`Task` 分派工具**，即使 front matter 写 `tools: ..., Agent` 也不生效（planner 实际只拿到 Read/Grep/Glob）。因此**嵌套分派不可行，编排由主会话（架构师 Hy4）执行**：planner 出计划 → 主会话用 Task 逐个分派 → 汇总。
+- 已铺开的角色 agent：`doc-updater`、`architect`、`planner`、`backend-dev`/`frontend-dev`、`backend-reviewer`/`frontend-reviewer`、`backend-tester`/`frontend-tester`、`tester`；配套技能 `tdd-workflow`、`coding-standards`、`verification-loop`、`security-review`、`regression-guard`、`strategic-compact`、`backend-patterns`、`frontend-patterns`。
+- 调用方式：`Task` 工具的 `subagent_name` 指定角色名（如 `backend-tester`）；也可自然语言显式调用（"使用 architect 子代理评审"）或靠 `description` 里的 `Use PROACTIVELY` 触发自动委派。
 - 也可用 **Agent Teams** 做并行编排（`team_create` + 具名成员 + `send_message` 通信）。
 
 **实践结论与限制（2026-08-28 实测）**：
@@ -99,8 +99,8 @@
   - 因此角色 agent 的 `model` 直接填 `ollama list` 中**已注册**的真实模型名。要为不同角色分配不同本地模型，需先在用户级 `models.json` 注册（属用户全局配置，改动前须经用户同意）。
 - **`Task` 工具调用内置 `code-explorer` 时是只读的**（无 Bash/写文件），无法落盘报告；而调用自定义 agent（如 `tester`）时，其 `tools` 生效，可用 Bash 真实执行命令与写文件——已实测：tester 用 Bash 跑 curl 并自行写回验收报告。
 - 自定义 agent 若需落盘文档或跑命令，`tools` 必须包含 `Bash`（只读子代理无法写报告，需由架构师代落盘）。
-- **⚠️ 创建/修改 agent 定义时，必须复核 `tools` 是否满足「进展日志落盘」要求**：所有角色 agent 都被要求写 `.codebuddy/agent-logs/*` 日志（思考可见），若无 `Bash` 则日志写不出。曾漏配 `pm.md`（只有 Read/Grep/Glob/Edit），实战中 pm 无法写日志——改为加 `Bash`。新增 agent 前先确认 `tools` 含 `Bash`（除非该角色明确无落盘需求）。
-- 新建的 agent 文件**即时生效**（实测新建 `sdd-orchestrator.md` 后同一会话即可调用），无需重启。
+- **⚠️ 创建/修改 agent 定义时，必须复核 `tools` 是否满足「进展日志落盘」要求**：所有角色 agent 都被要求写 `.codebuddy/agent-logs/*` 日志（思考可见），若无 `Bash` 则日志写不出。曾漏配 `doc-updater.md`（只有 Read/Grep/Glob/Edit），实战中 doc-updater 无法写日志——改为加 `Bash`。新增 agent 前先确认 `tools` 含 `Bash`（除非该角色明确无落盘需求）。
+- 新建的 agent 文件**即时生效**（实测新建 `planner.md` 后同一会话即可调用），无需重启。
 - **本地模型驱动子代理较慢**：实测单次分派 3–8 分钟（27B 量化模型），属正常成本，不要误判为卡死；追求速度可改用 `qwen3.5:9b`（需先在用户级 `models.json` 注册）。
 #### 角色模型分配（2026-09-03 修订：27B 统一改用 MLX 版；依据 `docs/sdd/TOOLCALL_BENCHMARK.md` 与 `docs/sdd/retro/2026-09-02-subagent-timeout-mlx.md` 实测）
 
@@ -112,32 +112,35 @@
 | `frontend-reviewer` | `qwen3.8:27b-mlx` | 用户指定升配（2026-09-05）：评审需**可靠核对 DOM 契约并给出文件行号依据**，质量优先 |
 | `backend-tester` | `qwen3.5:9b` | 跑测试与判定，9b 快（tool call 1.7–7.4s） |
 | `frontend-tester` | `qwen3.5:9b` | 静态核对（`node --check` / Grep），9b 快 |
-| `pm` / `tester`（兼容） | `qwen3.5:9b` | 文案/判定类任务，快（tool call 1.7–7.4s）；实测单次任务 ~90s |
-| `junior-dev`（兼容） | `qwen3.8:27b-mlx` | **编码质量优先**（用户要求），27B 级。2026-09-03 起统一 MLX 版（原 `qwen3.8-27b-q4` GGUF 版已弃用）：解码 24.3 tok/s，较 GGUF 的 13.8 tok/s 快 76%，GGUF 吞吐过低是子代理超时的主因 |
-| `tech-lead` | `qwen3.8:27b` → `qwen3.8:27b-mlx` | 评审需强推理；**用户决策：工作重要，质量优先，不降速**。2026-09-03 起统一 MLX 版（原 `qwen3.8:27b` 为 GGUF 版，已弃用） |
-| `code-drafter` | `deepseek-coder-v2:16b` | **极快（3.6s）**，仅用于独立小函数/片段初稿；该模型不支持 tools，产出由主会话落盘，需人工复核 |
+| `tester` | `qwen3.5:9b` | 跨端验收总控：汇总单端报告 + 集成验收，9b 快（与单端 tester 同档） |
+| `doc-updater` | `qwen3.5:9b` | 文档/产品步骤，文案类任务，9b 快（tool call 1.7–7.4s）；实测单次任务 ~90s |
+| `architect` | `qwen3.8:27b-mlx` | 架构决策与评审总控需强推理；2026-09-03 起统一 MLX 版：解码 24.3 tok/s |
+| `planner` | `qwen3.8:27b-mlx` | 编排规划需全局视野；2026-09-03 起统一 MLX 版 |
 
 #### Agent ↔ Skill 绑定矩阵（分派前查此表）
 
 > 设计原则（参照 ECC）：**skills 是主要工作流面**，规则集中放在 skill 里共享，不重复写进每个 agent 的 system prompt，以压缩每个 agent 的常驻上下文。
-> 所有 agent 启动时**必读** `context-budget`；其余按职责绑定。
+> 所有 agent 启动时**必读** `progress-logging`（进展日志与进度预测，必须）与 `strategic-compact`（上下文压缩）；其余按职责绑定。
 
 | Agent | 主 skill（front matter `skills:`） | 启动必读（正文要求 Read，按顺序） | 只改 / 只评范围 |
 |---|---|---|---|
-| `backend-dev` | `sdd-coding` | `context-budget` → `backend-patterns` → `regression-guard` | `backend/**` + 后端测试 |
-| `frontend-dev` | `sdd-coding` | `context-budget` → `frontend-patterns` → `regression-guard` | `frontend/**` |
-| `backend-reviewer` | `sdd-review` | `context-budget` → `backend-patterns` → `regression-guard` | `backend/**` |
-| `frontend-reviewer` | `sdd-review` | `context-budget` → `frontend-patterns` → `regression-guard` | `frontend/**` |
-| `backend-tester` | `sdd-acceptance` | `context-budget` → `backend-patterns` → `regression-guard` | 后端 pytest |
-| `frontend-tester` | `sdd-acceptance` | `context-budget` → `frontend-patterns` → `regression-guard` | 前端静态核对 |
-| `pm` | `sdd-pm-steps` | `context-budget` | spec 的"产品使用步骤"段 |
-| `tech-lead` / `tester` / `junior-dev`（兼容） | 原绑定 | 追加 `context-budget` + `regression-guard` | 跨端 |
+| `backend-dev` | `tdd-workflow` | `progress-logging` → `backend-patterns` → `python-testing` → `regression-guard` | `backend/**` + 后端测试（Django 代码另读 `django-patterns`/`django-tdd`/`django-verification`） |
+| `frontend-dev` | `tdd-workflow` | `progress-logging` → `frontend-patterns` → `regression-guard` | `frontend/**` |
+| `backend-reviewer` | `coding-standards` | `progress-logging` → `backend-patterns` → `regression-guard` | `backend/**` |
+| `frontend-reviewer` | `coding-standards` | `progress-logging` → `frontend-patterns` → `regression-guard` | `frontend/**` |
+| `backend-tester` | `verification-loop` | `progress-logging` | 后端 pytest |
+| `frontend-tester` | `verification-loop` | `progress-logging` | 前端静态核对 |
+| `tester` | `verification-loop` | `progress-logging` → `regression-guard` | 跨端验收总控（汇总单端 + 集成验收） |
+| `doc-updater` | （`strategic-compact` + `progress-logging`） | `progress-logging` | spec 的"产品使用步骤"段 |
+| `architect` | `coding-standards` + `regression-guard` | `progress-logging` → `backend-patterns` / `frontend-patterns` | 评审/架构文档 |
+| `planner` | （`strategic-compact` + `progress-logging`） | `progress-logging` | 编排/分派计划 |
 
 **共享技能职责**
 
 | Skill | 承载内容 |
 |---|---|
-| `context-budget` | 上下文主动压缩五条、日志进度预测、中断恢复复用（原散落在各 agent 的重复规则，已收敛到此） |
+| `strategic-compact` | ECC 战略压缩（`/compact` 时机、存活内容、hook）；纯 ECC 内容，本项目未追加附录。 |
+| `progress-logging` | 本项目特有（ECC 无对应）：子代理进展日志与进度预测纪律——每步写 `.codebuddy/agent-logs/<agent>-<spec>-<时间戳>.md`、每条带 `- 进度：约 X%`、回传必给日志路径。 |
 | `regression-guard` | 本项目高频回归清单：前端 DOM 契约 / `?v=N` / XSS / CSS 作用域；后端 SQLite 迁移 / 外键 RESTRICT / SSRF / USENIX 来源 / 禁止重复实现 |
 | `backend-patterns` | 分层边界、SQLite store 规范、并发领用、UTC 时间、常用验证命令 |
 | `frontend-patterns` | 无构建静态前端的 DOM 约定、四项必守、常用验证命令 |
@@ -165,12 +168,12 @@
   mlx 解码快 76%、预填充快近 4 倍。GGUF 版吞吐过低是子代理超时的主因。
 - **给 27B 子代理派活要控输出量**：按 24 tok/s 估算生成时间，**一次只让它产出一个文件**。要求它一次性输出多个文件全文会因生成耗时过长而超时。
 - **子代理失败时先查 `.codebuddy/agent-logs/` 历史日志**：若以前有详细日志而本次连第一条都没写，说明是执行慢/超时，而非配置错误（配置错误会直接报 `model not found`）——可避免重复排查已解决的配置问题。
-- **任务复杂度判断标准已写入技能 `sdd-coding`**：`junior-dev` 动手前需自评（简单=单函数/无并发/≤1 文件；复杂=涉及锁/多文件/状态/复杂边界），简单任务可建议转 `code-drafter` 出草稿后复核，复杂任务须按「复杂任务自检清单」（锁范围、可哈希、双重检查、容量上限、异常边界）逐项核对。
+- **任务复杂度判断标准已写入技能 `tdd-workflow`**：`backend-dev` / `frontend-dev` 动手前需自评（简单=单函数/无并发/≤1 文件；复杂=涉及锁/多文件/状态/复杂边界），简单任务可建议转主会话出草稿后复核，复杂任务须按「复杂任务自检清单」（锁范围、可哈希、双重检查、容量上限、异常边界）逐项核对。
 
 - 为不同角色分配不同模型，须先在**用户级 `~/.codebuddy/models.json`** 注册（项目级的自定义 ID 不识别）。已注册上表模型并备份原配置。
 - **⚠️ 子代理 `model` 字段不能用含 `/` 的命名空间 ID**：实测 `oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU` 虽已注册，仍报 `Subagent model config is invalid! Model ... not found`；改用不含 `/` 的 `qwen3.8:27b` 即正常。
   - （补充）`model` 名带 `-q4` 这类后缀是可以的；此前"只有无后缀名能调度"的判断是误判，真实根因是注册名与 agent 里写的字符串不一致。属低频场景，细节已归档至 `docs/sdd/retro/2026-09-01-subagent-model-naming.md`。
-  → 文档中的分配表必须与 `.codebuddy/agents/*.md` 实际值一致，否则照抄即踩坑（此坑由 tech-lead 评审发现）。
+  → 文档中的分配表必须与 `.codebuddy/agents/*.md` 实际值一致，否则照抄即踩坑（此坑由 architect 评审发现）。
 - **deepseek-coder 系列不可用**：`deepseek-coder:33b`、`deepseek-coder-v2:16b` 均不支持 tools（Ollama 返回 `does not support tools`），且编码正确率不如 `qwen3.5:9b`（漏"冒号前"约束，33b 还返回超长串）。
 
 #### 本地模型的正确用法（2026-08-28 踩坑修正，务必遵守）
@@ -280,13 +283,13 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：�
 1. **需求评审（Requirement Review）** — 开发主管：确认目标清晰、范围可测、边界与"明确不做"完整、产品使用步骤可操作。写入 `NNN-requirement-review.md`，结论通过/打回。
 2. **技术评审（Tech Review）** — 开发主管：确认数据模型、接口、模块拆分、模型与上下文预算合理。写入 `NNN-tech-review.md`，结论通过/打回。
 3. 需求与技术评审均通过后，待**用户明确确认** spec 才转 `已确认`，进入实现。
-4. **验收评审（Acceptance Review）** — 测试出报告 + 开发主管签字：实现完成后，测试按 spec 中"产品使用步骤/验收场景"执行验收，出具 `NNN-acceptance-review.md`（含通过/不通过结论）；开发主管签字确认后 spec 转 `已完成` 并进入部署。验收不通过则退回实现阶段。
+4. **验收评审（Acceptance Review）** — 测试（`tester` 为跨端验收总控，汇总 `backend-tester` / `frontend-tester` 单端报告并做集成验收）出报告 + 架构师签字：实现完成后，测试按 spec 中"产品使用步骤/验收场景"执行验收，出具 `NNN-acceptance-review.md`（含通过/不通过结论）；架构师签字确认后 spec 转 `已完成` 并进入部署。验收不通过则退回实现阶段。
 
 ## 门禁执行硬规则
 
 > 逐条可勾选清单、失败处置与收口项见 **`docs/sdd/SDD-GATE-CHECKLIST.md`**。以下为不可省略的要点：
 
-1. **分工真实发生**：需求/技术评审、验收、编码分别由 `tech-lead` / `tester` / `junior-dev` 承担；主会话只做编排、决策与最小增量落地校验。
+1. **分工真实发生**：需求/技术评审、验收、编码分别由 `architect` / `tester`·`backend-tester`·`frontend-tester` / `backend-dev`·`frontend-dev` 承担；主会话只做编排、决策与最小增量落地校验。
 2. **失败先诊断优化，不得判定「它做不了」而代行**：子代理失败或产出不可用时，先诊断原因并**调整分派方式**重试：
    - 回传被截断 → 任务拆更小（≤1 文件）、要求「先回传代码、后回传说明」并把片段写进日志；
    - `Edit` 静默失败（中小模型） → 改为回传片段，由架构师 apply；
@@ -296,11 +299,11 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：�
    **禁止**以「上次失败过，所以它做不了」为由预防性放弃分派。
 3. **代行是例外，条件必须客观**：代行须三处留痕（① 产出文档头部写「主模型代行（原因）」；② spec 评审记录结论后标 `（代行，非独立评审）`；③ 变更日志记录一行）。
    **唯一允许的代行条件**：改动**不含任何代码文件**（纯文档 / 配置 / 评审文档）。
-   **禁止代行**：改动涉及 `.py` / `.js` / `.html` / `.css` 等代码文件时一律分派 `junior-dev`，**无论改动多小**；评审 / 验收一律分派 `tech-lead` / `tester`。
+   **禁止代行**：改动涉及 `.py` / `.js` / `.html` / `.css` 等代码文件时一律分派 `backend-dev` / `frontend-dev`，**无论改动多小**；评审 / 验收一律分派 `architect` / `tester`·`backend-tester`·`frontend-tester`。
    子代理失败时按规则 2 重试（换模型 / 拆分缩小任务），**不得因"自己写更快"而代行**。
    > 本条曾被执行者用「改动极小 / 上下文在手」的主观借口绕过，故已删除一切主观裁量措辞，只保留"是否含代码文件"这一可数事实。
-4. **分派前置**：任何含代码文件的实现动作，**必须先发起 `Task(junior-dev)` 再落地**，禁止先写代码后补记分派，也禁止"先评估值不值得再决定分不分派"。
-5. **强制任务拆分与适配**：当 `junior-dev` 使用本地 Ollama 模型时，涉及 ≥3 个文件的改动必须拆成「每任务 ≤2 个代码文件、改动 ≤150 行」的子任务逐一分派，不得整体自己写。使用线上模型时不适用这条文件数/行数上限，但仍须按风险拆分、先分派后落地，并由主会话读回和验证。分派时**按模型能力适配**：给**最小必要上下文**（明确文件路径 + 行号 + 目标状态），而非给得越多越好；明确「做完的样子」（跑通哪条命令 / 输出什么）作为验收标准；中小模型不做大段 `Edit`。
+4. **分派前置**：任何含代码文件的实现动作，**必须先发起 `Task(backend-dev)` / `Task(frontend-dev)` 再落地**，禁止先写代码后补记分派，也禁止"先评估值不值得再决定分不分派"。
+5. **强制任务拆分与适配**：当 `backend-dev` / `frontend-dev` 使用本地 Ollama 模型时，涉及 ≥3 个文件的改动必须拆成「每任务 ≤2 个代码文件、改动 ≤150 行」的子任务逐一分派，不得整体自己写。使用线上模型时不适用这条文件数/行数上限，但仍须按风险拆分、先分派后落地，并由主会话读回和验证。分派时**按模型能力适配**：给**最小必要上下文**（明确文件路径 + 行号 + 目标状态），而非给得越多越好；明确「做完的样子」（跑通哪条命令 / 输出什么）作为验收标准；中小模型不做大段 `Edit`。
 6. **禁止占位式引用**：评审记录在文档未产出前写「待评审（未执行）」，结论禁留「/」，不得引用尚不存在的路径。
 7. **执行配置五行齐全**：不参与写「不适用（原因）」，不整行删除；架构师行填「**自身**」，不写死模型代号。
 8. **收口即 DoD**：三份评审有真实结论、验收签字栏已填、`spec-status-changelog.md` 已追加、变更日志补齐、引用路径存在、复盘已落盘 —— 全满足才转 `已完成`；验收未签字不得转。
