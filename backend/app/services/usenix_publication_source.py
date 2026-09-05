@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
+import re
 import tempfile
 import threading
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional
+from urllib.parse import urlsplit
 
 import httpx
 
-from backend.app.domain.paper_discovery import ConferenceSource
+from backend.app.domain.paper_discovery import (
+    CatalogPaper,
+    CatalogSourceRecord,
+    ConferenceSource,
+    SearchEvent,
+    SearchJob,
+    SearchSourceProgress,
+    SourceFetchUnit,
+)
 from backend.app.services.arxiv_adapter import ArxivFallbackAdapter
 from backend.app.services.paper_discovery_normalization import normalize_title
 from backend.app.services.paper_download import (
@@ -20,7 +32,28 @@ from backend.app.services.paper_download import (
     download_candidate,
 )
 from backend.app.services.paper_download_security import URLSecurityError, validate_url
-from backend.app.services.usenix_paper_parser import UsenixAcceptedParser
+from backend.app.services.usenix_paper_parser import (
+    UsenixAcceptedParser,
+    parse_accepted_papers,
+)
+
+
+class _SyncResult:
+    """Outcome of a single ``sync_usenix_units`` run over discovered pages."""
+    __slots__ = ("status", "error_code", "cached", "completed", "failed", "paper_count")
+
+    def __init__(self) -> None:
+        self.status = "completed"
+        self.error_code: Optional[str] = None
+        self.cached: list[str] = []
+        self.completed: list[str] = []
+        self.failed: list[str] = []
+        self.paper_count = 0
+
+
+def _default_utcnow() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -48,10 +81,15 @@ class UsenixAcceptedSource:
                  cache_ttl_seconds: float = 86400.0,
                  now: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep,
-                 pdf_page_validator: Optional[Callable[[Any], int]] = None) -> None:
+                 pdf_page_validator: Optional[Callable[[Any], int]] = None,
+                 store: Any = None,
+                 utcnow: Callable[[], str] = _default_utcnow) -> None:
         self.client = client
         self.parser = parser or UsenixAcceptedParser()
         self.arxiv_adapter = arxiv_adapter or ArxivFallbackAdapter()
+        self.store = store
+        self._utcnow = utcnow
+        self._discovery_routes: list[Any] = []
         self.timeout = timeout
         self.dns_resolver, self.peer_ip_resolver = dns_resolver, peer_ip_resolver
         self.cache_ttl_seconds, self._now, self._sleep = max(0.0, cache_ttl_seconds), now, sleep
@@ -96,8 +134,6 @@ class UsenixAcceptedSource:
                     paper = self.parser.parse_detail(self._get_text(detail_url, interval), page_url=detail_url)
                 except Exception:
                     warnings.append("USENIX_PARSE_FAILED")
-                    continue
-                if normalize_title(query) not in normalize_title(paper.title):
                     continue
                 pdf_url, stage = self._preferred_pdf(paper, interval)
                 if not pdf_url:
@@ -236,6 +272,257 @@ class UsenixAcceptedSource:
     def _probe_settings(self) -> Any:
         from backend.app.core.article_settings import ArticleSettings
         return ArticleSettings(article_download_dir=tempfile.gettempdir())
+
+    # --- Catalog synchronization (Spec015 Task14) --------------------------
+    #
+    # Cache authority lives in SQLite via fetch units, so a brand new process
+    # re-hitting a completed unit skips the listing fetch entirely.  Discovery
+    # is *controlled*: only same-conference, no query/fragment/userinfo
+    # accepted-paper pages under a known usenixsecurity cycle are admitted.
+
+    @staticmethod
+    def _norm_path(url: str) -> Optional[str]:
+        """Return the canonical path of a same-origin USENIX page, else None."""
+        parts = urlsplit(url)
+        if not parts.scheme or not parts.netloc or parts.query or parts.fragment:
+            return None
+        if not parts.netloc.casefold().endswith("usenix.org") or parts.username:
+            return None
+        path = parts.path
+        return path if path.endswith("/") else f"{path}/"
+
+    @staticmethod
+    def _accepted_path_ok(path: str) -> bool:
+        norm = path.rstrip("/")
+        return bool(
+            re.fullmatch(
+                r"/conference/usenixsecurity\d+/"
+                r"(cycle\d+|summer|fall|accepted)-accepted-papers",
+                norm,
+            )
+        )
+
+    def _discovered_pages(self, conference_id: str, years: Iterable[int]) -> tuple[str, ...]:
+        """Deterministic, same-conference seed + same-year supplementary pages."""
+        if conference_id != "usenix-security":
+            return ()
+        cycles = ("cycle1", "summer", "fall")
+        pages: list[str] = []
+        seen: set[str] = set()
+        for year in dict.fromkeys(int(y) for y in years):
+            for cycle in cycles:
+                url = f"{self.origin}/conference/usenixsecurity{year % 100:02d}/{cycle}-accepted-papers"
+                if url not in seen:
+                    seen.add(url)
+                    pages.append(url)
+        return tuple(pages)
+
+    def _listing_for(self, page: str, route: Any) -> str:
+        """Canonicalise a discovered page to its listing template form."""
+        if route is None or not route.get("listing_url_template"):
+            return page
+        template = str(route["listing_url_template"])
+        norm = self._norm_path(page) or "/"
+        tail = norm[len("/conference/usenixsecurity"):]
+        match = re.match(r"(\d{2})/(.+)", tail)
+        if not match:
+            return page
+        yy, cycle = match.group(1), match.group(2)
+        year = int("20" + yy) % 100 + 2000
+        return template.replace("{yy}", yy).replace("{year}", str(year)).replace("{cycle}", cycle)
+
+    def _content_hash(self, text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+    def _fetch_listing(self, page: str) -> tuple[Optional[str], Optional[str]]:
+        """Fetch a listing page text via allowlist + rate limit; (text, error)."""
+        try:
+            validate_url(page, allowed_hosts={"www.usenix.org"}, dns_resolver=self.dns_resolver)
+        except URLSecurityError as error:
+            return None, f"URL_SECURITY:{error}"
+        try:
+            self._before_request(1.0)
+            response = self._client().get(page, timeout=self.timeout, follow_redirects=False)
+        except (httpx.HTTPError, OSError):
+            return None, "USENIX_UNAVAILABLE"
+        if response.status_code >= 400:
+            return None, f"USENIX_HTTP_{response.status_code}"
+        return response.text, None
+
+    def _sync_one_page(self, search_id: str, conference_id: str, page: str,
+                       owner: str, lease_seconds: int, now: str,
+                       result: "_SyncResult", route: Any) -> None:
+        """Fetch, dedup and persist one accepted-paper listing page."""
+        path = self._norm_path(page)
+        if path is None or not self._accepted_path_ok(path.rstrip("/")):
+            result.failed.append(page)
+            self._append_event(search_id, conference_id, "USENIX_DISCOVERY_REJECTED", "rejected",
+                               {"page": page}, now)
+            return
+        unit_id = f"usenix|{conference_id}|{path}"
+        listing = self._listing_for(page, route)
+
+        existing = self.store.get_fetch_unit(unit_id)
+        if existing is not None and existing.status == "completed" and existing.content_hash:
+            with self._lock:
+                result.cached.append(unit_id)
+            return
+
+        acquired = self.store.acquire_fetch_unit(unit_id, owner, lease_seconds, now)
+        if not acquired:
+            # Another owner holds a valid lease; treat as already in-flight.
+            with self._lock:
+                result.cached.append(unit_id)
+            return
+
+        text, fetch_error = self._fetch_listing(listing)
+        if text is None:
+            failed_unit = SourceFetchUnit(
+                fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+                status="failed", error_code=fetch_error, lease_owner=owner,
+                last_attempt_at=now, created_at=now, updated_at=now,
+            )
+            self.store.save_fetch_unit(failed_unit, now)
+            with self._lock:
+                result.failed.append(page)
+            self._append_event(search_id, conference_id, "USENIX_FETCH_FAILED", "failed",
+                               {"unit_id": unit_id, "error_code": fetch_error}, now)
+            return
+
+        unit_hash = self._content_hash(text)
+        papers = tuple(parse_accepted_papers(text, page_url=listing))
+        paper_count = 0
+        for paper in papers:
+            self._persist_paper(search_id, unit_id, conference_id, paper, now, result)
+            paper_count += 1
+
+        completed_unit = SourceFetchUnit(
+            fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+            status="completed", content_hash=unit_hash, paper_count=paper_count,
+            lease_owner=owner, last_attempt_at=now, last_success_at=now,
+            created_at=existing.created_at if existing is not None and existing.created_at else now,
+            updated_at=now,
+        )
+        self.store.save_fetch_unit(completed_unit, now)
+        with self._lock:
+            result.completed.append(unit_id)
+            result.paper_count += paper_count
+
+    def _persist_paper(self, search_id: str, unit_id: str, conference_id: str,
+                       paper: Any, now: str, result: "_SyncResult") -> None:
+        """Upsert a catalog paper and its source record for one accepted paper."""
+        title = paper.title
+        key = normalize_title(title)
+        catalog_paper_id = hashlib.sha256(f"{conference_id}|{key}".encode("utf-8")).hexdigest()[:32]
+        metadata = {
+            "title": title,
+            "authors": list(paper.authors),
+            "year": paper.year,
+            "abstract": paper.abstract,
+            "article_url": paper.article_url,
+            "page_unit_id": unit_id,
+        }
+        metadata_hash = hashlib.sha256(
+            json.dumps(metadata, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        catalog = CatalogPaper(
+            catalog_paper_id=catalog_paper_id, conference_id=conference_id, year=paper.year,
+            title=title, normalized_title=key, authors=list(paper.authors),
+            abstract=paper.abstract or None, publication_stage="accepted",
+            official_page_url=paper.article_url,
+            official_pdf_url=paper.official_pdf_url,
+            prepublication_pdf_url=paper.prepublication_pdf_url,
+            metadata_hash=metadata_hash, index_status="pending",
+            created_at=now, updated_at=now,
+        )
+        self.store.upsert_catalog_paper(catalog, now)
+        source_record = CatalogSourceRecord(
+            source_record_id=f"{unit_id}|{catalog_paper_id}".replace("/", "-"),
+            catalog_paper_id=catalog_paper_id, fetch_unit_id=unit_id,
+            source_kind="usenix", source_key=catalog_paper_id,
+            raw_metadata=metadata, observed_at=now,
+        )
+        self.store.save_source_record(source_record, now)
+
+    def _append_event(self, search_id: str, conference_id: str, event_type: str,
+                      status: str, payload: Mapping[str, Any], now: str) -> None:
+        event = SearchEvent(
+            event_id=0, search_id=search_id, node_name="usenix_sync",
+            source_kind="usenix", event_type=event_type, status=status,
+            safe_payload=dict(payload), created_at=now,
+        )
+        self.store.append_search_event(event, now)
+
+    def sync_usenix_units(
+        self,
+        search_id: str,
+        conference_id: str,
+        years: Iterable[int],
+        *,
+        owner: str,
+        lease_seconds: int = 300,
+        now: Optional[str] = None,
+    ) -> _SyncResult:
+        """Controlled discover + lease + persist USENIX accepted-paper pages."""
+        if self.store is None:
+            raise ValueError("sync_usenix_units requires a store")
+        now = now or self._utcnow()
+        route = self._discovery_route(conference_id)
+        result = _SyncResult()
+        pages = self._discovered_pages(conference_id, years)
+        for page in pages:
+            try:
+                self._sync_one_page(search_id, conference_id, page, owner,
+                                    lease_seconds, now, result, route)
+            except Exception as error:  # noqa: BLE001 - one page must not abort the batch
+                with self._lock:
+                    result.failed.append(page)
+                self._append_event(search_id, conference_id, "USENIX_SYNC_FAILED", "failed",
+                                   {"page": page, "error_code": type(error).__name__}, now)
+
+        if not pages:
+            result.status, result.error_code = "failed", "NO_PAGES"
+        elif result.failed and not result.completed and not result.cached:
+            result.status, result.error_code = "failed", "USENIX_UNAVAILABLE"
+        elif result.failed:
+            result.status = "partial"
+
+        self._record_progress(search_id, conference_id, result, now)
+        self._record_job(search_id, conference_id, years, result, now)
+        with self._lock:
+            for page in result.failed:
+                self._append_event(search_id, conference_id, "USENIX_UNIT_FAILED", "failed",
+                                   {"page": page}, now)
+        return result
+
+    def _discovery_route(self, conference_id: str) -> Any:
+        routes = getattr(self, "_discovery_routes", None) or []
+        for route in routes:
+            if isinstance(route, Mapping) and route.get("route_type") == "usenix_accepted":
+                return route if route.get("enabled", True) else None
+        return None
+
+    def _record_progress(self, search_id: str, conference_id: str,
+                         result: "_SyncResult", now: str) -> None:
+        progress = SearchSourceProgress(
+            search_id=search_id, source_kind="usenix", status=result.status,
+            cached_units=[{"unit_id": u} for u in result.cached],
+            completed_units=[{"unit_id": u} for u in result.completed],
+            paper_count=result.paper_count, error_code=result.error_code,
+            message_code=result.status, updated_at=now,
+        )
+        self.store.save_source_progress(progress, now)
+
+    def _record_job(self, search_id: str, conference_id: str,
+                    years: Iterable[int], result: "_SyncResult", now: str) -> None:
+        job = SearchJob(
+            search_id=search_id, query="", conference_ids=[conference_id],
+            years=list(dict.fromkeys(int(y) for y in years)),
+            status=result.status, degraded=bool(result.failed),
+            error_code=result.error_code, total_results=result.paper_count,
+            created_at=now, started_at=now, completed_at=now, updated_at=now,
+        )
+        self.store.create_search_job(job, now)
 
 
 class _ProbeClient:
