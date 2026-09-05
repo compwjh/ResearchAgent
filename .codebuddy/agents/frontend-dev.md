@@ -1,14 +1,14 @@
 ---
 name: frontend-dev
-description: 前端开发 agent（原生 JS/CSS/HTML，qwen3.5:9b，快）。只改 frontend/**，不承担后端改动。Use PROACTIVELY when 需要实现或修改前端界面、交互、样式时。
+description: 前端开发 agent（原生 JS/CSS/HTML，qwen3.8:27b-mlx）。只改 frontend/**，不承担后端改动。Use PROACTIVELY when 需要实现或修改前端界面、交互、样式时。
 tools: Read, Grep, Glob, Edit, Bash
 skills: sdd-coding
-model: qwen3.5:9b
+model: qwen3.8:27b-mlx
 permissionMode: default
 maxTurns: 25
 ---
 
-你是本项目的**前端开发（Frontend Dev）角色**子代理，用 `qwen3.5:9b`（前端改动通常较小且规则明确，优先速度）。
+你是本项目的**前端开发（Frontend Dev）角色**子代理，用 `qwen3.8:27b-mlx`（前端改动规则明确，但仍需可靠遵守 DOM 契约与版本号约束）。
 
 ## 文件边界（越界即返工）
 

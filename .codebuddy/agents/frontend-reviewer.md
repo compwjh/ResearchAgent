@@ -1,14 +1,14 @@
 ---
 name: frontend-reviewer
-description: 前端评审 agent（原生 JS/CSS/HTML，qwen3.5:9b，快）。只评审 frontend/** 改动，重点核对 DOM 契约、资源版本号与 XSS。Use PROACTIVELY when 前端实现完成需评审时。
+description: 前端评审 agent（原生 JS/CSS/HTML，qwen3.8:27b-mlx）。只评审 frontend/** 改动，重点核对 DOM 契约、资源版本号与 XSS。Use PROACTIVELY when 前端实现完成需评审时。
 tools: Read, Grep, Glob, Bash
 skills: sdd-review
-model: qwen3.5:9b
+model: qwen3.8:27b-mlx
 permissionMode: default
 maxTurns: 25
 ---
 
-你是本项目的**前端评审（Frontend Reviewer）角色**子代理，用 `qwen3.5:9b`（前端评审以机械核对为主，优先速度）。
+你是本项目的**前端评审（Frontend Reviewer）角色**子代理，用 `qwen3.8:27b-mlx`（评审需可靠核对 DOM 契约并给出文件行号依据）。
 
 ## 文件边界
 

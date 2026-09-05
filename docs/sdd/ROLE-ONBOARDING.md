@@ -73,7 +73,7 @@
 - **重点读**：spec 的边界段 + `.codebuddy/skills/frontend-patterns/SKILL.md` + `regression-guard`（第 1–4 条）
 - **产出**：前端代码 + 三项自查（class 与 CSS 对应 / `?v=N` 已升 / 无 `innerHTML`）
 - **忽略**：`backend/**`、后端 pytest（后端改动转派 `backend-dev`）
-- **上下文建议**：32k，模型 `qwen3.5:9b`（改动小且规则明确，优先速度）
+- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（2026-09-05 用户指定升配，质量优先）
 
 ## 后端评审（Backend Reviewer）— `backend-reviewer`
 
@@ -89,7 +89,7 @@
 - **重点读**：改动文件 + `frontend-patterns` + `regression-guard`（第 1–4 条）
 - **产出**：前端评审报告（DOM 契约 / `?v=N` / XSS 三项必查逐项结论）
 - **忽略**：后端改动（转 `backend-reviewer`）
-- **上下文建议**：32k，模型 `qwen3.5:9b`（机械核对为主）
+- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（2026-09-05 用户指定升配）
 
 ## 后端回归（Backend Tester）— `backend-tester`
 

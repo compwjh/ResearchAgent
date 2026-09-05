@@ -116,9 +116,9 @@ ResearchAgent 本身及其所有项目级 Agent 处理 USENIX Security accepted/
 | 角色 agent | 模型 | 理由 |
 |---|---|---|
 | `backend-dev` | `qwen3.8:27b-mlx` | 后端含并发/事务/边界要求，**必须 27B 级**（9b 会出现"在锁内调用用户函数"这类真实并发缺陷） |
-| `frontend-dev` | `qwen3.5:9b` | 前端改动小且规则明确（DOM 契约/版本号/XSS），9b 足够且**快约 3 倍**（14.6s vs 45.4s） |
+| `frontend-dev` | `qwen3.8:27b-mlx` | 用户指定升配（2026-09-05）：前端虽规则明确，但需**可靠遵守 DOM 契约与 `?v=N` 约束**，质量优先于速度 |
 | `backend-reviewer` | `qwen3.8:27b-mlx` | 评审需强推理；用户决策质量优先、不降速 |
-| `frontend-reviewer` | `qwen3.5:9b` | 以机械核对为主（class 对应 / `?v=N` 是否升级），9b 快 |
+| `frontend-reviewer` | `qwen3.8:27b-mlx` | 用户指定升配（2026-09-05）：评审需**可靠核对 DOM 契约并给出文件行号依据**，质量优先 |
 | `backend-tester` | `qwen3.5:9b` | 跑测试与判定，9b 快（tool call 1.7–7.4s） |
 | `frontend-tester` | `qwen3.5:9b` | 静态核对（`node --check` / Grep），9b 快 |
 | `pm` / `tester`（兼容） | `qwen3.5:9b` | 文案/判定类任务，快（tool call 1.7–7.4s）；实测单次任务 ~90s |

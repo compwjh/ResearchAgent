@@ -33,9 +33,9 @@
 | 初级开发 Junior Dev（兼容保留） | `qwen3.8:27b-mlx` | 32k | 代码 + 自测结果 | `Task(junior-dev)` | 可，须在变更日志写明"架构师落地校验" |
 | 测试 QA（兼容保留，跨端验收） | `qwen3.5:9b` | 32k | `reviews/NNN-acceptance-review.md` | `Task(tester)` | **仅紧急且须显式标注** |
 | **后端开发 Backend Dev** | `qwen3.8:27b-mlx` | 32k | 后端代码 + 自测结果（只改 `backend/**`） | `Task(backend-dev)` | 同上（纯文档可代行） |
-| **前端开发 Frontend Dev** | `qwen3.5:9b` | 32k | 前端代码 + 三项自查（只改 `frontend/**`） | `Task(frontend-dev)` | 同上 |
+| **前端开发 Frontend Dev** | `qwen3.8:27b-mlx` | 32k | 前端代码 + 三项自查（只改 `frontend/**`） | `Task(frontend-dev)` | 同上 |
 | **后端评审 Backend Reviewer** | `qwen3.8:27b-mlx` | 32k | 后端评审报告（只评 `backend/**`） | `Task(backend-reviewer)` | **仅紧急且须显式标注** |
-| **前端评审 Frontend Reviewer** | `qwen3.5:9b` | 32k | 前端评审报告（只评 `frontend/**`） | `Task(frontend-reviewer)` | **仅紧急且须显式标注** |
+| **前端评审 Frontend Reviewer** | `qwen3.8:27b-mlx` | 32k | 前端评审报告（只评 `frontend/**`） | `Task(frontend-reviewer)` | **仅紧急且须显式标注** |
 | **后端回归 Backend Tester** | `qwen3.5:9b` | 32k | 后端验收结论（只跑后端 pytest） | `Task(backend-tester)` | **仅紧急且须显式标注** |
 | **前端回归 Frontend Tester** | `qwen3.5:9b` | 32k | 前端验收结论（只做静态核对） | `Task(frontend-tester)` | **仅紧急且须显式标注** |
 
