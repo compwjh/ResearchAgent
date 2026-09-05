@@ -3,6 +3,8 @@
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
 > 依赖：任务 11；当前状态：`已完成`
 
+> ⚠️ **设计更正（2026-09-05）**：USENIX skill 是**产品资产**，不属于开发工具目录 `.codebuddy/skills/`。`.codebuddy/skills/usenix-*` 两份副本已移除，仅保留 `.agents/skills/usenix-*`（供 ResearchAgent 运行时加载）；开发流程规则 `AGENTS.md` 不再收录该段。开发子代理（backend-dev / frontend-dev 等）永远不需要下论文功能，不应把产品资产放进开发技能目录。
+
 ## 一句话目标
 
 创建两个职责隔离的可移植项目级 Skill：下载版负责用户选定论文后的 PDF 下载/验证/导入，目录版负责 USENIX/DBLP 元数据检索、增量缓存、进度和 RAG；两者不得混用。

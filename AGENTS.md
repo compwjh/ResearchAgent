@@ -2,15 +2,6 @@
 
 本项目采用 SDD（Specification-Driven Development，规范驱动开发）流程。
 
-## 项目级 USENIX 论文 Skill
-
-ResearchAgent 本身及其所有项目级 Agent 处理 USENIX Security accepted/prepublication 论文目录检索、下载、导入或回填时，必须按职责加载对应 Skill：
-
-- 目录元数据检索、增量缓存、LangGraph、RAG、来源进度：`.agents/skills/usenix-paper-catalog-search/SKILL.md`
-- 用户选定论文后的 PDF 下载、验证、导入、登录续传：`.agents/skills/usenix-accepted-papers/SKILL.md`
-
-两个 Skill 都适用于主 Agent、PM、Tech Lead、QA、调度器和执行 Agent，不仅适用于开发 Agent。目录检索 Skill 严禁搜索阶段请求、下载或验证 PDF；下载 Skill 只接受服务端冻结结果 ID，并遵守 USENIX → prepublication → 严格 arXiv 兜底顺序、allowlist、限速、出版阶段字段和 Task/SQLite 回填协议。没有目标子 Agent、来源不受控或匹配不确定时停止并记录阻塞。
-
 ## 强制流程
 
 1. 收到新的功能需求、改动需求或修复需求时，先进入计划模式，只分析需求、读取必要上下文，并创建或更新 `docs/sdd/specs/NNN-kebab-case.md`。
