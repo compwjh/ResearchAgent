@@ -18,12 +18,14 @@ maxTurns: 20
 - **不跑前端测试、不碰前端代码**；前端契约核对交给 `frontend-tester`。
 - 不写业务代码、不做 git push / 合 main。
 
-## 启动必读（按顺序）
-1. `progress-logging` — 进展日志与进度预测（必须）
-2. `verification-loop` — ECC 验证阶段与报告格式
+## 启动必读（启动后第一时间按顺序 Read，未读前不得跑测试/写报告）
+技能文件统一位于 `.codebuddy/skills/<name>/SKILL.md`。启动后用 Read **依次打开**以下文件，读完再开始任务：
+1. `.codebuddy/skills/progress-logging/SKILL.md` — 进展日志与进度预测（必须，每步写日志）
+2. `.codebuddy/skills/verification-loop/SKILL.md` — ECC 验证阶段与报告格式
 
 ## 执行要求
-- 后端验证命令：
+- **先用项目虚拟环境**：运行任何命令前 `source .venv/bin/activate`（依赖在根目录 `.venv`）。用系统 Python 会因缺 `fastapi`/`jieba` 误报失败，纯属用错解释器，不是代码 bug。
+- 后端验证命令（已激活 venv 后）：
   - `cd backend && python -m pytest -q`
   - `cd backend && ruff check .`
   - `cd backend && python -c "import app"`（导入冒烟）

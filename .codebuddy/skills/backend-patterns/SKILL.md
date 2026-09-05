@@ -603,7 +603,9 @@ export async function GET(request: Request) {
 - **store 规范**：所有 DB 访问经 `store.py`，SQL 用参数化；迁移脚本放 `backend/migrations`，单事务幂等。
 - **并发领用**：抢锁用单条条件 `UPDATE ... WHERE claimed_by IS NULL ... RETURNING`，锁内只做必要写，计算移到锁外。
 - **UTC 时间**：所有时间戳存 UTC（带时区或 naive UTC），展示层再转本地。
-- **常用验证命令**：
+- **虚拟环境（关键）**：项目依赖装在仓库根目录的 `.venv` 里。**运行任何后端验证命令前必须先 `source .venv/bin/activate`**，否则会用系统 Python，误报 `ModuleNotFoundError: No module named 'fastapi' / 'jieba'` 等（看似测试失败，实为用错解释器）。
+- **常用验证命令**（在已激活 `.venv` 后执行）：
   - `cd backend && python -m pytest -q`
   - `cd backend && ruff check .`
   - `cd backend && python -c "import app"`（导入冒烟）
+  - 单文件/覆盖率（仓库根目录执行，tests/ 在根）：`python -m pytest tests/test_xxx.py --cov=backend.app.services.xxx --cov-report=term-missing`
