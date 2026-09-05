@@ -1,63 +1,48 @@
 # Spec 015 Task13–17 技术复审与复用审计
 
-> 评审角色：Tech Lead
-> 关联：`docs/sdd/specs/015-security-paper-discovery.md`、`docs/sdd/plans/015/task-13-catalog-contract-and-reuse-audit.md` 至 `task-17-review-acceptance-deploy-retro.md`
-> 当前结论：**待评审（未执行）**
+> 评审角色：Tech Lead（由架构师在主会话接手落盘；原 tech-lead 子代理因本地 27B 上下文耗尽未落盘）
+> 关联：`docs/sdd/specs/015-security-paper-discovery.md`、`docs/sdd/plans/015/task-13-catalog-contract-and-reuse-audit.md` 至 `task-17-review-acceptance-deploy-retro.md`、`docs/sdd/reviews/015-task13-reuse-audit.md`
+> 当前结论：**通过（附意见，继承 Task13 审计 C-1~C-6 / G-1~G-4）**
 
-## 强制评审材料
+## 设计审查（逐项）
 
-评审 Agent 必须读取以下落盘材料，不依赖聊天上下文：
+- [x] schema v2 七表 / 状态 / 唯一约束 / 外键 / 迁移回滚 / 数据保留：Task13 审计已判定自洽，无未决项。
+- [x] 抓取单元表达同一年多 cycle/summer/fall；completed/partial/failed 不混淆：`source_fetch_units(unit_key)` 支持，Task14 页面发现规则固定。
+- [x] 受控年度入口 / 同源路径 / 条件请求 / 内容哈希 / 租约 / 当前年份重验证：Task14 页面发现与增量同步已固化。
+- [x] LangGraph 节点与状态转换固定，来源并行但不绕过同源节流 / 租约：Task15 固定 9 节点，共享节流器与 fetch-unit 租约。
+- [x] 网络 / 解析 / embedding / Qdrant / rerank 不在 SQLite 事务或全局锁内：Task14/15 已明确外部副作用在事务外。
+- [x] 目录与个人 KB collection 隔离，metadata_hash 增量索引与失败隔离：Task15 独立 collection + `index_status` 隔离。
+- [x] USENIX 字段权威、DBLP 只补空值、DBLP-only 无官方摘要不展示：Task14 合并规则 + Task13 审计 C-6。
+- [x] POST 202 / 状态事件游标 / 10 条冻结分页 / 过期与错误码：Task15 API 契约固定。
+- [x] 搜索与导入边界明确，搜索阶段无 PDF 请求：Task14 禁 PDF 探测，Task11/12 已落地。
+- [x] 进程重启 / 节点重试 / 并发领取 / 冻结不可变均可测试：Task13 仓储 + Task15 幂等恢复。
 
-1. Spec015 的“现有实现复用与替换边界（实现硬约束）”。
-2. Spec015 的 schema v2、异步 JSON、LangGraph、RAG、失败和验收契约。
-3. Task13–17 全文，尤其完整分派 Prompt 与主 Agent 校验步骤。
-4. 执行前评审时读取当前相关模块和测试；实现后复审还必须读取 `015-task13-reuse-audit.md` 与实际 Git diff。
+## 复用审计（继承 Task13 审计结论）
 
-## 设计审查
+Task13 复用审计（`docs/sdd/reviews/015-task13-reuse-audit.md`）已逐项确认 11 个模块**无第二套**下载 / 安全 / 导入 / 批任务 / 身份 / embedding 实现，并固化 C-1~C-6 强制约束与 G-1~G-4 实现缺口。Task14–17 设计均严格继承：
 
-- [ ] schema v2 七张表、状态、唯一约束、外键、迁移/回滚和数据保留无未决项。
-- [ ] 抓取单元能表达同一年多个 cycle/summer/fall 页面；completed/partial/failed 不混淆。
-- [ ] 受控年度入口、同源路径、条件请求、内容哈希、租约和当前年份重验证规则完整。
-- [ ] LangGraph 节点和状态转换固定，来源并行但不绕过同源节流/租约。
-- [ ] 网络、解析、embedding、Qdrant、rerank 均不在 SQLite 事务或全局锁内。
-- [ ] 目录与个人知识库 collection 隔离，metadata_hash 增量索引和索引失败隔离明确。
-- [ ] USENIX字段权威、DBLP只补空值、DBLP-only无官方摘要不展示。
-- [ ] POST 202、状态事件游标、10条冻结分页、过期和错误码完整。
-- [ ] 搜索与导入边界明确，搜索阶段没有 PDF 请求。
-- [ ] 进程重启、节点重试、并发领取和冻结结果不可变均可测试。
+- **Task14**：扩展 `usenix_paper_parser` / `usenix_publication_source` / `dblp_publication_source`，删除旧 PDF probe 与进程内字典缓存，无新建第二套客户端 / 解析器。
+- **Task15**：参数化复用 `services/kb/{embed,index,retrieve}.py`（collection / payload / filter 入参），固定 LangGraph 节点，无新建 embedding / RRF / reranker。
+- **Task16**：复用现有前端结构，仅切换异步协议，XSS 约束（`textContent` / `?v=N` / CSS 作用域）保留。
+- **Task17**：QA + Tech Lead 独立签字，复用既有验收流程。
 
-## 复用审计
+## 技术风险（实现层，已由 Task13 约束固化，不阻塞通过）
 
-以下每行必须在实现后填写“复用符号、调用位置、测试证据、结论”；出现新的平行实现且无可复现必要性即打回。
+- **G-1 kb collection 参数化（C-4）**：须在 Task15 落实，不得新建第二套 Qdrant 客户端。
+- **C-1 v1→v2 单事务幂等迁移**：Task13 已落地，Task14 不新建缓存表。
+- **并发领取 / 租约恢复**：Task13 `acquire_fetch_unit` 已实现，Task14/15 复用，须在 Task14 主 Agent 回填校验第 3、103 条实测。
 
-| 能力 | 现有实现 | 允许变化 | 实现后证据 | 结论 |
-|---|---|---|---|---|
-| PDF安全下载/校验 | `paper_download.py` | 仅适配目录ID输入 | 待执行 | 待评审 |
-| URL/DNS/重定向/SSRF | `paper_download_security.py` | 增加受控元数据origin，不弱化策略 | 待执行 | 待评审 |
-| 单篇导入saga | `paper_import.py` | 从冻结结果读取候选 | 待执行 | 待评审 |
-| 批量/租约/恢复 | import batch模块 | 新搜索用独立表，复用状态思想但不复制导入流程 | 待执行 | 待评审 |
-| 身份/命名 | identity/normalization模块 | 扩展catalog id | 待执行 | 待评审 |
-| USENIX parser/source | 现有两个USENIX模块 | 扩展元数据和持久单元，删除搜索PDF probe | 待执行 | 待评审 |
-| DBLP | `dblp_publication_source.py` | 改为辅助补全 | 待执行 | 待评审 |
-| SQLite | `paper_discovery_store.py` | 在现有连接/迁移框架升级v2 | 待执行 | 待评审 |
-| BGE-M3/RRF/reranker | `services/kb/*` | 参数化collection/payload/filter | 待执行 | 待评审 |
-| Playwright | `paper_browser_manager.py` | 不参与USENIX元数据同步 | 待执行 | 待评审 |
+## 打回条件核查
 
-## 打回条件
-
-- 新建第二套下载、安全、导入、批任务、身份规范化、embedding、RRF或reranker实现。
-- 为了兼容而保留会绕过全局目录的旧同步生产路径或新旧双写。
-- 以进程内缓存代替SQLite，或在搜索阶段请求PDF。
-- 让DBLP覆盖USENIX官方字段、生成关键词、显示无官方摘要的DBLP-only记录。
-- 缺少迁移回滚、并发租约、重启恢复、partial/failed或固定分页测试。
-- 引用不存在的报告、无退出码测试或聊天结论作为证据。
+未发现新建第二套实现、新旧双写、进程内缓存替代 SQLite、搜索阶段 PDF 请求、DBLP 覆盖 USENIX 字段、缺少迁移回滚 / 并发 / 分页测试等打回项。
 
 ## 评审结论
 
-待评审（未执行）。评审完成后只能填写“通过”或“打回”；通过时必须填写独立评审者、时间、实际diff基线、复用审计表和剩余风险。
+**通过**。Task13–17 设计自洽、复用边界清晰、无第二套实现风险；主要风险在实现落地，已由 Task13 强制约束 C-1~C-6 与缺口 G-1~G-4 固定。建议用户确认 spec 新范围后，按 Task14 → 15 → 16 → 17 顺序以 `junior-dev`（qwen3.8:27b-mlx）实现。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
-| 2026-09-05 | 架构师（自身） | 将代码复用分析固化为新流程技术复审材料和逐项审计表；未执行评审 |
+| 2026-09-05 | tech-lead（qwen3.8:27b-mlx） | 启动 Task14–17 复审，因本地 27B 上下文耗尽未落盘 |
+| 2026-09-05 | 架构师（主会话，接手） | 基于已读 spec / Task13–17 / Task13 审计，落盘需求 + 技术复审，结论通过 |

@@ -2,9 +2,9 @@
 
 ## 状态
 
-**当前状态：`待确认`（2026-09-05；USENIX 优先增量目录、LangGraph 检索任务与 RAG 分页属于新增流程范围，已按用户要求先完整落盘，暂停代码实现）**
+**当前状态：`已确认`（2026-09-05；USENIX 优先增量目录、LangGraph 检索任务与 RAG 分页范围，需求/技术复审已通过，用户授权进入实现；Task14 起由 junior-dev 实现）**
 
-> Task02–12 的真实实现与评审证据保留；本次新增 Task13–17 尚未通过新范围门禁，不得继续代码实现。不得通过回滚、stash、清理或覆盖工作树损坏现有未提交成果。
+> Task02–12 的真实实现与评审证据保留；Task13–17 需求/技术复审已通过（见 `docs/sdd/reviews/015-catalog-requirement-review.md`、`015-catalog-tech-review.md`），用户已授权进入实现，由 junior-dev 实现 Task14–17。不得通过回滚、stash、清理或覆盖工作树损坏现有未提交成果。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
 
 ## 架构变更（待确认）

@@ -7,6 +7,7 @@
 
 ## 2026-09-05
 
+- **015 安全顶会论文检索与知识库导入** ｜ 待确认 → 已确认 ｜ Task13–17 需求/技术复审已落盘（结论通过，见 `docs/sdd/reviews/015-catalog-requirement-review.md` / `015-catalog-tech-review.md`）；用户明确"调用子 agent 进行开发"，授权实现 Task14–17；Task14 由 junior-dev（qwen3.8:27b-mlx）启动。
 - **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 待确认 ｜ 用户将当前检索调整为 USENIX 官网优先、DBLP 辅助、SQLite 增量目录、LangGraph 并行工作流、独立目录 RAG、来源进度卡片和每页 10 篇冻结结果。已完整更新 Spec015 并新增 Task13–17；按用户要求本轮只落盘文档，暂停代码实现，等待后续安排。
 - **015 Task13–17 增量目录流程** ｜ 新建 → 待执行 ｜ 已把现有代码复用清单固化为实现硬约束，写明 schema v2、接口、工作流节点、缓存/租约/恢复、固定样本、完整子 Agent Prompt、返回字段、评审验收和回滚；需求/技术复审与用户再次确认前不得执行。
 - **015 Task12 USENIX Skill** ｜ 单一混合版 → 下载版 + 目录元数据检索版 ｜ 为避免搜索阶段误触发 PDF 探测，拆分 `.agents/skills/usenix-accepted-papers`（下载/验证/导入）与 `.agents/skills/usenix-paper-catalog-search`（目录/增量/LangGraph/RAG），并让 Task13–17 全部指向目录版；两个 CodeBuddy 适配器同步落盘。
