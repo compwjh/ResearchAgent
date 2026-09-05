@@ -58,3 +58,51 @@
 - **产出**：`NNN-acceptance-review.md`（报告 + 结论）、Bug 复现证据
 - **忽略**：架构决策、模型预算、未涉及模块的代码
 - **上下文建议**：32k（中等代码模型，优先本地 Ollama）
+
+## 后端开发（Backend Dev）— `backend-dev`
+
+- **何时接手**：spec `已确认` 后，改动**只涉及 `backend/**`**（API / 服务 / 数据层 / 迁移）。
+- **重点读**：spec 的数据模型/接口/边界段 + `.codebuddy/skills/backend-patterns/SKILL.md` + `regression-guard`（第 5–9 条）
+- **产出**：后端代码 + 自测结果（`py_compile` / `pytest`）
+- **忽略**：`frontend/**`、前端测试、其他 spec（前端改动转派 `frontend-dev`）
+- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（后端含并发/事务/边界，必须 27B 级）
+
+## 前端开发（Frontend Dev）— `frontend-dev`
+
+- **何时接手**：改动**只涉及 `frontend/**`**（`index.html` / `app.js` / `styles.css`）。
+- **重点读**：spec 的边界段 + `.codebuddy/skills/frontend-patterns/SKILL.md` + `regression-guard`（第 1–4 条）
+- **产出**：前端代码 + 三项自查（class 与 CSS 对应 / `?v=N` 已升 / 无 `innerHTML`）
+- **忽略**：`backend/**`、后端 pytest（后端改动转派 `backend-dev`）
+- **上下文建议**：32k，模型 `qwen3.5:9b`（改动小且规则明确，优先速度）
+
+## 后端评审（Backend Reviewer）— `backend-reviewer`
+
+- **何时接手**：后端实现完成需评审，或对 `backend/**` 改动做代码审查。
+- **重点读**：spec 全部 + 改动文件 + `backend-patterns` + `regression-guard`（第 5–9 条）
+- **产出**：后端评审报告（`docs/sdd/reviews/`）
+- **忽略**：前端改动（转 `frontend-reviewer`）
+- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（评审需强推理）
+
+## 前端评审（Frontend Reviewer）— `frontend-reviewer`
+
+- **何时接手**：前端实现完成需评审。
+- **重点读**：改动文件 + `frontend-patterns` + `regression-guard`（第 1–4 条）
+- **产出**：前端评审报告（DOM 契约 / `?v=N` / XSS 三项必查逐项结论）
+- **忽略**：后端改动（转 `backend-reviewer`）
+- **上下文建议**：32k，模型 `qwen3.5:9b`（机械核对为主）
+
+## 后端回归（Backend Tester）— `backend-tester`
+
+- **何时接手**：改动只涉及后端，需回归验证或按验收点做后端验收。
+- **重点读**：验收点 + 相关后端测试 + `backend-patterns`
+- **产出**：后端验收结论（命令 / 退出码 / 真实输出摘要）
+- **忽略**：前端测试（转 `frontend-tester`）——**单端改动只跑该端回归，省资源**
+- **上下文建议**：32k，模型 `qwen3.5:9b`
+
+## 前端回归（Frontend Tester）— `frontend-tester`
+
+- **何时接手**：改动只涉及前端，需回归验证。
+- **重点读**：改动文件 + `frontend-patterns`
+- **产出**：前端验收结论（`node --check` / class 对应 / `?v=N` / XSS 四项）
+- **忽略**：后端 pytest（转 `backend-tester`）
+- **上下文建议**：32k，模型 `qwen3.5:9b`

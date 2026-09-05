@@ -16,6 +16,18 @@ maxTurns: 30
 - 有独立上下文窗口，**不要全项目扫描**；先遵循已自动加载的 `sdd-coding` 技能流程。
 - 只改 spec 范围内的文件；不写评审文档、不改 spec。
 
+## ⚠️ 优先使用专职 agent（本角色为兼容保留）
+
+- **只改 `backend/**`（.py）→ 请用 `backend-dev`**（27B，懂并发/事务/迁移）。
+- **只改 `frontend/**`（.html/.js/.css）→ 请用 `frontend-dev`**（9b，更快且自带前端三项自查）。
+- 本角色仅用于**跨端改动**或**暂时无法拆分归属**的场景；不要用一个 agent 同时做前后端（浪费上下文）。
+
+## 启动必读（按顺序）
+
+1. `.codebuddy/skills/context-budget/SKILL.md` — 上下文压缩与进度日志（**强制**）
+2. `.codebuddy/skills/regression-guard/SKILL.md` — 本项目高频回归清单（改完逐项自查）
+3. 按改动端选读 `backend-patterns` 或 `frontend-patterns`
+
 ## 执行要求（技能里的硬性约束，违反必返工）
 
 1. **DOM 契约一致**：写完 JS 用 Grep 在 CSS 搜同名选择器确认存在；写完 CSS 用 Grep 在 JS/HTML 搜同名 class 确认被渲染。

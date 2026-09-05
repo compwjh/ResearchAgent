@@ -36,9 +36,15 @@ ResearchAgent 本身及其所有项目级 Agent 处理 USENIX Security accepted/
 |------|----------|----------------------|--------|--------------|
 | 架构师（Architect） | 编写/修订 spec、技术决策、划模块与边界、定模型与上下文预算 | spec（`docs/sdd/specs/NNN-*.md`）+ 执行配置 | spec 内容 R，模型预算 A | 旗舰/最强推理 |
 | 产品经理（PM） | 基于已确认 spec 梳理产品使用步骤、用户旅程、验收场景 | spec 的"产品使用步骤"段 | 产品可操作性 R | 中等推理/写作 |
-| 开发主管（Tech Lead） | 需求/技术/验收评审、拆任务、Code Review、合并裁决 | 三份评审文档（`reviews/`）、任务拆分、PR 批准 | 评审通过与合并 A | 强推理/代码 |
-| 初级开发（Junior Dev） | 在已确认 spec 内做最小范围编码 | 代码、自测结果 | 实现执行 R | 中等代码（优先本地） |
-| 测试（QA） | 写/跑测试、验收、Bug 复现、出报告 | 测试报告、验收结论（`reviews/NNN-acceptance-review.md`） | 验收签字 R | 中等代码（优先本地） |
+| 开发主管（Tech Lead） | 需求/技术评审**总控**、拆任务、合并裁决 | 评审文档、任务拆分、PR 批准 | 评审通过与合并 A | 强推理/代码 |
+| **后端开发（Backend Dev）** | **只改 `backend/**`**：API / 服务 / 数据层 / 迁移 | 后端代码、自测结果 | 后端实现 R | 27B 级（含并发/事务/边界） |
+| **前端开发（Frontend Dev）** | **只改 `frontend/**`**：界面 / 交互 / 样式 | 前端代码、三项自查结论 | 前端实现 R | 9b（规则明确，优先速度） |
+| **后端评审（Backend Reviewer）** | **只评 `backend/**` | 后端评审报告 | 后端评审 R | 27B 级（强推理） |
+| **前端评审（Frontend Reviewer）** | **只评 `frontend/**`（DOM 契约 / 版本号 / XSS）** | 前端评审报告 | 前端评审 R | 9b（机械核对为主） |
+| **后端回归（Backend Tester）** | **只跑后端 pytest**，单端回归 | 后端验收结论 | 后端验收 R | 9b |
+| **前端回归（Frontend Tester）** | **只做前端契约 / 静态核对**，不跑后端 pytest | 前端验收结论 | 前端验收 R | 9b |
+| 初级开发（Junior Dev，兼容保留） | 跨端或归属不确定的改动；**纯后端请用 `backend-dev`、纯前端请用 `frontend-dev`** | 代码、自测结果 | 实现执行 R | 27B 级 |
+| 测试（QA，兼容保留） | 跨端验收总控；**单端回归优先用 `backend-tester` / `frontend-tester`** | 验收结论（`reviews/NNN-acceptance-review.md`） | 验收签字 R | 9b |
 
 - **交接原则**：每个角色的输出必须落盘为文档，下游角色**只认落盘文档**，不靠口头/上下文传递，避免重复扫描整个项目。
 
@@ -109,10 +115,47 @@ ResearchAgent 本身及其所有项目级 Agent 处理 USENIX Security accepted/
 
 | 角色 agent | 模型 | 理由 |
 |---|---|---|
-| `pm` / `tester` | `qwen3.5:9b` | 文案/判定类任务，快（tool call 1.7–7.4s）；实测单次任务 ~90s |
-| `junior-dev` | `qwen3.8:27b-mlx` | **编码质量优先**（用户要求），27B 级。2026-09-03 起统一 MLX 版（原 `qwen3.8-27b-q4` GGUF 版已弃用）：解码 24.3 tok/s，较 GGUF 的 13.8 tok/s 快 76%，GGUF 吞吐过低是子代理超时的主因 |
+| `backend-dev` | `qwen3.8:27b-mlx` | 后端含并发/事务/边界要求，**必须 27B 级**（9b 会出现"在锁内调用用户函数"这类真实并发缺陷） |
+| `frontend-dev` | `qwen3.5:9b` | 前端改动小且规则明确（DOM 契约/版本号/XSS），9b 足够且**快约 3 倍**（14.6s vs 45.4s） |
+| `backend-reviewer` | `qwen3.8:27b-mlx` | 评审需强推理；用户决策质量优先、不降速 |
+| `frontend-reviewer` | `qwen3.5:9b` | 以机械核对为主（class 对应 / `?v=N` 是否升级），9b 快 |
+| `backend-tester` | `qwen3.5:9b` | 跑测试与判定，9b 快（tool call 1.7–7.4s） |
+| `frontend-tester` | `qwen3.5:9b` | 静态核对（`node --check` / Grep），9b 快 |
+| `pm` / `tester`（兼容） | `qwen3.5:9b` | 文案/判定类任务，快（tool call 1.7–7.4s）；实测单次任务 ~90s |
+| `junior-dev`（兼容） | `qwen3.8:27b-mlx` | **编码质量优先**（用户要求），27B 级。2026-09-03 起统一 MLX 版（原 `qwen3.8-27b-q4` GGUF 版已弃用）：解码 24.3 tok/s，较 GGUF 的 13.8 tok/s 快 76%，GGUF 吞吐过低是子代理超时的主因 |
 | `tech-lead` | `qwen3.8:27b` → `qwen3.8:27b-mlx` | 评审需强推理；**用户决策：工作重要，质量优先，不降速**。2026-09-03 起统一 MLX 版（原 `qwen3.8:27b` 为 GGUF 版，已弃用） |
 | `code-drafter` | `deepseek-coder-v2:16b` | **极快（3.6s）**，仅用于独立小函数/片段初稿；该模型不支持 tools，产出由主会话落盘，需人工复核 |
+
+#### Agent ↔ Skill 绑定矩阵（分派前查此表）
+
+> 设计原则（参照 ECC）：**skills 是主要工作流面**，规则集中放在 skill 里共享，不重复写进每个 agent 的 system prompt，以压缩每个 agent 的常驻上下文。
+> 所有 agent 启动时**必读** `context-budget`；其余按职责绑定。
+
+| Agent | 主 skill（front matter `skills:`） | 启动必读（正文要求 Read，按顺序） | 只改 / 只评范围 |
+|---|---|---|---|
+| `backend-dev` | `sdd-coding` | `context-budget` → `backend-patterns` → `regression-guard` | `backend/**` + 后端测试 |
+| `frontend-dev` | `sdd-coding` | `context-budget` → `frontend-patterns` → `regression-guard` | `frontend/**` |
+| `backend-reviewer` | `sdd-review` | `context-budget` → `backend-patterns` → `regression-guard` | `backend/**` |
+| `frontend-reviewer` | `sdd-review` | `context-budget` → `frontend-patterns` → `regression-guard` | `frontend/**` |
+| `backend-tester` | `sdd-acceptance` | `context-budget` → `backend-patterns` → `regression-guard` | 后端 pytest |
+| `frontend-tester` | `sdd-acceptance` | `context-budget` → `frontend-patterns` → `regression-guard` | 前端静态核对 |
+| `pm` | `sdd-pm-steps` | `context-budget` | spec 的"产品使用步骤"段 |
+| `tech-lead` / `tester` / `junior-dev`（兼容） | 原绑定 | 追加 `context-budget` + `regression-guard` | 跨端 |
+
+**共享技能职责**
+
+| Skill | 承载内容 |
+|---|---|
+| `context-budget` | 上下文主动压缩五条、日志进度预测、中断恢复复用（原散落在各 agent 的重复规则，已收敛到此） |
+| `regression-guard` | 本项目高频回归清单：前端 DOM 契约 / `?v=N` / XSS / CSS 作用域；后端 SQLite 迁移 / 外键 RESTRICT / SSRF / USENIX 来源 / 禁止重复实现 |
+| `backend-patterns` | 分层边界、SQLite store 规范、并发领用、UTC 时间、常用验证命令 |
+| `frontend-patterns` | 无构建静态前端的 DOM 约定、四项必守、常用验证命令 |
+
+#### 前后端分派原则（省资源核心）
+
+- 改动**只涉及一端**时，只分派该端 agent：如只改 CSS → 只派 `frontend-dev` + `frontend-tester`，**不跑后端 pytest**。
+- 改动**跨端**时，拆成两次分派（后端一次、前端一次），不要派一个通吃 agent 一次做完。
+- 回归同理：**单端改动只跑该端回归**，杜绝"改一行 CSS 触发全套后端用例"。
 
 > ⚠️ **本表必须与 `.codebuddy/agents/*.md` front matter 的 `model:` 字段逐字一致**，否则照本表分派即踩坑（报 `model not found` 或静默回退到默认模型）。
 > 当前两个 agent 文件的实际值均为 **`qwen3.8:27b-mlx`**（**冒号**写法）。注意 `qwen3.8-27b-mlx`（连字符写法）在 Ollama 中**不存在**，填写会导致分派失败。
