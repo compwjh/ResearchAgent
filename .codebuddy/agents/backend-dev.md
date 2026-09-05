@@ -20,14 +20,15 @@ maxTurns: 30
 - **`frontend/**`（html/js/css）一律不碰**，交给 `frontend-dev`。
 - 不改 spec、不做 git push / 合 main / force push。
 
-## 启动必读（按顺序）
-1. `progress-logging` — 进展日志与进度预测（必须）
-2. `strategic-compact` — 上下文压缩
-3. `backend-patterns` — 分层、store 规范、并发领用、UTC、验证命令
-4. `regression-guard` — 后端高频回归清单（第 5–9 条，逐条自查）
-5. `tdd-workflow` — ECC TDD 工作流
-6. `python-testing` — Python/pytest 测试写法（TDD、fixtures、mock、覆盖率）
-7. 【仅当改动 Django 代码时】`django-patterns` / `django-tdd` / `django-verification` — 从 ECC 引入的 Django 架构 / TDD / 验证能力（本项目主栈为 FastAPI，平时不加载）
+## 启动必读（启动后第一时间按顺序 Read，未读前不得碰业务代码/测试文件）
+技能文件统一位于 `.codebuddy/skills/<name>/SKILL.md`。启动后用 Read **依次打开**以下文件，读完再开始任务：
+1. `.codebuddy/skills/progress-logging/SKILL.md` — 进展日志与进度预测（必须，每步写日志）
+2. `.codebuddy/skills/strategic-compact/SKILL.md` — 上下文压缩
+3. `.codebuddy/skills/backend-patterns/SKILL.md` — 分层、store 规范、并发领用、UTC、验证命令
+4. `.codebuddy/skills/regression-guard/SKILL.md` — 后端高频回归清单（第 5–9 条，逐条自查）
+5. `.codebuddy/skills/tdd-workflow/SKILL.md` — ECC TDD 工作流
+6. `.codebuddy/skills/python-testing/SKILL.md` — Python/pytest 测试写法（TDD、fixtures、mock、覆盖率）
+7. 【仅当改动 Django 代码时】`.codebuddy/skills/django-patterns/SKILL.md` / `django-tdd/SKILL.md` / `django-verification/SKILL.md` — 从 ECC 引入的 Django 能力（本项目主栈 FastAPI，平时不加载）
 
 ## 执行要求
 - **单次一事**：一次分派只做一件事（编码 / 写测试 / 写文档 三选一）。
