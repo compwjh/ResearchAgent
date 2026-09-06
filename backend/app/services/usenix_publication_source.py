@@ -117,15 +117,25 @@ class UsenixAcceptedSource:
         self._probe_state.retryable = False
         records: list[dict[str, Any]] = []
         warnings: list[str] = []
-        failed_years = 0
+        failed_listings: dict[int, int] = {}
+        listings_per_year: dict[int, int] = {}
+        listings: list[tuple[int, str]] = []
+        # An explicit non-default cycle keeps the legacy single-listing behavior;
+        # otherwise every cycle slug USENIX serves for that year is requested and
+        # aggregated, so summer/fall (2022-2024) and cycle1 (2025+) both resolve.
+        explicit_cycle = str(cycle).removeprefix("cycle")
+        explicit_cycle = explicit_cycle if explicit_cycle and explicit_cycle not in ("", "1") else None
         for year in selected_years:
-            listing = self._listing_url(route, int(year), cycle)
+            cycles = (explicit_cycle,) if explicit_cycle else self._cycles_for_year(int(year))
+            for slug in cycles:
+                listings_per_year[year] = listings_per_year.get(year, 0) + 1
+                listings.append((int(year), self._listing_url(route, int(year), slug)))
+        for year, listing in listings:
             try:
                 markup = self._get_text(listing, interval)
                 details = self.parser.parse_listing(markup, page_url=listing)
             except Exception:
-                failed_years += 1
-                warnings.append("USENIX_UNAVAILABLE")
+                failed_listings[year] = failed_listings.get(year, 0) + 1
                 continue
             for detail_url in details:
                 if len(records) >= limit:
@@ -166,6 +176,16 @@ class UsenixAcceptedSource:
                     "pdf_url": pdf_url, "publication_stage": stage, "source_kind": source_kind,
                     "arxiv_id": arxiv_id, "source_links": links,
                 }})
+         # A year is failed only when every listing slug for it failed; any
+         # successful slug keeps the year alive.  Emit one warning per failed
+         # year (deduped) instead of one per failing listing, and mark the whole
+         # result unavailable only when every year failed.
+        failed_years = 0
+        for year in selected_years:
+            if failed_listings.get(year, 0) >= listings_per_year[year]:
+                failed_years += 1
+        if failed_years:
+            warnings.append("USENIX_UNAVAILABLE")
         error = "USENIX_UNAVAILABLE" if failed_years == len(selected_years) and failed_years else None
         result = UsenixAcceptedResult(tuple(records), tuple(dict.fromkeys(warnings)), error)
         if not result.error_code and not result.warnings and not getattr(self._probe_state, "retryable", False):
@@ -247,9 +267,33 @@ class UsenixAcceptedSource:
             value = 1.0
         return max(0.0, value)
 
+    # USENIX Security publishes accepted papers under different URL slugs
+    # depending on the year: 2025+ serves ``cycle{N}``, while 2022-2024 only
+    # publish ``summer`` and ``fall`` listings.  Requesting a slug the site
+    # does not serve returns 404, so slugs must be resolved per year.
+    CYCLE_URL_FROM_YEAR = 2025
+    LEGACY_CYCLES: tuple[str, ...] = ("summer", "fall")
+
+    @classmethod
+    def _cycles_for_year(cls, year: int) -> tuple[str, ...]:
+        """Return the accepted-paper listing slugs USENIX serves for ``year``."""
+        if int(year) >= cls.CYCLE_URL_FROM_YEAR:
+            return ("cycle1",)
+        return cls.LEGACY_CYCLES
+
     def _listing_url(self, route: Mapping[str, Any], year: int, cycle: str) -> str:
         template = str(route.get("listing_url_template") or
-                       f"{self.origin}/conference/usenixsecurity{{yy}}/cycle{{cycle}}-accepted-papers")
+                       f"{self.origin}/conference/usenixsecurity{{yy}}/{{cycle}}-accepted-papers")
+        cycle = str(cycle)
+        # Historical templates bake a literal ``cycle`` prefix into the
+        # placeholder (``cycle{cycle}-accepted-papers``).  Callers pass slugs in
+        # two shapes -- bare ("1") or full ("cycle1", "summer", "fall") -- so
+        # normalise both: a bare number becomes a cycle slug, and the literal
+        # prefix is always dropped.  Otherwise the template renders nonsense
+        # such as ``cyclecycle1`` or ``cyclesummer``.
+        if not cycle.startswith("cycle") and cycle.isdigit():
+            cycle = f"cycle{cycle}"
+        template = template.replace("cycle{cycle}", "{cycle}")
         return template.replace("{yy}", f"{year % 100:02d}").replace("{year}", str(year)).replace("{cycle}", cycle)
 
     def _before_request(self, interval: float) -> None:
@@ -306,11 +350,10 @@ class UsenixAcceptedSource:
         """Deterministic, same-conference seed + same-year supplementary pages."""
         if conference_id != "usenix-security":
             return ()
-        cycles = ("cycle1", "summer", "fall")
         pages: list[str] = []
         seen: set[str] = set()
         for year in dict.fromkeys(int(y) for y in years):
-            for cycle in cycles:
+            for cycle in self._cycles_for_year(year):
                 url = f"{self.origin}/conference/usenixsecurity{year % 100:02d}/{cycle}-accepted-papers"
                 if url not in seen:
                     seen.add(url)
@@ -323,13 +366,14 @@ class UsenixAcceptedSource:
             return page
         template = str(route["listing_url_template"])
         norm = self._norm_path(page) or "/"
-        tail = norm[len("/conference/usenixsecurity"):]
-        match = re.match(r"(\d{2})/(.+)", tail)
+        # Match the slug itself rather than "everything after the year", so the
+        # canonical form keeps ``summer``/``fall``/``cycleN`` intact instead of
+        # nesting the whole ``<slug>-accepted-papers`` tail into ``{cycle}``.
+        match = re.match(r"/conference/usenixsecurity(\d{2})/(cycle\d+|summer|fall)-accepted-papers", norm)
         if not match:
             return page
         yy, cycle = match.group(1), match.group(2)
-        year = int("20" + yy) % 100 + 2000
-        return template.replace("{yy}", yy).replace("{year}", str(year)).replace("{cycle}", cycle)
+        return self._listing_url(route, int("20" + yy), cycle)
 
     def _content_hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
