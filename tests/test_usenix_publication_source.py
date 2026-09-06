@@ -177,3 +177,113 @@ def test_probe_rejects_oversized_and_redirected_pdf_without_following_target():
     result = source.search(ROUTED_SOURCE, "secure", [2025])
     assert result.records[0]["info"]["pdf_url"] is None
     assert not any("evil.example" in url for url in reached)
+
+
+# --- Spec-015: per-year cycle slug resolution (URL defect regression) -------
+#
+# 2022-2024 only serve ``summer``/``fall``; 2025+ serves ``cycle1``.  The
+# historical ROUTED_SOURCE template bakes a literal ``cycle`` prefix into the
+# placeholder (``cycle{cycle}-accepted-papers``), which historically produced
+# nonsense such as ``cyclecycle1`` / ``cyclesummer``.  These guards pin the
+# fixed behavior.
+
+SEC24_SUMMER = "https://www.usenix.org/conference/usenixsecurity24/summer-accepted-papers"
+SEC24_FALL = "https://www.usenix.org/conference/usenixsecurity24/fall-accepted-papers"
+SEC24_CYCLE1 = "https://www.usenix.org/conference/usenixsecurity24/cycle1-accepted-papers"
+SEC25_CYCLE1 = "https://www.usenix.org/conference/usenixsecurity25/cycle1-accepted-papers"
+
+
+def _source(handler, **kwargs):
+    base = dict(client=httpx.Client(transport=httpx.MockTransport(handler)),
+                dns_resolver=lambda _host: [PUBLIC], pdf_page_validator=lambda _path: 1,
+                sleep=lambda _v: None)
+    base.update(kwargs)
+    return UsenixAcceptedSource(**base)
+
+
+def test_default_year_2024_resolves_summer_and_fall_not_cycle1():
+    reached = []
+
+    def handler(request):
+        reached.append(str(request.url))
+        return httpx.Response(404)
+
+    source = _source(handler)
+    result = source.search(ROUTED_SOURCE, "secure", [2024])
+    assert SEC24_SUMMER in reached
+    assert SEC24_FALL in reached
+    assert SEC24_CYCLE1 not in reached
+    # Both slugs 404 -> the whole year is unavailable, but that is not the point
+    # of this guard; the point is which URLs the resolver requested.
+    assert result.error_code == "USENIX_UNAVAILABLE"
+
+
+def test_default_year_2025_resolves_cycle1():
+    reached = []
+
+    def handler(request):
+        reached.append(str(request.url))
+        return httpx.Response(404)
+
+    source = _source(handler)
+    source.search(ROUTED_SOURCE, "secure", [2025])
+    assert SEC25_CYCLE1 in reached
+    assert all("cycle1-accepted-papers" in url for url in reached)
+
+
+def test_listing_url_normalizes_bare_and_full_cycle_slugs_without_double_prefix():
+    route = {"listing_url_template": "https://www.usenix.org/conference/usenixsecurity{yy}/cycle{cycle}-accepted-papers"}
+    source = _source(lambda _request: httpx.Response(404))
+
+    bare = source._listing_url(route, 2024, "1")
+    full = source._listing_url(route, 2024, "cycle1")
+    legacy = source._listing_url(route, 2024, "summer")
+
+    assert bare == "https://www.usenix.org/conference/usenixsecurity24/cycle1-accepted-papers"
+    assert full == "https://www.usenix.org/conference/usenixsecurity24/cycle1-accepted-papers"
+    assert legacy == "https://www.usenix.org/conference/usenixsecurity24/summer-accepted-papers"
+    for url in (bare, full, legacy):
+        assert "cyclecycle" not in url
+        assert "cyclesummer" not in url
+
+
+def test_partial_slug_failure_keeps_year_available():
+    def handler(request):
+        path = request.url.path
+        if path.endswith("summer-accepted-papers"):
+            return httpx.Response(404)
+        if path.endswith("fall-accepted-papers"):
+            return httpx.Response(200, text=f'<a href="{DETAIL}">paper</a>')
+        if path.endswith("/presentation/demo"):
+            return httpx.Response(200, text=DETAIL_HTML)
+        if path.endswith("official.pdf"):
+            return httpx.Response(200, content=b"%PDF-1.7 official")
+        return httpx.Response(404)
+
+    source = _source(handler)
+    result = source.search(ROUTED_SOURCE, "secure", [2024])
+    assert len(result.records) == 1
+    assert result.records[0]["info"]["publication_stage"] == "accepted"
+    assert result.error_code != "USENIX_UNAVAILABLE"
+
+
+def test_all_slugs_failed_marks_unavailable():
+    def handler(request):
+        path = request.url.path
+        if path.endswith("summer-accepted-papers") or path.endswith("fall-accepted-papers"):
+            return httpx.Response(404)
+        return httpx.Response(404)
+
+    source = _source(handler)
+    result = source.search(ROUTED_SOURCE, "secure", [2024])
+    assert result.records == ()
+    assert result.error_code == "USENIX_UNAVAILABLE"
+
+
+def test_discovered_pages_maps_year_to_cycle_slugs():
+    source = _source(lambda _request: httpx.Response(404))
+    pages = source._discovered_pages("usenix-security", [2024, 2025])
+    assert SEC24_SUMMER in pages
+    assert SEC24_FALL in pages
+    assert SEC25_CYCLE1 in pages
+    assert SEC24_CYCLE1 not in pages
