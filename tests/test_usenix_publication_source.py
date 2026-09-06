@@ -287,3 +287,121 @@ def test_discovered_pages_maps_year_to_cycle_slugs():
     assert SEC24_FALL in pages
     assert SEC25_CYCLE1 in pages
     assert SEC24_CYCLE1 not in pages
+
+
+# --- Spec-015 regression guards: legacy/template path & out-of-range years ---
+#
+# The 2024 scenario must use its own detail fixtures so a 2025-year constant
+# (DETAIL/DETAIL_HTML) does not bleed its 2025 publication date into a 2024
+# listing. These constants pin the year explicitly.
+SEC24_DETAIL = "https://www.usenix.org/conference/usenixsecurity24/presentation/demo"
+SEC24_DETAIL_HTML = ('<meta name="citation_title" content="Secure Search">'
+                     '<meta name="citation_author" content="Ada Lovelace">'
+                     '<meta name="citation_publication_date" content="2024-01-01">'
+                     '<a href="/official.pdf">PDF</a>'
+                     '<a href="/prepub.pdf">Prepublication PDF</a>')
+SEC24_CYCLE2 = "https://www.usenix.org/conference/usenixsecurity24/cycle2-accepted-papers"
+
+
+def test_listing_for_applies_template_to_summer_slug():
+    route = ROUTED_SOURCE.discovery_routes[0]
+    source = _source(lambda _request: httpx.Response(404))
+    result = source._listing_for(SEC24_SUMMER, route)
+    assert result == SEC24_SUMMER
+    assert "cyclesummer" not in result
+    assert "-accepted-papers-accepted-papers" not in result
+
+
+def test_listing_for_returns_original_page_without_template():
+    source = _source(lambda _request: httpx.Response(404))
+    assert source._listing_for(SEC24_SUMMER, {}) == SEC24_SUMMER
+    other = "https://www.usenix.org/other/page"
+    assert source._listing_for(other, ROUTED_SOURCE.discovery_routes[0]) == other
+
+
+def test_explicit_cycle_requests_only_that_cycle():
+    reached = []
+
+    def handler(request):
+        reached.append(str(request.url))
+        return httpx.Response(404)
+
+    source = _source(handler)
+    source.search(ROUTED_SOURCE, "secure", [2024], cycle="2")
+    assert SEC24_CYCLE2 in reached
+    assert not any("summer" in url for url in reached)
+    assert not any("fall" in url for url in reached)
+
+
+def test_explicit_cycle1_matches_default_behavior():
+    def make():
+        reached = []
+
+        def handler(request):
+            reached.append(str(request.url))
+            return httpx.Response(404)
+
+        return _source(handler), reached
+
+    source_explicit, reached_explicit = make()
+    source_explicit.search(ROUTED_SOURCE, "secure", [2024], cycle="cycle1")
+
+    source_default, reached_default = make()
+    source_default.search(ROUTED_SOURCE, "secure", [2024])
+
+    assert set(reached_explicit) == set(reached_default)
+    assert SEC24_SUMMER in reached_explicit
+    assert SEC24_FALL in reached_explicit
+    assert SEC24_CYCLE1 not in reached_explicit
+
+
+def test_out_of_range_year_generates_no_listing():
+    source = _source(lambda _request: httpx.Response(404))
+    pages = source._discovered_pages("usenix-security", [2021, 2024])
+    assert not any("usenixsecurity21" in url for url in pages)
+    assert SEC24_SUMMER in pages
+    assert SEC24_FALL in pages
+
+    reached = []
+
+    def handler(request):
+        reached.append(str(request.url))
+        return httpx.Response(404)
+
+    out = _source(handler)
+    out.search(ROUTED_SOURCE, "secure", [2021])
+    assert reached == []
+
+
+def test_only_out_of_range_years_marks_unavailable():
+    def handler(request):
+        raise AssertionError("out-of-range year must not fetch any listing")
+
+    source = _source(handler)
+    result = source.search(ROUTED_SOURCE, "secure", [2021])
+    assert result.records == ()
+    assert result.error_code == "USENIX_UNAVAILABLE"
+
+
+def test_out_of_range_year_does_not_pollute_successful_search():
+    reached = []
+
+    def handler(request):
+        reached.append(str(request.url))
+        path = request.url.path
+        if path.endswith("summer-accepted-papers"):
+            return httpx.Response(404)
+        if path.endswith("fall-accepted-papers"):
+            return httpx.Response(200, text=f'<a href="{SEC24_DETAIL}">paper</a>')
+        if path.endswith("/presentation/demo"):
+            return httpx.Response(200, text=SEC24_DETAIL_HTML)
+        if path.endswith("official.pdf"):
+            return httpx.Response(200, content=b"%PDF-1.7 official")
+        return httpx.Response(404)
+
+    source = _source(handler)
+    result = source.search(ROUTED_SOURCE, "secure", [2021, 2024])
+    assert len(result.records) == 1
+    assert result.error_code is None
+    assert "USENIX_UNAVAILABLE" not in result.warnings
+    assert not any("usenixsecurity21" in url for url in reached)

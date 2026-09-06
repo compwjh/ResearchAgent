@@ -176,17 +176,26 @@ class UsenixAcceptedSource:
                     "pdf_url": pdf_url, "publication_stage": stage, "source_kind": source_kind,
                     "arxiv_id": arxiv_id, "source_links": links,
                 }})
-         # A year is failed only when every listing slug for it failed; any
-         # successful slug keeps the year alive.  Emit one warning per failed
-         # year (deduped) instead of one per failing listing, and mark the whole
-         # result unavailable only when every year failed.
-        failed_years = 0
-        for year in selected_years:
-            if failed_listings.get(year, 0) >= listings_per_year[year]:
-                failed_years += 1
-        if failed_years:
+        # Only years that actually have a listing can fail; years outside the
+        # controlled range (no cycles) contribute no listing and are ignored here,
+        # so an out-of-range year no longer forces the whole result unavailable.
+        listing_years = [year for year in selected_years if year in listings_per_year]
+        failed_years = sum(
+            1 for year in listing_years
+            if failed_listings.get(year, 0) >= listings_per_year[year]
+        )
+        # A non-empty selection that resolves to zero listings means every year is
+        # out of range: surface it instead of silently returning an empty 200.
+        if selected_years and not listings:
+            error = "USENIX_UNAVAILABLE"
+        elif listing_years and failed_years == len(listing_years):
+            error = "USENIX_UNAVAILABLE"
+        else:
+            error = None
+        # Any failed listing year (partial or full) still warns; out-of-range years
+        # that contributed no listing do not.
+        if failed_years or error == "USENIX_UNAVAILABLE":
             warnings.append("USENIX_UNAVAILABLE")
-        error = "USENIX_UNAVAILABLE" if failed_years == len(selected_years) and failed_years else None
         result = UsenixAcceptedResult(tuple(records), tuple(dict.fromkeys(warnings)), error)
         if not result.error_code and not result.warnings and not getattr(self._probe_state, "retryable", False):
             with self._lock:
@@ -272,12 +281,18 @@ class UsenixAcceptedSource:
     # publish ``summer`` and ``fall`` listings.  Requesting a slug the site
     # does not serve returns 404, so slugs must be resolved per year.
     CYCLE_URL_FROM_YEAR = 2025
+    # USENIX Security only publishes ``summer``/``fall`` accepted-paper listings
+    # from 2022; earlier years are out of the controlled range and serve none.
+    USENIX_MIN_YEAR = 2022
     LEGACY_CYCLES: tuple[str, ...] = ("summer", "fall")
 
     @classmethod
     def _cycles_for_year(cls, year: int) -> tuple[str, ...]:
         """Return the accepted-paper listing slugs USENIX serves for ``year``."""
-        if int(year) >= cls.CYCLE_URL_FROM_YEAR:
+        year = int(year)
+        if year < cls.USENIX_MIN_YEAR:
+            return ()
+        if year >= cls.CYCLE_URL_FROM_YEAR:
             return ("cycle1",)
         return cls.LEGACY_CYCLES
 
