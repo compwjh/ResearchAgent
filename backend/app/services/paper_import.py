@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
-from backend.app.core.article_settings import ArticleSettings
+from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.core.config import KB_PAPERS_DIR
 from backend.app.services.paper_download import (
     DOWNLOAD_BLOCKED,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.core.article_settings import ArticleSettings
+from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.services.kb.store import STATUS_INDEXED, get_paper, load_papers, resolve_paper_path
 from backend.app.services.paper_download import DownloadResult, PaperDownloadError
 from backend.app.services.paper_import import (

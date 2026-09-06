@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime
 
-from backend.app.core.article_settings import ArticleSettings
+from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.domain.paper_discovery import ConferenceSource
 from backend.app.services.dblp_publication_source import DBLPPublicationResult
 from backend.app.services.paper_discovery_search import PaperDiscoverySearchError, PaperDiscoverySearchService

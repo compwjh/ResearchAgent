@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 import httpx
 
-from backend.app.core.article_settings import ArticleSettings
+from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.services.paper_download_security import (
     DEFAULT_MAX_REDIRECTS,
     URLSecurityError,

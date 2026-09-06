@@ -329,7 +329,7 @@ class UsenixAcceptedSource:
         return None
 
     def _probe_settings(self) -> Any:
-        from backend.app.core.article_settings import ArticleSettings
+        from backend.app.platform.settings.settings_repository import ArticleSettings
         return ArticleSettings(article_download_dir=tempfile.gettempdir())
 
     # --- Catalog synchronization (Spec015 Task14) --------------------------

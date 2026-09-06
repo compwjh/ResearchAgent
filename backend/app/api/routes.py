@@ -29,7 +29,11 @@ from backend.app.api.schemas import (
     PaperSearchRequest,
 )
 from backend.app.agents.article_agent import build_task
-from backend.app.core.article_settings import ArticleSettings, load_article_settings, save_article_settings
+from backend.app.platform.settings.settings_repository import (
+    ArticleSettings,
+    load_article_settings,
+    save_article_settings,
+)
 from backend.app.core.config import BASE_DIR, CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR, MODEL_NAME
 from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
 from backend.app.domain.article import ArticleCandidate, ArticleTask
