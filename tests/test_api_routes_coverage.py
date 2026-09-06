@@ -51,7 +51,7 @@ class HealthAndSettingsTests(unittest.TestCase):
     def tearDown(self):
         routes.article_settings = self._orig_settings
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1", "m2"])
+    @patch("backend.app.api.routes_system.get_available_models", return_value=["m1", "m2"])
     def test_health_returns_model_list(self, _mock_models):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
@@ -60,7 +60,7 @@ class HealthAndSettingsTests(unittest.TestCase):
         self.assertEqual(body["models"], ["m1", "m2"])
         self.assertIn("model", body)
 
-    @patch("backend.app.api.routes.get_available_models", side_effect=httpx.HTTPError("ollama down"))
+    @patch("backend.app.api.routes_system.get_available_models", side_effect=httpx.HTTPError("ollama down"))
     def test_health_degrades_to_empty_models_on_ollama_error(self, _mock_models):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
@@ -160,25 +160,25 @@ class ChatEndpointTests(unittest.TestCase):
 
     def test_chat_allows_longer_question_in_developer_mode(self):
         """developer 模式阈值 20000，2500 字应通过长度校验。"""
-        with patch("backend.app.api.routes.get_available_models", return_value=["m1"]):
+        with patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"]):
             response = self.client.post(
                 "/api/chat", json={"question": "x" * 2500, "mode": "developer", "model": "m1"}
             )
         self.assertNotEqual(response.status_code, 400)
 
-    @patch("backend.app.api.routes.get_available_models", side_effect=httpx.HTTPError("down"))
+    @patch("backend.app.api.routes_chat.get_available_models", side_effect=httpx.HTTPError("down"))
     def test_chat_returns_502_when_ollama_unreachable(self, _mock_models):
         response = self.client.post("/api/chat", json={"question": "你好"})
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["detail"], "无法连接 Ollama 服务")
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["installed-model"])
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["installed-model"])
     def test_chat_rejects_unknown_model(self, _mock_models):
         response = self.client.post("/api/chat", json={"question": "你好", "model": "ghost-model"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("不存在", response.json()["detail"])
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
     @patch("backend.app.services.ollama.create_chat_model")
     @patch("backend.app.graphs.chat.build_chat_graph")
     def test_chat_streams_tokens_and_done(self, mock_graph, mock_model, _mock_models):
@@ -198,7 +198,7 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(events[-1]["type"], "done")
         mock_model.assert_called_once_with("m1")
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
     @patch("backend.app.services.ollama.create_chat_model")
     @patch("backend.app.graphs.chat.build_chat_graph")
     def test_chat_emits_debug_event_in_developer_mode(self, mock_graph, _mock_model, _mock_models):
@@ -212,7 +212,7 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(debug[0]["debug"]["graph_node"], "ask_model")
         self.assertEqual(debug[0]["debug"]["input_length"], 2)
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
     @patch("backend.app.services.ollama.create_chat_model")
     @patch("backend.app.graphs.chat.build_chat_graph")
     def test_chat_stream_error_is_reported(self, mock_graph, _mock_model, _mock_models):

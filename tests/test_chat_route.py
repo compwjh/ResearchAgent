@@ -121,7 +121,7 @@ class ChatApiTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def _post_chat(self):
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
+        with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]):
             with patch("backend.app.services.ollama.create_chat_model", side_effect=_mock_model(["Hi", " there"])):
                 response = self.client.post("/api/chat", json={"question": "hello", "model": "qwen3.5:9b"})
         return response
@@ -134,9 +134,9 @@ class ChatApiTests(unittest.TestCase):
         self.assertIn('"type": "done"', response.text)
 
     def test_record_generation_called_once_with_route(self):
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
+        with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]):
             with patch("backend.app.services.ollama.create_chat_model", side_effect=_mock_model(["ok"])):
-                with patch("backend.app.api.routes.record_ollama_generation") as mock_record:
+                with patch("backend.app.api.routes_chat.record_ollama_generation") as mock_record:
                     response = self.client.post("/api/chat", json={"question": "hi", "model": "qwen3.5:9b"})
         self.assertEqual(response.status_code, 200)
         mock_record.assert_called_once()
@@ -149,18 +149,18 @@ class ChatApiTests(unittest.TestCase):
 
     def test_prompt_never_contains_secrets(self):
         # 即便问题里含敏感样内容，prompt_messages 仍只回传用户文本本身
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
+        with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]):
             with patch("backend.app.services.ollama.create_chat_model", side_effect=_mock_model(["ok"])):
-                with patch("backend.app.api.routes.record_ollama_generation") as mock_record:
+                with patch("backend.app.api.routes_chat.record_ollama_generation") as mock_record:
                     self.client.post("/api/chat", json={"question": "secret-token", "model": "qwen3.5:9b"})
         kwargs = mock_record.call_args.kwargs
         self.assertEqual(kwargs["prompt_messages"], [{"role": "user", "content": "secret-token"}])
 
     def test_error_path_still_streams_error_and_does_not_crash(self):
         model = _FakeModelError(["par"], RuntimeError("boom"))
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
+        with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]):
             with patch("backend.app.services.ollama.create_chat_model", return_value=model):
-                with patch("backend.app.api.routes.record_ollama_generation") as mock_record:
+                with patch("backend.app.api.routes_chat.record_ollama_generation") as mock_record:
                     response = self.client.post(
                         "/api/chat",
                         json={"question": "hi", "model": "qwen3.5:9b", "mode": "developer"},

@@ -51,7 +51,7 @@ class UploadTests(unittest.TestCase):
         self.assertIn("为空", response.json()["detail"])
 
     def test_rejects_oversized_file(self):
-        with patch("backend.app.api.routes.KB_MAX_UPLOAD_MB", 0):
+        with patch("backend.app.api.routes_kb.KB_MAX_UPLOAD_MB", 0):
             response = self.client.post(
                 "/api/kb/upload", files={"file": ("big.pdf", PDF_BYTES, "application/pdf")}
             )
@@ -69,14 +69,14 @@ class UploadTests(unittest.TestCase):
                 "uploaded_at": "2026-08-30T10:00:00",
                 "error": None,
             }
-            with patch("backend.app.api.routes.new_record") as mock_new:
+            with patch("backend.app.api.routes_kb.new_record") as mock_new:
                 mock_new.return_value = Mock(paper_id="paper-1", file_name="paper.pdf")
-                with patch("backend.app.api.routes.save_upload", return_value=("paper-1", Path(tmp) / "paper-1.pdf")) as mock_save:
-                    with patch("backend.app.api.routes.upsert_paper") as mock_upsert:
+                with patch("backend.app.api.routes_kb.save_upload", return_value=("paper-1", Path(tmp) / "paper-1.pdf")) as mock_save:
+                    with patch("backend.app.api.routes_kb.upsert_paper") as mock_upsert:
                         # spec-012：v1 同步建索引（且按 R1 走单线程池排队），v2 提交异步任务
-                        with patch("backend.app.api.routes.run_index_task_sync", return_value=record_payload) as mock_sync:
-                            with patch("backend.app.api.routes.submit_index_task", return_value=True) as mock_submit:
-                                with patch("backend.app.api.routes.update_chunker_state"):
+                        with patch("backend.app.api.routes_kb.run_index_task_sync", return_value=record_payload) as mock_sync:
+                            with patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as mock_submit:
+                                with patch("backend.app.api.routes_kb.update_chunker_state"):
                                     response = self.client.post(
                                         "/api/kb/upload", files={"file": ("paper.pdf", PDF_BYTES, "application/pdf")}
                                     )
@@ -99,14 +99,14 @@ class PaperListTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_returns_empty_list(self):
-        with patch("backend.app.api.routes.load_papers", return_value=[]):
+        with patch("backend.app.api.routes_kb.load_papers", return_value=[]):
             response = self.client.get("/api/kb/papers")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"papers": []})
 
     def test_returns_stored_papers(self):
         papers = [{"paper_id": "p1", "file_name": "a.pdf", "status": "indexed"}]
-        with patch("backend.app.api.routes.load_papers", return_value=papers):
+        with patch("backend.app.api.routes_kb.load_papers", return_value=papers):
             response = self.client.get("/api/kb/papers")
         self.assertEqual(response.json()["papers"][0]["file_name"], "a.pdf")
 
@@ -116,22 +116,22 @@ class DeletePaperTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_missing_paper_returns_404(self):
-        with patch("backend.app.api.routes.remove_paper", return_value=False):
+        with patch("backend.app.api.routes_kb.remove_paper", return_value=False):
             response = self.client.delete("/api/kb/papers/unknown")
         self.assertEqual(response.status_code, 404)
         self.assertIn("论文不存在", response.json()["detail"])
 
     def test_delete_removes_metadata_and_vectors(self):
-        with patch("backend.app.api.routes.remove_paper", return_value=True):
-            with patch("backend.app.api.routes.delete_paper") as mock_delete:
+        with patch("backend.app.api.routes_kb.remove_paper", return_value=True):
+            with patch("backend.app.api.routes_kb.delete_paper") as mock_delete:
                 response = self.client.delete("/api/kb/papers/p1")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"deleted": True, "vectors_removed": True})
         mock_delete.assert_called_once_with("p1")
 
     def test_vector_failure_is_reported(self):
-        with patch("backend.app.api.routes.remove_paper", return_value=True):
-            with patch("backend.app.api.routes.delete_paper", side_effect=RuntimeError("qdrant down")):
+        with patch("backend.app.api.routes_kb.remove_paper", return_value=True):
+            with patch("backend.app.api.routes_kb.delete_paper", side_effect=RuntimeError("qdrant down")):
                 response = self.client.delete("/api/kb/papers/p1")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["vectors_removed"])
@@ -152,12 +152,12 @@ class AskTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_requires_ollama(self):
-        with patch("backend.app.api.routes.get_available_models", side_effect=httpx.HTTPError("down")):
+        with patch("backend.app.api.routes_kb.get_available_models", side_effect=httpx.HTTPError("down")):
             response = self.client.post("/api/kb/ask", json={"question": "核心贡献？", "model": "qwen3.5:9b"})
         self.assertEqual(response.status_code, 502)
 
     def test_rejects_unknown_model(self):
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
+        with patch("backend.app.api.routes_kb.get_available_models", return_value=["qwen3.5:9b"]):
             response = self.client.post("/api/kb/ask", json={"question": "核心贡献？", "model": "ghost"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("不存在", response.json()["detail"])
@@ -165,8 +165,8 @@ class AskTests(unittest.TestCase):
     def test_streams_tokens_and_citations(self):
         chat = Mock()
         chat.stream.return_value = [Mock(content="混合检索"), Mock(content="效果更好")]
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
-            with patch("backend.app.api.routes.hybrid_search", return_value=self.hits):
+        with patch("backend.app.api.routes_kb.get_available_models", return_value=["qwen3.5:9b"]):
+            with patch("backend.app.api.routes_kb.hybrid_search", return_value=self.hits):
                 with patch("backend.app.services.ollama.create_chat_model", return_value=chat) as mock_create:
                     response = self.client.post(
                         "/api/kb/ask", json={"question": "核心贡献？", "model": "qwen3.5:9b"}
@@ -182,8 +182,8 @@ class AskTests(unittest.TestCase):
         mock_create.assert_called_once_with("qwen3.5:9b", reasoning=False)
 
     def test_reports_retrieval_failure(self):
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
-            with patch("backend.app.api.routes.hybrid_search", side_effect=RuntimeError("qdrant down")):
+        with patch("backend.app.api.routes_kb.get_available_models", return_value=["qwen3.5:9b"]):
+            with patch("backend.app.api.routes_kb.hybrid_search", side_effect=RuntimeError("qdrant down")):
                 response = self.client.post(
                     "/api/kb/ask", json={"question": "核心贡献？", "model": "qwen3.5:9b"}
                 )
@@ -192,8 +192,8 @@ class AskTests(unittest.TestCase):
         self.assertIn("检索失败", error["message"])
 
     def test_empty_knowledge_base_is_friendly(self):
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
-            with patch("backend.app.api.routes.hybrid_search", return_value=[]):
+        with patch("backend.app.api.routes_kb.get_available_models", return_value=["qwen3.5:9b"]):
+            with patch("backend.app.api.routes_kb.hybrid_search", return_value=[]):
                 response = self.client.post(
                     "/api/kb/ask", json={"question": "核心贡献？", "model": "qwen3.5:9b"}
                 )
@@ -208,11 +208,11 @@ class HealthTests(unittest.TestCase):
 
     def test_reports_component_status(self):
         client = Mock()
-        with patch("backend.app.api.routes.get_client", return_value=client):
-            with patch("backend.app.api.routes.ensure_collection") as mock_collection:
-                with patch("backend.app.api.routes.count_points", return_value=42):
-                    with patch("backend.app.api.routes.embed_texts", return_value=[[0.1]]):
-                        with patch("backend.app.api.routes.load_papers", return_value=[{"paper_id": "p1"}]):
+        with patch("backend.app.api.routes_kb.get_client", return_value=client):
+            with patch("backend.app.api.routes_kb.ensure_collection") as mock_collection:
+                with patch("backend.app.api.routes_kb.count_points", return_value=42):
+                    with patch("backend.app.api.routes_kb.embed_texts", return_value=[[0.1]]):
+                        with patch("backend.app.api.routes_kb.load_papers", return_value=[{"paper_id": "p1"}]):
                             response = self.client.get("/api/kb/health")
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -224,9 +224,9 @@ class HealthTests(unittest.TestCase):
         mock_collection.assert_called_once_with(client)
 
     def test_degrades_when_components_down(self):
-        with patch("backend.app.api.routes.get_client", side_effect=RuntimeError("no qdrant")):
-            with patch("backend.app.api.routes.embed_texts", side_effect=RuntimeError("no ollama")):
-                with patch("backend.app.api.routes.load_papers", return_value=[]):
+        with patch("backend.app.api.routes_kb.get_client", side_effect=RuntimeError("no qdrant")):
+            with patch("backend.app.api.routes_kb.embed_texts", side_effect=RuntimeError("no ollama")):
+                with patch("backend.app.api.routes_kb.load_papers", return_value=[]):
                     response = self.client.get("/api/kb/health")
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -246,8 +246,8 @@ class AskChunkerTests(unittest.TestCase):
         token = Mock()
         token.content = reply
         chat.stream.return_value = [token]
-        with patch("backend.app.api.routes.get_available_models", return_value=["qwen3.5:9b"]):
-            with patch("backend.app.api.routes.hybrid_search",
+        with patch("backend.app.api.routes_kb.get_available_models", return_value=["qwen3.5:9b"]):
+            with patch("backend.app.api.routes_kb.hybrid_search",
                        return_value=self.hits if hits is None else hits) as search:
                 with patch("backend.app.services.ollama.create_chat_model", return_value=chat):
                     response = self.client.post("/api/kb/ask", json=payload)
@@ -309,7 +309,7 @@ class ReindexTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_missing_paper_returns_404(self):
-        with patch("backend.app.api.routes.get_paper", return_value=None):
+        with patch("backend.app.api.routes_kb.get_paper", return_value=None):
             response = self.client.post("/api/kb/papers/nope/reindex", json={"chunker": "all"})
         self.assertEqual(response.status_code, 404)
         self.assertIn("论文不存在", response.json()["detail"])
@@ -317,17 +317,17 @@ class ReindexTests(unittest.TestCase):
     def test_missing_source_file_returns_404(self):
         empty = Path(self.tmp.name) / "empty"
         empty.mkdir(exist_ok=True)
-        with patch("backend.app.api.routes.get_paper", return_value=self.paper):
-            with patch("backend.app.api.routes.KB_PAPERS_DIR", empty):
+        with patch("backend.app.api.routes_kb.get_paper", return_value=self.paper):
+            with patch("backend.app.api.routes_kb.KB_PAPERS_DIR", empty):
                 response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "all"})
         self.assertEqual(response.status_code, 404)
         self.assertIn("原件", response.json()["detail"])
 
     def test_reindex_all_submits_both_versions(self):
-        with patch("backend.app.api.routes.get_paper", return_value=self.paper), patch(
-            "backend.app.api.routes.KB_PAPERS_DIR", self.dir
-        ), patch("backend.app.api.routes.submit_index_task", return_value=True) as submit, patch(
-            "backend.app.api.routes.update_chunker_state"
+        with patch("backend.app.api.routes_kb.get_paper", return_value=self.paper), patch(
+            "backend.app.api.routes_kb.KB_PAPERS_DIR", self.dir
+        ), patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as submit, patch(
+            "backend.app.api.routes_kb.update_chunker_state"
         ):
             response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "all"})
         self.assertEqual(response.status_code, 200)
@@ -335,10 +335,10 @@ class ReindexTests(unittest.TestCase):
         self.assertEqual(sorted(c.args[1] for c in submit.call_args_list), ["v1", "v2"])
 
     def test_reindex_single_version(self):
-        with patch("backend.app.api.routes.get_paper", return_value=self.paper), patch(
-            "backend.app.api.routes.KB_PAPERS_DIR", self.dir
-        ), patch("backend.app.api.routes.submit_index_task", return_value=True) as submit, patch(
-            "backend.app.api.routes.update_chunker_state"
+        with patch("backend.app.api.routes_kb.get_paper", return_value=self.paper), patch(
+            "backend.app.api.routes_kb.KB_PAPERS_DIR", self.dir
+        ), patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as submit, patch(
+            "backend.app.api.routes_kb.update_chunker_state"
         ):
             response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "v2"})
         self.assertEqual(response.status_code, 200)
@@ -350,10 +350,10 @@ class ReindexTests(unittest.TestCase):
         (self.dir / "p1.pdf").unlink()
         readable = self.dir / paper["stored_name"]
         readable.write_bytes(b"%PDF-1.4 fake")
-        with patch("backend.app.api.routes.get_paper", return_value=paper), patch(
-            "backend.app.api.routes.KB_PAPERS_DIR", self.dir
-        ), patch("backend.app.api.routes.submit_index_task", return_value=True) as submit, patch(
-            "backend.app.api.routes.update_chunker_state"
+        with patch("backend.app.api.routes_kb.get_paper", return_value=paper), patch(
+            "backend.app.api.routes_kb.KB_PAPERS_DIR", self.dir
+        ), patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as submit, patch(
+            "backend.app.api.routes_kb.update_chunker_state"
         ):
             response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "v1"})
         self.assertEqual(response.status_code, 200)
@@ -374,7 +374,7 @@ class PaperListChunkerTests(unittest.TestCase):
                 "v2": {"status": "indexing", "chunk_count": 0, "progress": 45, "error": None},
             },
         }]
-        with patch("backend.app.api.routes.load_papers", return_value=papers):
+        with patch("backend.app.api.routes_kb.load_papers", return_value=papers):
             response = self.client.get("/api/kb/papers")
         chunkers = response.json()["papers"][0]["chunkers"]
         self.assertEqual(chunkers["v2"]["status"], "indexing")

@@ -13,7 +13,7 @@ import pymupdf
 from fastapi.testclient import TestClient
 from qdrant_client import models
 
-from backend.app.api import routes
+from backend.app.api import routes_kb as routes
 from backend.app.main import app
 from backend.app.services.kb import index as index_module
 from backend.app.services.kb import retrieve as retrieve_module
