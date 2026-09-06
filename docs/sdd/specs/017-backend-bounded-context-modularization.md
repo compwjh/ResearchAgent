@@ -68,6 +68,7 @@ backend/app/
    
    把后者改成前者（或反之）即视为破坏对外契约。
 6. 响应媒体类型与响应头不变：三处 SSE（`/agent/run`、`/chat`、`/kb/ask`）保持 `text/event-stream` 及 `Cache-Control: no-cache`、`X-Accel-Buffering: no`。
+   > **Task02 实测风险（必须处理）**：OpenAPI 快照把这三个端点声明为 `application/json`，且 `components.schemas` 不含 `code` / `message` / `retryable` 等错误字段。因此 **Task07 禁止只比对 OpenAPI diff**，必须对「SSE 的 `Content-Type`」与「两类错误体」分别补**运行时断言**，否则「SSE 退化成 JSON」「错误体被统一」这类破坏会被静默放过。
 7. 下表标注「别名」的端点**全部保留**，即使当前前端不调用。
 
 ### 端点基线（35 个操作，源自 `backend/app/api/routes.py`）
@@ -229,6 +230,21 @@ backend/app/
 - 判定命令（Task07）：在上述四类范围内 grep `backend.app.services.`、`backend.app.domain.`、`backend.app.agents.`、`backend.app.graphs.` 结果为空。
 - **白名单例外**：`USENIXAcceptedSource = UsenixAcceptedSource` 这类**对外类名别名**若被外部脚本引用，须在本表登记为白名单并注明理由；未登记的一律视为未清理。
 - 无法判定归属的文件：默认留在原位，在 Task02 清单标注「待裁决」，由架构师裁决后才可移动；**不允许以「迁移范围内」为由跳过检查**。
+
+### 补充归属（架构师裁决，Task02 盘点后补齐）
+
+Task02 实测 58 个实现文件，本表补齐此前未归类的 6 个：
+
+| 文件 | 分类 | 目标 | 任务 |
+|---|---|---|---|
+| `backend/app/__init__.py` | 保留原位 | 包标记，不移动 | — |
+| `backend/app/main.py` | **保留原位**（仅装配） | 只保留应用装配、静态资源、总路由与生命周期注册 | 03 |
+| `backend/app/api/__init__.py` | 保留 | `api/` 包标记 | — |
+| `backend/app/api/routes.py` | 拆分后删除 | 按业务拆为 `api/` 下子路由模块，原文件在 Task07 删除 | 03 拆分 / 07 删除 |
+| `backend/app/api/schemas.py` | 保留（可按端点拆分） | 请求/响应模型留在 `api/` | 03 |
+| `backend/app/core/__init__.py` | 随 `core/` 迁 `platform/` | Task07 确认无引用后删除 | 03 |
+
+> **部署约束**：`deploy/start.sh` 与 `deploy/stop.sh` 以 `uvicorn backend.app.main:app` 为入口。**`main.py` 的路径与 ASGI 应用对象名必须保持不变**，否则服务会静默启动失败；Task07 完成后必须实际启动一次验证。
 
 ## 跨上下文端口契约与装配（技术评审必改项 2、3、4）
 
