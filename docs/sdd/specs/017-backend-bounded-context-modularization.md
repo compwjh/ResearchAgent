@@ -63,7 +63,8 @@ backend/app/
 4. 状态码集合不变（含 422 参数校验、424 上游不可用）。
 5. 错误**状态码、错误码与错误体结构**均只增不减。现有系统存在**两类错误体，迁移中禁止相互统一**：
    - `/papers/*`：`_paper_api_error()` 产出 `{code, message, retryable}`，如 `CONFERENCE_DISABLED`(400)、`PAPER_DISCOVERY_DISABLED`(503)、`USENIX_UNAVAILABLE`(424)、`INVALID_YEARS`(422)。
-   - `/agent/*`、`/chat`、`/kb/*`、`/health`：FastAPI `HTTPException` 产出 `{"detail": ...}`；部分 `detail` 是对象，如 `/agent/articles/download` 的 404 返回 `{"download_outcome", "user_message", "article_url"}`。
+   - `/agent/*`、`/chat`、`/kb/*`：FastAPI `HTTPException` 产出 `{"detail": ...}`；部分 `detail` 是对象，如 `/agent/articles/download` 的 404 返回 `{"download_outcome", "user_message", "article_url"}`。
+   - `/health`：**恒返回 200**，Ollama 不可达时降级为 `models: []` 而非报错（`backend/app/api/routes.py:280-291`），不得新增错误体。
    
    把后者改成前者（或反之）即视为破坏对外契约。
 6. 响应媒体类型与响应头不变：三处 SSE（`/agent/run`、`/chat`、`/kb/ask`）保持 `text/event-stream` 及 `Cache-Control: no-cache`、`X-Accel-Buffering: no`。
@@ -299,7 +300,7 @@ Task07 必须提供**可执行的 architecture test**，而非文字承诺。规
 
 | 场景 | 操作 | 成功可观察结果 | 失败场景与应保持不变的错误 |
 |---|---|---|---|
-| 1. 健康检查 | `GET /health` | HTTP 200，返回服务状态 | 依赖不可用时，状态码与 `{"detail": ...}` 结构与迁移前一致 |
+| 1. 健康检查 | `GET /health` | HTTP 200，返回 `{status: "ok", model, models, paper_discovery_enabled}` | Ollama 不可达时**仍返回 200 且 `models: []`**，不得新增错误体（见 `routes.py:280-291`） |
 | 2. 文章设置读取 | `GET /agent/settings` | HTTP 200，返回当前配置（含 `article_*` 字段） | Ollama 不可达 → 503，且保持 `{"detail": ...}` |
 | 3. 文章设置保存（跨上下文不丢配置） | `PUT /agent/settings` 仅改 `article_download_dir` → `GET /agent/settings` → 执行一次论文检索 | 200；文章配置已更新，且 **`paper_discovery_*` 与未知字段未丢失**，论文检索仍可用 | 参数非法时沿用原 4xx 与 `{"detail": ...}`；**禁止整文件覆盖导致另一上下文配置丢失** |
 | 4. 文章任务创建 | `POST /agent/run` | 200，以 SSE（`text/event-stream`）返回任务与进度 | 问题为空 → 400 `{"detail": "问题不能为空"}`；Ollama 不可达 → 502 `{"detail": ...}` |
