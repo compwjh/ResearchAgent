@@ -16,10 +16,9 @@ try/except 包装。
 
 # 生命周期
 # 供论文发现等其它上下文使用的操作
-from backend.app.services.kb.index import backfill_chunker_defaults, delete_paper_chunker, index_paper_chunker
-
 # 其它外部消费方用到的能力
-from backend.app.services.kb.prompts import build_prompt
+from backend.app.knowledge_base.infrastructure.prompts import build_prompt
+from backend.app.services.kb.index import backfill_chunker_defaults, delete_paper_chunker, index_paper_chunker
 from backend.app.services.kb.retrieve import hybrid_search
 
 # 常量与类型

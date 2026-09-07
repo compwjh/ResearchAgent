@@ -1,5 +1,6 @@
 """个人论文知识库（RAG）服务包（spec-011 / spec-012）。"""
 
+from backend.app.knowledge_base.infrastructure.prompts import build_prompt, citation_payloads
 from backend.app.services.kb.index import (
     DENSE_VECTOR,
     SPARSE_VECTOR,
@@ -14,7 +15,6 @@ from backend.app.services.kb.index import (
     reset_client,
 )
 from backend.app.services.kb.parse import PdfParseError, build_chunks, extract_pages, split_text
-from backend.app.services.kb.prompts import build_prompt, citation_payloads
 from backend.app.services.kb.retrieve import Hit, hybrid_search, reranker_available, rrf_fuse
 from backend.app.services.kb.store import (
     CHUNKER_V1,
