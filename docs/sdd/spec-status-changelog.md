@@ -98,3 +98,6 @@
 - **015 Task11 USENIX accepted + arXiv** ｜ 待执行 → 已完成 ｜ 来源解析、严格匹配、缓存/节流、PDF 安全探测、候选字段/SQLite、搜索/API 接线和跨来源去重均通过 Tech Lead 最终复评与 QA 验收；全仓回归 552 passed。
 - **015 Task12 项目级 USENIX Skill** ｜ 待执行 → 已完成 ｜ 创建 `.agents/skills/usenix-accepted-papers/SKILL.md`、CodeBuddy 适配器，并将适用角色明确为 ResearchAgent 主 Agent、项目 Agent、PM、Tech Lead、QA、调度器和执行 Agent；静态与跨 IDE 验收通过。
 - **015 Task12 Skill 适用范围澄清** ｜ 已完成 → 已完成 ｜ 用户明确“项目的 agent”指 ResearchAgent 本身；已在 Skill 与 `AGENTS.md` 中固定主 Agent/项目级 Agent 的触发和执行协议，保持本次临时 Luna high 模型选择不进入长期模型规则。
+- **015 Task13 全局目录协议与复用审计** ｜ 待执行 → 实施中（约 60%）｜ 2026-09-07 收口回填：`search_source_progress`、`search_results` 表与 `get_search_results_page()` 已落地（见 `reviews/015-task13-store-implementation.md`）；协议固化与复用审计未收口。此前任务表长期写「待执行」，与代码脱节，本次一并修正。
+- **015 Task14 USENIX 增量目录同步** ｜ 待执行 → 已完成 ｜ 2026-09-07 收口回填：USENIX 增量目录同步与 `/accepted` 只读端点已落地；按年份解析 slug 的修复经 `reviews/015-backend-review.md` 评审，结论 WARNING（1 项 HIGH：`_listing_for` 新正则无回归测试，列为下一提交强制项）。
+- **015 安全顶会论文检索与知识库导入** ｜ 已确认 → 实施中（收口核对，维持实施中）｜ 2026-09-07 收口核对：验收评审（`reviews/015-acceptance-review.md`）结论为「整体验收不通过（阻塞）」且 Tech Lead 待签字，Task15–17 从未分派、无实现（A17 来源进度卡、A18 RAG 分页、A16 增量目录端到端均无证据），Task04 待执行，A3/A10/A11/A14 仍受外部与环境阻塞。**不满足转 `已完成` 的 DoD，保持 `实施中`**。按用户既定顺序：先完成 Spec017 后端重构与全量回归，再回来做 Task15/16。

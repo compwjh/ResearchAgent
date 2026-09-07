@@ -2,9 +2,13 @@
 
 ## 状态
 
-**当前状态：`已确认`（2026-09-05；USENIX 优先增量目录、LangGraph 检索任务与 RAG 分页范围，需求/技术复审已通过，用户授权进入实现；Task14 起由 junior-dev 实现）**
+**当前状态：`实施中`（2026-09-07 收口核对）**
 
-> Task02–12 的真实实现与评审证据保留；Task13–17 需求/技术复审已通过（见 `docs/sdd/reviews/015-catalog-requirement-review.md`、`015-catalog-tech-review.md`），用户已授权进入实现，由 junior-dev 实现 Task14–17。不得通过回滚、stash、清理或覆盖工作树损坏现有未提交成果。
+> **本 Spec 不满足转 `已完成` 的收口条件**（`SDD-GATE-CHECKLIST.md` §3）：Task15–17 从未分派、无实现（A17 来源进度卡、A18 RAG 与分页、A16 增量目录端到端无可复核证据）；验收评审未签字；Task04（语义排序与 Reranker）待执行；A3 自定义会议、A10/A11 真实 ACM/IEEE 登录、A14 排序质量仍受外部数据源与环境阻塞。**验收未签字不得转 `已完成`**，故保持 `实施中`。
+>
+> **暂停代码实现的原因（用户既定顺序）**：先完成 Spec017 后端限界上下文重构与全量回归，再回来做 Task15/16（依据 `docs/sdd/retro/2026-09-06-spec015-task15-16-not-dispatched.md`）。恢复时必须先核对本表状态与 `.codebuddy/agent-logs/`，确认 Task15 是否已有分派记录。
+
+> Task02–12 的真实实现与评审证据保留；Task13–17 需求/技术复审已通过（见 `docs/sdd/reviews/015-catalog-requirement-review.md`、`015-catalog-tech-review.md`），用户已授权进入实现。已落地部分：Task13 部分落地（`search_source_progress`、`search_results` 表与 `get_search_results_page()`）、Task14 已落地（USENIX 增量目录同步与 `/accepted` 只读端点）；Task15–17 未动。不得通过回滚、stash、清理或覆盖工作树损坏现有未提交成果。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
 
 ## 架构变更（待确认）
@@ -575,8 +579,8 @@ Task16 切换前端后删除旧同步 `POST /api/papers/search` 路由，不保�
 | 10 | 论文发现限界上下文目录重构 | [`task-10-paper-discovery-package-migration.md`](../plans/015/task-10-paper-discovery-package-migration.md) | 03, 05, 06, 07, 08 | 待确认 |
 | 11 | USENIX accepted papers 与 arXiv 兜底来源 | [`task-11-usenix-accepted-and-arxiv-fallback.md`](../plans/015/task-11-usenix-accepted-and-arxiv-fallback.md) | 03, 05, 08 | 已完成 |
 | 12 | USENIX 双 Skill 与跨 IDE 使用协议 | [`task-12-usenix-paper-skill.md`](../plans/015/task-12-usenix-paper-skill.md) | 11 | 已完成（下载版/目录版） |
-| 13 | 固化全局目录协议与复用审计 | [`task-13-catalog-contract-and-reuse-audit.md`](../plans/015/task-13-catalog-contract-and-reuse-audit.md) | 03, 05, 11, 12 | 待执行 |
-| 14 | 实现 USENIX 增量目录同步 | [`task-14-usenix-incremental-catalog.md`](../plans/015/task-14-usenix-incremental-catalog.md) | 13 | 待执行 |
+| 13 | 固化全局目录协议与复用审计 | [`task-13-catalog-contract-and-reuse-audit.md`](../plans/015/task-13-catalog-contract-and-reuse-audit.md) | 03, 05, 11, 12 | 实施中（约 60%；`search_source_progress`、`search_results` 表与 `get_search_results_page()` 已落地，见 `reviews/015-task13-store-implementation.md`；协议固化与复用审计未收口） |
+| 14 | 实现 USENIX 增量目录同步 | [`task-14-usenix-incremental-catalog.md`](../plans/015/task-14-usenix-incremental-catalog.md) | 13 | 已完成（USENIX 增量目录同步与 `/accepted` 只读端点已落地；按年份解析 slug 修复经 `reviews/015-backend-review.md` 评审，结论 WARNING） |
 | 15 | 实现 LangGraph、目录 RAG 与冻结结果 | [`task-15-langgraph-catalog-rag.md`](../plans/015/task-15-langgraph-catalog-rag.md) | 14 | 待执行 |
 | 16 | 实现来源进度与十条分页交互 | [`task-16-search-progress-and-pagination.md`](../plans/015/task-16-search-progress-and-pagination.md) | 15 | 待执行 |
 | 17 | 执行复用审计、验收、部署与复盘 | [`task-17-review-acceptance-deploy-retro.md`](../plans/015/task-17-review-acceptance-deploy-retro.md) | 13, 14, 15, 16 | 待执行 |
@@ -587,9 +591,10 @@ Task16 切换前端后删除旧同步 `POST /api/papers/search` 路由，不保�
 
 - 原范围需求评审：[`docs/sdd/reviews/015-requirement-review.md`](../reviews/015-requirement-review.md)（结论：**通过**；历史证据保留）
 - 原范围技术评审：[`docs/sdd/reviews/015-tech-review.md`](../reviews/015-tech-review.md)（结论：**通过**；历史证据保留）
-- Task13–17 需求复审：[`docs/sdd/reviews/015-catalog-requirement-review.md`](../reviews/015-catalog-requirement-review.md)（待评审（未执行））
-- Task13–17 技术复审与复用审计：[`docs/sdd/reviews/015-catalog-tech-review.md`](../reviews/015-catalog-tech-review.md)（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/015-acceptance-review.md`（测试报告 + 开发主管签字；待评审（未执行））
+- Task13–17 需求复审：[`docs/sdd/reviews/015-catalog-requirement-review.md`](../reviews/015-catalog-requirement-review.md)（结论：**通过**）
+- Task13–17 技术复审与复用审计：[`docs/sdd/reviews/015-catalog-tech-review.md`](../reviews/015-catalog-tech-review.md)（结论：**通过**，附意见；继承 Task13 审计 C-1~C-6 / G-1~G-4）
+- 验收评审（Task09）：[`docs/sdd/reviews/015-acceptance-review.md`](../reviews/015-acceptance-review.md)（结论：**整体验收不通过（阻塞）**；QA 已签字，开发主管（Tech Lead）**待签字**。该报告要求「阻塞解除并由 Tech Lead 签字前，Spec015 必须保持 `实施中`，不得标记 `已完成`」）
+- Task14 slug 修复后端评审：[`docs/sdd/reviews/015-backend-review.md`](../reviews/015-backend-review.md)（结论：**WARNING**；1 项 HIGH：`_listing_for` 新正则路径无回归测试，列为下一提交强制项）
 
 ## 变更日志（Changelog）
 
@@ -621,6 +626,11 @@ Task16 切换前端后删除旧同步 `POST /api/papers/search` 路由，不保�
 | 2026-09-05 | 用户 | 将检索流程调整为 USENIX 官网优先、DBLP 辅助、增量目录缓存、LangGraph 并行编排、RAG 召回、来源进度卡片和每页 10 篇；要求先完整落盘文档，后续执行另行安排 |
 | 2026-09-05 | 架构师（自身） | 根据真实代码盘点新增“现有实现复用与替换边界”，固定原样复用、参数化复用、必须替换和禁止重复开发的模块；新增 Task13–17，状态退回待确认并暂停代码实现 |
 | 2026-09-04 | tester / Tech Lead | Task05 安全修复复验与签核通过：定向回归 150 passed，修复项精确回归 11 passed，并发幂等 10/10 轮；批量与登录续传移交 Task06 |
+| 2026-09-06 | 架构师（自身） | Task13 部分落地（`search_source_progress`、`search_results` 表与 `get_search_results_page()`）、Task14 落地（USENIX 增量目录同步与 `/accepted` 只读端点）；本次收口时回填任务表状态，修正「代码已落地但任务表仍写待执行」的长期脱节 |
+| 2026-09-06 | 架构师（自身，主会话代行） | USENIX slug 按年份解析修复的后端评审落盘 `reviews/015-backend-review.md`，结论 WARNING；1 项 HIGH：`_listing_for` 新正则路径无回归测试，列为下一提交强制项 |
+| 2026-09-06 | 架构师（自身） | 复盘 Task15–17 从未分派（`retro/2026-09-06-spec015-task15-16-not-dispatched.md`），确立任务链推进、状态与代码同批提交、已确认 spec 优先、交接检查点四条规则；用户确定顺序：先 017 后端重构 → 全量回归 → 再 015 Task15/16 |
+| 2026-09-07 | 架构师（自身） | 收口核对：验收报告结论为「不通过（阻塞）」且 Tech Lead 未签字，Task15–17 未实现，故**状态保持 `实施中`**；回填评审记录为真实结论（消除「待评审（未执行）」占位）并同步 changelog |
+| 2026-09-07 | 架构师（自身） | 引入 ruff（`ruff.toml` + `requirements-dev.txt`，显式固定 select 因 ruff 0.16 默认规则集过宽）；导入排序修复 58 处、删除确认无引用的死导入 18 处，全量回归 626 passed 无回归 |
 
 ---
 **六条自检**：①边界均可转为测试；②spec 说明需求、task 承载实施细节；③task 链接真实且依赖无环；④明确不做已划死范围；⑤执行配置五行齐全；⑥产品步骤可映射 A1–A15。
