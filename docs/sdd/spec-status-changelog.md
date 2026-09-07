@@ -104,3 +104,7 @@
 - **017 Task02 建立迁移清单与契约基线** ｜ 待执行 → 已完成 ｜ 2026-09-07 收口回填：`plans/017/migration-inventory.md` 与 `openapi-baseline.json` 已冻结落盘，此前任务表长期写「待执行」，与代码脱节。
 - **017 Task03 拆分 API 与平台装配** ｜ 待执行 → 已完成 ｜ 2026-09-07：路由拆分两批（system/chat/kb、paper/article）完成，`routes.py` 缩为 37 行纯注册入口；设置拆分、跨域 port（`platform/ports.py`）、composition root（`platform/bootstrap.py`）已落地；路由依赖改经注册表解析，3 处死 `TaskStore` 单例已删并新增架构测试锁定。端点归属清单落盘 `plans/017/api-module-inventory.md`。OpenAPI 与基线逐项一致（35 个 /api 操作，0 差异），全量 628 passed。
 - **017 Task05 迁移知识库限界上下文** ｜ 待执行 → 已完成 ｜ 2026-09-08：10 个实现模块迁入 `knowledge_base/infrastructure/`；受控入口 `knowledge_base/application.py` 以显式 `__all__` 承接全部对外契约；`services/kb` 包（含 43 成员 facade）已删除，跨层 facade 通道不复存在。消费方按边界分流：api/脚本/论文发现走 application 入口，测试走 infrastructure。OpenAPI 与基线逐项一致，全量 629 passed。
+- **017 Task06 迁移文章助手与聊天** ｜ 待执行 → 已完成 ｜ 2026-09-08：article_assistant/ 与 chat/ 建立；ollama*.py 迁 platform；run_chat 因依赖 graphs.chat（业务模块）下沉到 chat/application/chat_runner.py。
+- **017 Task07 删除旧结构并验证模块边界** ｜ 待执行 → 已完成 ｜ 2026-09-08：observability 迁 platform、chat graph 迁 chat/application；删除 services/domain/graphs/observability 四个旧包；架构测试扩到 5 条可执行断言。
+- **017 Task08 评审、部署与复盘** ｜ 待执行 → 已完成 ｜ 2026-09-08：验收评审通过（QA 与 Tech Lead 签字均由主模型代行，用户临时要求）；服务实际启动，首页/health/kb-health/conferences/kb-papers 均 200；复盘落盘。
+- **017 后端限界上下文模块化** ｜ 已确认 → 已完成 ｜ 2026-09-08：Task02–08 全部完成。全量 631 passed；OpenAPI 与基线逐项一致；ruff 与迁移前持平。遗留：Reranker 降级运行、PaperImportPort 未实现、knowledge_base 受控入口待收窄。

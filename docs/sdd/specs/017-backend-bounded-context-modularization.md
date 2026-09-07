@@ -2,7 +2,17 @@
 
 ## 状态
 
-**当前状态：`已确认`（2026-09-06；需求评审 4 项与技术评审 7 项打回意见已修订，architect 复审判定全部闭环，用户授权进入实现；按 `02 → 03 → 05 → 04 → 06 → 07 → 08` 顺序执行）**
+**当前状态：`已完成`（2026-09-08；Task02–Task08 全部完成并通过验收评审，运行时已验证）**
+
+> 收口证据：全量 `631 passed / 0 failed`；OpenAPI 与 Task02 冻结基线逐项一致（36 操作，0 差异）；
+> ruff 122 条与迁移前持平；服务实际启动，首页 `/api/health`、`/api/kb/health`、
+> `/api/papers/conferences`、`/api/kb/papers` 均返回 200。
+> 验收评审 [`017-acceptance-review.md`](../reviews/017-acceptance-review.md)；
+> 复盘 [`2026-09-08-spec017-modularization-retro.md`](../retro/2026-09-08-spec017-modularization-retro.md)。
+>
+> **遗留（不阻塞收口）**：① Reranker 因本地缺模型以 RRF 降级运行（spec-014 既定行为）；
+> ② `platform/ports.py` 的 `PaperImportPort` 只定义未实现，实现属 spec-015 范围；
+> ③ `knowledge_base/application.py` 导出面沿用旧 facade 宽度，后续应逐步收窄。
 
 ## 一句话目标
 
@@ -350,20 +360,21 @@ Task07 必须提供**可执行的 architecture test**，而非文字承诺。规
 | 02 | 建立迁移清单与契约基线 | [Task 02](../plans/017/task-02-contract-baseline.md) | 01 | 已完成（迁移清单 `migration-inventory.md` 与 OpenAPI 基线 `openapi-baseline.json` 已冻结落盘） |
 | 03 | 拆分 API 与平台装配（含设置拆分、composition root、跨域 port 定义） | [Task 03](../plans/017/task-03-api-platform.md) | 02 | 已完成（子路由拆分两批、设置拆分、跨域 port、composition root 均落地；端点归属清单见 [`api-module-inventory.md`](../plans/017/api-module-inventory.md)） |
 | 05 | 迁移知识库限界上下文（先提供 KB application facade） | [Task 05](../plans/017/task-05-knowledge-base.md) | 03 | 已完成（10 个实现模块迁入 `knowledge_base/infrastructure/`；受控入口 `knowledge_base/application.py`；`services/kb` 包与 43 成员 facade 已删除） |
-| 04 | 迁移论文发现限界上下文（消费 KB port） | [Task 04](../plans/017/task-04-paper-discovery.md) | 05 | 待执行 |
-| 06 | 迁移文章助手与聊天（消费已拆分的设置与 platform） | [Task 06](../plans/017/task-06-article-chat.md) | 03 | 待执行 |
+| 04 | 迁移论文发现限界上下文（消费 KB port） | [Task 04](../plans/017/task-04-paper-discovery.md) | 05 | 已完成（19 个模块迁入 `paper_discovery/` 的 domain/infrastructure/application；新增 `application/entry.py` 受控出口，api 不再直连 infrastructure） |
+| 06 | 迁移文章助手与聊天（消费已拆分的设置与 platform） | [Task 06](../plans/017/task-06-article-chat.md) | 03 | 已完成（`article_assistant/` 与 `chat/`；`ollama*.py` 迁 platform；`run_chat` 下沉到 `chat/application/chat_runner.py` 以消除 platform→业务反向依赖） |
 
 **执行顺序**：`02 → 03 → 05 → 04 → 06 → 07 → 08`。Task04 **不得早于** Task05 的 KB application contract 可用；Task06 依赖 Task03 的 settings repository，在目录不重叠时可与 Task04 并行；Task04 与 Task06 不得同时移动同一个 settings repository 或数据文件。
 
 **Task02 硬门禁（技术评审必改项 5）**：Task02 产物必须是**逐项可勾选的全量迁移清单**，每行包含：文件路径 → 目标目录 → 承接任务 → 删除时机。必须覆盖：全部 `.py` 实现、测试（含 monkeypatch 字符串与 patch 点，如 `tests/test_api_routes_coverage.py`）、启动/部署脚本（`scripts/`、`deploy/`）、`observability/`、`core/config.py`、`core/article_settings.py`、`services/kb/__init__.py` 的**全部 facade 消费者**、以及动态 import 字符串。**同一文件只能归属一个任务**；清单未覆盖的文件一律视为「待裁决」，不得由实现 Agent 自行处理。
-| 07 | 删除旧结构并验证模块边界 | [Task 07](../plans/017/task-07-remove-legacy-boundaries.md) | 04, 05, 06 | 待执行 |
-| 08 | 评审、部署与复盘 | [Task 08](../plans/017/task-08-review-deploy-retro.md) | 07 | 待执行 |
+| 07 | 删除旧结构并验证模块边界 | [Task 07](../plans/017/task-07-remove-legacy-boundaries.md) | 04, 05, 06 | 已完成（observability 迁 platform、chat graph 迁 chat/application；删除 `services`/`domain`/`graphs`/`observability` 旧包；架构测试扩到 5 条） |
+| 08 | 评审、部署与复盘 | [Task 08](../plans/017/task-08-review-deploy-retro.md) | 07 | 已完成（验收评审通过、服务实际启动并验证、复盘已落盘） |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/017-requirement-review.md`（**打回** → 4 项必改已于 2026-09-06 修订，待复审）
-- 技术评审：`docs/sdd/reviews/017-tech-review.md`（**打回** → 7 项必改已于 2026-09-06 修订，待复审）
-- 验收评审：`docs/sdd/reviews/017-acceptance-review.md`（测试报告 + 开发主管签字；待评审（未执行））
+- 需求评审：[`docs/sdd/reviews/017-requirement-review.md`](../reviews/017-requirement-review.md)（**打回** → 4 项必改已于 2026-09-06 修订）
+- 技术评审：[`docs/sdd/reviews/017-tech-review.md`](../reviews/017-tech-review.md)（**打回** → 7 项必改已于 2026-09-06 修订）
+- 复审（architect）：[`docs/sdd/reviews/017-rereview.md`](../reviews/017-rereview.md)（结论：**通过**，判定全部闭环）
+- 验收评审：[`docs/sdd/reviews/017-acceptance-review.md`](../reviews/017-acceptance-review.md)（结论：**通过**；测试（QA）与开发主管（Tech Lead）签字均由**主模型代行**，原因：用户 2026-09-08 要求「子 agent 都让你代行（临时要求）」，已在文档头部与复盘中留痕）
 
 ## 变更日志
 
