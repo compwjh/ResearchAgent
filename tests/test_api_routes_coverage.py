@@ -180,7 +180,7 @@ class ChatEndpointTests(unittest.TestCase):
 
     @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
     @patch("backend.app.platform.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_chat_streams_tokens_and_done(self, mock_graph, mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [
@@ -200,7 +200,7 @@ class ChatEndpointTests(unittest.TestCase):
 
     @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
     @patch("backend.app.platform.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_chat_emits_debug_event_in_developer_mode(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [{"type": "token", "content": "ok"}]
@@ -214,7 +214,7 @@ class ChatEndpointTests(unittest.TestCase):
 
     @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
     @patch("backend.app.platform.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_chat_stream_error_is_reported(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.side_effect = RuntimeError("boom")
@@ -428,7 +428,7 @@ class RunAgentBranchTests(unittest.TestCase):
 
     @patch("backend.app.api.routes_article.get_available_models", return_value=["m1"])
     @patch("backend.app.platform.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_run_chat_branch_streams_answer(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [{"type": "token", "content": "hi"}]
@@ -447,7 +447,7 @@ class RunAgentBranchTests(unittest.TestCase):
 
     @patch("backend.app.api.routes_article.get_available_models", return_value=["m1"])
     @patch("backend.app.platform.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_run_chat_branch_reports_exception(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.side_effect = RuntimeError("boom")
@@ -464,7 +464,7 @@ class ChatGraphTests(unittest.TestCase):
     """覆盖 graphs/chat.py 的 ask_model 分支。"""
 
     def test_build_chat_graph_streams_content_chunks(self):
-        from backend.app.graphs.chat import build_chat_graph
+        from backend.app.chat.application.chat_graph import build_chat_graph
 
         class _Chunk:
             def __init__(self, content):
@@ -477,7 +477,7 @@ class ChatGraphTests(unittest.TestCase):
         self.assertEqual(result["answer"], "你好")
 
     def test_build_chat_graph_handles_non_string_content(self):
-        from backend.app.graphs.chat import build_chat_graph
+        from backend.app.chat.application.chat_graph import build_chat_graph
 
         class _Chunk:
             def __init__(self, content):

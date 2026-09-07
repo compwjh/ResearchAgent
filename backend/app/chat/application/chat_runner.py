@@ -1,7 +1,7 @@
 """聊天链路执行（Spec017 Task06）。
 
 `run_chat` 原本位于 `backend.app.platform.ollama`，但它需要通过
-`backend.app.graphs.chat.build_chat_graph` 驱动 LangGraph 会话图——
+`backend.app.chat.application.chat_graph.build_chat_graph` 驱动 LangGraph 会话图——
 `graphs.chat` 属**业务模块**，而静态边界规则禁止 `platform` import 业务模块。
 因此这里把它下沉到聊天上下文的 application 层：platform 只保留与模型无关的
 Ollama 能力（`create_chat_model` / `get_available_models` / 直连流式）。
@@ -38,7 +38,7 @@ def _langchain_drive(run: "ChatRun", model: str, prompt: str, reasoning: bool):
         if reasoning
         else _ollama.create_chat_model(model, reasoning=False)
     )
-    from backend.app.graphs.chat import build_chat_graph
+    from backend.app.chat.application.chat_graph import build_chat_graph
 
     graph = build_chat_graph(chat_model)
     start = time.perf_counter()

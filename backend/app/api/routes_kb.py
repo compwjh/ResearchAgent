@@ -37,7 +37,7 @@ from backend.app.knowledge_base.application import (
     update_chunker_state,
     upsert_paper,
 )
-from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
+from backend.app.platform.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,

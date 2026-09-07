@@ -19,9 +19,9 @@ import contextvars
 import logging
 from typing import List, Optional
 
-from backend.app.observability import client as obs_client
-from backend.app.observability import config as obs_config
-from backend.app.observability.safe import safe_call
+from backend.app.platform.observability import client as obs_client
+from backend.app.platform.observability import config as obs_config
+from backend.app.platform.observability.safe import safe_call
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,7 @@ from backend.app.article_assistant.application.entry import (
 )
 from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.chat.application.chat_runner import run_chat
-from backend.app.observability import flush, record_ollama_generation, utc_now
+from backend.app.platform.observability import flush, record_ollama_generation, utc_now
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,

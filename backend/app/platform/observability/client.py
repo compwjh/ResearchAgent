@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 
 from backend.app.core import config
-from backend.app.observability import config as obs_config
+from backend.app.platform.observability import config as obs_config
 
 logger = logging.getLogger(__name__)
 

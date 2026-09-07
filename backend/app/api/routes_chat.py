@@ -10,7 +10,7 @@ from backend.app.api.schemas import (
 )
 from backend.app.chat.application.chat_runner import run_chat
 from backend.app.core.config import MODEL_NAME
-from backend.app.observability import flush, record_ollama_generation, utc_now
+from backend.app.platform.observability import flush, record_ollama_generation, utc_now
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,

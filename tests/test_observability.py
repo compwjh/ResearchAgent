@@ -7,10 +7,10 @@ import unittest
 from unittest import mock
 
 from backend.app.core import config
-from backend.app.observability import client as obs_client
-from backend.app.observability import config as obs_config
-from backend.app.observability.spans import derive_metrics, record_event, record_ollama_generation
-from backend.app.observability.trace import end_trace, get_current_trace_id, start_trace
+from backend.app.platform.observability import client as obs_client
+from backend.app.platform.observability import config as obs_config
+from backend.app.platform.observability.spans import derive_metrics, record_event, record_ollama_generation
+from backend.app.platform.observability.trace import end_trace, get_current_trace_id, start_trace
 from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings
 
 

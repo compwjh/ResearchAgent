@@ -20,8 +20,8 @@ from backend.app.core.config import (
     KB_EMBED_NUM_BATCH,
     OLLAMA_BASE_URL,
 )
-from backend.app.observability import record_event
-from backend.app.observability.safe import safe_call
+from backend.app.platform.observability import record_event
+from backend.app.platform.observability.safe import safe_call
 
 # 稀疏向量槽位数量（约 100 万），个人知识库量级下碰撞概率可忽略
 SPARSE_DIM = 1 << 20

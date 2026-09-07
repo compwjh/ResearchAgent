@@ -101,7 +101,7 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
         graph = mock.Mock()
         graph.stream.return_value = [{"type": "token", "content": "ok"}]
         with mock.patch("backend.app.platform.ollama.create_chat_model") as create_model, mock.patch(
-            "backend.app.graphs.chat.build_chat_graph", return_value=graph
+            "backend.app.chat.application.chat_graph.build_chat_graph", return_value=graph
         ):
             list(run_chat("q", "m", route="langchain").events)
 
@@ -111,7 +111,7 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
         graph = mock.Mock()
         graph.stream.return_value = [{"type": "token", "content": "ok"}]
         with mock.patch("backend.app.platform.ollama.create_chat_model") as create_model, mock.patch(
-            "backend.app.graphs.chat.build_chat_graph", return_value=graph
+            "backend.app.chat.application.chat_graph.build_chat_graph", return_value=graph
         ):
             list(run_chat("q", "m", route="langchain", think=False).events)
 

@@ -45,7 +45,7 @@ class KbAskTraceTests(unittest.TestCase):
     @patch("backend.app.api.routes_kb.hybrid_search")
     @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
     @patch("backend.app.platform.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_normal_flow_reports_generation(
         self, mock_graph, _mock_model, _mock_models, mock_search,
         mock_report, mock_end_trace, mock_start_trace,
@@ -110,7 +110,7 @@ class KbAskTraceTests(unittest.TestCase):
     @patch("backend.app.api.routes_kb.hybrid_search")
     @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
     @patch("backend.app.platform.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_generation_error_still_emits_error_and_ends_trace(
         self, mock_graph, _mock_model, _mock_models, mock_search,
         mock_report, mock_end_trace, mock_start_trace,
@@ -179,7 +179,7 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(mock_start_trace.call_count, 1)
         self.assertEqual(mock_end_trace.call_count, 1)
 
-    @patch("backend.app.observability.config.enabled", return_value=False)
+    @patch("backend.app.platform.observability.config.enabled", return_value=False)
     @patch("backend.app.api.routes_kb.record_ollama_generation")
     @patch("backend.app.api.routes_kb.hybrid_search", return_value=[_fake_hit()])
     @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
@@ -190,7 +190,7 @@ class KbAskTraceTests(unittest.TestCase):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [{"type": "token", "content": "答"}]
         mock_model.return_value = MagicMock()
-        with patch("backend.app.graphs.chat.build_chat_graph", return_value=fake_graph):
+        with patch("backend.app.chat.application.chat_graph.build_chat_graph", return_value=fake_graph):
             response = self.client.post("/api/kb/ask", json={"question": "关闭观测", "model": "m1"})
         self.assertEqual(response.status_code, 200)
         events = _sse_events(response.text)

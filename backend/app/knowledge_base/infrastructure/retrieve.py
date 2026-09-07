@@ -30,8 +30,8 @@ from backend.app.knowledge_base.infrastructure.index import DENSE_VECTOR, SPARSE
 from backend.app.knowledge_base.infrastructure.reranker import _url as _reranker_url
 from backend.app.knowledge_base.infrastructure.reranker import rerank_hits
 from backend.app.knowledge_base.infrastructure.store import CHUNKER_V1
-from backend.app.observability import record_event
-from backend.app.observability.safe import safe_call
+from backend.app.platform.observability import record_event
+from backend.app.platform.observability.safe import safe_call
 
 RRF_K = 60
 _SCORE_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")

@@ -116,6 +116,65 @@ def test_platform_does_not_import_business_modules():
     )
 
 
+# 已拆除的旧结构（Spec017 Task07 删除），任何 import 都属回退。
+_LEGACY_PACKAGES = (
+    "backend.app.services.",
+    "backend.app.domain.",
+    "backend.app.graphs.",
+    "backend.app.observability.",
+)
+
+# 各业务限界上下文包（相对 backend/app 的目录名）。
+_CONTEXTS = ("knowledge_base", "paper_discovery", "article_assistant", "chat")
+
+
+def test_no_legacy_module_paths():
+    """Task07 删除旧结构后，`services` / `domain` / `graphs` / `observability`
+
+    四个旧包不应再出现在任何 import 中（observability 已迁至 `platform` 下）。
+    本断言把「旧路径零 import」从文字承诺固化为可执行检查。
+    """
+    violations = []
+    for path in _py_files(_REPO_ROOT / "backend") + _py_files(_REPO_ROOT / "tests") + _py_files(_REPO_ROOT / "scripts"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            for mod in _module_names_from(node):
+                if mod.startswith(_LEGACY_PACKAGES):
+                    violations.append(f"{path}:{node.lineno}:{mod}")
+    assert not violations, (
+        "仍存在已拆除的旧结构 import（违反 Spec017 Task07）:\n" + "\n".join(violations)
+    )
+
+
+def test_contexts_do_not_import_other_contexts_internals():
+    """业务模块不得 import 其它上下文的 `domain` / `infrastructure`。
+
+    跨上下文协作只能经对方的 application 入口（或 Task03 定义的 port）。
+    同上下文内部引用自身 domain/infrastructure 不在禁止之列。
+    """
+    app_dir = _REPO_ROOT / "backend" / "app"
+    violations = []
+    for ctx in _CONTEXTS:
+        ctx_dir = app_dir / ctx
+        if not ctx_dir.is_dir():
+            continue
+        for path in _py_files(ctx_dir):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                for mod in _module_names_from(node):
+                    for other in _CONTEXTS:
+                        if other == ctx:
+                            continue
+                        if mod.startswith(f"backend.app.{other}.infrastructure") or mod.startswith(
+                            f"backend.app.{other}.domain"
+                        ):
+                            violations.append(f"{path}:{node.lineno}:{mod}")
+    assert not violations, (
+        "业务模块 import 了其它上下文的 domain / infrastructure（违反 Spec017 静态边界检查规则）:\n"
+        + "\n".join(violations)
+    )
+
+
 def test_api_does_not_import_infrastructure():
     """静态边界检查规则：api 层不得 import 任何上下文的 infrastructure。
 

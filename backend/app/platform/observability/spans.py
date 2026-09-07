@@ -26,10 +26,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
-from backend.app.observability import client as obs_client
-from backend.app.observability import config as obs_config
-from backend.app.observability.safe import safe_call
-from backend.app.observability.trace import get_current_trace_id
+from backend.app.platform.observability import client as obs_client
+from backend.app.platform.observability import config as obs_config
+from backend.app.platform.observability.safe import safe_call
+from backend.app.platform.observability.trace import get_current_trace_id
 from backend.app.platform.ollama_direct import OllamaChatResult
 
 logger = logging.getLogger(__name__)

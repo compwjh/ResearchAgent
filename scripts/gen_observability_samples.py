@@ -37,7 +37,7 @@ from backend.app.core.config import (  # noqa: E402
     OLLAMA_BASE_URL,
 )
 from backend.app.knowledge_base.application import CHUNKER_V1, build_prompt, hybrid_search  # noqa: E402
-from backend.app.observability import (  # noqa: E402
+from backend.app.platform.observability import (  # noqa: E402
     derive_metrics,
     end_trace,
     flush,

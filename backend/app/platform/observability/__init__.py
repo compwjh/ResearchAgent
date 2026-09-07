@@ -5,7 +5,7 @@
 
 典型用法：
 
-    from backend.app.observability import record_ollama_generation, utc_now
+    from backend.app.platform.observability import record_ollama_generation, utc_now
 
     started_at = utc_now()
     result = chat_direct(messages, model)
@@ -18,15 +18,15 @@
     )
 """
 
-from backend.app.observability import client, config, safe  # noqa: F401
-from backend.app.observability.client import flush, get_client
-from backend.app.observability.spans import (
+from backend.app.platform.observability import client, config, safe  # noqa: F401
+from backend.app.platform.observability.client import flush, get_client
+from backend.app.platform.observability.spans import (
     derive_metrics,
     record_event,
     record_ollama_generation,
     utc_now,
 )
-from backend.app.observability.trace import (
+from backend.app.platform.observability.trace import (
     create_trace_id,
     end_trace,
     get_current_trace_id,
