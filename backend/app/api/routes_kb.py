@@ -41,10 +41,8 @@ from backend.app.services.kb.embed import embed_texts
 from backend.app.services.kb.retrieve import reranker_health
 from backend.app.services.kb.store import resolve_paper_path
 from backend.app.services.ollama import get_available_models, run_chat
-from backend.app.services.task_store import TaskStore
 
 router = APIRouter()
-article_tasks = TaskStore()
 article_settings = load_article_settings()
 paper_discovery_store = None
 paper_discovery_store_path = None

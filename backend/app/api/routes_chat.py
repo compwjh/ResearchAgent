@@ -14,10 +14,8 @@ from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
 from backend.app.services.ollama import get_available_models, run_chat
-from backend.app.services.task_store import TaskStore
 
 router = APIRouter()
-article_tasks = TaskStore()
 article_settings = load_article_settings()
 paper_discovery_store = None
 paper_discovery_store_path = None
