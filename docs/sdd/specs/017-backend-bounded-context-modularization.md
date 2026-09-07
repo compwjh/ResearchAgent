@@ -349,7 +349,7 @@ Task07 必须提供**可执行的 architecture test**，而非文字承诺。规
 | 01 | 编写 Spec017 | 本文件 | — | 完成 |
 | 02 | 建立迁移清单与契约基线 | [Task 02](../plans/017/task-02-contract-baseline.md) | 01 | 已完成（迁移清单 `migration-inventory.md` 与 OpenAPI 基线 `openapi-baseline.json` 已冻结落盘） |
 | 03 | 拆分 API 与平台装配（含设置拆分、composition root、跨域 port 定义） | [Task 03](../plans/017/task-03-api-platform.md) | 02 | 已完成（子路由拆分两批、设置拆分、跨域 port、composition root 均落地；端点归属清单见 [`api-module-inventory.md`](../plans/017/api-module-inventory.md)） |
-| 05 | 迁移知识库限界上下文（先提供 KB application facade） | [Task 05](../plans/017/task-05-knowledge-base.md) | 03 | 待执行 |
+| 05 | 迁移知识库限界上下文（先提供 KB application facade） | [Task 05](../plans/017/task-05-knowledge-base.md) | 03 | 已完成（10 个实现模块迁入 `knowledge_base/infrastructure/`；受控入口 `knowledge_base/application.py`；`services/kb` 包与 43 成员 facade 已删除） |
 | 04 | 迁移论文发现限界上下文（消费 KB port） | [Task 04](../plans/017/task-04-paper-discovery.md) | 05 | 待执行 |
 | 06 | 迁移文章助手与聊天（消费已拆分的设置与 platform） | [Task 06](../plans/017/task-06-article-chat.md) | 03 | 待执行 |
 
