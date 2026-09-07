@@ -382,3 +382,9 @@ Task07 必须提供**可执行的 architecture test**，而非文字承诺。规
 |---|---|---|
 | 2026-09-05 | 架构师（自身） | 根据用户确认建立全后端彻底重构 Spec；初始状态为待确认，等待评审与状态门禁。 |
 | 2026-09-06 | 架构师（自身） | 需求评审（打回）与技术评审（打回）后修订：新增「对外契约基线」（35 个端点、4 组公开别名、三类 SSE、**两类错误体**）、「环境与数据兼容性矩阵」（含 `load_article_settings` 四级优先级与 read-modify-write 要求）、「旧目录迁移分类与清理边界」（逐文件归属 + 四类 import 检查范围）、「跨上下文端口契约与装配」、「静态边界检查规则」；补齐产品使用步骤与 13 项验收场景；任务顺序改为 `02→03→05→04→06→07→08`。状态仍为 `待确认`，待复审。 |
+| 2026-09-07 | 架构师（自身） | Task03 完成：路由拆分两批、`platform/settings` 设置拆分、`platform/ports.py` 跨域 port、`platform/bootstrap.py` composition root；端点归属清单落盘 `plans/017/api-module-inventory.md`。OpenAPI 与基线一致（35 个 /api 操作，0 差异）。 |
+| 2026-09-08 | 架构师（自身） | Task05 完成：`services/kb` 10 个模块迁入 `knowledge_base/infrastructure/`，43 成员包级 facade 删除，受控入口 `knowledge_base/application.py` 承接对外契约。 |
+| 2026-09-08 | 架构师（自身） | Task04 完成：19 个模块迁入 `paper_discovery/`（domain 5 / infrastructure 11 / application 3），新增 `application/entry.py` 使 api 不再直连 infrastructure。 |
+| 2026-09-08 | 架构师（自身） | Task06 完成：`article_assistant/` 与 `chat/` 建立，`ollama*.py` 迁 `platform`；发现并修正 platform 反向依赖业务模块——`run_chat` 下沉到 `chat/application/chat_runner.py`。 |
+| 2026-09-08 | 架构师（自身） | Task07 完成：`observability` 迁 `platform`、`chat graph` 迁 `chat/application`；删除 `services`/`domain`/`graphs`/`observability` 旧包；架构测试扩到 5 条可执行断言。 |
+| 2026-09-08 | 架构师（**主模型代行**） | Task08 验收评审、部署与复盘由主模型代行，原因：用户 2026-09-08 要求「子 agent 都让你代行（临时要求）」。代行范围仅限 Task08（评审/部署/复盘），Task03–07 的实现均由 `backend-dev` 分派完成。该临时授权已于 2026-09-08 017 收口后由用户要求恢复分派而结束。 |
