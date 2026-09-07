@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from backend.app.core.config import BASE_DIR
 from backend.app.domain.article import ArticleCandidate
+from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
@@ -30,7 +31,14 @@ from backend.app.services.paper_import_batch_service import (
 from backend.app.services.paper_import_batch_store import PaperImportBatchStore
 from backend.app.services.task_store import TaskStore
 
-article_tasks = TaskStore()
+
+def article_tasks() -> TaskStore:
+    """返回文章任务仓储；经 composition root 解析，测试可用 override_provider 替换。"""
+    return get_provider("article_tasks")
+
+
+register_provider("article_tasks", TaskStore)
+
 article_settings = load_article_settings()
 paper_discovery_store = None
 paper_discovery_store_path = None
@@ -55,7 +63,7 @@ def _paper_api_error(status_code: int, code: str, message: str, retryable: bool 
     )
 
 
-def _paper_store() -> PaperDiscoveryStore:
+def _build_paper_store() -> PaperDiscoveryStore:
     global paper_discovery_store, paper_discovery_store_path
     from backend.app.api import routes
     article_settings = routes.article_settings
@@ -68,7 +76,7 @@ def _paper_store() -> PaperDiscoveryStore:
     return paper_discovery_store
 
 
-def _paper_search_service() -> PaperDiscoverySearchService:
+def _build_paper_search_service() -> PaperDiscoverySearchService:
     global paper_discovery_search_service
     from backend.app.api import routes
     article_settings = routes.article_settings
@@ -80,7 +88,7 @@ def _paper_search_service() -> PaperDiscoverySearchService:
             store=_paper_store(),
             settings=article_settings,
             default_years=article_settings.paper_discovery_default_years,
-        )
+         )
     return paper_discovery_search_service
 
 
@@ -111,7 +119,7 @@ def _paper_candidate_hosts(candidate: object) -> set[str]:
     return hosts
 
 
-def _paper_batch_service() -> PaperImportBatchService:
+def _build_paper_batch_service() -> PaperImportBatchService:
     """Build the batch orchestrator lazily so routes remain test-injectable."""
     global paper_import_batch_service, paper_import_batch_store_path
     from backend.app.api import routes
@@ -131,19 +139,41 @@ def _paper_batch_service() -> PaperImportBatchService:
                 (source.short_name for source in _paper_store().list_conferences()
                  if source.conference_id == _paper_candidate_value(candidate, "conference_id")),
                 None,
-            ),
+             ),
         )
         paper_import_batch_store_path = configured_path
     return paper_import_batch_service
 
 
-def _paper_browser_manager() -> PaperBrowserManager:
+def _build_paper_browser_manager() -> PaperBrowserManager:
     global paper_browser_manager
     from backend.app.api import routes
     article_settings = routes.article_settings
     if paper_browser_manager is None:
         paper_browser_manager = PaperBrowserManager(settings=article_settings)
     return paper_browser_manager
+
+
+def _paper_store() -> PaperDiscoveryStore:
+    return get_provider("paper_discovery_store")
+
+
+def _paper_search_service() -> PaperDiscoverySearchService:
+    return get_provider("paper_search_service")
+
+
+def _paper_batch_service() -> PaperImportBatchService:
+    return get_provider("paper_batch_service")
+
+
+def _paper_browser_manager() -> PaperBrowserManager:
+    return get_provider("paper_browser_manager")
+
+
+register_provider("paper_discovery_store", _build_paper_store, singleton=False)
+register_provider("paper_search_service", _build_paper_search_service, singleton=False)
+register_provider("paper_batch_service", _build_paper_batch_service, singleton=False)
+register_provider("paper_browser_manager", _build_paper_browser_manager, singleton=False)
 
 
 def _conference_payload(source) -> dict:

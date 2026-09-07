@@ -83,7 +83,7 @@ def download_outcome(status: str) -> tuple[str, str]:
 
 @router.get("/agent/tasks/{task_id}")
 def get_agent_task(task_id: str) -> dict:
-    task = article_tasks.get(task_id)
+    task = article_tasks().get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {**task.__dict__, "candidates": [article_candidate_payload(item) for item in task.candidates]}
@@ -95,7 +95,7 @@ def run_agent(request: ChatRequest):
     if not query or len(query) > 500:
         raise HTTPException(status_code=400, detail="问题不能为空且最多支持 500 个字符")
     task = build_task(str(uuid.uuid4()), query)
-    article_tasks.save(task)
+    article_tasks().save(task)
 
     def generate():
         yield stream_event("meta", task_id=task.task_id)
@@ -154,25 +154,25 @@ def run_agent(request: ChatRequest):
         except httpx.HTTPError as error:
             task.status = "failed"
             task.error = "文章检索来源不可用"
-            article_tasks.save(task)
+            article_tasks().save(task)
             yield stream_event("error", message=task.error)
             return
         if not task.candidates:
             task.status = "failed"
             task.error = "没有找到候选文章，请补充作者、年份或 DOI"
-            article_tasks.save(task)
+            article_tasks().save(task)
             yield stream_event("error", message=task.error)
             return
         task.candidates = top_recommendations(task.candidates)
         if not task.candidates:
             task.status = "failed"
             task.error = "没有找到相似度大于 50% 的候选文章，请补充更精确的标题、作者或 DOI"
-            article_tasks.save(task)
+            article_tasks().save(task)
             yield stream_event("error", message=task.error)
             yield stream_event("done")
             return
         task.status = "awaiting_selection"
-        article_tasks.save(task)
+        article_tasks().save(task)
         for candidate in task.candidates:
             yield stream_event("candidate", candidate=article_candidate_payload(candidate))
         yield stream_event("result", task_id=task.task_id, message="请选择要下载的文章")
@@ -196,13 +196,13 @@ def search_articles_endpoint(payload: dict):
     task.candidates = top_recommendations(raw_candidates)
     task.status = "awaiting_selection" if task.candidates else "failed"
     task.error = None if task.candidates else "没有找到相似度大于 50% 的候选文章"
-    article_tasks.save(task)
+    article_tasks().save(task)
     return {"task_id": task.task_id, "status": task.status, "candidates": [article_candidate_payload(item) for item in task.candidates], "error": task.error}
 
 
 @router.post("/agent/articles/download")
 def download_article_endpoint(payload: dict):
-    task = article_tasks.get(payload.get("task_id"))
+    task = article_tasks().get(payload.get("task_id"))
     candidate_id = payload.get("candidate_id")
     candidate = next((item for item in task.candidates if item.candidate_id == candidate_id), None) if task else None
     if not task or not candidate:
@@ -226,23 +226,23 @@ def download_article_endpoint(payload: dict):
         candidate.pdf_url_status = pdf_status
         if resolved_url and pdf_status == "public_pdf":
             candidate.pdf_url = resolved_url
-        article_tasks.save(task)
+        article_tasks().save(task)
         if pdf_status == "login_required":
             task.status = "waiting_login"
             task.human_action = "waiting_login"
             candidate.requires_login = True
-            article_tasks.save(task)
+            article_tasks().save(task)
             outcome, user_message = download_outcome(pdf_status)
             return {"status": "waiting_login", "download_outcome": outcome, "user_message": user_message, "task_id": task.task_id, "candidate_id": candidate_id, "source_name": candidate.source_name, "login_url": candidate.article_url or candidate.pdf_url}
         if pdf_status != "public_pdf":
             task.status = "failed"
             outcome, task.error = download_outcome(pdf_status)
-            article_tasks.save(task)
+            article_tasks().save(task)
             raise HTTPException(status_code=404, detail={"download_outcome": outcome, "user_message": task.error, "article_url": candidate.article_url})
     if candidate.requires_login:
         task.status = "waiting_login"
         task.human_action = "waiting_login"
-        article_tasks.save(task)
+        article_tasks().save(task)
         return {"status": "waiting_login", "task_id": task.task_id, "candidate_id": candidate_id, "source_name": candidate.source_name, "login_url": candidate.article_url or candidate.pdf_url}
     executor = download_under_skill if use_skill else download_article
     try:
@@ -250,30 +250,30 @@ def download_article_endpoint(payload: dict):
     except PermissionError as error:
         task.status = "waiting_login"
         task.human_action = "waiting_login"
-        article_tasks.save(task)
+        article_tasks().save(task)
         return {"status": "waiting_login", "download_outcome": "login_required", "user_message": "该文章需要登录，请完成登录后继续。", "task_id": task.task_id, "candidate_id": candidate_id, "source_name": candidate.source_name, "login_url": candidate.article_url or candidate.pdf_url, "message": str(error)}
     except (httpx.HTTPError, ValueError) as error:
         task.status = "failed"
         task.error = str(error)
-        article_tasks.save(task)
+        article_tasks().save(task)
         raise HTTPException(status_code=502, detail=task.error) from error
     if result.get("type") == "error":
         task.status = "failed"
         task.error = result.get("user_message", "下载失败")
-        article_tasks.save(task)
+        article_tasks().save(task)
         raise HTTPException(
             status_code=502,
             detail={"download_outcome": result.get("download_outcome", "source_unavailable"), "user_message": task.error},
         )
     task.status = "completed"
     task.result = result
-    article_tasks.save(task)
+    article_tasks().save(task)
     return {"status": task.status, **result}
 
 
 @router.post("/agent/articles/probe")
 def probe_article_endpoint(payload: dict):
-    task = article_tasks.get(payload.get("task_id"))
+    task = article_tasks().get(payload.get("task_id"))
     candidate_id = payload.get("candidate_id")
     candidate = next((item for item in task.candidates if item.candidate_id == candidate_id), None) if task else None
     if not task or not candidate:
@@ -284,14 +284,14 @@ def probe_article_endpoint(payload: dict):
         candidate.pdf_url = resolved_url
     elif status == "login_required":
         candidate.requires_login = True
-    article_tasks.save(task)
+    article_tasks().save(task)
     outcome, user_message = download_outcome(status)
     return {"candidate_id": candidate_id, "pdf_url_status": status, "download_outcome": "downloaded" if status == "public_pdf" else outcome, "user_message": "已找到可访问的 PDF 地址，可以下载。" if status == "public_pdf" else user_message, "article_url": candidate.article_url, "pdf_url": candidate.pdf_url, "requires_login": candidate.requires_login}
 
 
 @router.post("/agent/articles/plan-download")
 def plan_article_download(payload: dict):
-    task = article_tasks.get(payload.get("task_id"))
+    task = article_tasks().get(payload.get("task_id"))
     candidate_id = payload.get("candidate_id")
     candidate = next((item for item in task.candidates if item.candidate_id == candidate_id), None) if task else None
     if not task or not candidate:
@@ -313,7 +313,7 @@ def plan_article_download(payload: dict):
 
 @router.post("/agent/tasks/{task_id}/human-actions/login-completed")
 def login_completed(task_id: str, payload: dict):
-    task = article_tasks.get(task_id)
+    task = article_tasks().get(task_id)
     if not task or task.status != "waiting_login":
         raise HTTPException(status_code=400, detail="任务当前不在等待登录状态")
     candidate_id = payload.get("candidate_id")
@@ -322,7 +322,7 @@ def login_completed(task_id: str, payload: dict):
         raise HTTPException(status_code=404, detail="候选文章不存在")
     candidate.requires_login = False
     task.human_action = "login_completed"
-    article_tasks.save(task)
+    article_tasks().save(task)
     return download_article_endpoint({"task_id": task_id, "candidate_id": candidate_id})
 
 
