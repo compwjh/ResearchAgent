@@ -1,13 +1,13 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
-from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api.routes import paper_request_validation_error_response, router
+from backend.app.api.common import paper_request_validation_error_response
+from backend.app.api.routes import router
 from backend.app.core.config import FRONTEND_DIR
 from backend.app.services.kb import backfill_chunker_defaults, mark_interrupted_on_startup
 

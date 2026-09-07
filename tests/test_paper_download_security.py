@@ -10,7 +10,6 @@ from backend.app.services.paper_download_security import (
     validate_url,
 )
 
-
 PUBLIC = "93.184.216.34"
 
 

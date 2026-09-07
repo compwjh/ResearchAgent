@@ -1,9 +1,12 @@
 import httpx
 
 from backend.app.domain.paper_discovery import ConferenceSource
-from backend.app.services.dblp_publication_source import DBLPPublicationSource, deduplicate_publications, filter_main_conference_records
+from backend.app.services.dblp_publication_source import (
+    DBLPPublicationSource,
+    deduplicate_publications,
+    filter_main_conference_records,
+)
 from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
-
 
 SOURCE = ConferenceSource("uss", "USENIX Security", "USENIX Security", "conf/uss", ["USENIX Security Symposium"])
 

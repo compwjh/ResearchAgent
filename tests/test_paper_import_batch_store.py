@@ -9,7 +9,6 @@ from backend.app.domain.paper_import_batch import (
     BATCH_WAITING_LOGIN,
     ITEM_COMPLETED,
     ITEM_DOWNLOADING,
-    ITEM_FAILED,
     ITEM_INDEXING,
     ITEM_VALIDATING,
     ITEM_WAITING_LOGIN,

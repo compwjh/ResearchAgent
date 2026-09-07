@@ -2,8 +2,9 @@ import json
 import re
 from typing import Tuple, TypedDict
 
-from backend.app.domain.article import ArticleTask
 from langgraph.graph import END, START, StateGraph
+
+from backend.app.domain.article import ArticleTask
 
 # 强下载触发词：命中则直接判为 download_paper，跳过模型调用（性能优化）。
 STRONG_DOWNLOAD_WORDS = (

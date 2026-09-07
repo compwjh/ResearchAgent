@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import uuid
-import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from backend.app.core.config import BASE_DIR
 from backend.app.domain.paper_import_batch import (
@@ -33,7 +33,6 @@ from backend.app.domain.paper_import_batch import (
     PaperImportBatch,
     PaperImportItem,
 )
-
 
 SCHEMA_VERSION = 1
 MAX_BATCH_ITEMS = 20

@@ -4,9 +4,11 @@ import pytest
 
 from backend.app.services.ieee_paper_parser import (
     IEEE_PARSE_FAILED,
-    IEEEPaperParseError as ParseError,
     IEEEPaperParser,
     parse_ieee_page,
+)
+from backend.app.services.ieee_paper_parser import (
+    IEEEPaperParseError as ParseError,
 )
 
 PAGE_URL = "https://ieeexplore.ieee.org/document/1234567"

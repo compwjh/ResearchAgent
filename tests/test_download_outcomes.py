@@ -1,6 +1,6 @@
 import unittest
 
-from backend.app.api.routes import download_outcome
+from backend.app.api.routes_article import download_outcome
 
 
 class DownloadOutcomeTests(unittest.TestCase):

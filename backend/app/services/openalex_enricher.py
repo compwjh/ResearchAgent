@@ -3,17 +3,16 @@
 OpenAlex is deliberately a best-effort supplement: a failure never removes the
 DBLP candidate and no rerank score is created here.
 """
+import time
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
-import re
-import time
-import unicodedata
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import httpx
 
 from backend.app.domain.paper_discovery import PaperCandidate
 from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
+
 
 @dataclass(frozen=True)
 class OpenAlexWarning:

@@ -26,9 +26,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 # 通过模块属性引用 run_chat，便于测试 patch `backend.app.services.ollama.run_chat`。
-from backend.app.services import ollama
 from backend.app.core.config import MODEL_NAME
 from backend.app.observability import derive_metrics
+from backend.app.services import ollama
 
 DEFAULT_QUESTION = "用一句话解释什么是向量数据库？"
 DEFAULT_ROUTES: Sequence[str] = ("langchain", "direct")

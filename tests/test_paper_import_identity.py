@@ -5,11 +5,10 @@ import pytest
 from backend.app.services.paper_import_identity import (
     build_paper_filename,
     build_paper_identity,
-    canonical_dblp_key,
     canonical_doi,
     deduplicate_candidates,
-    identity_keys_for_candidate,
     filename_for_candidate,
+    identity_keys_for_candidate,
     paper_identity_keys,
     unique_paper_filename,
 )

@@ -9,7 +9,6 @@ from backend.app.services.acm_paper_parser import (
     parse_acm_page,
 )
 
-
 HTML = """
 <html><head>
 <meta name="citation_title" content="A Safe &amp; Useful Paper">

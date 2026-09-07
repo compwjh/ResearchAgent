@@ -25,7 +25,6 @@ from backend.app.services.paper_download_security import (
     validate_url,
 )
 
-
 DOWNLOAD_BLOCKED = "DOWNLOAD_BLOCKED"
 DOWNLOAD_TIMEOUT = "DOWNLOAD_TIMEOUT"
 PDF_TOO_LARGE = "PDF_TOO_LARGE"

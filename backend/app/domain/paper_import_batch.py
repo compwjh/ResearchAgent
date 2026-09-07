@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-
 BATCH_QUEUED = "queued"
 BATCH_RUNNING = "running"
 BATCH_WAITING_LOGIN = "waiting_login"

@@ -1,9 +1,15 @@
 """Fail-open batch client for llama.cpp's local rerank endpoint (spec-014)."""
 from __future__ import annotations
-import ipaddress, math, threading, time
+
+import ipaddress
+import math
+import threading
+import time
 from typing import Callable, Dict, Generic, List, Literal, NamedTuple, Optional, Sequence, Tuple, TypeVar
 from urllib.parse import urlsplit
+
 import httpx
+
 T = TypeVar("T")
 RerankReason = Literal[
     "disabled", "too_few_candidates", "connection", "timeout", "http_status", "invalid_json",

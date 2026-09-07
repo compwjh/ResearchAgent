@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.domain.article import ArticleCandidate
+from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.services.article_download import probe_pdf_url
 
 

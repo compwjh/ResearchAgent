@@ -11,7 +11,6 @@ from unittest.mock import Mock, patch
 import httpx
 
 from backend.app.services.kb import embed as embed_module
-from backend.app.services.kb import index as index_module
 from backend.app.services.kb import retrieve as retrieve_module
 
 

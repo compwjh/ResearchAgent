@@ -6,7 +6,7 @@
 import threading
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional
 
 from qdrant_client import QdrantClient, models
 

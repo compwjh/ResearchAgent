@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import httpx
 
-from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.domain.article import ArticleCandidate
+from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.services.article_download import download_article, safe_filename
 from backend.app.services.article_search import search_articles
 from backend.app.services.download_paper_skill import skill_status

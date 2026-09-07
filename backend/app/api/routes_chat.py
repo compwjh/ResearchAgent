@@ -1,101 +1,19 @@
-import json
-import os
 import time
-import uuid
-from dataclasses import asdict, replace
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Annotated, List
-from urllib.parse import urlsplit
+from typing import List
 
 import httpx
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import ValidationError
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from backend.app.api.schemas import (
     ChatRequest,
-    ConferenceUpdateRequest,
-    KBAskRequest,
-    KBReindexRequest,
-    PaperImportBatchRequest,
-    PaperImportBatchResponse,
-    PaperImportItemActionRequest,
-    PaperImportItemLoginResponse,
-    PaperImportRequest,
-    PaperImportResponse,
-    PaperAcceptedRequest,
-    PaperSearchRequest,
 )
-from backend.app.agents.article_agent import build_task
+from backend.app.core.config import MODEL_NAME
+from backend.app.observability import flush, record_ollama_generation, utc_now
 from backend.app.platform.settings.settings_repository import (
-    ArticleSettings,
     load_article_settings,
-    save_article_settings,
 )
-from backend.app.core.config import BASE_DIR, CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR, MODEL_NAME
-from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
-from backend.app.domain.article import ArticleCandidate, ArticleTask
-from backend.app.domain.paper_discovery import SearchSession
-from backend.app.services.article_download import download_article, probe_pdf_url
-from backend.app.services.article_search import search_articles
-from backend.app.services.download_paper_skill import SKILL_NAME, build_skill_plan, download_under_skill, skill_status
-from backend.app.services.kb import (
-    CHUNKERS,
-    CHUNKER_V1,
-    CHUNKER_V2,
-    STATUS_INDEXING,
-    build_prompt,
-    citation_payloads,
-    count_points,
-    delete_paper,
-    ensure_collection,
-    get_client,
-    get_paper,
-    hybrid_search,
-    index_paper,
-    index_paper_chunker,
-    load_papers,
-    new_record,
-    remove_paper,
-    run_index_task_sync,
-    save_upload,
-    submit_index_task,
-    update_chunker_state,
-    upsert_paper,
-)
-from backend.app.services.kb.embed import embed_texts
-from backend.app.services.kb.retrieve import reranker_health
-from backend.app.services.kb.store import resolve_paper_path
-from backend.app.services.ollama import create_chat_model, get_available_models, run_chat
-from backend.app.services.dblp_publication_source import DBLPPublicationSource
-from backend.app.services.openalex_enricher import OpenAlexEnricher
-from backend.app.services.paper_discovery_search import PaperDiscoverySearchError, PaperDiscoverySearchService
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.paper_download import (
-    DOWNLOAD_BLOCKED,
-    DOWNLOAD_TIMEOUT,
-    INVALID_PDF,
-    LOGIN_REQUIRED,
-    PDF_NOT_FOUND,
-    PDF_TOO_LARGE,
-    PaperDownloadError,
-)
-from backend.app.services.paper_import import (
-    KB_IMPORT_FAILED,
-    PAPER_ALREADY_EXISTS,
-    PaperImportError,
-    import_candidate,
-    safe_import_error_code,
-    safe_import_error_message,
-)
-from backend.app.services.paper_import_batch_service import (
-    PaperImportBatchService,
-    PaperImportBatchServiceError,
-)
-from backend.app.services.paper_import_batch_store import PaperImportBatchStore
-from backend.app.services.paper_browser_manager import BrowserManagerError, PaperBrowserManager
+from backend.app.services.ollama import get_available_models, run_chat
 from backend.app.services.task_store import TaskStore
 
 router = APIRouter()
@@ -112,8 +30,9 @@ paper_browser_manager = None
 paper_browser_sessions = {}
 
 
-
 from backend.app.api.common import *  # noqa: F401,F403
+
+
 @router.post("/chat")
 def chat(request: ChatRequest):
     question = request.question.strip()
@@ -184,3 +103,4 @@ def chat(request: ChatRequest):
 
 
 # ==================== 知识库 / RAG（spec-011）====================
+

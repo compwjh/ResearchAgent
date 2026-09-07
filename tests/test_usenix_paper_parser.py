@@ -5,7 +5,6 @@ import pytest
 
 from backend.app.services.usenix_paper_parser import (
     USENIX_PARSE_FAILED,
-    UsenixAcceptedPaper,
     UsenixAcceptedParser,
     UsenixPaperParseError,
     parse_accepted_listing,

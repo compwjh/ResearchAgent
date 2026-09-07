@@ -1,5 +1,4 @@
 import io
-import os
 import stat
 from pathlib import Path
 
@@ -17,7 +16,6 @@ from backend.app.services.paper_download import (
     PaperDownloadError,
     download_candidate,
 )
-
 
 PUBLIC = "93.184.216.34"
 PDF = b"%PDF-1.7\nminimal test body"

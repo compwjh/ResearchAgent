@@ -10,7 +10,6 @@ from backend.app.domain.article import ArticleCandidate
 from backend.app.services.article_download import download_article, safe_filename
 from backend.app.services.ollama import create_chat_model
 
-
 SKILL_NAME = "download-paper"
 WORKER_MODEL = "deepseek-coder:33b"
 SKILL_DIR = Path("/Users/wjh/.codex/skills/download-paper")

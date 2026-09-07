@@ -17,9 +17,9 @@ from backend.app.services.kb.parse import PdfParseError, build_chunks, extract_p
 from backend.app.services.kb.prompts import build_prompt, citation_payloads
 from backend.app.services.kb.retrieve import Hit, hybrid_search, reranker_available, rrf_fuse
 from backend.app.services.kb.store import (
-    CHUNKERS,
     CHUNKER_V1,
     CHUNKER_V2,
+    CHUNKERS,
     STATUS_FAILED,
     STATUS_INDEXED,
     STATUS_INDEXING,

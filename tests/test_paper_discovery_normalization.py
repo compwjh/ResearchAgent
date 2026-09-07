@@ -19,7 +19,6 @@ from backend.app.services.paper_discovery_normalization import (
     normalize_title,
 )
 
-
 # --- normalize_doi -----------------------------------------------------------
 
 @pytest.mark.parametrize(

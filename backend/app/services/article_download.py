@@ -7,8 +7,8 @@ from urllib.parse import urljoin
 
 import httpx
 
-from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.domain.article import ArticleCandidate
+from backend.app.platform.settings.settings_repository import ArticleSettings
 
 
 class _PdfLinkParser(HTMLParser):

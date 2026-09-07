@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 from urllib.parse import parse_qsl, urljoin, urlsplit
 
-
 DOWNLOAD_BLOCKED = "DOWNLOAD_BLOCKED"
 INVALID_URL = "INVALID_URL"
 DEFAULT_MAX_REDIRECTS = 5

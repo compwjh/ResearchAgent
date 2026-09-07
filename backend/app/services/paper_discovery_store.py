@@ -10,19 +10,18 @@ from typing import Iterable, List, Optional
 
 from backend.app.core.config import BASE_DIR
 from backend.app.domain.paper_discovery import (
-     CatalogPaper,
-     CatalogSourceRecord,
-     ConferenceSource,
-     PaperCandidate,
-     SearchEvent,
-     SearchJob,
-     SearchResult,
-     SearchSession,
-     SearchSourceProgress,
-     SourceFetchUnit,
+    CatalogPaper,
+    CatalogSourceRecord,
+    ConferenceSource,
+    PaperCandidate,
+    SearchEvent,
+    SearchJob,
+    SearchResult,
+    SearchSession,
+    SearchSourceProgress,
+    SourceFetchUnit,
 )
 from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
-
 
 SCHEMA_VERSION = 2
 BUILT_IN_CONFERENCES = (

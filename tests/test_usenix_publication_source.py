@@ -5,7 +5,6 @@ from backend.app.services.arxiv_adapter import ArxivFallbackResult, ArxivMatch
 from backend.app.services.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.services.usenix_publication_source import UsenixAcceptedSource
 
-
 SOURCE = ConferenceSource("usenix-security", "USENIX Security Symposium", "USENIX Security", "conf/uss", ["USENIX Security"], built_in=True)
 ROUTED_SOURCE = ConferenceSource(
     "usenix-security", "USENIX Security Symposium", "USENIX Security", "conf/uss", ["USENIX Security"],

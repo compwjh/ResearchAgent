@@ -13,15 +13,14 @@ import inspect
 import sqlite3
 import time
 import uuid
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from collections.abc import Mapping
 from typing import Any, Callable, Iterable, Optional
 
 from backend.app.domain.paper_import_batch import (
     ITEM_COMPLETED,
     ITEM_DOWNLOADING,
-    ITEM_FAILED,
     ITEM_INDEXING,
     ITEM_QUEUED,
     ITEM_VALIDATING,
@@ -29,11 +28,10 @@ from backend.app.domain.paper_import_batch import (
     PaperImportBatch,
     PaperImportItem,
 )
+from backend.app.services.paper_discovery_normalization import normalize_title
 from backend.app.services.paper_discovery_store import PaperDiscoveryStore
 from backend.app.services.paper_import import (
     LOGIN_REQUIRED,
-    PaperImportError,
-    PaperImportResult,
     import_candidate,
     safe_import_error_code,
     safe_import_error_message,
@@ -45,8 +43,6 @@ from backend.app.services.paper_import_batch_store import (
     PaperImportBatchStore,
     PaperImportBatchStoreError,
 )
-from backend.app.services.paper_discovery_normalization import normalize_title
-
 
 IMPORT_FAILED = "IMPORT_FAILED"
 INVALID_SEARCH_SNAPSHOT = "INVALID_SEARCH_SNAPSHOT"

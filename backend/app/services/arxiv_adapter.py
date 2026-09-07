@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from difflib import SequenceMatcher
 import threading
 import time
-from typing import Any, Callable, Iterable, Optional
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from typing import Callable, Iterable, Optional
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
 

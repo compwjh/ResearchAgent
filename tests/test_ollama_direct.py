@@ -10,13 +10,13 @@ from unittest import mock
 
 import pytest
 
+from backend.app.services.ollama import run_chat
 from backend.app.services.ollama_direct import (
     OllamaChatResult,
     OllamaTimings,
     chat_direct,
     chat_direct_stream,
 )
-from backend.app.services.ollama import run_chat
 
 
 class _FakeResponse:

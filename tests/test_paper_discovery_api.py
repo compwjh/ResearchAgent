@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes
+from backend.app.api import routes, routes_paper
 from backend.app.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
 from backend.app.main import app
 from backend.app.services.paper_discovery_store import PaperDiscoveryStore
@@ -17,7 +17,7 @@ class HealthEndpointPaperDiscoveryFlagTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    @patch("backend.app.api.routes.get_available_models", return_value=[])
+    @patch("backend.app.api.routes_system.get_available_models", return_value=[])
     def test_health_defaults_paper_discovery_enabled(self, _mock_models):
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("PAPER_DISCOVERY_ENABLED", None)
@@ -31,7 +31,7 @@ class HealthEndpointPaperDiscoveryFlagTests(unittest.TestCase):
         )
         self.assertIs(body["paper_discovery_enabled"], True)
 
-    @patch("backend.app.api.routes.get_available_models", return_value=[])
+    @patch("backend.app.api.routes_system.get_available_models", return_value=[])
     def test_health_reports_disabled_paper_discovery(self, _mock_models):
         with patch.dict("os.environ", {"PAPER_DISCOVERY_ENABLED": "false"}):
             response = self.client.get("/api/health")
@@ -90,7 +90,7 @@ class PaperConferenceSearchEndpointTests(unittest.TestCase):
         self.database.close()
 
     def test_search_matches_configured_name_short_name_and_id_case_insensitively(self):
-        with patch.object(routes, "_paper_store", return_value=self.store):
+        with patch.object(routes_paper, "_paper_store", return_value=self.store):
             for query, expected_id in (
                 ("uSeNiX", "usenix-security"),
                 ("IEEE symposium", "ieee-sp"),
@@ -104,7 +104,7 @@ class PaperConferenceSearchEndpointTests(unittest.TestCase):
                 self.assertEqual([item["conference_id"] for item in conferences], [expected_id])
 
     def test_search_returns_only_existing_safe_conference_payload(self):
-        with patch.object(routes, "_paper_store", return_value=self.store):
+        with patch.object(routes_paper, "_paper_store", return_value=self.store):
             response = self.client.get("/api/papers/conferences/search", params={"q": "machine learning"})
 
         self.assertEqual(response.status_code, 200)
@@ -123,7 +123,7 @@ class PaperConferenceSearchEndpointTests(unittest.TestCase):
 
     def test_disabled_search_does_not_open_store(self):
         with patch.dict("os.environ", {"PAPER_DISCOVERY_ENABLED": "false"}), patch.object(
-            routes, "_paper_store", side_effect=AssertionError("store must not be accessed")
+            routes_paper, "_paper_store", side_effect=AssertionError("store must not be accessed")
         ):
             response = self.client.get("/api/papers/conferences/search", params={"q": "ccs"})
 
@@ -157,8 +157,8 @@ class PaperImportEndpointTests(unittest.TestCase):
             "paper_id": "paper-1", "stored_name": "2025-CCS-A-Safe-Paper.pdf",
             "status": "indexed", "error_code": None, "existing": False,
         }
-        with patch.object(routes, "_paper_store", return_value=self.store), patch.object(
-            routes, "import_candidate", return_value=result
+        with patch.object(routes_paper, "_paper_store", return_value=self.store), patch.object(
+            routes_paper, "import_candidate", return_value=result
         ) as importer:
             response = self.client.post(
                 "/api/papers/imports",
@@ -190,8 +190,8 @@ class PaperImportEndpointTests(unittest.TestCase):
 
     def test_import_disabled_does_not_open_store_or_import(self):
         with patch.dict("os.environ", {"PAPER_DISCOVERY_ENABLED": "false"}), patch.object(
-            routes, "_paper_store", side_effect=AssertionError("store must not be accessed")
-        ), patch.object(routes, "import_candidate", side_effect=AssertionError("import must not run")):
+            routes_paper, "_paper_store", side_effect=AssertionError("store must not be accessed")
+        ), patch.object(routes_paper, "import_candidate", side_effect=AssertionError("import must not run")):
             response = self.client.post(
                 "/api/papers/imports",
                 json={"search_id": "search-1", "candidate_id": "candidate-1"},
@@ -205,8 +205,8 @@ class PaperImportEndpointTests(unittest.TestCase):
             SearchSession("expired", "security", "2000-01-01T00:00:00Z"),
             [PaperCandidate("candidate-1", "expired", "A Safe Paper", "ccs", "CCS", pdf_url="https://papers.example/x")],
         )
-        with patch.object(routes, "_paper_store", return_value=expired), patch.object(
-            routes, "import_candidate", side_effect=AssertionError("import must not run")
+        with patch.object(routes_paper, "_paper_store", return_value=expired), patch.object(
+            routes_paper, "import_candidate", side_effect=AssertionError("import must not run")
         ):
             response = self.client.post(
                 "/api/papers/imports",
@@ -223,8 +223,8 @@ class PaperImportEndpointTests(unittest.TestCase):
             "INVALID_PDF": 502,
         }
         for code, expected_status in errors.items():
-            with self.subTest(code=code), patch.object(routes, "_paper_store", return_value=self.store), patch.object(
-                routes, "import_candidate", side_effect=PaperDownloadError(code, "safe message")
+            with self.subTest(code=code), patch.object(routes_paper, "_paper_store", return_value=self.store), patch.object(
+                routes_paper, "import_candidate", side_effect=PaperDownloadError(code, "safe message")
             ):
                 response = self.client.post(
                     "/api/papers/imports",
@@ -263,10 +263,10 @@ class AcceptedPaperYearBoundaryTests(unittest.TestCase):
         self.store = SimpleNamespace(list_conferences=lambda: [self.source])
 
     def _get(self, **params):
-        with patch.object(routes, "_paper_discovery_enabled", return_value=True), patch.object(
-            routes, "_paper_store", return_value=self.store
-        ), patch.object(routes, "_paper_search_service", return_value=self.service), patch.object(
-            routes, "datetime", self.FrozenDateTime
+        with patch.object(routes_paper, "_paper_discovery_enabled", return_value=True), patch.object(
+            routes_paper, "_paper_store", return_value=self.store
+        ), patch.object(routes_paper, "_paper_search_service", return_value=self.service), patch.object(
+            routes_paper, "datetime", self.FrozenDateTime
         ):
             return self.client.get("/api/papers/conferences/usenix-security/accepted", params=params)
 

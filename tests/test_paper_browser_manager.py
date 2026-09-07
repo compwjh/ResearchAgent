@@ -11,12 +11,11 @@ from backend.app.services.paper_browser_manager import (
     BROWSER_PROFILE_LOCKED,
     BROWSER_TIMEOUT,
     BROWSER_UNAVAILABLE,
-    BrowserManagerError,
     PINNED_PLAYWRIGHT_VERSION,
+    BrowserManagerError,
     PaperBrowserManager,
 )
-from backend.app.services.paper_download import LOGIN_REQUIRED, PaperDownloadError
-from backend.app.services.paper_download import DOWNLOAD_BLOCKED
+from backend.app.services.paper_download import DOWNLOAD_BLOCKED, LOGIN_REQUIRED, PaperDownloadError
 
 
 class FakePage:

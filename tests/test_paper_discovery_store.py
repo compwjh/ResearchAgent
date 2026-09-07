@@ -1,16 +1,20 @@
 import sqlite3
 import threading
+
 import pytest
+
 from backend.app.domain.paper_discovery import (
     CatalogPaper,
     CatalogSourceRecord,
     PaperCandidate,
     SearchJob,
-    SearchSession,
     SearchResult,
+    SearchSession,
     SourceFetchUnit,
 )
 from backend.app.services.paper_discovery_store import PaperDiscoveryStore
+
+
 def test_store_seeds_reads_and_enforces_candidate_doi(tmp_path):
     store = PaperDiscoveryStore(tmp_path / "state.sqlite3")
     assert len(store.list_conferences()) == 4

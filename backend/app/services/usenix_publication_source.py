@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 import re
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Optional
 from urllib.parse import urlsplit
 

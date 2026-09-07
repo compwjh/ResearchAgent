@@ -1,6 +1,6 @@
+import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
-import time
 
 import pytest
 

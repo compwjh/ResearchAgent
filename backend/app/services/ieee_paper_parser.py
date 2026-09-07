@@ -16,7 +16,6 @@ from html.parser import HTMLParser
 from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qsl, unquote, urljoin, urlsplit
 
-
 IEEE_ORIGIN = "https://ieeexplore.ieee.org"
 IEEE_HOST = "ieeexplore.ieee.org"
 IEEE_PARSE_FAILED = "IEEE_PARSE_FAILED"

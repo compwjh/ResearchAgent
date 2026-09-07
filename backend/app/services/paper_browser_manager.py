@@ -7,8 +7,8 @@ boundary used by those adapters.
 
 from __future__ import annotations
 
-import importlib.metadata
 import hashlib
+import importlib.metadata
 import os
 import shutil
 import tempfile
@@ -21,12 +21,12 @@ from urllib.parse import urlsplit
 from backend.app.core.config import BASE_DIR
 from backend.app.services.paper_download import (
     DOWNLOAD_BLOCKED,
-    DownloadResult,
     INVALID_PDF,
     LOGIN_REQUIRED,
     MAX_PDF_BYTES,
     PDF_NOT_FOUND,
     PDF_TOO_LARGE,
+    DownloadResult,
     PaperDownloadError,
     _validate_pages,
 )
@@ -39,9 +39,9 @@ from backend.app.services.paper_download_security import (
 )
 
 try:  # Playwright is optional so public-PDF imports keep working without it.
-    from playwright.sync_api import sync_playwright as _sync_playwright
-    from playwright.sync_api import TimeoutError as _PlaywrightSyncTimeoutError
     from playwright.async_api import TimeoutError as _PlaywrightAsyncTimeoutError
+    from playwright.sync_api import TimeoutError as _PlaywrightSyncTimeoutError
+    from playwright.sync_api import sync_playwright as _sync_playwright
 except ImportError:  # pragma: no cover - exercised through the health tests
     _sync_playwright = None
     _PlaywrightSyncTimeoutError = None

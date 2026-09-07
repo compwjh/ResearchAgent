@@ -1,101 +1,33 @@
 import json
 import os
-import time
 import uuid
-from dataclasses import asdict, replace
-from datetime import datetime, timedelta, timezone
+from dataclasses import asdict
 from pathlib import Path
-from typing import Annotated, List
+from typing import List
 from urllib.parse import urlsplit
 
-import httpx
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
+from fastapi import Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from backend.app.api.schemas import (
-    ChatRequest,
-    ConferenceUpdateRequest,
-    KBAskRequest,
-    KBReindexRequest,
-    PaperImportBatchRequest,
-    PaperImportBatchResponse,
-    PaperImportItemActionRequest,
-    PaperImportItemLoginResponse,
-    PaperImportRequest,
-    PaperImportResponse,
-    PaperAcceptedRequest,
-    PaperSearchRequest,
-)
-from backend.app.agents.article_agent import build_task
+from backend.app.core.config import BASE_DIR
+from backend.app.domain.article import ArticleCandidate
 from backend.app.platform.settings.settings_repository import (
-    ArticleSettings,
     load_article_settings,
-    save_article_settings,
 )
-from backend.app.core.config import BASE_DIR, CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR, MODEL_NAME
-from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
-from backend.app.domain.article import ArticleCandidate, ArticleTask
-from backend.app.domain.paper_discovery import SearchSession
-from backend.app.services.article_download import download_article, probe_pdf_url
-from backend.app.services.article_search import search_articles
-from backend.app.services.download_paper_skill import SKILL_NAME, build_skill_plan, download_under_skill, skill_status
-from backend.app.services.kb import (
-    CHUNKERS,
-    CHUNKER_V1,
-    CHUNKER_V2,
-    STATUS_INDEXING,
-    build_prompt,
-    citation_payloads,
-    count_points,
-    delete_paper,
-    ensure_collection,
-    get_client,
-    get_paper,
-    hybrid_search,
-    index_paper,
-    index_paper_chunker,
-    load_papers,
-    new_record,
-    remove_paper,
-    run_index_task_sync,
-    save_upload,
-    submit_index_task,
-    update_chunker_state,
-    upsert_paper,
-)
-from backend.app.services.kb.embed import embed_texts
-from backend.app.services.kb.retrieve import reranker_health
-from backend.app.services.kb.store import resolve_paper_path
-from backend.app.services.ollama import create_chat_model, get_available_models, run_chat
 from backend.app.services.dblp_publication_source import DBLPPublicationSource
 from backend.app.services.openalex_enricher import OpenAlexEnricher
-from backend.app.services.paper_discovery_search import PaperDiscoverySearchError, PaperDiscoverySearchService
+from backend.app.services.paper_browser_manager import PaperBrowserManager
+from backend.app.services.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.paper_download import (
-    DOWNLOAD_BLOCKED,
-    DOWNLOAD_TIMEOUT,
-    INVALID_PDF,
-    LOGIN_REQUIRED,
-    PDF_NOT_FOUND,
-    PDF_TOO_LARGE,
-    PaperDownloadError,
-)
 from backend.app.services.paper_import import (
-    KB_IMPORT_FAILED,
-    PAPER_ALREADY_EXISTS,
-    PaperImportError,
     import_candidate,
-    safe_import_error_code,
-    safe_import_error_message,
 )
 from backend.app.services.paper_import_batch_service import (
     PaperImportBatchService,
-    PaperImportBatchServiceError,
 )
 from backend.app.services.paper_import_batch_store import PaperImportBatchStore
-from backend.app.services.paper_browser_manager import BrowserManagerError, PaperBrowserManager
 from backend.app.services.task_store import TaskStore
 
 article_tasks = TaskStore()
@@ -125,6 +57,8 @@ def _paper_api_error(status_code: int, code: str, message: str, retryable: bool 
 
 def _paper_store() -> PaperDiscoveryStore:
     global paper_discovery_store, paper_discovery_store_path
+    from backend.app.api import routes
+    article_settings = routes.article_settings
     configured_path = Path(article_settings.paper_discovery_db_path)
     if not configured_path.is_absolute():
         configured_path = BASE_DIR / configured_path
@@ -136,6 +70,8 @@ def _paper_store() -> PaperDiscoveryStore:
 
 def _paper_search_service() -> PaperDiscoverySearchService:
     global paper_discovery_search_service
+    from backend.app.api import routes
+    article_settings = routes.article_settings
     if paper_discovery_search_service is None:
         timeout = article_settings.paper_discovery_request_timeout_seconds
         paper_discovery_search_service = PaperDiscoverySearchService(
@@ -148,9 +84,38 @@ def _paper_search_service() -> PaperDiscoverySearchService:
     return paper_discovery_search_service
 
 
+def _paper_candidate_value(candidate: object, name: str, default=None):
+    if isinstance(candidate, dict):
+        return candidate.get(name, default)
+    return getattr(candidate, name, default)
+
+
+def _paper_candidate_hosts(candidate: object) -> set[str]:
+    """Return only the fixed server-side download host allowlist.
+
+    ``candidate.pdf_url`` is a persisted external snapshot value, not a
+    trust decision.  Never add its hostname here; the downloader validates
+    that target against this fixed set on every hop.
+    """
+    from backend.app.api import routes
+    article_settings = routes.article_settings
+    hosts: set[str] = set()
+    configured_hosts = getattr(article_settings, "paper_discovery_allowed_hosts", [])
+    # Keep existing ArticleSettings download origins as a backwards-compatible
+    # server configuration fallback when the dedicated setting is empty.
+    configured = configured_hosts or article_settings.article_download_urls
+    for value in configured:
+        host = urlsplit(value).hostname if "://" in value else value
+        if host:
+            hosts.add(host.casefold())
+    return hosts
+
+
 def _paper_batch_service() -> PaperImportBatchService:
     """Build the batch orchestrator lazily so routes remain test-injectable."""
     global paper_import_batch_service, paper_import_batch_store_path
+    from backend.app.api import routes
+    article_settings = routes.article_settings
     configured_path = Path(article_settings.paper_discovery_db_path)
     if not configured_path.is_absolute():
         configured_path = BASE_DIR / configured_path
@@ -174,6 +139,8 @@ def _paper_batch_service() -> PaperImportBatchService:
 
 def _paper_browser_manager() -> PaperBrowserManager:
     global paper_browser_manager
+    from backend.app.api import routes
+    article_settings = routes.article_settings
     if paper_browser_manager is None:
         paper_browser_manager = PaperBrowserManager(settings=article_settings)
     return paper_browser_manager
@@ -245,7 +212,6 @@ def paper_request_validation_error_response(request: Request, error: RequestVali
         }.get(code, "accepted 查询参数无效")
         return _paper_api_error(422, code, message)
     if request.method == "POST" and path == "/api/papers/imports":
-        locations = {str(item) for detail in error.errors() for item in detail.get("loc", ())}
         body = getattr(error, "body", None)
         # Union validation reports the batch model's missing ``candidate_ids``
         # even for the retained Task05 single-paper shape.  The parsed body is
@@ -280,4 +246,35 @@ def top_recommendations(candidates: List[ArticleCandidate]) -> List[ArticleCandi
     return qualified[:RECOMMEND_MAX_COUNT]
 
 
-__all__ = ["_paper_discovery_enabled", "_paper_api_error", "_paper_store", "_paper_search_service", "_paper_batch_service", "_paper_browser_manager", "_conference_payload", "_candidate_payload", "_validation_error_code", "_accepted_validation_error_code", "paper_request_validation_error_response", "stream_event", "top_recommendations", "RECOMMEND_MIN_CONFIDENCE", "RECOMMEND_MAX_COUNT", "CONFERENCE_SEARCH_QUERY_MAX_LENGTH"]
+__all__ = [
+    # module-level shared state
+    "article_tasks",
+    "article_settings",
+    "paper_discovery_store",
+    "paper_discovery_store_path",
+    "paper_discovery_search_service",
+    "paper_import_batch_service",
+    "paper_import_batch_store_path",
+    "paper_browser_manager",
+    "paper_browser_sessions",
+    # helpers
+    "_paper_discovery_enabled",
+    "_paper_api_error",
+    "_paper_store",
+    "_paper_search_service",
+    "_paper_candidate_value",
+    "_paper_candidate_hosts",
+    "_paper_batch_service",
+    "_paper_browser_manager",
+    "_conference_payload",
+    "_candidate_payload",
+    "_validation_error_code",
+    "_accepted_validation_error_code",
+    "paper_request_validation_error_response",
+    "stream_event",
+    "top_recommendations",
+    # constants
+    "RECOMMEND_MIN_CONFIDENCE",
+    "RECOMMEND_MAX_COUNT",
+    "CONFERENCE_SEARCH_QUERY_MAX_LENGTH",
+]

@@ -9,11 +9,11 @@ from difflib import SequenceMatcher
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 from uuid import uuid4
 
+from backend.app.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,
     load_article_settings,
 )
-from backend.app.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
 from backend.app.services.dblp_publication_source import DBLPPublicationSource
 from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
 from backend.app.services.paper_discovery_store import PaperDiscoveryStore

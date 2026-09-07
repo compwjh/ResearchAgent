@@ -1,13 +1,13 @@
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes
+from backend.app.api import routes, routes_paper
 from backend.app.domain.paper_discovery import PaperCandidate, SearchSession
 from backend.app.main import app
 from backend.app.services.paper_discovery_store import PaperDiscoveryStore
+from backend.app.services.paper_download import DOWNLOAD_BLOCKED
 from backend.app.services.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
 from backend.app.services.paper_import_batch_service import PaperImportBatchService
 from backend.app.services.paper_import_batch_store import PaperImportBatchStore
-from backend.app.services.paper_download import DOWNLOAD_BLOCKED
 
 
 class FakeLoginSession:
@@ -64,9 +64,9 @@ def _setup(monkeypatch, tmp_path, importer):
         importer=importer,
     )
     browser = FakeBrowser()
-    monkeypatch.setattr(routes, "_paper_store", lambda: discovery)
-    monkeypatch.setattr(routes, "_paper_batch_service", lambda: service)
-    monkeypatch.setattr(routes, "_paper_browser_manager", lambda: browser)
+    monkeypatch.setattr(routes_paper, "_paper_store", lambda: discovery)
+    monkeypatch.setattr(routes_paper, "_paper_batch_service", lambda: service)
+    monkeypatch.setattr(routes_paper, "_paper_browser_manager", lambda: browser)
     routes.paper_browser_sessions.clear()
     return service, browser
 
