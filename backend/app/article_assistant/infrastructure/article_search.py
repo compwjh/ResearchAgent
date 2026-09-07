@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
 
-from backend.app.domain.article import ArticleCandidate
+from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.platform.settings.settings_repository import ArticleSettings
 
 

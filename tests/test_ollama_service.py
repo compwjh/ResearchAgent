@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import httpx
 
-from backend.app.services.ollama import create_chat_model, get_available_models
+from backend.app.platform.ollama import create_chat_model, get_available_models
 
 
 class OllamaServiceTests(unittest.TestCase):

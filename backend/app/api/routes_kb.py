@@ -9,6 +9,7 @@ from backend.app.api.schemas import (
     KBAskRequest,
     KBReindexRequest,
 )
+from backend.app.chat.application.chat_runner import run_chat
 from backend.app.core.config import CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR
 from backend.app.knowledge_base.application import (
     CHUNKER_V1,
@@ -37,10 +38,10 @@ from backend.app.knowledge_base.application import (
     upsert_paper,
 )
 from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
+from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
-from backend.app.services.ollama import get_available_models, run_chat
 
 router = APIRouter()
 article_settings = load_article_settings()

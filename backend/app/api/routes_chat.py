@@ -8,12 +8,13 @@ from fastapi.responses import StreamingResponse
 from backend.app.api.schemas import (
     ChatRequest,
 )
+from backend.app.chat.application.chat_runner import run_chat
 from backend.app.core.config import MODEL_NAME
 from backend.app.observability import flush, record_ollama_generation, utc_now
+from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
-from backend.app.services.ollama import get_available_models, run_chat
 
 router = APIRouter()
 article_settings = load_article_settings()

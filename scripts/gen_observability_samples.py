@@ -30,6 +30,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import httpx  # noqa: E402
 
+from backend.app.chat.application.chat_runner import run_chat  # noqa: E402
 from backend.app.core.config import (  # noqa: E402
     LANGFUSE_ENABLED,
     MODEL_NAME,
@@ -44,8 +45,7 @@ from backend.app.observability import (  # noqa: E402
     start_trace,
     utc_now,
 )
-from backend.app.services.ollama import run_chat  # noqa: E402
-from backend.app.services.ollama_direct import (  # noqa: E402
+from backend.app.platform.ollama_direct import (  # noqa: E402
     OllamaChatResult,
     OllamaTimings,
 )
@@ -203,7 +203,7 @@ def _run_failure_once(*, model: str, tags: List[str]) -> Dict[str, Any]:
     注意必须在 `chat_direct` 读取该模块全局变量的层面打补丁才有效
     （config 里的同名常量是导入期绑定，运行时改它无效）。
     """
-    import backend.app.services.ollama_direct as ollama_direct
+    import backend.app.platform.ollama_direct as ollama_direct
 
     original = ollama_direct.OLLAMA_BASE_URL
     ollama_direct.OLLAMA_BASE_URL = "http://127.0.0.1:1"  # 死端口

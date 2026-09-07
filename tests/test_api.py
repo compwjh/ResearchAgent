@@ -3,9 +3,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend.app.domain.article import ArticleCandidate
+from backend.app.article_assistant.application.download_paper_skill import SKILL_NAME
+from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.main import app
-from backend.app.services.download_paper_skill import SKILL_NAME
 
 
 class AgentApiTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class AgentApiTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_run_emits_intent_events(self):
-        from backend.app.domain.article import ArticleTask
+        from backend.app.article_assistant.domain.article import ArticleTask
 
         task = ArticleTask(
             task_id="task-chat",
@@ -120,7 +120,7 @@ class AgentApiTests(unittest.TestCase):
         mock_skill_exec.assert_called_once()
 
     def test_search_filters_low_confidence_and_caps_at_three(self):
-        from backend.app.domain.article import ArticleTask
+        from backend.app.article_assistant.domain.article import ArticleTask
 
         high = [
             ArticleCandidate(candidate_id=f"hi-{i}", title=f"Hi {i}", confidence=0.9 - i * 0.05)
@@ -150,7 +150,7 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(confidences, sorted(confidences, reverse=True))
 
     def test_run_intent_event_carries_skill_for_download_paper(self):
-        from backend.app.domain.article import ArticleTask
+        from backend.app.article_assistant.domain.article import ArticleTask
 
         task = ArticleTask(
             task_id="task-x",

@@ -2,7 +2,7 @@ from langchain_ollama import ChatOllama
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
-from backend.app.domain.chat import ConversationState
+from backend.app.chat.domain.chat import ConversationState
 
 
 def build_chat_graph(model: ChatOllama):

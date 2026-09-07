@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Iterable, Iterator, Optional
 from urllib.parse import urlparse
 
-from backend.app.domain.article import ArticleCandidate
-from backend.app.services.article_download import download_article, safe_filename
-from backend.app.services.ollama import create_chat_model
+from backend.app.article_assistant.domain.article import ArticleCandidate
+from backend.app.article_assistant.infrastructure.article_download import download_article, safe_filename
+from backend.app.platform.ollama import create_chat_model
 
 SKILL_NAME = "download-paper"
 WORKER_MODEL = "deepseek-coder:33b"

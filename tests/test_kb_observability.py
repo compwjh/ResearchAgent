@@ -129,7 +129,7 @@ class RetrievalEventTests(unittest.TestCase):
         converted = [retrieve_module._to_hit(point) for point in hits]
         chat = Mock()
         chat.invoke.side_effect = [SimpleNamespace(content="9"), SimpleNamespace(content="2")]
-        with patch("backend.app.services.ollama.create_chat_model", return_value=chat):
+        with patch("backend.app.platform.ollama.create_chat_model", return_value=chat):
             with patch.object(retrieve_module, "record_event") as record:
                 result = retrieve_module.rerank("问题", converted, model="reranker")
         self.assertEqual([hit.chunk_index for hit in result], [1, 2])
@@ -149,7 +149,7 @@ class RetrievalEventTests(unittest.TestCase):
 
     def test_rerank_records_degraded_and_observation_failure_is_ignored(self):
         hits = [retrieve_module._to_hit(make_point("p1", 1, 0.8)), retrieve_module._to_hit(make_point("p1", 2, 0.7))]
-        with patch("backend.app.services.ollama.create_chat_model", side_effect=RuntimeError("offline")):
+        with patch("backend.app.platform.ollama.create_chat_model", side_effect=RuntimeError("offline")):
             with patch.object(retrieve_module, "record_event", side_effect=RuntimeError("telemetry")):
                 result = retrieve_module.rerank("问题", hits, model="reranker")
         self.assertEqual(result, hits)

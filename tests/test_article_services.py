@@ -5,11 +5,11 @@ from unittest.mock import patch
 
 import httpx
 
-from backend.app.domain.article import ArticleCandidate
+from backend.app.article_assistant.application.download_paper_skill import skill_status
+from backend.app.article_assistant.domain.article import ArticleCandidate
+from backend.app.article_assistant.infrastructure.article_download import download_article, safe_filename
+from backend.app.article_assistant.infrastructure.article_search import search_articles
 from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.article_download import download_article, safe_filename
-from backend.app.services.article_search import search_articles
-from backend.app.services.download_paper_skill import skill_status
 
 
 class ArticleServiceTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class ArticleServiceTests(unittest.TestCase):
         self.assertNotIn("..", filename)
         self.assertTrue(filename.endswith(".pdf"))
 
-    @patch("backend.app.services.article_search.httpx.get")
+    @patch("backend.app.article_assistant.infrastructure.article_search.httpx.get")
     def test_crossref_response_becomes_candidate(self, mock_get):
         mock_get.return_value = httpx.Response(
             200,
@@ -50,7 +50,7 @@ class ArticleServiceTests(unittest.TestCase):
         candidate = ArticleCandidate("candidate", "Paper", pdf_url="https://example.com/paper.pdf")
         with tempfile.TemporaryDirectory() as directory:
             settings = ArticleSettings(article_download_dir=directory)
-            with patch("backend.app.services.article_download.httpx.stream", return_value=FakeResponse()):
+            with patch("backend.app.article_assistant.infrastructure.article_download.httpx.stream", return_value=FakeResponse()):
                 with self.assertRaises(ValueError):
                     next(download_article(candidate, settings))
             self.assertEqual(list(Path(directory).iterdir()), [])

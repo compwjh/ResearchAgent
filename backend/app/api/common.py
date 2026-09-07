@@ -11,8 +11,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from backend.app.article_assistant.application.entry import TaskStore
+from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.core.config import BASE_DIR
-from backend.app.domain.article import ArticleCandidate
 from backend.app.paper_discovery.application.entry import (
     DBLPPublicationSource,
     OpenAlexEnricher,
@@ -31,7 +32,6 @@ from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
-from backend.app.services.task_store import TaskStore
 
 
 def article_tasks() -> TaskStore:

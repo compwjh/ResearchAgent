@@ -402,7 +402,7 @@ def rerank(question: str, hits: List[Hit], model: Optional[str] = None) -> List[
         )
         return hits
     try:
-        from backend.app.services.ollama import create_chat_model
+        from backend.app.platform.ollama import create_chat_model
 
         chat = create_chat_model(name)
         scored = []

@@ -3,10 +3,10 @@ import httpx
 from fastapi import APIRouter
 
 from backend.app.core.config import MODEL_NAME
+from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
-from backend.app.services.ollama import get_available_models
 
 router = APIRouter()
 article_settings = load_article_settings()

@@ -1,6 +1,6 @@
 """双链路 A/B 基准入口单测（spec-013 task-05）。
 
-**禁止真实调用 Ollama**：patch `backend.app.services.ollama.run_chat`，
+**禁止真实调用 Ollama**：patch `backend.app.chat.application.chat_runner.run_chat`，
 让 langchain / direct 分别返回可控的假 `ChatRun`（.result 用
 `OllamaChatResult` 构造），从而几秒内完成且不触达模型。
 """
@@ -16,8 +16,8 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 
 import bench_ollama_routes as bench  # noqa: E402
 
-from backend.app.services.ollama import ChatRun  # noqa: E402
-from backend.app.services.ollama_direct import OllamaChatResult, OllamaTimings  # noqa: E402
+from backend.app.platform.ollama import ChatRun  # noqa: E402
+from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings  # noqa: E402
 
 
 def _fake_run(route, *, result=None, explode=False):
@@ -90,7 +90,7 @@ class _RunChatMock:
 class RunBenchmarkStructureTests(unittest.TestCase):
     def test_structure_and_default_routes(self):
         # 不传 routes 时应默认跑 langchain,direct（默认替身即跑这两条）。
-        with mock.patch.object(bench.ollama, "run_chat", _RunChatMock()):
+        with mock.patch.object(bench.chat_runner, "run_chat", _RunChatMock()):
             report = bench.run_benchmark("问题", "model-x")
         self.assertEqual(report["question"], "问题")
         self.assertEqual(report["model"], "model-x")
@@ -103,7 +103,7 @@ class RunBenchmarkStructureTests(unittest.TestCase):
         self.assertIn("diff", report)
 
     def test_samples_and_avg_present(self):
-        with mock.patch.object(bench.ollama, "run_chat", _RunChatMock()):
+        with mock.patch.object(bench.chat_runner, "run_chat", _RunChatMock()):
             report = bench.run_benchmark("q", "m", runs=2)
         for data in report["routes"].values():
             # 2 轮无异常应各积累 2 个样本
@@ -118,7 +118,7 @@ class DiffSemanticsTests(unittest.TestCase):
     """diff 固定语义 = langchain - direct。"""
 
     def _report(self):
-        with mock.patch.object(bench.ollama, "run_chat", _RunChatMock()):
+        with mock.patch.object(bench.chat_runner, "run_chat", _RunChatMock()):
             return bench.run_benchmark("q", "m", runs=1)
 
     def test_diff_equals_langchain_minus_direct(self):
@@ -139,7 +139,7 @@ class DiffSemanticsTests(unittest.TestCase):
     def test_total_diff_when_direct_missing_total(self):
         # direct 缺 total_ms（timings_available=False）时 total=0，diff 如实相减不伪造。
         direct_no_total = _result("direct", timings=OllamaTimings(total_ms=0.0), timings_available=False)
-        with mock.patch.object(bench.ollama, "run_chat") as mock_run:
+        with mock.patch.object(bench.chat_runner, "run_chat") as mock_run:
             def _side(question, model, *, route=None, prompt=None):
                 if route == "direct":
                     return _fake_run("direct", result=direct_no_total)
@@ -154,7 +154,7 @@ class ErrorResilienceTests(unittest.TestCase):
     """某 route 抛异常时记入 errors 且不中断，另一 route 仍有结果。"""
 
     def test_route_error_recorded_others_survive(self):
-        with mock.patch.object(bench.ollama, "run_chat", _RunChatMock(explode_routes={"langchain"})):
+        with mock.patch.object(bench.chat_runner, "run_chat", _RunChatMock(explode_routes={"langchain"})):
             report = bench.run_benchmark("q", "m", runs=1)
         # langchain 全失败：0 样本、1 条错误
         self.assertEqual(report["routes"]["langchain"]["samples"], [])
@@ -175,7 +175,7 @@ class ErrorResilienceTests(unittest.TestCase):
                 return _fake_run("langchain", explode=True)
             return _fake_run("langchain", result=LC_RESULT)
 
-        with mock.patch.object(bench.ollama, "run_chat", side_effect=_side):
+        with mock.patch.object(bench.chat_runner, "run_chat", side_effect=_side):
             report = bench.run_benchmark("q", "m", routes=["langchain"], runs=2)
         self.assertEqual(len(report["routes"]["langchain"]["samples"]), 1)
         self.assertEqual(len(report["routes"]["langchain"]["errors"]), 1)

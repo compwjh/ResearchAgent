@@ -11,7 +11,7 @@ from backend.app.observability import client as obs_client
 from backend.app.observability import config as obs_config
 from backend.app.observability.spans import derive_metrics, record_event, record_ollama_generation
 from backend.app.observability.trace import end_trace, get_current_trace_id, start_trace
-from backend.app.services.ollama_direct import OllamaChatResult, OllamaTimings
+from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings
 
 
 def _result(**overrides) -> OllamaChatResult:

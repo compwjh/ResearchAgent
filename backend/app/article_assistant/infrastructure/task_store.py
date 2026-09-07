@@ -4,8 +4,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from backend.app.article_assistant.domain.article import ArticleCandidate, ArticleTask
 from backend.app.core.config import BASE_DIR
-from backend.app.domain.article import ArticleCandidate, ArticleTask
 
 
 class TaskStore:

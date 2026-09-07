@@ -8,16 +8,25 @@ from backend.app.agents.article_agent import build_task
 from backend.app.api.schemas import (
     ChatRequest,
 )
-from backend.app.domain.article import ArticleCandidate
+from backend.app.article_assistant.application.download_paper_skill import (
+    SKILL_NAME,
+    build_skill_plan,
+    download_under_skill,
+    skill_status,
+)
+from backend.app.article_assistant.application.entry import (
+    download_article,
+    probe_pdf_url,
+    search_articles,
+)
+from backend.app.article_assistant.domain.article import ArticleCandidate
+from backend.app.chat.application.chat_runner import run_chat
 from backend.app.observability import flush, record_ollama_generation, utc_now
+from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,
     save_article_settings,
 )
-from backend.app.services.article_download import download_article, probe_pdf_url
-from backend.app.services.article_search import search_articles
-from backend.app.services.download_paper_skill import SKILL_NAME, build_skill_plan, download_under_skill, skill_status
-from backend.app.services.ollama import get_available_models, run_chat
 
 router = APIRouter()
 

@@ -1,8 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from backend.app.domain.article import ArticleCandidate
-from backend.app.services.download_paper_skill import (
+from backend.app.article_assistant.application.download_paper_skill import (
     COOKIE_SESSION,
     LITERATURE_MUTUAL_AID,
     POW_CHALLENGE,
@@ -13,6 +12,7 @@ from backend.app.services.download_paper_skill import (
     download_under_skill,
     fetch_cookies_via_opencli,
 )
+from backend.app.article_assistant.domain.article import ArticleCandidate
 
 
 def _public_candidate() -> ArticleCandidate:
@@ -50,7 +50,7 @@ class DecideDownloadMethodTests(unittest.TestCase):
 
 
 class OpenCliTests(unittest.TestCase):
-    @patch("backend.app.services.download_paper_skill.shutil.which", return_value=None)
+    @patch("backend.app.article_assistant.application.download_paper_skill.shutil.which", return_value=None)
     def test_fetch_cookies_raises_when_opencli_missing(self, _mock_which):
         with self.assertRaises(OpenCliUnavailable):
             fetch_cookies_via_opencli()
@@ -59,7 +59,7 @@ class OpenCliTests(unittest.TestCase):
 class DownloadUnderSkillTests(unittest.TestCase):
     def test_public_path_yields_skill_fields(self):
         with patch(
-            "backend.app.services.download_paper_skill.download_article",
+            "backend.app.article_assistant.application.download_paper_skill.download_article",
             return_value=iter([{"type": "result", "file_path": "/tmp/x.pdf"}]),
         ):
             events = list(download_under_skill(_public_candidate(), MagicMock()))
@@ -69,7 +69,7 @@ class DownloadUnderSkillTests(unittest.TestCase):
 
     def test_non_public_without_opencli_yields_error_event(self):
         with patch(
-            "backend.app.services.download_paper_skill.fetch_cookies_via_opencli",
+            "backend.app.article_assistant.application.download_paper_skill.fetch_cookies_via_opencli",
             side_effect=OpenCliUnavailable("本机未安装 opencli"),
         ):
             events = list(download_under_skill(_login_candidate(), MagicMock()))
@@ -82,7 +82,7 @@ class DownloadUnderSkillTests(unittest.TestCase):
 
 class BuildSkillPlanTests(unittest.TestCase):
     def test_public_plan_is_skill_led_public(self):
-        with patch("backend.app.services.download_paper_skill.build_download_plan", return_value={"user_message": "ok"}):
+        with patch("backend.app.article_assistant.application.download_paper_skill.build_download_plan", return_value={"user_message": "ok"}):
             plan = build_skill_plan(_public_candidate())
         self.assertEqual(plan["skill_name"], "download-paper")
         self.assertEqual(plan["orchestration"], "skill_led")

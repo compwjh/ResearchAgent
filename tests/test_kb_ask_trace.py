@@ -44,7 +44,7 @@ class KbAskTraceTests(unittest.TestCase):
     @patch("backend.app.api.routes_kb.record_ollama_generation")
     @patch("backend.app.api.routes_kb.hybrid_search")
     @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
+    @patch("backend.app.platform.ollama.create_chat_model")
     @patch("backend.app.graphs.chat.build_chat_graph")
     def test_normal_flow_reports_generation(
         self, mock_graph, _mock_model, _mock_models, mock_search,
@@ -109,7 +109,7 @@ class KbAskTraceTests(unittest.TestCase):
     @patch("backend.app.api.routes_kb.record_ollama_generation")
     @patch("backend.app.api.routes_kb.hybrid_search")
     @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
+    @patch("backend.app.platform.ollama.create_chat_model")
     @patch("backend.app.graphs.chat.build_chat_graph")
     def test_generation_error_still_emits_error_and_ends_trace(
         self, mock_graph, _mock_model, _mock_models, mock_search,
@@ -183,7 +183,7 @@ class KbAskTraceTests(unittest.TestCase):
     @patch("backend.app.api.routes_kb.record_ollama_generation")
     @patch("backend.app.api.routes_kb.hybrid_search", return_value=[_fake_hit()])
     @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
+    @patch("backend.app.platform.ollama.create_chat_model")
     def test_langfuse_disabled_preserves_normal_sse(
         self, mock_model, _mock_models, mock_search, mock_report, mock_enabled,
     ):

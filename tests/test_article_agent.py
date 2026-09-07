@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest import mock
 
 from backend.app.agents.article_agent import build_intent_graph, normalize_query
-from backend.app.domain.article import ArticleTask
-from backend.app.services.task_store import TaskStore
+from backend.app.article_assistant.domain.article import ArticleTask
+from backend.app.article_assistant.infrastructure.task_store import TaskStore
 
 
 class _FakeChatModel:
@@ -24,7 +24,7 @@ class _FakeChatModel:
 
 class ArticleAgentTests(unittest.TestCase):
     @mock.patch(
-        "backend.app.services.ollama.create_chat_model",
+        "backend.app.platform.ollama.create_chat_model",
         lambda _model: _FakeChatModel("download_paper"),
     )
     def test_required_paper_titles_route_to_download(self):
@@ -46,7 +46,7 @@ class ArticleAgentTests(unittest.TestCase):
         self.assertGreaterEqual(result["confidence"], 0.9)
 
     @mock.patch(
-        "backend.app.services.ollama.create_chat_model",
+        "backend.app.platform.ollama.create_chat_model",
         lambda _model: _FakeChatModel("download_paper"),
     )
     def test_title_only_input_routes_download(self):

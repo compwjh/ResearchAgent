@@ -4,7 +4,7 @@ from typing import Tuple, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from backend.app.domain.article import ArticleTask
+from backend.app.article_assistant.domain.article import ArticleTask
 
 # 强下载触发词：命中则直接判为 download_paper，跳过模型调用（性能优化）。
 STRONG_DOWNLOAD_WORDS = (
@@ -51,7 +51,7 @@ def _extract_json(text: str) -> dict:
 
 
 def _classify_with_llm(normalized_query: str) -> Tuple[str, float]:
-    from backend.app.services.ollama import create_chat_model
+    from backend.app.platform.ollama import create_chat_model
 
     try:
         response = create_chat_model(INTENT_MODEL).invoke(

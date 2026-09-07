@@ -10,8 +10,8 @@ from unittest import mock
 
 import pytest
 
-from backend.app.services.ollama import run_chat
-from backend.app.services.ollama_direct import (
+from backend.app.chat.application.chat_runner import run_chat
+from backend.app.platform.ollama_direct import (
     OllamaChatResult,
     OllamaTimings,
     chat_direct,
@@ -74,7 +74,7 @@ class TimingsParsingTests(unittest.TestCase):
             _done_event(),
         ]
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             result = chat_direct([{"role": "user", "content": "hi"}], "qwen3.8:27b-mlx")
@@ -87,7 +87,7 @@ class TimingsParsingTests(unittest.TestCase):
 
     def test_parses_token_counts(self):
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse([_done_event()])),
         ):
             result = chat_direct([{"role": "user", "content": "hi"}], "m")
@@ -100,7 +100,7 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
     def test_default_langchain_call_keeps_legacy_factory_signature(self):
         graph = mock.Mock()
         graph.stream.return_value = [{"type": "token", "content": "ok"}]
-        with mock.patch("backend.app.services.ollama.create_chat_model") as create_model, mock.patch(
+        with mock.patch("backend.app.platform.ollama.create_chat_model") as create_model, mock.patch(
             "backend.app.graphs.chat.build_chat_graph", return_value=graph
         ):
             list(run_chat("q", "m", route="langchain").events)
@@ -110,7 +110,7 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
     def test_disabled_reasoning_is_explicit_for_langchain_call(self):
         graph = mock.Mock()
         graph.stream.return_value = [{"type": "token", "content": "ok"}]
-        with mock.patch("backend.app.services.ollama.create_chat_model") as create_model, mock.patch(
+        with mock.patch("backend.app.platform.ollama.create_chat_model") as create_model, mock.patch(
             "backend.app.graphs.chat.build_chat_graph", return_value=graph
         ):
             list(run_chat("q", "m", route="langchain", think=False).events)
@@ -124,7 +124,7 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
         （如 deepseek-coder-v2:16b）收到 think=true 会返回 HTTP 400
         `does not support thinking`。改动前默认即为 None（think: null）。
         """
-        from backend.app.services.ollama import create_chat_model
+        from backend.app.platform.ollama import create_chat_model
 
         self.assertIsNone(
             create_chat_model("m").reasoning,
@@ -132,7 +132,7 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
         )
 
     def test_factory_forwards_explicit_reasoning(self):
-        from backend.app.services.ollama import create_chat_model
+        from backend.app.platform.ollama import create_chat_model
 
         self.assertIs(create_chat_model("m", reasoning=False).reasoning, False)
         self.assertIs(create_chat_model("m", reasoning=True).reasoning, True)
@@ -147,7 +147,7 @@ class ThinkingSeparationTests(unittest.TestCase):
             _done_event(),
         ]
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             result = chat_direct([{"role": "user", "content": "q"}], "m")
@@ -157,7 +157,7 @@ class ThinkingSeparationTests(unittest.TestCase):
 
     def test_thinking_is_empty_string_when_absent(self):
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse([{"message": {"content": "x"}, "done": False}, _done_event()])),
         ):
             result = chat_direct([{"role": "user", "content": "q"}], "m")
@@ -173,7 +173,7 @@ class MissingTimingsTests(unittest.TestCase):
             {"done": True, "done_reason": "stop"},
         ]
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             result = chat_direct([{"role": "user", "content": "q"}], "m")
@@ -196,7 +196,7 @@ class LatencyRecordingTests(unittest.TestCase):
             _done_event(),
         ]
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             result = chat_direct([{"role": "user", "content": "q"}], "m")
@@ -210,7 +210,7 @@ class LatencyRecordingTests(unittest.TestCase):
         """macOS 系统代理会把 localhost 请求截走返回 503，必须禁用环境代理。"""
         capture = {}
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse([_done_event()]), capture=capture),
         ):
             chat_direct([{"role": "user", "content": "q"}], "m")
@@ -220,7 +220,7 @@ class LatencyRecordingTests(unittest.TestCase):
     def test_think_flag_is_sent_to_ollama(self):
         capture = {}
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse([_done_event()]), capture=capture),
         ):
             chat_direct([{"role": "user", "content": "q"}], "m", think=False)
@@ -231,7 +231,7 @@ class LatencyRecordingTests(unittest.TestCase):
 class ErrorHandlingTests(unittest.TestCase):
     def test_http_error_status_raises(self):
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse([], status_code=503)),
         ):
             with self.assertRaises(RuntimeError):
@@ -243,7 +243,7 @@ class ErrorHandlingTests(unittest.TestCase):
         def _raise(*args, **kwargs):
             raise httpx.ConnectError("refused")
 
-        with mock.patch("backend.app.services.ollama_direct.httpx.stream", _raise):
+        with mock.patch("backend.app.platform.ollama_direct.httpx.stream", _raise):
             with self.assertRaises(RuntimeError):
                 chat_direct([{"role": "user", "content": "q"}], "m")
 
@@ -258,7 +258,7 @@ class ErrorHandlingTests(unittest.TestCase):
         response = _FakeResponse(events, raise_on_iter=httpx.RemoteProtocolError("closed"))
 
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(response),
         ):
             result = chat_direct([{"role": "user", "content": "q"}], "m")
@@ -283,7 +283,7 @@ class StreamContractTests(unittest.TestCase):
             _done_event(),
         ]
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             stream = chat_direct_stream([{"role": "user", "content": "hi"}], "m")
@@ -302,7 +302,7 @@ class StreamContractTests(unittest.TestCase):
             _done_event(),
         ]
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             stream = chat_direct_stream([{"role": "user", "content": "q"}], "m")
@@ -322,14 +322,14 @@ class StreamContractTests(unittest.TestCase):
             _done_event(),
         ]
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             via_stream = chat_direct_stream([{"role": "user", "content": "q"}], "m")
             for _ in via_stream:
                 pass
         with mock.patch(
-            "backend.app.services.ollama_direct.httpx.stream",
+            "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse(events)),
         ):
             via_direct = chat_direct([{"role": "user", "content": "q"}], "m")
@@ -347,7 +347,7 @@ class StreamContractTests(unittest.TestCase):
         def _raise(*args, **kwargs):
             raise httpx.ConnectError("refused")
 
-        with mock.patch("backend.app.services.ollama_direct.httpx.stream", _raise):
+        with mock.patch("backend.app.platform.ollama_direct.httpx.stream", _raise):
             stream = chat_direct_stream([{"role": "user", "content": "q"}], "m")
             with self.assertRaises(RuntimeError):
                 list(stream)
@@ -360,7 +360,7 @@ class RealStreamCallTests(unittest.TestCase):
 
     def _pick_model(self):
         try:
-            from backend.app.services.ollama import get_available_models
+            from backend.app.platform.ollama import get_available_models
 
             models = get_available_models()
         except Exception:

@@ -25,10 +25,10 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-# 通过模块属性引用 run_chat，便于测试 patch `backend.app.services.ollama.run_chat`。
+# 通过模块属性引用 run_chat，便于测试 patch `backend.app.chat.application.chat_runner.run_chat`。
+from backend.app.chat.application import chat_runner
 from backend.app.core.config import MODEL_NAME
 from backend.app.observability import derive_metrics
-from backend.app.services import ollama
 
 DEFAULT_QUESTION = "用一句话解释什么是向量数据库？"
 DEFAULT_ROUTES: Sequence[str] = ("langchain", "direct")
@@ -76,7 +76,7 @@ def run_benchmark(
 ) -> Dict:
     """对每个 route 跑 `runs` 轮，收集指标并聚合。
 
-    纯函数（仅依赖 `backend.app.services.ollama.run_chat` 与 `derive_metrics`），
+    纯函数（仅依赖 `backend.app.chat.application.chat_runner.run_chat` 与 `derive_metrics`），
     便于测试 patch 后断言结构。单次异常记入该 route 的 `errors`，不中断整体。
     """
     routes_result: Dict[str, Dict[str, Dict]] = {}
@@ -85,7 +85,7 @@ def run_benchmark(
         errors: List[str] = []
         for _ in range(runs):
             try:
-                run = ollama.run_chat(question, model, route=route)
+                run = chat_runner.run_chat(question, model, route=route)
                 # 必须把事件迭代完，.result 才会被填好。
                 for _ in run:
                     pass

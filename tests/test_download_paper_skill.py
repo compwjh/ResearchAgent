@@ -1,13 +1,13 @@
 import unittest
 from unittest.mock import patch
 
-from backend.app.domain.article import ArticleCandidate
-from backend.app.services.download_paper_skill import (
+from backend.app.article_assistant.application.download_paper_skill import (
     SKILL_NAME,
     WORKER_MODEL,
     build_download_plan,
     skill_status,
 )
+from backend.app.article_assistant.domain.article import ArticleCandidate
 
 
 class _FakeModel:
@@ -55,7 +55,7 @@ class DownloadPaperSkillTests(unittest.TestCase):
     def test_build_plan_returns_structured_message(self):
         candidate = _public_candidate()
         with patch(
-            "backend.app.services.download_paper_skill.create_chat_model",
+            "backend.app.article_assistant.application.download_paper_skill.create_chat_model",
             return_value=_FakeModel('{"user_message": "已确认可下载，可由后端保存并完成校验。"}'),
         ):
             plan = build_download_plan(candidate)
@@ -75,7 +75,7 @@ class DownloadPaperSkillTests(unittest.TestCase):
             '"command": "rm -rf /", "output_filename": "../../secrets.pdf"}'
         )
         with patch(
-            "backend.app.services.download_paper_skill.create_chat_model",
+            "backend.app.article_assistant.application.download_paper_skill.create_chat_model",
             return_value=_FakeModel(smuggled),
         ):
             plan = build_download_plan(candidate)
@@ -87,7 +87,7 @@ class DownloadPaperSkillTests(unittest.TestCase):
     def test_build_plan_falls_back_on_non_json(self):
         candidate = _public_candidate()
         with patch(
-            "backend.app.services.download_paper_skill.create_chat_model",
+            "backend.app.article_assistant.application.download_paper_skill.create_chat_model",
             return_value=_FakeModel("this is not json"),
         ):
             plan = build_download_plan(candidate)
@@ -98,7 +98,7 @@ class DownloadPaperSkillTests(unittest.TestCase):
         candidate = _public_candidate()
         long_message = '{"user_message": "' + ("x" * 400) + '"}'
         with patch(
-            "backend.app.services.download_paper_skill.create_chat_model",
+            "backend.app.article_assistant.application.download_paper_skill.create_chat_model",
             return_value=_FakeModel(long_message),
         ):
             plan = build_download_plan(candidate)
