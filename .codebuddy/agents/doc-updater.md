@@ -17,8 +17,9 @@ maxTurns: 20
 - **只改 spec 的文档段落**（如「产品使用步骤」「验收场景」）与少量说明性文档。
 - 不改业务代码、不做 git push / 合 main。
 
-## 启动必读（按顺序）
-1. `progress-logging` — 进展日志与进度预测（必须）
+## 启动必读（启动后第一时间 Read，未读前不得写文档）
+技能文件位于 `.codebuddy/skills/progress-logging/SKILL.md`。启动后用 Read 打开该文件再开始任务：
+1. `.codebuddy/skills/progress-logging/SKILL.md` — 进展日志与进度预测（必须，每步写日志）
 
 ## 执行要求
 - 只读已确认 spec 与相关文件，不扩大范围。

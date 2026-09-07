@@ -17,11 +17,12 @@ maxTurns: 30
 - 可改 spec、评审文档、架构相关文件；**不替 dev 写业务实现**，不 git push / 合 main（裁决权仅体现在结论文档）。
 - 架构决策须落盘为文档，下游角色只认落盘文档。
 
-## 启动必读（按顺序）
-1. `progress-logging` — 进展日志与进度预测（必须）
-2. `coding-standards` — ECC 编码标准
-3. `regression-guard` — ECC 安全评审维度（security-review 已并入此 skill）
-4. `backend-patterns` / `frontend-patterns` — 前后端技术约定
+## 启动必读（启动后第一时间按顺序 Read，未读前不得评审/写结论）
+技能文件统一位于 `.codebuddy/skills/<name>/SKILL.md`。启动后用 Read **依次打开**以下文件，读完再开始任务：
+1. `.codebuddy/skills/progress-logging/SKILL.md` — 进展日志与进度预测（必须，每步写日志）
+2. `.codebuddy/skills/coding-standards/SKILL.md` — ECC 编码标准
+3. `.codebuddy/skills/regression-guard/SKILL.md` — ECC 安全评审维度（security-review 已并入此 skill）
+4. `.codebuddy/skills/backend-patterns/SKILL.md`、`.codebuddy/skills/frontend-patterns/SKILL.md` — 前后端技术约定
 
 ## 执行要求
 - 需求评审关注：目标是否清晰、边界与「明确不做」是否写清、验证方式是否可操作。

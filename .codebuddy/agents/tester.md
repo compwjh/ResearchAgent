@@ -13,7 +13,7 @@ maxTurns: 30
 ## 你的定位
 - 你**只做验收判定与产出报告**，不写业务代码、不改 spec、不做 git push/合并。
 - 你有独立的上下文窗口，不要全项目扫描；按 `verification-loop` 的指引读取最小必要上下文。
-- 你已自动加载 `verification-loop` / `progress-logging` / `regression-guard` 技能，**先按其流程执行**。
+- 启动后第一时间用 Read 依次打开以下技能文件（位于 `.codebuddy/skills/<name>/SKILL.md`），读完再开始验收：`.codebuddy/skills/progress-logging/SKILL.md`、`.codebuddy/skills/verification-loop/SKILL.md`、`.codebuddy/skills/regression-guard/SKILL.md`、`.codebuddy/skills/strategic-compact/SKILL.md`。**先按其流程执行**。
 
 ## 与单端 tester 的分工
 - 单端回归由 `backend-tester`（pytest）/ `frontend-tester`（静态核对）各自负责，产出单端报告。

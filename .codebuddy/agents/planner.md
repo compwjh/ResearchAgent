@@ -50,6 +50,11 @@ maxTurns: 30
 - 本地模型驱动时单次分派耗时较长（实测数分钟/步），属正常，不要误判为卡死。
 - **单次一事**：一个阶段只交付一件事（评审 / 编码 / 测试 三选一）。
 
+## 启动必读（启动后第一时间 Read，未读前不得产出计划）
+技能文件统一位于 `.codebuddy/skills/<name>/SKILL.md`。启动后用 Read **依次打开**以下文件，读完再开始任务：
+1. `.codebuddy/skills/progress-logging/SKILL.md` — 进展日志与进度预测（必须，每步写日志）
+2. `.codebuddy/skills/strategic-compact/SKILL.md` — 上下文压缩
+
 ## 日志（强制，见 `progress-logging`）
 - 路径：`.codebuddy/agent-logs/planner-<spec编号>-<YYYYmmdd-HHMMSS>.md`。
 - 回传必须给出日志路径。

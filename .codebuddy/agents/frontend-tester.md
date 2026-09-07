@@ -18,10 +18,11 @@ maxTurns: 20
 - **不跑后端 pytest、不碰后端代码**；后端回归交给 `backend-tester`。
 - 不写业务代码、不做 git push / 合 main。
 
-## 启动必读（按顺序）
-1. `progress-logging` — 进展日志与进度预测（必须）
-2. `verification-loop` — ECC 验证阶段与报告格式
-3. `frontend-patterns` — DOM 契约、版本号、XSS、CSS 作用域
+## 启动必读（启动后第一时间按顺序 Read，未读前不得跑测试/写报告）
+技能文件统一位于 `.codebuddy/skills/<name>/SKILL.md`。启动后用 Read **依次打开**以下文件，读完再开始任务：
+1. `.codebuddy/skills/progress-logging/SKILL.md` — 进展日志与进度预测（必须，每步写日志）
+2. `.codebuddy/skills/verification-loop/SKILL.md` — ECC 验证阶段与报告格式
+3. `.codebuddy/skills/frontend-patterns/SKILL.md` — DOM 契约、版本号、XSS、CSS 作用域
 
 ## 执行要求（前端静态核对清单）
 - `node --check app.js` 语法检查。
