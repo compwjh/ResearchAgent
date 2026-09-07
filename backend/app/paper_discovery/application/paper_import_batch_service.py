@@ -18,7 +18,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Optional
 
-from backend.app.domain.paper_import_batch import (
+from backend.app.paper_discovery.application.paper_import import (
+    LOGIN_REQUIRED,
+    import_candidate,
+    safe_import_error_code,
+    safe_import_error_message,
+)
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
+from backend.app.paper_discovery.domain.paper_import_batch import (
     ITEM_COMPLETED,
     ITEM_DOWNLOADING,
     ITEM_INDEXING,
@@ -28,15 +35,8 @@ from backend.app.domain.paper_import_batch import (
     PaperImportBatch,
     PaperImportItem,
 )
-from backend.app.services.paper_discovery_normalization import normalize_title
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.paper_import import (
-    LOGIN_REQUIRED,
-    import_candidate,
-    safe_import_error_code,
-    safe_import_error_message,
-)
-from backend.app.services.paper_import_batch_store import (
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
+from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     BATCH_NOT_FOUND,
     DATABASE_LOCKED,
     INVALID_STATE_TRANSITION,

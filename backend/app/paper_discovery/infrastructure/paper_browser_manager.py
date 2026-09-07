@@ -19,7 +19,14 @@ from typing import Any, Callable, Iterator, Mapping, Optional
 from urllib.parse import urlsplit
 
 from backend.app.core.config import BASE_DIR
-from backend.app.services.paper_download import (
+from backend.app.paper_discovery.domain.paper_download_security import (
+    DEFAULT_MAX_REDIRECTS,
+    URLSecurityError,
+    ValidatedURL,
+    validate_redirect_target,
+    validate_url,
+)
+from backend.app.paper_discovery.infrastructure.paper_download import (
     DOWNLOAD_BLOCKED,
     INVALID_PDF,
     LOGIN_REQUIRED,
@@ -29,13 +36,6 @@ from backend.app.services.paper_download import (
     DownloadResult,
     PaperDownloadError,
     _validate_pages,
-)
-from backend.app.services.paper_download_security import (
-    DEFAULT_MAX_REDIRECTS,
-    URLSecurityError,
-    ValidatedURL,
-    validate_redirect_target,
-    validate_url,
 )
 
 try:  # Playwright is optional so public-PDF imports keep working without it.

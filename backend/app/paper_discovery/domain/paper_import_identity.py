@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 
 DEFAULT_FILENAME_MAX_LENGTH = 180
 DEFAULT_SUFFIX = ".pdf"

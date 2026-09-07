@@ -12,7 +12,7 @@ from xml.etree import ElementTree
 
 import httpx
 
-from backend.app.services.paper_discovery_normalization import normalize_title
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
 
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
 ARXIV_HOSTS = frozenset({"arxiv.org", "export.arxiv.org"})

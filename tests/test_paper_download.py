@@ -5,8 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.paper_download import (
+from backend.app.paper_discovery.infrastructure.paper_download import (
     DOWNLOAD_BLOCKED,
     DOWNLOAD_TIMEOUT,
     INVALID_PDF,
@@ -16,6 +15,7 @@ from backend.app.services.paper_download import (
     PaperDownloadError,
     download_candidate,
 )
+from backend.app.platform.settings.settings_repository import ArticleSettings
 
 PUBLIC = "93.184.216.34"
 PDF = b"%PDF-1.7\nminimal test body"

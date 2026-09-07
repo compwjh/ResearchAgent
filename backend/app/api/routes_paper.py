@@ -19,19 +19,18 @@ from backend.app.api.schemas import (
     PaperImportResponse,
     PaperSearchRequest,
 )
-from backend.app.domain.paper_discovery import SearchSession
-from backend.app.services.paper_browser_manager import BrowserManagerError
-from backend.app.services.paper_discovery_search import PaperDiscoverySearchError
-from backend.app.services.paper_download import (
+from backend.app.paper_discovery.application.entry import (
     DOWNLOAD_BLOCKED,
     DOWNLOAD_TIMEOUT,
     INVALID_PDF,
     LOGIN_REQUIRED,
     PDF_NOT_FOUND,
     PDF_TOO_LARGE,
+    BrowserManagerError,
     PaperDownloadError,
 )
-from backend.app.services.paper_import import (
+from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchError
+from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,
@@ -39,10 +38,11 @@ from backend.app.services.paper_import import (
     safe_import_error_code,
     safe_import_error_message,
 )
-from backend.app.services.paper_import_batch_service import (
+from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchService,
     PaperImportBatchServiceError,
 )
+from backend.app.paper_discovery.domain.paper_discovery import SearchSession
 
 router = APIRouter()
 

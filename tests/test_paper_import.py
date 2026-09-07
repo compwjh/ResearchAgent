@@ -4,14 +4,14 @@ from dataclasses import dataclass
 import pytest
 
 from backend.app.knowledge_base.infrastructure.store import STATUS_INDEXED, get_paper, load_papers, resolve_paper_path
-from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.paper_download import DownloadResult, PaperDownloadError
-from backend.app.services.paper_import import (
+from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,
     import_candidate,
 )
+from backend.app.paper_discovery.infrastructure.paper_download import DownloadResult, PaperDownloadError
+from backend.app.platform.settings.settings_repository import ArticleSettings
 
 
 @dataclass
@@ -117,7 +117,7 @@ def test_metadata_failure_after_rename_removes_target_and_record(tmp_path, monke
         meta_path.write_text("[" + json.dumps(record.to_dict()) + "]", encoding="utf-8")
         raise OSError("metadata disk failure")
 
-    monkeypatch.setattr("backend.app.services.paper_import.upsert_paper", failed_upsert)
+    monkeypatch.setattr("backend.app.paper_discovery.application.paper_import.upsert_paper", failed_upsert)
     with pytest.raises(PaperImportError) as exc:
         import_candidate(
             _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",

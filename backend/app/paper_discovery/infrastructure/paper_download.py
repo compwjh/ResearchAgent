@@ -15,8 +15,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 import httpx
 
-from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.paper_download_security import (
+from backend.app.paper_discovery.domain.paper_download_security import (
     DEFAULT_MAX_REDIRECTS,
     URLSecurityError,
     ValidatedURL,
@@ -24,6 +23,7 @@ from backend.app.services.paper_download_security import (
     validate_redirect_target,
     validate_url,
 )
+from backend.app.platform.settings.settings_repository import ArticleSettings
 
 DOWNLOAD_BLOCKED = "DOWNLOAD_BLOCKED"
 DOWNLOAD_TIMEOUT = "DOWNLOAD_TIMEOUT"

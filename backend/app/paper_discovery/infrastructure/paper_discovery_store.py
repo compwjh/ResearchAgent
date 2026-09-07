@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from backend.app.core.config import BASE_DIR
-from backend.app.domain.paper_discovery import (
+from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     CatalogSourceRecord,
     ConferenceSource,
@@ -21,7 +21,7 @@ from backend.app.domain.paper_discovery import (
     SearchSourceProgress,
     SourceFetchUnit,
 )
-from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 
 SCHEMA_VERSION = 2
 BUILT_IN_CONFERENCES = (

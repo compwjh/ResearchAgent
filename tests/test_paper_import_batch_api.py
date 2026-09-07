@@ -1,13 +1,13 @@
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes, routes_paper
-from backend.app.domain.paper_discovery import PaperCandidate, SearchSession
 from backend.app.main import app
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.paper_download import DOWNLOAD_BLOCKED
-from backend.app.services.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
-from backend.app.services.paper_import_batch_service import PaperImportBatchService
-from backend.app.services.paper_import_batch_store import PaperImportBatchStore
+from backend.app.paper_discovery.application.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
+from backend.app.paper_discovery.application.paper_import_batch_service import PaperImportBatchService
+from backend.app.paper_discovery.domain.paper_discovery import PaperCandidate, SearchSession
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
+from backend.app.paper_discovery.infrastructure.paper_download import DOWNLOAD_BLOCKED
+from backend.app.paper_discovery.infrastructure.paper_import_batch_store import PaperImportBatchStore
 
 
 class FakeLoginSession:

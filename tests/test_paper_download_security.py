@@ -1,6 +1,6 @@
 import unittest
 
-from backend.app.services.paper_download_security import (
+from backend.app.paper_discovery.domain.paper_download_security import (
     DOWNLOAD_BLOCKED,
     INVALID_URL,
     URLSecurityError,

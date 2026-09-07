@@ -2,12 +2,15 @@ from datetime import datetime
 
 import pytest
 
-from backend.app.domain.paper_discovery import ConferenceSource
+from backend.app.paper_discovery.application.paper_discovery_search import (
+    PaperDiscoverySearchError,
+    PaperDiscoverySearchService,
+)
+from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource
+from backend.app.paper_discovery.infrastructure.dblp_publication_source import DBLPPublicationResult
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
+from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedResult
 from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.dblp_publication_source import DBLPPublicationResult
-from backend.app.services.paper_discovery_search import PaperDiscoverySearchError, PaperDiscoverySearchService
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.usenix_publication_source import UsenixAcceptedResult
 
 SOURCE = ConferenceSource(
     "ccs", "ACM Conference on Computer and Communications Security", "CCS",

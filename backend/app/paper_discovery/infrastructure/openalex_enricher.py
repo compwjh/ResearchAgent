@@ -10,8 +10,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import httpx
 
-from backend.app.domain.paper_discovery import PaperCandidate
-from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.paper_discovery import PaperCandidate
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 
 
 @dataclass(frozen=True)

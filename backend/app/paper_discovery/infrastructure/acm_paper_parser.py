@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 from typing import Any, Iterable, Mapping
 from urllib.parse import unquote, urljoin, urlsplit
 
-from backend.app.services.paper_import_identity import canonical_doi
+from backend.app.paper_discovery.domain.paper_import_identity import canonical_doi
 
 ACM_ORIGIN = "https://dl.acm.org"
 ACM_PARSE_FAILED = "ACM_PARSE_FAILED"

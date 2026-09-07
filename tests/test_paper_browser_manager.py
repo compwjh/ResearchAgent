@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-import backend.app.services.paper_browser_manager as browser_module
-from backend.app.services.paper_browser_manager import (
+import backend.app.paper_discovery.infrastructure.paper_browser_manager as browser_module
+from backend.app.paper_discovery.infrastructure.paper_browser_manager import (
     BROWSER_CRASHED,
     BROWSER_ORIGIN_NOT_ALLOWED,
     BROWSER_PROFILE_LOCKED,
@@ -15,7 +15,11 @@ from backend.app.services.paper_browser_manager import (
     BrowserManagerError,
     PaperBrowserManager,
 )
-from backend.app.services.paper_download import DOWNLOAD_BLOCKED, LOGIN_REQUIRED, PaperDownloadError
+from backend.app.paper_discovery.infrastructure.paper_download import (
+    DOWNLOAD_BLOCKED,
+    LOGIN_REQUIRED,
+    PaperDownloadError,
+)
 
 
 class FakePage:

@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from backend.app.domain.paper_discovery import (
+from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     CatalogSourceRecord,
     PaperCandidate,
@@ -12,7 +12,7 @@ from backend.app.domain.paper_discovery import (
     SearchSession,
     SourceFetchUnit,
 )
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 
 
 def test_store_seeds_reads_and_enforces_candidate_doi(tmp_path):

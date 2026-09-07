@@ -7,10 +7,10 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes, routes_paper
-from backend.app.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
 from backend.app.main import app
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.paper_download import PaperDownloadError
+from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
+from backend.app.paper_discovery.infrastructure.paper_download import PaperDownloadError
 
 
 class HealthEndpointPaperDiscoveryFlagTests(unittest.TestCase):

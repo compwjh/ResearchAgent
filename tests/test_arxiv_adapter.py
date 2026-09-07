@@ -2,7 +2,7 @@ from xml.sax.saxutils import escape
 
 import httpx
 
-from backend.app.services.arxiv_adapter import ARXIV_API_URL, ArxivFallbackAdapter
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import ARXIV_API_URL, ArxivFallbackAdapter
 
 
 def atom_entry(title, authors, year=2025, arxiv_id="2501.00001", pdf="https://arxiv.org/pdf/2501.00001"):

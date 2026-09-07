@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from backend.app.services.ieee_paper_parser import (
+from backend.app.paper_discovery.infrastructure.ieee_paper_parser import (
     IEEE_PARSE_FAILED,
     IEEEPaperParser,
     parse_ieee_page,
 )
-from backend.app.services.ieee_paper_parser import (
+from backend.app.paper_discovery.infrastructure.ieee_paper_parser import (
     IEEEPaperParseError as ParseError,
 )
 

@@ -9,15 +9,15 @@ from difflib import SequenceMatcher
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 from uuid import uuid4
 
-from backend.app.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
+from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.infrastructure.dblp_publication_source import DBLPPublicationSource
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
+from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedSource
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,
     load_article_settings,
 )
-from backend.app.services.dblp_publication_source import DBLPPublicationSource
-from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.usenix_publication_source import UsenixAcceptedSource
 
 
 def _utcnow() -> datetime:

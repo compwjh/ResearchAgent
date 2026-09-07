@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from backend.app.domain.paper_import_batch import (
+from backend.app.paper_discovery.domain.paper_import_batch import (
     BATCH_COMPLETED,
     BATCH_FAILED,
     BATCH_WAITING_LOGIN,
@@ -14,7 +14,7 @@ from backend.app.domain.paper_import_batch import (
     ITEM_WAITING_LOGIN,
     PaperImportItem,
 )
-from backend.app.services.paper_import_batch_store import (
+from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     IMPORT_INTERRUPTED,
     INVALID_STATE_TRANSITION,
     PaperImportBatchStore,

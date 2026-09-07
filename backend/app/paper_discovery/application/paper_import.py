@@ -29,8 +29,13 @@ from backend.app.knowledge_base.application import (
     run_index_task_sync,
     upsert_paper,
 )
-from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.paper_download import (
+from backend.app.paper_discovery.domain.paper_import_identity import (
+    PaperImportIdentity,
+    _identities_match,
+    build_paper_identity,
+    filename_for_candidate,
+)
+from backend.app.paper_discovery.infrastructure.paper_download import (
     DOWNLOAD_BLOCKED,
     DOWNLOAD_TIMEOUT,
     INVALID_PDF,
@@ -41,12 +46,7 @@ from backend.app.services.paper_download import (
     PaperDownloadError,
     download_candidate,
 )
-from backend.app.services.paper_import_identity import (
-    PaperImportIdentity,
-    _identities_match,
-    build_paper_identity,
-    filename_for_candidate,
-)
+from backend.app.platform.settings.settings_repository import ArticleSettings
 
 PAPER_ALREADY_EXISTS = "PAPER_ALREADY_EXISTS"
 KB_IMPORT_FAILED = "KB_IMPORT_FAILED"

@@ -4,22 +4,22 @@ from threading import Event, Lock
 
 import pytest
 
-from backend.app.domain.paper_discovery import PaperCandidate, SearchSession
-from backend.app.domain.paper_import_batch import (
+from backend.app.paper_discovery.application.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
+from backend.app.paper_discovery.application.paper_import_batch_service import (
+    CANDIDATE_NOT_FOUND,
+    INVALID_SEARCH_SNAPSHOT,
+    PaperImportBatchService,
+    PaperImportBatchServiceError,
+)
+from backend.app.paper_discovery.domain.paper_discovery import PaperCandidate, SearchSession
+from backend.app.paper_discovery.domain.paper_import_batch import (
     BATCH_WAITING_LOGIN,
     ITEM_COMPLETED,
     ITEM_DOWNLOADING,
     ITEM_FAILED,
     ITEM_WAITING_LOGIN,
 )
-from backend.app.services.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
-from backend.app.services.paper_import_batch_service import (
-    CANDIDATE_NOT_FOUND,
-    INVALID_SEARCH_SNAPSHOT,
-    PaperImportBatchService,
-    PaperImportBatchServiceError,
-)
-from backend.app.services.paper_import_batch_store import (
+from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     DATABASE_LOCKED,
     PaperImportBatchStore,
     PaperImportBatchStoreError,

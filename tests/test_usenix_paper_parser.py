@@ -3,7 +3,7 @@ import textwrap
 
 import pytest
 
-from backend.app.services.usenix_paper_parser import (
+from backend.app.paper_discovery.infrastructure.usenix_paper_parser import (
     USENIX_PARSE_FAILED,
     UsenixAcceptedParser,
     UsenixPaperParseError,

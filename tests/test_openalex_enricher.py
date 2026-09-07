@@ -1,7 +1,7 @@
 import httpx
 
-from backend.app.domain.paper_discovery import PaperCandidate
-from backend.app.services.openalex_enricher import OpenAlexEnricher
+from backend.app.paper_discovery.domain.paper_discovery import PaperCandidate
+from backend.app.paper_discovery.infrastructure.openalex_enricher import OpenAlexEnricher
 
 
 def candidate(title="A Secure Paper", year=2024, doi=None):

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from backend.app.services.paper_import_identity import (
+from backend.app.paper_discovery.domain.paper_import_identity import (
     build_paper_filename,
     build_paper_identity,
     canonical_doi,

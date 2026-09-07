@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from backend.app.domain.paper_discovery import (
+from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     CatalogSourceRecord,
     ConferenceSource,
@@ -23,16 +23,16 @@ from backend.app.domain.paper_discovery import (
     SearchSourceProgress,
     SourceFetchUnit,
 )
-from backend.app.services.arxiv_adapter import ArxivFallbackAdapter
-from backend.app.services.paper_discovery_normalization import normalize_title
-from backend.app.services.paper_download import (
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
+from backend.app.paper_discovery.domain.paper_download_security import URLSecurityError, validate_url
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import ArxivFallbackAdapter
+from backend.app.paper_discovery.infrastructure.paper_download import (
     INVALID_PDF,
     PDF_TOO_LARGE,
     PaperDownloadError,
     download_candidate,
 )
-from backend.app.services.paper_download_security import URLSecurityError, validate_url
-from backend.app.services.usenix_paper_parser import (
+from backend.app.paper_discovery.infrastructure.usenix_paper_parser import (
     UsenixAcceptedParser,
     parse_accepted_papers,
 )

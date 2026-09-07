@@ -13,22 +13,24 @@ from pydantic import ValidationError
 
 from backend.app.core.config import BASE_DIR
 from backend.app.domain.article import ArticleCandidate
+from backend.app.paper_discovery.application.entry import (
+    DBLPPublicationSource,
+    OpenAlexEnricher,
+    PaperBrowserManager,
+    PaperDiscoveryStore,
+    PaperImportBatchStore,
+)
+from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
+from backend.app.paper_discovery.application.paper_import import (
+    import_candidate,
+)
+from backend.app.paper_discovery.application.paper_import_batch_service import (
+    PaperImportBatchService,
+)
 from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
-from backend.app.services.dblp_publication_source import DBLPPublicationSource
-from backend.app.services.openalex_enricher import OpenAlexEnricher
-from backend.app.services.paper_browser_manager import PaperBrowserManager
-from backend.app.services.paper_discovery_search import PaperDiscoverySearchService
-from backend.app.services.paper_discovery_store import PaperDiscoveryStore
-from backend.app.services.paper_import import (
-    import_candidate,
-)
-from backend.app.services.paper_import_batch_service import (
-    PaperImportBatchService,
-)
-from backend.app.services.paper_import_batch_store import PaperImportBatchStore
 from backend.app.services.task_store import TaskStore
 
 

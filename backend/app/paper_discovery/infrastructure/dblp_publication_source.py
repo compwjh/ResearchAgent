@@ -6,8 +6,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import httpx
 
-from backend.app.domain.paper_discovery import ConferenceSource
-from backend.app.services.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 
 _EXCLUDED = re.compile(r"\b(workshop|poster|doctoral|soups|demo|tutorial|ccsw|spw)\b", re.I)
 

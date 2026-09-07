@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from backend.app.services.acm_paper_parser import (
+from backend.app.paper_discovery.infrastructure.acm_paper_parser import (
     ACM_PARSE_FAILED,
     AcmPaperParseError,
     AcmPaperParser,
