@@ -10,6 +10,7 @@ frontend/.DS_Store
 .coverage.*
 htmlcov/
 .pytest_cache/
+.ruff_cache/
 # .codebuddy 下 agents/skills/models.json 属项目资产，需入库共享；
 # 仅忽略 IDE 运行数据（plans/本地设置/记忆）
 .codebuddy/plans/
