@@ -16,19 +16,20 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from backend.app.core.config import KB_PAPERS_DIR
-from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.kb.index import delete_paper_chunker, index_paper_chunker
-from backend.app.services.kb.store import (
+from backend.app.knowledge_base.application import (
     CHUNKER_V1,
     STATUS_INDEXED,
     STATUS_INDEXING,
     PaperRecord,
+    delete_paper_chunker,
+    index_paper_chunker,
     load_papers,
     new_record,
     remove_paper,
+    run_index_task_sync,
     upsert_paper,
 )
-from backend.app.services.kb.tasks import run_index_task_sync
+from backend.app.platform.settings.settings_repository import ArticleSettings
 from backend.app.services.paper_download import (
     DOWNLOAD_BLOCKED,
     DOWNLOAD_TIMEOUT,

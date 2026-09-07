@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 import pytest
 
+from backend.app.knowledge_base.infrastructure.store import STATUS_INDEXED, get_paper, load_papers, resolve_paper_path
 from backend.app.platform.settings.settings_repository import ArticleSettings
-from backend.app.services.kb.store import STATUS_INDEXED, get_paper, load_papers, resolve_paper_path
 from backend.app.services.paper_download import DownloadResult, PaperDownloadError
 from backend.app.services.paper_import import (
     KB_IMPORT_FAILED,

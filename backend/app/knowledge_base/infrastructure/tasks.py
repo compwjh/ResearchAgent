@@ -16,7 +16,7 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, Dict, Optional, Tuple
 
-from backend.app.services.kb import store
+from backend.app.knowledge_base.infrastructure import store
 
 # 单线程是硬要求，见模块 docstring。
 _MAX_WORKERS = 1

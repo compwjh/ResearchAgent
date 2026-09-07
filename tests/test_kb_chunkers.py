@@ -7,9 +7,9 @@
 import unittest
 from unittest.mock import patch
 
-from backend.app.services.kb import chunkers as chunkers_module
-from backend.app.services.kb import parse as parse_module
-from backend.app.services.kb.chunkers import (
+from backend.app.knowledge_base.infrastructure import chunkers as chunkers_module
+from backend.app.knowledge_base.infrastructure import parse as parse_module
+from backend.app.knowledge_base.infrastructure.chunkers import (
     Chunk,
     build_chunks_v1,
     build_chunks_v2,

@@ -25,13 +25,13 @@ from backend.app.core.config import (
     RERANKER_ENABLED,
     RERANKER_READ_TIMEOUT_SECONDS,
 )
+from backend.app.knowledge_base.infrastructure.embed import embed_texts, encode_sparse
+from backend.app.knowledge_base.infrastructure.index import DENSE_VECTOR, SPARSE_VECTOR, get_client
+from backend.app.knowledge_base.infrastructure.reranker import _url as _reranker_url
+from backend.app.knowledge_base.infrastructure.reranker import rerank_hits
+from backend.app.knowledge_base.infrastructure.store import CHUNKER_V1
 from backend.app.observability import record_event
 from backend.app.observability.safe import safe_call
-from backend.app.services.kb.embed import embed_texts, encode_sparse
-from backend.app.services.kb.index import DENSE_VECTOR, SPARSE_VECTOR, get_client
-from backend.app.services.kb.reranker import _url as _reranker_url
-from backend.app.services.kb.reranker import rerank_hits
-from backend.app.services.kb.store import CHUNKER_V1
 
 RRF_K = 60
 _SCORE_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")

@@ -10,11 +10,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.app.services.kb import index as index_module
-from backend.app.services.kb import store as store_module
-from backend.app.services.kb import tasks as tasks_module
-from backend.app.services.kb.parse import PdfParseError
-from backend.app.services.kb.store import (
+from backend.app.knowledge_base.infrastructure import index as index_module
+from backend.app.knowledge_base.infrastructure import store as store_module
+from backend.app.knowledge_base.infrastructure import tasks as tasks_module
+from backend.app.knowledge_base.infrastructure.parse import PdfParseError
+from backend.app.knowledge_base.infrastructure.store import (
     CHUNKER_V1,
     CHUNKER_V2,
     STATUS_FAILED,

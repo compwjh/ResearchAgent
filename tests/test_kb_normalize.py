@@ -6,7 +6,7 @@
 
 import unittest
 
-from backend.app.services.kb.normalize import (
+from backend.app.knowledge_base.infrastructure.normalize import (
     detect_citation,
     locate_reference_start,
     normalize_text,

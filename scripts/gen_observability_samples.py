@@ -35,6 +35,7 @@ from backend.app.core.config import (  # noqa: E402
     MODEL_NAME,
     OLLAMA_BASE_URL,
 )
+from backend.app.knowledge_base.application import CHUNKER_V1, build_prompt, hybrid_search  # noqa: E402
 from backend.app.observability import (  # noqa: E402
     derive_metrics,
     end_trace,
@@ -43,7 +44,6 @@ from backend.app.observability import (  # noqa: E402
     start_trace,
     utc_now,
 )
-from backend.app.services.kb import CHUNKER_V1, build_prompt, hybrid_search  # noqa: E402
 from backend.app.services.ollama import run_chat  # noqa: E402
 from backend.app.services.ollama_direct import (  # noqa: E402
     OllamaChatResult,

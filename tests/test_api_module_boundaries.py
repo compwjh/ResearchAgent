@@ -111,6 +111,26 @@ def test_platform_does_not_import_business_modules():
                 if _blocks_forbidden(mod):
                     violations.append(f"{path}:{node.lineno}:{mod}")
     assert not violations, (
-         "platform 层 import 了业务模块（违反 Spec017 静态边界检查规则）:\n"
-         + "\n".join(violations)
+        "platform 层 import 了业务模块（违反 Spec017 静态边界检查规则）:\n"
+        + "\n".join(violations)
+    )
+
+
+def test_api_does_not_import_infrastructure():
+    """静态边界检查规则：api 层不得 import 任何上下文的 infrastructure。
+
+    依赖方向固定为 `api → application → domain / infrastructure`，api 只能经
+    各上下文的 application 入口（如 `knowledge_base.application`）访问能力，
+    不得直连 infrastructure 实现模块。知识库迁移完成后本断言应通过。
+    """
+    violations = []
+    for path in _py_files(_API_DIR):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            for mod in _module_names_from(node):
+                if ".infrastructure" in mod:
+                    violations.append(f"{path}:{node.lineno}:{mod}")
+    assert not violations, (
+        "api 层直接 import 了 infrastructure 模块（违反 Spec017 静态边界检查规则）:\n"
+        + "\n".join(violations)
     )

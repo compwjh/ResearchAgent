@@ -9,13 +9,13 @@ from unittest.mock import Mock, patch
 
 import httpx
 
+from backend.app.knowledge_base.infrastructure import embed as embed_module
+from backend.app.knowledge_base.infrastructure import index as index_module
+from backend.app.knowledge_base.infrastructure import parse as parse_module
 from backend.app.knowledge_base.infrastructure import prompts
-from backend.app.services.kb import embed as embed_module
-from backend.app.services.kb import index as index_module
-from backend.app.services.kb import parse as parse_module
-from backend.app.services.kb import retrieve as retrieve_module
-from backend.app.services.kb import store as store_module
-from backend.app.services.kb.retrieve import Hit
+from backend.app.knowledge_base.infrastructure import retrieve as retrieve_module
+from backend.app.knowledge_base.infrastructure import store as store_module
+from backend.app.knowledge_base.infrastructure.retrieve import Hit
 
 
 def make_point(paper_id, chunk_index, score, text="片段", page=2, file_name="a.pdf"):

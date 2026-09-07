@@ -9,8 +9,8 @@ from unittest.mock import Mock, patch
 import httpx
 from fastapi.testclient import TestClient
 
+from backend.app.knowledge_base.infrastructure.retrieve import Hit
 from backend.app.main import app
-from backend.app.services.kb.retrieve import Hit
 
 PDF_BYTES = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF"
 

@@ -9,7 +9,10 @@ from fastapi.staticfiles import StaticFiles
 from backend.app.api.common import paper_request_validation_error_response
 from backend.app.api.routes import router
 from backend.app.core.config import FRONTEND_DIR
-from backend.app.services.kb import backfill_chunker_defaults, mark_interrupted_on_startup
+from backend.app.knowledge_base.application import (
+    backfill_chunker_defaults,
+    mark_interrupted_on_startup,
+)
 
 
 @asynccontextmanager

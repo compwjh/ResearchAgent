@@ -10,8 +10,8 @@ from unittest.mock import Mock, patch
 
 import httpx
 
-from backend.app.services.kb import embed as embed_module
-from backend.app.services.kb import retrieve as retrieve_module
+from backend.app.knowledge_base.infrastructure import embed as embed_module
+from backend.app.knowledge_base.infrastructure import retrieve as retrieve_module
 
 
 def make_point(paper_id, chunk_index, score, text="片段", page=1, file_name="a.pdf"):

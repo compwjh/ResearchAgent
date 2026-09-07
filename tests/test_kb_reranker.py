@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from backend.app.services.kb.reranker import clear_negative_cache, rerank_hits
+from backend.app.knowledge_base.infrastructure.reranker import clear_negative_cache, rerank_hits
 
 
 @dataclass(frozen=True)

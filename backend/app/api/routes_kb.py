@@ -10,11 +10,7 @@ from backend.app.api.schemas import (
     KBReindexRequest,
 )
 from backend.app.core.config import CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR
-from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
-from backend.app.platform.settings.settings_repository import (
-    load_article_settings,
-)
-from backend.app.services.kb import (
+from backend.app.knowledge_base.application import (
     CHUNKER_V1,
     CHUNKER_V2,
     CHUNKERS,
@@ -23,6 +19,7 @@ from backend.app.services.kb import (
     citation_payloads,
     count_points,
     delete_paper,
+    embed_texts,
     ensure_collection,
     get_client,
     get_paper,
@@ -31,15 +28,18 @@ from backend.app.services.kb import (
     load_papers,
     new_record,
     remove_paper,
+    reranker_health,
+    resolve_paper_path,
     run_index_task_sync,
     save_upload,
     submit_index_task,
     update_chunker_state,
     upsert_paper,
 )
-from backend.app.services.kb.embed import embed_texts
-from backend.app.services.kb.retrieve import reranker_health
-from backend.app.services.kb.store import resolve_paper_path
+from backend.app.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
+from backend.app.platform.settings.settings_repository import (
+    load_article_settings,
+)
 from backend.app.services.ollama import get_available_models, run_chat
 
 router = APIRouter()
