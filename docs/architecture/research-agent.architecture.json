@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ResearchAgent 项目架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1240, 760],
+    "repository": {
+      "url": "https://github.com/compwjh/ResearchAgent",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "f7ca5994316249232ccf70fa37edf45dc66bace4"
+    },
+    "views": [
+      {
+        "id": "request-path",
+        "label": "请求主路径",
+        "focus": ["researcher", "frontend", "api", "paper-app", "catalog-store"],
+        "note": "从浏览器请求进入 FastAPI，再经过应用层访问目录持久化。"
+      },
+      {
+        "id": "discovery-sources",
+        "label": "论文目录发现",
+        "focus": ["paper-app", "usenix", "dblp", "catalog-store", "ollama"],
+        "note": "论文目录检索复用 USENIX 与 DBLP 来源适配器，并将结果写入 SQLite。"
+      },
+      {
+        "id": "knowledge-retrieval",
+        "label": "知识库召回",
+        "focus": ["paper-app", "knowledge", "kb-index", "ollama"],
+        "note": "知识库应用层通过索引基础设施完成本地内容召回，模型服务位于本机边界外。"
+      }
+    ]
+  },
+  "components": [
+    { "id": "researcher", "type": "external", "label": "研究者", "sublabel": "浏览器用户", "pos": [36, 330], "size": [132, 66] },
+    { "id": "frontend", "type": "frontend", "label": "Web 前端", "sublabel": "frontend/index.html + app.js", "pos": [220, 330], "size": [156, 66], "sources": [{ "path": "frontend/index.html", "label": "入口" }, { "path": "frontend/app.js", "label": "交互" }] },
+    { "id": "api", "type": "backend", "label": "FastAPI API", "sublabel": "backend/app/main.py", "pos": [430, 330], "size": [156, 66], "sources": [{ "path": "backend/app/main.py", "label": "应用入口" }, { "path": "backend/app/api/routes.py", "label": "路由" }] },
+    { "id": "paper-app", "type": "backend", "label": "论文发现应用层", "sublabel": "catalog + search orchestration", "pos": [646, 230], "size": [176, 66], "sources": [{ "path": "backend/app/paper_discovery/application/entry.py", "label": "应用入口" }, { "path": "backend/app/paper_discovery/application/catalog_search_graph.py", "label": "搜索图" }] },
+    { "id": "knowledge", "type": "backend", "label": "知识库应用层", "sublabel": "ingest + retrieval", "pos": [646, 430], "size": [176, 66], "sources": [{ "path": "backend/app/knowledge_base/application.py", "label": "应用服务" }] },
+    { "id": "catalog-store", "type": "database", "label": "论文目录 SQLite", "sublabel": "catalog/search state", "pos": [950, 230], "size": [172, 66], "sources": [{ "path": "backend/app/paper_discovery/infrastructure/paper_discovery_store.py", "label": "store" }] },
+    { "id": "kb-index", "type": "database", "label": "知识库索引", "sublabel": "local vector/search index", "pos": [900, 430], "size": [172, 66], "sources": [{ "path": "backend/app/knowledge_base/infrastructure/index.py", "label": "index" }] },
+    { "id": "usenix", "type": "external", "label": "USENIX 来源", "sublabel": "publication metadata", "pos": [900, 80], "size": [172, 66], "sources": [{ "path": "backend/app/paper_discovery/infrastructure/usenix_publication_source.py", "label": "适配器" }] },
+    { "id": "dblp", "type": "external", "label": "DBLP 来源", "sublabel": "publication metadata", "pos": [1100, 80], "size": [120, 66], "sources": [{ "path": "backend/app/paper_discovery/infrastructure/dblp_publication_source.py", "label": "适配器" }] },
+    { "id": "ollama", "type": "external", "label": "本地 Ollama", "sublabel": "qwen3.8:27b-mlx", "pos": [1100, 620], "size": [120, 66] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "ResearchAgent 本地服务进程", "wraps": ["frontend", "api", "paper-app", "knowledge", "catalog-store", "kb-index"], "pad": 22 },
+    { "kind": "security-group", "label": "本地数据与模型边界", "wraps": ["catalog-store", "kb-index"], "pad": 14 }
+  ],
+  "connections": [
+    { "id": "researcher-frontend", "from": "researcher", "to": "frontend", "label": "HTTP", "variant": "emphasis" },
+    { "id": "frontend-api", "from": "frontend", "to": "api", "label": "REST / JSON", "variant": "emphasis", "labelDy": -27 },
+    { "id": "api-paper", "from": "api", "to": "paper-app", "label": "paper discovery", "fromSide": "right", "toSide": "left", "labelDy": -74 },
+    { "id": "api-knowledge", "from": "api", "to": "knowledge", "label": "knowledge retrieval", "fromSide": "right", "toSide": "left" },
+    { "id": "paper-catalog", "from": "paper-app", "to": "catalog-store", "label": "metadata + progress", "variant": "emphasis", "labelAt": [886, 310] },
+    { "id": "knowledge-index", "from": "knowledge", "to": "kb-index", "label": "index / recall", "variant": "emphasis" },
+    { "id": "paper-usenix", "from": "paper-app", "to": "usenix", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "paper-dblp", "from": "paper-app", "to": "dblp", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "knowledge-ollama", "from": "knowledge", "to": "ollama", "label": "model call", "variant": "security", "fromSide": "bottom", "toSide": "top", "via": [[734, 540], [1160, 540], [1160, 620]], "labelDy": 54 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "主请求链", "items": ["浏览器前端调用 FastAPI JSON API", "应用层负责论文发现与知识库召回编排"] },
+    { "dot": "emerald", "title": "数据边界", "items": ["论文目录状态持久化在 SQLite", "知识库索引和本地模型调用不属于外部云服务"] },
+    { "dot": "amber", "title": "来源复用", "items": ["USENIX 与 DBLP 只提供目录元数据来源", "下载与导入流程保持在独立能力边界"] }
+  ]
+}
