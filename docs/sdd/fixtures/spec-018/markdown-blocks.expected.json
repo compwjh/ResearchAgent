@@ -1,0 +1,209 @@
+{
+  "schema_version": "provenance-dto-v1",
+  "mapping_algorithm_version": "source-anchor-v1",
+  "sample_id": "markdown-blocks",
+  "document_id": "fixture-markdown-blocks",
+  "media_type": "text/markdown",
+  "source_sha256": "0b19f1dc1a3bd687b2b9f369ce6c93998648d4f7b6c976d1ed87a78b41325e97",
+  "indexed_source_sha256": "0b19f1dc1a3bd687b2b9f369ce6c93998648d4f7b6c976d1ed87a78b41325e97",
+  "source_hash_state": "verified_fixture",
+  "source_parser_version": "fixture-markdown-block-parser-v1",
+  "normalize_version": "nfkc-crlf-lf-trim-horizontal-space-v1",
+  "chunker": "markdown-block-v1",
+  "chunker_config": {
+    "block_preserving": true
+  },
+  "chunker_config_fingerprint": "233376a789ab8487385fe7152f7339f05367ca8080a14f42a977ee2a1e857036",
+  "payload_schema_version": "qdrant-payload-v1",
+  "status": "ready",
+  "progress": 100,
+  "error": null,
+  "index_fingerprint": "9e8e0b509e584dd8a543708588ad7edc5eb8cb2d70ffa89edd0e545f6271865c",
+  "pages": [],
+  "blocks": [
+    {
+      "block_id": "markdown-blocks:b0",
+      "ordinal": 0,
+      "text": "# Source Anchor Fixture",
+      "locator": {
+        "start_line": 1,
+        "end_line": 1
+      },
+      "heading_path": [
+        "Source Anchor Fixture"
+      ],
+      "block_type": "heading",
+      "start": 0,
+      "end": 23
+    },
+    {
+      "block_id": "markdown-blocks:b1",
+      "ordinal": 1,
+      "text": "This paragraph is an ordinary Markdown block with stable line boundaries for provenance testing.",
+      "locator": {
+        "start_line": 3,
+        "end_line": 3
+      },
+      "heading_path": [
+        "Source Anchor Fixture"
+      ],
+      "block_type": "paragraph",
+      "start": 25,
+      "end": 121
+    },
+    {
+      "block_id": "markdown-blocks:b2",
+      "ordinal": 2,
+      "text": "- first list item\n- second list item",
+      "locator": {
+        "start_line": 5,
+        "end_line": 6
+      },
+      "heading_path": [
+        "Source Anchor Fixture"
+      ],
+      "block_type": "list",
+      "start": 123,
+      "end": 159
+    },
+    {
+      "block_id": "markdown-blocks:b3",
+      "ordinal": 3,
+      "text": "| Column A | Column B |\n| --- | --- |\n| alpha | beta |",
+      "locator": {
+        "start_line": 8,
+        "end_line": 10
+      },
+      "heading_path": [
+        "Source Anchor Fixture"
+      ],
+      "block_type": "table",
+      "start": 161,
+      "end": 215
+    },
+    {
+      "block_id": "markdown-blocks:b4",
+      "ordinal": 4,
+      "text": "```python\nprint(\"fixture\")\n```",
+      "locator": {
+        "start_line": 12,
+        "end_line": 14
+      },
+      "heading_path": [
+        "Source Anchor Fixture"
+      ],
+      "block_type": "code",
+      "start": 217,
+      "end": 247
+    }
+  ],
+  "words": [],
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "# Source Anchor Fixture",
+      "page": null,
+      "page_end": null,
+      "section": "Source Anchor Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 1,
+      "text": "This paragraph is an ordinary Markdown block with stable line boundaries for provenance testing.",
+      "page": null,
+      "page_end": null,
+      "section": "Source Anchor Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 2,
+      "text": "- first list item\n- second list item",
+      "page": null,
+      "page_end": null,
+      "section": "Source Anchor Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 3,
+      "text": "| Column A | Column B |\n| --- | --- |\n| alpha | beta |",
+      "page": null,
+      "page_end": null,
+      "section": "Source Anchor Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 4,
+      "text": "```python\nprint(\"fixture\")\n```",
+      "page": null,
+      "page_end": null,
+      "section": "Source Anchor Fixture",
+      "chunker": "markdown-block-v1"
+    }
+  ],
+  "anchors": [
+    {
+      "block_id": "markdown-blocks:b0",
+      "chunk_index": 0,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 1,
+        "end_line": 1
+      }
+    },
+    {
+      "block_id": "markdown-blocks:b1",
+      "chunk_index": 1,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 3,
+        "end_line": 3
+      }
+    },
+    {
+      "block_id": "markdown-blocks:b2",
+      "chunk_index": 2,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 5,
+        "end_line": 6
+      }
+    },
+    {
+      "block_id": "markdown-blocks:b3",
+      "chunk_index": 3,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 8,
+        "end_line": 10
+      }
+    },
+    {
+      "block_id": "markdown-blocks:b4",
+      "chunk_index": 4,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 12,
+        "end_line": 14
+      }
+    }
+  ],
+  "mapped_count": 5,
+  "unmapped_count": 0,
+  "unmapped_reasons": [],
+  "metrics": {
+    "page_count": null,
+    "block_count": 5,
+    "word_count": 0,
+    "line_count": 14,
+    "mapped_chunk_rate": 1.0,
+    "anchor_count": 5,
+    "bbox_max_error": null,
+    "bbox_median_error": null,
+    "markdown_line_exact_rate": 1.0
+  }
+}

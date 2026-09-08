@@ -1,0 +1,759 @@
+{
+  "schema_version": "provenance-dto-v1",
+  "mapping_algorithm_version": "source-anchor-v1",
+  "sample_id": "pdf-hostile-features",
+  "document_id": "fixture-pdf-hostile-features",
+  "media_type": "application/pdf",
+  "source_sha256": "1bc72165cc992f88ad28ef9a6ea24438e1024c305082f03bd3d554a59d664377",
+  "indexed_source_sha256": "1bc72165cc992f88ad28ef9a6ea24438e1024c305082f03bd3d554a59d664377",
+  "source_hash_state": "verified_fixture",
+  "source_parser_version": "pymupdf-1.28.2-extract_pages_normalized-unversioned",
+  "normalize_version": "normalize.py-unversioned",
+  "chunker": "v1",
+  "chunker_config": {
+    "chunk_size": 1000,
+    "overlap": 200
+  },
+  "chunker_config_fingerprint": "5d528ea9973d0fa2a78e7b91e4bf84b3f4bb2a345a646a6d89d9cd3f056c2559",
+  "payload_schema_version": "qdrant-payload-v1",
+  "status": "partial",
+  "progress": 100,
+  "error": "HOSTILE_FEATURES_NOT_EXECUTED",
+  "index_fingerprint": "e4cd16683421bd5778ee4e9b6c99ab25004c9fb5d80b14c742103fb4bb9885fd",
+  "pages": [
+    {
+      "page": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "rotation": 0,
+      "crop_box": [
+        0.0,
+        0.0,
+        612.0,
+        792.0
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 0,
+      "page": 1,
+      "text": "Hostile fixture text is anonymous and exists only to test safe display boundaries. Remote URL and JavaScript must never be fetched or executed.",
+      "raw_text": "Hostile fixture text is anonymous and exists only to test safe display boundaries. Remote URL\nand JavaScript must never be fetched or executed.\n",
+      "start": 0,
+      "end": 144,
+      "bbox": [
+        72.0,
+        72.00001525878906,
+        527.466064453125,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.09090911017523871,
+        0.8618726543351716,
+        0.12865563594933713
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "Hostile fixture text is anonymous and exists only to test safe display boundaries. Remote URL",
+          "start": 0,
+          "end": 93,
+          "bbox": [
+            72.0,
+            72.00001525878906,
+            527.466064453125,
+            87.114013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.09090911017523871,
+            0.8618726543351716,
+            0.10999244150489268
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "and JavaScript must never be fetched or executed.",
+          "start": 94,
+          "end": 143,
+          "bbox": [
+            72.0,
+            86.78126525878906,
+            320.2369689941406,
+            101.895263671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.10957230461968316,
+            0.5232630212322559,
+            0.12865563594933713
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    },
+    {
+      "block_id": "pdf-hostile-features:p1:b1",
+      "ordinal": 1,
+      "page": 1,
+      "text": "unsafe form value",
+      "raw_text": "unsafe form value\n",
+      "start": 0,
+      "end": 18,
+      "bbox": [
+        72.0,
+        361.75,
+        310.4400329589844,
+        402.9700012207031
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.4567550505050505,
+        0.507254955815334,
+        0.5088005065917969
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "unsafe form value",
+          "start": 0,
+          "end": 17,
+          "bbox": [
+            72.0,
+            361.75,
+            310.4400329589844,
+            402.9700012207031
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.4567550505050505,
+            0.507254955815334,
+            0.5088005065917969
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    }
+  ],
+  "words": [
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w0",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "Hostile",
+      "start": 0,
+      "end": 7,
+      "bbox": [
+        72.0,
+        72.00001525878906,
+        105.61599731445312,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.09090911017523871,
+        0.17257515901054432,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w1",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "fixture",
+      "start": 8,
+      "end": 15,
+      "bbox": [
+        108.67399597167969,
+        72.00001525878906,
+        138.62698364257812,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.17757188884261388,
+        0.09090911017523871,
+        0.22651467915453943,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w2",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "text",
+      "start": 16,
+      "end": 20,
+      "bbox": [
+        141.6849822998047,
+        72.00001525878906,
+        159.41697692871094,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.23151140898660896,
+        0.09090911017523871,
+        0.2604852564194623,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w3",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "is",
+      "start": 21,
+      "end": 23,
+      "bbox": [
+        162.4749755859375,
+        72.00001525878906,
+        170.41697692871094,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.26548198625153185,
+        0.09090911017523871,
+        0.27845911262861267,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w4",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "anonymous",
+      "start": 24,
+      "end": 33,
+      "bbox": [
+        173.4749755859375,
+        72.00001525878906,
+        230.33395385742188,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.2834558424606822,
+        0.09090911017523871,
+        0.3763626697016697,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w5",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "and",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        233.39195251464844,
+        72.00001525878906,
+        251.7399444580078,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.38135939953373926,
+        0.09090911017523871,
+        0.41133977852615655,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w6",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 6,
+      "line_ordinal": 0,
+      "text": "exists",
+      "start": 38,
+      "end": 44,
+      "bbox": [
+        254.79794311523438,
+        72.00001525878906,
+        282.9139404296875,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.4163365083582261,
+        0.09090911017523871,
+        0.46227768044066586,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w7",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 7,
+      "line_ordinal": 0,
+      "text": "only",
+      "start": 45,
+      "end": 49,
+      "bbox": [
+        285.9719543457031,
+        72.00001525878906,
+        306.14593505859375,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.46727443520539724,
+        0.09090911017523871,
+        0.5002384559780944,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w8",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 8,
+      "line_ordinal": 0,
+      "text": "to",
+      "start": 50,
+      "end": 52,
+      "bbox": [
+        309.2039489746094,
+        72.00001525878906,
+        318.3779602050781,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.5052352107428257,
+        0.09090911017523871,
+        0.5202254251716962,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w9",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 9,
+      "line_ordinal": 0,
+      "text": "test",
+      "start": 53,
+      "end": 57,
+      "bbox": [
+        321.43597412109375,
+        72.00001525878906,
+        339.1679992675781,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.5252221799364277,
+        0.09090911017523871,
+        0.5541960772346047,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w10",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 10,
+      "line_ordinal": 0,
+      "text": "safe",
+      "start": 58,
+      "end": 62,
+      "bbox": [
+        342.22601318359375,
+        72.00001525878906,
+        363.0160217285156,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.5591928319993362,
+        0.09090911017523871,
+        0.593163434196921,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w11",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 11,
+      "line_ordinal": 0,
+      "text": "display",
+      "start": 63,
+      "end": 70,
+      "bbox": [
+        366.07403564453125,
+        72.00001525878906,
+        400.3059997558594,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.5981601889616524,
+        0.09090911017523871,
+        0.6540947708429075,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w12",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 12,
+      "line_ordinal": 0,
+      "text": "boundaries.",
+      "start": 71,
+      "end": 82,
+      "bbox": [
+        403.364013671875,
+        72.00001525878906,
+        460.8389892578125,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.6590915256076388,
+        0.09090911017523871,
+        0.7530048844081904,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w13",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 13,
+      "line_ordinal": 0,
+      "text": "Remote",
+      "start": 83,
+      "end": 89,
+      "bbox": [
+        463.8970031738281,
+        72.00001525878906,
+        502.4079895019531,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.7580016391729217,
+        0.09090911017523871,
+        0.820928087421492,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w14",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 14,
+      "line_ordinal": 0,
+      "text": "URL",
+      "start": 90,
+      "end": 93,
+      "bbox": [
+        505.46600341796875,
+        72.00001525878906,
+        527.466064453125,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.8259248421862234,
+        0.09090911017523871,
+        0.8618726543351716,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w15",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 15,
+      "line_ordinal": 1,
+      "text": "and",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        72.0,
+        86.78126525878906,
+        90.34799194335938,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.10957230461968316,
+        0.1476274378159467,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w16",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 16,
+      "line_ordinal": 1,
+      "text": "JavaScript",
+      "start": 98,
+      "end": 108,
+      "bbox": [
+        93.40599060058594,
+        86.78126525878906,
+        144.75396728515625,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.15262416764801623,
+        0.10957230461968316,
+        0.23652609033522262,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w17",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 17,
+      "line_ordinal": 1,
+      "text": "must",
+      "start": 109,
+      "end": 113,
+      "bbox": [
+        147.8119659423828,
+        86.78126525878906,
+        171.64895629882812,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.24152282016729218,
+        0.10957230461968316,
+        0.28047215081507865,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w18",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 18,
+      "line_ordinal": 1,
+      "text": "never",
+      "start": 114,
+      "end": 119,
+      "bbox": [
+        174.7069549560547,
+        86.78126525878906,
+        202.2179412841797,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.2854688806471482,
+        0.10957230461968316,
+        0.33042147268656813,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w19",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 19,
+      "line_ordinal": 1,
+      "text": "be",
+      "start": 120,
+      "end": 122,
+      "bbox": [
+        205.27593994140625,
+        86.78126525878906,
+        217.5079345703125,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.3354182025186377,
+        0.10957230461968316,
+        0.35540512184691586,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w20",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 20,
+      "line_ordinal": 1,
+      "text": "fetched",
+      "start": 123,
+      "end": 130,
+      "bbox": [
+        220.56593322753906,
+        86.78126525878906,
+        256.64593505859375,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.3604018516789854,
+        0.10957230461968316,
+        0.4193561030369179,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w21",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 21,
+      "line_ordinal": 1,
+      "text": "or",
+      "start": 131,
+      "end": 133,
+      "bbox": [
+        259.7039489746094,
+        86.78126525878906,
+        269.4829406738281,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.42435285780164933,
+        0.10957230461968316,
+        0.4403316024082159,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b0:w22",
+      "block_id": "pdf-hostile-features:p1:b0",
+      "ordinal": 22,
+      "line_ordinal": 1,
+      "text": "executed.",
+      "start": 134,
+      "end": 143,
+      "bbox": [
+        272.54095458984375,
+        86.78126525878906,
+        320.2369689941406,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.44532835717294733,
+        0.10957230461968316,
+        0.5232630212322559,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b1:w0",
+      "block_id": "pdf-hostile-features:p1:b1",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "unsafe",
+      "start": 0,
+      "end": 6,
+      "bbox": [
+        72.0,
+        361.75,
+        162.0600128173828,
+        402.9700012207031
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.4567550505050505,
+        0.2648039425120634,
+        0.5088005065917969
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b1:w1",
+      "block_id": "pdf-hostile-features:p1:b1",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "form",
+      "start": 7,
+      "end": 11,
+      "bbox": [
+        170.4000244140625,
+        361.75,
+        230.4000244140625,
+        402.9700012207031
+      ],
+      "normalized_bbox": [
+        0.2784314124412786,
+        0.4567550505050505,
+        0.3764706281275531,
+        0.5088005065917969
+      ]
+    },
+    {
+      "word_id": "pdf-hostile-features:p1:b1:w2",
+      "block_id": "pdf-hostile-features:p1:b1",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "value",
+      "start": 12,
+      "end": 17,
+      "bbox": [
+        238.74002075195312,
+        361.75,
+        310.4400329589844,
+        402.9700012207031
+      ],
+      "normalized_bbox": [
+        0.39009807312410644,
+        0.4567550505050505,
+        0.507254955815334,
+        0.5088005065917969
+      ]
+    }
+  ],
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "Hostile fixture text is anonymous and exists only to test safe display boundaries. Remote URL and JavaScript must never be fetched or executed.\nunsafe form value",
+      "page": 1,
+      "page_end": 1,
+      "section": "",
+      "chunker": "v1"
+    }
+  ],
+  "anchors": [
+    {
+      "block_id": "pdf-hostile-features:p1:b0",
+      "chunk_index": 0,
+      "coverage": 0.888199,
+      "is_primary": true,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          72.0,
+          72.00001525878906,
+          527.466064453125,
+          101.895263671875
+        ],
+        "normalized_bbox": [
+          0.11764705882352941,
+          0.09090911017523871,
+          0.8618726543351716,
+          0.12865563594933713
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-hostile-features:p1:b1",
+      "chunk_index": 0,
+      "coverage": 0.10559,
+      "is_primary": false,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          72.0,
+          361.75,
+          310.4400329589844,
+          402.9700012207031
+        ],
+        "normalized_bbox": [
+          0.11764705882352941,
+          0.4567550505050505,
+          0.507254955815334,
+          0.5088005065917969
+        ]
+      }
+    }
+  ],
+  "mapped_count": 1,
+  "unmapped_count": 0,
+  "unmapped_reasons": [],
+  "metrics": {
+    "page_count": 1,
+    "block_count": 2,
+    "word_count": 26,
+    "line_count": 3,
+    "mapped_chunk_rate": 1.0,
+    "anchor_count": 2,
+    "bbox_max_error": 0.0,
+    "bbox_median_error": 0.0,
+    "markdown_line_exact_rate": null
+  }
+}

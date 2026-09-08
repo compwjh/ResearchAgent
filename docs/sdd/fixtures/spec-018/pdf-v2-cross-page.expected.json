@@ -1,0 +1,3078 @@
+{
+  "schema_version": "provenance-dto-v1",
+  "mapping_algorithm_version": "source-anchor-v1",
+  "sample_id": "pdf-v2-cross-page",
+  "document_id": "fixture-pdf-v2-cross-page",
+  "media_type": "application/pdf",
+  "source_sha256": "c0fccf6f1d0dde1c299ce044e63c79c2796ca981f7bcadaf62ec27db9e996468",
+  "indexed_source_sha256": "c0fccf6f1d0dde1c299ce044e63c79c2796ca981f7bcadaf62ec27db9e996468",
+  "source_hash_state": "verified_fixture",
+  "source_parser_version": "pymupdf-1.28.2-extract_pages_normalized-unversioned",
+  "normalize_version": "normalize.py-unversioned",
+  "chunker": "v2",
+  "chunker_config": {
+    "max_chars": 1200,
+    "llm": "disabled"
+  },
+  "chunker_config_fingerprint": "5407bbba2a15ca020d5fb0b17acfdec5f6e00bc0466ef0647fbe1ee25084e733",
+  "payload_schema_version": "qdrant-payload-v1",
+  "status": "ready",
+  "progress": 100,
+  "error": null,
+  "index_fingerprint": "32c4866a6d559516ffd4e8d4ddd893f1d7bcff183ad2c9e768bfc0f6f0bbbb62",
+  "pages": [
+    {
+      "page": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "rotation": 0,
+      "crop_box": [
+        0.0,
+        0.0,
+        612.0,
+        792.0
+      ]
+    },
+    {
+      "page": 2,
+      "width": 612.0,
+      "height": 792.0,
+      "rotation": 0,
+      "crop_box": [
+        0.0,
+        0.0,
+        612.0,
+        792.0
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 0,
+      "page": 1,
+      "text": "Cross-page source block begins on the first page and intentionally ends without a heading. The same sentence continues across the page boundary so v2 may merge adjacent blocks while retaining page and page_end. The same sentence continues across the page boundary so v2 may merge adjacent blocks while retaining page and page_end. The same sentence continues across the page boundary so v2 may merge adjacent blocks while retaining page and page_end.",
+      "raw_text": "Cross-page source block begins on the first page and intentionally ends without a heading. The\nsame sentence continues across the page boundary so v2 may merge adjacent blocks while\nretaining page and page_end. The same sentence continues across the page boundary so v2\nmay merge adjacent blocks while retaining page and page_end. The same sentence continues\nacross the page boundary so v2 may merge adjacent blocks while retaining page and\npage_end.\n",
+      "start": 0,
+      "end": 451,
+      "bbox": [
+        72.0,
+        90.00001525878906,
+        534.8469848632812,
+        179.020263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.11363638290251145,
+        0.8739329818027471,
+        0.22603568645438762
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "Cross-page source block begins on the first page and intentionally ends without a heading. The",
+          "start": 0,
+          "end": 94,
+          "bbox": [
+            72.0,
+            90.00001525878906,
+            534.8469848632812,
+            105.114013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.11363638290251145,
+            0.8739329818027471,
+            0.13271971423216541
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "same sentence continues across the page boundary so v2 may merge adjacent blocks while",
+          "start": 95,
+          "end": 181,
+          "bbox": [
+            72.0,
+            104.78126525878906,
+            521.3720092773438,
+            119.895263671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.13229957734695588,
+            0.851915047838797,
+            0.15138290867660986
+          ]
+        },
+        {
+          "ordinal": 2,
+          "text": "retaining page and page_end. The same sentence continues across the page boundary so v2",
+          "start": 182,
+          "end": 269,
+          "bbox": [
+            72.0,
+            119.56251525878906,
+            527.5430297851562,
+            134.676513671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.15096277179140033,
+            0.8619984146816279,
+            0.17004610312105428
+          ]
+        },
+        {
+          "ordinal": 3,
+          "text": "may merge adjacent blocks while retaining page and page_end. The same sentence continues",
+          "start": 270,
+          "end": 358,
+          "bbox": [
+            72.0,
+            134.34376525878906,
+            533.0100708007812,
+            149.457763671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.16962596623584478,
+            0.8709314882365706,
+            0.18870929756549873
+          ]
+        },
+        {
+          "ordinal": 4,
+          "text": "across the page boundary so v2 may merge adjacent blocks while retaining page and",
+          "start": 359,
+          "end": 440,
+          "bbox": [
+            72.0,
+            149.12501525878906,
+            487.7558898925781,
+            164.239013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.18828916068028922,
+            0.7969867481904871,
+            0.20737249200994318
+          ]
+        },
+        {
+          "ordinal": 5,
+          "text": "page_end.",
+          "start": 441,
+          "end": 450,
+          "bbox": [
+            72.0,
+            163.90626525878906,
+            123.98597717285156,
+            179.020263671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.20695235512473367,
+            0.2025914659687117,
+            0.22603568645438762
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    },
+    {
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 1,
+      "page": 2,
+      "text": "Continuation text remains part of the preceding structure and contains no heading marker. The continuation preserves deterministic words and allows the mapping probe to verify a cross-page chunk. The continuation preserves deterministic words and allows the mapping probe to verify a cross-page chunk. The continuation preserves deterministic words and allows the mapping probe to verify a cross-page chunk.",
+      "raw_text": "Continuation text remains part of the preceding structure and contains no heading marker. The\ncontinuation preserves deterministic words and allows the mapping probe to verify a cross-page\nchunk. The continuation preserves deterministic words and allows the mapping probe to verify a\ncross-page chunk. The continuation preserves deterministic words and allows the mapping\nprobe to verify a cross-page chunk.\n",
+      "start": 0,
+      "end": 408,
+      "bbox": [
+        72.0,
+        90.00001525878906,
+        537.8609619140625,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.11363638290251145,
+        0.8788577809053308,
+        0.20737249200994318
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "Continuation text remains part of the preceding structure and contains no heading marker. The",
+          "start": 0,
+          "end": 93,
+          "bbox": [
+            72.0,
+            90.00001525878906,
+            531.7780151367188,
+            105.114013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.11363638290251145,
+            0.8689183253867954,
+            0.13271971423216541
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "continuation preserves deterministic words and allows the mapping probe to verify a cross-page",
+          "start": 94,
+          "end": 188,
+          "bbox": [
+            72.0,
+            104.78126525878906,
+            537.8500366210938,
+            119.895263671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.13229957734695588,
+            0.8788399291194342,
+            0.15138290867660986
+          ]
+        },
+        {
+          "ordinal": 2,
+          "text": "chunk. The continuation preserves deterministic words and allows the mapping probe to verify a",
+          "start": 189,
+          "end": 283,
+          "bbox": [
+            72.0,
+            119.56251525878906,
+            537.8609619140625,
+            134.676513671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.15096277179140033,
+            0.8788577809053308,
+            0.17004610312105428
+          ]
+        },
+        {
+          "ordinal": 3,
+          "text": "cross-page chunk. The continuation preserves deterministic words and allows the mapping",
+          "start": 284,
+          "end": 371,
+          "bbox": [
+            72.0,
+            134.34376525878906,
+            513.3969116210938,
+            149.457763671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.16962596623584478,
+            0.8388838425181271,
+            0.18870929756549873
+          ]
+        },
+        {
+          "ordinal": 4,
+          "text": "probe to verify a cross-page chunk.",
+          "start": 372,
+          "end": 407,
+          "bbox": [
+            72.0,
+            149.12501525878906,
+            243.79794311523438,
+            164.239013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.18828916068028922,
+            0.3983626521490758,
+            0.20737249200994318
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    }
+  ],
+  "words": [
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w0",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "Cross-page",
+      "start": 0,
+      "end": 10,
+      "bbox": [
+        72.0,
+        90.00001525878906,
+        128.84799194335938,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.11363638290251145,
+        0.21053593454797284,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w1",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "source",
+      "start": 11,
+      "end": 17,
+      "bbox": [
+        131.90599060058594,
+        90.00001525878906,
+        164.91697692871094,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.21553266438004237,
+        0.11363638290251145,
+        0.2694721845240375,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w2",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "block",
+      "start": 18,
+      "end": 23,
+      "bbox": [
+        167.9749755859375,
+        90.00001525878906,
+        193.6489715576172,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.27446891435610704,
+        0.11363638290251145,
+        0.31641988816604116,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w3",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "begins",
+      "start": 24,
+      "end": 30,
+      "bbox": [
+        196.70697021484375,
+        90.00001525878906,
+        229.1129608154297,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.3214166179981107,
+        0.11363638290251145,
+        0.37436758303174783,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w4",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "on",
+      "start": 31,
+      "end": 33,
+      "bbox": [
+        232.17095947265625,
+        90.00001525878906,
+        244.4029541015625,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.3793643128638174,
+        0.11363638290251145,
+        0.39935123219209556,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w5",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        247.46095275878906,
+        90.00001525878906,
+        262.7509460449219,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.4043479620241651,
+        0.11363638290251145,
+        0.42933161118451285,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w6",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 6,
+      "line_ordinal": 0,
+      "text": "first",
+      "start": 38,
+      "end": 43,
+      "bbox": [
+        265.8089599609375,
+        90.00001525878906,
+        283.52996826171875,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.4343283659492443,
+        0.11363638290251145,
+        0.4632842618655535,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w7",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 7,
+      "line_ordinal": 0,
+      "text": "page",
+      "start": 6,
+      "end": 10,
+      "bbox": [
+        286.5879821777344,
+        90.00001525878906,
+        311.0519714355469,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.46828101663028493,
+        0.11363638290251145,
+        0.5082548552868413,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w8",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 8,
+      "line_ordinal": 0,
+      "text": "and",
+      "start": 49,
+      "end": 52,
+      "bbox": [
+        314.1099853515625,
+        90.00001525878906,
+        332.4579772949219,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.5132516100515727,
+        0.11363638290251145,
+        0.54323198904399,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w9",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 9,
+      "line_ordinal": 0,
+      "text": "intentionally",
+      "start": 53,
+      "end": 66,
+      "bbox": [
+        335.5159912109375,
+        90.00001525878906,
+        393.595947265625,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.5482287438087214,
+        0.11363638290251145,
+        0.6431306327869689,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w10",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 10,
+      "line_ordinal": 0,
+      "text": "ends",
+      "start": 67,
+      "end": 71,
+      "bbox": [
+        396.6539611816406,
+        90.00001525878906,
+        420.501953125,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.6481273875517004,
+        0.11363638290251145,
+        0.6870946946486928,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w11",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 11,
+      "line_ordinal": 0,
+      "text": "without",
+      "start": 72,
+      "end": 79,
+      "bbox": [
+        423.5599670410156,
+        90.00001525878906,
+        458.407958984375,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.6920914494134243,
+        0.11363638290251145,
+        0.749032612719567,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w12",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 12,
+      "line_ordinal": 0,
+      "text": "a",
+      "start": 7,
+      "end": 8,
+      "bbox": [
+        461.4659729003906,
+        90.00001525878906,
+        467.58197021484375,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.7540293674842984,
+        0.11363638290251145,
+        0.7640228271484375,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w13",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 13,
+      "line_ordinal": 0,
+      "text": "heading.",
+      "start": 82,
+      "end": 90,
+      "bbox": [
+        470.6399841308594,
+        90.00001525878906,
+        512.8359375,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.7690195819131689,
+        0.11363638290251145,
+        0.8379672181372549,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w14",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 14,
+      "line_ordinal": 0,
+      "text": "The",
+      "start": 91,
+      "end": 94,
+      "bbox": [
+        515.8939208984375,
+        90.00001525878906,
+        534.8469848632812,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.8429639230366626,
+        0.11363638290251145,
+        0.8739329818027471,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w15",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 15,
+      "line_ordinal": 1,
+      "text": "same",
+      "start": 95,
+      "end": 99,
+      "bbox": [
+        72.0,
+        104.78126525878906,
+        98.8949966430664,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.13229957734695588,
+        0.16159313176971635,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w16",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 16,
+      "line_ordinal": 1,
+      "text": "sentence",
+      "start": 100,
+      "end": 108,
+      "bbox": [
+        101.95299530029297,
+        104.78126525878906,
+        146.5909881591797,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.1665898616017859,
+        0.13229957734695588,
+        0.23952775843003216,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w17",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 17,
+      "line_ordinal": 1,
+      "text": "continues",
+      "start": 109,
+      "end": 118,
+      "bbox": [
+        149.64898681640625,
+        104.78126525878906,
+        196.72897338867188,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.2445244882621017,
+        0.13229957734695588,
+        0.3214525708965227,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w18",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 18,
+      "line_ordinal": 1,
+      "text": "across",
+      "start": 119,
+      "end": 125,
+      "bbox": [
+        199.78697204589844,
+        104.78126525878906,
+        232.1819610595703,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.32644930072859224,
+        0.13229957734695588,
+        0.37938228931302337,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w19",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 19,
+      "line_ordinal": 1,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        235.23995971679688,
+        104.78126525878906,
+        250.5299530029297,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.3843790191450929,
+        0.13229957734695588,
+        0.40936266830544066,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w20",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 20,
+      "line_ordinal": 1,
+      "text": "page",
+      "start": 6,
+      "end": 10,
+      "bbox": [
+        253.58795166015625,
+        104.78126525878906,
+        278.05194091796875,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.4143593981375102,
+        0.13229957734695588,
+        0.45433323679406656,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w21",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 21,
+      "line_ordinal": 1,
+      "text": "boundary",
+      "start": 135,
+      "end": 143,
+      "bbox": [
+        281.1099548339844,
+        104.78126525878906,
+        326.96893310546875,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.459329991558798,
+        0.13229957734695588,
+        0.5342629625906352,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w22",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 22,
+      "line_ordinal": 1,
+      "text": "so",
+      "start": 11,
+      "end": 13,
+      "bbox": [
+        330.0269470214844,
+        104.78126525878906,
+        341.6429443359375,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.5392597173553666,
+        0.13229957734695588,
+        0.5582401051240808,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w23",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 23,
+      "line_ordinal": 1,
+      "text": "v2",
+      "start": 147,
+      "end": 149,
+      "bbox": [
+        344.7009582519531,
+        104.78126525878906,
+        356.31695556640625,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.5632368598888123,
+        0.13229957734695588,
+        0.5822172476575266,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w24",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 24,
+      "line_ordinal": 1,
+      "text": "may",
+      "start": 150,
+      "end": 153,
+      "bbox": [
+        359.3749694824219,
+        104.78126525878906,
+        380.1539611816406,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.587214002422258,
+        0.13229957734695588,
+        0.6211666032379749,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w25",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 25,
+      "line_ordinal": 1,
+      "text": "merge",
+      "start": 154,
+      "end": 159,
+      "bbox": [
+        383.21197509765625,
+        104.78126525878906,
+        414.3859558105469,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.6261633580027063,
+        0.13229957734695588,
+        0.6771012349845538,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w26",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 26,
+      "line_ordinal": 1,
+      "text": "adjacent",
+      "start": 160,
+      "end": 168,
+      "bbox": [
+        417.4439697265625,
+        104.78126525878906,
+        459.0239562988281,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.6820979897492851,
+        0.13229957734695588,
+        0.7500391442791309,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w27",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 27,
+      "line_ordinal": 1,
+      "text": "blocks",
+      "start": 169,
+      "end": 175,
+      "bbox": [
+        462.08197021484375,
+        104.78126525878906,
+        493.2559509277344,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.7550358990438624,
+        0.13229957734695588,
+        0.8059737760257097,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w28",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 28,
+      "line_ordinal": 1,
+      "text": "while",
+      "start": 176,
+      "end": 181,
+      "bbox": [
+        496.31396484375,
+        104.78126525878906,
+        521.3720092773438,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.8109705307904411,
+        0.13229957734695588,
+        0.851915047838797,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w29",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 29,
+      "line_ordinal": 2,
+      "text": "retaining",
+      "start": 182,
+      "end": 191,
+      "bbox": [
+        72.0,
+        119.56251525878906,
+        114.18498992919922,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.15096277179140033,
+        0.18657678093006408,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w30",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 30,
+      "line_ordinal": 2,
+      "text": "page",
+      "start": 6,
+      "end": 10,
+      "bbox": [
+        117.24298858642578,
+        119.56251525878906,
+        141.7069854736328,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.19157351076213364,
+        0.15096277179140033,
+        0.23154736188502092,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w31",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 31,
+      "line_ordinal": 2,
+      "text": "and",
+      "start": 49,
+      "end": 52,
+      "bbox": [
+        144.76498413085938,
+        119.56251525878906,
+        163.11297607421875,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.23654409171709048,
+        0.15096277179140033,
+        0.26652447070950774,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w32",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 32,
+      "line_ordinal": 2,
+      "text": "page_end.",
+      "start": 201,
+      "end": 210,
+      "bbox": [
+        166.1709747314453,
+        119.56251525878906,
+        218.15695190429688,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.2715212005415773,
+        0.15096277179140033,
+        0.3564656076867596,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w33",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 33,
+      "line_ordinal": 2,
+      "text": "The",
+      "start": 91,
+      "end": 94,
+      "bbox": [
+        221.21495056152344,
+        119.56251525878906,
+        240.16793823242188,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.36146233751882917,
+        0.15096277179140033,
+        0.39243127162160435,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w34",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 34,
+      "line_ordinal": 2,
+      "text": "same",
+      "start": 95,
+      "end": 99,
+      "bbox": [
+        243.22593688964844,
+        119.56251525878906,
+        270.1209411621094,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.3974280014536739,
+        0.15096277179140033,
+        0.4413740868661918,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w35",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 35,
+      "line_ordinal": 2,
+      "text": "sentence",
+      "start": 100,
+      "end": 108,
+      "bbox": [
+        273.178955078125,
+        119.56251525878906,
+        317.81695556640625,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.4463708416309232,
+        0.15096277179140033,
+        0.5193087509255004,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w36",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 36,
+      "line_ordinal": 2,
+      "text": "continues",
+      "start": 109,
+      "end": 118,
+      "bbox": [
+        320.8749694824219,
+        119.56251525878906,
+        367.9549560546875,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.5243055056902318,
+        0.15096277179140033,
+        0.6012335883246528,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w37",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 37,
+      "line_ordinal": 2,
+      "text": "across",
+      "start": 119,
+      "end": 125,
+      "bbox": [
+        371.0129699707031,
+        119.56251525878906,
+        403.407958984375,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.6062303430893842,
+        0.15096277179140033,
+        0.6591633316738154,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w38",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 38,
+      "line_ordinal": 2,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        406.4659729003906,
+        119.56251525878906,
+        421.7559814453125,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.6641600864385467,
+        0.15096277179140033,
+        0.6891437605315563,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w39",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 39,
+      "line_ordinal": 2,
+      "text": "page",
+      "start": 6,
+      "end": 10,
+      "bbox": [
+        424.8139953613281,
+        119.56251525878906,
+        449.2779846191406,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.6941405152962878,
+        0.15096277179140033,
+        0.7341143539528442,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w40",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 40,
+      "line_ordinal": 2,
+      "text": "boundary",
+      "start": 135,
+      "end": 143,
+      "bbox": [
+        452.33599853515625,
+        119.56251525878906,
+        498.1949768066406,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.7391111087175756,
+        0.15096277179140033,
+        0.8140440797494128,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w41",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 41,
+      "line_ordinal": 2,
+      "text": "so",
+      "start": 11,
+      "end": 13,
+      "bbox": [
+        501.25299072265625,
+        119.56251525878906,
+        512.8690185546875,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.8190408345141442,
+        0.15096277179140033,
+        0.8380212721481822,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w42",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 42,
+      "line_ordinal": 2,
+      "text": "v2",
+      "start": 147,
+      "end": 149,
+      "bbox": [
+        515.927001953125,
+        119.56251525878906,
+        527.5430297851562,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.8430179770475899,
+        0.15096277179140033,
+        0.8619984146816279,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w43",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 43,
+      "line_ordinal": 3,
+      "text": "may",
+      "start": 150,
+      "end": 153,
+      "bbox": [
+        72.0,
+        134.34376525878906,
+        92.77899932861328,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.16962596623584478,
+        0.15159967210557726,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w44",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 44,
+      "line_ordinal": 3,
+      "text": "merge",
+      "start": 154,
+      "end": 159,
+      "bbox": [
+        95.83699798583984,
+        134.34376525878906,
+        127.01099395751953,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.1565964019376468,
+        0.16962596623584478,
+        0.2075343038521561,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w45",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 45,
+      "line_ordinal": 3,
+      "text": "adjacent",
+      "start": 160,
+      "end": 168,
+      "bbox": [
+        130.06900024414062,
+        134.34376525878906,
+        171.64898681640625,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.21253104615055657,
+        0.16962596623584478,
+        0.28047220068040235,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w46",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 46,
+      "line_ordinal": 3,
+      "text": "blocks",
+      "start": 169,
+      "end": 175,
+      "bbox": [
+        174.7069854736328,
+        134.34376525878906,
+        205.8809814453125,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.2854689305124719,
+        0.16962596623584478,
+        0.3364068324269812,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w47",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 47,
+      "line_ordinal": 3,
+      "text": "while",
+      "start": 176,
+      "end": 181,
+      "bbox": [
+        208.93898010253906,
+        134.34376525878906,
+        233.99697875976562,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.3414035622590508,
+        0.16962596623584478,
+        0.38234800450942097,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w48",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 48,
+      "line_ordinal": 3,
+      "text": "retaining",
+      "start": 182,
+      "end": 191,
+      "bbox": [
+        237.0549774169922,
+        134.34376525878906,
+        279.23992919921875,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.3873447343414905,
+        0.16962596623584478,
+        0.4562743941163705,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w49",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 49,
+      "line_ordinal": 3,
+      "text": "page",
+      "start": 6,
+      "end": 10,
+      "bbox": [
+        282.2979431152344,
+        134.34376525878906,
+        306.7619323730469,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.46127114888110193,
+        0.16962596623584478,
+        0.5012449875376583,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w50",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 50,
+      "line_ordinal": 3,
+      "text": "and",
+      "start": 49,
+      "end": 52,
+      "bbox": [
+        309.8199462890625,
+        134.34376525878906,
+        328.1679382324219,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.5062417423023897,
+        0.16962596623584478,
+        0.536222121294807,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w51",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 51,
+      "line_ordinal": 3,
+      "text": "page_end.",
+      "start": 201,
+      "end": 210,
+      "bbox": [
+        331.2259521484375,
+        134.34376525878906,
+        383.2119445800781,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.5412188760595384,
+        0.16962596623584478,
+        0.6261633081373825,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w52",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 52,
+      "line_ordinal": 3,
+      "text": "The",
+      "start": 91,
+      "end": 94,
+      "bbox": [
+        386.26995849609375,
+        134.34376525878906,
+        405.22296142578125,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.631160062902114,
+        0.16962596623584478,
+        0.6621290219375511,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w53",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 53,
+      "line_ordinal": 3,
+      "text": "same",
+      "start": 95,
+      "end": 99,
+      "bbox": [
+        408.2809753417969,
+        134.34376525878906,
+        435.17596435546875,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.6671257767022825,
+        0.16962596623584478,
+        0.7110718371821385,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w54",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 54,
+      "line_ordinal": 3,
+      "text": "sentence",
+      "start": 100,
+      "end": 108,
+      "bbox": [
+        438.2339782714844,
+        134.34376525878906,
+        482.8719787597656,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.7160685919468699,
+        0.16962596623584478,
+        0.7890065012414471,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w55",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 55,
+      "line_ordinal": 3,
+      "text": "continues",
+      "start": 109,
+      "end": 118,
+      "bbox": [
+        485.92999267578125,
+        134.34376525878906,
+        533.0100708007812,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.7940032560061785,
+        0.16962596623584478,
+        0.8709314882365706,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w56",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 56,
+      "line_ordinal": 4,
+      "text": "across",
+      "start": 119,
+      "end": 125,
+      "bbox": [
+        72.0,
+        149.12501525878906,
+        104.3949966430664,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.18828916068028922,
+        0.1705800598742915,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w57",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 57,
+      "line_ordinal": 4,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        107.45299530029297,
+        149.12501525878906,
+        122.74298858642578,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.17557678970636106,
+        0.18828916068028922,
+        0.2005604388667088,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w58",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 58,
+      "line_ordinal": 4,
+      "text": "page",
+      "start": 6,
+      "end": 10,
+      "bbox": [
+        125.80098724365234,
+        149.12501525878906,
+        150.26498413085938,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.20555716869877835,
+        0.18828916068028922,
+        0.24553101982166564,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w59",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 59,
+      "line_ordinal": 4,
+      "text": "boundary",
+      "start": 135,
+      "end": 143,
+      "bbox": [
+        153.32298278808594,
+        149.12501525878906,
+        199.1819610595703,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.2505277496537352,
+        0.18828916068028922,
+        0.3254607206855724,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w60",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 60,
+      "line_ordinal": 4,
+      "text": "so",
+      "start": 11,
+      "end": 13,
+      "bbox": [
+        202.23995971679688,
+        149.12501525878906,
+        213.85595703125,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.33045745051764197,
+        0.18828916068028922,
+        0.3494378382863562,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w61",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 61,
+      "line_ordinal": 4,
+      "text": "v2",
+      "start": 147,
+      "end": 149,
+      "bbox": [
+        216.91395568847656,
+        149.12501525878906,
+        228.5299530029297,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.3544345681184258,
+        0.18828916068028922,
+        0.37341495588714,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w62",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 62,
+      "line_ordinal": 4,
+      "text": "may",
+      "start": 150,
+      "end": 153,
+      "bbox": [
+        231.58795166015625,
+        149.12501525878906,
+        252.366943359375,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.3784116857192096,
+        0.18828916068028922,
+        0.41236428653492646,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w63",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 63,
+      "line_ordinal": 4,
+      "text": "merge",
+      "start": 154,
+      "end": 159,
+      "bbox": [
+        255.42494201660156,
+        149.12501525878906,
+        286.59893798828125,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.417361016366996,
+        0.18828916068028922,
+        0.4682989182815053,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w64",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 64,
+      "line_ordinal": 4,
+      "text": "adjacent",
+      "start": 160,
+      "end": 168,
+      "bbox": [
+        289.6569519042969,
+        149.12501525878906,
+        331.2369384765625,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.4732956730462367,
+        0.18828916068028922,
+        0.5412368275760825,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w65",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 65,
+      "line_ordinal": 4,
+      "text": "blocks",
+      "start": 169,
+      "end": 175,
+      "bbox": [
+        334.2949523925781,
+        149.12501525878906,
+        365.46893310546875,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.546233582340814,
+        0.18828916068028922,
+        0.5971714593226614,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w66",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 66,
+      "line_ordinal": 4,
+      "text": "while",
+      "start": 176,
+      "end": 181,
+      "bbox": [
+        368.5269470214844,
+        149.12501525878906,
+        393.58489990234375,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.6021682140873927,
+        0.18828916068028922,
+        0.6431125815397774,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w67",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 67,
+      "line_ordinal": 4,
+      "text": "retaining",
+      "start": 182,
+      "end": 191,
+      "bbox": [
+        396.6429138183594,
+        149.12501525878906,
+        438.827880859375,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.6481093363045087,
+        0.18828916068028922,
+        0.7170390210120506,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w68",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 68,
+      "line_ordinal": 4,
+      "text": "page",
+      "start": 6,
+      "end": 10,
+      "bbox": [
+        441.8858947753906,
+        149.12501525878906,
+        466.3498840332031,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.722035775776782,
+        0.18828916068028922,
+        0.7620096144333385,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w69",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 69,
+      "line_ordinal": 4,
+      "text": "and",
+      "start": 49,
+      "end": 52,
+      "bbox": [
+        469.40789794921875,
+        149.12501525878906,
+        487.7558898925781,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.7670063691980699,
+        0.18828916068028922,
+        0.7969867481904871,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p1:b0:w70",
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "ordinal": 70,
+      "line_ordinal": 5,
+      "text": "page_end.",
+      "start": 201,
+      "end": 210,
+      "bbox": [
+        72.0,
+        163.90626525878906,
+        123.98597717285156,
+        179.020263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.20695235512473367,
+        0.2025914659687117,
+        0.22603568645438762
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w0",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "Continuation",
+      "start": 0,
+      "end": 12,
+      "bbox": [
+        72.0,
+        90.00001525878906,
+        133.7539825439453,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.11363638290251145,
+        0.21855225905873418,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w1",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "text",
+      "start": 13,
+      "end": 17,
+      "bbox": [
+        136.81198120117188,
+        90.00001525878906,
+        154.54397583007812,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.2235489888908037,
+        0.11363638290251145,
+        0.2525228363236571,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w2",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "remains",
+      "start": 18,
+      "end": 25,
+      "bbox": [
+        157.6019744873047,
+        90.00001525878906,
+        196.71795654296875,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.25751956615572663,
+        0.11363638290251145,
+        0.3214345695146548,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w3",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "part",
+      "start": 26,
+      "end": 30,
+      "bbox": [
+        199.7759552001953,
+        90.00001525878906,
+        218.72894287109375,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.3264312993467244,
+        0.11363638290251145,
+        0.3574002334494996,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w4",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "of",
+      "start": 31,
+      "end": 33,
+      "bbox": [
+        221.7869415283203,
+        90.00001525878906,
+        230.9609375,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.3623969632815691,
+        0.11363638290251145,
+        0.3773871527777778,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w5",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        234.01893615722656,
+        90.00001525878906,
+        249.30892944335938,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.38238388260984735,
+        0.11363638290251145,
+        0.4073675317701951,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w6",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 6,
+      "line_ordinal": 0,
+      "text": "preceding",
+      "start": 38,
+      "end": 47,
+      "bbox": [
+        252.36692810058594,
+        90.00001525878906,
+        300.66790771484375,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.4123642616022646,
+        0.11363638290251145,
+        0.4912874309066074,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w7",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 7,
+      "line_ordinal": 0,
+      "text": "structure",
+      "start": 48,
+      "end": 57,
+      "bbox": [
+        303.7259216308594,
+        90.00001525878906,
+        346.51593017578125,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.49628418567133886,
+        0.11363638290251145,
+        0.5662025002872243,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w8",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 8,
+      "line_ordinal": 0,
+      "text": "and",
+      "start": 58,
+      "end": 61,
+      "bbox": [
+        349.5739440917969,
+        90.00001525878906,
+        367.92193603515625,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.5711992550519557,
+        0.11363638290251145,
+        0.6011796340443729,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w9",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 9,
+      "line_ordinal": 0,
+      "text": "contains",
+      "start": 62,
+      "end": 70,
+      "bbox": [
+        370.9799499511719,
+        90.00001525878906,
+        411.9439392089844,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.6061763888091044,
+        0.11363638290251145,
+        0.6731110117793863,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w10",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 10,
+      "line_ordinal": 0,
+      "text": "no",
+      "start": 71,
+      "end": 73,
+      "bbox": [
+        415.001953125,
+        90.00001525878906,
+        427.23394775390625,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.6781077665441176,
+        0.11363638290251145,
+        0.6980946858723959,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w11",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 11,
+      "line_ordinal": 0,
+      "text": "heading",
+      "start": 74,
+      "end": 81,
+      "bbox": [
+        430.2919616699219,
+        90.00001525878906,
+        469.429931640625,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.7030914406371273,
+        0.11363638290251145,
+        0.7670423719618056,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w12",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 12,
+      "line_ordinal": 0,
+      "text": "marker.",
+      "start": 82,
+      "end": 89,
+      "bbox": [
+        472.4879455566406,
+        90.00001525878906,
+        509.7669372558594,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.772039126726537,
+        0.11363638290251145,
+        0.8329525118559794,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w13",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 13,
+      "line_ordinal": 0,
+      "text": "The",
+      "start": 90,
+      "end": 93,
+      "bbox": [
+        512.824951171875,
+        90.00001525878906,
+        531.7780151367188,
+        105.114013671875
+      ],
+      "normalized_bbox": [
+        0.8379492666207108,
+        0.11363638290251145,
+        0.8689183253867954,
+        0.13271971423216541
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w14",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 14,
+      "line_ordinal": 1,
+      "text": "continuation",
+      "start": 94,
+      "end": 106,
+      "bbox": [
+        72.0,
+        104.78126525878906,
+        131.31198120117188,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.13229957734695588,
+        0.21456206078622855,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w15",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 15,
+      "line_ordinal": 1,
+      "text": "preserves",
+      "start": 107,
+      "end": 116,
+      "bbox": [
+        134.36997985839844,
+        104.78126525878906,
+        182.6599578857422,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.2195587906182981,
+        0.13229957734695588,
+        0.29846398347343495,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w16",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 16,
+      "line_ordinal": 1,
+      "text": "deterministic",
+      "start": 117,
+      "end": 130,
+      "bbox": [
+        185.71795654296875,
+        104.78126525878906,
+        247.44993591308594,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.3034607133055045,
+        0.13229957734695588,
+        0.40432996064229726,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w17",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 17,
+      "line_ordinal": 1,
+      "text": "words",
+      "start": 131,
+      "end": 136,
+      "bbox": [
+        250.5079345703125,
+        104.78126525878906,
+        279.84490966796875,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.4093266904743668,
+        0.13229957734695588,
+        0.45726292429406656,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w18",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 18,
+      "line_ordinal": 1,
+      "text": "and",
+      "start": 58,
+      "end": 61,
+      "bbox": [
+        282.9029235839844,
+        104.78126525878906,
+        301.25091552734375,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.462259679058798,
+        0.13229957734695588,
+        0.4922400580512153,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w19",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 19,
+      "line_ordinal": 1,
+      "text": "allows",
+      "start": 141,
+      "end": 147,
+      "bbox": [
+        304.3089294433594,
+        104.78126525878906,
+        334.86688232421875,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.49723681281594667,
+        0.13229957734695588,
+        0.5471681083729064,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w20",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 20,
+      "line_ordinal": 1,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        337.9248962402344,
+        104.78126525878906,
+        353.21490478515625,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.5521648631376379,
+        0.13229957734695588,
+        0.5771485372306475,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w21",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 21,
+      "line_ordinal": 1,
+      "text": "mapping",
+      "start": 152,
+      "end": 159,
+      "bbox": [
+        356.2729187011719,
+        104.78126525878906,
+        398.4578857421875,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.5821452919953789,
+        0.13229957734695588,
+        0.6510749767029208,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w22",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 22,
+      "line_ordinal": 1,
+      "text": "probe",
+      "start": 160,
+      "end": 165,
+      "bbox": [
+        401.5158996582031,
+        104.78126525878906,
+        429.64288330078125,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.6560717314676522,
+        0.13229957734695588,
+        0.702030855066636,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w23",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 23,
+      "line_ordinal": 1,
+      "text": "to",
+      "start": 166,
+      "end": 168,
+      "bbox": [
+        432.7008972167969,
+        104.78126525878906,
+        441.8749084472656,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.7070276098313675,
+        0.13229957734695588,
+        0.722017824260238,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w24",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 24,
+      "line_ordinal": 1,
+      "text": "verify",
+      "start": 169,
+      "end": 175,
+      "bbox": [
+        444.93292236328125,
+        104.78126525878906,
+        471.2119140625,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.7270145790249694,
+        0.13229957734695588,
+        0.7699541079452614,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w25",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 25,
+      "line_ordinal": 1,
+      "text": "a",
+      "start": 7,
+      "end": 8,
+      "bbox": [
+        474.2699279785156,
+        104.78126525878906,
+        480.38592529296875,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.7749508627099928,
+        0.13229957734695588,
+        0.7849443223741319,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w26",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 26,
+      "line_ordinal": 1,
+      "text": "cross-page",
+      "start": 178,
+      "end": 188,
+      "bbox": [
+        483.4439392089844,
+        104.78126525878906,
+        537.8500366210938,
+        119.895263671875
+      ],
+      "normalized_bbox": [
+        0.7899410771388634,
+        0.13229957734695588,
+        0.8788399291194342,
+        0.15138290867660986
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w27",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 27,
+      "line_ordinal": 2,
+      "text": "chunk.",
+      "start": 189,
+      "end": 195,
+      "bbox": [
+        72.0,
+        119.56251525878906,
+        104.40599060058594,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.15096277179140033,
+        0.17059802385716658,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w28",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 28,
+      "line_ordinal": 2,
+      "text": "The",
+      "start": 90,
+      "end": 93,
+      "bbox": [
+        107.4639892578125,
+        119.56251525878906,
+        126.41698455810547,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.1755947536892361,
+        0.15096277179140033,
+        0.20656370025834228,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w29",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 29,
+      "line_ordinal": 2,
+      "text": "continuation",
+      "start": 94,
+      "end": 106,
+      "bbox": [
+        129.47499084472656,
+        119.56251525878906,
+        188.78697204589844,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.21156044255674275,
+        0.15096277179140033,
+        0.30847544451944187,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w30",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 30,
+      "line_ordinal": 2,
+      "text": "preserves",
+      "start": 107,
+      "end": 116,
+      "bbox": [
+        191.844970703125,
+        119.56251525878906,
+        240.13494873046875,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.3134721743515114,
+        0.15096277179140033,
+        0.3923773672066483,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w31",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 31,
+      "line_ordinal": 2,
+      "text": "deterministic",
+      "start": 117,
+      "end": 130,
+      "bbox": [
+        243.1929473876953,
+        119.56251525878906,
+        304.9248962402344,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.39737409703871784,
+        0.15096277179140033,
+        0.4982432945101869,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w32",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 32,
+      "line_ordinal": 2,
+      "text": "words",
+      "start": 131,
+      "end": 136,
+      "bbox": [
+        307.98291015625,
+        119.56251525878906,
+        337.31988525390625,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.5032400492749183,
+        0.15096277179140033,
+        0.5511762830946181,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w33",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 33,
+      "line_ordinal": 2,
+      "text": "and",
+      "start": 58,
+      "end": 61,
+      "bbox": [
+        340.3778991699219,
+        119.56251525878906,
+        358.72589111328125,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.5561730378593495,
+        0.15096277179140033,
+        0.5861534168517667,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w34",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 34,
+      "line_ordinal": 2,
+      "text": "allows",
+      "start": 141,
+      "end": 147,
+      "bbox": [
+        361.7839050292969,
+        119.56251525878906,
+        392.34185791015625,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.5911501716164982,
+        0.15096277179140033,
+        0.6410814671734579,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w35",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 35,
+      "line_ordinal": 2,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        395.3998718261719,
+        119.56251525878906,
+        410.68988037109375,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.6460782219381893,
+        0.15096277179140033,
+        0.6710618960311989,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w36",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 36,
+      "line_ordinal": 2,
+      "text": "mapping",
+      "start": 152,
+      "end": 159,
+      "bbox": [
+        413.7478942871094,
+        119.56251525878906,
+        455.932861328125,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.6760586507959303,
+        0.15096277179140033,
+        0.7449883355034722,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w37",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 37,
+      "line_ordinal": 2,
+      "text": "probe",
+      "start": 160,
+      "end": 165,
+      "bbox": [
+        458.9908752441406,
+        119.56251525878906,
+        487.11785888671875,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.7499850902682036,
+        0.15096277179140033,
+        0.7959442138671875,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w38",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 38,
+      "line_ordinal": 2,
+      "text": "to",
+      "start": 166,
+      "end": 168,
+      "bbox": [
+        490.1758728027344,
+        119.56251525878906,
+        499.3498840332031,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.8009409686319189,
+        0.15096277179140033,
+        0.8159311830607894,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w39",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 39,
+      "line_ordinal": 2,
+      "text": "verify",
+      "start": 169,
+      "end": 175,
+      "bbox": [
+        502.40789794921875,
+        119.56251525878906,
+        528.6869506835938,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.8209279378255209,
+        0.15096277179140033,
+        0.8638675664764603,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w40",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 40,
+      "line_ordinal": 2,
+      "text": "a",
+      "start": 7,
+      "end": 8,
+      "bbox": [
+        531.7449340820312,
+        119.56251525878906,
+        537.8609619140625,
+        134.676513671875
+      ],
+      "normalized_bbox": [
+        0.8688642713758681,
+        0.15096277179140033,
+        0.8788577809053308,
+        0.17004610312105428
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w41",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 41,
+      "line_ordinal": 3,
+      "text": "cross-page",
+      "start": 178,
+      "end": 188,
+      "bbox": [
+        72.0,
+        134.34376525878906,
+        126.40599060058594,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.16962596623584478,
+        0.2065457362754672,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w42",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 42,
+      "line_ordinal": 3,
+      "text": "chunk.",
+      "start": 189,
+      "end": 195,
+      "bbox": [
+        129.4639892578125,
+        134.34376525878906,
+        161.86997985839844,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.21154246610753677,
+        0.16962596623584478,
+        0.2644934311411739,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w43",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 43,
+      "line_ordinal": 3,
+      "text": "The",
+      "start": 90,
+      "end": 93,
+      "bbox": [
+        164.927978515625,
+        134.34376525878906,
+        183.88096618652344,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.26949016097324346,
+        0.16962596623584478,
+        0.3004590950760187,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w44",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 44,
+      "line_ordinal": 3,
+      "text": "continuation",
+      "start": 94,
+      "end": 106,
+      "bbox": [
+        186.93896484375,
+        134.34376525878906,
+        246.25094604492188,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.30545582490808826,
+        0.16962596623584478,
+        0.4023708268707874,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w45",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 45,
+      "line_ordinal": 3,
+      "text": "preserves",
+      "start": 107,
+      "end": 116,
+      "bbox": [
+        249.30894470214844,
+        134.34376525878906,
+        297.59893798828125,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.4073675567028569,
+        0.16962596623584478,
+        0.48627277449065565,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w46",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 46,
+      "line_ordinal": 3,
+      "text": "deterministic",
+      "start": 117,
+      "end": 130,
+      "bbox": [
+        300.6569519042969,
+        134.34376525878906,
+        362.388916015625,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.491269529255387,
+        0.16962596623584478,
+        0.592138751659518,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w47",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 47,
+      "line_ordinal": 3,
+      "text": "words",
+      "start": 131,
+      "end": 136,
+      "bbox": [
+        365.4469299316406,
+        134.34376525878906,
+        394.7839050292969,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.5971355064242494,
+        0.16962596623584478,
+        0.6450717402439491,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w48",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 48,
+      "line_ordinal": 3,
+      "text": "and",
+      "start": 58,
+      "end": 61,
+      "bbox": [
+        397.8419189453125,
+        134.34376525878906,
+        416.1899108886719,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.6500684950086806,
+        0.16962596623584478,
+        0.6800488740010978,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w49",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 49,
+      "line_ordinal": 3,
+      "text": "allows",
+      "start": 141,
+      "end": 147,
+      "bbox": [
+        419.2479248046875,
+        134.34376525878906,
+        449.8058776855469,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.6850456287658292,
+        0.16962596623584478,
+        0.734976924322789,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w50",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 50,
+      "line_ordinal": 3,
+      "text": "the",
+      "start": 34,
+      "end": 37,
+      "bbox": [
+        452.8638916015625,
+        134.34376525878906,
+        468.1539001464844,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.7399736790875204,
+        0.16962596623584478,
+        0.76495735318053,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w51",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 51,
+      "line_ordinal": 3,
+      "text": "mapping",
+      "start": 152,
+      "end": 159,
+      "bbox": [
+        471.2119140625,
+        134.34376525878906,
+        513.3969116210938,
+        149.457763671875
+      ],
+      "normalized_bbox": [
+        0.7699541079452614,
+        0.16962596623584478,
+        0.8388838425181271,
+        0.18870929756549873
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w52",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 52,
+      "line_ordinal": 4,
+      "text": "probe",
+      "start": 160,
+      "end": 165,
+      "bbox": [
+        72.0,
+        149.12501525878906,
+        100.12699127197266,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.18828916068028922,
+        0.1636061948888442,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w53",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 53,
+      "line_ordinal": 4,
+      "text": "to",
+      "start": 166,
+      "end": 168,
+      "bbox": [
+        103.18498992919922,
+        149.12501525878906,
+        112.3589859008789,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.16860292472091376,
+        0.18828916068028922,
+        0.1835931142171224,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w54",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 54,
+      "line_ordinal": 4,
+      "text": "verify",
+      "start": 169,
+      "end": 175,
+      "bbox": [
+        115.41698455810547,
+        149.12501525878906,
+        141.69598388671875,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.18858984404919193,
+        0.18828916068028922,
+        0.23152938543581494,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w55",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 55,
+      "line_ordinal": 4,
+      "text": "a",
+      "start": 7,
+      "end": 8,
+      "bbox": [
+        144.7539825439453,
+        149.12501525878906,
+        150.86997985839844,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.2365261152678845,
+        0.18828916068028922,
+        0.2465195749320236,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w56",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 56,
+      "line_ordinal": 4,
+      "text": "cross-page",
+      "start": 178,
+      "end": 188,
+      "bbox": [
+        153.927978515625,
+        149.12501525878906,
+        208.33395385742188,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.25151630476409315,
+        0.18828916068028922,
+        0.34041495728336907,
+        0.20737249200994318
+      ]
+    },
+    {
+      "word_id": "pdf-v2-cross-page:p2:b0:w57",
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "ordinal": 57,
+      "line_ordinal": 4,
+      "text": "chunk.",
+      "start": 189,
+      "end": 195,
+      "bbox": [
+        211.39195251464844,
+        149.12501525878906,
+        243.79794311523438,
+        164.239013671875
+      ],
+      "normalized_bbox": [
+        0.3454116871154386,
+        0.18828916068028922,
+        0.3983626521490758,
+        0.20737249200994318
+      ]
+    }
+  ],
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "Cross-page source block begins on the first page and intentionally ends without a heading. The same sentence continues across the page boundary so v2 may merge adjacent blocks while retaining page and page_end. The same sentence continues across the page boundary so v2 may merge adjacent blocks while retaining page and page_end. The same sentence continues across the page boundary so v2 may merge adjacent blocks while retaining page and page_end.\n\nContinuation text remains part of the preceding structure and contains no heading marker. The continuation preserves deterministic words and allows the mapping probe to verify a cross-page chunk. The continuation preserves deterministic words and allows the mapping probe to verify a cross-page chunk. The continuation preserves deterministic words and allows the mapping probe to verify a cross-page chunk.",
+      "page": 1,
+      "page_end": 2,
+      "section": "",
+      "chunker": "v2"
+    }
+  ],
+  "anchors": [
+    {
+      "block_id": "pdf-v2-cross-page:p1:b0",
+      "chunk_index": 0,
+      "coverage": 0.523865,
+      "is_primary": true,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          72.0,
+          90.00001525878906,
+          534.8469848632812,
+          179.020263671875
+        ],
+        "normalized_bbox": [
+          0.11764705882352941,
+          0.11363638290251145,
+          0.8739329818027471,
+          0.22603568645438762
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-v2-cross-page:p2:b0",
+      "chunk_index": 0,
+      "coverage": 0.473807,
+      "is_primary": false,
+      "locator": {
+        "page": 2,
+        "bbox": [
+          72.0,
+          90.00001525878906,
+          537.8609619140625,
+          164.239013671875
+        ],
+        "normalized_bbox": [
+          0.11764705882352941,
+          0.11363638290251145,
+          0.8788577809053308,
+          0.20737249200994318
+        ]
+      }
+    }
+  ],
+  "mapped_count": 1,
+  "unmapped_count": 0,
+  "unmapped_reasons": [],
+  "metrics": {
+    "page_count": 2,
+    "block_count": 2,
+    "word_count": 129,
+    "line_count": 11,
+    "mapped_chunk_rate": 1.0,
+    "anchor_count": 2,
+    "bbox_max_error": 0.0,
+    "bbox_median_error": 0.0,
+    "markdown_line_exact_rate": null
+  }
+}

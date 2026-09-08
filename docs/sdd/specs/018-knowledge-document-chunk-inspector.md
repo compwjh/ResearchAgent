@@ -2,9 +2,9 @@
 
 ## 状态
 
-**当前状态：`实施中`（需求/技术评审已通过；用户已明确要求开始 Spec018，当前进入 Task02 Go/No-Go 门禁）**
+**当前状态：`待确认`（Task02 Go/No-Go 为 `NO-GO`，需先修订来源锚点契约）**
 
-> 需求评审与技术复审已通过（`018-requirement-review.md`、`018-tech-review.md`）；用户已明确要求“开展 018 的工作”。本轮先执行 Task02 来源锚点 Go/No-Go，未通过前不修改业务代码。
+> 需求评审与技术复审已通过（`018-requirement-review.md`、`018-tech-review.md`）；用户已明确要求“开展 018 的工作”。Task02 已完成只读来源锚点 Go/No-Go，但严格结论为 `NO-GO`：现有 parser 仅返回 `(page, text)`，不能证明同源 bbox/line/word provenance DTO，且 hostile PDF 浏览器零网络请求证据未建立。按门禁回退为待确认，Task03–07 暂停，未修改业务代码。
 
 ## 一句话目标
 

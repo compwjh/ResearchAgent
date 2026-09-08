@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/provenance-dto-v1",
+  "title": "Spec018 source provenance DTO",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mapping_algorithm_version",
+    "document_id",
+    "media_type",
+    "source_sha256",
+    "source_hash_state",
+    "pages",
+    "blocks",
+    "chunks",
+    "anchors",
+    "mapped_count",
+    "unmapped_count"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "provenance-dto-v1"
+    },
+    "mapping_algorithm_version": {
+      "const": "source-anchor-v1"
+    },
+    "sample_id": {
+      "type": "string"
+    },
+    "document_id": {
+      "type": "string"
+    },
+    "media_type": {
+      "enum": [
+        "application/pdf",
+        "text/markdown"
+      ]
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "indexed_source_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_hash_state": {
+      "enum": [
+        "verified_fixture",
+        "legacy_unknown",
+        "unverified"
+      ]
+    },
+    "source_parser_version": {
+      "type": "string"
+    },
+    "normalize_version": {
+      "type": "string"
+    },
+    "chunker": {
+      "type": "string"
+    },
+    "chunker_config": {
+      "type": "object"
+    },
+    "chunker_config_fingerprint": {
+      "type": "string"
+    },
+    "payload_schema_version": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "building",
+        "ready",
+        "partial",
+        "failed"
+      ]
+    },
+    "progress": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "index_fingerprint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pages": {
+      "type": "array"
+    },
+    "blocks": {
+      "type": "array"
+    },
+    "words": {
+      "type": "array"
+    },
+    "chunks": {
+      "type": "array"
+    },
+    "anchors": {
+      "type": "array"
+    },
+    "mapped_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unmapped_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unmapped_reasons": {
+      "type": "array"
+    },
+    "metrics": {
+      "type": "object"
+    }
+  }
+}

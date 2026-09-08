@@ -1,0 +1,5787 @@
+{
+  "schema_version": "provenance-dto-v1",
+  "mapping_algorithm_version": "source-anchor-v1",
+  "sample_id": "pdf-two-column-v1-overlap",
+  "document_id": "fixture-pdf-two-column-v1-overlap",
+  "media_type": "application/pdf",
+  "source_sha256": "33726da69e2c79bd5b3d4fe10dc14a2b64760802151b4af97b97f4bb84e99e7d",
+  "indexed_source_sha256": "33726da69e2c79bd5b3d4fe10dc14a2b64760802151b4af97b97f4bb84e99e7d",
+  "source_hash_state": "verified_fixture",
+  "source_parser_version": "pymupdf-1.28.2-extract_pages_normalized-unversioned",
+  "normalize_version": "normalize.py-unversioned",
+  "chunker": "v1",
+  "chunker_config": {
+    "chunk_size": 1000,
+    "overlap": 200
+  },
+  "chunker_config_fingerprint": "5d528ea9973d0fa2a78e7b91e4bf84b3f4bb2a345a646a6d89d9cd3f056c2559",
+  "payload_schema_version": "qdrant-payload-v1",
+  "status": "ready",
+  "progress": 100,
+  "error": null,
+  "index_fingerprint": "1f54fdb66cb88782282a58ba3a3e38de95d005c09d8eb5144d719e01b068b93c",
+  "pages": [
+    {
+      "page": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "rotation": 0,
+      "crop_box": [
+        0.0,
+        0.0,
+        612.0,
+        792.0
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 0,
+      "page": 1,
+      "text": "LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.",
+      "raw_text": "LEFT COLUMN repeated anchor alpha. LEFT\nCOLUMN repeated anchor alpha. LEFT COLUMN\nrepeated anchor alpha. LEFT COLUMN repeated\nanchor alpha. LEFT COLUMN repeated anchor\nalpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT\nCOLUMN repeated anchor alpha. LEFT COLUMN\nrepeated anchor alpha. LEFT COLUMN repeated\nanchor alpha. LEFT COLUMN repeated anchor\nalpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT\nCOLUMN repeated anchor alpha. LEFT COLUMN\nrepeated anchor alpha. LEFT COLUMN repeated\nanchor alpha. LEFT COLUMN repeated anchor\nalpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT\nCOLUMN repeated anchor alpha. LEFT COLUMN\nrepeated anchor alpha. LEFT COLUMN repeated\nanchor alpha.\n",
+      "start": 0,
+      "end": 770,
+      "bbox": [
+        54.0,
+        72.0,
+        276.2899475097656,
+        327.614990234375
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.09090909090909091,
+        0.45145416259765625,
+        0.4136552906999684
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "LEFT COLUMN repeated anchor alpha. LEFT",
+          "start": 0,
+          "end": 39,
+          "bbox": [
+            54.0,
+            72.0,
+            257.4099426269531,
+            85.73999786376953
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.09090909090909091,
+            0.42060448141659007,
+            0.10825757306031507
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "COLUMN repeated anchor alpha. LEFT COLUMN",
+          "start": 40,
+          "end": 81,
+          "bbox": [
+            54.0,
+            85.4375,
+            276.2899475097656,
+            99.17749786376953
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.10787563131313131,
+            0.45145416259765625,
+            0.12522411346435547
+          ]
+        },
+        {
+          "ordinal": 2,
+          "text": "repeated anchor alpha. LEFT COLUMN repeated",
+          "start": 82,
+          "end": 125,
+          "bbox": [
+            54.0,
+            98.875,
+            272.4299621582031,
+            112.61499786376953
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.12484217171717171,
+            0.44514699699052795,
+            0.14219065386839588
+          ]
+        },
+        {
+          "ordinal": 3,
+          "text": "anchor alpha. LEFT COLUMN repeated anchor",
+          "start": 126,
+          "end": 167,
+          "bbox": [
+            54.0,
+            112.3125,
+            263.52996826171875,
+            126.05249786376953
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.14180871212121213,
+            0.430604523303462,
+            0.15915719427243627
+          ]
+        },
+        {
+          "ordinal": 4,
+          "text": "alpha. LEFT COLUMN repeated anchor alpha.",
+          "start": 168,
+          "end": 209,
+          "bbox": [
+            54.0,
+            125.75,
+            260.1999816894531,
+            139.49000549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.1587752525252525,
+            0.4251633687736162,
+            0.17612374430955058
+          ]
+        },
+        {
+          "ordinal": 5,
+          "text": "LEFT COLUMN repeated anchor alpha. LEFT",
+          "start": 210,
+          "end": 249,
+          "bbox": [
+            54.0,
+            139.1875,
+            257.4099426269531,
+            152.92750549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.17574179292929293,
+            0.42060448141659007,
+            0.193090284713591
+          ]
+        },
+        {
+          "ordinal": 6,
+          "text": "COLUMN repeated anchor alpha. LEFT COLUMN",
+          "start": 250,
+          "end": 291,
+          "bbox": [
+            54.0,
+            152.625,
+            276.2899475097656,
+            166.36500549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.19270833333333334,
+            0.45145416259765625,
+            0.21005682511763138
+          ]
+        },
+        {
+          "ordinal": 7,
+          "text": "repeated anchor alpha. LEFT COLUMN repeated",
+          "start": 292,
+          "end": 335,
+          "bbox": [
+            54.0,
+            166.0625,
+            272.4299621582031,
+            179.80250549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.20967487373737373,
+            0.44514699699052795,
+            0.2270233655216718
+          ]
+        },
+        {
+          "ordinal": 8,
+          "text": "anchor alpha. LEFT COLUMN repeated anchor",
+          "start": 336,
+          "end": 377,
+          "bbox": [
+            54.0,
+            179.5,
+            263.52996826171875,
+            193.24000549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.22664141414141414,
+            0.430604523303462,
+            0.2439899059257122
+          ]
+        },
+        {
+          "ordinal": 9,
+          "text": "alpha. LEFT COLUMN repeated anchor alpha.",
+          "start": 378,
+          "end": 419,
+          "bbox": [
+            54.0,
+            192.9375,
+            260.1999816894531,
+            206.67750549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.24360795454545456,
+            0.4251633687736162,
+            0.2609564463297526
+          ]
+        },
+        {
+          "ordinal": 10,
+          "text": "LEFT COLUMN repeated anchor alpha. LEFT",
+          "start": 420,
+          "end": 459,
+          "bbox": [
+            54.0,
+            206.375,
+            257.4099426269531,
+            220.11500549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.260574494949495,
+            0.42060448141659007,
+            0.277922986733793
+          ]
+        },
+        {
+          "ordinal": 11,
+          "text": "COLUMN repeated anchor alpha. LEFT COLUMN",
+          "start": 460,
+          "end": 501,
+          "bbox": [
+            54.0,
+            219.8125,
+            276.2899475097656,
+            233.55250549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.27754103535353536,
+            0.45145416259765625,
+            0.2948895271378334
+          ]
+        },
+        {
+          "ordinal": 12,
+          "text": "repeated anchor alpha. LEFT COLUMN repeated",
+          "start": 502,
+          "end": 545,
+          "bbox": [
+            54.0,
+            233.25,
+            272.4299621582031,
+            246.99000549316406
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.29450757575757575,
+            0.44514699699052795,
+            0.31185606754187384
+          ]
+        },
+        {
+          "ordinal": 13,
+          "text": "anchor alpha. LEFT COLUMN repeated anchor",
+          "start": 546,
+          "end": 587,
+          "bbox": [
+            54.0,
+            246.6875,
+            263.52996826171875,
+            260.427490234375
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.3114741161616162,
+            0.430604523303462,
+            0.32882258867976644
+          ]
+        },
+        {
+          "ordinal": 14,
+          "text": "alpha. LEFT COLUMN repeated anchor alpha.",
+          "start": 588,
+          "end": 629,
+          "bbox": [
+            54.0,
+            260.125,
+            260.1999816894531,
+            273.864990234375
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.3284406565656566,
+            0.4251633687736162,
+            0.3457891290838068
+          ]
+        },
+        {
+          "ordinal": 15,
+          "text": "LEFT COLUMN repeated anchor alpha. LEFT",
+          "start": 630,
+          "end": 669,
+          "bbox": [
+            54.0,
+            273.5625,
+            257.4099426269531,
+            287.302490234375
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.34540719696969696,
+            0.42060448141659007,
+            0.3627556694878472
+          ]
+        },
+        {
+          "ordinal": 16,
+          "text": "COLUMN repeated anchor alpha. LEFT COLUMN",
+          "start": 670,
+          "end": 711,
+          "bbox": [
+            54.0,
+            287.0,
+            276.2899475097656,
+            300.739990234375
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.36237373737373735,
+            0.45145416259765625,
+            0.37972220989188765
+          ]
+        },
+        {
+          "ordinal": 17,
+          "text": "repeated anchor alpha. LEFT COLUMN repeated",
+          "start": 712,
+          "end": 755,
+          "bbox": [
+            54.0,
+            300.4375,
+            272.4299621582031,
+            314.177490234375
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.3793402777777778,
+            0.44514699699052795,
+            0.39668875029592804
+          ]
+        },
+        {
+          "ordinal": 18,
+          "text": "anchor alpha.",
+          "start": 756,
+          "end": 769,
+          "bbox": [
+            54.0,
+            313.875,
+            114.5899887084961,
+            327.614990234375
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.3963068181818182,
+            0.1872385436413335,
+            0.4136552906999684
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    },
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 1,
+      "page": 1,
+      "text": "RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.",
+      "raw_text": "RIGHT COLUMN repeated anchor beta. RIGHT\nCOLUMN repeated anchor beta. RIGHT COLUMN\nrepeated anchor beta. RIGHT COLUMN repeated\nanchor beta. RIGHT COLUMN repeated anchor\nbeta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT\nCOLUMN repeated anchor beta. RIGHT COLUMN\nrepeated anchor beta. RIGHT COLUMN repeated\nanchor beta. RIGHT COLUMN repeated anchor\nbeta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT\nCOLUMN repeated anchor beta. RIGHT COLUMN\nrepeated anchor beta. RIGHT COLUMN repeated\nanchor beta. RIGHT COLUMN repeated anchor\nbeta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT\nCOLUMN repeated anchor beta. RIGHT COLUMN\nrepeated anchor beta. RIGHT COLUMN repeated\nanchor beta.\n",
+      "start": 0,
+      "end": 770,
+      "bbox": [
+        326.0,
+        72.0,
+        549.9498901367188,
+        327.614990234375
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.09090909090909091,
+        0.8986109315959456,
+        0.4136552906999684
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "RIGHT COLUMN repeated anchor beta. RIGHT",
+          "start": 0,
+          "end": 40,
+          "bbox": [
+            326.0,
+            72.0,
+            537.7299194335938,
+            85.73999786376953
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.09090909090909091,
+            0.8786436592052186,
+            0.10825757306031507
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "COLUMN repeated anchor beta. RIGHT COLUMN",
+          "start": 41,
+          "end": 82,
+          "bbox": [
+            326.0,
+            85.4375,
+            549.9498901367188,
+            99.17749786376953
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.10787563131313131,
+            0.8986109315959456,
+            0.12522411346435547
+          ]
+        },
+        {
+          "ordinal": 2,
+          "text": "repeated anchor beta. RIGHT COLUMN repeated",
+          "start": 83,
+          "end": 126,
+          "bbox": [
+            326.0,
+            98.875,
+            546.0899047851562,
+            112.61499786376953
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.12484217171717171,
+            0.8923037659888174,
+            0.14219065386839588
+          ]
+        },
+        {
+          "ordinal": 3,
+          "text": "anchor beta. RIGHT COLUMN repeated anchor",
+          "start": 127,
+          "end": 168,
+          "bbox": [
+            326.0,
+            112.3125,
+            537.18994140625,
+            126.05249786376953
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.14180871212121213,
+            0.8777613421670751,
+            0.15915719427243627
+          ]
+        },
+        {
+          "ordinal": 4,
+          "text": "beta. RIGHT COLUMN repeated anchor beta.",
+          "start": 169,
+          "end": 209,
+          "bbox": [
+            326.0,
+            125.75,
+            528.8599853515625,
+            139.49000549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.1587752525252525,
+            0.8641503028620302,
+            0.17612374430955058
+          ]
+        },
+        {
+          "ordinal": 5,
+          "text": "RIGHT COLUMN repeated anchor beta. RIGHT",
+          "start": 210,
+          "end": 250,
+          "bbox": [
+            326.0,
+            139.1875,
+            537.7299194335938,
+            152.92750549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.17574179292929293,
+            0.8786436592052186,
+            0.193090284713591
+          ]
+        },
+        {
+          "ordinal": 6,
+          "text": "COLUMN repeated anchor beta. RIGHT COLUMN",
+          "start": 251,
+          "end": 292,
+          "bbox": [
+            326.0,
+            152.625,
+            549.9498901367188,
+            166.36500549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.19270833333333334,
+            0.8986109315959456,
+            0.21005682511763138
+          ]
+        },
+        {
+          "ordinal": 7,
+          "text": "repeated anchor beta. RIGHT COLUMN repeated",
+          "start": 293,
+          "end": 336,
+          "bbox": [
+            326.0,
+            166.0625,
+            546.0899047851562,
+            179.80250549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.20967487373737373,
+            0.8923037659888174,
+            0.2270233655216718
+          ]
+        },
+        {
+          "ordinal": 8,
+          "text": "anchor beta. RIGHT COLUMN repeated anchor",
+          "start": 337,
+          "end": 378,
+          "bbox": [
+            326.0,
+            179.5,
+            537.18994140625,
+            193.24000549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.22664141414141414,
+            0.8777613421670751,
+            0.2439899059257122
+          ]
+        },
+        {
+          "ordinal": 9,
+          "text": "beta. RIGHT COLUMN repeated anchor beta.",
+          "start": 379,
+          "end": 419,
+          "bbox": [
+            326.0,
+            192.9375,
+            528.8599853515625,
+            206.67750549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.24360795454545456,
+            0.8641503028620302,
+            0.2609564463297526
+          ]
+        },
+        {
+          "ordinal": 10,
+          "text": "RIGHT COLUMN repeated anchor beta. RIGHT",
+          "start": 420,
+          "end": 460,
+          "bbox": [
+            326.0,
+            206.375,
+            537.7299194335938,
+            220.11500549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.260574494949495,
+            0.8786436592052186,
+            0.277922986733793
+          ]
+        },
+        {
+          "ordinal": 11,
+          "text": "COLUMN repeated anchor beta. RIGHT COLUMN",
+          "start": 461,
+          "end": 502,
+          "bbox": [
+            326.0,
+            219.8125,
+            549.9498901367188,
+            233.55250549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.27754103535353536,
+            0.8986109315959456,
+            0.2948895271378334
+          ]
+        },
+        {
+          "ordinal": 12,
+          "text": "repeated anchor beta. RIGHT COLUMN repeated",
+          "start": 503,
+          "end": 546,
+          "bbox": [
+            326.0,
+            233.25,
+            546.0899047851562,
+            246.99000549316406
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.29450757575757575,
+            0.8923037659888174,
+            0.31185606754187384
+          ]
+        },
+        {
+          "ordinal": 13,
+          "text": "anchor beta. RIGHT COLUMN repeated anchor",
+          "start": 547,
+          "end": 588,
+          "bbox": [
+            326.0,
+            246.6875,
+            537.18994140625,
+            260.427490234375
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.3114741161616162,
+            0.8777613421670751,
+            0.32882258867976644
+          ]
+        },
+        {
+          "ordinal": 14,
+          "text": "beta. RIGHT COLUMN repeated anchor beta.",
+          "start": 589,
+          "end": 629,
+          "bbox": [
+            326.0,
+            260.125,
+            528.8599853515625,
+            273.864990234375
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.3284406565656566,
+            0.8641503028620302,
+            0.3457891290838068
+          ]
+        },
+        {
+          "ordinal": 15,
+          "text": "RIGHT COLUMN repeated anchor beta. RIGHT",
+          "start": 630,
+          "end": 670,
+          "bbox": [
+            326.0,
+            273.5625,
+            537.7299194335938,
+            287.302490234375
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.34540719696969696,
+            0.8786436592052186,
+            0.3627556694878472
+          ]
+        },
+        {
+          "ordinal": 16,
+          "text": "COLUMN repeated anchor beta. RIGHT COLUMN",
+          "start": 671,
+          "end": 712,
+          "bbox": [
+            326.0,
+            287.0,
+            549.9498901367188,
+            300.739990234375
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.36237373737373735,
+            0.8986109315959456,
+            0.37972220989188765
+          ]
+        },
+        {
+          "ordinal": 17,
+          "text": "repeated anchor beta. RIGHT COLUMN repeated",
+          "start": 713,
+          "end": 756,
+          "bbox": [
+            326.0,
+            300.4375,
+            546.0899047851562,
+            314.177490234375
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.3793402777777778,
+            0.8923037659888174,
+            0.39668875029592804
+          ]
+        },
+        {
+          "ordinal": 18,
+          "text": "anchor beta.",
+          "start": 757,
+          "end": 769,
+          "bbox": [
+            326.0,
+            313.875,
+            381.5899658203125,
+            327.614990234375
+          ],
+          "normalized_bbox": [
+            0.5326797385620915,
+            0.3963068181818182,
+            0.6235130160462623,
+            0.4136552906999684
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    },
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 2,
+      "page": 1,
+      "text": "Two-column reading order is left column then right column.",
+      "raw_text": "Two-column reading order is left column then right column.\n",
+      "start": 0,
+      "end": 59,
+      "bbox": [
+        54.0,
+        720.3250122070312,
+        288.0809326171875,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.9095012780391809,
+        0.4707204781326593,
+        0.9251148724796796
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "Two-column reading order is left column then right column.",
+          "start": 0,
+          "end": 58,
+          "bbox": [
+            54.0,
+            720.3250122070312,
+            288.0809326171875,
+            732.6909790039062
+          ],
+          "normalized_bbox": [
+            0.08823529411764706,
+            0.9095012780391809,
+            0.4707204781326593,
+            0.9251148724796796
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    }
+  ],
+  "words": [
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w0",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        54.0,
+        72.0,
+        78.45000457763672,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.09090909090909091,
+        0.12818628198960247,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w1",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        81.2300033569336,
+        72.0,
+        124.56000518798828,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.13272876365512026,
+        0.09090909090909091,
+        0.20352942024181092,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w2",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        127.34000396728516,
+        72.0,
+        166.8099822998047,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.2080719019073287,
+        0.09090909090909091,
+        0.2725653305552364,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w3",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        169.58998107910156,
+        72.0,
+        200.15997314453125,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.2771078122207542,
+        0.09090909090909091,
+        0.3270587796479269,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w4",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        202.93997192382812,
+        72.0,
+        230.17996215820312,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.33160126131344464,
+        0.09090909090909091,
+        0.3761110492781097,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w5",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        232.9599609375,
+        72.0,
+        257.4099426269531,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.09090909090909091,
+        0.42060448141659007,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w6",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 6,
+      "line_ordinal": 1,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        54.0,
+        85.4375,
+        97.33000183105469,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.10787563131313131,
+        0.15903595070433774,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w7",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 7,
+      "line_ordinal": 1,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        100.11000061035156,
+        85.4375,
+        139.57998657226562,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.1635784323698555,
+        0.10787563131313131,
+        0.22807187348409416,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w8",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 8,
+      "line_ordinal": 1,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        142.3599853515625,
+        85.4375,
+        172.9299774169922,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.23261435514961193,
+        0.10787563131313131,
+        0.2825653225767846,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w9",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 9,
+      "line_ordinal": 1,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        175.70997619628906,
+        85.4375,
+        202.94996643066406,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.28710780424230237,
+        0.10787563131313131,
+        0.3316175922069674,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w10",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 10,
+      "line_ordinal": 1,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        205.72996520996094,
+        85.4375,
+        230.17996215820312,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.3361600738724852,
+        0.10787563131313131,
+        0.3761110492781097,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w11",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 11,
+      "line_ordinal": 1,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        232.9599609375,
+        85.4375,
+        276.2899475097656,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.10787563131313131,
+        0.45145416259765625,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w12",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 12,
+      "line_ordinal": 2,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        54.0,
+        98.875,
+        93.4699935913086,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.12484217171717171,
+        0.15272874769821665,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w13",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 13,
+      "line_ordinal": 2,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        96.24999237060547,
+        98.875,
+        126.81998443603516,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.15727122936373442,
+        0.12484217171717171,
+        0.20722219679090711,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w14",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 14,
+      "line_ordinal": 2,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        129.59999084472656,
+        98.875,
+        156.83998107910156,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.21176469092275582,
+        0.12484217171717171,
+        0.25627447888742083,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w15",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 15,
+      "line_ordinal": 2,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        159.61997985839844,
+        98.875,
+        184.06997680664062,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.2608169605529386,
+        0.12484217171717171,
+        0.3007679359585631,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w16",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 16,
+      "line_ordinal": 2,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        186.8499755859375,
+        98.875,
+        230.1799774169922,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.3053104176240809,
+        0.12484217171717171,
+        0.37611107421077156,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w17",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 17,
+      "line_ordinal": 2,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        232.95997619628906,
+        98.875,
+        272.4299621582031,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.12484217171717171,
+        0.44514699699052795,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w18",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 18,
+      "line_ordinal": 3,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        54.0,
+        112.3125,
+        84.56999969482422,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.14180871212121213,
+        0.1381862740111507,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w19",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 19,
+      "line_ordinal": 3,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        87.3499984741211,
+        112.3125,
+        114.5899887084961,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.14272875567666846,
+        0.14180871212121213,
+        0.1872385436413335,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w20",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 20,
+      "line_ordinal": 3,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        117.36998748779297,
+        112.3125,
+        141.8199920654297,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.19178102530685126,
+        0.14180871212121213,
+        0.23173201317880668,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w21",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 21,
+      "line_ordinal": 3,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        144.59999084472656,
+        112.3125,
+        187.92999267578125,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.23627449484432445,
+        0.14180871212121213,
+        0.3070751514310151,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w22",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 22,
+      "line_ordinal": 3,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        190.70999145507812,
+        112.3125,
+        230.1799774169922,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.3116176330965329,
+        0.14180871212121213,
+        0.37611107421077156,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w23",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 23,
+      "line_ordinal": 3,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        232.95997619628906,
+        112.3125,
+        263.52996826171875,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.14180871212121213,
+        0.430604523303462,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w24",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 24,
+      "line_ordinal": 4,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        54.0,
+        125.75,
+        81.23999786376953,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.1587752525252525,
+        0.13274509454864303,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w25",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 25,
+      "line_ordinal": 4,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        84.0199966430664,
+        125.75,
+        108.4699935913086,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.1372875762141608,
+        0.1587752525252525,
+        0.17723855161978527,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w26",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 26,
+      "line_ordinal": 4,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        111.24999237060547,
+        125.75,
+        154.5800018310547,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.18178103328530304,
+        0.1587752525252525,
+        0.25258170233832467,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w27",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 27,
+      "line_ordinal": 4,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        157.36000061035156,
+        125.75,
+        196.82998657226562,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.2571241840038424,
+        0.1587752525252525,
+        0.32161762511808106,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w28",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 28,
+      "line_ordinal": 4,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        199.6099853515625,
+        125.75,
+        230.1799774169922,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.32616010678359886,
+        0.1587752525252525,
+        0.37611107421077156,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w29",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 29,
+      "line_ordinal": 4,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        232.95997619628906,
+        125.75,
+        260.1999816894531,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.1587752525252525,
+        0.4251633687736162,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w30",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 30,
+      "line_ordinal": 5,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        54.0,
+        139.1875,
+        78.45000457763672,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.17574179292929293,
+        0.12818628198960247,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w31",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 31,
+      "line_ordinal": 5,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        81.2300033569336,
+        139.1875,
+        124.56000518798828,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.13272876365512026,
+        0.17574179292929293,
+        0.20352942024181092,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w32",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 32,
+      "line_ordinal": 5,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        127.34000396728516,
+        139.1875,
+        166.8099822998047,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.2080719019073287,
+        0.17574179292929293,
+        0.2725653305552364,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w33",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 33,
+      "line_ordinal": 5,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        169.58998107910156,
+        139.1875,
+        200.15997314453125,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.2771078122207542,
+        0.17574179292929293,
+        0.3270587796479269,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w34",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 34,
+      "line_ordinal": 5,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        202.93997192382812,
+        139.1875,
+        230.17996215820312,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.33160126131344464,
+        0.17574179292929293,
+        0.3761110492781097,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w35",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 35,
+      "line_ordinal": 5,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        232.9599609375,
+        139.1875,
+        257.4099426269531,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.17574179292929293,
+        0.42060448141659007,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w36",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 36,
+      "line_ordinal": 6,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        54.0,
+        152.625,
+        97.33000183105469,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.19270833333333334,
+        0.15903595070433774,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w37",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 37,
+      "line_ordinal": 6,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        100.11000061035156,
+        152.625,
+        139.57998657226562,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.1635784323698555,
+        0.19270833333333334,
+        0.22807187348409416,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w38",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 38,
+      "line_ordinal": 6,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        142.3599853515625,
+        152.625,
+        172.9299774169922,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.23261435514961193,
+        0.19270833333333334,
+        0.2825653225767846,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w39",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 39,
+      "line_ordinal": 6,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        175.70997619628906,
+        152.625,
+        202.94996643066406,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.28710780424230237,
+        0.19270833333333334,
+        0.3316175922069674,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w40",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 40,
+      "line_ordinal": 6,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        205.72996520996094,
+        152.625,
+        230.17996215820312,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.3361600738724852,
+        0.19270833333333334,
+        0.3761110492781097,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w41",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 41,
+      "line_ordinal": 6,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        232.9599609375,
+        152.625,
+        276.2899475097656,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.19270833333333334,
+        0.45145416259765625,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w42",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 42,
+      "line_ordinal": 7,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        54.0,
+        166.0625,
+        93.4699935913086,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.20967487373737373,
+        0.15272874769821665,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w43",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 43,
+      "line_ordinal": 7,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        96.24999237060547,
+        166.0625,
+        126.81998443603516,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.15727122936373442,
+        0.20967487373737373,
+        0.20722219679090711,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w44",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 44,
+      "line_ordinal": 7,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        129.59999084472656,
+        166.0625,
+        156.83998107910156,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.21176469092275582,
+        0.20967487373737373,
+        0.25627447888742083,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w45",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 45,
+      "line_ordinal": 7,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        159.61997985839844,
+        166.0625,
+        184.06997680664062,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.2608169605529386,
+        0.20967487373737373,
+        0.3007679359585631,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w46",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 46,
+      "line_ordinal": 7,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        186.8499755859375,
+        166.0625,
+        230.1799774169922,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.3053104176240809,
+        0.20967487373737373,
+        0.37611107421077156,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w47",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 47,
+      "line_ordinal": 7,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        232.95997619628906,
+        166.0625,
+        272.4299621582031,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.20967487373737373,
+        0.44514699699052795,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w48",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 48,
+      "line_ordinal": 8,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        54.0,
+        179.5,
+        84.56999969482422,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.22664141414141414,
+        0.1381862740111507,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w49",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 49,
+      "line_ordinal": 8,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        87.3499984741211,
+        179.5,
+        114.5899887084961,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.14272875567666846,
+        0.22664141414141414,
+        0.1872385436413335,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w50",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 50,
+      "line_ordinal": 8,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        117.36998748779297,
+        179.5,
+        141.8199920654297,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.19178102530685126,
+        0.22664141414141414,
+        0.23173201317880668,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w51",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 51,
+      "line_ordinal": 8,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        144.59999084472656,
+        179.5,
+        187.92999267578125,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.23627449484432445,
+        0.22664141414141414,
+        0.3070751514310151,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w52",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 52,
+      "line_ordinal": 8,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        190.70999145507812,
+        179.5,
+        230.1799774169922,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.3116176330965329,
+        0.22664141414141414,
+        0.37611107421077156,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w53",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 53,
+      "line_ordinal": 8,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        232.95997619628906,
+        179.5,
+        263.52996826171875,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.22664141414141414,
+        0.430604523303462,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w54",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 54,
+      "line_ordinal": 9,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        54.0,
+        192.9375,
+        81.23999786376953,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.24360795454545456,
+        0.13274509454864303,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w55",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 55,
+      "line_ordinal": 9,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        84.0199966430664,
+        192.9375,
+        108.4699935913086,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.1372875762141608,
+        0.24360795454545456,
+        0.17723855161978527,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w56",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 56,
+      "line_ordinal": 9,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        111.24999237060547,
+        192.9375,
+        154.5800018310547,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.18178103328530304,
+        0.24360795454545456,
+        0.25258170233832467,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w57",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 57,
+      "line_ordinal": 9,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        157.36000061035156,
+        192.9375,
+        196.82998657226562,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.2571241840038424,
+        0.24360795454545456,
+        0.32161762511808106,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w58",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 58,
+      "line_ordinal": 9,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        199.6099853515625,
+        192.9375,
+        230.1799774169922,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.32616010678359886,
+        0.24360795454545456,
+        0.37611107421077156,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w59",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 59,
+      "line_ordinal": 9,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        232.95997619628906,
+        192.9375,
+        260.1999816894531,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.24360795454545456,
+        0.4251633687736162,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w60",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 60,
+      "line_ordinal": 10,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        54.0,
+        206.375,
+        78.45000457763672,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.260574494949495,
+        0.12818628198960247,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w61",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 61,
+      "line_ordinal": 10,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        81.2300033569336,
+        206.375,
+        124.56000518798828,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.13272876365512026,
+        0.260574494949495,
+        0.20352942024181092,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w62",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 62,
+      "line_ordinal": 10,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        127.34000396728516,
+        206.375,
+        166.8099822998047,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.2080719019073287,
+        0.260574494949495,
+        0.2725653305552364,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w63",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 63,
+      "line_ordinal": 10,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        169.58998107910156,
+        206.375,
+        200.15997314453125,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.2771078122207542,
+        0.260574494949495,
+        0.3270587796479269,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w64",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 64,
+      "line_ordinal": 10,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        202.93997192382812,
+        206.375,
+        230.17996215820312,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.33160126131344464,
+        0.260574494949495,
+        0.3761110492781097,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w65",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 65,
+      "line_ordinal": 10,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        232.9599609375,
+        206.375,
+        257.4099426269531,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.260574494949495,
+        0.42060448141659007,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w66",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 66,
+      "line_ordinal": 11,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        54.0,
+        219.8125,
+        97.33000183105469,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.27754103535353536,
+        0.15903595070433774,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w67",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 67,
+      "line_ordinal": 11,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        100.11000061035156,
+        219.8125,
+        139.57998657226562,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.1635784323698555,
+        0.27754103535353536,
+        0.22807187348409416,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w68",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 68,
+      "line_ordinal": 11,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        142.3599853515625,
+        219.8125,
+        172.9299774169922,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.23261435514961193,
+        0.27754103535353536,
+        0.2825653225767846,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w69",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 69,
+      "line_ordinal": 11,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        175.70997619628906,
+        219.8125,
+        202.94996643066406,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.28710780424230237,
+        0.27754103535353536,
+        0.3316175922069674,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w70",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 70,
+      "line_ordinal": 11,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        205.72996520996094,
+        219.8125,
+        230.17996215820312,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.3361600738724852,
+        0.27754103535353536,
+        0.3761110492781097,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w71",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 71,
+      "line_ordinal": 11,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        232.9599609375,
+        219.8125,
+        276.2899475097656,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.27754103535353536,
+        0.45145416259765625,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w72",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 72,
+      "line_ordinal": 12,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        54.0,
+        233.25,
+        93.4699935913086,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.29450757575757575,
+        0.15272874769821665,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w73",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 73,
+      "line_ordinal": 12,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        96.24999237060547,
+        233.25,
+        126.81998443603516,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.15727122936373442,
+        0.29450757575757575,
+        0.20722219679090711,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w74",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 74,
+      "line_ordinal": 12,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        129.59999084472656,
+        233.25,
+        156.83998107910156,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.21176469092275582,
+        0.29450757575757575,
+        0.25627447888742083,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w75",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 75,
+      "line_ordinal": 12,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        159.61997985839844,
+        233.25,
+        184.06997680664062,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.2608169605529386,
+        0.29450757575757575,
+        0.3007679359585631,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w76",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 76,
+      "line_ordinal": 12,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        186.8499755859375,
+        233.25,
+        230.1799774169922,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.3053104176240809,
+        0.29450757575757575,
+        0.37611107421077156,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w77",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 77,
+      "line_ordinal": 12,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        232.95997619628906,
+        233.25,
+        272.4299621582031,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.29450757575757575,
+        0.44514699699052795,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w78",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 78,
+      "line_ordinal": 13,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        54.0,
+        246.6875,
+        84.56999969482422,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.3114741161616162,
+        0.1381862740111507,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w79",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 79,
+      "line_ordinal": 13,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        87.3499984741211,
+        246.6875,
+        114.5899887084961,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.14272875567666846,
+        0.3114741161616162,
+        0.1872385436413335,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w80",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 80,
+      "line_ordinal": 13,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        117.36998748779297,
+        246.6875,
+        141.8199920654297,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.19178102530685126,
+        0.3114741161616162,
+        0.23173201317880668,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w81",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 81,
+      "line_ordinal": 13,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        144.59999084472656,
+        246.6875,
+        187.92999267578125,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.23627449484432445,
+        0.3114741161616162,
+        0.3070751514310151,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w82",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 82,
+      "line_ordinal": 13,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        190.70999145507812,
+        246.6875,
+        230.1799774169922,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.3116176330965329,
+        0.3114741161616162,
+        0.37611107421077156,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w83",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 83,
+      "line_ordinal": 13,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        232.95997619628906,
+        246.6875,
+        263.52996826171875,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.3114741161616162,
+        0.430604523303462,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w84",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 84,
+      "line_ordinal": 14,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        54.0,
+        260.125,
+        81.23999786376953,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.3284406565656566,
+        0.13274509454864303,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w85",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 85,
+      "line_ordinal": 14,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        84.0199966430664,
+        260.125,
+        108.4699935913086,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.1372875762141608,
+        0.3284406565656566,
+        0.17723855161978527,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w86",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 86,
+      "line_ordinal": 14,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        111.24999237060547,
+        260.125,
+        154.5800018310547,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.18178103328530304,
+        0.3284406565656566,
+        0.25258170233832467,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w87",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 87,
+      "line_ordinal": 14,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        157.36000061035156,
+        260.125,
+        196.82998657226562,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.2571241840038424,
+        0.3284406565656566,
+        0.32161762511808106,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w88",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 88,
+      "line_ordinal": 14,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        199.6099853515625,
+        260.125,
+        230.1799774169922,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.32616010678359886,
+        0.3284406565656566,
+        0.37611107421077156,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w89",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 89,
+      "line_ordinal": 14,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        232.95997619628906,
+        260.125,
+        260.1999816894531,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.3284406565656566,
+        0.4251633687736162,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w90",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 90,
+      "line_ordinal": 15,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        54.0,
+        273.5625,
+        78.45000457763672,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.34540719696969696,
+        0.12818628198960247,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w91",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 91,
+      "line_ordinal": 15,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        81.2300033569336,
+        273.5625,
+        124.56000518798828,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.13272876365512026,
+        0.34540719696969696,
+        0.20352942024181092,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w92",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 92,
+      "line_ordinal": 15,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        127.34000396728516,
+        273.5625,
+        166.8099822998047,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.2080719019073287,
+        0.34540719696969696,
+        0.2725653305552364,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w93",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 93,
+      "line_ordinal": 15,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        169.58998107910156,
+        273.5625,
+        200.15997314453125,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.2771078122207542,
+        0.34540719696969696,
+        0.3270587796479269,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w94",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 94,
+      "line_ordinal": 15,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        202.93997192382812,
+        273.5625,
+        230.17996215820312,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.33160126131344464,
+        0.34540719696969696,
+        0.3761110492781097,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w95",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 95,
+      "line_ordinal": 15,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        232.9599609375,
+        273.5625,
+        257.4099426269531,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.34540719696969696,
+        0.42060448141659007,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w96",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 96,
+      "line_ordinal": 16,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        54.0,
+        287.0,
+        97.33000183105469,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.36237373737373735,
+        0.15903595070433774,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w97",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 97,
+      "line_ordinal": 16,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        100.11000061035156,
+        287.0,
+        139.57998657226562,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.1635784323698555,
+        0.36237373737373735,
+        0.22807187348409416,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w98",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 98,
+      "line_ordinal": 16,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        142.3599853515625,
+        287.0,
+        172.9299774169922,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.23261435514961193,
+        0.36237373737373735,
+        0.2825653225767846,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w99",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 99,
+      "line_ordinal": 16,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        175.70997619628906,
+        287.0,
+        202.94996643066406,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.28710780424230237,
+        0.36237373737373735,
+        0.3316175922069674,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w100",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 100,
+      "line_ordinal": 16,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        205.72996520996094,
+        287.0,
+        230.17996215820312,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.3361600738724852,
+        0.36237373737373735,
+        0.3761110492781097,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w101",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 101,
+      "line_ordinal": 16,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        232.9599609375,
+        287.0,
+        276.2899475097656,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.38065353094362747,
+        0.36237373737373735,
+        0.45145416259765625,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w102",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 102,
+      "line_ordinal": 17,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        54.0,
+        300.4375,
+        93.4699935913086,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.3793402777777778,
+        0.15272874769821665,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w103",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 103,
+      "line_ordinal": 17,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        96.24999237060547,
+        300.4375,
+        126.81998443603516,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.15727122936373442,
+        0.3793402777777778,
+        0.20722219679090711,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w104",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 104,
+      "line_ordinal": 17,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        129.59999084472656,
+        300.4375,
+        156.83998107910156,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.21176469092275582,
+        0.3793402777777778,
+        0.25627447888742083,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w105",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 105,
+      "line_ordinal": 17,
+      "text": "LEFT",
+      "start": 0,
+      "end": 4,
+      "bbox": [
+        159.61997985839844,
+        300.4375,
+        184.06997680664062,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.2608169605529386,
+        0.3793402777777778,
+        0.3007679359585631,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w106",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 106,
+      "line_ordinal": 17,
+      "text": "COLUMN",
+      "start": 5,
+      "end": 11,
+      "bbox": [
+        186.8499755859375,
+        300.4375,
+        230.1799774169922,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.3053104176240809,
+        0.3793402777777778,
+        0.37611107421077156,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w107",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 107,
+      "line_ordinal": 17,
+      "text": "repeated",
+      "start": 12,
+      "end": 20,
+      "bbox": [
+        232.95997619628906,
+        300.4375,
+        272.4299621582031,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.3806535558762893,
+        0.3793402777777778,
+        0.44514699699052795,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w108",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 108,
+      "line_ordinal": 18,
+      "text": "anchor",
+      "start": 21,
+      "end": 27,
+      "bbox": [
+        54.0,
+        313.875,
+        84.56999969482422,
+        327.614990234375
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.3963068181818182,
+        0.1381862740111507,
+        0.4136552906999684
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b0:w109",
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "ordinal": 109,
+      "line_ordinal": 18,
+      "text": "alpha.",
+      "start": 28,
+      "end": 34,
+      "bbox": [
+        87.3499984741211,
+        313.875,
+        114.5899887084961,
+        327.614990234375
+      ],
+      "normalized_bbox": [
+        0.14272875567666846,
+        0.3963068181818182,
+        0.1872385436413335,
+        0.4136552906999684
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w0",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        326.0,
+        72.0,
+        357.1099853515625,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.09090909090909091,
+        0.5835130479600694,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w1",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        359.8899841308594,
+        72.0,
+        403.219970703125,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.5880555296255872,
+        0.09090909090909091,
+        0.658856161279616,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w2",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        405.9999694824219,
+        72.0,
+        445.4699401855469,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.6633986429451337,
+        0.09090909090909091,
+        0.7278920591267106,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w3",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        448.24993896484375,
+        72.0,
+        478.8199157714844,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.7324345407922284,
+        0.09090909090909091,
+        0.7823854832867392,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w4",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        481.59991455078125,
+        72.0,
+        503.83990478515625,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.7869279649522569,
+        0.09090909090909091,
+        0.823267818276399,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w5",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        506.6199035644531,
+        72.0,
+        537.7299194335938,
+        85.73999786376953
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.09090909090909091,
+        0.8786436592052186,
+        0.10825757306031507
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w6",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 6,
+      "line_ordinal": 1,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        326.0,
+        85.4375,
+        369.3299865722656,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.10787563131313131,
+        0.6034803702161203,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w7",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 7,
+      "line_ordinal": 1,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        372.1099853515625,
+        85.4375,
+        411.5799560546875,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.6080228518816381,
+        0.10787563131313131,
+        0.6725162680632149,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w8",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 8,
+      "line_ordinal": 1,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        414.3599548339844,
+        85.4375,
+        444.929931640625,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.6770587497287326,
+        0.10787563131313131,
+        0.7270096922232434,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w9",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 9,
+      "line_ordinal": 1,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        447.7099304199219,
+        85.4375,
+        469.9499206542969,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.7315521738887613,
+        0.10787563131313131,
+        0.7678920272129034,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w10",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 10,
+      "line_ordinal": 1,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        472.72991943359375,
+        85.4375,
+        503.83990478515625,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.7724345088784211,
+        0.10787563131313131,
+        0.823267818276399,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w11",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 11,
+      "line_ordinal": 1,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        506.6199035644531,
+        85.4375,
+        549.9498901367188,
+        99.17749786376953
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.10787563131313131,
+        0.8986109315959456,
+        0.12522411346435547
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w12",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 12,
+      "line_ordinal": 2,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        326.0,
+        98.875,
+        365.469970703125,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.12484217171717171,
+        0.5971731547436683,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w13",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 13,
+      "line_ordinal": 2,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        368.2499694824219,
+        98.875,
+        398.8199462890625,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.601715636409186,
+        0.12484217171717171,
+        0.651666578903697,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w14",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 14,
+      "line_ordinal": 2,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        401.5999450683594,
+        98.875,
+        423.8399353027344,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.6562090605692147,
+        0.12484217171717171,
+        0.6925489138933568,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w15",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 15,
+      "line_ordinal": 2,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        426.61993408203125,
+        98.875,
+        457.72991943359375,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.6970913955588746,
+        0.12484217171717171,
+        0.7479247049568525,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w16",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 16,
+      "line_ordinal": 2,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        460.5099182128906,
+        98.875,
+        503.83990478515625,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.7524671866223703,
+        0.12484217171717171,
+        0.823267818276399,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w17",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 17,
+      "line_ordinal": 2,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        506.6199035644531,
+        98.875,
+        546.0899047851562,
+        112.61499786376953
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.12484217171717171,
+        0.8923037659888174,
+        0.14219065386839588
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w18",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 18,
+      "line_ordinal": 3,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        326.0,
+        112.3125,
+        356.5699768066406,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.14180871212121213,
+        0.5826306810566023,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w19",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 19,
+      "line_ordinal": 3,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        359.3499755859375,
+        112.3125,
+        381.5899658203125,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.5871731627221201,
+        0.14180871212121213,
+        0.6235130160462623,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w20",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 20,
+      "line_ordinal": 3,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        384.3699645996094,
+        112.3125,
+        415.4799499511719,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.62805549771178,
+        0.14180871212121213,
+        0.678888807109758,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w21",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 21,
+      "line_ordinal": 3,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        418.25994873046875,
+        112.3125,
+        461.5899353027344,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.6834312887752757,
+        0.14180871212121213,
+        0.7542319204293045,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w22",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 22,
+      "line_ordinal": 3,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        464.36993408203125,
+        112.3125,
+        503.83990478515625,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.7587744020948223,
+        0.14180871212121213,
+        0.823267818276399,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w23",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 23,
+      "line_ordinal": 3,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        506.6199035644531,
+        112.3125,
+        537.18994140625,
+        126.05249786376953
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.14180871212121213,
+        0.8777613421670751,
+        0.15915719427243627
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w24",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 24,
+      "line_ordinal": 4,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        326.0,
+        125.75,
+        348.239990234375,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.1587752525252525,
+        0.5690195918862336,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w25",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 25,
+      "line_ordinal": 4,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        351.0199890136719,
+        125.75,
+        382.1299743652344,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.5735620735517515,
+        0.1587752525252525,
+        0.6243953829497294,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w26",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 26,
+      "line_ordinal": 4,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        384.90997314453125,
+        125.75,
+        428.2399597167969,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.6289378646152471,
+        0.1587752525252525,
+        0.699738496269276,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w27",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 27,
+      "line_ordinal": 4,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        431.01995849609375,
+        125.75,
+        470.48992919921875,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.7042809779347937,
+        0.1587752525252525,
+        0.7687743941163705,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w28",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 28,
+      "line_ordinal": 4,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        473.2699279785156,
+        125.75,
+        503.83990478515625,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.7733168757818882,
+        0.1587752525252525,
+        0.823267818276399,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w29",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 29,
+      "line_ordinal": 4,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        506.6199035644531,
+        125.75,
+        528.8599853515625,
+        139.49000549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.1587752525252525,
+        0.8641503028620302,
+        0.17612374430955058
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w30",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 30,
+      "line_ordinal": 5,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        326.0,
+        139.1875,
+        357.1099853515625,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.17574179292929293,
+        0.5835130479600694,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w31",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 31,
+      "line_ordinal": 5,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        359.8899841308594,
+        139.1875,
+        403.219970703125,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.5880555296255872,
+        0.17574179292929293,
+        0.658856161279616,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w32",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 32,
+      "line_ordinal": 5,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        405.9999694824219,
+        139.1875,
+        445.4699401855469,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.6633986429451337,
+        0.17574179292929293,
+        0.7278920591267106,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w33",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 33,
+      "line_ordinal": 5,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        448.24993896484375,
+        139.1875,
+        478.8199157714844,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.7324345407922284,
+        0.17574179292929293,
+        0.7823854832867392,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w34",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 34,
+      "line_ordinal": 5,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        481.59991455078125,
+        139.1875,
+        503.83990478515625,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.7869279649522569,
+        0.17574179292929293,
+        0.823267818276399,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w35",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 35,
+      "line_ordinal": 5,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        506.6199035644531,
+        139.1875,
+        537.7299194335938,
+        152.92750549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.17574179292929293,
+        0.8786436592052186,
+        0.193090284713591
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w36",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 36,
+      "line_ordinal": 6,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        326.0,
+        152.625,
+        369.3299865722656,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.19270833333333334,
+        0.6034803702161203,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w37",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 37,
+      "line_ordinal": 6,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        372.1099853515625,
+        152.625,
+        411.5799560546875,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.6080228518816381,
+        0.19270833333333334,
+        0.6725162680632149,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w38",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 38,
+      "line_ordinal": 6,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        414.3599548339844,
+        152.625,
+        444.929931640625,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.6770587497287326,
+        0.19270833333333334,
+        0.7270096922232434,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w39",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 39,
+      "line_ordinal": 6,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        447.7099304199219,
+        152.625,
+        469.9499206542969,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.7315521738887613,
+        0.19270833333333334,
+        0.7678920272129034,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w40",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 40,
+      "line_ordinal": 6,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        472.72991943359375,
+        152.625,
+        503.83990478515625,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.7724345088784211,
+        0.19270833333333334,
+        0.823267818276399,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w41",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 41,
+      "line_ordinal": 6,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        506.6199035644531,
+        152.625,
+        549.9498901367188,
+        166.36500549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.19270833333333334,
+        0.8986109315959456,
+        0.21005682511763138
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w42",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 42,
+      "line_ordinal": 7,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        326.0,
+        166.0625,
+        365.469970703125,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.20967487373737373,
+        0.5971731547436683,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w43",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 43,
+      "line_ordinal": 7,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        368.2499694824219,
+        166.0625,
+        398.8199462890625,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.601715636409186,
+        0.20967487373737373,
+        0.651666578903697,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w44",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 44,
+      "line_ordinal": 7,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        401.5999450683594,
+        166.0625,
+        423.8399353027344,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.6562090605692147,
+        0.20967487373737373,
+        0.6925489138933568,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w45",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 45,
+      "line_ordinal": 7,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        426.61993408203125,
+        166.0625,
+        457.72991943359375,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.6970913955588746,
+        0.20967487373737373,
+        0.7479247049568525,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w46",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 46,
+      "line_ordinal": 7,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        460.5099182128906,
+        166.0625,
+        503.83990478515625,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.7524671866223703,
+        0.20967487373737373,
+        0.823267818276399,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w47",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 47,
+      "line_ordinal": 7,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        506.6199035644531,
+        166.0625,
+        546.0899047851562,
+        179.80250549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.20967487373737373,
+        0.8923037659888174,
+        0.2270233655216718
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w48",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 48,
+      "line_ordinal": 8,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        326.0,
+        179.5,
+        356.5699768066406,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.22664141414141414,
+        0.5826306810566023,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w49",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 49,
+      "line_ordinal": 8,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        359.3499755859375,
+        179.5,
+        381.5899658203125,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.5871731627221201,
+        0.22664141414141414,
+        0.6235130160462623,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w50",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 50,
+      "line_ordinal": 8,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        384.3699645996094,
+        179.5,
+        415.4799499511719,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.62805549771178,
+        0.22664141414141414,
+        0.678888807109758,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w51",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 51,
+      "line_ordinal": 8,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        418.25994873046875,
+        179.5,
+        461.5899353027344,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.6834312887752757,
+        0.22664141414141414,
+        0.7542319204293045,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w52",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 52,
+      "line_ordinal": 8,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        464.36993408203125,
+        179.5,
+        503.83990478515625,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.7587744020948223,
+        0.22664141414141414,
+        0.823267818276399,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w53",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 53,
+      "line_ordinal": 8,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        506.6199035644531,
+        179.5,
+        537.18994140625,
+        193.24000549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.22664141414141414,
+        0.8777613421670751,
+        0.2439899059257122
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w54",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 54,
+      "line_ordinal": 9,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        326.0,
+        192.9375,
+        348.239990234375,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.24360795454545456,
+        0.5690195918862336,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w55",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 55,
+      "line_ordinal": 9,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        351.0199890136719,
+        192.9375,
+        382.1299743652344,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.5735620735517515,
+        0.24360795454545456,
+        0.6243953829497294,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w56",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 56,
+      "line_ordinal": 9,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        384.90997314453125,
+        192.9375,
+        428.2399597167969,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.6289378646152471,
+        0.24360795454545456,
+        0.699738496269276,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w57",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 57,
+      "line_ordinal": 9,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        431.01995849609375,
+        192.9375,
+        470.48992919921875,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.7042809779347937,
+        0.24360795454545456,
+        0.7687743941163705,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w58",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 58,
+      "line_ordinal": 9,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        473.2699279785156,
+        192.9375,
+        503.83990478515625,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.7733168757818882,
+        0.24360795454545456,
+        0.823267818276399,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w59",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 59,
+      "line_ordinal": 9,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        506.6199035644531,
+        192.9375,
+        528.8599853515625,
+        206.67750549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.24360795454545456,
+        0.8641503028620302,
+        0.2609564463297526
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w60",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 60,
+      "line_ordinal": 10,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        326.0,
+        206.375,
+        357.1099853515625,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.260574494949495,
+        0.5835130479600694,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w61",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 61,
+      "line_ordinal": 10,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        359.8899841308594,
+        206.375,
+        403.219970703125,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.5880555296255872,
+        0.260574494949495,
+        0.658856161279616,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w62",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 62,
+      "line_ordinal": 10,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        405.9999694824219,
+        206.375,
+        445.4699401855469,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.6633986429451337,
+        0.260574494949495,
+        0.7278920591267106,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w63",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 63,
+      "line_ordinal": 10,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        448.24993896484375,
+        206.375,
+        478.8199157714844,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.7324345407922284,
+        0.260574494949495,
+        0.7823854832867392,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w64",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 64,
+      "line_ordinal": 10,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        481.59991455078125,
+        206.375,
+        503.83990478515625,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.7869279649522569,
+        0.260574494949495,
+        0.823267818276399,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w65",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 65,
+      "line_ordinal": 10,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        506.6199035644531,
+        206.375,
+        537.7299194335938,
+        220.11500549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.260574494949495,
+        0.8786436592052186,
+        0.277922986733793
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w66",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 66,
+      "line_ordinal": 11,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        326.0,
+        219.8125,
+        369.3299865722656,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.27754103535353536,
+        0.6034803702161203,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w67",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 67,
+      "line_ordinal": 11,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        372.1099853515625,
+        219.8125,
+        411.5799560546875,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.6080228518816381,
+        0.27754103535353536,
+        0.6725162680632149,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w68",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 68,
+      "line_ordinal": 11,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        414.3599548339844,
+        219.8125,
+        444.929931640625,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.6770587497287326,
+        0.27754103535353536,
+        0.7270096922232434,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w69",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 69,
+      "line_ordinal": 11,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        447.7099304199219,
+        219.8125,
+        469.9499206542969,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.7315521738887613,
+        0.27754103535353536,
+        0.7678920272129034,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w70",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 70,
+      "line_ordinal": 11,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        472.72991943359375,
+        219.8125,
+        503.83990478515625,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.7724345088784211,
+        0.27754103535353536,
+        0.823267818276399,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w71",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 71,
+      "line_ordinal": 11,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        506.6199035644531,
+        219.8125,
+        549.9498901367188,
+        233.55250549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.27754103535353536,
+        0.8986109315959456,
+        0.2948895271378334
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w72",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 72,
+      "line_ordinal": 12,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        326.0,
+        233.25,
+        365.469970703125,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.29450757575757575,
+        0.5971731547436683,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w73",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 73,
+      "line_ordinal": 12,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        368.2499694824219,
+        233.25,
+        398.8199462890625,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.601715636409186,
+        0.29450757575757575,
+        0.651666578903697,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w74",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 74,
+      "line_ordinal": 12,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        401.5999450683594,
+        233.25,
+        423.8399353027344,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.6562090605692147,
+        0.29450757575757575,
+        0.6925489138933568,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w75",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 75,
+      "line_ordinal": 12,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        426.61993408203125,
+        233.25,
+        457.72991943359375,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.6970913955588746,
+        0.29450757575757575,
+        0.7479247049568525,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w76",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 76,
+      "line_ordinal": 12,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        460.5099182128906,
+        233.25,
+        503.83990478515625,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.7524671866223703,
+        0.29450757575757575,
+        0.823267818276399,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w77",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 77,
+      "line_ordinal": 12,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        506.6199035644531,
+        233.25,
+        546.0899047851562,
+        246.99000549316406
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.29450757575757575,
+        0.8923037659888174,
+        0.31185606754187384
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w78",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 78,
+      "line_ordinal": 13,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        326.0,
+        246.6875,
+        356.5699768066406,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.3114741161616162,
+        0.5826306810566023,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w79",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 79,
+      "line_ordinal": 13,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        359.3499755859375,
+        246.6875,
+        381.5899658203125,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.5871731627221201,
+        0.3114741161616162,
+        0.6235130160462623,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w80",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 80,
+      "line_ordinal": 13,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        384.3699645996094,
+        246.6875,
+        415.4799499511719,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.62805549771178,
+        0.3114741161616162,
+        0.678888807109758,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w81",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 81,
+      "line_ordinal": 13,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        418.25994873046875,
+        246.6875,
+        461.5899353027344,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.6834312887752757,
+        0.3114741161616162,
+        0.7542319204293045,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w82",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 82,
+      "line_ordinal": 13,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        464.36993408203125,
+        246.6875,
+        503.83990478515625,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.7587744020948223,
+        0.3114741161616162,
+        0.823267818276399,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w83",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 83,
+      "line_ordinal": 13,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        506.6199035644531,
+        246.6875,
+        537.18994140625,
+        260.427490234375
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.3114741161616162,
+        0.8777613421670751,
+        0.32882258867976644
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w84",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 84,
+      "line_ordinal": 14,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        326.0,
+        260.125,
+        348.239990234375,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.3284406565656566,
+        0.5690195918862336,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w85",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 85,
+      "line_ordinal": 14,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        351.0199890136719,
+        260.125,
+        382.1299743652344,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.5735620735517515,
+        0.3284406565656566,
+        0.6243953829497294,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w86",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 86,
+      "line_ordinal": 14,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        384.90997314453125,
+        260.125,
+        428.2399597167969,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.6289378646152471,
+        0.3284406565656566,
+        0.699738496269276,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w87",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 87,
+      "line_ordinal": 14,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        431.01995849609375,
+        260.125,
+        470.48992919921875,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.7042809779347937,
+        0.3284406565656566,
+        0.7687743941163705,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w88",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 88,
+      "line_ordinal": 14,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        473.2699279785156,
+        260.125,
+        503.83990478515625,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.7733168757818882,
+        0.3284406565656566,
+        0.823267818276399,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w89",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 89,
+      "line_ordinal": 14,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        506.6199035644531,
+        260.125,
+        528.8599853515625,
+        273.864990234375
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.3284406565656566,
+        0.8641503028620302,
+        0.3457891290838068
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w90",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 90,
+      "line_ordinal": 15,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        326.0,
+        273.5625,
+        357.1099853515625,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.34540719696969696,
+        0.5835130479600694,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w91",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 91,
+      "line_ordinal": 15,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        359.8899841308594,
+        273.5625,
+        403.219970703125,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.5880555296255872,
+        0.34540719696969696,
+        0.658856161279616,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w92",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 92,
+      "line_ordinal": 15,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        405.9999694824219,
+        273.5625,
+        445.4699401855469,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.6633986429451337,
+        0.34540719696969696,
+        0.7278920591267106,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w93",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 93,
+      "line_ordinal": 15,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        448.24993896484375,
+        273.5625,
+        478.8199157714844,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.7324345407922284,
+        0.34540719696969696,
+        0.7823854832867392,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w94",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 94,
+      "line_ordinal": 15,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        481.59991455078125,
+        273.5625,
+        503.83990478515625,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.7869279649522569,
+        0.34540719696969696,
+        0.823267818276399,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w95",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 95,
+      "line_ordinal": 15,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        506.6199035644531,
+        273.5625,
+        537.7299194335938,
+        287.302490234375
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.34540719696969696,
+        0.8786436592052186,
+        0.3627556694878472
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w96",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 96,
+      "line_ordinal": 16,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        326.0,
+        287.0,
+        369.3299865722656,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.36237373737373735,
+        0.6034803702161203,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w97",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 97,
+      "line_ordinal": 16,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        372.1099853515625,
+        287.0,
+        411.5799560546875,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.6080228518816381,
+        0.36237373737373735,
+        0.6725162680632149,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w98",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 98,
+      "line_ordinal": 16,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        414.3599548339844,
+        287.0,
+        444.929931640625,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.6770587497287326,
+        0.36237373737373735,
+        0.7270096922232434,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w99",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 99,
+      "line_ordinal": 16,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        447.7099304199219,
+        287.0,
+        469.9499206542969,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.7315521738887613,
+        0.36237373737373735,
+        0.7678920272129034,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w100",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 100,
+      "line_ordinal": 16,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        472.72991943359375,
+        287.0,
+        503.83990478515625,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.7724345088784211,
+        0.36237373737373735,
+        0.823267818276399,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w101",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 101,
+      "line_ordinal": 16,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        506.6199035644531,
+        287.0,
+        549.9498901367188,
+        300.739990234375
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.36237373737373735,
+        0.8986109315959456,
+        0.37972220989188765
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w102",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 102,
+      "line_ordinal": 17,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        326.0,
+        300.4375,
+        365.469970703125,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.3793402777777778,
+        0.5971731547436683,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w103",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 103,
+      "line_ordinal": 17,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        368.2499694824219,
+        300.4375,
+        398.8199462890625,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.601715636409186,
+        0.3793402777777778,
+        0.651666578903697,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w104",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 104,
+      "line_ordinal": 17,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        401.5999450683594,
+        300.4375,
+        423.8399353027344,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.6562090605692147,
+        0.3793402777777778,
+        0.6925489138933568,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w105",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 105,
+      "line_ordinal": 17,
+      "text": "RIGHT",
+      "start": 0,
+      "end": 5,
+      "bbox": [
+        426.61993408203125,
+        300.4375,
+        457.72991943359375,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.6970913955588746,
+        0.3793402777777778,
+        0.7479247049568525,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w106",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 106,
+      "line_ordinal": 17,
+      "text": "COLUMN",
+      "start": 6,
+      "end": 12,
+      "bbox": [
+        460.5099182128906,
+        300.4375,
+        503.83990478515625,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.7524671866223703,
+        0.3793402777777778,
+        0.823267818276399,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w107",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 107,
+      "line_ordinal": 17,
+      "text": "repeated",
+      "start": 13,
+      "end": 21,
+      "bbox": [
+        506.6199035644531,
+        300.4375,
+        546.0899047851562,
+        314.177490234375
+      ],
+      "normalized_bbox": [
+        0.8278102999419169,
+        0.3793402777777778,
+        0.8923037659888174,
+        0.39668875029592804
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w108",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 108,
+      "line_ordinal": 18,
+      "text": "anchor",
+      "start": 22,
+      "end": 28,
+      "bbox": [
+        326.0,
+        313.875,
+        356.5699768066406,
+        327.614990234375
+      ],
+      "normalized_bbox": [
+        0.5326797385620915,
+        0.3963068181818182,
+        0.5826306810566023,
+        0.4136552906999684
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b1:w109",
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "ordinal": 109,
+      "line_ordinal": 18,
+      "text": "beta.",
+      "start": 29,
+      "end": 34,
+      "bbox": [
+        359.3499755859375,
+        313.875,
+        381.5899658203125,
+        327.614990234375
+      ],
+      "normalized_bbox": [
+        0.5871731627221201,
+        0.3963068181818182,
+        0.6235130160462623,
+        0.4136552906999684
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w0",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "Two-column",
+      "start": 0,
+      "end": 10,
+      "bbox": [
+        54.0,
+        720.3250122070312,
+        103.00499725341797,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.08823529411764706,
+        0.9095012780391809,
+        0.16830881904153264,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w1",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "reading",
+      "start": 11,
+      "end": 18,
+      "bbox": [
+        105.50699615478516,
+        720.3250122070312,
+        135.52198791503906,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.1723970525404986,
+        0.9095012780391809,
+        0.22144115672392004,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w2",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "order",
+      "start": 19,
+      "end": 24,
+      "bbox": [
+        138.02398681640625,
+        720.3250122070312,
+        159.02996826171875,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.22552939022288604,
+        0.9095012780391809,
+        0.2598528893165339,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w3",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "is",
+      "start": 25,
+      "end": 27,
+      "bbox": [
+        161.53196716308594,
+        720.3250122070312,
+        168.02996826171875,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.2639411228154999,
+        0.9095012780391809,
+        0.27455877166947507,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w4",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "left",
+      "start": 28,
+      "end": 32,
+      "bbox": [
+        170.53196716308594,
+        720.3250122070312,
+        182.5379638671875,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.2786470051684411,
+        0.9095012780391809,
+        0.29826464684180964,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w5",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "column",
+      "start": 4,
+      "end": 10,
+      "bbox": [
+        185.0399627685547,
+        720.3250122070312,
+        214.0469512939453,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.3023528803407756,
+        0.9095012780391809,
+        0.3497499204149433,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w6",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 6,
+      "line_ordinal": 0,
+      "text": "then",
+      "start": 40,
+      "end": 44,
+      "bbox": [
+        216.5489501953125,
+        720.3250122070312,
+        234.0629425048828,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.3538381539139093,
+        0.9095012780391809,
+        0.38245578840667127,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w7",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 7,
+      "line_ordinal": 0,
+      "text": "right",
+      "start": 45,
+      "end": 50,
+      "bbox": [
+        236.56494140625,
+        720.3250122070312,
+        254.06993103027344,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.38654402190563725,
+        0.9095012780391809,
+        0.41514694612789776,
+        0.9251148724796796
+      ]
+    },
+    {
+      "word_id": "pdf-two-column-v1-overlap:p1:b2:w8",
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "ordinal": 8,
+      "line_ordinal": 0,
+      "text": "column.",
+      "start": 51,
+      "end": 58,
+      "bbox": [
+        256.5719299316406,
+        720.3250122070312,
+        288.0809326171875,
+        732.6909790039062
+      ],
+      "normalized_bbox": [
+        0.41923517962686374,
+        0.9095012780391809,
+        0.4707204781326593,
+        0.9251148724796796
+      ]
+    }
+  ],
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.\nLEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha. LEFT COLUMN repeated anchor alpha.\nRIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.",
+      "page": 1,
+      "page_end": 1,
+      "section": "",
+      "chunker": "v1"
+    },
+    {
+      "chunk_index": 1,
+      "text": "UMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.\nRIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta. RIGHT COLUMN repeated anchor beta.\nTwo-column reading order is left column then right column.",
+      "page": 1,
+      "page_end": 1,
+      "section": "",
+      "chunker": "v1"
+    }
+  ],
+  "anchors": [
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "chunk_index": 0,
+      "coverage": 0.785495,
+      "is_primary": true,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          54.0,
+          72.0,
+          276.2899475097656,
+          327.614990234375
+        ],
+        "normalized_bbox": [
+          0.08823529411764706,
+          0.09090909090909091,
+          0.45145416259765625,
+          0.4136552906999684
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "chunk_index": 0,
+      "coverage": 0.38713,
+      "is_primary": false,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          326.0,
+          72.0,
+          549.9498901367188,
+          327.614990234375
+        ],
+        "normalized_bbox": [
+          0.5326797385620915,
+          0.09090909090909091,
+          0.8986109315959456,
+          0.4136552906999684
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "chunk_index": 0,
+      "coverage": 0.018386,
+      "is_primary": false,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          54.0,
+          720.3250122070312,
+          288.0809326171875,
+          732.6909790039062
+        ],
+        "normalized_bbox": [
+          0.08823529411764706,
+          0.9095012780391809,
+          0.4707204781326593,
+          0.9251148724796796
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b0",
+      "chunk_index": 1,
+      "coverage": 0.726161,
+      "is_primary": true,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          54.0,
+          72.0,
+          276.2899475097656,
+          327.614990234375
+        ],
+        "normalized_bbox": [
+          0.08823529411764706,
+          0.09090909090909091,
+          0.45145416259765625,
+          0.4136552906999684
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b1",
+      "chunk_index": 1,
+      "coverage": 0.710269,
+      "is_primary": false,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          326.0,
+          72.0,
+          549.9498901367188,
+          327.614990234375
+        ],
+        "normalized_bbox": [
+          0.5326797385620915,
+          0.09090909090909091,
+          0.8986109315959456,
+          0.4136552906999684
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-two-column-v1-overlap:p1:b2",
+      "chunk_index": 1,
+      "coverage": 0.070905,
+      "is_primary": false,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          54.0,
+          720.3250122070312,
+          288.0809326171875,
+          732.6909790039062
+        ],
+        "normalized_bbox": [
+          0.08823529411764706,
+          0.9095012780391809,
+          0.4707204781326593,
+          0.9251148724796796
+        ]
+      }
+    }
+  ],
+  "mapped_count": 2,
+  "unmapped_count": 0,
+  "unmapped_reasons": [],
+  "metrics": {
+    "page_count": 1,
+    "block_count": 3,
+    "word_count": 229,
+    "line_count": 39,
+    "mapped_chunk_rate": 1.0,
+    "anchor_count": 6,
+    "bbox_max_error": 0.0,
+    "bbox_median_error": 0.0,
+    "markdown_line_exact_rate": null
+  }
+}

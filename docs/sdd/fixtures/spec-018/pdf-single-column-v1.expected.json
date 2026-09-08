@@ -1,0 +1,2239 @@
+{
+  "schema_version": "provenance-dto-v1",
+  "mapping_algorithm_version": "source-anchor-v1",
+  "sample_id": "pdf-single-column-v1",
+  "document_id": "fixture-pdf-single-column-v1",
+  "media_type": "application/pdf",
+  "source_sha256": "3cc6b61497f483fcb1933919cb00f1568ad1fd609953c96e4970c772cbe4e4ec",
+  "indexed_source_sha256": "3cc6b61497f483fcb1933919cb00f1568ad1fd609953c96e4970c772cbe4e4ec",
+  "source_hash_state": "verified_fixture",
+  "source_parser_version": "pymupdf-1.28.2-extract_pages_normalized-unversioned",
+  "normalize_version": "normalize.py-unversioned",
+  "chunker": "v1",
+  "chunker_config": {
+    "chunk_size": 1000,
+    "overlap": 200
+  },
+  "chunker_config_fingerprint": "5d528ea9973d0fa2a78e7b91e4bf84b3f4bb2a345a646a6d89d9cd3f056c2559",
+  "payload_schema_version": "qdrant-payload-v1",
+  "status": "ready",
+  "progress": 100,
+  "error": null,
+  "index_fingerprint": "e057913b69f6ee64efbd1b39ea0533f4bb46ef0eb1cf36919ab05f7f0ee4e097",
+  "pages": [
+    {
+      "page": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "rotation": 0,
+      "crop_box": [
+        0.0,
+        0.0,
+        612.0,
+        792.0
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 0,
+      "page": 1,
+      "text": "Source-anchor feasibility uses deterministic text blocks. This ordinary paragraph is long enough to exercise parser normalization and stable block identity without relying on private user data.",
+      "raw_text": "Source-anchor feasibility uses deterministic text blocks. This ordinary paragraph is long enough\nto exercise parser normalization and stable block identity without relying on private user data.\n",
+      "start": 0,
+      "end": 194,
+      "bbox": [
+        72.0,
+        72.00001525878906,
+        536.0130004882812,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.09090911017523871,
+        0.8758382360919629,
+        0.12865563594933713
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "Source-anchor feasibility uses deterministic text blocks. This ordinary paragraph is long enough",
+          "start": 0,
+          "end": 96,
+          "bbox": [
+            72.0,
+            72.00001525878906,
+            536.0130004882812,
+            87.114013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.09090911017523871,
+            0.8758382360919629,
+            0.10999244150489268
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "to exercise parser normalization and stable block identity without relying on private user data.",
+          "start": 97,
+          "end": 193,
+          "bbox": [
+            72.0,
+            86.78126525878906,
+            525.02392578125,
+            101.895263671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.10957230461968316,
+            0.8578822316687091,
+            0.12865563594933713
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    },
+    {
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 1,
+      "page": 1,
+      "text": "A second paragraph provides a separate source block with an explicit page-local rectangle. It includes repeated anchor words and a short conclusion so the mapping probe can test stable ordinal ordering.",
+      "raw_text": "A second paragraph provides a separate source block with an explicit page-local rectangle. It\nincludes repeated anchor words and a short conclusion so the mapping probe can test stable\nordinal ordering.\n",
+      "start": 0,
+      "end": 203,
+      "bbox": [
+        72.0,
+        116.34376525878906,
+        524.4520874023438,
+        161.020263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.14689869350857204,
+        0.8569478552325879,
+        0.2033084137271149
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "A second paragraph provides a separate source block with an explicit page-local rectangle. It",
+          "start": 0,
+          "end": 93,
+          "bbox": [
+            72.0,
+            116.34376525878906,
+            524.4298095703125,
+            131.457763671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.14689869350857204,
+            0.8569114535462623,
+            0.16598202483822602
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "includes repeated anchor words and a short conclusion so the mapping probe can test stable",
+          "start": 94,
+          "end": 184,
+          "bbox": [
+            72.0,
+            131.12501525878906,
+            524.4520874023438,
+            146.239013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.1655618879530165,
+            0.8569478552325879,
+            0.18464521928267044
+          ]
+        },
+        {
+          "ordinal": 2,
+          "text": "ordinal ordering.",
+          "start": 185,
+          "end": 202,
+          "bbox": [
+            72.0,
+            145.90626525878906,
+            151.4749755859375,
+            161.020263671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.18422508239746094,
+            0.24750813004238154,
+            0.2033084137271149
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    },
+    {
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 2,
+      "page": 1,
+      "text": "The final block records that source coordinates are measured in PDF points and normalized by the page width and height. Every expected coordinate comes from PyMuPDF display extraction rather than an assumed layout.",
+      "raw_text": "The final block records that source coordinates are measured in PDF points and normalized by\nthe page width and height. Every expected coordinate comes from PyMuPDF display extraction\nrather than an assumed layout.\n",
+      "start": 0,
+      "end": 215,
+      "bbox": [
+        72.0,
+        260.0,
+        536.0350341796875,
+        304.676513671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.3282828282828283,
+        0.8758742388556985,
+        0.3846925677675189
+      ],
+      "lines": [
+        {
+          "ordinal": 0,
+          "text": "The final block records that source coordinates are measured in PDF points and normalized by",
+          "start": 0,
+          "end": 92,
+          "bbox": [
+            72.0,
+            260.0,
+            532.9659423828125,
+            275.114013671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.3282828282828283,
+            0.8708593829784518,
+            0.34736617887863
+          ]
+        },
+        {
+          "ordinal": 1,
+          "text": "the page width and height. Every expected coordinate comes from PyMuPDF display extraction",
+          "start": 93,
+          "end": 183,
+          "bbox": [
+            72.0,
+            274.78125,
+            536.0350341796875,
+            289.895263671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.3469460227272727,
+            0.8758742388556985,
+            0.3660293733230745
+          ]
+        },
+        {
+          "ordinal": 2,
+          "text": "rather than an assumed layout.",
+          "start": 184,
+          "end": 214,
+          "bbox": [
+            72.0,
+            289.5625,
+            223.63494873046875,
+            304.676513671875
+          ],
+          "normalized_bbox": [
+            0.11764705882352941,
+            0.3656092171717172,
+            0.3654165828929228,
+            0.3846925677675189
+          ]
+        }
+      ],
+      "block_type": "paragraph",
+      "heading_path": []
+    }
+  ],
+  "words": [
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w0",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "Source-anchor",
+      "start": 0,
+      "end": 13,
+      "bbox": [
+        72.0,
+        72.00001525878906,
+        144.13796997070312,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.09090911017523871,
+        0.2355195587756587,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w1",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "feasibility",
+      "start": 14,
+      "end": 25,
+      "bbox": [
+        147.1959686279297,
+        72.00001525878906,
+        192.42796325683594,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.24051628860772825,
+        0.09090911017523871,
+        0.3144247765634574,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w2",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "uses",
+      "start": 26,
+      "end": 30,
+      "bbox": [
+        195.4859619140625,
+        72.00001525878906,
+        218.71795654296875,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.31942150639552697,
+        0.09090911017523871,
+        0.35738228193295546,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w3",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "deterministic",
+      "start": 31,
+      "end": 44,
+      "bbox": [
+        221.7759552001953,
+        72.00001525878906,
+        283.5079040527344,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.362379011765025,
+        0.09090911017523871,
+        0.46324820923649407,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w4",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "text",
+      "start": 45,
+      "end": 49,
+      "bbox": [
+        286.56591796875,
+        72.00001525878906,
+        304.2979431152344,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.4682449640012255,
+        0.09090911017523871,
+        0.49721886129940257,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w5",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "blocks.",
+      "start": 50,
+      "end": 57,
+      "bbox": [
+        307.35595703125,
+        72.00001525878906,
+        341.58795166015625,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.502215616064134,
+        0.09090911017523871,
+        0.5581502478107129,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w6",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 6,
+      "line_ordinal": 0,
+      "text": "This",
+      "start": 58,
+      "end": 62,
+      "bbox": [
+        344.6459655761719,
+        72.00001525878906,
+        365.4249572753906,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.5631470025754443,
+        0.09090911017523871,
+        0.5970996033911612,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w7",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 7,
+      "line_ordinal": 0,
+      "text": "ordinary",
+      "start": 63,
+      "end": 71,
+      "bbox": [
+        368.48297119140625,
+        72.00001525878906,
+        408.2149353027344,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.6020963581558926,
+        0.09090911017523871,
+        0.6670178681417228,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w8",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 8,
+      "line_ordinal": 0,
+      "text": "paragraph",
+      "start": 72,
+      "end": 81,
+      "bbox": [
+        411.27294921875,
+        72.00001525878906,
+        461.4109191894531,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.6720146229064542,
+        0.09090911017523871,
+        0.7539394104402829,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w9",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 9,
+      "line_ordinal": 0,
+      "text": "is",
+      "start": 39,
+      "end": 41,
+      "bbox": [
+        464.46893310546875,
+        72.00001525878906,
+        472.4109191894531,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.7589361652050143,
+        0.09090911017523871,
+        0.7719132666494332,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w10",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 10,
+      "line_ordinal": 0,
+      "text": "long",
+      "start": 85,
+      "end": 89,
+      "bbox": [
+        475.46893310546875,
+        72.00001525878906,
+        496.2589111328125,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.7769100214141647,
+        0.09090911017523871,
+        0.8108805737464256,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w11",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 11,
+      "line_ordinal": 0,
+      "text": "enough",
+      "start": 90,
+      "end": 96,
+      "bbox": [
+        499.3169250488281,
+        72.00001525878906,
+        536.0130004882812,
+        87.114013671875
+      ],
+      "normalized_bbox": [
+        0.815877328511157,
+        0.09090911017523871,
+        0.8758382360919629,
+        0.10999244150489268
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w12",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 12,
+      "line_ordinal": 1,
+      "text": "to",
+      "start": 97,
+      "end": 99,
+      "bbox": [
+        72.0,
+        86.78126525878906,
+        81.17399597167969,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.10957230461968316,
+        0.13263724831973805,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w13",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 13,
+      "line_ordinal": 1,
+      "text": "exercise",
+      "start": 100,
+      "end": 108,
+      "bbox": [
+        84.23199462890625,
+        86.78126525878906,
+        125.18498992919922,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.13763397815180758,
+        0.10957230461968316,
+        0.2045506371392144,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w14",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 14,
+      "line_ordinal": 1,
+      "text": "parser",
+      "start": 109,
+      "end": 115,
+      "bbox": [
+        128.2429962158203,
+        86.78126525878906,
+        159.41697692871094,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.2095473794376149,
+        0.10957230461968316,
+        0.2604852564194623,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w15",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 15,
+      "line_ordinal": 1,
+      "text": "normalization",
+      "start": 116,
+      "end": 129,
+      "bbox": [
+        162.4749755859375,
+        86.78126525878906,
+        227.88095092773438,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.26548198625153185,
+        0.10957230461968316,
+        0.37235449497995815,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w16",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 16,
+      "line_ordinal": 1,
+      "text": "and",
+      "start": 130,
+      "end": 133,
+      "bbox": [
+        230.93894958496094,
+        86.78126525878906,
+        249.2869415283203,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.37735122481202765,
+        0.10957230461968316,
+        0.40733160380444494,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w17",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 17,
+      "line_ordinal": 1,
+      "text": "stable",
+      "start": 134,
+      "end": 140,
+      "bbox": [
+        252.34494018554688,
+        86.78126525878906,
+        281.69293212890625,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.4123283336365145,
+        0.10957230461968316,
+        0.4602825688380821,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w18",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 18,
+      "line_ordinal": 1,
+      "text": "block",
+      "start": 50,
+      "end": 55,
+      "bbox": [
+        284.7509460449219,
+        86.78126525878906,
+        310.4249267578125,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.46527932360281354,
+        0.10957230461968316,
+        0.5072302724800858,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w19",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 19,
+      "line_ordinal": 1,
+      "text": "identity",
+      "start": 147,
+      "end": 155,
+      "bbox": [
+        313.4829406738281,
+        86.78126525878906,
+        348.3309326171875,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.5122270272448172,
+        0.10957230461968316,
+        0.56916819055096,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w20",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 20,
+      "line_ordinal": 1,
+      "text": "without",
+      "start": 156,
+      "end": 163,
+      "bbox": [
+        351.3889465332031,
+        86.78126525878906,
+        386.2369384765625,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.5741649453156914,
+        0.10957230461968316,
+        0.6311061086218341,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w21",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 21,
+      "line_ordinal": 1,
+      "text": "relying",
+      "start": 164,
+      "end": 171,
+      "bbox": [
+        389.2949523925781,
+        86.78126525878906,
+        421.6899108886719,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.6361028633865655,
+        0.10957230461968316,
+        0.689035802105673,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w22",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 22,
+      "line_ordinal": 1,
+      "text": "on",
+      "start": 86,
+      "end": 88,
+      "bbox": [
+        424.7479248046875,
+        86.78126525878906,
+        436.97991943359375,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.6940325568704044,
+        0.10957230461968316,
+        0.7140194761986826,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w23",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 23,
+      "line_ordinal": 1,
+      "text": "private",
+      "start": 175,
+      "end": 182,
+      "bbox": [
+        440.0379333496094,
+        86.78126525878906,
+        473.0489196777344,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.719016230963414,
+        0.10957230461968316,
+        0.7729557511074091,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w24",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 24,
+      "line_ordinal": 1,
+      "text": "user",
+      "start": 183,
+      "end": 187,
+      "bbox": [
+        476.10693359375,
+        86.78126525878906,
+        497.5019226074219,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.7779525058721405,
+        0.10957230461968316,
+        0.8129116382474214,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b0:w25",
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "ordinal": 25,
+      "line_ordinal": 1,
+      "text": "data.",
+      "start": 188,
+      "end": 193,
+      "bbox": [
+        500.5599365234375,
+        86.78126525878906,
+        525.02392578125,
+        101.895263671875
+      ],
+      "normalized_bbox": [
+        0.8179083930121528,
+        0.10957230461968316,
+        0.8578822316687091,
+        0.12865563594933713
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w0",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "A",
+      "start": 0,
+      "end": 1,
+      "bbox": [
+        72.0,
+        116.34376525878906,
+        79.33699798583984,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.14689869350857204,
+        0.1296356176239213,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w1",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "second",
+      "start": 2,
+      "end": 8,
+      "bbox": [
+        82.3949966430664,
+        116.34376525878906,
+        117.8589859008789,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.13463234745599087,
+        0.14689869350857204,
+        0.19258004232169756,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w2",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "paragraph",
+      "start": 9,
+      "end": 18,
+      "bbox": [
+        120.91698455810547,
+        116.34376525878906,
+        171.05496215820312,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.1975767721537671,
+        0.14689869350857204,
+        0.2795015721539267,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w3",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "provides",
+      "start": 19,
+      "end": 27,
+      "bbox": [
+        174.1129608154297,
+        116.34376525878906,
+        215.68194580078125,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.28449830198599624,
+        0.14689869350857204,
+        0.35242148006663604,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w4",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "a",
+      "start": 10,
+      "end": 11,
+      "bbox": [
+        218.7399444580078,
+        116.34376525878906,
+        224.85594177246094,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.3574182098987056,
+        0.14689869350857204,
+        0.36741166956284466,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w5",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "separate",
+      "start": 30,
+      "end": 38,
+      "bbox": [
+        227.9139404296875,
+        116.34376525878906,
+        270.7149353027344,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.3724083993949142,
+        0.14689869350857204,
+        0.44234466552734375,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w6",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 6,
+      "line_ordinal": 0,
+      "text": "source",
+      "start": 39,
+      "end": 45,
+      "bbox": [
+        273.77294921875,
+        116.34376525878906,
+        306.783935546875,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.4473414202920752,
+        0.14689869350857204,
+        0.5012809404360703,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w7",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 7,
+      "line_ordinal": 0,
+      "text": "block",
+      "start": 46,
+      "end": 51,
+      "bbox": [
+        309.8419494628906,
+        116.34376525878906,
+        335.51593017578125,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.5062776952008017,
+        0.14689869350857204,
+        0.5482286440780739,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w8",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 8,
+      "line_ordinal": 0,
+      "text": "with",
+      "start": 52,
+      "end": 56,
+      "bbox": [
+        338.5739440917969,
+        116.34376525878906,
+        358.1319274902344,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.5532253988428053,
+        0.14689869350857204,
+        0.5851828880559385,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w9",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 9,
+      "line_ordinal": 0,
+      "text": "an",
+      "start": 57,
+      "end": 59,
+      "bbox": [
+        361.18994140625,
+        116.34376525878906,
+        373.42193603515625,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.5901796428206699,
+        0.14689869350857204,
+        0.6101665621489482,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w10",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 10,
+      "line_ordinal": 0,
+      "text": "explicit",
+      "start": 60,
+      "end": 68,
+      "bbox": [
+        376.4799499511719,
+        116.34376525878906,
+        410.0959167480469,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.6151633169136795,
+        0.14689869350857204,
+        0.6700913672353707,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w11",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 11,
+      "line_ordinal": 0,
+      "text": "page-local",
+      "start": 69,
+      "end": 79,
+      "bbox": [
+        413.1539306640625,
+        116.34376525878906,
+        463.8968811035156,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.6750881220001022,
+        0.14689869350857204,
+        0.7580014397116268,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w12",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 12,
+      "line_ordinal": 0,
+      "text": "rectangle.",
+      "start": 80,
+      "end": 90,
+      "bbox": [
+        466.95489501953125,
+        116.34376525878906,
+        515.255859375,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.7629981944763583,
+        0.14689869350857204,
+        0.8419213388480392,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w13",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 13,
+      "line_ordinal": 0,
+      "text": "It",
+      "start": 91,
+      "end": 93,
+      "bbox": [
+        518.3138427734375,
+        116.34376525878906,
+        524.4298095703125,
+        131.457763671875
+      ],
+      "normalized_bbox": [
+        0.846918043747447,
+        0.14689869350857204,
+        0.8569114535462623,
+        0.16598202483822602
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w14",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 14,
+      "line_ordinal": 1,
+      "text": "includes",
+      "start": 94,
+      "end": 102,
+      "bbox": [
+        72.0,
+        131.12501525878906,
+        112.34799194335938,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.1655618879530165,
+        0.18357515023424734,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w15",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 15,
+      "line_ordinal": 1,
+      "text": "repeated",
+      "start": 103,
+      "end": 111,
+      "bbox": [
+        115.40599060058594,
+        131.12501525878906,
+        158.82298278808594,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.1885718800663169,
+        0.1655618879530165,
+        0.25951467775831033,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w16",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 16,
+      "line_ordinal": 1,
+      "text": "anchor",
+      "start": 112,
+      "end": 118,
+      "bbox": [
+        161.8809814453125,
+        131.12501525878906,
+        195.50796508789062,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.2645114075903799,
+        0.1655618879530165,
+        0.31945745929393893,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w17",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 17,
+      "line_ordinal": 1,
+      "text": "words",
+      "start": 119,
+      "end": 124,
+      "bbox": [
+        198.5659637451172,
+        131.12501525878906,
+        227.9029541015625,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.3244541891260085,
+        0.1655618879530165,
+        0.3723904478783701,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w18",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 18,
+      "line_ordinal": 1,
+      "text": "and",
+      "start": 125,
+      "end": 128,
+      "bbox": [
+        230.96095275878906,
+        131.12501525878906,
+        249.30894470214844,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.37738717771043967,
+        0.1655618879530165,
+        0.4073675567028569,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w19",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 19,
+      "line_ordinal": 1,
+      "text": "a",
+      "start": 10,
+      "end": 11,
+      "bbox": [
+        252.366943359375,
+        131.12501525878906,
+        258.4829406738281,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.41236428653492646,
+        0.1655618879530165,
+        0.4223577461990656,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w20",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 20,
+      "line_ordinal": 1,
+      "text": "short",
+      "start": 131,
+      "end": 136,
+      "bbox": [
+        261.54095458984375,
+        131.12501525878906,
+        285.99395751953125,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.42735450096379696,
+        0.1655618879530165,
+        0.4673103881038092,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w21",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 21,
+      "line_ordinal": 1,
+      "text": "conclusion",
+      "start": 137,
+      "end": 147,
+      "bbox": [
+        289.0519714355469,
+        131.12501525878906,
+        341.01593017578125,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.47230714286854064,
+        0.1655618879530165,
+        0.557215572182649,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w22",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 22,
+      "line_ordinal": 1,
+      "text": "so",
+      "start": 39,
+      "end": 41,
+      "bbox": [
+        344.0739440917969,
+        131.12501525878906,
+        355.68994140625,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.5622123269473805,
+        0.1655618879530165,
+        0.5811927147160948,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w23",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 23,
+      "line_ordinal": 1,
+      "text": "the",
+      "start": 151,
+      "end": 154,
+      "bbox": [
+        358.7479553222656,
+        131.12501525878906,
+        374.0379638671875,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.5861894694808262,
+        0.1655618879530165,
+        0.6111731435738358,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w24",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 24,
+      "line_ordinal": 1,
+      "text": "mapping",
+      "start": 155,
+      "end": 162,
+      "bbox": [
+        377.0959777832031,
+        131.12501525878906,
+        419.28094482421875,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.6161698983385672,
+        0.1655618879530165,
+        0.6850995830461091,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w25",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 25,
+      "line_ordinal": 1,
+      "text": "probe",
+      "start": 163,
+      "end": 168,
+      "bbox": [
+        422.3389587402344,
+        131.12501525878906,
+        450.4659423828125,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.6900963378108405,
+        0.1655618879530165,
+        0.7360554614098244,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w26",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 26,
+      "line_ordinal": 1,
+      "text": "can",
+      "start": 169,
+      "end": 172,
+      "bbox": [
+        453.5239562988281,
+        131.12501525878906,
+        471.2559509277344,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.7410522161745557,
+        0.1655618879530165,
+        0.7700260636074091,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w27",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 27,
+      "line_ordinal": 1,
+      "text": "test",
+      "start": 173,
+      "end": 177,
+      "bbox": [
+        474.31396484375,
+        131.12501525878906,
+        492.0459899902344,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.7750228183721405,
+        0.1655618879530165,
+        0.8039967156703176,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w28",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 28,
+      "line_ordinal": 1,
+      "text": "stable",
+      "start": 178,
+      "end": 184,
+      "bbox": [
+        495.10400390625,
+        131.12501525878906,
+        524.4520874023438,
+        146.239013671875
+      ],
+      "normalized_bbox": [
+        0.808993470435049,
+        0.1655618879530165,
+        0.8569478552325879,
+        0.18464521928267044
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w29",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 29,
+      "line_ordinal": 2,
+      "text": "ordinal",
+      "start": 185,
+      "end": 192,
+      "bbox": [
+        72.0,
+        145.90626525878906,
+        105.01099395751953,
+        161.020263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.18422508239746094,
+        0.17158659143385543,
+        0.2033084137271149
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b1:w30",
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "ordinal": 30,
+      "line_ordinal": 2,
+      "text": "ordering.",
+      "start": 193,
+      "end": 202,
+      "bbox": [
+        108.0689926147461,
+        145.90626525878906,
+        151.4749755859375,
+        161.020263671875
+      ],
+      "normalized_bbox": [
+        0.176583321265925,
+        0.18422508239746094,
+        0.24750813004238154,
+        0.2033084137271149
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w0",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 0,
+      "line_ordinal": 0,
+      "text": "The",
+      "start": 0,
+      "end": 3,
+      "bbox": [
+        72.0,
+        260.0,
+        90.95299530029297,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.3282828282828283,
+        0.14861600539263556,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w1",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 1,
+      "line_ordinal": 0,
+      "text": "final",
+      "start": 4,
+      "end": 9,
+      "bbox": [
+        94.01099395751953,
+        260.0,
+        114.18498992919922,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.15361273522470512,
+        0.3282828282828283,
+        0.18657678093006408,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w2",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 2,
+      "line_ordinal": 0,
+      "text": "block",
+      "start": 10,
+      "end": 15,
+      "bbox": [
+        117.24298858642578,
+        260.0,
+        142.9169921875,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.19157351076213364,
+        0.3282828282828283,
+        0.2335244970383987,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w3",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 3,
+      "line_ordinal": 0,
+      "text": "records",
+      "start": 16,
+      "end": 23,
+      "bbox": [
+        145.97499084472656,
+        260.0,
+        182.6489715576172,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.23852122687046823,
+        0.3282828282828283,
+        0.29844603195689084,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w4",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 4,
+      "line_ordinal": 0,
+      "text": "that",
+      "start": 24,
+      "end": 28,
+      "bbox": [
+        185.70697021484375,
+        260.0,
+        204.05496215820312,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.3034427617889604,
+        0.3282828282828283,
+        0.33342314078137764,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w5",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 5,
+      "line_ordinal": 0,
+      "text": "source",
+      "start": 29,
+      "end": 35,
+      "bbox": [
+        207.1129608154297,
+        260.0,
+        240.1239471435547,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.3384198706134472,
+        0.3282828282828283,
+        0.3923593907574423,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w6",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 6,
+      "line_ordinal": 0,
+      "text": "coordinates",
+      "start": 36,
+      "end": 47,
+      "bbox": [
+        243.18194580078125,
+        260.0,
+        300.0409240722656,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.39735612058951186,
+        0.3282828282828283,
+        0.4902629478304994,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w7",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 7,
+      "line_ordinal": 0,
+      "text": "are",
+      "start": 48,
+      "end": 51,
+      "bbox": [
+        303.09893798828125,
+        260.0,
+        318.9939270019531,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.4952597025952308,
+        0.3282828282828283,
+        0.5212319068659365,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w8",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 8,
+      "line_ordinal": 0,
+      "text": "measured",
+      "start": 52,
+      "end": 60,
+      "bbox": [
+        322.05194091796875,
+        260.0,
+        370.9579162597656,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.5262286616306678,
+        0.3282828282828283,
+        0.6061403860453687,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w9",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 9,
+      "line_ordinal": 0,
+      "text": "in",
+      "start": 5,
+      "end": 7,
+      "bbox": [
+        374.01593017578125,
+        260.0,
+        382.57391357421875,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.6111371408101001,
+        0.3282828282828283,
+        0.6251207738140829,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w10",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 10,
+      "line_ordinal": 0,
+      "text": "PDF",
+      "start": 64,
+      "end": 67,
+      "bbox": [
+        385.6319274902344,
+        260.0,
+        407.6319274902344,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.6301175285788143,
+        0.3282828282828283,
+        0.666065240997115,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w11",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 11,
+      "line_ordinal": 0,
+      "text": "points",
+      "start": 68,
+      "end": 74,
+      "bbox": [
+        410.68994140625,
+        260.0,
+        440.0379333496094,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.6710619957618464,
+        0.3282828282828283,
+        0.719016230963414,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w12",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 12,
+      "line_ordinal": 0,
+      "text": "and",
+      "start": 75,
+      "end": 78,
+      "bbox": [
+        443.095947265625,
+        260.0,
+        461.4439392089844,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.7240129857281454,
+        0.3282828282828283,
+        0.7539933647205627,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w13",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 13,
+      "line_ordinal": 0,
+      "text": "normalized",
+      "start": 79,
+      "end": 89,
+      "bbox": [
+        464.501953125,
+        260.0,
+        518.2919311523438,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.7589901194852942,
+        0.3282828282828283,
+        0.8468822404450062,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w14",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 14,
+      "line_ordinal": 0,
+      "text": "by",
+      "start": 90,
+      "end": 92,
+      "bbox": [
+        521.3499145507812,
+        260.0,
+        532.9659423828125,
+        275.114013671875
+      ],
+      "normalized_bbox": [
+        0.8518789453444138,
+        0.3282828282828283,
+        0.8708593829784518,
+        0.34736617887863
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w15",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 15,
+      "line_ordinal": 1,
+      "text": "the",
+      "start": 93,
+      "end": 96,
+      "bbox": [
+        72.0,
+        274.78125,
+        87.28999328613281,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.3469460227272727,
+        0.14263070798387714,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w16",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 16,
+      "line_ordinal": 1,
+      "text": "page",
+      "start": 97,
+      "end": 101,
+      "bbox": [
+        90.34799194335938,
+        274.78125,
+        114.81198120117188,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.1476274378159467,
+        0.3469460227272727,
+        0.18760127647250308,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w17",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 17,
+      "line_ordinal": 1,
+      "text": "width",
+      "start": 102,
+      "end": 107,
+      "bbox": [
+        117.86997985839844,
+        274.78125,
+        143.54397583007812,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.1925980063045726,
+        0.3469460227272727,
+        0.23454898011450673,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w18",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 18,
+      "line_ordinal": 1,
+      "text": "and",
+      "start": 75,
+      "end": 78,
+      "bbox": [
+        146.6019744873047,
+        274.78125,
+        164.94996643066406,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.23954570994657629,
+        0.3469460227272727,
+        0.26952608893899355,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w19",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 19,
+      "line_ordinal": 1,
+      "text": "height.",
+      "start": 112,
+      "end": 119,
+      "bbox": [
+        168.00796508789062,
+        274.78125,
+        201.0299530029297,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.2745228187710631,
+        0.3469460227272727,
+        0.3284803153642642,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w20",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 20,
+      "line_ordinal": 1,
+      "text": "Every",
+      "start": 120,
+      "end": 125,
+      "bbox": [
+        204.08795166015625,
+        274.78125,
+        232.20394897460938,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.33347704519633375,
+        0.3469460227272727,
+        0.3794182172787735,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w21",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 21,
+      "line_ordinal": 1,
+      "text": "expected",
+      "start": 126,
+      "end": 134,
+      "bbox": [
+        235.26194763183594,
+        274.78125,
+        279.89996337890625,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.384414947110843,
+        0.3469460227272727,
+        0.4573528813380821,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w22",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 22,
+      "line_ordinal": 1,
+      "text": "coordinate",
+      "start": 36,
+      "end": 46,
+      "bbox": [
+        282.9579772949219,
+        274.78125,
+        334.31695556640625,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.46234963610281354,
+        0.3469460227272727,
+        0.546269535239226,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w23",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 23,
+      "line_ordinal": 1,
+      "text": "comes",
+      "start": 146,
+      "end": 151,
+      "bbox": [
+        337.3749694824219,
+        274.78125,
+        369.76995849609375,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.5512662900039573,
+        0.3469460227272727,
+        0.6041992785883885,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w24",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 24,
+      "line_ordinal": 1,
+      "text": "from",
+      "start": 152,
+      "end": 156,
+      "bbox": [
+        372.8279724121094,
+        274.78125,
+        394.8279724121094,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.6091960333531199,
+        0.3469460227272727,
+        0.6451437457714205,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w25",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 25,
+      "line_ordinal": 1,
+      "text": "PyMuPDF",
+      "start": 157,
+      "end": 164,
+      "bbox": [
+        397.885986328125,
+        274.78125,
+        448.0019836425781,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.6501405005361519,
+        0.3469460227272727,
+        0.7320293850368924,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w26",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 26,
+      "line_ordinal": 1,
+      "text": "display",
+      "start": 165,
+      "end": 172,
+      "bbox": [
+        451.05999755859375,
+        274.78125,
+        485.2919616699219,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.7370261398016238,
+        0.3469460227272727,
+        0.7929607216828789,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w27",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 27,
+      "line_ordinal": 1,
+      "text": "extraction",
+      "start": 173,
+      "end": 183,
+      "bbox": [
+        488.3499755859375,
+        274.78125,
+        536.0350341796875,
+        289.895263671875
+      ],
+      "normalized_bbox": [
+        0.7979574764476103,
+        0.3469460227272727,
+        0.8758742388556985,
+        0.3660293733230745
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w28",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 28,
+      "line_ordinal": 2,
+      "text": "rather",
+      "start": 184,
+      "end": 190,
+      "bbox": [
+        72.0,
+        289.5625,
+        100.73199462890625,
+        304.676513671875
+      ],
+      "normalized_bbox": [
+        0.11764705882352941,
+        0.3656092171717172,
+        0.1645947624655331,
+        0.3846925677675189
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w29",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 29,
+      "line_ordinal": 2,
+      "text": "than",
+      "start": 191,
+      "end": 195,
+      "bbox": [
+        103.78999328613281,
+        289.5625,
+        125.19598388671875,
+        304.676513671875
+      ],
+      "normalized_bbox": [
+        0.16959149229760265,
+        0.3656092171717172,
+        0.20456860112208947,
+        0.3846925677675189
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w30",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 30,
+      "line_ordinal": 2,
+      "text": "an",
+      "start": 75,
+      "end": 77,
+      "bbox": [
+        128.2539825439453,
+        289.5625,
+        140.48597717285156,
+        304.676513671875
+      ],
+      "normalized_bbox": [
+        0.209565330954159,
+        0.3656092171717172,
+        0.2295522502824372,
+        0.3846925677675189
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w31",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 31,
+      "line_ordinal": 2,
+      "text": "assumed",
+      "start": 199,
+      "end": 206,
+      "bbox": [
+        143.54397583007812,
+        289.5625,
+        188.17095947265625,
+        304.676513671875
+      ],
+      "normalized_bbox": [
+        0.23454898011450673,
+        0.3656092171717172,
+        0.3074688880272161,
+        0.3846925677675189
+      ]
+    },
+    {
+      "word_id": "pdf-single-column-v1:p1:b2:w32",
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "ordinal": 32,
+      "line_ordinal": 2,
+      "text": "layout.",
+      "start": 207,
+      "end": 214,
+      "bbox": [
+        191.2289581298828,
+        289.5625,
+        223.63494873046875,
+        304.676513671875
+      ],
+      "normalized_bbox": [
+        0.3124656178592856,
+        0.3656092171717172,
+        0.3654165828929228,
+        0.3846925677675189
+      ]
+    }
+  ],
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "Source-anchor feasibility uses deterministic text blocks. This ordinary paragraph is long enough to exercise parser normalization and stable block identity without relying on private user data.\nA second paragraph provides a separate source block with an explicit page-local rectangle. It includes repeated anchor words and a short conclusion so the mapping probe can test stable ordinal ordering.\nThe final block records that source coordinates are measured in PDF points and normalized by the page width and height. Every expected coordinate comes from PyMuPDF display extraction rather than an assumed layout.",
+      "page": 1,
+      "page_end": 1,
+      "section": "",
+      "chunker": "v1"
+    }
+  ],
+  "anchors": [
+    {
+      "block_id": "pdf-single-column-v1:p1:b2",
+      "chunk_index": 0,
+      "coverage": 0.350245,
+      "is_primary": true,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          72.0,
+          260.0,
+          536.0350341796875,
+          304.676513671875
+        ],
+        "normalized_bbox": [
+          0.11764705882352941,
+          0.3282828282828283,
+          0.8758742388556985,
+          0.3846925677675189
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-single-column-v1:p1:b1",
+      "chunk_index": 0,
+      "coverage": 0.330606,
+      "is_primary": false,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          72.0,
+          116.34376525878906,
+          524.4520874023438,
+          161.020263671875
+        ],
+        "normalized_bbox": [
+          0.11764705882352941,
+          0.14689869350857204,
+          0.8569478552325879,
+          0.2033084137271149
+        ]
+      }
+    },
+    {
+      "block_id": "pdf-single-column-v1:p1:b0",
+      "chunk_index": 0,
+      "coverage": 0.315876,
+      "is_primary": false,
+      "locator": {
+        "page": 1,
+        "bbox": [
+          72.0,
+          72.00001525878906,
+          536.0130004882812,
+          101.895263671875
+        ],
+        "normalized_bbox": [
+          0.11764705882352941,
+          0.09090911017523871,
+          0.8758382360919629,
+          0.12865563594933713
+        ]
+      }
+    }
+  ],
+  "mapped_count": 1,
+  "unmapped_count": 0,
+  "unmapped_reasons": [],
+  "metrics": {
+    "page_count": 1,
+    "block_count": 3,
+    "word_count": 90,
+    "line_count": 8,
+    "mapped_chunk_rate": 1.0,
+    "anchor_count": 3,
+    "bbox_max_error": 0.0,
+    "bbox_median_error": 0.0,
+    "markdown_line_exact_rate": null
+  }
+}

@@ -1,0 +1,396 @@
+{
+  "schema_version": "spec-018-task-02-fixture-index-v1",
+  "generated_by": "backend-tester",
+  "generated_at": "2026-09-08",
+  "mapping_algorithm_version": "source-anchor-v1",
+  "qdrant_fixture_policy": "no fixture writes; real payload read-only fingerprint recorded in report",
+  "entries": [
+    {
+      "sample_id": "pdf-single-column-v1",
+      "kind": "source",
+      "path": "docs/sdd/fixtures/spec-018/pdf-single-column-v1.pdf",
+      "sha256": "3cc6b61497f483fcb1933919cb00f1568ad1fd609953c96e4970c772cbe4e4ec",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-single-column-v1",
+      "kind": "expected",
+      "path": "docs/sdd/fixtures/spec-018/pdf-single-column-v1.expected.json",
+      "sha256": "a91ace4a082d86365006f353c8ecb5ac3ad4d940ec265ff87216f6e43b382ea3",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-single-column-v1",
+      "kind": "readme",
+      "path": "docs/sdd/fixtures/spec-018/pdf-single-column-v1.README.md",
+      "sha256": "0c07472113063ba27c9f2dddb3872427064f808c844c7430195b19e80e6f9bf0",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-two-column-v1-overlap",
+      "kind": "source",
+      "path": "docs/sdd/fixtures/spec-018/pdf-two-column-v1-overlap.pdf",
+      "sha256": "33726da69e2c79bd5b3d4fe10dc14a2b64760802151b4af97b97f4bb84e99e7d",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-two-column-v1-overlap",
+      "kind": "expected",
+      "path": "docs/sdd/fixtures/spec-018/pdf-two-column-v1-overlap.expected.json",
+      "sha256": "418a558b78e24cb2bf8e400b868cbdea34bbfe4aa3236c9bdc21ddb2575322c0",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-two-column-v1-overlap",
+      "kind": "readme",
+      "path": "docs/sdd/fixtures/spec-018/pdf-two-column-v1-overlap.README.md",
+      "sha256": "b8e270c2ceaea62b66b08e19df9be5a886b18c59274069015fc0a64a07e67f27",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-v2-cross-page",
+      "kind": "source",
+      "path": "docs/sdd/fixtures/spec-018/pdf-v2-cross-page.pdf",
+      "sha256": "c0fccf6f1d0dde1c299ce044e63c79c2796ca981f7bcadaf62ec27db9e996468",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-v2-cross-page",
+      "kind": "expected",
+      "path": "docs/sdd/fixtures/spec-018/pdf-v2-cross-page.expected.json",
+      "sha256": "cbece70d3a9296494aa4f28e1e4e27bcae89af7c9e3c09c80ea9b0c73f0e17fc",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-v2-cross-page",
+      "kind": "readme",
+      "path": "docs/sdd/fixtures/spec-018/pdf-v2-cross-page.README.md",
+      "sha256": "1ae7c7a01a221c97104bd9a43ca332741c92a3cd813bb13d0ecfa2e024a0f253",
+      "media_type": "application/pdf",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-no-text-layer",
+      "kind": "source",
+      "path": "docs/sdd/fixtures/spec-018/pdf-no-text-layer.pdf",
+      "sha256": "05e59443707b6976afedbf1b0c1de5ad9bf62609411c902feb241b5033303252",
+      "media_type": "application/pdf",
+      "expected_status": "failed",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-no-text-layer",
+      "kind": "expected",
+      "path": "docs/sdd/fixtures/spec-018/pdf-no-text-layer.expected.json",
+      "sha256": "b116f4a6a81b74039f9327d55420d2a266218a2fc382b1ffefb363680c6a8289",
+      "media_type": "application/pdf",
+      "expected_status": "failed",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-no-text-layer",
+      "kind": "readme",
+      "path": "docs/sdd/fixtures/spec-018/pdf-no-text-layer.README.md",
+      "sha256": "062a5ff318c3650d1ae3cf2e1adfd93ba7c3b3a4217df9053cf890cd7f3bc24b",
+      "media_type": "application/pdf",
+      "expected_status": "failed",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-hostile-features",
+      "kind": "source",
+      "path": "docs/sdd/fixtures/spec-018/pdf-hostile-features.pdf",
+      "sha256": "1bc72165cc992f88ad28ef9a6ea24438e1024c305082f03bd3d554a59d664377",
+      "media_type": "application/pdf",
+      "expected_status": "partial",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-hostile-features",
+      "kind": "expected",
+      "path": "docs/sdd/fixtures/spec-018/pdf-hostile-features.expected.json",
+      "sha256": "20477b4ed7b1250adf12388b7565a305699d8f4986071f3687a8d9b0a811e4dc",
+      "media_type": "application/pdf",
+      "expected_status": "partial",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "pdf-hostile-features",
+      "kind": "readme",
+      "path": "docs/sdd/fixtures/spec-018/pdf-hostile-features.README.md",
+      "sha256": "b1217d3f7d7944fdc1127d43c4298f5454ba4dc3ce9d36a36eb44804a69567f0",
+      "media_type": "application/pdf",
+      "expected_status": "partial",
+      "thresholds": {
+        "bbox_max_error": 0.005,
+        "markdown_line_exact_rate": null,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "markdown-blocks",
+      "kind": "source",
+      "path": "docs/sdd/fixtures/spec-018/markdown-blocks.md",
+      "sha256": "0b19f1dc1a3bd687b2b9f369ce6c93998648d4f7b6c976d1ed87a78b41325e97",
+      "media_type": "text/markdown",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": null,
+        "markdown_line_exact_rate": 1.0,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "markdown-blocks",
+      "kind": "expected",
+      "path": "docs/sdd/fixtures/spec-018/markdown-blocks.expected.json",
+      "sha256": "d7847f4089d88f4c5f989073eac2a3a048471a05986c3531deb694e782b2b22c",
+      "media_type": "text/markdown",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": null,
+        "markdown_line_exact_rate": 1.0,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "markdown-blocks",
+      "kind": "readme",
+      "path": "docs/sdd/fixtures/spec-018/markdown-blocks.README.md",
+      "sha256": "8e11f5ad688613b59a5396fb51f02bcb60ec58f3a6091cb0aacb1a720afad083",
+      "media_type": "text/markdown",
+      "expected_status": "ready",
+      "thresholds": {
+        "bbox_max_error": null,
+        "markdown_line_exact_rate": 1.0,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "markdown-hostile",
+      "kind": "source",
+      "path": "docs/sdd/fixtures/spec-018/markdown-hostile.md",
+      "sha256": "8adfb117879523e8858d9346307cfcfce94eb8b71d144c7453802b2973cf9f32",
+      "media_type": "text/markdown",
+      "expected_status": "partial",
+      "thresholds": {
+        "bbox_max_error": null,
+        "markdown_line_exact_rate": 1.0,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "markdown-hostile",
+      "kind": "expected",
+      "path": "docs/sdd/fixtures/spec-018/markdown-hostile.expected.json",
+      "sha256": "caae72931d25d856453ece2134c9af6ae41da3a7dd076b553b9ad0b87293a059",
+      "media_type": "text/markdown",
+      "expected_status": "partial",
+      "thresholds": {
+        "bbox_max_error": null,
+        "markdown_line_exact_rate": 1.0,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "markdown-hostile",
+      "kind": "readme",
+      "path": "docs/sdd/fixtures/spec-018/markdown-hostile.README.md",
+      "sha256": "bffcb5b252821caad73b86a7d98e8d54706ba0401596994fc6ff96fca5835ba2",
+      "media_type": "text/markdown",
+      "expected_status": "partial",
+      "thresholds": {
+        "bbox_max_error": null,
+        "markdown_line_exact_rate": 1.0,
+        "qdrant_duplicate_count": 0,
+        "qdrant_gap_count": 0,
+        "embedding_calls": 0,
+        "chunker_calls": 0,
+        "qdrant_upsert_calls": 0,
+        "qdrant_delete_calls": 0
+      }
+    },
+    {
+      "sample_id": "task-02",
+      "kind": "dto-schema",
+      "path": "docs/sdd/plans/018/artifacts/task-02/provenance-dto.schema.json",
+      "sha256": "01718f4b37a08f74b0a9bbd4c818810e145cd65d296ad2f1022c57dd866af6ed",
+      "media_type": "application/schema+json",
+      "expected_status": "schema",
+      "thresholds": {}
+    }
+  ]
+}

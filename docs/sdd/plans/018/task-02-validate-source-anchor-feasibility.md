@@ -1,7 +1,7 @@
 # Task 02：验证来源锚点可行性（Go/No-Go）
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task 01、Spec 已确认；被依赖：Task 03；当前状态：`实施中`
+> 依赖：Task 01、Spec 已确认；被依赖：Task 03；当前状态：`阻塞/需修订`
 
 ## 一句话目标
 
@@ -85,10 +85,11 @@ Task 02 必须按以下顺序交接，不允许把多个阶段合并成一次不
 
 ## 执行结果
 
-执行中：已按 02-A→02-B→02-C→02-D 分派固定样本与只读可行性验证；最终以固定报告中的 `GO`/`NO-GO` 为准。
+已完成 02-A→02-B→02-C→02-D 只读核验，严格结论：`NO-GO`；Task02 状态为 `阻塞/需修订`，Task03 不放行。固定产物：`docs/sdd/fixtures/spec-018/`、`docs/sdd/plans/018/artifacts/task-02/fixture-index.json`、`provenance-dto.schema.json`、`source-anchor-feasibility-report.md`。探针命令 `PYTHONPATH=. .venv/bin/python /private/tmp/spec018_audit.py` 退出码 0；embedding=0、检查路径切分=0、upsert=0、delete=0；真实 Qdrant 1132 points 只读指纹已记录。未修改业务代码、用户 data/kb、Qdrant、Git 历史或 Spec 状态。
 
 ## 变更日志
 
 - 2026-09-08：架构师创建 Task。
 - 2026-09-08：根据 P0-7 拆为 02-A fixture、02-B provenance/mapping、02-C Tech Lead Go/No-Go；冻结三个交接产物、字段、SHA-256 与停止门禁。
 - 2026-09-08：P0-7 最终小修订增加 02-D handoff closure，明确 Tech Lead 单步最低 64k、最终 Gate 128k，交接只读固定 artifacts，不修改实现。
+- 2026-09-08：backend-tester 完成 02-A→02-D；匿名样本 oracle、bbox 重投影、Markdown 行号 oracle、Qdrant duplicate/gap 与 no-embedding guard 通过，但现有 parser 缺少同源 PDF provenance DTO、业务缺少 Markdown parser/chunker，hostile 网络未实测；严格裁决 `NO-GO`，Task03 阻塞。

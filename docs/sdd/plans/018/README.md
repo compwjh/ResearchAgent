@@ -1,13 +1,13 @@
 # Spec 018 任务索引：知识文档切片检查器
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md)
-> 当前状态：`实施中`；需求评审与技术复审已通过，用户已明确要求开始 Spec018；当前只执行 Task02 Go/No-Go，未通过前不得修改业务代码。
+> 当前状态：`待确认`；Task02 Go/No-Go 严格结论为 `NO-GO`，需先修订来源锚点契约；Task03–07 暂停，未修改业务代码。
 
 ## 执行顺序
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
-| [02](./task-02-validate-source-anchor-feasibility.md) | 验证 PDF/Markdown 来源锚点与既有切片对齐 | Spec 已确认 | 实施中 |
+| [02](./task-02-validate-source-anchor-feasibility.md) | 验证 PDF/Markdown 来源锚点与既有切片对齐 | Spec 已确认 | 阻塞/需修订 |
 | [03](./task-03-document-contract-and-migration.md) | 定义通用文档、清单和无损迁移协议 | 02 Go | 待执行 |
 | [04](./task-04-backend-document-inspection-api.md) | 后端导入、原件和检查清单接口 | 03 | 待执行 |
 | [05](./task-05-frontend-chunk-inspector.md) | 双栏/窄屏检查器与双向联动 | 04 | 待执行 |
@@ -25,7 +25,7 @@
 ## 需求评审修订轮门禁（2026-09-08）
 
 - Spec 018 已把桌面/窄屏产品旅程、PDF/Markdown 固定样本、manifest/anchor 期望字段、旧 `paper_id → document_id` 补建矩阵、no-embedding/no-reslice spy、PDF.js/Markdown 网络安全、Range 状态码、双栏联动和 `scrollTop` 保留写入验收方式；需求评审结论为“通过”。
-- 技术复审已通过；用户已明确确认 Spec，状态已进入 `实施中`。Task 02 仅允许执行来源锚点验证，不得提前修改业务代码；No-Go 自动回退 Spec 状态并停止后续任务。
+- 技术复审已通过；用户曾明确确认 Spec 并启动 Task02。Task02 已严格 `NO-GO`，因此自动回退 Spec 为 `待确认` 并停止后续任务；不得提前修改业务代码。
 - Task 02 必须把固定样本与 `*.expected.json` 落盘到 `docs/sdd/fixtures/spec-018/`，并对 `source_sha256`、`index_fingerprint`、映射对、primary、bbox/行号误差和 `partial` 判定给出 Go/No-Go 结果；不得只以口头结论替代样本。
 - Task 03–06 必须保留验收观测字段：embedding/切分/Qdrant 写操作调用次数、point ID/payload fingerprint、原件 hash、manifest 状态/进度、Range headers、浏览器网络请求、面板/焦点/滚动位置；实现或测试发现契约变化时先暂停并更新 Spec。
 - Task 07 只能在后端/前端单端验收和跨端浏览器验收均能复现上述 oracle 后进入部署；评审文档必须引用实际 fixture、命令、退出码和观测值。
