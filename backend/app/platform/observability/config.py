@@ -7,7 +7,7 @@
 import logging
 import random
 
-from backend.app.core import config
+from backend.app.platform import config
 
 logger = logging.getLogger(__name__)
 

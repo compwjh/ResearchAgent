@@ -14,7 +14,8 @@ from pydantic import ValidationError
 
 from backend.app.article_assistant.application.entry import TaskStore
 from backend.app.article_assistant.domain.article import ArticleCandidate
-from backend.app.core.config import BASE_DIR
+from backend.app.knowledge_base.application import create_paper_import_port
+from backend.app.platform.config import BASE_DIR
 from backend.app.paper_discovery.application.entry import (
     DBLPPublicationSource,
     UsenixAcceptedSource,
@@ -43,6 +44,23 @@ def article_tasks() -> TaskStore:
 
 
 register_provider("article_tasks", TaskStore)
+register_provider("paper_import_port", create_paper_import_port)
+
+
+def _paper_import_port_factory():
+    """Expose the KB constructor through the provider registry.
+
+    ``ProviderRegistry`` calls a registered provider before returning its
+    value.  Registering ``create_paper_import_port`` directly would therefore
+    resolve to an already-created adapter and leave paper discovery unable to
+    pass its per-call test seams.  This extra zero-argument provider returns
+    the constructor itself; the application boundary then invokes it with the
+    optional paths/indexer/deleter/client arguments.
+    """
+    return create_paper_import_port
+
+
+register_provider("paper_import_port_factory", _paper_import_port_factory, singleton=False)
 
 article_settings = load_article_settings()
 paper_discovery_store = None
@@ -73,8 +91,6 @@ def _paper_api_error(status_code: int, code: str, message: str, retryable: bool 
 
 def _build_paper_store() -> PaperDiscoveryStore:
     global paper_discovery_store, paper_discovery_store_path
-    from backend.app.api import routes
-    article_settings = routes.article_settings
     configured_path = Path(article_settings.paper_discovery_db_path)
     if not configured_path.is_absolute():
         configured_path = BASE_DIR / configured_path
@@ -86,8 +102,6 @@ def _build_paper_store() -> PaperDiscoveryStore:
 
 def _build_paper_search_service() -> PaperDiscoverySearchService:
     global paper_discovery_search_service
-    from backend.app.api import routes
-    article_settings = routes.article_settings
     if paper_discovery_search_service is None:
         timeout = article_settings.paper_discovery_request_timeout_seconds
         paper_discovery_search_service = PaperDiscoverySearchService(
@@ -102,15 +116,14 @@ def _build_paper_search_service() -> PaperDiscoverySearchService:
 
 def _build_paper_catalog_search_graph() -> CatalogSearchGraph:
     global paper_catalog_search_graph
-    from backend.app.api import routes
     if paper_catalog_search_graph is None:
         store = _paper_store()
-        timeout = routes.article_settings.paper_discovery_request_timeout_seconds
+        timeout = article_settings.paper_discovery_request_timeout_seconds
         paper_catalog_search_graph = CatalogSearchGraph(
             store=store,
             accepted_source=UsenixAcceptedSource(timeout=timeout, store=store),
             dblp_source=DBLPPublicationSource(timeout=timeout),
-            ttl_seconds=routes.article_settings.paper_discovery_search_ttl_seconds,
+            ttl_seconds=article_settings.paper_discovery_search_ttl_seconds,
         )
     return paper_catalog_search_graph
 
@@ -157,8 +170,6 @@ def _paper_candidate_hosts(candidate: object) -> set[str]:
     trust decision.  Never add its hostname here; the downloader validates
     that target against this fixed set on every hop.
     """
-    from backend.app.api import routes
-    article_settings = routes.article_settings
     hosts: set[str] = set()
     configured_hosts = getattr(article_settings, "paper_discovery_allowed_hosts", [])
     # Keep existing ArticleSettings download origins as a backwards-compatible
@@ -174,8 +185,6 @@ def _paper_candidate_hosts(candidate: object) -> set[str]:
 def _build_paper_batch_service() -> PaperImportBatchService:
     """Build the batch orchestrator lazily so routes remain test-injectable."""
     global paper_import_batch_service, paper_import_batch_store_path
-    from backend.app.api import routes
-    article_settings = routes.article_settings
     configured_path = Path(article_settings.paper_discovery_db_path)
     if not configured_path.is_absolute():
         configured_path = BASE_DIR / configured_path
@@ -199,8 +208,6 @@ def _build_paper_batch_service() -> PaperImportBatchService:
 
 def _build_paper_browser_manager() -> PaperBrowserManager:
     global paper_browser_manager
-    from backend.app.api import routes
-    article_settings = routes.article_settings
     if paper_browser_manager is None:
         paper_browser_manager = PaperBrowserManager(settings=article_settings)
     return paper_browser_manager

@@ -10,7 +10,7 @@ from typing import List
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from backend.app.core.config import BASE_DIR
+from backend.app.platform.config import BASE_DIR
 
 
 class PaperDiscoverySettings(BaseModel):

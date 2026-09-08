@@ -193,3 +193,11 @@ def test_api_does_not_import_infrastructure():
         "api 层直接 import 了 infrastructure 模块（违反 Spec017 静态边界检查规则）:\n"
         + "\n".join(violations)
     )
+
+
+def test_paper_import_application_uses_kb_port_instead_of_kb_internals():
+    """论文导入只能依赖跨域 port，不能反向读取 KB application/infrastructure。"""
+    path = _REPO_ROOT / "backend" / "app" / "paper_discovery" / "application" / "paper_import.py"
+    source = path.read_text(encoding="utf-8")
+    assert "PaperImportPort" in source
+    assert "backend.app.knowledge_base" not in source

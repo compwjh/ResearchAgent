@@ -1,7 +1,9 @@
 # 任务 07：删除旧结构并验证模块边界
 
 > 关联：[Spec017](../../specs/017-backend-bounded-context-modularization.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 04、05、06；当前状态：`待执行`
+> 依赖：任务 04、05、06；当前状态：`已完成`
+
+> 2026-09-08 收口：旧 `services/domain/graphs/observability`、旧 Agent、旧 config 与 routes facade 均已清除；边界测试通过。
 
 ## 目标
 

@@ -1,7 +1,9 @@
 # 任务 04：迁移论文发现限界上下文
 
 > 关联：[Spec017](../../specs/017-backend-bounded-context-modularization.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 05（KB application contract 就绪）；当前状态：`待执行`  
+> 依赖：任务 05（KB application contract 就绪）；当前状态：`已完成`
+
+> 2026-09-08 收口：论文导入编排改为注入 `PaperImportPort`，不再直连知识库内部存储/索引实现。
 > 本任务**不得早于** Task05 提供 KB application facade；必须改为调用 Task03 定义的 port，禁止继续 import KB 的 store/index/tasks。
 
 ## 目标

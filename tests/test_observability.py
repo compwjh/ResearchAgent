@@ -6,7 +6,7 @@
 import unittest
 from unittest import mock
 
-from backend.app.core import config
+from backend.app.platform import config
 from backend.app.platform.observability import client as obs_client
 from backend.app.platform.observability import config as obs_config
 from backend.app.platform.observability.spans import derive_metrics, record_event, record_ollama_generation

@@ -7,6 +7,9 @@
 
 ## 2026-09-08
 
+- **017 后端限界上下文彻底重构** ｜ 已完成 → 实施中 ｜ Luna xhigh 独立审计发现旧 `agents/article_agent.py`、`core/config.py`、`api/routes.py` 兼容转发和未接线 `PaperImportPort` 仍不符合原 Spec 的“旧结构清零/跨域 port 接线”要求；保留历史验收证据，退回修复与重新验收。
+- **017 后端限界上下文彻底重构** ｜ 实施中 → 已完成 ｜ 完成旧 Agent/config/routes 清理、PaperImportPort factory 接线与回归；定向 `131 passed`，全量 `653 passed / 38 subtests`，修复轮验收见 `017-remediation-acceptance-review.md`。
+- **018 知识文档切片检查器与双向原文定位** ｜ 新建 → 待确认 ｜ 用户要求在个人知识库新增切片检查 Tab；经 Grill with Docs 访谈确认 PDF + Markdown、文本块级双向映射、单版本切换、只读检查、旧文档零 embedding 自动补建和窄屏切换。Spec 与 Task 02–07 已落盘；用户产品方向确认已收到，仍待需求/技术评审门禁通过后转已确认。
 - **015 Task15–17 继续开发** ｜ Task15/16 待执行 → 实施中 ｜ 用户明确要求接续已有部分实现并开发 Task15–17；已核对 Task13/14 落盘证据，分别分派 backend-dev 与 frontend-dev 实现异步目录检索、LangGraph/RAG、来源进度和分页。模型仅本轮临时使用 Luna high，不写入长期规则；Task17 将在实现完成后执行验收与部署。
 - **015 USENIX-only 目录检索阶段** ｜ Task15/16 实施中、Task17 待执行 → Task15/16/17 已完成（USENIX-only） ｜ 完成 LangGraph/RAG、双源进度、固定分页、增量缓存、并发租约恢复、权威合并、失败释放和旧同步路由删除；QA 与后端复审通过，Spec 总状态保持实施中，ACM/IEEE、自定义会议、排序质量与真实 PDF/GUI 证据明确 deferred。
 - **015 USENIX-only 本地部署** ｜ 实现完成 → 已部署验证 ｜ 8000 被沙箱外进程占用且无法停止，改用 8001 启动本版本；首页与 `/api/health` 返回 200，最小 USENIX 异步检索入口返回 202。Qdrant 并发占用按降级语义记录，未宣称 RAG 在线健康。

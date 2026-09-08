@@ -1,7 +1,9 @@
 # 任务 03：拆分 API 与平台装配
 
 > 关联：[Spec017](../../specs/017-backend-bounded-context-modularization.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 02；当前状态：`待执行`  
+> 依赖：任务 02；当前状态：`已完成`
+
+> 2026-09-08 收口：配置已迁入 `platform/config.py`，路由入口已去除兼容 facade，ProviderRegistry 与设置拆分通过回归。
 > 本任务是 Task04/05/06 的**前置**：设置拆分、跨域 port 与 composition root 必须先于业务迁移交付。
 
 ## 目标

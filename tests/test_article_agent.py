@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from backend.app.agents.article_agent import build_intent_graph, normalize_query
+from backend.app.article_assistant.application.article_agent import build_intent_graph, normalize_query
 from backend.app.article_assistant.domain.article import ArticleTask
 from backend.app.article_assistant.infrastructure.task_store import TaskStore
 

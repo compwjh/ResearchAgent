@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
-from backend.app.api import routes
+from backend.app.api import common
 from backend.app.api.schemas import (
     ConferenceUpdateRequest,
     PaperAcceptedRequest,
@@ -97,7 +97,7 @@ def create_async_paper_search(request: AsyncPaperSearchRequest):
     if years != sorted(years) or any(year < 1900 or year > datetime.now(timezone.utc).year for year in years):
         return _paper_api_error(400, "INVALID_YEARS", "years 必须为升序且在受控范围内")
     now = datetime.now(timezone.utc)
-    ttl = getattr(routes.article_settings, "paper_discovery_search_ttl_seconds", 86400)
+    ttl = getattr(common.article_settings, "paper_discovery_search_ttl_seconds", 86400)
     search_id = uuid.uuid4().hex
     job = SearchJob(search_id, request.query.strip(), request.conference_ids, years, "queued", "catalog-search-v1",
                     False, None, 0, now.isoformat(timespec="seconds").replace("+00:00", "Z"), None, None,
@@ -272,11 +272,11 @@ def list_accepted_papers(
         service = _paper_search_service()
     except Exception:
         service = None
-    default_years = getattr(service, "default_years", routes.article_settings.paper_discovery_default_years)
+    default_years = getattr(service, "default_years", common.article_settings.paper_discovery_default_years)
     if request.year is not None and request.year > current_year:
         return _paper_api_error(422, "INVALID_ACCEPTED_YEAR", "year 必须为 1900 到当前年份的整数")
     years = [request.year] if request.year is not None else list(range(current_year - default_years, current_year))
-    limit = request.limit or getattr(service, "default_limit", routes.article_settings.paper_discovery_search_limit)
+    limit = request.limit or getattr(service, "default_limit", common.article_settings.paper_discovery_search_limit)
     query = request.q or ""
     try:
         list_catalog_papers = getattr(store, "list_catalog_papers", None)
@@ -337,7 +337,7 @@ def list_accepted_papers(
 
     search_id = uuid.uuid4().hex
     now = datetime.now(timezone.utc)
-    ttl = getattr(service, "search_ttl_seconds", getattr(routes.article_settings, "paper_discovery_search_ttl_seconds", 86400))
+    ttl = getattr(service, "search_ttl_seconds", getattr(common.article_settings, "paper_discovery_search_ttl_seconds", 86400))
     session = SearchSession(
         search_id=search_id,
         query=query,
@@ -451,7 +451,7 @@ def _import_single_paper(request: PaperImportRequest):
     try:
         result = import_candidate(
             candidate,
-            routes.article_settings,
+            common.article_settings,
             _paper_candidate_hosts(candidate),
             conference_short_name=source.short_name,
         )

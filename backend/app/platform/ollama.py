@@ -18,7 +18,7 @@ from typing import Iterator, List, Optional
 import httpx
 from langchain_ollama import ChatOllama
 
-from backend.app.core.config import OLLAMA_BASE_URL
+from backend.app.platform.config import OLLAMA_BASE_URL
 from backend.app.platform.ollama_direct import OllamaChatResult
 
 

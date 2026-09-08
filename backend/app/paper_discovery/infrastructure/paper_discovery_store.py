@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from backend.app.core.config import BASE_DIR
+from backend.app.platform.config import BASE_DIR
 from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     CatalogSourceRecord,

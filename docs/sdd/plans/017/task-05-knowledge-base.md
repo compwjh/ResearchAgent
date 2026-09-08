@@ -1,7 +1,9 @@
 # 任务 05：迁移知识库限界上下文
 
 > 关联：[Spec017](../../specs/017-backend-bounded-context-modularization.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 03；当前状态：`待执行`
+> 依赖：任务 03；当前状态：`已完成`
+
+> 2026-09-08 收口：知识库实现集中于 `knowledge_base/`，提供受控 PaperImport 适配器并保留既有索引与补偿语义。
 
 ## 目标
 

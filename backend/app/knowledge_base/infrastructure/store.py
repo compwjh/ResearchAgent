@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Union
 
-from backend.app.core.config import KB_META_PATH, KB_PAPERS_DIR
+from backend.app.platform.config import KB_META_PATH, KB_PAPERS_DIR
 
 STATUS_PENDING = "pending"
 STATUS_INDEXING = "indexing"

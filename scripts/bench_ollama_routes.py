@@ -27,7 +27,7 @@ if str(_ROOT) not in sys.path:
 
 # 通过模块属性引用 run_chat，便于测试 patch `backend.app.chat.application.chat_runner.run_chat`。
 from backend.app.chat.application import chat_runner
-from backend.app.core.config import MODEL_NAME
+from backend.app.platform.config import MODEL_NAME
 from backend.app.platform.observability import derive_metrics
 
 DEFAULT_QUESTION = "用一句话解释什么是向量数据库？"

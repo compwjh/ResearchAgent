@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Optional
 from urllib.parse import urlsplit
 
-from backend.app.core.config import BASE_DIR
+from backend.app.platform.config import BASE_DIR
 from backend.app.paper_discovery.domain.paper_download_security import (
     DEFAULT_MAX_REDIRECTS,
     URLSecurityError,

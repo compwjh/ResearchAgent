@@ -1,7 +1,9 @@
 # 任务 06：迁移文章助手与聊天
 
 > 关联：[Spec017](../../specs/017-backend-bounded-context-modularization.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 03（settings repository 就绪）；当前状态：`待执行`  
+> 依赖：任务 03（settings repository 就绪）；当前状态：`已完成`
+
+> 2026-09-08 收口：Article Agent 已迁入 `article_assistant/application/article_agent.py`，旧路径删除，文章/意图/API 定向回归通过。
 > 目录边界不重叠时可与 Task04 并行，但**不得与 Task04 同时移动同一个 settings repository 或数据文件**。
 
 ## 目标

@@ -62,9 +62,11 @@ class PaperImportResult:
     本 port 仅定义契约；实现由 Task05（知识库上下文）提供，Task04（论文发现上下文）消费。
     """
 
-    paper_id: str   # 论文标识。
+    paper_id: str | None   # 论文标识；失败时可为空。
     index_status: ImportIndexStatus   # 索引状态。
     error_code: PaperImportErrorCode | None   # 失败时的错误码，成功为 None。
+    stored_name: str | None = None   # 知识库侧最终保存的文件名。
+    existing: bool = False   # 是否命中幂等已有记录。
 
 
 @runtime_checkable
@@ -80,4 +82,16 @@ class PaperImportPort(Protocol):
 
         本 port 仅定义契约；实现由 Task05（知识库上下文）提供，Task04（论文发现上下文）消费。
         """
+        ...
+
+    def find_existing(self, candidate_snapshot: Mapping[str, Any]) -> PaperImportResult | None:
+        """按候选快照查询已有记录，避免重复下载。
+
+        该查询仍属于知识库适配器的幂等边界；论文发现侧只消费稳定 DTO，
+        不读取知识库元数据仓储。
+        """
+        ...
+
+    def existing_names(self) -> set[str]:
+        """返回知识库侧已占用的展示文件名，供论文发现生成安全文件名。"""
         ...

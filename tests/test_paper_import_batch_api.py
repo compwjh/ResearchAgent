@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes, routes_paper
+from backend.app.api import common, routes_paper
 from backend.app.main import app
 from backend.app.paper_discovery.application.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
 from backend.app.paper_discovery.application.paper_import_batch_service import PaperImportBatchService
@@ -67,7 +67,7 @@ def _setup(monkeypatch, tmp_path, importer):
     monkeypatch.setattr(routes_paper, "_paper_store", lambda: discovery)
     monkeypatch.setattr(routes_paper, "_paper_batch_service", lambda: service)
     monkeypatch.setattr(routes_paper, "_paper_browser_manager", lambda: browser)
-    routes.paper_browser_sessions.clear()
+    common.paper_browser_sessions.clear()
     return service, browser
 
 
@@ -169,7 +169,7 @@ def test_resume_uses_item_session_callback_without_exposing_sensitive_data(monke
 
 
 def test_single_import_error_response_uses_fixed_safe_message():
-    response = routes._paper_import_error_response(
+    response = routes_paper._paper_import_error_response(
         DOWNLOAD_BLOCKED,
         "https://evil.example/file.pdf Cookie=session=secret Authorization=Bearer token",
     )

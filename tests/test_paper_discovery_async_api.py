@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes, routes_paper  # noqa: F401 - initialize facade before submodule
+from backend.app.api import routes_paper
 from backend.app.main import app
 from backend.app.paper_discovery.domain.paper_discovery import CatalogPaper, SearchJob, SearchResult
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore

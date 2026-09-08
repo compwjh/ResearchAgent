@@ -14,7 +14,7 @@ from typing import List, Optional, Sequence
 import httpx
 from qdrant_client import models
 
-from backend.app.core.config import (
+from backend.app.platform.config import (
     KB_CANDIDATE_POOL,
     KB_COLLECTION,
     KB_RERANK_CANDIDATES,

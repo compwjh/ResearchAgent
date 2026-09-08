@@ -45,6 +45,7 @@ def _env_positive_number(name: str, default, cast):
         )
         return default
 
+
 # ---------- 知识库 / RAG（spec-011）----------
 KB_DIR = Path(os.getenv("KB_DIR", str(BASE_DIR / "data" / "kb")))
 KB_PAPERS_DIR = KB_DIR / "papers"

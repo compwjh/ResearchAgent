@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from backend.app.knowledge_base.application import create_paper_import_port
 from backend.app.knowledge_base.infrastructure.store import STATUS_INDEXED, get_paper, load_papers, resolve_paper_path
 from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
@@ -11,6 +12,7 @@ from backend.app.paper_discovery.application.paper_import import (
     import_candidate,
 )
 from backend.app.paper_discovery.infrastructure.paper_download import DownloadResult, PaperDownloadError
+from backend.app.platform.ports import ImportIndexStatus, PaperImportResult as PortImportResult
 from backend.app.platform.settings.settings_repository import ArticleSettings
 
 
@@ -49,6 +51,15 @@ def _indexer(record, path):
     return {"paper_id": record.paper_id, "status": STATUS_INDEXED}
 
 
+def _port(papers, meta, *, indexer=None, deleter=None):
+    return create_paper_import_port(
+        papers_dir=papers,
+        meta_path=meta,
+        indexer=indexer,
+        deleter=deleter,
+    )
+
+
 def test_import_persists_metadata_renames_and_indexes(tmp_path):
     papers = tmp_path / "papers"
     meta = tmp_path / "papers.json"
@@ -56,7 +67,7 @@ def test_import_persists_metadata_renames_and_indexes(tmp_path):
     result = import_candidate(
         _candidate(), ArticleSettings(), {"papers.example"},
         conference_short_name="CCS", downloader=_downloader(tmp_path, calls),
-        indexer=_indexer, papers_dir=papers, meta_path=meta, temp_dir=tmp_path,
+        paper_import_port=_port(papers, meta, indexer=_indexer), temp_dir=tmp_path,
     )
     assert result.status == STATUS_INDEXED
     assert result.stored_name == "2025-CCS-A-Safe-Paper.pdf"
@@ -78,11 +89,11 @@ def test_duplicate_is_checked_before_download(tmp_path):
     calls = []
     first = import_candidate(
         _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
-        downloader=_downloader(tmp_path, calls), indexer=_indexer, papers_dir=papers, meta_path=meta,
+        downloader=_downloader(tmp_path, calls), paper_import_port=_port(papers, meta, indexer=_indexer),
     )
     second = import_candidate(
         _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
-        downloader=_downloader(tmp_path, calls), indexer=_indexer, papers_dir=papers, meta_path=meta,
+        downloader=_downloader(tmp_path, calls), paper_import_port=_port(papers, meta, indexer=_indexer),
     )
     assert second.error_code == PAPER_ALREADY_EXISTS
     assert second.paper_id == first.paper_id
@@ -99,8 +110,9 @@ def test_index_failure_removes_record_and_file(tmp_path):
     with pytest.raises(PaperImportError) as exc:
         import_candidate(
             _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
-            downloader=_downloader(tmp_path, []), indexer=failed_indexer,
-            papers_dir=papers, meta_path=meta,
+            downloader=_downloader(tmp_path, []), paper_import_port=_port(
+                papers, meta, indexer=failed_indexer,
+            ),
         )
     assert exc.value.code == KB_IMPORT_FAILED
     assert list(papers.glob("*.pdf")) == []
@@ -117,12 +129,12 @@ def test_metadata_failure_after_rename_removes_target_and_record(tmp_path, monke
         meta_path.write_text("[" + json.dumps(record.to_dict()) + "]", encoding="utf-8")
         raise OSError("metadata disk failure")
 
-    monkeypatch.setattr("backend.app.paper_discovery.application.paper_import.upsert_paper", failed_upsert)
+    monkeypatch.setattr("backend.app.knowledge_base.application.upsert_paper", failed_upsert)
     with pytest.raises(PaperImportError) as exc:
         import_candidate(
             _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
-            downloader=_downloader(tmp_path, []), indexer=_indexer,
-            papers_dir=papers, meta_path=meta, temp_dir=tmp_path,
+            downloader=_downloader(tmp_path, []), paper_import_port=_port(papers, meta, indexer=_indexer),
+            temp_dir=tmp_path,
         )
     assert exc.value.code == KB_IMPORT_FAILED
     assert list(papers.glob("*.pdf")) == []
@@ -144,8 +156,9 @@ def test_index_failure_invokes_idempotent_vector_compensation(tmp_path):
     with pytest.raises(PaperImportError):
         import_candidate(
             _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
-            downloader=_downloader(tmp_path, []), indexer=partial_indexer, deleter=deleter,
-            papers_dir=papers, meta_path=meta,
+            downloader=_downloader(tmp_path, []), paper_import_port=_port(
+                papers, meta, indexer=partial_indexer, deleter=deleter,
+            ),
         )
     assert deleted[1][0] == deleted[0][1]
     assert deleted[1][1] == "v1"
@@ -160,9 +173,39 @@ def test_download_error_is_preserved_and_temp_file_is_cleaned(tmp_path):
     with pytest.raises(PaperDownloadError) as exc:
         import_candidate(
             _candidate(), ArticleSettings(), {"papers.example"}, downloader=blocked,
-            papers_dir=tmp_path / "papers", meta_path=tmp_path / "papers.json",
+            paper_import_port=_port(tmp_path / "papers", tmp_path / "papers.json"),
         )
     assert exc.value.code == "DOWNLOAD_BLOCKED"
+
+
+def test_import_delegates_trusted_local_pdf_to_injected_port(tmp_path):
+    seen = []
+
+    class RecordingPort:
+        def find_existing(self, _snapshot):
+            return None
+
+        def existing_names(self):
+            return set()
+
+        def import_paper(self, request):
+            seen.append(request)
+            assert request.trusted_pdf_path.is_file()
+            return PortImportResult(
+                paper_id="paper-1",
+                index_status=ImportIndexStatus.INDEXED,
+                error_code=None,
+                stored_name="2025-CCS-A-Safe-Paper.pdf",
+            )
+
+    result = import_candidate(
+        _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+        downloader=_downloader(tmp_path, []), paper_import_port=RecordingPort(), temp_dir=tmp_path,
+    )
+    assert result.paper_id == "paper-1"
+    assert len(seen) == 1
+    assert seen[0].candidate_snapshot["_stored_name"] == "2025-CCS-A-Safe-Paper.pdf"
+    assert not (tmp_path / "private-download.pdf").exists()
 
 
 def test_paper_import_error_message_is_fixed_by_stable_code():

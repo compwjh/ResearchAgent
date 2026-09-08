@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes, routes_paper
+from backend.app.api import common, routes_paper
 from backend.app.main import app
 from backend.app.paper_discovery.domain.paper_discovery import CatalogPaper, ConferenceSource, PaperCandidate, SearchSession
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
@@ -104,7 +104,7 @@ class PaperConferenceSearchEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         configured = next(item for item in self.store.list_conferences() if item.conference_id == self.custom.conference_id)
-        self.assertEqual(response.json()["conferences"], [routes._conference_payload(configured)])
+        self.assertEqual(response.json()["conferences"], [common._conference_payload(configured)])
 
     def test_empty_and_overlong_query_use_stable_errors(self):
         for query, expected_code in (("   ", "INVALID_CONFERENCE_QUERY"), ("x" * 101, "CONFERENCE_QUERY_TOO_LONG")):
@@ -141,8 +141,8 @@ class PaperImportEndpointTests(unittest.TestCase):
                 authors=["Author"], pdf_url="https://papers.example/paper.pdf",
             )],
         )
-        self.original_enabled = routes._paper_discovery_enabled
-        self.original_settings = routes.article_settings
+        self.original_enabled = common._paper_discovery_enabled
+        self.original_settings = common.article_settings
 
     def tearDown(self):
         self.database.close()
@@ -166,13 +166,13 @@ class PaperImportEndpointTests(unittest.TestCase):
         self.assertEqual(importer.call_args.kwargs["conference_short_name"], "CCS")
 
     def test_candidate_hostname_cannot_expand_download_allowlist(self):
-        routes.article_settings = routes.article_settings.model_copy(
+        common.article_settings = common.article_settings.model_copy(
             update={"paper_discovery_allowed_hosts": ["trusted.example"]}
         )
         try:
-            self.assertEqual(routes._paper_candidate_hosts(self.store.get_candidate("search-1", "candidate-1")), {"trusted.example"})
+            self.assertEqual(common._paper_candidate_hosts(self.store.get_candidate("search-1", "candidate-1")), {"trusted.example"})
         finally:
-            routes.article_settings = self.original_settings
+            common.article_settings = self.original_settings
 
     def test_import_rejects_client_metadata_with_stable_validation_error(self):
         response = self.client.post(

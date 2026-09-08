@@ -1,7 +1,9 @@
 # 任务 02：建立迁移清单与契约基线
 
 > 关联：[Spec017](../../specs/017-backend-bounded-context-modularization.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 01；当前状态：`待执行`
+> 依赖：任务 01；当前状态：`已完成`
+
+> 2026-09-08 收口：迁移清单与 OpenAPI 基线已存在并用于本轮审计。
 
 ## 目标
 

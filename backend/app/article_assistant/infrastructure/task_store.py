@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from backend.app.article_assistant.domain.article import ArticleCandidate, ArticleTask
-from backend.app.core.config import BASE_DIR
+from backend.app.platform.config import BASE_DIR
 
 
 class TaskStore:

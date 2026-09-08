@@ -1,7 +1,9 @@
 # 任务 08：评审、部署与复盘
 
 > 关联：[Spec017](../../specs/017-backend-bounded-context-modularization.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 07；当前状态：`待执行`
+> 依赖：任务 07；当前状态：`已完成`
+
+> 2026-09-08 收口：全量 pytest 653 passed；定向 131 passed；冲突标记、旧路径和 diff 检查通过，验收证据见 remediation review。
 
 ## 目标
 

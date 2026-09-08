@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from backend.app.agents.article_agent import classify_intent
+from backend.app.article_assistant.application.article_agent import classify_intent
 
 
 class _FakeModel:

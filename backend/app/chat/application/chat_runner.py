@@ -16,7 +16,7 @@ Ollama 能力（`create_chat_model` / `get_available_models` / 直连流式）�
 import time
 from typing import List, Optional
 
-from backend.app.core.config import OLLAMA_ROUTE
+from backend.app.platform.config import OLLAMA_ROUTE
 from backend.app.platform import ollama as _ollama
 from backend.app.platform.ollama import ChatRun
 from backend.app.platform.ollama_direct import (

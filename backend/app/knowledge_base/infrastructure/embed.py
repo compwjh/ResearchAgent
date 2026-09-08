@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Sequence
 import httpx
 from qdrant_client import models
 
-from backend.app.core.config import (
+from backend.app.platform.config import (
     EMBED_MODEL,
     KB_EMBED_BATCH_SIZE,
     KB_EMBED_NUM_BATCH,

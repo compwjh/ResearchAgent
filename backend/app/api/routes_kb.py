@@ -10,7 +10,7 @@ from backend.app.api.schemas import (
     KBReindexRequest,
 )
 from backend.app.chat.application.chat_runner import run_chat
-from backend.app.core.config import CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR
+from backend.app.platform.config import CHUNK_V2_LLM_MODEL, KB_MAX_UPLOAD_MB, KB_PAPERS_DIR
 from backend.app.knowledge_base.application import (
     CHUNKER_V1,
     CHUNKER_V2,
@@ -286,4 +286,3 @@ def kb_ask(request: KBAskRequest):
                 pass
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-

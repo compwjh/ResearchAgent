@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes
+from backend.app.api import common
 from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.main import app
 
@@ -46,10 +46,10 @@ def _sse_events(text):
 class HealthAndSettingsTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
-        self._orig_settings = routes.article_settings
+        self._orig_settings = common.article_settings
 
     def tearDown(self):
-        routes.article_settings = self._orig_settings
+        common.article_settings = self._orig_settings
 
     @patch("backend.app.api.routes_system.get_available_models", return_value=["m1", "m2"])
     def test_health_returns_model_list(self, _mock_models):
@@ -81,7 +81,7 @@ class HealthAndSettingsTests(unittest.TestCase):
         response = self.client.put("/api/agent/settings", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["article_max_candidates_per_source"], 7)
-        self.assertEqual(routes.article_settings.article_max_candidates_per_source, 7)
+        self.assertEqual(common.article_settings.article_max_candidates_per_source, 7)
         mock_save.assert_called_once()
 
 

@@ -19,7 +19,7 @@ import json
 import os
 from pathlib import Path
 
-from backend.app.core.config import BASE_DIR
+from backend.app.platform.config import BASE_DIR
 from backend.app.platform.settings.article_assistant_settings import ArticleAssistantSettings
 from backend.app.platform.settings.paper_discovery_settings import PaperDiscoverySettings
 

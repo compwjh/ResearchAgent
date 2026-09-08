@@ -28,7 +28,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import httpx
 
-from backend.app.core.config import (
+from backend.app.platform.config import (
     CHUNK_V2_LLM_BATCH,
     CHUNK_V2_LLM_MODEL,
     CHUNK_V2_LLM_TIMEOUT,

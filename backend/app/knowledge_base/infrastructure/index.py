@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from qdrant_client import QdrantClient, models
 
-from backend.app.core.config import EMBED_DIM, KB_COLLECTION, QDRANT_PATH
+from backend.app.platform.config import EMBED_DIM, KB_COLLECTION, QDRANT_PATH
 from backend.app.knowledge_base.infrastructure.chunkers import build_chunks_v1, build_chunks_v2, ollama_boundary_judge
 from backend.app.knowledge_base.infrastructure.embed import EmbeddingError, embed_texts, encode_sparse
 from backend.app.knowledge_base.infrastructure.normalize import detect_citation, locate_reference_start

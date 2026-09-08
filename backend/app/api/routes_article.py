@@ -4,7 +4,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from backend.app.agents.article_agent import build_task
+from backend.app.article_assistant.application.article_agent import build_task
 from backend.app.api.schemas import (
     ChatRequest,
 )
@@ -20,6 +20,7 @@ from backend.app.article_assistant.application.entry import (
     search_articles,
 )
 from backend.app.article_assistant.domain.article import ArticleCandidate
+from backend.app.api import common
 from backend.app.chat.application.chat_runner import run_chat
 from backend.app.platform.observability import flush, record_ollama_generation, utc_now
 from backend.app.platform.ollama import get_available_models
@@ -35,9 +36,9 @@ from backend.app.api.common import *  # noqa: F401,F403
 
 @router.get("/agent/settings")
 def get_agent_settings() -> dict:
-    return article_settings.model_dump() | {
-        "search_sources": len(article_settings.article_search_urls),
-        "download_sources": len(article_settings.article_download_urls),
+    return common.article_settings.model_dump() | {
+        "search_sources": len(common.article_settings.article_search_urls),
+        "download_sources": len(common.article_settings.article_download_urls),
     }
 
 
@@ -54,13 +55,8 @@ def get_download_paper_skill() -> dict:
 
 @router.put("/agent/settings")
 def update_agent_settings(settings: ArticleSettings) -> dict:
-    global article_settings, paper_discovery_search_service, paper_import_batch_service, paper_import_batch_store_path, paper_browser_manager
-    article_settings = settings
-    # `routes.article_settings` 是共享 facade（common helper / routes_paper / 测试
-    # 都通过它读取最新设置）。上面只重新绑定了本模块的全局，这里同步 facade，
-    # 否则其它模块经 star-import 拿到的仍是旧快照。
-    from backend.app.api import routes
-    routes.article_settings = settings
+    global paper_discovery_search_service, paper_import_batch_service, paper_import_batch_store_path, paper_browser_manager
+    common.article_settings = settings
     # Rebuild paper-discovery dependencies on the next request so changed
     # path/timeout/default-year settings take effect without a process restart.
     paper_discovery_search_service = None
@@ -159,7 +155,7 @@ def run_agent(request: ChatRequest):
             return
         yield stream_event("stage", name="searching", message="正在检索文章")
         try:
-            task.candidates = search_articles(task.normalized_query, article_settings)
+            task.candidates = search_articles(task.normalized_query, common.article_settings)
         except httpx.HTTPError as error:
             task.status = "failed"
             task.error = "文章检索来源不可用"
@@ -199,7 +195,7 @@ def search_articles_endpoint(payload: dict):
     if task.intent != "download_paper":
         raise HTTPException(status_code=400, detail="该请求不是论文下载意图")
     try:
-        raw_candidates = search_articles(task.normalized_query, article_settings)
+        raw_candidates = search_articles(task.normalized_query, common.article_settings)
     except httpx.HTTPError as error:
         raise HTTPException(status_code=502, detail="文章检索来源不可用") from error
     task.candidates = top_recommendations(raw_candidates)
@@ -231,7 +227,7 @@ def download_article_endpoint(payload: dict):
             raise HTTPException(status_code=503, detail=status)
     task.selected_candidate_id = candidate_id
     if not candidate.pdf_url:
-        pdf_status, resolved_url = probe_pdf_url(candidate, article_settings)
+        pdf_status, resolved_url = probe_pdf_url(candidate, common.article_settings)
         candidate.pdf_url_status = pdf_status
         if resolved_url and pdf_status == "public_pdf":
             candidate.pdf_url = resolved_url
@@ -255,7 +251,7 @@ def download_article_endpoint(payload: dict):
         return {"status": "waiting_login", "task_id": task.task_id, "candidate_id": candidate_id, "source_name": candidate.source_name, "login_url": candidate.article_url or candidate.pdf_url}
     executor = download_under_skill if use_skill else download_article
     try:
-        result = next(executor(candidate, article_settings))
+        result = next(executor(candidate, common.article_settings))
     except PermissionError as error:
         task.status = "waiting_login"
         task.human_action = "waiting_login"
@@ -287,7 +283,7 @@ def probe_article_endpoint(payload: dict):
     candidate = next((item for item in task.candidates if item.candidate_id == candidate_id), None) if task else None
     if not task or not candidate:
         raise HTTPException(status_code=404, detail="任务或候选文章不存在")
-    status, resolved_url = probe_pdf_url(candidate, article_settings)
+    status, resolved_url = probe_pdf_url(candidate, common.article_settings)
     candidate.pdf_url_status = status
     if status == "public_pdf":
         candidate.pdf_url = resolved_url
@@ -333,6 +329,4 @@ def login_completed(task_id: str, payload: dict):
     task.human_action = "login_completed"
     article_tasks().save(task)
     return download_article_endpoint({"task_id": task_id, "candidate_id": candidate_id})
-
-
 

@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
-from backend.app.core.config import OLLAMA_BASE_URL
+from backend.app.platform.config import OLLAMA_BASE_URL
 
 
 @dataclass(frozen=True)

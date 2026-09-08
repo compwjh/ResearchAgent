@@ -2,7 +2,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from backend.app.core.config import MODEL_NAME
+from backend.app.platform.config import MODEL_NAME
 
 
 class ChatRequest(BaseModel):

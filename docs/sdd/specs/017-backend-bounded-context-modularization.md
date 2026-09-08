@@ -2,17 +2,15 @@
 
 ## 状态
 
-**当前状态：`已完成`（2026-09-08；Task02–Task08 全部完成并通过验收评审，运行时已验证）**
+**当前状态：`已完成`（2026-09-08 修复轮通过；旧 Agent/config/routes 已清理，PaperImportPort 已接线）**
 
-> 收口证据：全量 `631 passed / 0 failed`；OpenAPI 与 Task02 冻结基线逐项一致（36 操作，0 差异）；
+> 历史验收证据：全量 `631 passed / 0 failed`；OpenAPI 与 Task02 冻结基线逐项一致（36 操作，0 差异）；
 > ruff 122 条与迁移前持平；服务实际启动，首页 `/api/health`、`/api/kb/health`、
 > `/api/papers/conferences`、`/api/kb/papers` 均返回 200。
 > 验收评审 [`017-acceptance-review.md`](../reviews/017-acceptance-review.md)；
 > 复盘 [`2026-09-08-spec017-modularization-retro.md`](../retro/2026-09-08-spec017-modularization-retro.md)。
 >
-> **遗留（不阻塞收口）**：① Reranker 因本地缺模型以 RRF 降级运行（spec-014 既定行为）；
-> ② `platform/ports.py` 的 `PaperImportPort` 只定义未实现，实现属 spec-015 范围；
-> ③ `knowledge_base/application.py` 导出面沿用旧 facade 宽度，后续应逐步收窄。
+> 修复轮证据：[`017-remediation-acceptance-review.md`](../reviews/017-remediation-acceptance-review.md)，定向 `131 passed`，全量 `653 passed / 38 subtests`；旧路径扫描、边界测试和 diff 检查通过。Reranker 的 RRF 降级仍是 spec-014 既定非阻塞行为。
 
 ## 一句话目标
 
@@ -374,7 +372,8 @@ Task07 必须提供**可执行的 architecture test**，而非文字承诺。规
 - 需求评审：[`docs/sdd/reviews/017-requirement-review.md`](../reviews/017-requirement-review.md)（**打回** → 4 项必改已于 2026-09-06 修订）
 - 技术评审：[`docs/sdd/reviews/017-tech-review.md`](../reviews/017-tech-review.md)（**打回** → 7 项必改已于 2026-09-06 修订）
 - 复审（architect）：[`docs/sdd/reviews/017-rereview.md`](../reviews/017-rereview.md)（结论：**通过**，判定全部闭环）
-- 验收评审：[`docs/sdd/reviews/017-acceptance-review.md`](../reviews/017-acceptance-review.md)（结论：**通过**；测试（QA）与开发主管（Tech Lead）签字均由**主模型代行**，原因：用户 2026-09-08 要求「子 agent 都让你代行（临时要求）」，已在文档头部与复盘中留痕）
+- 验收评审：[`docs/sdd/reviews/017-acceptance-review.md`](../reviews/017-acceptance-review.md)（历史验收记录）
+- 修复轮验收：[`docs/sdd/reviews/017-remediation-acceptance-review.md`](../reviews/017-remediation-acceptance-review.md)（结论：**通过**）
 
 ## 变更日志
 
@@ -388,3 +387,4 @@ Task07 必须提供**可执行的 architecture test**，而非文字承诺。规
 | 2026-09-08 | 架构师（自身） | Task06 完成：`article_assistant/` 与 `chat/` 建立，`ollama*.py` 迁 `platform`；发现并修正 platform 反向依赖业务模块——`run_chat` 下沉到 `chat/application/chat_runner.py`。 |
 | 2026-09-08 | 架构师（自身） | Task07 完成：`observability` 迁 `platform`、`chat graph` 迁 `chat/application`；删除 `services`/`domain`/`graphs`/`observability` 旧包；架构测试扩到 5 条可执行断言。 |
 | 2026-09-08 | 架构师（**主模型代行**） | Task08 验收评审、部署与复盘由主模型代行，原因：用户 2026-09-08 要求「子 agent 都让你代行（临时要求）」。代行范围仅限 Task08（评审/部署/复盘），Task03–07 的实现均由 `backend-dev` 分派完成。该临时授权已于 2026-09-08 017 收口后由用户要求恢复分派而结束。 |
+| 2026-09-08 | 架构师（自身） | 审计回退后完成 Article Agent、platform config、routes facade 与 PaperImportPort factory 修复；定向 131 passed、全量 653 passed，修复轮验收通过，状态恢复为 `已完成`。 |

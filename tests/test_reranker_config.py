@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.app.core import config
+from backend.app.platform import config
 
 
 def _load(overrides=None):

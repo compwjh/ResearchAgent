@@ -31,7 +31,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import httpx  # noqa: E402
 
 from backend.app.chat.application.chat_runner import run_chat  # noqa: E402
-from backend.app.core.config import (  # noqa: E402
+from backend.app.platform.config import (  # noqa: E402
     LANGFUSE_ENABLED,
     MODEL_NAME,
     OLLAMA_BASE_URL,

@@ -40,7 +40,7 @@ from backend.app.knowledge_base.application import (
     rerank_hits,
     rrf_fuse,
 )
-from backend.app.core.config import EMBED_DIM
+from backend.app.platform.config import EMBED_DIM
 
 
 GRAPH_VERSION = "catalog-search-v1"
