@@ -87,12 +87,19 @@ class Chunk:
     """
 
     text: str
-    page: int
+    page: Optional[int]
     chunk_index: int
-    page_end: int = 0
+    page_end: Optional[int] = 0
     section: str = ""
 
     def __post_init__(self) -> None:
+        # Markdown provenance intentionally carries null page coordinates.
+        # Preserve that contract instead of coercing null to page 0.
+        if self.page is None:
+            self.page_end = None
+            return
+        if self.page_end is None:
+            return
         # 页码从 1 开始，故用 <=0 判断"未显式指定"。
         if not self.page_end or int(self.page_end) <= 0:
             self.page_end = int(self.page)
@@ -159,7 +166,7 @@ def _apply_overlap(chunks: List[str], size: int, overlap: int) -> List[str]:
 
 
 def build_chunks_v1(
-    pages: Sequence[Tuple[int, str]],
+    pages: Sequence[Tuple[Optional[int], str]],
     chunk_size: int = 1000,
     overlap: int = 200,
 ) -> List[Chunk]:
@@ -179,7 +186,7 @@ def build_chunks_v1(
 
 
 def build_chunks_v2(
-    pages: Sequence[Tuple[int, str]],
+    pages: Sequence[Tuple[Optional[int], str]],
     *,
     max_chars: Optional[int] = None,
     llm: Optional[Callable[[str], str]] = None,
@@ -234,7 +241,7 @@ def build_chunks_v2(
     return chunks, llm_used
 
 
-def _to_blocks(pages: Sequence[Tuple[int, str]]) -> List[Tuple[int, str]]:
+def _to_blocks(pages: Sequence[Tuple[Optional[int], str]]) -> List[Tuple[Optional[int], str]]:
     """把清洗后的页文本按空行切成 blocks，并保留各自页码。"""
     blocks: List[Tuple[int, str]] = []
     for page, text in pages:
@@ -287,7 +294,7 @@ def _judge_by_llm(
 ) -> bool:
     """把规则未判定的候选批量送 LLM；任何异常都只放弃 LLM 阶段，不抛出。
 
-    返回是否**成功用到** LLM 结果（有任一命中即 True）。
+    返回是否**成功解析并采用** LLM 结果（合法空列表也算 True）。
     不修改调用方持有的其它状态；失败时 `boundaries` 仅含规则结果。
     """
     rule_set = set(boundaries)
@@ -299,19 +306,22 @@ def _judge_by_llm(
 
     batch_size = max(1, int(CHUNK_V2_LLM_BATCH))
     total = len(candidates)
-    used = False
+    proposed_boundaries: List[int] = []
     for start in range(0, total, batch_size):
         batch = candidates[start : start + batch_size]
         try:
             reply = llm(_build_prompt(blocks, batch))
         except Exception:
             # 单次失败即放弃整个 LLM 阶段（27B 慢，重试会拖垮上传）
-            return used
-        for offset in _parse_verdicts(reply, len(batch)):
-            boundaries.append(batch[offset])
-            used = True
+            return False
+        parsed = _parse_verdicts_result(reply, len(batch))
+        if parsed is None:
+            return False
+        for offset in parsed:
+            proposed_boundaries.append(batch[offset])
         _report(progress, 10 + int(60 * (start + len(batch)) / total))
-    return used
+    boundaries.extend(proposed_boundaries)
+    return True
 
 
 def _group_by_boundary(
@@ -426,19 +436,34 @@ def _parse_verdicts(raw: str, size: int) -> List[int]:
 
     保守原则：解析不出就不新增边界（宁可少切，不可乱切）。
     """
+    parsed = _parse_verdicts_result(raw, size)
+    return [] if parsed is None else parsed
+
+
+def _parse_verdicts_result(raw: str, size: int) -> Optional[List[int]]:
+    """Return parsed offsets, or ``None`` when the response is not parseable.
+
+    ``[]`` is a valid LLM decision and must remain distinguishable from a
+    transport/protocol failure so callers can report ``llm_used`` accurately.
+    """
     text = (raw or "").strip()
     if not text:
-        return []
+        return None
     match = _LLM_NUMBERS.search(text)
     if not match:
+        return None
+    content = match.group(1).strip()
+    if not content:
         return []
     offsets: List[int] = []
-    for token in re.split(r"[,，\s]+", match.group(1)):
+    for token in re.split(r"[,，\s]+", content):
         token = token.strip()
         if not token.isdigit():
-            continue
+            return None
         offset = int(token) - 1  # 批内编号是 1-based
-        if 0 <= offset < size and offset not in offsets:
+        if not 0 <= offset < size:
+            return None
+        if offset not in offsets:
             offsets.append(offset)
     return offsets
 

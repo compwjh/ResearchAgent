@@ -136,7 +136,7 @@ def locate_reference_start(pages: Sequence[Tuple[int, str]]) -> Optional[int]:
     return None
 
 
-def detect_citation(text: str, page: int, *, ref_start_page: Optional[int]) -> bool:
+def detect_citation(text: str, page: Optional[int], *, ref_start_page: Optional[int]) -> bool:
     """保守判定某页文本是否为参考文献条目区。
 
     - 未定位到参考文献区（ref_start_page 为 None）→ 一律不判为 citation。
@@ -144,6 +144,11 @@ def detect_citation(text: str, page: int, *, ref_start_page: Optional[int]) -> b
     - 起始页之后：`^[数字]` 条目 ≥ 2，或特征词命中 ≥ 阈值 → citation。
     """
     if ref_start_page is None:
+        return False
+    # Markdown chunks intentionally have no PDF page.  They cannot be
+    # classified by a page-based reference zone, but must remain safe for the
+    # shared index consumer rather than manufacturing page 0 or raising.
+    if page is None:
         return False
     if page < ref_start_page:
         return False

@@ -69,21 +69,33 @@ _CITATION_INTENT = [
 class Hit:
     paper_id: str
     file_name: str
-    page: int
+    page: Optional[int]
     chunk_index: int
     text: str
     score: float
     # spec-012 新增，均带默认值以保证既有构造方式不被破坏
     chunker: str = CHUNKER_V1
-    page_end: int = 0
+    page_end: Optional[int] = None
     section: str = ""
     is_citation: bool = False
     rerank_score: Optional[float] = None
     rerank_rank: Optional[int] = None
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
 
     def __post_init__(self) -> None:
-        if not self.page_end or int(self.page_end) <= 0:
+        if self.page is None:
+            self.page_end = None
+            return
+        if self.page_end is None or int(self.page_end) <= 0:
             self.page_end = int(self.page)
+
+
+def _optional_int(value) -> Optional[int]:
+    if value is None:
+        return None
+    parsed = int(value)
+    return parsed if parsed > 0 else None
 
 
 def _to_hit(point) -> Hit:
@@ -91,14 +103,16 @@ def _to_hit(point) -> Hit:
     return Hit(
         paper_id=payload.get("paper_id", ""),
         file_name=payload.get("file_name", ""),
-        page=int(payload.get("page", 0) or 0),
+        page=_optional_int(payload.get("page")),
         chunk_index=int(payload.get("chunk_index", 0) or 0),
         text=payload.get("text", "") or "",
         score=float(point.score or 0.0),
         chunker=payload.get("chunker") or CHUNKER_V1,
-        page_end=int(payload.get("page_end", 0) or 0),
+        page_end=_optional_int(payload.get("page_end")),
         section=payload.get("section") or "",
         is_citation=bool(payload.get("is_citation", False)),
+        start_line=_optional_int(payload.get("start_line")),
+        end_line=_optional_int(payload.get("end_line")),
     )
 
 

@@ -3,10 +3,27 @@
 from typing import List
 
 
+def _optional_int(value):
+    """Keep null provenance coordinates null and ignore mock/non-numeric attrs."""
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        return None
+    return int(value)
+
+
 def _page_label(hit) -> str:
     """出处页码文案（spec-012）：跨页片段显示 `第 3-4 页`，单页仍为 `第 3 页`。"""
-    start = int(getattr(hit, "page", 0) or 0)
-    end = int(getattr(hit, "page_end", 0) or 0)
+    page = _optional_int(getattr(hit, "page", None))
+    if page is None:
+        start_line = _optional_int(getattr(hit, "start_line", None))
+        end_line = _optional_int(getattr(hit, "end_line", None))
+        if start_line is not None and end_line is not None:
+            return f"行 {int(start_line)}–{int(end_line)}"
+        if start_line is not None:
+            return f"行 {int(start_line)}"
+        return "无页码"
+    start = page
+    end_value = _optional_int(getattr(hit, "page_end", None))
+    end = end_value if end_value is not None and end_value > 0 else start
     if end and end > start:
         return f"第 {start}-{end} 页"
     return f"第 {start} 页"
@@ -33,16 +50,20 @@ def build_prompt(question: str, hits) -> str:
 
 
 def citation_payloads(hits: List) -> List[dict]:
-    return [
-        {
+    payloads = []
+    for hit in hits:
+        page = _optional_int(getattr(hit, "page", None))
+        page_end = _optional_int(getattr(hit, "page_end", None))
+        payloads.append({
             "file_name": hit.file_name,
-            "page": hit.page,
-            # spec-012：v2 跨页合并片段的结束页，前端据此显示 `p.3-4`
-            "page_end": int(getattr(hit, "page_end", 0) or 0) or int(hit.page or 0),
+            "page": page,
+            # PDF v2 保留跨页结束页；Markdown 保留 null，不猜测第 0 页。
+            "page_end": page_end if page_end and page is not None else (page if page is not None else None),
+            "start_line": _optional_int(getattr(hit, "start_line", None)),
+            "end_line": _optional_int(getattr(hit, "end_line", None)),
             "chunk_index": hit.chunk_index,
             "paper_id": hit.paper_id,
             "score": round(hit.score, 6),
             "text": hit.text,  # 供前端点击引用后展开原文片段
-        }
-        for hit in hits
-    ]
+        })
+    return payloads

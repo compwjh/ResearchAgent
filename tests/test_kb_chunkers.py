@@ -166,8 +166,9 @@ class V2LlmTests(unittest.TestCase):
         self.assertTrue(llm_used)
 
     def test_empty_reply_degrades_gracefully(self):
-        chunks, _ = build_chunks_v2(PAGES, max_chars=LIMIT, llm=lambda p: "[]")
+        chunks, llm_used = build_chunks_v2(PAGES, max_chars=LIMIT, llm=lambda p: "[]")
         self.assertTrue(chunks)
+        self.assertTrue(llm_used, "合法 [] 也是成功解析的 LLM 决策")
 
     def test_unparsable_reply_degrades_gracefully(self):
         chunks, _ = build_chunks_v2(PAGES, max_chars=LIMIT, llm=lambda p: "我不知道")
@@ -185,6 +186,21 @@ class V2LlmTests(unittest.TestCase):
         self.assertTrue(chunks, "LLM 失败必须降级出结果，不得阻塞上传")
         self.assertFalse(llm_used)
         self.assertTrue(all(len(chunk.text) <= LIMIT for chunk in chunks))
+
+    def test_partial_llm_failure_commits_no_partial_boundaries(self):
+        calls = 0
+
+        def flaky(_prompt):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return "[]"
+            raise RuntimeError("timeout")
+
+        expected, _ = build_chunks_v2(PAGES, max_chars=LIMIT)
+        actual, llm_used = build_chunks_v2(PAGES, max_chars=LIMIT, llm=flaky)
+        self.assertFalse(llm_used)
+        self.assertEqual([item.text for item in actual], [item.text for item in expected])
 
     def test_progress_is_monotonic_and_ends_at_100(self):
         seen = []

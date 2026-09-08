@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/source-provenance-bundle-v1",
+  "title": "Spec018 SourceProvenanceBundle v1",
+  "description": "Parser DTO plus reused v1/v2 chunk snapshots and source anchors; not an InspectionManifest.",
+  "x-max-serialized-bytes": 268435456,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "mapping_algorithm_version", "document_id", "media_type",
+    "source_sha256", "source_hash_state", "source_parser_version", "normalize_version",
+    "chunker", "chunker_config", "chunker_config_fingerprint", "payload_schema_version",
+    "status", "progress", "error", "pages", "blocks", "chunks", "anchors",
+    "mapped_count", "unmapped_count", "unmapped_reasons", "chunk_snapshot_fingerprint",
+    "llm_used", "degradation_diagnostics"
+  ],
+  "$defs": {
+    "bbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "number" }
+    },
+    "normalizedBbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "pdfLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page", "bbox", "normalized_bbox"],
+      "properties": {
+        "page": { "type": "integer", "minimum": 1 },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "normalized_bbox": {
+          "$ref": "#/$defs/normalizedBbox",
+          "description": "0..1 coordinates; parser enforces finite ordered crop-relative values."
+        }
+      }
+    },
+    "markdownLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_line", "end_line"],
+      "properties": {
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "pdfPage": {
+      "type": "object",
+      "required": ["page", "width", "height", "rotation", "crop_box"],
+      "properties": {
+        "page": { "type": "integer", "minimum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "rotation": { "type": "integer", "minimum": 0, "maximum": 359 },
+        "crop_box": { "$ref": "#/$defs/bbox" }
+      }
+    },
+    "pdfBlock": {
+      "type": "object",
+      "x-max-serialized-bytes": 2097152,
+      "required": [
+        "block_id", "ordinal", "display_ordinal", "page", "text", "raw_text",
+        "start", "end", "bbox", "normalized_bbox", "lines", "block_type",
+        "heading_path", "locator"
+      ],
+      "properties": {
+        "block_id": { "type": "string", "minLength": 1 },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "display_ordinal": { "type": "integer", "minimum": 0 },
+        "page": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string", "x-max-utf8-bytes": 1048576 },
+        "raw_text": { "type": "string", "x-max-utf8-bytes": 1048576 },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "normalized_bbox": { "$ref": "#/$defs/normalizedBbox" },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ordinal", "text", "start", "end", "bbox", "normalized_bbox"
+            ],
+            "properties": {
+              "ordinal": { "type": "integer", "minimum": 0 },
+              "text": { "type": "string", "x-max-utf8-bytes": 1048576 },
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 0 },
+              "bbox": { "$ref": "#/$defs/bbox" },
+              "normalized_bbox": { "$ref": "#/$defs/normalizedBbox" }
+            }
+          }
+        },
+        "block_type": { "type": "string", "minLength": 1 },
+        "heading_path": { "type": "array", "items": { "type": "string" } },
+        "locator": { "$ref": "#/$defs/pdfLocator" }
+      },
+      "additionalProperties": false
+    },
+    "markdownBlock": {
+      "type": "object",
+      "x-max-serialized-bytes": 2097152,
+      "required": [
+        "block_id", "ordinal", "text", "locator", "heading_path", "block_type",
+        "start", "end", "page", "page_end", "inline_resources", "diagnostics"
+      ],
+      "properties": {
+        "block_id": { "type": "string", "minLength": 1 },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string", "x-max-utf8-bytes": 1048576 },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "page": { "type": "null" },
+        "page_end": { "type": "null" },
+        "heading_path": { "type": "array", "items": { "type": "string" } },
+        "block_type": { "type": "string", "minLength": 1 },
+        "inline_resources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_id", "kind", "alt", "destination", "title", "loadable", "placeholder"
+            ],
+            "properties": {
+              "resource_id": { "type": "string", "minLength": 1 },
+              "kind": { "const": "image" },
+              "alt": { "type": "string" },
+              "destination": { "type": "string" },
+              "title": { "type": ["string", "null"] },
+              "loadable": { "type": "boolean", "const": false },
+              "placeholder": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "locator": { "$ref": "#/$defs/markdownLocator" }
+      },
+      "additionalProperties": false
+    },
+    "chunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunk_index", "text", "page", "page_end", "section", "chunker"],
+      "properties": {
+        "chunk_index": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string", "x-max-utf8-bytes": 262144 },
+        "page": { "type": ["integer", "null"], "minimum": 1 },
+        "page_end": { "type": ["integer", "null"], "minimum": 1 },
+        "start_line": { "type": ["integer", "null"], "minimum": 1 },
+        "end_line": { "type": ["integer", "null"], "minimum": 1 },
+        "section": { "type": "string" },
+        "chunker": { "enum": ["v1", "v2", "markdown-block-v1"] }
+      },
+      "x-max-serialized-bytes": 524288
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block_id", "chunk_index", "coverage", "is_primary", "locator"],
+      "properties": {
+        "block_id": { "type": "string", "minLength": 1 },
+        "chunk_index": { "type": "integer", "minimum": 0 },
+        "coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "is_primary": { "type": "boolean" },
+        "locator": {
+          "oneOf": [
+            { "$ref": "#/$defs/pdfLocator" },
+            { "$ref": "#/$defs/markdownLocator" }
+          ]
+        }
+      },
+      "x-max-serialized-bytes": 4096
+    },
+    "unmappedReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunk_index", "reason"],
+      "properties": {
+        "chunk_index": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": { "const": "source-provenance-bundle-v1" },
+    "mapping_algorithm_version": { "const": "source-anchor-v1" },
+    "sample_id": { "type": "string" },
+    "document_id": { "type": "string", "minLength": 1 },
+    "media_type": { "enum": ["application/pdf", "text/markdown"] },
+    "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "indexed_source_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Historical index hash only; omitted by Task02A when unknown."
+    },
+    "source_hash_state": { "enum": ["verified", "legacy_unknown", "mismatch"] },
+    "source_parser_version": { "type": "string", "minLength": 1 },
+    "normalize_version": { "type": "string", "minLength": 1 },
+    "chunker": { "enum": ["v1", "v2", "markdown-block-v1"] },
+    "chunker_config": { "type": "object", "additionalProperties": true },
+    "chunker_config_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "payload_schema_version": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["ready", "partial", "failed"] },
+    "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "error": { "type": ["string", "null"] },
+    "pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pdfPage" }
+    },
+    "blocks": {
+      "type": "array",
+      "maxItems": 200000,
+      "items": { "type": "object" },
+      "x-max-serialized-bytes": 268435456
+    },
+    "chunks": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/chunk" },
+      "x-max-serialized-bytes": 268435456
+    },
+    "anchors": {
+      "type": "array",
+      "maxItems": 400000,
+      "items": { "$ref": "#/$defs/anchor" },
+      "x-max-serialized-bytes": 268435456
+    },
+    "mapped_count": { "type": "integer", "minimum": 0 },
+    "unmapped_count": { "type": "integer", "minimum": 0 },
+    "unmapped_reasons": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/unmappedReason" }
+    },
+    "chunk_snapshot_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "llm_used": { "type": "boolean" },
+    "degradation_diagnostics": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "media_type": { "const": "application/pdf" } } },
+      "then": {
+        "properties": {
+          "blocks": { "items": { "$ref": "#/$defs/pdfBlock" } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "media_type": { "const": "text/markdown" } } },
+      "then": {
+        "properties": {
+          "pages": { "maxItems": 0 },
+          "blocks": { "items": { "$ref": "#/$defs/markdownBlock" } }
+        }
+      }
+    }
+  ]
+}

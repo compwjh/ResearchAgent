@@ -632,6 +632,33 @@ class RetrieveFilterTests(unittest.TestCase):
         hit = Hit("p1", "a.pdf", 3, 0, "t", 1.0)
         self.assertEqual(hit.page_end, 3)
 
+    def test_markdown_payload_keeps_null_page_and_lines(self):
+        point = SimpleNamespace(
+            score=0.5,
+            payload={
+                "paper_id": "p1", "file_name": "a.md", "page": None,
+                "page_end": None, "start_line": 7, "end_line": 10,
+                "chunk_index": 0, "text": "markdown", "chunker": "v1",
+            },
+        )
+        hit = retrieve_module._to_hit(point)
+        self.assertIsNone(hit.page)
+        self.assertIsNone(hit.page_end)
+        self.assertEqual((hit.start_line, hit.end_line), (7, 10))
+        payload = prompts.citation_payloads([hit])[0]
+        self.assertIsNone(payload["page"])
+        self.assertIsNone(payload["page_end"])
+        self.assertEqual((payload["start_line"], payload["end_line"]), (7, 10))
+
+    def test_markdown_context_uses_line_range_without_page_zero(self):
+        hit = Hit(
+            "p1", "a.md", None, 0, "markdown", 0.5,
+            start_line=7, end_line=10,
+        )
+        context = prompts.build_context([hit])
+        self.assertIn("行 7–10", context)
+        self.assertNotIn("第 0 页", context)
+
 
 class BackfillTests(unittest.TestCase):
     """旧点缺 chunker 字段会导致按版本过滤后完全检索不到，迁移必须补上。"""
