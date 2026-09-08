@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/pdf-source-provenance-v1",
+  "title": "Spec018 pure PDF source provenance DTO",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_id",
+    "media_type",
+    "source_sha256",
+    "source_parser_version",
+    "normalize_version",
+    "status",
+    "error",
+    "pages",
+    "blocks",
+    "metrics"
+  ],
+  "properties": {
+    "schema_version": {"const": "pdf-source-provenance-v1"},
+    "sample_id": {"type": "string"},
+    "document_id": {"type": "string", "minLength": 1},
+    "media_type": {"const": "application/pdf"},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_parser_version": {"type": "string", "minLength": 1},
+    "normalize_version": {"type": "string", "minLength": 1},
+    "status": {"enum": ["ready", "partial", "failed"]},
+    "error": {"type": ["string", "null"]},
+    "pages": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/page"}
+    },
+    "blocks": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/block"}
+    },
+    "metrics": {"$ref": "#/$defs/metrics"}
+  },
+  "$defs": {
+    "bbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"type": "number"}
+    },
+    "normalized_bbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page", "width", "height", "rotation", "crop_box"],
+      "properties": {
+        "page": {"type": "integer", "minimum": 1},
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0},
+        "rotation": {"type": "integer", "minimum": 0, "maximum": 359},
+        "crop_box": {"$ref": "#/$defs/bbox"}
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "text",
+        "start",
+        "end",
+        "bbox",
+        "normalized_bbox"
+      ],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 0},
+        "text": {"type": "string"},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "normalized_bbox": {"$ref": "#/$defs/normalized_bbox"}
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "block_id",
+        "ordinal",
+        "display_ordinal",
+        "page",
+        "text",
+        "raw_text",
+        "start",
+        "end",
+        "bbox",
+        "normalized_bbox",
+        "lines",
+        "block_type",
+        "heading_path"
+      ],
+      "properties": {
+        "block_id": {"type": "string", "minLength": 1},
+        "ordinal": {"type": "integer", "minimum": 0},
+        "display_ordinal": {"type": "integer", "minimum": 0},
+        "page": {"type": "integer", "minimum": 1},
+        "text": {"type": "string"},
+        "raw_text": {"type": "string"},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "normalized_bbox": {"$ref": "#/$defs/normalized_bbox"},
+        "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}},
+        "block_type": {"type": "string", "minLength": 1},
+        "heading_path": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_count", "block_count", "line_count"],
+      "properties": {
+        "page_count": {"type": "integer", "minimum": 0},
+        "block_count": {"type": "integer", "minimum": 0},
+        "line_count": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

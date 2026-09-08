@@ -5,3 +5,5 @@
 # 跨小版本升级可能让检查结果变化。本项目已在 ruff.toml 显式固定 select/ignore，
 # 但若升级主版本，请先跑一遍 `ruff check --statistics .` 对比基线再放开上限。
 ruff>=0.16.6,<0.17
+# Strict Draft 2020-12 validation for versioned provenance schemas
+jsonschema>=4.19,<5
