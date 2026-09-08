@@ -99,7 +99,7 @@
   - 因此角色 agent 的 `model` 直接填 `ollama list` 中**已注册**的真实模型名。要为不同角色分配不同本地模型，需先在用户级 `models.json` 注册（属用户全局配置，改动前须经用户同意）。
 - **`Task` 工具调用内置 `code-explorer` 时是只读的**（无 Bash/写文件），无法落盘报告；而调用自定义 agent（如 `tester`）时，其 `tools` 生效，可用 Bash 真实执行命令与写文件——已实测：tester 用 Bash 跑 curl 并自行写回验收报告。
 - 自定义 agent 若需落盘文档或跑命令，`tools` 必须包含 `Bash`（只读子代理无法写报告，需由架构师代落盘）。
-- **⚠️ 创建/修改 agent 定义时，必须复核 `tools` 是否满足「进展日志落盘」要求**：所有角色 agent 都被要求写 `.codebuddy/agent-logs/*` 日志（思考可见），若无 `Bash` 则日志写不出。曾漏配 `doc-updater.md`（只有 Read/Grep/Glob/Edit），实战中 doc-updater 无法写日志——改为加 `Bash`。新增 agent 前先确认 `tools` 含 `Bash`（除非该角色明确无落盘需求）。
+- **⚠️ 创建/修改 agent 定义时，必须复核 `tools` 是否满足「进展日志落盘」要求**：所有角色 agent 都被要求写 `.codebuddy/agent-logs/spec-<NNN>/task-<TT>/<role>/` 日志（思考可见），若无 `Bash` 则日志写不出。曾漏配 `doc-updater.md`（只有 Read/Grep/Glob/Edit），实战中 doc-updater 无法写日志——改为加 `Bash`。新增 agent 前先确认 `tools` 含 `Bash`（除非该角色明确无落盘需求）。
 - 新建的 agent 文件**即时生效**（实测新建 `planner.md` 后同一会话即可调用），无需重启。
 - **本地模型驱动子代理较慢**：实测单次分派 3–8 分钟（27B 量化模型），属正常成本，不要误判为卡死；追求速度可改用 `qwen3.5:9b`（需先在用户级 `models.json` 注册）。
 #### 角色模型分配（2026-09-03 修订：27B 统一改用 MLX 版；依据 `docs/sdd/TOOLCALL_BENCHMARK.md` 与 `docs/sdd/retro/2026-09-02-subagent-timeout-mlx.md` 实测）
@@ -140,7 +140,7 @@
 | Skill | 承载内容 |
 |---|---|
 | `strategic-compact` | ECC 战略压缩（`/compact` 时机、存活内容、hook）；纯 ECC 内容，本项目未追加附录。 |
-| `progress-logging` | 本项目特有（ECC 无对应）：子代理进展日志与进度预测纪律——每步写 `.codebuddy/agent-logs/<agent>-<spec>-<时间戳>.md`、每条带 `- 进度：约 X%`、回传必给日志路径。 |
+| `progress-logging` | 本项目特有（ECC 无对应）：子代理进展日志与进度预测纪律——每步写 `.codebuddy/agent-logs/spec-<NNN>/task-<TT>/<role>/<时间戳>.md`、每条带 `- 进度：约 X%`、回传必给日志路径。 |
 | `regression-guard` | 本项目高频回归清单：前端 DOM 契约 / `?v=N` / XSS / CSS 作用域；后端 SQLite 迁移 / 外键 RESTRICT / SSRF / USENIX 来源 / 禁止重复实现 |
 | `backend-patterns` | 分层边界、SQLite store 规范、并发领用、UTC 时间、常用验证命令 |
 | `frontend-patterns` | 无构建静态前端的 DOM 约定、四项必守、常用验证命令 |
@@ -167,7 +167,7 @@
 
   mlx 解码快 76%、预填充快近 4 倍。GGUF 版吞吐过低是子代理超时的主因。
 - **给 27B 子代理派活要控输出量**：按 24 tok/s 估算生成时间，**一次只让它产出一个文件**。要求它一次性输出多个文件全文会因生成耗时过长而超时。
-- **子代理失败时先查 `.codebuddy/agent-logs/` 历史日志**：若以前有详细日志而本次连第一条都没写，说明是执行慢/超时，而非配置错误（配置错误会直接报 `model not found`）——可避免重复排查已解决的配置问题。
+- **子代理失败时先查 `.codebuddy/agent-logs/spec-<NNN>/task-<TT>/<role>/` 历史日志**：若以前有详细日志而本次连第一条都没写，说明是执行慢/超时，而非配置错误（配置错误会直接报 `model not found`）——可避免重复排查已解决的配置问题。
 - **任务复杂度判断标准已写入技能 `tdd-workflow`**：`backend-dev` / `frontend-dev` 动手前需自评（简单=单函数/无并发/≤1 文件；复杂=涉及锁/多文件/状态/复杂边界），简单任务可建议转主会话出草稿后复核，复杂任务须按「复杂任务自检清单」（锁范围、可哈希、双重检查、容量上限、异常边界）逐项核对。
 
 - 为不同角色分配不同模型，须先在**用户级 `~/.codebuddy/models.json`** 注册（项目级的自定义 ID 不识别）。已注册上表模型并备份原配置。
@@ -198,7 +198,7 @@
 
 子代理的推理过程默认不对外可见（尤其本地模型会先长篇 thinking 再输出）。解决办法：
 
-- **进展日志落盘（已落地，推荐）**：各角色 agent 的 system prompt 要求**每完成一步就追加写日志**到 `.codebuddy/agent-logs/<role>-<spec>-<时间戳>.md`，格式为 `[时间] 步骤 N / 观察 / 判断 / 下一步`。外部可用 `tail -f <日志路径>` **实时观察思考轨迹**（已实测：日志含每步时间戳、读到的内容、判断依据与行号）。
+- **进展日志落盘（已落地，推荐）**：各角色 agent 的 system prompt 要求**每完成一步就追加写日志**到 `.codebuddy/agent-logs/spec-<NNN>/task-<TT>/<role>/<时间戳>.md`，格式为 `[时间] 步骤 N / 观察 / 判断 / 下一步`。外部可用 `tail -f <日志路径>` **实时观察思考轨迹**（已实测：日志含每步时间戳、读到的内容、判断依据与行号）。
 - 日志属运行产物，已在 `.gitignore` 忽略；回传摘要必须给出日志路径。
 - 备选：Ollama 的 `/v1` 接口思考内容在 `reasoning_content` 字段，需框架透传才可见；纯 `ollama run` 场景可用 `--hidethinking` 反向关闭思考输出。
 - 若需更强的实时交互，可试用 Agent Teams（具名成员 + `send_message` 主动汇报进度）。

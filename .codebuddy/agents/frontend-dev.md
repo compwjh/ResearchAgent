@@ -36,7 +36,7 @@ maxTurns: 25
 - 需要后端接口改动时**停下来回报**，由主会话转派 `backend-dev`。
 
 ## 日志（强制，见 `progress-logging`）
-- 路径：`.codebuddy/agent-logs/frontend-dev-<spec编号>-<YYYYmmdd-HHMMSS>.md`，每步追加。
+- 路径：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/frontend-dev/<YYYYmmdd-HHMMSS>.md`，每步追加。
 - 回传**必须给出日志路径**。
 
 ## 输出

@@ -31,7 +31,7 @@ maxTurns: 20
 - **XSS**：确认动态文本只用 `textContent`/`input.value`，无 `innerHTML` 拼接用户输入。
 
 ## 日志（强制，见 `progress-logging`）
-- 路径：`.codebuddy/agent-logs/frontend-tester-<spec编号>-<YYYYmmdd-HHMMSS>.md`。
+- 路径：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/frontend-tester/<YYYYmmdd-HHMMSS>.md`。
 - 回传必须给出日志路径。
 
 ## 输出

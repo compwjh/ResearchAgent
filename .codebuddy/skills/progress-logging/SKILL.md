@@ -7,7 +7,11 @@ description: 本项目子代理进展日志与进度预测纪律（本地模型�
 
 > 本项目子代理由本地模型驱动，中间推理默认对外部不可见。你必须在执行中持续写日志，供外部 `tail -f` 实时观察你的思考轨迹。
 
-- **日志路径**：`.codebuddy/agent-logs/<agent名>-<spec编号>-<YYYYmmdd-HHMMSS>.md`
+- **日志路径**：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/<role>/<YYYYmmdd-HHMMSS>.md`
+  - `<NNN>` 为三位 Spec 编号，例如 `spec-017`。
+  - `<TT>` 为两位 Task 编号，例如 `task-06`；若任务是 Spec 级评审或无法归属具体 Task，使用 `task-00`。
+  - `<role>` 使用实际逻辑角色名，例如 `backend-dev`、`tester`、`architect`。
+  - 目录不存在时由子代理创建；同一 Task/角色可保留多份带时间戳日志，不覆盖历史记录。
 - **每完成一步就追加写入**（不要最后一次性写）。每条形如：
 
   ```markdown

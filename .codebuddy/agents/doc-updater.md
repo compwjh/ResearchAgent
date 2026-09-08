@@ -27,7 +27,7 @@ maxTurns: 20
 - 落盘为 spec 对应段落，不另起无关文档。
 
 ## 日志（强制，见 `progress-logging`）
-- 路径：`.codebuddy/agent-logs/doc-updater-<spec编号>-<YYYYmmdd-HHMMSS>.md`。
+- 路径：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/doc-updater/<YYYYmmdd-HHMMSS>.md`。
 - 回传必须给出日志路径。
 
 ## 输出

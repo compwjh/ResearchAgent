@@ -32,7 +32,7 @@ maxTurns: 20
 - 按 spec 验收点时，逐条给出 PASS/FAIL 与真实输出，不凭记忆。
 
 ## 日志（强制，见 `progress-logging`）
-- 路径：`.codebuddy/agent-logs/backend-tester-<spec编号>-<YYYYmmdd-HHMMSS>.md`。
+- 路径：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/backend-tester/<YYYYmmdd-HHMMSS>.md`。
 - 回传必须给出日志路径。
 
 ## 输出

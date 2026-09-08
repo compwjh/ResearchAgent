@@ -56,7 +56,7 @@ maxTurns: 30
 2. `.codebuddy/skills/strategic-compact/SKILL.md` — 上下文压缩
 
 ## 日志（强制，见 `progress-logging`）
-- 路径：`.codebuddy/agent-logs/planner-<spec编号>-<YYYYmmdd-HHMMSS>.md`。
+- 路径：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/planner/<YYYYmmdd-HHMMSS>.md`。
 - 回传必须给出日志路径。
 
 ## 行为边界

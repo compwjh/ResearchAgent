@@ -31,7 +31,7 @@ maxTurns: 30
 5. 报告写入 `docs/sdd/reviews/NNN-acceptance-review.md`，报告末尾的"开发主管签字"段**留空**，交由架构师签署。
 
 ## 进展日志（必须，见 `progress-logging`）
-- 路径：`.codebuddy/agent-logs/tester-<spec编号>-<YYYYmmdd-HHMMSS>.md`
+- 路径：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/tester/<YYYYmmdd-HHMMSS>.md`
 - **每完成一步就追加写入**，不要等到最后一次性写。每条形如：
   ```markdown
   ## [HH:MM:SS] 步骤 N：<在做什么>
@@ -41,7 +41,7 @@ maxTurns: 30
   - 下一步：<准备做什么>
   ```
 - 用 Bash 追加（如 `cat >> 日志 <<'EOF' ... EOF`）或用 Edit 工具。
-- 外部可用 `tail -f .codebuddy/agent-logs/<你的日志名>.md` 实时观察你的进展。
+- 外部可用 `tail -f .codebuddy/agent-logs/spec-<NNN>/task-<TT>/tester/<时间戳>.md` 实时观察你的进展。
 - 回传摘要时**必须给出日志路径**。
 
 ## 上下文预算与主动压缩（必须遵守）

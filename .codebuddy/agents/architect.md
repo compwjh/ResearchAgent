@@ -30,7 +30,7 @@ maxTurns: 30
 - 结论落盘为 `docs/sdd/reviews/NNN-*-review.md`，明确通过/打回与阻塞项。
 
 ## 日志（强制，见 `progress-logging`）
-- 路径：`.codebuddy/agent-logs/architect-<spec编号>-<YYYYmmdd-HHMMSS>.md`。
+- 路径：`.codebuddy/agent-logs/spec-<NNN>/task-<TT>/architect/<YYYYmmdd-HHMMSS>.md`。
 - 回传必须给出日志路径。
 
 ## 输出
