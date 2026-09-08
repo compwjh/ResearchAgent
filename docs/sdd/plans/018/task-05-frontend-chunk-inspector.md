@@ -26,6 +26,7 @@
 4. 右侧渲染切片元数据、映射状态和虚拟化/分段列表。
 5. 实现双向高亮、程序化滚动抑制、重叠全高亮和 partial 警告。
 6. 窄屏切换时保留两侧滚动位置，联动自动切到目标栏。
+7. 旧索引升级中显示原文、旧切片和进度，禁用联动；失败显示“手动重试”，不得在刷新时再次自动触发。
 
 ## 子 Agent 分派
 
@@ -55,6 +56,7 @@ Task 05 依次冻结依赖、DOM、renderer 和 interaction；每个本地 `qwen
 - `get_document_options` 固定至少为 `isEvalSupported:false`、`enableXfa:false`、`useWorkerFetch:false`、`stopAtErrors:true`、`disableAutoFetch:true`；允许 API 仅 `getDocument/getPage/getViewport/getTextContent/render`。annotation、form、XFA、attachment、JavaScript、私有字段、原生 PDF 导航均视为违规；Range、取消、损坏响应、主库/worker 版本或 hash 不一致必须映射稳定 UI 错误态。
 - `renderMarkdownBlock(dto)` 是唯一 Markdown 入口，DTO 必须含 `block_id/ordinal/text/locator/heading_path/block_type`。流程固定为 Marked 解析 → DOMPurify 净化 → block container；`data-block-id`/ARIA/focus 由 DOM API 写入。禁止正则包裹原文和未净化 `innerHTML`。图片在挂载前被替换成 DOM API 创建、`textContent` 写入的“图片已阻止：<原地址>”（最多 2048 字符），不保留 `src/srcset`、不加载附件或网络资源；缺库时只显示 `escapeHtml` 纯文本并报 `RENDERER_UNAVAILABLE`。
 - `frontend-fixture-index.json` 必须逐项记录本地 vendor/worker/license/NOTICE hash、DOM block_id/ARIA 观测、hostile Markdown 脚本/事件/协议/图片/附件输入、浏览器网络请求数（除同源 source/worker 外必须为 0）和库缺失降级结果。任一字段、hash、退出码或网络观测缺失，Task 05/06 保持阻塞。
+- Task05 是 hostile PDF/Markdown 真实浏览器网络硬门：除同源 source、worker 和应用 API 外请求数必须为 0。该证据不得再回推为 Task02B 前置条件。
 
 ### 固定 Prompt
 
@@ -93,3 +95,4 @@ Task 05 依次冻结依赖、DOM、renderer 和 interaction；每个本地 `qwen
 - 2026-09-08：修订 C 补齐 PDF.js vendor manifest 的逐字段 hash/许可证/worker/display-only schema，以及 Marked→DOMPurify→block container、textContent 图片占位和零网络请求的 fixture 门禁；仅更新计划文档，未修改业务代码。
 - 2026-09-08：P0-6 复核补丁明确 `pdfjs-vendor-manifest.json`、`dom-contract.schema.json` 和 frontend fixture 是唯一下游输入；缺少主库/worker/LICENSE/NOTICE hash、display-only 配置或 `SourceBlock → renderMarkdownBlock → DOMPurify → block container` 证据时保持 Task 05–06 阻塞，未修改业务代码。
 - 2026-09-08：P0-7 最终小修订确认 05-A～05-D 串行交接，固定 PDF.js manifest、DOM contract、frontend fixture 和单端报告路径；每个本地 27B 子任务最多 2 个代码/资源文件、约 150 行，缺少 frontend-tester/reviewer 结论不得放行 Task 06。
+- 2026-09-08：自动重建修订增加升级中只读无联动、失败后手动重试和 Task05 hostile 真实浏览器零网络硬门；本轮仅更新文档。

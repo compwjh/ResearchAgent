@@ -20,10 +20,10 @@
 
 ## 执行阶段
 
-1. 增加 Markdown 安全读取和块级解析，接入现有 v1/v2 切分与索引。
+1. 接入 Task02A 已冻结的 PDF/Markdown provenance 与 v1/v2，不重复实现 parser/chunker。
 2. 增加按文档、chunker scroll Qdrant 实际 payload 的 application 方法。
 3. 生成 PDF bbox / Markdown lines 原文块并建立多对多锚点。
-4. 实现清单原子保存、指纹失效、幂等并发构建和重启恢复。
+4. 实现清单原子保存、指纹失效，并把旧索引请求路由到 Task02A 唯一 upgrade/recovery 状态机。
 5. 实现 documents、source、inspection、reindex、delete API。
 6. 迁移现有调用方，不复制旧 papers 路由逻辑。
 
@@ -43,7 +43,7 @@ Task 04 必须先冻结 API schema，再按 application、manifest、routes、te
 | 04-C routes/error schema | `backend-dev` / 27B / 32k | 最多 2 个 route/schema 文件 + 对应测试；documents/upload/source/HEAD/inspection/reindex/delete | 更新 `api-schema.json` 的所有成功/错误体、202/409/404/416/413/415/503、Location/Retry-After/ETag/分页/容量/超时 |
 | 04-D backend regression/review | `backend-tester` / `qwen3.5:9b` / 32k；`backend-reviewer` / 27B / 32k | 只跑测试/评审，不补业务实现 | `docs/sdd/plans/018/artifacts/task-04/backend-contract-report.md`、`api-fixture-index.json`；报告列命令、退出码、观测值和 blocking issue |
 
-固定 fixture 位于 `docs/sdd/fixtures/spec-018/api/`，至少覆盖空库、非法媒体/编码/Range、50 MiB/8 MiB/数量/超时边界、202 构建、409 未就绪/重复任务、404、503 tombstone，以及 ETag/HEAD/cursor。API schema 必须定义统一错误体 `{error_code,message,retryable,request_id,document_id?,chunker?,task_id?,details?}`，禁止把自由文本 `detail` 当客户端契约。inspection 成功响应只能返回当前页 `manifest/blocks/chunks/anchors/next_cursor/total`，不得无限 JSON；检查路径 spy 的 embedding/切分/upsert/delete 必须为 0。
+固定 fixture 位于 `docs/sdd/fixtures/spec-018/api/`，至少覆盖空库、非法媒体/编码/Range、容量/超时、202 manifest、202 legacy upgrade、409 hash 冲突/仅手动重试、404、503 restore/tombstone，以及 ETag/HEAD/cursor。新索引 inspection 的 embedding/切分/upsert/delete 必须为 0；旧索引只能观察到一次唯一 upgrade 任务，不能由 route 直接调用第二套索引逻辑。
 
 ### 修订 C：API schema v1 精确冻结（P0-5）
 
@@ -52,8 +52,8 @@ Task 04 必须先冻结 API schema，再按 application、manifest、routes、te
 - `GET /api/kb/documents`：200 `{documents,next_cursor,total}`；summary 必填 `document_id/file_name/media_type/source_sha256/status/page_count/chunkers`，`limit=50`、最大 100、cursor≤512 bytes；`INVALID_LIMIT/INVALID_CURSOR`→400，响应带基于规范化 summary+cursor 的 ETag。
 - `POST /api/kb/documents/upload`：201 `{document_id,media_type,file_name,source_sha256,status,chunkers,task_id}`；50 MiB 原件、64 KiB JSON 控制体和 60 秒累计超时；扩展名/MIME 失败→415 `UNSUPPORTED_MEDIA_TYPE`，编码/PDF 失败→400 `INVALID_ENCODING/INVALID_PDF`，大小或对象数量失败→413 `PAYLOAD_TOO_LARGE`，均不得写入半截原件、metadata 或 task。
 - `GET/HEAD /api/kb/documents/{id}/source`：无 Range 200，合法单 Range 206；GET/HEAD 状态及 `ETag,Content-Type,Content-Length,Accept-Ranges` 一致，206 另带 `Content-Range`，HEAD 无 body；`If-None-Match` 命中→304；未知文档/原件→404 `DOCUMENT_NOT_FOUND/SOURCE_NOT_FOUND`；非法、越界、多 Range→416 `INVALID_RANGE` 且带 `Content-Range: bytes */total`；source 读取超时→503 `SOURCE_TIMEOUT`。
-- `GET /api/kb/documents/{id}/inspection`：ready/partial 200 `{manifest,blocks,chunks,anchors,next_cursor,total}`，`page_size=200`、最大 500、单页 JSON≤8 MiB；缺失/失效清单→202 `INSPECTION_BUILDING`，必须有 `Location,Retry-After:2,task_id,status,progress`；未完成索引/failed/snapshot 冲突→409 `INDEX_NOT_READY/INDEX_FAILED/SNAPSHOT_CONFLICT`；构建依赖不可用或 300 秒超时→503 `MANIFEST_FAILED/MANIFEST_TIMEOUT/QDRANT_UNAVAILABLE`。
-- `POST /api/kb/documents/{id}/reindex`：202 `{task_id,document_id,chunker,status,progress}`，`chunker` 仅 v1/v2/all，带 `Location` 与 `Retry-After:2`；重复执行→409 `INDEX_ALREADY_RUNNING`；原件缺失→404 `SOURCE_NOT_FOUND`；依赖不可用→503 `QDRANT_UNAVAILABLE`。
+- `GET /api/kb/documents/{id}/inspection`：ready/partial 200 `{manifest,blocks,chunks,anchors,next_cursor,total}`。新索引缺失/失效清单→202 `INSPECTION_BUILDING`；旧索引缺 provenance 的首次打开→202 `LEGACY_UPGRADE_RUNNING`，额外必填 `interaction_mode:"read_only_no_link"`、`auto_attempted:true`、`old_snapshot_available:true`。自动升级失败后的 GET→409 `UPGRADE_RETRY_REQUIRED`，不得再次自动提交。
+- `POST /api/kb/documents/{id}/reindex`：202 `{task_id,document_id,chunker,status,progress,reason}`；`reason="inspection_upgrade_retry"` 是失败后的手动重试。重复执行→409 `INDEX_ALREADY_RUNNING`；hash 冲突→409 `SOURCE_HASH_MISMATCH`；恢复失败→503 `UPGRADE_RESTORE_FAILED`；原件缺失→404 `SOURCE_NOT_FOUND`。
 - `DELETE /api/kb/documents/{id}`：全目标完成才 200 `{document_id,status:"completed",deleted:{source,metadata,manifests,vectors}}`；部分失败只返回 503 `DELETE_PENDING`，带 tombstone 状态、同文档重试 `Location` 和 `Retry-After:10`，不得以 `vectors:false` 返回 200。
 
 统一错误体固定为 `{error_code,message,retryable,request_id,document_id?,chunker?,task_id?,details?}`；稳定 code、状态映射和优先级必须与 Spec 修订 C 一致。`details` 只允许非敏感的 `limit_name/limit_value/observed_value/current_status/retry_after_seconds/allowed_range/current_etag`。所有 400/404/409/413/415/416/503 fixture 都必须比对 body 字段和 headers，不能只断言 status code。
@@ -69,13 +69,13 @@ fixture index 必须分别记录 document≤50 MiB、block≤200,000 且 text≤
 ### 固定 Prompt
 
 ```text
-你是 Spec018 的 backend-dev。只读取 Spec018、Task03/04 结果和 knowledge_base/paper_discovery 的受控 application 入口。实现通用 PDF/Markdown 导入、原件安全读取、按真实 Qdrant payload 生成切片快照、来源锚点和可重建清单。必须复用现有切分、embedding、Qdrant、异步任务、下载安全和论文导入能力；不得重新 embedding 旧文档，不得新建第二套索引。仅修改 backend 与对应测试。验证路径穿越、Range、Markdown 编码/XSS 输入、并发构建、重启、partial 映射、hash 失效和旧 PDF。按固定结果字段回传，并给出开始结束与总耗时。
+你是 Spec018 的 backend-dev。只读取 Spec018、Task02A/02B、Task03/04 结果和 knowledge_base/paper_discovery 的受控 application 入口。实现通用 PDF/Markdown 导入、原件安全读取、按真实 Qdrant payload 生成切片快照、来源锚点和可重建清单。必须复用 Task02A 的 parser、provenance、旧索引升级/恢复及现有切分、embedding、Qdrant、异步任务、下载安全和论文导入能力；不得新建第二套索引。新索引 inspection 不得 embedding；旧索引缺 provenance 只能幂等提交唯一 legacy upgrade。仅修改 backend 与对应测试。验证路径穿越、Range、Markdown 编码/XSS 输入、并发构建、重启、partial 映射、hash 失效、旧 PDF、失败恢复和仅手动重试。
 ```
 
 ## 主 Agent 校验
 
 - API 只能以 document_id 解析服务器路径，客户端不能传路径。
-- 旧文档构建清单时 embedding mock 断言为 0 次。
+- 新文档/已有 provenance 构建清单时 embedding mock 断言为 0 次；旧索引只允许进入 Task02A 唯一 upgrade 状态机。
 - Qdrant 查询带 document_id + chunker 过滤。
 - 清单写入使用临时文件 + 原子替换，不留下半截 JSON。
 
@@ -103,3 +103,4 @@ fixture index 必须分别记录 document≤50 MiB、block≤200,000 且 text≤
 - 2026-09-08：修订 C 补齐 API v1 每个端点的成功/错误体、稳定 code、状态码优先级、headers、容量/超时/分页和 fixture 逐字段断言；仅更新计划文档，未修改业务代码。
 - 2026-09-08：P0-5 复核补丁明确 `limit` 的 `INVALID_LIMIT` 与 `cursor` 的 `INVALID_CURSOR` 分离；Task 04 只能以 `api-schema.json`/`api-fixture-index.json` 作为下游机器可校验契约，缺字段、header、优先级或退出码时保持阻塞，未修改业务代码。
 - 2026-09-08：P0-7 最终小修订确认 04-A～04-D 串行交接，固定 API schema/fixture/单端报告路径；每个本地 27B 子任务最多 2 个代码文件、约 150 行，缺少 backend-tester/reviewer 结论不得放行 Task 05。
+- 2026-09-08：自动重建修订要求 Task04 复用 Task02A provenance/upgrade/recovery，不重复 parser；API 新增 legacy upgrade、hash 冲突、仅手动重试和恢复失败状态。本轮仅更新文档。

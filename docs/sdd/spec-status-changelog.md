@@ -120,3 +120,4 @@
 - **017 Task08 评审、部署与复盘** ｜ 待执行 → 已完成 ｜ 2026-09-08：验收评审通过（QA 与 Tech Lead 签字均由主模型代行，用户临时要求）；服务实际启动，首页/health/kb-health/conferences/kb-papers 均 200；复盘落盘。
 - **017 后端限界上下文模块化** ｜ 已确认 → 已完成 ｜ 2026-09-08：Task02–08 全部完成。全量 631 passed；OpenAPI 与基线逐项一致；ruff 与迁移前持平。遗留：Reranker 降级运行、PaperImportPort 未实现、knowledge_base 受控入口待收窄。
 - **018 知识文档切片检查器与双向原文定位** ｜ 实施中 → 待确认 ｜ 2026-09-08：Task02 只读 Go/No-Go 完成，严格结论 `NO-GO`。现有 PDF parser 仅返回 `(page, text)`，无法证明同源 bbox/line/word provenance DTO；hostile PDF 浏览器零网络请求证据未建立。固定 fixture、expected JSON、schema、审计报告和层级日志已落盘，Task03–07 暂停，待修订契约后重新确认。
+- **018 知识文档切片检查器与双向原文定位（自动重建修订）** ｜ 待确认 → 待确认 ｜ 2026-09-08：经 Grill with Docs 确认旧 PDF 首次打开自动重建已有 v1/v2、原地替换前保存完整 point/vector 快照、失败恢复、首次失败后仅手动重试、块级 bbox、partial 可切换及 v2 不降级；hostile 浏览器网络硬门移至 Task05。新增 Task02A/02B，上一版评审不覆盖本修订，等待重新评审与确认；未修改业务代码。

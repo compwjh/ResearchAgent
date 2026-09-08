@@ -292,3 +292,17 @@ hostile fixture 的验收断言尚不能替代上述依赖版本和 DOM 绑定�
 
 - 开发主管（Tech Lead）：当前协作 Agent，签字：**最终复审通过**
 - 签字时间：2026-09-08 20:29 +0800
+
+## 自动重建修订待重新技术评审（2026-09-08）
+
+首轮 Task02 `NO-GO` 后，Spec 新增生产级 PDF block provenance、Markdown parser、provenance-aware v1/v2、`LegacyInspectionUpgrade`、完整 point/payload/dense+sparse vector 快照、预计算后原地替换、跨版本失败恢复、成功删快照、首次失败后仅手动重试，并把 hostile PDF 的真实浏览器零网络硬门移交 Task05。
+
+这些变化会修改上一版 P0-1、P0-2、P0-4、P0-5 和 no-embedding 假设，因此上一版“最终复审通过”只作为历史结论保留，**不覆盖当前修订**。当前技术评审状态为：`待评审（未执行）`。重新评审必须验证：
+
+1. Task02A/02B 的顺序消除了“未实现前要求实现证据”的循环门禁。
+2. 恢复快照能完整保存并恢复 dense/sparse vector，且不进入 Git、API 或敏感日志。
+3. v1/v2 文档级事务、进程中断恢复、短写入窗口和仅手动重试状态机无歧义。
+4. 新索引 inspection 的 no-embedding 路径与旧索引唯一 upgrade 路径严格分离。
+5. Task05 明确承接 hostile PDF/Markdown 的真实浏览器网络硬门。
+
+重新评审通过前不得执行 Task02A 或修改业务代码。

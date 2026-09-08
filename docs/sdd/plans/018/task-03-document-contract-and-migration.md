@@ -1,7 +1,7 @@
 # Task 03：定义通用文档协议与迁移
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task 02 Go；被依赖：Task 04；当前状态：`待执行`
+> 依赖：Task02B Go；被依赖：Task 04；当前状态：`待执行`
 
 ## 一句话目标
 
@@ -11,11 +11,11 @@
 
 - 元数据当前位于 `data/kb/papers.json`，原件默认位于 `data/kb/papers/`。
 - 论文发现导入会写入同一知识库并携带可选论文元数据。
-- 不能通过重新生成 ID 或重新向量化完成迁移。
+- 身份/元数据迁移本身不能重新生成 ID 或修改向量；旧索引 provenance 升级由 Task02A 的唯一恢复式重建流程负责。
 
 ## 前置门禁
 
-- Task 02 结论为 Go。
+- Task02B 结论为 Go。
 - 记录迁移前元数据摘要、原件清单和 Qdrant point 数量；不得提交用户数据。
 
 ## 执行阶段与决策依据
@@ -29,7 +29,7 @@
 ## 子 Agent 分派
 
 - 代码角色：backend-dev；评审：backend-reviewer。
-- 最小上下文：Spec/Task、现有 store/application、论文导入 application、Task02 证据。
+- 最小上下文：Spec/Task、现有 store/application、论文导入 application、Task02 历史证据及 Task02A/02B 交接物。
 - 允许修改：`backend/**`、对应后端测试、`CONTEXT.md`、单个 ADR、本 Task 结果。
 
 ## 可交接子任务与固定产物（P0-7）
@@ -48,7 +48,7 @@ Task 03 按协议先行、迁移后行、边界最后评审的顺序执行。每
 ### 固定 Prompt
 
 ```text
-你是 Spec018 的 backend-dev。基于 Task02 的 Go 结论定义通用知识文档与检查清单协议，保留所有既有 paper_id 值作为 document_id，迁移不得重新 embedding、删除原件或伪造元数据。先复用现有知识库 store/application 和论文发现导入入口，不得新建第二套索引或下载实现。只修改 backend、对应后端测试、CONTEXT.md、指定 ADR 和本 Task 结果。必须验证旧 JSON、旧 stored_name、论文导入元数据、重复迁移、迁移中断与回滚。返回固定字段：状态摘要、改动文件、测试命令/退出码/结果、产物、决策依据、风险阻塞、主 Agent 动作、开始结束耗时、可用的模型/token/工具统计。
+你是 Spec018 的 backend-dev。基于 Task02B 的 Go 结论定义通用知识文档与检查清单协议，保留所有既有 paper_id 值作为 document_id。身份/元数据迁移不得重新 embedding、删除原件或伪造元数据；旧索引升级只能复用 Task02A 的唯一恢复式流程。先复用现有知识库 store/application 和论文发现导入入口，不得新建第二套索引或下载实现。只修改 backend、对应后端测试、CONTEXT.md、指定 ADR 和本 Task 结果。必须验证旧 JSON、旧 stored_name、论文导入元数据、重复迁移、迁移中断与回滚。返回固定字段：状态摘要、改动文件、测试命令/退出码/结果、产物、决策依据、风险阻塞、主 Agent 动作、开始结束耗时、可用的模型/token/工具统计。
 ```
 
 ## 主 Agent 校验
