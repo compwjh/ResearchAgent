@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://researchagent.invalid/spec-018/markdown-source-provenance-v1",
+  "title": "Spec018 Markdown source provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_id",
+    "media_type",
+    "source_sha256",
+    "source_parser_version",
+    "normalize_version",
+    "status",
+    "error",
+    "normalized_text",
+    "blocks",
+    "metrics"
+  ],
+  "properties": {
+    "schema_version": { "const": "markdown-source-provenance-v1" },
+    "sample_id": { "type": "string", "minLength": 1 },
+    "document_id": { "type": "string", "minLength": 1 },
+    "media_type": { "const": "text/markdown" },
+    "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "source_parser_version": { "const": "markdown-source-parser-v1" },
+    "normalize_version": { "const": "nfkc-crlf-lf-trim-horizontal-space-v1" },
+    "status": { "enum": ["ready", "partial", "failed"] },
+    "error": { "type": ["string", "null"] },
+    "normalized_text": { "type": "string" },
+    "blocks": {
+      "type": "array",
+      "maxItems": 200000,
+      "items": { "$ref": "#/$defs/block" }
+    },
+    "metrics": { "$ref": "#/$defs/metrics" }
+  },
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id",
+        "kind",
+        "alt",
+        "destination",
+        "title",
+        "loadable",
+        "placeholder"
+      ],
+      "properties": {
+        "resource_id": { "type": "string", "minLength": 1 },
+        "kind": { "const": "image" },
+        "alt": { "type": "string" },
+        "destination": { "type": "string", "minLength": 1 },
+        "title": { "type": ["string", "null"] },
+        "loadable": { "const": false },
+        "placeholder": { "type": "string", "minLength": 1 }
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "block_id",
+        "ordinal",
+        "text",
+        "locator",
+        "heading_path",
+        "block_type",
+        "start",
+        "end",
+        "page",
+        "page_end",
+        "inline_resources",
+        "diagnostics"
+      ],
+      "properties": {
+        "block_id": { "type": "string", "minLength": 1 },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "text": {
+          "type": "string",
+          "description": "Parser-enforced UTF-8 byte limit; Draft 2020-12 maxLength counts code points, not UTF-8 bytes.",
+          "x-max-utf8-bytes": 1048576
+        },
+        "locator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start_line", "end_line"],
+          "properties": {
+            "start_line": { "type": "integer", "minimum": 1 },
+            "end_line": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "heading_path": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "block_type": {
+          "enum": [
+            "heading",
+            "paragraph",
+            "list",
+            "table",
+            "code",
+            "blockquote",
+            "horizontal_rule",
+            "html"
+          ]
+        },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "page": { "const": null },
+        "page_end": { "const": null },
+        "inline_resources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/resource" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_count",
+        "line_count",
+        "block_count",
+        "image_count",
+        "diagnostic_count",
+        "markdown_line_exact_rate"
+      ],
+      "properties": {
+        "page_count": { "const": null },
+        "line_count": { "type": "integer", "minimum": 0 },
+        "block_count": { "type": "integer", "minimum": 0, "maximum": 200000 },
+        "image_count": { "type": "integer", "minimum": 0 },
+        "diagnostic_count": { "type": "integer", "minimum": 0 },
+        "markdown_line_exact_rate": { "const": 1.0 }
+      }
+    }
+  }
+}
