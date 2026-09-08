@@ -25,6 +25,12 @@ def test_paper_view_has_stable_render_targets() -> None:
         "paper-login-queue",
         "paper-login-items",
         "paper-conference-dialog",
+        "paper-search-progress",
+        "paper-source-usenix",
+        "paper-source-dblp",
+        "paper-pagination",
+        "paper-prev-page",
+        "paper-next-page",
     }
     for element_id in required_ids:
         assert f'id="{element_id}"' in INDEX
@@ -47,6 +53,21 @@ def test_paper_content_renderer_uses_safe_dom_text_boundary() -> None:
     assert "innerHTML" not in batch_renderer
     assert "title.textContent" in batch_renderer
     assert "error.textContent" in batch_renderer
+
+
+def test_async_search_uses_frozen_server_pagination_contract() -> None:
+    assert "fetch('/api/papers/searches'" in APP
+    assert "conference_ids: conferenceIds" in APP
+    assert "body: JSON.stringify({ query, conference_ids: conferenceIds, years })" in APP
+    assert "/api/papers/searches/${encodeURIComponent(searchId)}/results?page=" in APP
+    assert "total_pages" in APP
+    assert "has_next" in APP
+    assert "generation" in APP
+    assert "/api/papers/search'" not in APP
+    assert "cached: '已使用缓存'" in APP
+    assert "checking_cache: '正在检查本地目录'" in APP
+    assert "fetching: '正在从该来源获取'" in APP
+    assert "merging: '正在整理元数据'" in APP
 
 
 def test_paper_styles_cover_long_content_scrolling_and_focus() -> None:

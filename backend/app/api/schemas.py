@@ -52,6 +52,16 @@ class PaperSearchRequest(BaseModel):
     publication_scope: Literal["published", "accepted", "all"] = "published"
 
 
+class AsyncPaperSearchRequest(BaseModel):
+    """Task15 async catalog search: only server-controlled scope is accepted."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    query: str = Field(min_length=1, max_length=500)
+    conference_ids: List[str] = Field(min_length=1, max_length=1)
+    years: List[StrictInt] = Field(min_length=1, max_length=10)
+
+
 class PaperAcceptedRequest(BaseModel):
     """受控 accepted-paper 查询参数；来源 URL 只来自服务端会议配置。"""
 

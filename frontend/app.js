@@ -326,9 +326,15 @@ const paperYearTo = document.querySelector('#paper-year-to');
 const paperSearchButton = document.querySelector('#paper-search-button');
 const paperSearchStatus = document.querySelector('#paper-search-status');
 const paperSearchError = document.querySelector('#paper-search-error');
+const paperProgressPanel = document.querySelector('#paper-search-progress');
+const paperProgressStatus = document.querySelector('#paper-progress-status');
 const paperResultCount = document.querySelector('#paper-result-count');
 const paperResults = document.querySelector('#paper-results');
 const paperResultsEmpty = document.querySelector('#paper-results-empty');
+const paperPagination = document.querySelector('#paper-pagination');
+const paperPrevPage = document.querySelector('#paper-prev-page');
+const paperNextPage = document.querySelector('#paper-next-page');
+const paperPageStatus = document.querySelector('#paper-page-status');
 const paperResultsToolbar = document.querySelector('#paper-results-toolbar');
 const paperSelectAll = document.querySelector('#paper-select-all');
 const paperSelectedCount = document.querySelector('#paper-selected-count');
@@ -363,6 +369,10 @@ const paperState = {
   candidates: [],
   candidateSearchIds: new Map(),
   searchIds: [],
+  searchId: null,
+  searchPage: 1,
+  searchTotalPages: 0,
+  searchHasNext: false,
   searchSerial: 0,
   searchController: null,
   conferencesLoaded: false,
@@ -379,6 +389,24 @@ const PAPER_STATUS_TEXT = {
   indexing: '索引中', completed: '已完成', failed: '失败', cancelled: '已取消',
   partial_success: '部分完成', running: '处理中', completed_count: '已完成',
 };
+const PAPER_SOURCE_STATUS_TEXT = {
+  queued: '等待开始', checking_cache: '正在检查本地目录', cached: '已使用缓存',
+  fetching: '正在从该来源获取', merging: '正在整理元数据', completed: '检索完成',
+  failed: '该来源暂时不可用', partial: '部分完成',
+};
+const PAPER_SOURCE_MESSAGE_TEXT = {
+  SOURCE_QUEUED: '等待开始', CHECKING_CACHE: '正在检查本地目录', CACHE_HIT: '已使用缓存',
+  FETCHING_SOURCE: '正在从该来源获取', MERGING_METADATA: '正在整理元数据',
+  SOURCE_COMPLETED: '检索完成', SOURCE_PARTIAL: '部分完成', SOURCE_FAILED: '该来源暂时不可用',
+};
+const PAPER_SOURCE_LABELS = { usenix: 'USENIX Security 官网', dblp: 'DBLP 辅助书目' };
+const PAPER_PUBLICATION_STAGE_TEXT = {
+  published: '已发表', accepted: '已接收', prepublication: '预发表',
+};
+const PAPER_SOURCE_ERROR_TEXT = {
+  USENIX_UNAVAILABLE: '该来源暂时不可用', DBLP_UNAVAILABLE: '该来源暂时不可用',
+  SOURCE_UNAVAILABLE: '该来源暂时不可用', SOURCE_FETCH_FAILED: '该来源暂时不可用',
+};
 const PAPER_ERROR_TEXT = {
   PAPER_DISCOVERY_DISABLED: '论文检索功能当前已关闭', PAPER_DISCOVERY_UNAVAILABLE: '检索服务暂时不可用',
   PAPER_DISCOVERY_STORE_UNAVAILABLE: '检索配置暂时不可用', SEARCH_EXPIRED: '搜索会话已过期，请重新检索',
@@ -389,6 +417,7 @@ const PAPER_ERROR_TEXT = {
   BROWSER_SESSION_REQUIRED: '请先完成受控登录后再续传', BROWSER_UNAVAILABLE: '浏览器当前不可用',
   BROWSER_ORIGIN_NOT_ALLOWED: '该论文不支持受控登录', IMPORT_BATCH_UNAVAILABLE: '导入服务暂时不可用',
   IMPORT_BATCH_ERROR: '导入批次失败', PAPER_ALREADY_EXISTS: '论文已在知识库中', LOGIN_REQUIRED: '需要登录后才能下载',
+  SEARCH_NOT_READY: '结果正在整理，请稍后重试',
 };
 
 class PaperApiError extends Error {
@@ -417,6 +446,9 @@ function setPaperEnabled(enabled) {
     paperState.batchPollSerial += 1;
     paperState.searchController?.abort();
     paperState.searchController = null;
+    paperState.searchId = null;
+    if (paperProgressPanel) paperProgressPanel.hidden = true;
+    if (paperPagination) paperPagination.hidden = true;
     if (paperSearchButton) paperSearchButton.disabled = false;
     if (paperResults) paperResults.setAttribute('aria-busy', 'false');
     if (paperState.batchPollTimer) {
@@ -627,99 +659,199 @@ function comparePaperCandidateRecords(left, right) {
   return left.candidateIndex - right.candidateIndex;
 }
 
-function renderPaperResults(candidates) {
+function paperUnitCount(value) {
+  if (Array.isArray(value)) return value.length;
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? count : 0;
+}
+
+function paperSourceProgressByKind(progress) {
+  const byKind = new Map();
+  (Array.isArray(progress) ? progress : []).forEach((item) => {
+    if (item && (item.source_kind === 'usenix' || item.source_kind === 'dblp')) byKind.set(item.source_kind, item);
+  });
+  return byKind;
+}
+
+function renderPaperSourceProgress(payload = {}) {
+  const progress = paperSourceProgressByKind(payload.source_progress || payload.sources);
+  if (paperProgressPanel) paperProgressPanel.hidden = false;
+  ['usenix', 'dblp'].forEach((sourceKind) => {
+    const card = document.querySelector(`#paper-source-${sourceKind}`);
+    const statusNode = document.querySelector(`#paper-source-${sourceKind}-status`);
+    const countsNode = document.querySelector(`#paper-source-${sourceKind}-counts`);
+    const errorNode = document.querySelector(`#paper-source-${sourceKind}-error`);
+    const source = progress.get(sourceKind) || { status: 'queued', cached_units: [], fetching_units: [], completed_units: [], paper_count: 0 };
+    const status = PAPER_SOURCE_STATUS_TEXT[source.status] ? source.status : 'queued';
+    const message = PAPER_SOURCE_STATUS_TEXT[source.status]
+      || PAPER_SOURCE_MESSAGE_TEXT[source.message_code] || '正在整理来源';
+    const errorText = source.error_code ? (PAPER_SOURCE_ERROR_TEXT[source.error_code] || (status === 'failed' ? '该来源暂时不可用' : '')) : '';
+    if (card) card.className = `paper-source-card status-${status}`;
+    if (statusNode) statusNode.textContent = message;
+    if (countsNode) countsNode.textContent = `缓存 ${paperUnitCount(source.cached_units)} · 获取 ${paperUnitCount(source.fetching_units)} · 完成 ${paperUnitCount(source.completed_units)} · 论文 ${paperUnitCount(source.paper_count)}`;
+    if (errorNode) { errorNode.textContent = errorText; errorNode.hidden = !errorText; }
+  });
+  const jobStatus = payload.status;
+  if (paperProgressStatus) {
+    paperProgressStatus.textContent = jobStatus === 'partial'
+      ? '部分来源未完成，以下结果来自可用目录'
+      : jobStatus === 'completed' ? '检索完成' : jobStatus === 'failed' ? '检索失败' : '正在检索…';
+  }
+}
+
+function normalizePaperResult(item, searchId) {
+  const candidate = item && typeof item === 'object' ? item : {};
+  const candidateId = paperText(candidate.catalog_paper_id || candidate.candidate_id, '');
+  return {
+    ...candidate,
+    candidate_id: candidateId,
+    search_id: searchId,
+    authors: Array.isArray(candidate.authors) ? candidate.authors.map((author) => String(author)) : [],
+    keywords: Array.isArray(candidate.keywords) ? candidate.keywords.map((keyword) => String(keyword)) : [],
+    source_kinds: Array.isArray(candidate.source_kinds) ? candidate.source_kinds.map((kind) => String(kind)) : [],
+  };
+}
+
+function renderPaperPagination(pageInfo = {}) {
+  const page = Math.max(1, Number(pageInfo.page) || 1);
+  const totalPages = Math.max(page, Number(pageInfo.total_pages) || 1);
+  const hasNext = typeof pageInfo.has_next === 'boolean' ? pageInfo.has_next : page < totalPages;
+  paperState.searchPage = page; paperState.searchTotalPages = totalPages; paperState.searchHasNext = hasNext;
+  if (paperPagination) paperPagination.hidden = !paperState.candidates.length;
+  if (paperPageStatus) paperPageStatus.textContent = `第 ${page} / ${totalPages} 页`;
+  if (paperPrevPage) paperPrevPage.disabled = page <= 1;
+  if (paperNextPage) paperNextPage.disabled = !hasNext;
+}
+
+function renderPaperResults(candidates, pageInfo = {}) {
   if (!paperResults) return;
   paperResults.replaceChildren();
-  paperState.candidates = candidates.slice();
+  paperState.candidates = candidates;
   paperResultsEmpty.hidden = candidates.length > 0;
   paperResultsEmpty.textContent = candidates.length ? '' : '没有找到符合条件的论文。';
-  if (paperResultCount) paperResultCount.textContent = candidates.length ? `${candidates.length} 篇` : '';
+  if (paperResultCount) paperResultCount.textContent = candidates.length ? `${Number(pageInfo.total) || candidates.length} 篇` : '';
   if (paperResultsToolbar) paperResultsToolbar.hidden = candidates.length === 0;
   candidates.forEach((candidate) => {
     const item = document.createElement('li'); item.className = 'paper-result-item';
     const head = document.createElement('div'); head.className = 'paper-result-head';
     const select = document.createElement('input'); select.type = 'checkbox'; select.className = 'paper-result-select';
     select.dataset.candidateId = paperText(candidate.candidate_id, '');
-    select.disabled = Boolean(candidate.existing_paper_id);
+    select.disabled = Boolean(candidate.existing_paper_id || !candidate.candidate_id);
     select.setAttribute('aria-label', `选择论文：${paperText(candidate.title, '未命名论文')}`);
     select.addEventListener('change', updatePaperSelection);
     const title = document.createElement('h3'); title.className = 'paper-result-title'; title.textContent = paperText(candidate.title, '未命名论文');
     head.append(select, title); item.appendChild(head);
     const meta = document.createElement('p'); meta.className = 'paper-result-meta';
-    meta.textContent = [candidate.authors?.join?.(', '), candidate.year, candidate.conference_name, `相关度 ${paperCandidateScore(candidate)}`].filter(Boolean).join(' · ');
+    meta.textContent = [candidate.authors.join(', '), candidate.year, candidate.conference_name, `相关度 ${paperCandidateScore(candidate)}`].filter(Boolean).join(' · ');
     item.appendChild(meta);
     const abstract = document.createElement('p'); abstract.className = 'paper-result-abstract';
-    abstract.textContent = candidate.abstract ? candidate.abstract : '摘要暂不可用'; item.appendChild(abstract);
+    abstract.textContent = candidate.abstract ? String(candidate.abstract) : '摘要暂不可用'; item.appendChild(abstract);
+    if (candidate.keywords.length) {
+      const keywords = document.createElement('p'); keywords.className = 'paper-result-meta paper-result-keywords';
+      keywords.textContent = `关键词：${candidate.keywords.join('、')}`; item.appendChild(keywords);
+    }
     const status = document.createElement('span'); status.className = 'paper-result-status';
-    status.textContent = `PDF：${PAPER_STATUS_TEXT[candidate.pdf_access] || paperText(candidate.pdf_access, '未知')}`; item.appendChild(status);
+    const sourceNames = candidate.source_kinds.map((kind) => PAPER_SOURCE_LABELS[kind] || '受控来源').join('、') || '受控来源';
+    const stage = PAPER_PUBLICATION_STAGE_TEXT[candidate.publication_stage] || '出版阶段待确认';
+    status.textContent = `出版阶段：${stage} · 来源：${sourceNames}`; item.appendChild(status);
     const action = document.createElement('button'); action.type = 'button'; action.className = 'secondary-button paper-import-one';
     action.dataset.candidateId = paperText(candidate.candidate_id, '');
-    action.disabled = Boolean(candidate.existing_paper_id); action.textContent = candidate.existing_paper_id ? '已在知识库' : '添加到知识库';
+    action.disabled = Boolean(candidate.existing_paper_id || !candidate.candidate_id); action.textContent = candidate.existing_paper_id ? '已在知识库' : '添加到知识库';
     action.addEventListener('click', () => importPaperCandidates([candidate])); item.appendChild(action);
     paperResults.appendChild(item);
+    if (candidate.candidate_id) {
+      paperState.candidateSearchIds.set(candidate.candidate_id, candidate.search_id);
+      paperState.candidateById.set(candidate.candidate_id, candidate);
+    }
   });
+  renderPaperPagination(pageInfo);
   updatePaperSelection();
+}
+
+async function loadPaperResultsPage(searchId, page, serial, controller) {
+  const response = await fetch(`/api/papers/searches/${encodeURIComponent(searchId)}/results?page=${encodeURIComponent(page)}`, { signal: controller.signal });
+  const data = await paperJson(response);
+  if (serial !== paperState.searchSerial) return null;
+  const rawItems = Array.isArray(data.items) ? data.items : (Array.isArray(data.results) ? data.results : []);
+  const candidates = rawItems.map((item) => normalizePaperResult(item, searchId));
+  renderPaperResults(candidates, data);
+  return data;
+}
+
+function waitForPaperPoll(delay, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(resolve, delay);
+    signal.addEventListener('abort', () => { window.clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+  });
+}
+
+async function pollPaperSearch(searchId, serial, controller) {
+  while (serial === paperState.searchSerial && !controller.signal.aborted) {
+    const response = await fetch(`/api/papers/searches/${encodeURIComponent(searchId)}`, { signal: controller.signal });
+    const data = await paperJson(response);
+    if (serial !== paperState.searchSerial) return;
+    renderPaperSourceProgress(data);
+    const status = data.status || 'running';
+    if (paperSearchStatus) paperSearchStatus.textContent = status === 'partial'
+      ? '部分来源未完成，以下结果来自可用目录' : status === 'completed' ? '检索完成' : '正在检索…';
+    if (['completed', 'partial', 'failed'].includes(status)) {
+      try {
+        const resultData = await loadPaperResultsPage(searchId, 1, serial, controller);
+        const visibleItems = resultData?.items || resultData?.results || [];
+        if (status === 'failed' && !visibleItems.length) showPaperError('PAPER_DISCOVERY_UNAVAILABLE');
+        else if (status === 'failed' && visibleItems.length) {
+          if (paperSearchStatus) paperSearchStatus.textContent = '部分来源未完成，以下结果来自可用目录';
+          if (paperProgressStatus) paperProgressStatus.textContent = '部分来源未完成，以下结果来自可用目录';
+        }
+      } catch (error) {
+        if (status === 'partial' && error.name !== 'AbortError') showPaperError('SEARCH_NOT_READY');
+        else if (status === 'failed' && error.name !== 'AbortError') showPaperError(error.code || 'PAPER_DISCOVERY_UNAVAILABLE');
+        else throw error;
+      }
+      return;
+    }
+    await waitForPaperPoll(1200, controller);
+  }
 }
 
 async function searchPapers(event) {
   event?.preventDefault();
-  if (!paperState.enabled || paperSearchButton?.disabled) return;
+  if (!paperState.enabled) return;
   const query = (paperQuery?.value || '').trim();
   const conferenceIds = paperConferenceList ? [...paperConferenceList.querySelectorAll('input:checked')].map((input) => input.value) : [];
   const years = paperYearList();
   if (!query) { showPaperError('INVALID_QUERY'); return; }
   if (!conferenceIds.length) { showPaperError('INVALID_CONFERENCE'); return; }
   if (!years) { showPaperError('INVALID_YEARS'); return; }
-  if (paperState.searchController) paperState.searchController.abort();
-  const serial = ++paperState.searchSerial;
+  paperState.searchController?.abort();
+  const generation = ++paperState.searchSerial;
+  const serial = generation;
   const controller = new AbortController(); paperState.searchController = controller;
-  if (paperSearchButton) paperSearchButton.disabled = true;
+  paperState.searchId = null; paperState.searchIds = []; paperState.searchPage = 1; paperState.searchTotalPages = 0; paperState.searchHasNext = false;
+  paperState.candidateSearchIds.clear(); paperState.candidateById.clear(); paperState.candidates = [];
+  // Keep the submit control available so a new search can supersede an
+  // in-flight generation; the controller/generation guard cancels the old one.
+  if (paperSearchButton) paperSearchButton.disabled = false;
   if (paperResults) paperResults.setAttribute('aria-busy', 'true');
   if (paperSearchError) paperSearchError.hidden = true;
   if (paperSearchStatus) paperSearchStatus.textContent = '正在检索…';
+  renderPaperSourceProgress({ status: 'queued' });
+  if (paperResults) paperResults.replaceChildren();
+  if (paperResultsEmpty) { paperResultsEmpty.hidden = false; paperResultsEmpty.textContent = '正在准备检索…'; }
+  if (paperResultsToolbar) paperResultsToolbar.hidden = true;
+  if (paperPagination) paperPagination.hidden = true;
   try {
-    const responses = await Promise.all(conferenceIds.map(async (conference_id) => {
-      try {
-        const response = await fetch('/api/papers/search', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-          body: JSON.stringify({ query, conference_id, years, limit: 20 }),
-        });
-        return { data: await paperJson(response), error: null };
-      } catch (error) {
-        if (error.name === 'AbortError') throw error;
-        return { data: null, error };
-      }
-    }));
+    const response = await fetch('/api/papers/searches', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({ query, conference_ids: conferenceIds, years }),
+    });
+    const data = await paperJson(response);
     if (serial !== paperState.searchSerial) return;
-    paperState.candidateSearchIds.clear(); paperState.searchIds = [];
-    const deduplicated = new Set();
-    const successful = responses.filter((result) => result.data).map((result) => result.data);
-    responses.forEach(({ data }, responseIndex) => {
-      if (!data) return;
-      if (data.search_id) paperState.searchIds.push(data.search_id);
-      (data.candidates || []).forEach((candidate, candidateIndex) => {
-        if (!candidate.candidate_id || !data.search_id) return;
-        const record = { candidate, responseIndex, candidateIndex, searchId: data.search_id };
-        const existingRecords = [...deduplicated].filter((owner) => paperCandidateIdentityMatches(candidate, owner.candidate));
-        if (!existingRecords.length) {
-          deduplicated.add(record);
-          return;
-        }
-        const winner = [record, ...existingRecords].sort(comparePaperCandidateRecords)[0];
-        existingRecords.forEach((owner) => deduplicated.delete(owner));
-        deduplicated.add(winner);
-      });
-    });
-    if (!successful.length) throw responses[0]?.error || new PaperApiError('PAPER_DISCOVERY_UNAVAILABLE');
-    const rankedRecords = [...deduplicated.values()].sort(comparePaperCandidateRecords);
-    const rankedCandidates = rankedRecords.map(({ candidate, searchId }) => {
-      paperState.candidateSearchIds.set(candidate.candidate_id, searchId);
-      paperState.candidateById.set(candidate.candidate_id, candidate);
-      return candidate;
-    });
-    renderPaperResults(rankedCandidates);
-    const degraded = responses.some(({ data, error }) => error || data?.degraded || (data?.warnings || []).length);
-    if (paperSearchStatus) paperSearchStatus.textContent = degraded ? '检索完成（部分来源降级）' : '检索完成';
+    const searchId = paperText(data.search_id, '');
+    if (!searchId) throw new PaperApiError('PAPER_DISCOVERY_UNAVAILABLE');
+    paperState.searchId = searchId; paperState.searchIds = [searchId];
+    renderPaperSourceProgress(data);
+    await pollPaperSearch(searchId, serial, controller);
   } catch (error) {
     if (error.name === 'AbortError' || serial !== paperState.searchSerial) return;
     showPaperError(error.code);
@@ -731,9 +863,33 @@ async function searchPapers(event) {
   }
 }
 
+function cancelPaperSearchPolling() {
+  paperState.searchSerial += 1;
+  paperState.searchController?.abort();
+  paperState.searchController = null;
+  if (paperSearchButton) paperSearchButton.disabled = false;
+}
+
 function showPaperError(code) {
-  if (paperSearchStatus) paperSearchStatus.textContent = '';
   if (paperSearchError) { paperSearchError.textContent = PAPER_ERROR_TEXT[code] || '论文服务暂时不可用，请稍后重试'; paperSearchError.hidden = false; }
+}
+
+async function changePaperPage(page) {
+  if (!paperState.searchId || !paperState.searchController || page < 1 || page > paperState.searchTotalPages) return;
+  const serial = paperState.searchSerial;
+  if (paperPrevPage) paperPrevPage.disabled = true;
+  if (paperNextPage) paperNextPage.disabled = true;
+  if (paperResults) paperResults.setAttribute('aria-busy', 'true');
+  try {
+    await loadPaperResultsPage(paperState.searchId, page, serial, paperState.searchController);
+  } catch (error) {
+    if (error.name !== 'AbortError' && serial === paperState.searchSerial) showPaperError(error.code || 'SEARCH_NOT_READY');
+  } finally {
+    if (serial === paperState.searchSerial) {
+      if (paperResults) paperResults.setAttribute('aria-busy', 'false');
+      renderPaperPagination({ page: paperState.searchPage, total_pages: paperState.searchTotalPages, has_next: paperState.searchHasNext });
+    }
+  }
 }
 
 async function importPaperCandidates(candidates) {
@@ -995,6 +1151,8 @@ async function renderManagedConferences() {
 if (paperForm) paperForm.addEventListener('submit', searchPapers);
 if (paperSelectAll) paperSelectAll.addEventListener('change', () => { paperResults?.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((input) => { input.checked = paperSelectAll.checked; }); updatePaperSelection(); });
 if (paperImportSelected) paperImportSelected.addEventListener('click', () => importPaperCandidates([...paperResults.querySelectorAll('input[type="checkbox"]:checked')].map((input) => paperState.candidates.find((candidate) => candidate.candidate_id === input.dataset.candidateId))));
+if (paperPrevPage) paperPrevPage.addEventListener('click', () => changePaperPage(paperState.searchPage - 1));
+if (paperNextPage) paperNextPage.addEventListener('click', () => changePaperPage(paperState.searchPage + 1));
 if (paperConferenceSearchButton) paperConferenceSearchButton.addEventListener('click', searchPaperConferences);
 if (paperManageButton) paperManageButton.addEventListener('click', () => {
   if (!paperState.enabled) return;
@@ -1004,6 +1162,7 @@ if (paperConferenceSearch) onEnterKey(paperConferenceSearch, (event) => { event.
 // 模型库/知识库视图：导航切换 + 列表渲染（spec 006 / spec 011）
 function showView(view) {
   const nextView = view === 'papers' && !paperState.enabled ? 'chat' : view;
+  if (nextView !== 'papers' && !paperView?.hidden) cancelPaperSearchPolling();
   const isChat = nextView === 'chat';
   document.querySelector('#chat').hidden = !isChat;
   document.querySelector('#models-view').hidden = nextView !== 'models';

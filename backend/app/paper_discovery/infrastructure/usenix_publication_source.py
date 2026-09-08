@@ -40,7 +40,7 @@ from backend.app.paper_discovery.infrastructure.usenix_paper_parser import (
 
 class _SyncResult:
     """Outcome of a single ``sync_usenix_units`` run over discovered pages."""
-    __slots__ = ("status", "error_code", "cached", "completed", "failed", "paper_count")
+    __slots__ = ("status", "error_code", "cached", "completed", "failed", "waiting", "paper_count")
 
     def __init__(self) -> None:
         self.status = "completed"
@@ -48,12 +48,23 @@ class _SyncResult:
         self.cached: list[str] = []
         self.completed: list[str] = []
         self.failed: list[str] = []
+        self.waiting: list[str] = []
         self.paper_count = 0
 
 
 def _default_utcnow() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _lease_expires_at(now: str, lease_seconds: int) -> str:
+    """Return a recoverable lease deadline for stores without release support."""
+    from datetime import datetime, timedelta
+
+    parsed = datetime.fromisoformat(now.replace("Z", "+00:00"))
+    return (parsed + timedelta(seconds=max(0, int(lease_seconds)))).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -408,6 +419,44 @@ class UsenixAcceptedSource:
             return None, f"USENIX_HTTP_{response.status_code}"
         return response.text, None
 
+    def _release_owned_fetch_unit(self, unit_id: str, owner: str, *, status: str,
+                                  now: str, lease_seconds: int,
+                                  fallback: Optional[SourceFetchUnit] = None) -> None:
+        """Release only our lease, retaining a deadline for narrow legacy stores.
+
+        The production store performs an owner-conditional SQL update.  Some
+        tests/integrations expose only the older save/get surface, so their
+        failed unit receives an explicit expiry instead of becoming immortal.
+        If ownership changed before cleanup, the fallback update is skipped.
+        """
+        release = getattr(self.store, "release_lease", None)
+        if callable(release):
+            try:
+                if release(unit_id, owner, status=status, now=now):
+                    return
+            except Exception:
+                # Best-effort fallback below; never overwrite a new owner's lease.
+                pass
+        # Re-read after a failed release attempt so a lease that changed hands
+        # cannot be overwritten by a stale fallback object.
+        try:
+            current = self.store.get_fetch_unit(unit_id)
+        except Exception:
+            current = fallback
+        if current is None:
+            current = fallback
+        if current is None or current.lease_owner != owner:
+            return
+        current.status = status
+        current.lease_owner = owner
+        current.lease_expires_at = _lease_expires_at(now, lease_seconds)
+        current.updated_at = now
+        try:
+            self.store.save_fetch_unit(current, now)
+        except Exception:
+            # The original fetch error must remain the observable failure.
+            return
+
     def _sync_one_page(self, search_id: str, conference_id: str, page: str,
                        owner: str, lease_seconds: int, now: str,
                        result: "_SyncResult", route: Any) -> None:
@@ -427,45 +476,76 @@ class UsenixAcceptedSource:
                 result.cached.append(unit_id)
             return
 
-        acquired = self.store.acquire_fetch_unit(unit_id, owner, lease_seconds, now)
-        if not acquired:
-            # Another owner holds a valid lease; treat as already in-flight.
-            with self._lock:
-                result.cached.append(unit_id)
-            return
-
-        text, fetch_error = self._fetch_listing(listing)
-        if text is None:
-            failed_unit = SourceFetchUnit(
-                fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
-                status="failed", error_code=fetch_error, lease_owner=owner,
-                last_attempt_at=now, created_at=now, updated_at=now,
-            )
-            self.store.save_fetch_unit(failed_unit, now)
-            with self._lock:
-                result.failed.append(page)
-            self._append_event(search_id, conference_id, "USENIX_FETCH_FAILED", "failed",
-                               {"unit_id": unit_id, "error_code": fetch_error}, now)
-            return
-
-        unit_hash = self._content_hash(text)
-        papers = tuple(parse_accepted_papers(text, page_url=listing))
-        paper_count = 0
-        for paper in papers:
-            self._persist_paper(search_id, unit_id, conference_id, paper, now, result)
-            paper_count += 1
-
-        completed_unit = SourceFetchUnit(
+        pending_unit = SourceFetchUnit(
             fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
-            status="completed", content_hash=unit_hash, paper_count=paper_count,
-            lease_owner=owner, last_attempt_at=now, last_success_at=now,
+            unit_key=listing, status="pending",
             created_at=existing.created_at if existing is not None and existing.created_at else now,
             updated_at=now,
         )
-        self.store.save_fetch_unit(completed_unit, now)
-        with self._lock:
-            result.completed.append(unit_id)
-            result.paper_count += paper_count
+        ensure = getattr(self.store, "ensure_fetch_unit", None)
+        if callable(ensure):
+            ensure(pending_unit, now)
+        elif existing is None:
+            # Compatibility for narrow stores; production uses the atomic
+            # INSERT .. DO NOTHING primitive before attempting the lease.
+            self.store.save_fetch_unit(pending_unit, now)
+
+        acquired = self.store.acquire_fetch_unit(unit_id, owner, lease_seconds, now)
+        if not acquired:
+            # Another owner holds a valid lease; keep this run retryable rather
+            # than reporting a cache hit that could freeze an empty result.
+            with self._lock:
+                result.waiting.append(unit_id)
+            return
+
+        try:
+            text, fetch_error = self._fetch_listing(listing)
+            if text is None:
+                failed_unit = SourceFetchUnit(
+                    fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+                    status="failed", error_code=fetch_error, lease_owner=owner,
+                    lease_expires_at=_lease_expires_at(now, lease_seconds),
+                    last_attempt_at=now, created_at=now, updated_at=now,
+                )
+                self.store.save_fetch_unit(failed_unit, now)
+                self._release_owned_fetch_unit(
+                    unit_id, owner, status="failed", now=now,
+                    lease_seconds=lease_seconds, fallback=failed_unit,
+                )
+                with self._lock:
+                    result.failed.append(page)
+                self._append_event(search_id, conference_id, "USENIX_FETCH_FAILED", "failed",
+                                   {"unit_id": unit_id, "error_code": fetch_error}, now)
+                return
+
+            unit_hash = self._content_hash(text)
+            papers = tuple(parse_accepted_papers(text, page_url=listing))
+            paper_count = 0
+            for paper in papers:
+                self._persist_paper(search_id, unit_id, conference_id, paper, now, result)
+                paper_count += 1
+
+            completed_unit = SourceFetchUnit(
+                fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+                status="completed", content_hash=unit_hash, paper_count=paper_count,
+                lease_owner=owner, last_attempt_at=now, last_success_at=now,
+                created_at=existing.created_at if existing is not None and existing.created_at else now,
+                updated_at=now,
+            )
+            self.store.save_fetch_unit(completed_unit, now)
+            self._release_owned_fetch_unit(
+                unit_id, owner, status="completed", now=now,
+                lease_seconds=lease_seconds, fallback=completed_unit,
+            )
+            with self._lock:
+                result.completed.append(unit_id)
+                result.paper_count += paper_count
+        except Exception:
+            self._release_owned_fetch_unit(
+                unit_id, owner, status="failed", now=now,
+                lease_seconds=lease_seconds,
+            )
+            raise
 
     def _persist_paper(self, search_id: str, unit_id: str, conference_id: str,
                        paper: Any, now: str, result: "_SyncResult") -> None:
@@ -541,6 +621,11 @@ class UsenixAcceptedSource:
 
         if not pages:
             result.status, result.error_code = "failed", "NO_PAGES"
+        elif result.waiting:
+            # A second worker must remain retryable even if another page in
+            # this batch failed; never turn an in-flight observation into a
+            # terminal failed/completed job that freezes an empty snapshot.
+            result.status = "waiting"
         elif result.failed and not result.completed and not result.cached:
             result.status, result.error_code = "failed", "USENIX_UNAVAILABLE"
         elif result.failed:
@@ -566,10 +651,13 @@ class UsenixAcceptedSource:
         progress = SearchSourceProgress(
             search_id=search_id, source_kind="usenix", status=result.status,
             cached_units=[{"unit_id": u} for u in result.cached],
+            fetching_units=[{"unit_id": u} for u in result.waiting],
             completed_units=[{"unit_id": u} for u in result.completed],
             paper_count=result.paper_count, error_code=result.error_code,
-            message_code=result.status, updated_at=now,
+            message_code={"waiting": "FETCHING_SOURCE", "partial": "MERGING_METADATA"}.get(result.status, result.status),
+            updated_at=now,
         )
+        progress.status = {"waiting": "fetching", "partial": "merging"}.get(result.status, result.status)
         self.store.save_source_progress(progress, now)
 
     def _record_job(self, search_id: str, conference_id: str,
@@ -577,9 +665,13 @@ class UsenixAcceptedSource:
         job = SearchJob(
             search_id=search_id, query="", conference_ids=[conference_id],
             years=list(dict.fromkeys(int(y) for y in years)),
-            status=result.status, degraded=bool(result.failed),
+            status="queued" if result.status == "waiting" else result.status,
+            degraded=bool(result.failed),
             error_code=result.error_code, total_results=result.paper_count,
-            created_at=now, started_at=now, completed_at=now, updated_at=now,
+            created_at=now,
+            started_at=None if result.status == "waiting" else now,
+            completed_at=None if result.status == "waiting" else now,
+            updated_at=now,
         )
         self.store.create_search_job(job, now)
 

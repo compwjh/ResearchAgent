@@ -1,7 +1,7 @@
 # 任务 15 — 实现 LangGraph、目录 RAG 与冻结结果
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 14；被依赖：任务 16、17；当前状态：`待执行`
+> 依赖：任务 14；被依赖：任务 16、17；当前状态：`已完成（USENIX-only）`
 > 主 Skill：`.agents/skills/usenix-paper-catalog-search/SKILL.md`（本任务只做目录、工作流和RAG）
 
 ## 一句话目标
@@ -144,10 +144,14 @@ tail -f .codebuddy/agent-logs/junior-dev-spec015-task15-*.md
 
 ## 执行结果
 
-待执行后填写。
+已完成。实现固定 9 节点 LangGraph、USENIX/DBLP 并行目录同步、独立 `paper-discovery-catalog` RAG collection、RRF/可选 reranker 降级、冻结结果、事件游标、缓存重建、租约等待/过期恢复和 owner-safe 失败释放。USENIX 官方字段优先，DBLP 仅补缺失字段；搜索阶段不探测 PDF。
+
+验证证据：[`015-task15-backend-review-final.md`](../../reviews/015-task15-backend-review-final.md) 及 `.codebuddy/agent-logs/` 中 fix-g/fix-h 日志；定向 105 passed，后端全量最终 650 passed、1 skipped、5 warnings、38 subtests，`py_compile` 与 `git diff --check` 通过。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-05 | 架构师（自身） | 创建Task15，固定图节点、状态、独立目录RAG、API与恢复契约；未执行代码 |
+| 2026-09-08 | 架构师（自身） | 用户明确要求继续开发 Task15–17；后端与前端实现分别分派给 backend-dev/frontend-dev，模型仅本轮临时使用 Luna high，不固化模型规则 |
+| 2026-09-08 | backend-dev / backend-reviewer | 完成并复核 USENIX-only LangGraph、目录 RAG、并发租约、跨 DOI 合并、partial 状态和失败释放；最终后端复审 PASS，外部会议扩展不纳入本阶段 |

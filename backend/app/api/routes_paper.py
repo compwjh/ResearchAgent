@@ -17,7 +17,7 @@ from backend.app.api.schemas import (
     PaperImportItemLoginResponse,
     PaperImportRequest,
     PaperImportResponse,
-    PaperSearchRequest,
+    AsyncPaperSearchRequest,
 )
 from backend.app.paper_discovery.application.entry import (
     DOWNLOAD_BLOCKED,
@@ -29,7 +29,7 @@ from backend.app.paper_discovery.application.entry import (
     BrowserManagerError,
     PaperDownloadError,
 )
-from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchError
+from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
     PAPER_ALREADY_EXISTS,
@@ -42,11 +42,117 @@ from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchService,
     PaperImportBatchServiceError,
 )
-from backend.app.paper_discovery.domain.paper_discovery import SearchSession
+from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchSession, SearchSourceProgress
 
 router = APIRouter()
 
 from backend.app.api.common import *  # noqa: F401,F403
+
+
+def _async_progress_payload(progress) -> dict:
+    return {
+        "source_kind": progress.source_kind, "status": progress.status,
+        "cached_units": progress.cached_units, "fetching_units": progress.fetching_units,
+        "completed_units": progress.completed_units, "paper_count": progress.paper_count,
+        "error_code": progress.error_code, "message_code": progress.message_code,
+    }
+
+
+def _async_job_payload(store, job: SearchJob, *, event_cursor: int | None = None) -> dict:
+    progress = {item.source_kind: _async_progress_payload(item) for item in store.get_source_progress(job.search_id)}
+    for source in ("usenix", "dblp"):
+        progress.setdefault(source, {
+            "source_kind": source, "status": "queued", "cached_units": [], "fetching_units": [],
+            "completed_units": [], "paper_count": 0, "error_code": None, "message_code": "SOURCE_QUEUED",
+        })
+    events = store.get_search_events(job.search_id, event_cursor)
+    return {
+        "search_id": job.search_id, "status": job.status, "degraded": bool(job.degraded),
+        "total_results": job.total_results, "source_progress": [progress["usenix"], progress["dblp"]],
+        "next_event_cursor": events[-1].event_id if events else event_cursor,
+        "events": [{"event_id": event.event_id, "node_name": event.node_name,
+                    "source_kind": event.source_kind, "event_type": event.event_type,
+                    "status": event.status, "safe_payload": event.safe_payload,
+                    "created_at": event.created_at} for event in events],
+    }
+
+
+def _async_expired(job: SearchJob) -> bool:
+    if not job.expires_at:
+        return False
+    try:
+        return datetime.fromisoformat(job.expires_at.replace("Z", "+00:00")) <= datetime.now(timezone.utc)
+    except ValueError:
+        return False
+
+
+@router.post("/papers/searches", status_code=202)
+def create_async_paper_search(request: AsyncPaperSearchRequest):
+    """Create a persisted search and schedule graph execution without waiting on sources."""
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    years = list(dict.fromkeys(request.years))
+    if request.conference_ids != ["usenix-security"]:
+        return _paper_api_error(400, "UNSUPPORTED_CONFERENCE", "异步目录检索当前仅支持 USENIX Security")
+    if years != sorted(years) or any(year < 1900 or year > datetime.now(timezone.utc).year for year in years):
+        return _paper_api_error(400, "INVALID_YEARS", "years 必须为升序且在受控范围内")
+    now = datetime.now(timezone.utc)
+    ttl = getattr(routes.article_settings, "paper_discovery_search_ttl_seconds", 86400)
+    search_id = uuid.uuid4().hex
+    job = SearchJob(search_id, request.query.strip(), request.conference_ids, years, "queued", "catalog-search-v1",
+                    False, None, 0, now.isoformat(timespec="seconds").replace("+00:00", "Z"), None, None,
+                    (now + timedelta(seconds=ttl)).isoformat(timespec="seconds").replace("+00:00", "Z"), now.isoformat(timespec="seconds").replace("+00:00", "Z"))
+    try:
+        store = _paper_store()
+        store.create_search_job(job)
+        for source in ("usenix", "dblp"):
+            store.save_source_progress(SearchSourceProgress(
+                search_id, source, "queued", message_code="SOURCE_QUEUED", updated_at=job.created_at,
+            ))
+        submit_paper_catalog_search(search_id)
+    except Exception:
+        return _paper_api_error(503, "PAPER_DISCOVERY_UNAVAILABLE", "论文检索任务暂时无法启动", True)
+    return _async_job_payload(store, job)
+
+
+@router.get("/papers/searches/{search_id}")
+def get_async_paper_search(search_id: str, event_cursor: int | None = Query(default=None, ge=0)):
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    store = _paper_store()
+    job = store.get_search_job(search_id)
+    if job is None:
+        return _paper_api_error(404, "SEARCH_NOT_FOUND", "搜索任务不存在")
+    if _async_expired(job):
+        return _paper_api_error(410, "SEARCH_EXPIRED", "搜索任务已过期")
+    return _async_job_payload(store, job, event_cursor=event_cursor)
+
+
+@router.get("/papers/searches/{search_id}/results")
+def get_async_paper_results(search_id: str, page: int = Query(default=1)):
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    if page < 1:
+        return _paper_api_error(400, "INVALID_PAGE", "page 必须从 1 开始")
+    store = _paper_store()
+    job = store.get_search_job(search_id)
+    if job is None:
+        return _paper_api_error(404, "SEARCH_NOT_FOUND", "搜索任务不存在")
+    if _async_expired(job):
+        return _paper_api_error(410, "SEARCH_EXPIRED", "搜索任务已过期")
+    if job.status not in {"completed", "partial", "failed"}:
+        return _paper_api_error(409, "SEARCH_NOT_READY", "搜索结果尚未冻结")
+    total = len(store.get_search_results(search_id))
+    if job.status == "failed" and total == 0:
+        return _paper_api_error(409, "SEARCH_NO_RESULTS", "搜索没有可读结果")
+    page_size = 10
+    total_pages = (total + page_size - 1) // page_size
+    rows = store.get_search_results_page(search_id, page, page_size)
+    return {
+        "search_id": search_id, "status": job.status, "page": page, "page_size": page_size,
+        "total": total, "total_pages": total_pages, "has_next": page < total_pages,
+        "items": [row.snapshot for row in rows],
+    }
 
 
 @router.get("/papers/conferences/search")
@@ -132,57 +238,21 @@ def delete_paper_conference(conference_id: str):
     return _paper_api_error(409, "CUSTOM_CONFERENCE_UNSUPPORTED", "自定义会议管理尚未开放")
 
 
-@router.post("/papers/search")
-def search_papers(request: PaperSearchRequest):
-    """检索单个已启用会议的论文；候选和搜索会话均由服务端生成。"""
-    if not _paper_discovery_enabled():
-        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
-    try:
-        store = _paper_store()
-        source = next((item for item in store.list_conferences() if item.conference_id == request.conference_id), None)
-    except Exception:
-        return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "论文检索配置暂时不可用", True)
-    if source is None:
-        return _paper_api_error(400, "CONFERENCE_NOT_CONFIGURED", "conference_id 不是服务端已配置会议")
-    if not source.enabled:
-        return _paper_api_error(400, "CONFERENCE_DISABLED", "conference_id 对应会议当前已停用")
-    try:
-        result = _paper_search_service().search(
-            source, request.query, request.years, request.limit,
-            publication_scope=request.publication_scope,
-        )
-    except PaperDiscoverySearchError as error:
-        status = 400 if error.error_code.startswith(("INVALID_", "CONFERENCE_")) else 503
-        return _paper_api_error(status, error.error_code, str(error), status != 400)
-    except Exception:
-        return _paper_api_error(503, "PAPER_DISCOVERY_UNAVAILABLE", "论文检索服务暂时不可用", True)
-
-    candidates = list(getattr(result, "candidates", ()) or ())
-    error_code = getattr(result, "error_code", None)
-    if error_code and not candidates:
-        return _paper_api_error(424, str(error_code), "论文检索来源暂时不可用，请稍后重试", True)
-    warnings = list(getattr(result, "warnings", ()) or ())
-    session = result.session
-    return {
-        "search_id": session.search_id,
-        "query": session.query,
-        "expires_at": session.expires_at,
-        "candidates": [_candidate_payload(candidate) for candidate in candidates],
-        "warnings": warnings,
-        "degraded": bool(warnings or error_code),
-    }
-
-
 @router.get("/papers/conferences/{conference_id}/accepted")
 def list_accepted_papers(
     conference_id: str,
     request: Annotated[PaperAcceptedRequest, Query()],
 ):
-    """通过服务端 accepted source 读取受控 USENIX 路线并保存候选快照。"""
+    """从全局 accepted catalog 读取兼容结果并保存候选快照。
+
+    Task15 的主链负责刷新 USENIX accepted catalog；这个历史兼容入口只读
+    已持久化的目录，不能在请求线程再次触发 accepted source 网络抓取。
+    """
     if not _paper_discovery_enabled():
         return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
     try:
-        source = next((item for item in _paper_store().list_conferences() if item.conference_id == conference_id), None)
+        store = _paper_store()
+        source = next((item for item in store.list_conferences() if item.conference_id == conference_id), None)
     except Exception:
         return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "论文检索配置暂时不可用", True)
     if source is None:
@@ -197,33 +267,77 @@ def list_accepted_papers(
     )
     if accepted_route is None:
         return _paper_api_error(400, "ACCEPTED_ROUTE_NOT_CONFIGURED", "会议未配置 accepted 论文来源")
+    current_year = datetime.now(timezone.utc).year
     try:
         service = _paper_search_service()
     except Exception:
-        return _paper_api_error(503, "PAPER_DISCOVERY_UNAVAILABLE", "论文检索服务暂时不可用", True)
-    accepted_source = getattr(service, "accepted_source", None)
-    search = getattr(accepted_source, "search", None)
-    if not callable(search):
-        return _paper_api_error(424, "ACCEPTED_SEARCH_UNSUPPORTED", "accepted 论文检索暂不可用", True)
-    current_year = datetime.now(timezone.utc).year
+        service = None
     default_years = getattr(service, "default_years", routes.article_settings.paper_discovery_default_years)
     if request.year is not None and request.year > current_year:
         return _paper_api_error(422, "INVALID_ACCEPTED_YEAR", "year 必须为 1900 到当前年份的整数")
     years = [request.year] if request.year is not None else list(range(current_year - default_years, current_year))
     limit = request.limit or getattr(service, "default_limit", routes.article_settings.paper_discovery_search_limit)
     query = request.q or ""
-    cycle = (request.cycle or "cycle1").removeprefix("cycle")
     try:
-        result = search(source, query, years, limit=limit, cycle=cycle)
+        list_catalog_papers = getattr(store, "list_catalog_papers", None)
+        if not callable(list_catalog_papers):
+            return _paper_api_error(424, "CATALOG_NOT_READY", "accepted 论文目录尚未准备好，请稍后重试", True)
+        try:
+            papers = list(list_catalog_papers([source.conference_id], years, index_status=None))
+        except TypeError:
+            # Narrow fake stores and older adapters may only expose positional
+            # filters; production uses the explicit administrative read above.
+            papers = list(list_catalog_papers([source.conference_id], years))
     except Exception:
-        return _paper_api_error(424, "USENIX_UNAVAILABLE", "accepted 论文来源暂时不可用，请稍后重试", True)
+        return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "论文检索配置暂时不可用", True)
 
-    records = list(getattr(result, "records", ()) or ())
-    warnings = list(getattr(result, "warnings", ()) or ())
-    error_code = getattr(result, "error_code", None)
+    accepted_papers = []
+    source_kinds = getattr(store, "get_catalog_source_kinds", None)
+    for paper in papers:
+        if getattr(paper, "publication_stage", None) != "accepted":
+            continue
+        if callable(source_kinds):
+            try:
+                kinds = set(source_kinds(paper.catalog_paper_id) or ())
+            except Exception:
+                kinds = set()
+            if kinds and not kinds.intersection({"usenix", "usenix_accepted"}):
+                continue
+        accepted_papers.append(paper)
+    if not accepted_papers:
+        return _paper_api_error(424, "CATALOG_NOT_READY", "accepted 论文目录尚未准备好，请稍后重试", True)
+
+    query_key = query.casefold().strip()
+    if query_key:
+        accepted_papers = [
+            paper for paper in accepted_papers
+            if query_key in " ".join(str(value or "") for value in (
+                getattr(paper, "title", ""), getattr(paper, "abstract", ""),
+                " ".join(getattr(paper, "authors", []) or []), getattr(paper, "doi", ""),
+            )).casefold()
+        ]
+    accepted_papers.sort(key=lambda paper: (
+        -(int(paper.year) if getattr(paper, "year", None) is not None else -1),
+        getattr(paper, "normalized_title", "") or str(getattr(paper, "title", "")).casefold(),
+        str(getattr(paper, "catalog_paper_id", "")),
+    ))
+    candidate_records = []
+    for paper in accepted_papers:
+        candidate_records.append({"info": {
+            "title": paper.title, "year": paper.year, "authors": list(paper.authors or []),
+            "abstract": paper.abstract, "doi": paper.doi, "key": paper.dblp_key,
+            "url": paper.official_page_url, "ee": paper.official_pdf_url,
+            "pdf_url": paper.official_pdf_url, "publication_stage": "accepted",
+            "source_kind": "usenix_accepted", "source_page_url": paper.official_page_url,
+            "source_links": [
+                {"kind": "accepted_page", "url": paper.official_page_url},
+                {"kind": "pdf", "url": paper.official_pdf_url},
+            ],
+        }})
+
     search_id = uuid.uuid4().hex
     now = datetime.now(timezone.utc)
-    ttl = getattr(service, "search_ttl_seconds", 86400)
+    ttl = getattr(service, "search_ttl_seconds", getattr(routes.article_settings, "paper_discovery_search_ttl_seconds", 86400))
     session = SearchSession(
         search_id=search_id,
         query=query,
@@ -231,26 +345,27 @@ def list_accepted_papers(
         created_at=now.isoformat(timespec="seconds").replace("+00:00", "Z"),
     )
     candidates = []
-    for initial_rank, record in enumerate(records):
-        candidate = service._candidate_from_record(record, source, search_id, query)
+    candidate_from_record = getattr(service, "_candidate_from_record", PaperDiscoverySearchService._candidate_from_record)
+    for initial_rank, record in enumerate(candidate_records):
+        candidate = candidate_from_record(record, source, search_id, query)
         if candidate is None:
             continue
         candidate.initial_rank = initial_rank
-        candidate.rank = len(candidates) + 1
         candidates.append(candidate)
+    candidates = candidates[:limit]
+    for rank, candidate in enumerate(candidates, 1):
+        candidate.rank = rank
     try:
-        service.store.save_search(session, candidates)
+        store.save_search(session, candidates)
     except Exception:
         return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "论文检索配置暂时不可用", True)
-    if error_code and not candidates:
-        return _paper_api_error(424, str(error_code), "accepted 论文来源暂时不可用，请稍后重试", True)
     return {
         "search_id": session.search_id,
         "query": session.query,
         "expires_at": session.expires_at,
         "candidates": [_candidate_payload(candidate) for candidate in candidates[:limit]],
-        "warnings": warnings,
-        "degraded": bool(warnings or error_code),
+        "warnings": [],
+        "degraded": False,
     }
 
 
@@ -712,6 +827,3 @@ _BROWSER_ERROR_STATUS = {
     "BROWSER_CRASHED": 424,
     "BROWSER_CANCELLED": 424,
 }
-
-
-

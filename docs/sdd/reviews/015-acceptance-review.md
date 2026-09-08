@@ -78,4 +78,13 @@
 ## 签字
 
 - 测试（QA）：**整体验收不通过（阻塞）**
+
+## 2026-09-08 USENIX-only 增量验收复核
+
+本轮按用户明确的“先跑通 USENIX，之后再扩展会议”范围复验 Task15–17。旧报告中 ACM/IEEE 登录、自定义会议、A14 排序质量和真实公开 PDF/GUI 证据不作为本阶段 USENIX 目录变更阻塞，继续保留为 deferred。
+
+- QA 报告：`/private/tmp/015-task17-acceptance-final2.md`；fix-g 定向 105 passed，重点并发/过期租约/跨 DOI 合并/DBLP 与 USENIX partial 7 passed，前端契约 4 passed。
+- 后端复审：`/private/tmp/015-task15-backend-review-h.md`，生产 SQLite 路径 PASS；失败/异常 owner-safe 释放、过期恢复和 stale owner 保护均有证据。
+- 全量后端最终：650 passed、1 skipped、5 warnings、38 subtests；`node --check frontend/app.js`、`py_compile`、`git diff --check` 和冲突扫描通过。
+- 结论：**USENIX-only 阶段通过**；Spec015 总状态保持实施中，待后续扩展阶段补齐 deferred 验收后再总收口。
 - 开发主管（Tech Lead）：**待签字**

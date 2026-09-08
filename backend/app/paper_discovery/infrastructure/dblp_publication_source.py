@@ -70,6 +70,9 @@ class DBLPPublicationResult:
     records: Tuple[Dict[str, Any], ...]
     warnings: Tuple[str, ...] = ()
     error_code: Optional[str] = None
+    # Keep the per-year failure evidence so callers can preserve successful
+    # units while marking only the years degraded by a warning.
+    failed_years: Tuple[int, ...] = ()
 
 
 class DBLPPublicationSource:
@@ -81,24 +84,29 @@ class DBLPPublicationSource:
         self.timeout, self.retries, self.backoff, self.client, self.transport, self.sleep = timeout, retries, backoff, client, transport, sleep
 
     def search(self, source: ConferenceSource, query: str, years: Iterable[int], limit: int = 100) -> DBLPPublicationResult:
-        selected_years, records, warnings, failure_codes = tuple(dict.fromkeys(years)), [], [], []
+        selected_years, records, warnings, failure_codes, failed_years = tuple(dict.fromkeys(years)), [], [], [], []
         for year in selected_years:
             payload, warning = self._request(source.dblp_stream, query, int(year), limit)
             if warning:
                 warnings.append(warning)
                 failure_codes.append(warning)
+                failed_years.append(int(year))
                 continue
             hits, shape_error = self._extract_hits(payload)
             if shape_error:
                 warnings.append(shape_error)
                 failure_codes.append(shape_error)
+                failed_years.append(int(year))
                 continue
             records.extend(filter_main_conference_records(hits, source, int(year)))
         if failure_codes and len(failure_codes) == len(selected_years):
             error = "DBLP_INVALID_RESPONSE" if all(code == "DBLP_INVALID_RESPONSE" for code in failure_codes) else "DBLP_UNAVAILABLE"
         else:
             error = None
-        return DBLPPublicationResult(tuple(deduplicate_publications(records, source.conference_id)), tuple(dict.fromkeys(warnings)), error)
+        return DBLPPublicationResult(
+            tuple(deduplicate_publications(records, source.conference_id)),
+            tuple(dict.fromkeys(warnings)), error, tuple(failed_years),
+        )
 
     @staticmethod
     def _extract_hits(payload: Any) -> Tuple[List[Dict[str, Any]], Optional[str]]:

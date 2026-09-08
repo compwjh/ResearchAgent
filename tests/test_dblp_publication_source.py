@@ -32,6 +32,22 @@ def test_adapter_retries_and_returns_structured_failure_with_explicit_user_agent
     assert DBLPPublicationSource(retries=0, transport=httpx.MockTransport(lambda _: (_ for _ in ()).throw(httpx.ReadTimeout("slow")))).search(SOURCE, "secure search", [2024]).error_code == "DBLP_UNAVAILABLE"
 
 
+def test_multi_year_search_exposes_warning_years_without_promoting_partial_to_error():
+    def handler(request):
+        if "year:2023" in request.url.params["q"]:
+            raise httpx.ReadTimeout("slow")
+        return httpx.Response(200, json={"result": {"hits": {"hit": [_item()]}}})
+
+    result = DBLPPublicationSource(
+        retries=0, transport=httpx.MockTransport(handler)
+    ).search(SOURCE, "secure search", [2023, 2024])
+
+    assert len(result.records) == 1
+    assert result.warnings == ("DBLP_TIMEOUT",)
+    assert result.error_code is None
+    assert result.failed_years == (2023,)
+
+
 def test_search_encodes_query_while_retaining_server_controlled_filters():
     seen = []
 

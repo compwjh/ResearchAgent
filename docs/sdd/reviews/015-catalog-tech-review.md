@@ -46,3 +46,10 @@ Task13 复用审计（`docs/sdd/reviews/015-task13-reuse-audit.md`）已逐项�
 |---|---|---|
 | 2026-09-05 | tech-lead（qwen3.8:27b-mlx） | 启动 Task14–17 复审，因本地 27B 上下文耗尽未落盘 |
 | 2026-09-05 | 架构师（主会话，接手） | 基于已读 spec / Task13–17 / Task13 审计，落盘需求 + 技术复审，结论通过 |
+
+## 2026-09-08 USENIX-only 实现复审
+
+- fix-g/fix-h 已闭合租约等待、跨 DOI/无 DOI 权威合并、USENIX partial 合法状态及失败释放四项实现级问题。
+- Graph 通过 `knowledge_base.application` 受控入口复用既有 embedding、RRF 和 reranker；未新增第二套下载、安全、导入或向量实现。
+- 旧同步 `POST /api/papers/search` 已删除；异步 searches、accepted catalog-only、来源进度和固定分页保持契约。
+- 复审结论：**USENIX-only PASS**。ACM/IEEE、自定义会议、A14 排序质量和真实公开 PDF/GUI 证据属于后续扩展，不改变本阶段结论。

@@ -12,6 +12,7 @@
 from backend.app.paper_discovery.infrastructure.dblp_publication_source import (
     DBLPPublicationSource,
 )
+from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedSource
 from backend.app.paper_discovery.infrastructure.openalex_enricher import OpenAlexEnricher
 from backend.app.paper_discovery.infrastructure.paper_browser_manager import (
     BrowserManagerError,
@@ -36,6 +37,7 @@ from backend.app.paper_discovery.infrastructure.paper_import_batch_store import 
 __all__ = [
     # 数据源
     "DBLPPublicationSource",
+    "UsenixAcceptedSource",
     "OpenAlexEnricher",
     # 浏览器
     "BrowserManagerError",

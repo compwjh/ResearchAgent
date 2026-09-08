@@ -65,12 +65,24 @@ def reset_client() -> None:
         _client = None
 
 
-def ensure_collection(client: QdrantClient, dim: Optional[int] = None) -> None:
+def ensure_collection(
+    client: QdrantClient,
+    dim: Optional[int] = None,
+    *,
+    collection_name: Optional[str] = None,
+) -> None:
+    """Ensure a dense+sparse collection exists.
+
+    ``collection_name`` is optional so the personal KB keeps its historical
+    behaviour while bounded contexts (paper discovery) can use an isolated
+    collection with the exact same vector configuration.
+    """
     size = int(dim or EMBED_DIM)
-    if client.collection_exists(KB_COLLECTION):
+    target_collection = collection_name or KB_COLLECTION
+    if client.collection_exists(target_collection):
         return
     client.create_collection(
-        collection_name=KB_COLLECTION,
+        collection_name=target_collection,
         vectors_config={DENSE_VECTOR: models.VectorParams(size=size, distance=models.Distance.COSINE)},
         sparse_vectors_config={SPARSE_VECTOR: models.SparseVectorParams(modifier=models.Modifier.IDF)},
     )

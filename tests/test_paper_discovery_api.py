@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes, routes_paper
 from backend.app.main import app
-from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource, PaperCandidate, SearchSession
+from backend.app.paper_discovery.domain.paper_discovery import CatalogPaper, ConferenceSource, PaperCandidate, SearchSession
+from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 from backend.app.paper_discovery.infrastructure.paper_download import PaperDownloadError
 
@@ -55,19 +56,13 @@ class PaperDiscoveryRequestContractTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "INVALID_CONFERENCE_UPDATE")
         self.assertFalse(response.json()["retryable"])
 
-    def test_paper_search_invalid_body_uses_stable_422_error(self):
+    def test_legacy_sync_paper_search_route_is_removed(self):
         response = self.client.post(
             "/api/papers/search",
             json={"query": "", "conference_id": "ccs"},
         )
 
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(
-            set(response.json()),
-            {"code", "message", "retryable", "request_id"},
-        )
-        self.assertEqual(response.json()["code"], "INVALID_QUERY")
-        self.assertFalse(response.json()["retryable"])
+        self.assertEqual(response.status_code, 404)
 
 
 class PaperConferenceSearchEndpointTests(unittest.TestCase):
@@ -244,6 +239,15 @@ class AcceptedPaperYearBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         self.search = Mock(return_value=SimpleNamespace(records=(), warnings=(), error_code=None))
+        cached_paper = SimpleNamespace(
+            catalog_paper_id="cached", publication_stage="accepted", conference_id="usenix-security",
+            year=2025, title="Cached Accepted", normalized_title="cached accepted", authors=["Ada"],
+            abstract="cached", doi=None, dblp_key=None, official_page_url="https://www.usenix.org/paper",
+            official_pdf_url="https://www.usenix.org/paper.pdf",
+        )
+        self.list_catalog_papers = Mock(
+            side_effect=lambda _conference_ids, years, **_kwargs: [cached_paper] if 2025 in years else []
+        )
         self.service = SimpleNamespace(
             accepted_source=SimpleNamespace(search=self.search),
             default_years=5,
@@ -260,7 +264,11 @@ class AcceptedPaperYearBoundaryTests(unittest.TestCase):
             built_in=True,
             discovery_routes=[{"route_type": "usenix_accepted", "enabled": True}],
         )
-        self.store = SimpleNamespace(list_conferences=lambda: [self.source])
+        self.store = SimpleNamespace(
+            list_conferences=lambda: [self.source],
+            list_catalog_papers=self.list_catalog_papers,
+            save_search=Mock(),
+        )
 
     def _get(self, **params):
         with patch.object(routes_paper, "_paper_discovery_enabled", return_value=True), patch.object(
@@ -274,19 +282,67 @@ class AcceptedPaperYearBoundaryTests(unittest.TestCase):
         response = self._get()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.search.call_args.args[2], [2021, 2022, 2023, 2024, 2025])
-        self.assertNotIn(2026, self.search.call_args.args[2])
+        self.assertEqual(self.list_catalog_papers.call_args.args[1], [2021, 2022, 2023, 2024, 2025])
+        self.assertNotIn(2026, self.list_catalog_papers.call_args.args[1])
+        self.search.assert_not_called()
 
     def test_explicit_current_year_is_forwarded_but_future_year_is_rejected(self):
         response = self._get(year=2026)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.search.call_args.args[2], [2026])
+        self.assertEqual(response.status_code, 424)
+        self.assertEqual(self.list_catalog_papers.call_args.args[1], [2026])
+        self.assertEqual(response.json()["code"], "CATALOG_NOT_READY")
 
-        self.search.reset_mock()
+        self.list_catalog_papers.reset_mock()
         response = self._get(year=2027)
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["code"], "INVALID_ACCEPTED_YEAR")
         self.search.assert_not_called()
+
+
+class AcceptedCatalogCompatibilityTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        import tempfile
+        self.database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
+        self.store = PaperDiscoveryStore(self.database.name)
+        self.accepted_search = Mock(side_effect=AssertionError("accepted source network must not run"))
+        self.service = PaperDiscoverySearchService(
+            accepted_source=SimpleNamespace(search=self.accepted_search),
+            store=self.store,
+        )
+
+    def tearDown(self):
+        self.database.close()
+
+    def _get(self, **params):
+        with patch.object(routes_paper, "_paper_discovery_enabled", return_value=True), patch.object(
+            routes_paper, "_paper_store", return_value=self.store
+        ), patch.object(routes_paper, "_paper_search_service", return_value=self.service):
+            return self.client.get("/api/papers/conferences/usenix-security/accepted", params=params)
+
+    def test_cache_hit_reads_catalog_and_creates_import_snapshot_without_network(self):
+        self.store.upsert_catalog_paper(CatalogPaper(
+            "accepted-2025", "usenix-security", 2025, "Cached Accepted Paper", "cached accepted paper",
+            authors=["Ada"], abstract="A cached abstract", official_page_url="https://www.usenix.org/paper",
+            official_pdf_url="https://www.usenix.org/paper.pdf", publication_stage="accepted",
+            metadata_hash="accepted-2025-hash", index_status="pending",
+        ))
+
+        response = self._get(year=2025, q="cached", limit=10)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual([item["title"] for item in body["candidates"]], ["Cached Accepted Paper"])
+        self.assertEqual(len(self.store.get_candidates(body["search_id"])), 1)
+        self.accepted_search.assert_not_called()
+
+    def test_cache_miss_returns_stable_not_ready_without_network(self):
+        response = self._get(year=2025)
+
+        self.assertEqual(response.status_code, 424)
+        self.assertEqual(response.json()["code"], "CATALOG_NOT_READY")
+        self.assertTrue(response.json()["retryable"])
+        self.accepted_search.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 from typing import List
@@ -16,12 +17,14 @@ from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.core.config import BASE_DIR
 from backend.app.paper_discovery.application.entry import (
     DBLPPublicationSource,
+    UsenixAcceptedSource,
     OpenAlexEnricher,
     PaperBrowserManager,
     PaperDiscoveryStore,
     PaperImportBatchStore,
 )
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
+from backend.app.paper_discovery.application.catalog_search_graph import CatalogSearchGraph, reset_running_jobs
 from backend.app.paper_discovery.application.paper_import import (
     import_candidate,
 )
@@ -48,6 +51,9 @@ paper_discovery_search_service = None
 paper_import_batch_service = None
 paper_import_batch_store_path = None
 paper_browser_manager = None
+paper_catalog_search_graph = None
+paper_catalog_search_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="paper-search")
+paper_catalog_search_inflight = set()
 # Sessions are keyed by import item, so a resume request can never borrow a
 # different item's authenticated browser context.
 paper_browser_sessions = {}
@@ -92,6 +98,50 @@ def _build_paper_search_service() -> PaperDiscoverySearchService:
             default_years=article_settings.paper_discovery_default_years,
          )
     return paper_discovery_search_service
+
+
+def _build_paper_catalog_search_graph() -> CatalogSearchGraph:
+    global paper_catalog_search_graph
+    from backend.app.api import routes
+    if paper_catalog_search_graph is None:
+        store = _paper_store()
+        timeout = routes.article_settings.paper_discovery_request_timeout_seconds
+        paper_catalog_search_graph = CatalogSearchGraph(
+            store=store,
+            accepted_source=UsenixAcceptedSource(timeout=timeout, store=store),
+            dblp_source=DBLPPublicationSource(timeout=timeout),
+            ttl_seconds=routes.article_settings.paper_discovery_search_ttl_seconds,
+        )
+    return paper_catalog_search_graph
+
+
+def _paper_catalog_search_graph() -> CatalogSearchGraph:
+    return get_provider("paper_catalog_search_graph")
+
+
+def submit_paper_catalog_search(search_id: str) -> None:
+    # A process-local guard prevents startup recovery and a duplicate request
+    # from submitting the same persisted job twice.  The SQLite job remains
+    # the source of truth; the guard is only an executor de-duplication aid.
+    if search_id in paper_catalog_search_inflight:
+        return
+    paper_catalog_search_inflight.add(search_id)
+    def _run():
+        try:
+            return _paper_catalog_search_graph().run(search_id)
+        finally:
+            paper_catalog_search_inflight.discard(search_id)
+    paper_catalog_search_executor.submit(_run)
+
+
+def recover_paper_catalog_searches() -> int:
+    store = _paper_store()
+    recovered = reset_running_jobs(store)
+    # Reset first, then explicitly re-enter the graph for every queued job.
+    # Keeping this helper in ``common`` avoids an application->API import cycle.
+    for search_id in store.list_search_ids(status="queued"):
+        submit_paper_catalog_search(search_id)
+    return recovered
 
 
 def _paper_candidate_value(candidate: object, name: str, default=None):
@@ -176,6 +226,7 @@ register_provider("paper_discovery_store", _build_paper_store, singleton=False)
 register_provider("paper_search_service", _build_paper_search_service, singleton=False)
 register_provider("paper_batch_service", _build_paper_batch_service, singleton=False)
 register_provider("paper_browser_manager", _build_paper_browser_manager, singleton=False)
+register_provider("paper_catalog_search_graph", _build_paper_catalog_search_graph, singleton=False)
 
 
 def _conference_payload(source) -> dict:
@@ -184,21 +235,6 @@ def _conference_payload(source) -> dict:
 
 def _candidate_payload(candidate) -> dict:
     return asdict(candidate)
-
-
-def _validation_error_code(error: ValidationError) -> str:
-    locations = {str(item) for detail in error.errors() for item in detail.get("loc", ())}
-    if "query" in locations:
-        return "INVALID_QUERY"
-    if "years" in locations:
-        return "INVALID_YEARS"
-    if "limit" in locations:
-        return "INVALID_LIMIT"
-    if "conference_id" in locations:
-        return "INVALID_CONFERENCE"
-    if "publication_scope" in locations:
-        return "INVALID_PUBLICATION_SCOPE"
-    return "INVALID_SEARCH_REQUEST"
 
 
 def _accepted_validation_error_code(error: ValidationError) -> str:
@@ -224,16 +260,13 @@ def paper_request_validation_error_response(request: Request, error: RequestVali
     path = request.url.path
     if request.method == "PATCH" and path.startswith("/api/papers/conferences/"):
         return _paper_api_error(422, "INVALID_CONFERENCE_UPDATE", "会议更新请求只支持 enabled 布尔值")
-    if request.method == "POST" and path == "/api/papers/search":
-        code = _validation_error_code(error)
-        message = {
-            "INVALID_QUERY": "query 必须为 1-500 个字符",
-            "INVALID_YEARS": "years 必须为不超过 10 个整数的列表",
-            "INVALID_LIMIT": "limit 必须在 1 到 100 之间",
-            "INVALID_CONFERENCE": "conference_id 必须为非空字符串",
-            "INVALID_PUBLICATION_SCOPE": "publication_scope 只支持 published、accepted 或 all",
-        }.get(code, "搜索请求参数无效")
-        return _paper_api_error(422, code, message)
+    if request.method == "POST" and path == "/api/papers/searches":
+        locations = {str(item) for detail in error.errors() for item in detail.get("loc", ())}
+        extra = any(detail.get("type") == "extra_forbidden" for detail in error.errors())
+        code = "INVALID_SEARCH_REQUEST" if extra else ("INVALID_YEARS" if "years" in locations else (
+            "INVALID_CONFERENCE" if "conference_ids" in locations else "INVALID_QUERY"
+        ))
+        return _paper_api_error(422, code, "异步论文检索请求参数无效")
     if request.method == "GET" and path.startswith("/api/papers/conferences/") and path.endswith("/accepted"):
         code = _accepted_validation_error_code(error)
         message = {
@@ -288,6 +321,8 @@ __all__ = [
     "paper_import_batch_service",
     "paper_import_batch_store_path",
     "paper_browser_manager",
+    "paper_catalog_search_graph",
+    "paper_catalog_search_executor",
     "paper_browser_sessions",
     # helpers
     "_paper_discovery_enabled",
@@ -298,9 +333,11 @@ __all__ = [
     "_paper_candidate_hosts",
     "_paper_batch_service",
     "_paper_browser_manager",
+    "_paper_catalog_search_graph",
+    "submit_paper_catalog_search",
+    "recover_paper_catalog_searches",
     "_conference_payload",
     "_candidate_payload",
-    "_validation_error_code",
     "_accepted_validation_error_code",
     "paper_request_validation_error_response",
     "stream_event",

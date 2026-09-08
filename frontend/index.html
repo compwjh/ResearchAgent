@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=14">
+  <link rel="stylesheet" href="/assets/styles.css?v=15">
 </head>
 <body>
   <main class="app-shell">
@@ -160,8 +160,29 @@
             <p class="field-help" id="paper-year-help">默认检索最近五个完整发表年份。</p>
           </fieldset>
 
-          <button class="send-button" id="paper-search-button" type="submit">开始检索</button>
+        <button class="send-button" id="paper-search-button" type="submit">开始检索</button>
         </form>
+
+        <section class="paper-progress-panel" id="paper-search-progress" aria-labelledby="paper-progress-title" hidden>
+          <header class="paper-section-header">
+            <div>
+              <h2 id="paper-progress-title">来源进度</h2>
+              <p class="paper-status" id="paper-progress-status" role="status" aria-live="polite">等待开始</p>
+            </div>
+          </header>
+          <div class="paper-source-grid" id="paper-source-progress">
+            <article class="paper-source-card" id="paper-source-usenix" data-source-kind="usenix" aria-live="polite">
+              <div class="paper-source-card-head"><h3>USENIX Security 官网</h3><span class="paper-source-status" id="paper-source-usenix-status">等待开始</span></div>
+              <p class="paper-source-counts" id="paper-source-usenix-counts">缓存 0 · 获取 0 · 完成 0 · 论文 0</p>
+              <p class="paper-source-error" id="paper-source-usenix-error" hidden></p>
+            </article>
+            <article class="paper-source-card" id="paper-source-dblp" data-source-kind="dblp" aria-live="polite">
+              <div class="paper-source-card-head"><h3>DBLP 辅助书目</h3><span class="paper-source-status" id="paper-source-dblp-status">等待开始</span></div>
+              <p class="paper-source-counts" id="paper-source-dblp-counts">缓存 0 · 获取 0 · 完成 0 · 论文 0</p>
+              <p class="paper-source-error" id="paper-source-dblp-error" hidden></p>
+            </article>
+          </div>
+        </section>
 
         <section class="paper-results-panel" aria-labelledby="paper-results-title">
           <header class="paper-section-header">
@@ -178,6 +199,11 @@
           </div>
           <p class="paper-empty" id="paper-results-empty">输入研究方向并开始检索。</p>
           <ol class="paper-results" id="paper-results" aria-live="polite" aria-busy="false"></ol>
+          <nav class="paper-pagination" id="paper-pagination" aria-label="论文结果分页" hidden>
+            <button class="secondary-button" id="paper-prev-page" type="button" disabled>上一页</button>
+            <span class="paper-page-status" id="paper-page-status" aria-live="polite">第 1 / 1 页</span>
+            <button class="secondary-button" id="paper-next-page" type="button" disabled>下一页</button>
+          </nav>
           <p class="paper-error" id="paper-search-error" role="alert" hidden></p>
         </section>
 
@@ -221,6 +247,6 @@
   </dialog>
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
-  <script src="/assets/app.js?v=14"></script>
+  <script src="/assets/app.js?v=15"></script>
 </body>
 </html>

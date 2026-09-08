@@ -1,7 +1,7 @@
 # 任务 16 — 实现来源进度与十条分页交互
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 15；被依赖：任务 17；当前状态：`待执行`
+> 依赖：任务 15；被依赖：任务 17；当前状态：`已完成（USENIX-only）`
 > 主 Skill：`.agents/skills/usenix-paper-catalog-search/SKILL.md`（本任务只做检索进度和冻结结果展示）
 
 ## 一句话目标
@@ -137,10 +137,14 @@ tail -f .codebuddy/agent-logs/junior-dev-spec015-task16-*.md
 
 ## 执行结果
 
-待执行后填写。
+已完成。前端改为异步创建任务 → 状态轮询 → 服务端固定 10 条分页，显示 USENIX/DBLP 独立来源卡片并隔离迟到响应；删除旧同步 `POST /api/papers/search` 路由及其专用校验分支，accepted 入口仅读全局目录且不触发网络。
+
+验证证据：[`015-task17-acceptance-usenix-only.md`](../../reviews/015-task17-acceptance-usenix-only.md) 及 `.codebuddy/agent-logs/backend-dev-task16-remove-legacy-route-*.md`；前端契约 4 passed，异步/API/边界定向 25 passed、9 subtests，`node --check frontend/app.js`、`py_compile` 与 `git diff --check` 通过。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-05 | 架构师（自身） | 创建Task16，固定来源卡片、异步轮询、分页、竞态和旧路径删除条件；未执行代码 |
+| 2026-09-08 | 架构师（自身） | 用户明确要求继续开发 Task15–17；前端异步检索与来源进度交互已分派给 frontend-dev，模型仅本轮临时使用 Luna high，不固化模型规则 |
+| 2026-09-08 | backend-dev / frontend-dev / tester | 完成并复核异步搜索、来源卡片、分页、旧同步路由删除与前端竞态隔离；ACM/IEEE 登录、A14 排序质量和自定义会议留作后续扩展 |

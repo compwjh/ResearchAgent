@@ -1,7 +1,7 @@
 # 任务 17 — 执行复用审计、验收、部署与复盘
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 13、14、15、16；被依赖：无；当前状态：`待执行`
+> 依赖：任务 13、14、15、16；被依赖：无；当前状态：`已完成（USENIX-only）`
 > 主 Skill：`.agents/skills/usenix-paper-catalog-search/SKILL.md`；公开论文导入验收的下载子步骤另按 `.agents/skills/usenix-accepted-papers/SKILL.md` 执行
 
 ## 一句话目标
@@ -124,10 +124,15 @@ tail -f deploy/run.log
 
 ## 执行结果
 
-待执行后填写。
+USENIX-only 验收完成。见 [`015-task17-acceptance-usenix-only.md`](../../reviews/015-task17-acceptance-usenix-only.md)：fix-g 定向 105 passed、重点并发/过期租约/跨 DOI 合并/DBLP 与 USENIX partial 7 passed、前端契约 4 passed、Node 语法和仓库扫描通过；后端最终全量 650 passed、1 skipped、5 warnings、38 subtests。见 [`015-task15-backend-review-final.md`](../../reviews/015-task15-backend-review-final.md)，fix-h 的失败释放和过期恢复已核对。
+
+本阶段明确不阻塞的 deferred：ACM/IEEE 合法登录、自定义会议/DBLP Venue Search、A14 排序质量标注集、真实公开 PDF 导入和 GUI/窄屏运行时证据；这些属于后续会议扩展/质量专项，不伪造为已完成。
+
+部署证据：8000 被沙箱外既有 Python 进程占用且无法由当前环境停止，故以 `RERANKER_ENABLED=false .venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8001` 启动本版本。`GET /api/health` 返回 200，首页返回 200（15,735 bytes），最小 USENIX 异步请求返回 202，search_id 为 `8988428774904044aefac7cbf9ee9d1b`。服务保持运行供用户测试；启动日志提示 Qdrant 文件目录被另一实例占用，检索将按既有降级语义运行。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-05 | 架构师（自身） | 创建Task17，固定独立QA、Tech Lead复用审计、失败修复循环、提交部署与收口门禁；未执行验收 |
+| 2026-09-08 | tester / backend-reviewer | 完成 USENIX-only 跨端验收与后端复用/并发复审；将 ACM/IEEE、自定义会议、排序质量和真实导入列为后续 deferred，不作为本轮目录变更阻塞 |

@@ -15,7 +15,7 @@
 本模块只做导入与文档，不新增业务逻辑、不改函数签名与常量值。
 """
 
-from backend.app.knowledge_base.infrastructure.embed import embed_texts
+from backend.app.knowledge_base.infrastructure.embed import embed_texts, encode_sparse
 from backend.app.knowledge_base.infrastructure.index import (
     DENSE_VECTOR,
     SPARSE_VECTOR,
@@ -44,6 +44,7 @@ from backend.app.knowledge_base.infrastructure.retrieve import (
     hybrid_search,
     reranker_available,
     reranker_health,
+    rerank_hits,
     rrf_fuse,
 )
 from backend.app.knowledge_base.infrastructure.store import (
@@ -100,6 +101,7 @@ __all__ = [
     "split_text",
     # 向量化与索引
     "embed_texts",
+    "encode_sparse",
     "index_paper",
     "index_paper_chunker",
     "delete_paper",
@@ -112,6 +114,7 @@ __all__ = [
     "hybrid_search",
     "reranker_available",
     "reranker_health",
+    "rerank_hits",
     "rrf_fuse",
     # 提示词
     "build_prompt",

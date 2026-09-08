@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,19 @@ from backend.app.paper_discovery.domain.paper_discovery import (
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 
 SCHEMA_VERSION = 2
+_SAFE_EVENT_KEYS = frozenset({"unit_id", "source_kind", "count", "error_code", "message_code"})
+_SAFE_EVENT_ERROR_CODES = frozenset({
+    "DBLP_UNAVAILABLE", "DBLP_TIMEOUT", "DBLP_NETWORK_ERROR", "DBLP_HTTP_ERROR",
+    "DBLP_INVALID_RESPONSE", "DBLP_RATE_LIMITED", "USENIX_UNAVAILABLE",
+    "USENIX_SYNC_FAILED", "USENIX_FETCH_FAILED", "USENIX_PARSE_FAILED",
+    "USENIX_UNIT_FAILED", "NO_PAGES", "INDEX_UNAVAILABLE", "RAG_DEGRADED",
+    "SOURCES_UNAVAILABLE", "SEARCH_WORKFLOW_FAILED", "INVALID_QUERY",
+})
+_SAFE_EVENT_MESSAGE_CODES = frozenset({
+    "SOURCE_QUEUED", "CHECKING_CACHE", "FETCHING_SOURCE", "MERGING_METADATA",
+    "SOURCE_COMPLETED", "CACHE_HIT", "SOURCE_FAILED", "INDEX_DEGRADED",
+})
+_SAFE_UNIT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._|:/-]{0,159}$")
 BUILT_IN_CONFERENCES = (
     ("ccs", "ACM Conference on Computer and Communications Security", "CCS", "conf/ccs", ["ACM Conference on Computer and Communications Security"]),
     ("usenix-security", "USENIX Security Symposium", "USENIX Security", "conf/uss", ["USENIX Security Symposium", "USENIX Security"]),
@@ -564,12 +578,74 @@ class PaperDiscoveryStore:
                 ),
             )
 
+    def ensure_fetch_unit(self, unit: SourceFetchUnit, now: Optional[str] = None) -> bool:
+        """Create a fetch unit once without clobbering a concurrent lease.
+
+        ``save_fetch_unit`` is an upsert used for status updates.  Fetch
+        planning needs a different primitive: two graph workers may observe a
+        missing row at the same time, and an ordinary upsert would erase the
+        first worker's lease before it can claim the row.
+        """
+        now = now or _utcnow()
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            cursor = connection.execute(
+                """INSERT INTO source_fetch_units
+                     (fetch_unit_id, source_kind, conference_id, year, unit_key, source_url, status,
+                      etag, last_modified, content_hash, paper_count, error_code, lease_owner,
+                      lease_expires_at, last_attempt_at, last_success_at, created_at, updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(fetch_unit_id) DO NOTHING""",
+                (
+                    unit.fetch_unit_id, unit.source_kind, unit.conference_id, unit.year, unit.unit_key,
+                    unit.source_url, unit.status, unit.etag, unit.last_modified, unit.content_hash,
+                    unit.paper_count, unit.error_code, unit.lease_owner, unit.lease_expires_at,
+                    unit.last_attempt_at, unit.last_success_at, unit.created_at or now, now,
+                ),
+            )
+            return cursor.rowcount > 0
+
     def get_fetch_unit(self, fetch_unit_id: str) -> Optional[SourceFetchUnit]:
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT * FROM source_fetch_units WHERE fetch_unit_id=?", (fetch_unit_id,)
             ).fetchone()
         return self._fetch_unit_from_row(row) if row is not None else None
+
+    def merge_catalog_paper(self, canonical: CatalogPaper, duplicate_ids: Iterable[str],
+                            now: Optional[str] = None) -> None:
+        """Replace duplicate catalog rows while preserving source evidence.
+
+        Source records are moved before duplicate rows are deleted because both
+        tables use ``ON DELETE RESTRICT``.  The caller supplies an already
+        merged, authoritative ``CatalogPaper`` (USENIX fields win; DBLP fills
+        missing values).
+        """
+        now = now or _utcnow()
+        duplicate_ids = [str(item) for item in duplicate_ids if str(item) != canonical.catalog_paper_id]
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            for duplicate_id in duplicate_ids:
+                connection.execute(
+                    "UPDATE catalog_source_records SET catalog_paper_id=? WHERE catalog_paper_id=?",
+                    (canonical.catalog_paper_id, duplicate_id),
+                )
+                connection.execute("DELETE FROM catalog_papers WHERE catalog_paper_id=?", (duplicate_id,))
+            connection.execute(
+                """UPDATE catalog_papers SET conference_id=?, year=?, title=?, normalized_title=?,
+                     authors_json=?, abstract=?, keywords_json=?, doi=?, dblp_key=?, publication_stage=?,
+                     official_page_url=?, official_pdf_url=?, prepublication_pdf_url=?, arxiv_id=?,
+                     metadata_hash=?, index_status=?, index_version=?, updated_at=?
+                   WHERE catalog_paper_id=?""",
+                (
+                    canonical.conference_id, canonical.year, canonical.title, canonical.normalized_title,
+                    json.dumps(canonical.authors), canonical.abstract, json.dumps(canonical.keywords),
+                    canonical.doi, canonical.dblp_key, canonical.publication_stage,
+                    canonical.official_page_url, canonical.official_pdf_url, canonical.prepublication_pdf_url,
+                    canonical.arxiv_id, canonical.metadata_hash, canonical.index_status or "pending",
+                    canonical.index_version, now, canonical.catalog_paper_id,
+                ),
+            )
 
     def upsert_catalog_paper(self, paper: CatalogPaper, now: Optional[str] = None) -> bool:
         """Insert or update a catalog paper keyed by catalog_paper_id.
@@ -664,6 +740,8 @@ class PaperDiscoveryStore:
                       expires_at, updated_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(search_id) DO UPDATE SET
+                     query=excluded.query, conference_ids_json=excluded.conference_ids_json,
+                     years_json=excluded.years_json,
                      status=excluded.status, graph_version=excluded.graph_version,
                      degraded=excluded.degraded, error_code=excluded.error_code,
                      total_results=excluded.total_results, started_at=excluded.started_at,
@@ -701,6 +779,33 @@ class PaperDiscoveryStore:
 
     def append_search_event(self, event: SearchEvent, now: Optional[str] = None) -> int:
         now = now or _utcnow()
+        payload = {}
+        for key, value in (event.safe_payload or {}).items():
+            if key not in _SAFE_EVENT_KEYS:
+                continue
+            if key == "count":
+                try:
+                    value = max(0, int(value))
+                except (TypeError, ValueError):
+                    continue
+            elif key == "unit_id":
+                value = str(value)[:160]
+                if ("://" in value or "?" in value or "#" in value
+                        or not _SAFE_UNIT_ID.fullmatch(value)):
+                    continue
+            elif key == "source_kind":
+                value = str(value)
+                if value not in {"usenix", "dblp"}:
+                    continue
+            elif key == "error_code":
+                value = str(value)
+                if value not in _SAFE_EVENT_ERROR_CODES:
+                    value = "SEARCH_WORKFLOW_FAILED"
+            elif key == "message_code":
+                value = str(value)
+                if value not in _SAFE_EVENT_MESSAGE_CODES:
+                    continue
+            payload[key] = value
         with self._connect() as connection:
             connection.execute("BEGIN")
             cursor = connection.execute(
@@ -710,7 +815,7 @@ class PaperDiscoveryStore:
                    VALUES(?,?,?,?,?,?,?)""",
                 (
                     event.search_id, event.node_name, event.source_kind, event.event_type, event.status,
-                    json.dumps(event.safe_payload), event.created_at or now,
+                    json.dumps(payload), event.created_at or now,
                 ),
             )
             return int(cursor.lastrowid)
@@ -830,11 +935,12 @@ class PaperDiscoveryStore:
         with self._connect() as connection:
             connection.execute("BEGIN")
             cursor = connection.execute(
-                 """UPDATE source_fetch_units
+                """UPDATE source_fetch_units
                     SET lease_owner=NULL, lease_expires_at=NULL, status=?,
-                        last_success_at=?, updated_at=?
+                        last_success_at=CASE WHEN ?='completed' THEN ? ELSE last_success_at END,
+                        updated_at=?
                     WHERE fetch_unit_id=? AND lease_owner=?""",
-                 (status, now, now, fetch_unit_id, owner),
+                 (status, status, now, now, fetch_unit_id, owner),
             )
             connection.commit()
             return cursor.rowcount > 0
@@ -868,3 +974,157 @@ class PaperDiscoveryStore:
                  (search_id, page_size, offset),
             ).fetchall()
         return [self._search_result_from_row(row) for row in rows]
+
+    def get_search_job(self, search_id: str) -> Optional[SearchJob]:
+        """Read one asynchronous search job without exposing raw SQLite rows."""
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM search_jobs WHERE search_id=?", (search_id,)).fetchone()
+        if row is None:
+            return None
+        return SearchJob(
+            row["search_id"], row["query"], json.loads(row["conference_ids_json"] or "[]"),
+            json.loads(row["years_json"] or "[]"), row["status"], row["graph_version"],
+            bool(row["degraded"]), row["error_code"], row["total_results"], row["created_at"],
+            row["started_at"], row["completed_at"], row["expires_at"], row["updated_at"],
+        )
+
+    def get_source_progress(self, search_id: str) -> List[SearchSourceProgress]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM search_source_progress WHERE search_id=? ORDER BY source_kind", (search_id,)
+            ).fetchall()
+        return [SearchSourceProgress(
+            row["search_id"], row["source_kind"], row["status"],
+            json.loads(row["cached_units_json"] or "[]"), json.loads(row["fetching_units_json"] or "[]"),
+            json.loads(row["completed_units_json"] or "[]"), row["paper_count"], row["error_code"],
+            row["message_code"], row["updated_at"],
+        ) for row in rows]
+
+    def get_search_events(self, search_id: str, after_event_id: Optional[int] = None,
+                          limit: int = 50) -> List[SearchEvent]:
+        limit = max(1, min(int(limit), 100))
+        with self._connect() as connection:
+            if after_event_id is None:
+                rows = connection.execute(
+                    "SELECT * FROM search_events WHERE search_id=? ORDER BY event_id DESC LIMIT ?",
+                    (search_id, limit),
+                ).fetchall()[::-1]
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM search_events WHERE search_id=? AND event_id>? ORDER BY event_id LIMIT ?",
+                    (search_id, int(after_event_id), limit),
+                ).fetchall()
+        return [SearchEvent(
+            row["event_id"], row["search_id"], row["node_name"], row["source_kind"],
+            row["event_type"], row["status"], json.loads(row["safe_payload_json"] or "{}"), row["created_at"],
+        ) for row in rows]
+
+    def list_search_ids(self, *, status: Optional[str] = None) -> List[str]:
+        """Return persisted job IDs for startup recovery/controlled scheduling."""
+        with self._connect() as connection:
+            if status is None:
+                rows = connection.execute("SELECT search_id FROM search_jobs ORDER BY created_at").fetchall()
+            else:
+                rows = connection.execute("SELECT search_id FROM search_jobs WHERE status=? ORDER BY created_at", (status,)).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def get_catalog_source_kinds(self, catalog_paper_id: str) -> List[str]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT source_kind FROM catalog_source_records WHERE catalog_paper_id=? ORDER BY source_kind",
+                (catalog_paper_id,),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def list_catalog_papers(self, conference_ids: Optional[Iterable[str]] = None,
+                            years: Optional[Iterable[int]] = None,
+                            *, index_status: Optional[str] = "indexed") -> List[CatalogPaper]:
+        """List catalog papers visible to retrieval by default.
+
+        Pending/failed metadata remains persisted for retry and diagnostics, but
+        must not accidentally enter a result set.  Callers doing the indexing
+        pass can explicitly request ``index_status=\"pending\"``; ``None`` is
+        reserved for administrative reads that intentionally need every state.
+        """
+        clauses, params = [], []
+        if index_status is not None:
+            if index_status not in {"pending", "indexed", "failed"}:
+                raise ValueError("invalid catalog index status")
+            clauses.append("index_status=?")
+            params.append(index_status)
+        if conference_ids:
+            ids = list(dict.fromkeys(str(item) for item in conference_ids))
+            clauses.append("conference_id IN (" + ",".join("?" for _ in ids) + ")")
+            params.extend(ids)
+        if years:
+            vals = list(dict.fromkeys(int(item) for item in years))
+            clauses.append("year IN (" + ",".join("?" for _ in vals) + ")")
+            params.extend(vals)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM catalog_papers" + where + " ORDER BY catalog_paper_id", params).fetchall()
+        return [self._catalog_paper_from_row(row) for row in rows]
+
+    def mark_catalog_indexed(self, catalog_paper_id: str, index_version: int = 1,
+                             now: Optional[str] = None) -> bool:
+        now = now or _utcnow()
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            cursor = connection.execute(
+                "UPDATE catalog_papers SET index_status='indexed', index_version=?, updated_at=? "
+                "WHERE catalog_paper_id=? AND index_status='pending'",
+                (int(index_version), now, catalog_paper_id),
+            )
+            return cursor.rowcount > 0
+
+    def mark_catalog_index_failed(self, catalog_paper_id: str, now: Optional[str] = None) -> bool:
+        now = now or _utcnow()
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            cursor = connection.execute(
+                "UPDATE catalog_papers SET index_status='failed', updated_at=? WHERE catalog_paper_id=?",
+                (now, catalog_paper_id),
+            )
+            return cursor.rowcount > 0
+
+    def freeze_search_results(self, search_id: str, results: Iterable[SearchResult],
+                             *, status: str, degraded: bool = False,
+                             error_code: Optional[str] = None, now: Optional[str] = None) -> int:
+        """Atomically insert a result snapshot and finalize the job.
+
+        No caller may update an already-frozen row; repeated node execution is
+        idempotent and only reads the existing snapshot.
+        """
+        now = now or _utcnow()
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            # Terminal status is the frozen marker.  This matters for a valid
+            # empty snapshot: COUNT(*) is zero both before and after freezing,
+            # so using only row count would allow a retry to append results.
+            job_row = connection.execute(
+                "SELECT status, total_results FROM search_jobs WHERE search_id=?", (search_id,)
+            ).fetchone()
+            if job_row is not None and job_row["status"] in {"completed", "partial", "failed"}:
+                return int(job_row["total_results"] or 0)
+            existing = connection.execute(
+                "SELECT COUNT(*) FROM search_results WHERE search_id=?", (search_id,)
+            ).fetchone()[0]
+            if not existing:
+                rows = list(results)
+                connection.executemany(
+                    """INSERT INTO search_results
+                       (search_id,catalog_paper_id,rank,retrieval_score,rerank_score,final_score,snapshot_json,created_at)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    [(item.search_id, item.catalog_paper_id, item.rank, item.retrieval_score,
+                      item.rerank_score, item.final_score, json.dumps(item.snapshot), item.created_at or now)
+                     for item in rows],
+                )
+                total = len(rows)
+            else:
+                total = int(existing)
+            connection.execute(
+                "UPDATE search_jobs SET status=?, degraded=?, error_code=?, total_results=?, "
+                "completed_at=?, updated_at=? WHERE search_id=? AND status NOT IN ('completed','partial','failed')",
+                (status, int(degraded), error_code, total, now, now, search_id),
+            )
+            return total

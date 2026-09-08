@@ -1,8 +1,11 @@
 import httpx
+from types import SimpleNamespace
 
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
-from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource
+from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource, SearchJob, SourceFetchUnit
 from backend.app.paper_discovery.infrastructure.arxiv_adapter import ArxivFallbackResult, ArxivMatch
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
+import backend.app.paper_discovery.infrastructure.usenix_publication_source as usenix_source_module
 from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedSource
 
 SOURCE = ConferenceSource("usenix-security", "USENIX Security Symposium", "USENIX Security", "conf/uss", ["USENIX Security"], built_in=True)
@@ -200,6 +203,45 @@ def _source(handler, **kwargs):
     return UsenixAcceptedSource(**base)
 
 
+def test_sync_unit_ensures_new_fetch_unit_before_acquire(monkeypatch):
+    calls = []
+
+    class Store:
+        def __init__(self):
+            self.unit = None
+
+        def get_fetch_unit(self, unit_id):
+            return self.unit if self.unit and self.unit.fetch_unit_id == unit_id else None
+
+        def ensure_fetch_unit(self, unit, now):
+            calls.append("ensure")
+            self.unit = unit
+            return True
+
+        def acquire_fetch_unit(self, unit_id, owner, lease_seconds, now):
+            calls.append("acquire")
+            assert self.get_fetch_unit(unit_id) is not None
+            return True
+
+        def save_fetch_unit(self, unit, now):
+            calls.append("save")
+            self.unit = unit
+
+    source = _source(lambda _request: httpx.Response(200, text=""))
+    source.store = Store()
+    monkeypatch.setattr(source, "_fetch_listing", lambda _listing: ("<html>", None))
+    monkeypatch.setattr(usenix_source_module, "parse_accepted_papers", lambda _text, page_url: ())
+    result = SimpleNamespace(completed=[], failed=[], cached=[], paper_count=0)
+
+    source._sync_one_page(
+        "search-ensure", "usenix-security", SEC24_SUMMER, "owner", 300,
+        "2026-01-01T00:00:00Z", result, None,
+    )
+
+    assert calls[:2] == ["ensure", "acquire"]
+    assert result.completed == ["usenix|usenix-security|/conference/usenixsecurity24/summer-accepted-papers/"]
+
+
 def test_default_year_2024_resolves_summer_and_fall_not_cycle1():
     reached = []
 
@@ -264,6 +306,100 @@ def test_partial_slug_failure_keeps_year_available():
     assert len(result.records) == 1
     assert result.records[0]["info"]["publication_stage"] == "accepted"
     assert result.error_code != "USENIX_UNAVAILABLE"
+
+
+def test_sync_usenix_partial_pages_persists_legal_progress_status(tmp_path):
+    def handler(request):
+        path = request.url.path
+        if path.endswith("summer-accepted-papers"):
+            return httpx.Response(404)
+        if path.endswith("fall-accepted-papers"):
+            return httpx.Response(200, text=f'<a href="{SEC24_DETAIL}">paper</a>')
+        if path.endswith("/presentation/demo"):
+            return httpx.Response(200, text=SEC24_DETAIL_HTML)
+        if path.endswith("official.pdf"):
+            return httpx.Response(200, content=b"%PDF-1.7 official")
+        return httpx.Response(404)
+
+    store = PaperDiscoveryStore(tmp_path / "state.sqlite3")
+    job = SearchJob(
+        "search-usenix-partial", "secure", ["usenix-security"], [2024],
+        expires_at="2099-01-01T00:00:00Z", created_at="2098-01-01T00:00:00Z",
+    )
+    store.create_search_job(job)
+    source = _source(handler)
+    source.store = store
+    source._discovery_routes = list(ROUTED_SOURCE.discovery_routes)
+
+    result = source.sync_usenix_units(
+        job.search_id, "usenix-security", [2024], owner="worker",
+        now="2099-01-01T00:00:00Z",
+    )
+
+    assert result.status == "partial"
+    progress = store.get_source_progress(job.search_id)
+    assert progress and progress[0].status in {"fetching", "merging"}
+    assert store.get_search_job(job.search_id).status == "partial"
+
+
+def test_usenix_http_failure_releases_lease_for_retry_after_restart(tmp_path):
+    store_path = tmp_path / "state.sqlite3"
+    store = PaperDiscoveryStore(store_path)
+    job = SearchJob(
+        "search-usenix-failure-retry", "secure", ["usenix-security"], [2025],
+        expires_at="2099-01-01T00:00:00Z", created_at="2098-01-01T00:00:00Z",
+    )
+    store.create_search_job(job)
+    source = _source(lambda _request: httpx.Response(503))
+    source.store = store
+    source._discovery_routes = list(ROUTED_SOURCE.discovery_routes)
+
+    result = source.sync_usenix_units(
+        job.search_id, "usenix-security", [2025], owner="worker-a",
+        lease_seconds=300, now="2099-01-01T00:00:00Z",
+    )
+
+    unit_id = "usenix|usenix-security|/conference/usenixsecurity25/cycle1-accepted-papers/"
+    assert result.status == "failed"
+    failed = store.get_fetch_unit(unit_id)
+    assert failed and failed.status == "failed"
+    assert failed.lease_owner is None and failed.lease_expires_at is None
+
+    # A fresh store instance models a worker restart; the failed unit must be
+    # immediately claimable instead of being permanently owned by worker-a.
+    restarted_store = PaperDiscoveryStore(store_path)
+    assert restarted_store.acquire_fetch_unit(
+        unit_id, "worker-b", 300, now="2099-01-01T00:00:01Z"
+    )
+
+
+def test_usenix_exception_releases_lease_for_retry_after_restart(tmp_path, monkeypatch):
+    store_path = tmp_path / "state.sqlite3"
+    store = PaperDiscoveryStore(store_path)
+    job = SearchJob(
+        "search-usenix-exception-retry", "secure", ["usenix-security"], [2025],
+        expires_at="2099-01-01T00:00:00Z", created_at="2098-01-01T00:00:00Z",
+    )
+    store.create_search_job(job)
+    source = _source(lambda _request: httpx.Response(200, text="<html>"))
+    source.store = store
+    source._discovery_routes = list(ROUTED_SOURCE.discovery_routes)
+    monkeypatch.setattr(source, "_fetch_listing", lambda _listing: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    result = source.sync_usenix_units(
+        job.search_id, "usenix-security", [2025], owner="worker-a",
+        lease_seconds=300, now="2099-01-01T00:00:00Z",
+    )
+
+    unit_id = "usenix|usenix-security|/conference/usenixsecurity25/cycle1-accepted-papers/"
+    assert result.status == "failed"
+    failed = store.get_fetch_unit(unit_id)
+    assert failed and failed.lease_owner is None and failed.lease_expires_at is None
+
+    restarted_store = PaperDiscoveryStore(store_path)
+    assert restarted_store.acquire_fetch_unit(
+        unit_id, "worker-b", 300, now="2099-01-01T00:00:01Z"
+    )
 
 
 def test_all_slugs_failed_marks_unavailable():

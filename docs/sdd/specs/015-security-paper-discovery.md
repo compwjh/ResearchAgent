@@ -2,13 +2,13 @@
 
 ## 状态
 
-**当前状态：`实施中`（2026-09-07 收口核对）**
+**当前状态：`实施中`（2026-09-08；USENIX-only 阶段实现完成，外部扩展 deferred）**
 
-> **本 Spec 不满足转 `已完成` 的收口条件**（`SDD-GATE-CHECKLIST.md` §3）：Task15–17 从未分派、无实现（A17 来源进度卡、A18 RAG 与分页、A16 增量目录端到端无可复核证据）；验收评审未签字；Task04（语义排序与 Reranker）待执行；A3 自定义会议、A10/A11 真实 ACM/IEEE 登录、A14 排序质量仍受外部数据源与环境阻塞。**验收未签字不得转 `已完成`**，故保持 `实施中`。
+> **本阶段范围已收口为 USENIX Security 官方目录优先、DBLP 辅助。** Task15–17 的实现、并发/恢复复审和 USENIX-only QA 已完成；Spec 仍保持 `实施中`，因为 ACM/IEEE 登录、自定义会议、A14 排序质量、真实公开 PDF 导入与 GUI/窄屏运行时证据被明确 deferred，待后续扩展阶段补齐后再转 `已完成`。
 >
 > **暂停代码实现的原因（用户既定顺序）**：先完成 Spec017 后端限界上下文重构与全量回归，再回来做 Task15/16（依据 `docs/sdd/retro/2026-09-06-spec015-task15-16-not-dispatched.md`）。恢复时必须先核对本表状态与 `.codebuddy/agent-logs/`，确认 Task15 是否已有分派记录。
 
-> Task02–12 的真实实现与评审证据保留；Task13–17 需求/技术复审已通过（见 `docs/sdd/reviews/015-catalog-requirement-review.md`、`015-catalog-tech-review.md`），用户已授权进入实现。已落地部分：Task13 部分落地（`search_source_progress`、`search_results` 表与 `get_search_results_page()`）、Task14 已落地（USENIX 增量目录同步与 `/accepted` 只读端点）；Task15–17 未动。不得通过回滚、stash、清理或覆盖工作树损坏现有未提交成果。
+> Task02–12 的真实实现与评审证据保留；Task13–17 需求/技术复审已通过（见 `docs/sdd/reviews/015-catalog-requirement-review.md`、`015-catalog-tech-review.md`），用户已授权进入实现。Task13/14 已落地，Task15–17 已完成 USENIX-only 实现与验收；不得通过回滚、stash、清理或覆盖现有成果。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
 
 ## 架构变更（待确认）

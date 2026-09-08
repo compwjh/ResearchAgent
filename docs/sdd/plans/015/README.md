@@ -10,7 +10,7 @@
 - 文件初始状态均为 `待执行`；只有需求/技术评审通过且用户明确确认 spec 后才可开始。
 - 使用本地 Ollama junior-dev 时，代码分派每次最多 2 个代码文件、改动不超过 150 行；线上模型不受此数量上限约束，但仍须按风险拆分并验证。
 - Spec013/014 与 Reranker 判断按用户授权 deferred；Task02 仅对内置会议召回与 OpenAlex 补全条件放行，Venue Search 保持阻塞。
-- Task13–17 是 2026-09-05 新增流程范围；在新需求/技术复审、复用审计和用户再次确认前全部保持 `待执行`。弱调度 Agent不得根据旧 Task04/07 自行猜测补全。
+- Task13–17 是 2026-09-05 新增流程范围；Task13/14 已按实际落盘实现回填，Task15–17 在用户明确要求“接下来开发”后进入实施。弱调度 Agent不得根据旧 Task04/07 自行猜测补全。
 - Task13–17 必须读取 Spec015 的“现有实现复用与替换边界”；优先复用已验证模块，禁止新建第二套下载、安全、导入、批任务、身份规范化或 embedding 实现。
 
 ## 任务清单
@@ -29,11 +29,11 @@
 | 10 | 论文发现限界上下文目录重构 | [task-10](./task-10-paper-discovery-package-migration.md) | 03, 05, 06, 07, 08 | 待确认 |
 | 11 | USENIX accepted papers 与 arXiv 兜底来源 | [task-11](./task-11-usenix-accepted-and-arxiv-fallback.md) | 03, 05, 08 | 已完成 |
 | 12 | USENIX 双 Skill 与跨 IDE 使用协议 | [task-12](./task-12-usenix-paper-skill.md) | 11 | 已完成（下载版/目录版） |
-| 13 | 固化全局目录协议与复用审计 | [task-13](./task-13-catalog-contract-and-reuse-audit.md) | 03, 05, 11, 12 | 待执行 |
-| 14 | 实现 USENIX 增量目录同步 | [task-14](./task-14-usenix-incremental-catalog.md) | 13 | 待执行 |
-| 15 | 实现 LangGraph、目录 RAG 与冻结结果 | [task-15](./task-15-langgraph-catalog-rag.md) | 14 | 待执行 |
-| 16 | 实现来源进度与十条分页交互 | [task-16](./task-16-search-progress-and-pagination.md) | 15 | 待执行 |
-| 17 | 执行复用审计、验收、部署与复盘 | [task-17](./task-17-review-acceptance-deploy-retro.md) | 13, 14, 15, 16 | 待执行 |
+| 13 | 固化全局目录协议与复用审计 | [task-13](./task-13-catalog-contract-and-reuse-audit.md) | 03, 05, 11, 12 | 已完成（协议/复用审计已落盘） |
+| 14 | 实现 USENIX 增量目录同步 | [task-14](./task-14-usenix-incremental-catalog.md) | 13 | 已完成（增量同步与 accepted 只读端点） |
+| 15 | 实现 LangGraph、目录 RAG 与冻结结果 | [task-15](./task-15-langgraph-catalog-rag.md) | 14 | 已完成（USENIX-only） |
+| 16 | 实现来源进度与十条分页交互 | [task-16](./task-16-search-progress-and-pagination.md) | 15 | 已完成（USENIX-only） |
+| 17 | 执行复用审计、验收、部署与复盘 | [task-17](./task-17-review-acceptance-deploy-retro.md) | 13, 14, 15, 16 | 已完成（USENIX-only；外部扩展 deferred） |
 
 ## 分支与回滚
 

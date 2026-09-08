@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api.common import paper_request_validation_error_response
+from backend.app.api.common import paper_request_validation_error_response, recover_paper_catalog_searches
 from backend.app.api.routes import router
 from backend.app.core.config import FRONTEND_DIR
 from backend.app.knowledge_base.application import (
@@ -24,6 +24,13 @@ async def lifespan(_app: FastAPI):
     2. 给 spec-011 遗留的索引点补齐 `chunker` 等字段
        —— 否则按版本过滤会让旧论文检索不到。
     """
+    try:
+        recovered = recover_paper_catalog_searches()
+        if recovered:
+            print(f"[paper-search] 已将 {recovered} 个中断任务恢复为 queued")
+    except Exception as error:
+        print(f"[paper-search] 启动恢复失败（已忽略）：{error}")
+
     try:
         interrupted = mark_interrupted_on_startup()
         if interrupted:
