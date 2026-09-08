@@ -22,7 +22,7 @@
 
 1. 创建/更新根 `CONTEXT.md`，只记录项目领域词，不写通用技术术语。
 2. 创建 ADR，说明原件、检查清单和向量索引分离的原因与后果。
-3. 定义 Pydantic/领域 DTO 与 manifest schema version 1。
+3. 只读消费 Task02A 的 `SourceProvenanceBundle` schema，定义唯一 manifest schema version 1；不得反向修改已通过的 parser/chunker 语义。
 4. 实现幂等迁移：保留现有 ID、时间、论文元数据、路径解析和 chunker 状态。
 5. 更新论文发现导入与知识库 application 的边界契约，不允许跨域直写基础设施。
 
@@ -38,7 +38,7 @@ Task 03 按协议先行、迁移后行、边界最后评审的顺序执行。每
 
 | 子任务 | 执行者/上下文 | 允许范围 | 固定输出/交接条件 |
 |---|---|---|---|
-| 03-A DTO/schema freeze | Tech Lead（自身）/ 128k；可由 `backend-dev` 27B 仅补 ≤2 个 schema/测试文件 | 只定义 DTO、manifest schema、版本和迁移 fixture 字段 | `docs/sdd/plans/018/artifacts/task-03/knowledge-document.schema.json`、`inspection-manifest.schema.json`；`docs/sdd/fixtures/spec-018/migration/` 的 fixture-index |
+| 03-A DTO/schema freeze | Tech Lead（自身）/ 128k；可由 `backend-dev` 27B 仅补 schema/测试文件 | 以 Task02A `SourceProvenanceBundle` 为输入定义 KnowledgeDocument、唯一 manifest schema、版本和迁移 fixture；禁止修改 02A schema | `docs/sdd/plans/018/artifacts/task-03/knowledge-document.schema.json`、`inspection-manifest.schema.json`；`docs/sdd/fixtures/spec-018/migration/` 的 fixture-index |
 | 03-B JSON migration | `backend-dev` / `qwen3.8:27b-mlx` / 32k | 最多 2 个已点名 backend 文件 + 对应测试；versioned backup、fsync/replace、fail-closed、idempotency | `docs/sdd/plans/018/artifacts/task-03/migration-report.md`，含记录/ID/stored basename/时间/元数据/hash/备份路径前后对照 |
 | 03-C Qdrant payload/application boundary | `backend-dev` / `qwen3.8:27b-mlx` / 32k | 最多 2 个已点名 backend 文件 + 对应测试；双读、payload-only、point/vector/fingerprint 不变 | `docs/sdd/plans/018/artifacts/task-03/qdrant-migration-report.md` 与兼容读取 fixture；review 前冻结 application 入口 |
 | 03-D review and handoff | `backend-reviewer` / `qwen3.8:27b-mlx` / 32k；Tech Lead 签字 | 只评 03-A～03-C 固定产物和 diff，不补实现 | `docs/sdd/plans/018/artifacts/task-03/backend-review-report.md`；通过后才可进入 Task 04 |

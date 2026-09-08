@@ -33,7 +33,7 @@
 |---|---|---|---|
 | 02B-A | backend-tester | 校验首轮 fixture/expected/schema hash 与 Task02A 交接物 | 报告“证据冻结”段 |
 | 02B-B | backend-tester | 正式入口重放 PDF/Markdown block/chunk/anchor | 报告“映射结果”段 |
-| 02B-C | backend-tester | FakeQdrant 成功/失败/中断恢复、并发与仅手动重试 | 报告“升级恢复”段 |
+| 02B-C | backend-tester | FakeQdrant 成功/失败/中断恢复、并发、仅手动重试与 dense+sparse RAG 排除 | 报告“升级恢复与检索排除”段 |
 | 02B-D | Tech Lead | 只读核验全部证据并签 `GO|NO-GO` | `artifacts/task-02b/source-anchor-revalidation-report.md` |
 
 ## 固定分派 Prompt
@@ -41,7 +41,7 @@
 ```text
 你是 Spec018 Task02B 的 backend-tester。只读取 Spec018、Task02/02A/02B、首轮 artifacts/fixtures、Task02A 固定报告和被测生产入口。不得修改 backend、frontend、用户 data/kb、真实 Qdrant、首轮 fixture/expected/NO-GO 报告或 Git 历史；不得重新设计实现。
 
-使用正式生产入口重放全部固定样本，验证 PDF block bbox、Markdown 行号、v1 overlap、v2 跨页和多对多 anchors。word 信息只作诊断，不是硬门。Hostile PDF 只验证后端不执行脚本/表单/附件/远程资源；真实浏览器零网络证据留给 Task05。使用 FakeQdrant 验证旧索引已有版本全部升级、预计算后短写入、完整 point/payload/dense+sparse vector 快照、故障恢复、成功删除快照、并发单任务，以及首次失败后仅手动重试。禁止触碰真实索引。
+使用正式生产入口重放全部固定样本，验证 PDF block bbox、Markdown 行号、v1 overlap、v2 跨页和多对多 anchors。word 信息只作诊断，不是硬门。Hostile PDF 只验证后端不执行脚本/表单/附件/远程资源；真实浏览器零网络证据留给 Task05。使用 FakeQdrant 验证旧索引已有版本全部升级、预计算后短写入、reindex-snapshot-v1 对 point/payload/dense+sparse 的机器 round-trip、快照损坏/截断 fail-closed、故障/重启幂等恢复、并发单 operation 和首次失败后仅手动重试。捕获 hybrid_search 的 dense+sparse 两次 query：running/validating/restoring 时目标文档必须同时进入相同 must_not 且零命中，restored/completed/partial 后恢复命中，RRF/reranker 不得收到被排除文档。禁止触碰真实索引。
 
 必须输出严格 GO 或 NO-GO。固定报告写入 docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md；日志写入 .codebuddy/agent-logs/spec-018/task-02b/backend-tester/<timestamp>.md。返回：状态摘要、命令/退出码、样本 hash、映射率与 bbox/行号误差、快照恢复前后 fingerprint、失败样本、GO/NO-GO、风险、主 Agent 动作、开始结束耗时和可用的模型/token/工具统计。
 ```
@@ -53,6 +53,7 @@
 - 测试命令、退出码、结果和故障注入矩阵。
 - block/chunk/anchor 数、映射率、partial 原因、bbox 最大误差和 Markdown 行号精度。
 - point ID、payload、dense/sparse vector、fingerprint 恢复对照。
+- operation/claim/startup recovery 状态迁移，以及 dense/sparse query filter/命中/RRF 输入对照。
 - 产物/日志路径、风险、阻塞、主 Agent 后续动作和耗时。
 
 ## 主 Agent 校验
@@ -72,6 +73,8 @@
 - Markdown block/行号 100% 匹配；v1/v2 保留真实来源关系。
 - `partial` 可提交但必须有覆盖率、未映射数量和稳定原因；零映射不得通过。
 - 所有旧索引故障注入恢复到相同 point/payload/vector/fingerprint。
+- 两个已有版本只产生一个持久 operation；delete 后中断由启动恢复先还原旧 points。
+- active upgrade 时 dense/sparse 两路均排除目标文档，恢复/完成/partial 后两路恢复命中。
 - Hostile 后端解析无网络、无活动内容执行；浏览器证据作为 Task05 必验项记录在 handoff。
 
 ## 风险、停止条件与回滚

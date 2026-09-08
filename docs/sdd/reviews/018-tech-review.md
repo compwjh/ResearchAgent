@@ -306,3 +306,46 @@ hostile fixture 的验收断言尚不能替代上述依赖版本和 DOM 绑定�
 5. Task05 明确承接 hostile PDF/Markdown 的真实浏览器网络硬门。
 
 重新评审通过前不得执行 Task02A 或修改业务代码。
+
+## 自动重建修订独立技术复审：打回（2026-09-08 22:25，Asia/Shanghai）
+
+本轮只读核对了架构师角色规则、当前 Spec 018、Plan README、Task02A/02B、Task03–07、首轮 Task02 `NO-GO` 报告、上一版技术评审，以及现有 `parse/chunker/index/retrieve/tasks` 接口；未修改业务代码、未运行 Task/测试/服务。结论只能为 `GO|NO-GO`，本轮为 **`NO-GO`（打回）**。
+
+### 已核对并成立的修订条款
+
+1. Spec `:152-159` 已把 `PdfSourceProvenanceV1`、block 级 bbox、rotation/crop box、阅读顺序和 PDF.js public viewport 映射固定下来；Task02A `:23-29,80-94` 与 Task02B `:22-28,42-46,69-80` 已禁止测试专用 parser、保留 v1/v2 多对多关系，并把 hostile 浏览器零网络门移交 Task05。
+2. Spec `:169-177`、Task02A `:28-29,48,80-94`、Task02B `:42-46,69-80` 已声明预计算后短写、v1/v2 全量恢复、dense/sparse 快照、升级期排除 RAG、成功删除快照和首次失败仅手动 retry；首轮证据仍为只读 `NO-GO`。
+3. Task02A→02B 的名义依赖是单向的（02B 只读消费 02A 产物），且 Task02B `:24-28` 明确浏览器门留给 Task05，未发现形式上的反向依赖。
+
+### P0 阻塞项（必须先补最小交接契约）
+
+1. **升级期 RAG 排除没有绑定到现有召回入口。** 现有 `backend/app/knowledge_base/infrastructure/retrieve.py:125-184` 的 `hybrid_search` 只按 `paper_id/chunker` 过滤，dense 与 sparse 两路均未读取 `LegacyInspectionUpgrade` 状态；`backend/app/api/routes_kb.py:199-213` 直接调用该入口。Task02A 仅在 `:80-88` 将“普通 RAG 排除”列为验收目标，Task02B 的 FakeQdrant Prompt `:42-46` 也没有要求验证升级中两路召回均排除文档。最小修订：在 `artifacts/task-02a/implementation-contract.md` 冻结唯一 `document_id/operation_id → upgrade_active` 读取点、application/retrieve 过滤入口和两路 query 的观测字段；02A-D/02B-C 必须加入 `running/validating/restoring` 下 dense+sparse 均为零命中、恢复/完成后恢复可召回的 fixture 与退出码，否则不能宣称“升级中排除”已可实现。
+
+2. **文档级 v1/v2 原子升级与现有按版本队列之间缺少可执行桥接。** 现有 `backend/app/knowledge_base/infrastructure/tasks.py:27-62` 以 `(paper_id,chunker)` 各自去重，`main.py:18-39` 启动时只把残留 `indexing` 标为失败；而 Spec `:171-175` 要求全部已有 v1/v2 共用一个持久 claim/`operation_id`、跨版本事务、删除后中断先恢复旧 points。Task02A `:31-39,48,52` 只描述“文档级升级”结果，未在固定交接物中冻结：谁创建/持久化 operation、如何跨两个 chunker 绑定同一 claim、启动恢复如何替换现有 `mark_interrupted_on_startup`、以及升级状态如何被 application/retrieve 读取。最小修订：02A-D 的 `implementation-contract.md` 增加 operation/claim/recovery 状态机和生产入口签名（含文件白名单），02B-C 以两个已有版本并发、delete 后进程中断、重启 restore 的 FakeQdrant 证据逐项核验；缺失即保持 `NO-GO`。
+
+3. **恢复快照虽声明“完整”，但机器可校验 schema 尚未冻结。** Spec `:124,171-174` 只列出 point ID、payload、dense/sparse vector 和 chunker state；Task02A `:38` 与 README `:55` 仅命名 `reindex-snapshot.schema.json`，没有冻结 snapshot schema/version、全量 v1/v2 point 集、dense 维度与数值编码、sparse indices/values 的排序与空值、payload canonicalization、每点/整体 fingerprint、source hash、写入完成标记和截断/损坏 fail-closed 规则。仅凭报告中的“vector fingerprint”无法证明恢复的是完整可重放快照。最小修订：在 02A 固定产物中逐字段定义 schema 与 canonical round-trip oracle；02B 必须记录删除前后每个版本的 point ID/payload/dense/sparse 原值、维度/长度、fingerprint，并验证快照损坏、短写和恢复幂等；快照仍不得进入 API、日志或 Git。
+
+4. **Task02A 要求生成 manifest，但正式 manifest 协议被延后到 Task03，形成交接缺口。** Task02A `:27-29,35-39` 要求新文档索引“同时生成 manifest”，而 Task03 `:21-27,35-46` 才定义 `InspectionManifest` schema/迁移，README `:57-59` 也把正式 manifest schema 固定在 Task03。Task02B 只能验证 provenance/chunk/anchor，无法验证 02A 产出的 manifest 是否符合下游唯一 schema；这会迫使 02A 私自定义临时 schema，或让 Task03 反向修改已通过的 02A 产物。最小修订二选一并写入交接表：要么 02A 只产出 provenance/chunk relation、明确 manifest 延至 Task03；要么在 02A 之前冻结最小 `InspectionManifest` schema/version 与 expected fixture，并让 02B 只读消费它。未选择前不得执行 02A。
+
+### 结论与放行动作
+
+当前文档已覆盖 provenance、Markdown v1/v2 复用、预计算/恢复意图、hostile Task05 移交和首次失败手动重试，但上述四项是与现有生产入口直接相关的 P0 交接缺口，不是实现后可接受的风险。Spec 018 继续保持 `待确认`；不得执行 Task02A、Task02B 或 Task03–07。完成最小契约修订、补齐固定 schema/fixture/报告字段后，重新提交独立技术评审。
+
+复审证据日志：`.codebuddy/agent-logs/spec-018/task-01/architect/20260908-220742.md`。
+
+## 自动重建修订 P0 补丁独立技术复审：通过（2026-09-08 22:27，Asia/Shanghai）
+
+本轮只读核对了当前 Spec 018、Plan README、Task02A/02B/03 与真实 `application/retrieve/tasks/main` 入口；未修改业务代码、未运行 Task/测试/服务。针对上一轮四项 P0，结论为严格 **`GO`（通过）**。
+
+### 四项 P0 证据
+
+1. **application 检索包装与升级排除：通过。** Spec `:181-182` 固定唯一 `knowledge_base.application.hybrid_search` 包装、`LegacyUpgradeStore.get_active_document_ids()`、`excluded_paper_ids` 到 `must_not paper_id MatchAny`，以及 dense/sparse 共用同一 filter 和 RRF/reranker 零污染观测。Task02A `:37-41,50,54,66,90-92` 已指定 D3 owner、报告路径和双路命中断言；Task02B `:36,44,56,77` 已纳入正式入口/FakeQdrant 验证。真实 route 只从 application 导入 `hybrid_search`（`backend/app/api/routes_kb.py:14-39,212`）；当前 application 仍是 infrastructure re-export（`backend/app/knowledge_base/application.py:61-68`），但 D3 已明确这是待实现的唯一替换点，没有第二个 route 入口。
+2. **文档级 operation、持久 claim 与启动恢复：通过。** Spec `:183-185` 固定既有单线程 `get_executor()` 上唯一 `(document_id,"legacy-upgrade")` operation、禁止按 chunker 嵌套提交、`data/kb/upgrades/<document-id>.json/.claim`、字段集合及恢复先后顺序。Task02A `:38-40,50,54,75` 和 Task02B `:36-37,44,56,76` 固定 D2 owner、联合 v1/v2、单 operation、delete 后中断 restore 和报告字段。现有 `tasks.py:27-62,65-90,139-145` 仍是旧 `(paper_id,chunker)` 队列、`main.py:35-39` 仍执行旧 interrupted 标记；这与当前 Spec `待确认/禁止改代码` 状态一致，且已被 D2/启动恢复契约明确替换边界，不构成文档评审阻塞。
+3. **`reindex-snapshot-v1` 完整快照与 fail-closed：通过。** Spec `:187-192` 固定 schema/version、全量有序 points、canonical UTF-8 键排序 payload、float32 little-endian dense raw-bytes base64、uint32/float32 little-endian sparse raw-bytes base64、逐点/四类总 hash、snapshot hash、`complete`、2 GiB/磁盘余量门、损坏/截断/未知版本拒绝和恢复 round-trip。Task02A `:38,50,65,92-93`、Task02B `:44,55,75` 将 schema、报告、逐点与总 fingerprint、损坏/截断、幂等恢复绑定为放行条件；README `:55,68` 固定交接路径。满足上一轮要求的机器可校验完整性。
+4. **02A→02B→03 manifest 单向交接：通过。** Spec `:194-197` 明确 02A 不生成/持久化 `InspectionManifest`，只产版本化 `SourceProvenanceBundle`；02B 只验证 bundle/升级/恢复；Task03 在 02B `GO` 后定义唯一 manifest schema，Task04 才持久化。Task02A `:29,37,41,73`、Task03 `:25,41-46`、README `:55-57,68-70` 的 artifacts、owner 和放行条件一致，已消除上一轮反向依赖。
+
+### 结论与门禁
+
+四项 P0 均已形成“Spec 条款 → Task owner → 固定 artifact/fixture → 观测字段 → 严格 GO/NO-GO”闭环；未发现新的技术阻塞或 02A→02B→03 循环。当前代码尚未实现新桥接，属于 Spec 仍为 `待确认` 时的预期状态，不应被误记为实现验收。
+
+本轮通过不改变 Spec 状态：仍须用户明确确认后才能执行 Task02A；Task02B 必须取得严格 `GO` 后才可放行 Task03。复审证据日志：`.codebuddy/agent-logs/spec-018/task-01/architect/20260908-221835.md`。

@@ -2,9 +2,9 @@
 
 ## 状态
 
-**当前状态：`待确认`（Task02 首轮 `NO-GO`；自动重建修订已冻结，待重新评审与确认）**
+**当前状态：`实施中`（自动重建修订需求/技术复审已通过，用户已确认；执行 Task02A）**
 
-> 2026-09-08 首轮 Task02 已完成并严格裁决 `NO-GO`：现有 parser 仅返回 `(page, text)`，不能提供同源文本块 bbox，业务代码也没有 Markdown parser。该结论和固定证据永久保留。本修订根据用户确认的 Grill with Docs 决策，新增生产级来源定位基础、旧索引自动重建与失败恢复协议，并把 hostile PDF 的真实浏览器零网络硬门移到 Task05。此前需求/技术评审不覆盖本次范围，须重新评审与确认；未修改业务代码。
+> 2026-09-08 首轮 Task02 已完成并严格裁决 `NO-GO`，该结论和固定证据永久保留。自动重建修订随后经独立需求复审与两轮技术复审，最终结论均为通过；用户已明确要求开始执行。当前只放行 Task02A，Task02B `GO` 前仍禁止 Task03–07。
 
 ## 一句话目标
 
@@ -176,6 +176,26 @@
 - 新索引切片完整但来源锚点不全时允许提交，manifest 为 `partial`，`interaction_mode="linked_partial"`，返回映射覆盖率、未映射数量和稳定原因码。零映射、索引不完整或 schema 错误必须恢复旧索引并标记 failed。
 - 升级中旧原文和快照中的旧切片可只读展示，`interaction_mode="read_only_no_link"`；点击联动控件禁用。首次自动升级失败后不得在后续 GET/打开操作中自动重试，只允许用户通过 reindex API 手动重试。
 
+#### 与现有检索和索引队列的唯一桥接
+
+- `knowledge_base.application.hybrid_search` 由应用层包装现有 infrastructure 检索：先从唯一 `LegacyUpgradeStore.get_active_document_ids()` 读取 `running/validating/restoring` 文档集合，再把它作为 `excluded_paper_ids` 传给 infrastructure `hybrid_search`。`build_filter` 把排除集合转换为 `must_not paper_id MatchAny`，dense 与 sparse 两次 `query_points` 必须复用同一个 filter。禁止 route、chat 或另一个 store 自行维护第二份排除列表。
+- 固定观测要求：升级状态为 `running/validating/restoring` 时，FakeQdrant 捕获到 dense 与 sparse 两路完全相同的 `must_not`，目标文档两路命中均为 0；状态恢复为 `restored/completed/partial` 后排除条件消失且两路恢复命中。RRF/reranker 不得收到被排除文档。
+- 文档级升级通过既有单线程 `get_executor()` 提交一个 `(document_id,"legacy-upgrade")` operation，不再为 v1/v2 分别调用 `submit_index_task`，避免同线程池嵌套等待。operation runner 在同一任务内依次完成全部已有版本的预计算、一次完整快照、原地替换、联合验证或联合恢复。
+- operation 状态固定写入 `data/kb/upgrades/<document-id>.json`，claim 为同目录 `<document-id>.claim`；字段至少含 `operation_id/document_id/chunkers/status/progress/auto_attempted/mutation_started/snapshot_complete/owner/pid/started_at/heartbeat/expires_at/attempt/error_code`。application、inspection API、RAG 排除和启动恢复只能读取该 store。
+- 启动顺序固定为 `recover_interrupted_legacy_upgrades_on_startup()` 后再执行既有 `mark_interrupted_on_startup()`：有完整快照且 `mutation_started=true` 时先幂等恢复全部旧 points；尚未进入写阶段时标记 failed 并要求手动重试；快照缺失/损坏时为 `UPGRADE_RESTORE_FAILED`，禁止继续索引或删除数据。
+
+#### `reindex-snapshot-v1` 机器契约
+
+- Task02A 必须先落盘 `docs/sdd/plans/018/artifacts/task-02a/reindex-snapshot.schema.json`。顶层必填：`schema_version="reindex-snapshot-v1"`、`operation_id`、`document_id`、`created_at`、`source_sha256`、有序 `chunkers`、`point_count`、`points`、`point_ids_sha256`、`payloads_sha256`、`dense_vectors_sha256`、`sparse_vectors_sha256`、`snapshot_sha256`、`complete=true`。
+- `points` 按 point ID 字典序保存。每点必填 `id/chunker/chunk_index/payload/payload_sha256/vectors`；payload 使用 UTF-8、键排序、无额外空白 JSON canonicalization。dense 固定 `{name,dtype:"float32",endianness:"little",dimension,data_base64,sha256}`；sparse 固定 `{name,index_dtype:"uint32",value_dtype:"float32",endianness:"little",indices_order:"ascending_unique",nnz,indices_base64,values_base64,sha256}`。缺任一向量、维度/nnz 不符、重复/乱序 indices 或 hash 不符均 fail-closed。
+- `snapshot_sha256` 对除自身外的 canonical snapshot 计算。只有完整 schema 校验、逐点 hash 和总 hash 全通过后，临时文件才可原子替换为最终文件并写 operation 的 `snapshot_complete=true`；截断/损坏/未知版本快照禁止触发删除。恢复后必须重新读取 Qdrant，证明 point ID、payload、dense/sparse 解码值和四类总 fingerprint 与快照一致，重复恢复无副作用。
+- 预估快照超过 2 GiB，或可用磁盘不足“预计快照大小两倍 + 512 MiB 安全余量”时，在 mutation 前返回 `SNAPSHOT_CAPACITY_EXCEEDED`，旧索引保持不变。快照正文不得进入 API、Git、评审文档或 Agent 日志。
+
+#### Task02A 与 Task03 的协议边界
+
+- Task02A 不生成或持久化 `InspectionManifest`。它只产出版本化 `SourceProvenanceBundle`：`pages/blocks/chunks/anchors/source_sha256/source_parser_version/chunker_config_fingerprint/payload_schema_version`，并证明该 bundle 可由正式索引流水线生成。
+- Task02B 只验证 bundle、索引升级和恢复。Task03 在 Task02B `GO` 后，以已冻结 bundle 为输入定义唯一 `InspectionManifest` schema；Task04 才负责把新文档索引结果和旧文档升级结果持久化为 manifest。Task03 不得反向修改 Task02A parser/chunker 语义。
+
 ### Markdown、page-null 与上传资源边界
 
 - 只接受扩展名 `.md`/`.markdown`，媒体类型固定为 `text/markdown`；非空 multipart MIME 不是 `text/markdown` 时返回 415。允许 UTF-8 BOM 并在解析前剥离；非法 UTF-8 或任意 NUL 返回 400 `INVALID_ENCODING`；CRLF/CR 统一为 LF 后解析，`source_sha256` 仍对原始字节计算。上传按流累计，超过 50 MiB 立即终止并返回 413，不得先整文件读入内存。
@@ -212,7 +232,7 @@
 | `POST /api/kb/documents/{id}/reindex` | 接受任务为 `202 {task_id,document_id,chunker,status,progress,reason}`，带 `Location` 与 `Retry-After` | 已运行优先 `409 INDEX_ALREADY_RUNNING`；hash 冲突 `409 SOURCE_HASH_MISMATCH`；原件不存在 `404 SOURCE_NOT_FOUND`；依赖不可用 `503 QDRANT_UNAVAILABLE` |
 | `DELETE /api/kb/documents/{id}` | 全部目标确认完成才 `200 {document_id,status:"completed",deleted:{source,metadata,manifests,vectors}}` | ID 不存在 `404 DOCUMENT_NOT_FOUND`；部分失败/待重试为 `503 DELETE_PENDING`，带 `Retry-After` 和 tombstone 状态；不得返回带 `vectors_removed:false` 的 200 |
 
-统一错误体固定为：`{error_code:string,message:string,retryable:boolean,request_id:string,document_id?:string,chunker?:string,task_id?:string,details?:object}`。`message` 只能是脱敏稳定摘要；`details` 只能包含 schema 已列出的计数、状态、`retry_after_seconds`、`allowed_range`、`current_etag` 等非敏感值。固定码和 HTTP 映射如下：`INVALID_CHUNKER/INVALID_DOCUMENT_ID/INVALID_CURSOR`→400，`INVALID_ENCODING/INVALID_PDF/PDF_NO_TEXT`→400（无文本清单只能 partial/failed），`UNSUPPORTED_MEDIA_TYPE`→415，`PAYLOAD_TOO_LARGE`→413，`DOCUMENT_NOT_FOUND/SOURCE_NOT_FOUND`→404，`INDEX_NOT_READY/INDEX_FAILED/INDEX_ALREADY_RUNNING/SNAPSHOT_CONFLICT/SOURCE_HASH_MISMATCH/UPGRADE_RETRY_REQUIRED`→409，`INVALID_RANGE`→416，`INSPECTION_BUILDING/MANIFEST_REBUILDING/LEGACY_UPGRADE_RUNNING`→202，`MANIFEST_FAILED/QDRANT_UNAVAILABLE/UPGRADE_RESTORE_FAILED/DELETE_PENDING`→503。所有错误均不得泄露绝对路径、原始 URL、PDF/Markdown 原文或第三方异常。
+统一错误体固定为：`{error_code:string,message:string,retryable:boolean,request_id:string,document_id?:string,chunker?:string,task_id?:string,details?:object}`。`message` 只能是脱敏稳定摘要；`details` 只能包含 schema 已列出的计数、状态、`retry_after_seconds`、`allowed_range`、`current_etag` 等非敏感值。固定码和 HTTP 映射如下：`INVALID_CHUNKER/INVALID_DOCUMENT_ID/INVALID_CURSOR`→400，`INVALID_ENCODING/INVALID_PDF/PDF_NO_TEXT`→400（无文本清单只能 partial/failed），`UNSUPPORTED_MEDIA_TYPE`→415，`PAYLOAD_TOO_LARGE`→413，`DOCUMENT_NOT_FOUND/SOURCE_NOT_FOUND`→404，`INDEX_NOT_READY/INDEX_FAILED/INDEX_ALREADY_RUNNING/SNAPSHOT_CONFLICT/SOURCE_HASH_MISMATCH/UPGRADE_RETRY_REQUIRED`→409，`INVALID_RANGE`→416，`INSPECTION_BUILDING/MANIFEST_REBUILDING/LEGACY_UPGRADE_RUNNING`→202，`MANIFEST_FAILED/QDRANT_UNAVAILABLE/UPGRADE_RESTORE_FAILED/SNAPSHOT_CAPACITY_EXCEEDED/DELETE_PENDING`→503。所有错误均不得泄露绝对路径、原始 URL、PDF/Markdown 原文或第三方异常。
 
 202 的响应必须带 `Location`（同一 inspection 或 reindex 任务可重试地址）、`Retry-After: 2`、`task_id`、`status`、`progress`；可重试的 409 必须带当前状态和建议动作；503 默认带 `Retry-After: 10`，并在 `details.retry_after_seconds` 重复可执行等待秒数。source 的 200/206/HEAD/304 行为、inspection/list 的 ETag 计算和 `If-None-Match` 命中行为必须按本节执行，不由实现者自行解释。
 
@@ -240,7 +260,7 @@
 以下条款与 `docs/sdd/plans/018/artifacts/task-04/api-schema.json`、`api-fixture-index.json` 及 `docs/sdd/plans/018/artifacts/task-05/pdfjs-vendor-manifest.json` 同步；实现、测试和评审只能消费这些冻结字段，不得以实现便利自行改名或改变状态语义。
 
 - **端点成功体的必填字段与类型**：`GET /api/kb/documents` 的 200 体固定为 `{documents:KnowledgeDocumentSummary[],next_cursor:string|null,total:int}`；每个 summary 必须含 `document_id:string`、`file_name:string`、`media_type:"application/pdf"|"text/markdown"`、`source_sha256:string`、`status:string`、`page_count:int|null` 和 `chunkers:object`。`POST /api/kb/documents/upload` 成功固定为 201 `{document_id:string,media_type:string,file_name:string,source_sha256:string,status:string,chunkers:object,task_id:string|null}`。source 是原始字节流，错误才使用统一 JSON；GET 与 HEAD 必须返回相同状态和缓存/Range headers，HEAD 永远无 body。inspection 的 200 体固定为 `{manifest:InspectionManifest,blocks:SourceBlock[],chunks:ChunkSnapshot[],anchors:SourceAnchor[],next_cursor:string|null,total:{blocks:int,chunks:int,anchors:int}}`，其中数组只对应当前 cursor 页；reindex 的 202 体固定为 `{task_id:string,document_id:string,chunker:"v1"|"v2"|"all",status:string,progress:int}`；delete 只有全部目标完成才返回 200 `{document_id:string,status:"completed",deleted:{source:bool,metadata:bool,manifests:bool,vectors:bool}}`。
-- **统一错误体与稳定 code**：所有 JSON 错误固定为 `{error_code:string,message:string,retryable:boolean,request_id:string,document_id?:string,chunker?:string,task_id?:string,details?:{limit_name?:string,limit_value?:number,observed_value?:number,current_status?:string,retry_after_seconds?:number,allowed_range?:string,current_etag?:string}}`。在原 code 集合上新增：`SOURCE_HASH_MISMATCH`、`UPGRADE_RETRY_REQUIRED`→409；`LEGACY_UPGRADE_RUNNING`→202；`UPGRADE_RESTORE_FAILED`→503。不得以自由文本 `detail`、第三方异常、原始 URL、路径或原文替代 `error_code`。
+- **统一错误体与稳定 code**：所有 JSON 错误固定为 `{error_code:string,message:string,retryable:boolean,request_id:string,document_id?:string,chunker?:string,task_id?:string,details?:{limit_name?:string,limit_value?:number,observed_value?:number,current_status?:string,retry_after_seconds?:number,allowed_range?:string,current_etag?:string}}`。在原 code 集合上新增：`SOURCE_HASH_MISMATCH`、`UPGRADE_RETRY_REQUIRED`→409；`LEGACY_UPGRADE_RUNNING`→202；`UPGRADE_RESTORE_FAILED`、`SNAPSHOT_CAPACITY_EXCEEDED`→503。不得以自由文本 `detail`、第三方异常、原始 URL、路径或原文替代 `error_code`。
 - **状态码、headers 和优先级**：请求格式/媒体/Range/大小校验分别优先产生 400/415/416/413；ID 或原件不存在产生 404；索引状态冲突产生 409；依赖不可用或超时产生 503。所有 202 必须带 `Location`（inspection 使用同一 `document_id+chunker` 的 inspection URI，reindex 使用同一文档/版本的状态 URI）、`Retry-After: 2`、`task_id`、`status`、`progress`。可重试的 503 必须带 `Retry-After`（默认 10 秒）和 `details.retry_after_seconds`；`DELETE_PENDING` 另带指向同一文档删除重试 URI 的 `Location`。合法 source 单 Range 为 206 并带 `Content-Range: bytes start-end/total`；非法/越界/多 Range 为 416 并带 `Content-Range: bytes */total`。200/206/HEAD 的 ETag 为带引号的 `"sha256:<source_sha256>"`；documents ETag 对规范化 summary+cursor 计算，inspection ETag 对 `source_sha256+index_fingerprint+mapping_algorithm_version+cursor` 计算。GET/HEAD 命中 `If-None-Match` 必须返回 304、无 body；HEAD 的状态、ETag、Content-Type、Content-Length、Accept-Ranges 和适用的 Content-Range 必须与 GET 一致。
 - **按领域对象冻结容量、超时和分页**：单 document 原件≤50 MiB、`file_name` UTF-8≤255 bytes、元数据控制体≤64 KiB、ID 长度≤128；单 document 最多 200,000 blocks、100,000 chunks、400,000 anchors。单 block 的规范化 UTF-8 `text`≤1 MiB、序列化 DTO≤2 MiB；单 chunk `text`≤256 KiB、序列化 DTO≤512 KiB；单 anchor 序列化 DTO≤4 KiB；单 manifest JSON≤256 MiB。上传累计 60 秒、source 读取 30 秒、每个 Qdrant scroll 页 30 秒、inspection 全量构建/映射 300 秒、manifest fsync/replace 30 秒；超时不保存临时结果为 ready，统一返回 503 `SOURCE_TIMEOUT`/`MANIFEST_TIMEOUT`/`QDRANT_UNAVAILABLE`。documents `limit` 默认 50、最大 100；inspection `page_size` 默认 200、最大 500；opaque cursor≤512 bytes；单页 JSON≤8 MiB。数量/字节上限返回 413 `PAYLOAD_TOO_LARGE`，并在 `details` 给出 `limit_name/limit_value/observed_value`；cursor 必须绑定 document、chunker 和 schema version，非法或跨文档返回 400 `INVALID_CURSOR`。
 - **PDF.js vendor manifest 与 display-only 配置**：只允许本地 vendored `pdfjs-dist 4.10.38`，主库 `frontend/vendor/pdfjs/pdf.min.mjs`、worker `frontend/vendor/pdfjs/pdf.worker.min.mjs`、同版本 `LICENSE` 和 `NOTICE` 必须存在；manifest 必须逐项记录 package/version、四个相对路径、主库/worker/LICENSE/NOTICE SHA-256、资源 query 版本、`GlobalWorkerOptions.workerSrc` 和允许 API。worker 路径必须为同源本地文件且与主库版本一致；`getDocument` 只能接收同源 source URI，固定 `isEvalSupported:false`、`enableXfa:false`、`useWorkerFetch:false`、`stopAtErrors:true`、`disableAutoFetch:true`，只允许 `getDocument/getPage/getViewport/getTextContent/render`，禁止 annotation/form/XFA/attachment、JavaScript、iframe、原生 PDF 导航、私有字段和远程 URL。取消、Range、损坏响应或版本/hash 不一致必须进入稳定受控错误态。
@@ -375,7 +395,7 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | Task | 可交接子任务 | 固定产物路径（下游只读） | 放行门槛 |
 |---|---|---|---|
 | 02（历史） | 首轮 fixture/probe/Go-No-Go | `docs/sdd/plans/018/artifacts/task-02/source-anchor-feasibility-report.md` 及既有 fixture/schema | 已完成，结论永久保留为 `NO-GO`，不放行下游 |
-| 02A | PDF provenance、Markdown parser、provenance-aware v1/v2、旧索引安全升级基础 | `docs/sdd/plans/018/artifacts/task-02a/implementation-contract.md`、`backend-test-report.md`、恢复快照 schema | 生产实现与固定样本通过；不得改写首轮报告 |
+| 02A | PDF provenance、Markdown parser、SourceProvenanceBundle、snapshot/operation/RAG exclusion | `docs/sdd/plans/018/artifacts/task-02a/implementation-contract.md`、`source-provenance-bundle.schema.json`、`reindex-snapshot.schema.json`、`backend-test-report.md` | 正式实现、round-trip、联合恢复和 dense+sparse 排除通过；不得改写首轮报告 |
 | 02B | 重新执行固定样本、后端 hostile 安全与 Tech Lead Go/No-Go | `docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md`、更新后的 fixture-index/schema hash | 仅 `GO` 放行 Task03；浏览器网络硬门明确留给 Task05 |
 | 03 | 03-A DTO/schema、03-B JSON/Qdrant migration、03-C application boundary、03-D reviewer | `docs/sdd/plans/018/artifacts/task-03/knowledge-document.schema.json`、`inspection-manifest.schema.json`、`migration-fixture-index.json`、`migration-report.md` | ID/point/vector/fingerprint 不变、损坏输入 fail-closed、重复迁移无副作用、reviewer 通过 |
 | 04 | 04-A source/chunk DTO、04-B manifest/upgrade store、04-C routes/schemas、04-D backend tests/review | `docs/sdd/plans/018/artifacts/task-04/api-schema.json`、`api-fixture-index.json`、`backend-contract-report.md`；fixture 在 `docs/sdd/fixtures/spec-018/api/` | 新索引 inspection no-embedding；旧索引只经唯一升级任务，快照恢复与手动重试通过 |
@@ -387,7 +407,7 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 
 | Task | A | B | C | D | 固定 artifacts / fixture | 放行门槛 |
 |---|---|---|---|---|---|---|
-| 02A | PDF block provenance | Markdown block provenance | provenance-aware v1/v2 + legacy upgrade/recovery | backend tests/review + Tech Lead | `artifacts/task-02a/implementation-contract.md`、`backend-test-report.md`、snapshot schema | 正式基础实现和恢复注入测试通过才进入 02B |
+| 02A | PDF block provenance | Markdown block provenance + SourceProvenanceBundle | snapshot/operation/legacy upgrade + RAG exclusion | backend tests/review + Tech Lead | `artifacts/task-02a/implementation-contract.md`、`source-provenance-bundle.schema.json`、`reindex-snapshot.schema.json`、`backend-test-report.md` | round-trip、联合恢复、启动恢复和 dense+sparse 排除通过才进入 02B |
 | 02B | 冻结首轮证据与新 revision | fixture 精确重放 | 后端 hostile/no-write + upgrade audit | Tech Lead Go/No-Go closure | `artifacts/task-02b/source-anchor-revalidation-report.md`、fixture/schema hash | 仅严格 `GO` 放行 Task03；真实浏览器网络证据留给 Task05 |
 | 03 | DTO/schema freeze；Tech Lead 128k | JSON migration；`backend-dev` 27B/32k | Qdrant/application；`backend-dev` 27B/32k | review/handoff；`backend-reviewer` 32k + Tech Lead 最低 64k | `artifacts/task-03/knowledge-document.schema.json`、`inspection-manifest.schema.json`、`migration-report.md`、`qdrant-migration-report.md`；migration fixture-index | ID/point/vector/fingerprint 不变、fail-closed、幂等、评审通过 |
 | 04 | source/chunk DTO；`backend-dev` 27B/32k | manifest/upgrade store；`backend-dev` 27B/32k | routes/API schema；`backend-dev` 27B/32k | tests/review/handoff；`backend-tester` 9B + reviewer/Tech Lead | `artifacts/task-04/api-schema.json`、`api-fixture-index.json`、`backend-contract-report.md`；API fixture | 新索引 inspection 无写入；旧索引只提交唯一 upgrade，恢复/手动重试通过 |
@@ -409,8 +429,8 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/018-requirement-review.md`（上一版修订轮通过；自动重建修订待重新评审）
-- 技术评审：`docs/sdd/reviews/018-tech-review.md`（上一版最终复审通过；自动重建修订待重新评审）
+- 需求评审：`docs/sdd/reviews/018-requirement-review.md`（自动重建修订独立复审通过）
+- 技术评审：`docs/sdd/reviews/018-tech-review.md`（首轮打回四项 P0；补齐后独立复审通过）
 - 验收评审：`docs/sdd/reviews/018-acceptance-review.md`（测试报告 + 开发主管签字；待评审（未执行））
 
 ## 变更日志
@@ -426,3 +446,5 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 2026-09-08 | 架构师（自身） | 根据技术评审 P0-5～P0-7 补齐公开 API v1 成功/错误 schema、稳定错误码与 202/409/404/416/413/415/503、Location/Retry-After/ETag/HEAD、容量/超时/分页上限；冻结 PDF.js 4.10.38 vendored 许可证/NOTICE/worker/display-only 与 Marked+DOMPurify block DTO/图片占位；为 Task 02–05 增加可交接子任务、固定产物路径、≤2 代码文件/约 150 行的本地 27B 约束，并单列 Tech Lead 上下文预算。技术复评前仍不得执行代码任务 |
 | 2026-09-08 | 架构师（自身） | P0-7 最终小修订将 Task 02–05 的 A/B/C/D、固定 artifacts、API/fixture/PDF.js/DOM 交接证据、单端报告与放行门槛汇总成表格；Task 02 增加只读 02-D handoff closure，Tech Lead 单步最低 64k、最终 Gate 128k；未修改业务代码 |
 | 2026-09-08 | 用户 / 架构师（Grill with Docs） | 首轮 Task02 `NO-GO` 后确认：旧 PDF 首次打开自动重建已有 v1/v2；原地替换前保存完整 point/vector 快照，失败恢复、成功删除；块级 bbox 为硬门，word 可选；partial 可切换；v2 模型失败不降级；失败后仅手动重试；hostile 浏览器零网络硬门移至 Task05。本轮仅修订文档，新增 Task02A/02B，待重新评审和确认 |
+| 2026-09-08 | 架构师（自身） | 根据自动重建独立技术评审的四项 P0，冻结 application hybrid_search 唯一包装与 dense+sparse 共用 must_not、既有单线程 executor 上的文档级 operation/claim/启动恢复、reindex-snapshot-v1 的 canonical/base64 round-trip schema，并将 Task02A 限定为 SourceProvenanceBundle、Task03 才定义 manifest；重新提交技术复审，未修改业务代码 |
+| 2026-09-08 | 独立需求/技术评审 | 自动重建修订需求复审通过；技术首轮打回四项 P0，补齐后复审通过。用户已明确确认执行，Spec 转为实施中并仅放行 Task02A |

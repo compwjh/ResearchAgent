@@ -130,3 +130,31 @@ Markdown 需要明确解析版本与块切分规则（尤其列表、表格、�
 首轮 Task02 `NO-GO` 后，用户通过 Grill with Docs 改变了旧文档产品语义：旧 PDF 首次打开检查器时自动重建已有 v1/v2，失败恢复旧索引，首次失败后仅手动重试；升级期间旧原文/切片可读但双向联动禁用；部分锚点缺失允许以 `partial` 切换。该范围与本报告上一版“旧文档零 embedding 补建”前提不同。
 
 因此上一版“通过”仅作为历史结论保留，**不覆盖当前自动重建修订**。当前修订的需求评审状态为：`待评审（未执行）`。重新评审至少核对首次自动升级、原地替换风险提示、升级中只读体验、失败后手动重试、partial 展示和原件 hash 冲突的用户旅程；通过前不得执行 Task02A。
+
+## 自动重建修订独立需求复审（2026-09-08）
+
+> 评审者：开发主管（独立需求评审） ｜ 模型：gpt-5.6-luna xhigh（仅本轮） ｜ 评审时间：2026-09-08 22:07 +0800
+>
+> 进展日志：[20260908-220742.md](../../../.codebuddy/agent-logs/spec-018/task-01/architect/20260908-220742.md)
+>
+> 评审范围：只读核对自动重建修订后的 Spec、Plan README、Task02A、Task02B、上一版需求评审和首轮 Task02 `NO-GO` 报告；未修改业务代码，未修改首轮历史证据。
+
+### 逐项核对
+
+| Grill 决策 / Gate 要求 | 结论 | 证据与可验收行为 |
+|---|---|---|
+| 旧 PDF 首次打开自动升级已有 v1/v2 | 通过 | `LegacyInspectionUpgrade` 明确只包含升级前已存在且可用的版本，首次打开最多自动提交一次（Spec:109-120、169-172）；接口固定返回 `auto_attempted`、`old_snapshot_available` 和 `interaction_mode`（Spec:135-147）。产品步骤也明确旧 PDF 首次打开触发已有版本升级（Spec:352）。 |
+| 升级中可观察、旧内容只读且禁用联动 | 通过 | 升级状态有 `pending/running/validating/restoring/restored/failed`、单调进度和 `read_only_no_link`（Spec:109-124）；清单构建中显示 0–100% 并复用同一任务（Spec:343-347）；升级中旧原文/切片可读、联动禁用（Spec:146-147、177、352）。 |
+| 失败恢复、失败后只允许手动重试 | 通过 | 删除旧 points 前完成预计算并保存含向量的快照，失败/中断先恢复旧索引（Spec:124、171-177）；失败后 GET 不再自动提交，只能通过 `reason="inspection_upgrade_retry"` 的 reindex（Spec:146-147）。Task02A 要求故障注入和“首次自动失败后仅手动 retry”（Task02A:48、67-73），Task02B 固定验证同一行为（Task02B:44-46、69-80）。 |
+| partial 与未映射块交互 | 通过 | 锚点不全允许 `partial/linked_partial`，必须显示覆盖率、未映射数量和稳定原因；零映射不得通过（Spec:176、298、328；Task02B:69-75）。产品点击未映射块时保留阅读位置并显示警告（Spec:348）。 |
+| hash 冲突、原件缺失和状态失败的用户动作 | 通过 | 原件缺失保留诊断并返回受控 404；hash 与记录不一致固定为 `SOURCE_HASH_MISMATCH`，不会静默索引替换文件；索引未完成/失败显示状态、进度/摘要和可执行重建入口（Spec:144-147、166、211-217、343-346）。 |
+| 验收是否能证明“没有偷偷重切片/embedding” | 通过 | 新文档/已有 provenance 仅构建派生清单且 embedding、切分、Qdrant 写均为 0；旧 PDF 首次升级单次幂等，验收要求记录调用次数、删除前预计算、快照 hash、写入窗口、恢复前后 fingerprint、并发单任务及失败后重复打开调用为 0（Spec:318-326）。 |
+| 首轮 `NO-GO` 是否被错误覆盖 | 通过 | 历史报告仍明确 parser/Markdown 实现/hostile 网络证据缺失并裁决 `NO-GO`（`docs/sdd/plans/018/artifacts/task-02/source-anchor-feasibility-report.md:9-12,111-132`）；README 和 Task02B 要求只读消费首轮 hash，Task02B 任何硬门失败即 `NO-GO`，仅严格 `GO` 放行 Task03（README:27-33,50-74；Task02B:16-28,58-80）。 |
+
+### 复审结论
+
+**通过（需求评审）。**
+
+本轮自动重建修订已把 Grill 决策完整转化为可操作的用户旅程、状态/进度/交互模式、失败恢复和手动重试入口，并为 `partial`、原件 hash 冲突、升级中只读和 no-embedding/no-reslice 提供了固定验收断言。首轮 `NO-GO` 作为不可改写历史证据保留，Task02A/02B 的实现与重新验证门禁也已明确，未发现新的需求层阻塞项。
+
+本结论不改变 Spec 的 `待确认` 状态，也不授权修改业务代码。进入 Task02A 前仍必须满足：技术评审通过、用户明确确认 Spec；Task02A 完成后必须由 Task02B 以严格 `GO|NO-GO` 重新裁决，任何 `NO-GO` 都停止 Task03–07。实现阶段应把“重建索引”按钮在自动升级失败时绑定到 `reason="inspection_upgrade_retry"`，但该绑定已由接口契约冻结，不构成需求阻塞。

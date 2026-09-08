@@ -1,14 +1,14 @@
 # Spec 018 任务索引：知识文档切片检查器
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md)
-> 当前状态：`待确认`；首轮 Task02 已完成并严格 `NO-GO`。自动重建修订和 Task02A/02B 已落盘，须重新完成需求/技术评审并由用户确认后才能修改业务代码。
+> 当前状态：`实施中`；自动重建修订需求/技术复审已通过且用户已确认。当前执行 Task02A；Task02B `GO` 前不得启动 Task03–07。
 
 ## 执行顺序
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
 | [02](./task-02-validate-source-anchor-feasibility.md) | 首轮来源锚点可行性审计 | 上一版 Spec 已确认 | 已完成（NO-GO） |
-| [02A](./task-02a-production-provenance-foundation.md) | 生产级 PDF/Markdown provenance 与旧索引安全升级基础 | 修订版 Spec 已确认 | 待执行 |
+| [02A](./task-02a-production-provenance-foundation.md) | 生产级 PDF/Markdown provenance 与旧索引安全升级基础 | 修订版 Spec 已确认 | 实施中 |
 | [02B](./task-02b-revalidate-source-anchor-feasibility.md) | 用正式实现重新验证来源锚点 | 02A | 待执行 |
 | [03](./task-03-document-contract-and-migration.md) | 定义通用文档、清单和无损迁移协议 | 02B Go | 待执行 |
 | [04](./task-04-backend-document-inspection-api.md) | 后端导入、原件和检查清单接口 | 03 | 待执行 |
@@ -18,7 +18,7 @@
 
 ## 全局执行门禁
 
-- Task02A 前必须重新完成 018 需求评审、技术评审和用户确认；上一版评审不覆盖自动重建范围。
+- Task02A 的重新需求/技术评审和用户确认已完成；Task02B 必须在 02A 实现、测试和评审通过后再启动。
 - 下游只读取本目录 Task、Spec、指定代码和上游落盘结果，不依赖聊天历史。
 - 后端与前端代码必须分别由对应角色 Agent 执行和评审。
 - 不允许为检查器重复实现 embedding、Qdrant、PDF 下载、安全校验或索引任务。
@@ -27,7 +27,7 @@
 ## 需求评审修订轮门禁（2026-09-08）
 
 - Spec 018 已把桌面/窄屏产品旅程、PDF/Markdown 固定样本、manifest/anchor 期望字段、旧 `paper_id → document_id` 补建矩阵、no-embedding/no-reslice spy、PDF.js/Markdown 网络安全、Range 状态码、双栏联动和 `scrollTop` 保留写入验收方式；需求评审结论为“通过”。
-- 上一版技术复审已通过；Task02 随后严格 `NO-GO`。本次自动重建修订使上一版评审失效，Spec 继续为 `待确认`；Task02A 不得提前执行。
+- Task02 首轮严格 `NO-GO` 后，自动重建修订需求复审通过；技术复审首轮打回四项 P0，补齐后通过。用户已确认，Task02A 已放行。
 - 首轮 Task02 fixture、`*.expected.json` 和 `NO-GO` 报告不可改写。Task02A 产出正式 parser/provenance/升级恢复基础；Task02B 必须重新引用原件与 expected hash，并给出新的严格 Go/No-Go。
 - Task 03–06 必须保留验收观测字段：embedding/切分/Qdrant 写操作调用次数、point ID/payload fingerprint、原件 hash、manifest 状态/进度、Range headers、浏览器网络请求、面板/焦点/滚动位置；实现或测试发现契约变化时先暂停并更新 Spec。
 - Task 07 只能在后端/前端单端验收和跨端浏览器验收均能复现上述 oracle 后进入部署；评审文档必须引用实际 fixture、命令、退出码和观测值。
@@ -52,7 +52,7 @@
 | Task | A → B → C → D | 固定 artifacts / 报告 | 交接门槛 |
 |---|---|---|---|
 | 02 | 首轮 fixture → probe → Go/No-Go | `docs/sdd/plans/018/artifacts/task-02/` | 历史 `NO-GO`，不改写 |
-| 02A | PDF provenance → Markdown provenance → provenance-aware v1/v2 → legacy upgrade/recovery | `docs/sdd/plans/018/artifacts/task-02a/implementation-contract.md`、`backend-test-report.md`、snapshot schema | 正式实现与恢复注入测试通过才进入 02B |
+| 02A | PDF provenance → Markdown provenance → SourceProvenanceBundle → snapshot/operation/RAG exclusion | `docs/sdd/plans/018/artifacts/task-02a/implementation-contract.md`、`source-provenance-bundle.schema.json`、`reindex-snapshot.schema.json`、`backend-test-report.md` | 正式实现、round-trip、恢复与 dense+sparse 排除通过才进入 02B |
 | 02B | 证据冻结 → fixture 重放 → hostile 后端安全 → Tech Lead Go/No-Go | `docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md` | 仅严格 `GO` 放行 Task03；浏览器网络证据留给 Task05 |
 | 03 | DTO/schema → JSON migration → Qdrant/application → reviewer + Tech Lead | `docs/sdd/plans/018/artifacts/task-03/knowledge-document.schema.json`、`inspection-manifest.schema.json`、`migration-report.md`、`qdrant-migration-report.md` | schema/fixture/report 完整且评审通过 |
 | 04 | source/chunk DTO → manifest/upgrade store → routes/API schema → backend test/review | `docs/sdd/plans/018/artifacts/task-04/api-schema.json`、`api-fixture-index.json`、`backend-contract-report.md` | 新索引 inspection no-embedding；旧索引唯一升级、恢复和手动重试全通过 |
@@ -65,7 +65,7 @@
 | Task | 必须先存在的下游输入 | 负责人签字 |
 |---|---|---|
 | 02 | `artifacts/task-02/` 首轮固定证据 | 历史 `NO-GO`，只读 |
-| 02A | `artifacts/task-02a/implementation-contract.md`、`backend-test-report.md`、snapshot schema | backend-reviewer + Tech Lead |
+| 02A | `artifacts/task-02a/implementation-contract.md`、`source-provenance-bundle.schema.json`、`reindex-snapshot.schema.json`、`backend-test-report.md` | backend-reviewer + Tech Lead |
 | 02B | `artifacts/task-02b/source-anchor-revalidation-report.md` | Tech Lead：仅 `GO` 放行 |
 | 03 | `artifacts/task-03/knowledge-document.schema.json`、`inspection-manifest.schema.json`、`migration-report.md`、`qdrant-migration-report.md` | backend-reviewer + Tech Lead |
 | 04 | `artifacts/task-04/api-schema.json`、`api-fixture-index.json`、`backend-contract-report.md` | backend-tester/backend-reviewer |
@@ -80,6 +80,7 @@
 - 2026-09-08：P0-5/P0-6 复核补丁修正 `INVALID_LIMIT`/`INVALID_CURSOR` 的逐端点映射，并将 Task 04/05 机器可校验 schema、fixture、依赖哈希与 DOM 绑定证据明确为唯一下游输入；未产生代码变更。
 - 2026-09-08：P0-7 最终小修订将 Task 02–05 的 A/B/C/D 串行边界、固定 artifacts、报告/fixture 和 Tech Lead 64k/128k 预算汇总成表格；未产生代码变更。
 - 2026-09-08：根据 Grill with Docs 决策保留首轮 Task02 `NO-GO`，新增 Task02A 正式实现与 Task02B 重新验证；冻结旧 PDF 首次自动升级、point/vector 快照、失败恢复、partial 切换、v2 不降级、仅手动重试和 Task05 浏览器安全门。本轮仅修订文档。
+- 2026-09-08：按独立技术评审 P0 补齐现有 hybrid_search dense+sparse 排除桥、单线程 executor 文档级 operation 与启动恢复、reindex-snapshot-v1 机器 schema/round-trip，以及 SourceProvenanceBundle→Task03 manifest 的单向交接；重新提交技术复审。
 
 ## 技术复评修订 C：P0-5/P0-6 只读交接门禁（2026-09-08）
 
