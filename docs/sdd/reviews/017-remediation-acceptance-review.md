@@ -36,6 +36,6 @@
 
 - `docs/sdd/reviews/017-task06-article-agent-fix.md`
 - `docs/sdd/reviews/017-task06-paper-port-factory-fix.md`
-- `.codebuddy/agent-logs/backend-dev-spec017-20260908-191423.md`
-- `.codebuddy/agent-logs/backend-dev-spec017-20260908-000000.md`
-- `.codebuddy/agent-logs/backend-dev-spec017-paper-port-20260908-000000.md`
+- `.codebuddy/agent-logs/spec-017/task-00/backend-dev/backend-dev-spec017-article-agent-20260908-191423.md`
+- `.codebuddy/agent-logs/spec-017/task-00/backend-dev/backend-dev-spec017-20260908-000000.md`
+- `.codebuddy/agent-logs/spec-017/task-00/backend-dev/backend-dev-spec017-paper-port-20260908-000000.md`

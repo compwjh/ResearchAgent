@@ -3,7 +3,7 @@
 - 关联规范：`docs/sdd/specs/017-backend-bounded-context-modularization.md`
 - 关联任务：Spec017 PaperImportPort 收口单点修复
 - 执行角色：backend-dev
-- 进展日志：`.codebuddy/agent-logs/backend-dev-spec017-paper-port-20260908-000000.md`
+- 进展日志：`.codebuddy/agent-logs/spec-017/task-00/backend-dev/backend-dev-spec017-paper-port-20260908-000000.md`
 - 执行模型：gpt-5.6-luna xhigh（本轮临时选择）
 
 ## 状态摘要
