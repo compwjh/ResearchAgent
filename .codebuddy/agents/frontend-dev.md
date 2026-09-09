@@ -3,7 +3,7 @@ name: frontend-dev
 description: 前端开发 agent（原生 JS/CSS/HTML，qwen3.8:27b-mlx）。只改 frontend/**，不承担后端改动。Use PROACTIVELY when 需要实现或修改前端界面、交互、样式时。
 tools: Read, Grep, Glob, Edit, Bash
 skills: tdd-workflow, frontend-patterns, regression-guard, strategic-compact, progress-logging
-model: qwen3.8:27b-mlx
+model: hy3
 permissionMode: default
 maxTurns: 25
 ---

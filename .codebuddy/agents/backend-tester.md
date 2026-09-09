@@ -3,7 +3,7 @@ name: backend-tester
 description: 后端回归/验收 agent（qwen3.5:9b）。只跑后端 pytest 与后端回归，不碰前端测试。Use PROACTIVELY when 改动只涉及 backend/** 需要回归验证、或需按验收点做后端验收时。
 tools: Read, Grep, Glob, Bash
 skills: verification-loop, strategic-compact, progress-logging
-model: qwen3.5:9b
+model: hy3
 permissionMode: default
 maxTurns: 20
 ---
