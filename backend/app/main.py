@@ -8,11 +8,11 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.common import paper_request_validation_error_response, recover_paper_catalog_searches
 from backend.app.api.routes import router
-from backend.app.platform.config import FRONTEND_DIR
 from backend.app.knowledge_base.application import (
-    backfill_chunker_defaults,
+    FinalizeBundleStore,
     mark_interrupted_on_startup,
 )
+from backend.app.platform.config import FRONTEND_DIR, KB_DIR
 
 
 @asynccontextmanager
@@ -39,11 +39,12 @@ async def lifespan(_app: FastAPI):
         print(f"[kb] 启动清理失败（已忽略）：{error}")
 
     try:
-        filled = backfill_chunker_defaults()
-        if filled:
-            print(f"[kb] 已为 {filled} 个旧索引点补齐切分版本字段（按 v1 语义）")
+        FinalizeBundleStore(KB_DIR.parents[1]).require_generation()
     except Exception as error:
-        print(f"[kb] 旧索引数据迁移失败（已忽略）：{error}")
+        # The API generation gate returns the stable error; startup remains
+        # available for upload/list/health and never mutates the old
+        # collection as a side effect of boot.
+        print(f"[kb] index generation gate not ready: {getattr(error, 'code', 'INDEX_REBUILD_REQUIRED')}")
 
     yield
 

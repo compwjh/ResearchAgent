@@ -133,3 +133,5 @@
 - **018 Task03 通用文档、Manifest 与迁移协议** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task02B 功能 GO 后开始冻结 KnowledgeDocument/InspectionManifest/FinalizeBundle 契约与旧 metadata 迁移边界。
 - **018 Task03 通用文档、Manifest 与迁移协议** ｜ 实施中 → 已完成（功能 GO） ｜ 2026-09-09：四份 schema、CONTEXT/ADR、幂等迁移与 canonical application 边界完成；30 项定向、370 项回归和 8/8 独立探针通过。旧 upload/delete/durability 问题留账转 Task04/06。
 - **018 Task04 后端文档 Manifest 与检查接口** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task03 功能门通过，开始实现通用文档 API、只读 source、真实索引 manifest、旧上传入口迁移与 generation/finalize 门禁。
+- **018 Task04 后端文档 Manifest 与检查接口** ｜ 实施中 → 已完成（功能门） ｜ 2026-09-09 19:14 +0800：两轮修复后，检查、上传、原件读取、reindex 与删除的功能契约获 backend-reviewer `GO` 与 backend-tester `PASS`；定向 54 passed、相关回归 394 passed。closure matrix 仍为 baseline_frozen，生产切换债务继续阻塞 Task06。
+- **018 Task05 前端双栏切片检查器** ｜ 待执行 → 实施中 ｜ 2026-09-09 19:14 +0800：Task04 功能门双签通过，放行本地 PDF.js、Markdown 块渲染、切片分页与双向定位实现；不触发全库重建或真实 Qdrant 变更。

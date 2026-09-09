@@ -1,7 +1,7 @@
 # Task 05：实现前端双栏切片检查器
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task 04；被依赖：Task 06；当前状态：`待执行`
+> 依赖：Task 04；被依赖：Task 06；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -99,3 +99,4 @@ Task 05 依次冻结依赖、DOM、renderer 和 interaction；仅使用本地 Ol
 - 2026-09-08：P0-7 最终小修订确认 05-A～05-D 串行交接，固定 PDF.js manifest、DOM contract、frontend fixture 和单端报告路径；每个本地 27B 子任务最多 2 个代码/资源文件、约 150 行，缺少 frontend-tester/reviewer 结论不得放行 Task 06。
 - 2026-09-08：自动重建修订增加升级中只读无联动、失败后手动重试和 Task05 hostile 真实浏览器零网络硬门；本轮仅更新文档。
 - 2026-09-09：全库替换修订移除旧索引升级 UI，改为 `INDEX_REBUILD_REQUIRED`/`INDEX_FINALIZE_REQUIRED` 维护提示；资源上限明确仅适用于本地 Ollama。
+- 2026-09-09：Task04 功能门经 backend-reviewer `GO` 和 backend-tester `PASS` 独立签字，开始 Task05；Task06 生产切换门仍保持阻塞。

@@ -238,7 +238,12 @@ def remove_paper(paper_id: str, meta_path: Optional[Path] = None, papers_dir: Op
             if target.exists():
                 target.unlink()
         except OSError:
-            pass
+            # Do not report a completed delete while the immutable source is
+            # still present.  Restore the metadata snapshot so the caller can
+            # retry deterministically and surface DELETE_PENDING.
+            with suppress(Exception):
+                save_papers(papers, meta_path)
+            return False
     return True
 
 

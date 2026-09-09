@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/task-04/api-schema-v1",
+  "title": "Spec018 Task04 document API contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "error", "endpoints", "limits", "status_codes"],
+  "properties": {
+    "schema_version": {"const": "api-schema-v1"},
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error_code", "message", "retryable", "request_id"],
+      "properties": {
+        "error_code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,127}$"},
+        "message": {"type": "string", "minLength": 1},
+        "retryable": {"type": "boolean"},
+        "request_id": {"type": "string", "minLength": 1},
+        "document_id": {"type": ["string", "null"]},
+        "chunker": {"enum": ["v1", "v2", "all", null]},
+        "task_id": {"type": ["string", "null"]},
+        "status": {"type": ["string", "null"]},
+        "progress": {"type": ["integer", "null"], "minimum": 0, "maximum": 100},
+        "details": {}
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["list", "upload", "source", "inspection", "reindex", "delete"],
+      "properties": {
+        "list": {"const": "GET /api/kb/documents -> 200 {documents,next_cursor,total}; ETag/304; limit 1..100"},
+        "upload": {"const": "POST /api/kb/documents/upload -> 201 canonical immutable document"},
+        "source": {"const": "GET|HEAD /api/kb/documents/{document_id}/source -> 200|206|304; one byte range"},
+        "inspection": {"const": "GET /api/kb/documents/{document_id}/inspection -> 200|202|304|404|409|503; total/ETag; bound cursor"},
+        "reindex": {"const": "POST /api/kb/documents/{document_id}/reindex -> 202 explicit v1|v2|all"},
+        "delete": {"const": "DELETE /api/kb/documents/{document_id} -> 200 completed or 503 DELETE_PENDING"}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upload_bytes", "file_name_bytes", "documents_default_limit", "inspection_default_page_size", "inspection_page_size", "source_range_bytes", "manifest_bytes"],
+      "properties": {
+        "upload_bytes": {"const": 52428800},
+        "file_name_bytes": {"const": 255},
+        "documents_default_limit": {"const": 50},
+        "inspection_default_page_size": {"const": 200},
+        "inspection_page_size": {"const": 500},
+        "source_range_bytes": {"const": 8388608},
+        "manifest_bytes": {"const": 268435456}
+      }
+    },
+    "status_codes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["202", "206", "304", "400", "404", "409", "413", "415", "416", "503"],
+      "properties": {
+        "202": {"const": "INSPECTION_BUILDING or queued reindex"},
+        "206": {"const": "single valid byte range"},
+        "304": {"const": "matching ETag"},
+        "400": {"const": "INVALID_REQUEST|INVALID_LIMIT|INVALID_CURSOR|INVALID_PAGE_SIZE|INVALID_CHUNKER|INVALID_ENCODING|INVALID_PDF|PDF_NO_TEXT"},
+        "404": {"const": "DOCUMENT_NOT_FOUND|SOURCE_NOT_FOUND"},
+        "409": {"const": "INDEX_REBUILD_REQUIRED|INDEX_NOT_READY|INDEX_FAILED|INDEX_ALREADY_RUNNING|SOURCE_HASH_MISMATCH"},
+        "413": {"const": "PAYLOAD_TOO_LARGE"},
+        "415": {"const": "UNSUPPORTED_MEDIA_TYPE"},
+        "416": {"const": "INVALID_RANGE"},
+        "503": {"const": "INDEX_FINALIZE_REQUIRED|MANIFEST_FAILED|QDRANT_UNAVAILABLE|DELETE_PENDING"}
+      }
+    }
+  }
+}

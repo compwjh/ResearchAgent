@@ -1,15 +1,15 @@
 {
   "schema_version": "upload-closure-matrix-v1",
-  "inventory_git_revision": "1f299a5a2f70de4b4dd343577d39ef309911f7b9",
-  "inventory_digest": "5ef5a5fd1d2ed100be950e462e52517536f003bd00bbde7ca189ac71abc8a9c7",
+  "inventory_git_revision": "21b60fc7f8022d9b98f0a02a003b27db638dacdc",
+  "inventory_digest": "96036652978090cea85ffbefd0056d87bfbb7055df226f83e8353b6839b2962c",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
-    {"path": "backend/app/main.py", "sha256": "2df1b6cebaa18b1f6cf1ab7cee31aa5fe1de20f492d0a5fd95fd7ad82099beeb"},
-    {"path": "backend/app/api/routes_kb.py", "sha256": "444ec16217274d60fc3c60fe78e64d6b3840786366a6662e904aa784ff23e9ea"},
+    {"path": "backend/app/main.py", "sha256": "990f1d4c8c03b0168996168d8e337c3737b2d847615b4488aec454e081007e42"},
+    {"path": "backend/app/api/routes_kb.py", "sha256": "1d6cb466557c918e9e8b11af480f752b4ca5e3e581aa1b02d465feb60051ba6f"},
     {"path": "backend/app/api/routes_paper.py", "sha256": "ebf82010433f71c65b7b157baa85376f647d827340f6d224ddac4d15b57e3199"},
-    {"path": "backend/app/knowledge_base/application.py", "sha256": "e420859d99efb5ac03525424de1cb414f1846d9c68db174ca7df5423bbdf8e44"},
-    {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "bf3c8df72fd21f6bfcdd6f843f28e27ff00b8bca3c8a102123d636dd6305ddf9"},
-    {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "934536e9dd2fa8f838130b372abbb6d771bacb7c4fc82b52073c2093c214ee38"},
+    {"path": "backend/app/knowledge_base/application.py", "sha256": "53587b1a9cd59255948af7e050880db62d5a87059457daf75201fcf244a99586"},
+    {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "8f036b73128c4eb172492d5e3ceb501e97278b2f83f513599407ad9009589c7c"},
+    {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "c22941a1668965de5da36370cfe20a2662c2c4ad90c595169ce18d02f92033a0"},
     {"path": "backend/app/knowledge_base/infrastructure/tasks.py", "sha256": "0f11484d71bdbec738a671c7d93eda37b91de51ebd5be024a2c28a2806e38885"},
     {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "4992a32a1a173a3c56510488e19f9ffc102721938bc280a9d5d1ba99c409cfa7"}
   ],
@@ -176,6 +176,7 @@
     }
   ],
   "tests": [
+    {"test_id": "T-API-DOCUMENT-ROUTES", "entry_ids": ["kb-upload-route"], "assertions": ["Canonical upload/list/source/inspection-gate route smoke tests pass with tempfile or spies", "Embedding and Qdrant write counters are zero"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_routes.py", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_routes.py", "docs/sdd/plans/018/artifacts/task-04/api-fixture-index.json"]},
     {"test_id": "T-OLD-ROUTES", "entry_ids": ["kb-upload-route", "kb-reindex-route", "kb-delete-route"], "assertions": ["Legacy routes are removed or forward only to document applications", "Forbidden-call spies are zero"], "command": "pytest -q tests/test_kb_document_routes.py -k legacy", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-IMMUTABLE-CREATE", "entry_ids": ["kb-upload-route", "paper-import-create-routes", "kb-import-adapter", "store-source-metadata"], "assertions": ["Existing document_id cannot be overwritten", "Same hash dedupes", "Same name/different bytes creates a new ID", "Concurrent creates preserve SHA-256=metadata hash=ETag"], "command": "pytest -q tests/test_kb_document_routes.py tests/test_paper_import.py -k 'immutable or dedupe or same_name or concurrent'", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-PAPER-IMPORT", "entry_ids": ["paper-import-create-routes", "paper-import-retry-routes", "paper-import-resume-route", "paper-import-route-helpers", "kb-import-adapter", "paper-import-application"], "assertions": ["Single/batch/retry/resume share immutable create/dedupe", "Secure download behavior is preserved"], "command": "pytest -q tests/test_paper_import.py tests/test_paper_import_batch.py", "exit_code": null, "status": "pending", "evidence_paths": []},

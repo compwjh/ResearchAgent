@@ -1,4 +1,6 @@
 """spec-011 知识库路由测试（TestClient + mock，离线可重复）。"""
+# Legacy test groups intentionally keep nested patch scopes for readability.
+# ruff: noqa: SIM117
 
 import json
 import unittest
@@ -9,6 +11,7 @@ from unittest.mock import Mock, patch
 import httpx
 from fastapi.testclient import TestClient
 
+from backend.app.knowledge_base.application import KnowledgeDocumentMigrationError
 from backend.app.knowledge_base.infrastructure.retrieve import Hit
 from backend.app.main import app
 
@@ -33,65 +36,47 @@ class UploadTests(unittest.TestCase):
         response = self.client.post(
             "/api/kb/upload", files={"file": ("note.txt", b"hello", "text/plain")}
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("只支持上传 PDF", response.json()["detail"])
+        self.assertEqual(response.status_code, 415)
+        self.assertEqual(response.json()["error_code"], "UNSUPPORTED_MEDIA_TYPE")
 
     def test_rejects_pdf_name_without_pdf_content(self):
         response = self.client.post(
             "/api/kb/upload", files={"file": ("fake.pdf", b"not a pdf", "application/pdf")}
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("不是合法的 PDF", response.json()["detail"])
+        self.assertEqual(response.json()["error_code"], "INVALID_PDF")
 
     def test_rejects_empty_file(self):
         response = self.client.post(
             "/api/kb/upload", files={"file": ("empty.pdf", b"", "application/pdf")}
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("为空", response.json()["detail"])
+        self.assertEqual(response.json()["error_code"], "INVALID_PDF")
 
     def test_rejects_oversized_file(self):
         with patch("backend.app.api.routes_kb.KB_MAX_UPLOAD_MB", 0):
             response = self.client.post(
                 "/api/kb/upload", files={"file": ("big.pdf", PDF_BYTES, "application/pdf")}
             )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("上限", response.json()["detail"])
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["error_code"], "PAYLOAD_TOO_LARGE")
 
     def test_upload_stores_file_and_indexes(self):
-        with TemporaryDirectory() as tmp:
-            record_payload = {
-                "paper_id": "paper-1",
-                "file_name": "paper.pdf",
-                "status": "indexed",
-                "page_count": 3,
-                "chunk_count": 12,
-                "uploaded_at": "2026-08-30T10:00:00",
-                "error": None,
-            }
-            with patch("backend.app.api.routes_kb.new_record") as mock_new:
-                mock_new.return_value = Mock(paper_id="paper-1", file_name="paper.pdf")
-                with patch("backend.app.api.routes_kb.save_upload", return_value=("paper-1", Path(tmp) / "paper-1.pdf")) as mock_save:
-                    with patch("backend.app.api.routes_kb.upsert_paper") as mock_upsert:
-                        # spec-012：v1 同步建索引（且按 R1 走单线程池排队），v2 提交异步任务
-                        with patch("backend.app.api.routes_kb.run_index_task_sync", return_value=record_payload) as mock_sync:
-                            with patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as mock_submit:
-                                with patch("backend.app.api.routes_kb.update_chunker_state"):
-                                    response = self.client.post(
-                                        "/api/kb/upload", files={"file": ("paper.pdf", PDF_BYTES, "application/pdf")}
-                                    )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["status"], "indexed")
-        self.assertEqual(body["chunk_count"], 12)
-        mock_upsert.assert_called_once()
-        self.assertEqual(mock_save.call_args.kwargs["paper_id"], "paper-1")
-        # v1 同步等待一次（R1：与 v2 共用同一队列，避免显存竞争）
-        mock_sync.assert_called_once()
-        self.assertEqual(mock_sync.call_args.args[1], "v1")
-        # v2 走异步提交
-        mock_submit.assert_called_once()
-        self.assertEqual(mock_submit.call_args.args[1], "v2")
+        record = {
+            "document_id": "paper-1",
+            "media_type": "application/pdf",
+            "file_name": "paper.pdf",
+            "source_sha256": "a" * 64,
+            "status": "pending",
+            "chunkers": {"v1": {"status": "pending"}, "v2": {"status": "pending"}},
+        }
+        with patch("backend.app.api.routes_kb.create_uploaded_document", return_value={"document": record, "task_id": None}) as create:
+            response = self.client.post(
+                "/api/kb/upload", files={"file": ("paper.pdf", PDF_BYTES, "application/pdf")}
+            )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["document_id"], "paper-1")
+        create.assert_called_once()
 
 
 class PaperListTests(unittest.TestCase):
@@ -116,25 +101,27 @@ class DeletePaperTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_missing_paper_returns_404(self):
-        with patch("backend.app.api.routes_kb.remove_paper", return_value=False):
+        with patch("backend.app.api.routes_kb.delete_document", return_value=None):
             response = self.client.delete("/api/kb/papers/unknown")
         self.assertEqual(response.status_code, 404)
-        self.assertIn("论文不存在", response.json()["detail"])
+        self.assertEqual(response.json()["error_code"], "DOCUMENT_NOT_FOUND")
 
     def test_delete_removes_metadata_and_vectors(self):
-        with patch("backend.app.api.routes_kb.remove_paper", return_value=True):
-            with patch("backend.app.api.routes_kb.delete_paper") as mock_delete:
-                response = self.client.delete("/api/kb/papers/p1")
+        result = {"document_id": "p1", "status": "completed", "deleted": {"source": True, "metadata": True, "manifests": True, "vectors": True}}
+        with patch("backend.app.api.routes_kb.delete_document", return_value=result):
+            response = self.client.delete("/api/kb/papers/p1")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"deleted": True, "vectors_removed": True})
-        mock_delete.assert_called_once_with("p1")
+        self.assertEqual(response.json(), result)
 
     def test_vector_failure_is_reported(self):
-        with patch("backend.app.api.routes_kb.remove_paper", return_value=True):
-            with patch("backend.app.api.routes_kb.delete_paper", side_effect=RuntimeError("qdrant down")):
-                response = self.client.delete("/api/kb/papers/p1")
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()["vectors_removed"])
+        result = {"document_id": "p1", "status": "DELETE_PENDING", "error_code": "DELETE_PENDING", "tombstoned": True}
+        with patch("backend.app.api.routes_kb.delete_document", return_value=result):
+            response = self.client.delete("/api/kb/papers/p1")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["error_code"], "DELETE_PENDING")
+        self.assertEqual(response.headers["retry-after"], "10")
+        self.assertEqual(response.headers["location"], "/api/kb/documents/p1")
+        self.assertEqual(response.json()["details"]["retry_after_seconds"], 10)
 
 
 class AskTests(unittest.TestCase):
@@ -309,55 +296,64 @@ class ReindexTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_missing_paper_returns_404(self):
-        with patch("backend.app.api.routes_kb.get_paper", return_value=None):
+        with patch("backend.app.api.routes_kb._require_generation", return_value=None), patch(
+            "backend.app.api.routes_kb.submit_document_reindex",
+            side_effect=KnowledgeDocumentMigrationError("DOCUMENT_NOT_FOUND"),
+        ):
             response = self.client.post("/api/kb/papers/nope/reindex", json={"chunker": "all"})
         self.assertEqual(response.status_code, 404)
-        self.assertIn("论文不存在", response.json()["detail"])
+        self.assertEqual(response.json()["error_code"], "DOCUMENT_NOT_FOUND")
 
     def test_missing_source_file_returns_404(self):
-        empty = Path(self.tmp.name) / "empty"
-        empty.mkdir(exist_ok=True)
-        with patch("backend.app.api.routes_kb.get_paper", return_value=self.paper):
-            with patch("backend.app.api.routes_kb.KB_PAPERS_DIR", empty):
-                response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "all"})
-        self.assertEqual(response.status_code, 404)
-        self.assertIn("原件", response.json()["detail"])
-
-    def test_reindex_all_submits_both_versions(self):
-        with patch("backend.app.api.routes_kb.get_paper", return_value=self.paper), patch(
-            "backend.app.api.routes_kb.KB_PAPERS_DIR", self.dir
-        ), patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as submit, patch(
-            "backend.app.api.routes_kb.update_chunker_state"
+        record = {"schema_version": "knowledge-document-v1", "document_id": "p1"}
+        with patch("backend.app.api.routes_kb.load_papers_strict", return_value=[record]), patch(
+            "backend.app.api.routes_kb._require_generation", return_value=None
+        ), patch(
+            "backend.app.api.routes_kb.submit_document_reindex",
+            side_effect=KnowledgeDocumentMigrationError("SOURCE_NOT_FOUND"),
         ):
             response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "all"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(submit.call_count, 2)
-        self.assertEqual(sorted(c.args[1] for c in submit.call_args_list), ["v1", "v2"])
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error_code"], "SOURCE_NOT_FOUND")
+
+    def test_reindex_all_submits_both_versions(self):
+        result = {"task_id": "task-1", "document_id": "p1", "chunker": "all", "submitted": {"v1": True, "v2": True}}
+        record = {"schema_version": "knowledge-document-v1", "document_id": "p1"}
+        with patch("backend.app.api.routes_kb.load_papers_strict", return_value=[record]), patch(
+            "backend.app.api.routes_kb._require_generation", return_value=None
+        ), patch(
+            "backend.app.api.routes_kb.submit_document_reindex", return_value=result
+        ) as submit:
+            response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "all"})
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["chunker"], "all")
+        self.assertEqual(response.headers["retry-after"], "2")
+        submit.assert_called_once_with("p1", "all")
 
     def test_reindex_single_version(self):
-        with patch("backend.app.api.routes_kb.get_paper", return_value=self.paper), patch(
-            "backend.app.api.routes_kb.KB_PAPERS_DIR", self.dir
-        ), patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as submit, patch(
-            "backend.app.api.routes_kb.update_chunker_state"
-        ):
+        result = {"task_id": "task-2", "document_id": "p1", "chunker": "v2", "submitted": {"v2": True}}
+        record = {"schema_version": "knowledge-document-v1", "document_id": "p1"}
+        with patch("backend.app.api.routes_kb.load_papers_strict", return_value=[record]), patch(
+            "backend.app.api.routes_kb._require_generation", return_value=None
+        ), patch(
+            "backend.app.api.routes_kb.submit_document_reindex", return_value=result
+        ) as submit:
             response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "v2"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(submit.call_count, 1)
-        self.assertEqual(submit.call_args.args[1], "v2")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["chunker"], "v2")
+        submit.assert_called_once_with("p1", "v2")
 
     def test_reindex_uses_stored_name_for_new_record(self):
-        paper = dict(self.paper, stored_name="2025-CCS-Paper.pdf")
-        (self.dir / "p1.pdf").unlink()
-        readable = self.dir / paper["stored_name"]
-        readable.write_bytes(b"%PDF-1.4 fake")
-        with patch("backend.app.api.routes_kb.get_paper", return_value=paper), patch(
-            "backend.app.api.routes_kb.KB_PAPERS_DIR", self.dir
-        ), patch("backend.app.api.routes_kb.submit_index_task", return_value=True) as submit, patch(
-            "backend.app.api.routes_kb.update_chunker_state"
+        result = {"task_id": "task-3", "document_id": "p1", "chunker": "v1", "submitted": {"v1": True}}
+        record = {"schema_version": "knowledge-document-v1", "document_id": "p1"}
+        with patch("backend.app.api.routes_kb.load_papers_strict", return_value=[record]), patch(
+            "backend.app.api.routes_kb._require_generation", return_value=None
+        ), patch(
+            "backend.app.api.routes_kb.submit_document_reindex", return_value=result
         ):
             response = self.client.post("/api/kb/papers/p1/reindex", json={"chunker": "v1"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(submit.call_args.args[0], "p1")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["task_id"], "task-3")
 
 
 class PaperListChunkerTests(unittest.TestCase):

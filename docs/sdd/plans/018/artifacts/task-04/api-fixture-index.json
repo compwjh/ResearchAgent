@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "api-fixture-index-v1",
+  "fixtures": [
+    {"fixture_id": "upload-markdown-canonical", "test": "test_upload_markdown_creates_canonical_immutable_record", "status": "passed"},
+    {"fixture_id": "upload-same-hash-dedupe", "test": "test_upload_same_hash_deduplicates_without_replacing_source", "status": "passed"},
+    {"fixture_id": "documents-etag-cursor", "test": "test_documents_list_has_cursor_and_etag", "status": "passed"},
+    {"fixture_id": "upload-unsupported-media", "test": "test_upload_route_returns_stable_unsupported_media_error", "status": "passed"},
+    {"fixture_id": "upload-mime-mismatch", "test": "test_upload_rejects_extension_and_mime_mismatch", "status": "passed"},
+    {"fixture_id": "source-range-head", "test": "test_source_route_forwards_range_and_head_headers", "status": "passed"},
+    {"fixture_id": "inspection-rebuild-gate", "test": "test_inspection_without_generation_is_explicit_rebuild_gate", "status": "passed"},
+    {"fixture_id": "inspection-unknown-404", "test": "test_inspection_unknown_document_precedes_generation_gate", "status": "passed"},
+    {"fixture_id": "inspection-building-202", "test": "test_inspection_building_has_stable_task_and_retry_contract", "status": "passed"},
+    {"fixture_id": "inspection-page-etag", "test": "test_inspection_ready_pages_all_arrays_and_supports_etag", "status": "passed"},
+    {"fixture_id": "reindex-invalid-body", "test": "test_reindex_invalid_body_is_unified_400", "status": "passed"},
+    {"fixture_id": "reindex-non-object-body", "test": "test_reindex_non_object_body_is_unified_400", "status": "passed"},
+    {"fixture_id": "reindex-source-hash-conflict", "test": "test_reindex_source_hash_conflict_is_stable_409", "status": "passed"},
+    {"fixture_id": "reindex-unknown-document-404", "test": "test_reindex_unknown_document_precedes_generation_gate", "status": "passed"},
+    {"fixture_id": "upload-missing-file", "test": "test_upload_missing_file_is_unified_400", "status": "passed"},
+    {"fixture_id": "delete-pending-headers", "test": "test_delete_pending_has_retry_location_and_details", "status": "passed"}
+  ],
+  "command": ".venv/bin/python -m pytest -q tests/test_kb_document_routes.py tests/test_kb_routes.py",
+  "exit_code": 0,
+  "real_data_or_qdrant": false,
+  "embedding_calls": 0,
+  "qdrant_write_calls": 0,
+  "notes": [
+    "Inspection and malformed-request fixtures use patched canonical metadata and manifest stores; no embedding/Qdrant calls are made.",
+    "Closure inventory remains baseline_frozen; these functional fixtures do not prove full startup/index/import/finalize closure.",
+    "Legacy route closure is implemented as a forwarding alias; full inventory verification remains Task04-D."
+  ]
+}

@@ -17,13 +17,24 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
+import os
 import re
 import threading
+import uuid
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable
 
+from backend.app.knowledge_base.infrastructure.document_read import (
+    DocumentReadError,
+    DocumentSourceReader,
+    SourceHead,
+    SourceRead,
+    validate_source_bytes,
+)
 from backend.app.knowledge_base.infrastructure.embed import embed_texts, encode_sparse
 from backend.app.knowledge_base.infrastructure.index import (
     DENSE_VECTOR,
@@ -38,9 +49,24 @@ from backend.app.knowledge_base.infrastructure.index import (
     index_paper_chunker,
     reset_client,
 )
+from backend.app.knowledge_base.infrastructure.inspection import (
+    ChunkSnapshot,
+    InspectionError,
+    InspectionManifest,
+    SourceAnchor,
+    SourceBlock,
+    build_inspection_manifest,
+)
+from backend.app.knowledge_base.infrastructure.manifest_store import (
+    FinalizeBundleStore,
+    InspectionManifestStore,
+    ManifestClaim,
+    ManifestStoreError,
+)
 from backend.app.knowledge_base.infrastructure.migration import (
     KnowledgeDocumentMigrationError,
     build_import_knowledge_document,
+    build_uploaded_knowledge_document,
     migrate_papers_json,
     patch_knowledge_document,
     write_import_knowledge_document,
@@ -103,6 +129,176 @@ from backend.app.platform.ports import (
 from backend.app.platform.ports import (
     PaperImportResult as PortImportResult,
 )
+
+_UPLOAD_LOCK = threading.RLock()
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_source_exclusive(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("xb") as stream:
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+    _fsync_directory(path.parent)
+
+
+def create_uploaded_document(
+    file_name: str,
+    media_type: str,
+    content: bytes,
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Create or deduplicate one immutable canonical document.
+
+    This is the sole HTTP upload application entry.  It writes only a
+    server-generated basename and a canonical metadata record; indexing is a
+    separate explicit operation and is never invoked from this function.
+    """
+    if not isinstance(content, bytes):
+        content = bytes(content)
+    validate_source_bytes(content, media_type)
+    if media_type == "text/markdown":
+        normalized = content[3:] if content.startswith(b"\xef\xbb\xbf") else content
+        if not normalized.decode("utf-8").strip():
+            raise DocumentReadError("MARKDOWN_PARSE_FAILED", status=400)
+    digest = hashlib.sha256(content).hexdigest()
+    meta = Path(meta_path or KB_META_PATH)
+    root = Path(papers_dir or KB_PAPERS_DIR)
+    with _UPLOAD_LOCK:
+        records = load_papers_strict(meta)
+        for item in records:
+            if item.get("schema_version") != "knowledge-document-v1":
+                continue
+            if item.get("source_sha256") != digest or item.get("media_type") != media_type:
+                continue
+            existing_path = resolve_paper_path(item, root)
+            if existing_path.is_file():
+                return {"document": dict(item), "deduplicated": True, "task_id": None}
+
+        document_id = uuid.uuid4().hex
+        suffix = ".md" if media_type == "text/markdown" else ".pdf"
+        stored_name = f"{document_id}{suffix}"
+        target = root / stored_name
+        try:
+            _write_source_exclusive(target, content)
+            document = build_uploaded_knowledge_document(
+                document_id=document_id,
+                file_name=file_name,
+                stored_name=stored_name,
+                media_type=media_type,
+                source_path=target,
+            )
+            write_import_knowledge_document(document, meta)
+        except Exception:
+            with suppress(OSError):
+                target.unlink(missing_ok=True)
+            raise
+        return {"document": document, "deduplicated": False, "task_id": None}
+
+
+def submit_document_reindex(
+    document_id: str,
+    chunker: str,
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+    client: Any = None,
+) -> dict[str, Any]:
+    """Queue reindexing for a canonical document without touching its source."""
+    if chunker not in CHUNKERS and chunker != "all":
+        raise KnowledgeDocumentMigrationError("CHUNKER_UNSUPPORTED")
+    meta = Path(meta_path or KB_META_PATH)
+    root = Path(papers_dir or KB_PAPERS_DIR)
+    document = next((item for item in load_papers_strict(meta) if record_id(item) == document_id), None)
+    if not isinstance(document, dict) or document.get("schema_version") != "knowledge-document-v1":
+        raise KnowledgeDocumentMigrationError("DOCUMENT_NOT_FOUND")
+    source = resolve_paper_path(document, root)
+    if not source.is_file():
+        raise KnowledgeDocumentMigrationError("SOURCE_NOT_FOUND")
+    digest = hashlib.sha256()
+    try:
+        with source.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+    except OSError as error:
+        raise KnowledgeDocumentMigrationError("SOURCE_NOT_FOUND") from error
+    expected_hash = document.get("source_sha256")
+    if not isinstance(expected_hash, str) or digest.hexdigest() != expected_hash:
+        raise KnowledgeDocumentMigrationError("SOURCE_HASH_MISMATCH")
+    targets = CHUNKERS if chunker == "all" else (chunker,)
+    task_id = uuid.uuid4().hex
+    submitted: dict[str, bool] = {}
+    for name in targets:
+        update_chunker_state(document_id, name, status=STATUS_INDEXING, progress=0, error=None, meta_path=meta)
+
+        def runner(progress, selected=name):
+            return index_paper_chunker(
+                document,
+                source,
+                selected,
+                progress=progress,
+                client=client,
+                meta_path=meta,
+            )
+
+        submitted[name] = submit_index_task(document_id, name, runner)
+    return {"task_id": task_id, "document_id": document_id, "chunker": chunker, "submitted": submitted}
+
+
+def delete_document(
+    document_id: str,
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+    manifest_root: Path | None = None,
+) -> dict[str, Any] | None:
+    """Delete one canonical document only after derived vector deletion succeeds."""
+    meta = Path(meta_path or KB_META_PATH)
+    root = Path(papers_dir or KB_PAPERS_DIR)
+    records = load_papers_strict(meta)
+    document = next((item for item in records if record_id(item) == document_id), None)
+    if not isinstance(document, dict):
+        return None
+    tombstoned = False
+    store_root = Path(manifest_root or root.parent)
+    try:
+        delete_paper(document_id)
+        manifest_store = InspectionManifestStore(store_root)
+        for name in CHUNKERS:
+            try:
+                manifest_store.tombstone(document_id, name, reason="document_deleted", owner="document-api")
+                tombstoned = True
+            except ManifestStoreError:
+                return {
+                    "document_id": document_id,
+                    "status": "DELETE_PENDING",
+                    "error_code": "DELETE_PENDING",
+                    "tombstoned": tombstoned,
+                }
+        if not remove_paper(document_id, meta, root):
+            raise KnowledgeDocumentMigrationError("DOCUMENT_NOT_FOUND")
+    except Exception as error:
+        return {
+            "document_id": document_id,
+            "status": "DELETE_PENDING",
+            "error_code": getattr(error, "code", "DELETE_PENDING"),
+            "tombstoned": tombstoned,
+        }
+    return {
+        "document_id": document_id,
+        "status": "completed",
+        "deleted": {"source": True, "metadata": True, "manifests": tombstoned, "vectors": True},
+    }
 
 
 def _snapshot_value(snapshot: Mapping[str, Any], name: str, default: Any = None) -> Any:
@@ -207,10 +403,8 @@ class KnowledgeBasePaperImportAdapter:
             for item in load_papers_strict(self.meta_path)
             if isinstance(item, dict) and item.get("stored_name")
         }
-        try:
+        with suppress(OSError):
             names.update(item.name for item in self.papers_dir.iterdir() if item.is_file())
-        except OSError:
-            pass
         return names
 
     def find_existing(self, candidate_snapshot: Mapping[str, Any]) -> PortImportResult | None:
@@ -232,15 +426,11 @@ class KnowledgeBasePaperImportAdapter:
 
     def _cleanup(self, paper_id: str | None, target: Path | None) -> None:
         if paper_id:
-            try:
+            with suppress(Exception):
                 remove_paper(paper_id, self.meta_path, self.papers_dir)
-            except Exception:
-                pass
         if target is not None:
-            try:
+            with suppress(OSError):
                 target.unlink(missing_ok=True)
-            except OSError:
-                pass
 
     def _default_indexer(self, record: PaperRecord, path: Path) -> Any:
         return run_index_task_sync(
@@ -341,14 +531,12 @@ class KnowledgeBasePaperImportAdapter:
                 stored_name=safe_name,
             )
         except Exception:
-            try:
+            with suppress(Exception):
                 _call_supported(
                     self.deleter or self._default_deleter,
                     (record.paper_id, CHUNKER_V1),
                     {"client": self.client},
                 )
-            except Exception:
-                pass
             self._cleanup(record.paper_id, target)
             return PortImportResult(
                 paper_id=None,
@@ -373,6 +561,37 @@ def create_paper_import_port(
         deleter=deleter,
         client=client,
     )
+
+
+def create_source_reader(*, meta_path: Path | None = None, papers_dir: Path | None = None) -> DocumentSourceReader:
+    """Create the read-only source boundary for document endpoints."""
+    return DocumentSourceReader(
+        meta_path=Path(meta_path or KB_META_PATH),
+        papers_dir=Path(papers_dir or KB_PAPERS_DIR),
+    )
+
+
+def read_document_source(
+    document_id: str,
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+    range_header: str | None = None,
+    if_none_match: str | None = None,
+    head_only: bool = False,
+) -> SourceRead:
+    """Read a source through the application-owned, immutable boundary."""
+    return create_source_reader(meta_path=meta_path, papers_dir=papers_dir).read(
+        document_id,
+        range_header=range_header,
+        if_none_match=if_none_match,
+        head_only=head_only,
+    )
+
+
+def create_manifest_store(*, live_root: Path, claim_root: Path | None = None) -> InspectionManifestStore:
+    """Create a manifest store with an explicit root (tempfile in tests)."""
+    return InspectionManifestStore(live_root, claim_root=claim_root)
 
 __all__ = [
     # 常量与类型
@@ -434,9 +653,30 @@ __all__ = [
     "submit_index_task",
     "KnowledgeBasePaperImportAdapter",
     "create_paper_import_port",
+    "create_uploaded_document",
+    "submit_document_reindex",
+    "delete_document",
+    "create_source_reader",
+    "read_document_source",
+    "build_inspection_manifest",
+    "create_manifest_store",
+    "DocumentReadError",
+    "SourceHead",
+    "SourceRead",
+    "validate_source_bytes",
+    "InspectionError",
+    "InspectionManifest",
+    "SourceBlock",
+    "ChunkSnapshot",
+    "SourceAnchor",
+    "FinalizeBundleStore",
+    "InspectionManifestStore",
+    "ManifestClaim",
+    "ManifestStoreError",
     "KnowledgeDocumentMigrationError",
     "build_import_knowledge_document",
     "migrate_papers_json",
     "patch_knowledge_document",
     "write_import_knowledge_document",
+    "build_uploaded_knowledge_document",
 ]

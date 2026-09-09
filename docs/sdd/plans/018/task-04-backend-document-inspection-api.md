@@ -1,7 +1,7 @@
 # Task 04：实现后端文档 Manifest 与检查接口
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task03；被依赖：Task05、06；当前状态：`实施中`
+> 依赖：Task03；被依赖：Task05、06；当前状态：`已完成（功能门 GO；生产切换债务留至 Task06）`
 
 ## 一句话目标
 
@@ -106,10 +106,15 @@
 
 ## 执行结果
 
-待执行后填写。
+- 04-A～04-C 已实现通用 PDF/Markdown 文档读取、不可变原件、manifest claim/store、检查分页、ETag/Range/HEAD、重建与删除错误契约。
+- 功能门最终验证：定向测试 `47 passed`，加 foundation 后 `54 passed`；相关 KB/paper 回归 `394 passed, 29 subtests`；Ruff、py_compile、JSON Schema、matrix hash 与 `git diff --check` 均 exit 0。
+- backend-reviewer 对 Task05 功能门签字 `GO`，backend-tester 签字 `PASS`。
+- `upload-closure-matrix.json` 保持真实状态 `baseline_frozen`：17/17 entry 仍 open、12/13 test 仍 pending。legacy 单文档 reindex、论文导入第二路径、startup recovery、CandidateIndexPort 收口与生产 cutover 继续阻塞 Task06，但不阻塞 Task05。
+- 本 Task 未读写真实 `data/kb`，未访问真实 Qdrant，未执行任何 Collection/alias 变更。
 
 ## 变更日志
 
 - 2026-09-08：创建 Task，并冻结 API/容量/PDF/Markdown 安全契约。
 - 2026-09-09：移除首次打开 legacy upgrade、snapshot restore 和仅手动重试协议；改为全库 rebuild/finalize 门禁与不可变原件。
 - 2026-09-09：根据独立技术复审 P1 增加逐路由/逐 symbol 的 `upload-closure-matrix.json`，作为 Task04/06 放行硬门。
+- 2026-09-09：两轮独立测试/评审打回后，修复 inspection durable claim、分页/ETag/202、reindex source hash/404/400/409、DELETE_PENDING、Markdown MIME 与统一错误体；功能门最终通过，生产闭环债务显式移交 Task06。

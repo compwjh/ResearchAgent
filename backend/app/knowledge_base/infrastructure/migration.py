@@ -291,6 +291,68 @@ def build_import_knowledge_document(record: Any, source_path: Path) -> dict[str,
     return document
 
 
+def build_uploaded_knowledge_document(
+    *,
+    document_id: str,
+    file_name: str,
+    stored_name: str,
+    media_type: str,
+    source_path: Path,
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    """Build the canonical, not-yet-indexed record for an HTTP upload.
+
+    Uploads are deliberately separate from legacy ``PaperRecord`` creation:
+    the source is already server-owned and immutable when this function is
+    called, while all derived index state starts as ``pending``.  ``legacy_unknown``
+    is the frozen metadata enum for a source that has not been indexed yet;
+    no historical indexed hash is invented here.
+    """
+    document_id = _safe_id(document_id)
+    if (
+        not isinstance(file_name, str)
+        or not file_name.strip()
+        or "/" in file_name
+        or "\\" in file_name
+        or len(file_name.encode("utf-8")) > 255
+    ):
+        raise KnowledgeDocumentMigrationError(MIGRATION_INPUT_INVALID)
+    if not _is_safe_basename(stored_name):
+        raise KnowledgeDocumentMigrationError(MIGRATION_INPUT_INVALID)
+    if media_type not in {"application/pdf", "text/markdown"}:
+        raise KnowledgeDocumentMigrationError(MIGRATION_INPUT_INVALID)
+    source = Path(source_path)
+    if not source.is_file():
+        raise KnowledgeDocumentMigrationError(MIGRATION_INPUT_INVALID)
+    normalized_created_at = _normalize_timestamp(created_at or datetime.now(timezone.utc).isoformat())
+    if normalized_created_at is None:
+        raise KnowledgeDocumentMigrationError(MIGRATION_INPUT_INVALID)
+    source_hash = _sha256(source)
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "migration_version": MIGRATION_VERSION,
+        "document_id": document_id,
+        "file_name": file_name,
+        "media_type": media_type,
+        "source_sha256": source_hash,
+        "indexed_source_sha256": None,
+        "source_hash_state": "legacy_unknown",
+        "stored_name": stored_name,
+        "source_immutable": True,
+        "status": STATUS_PENDING,
+        "created_at": normalized_created_at,
+        "page_count": None if media_type == "text/markdown" else 0,
+        "chunk_count": 0,
+        "chunkers": {
+            CHUNKERS[0]: default_chunker_state(STATUS_PENDING),
+            CHUNKERS[1]: default_chunker_state(STATUS_PENDING),
+        },
+        "error": None,
+    }
+    _validate([document], _schema_path())
+    return document
+
+
 def write_import_knowledge_document(document: Mapping[str, Any], meta_path: Path) -> dict[str, Any]:
     """Append one canonical document, refusing corrupt/legacy metadata."""
     meta = Path(meta_path)
@@ -479,6 +541,7 @@ __all__ = [
     "SOURCE_MISSING",
     "migrate_papers_json",
     "build_import_knowledge_document",
+    "build_uploaded_knowledge_document",
     "write_import_knowledge_document",
     "patch_knowledge_document",
 ]
