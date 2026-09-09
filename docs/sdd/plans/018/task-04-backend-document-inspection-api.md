@@ -1,96 +1,108 @@
-# Task 04：实现后端文档检查清单与接口
+# Task 04：实现后端文档 Manifest 与检查接口
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task 03；被依赖：Task 05、06；当前状态：`待执行`
+> 依赖：Task03；被依赖：Task05、06；当前状态：`待执行`
 
 ## 一句话目标
 
-在现有知识库流程上增加 PDF/Markdown 通用导入、原件安全读取、真实切片快照和可重建来源锚点接口。
+实现通用 PDF/Markdown 文档、原件安全读取、manifest 持久化和真实切片检查 API，并在全库重建完成前明确返回维护状态。
 
 ## 当前证据
 
-- 现有上传只认 PDF 魔数，索引流水线只接收按页文本。
-- Qdrant payload 已含 v1/v2、chunk_index、text、page range、section。
-- 现有异步索引队列和状态更新可复用。
+- Task02A 已提供 PDF/Markdown provenance 与 `SourceProvenanceBundle`。
+- Qdrant payload 可提供 v1/v2、chunk_index、text、page range、section 与向量结果。
+- 旧索引不再自动升级；首次全库重建由 Task06 显式执行。
 
 ## 前置门禁
 
-- Task 03 协议、迁移与 backend-reviewer 结论通过。
-- API schema 与状态码先写测试，再实现。
+- Task03 schema、元数据迁移、CONTEXT/ADR 和 backend-reviewer 结论通过。
+- API schema 与错误码先冻结再实现。
 
-## 执行阶段
+## 思维链（可审计执行设计）
 
-1. 接入 Task02A 已冻结的 PDF/Markdown provenance 与 v1/v2，不重复实现 parser/chunker。
-2. 增加按文档、chunker scroll Qdrant 实际 payload 的 application 方法。
-3. 生成 PDF bbox / Markdown lines 原文块并建立多对多锚点。
-4. 实现清单原子保存、指纹失效，并把旧索引请求路由到 Task02A 唯一 upgrade/recovery 状态机。
-5. 实现 documents、source、inspection、reindex、delete API。
-6. 迁移现有调用方，不复制旧 papers 路由逻辑。
+1. 复用 Task02A provenance 和现有 index/application，不重写 parser、chunker 或 embedding。
+2. manifest 只读取当前稳定 alias 中已经写入的真实 chunks；检查路径不 embedding。
+3. 在首次全库 finalize 完成前，inspection 返回 `INDEX_REBUILD_REQUIRED`；若 `finalize_pending`，服务健康状态为 `INDEX_FINALIZE_REQUIRED`。
+4. 原件只读且不可覆盖；删除通过 tombstone 清理全部派生物与元数据。
 
-## 子 Agent 分派
+## 子任务拆分与子 Agent 分派
 
-- 实现：backend-dev；评审：backend-reviewer；回归：backend-tester。
-- 允许修改：`backend/**` 与后端测试；禁止修改 frontend、用户 data 和 Qdrant 实例。
-
-## 可交接子任务与固定产物（P0-5/P0-7）
-
-Task 04 必须先冻结 API schema，再按 application、manifest、routes、tests 顺序交接。每个本地 `qwen3.8:27b-mlx` 子任务最多修改 2 个已点名代码文件、目标约 150 行；不能把 Markdown parser、Qdrant scroll、manifest store 和 routes 合并成一个任务。各子任务串行执行，前一步报告未落盘不得开始后一步。
-
-| 子任务 | 执行者/上下文 | 允许范围 | 固定输出/验收 |
+| 子任务 | 角色 | 内容 | 固定产物 |
 |---|---|---|---|
-| 04-A source/chunk DTO + application | `backend-dev` / 27B / 32k | 最多 2 个 backend 文件 + 对应测试；只接入真实 payload、page-null 和 block locator | `docs/sdd/plans/018/artifacts/task-04/api-schema.json` 中 DTO/成功响应片段；`source-chunk-report.md` |
-| 04-B manifest store/concurrency | `backend-dev` / 27B / 32k | 最多 2 个 backend 文件 + 对应测试；claim、临时文件、fsync/replace、hash/fingerprint 双检、recovery/tombstone | `manifest-store-report.md`；报告必须含并发/重启/损坏/删除 fixture 结果 |
-| 04-C routes/error schema | `backend-dev` / 27B / 32k | 最多 2 个 route/schema 文件 + 对应测试；documents/upload/source/HEAD/inspection/reindex/delete | 更新 `api-schema.json` 的所有成功/错误体、202/409/404/416/413/415/503、Location/Retry-After/ETag/分页/容量/超时 |
-| 04-D backend regression/review | `backend-tester` / `qwen3.5:9b` / 32k；`backend-reviewer` / 27B / 32k | 只跑测试/评审，不补业务实现 | `docs/sdd/plans/018/artifacts/task-04/backend-contract-report.md`、`api-fixture-index.json`；报告列命令、退出码、观测值和 blocking issue |
+| 04-A | backend-dev | source/chunk DTO 与 application 读取边界 | `source-chunk-report.md` |
+| 04-B | backend-dev | manifest store、claim、FinalizeBundle staging/commit marker、原子写入、恢复与 tombstone | `manifest-store-report.md` |
+| 04-C | backend-dev | documents/upload/source/inspection/reindex/delete、旧上传入口关闭、健康门禁与 API schema | `api-schema.json`、`upload-closure-matrix.json` |
+| 04-D | backend-tester + backend-reviewer | 后端回归、逐 entry 关闭审计与交接 | `api-fixture-index.json`、`backend-contract-report.md` |
 
-固定 fixture 位于 `docs/sdd/fixtures/spec-018/api/`，至少覆盖空库、非法媒体/编码/Range、容量/超时、202 manifest、202 legacy upgrade、409 hash 冲突/仅手动重试、404、503 restore/tombstone，以及 ETag/HEAD/cursor。新索引 inspection 的 embedding/切分/upsert/delete 必须为 0；旧索引只能观察到一次唯一 upgrade 任务，不能由 route 直接调用第二套索引逻辑。
+仅使用本地 Ollama 时，每个开发子任务最多修改 2 个已点名代码文件、目标约 150 行；线上 Agent 取消资源上限，但仍须遵守白名单和单一职责。
 
-### 修订 C：API schema v1 精确冻结（P0-5）
+## API 固定契约
 
-`api-schema.json` 不得只写示例，必须把下列内容作为机器可校验字段落盘：
+- `GET /api/kb/documents`：200 `{documents,next_cursor,total}`，支持 ETag、limit≤100、opaque cursor。
+- `POST /api/kb/documents/upload`：201；只接受 PDF 与 UTF-8 Markdown；原件不可变，不提供 PUT/PATCH/同 ID 覆盖。
+- `GET/HEAD /api/kb/documents/{id}/source`：完整读取 200、合法单 Range 206、匹配 ETag 304；HEAD 无 body。
+- `GET /api/kb/documents/{id}/inspection`：ready/partial 返回真实 manifest；全库未重建为 409 `INDEX_REBUILD_REQUIRED`；正常新索引缺失/失效 manifest 才返回 202 `INSPECTION_BUILDING`。
+- `POST /api/kb/documents/{id}/reindex`：只在首次全库 finalize 完成后接受 v1/v2/all 的显式单文档重建。
+- `DELETE /api/kb/documents/{id}`：只有原件、元数据、manifest、当前 Collection vectors 均清理成功才返回 200；部分失败为 503 `DELETE_PENDING`。
+- 服务发现 `finalize_pending` 时健康状态为 `INDEX_FINALIZE_REQUIRED`，不得进入正常请求服务。
 
-- `GET /api/kb/documents`：200 `{documents,next_cursor,total}`；summary 必填 `document_id/file_name/media_type/source_sha256/status/page_count/chunkers`，`limit=50`、最大 100、cursor≤512 bytes；`INVALID_LIMIT/INVALID_CURSOR`→400，响应带基于规范化 summary+cursor 的 ETag。
-- `POST /api/kb/documents/upload`：201 `{document_id,media_type,file_name,source_sha256,status,chunkers,task_id}`；50 MiB 原件、64 KiB JSON 控制体和 60 秒累计超时；扩展名/MIME 失败→415 `UNSUPPORTED_MEDIA_TYPE`，编码/PDF 失败→400 `INVALID_ENCODING/INVALID_PDF`，大小或对象数量失败→413 `PAYLOAD_TOO_LARGE`，均不得写入半截原件、metadata 或 task。
-- `GET/HEAD /api/kb/documents/{id}/source`：无 Range 200，合法单 Range 206；GET/HEAD 状态及 `ETag,Content-Type,Content-Length,Accept-Ranges` 一致，206 另带 `Content-Range`，HEAD 无 body；`If-None-Match` 命中→304；未知文档/原件→404 `DOCUMENT_NOT_FOUND/SOURCE_NOT_FOUND`；非法、越界、多 Range→416 `INVALID_RANGE` 且带 `Content-Range: bytes */total`；source 读取超时→503 `SOURCE_TIMEOUT`。
-- `GET /api/kb/documents/{id}/inspection`：ready/partial 200 `{manifest,blocks,chunks,anchors,next_cursor,total}`。新索引缺失/失效清单→202 `INSPECTION_BUILDING`；旧索引缺 provenance 的首次打开→202 `LEGACY_UPGRADE_RUNNING`，额外必填 `interaction_mode:"read_only_no_link"`、`auto_attempted:true`、`old_snapshot_available:true`。自动升级失败后的 GET→409 `UPGRADE_RETRY_REQUIRED`，不得再次自动提交。
-- `POST /api/kb/documents/{id}/reindex`：202 `{task_id,document_id,chunker,status,progress,reason}`；`reason="inspection_upgrade_retry"` 是失败后的手动重试。重复执行→409 `INDEX_ALREADY_RUNNING`；hash 冲突→409 `SOURCE_HASH_MISMATCH`；恢复失败→503 `UPGRADE_RESTORE_FAILED`；原件缺失→404 `SOURCE_NOT_FOUND`。
-- `DELETE /api/kb/documents/{id}`：全目标完成才 200 `{document_id,status:"completed",deleted:{source,metadata,manifests,vectors}}`；部分失败只返回 503 `DELETE_PENDING`，带 tombstone 状态、同文档重试 `Location` 和 `Retry-After:10`，不得以 `vectors:false` 返回 200。
+统一错误体为 `{error_code,message,retryable,request_id,document_id?,chunker?,task_id?,details?}`。稳定错误码至少覆盖 `INDEX_REBUILD_REQUIRED`、`INDEX_FINALIZE_REQUIRED`、`SOURCE_HASH_MISMATCH`、`INDEX_NOT_READY`、`INDEX_FAILED`、`INDEX_ALREADY_RUNNING`、`INSPECTION_BUILDING`、`MANIFEST_FAILED`、`QDRANT_UNAVAILABLE`、`SOURCE_TIMEOUT` 和 `DELETE_PENDING`；禁止旧 `LEGACY_UPGRADE_*`、`SNAPSHOT_*` 升级错误。
 
-统一错误体固定为 `{error_code,message,retryable,request_id,document_id?,chunker?,task_id?,details?}`；稳定 code、状态映射和优先级必须与 Spec 修订 C 一致。`details` 只允许非敏感的 `limit_name/limit_value/observed_value/current_status/retry_after_seconds/allowed_range/current_etag`。所有 400/404/409/413/415/416/503 fixture 都必须比对 body 字段和 headers，不能只断言 status code。
-
-### 修订 C：容量、超时和分项上限验收
-
-fixture index 必须分别记录 document≤50 MiB、block≤200,000 且 text≤1 MiB/DTO≤2 MiB、chunk≤100,000 且 text≤256 KiB/DTO≤512 KiB、anchor≤400,000 且 DTO≤4 KiB、manifest≤256 MiB；还要记录 upload 60 秒、source/Qdrant page 30 秒、inspection 300 秒、manifest fsync 30 秒，以及 documents limit 100、inspection page_size 500、cursor 512 bytes。超过字节/数量返回 413 `PAYLOAD_TOO_LARGE`，超时返回对应 503；任何 partial 临时结果不得标记 ready。
-
-### Task 04 放行门
-
-仅当 `api-schema.json`、`api-fixture-index.json`、四份子任务报告和 reviewer 结论均落盘且通过，Task 05 才能读取 API。发现 schema 变化、状态码歧义、Range/缓存 header 缺失或检查路径写调用非 0，必须暂停并更新 Spec/本 Task 产物，不得把问题下放给前端。
-
-### 固定 Prompt
+## 固定 Prompt
 
 ```text
-你是 Spec018 的 backend-dev。只读取 Spec018、Task02A/02B、Task03/04 结果和 knowledge_base/paper_discovery 的受控 application 入口。实现通用 PDF/Markdown 导入、原件安全读取、按真实 Qdrant payload 生成切片快照、来源锚点和可重建清单。必须复用 Task02A 的 parser、provenance、旧索引升级/恢复及现有切分、embedding、Qdrant、异步任务、下载安全和论文导入能力；不得新建第二套索引。新索引 inspection 不得 embedding；旧索引缺 provenance 只能幂等提交唯一 legacy upgrade。仅修改 backend 与对应测试。验证路径穿越、Range、Markdown 编码/XSS 输入、并发构建、重启、partial 映射、hash 失效、旧 PDF、失败恢复和仅手动重试。
+你是 Spec018 Task04 的 backend-dev。只读取 Spec018、Task02A/02B、Task03/04 固定交接物和 knowledge_base/paper_discovery 的受控 application 入口。允许修改分派清单点名的 backend 文件、对应后端测试和本 Task artifacts；禁止修改 frontend、用户 data/kb、真实 Qdrant、Git 历史。
+
+实现通用 PDF/Markdown 导入、不可变原件安全读取、按当前 papers alias 中真实 payload 构造 ChunkSnapshot/anchors/manifest、FinalizeBundle staging/幂等提交、index-generation commit marker、documents/source/inspection/reindex/delete API 和全库 rebuild/finalize 健康门禁。必须复用 Task02A parser/provenance 与现有切分、embedding、Qdrant、异步任务、下载安全和论文导入能力。inspection/manifest 重建不得调用 embedding 或写 Qdrant；旧索引缺 provenance 只返回 INDEX_REBUILD_REQUIRED，不得自动升级或建立第二条索引链路。
+
+必须迁移或关闭旧 upload 入口，证明任何路由都不能按调用方传入的已有 document_id 直接覆盖原件。固定测试覆盖同 ID、同 hash、同文件名和并发上传：同 ID 覆盖拒绝；重复 hash 沿用既有去重结果；同名不同内容创建安全的新 stored_name/document_id；成功后原件字节 SHA-256、metadata `source_sha256` 与 source ETag 三者一致。重建 Port 不得调用 upload/save_upload 或更新原件。
+
+必须消费并更新固定基线 `upload-closure-matrix.json`，不得重新凭聊天记录发明入口清单。基线已绑定真实 inventory revision、八个文件（含 `main.py`）hash/digest，并枚举 `/api/kb/upload`、旧 reindex/delete、`/api/papers/imports`、`/api/papers/import-batches`、两条 retry 别名、cancel、login、resume、route helpers、store 的 source/metadata/task 直接写函数、index/task/application symbols、lifespan 旧索引回填与 rebuild CLI；单数 `/api/papers/import` 是已纠正的文档笔误。实现改变 inventory 后重新生成 hash/digest；每项写清 current/target behavior、allowed callers、forbidden calls、required test IDs 和关闭状态。04-D 放行要求所有 entry=`closed`、required test=`passed`、exit_code=0、证据路径非空且 review_status=`verified`；任一 entry 仍能覆盖已有 source、绕过 CandidateIndexPort 或未被 inventory 测试发现时必须打回。
+
+验证路径穿越、Range/HEAD/ETag、Markdown 编码和 XSS 输入、并发 manifest、重启、partial、hash 失效、immutable source、删除 tombstone、分页、容量和稳定错误体。返回固定结果字段、测试退出码、产物、风险和主 Agent 后续动作。
 ```
+
+## 子 Agent 必须返回
+
+- 结果状态、摘要、改动文件和职责。
+- API/schema/fixture/report 路径。
+- `upload-closure-matrix.json` 的逐 entry 关闭状态与测试映射。
+- 测试命令、退出码、数量与耗时。
+- inspection 的 embedding、切分、Qdrant write 计数。
+- 并发、损坏、重启、删除和健康门禁观测。
+- 风险阻塞与主 Agent 后续动作。
 
 ## 主 Agent 校验
 
-- API 只能以 document_id 解析服务器路径，客户端不能传路径。
-- 新文档/已有 provenance 构建清单时 embedding mock 断言为 0 次；旧索引只允许进入 Task02A 唯一 upgrade 状态机。
-- Qdrant 查询带 document_id + chunker 过滤。
-- 清单写入使用临时文件 + 原子替换，不留下半截 JSON。
+- API 只以受校验 `document_id` 解析服务器路径。
+- inspection 的 embedding、切分、upsert/delete 均为 0。
+- 旧索引只得到 `INDEX_REBUILD_REQUIRED`，不存在自动升级入口。
+- 不存在同 ID 覆盖原件的接口。
+- 旧 upload route 已迁移到同一不可变 application 入口或明确移除；并发/重复 hash/同名 fixture 有证据。
+- 矩阵覆盖全部路由、store/index symbols、论文导入、CLI 与后台入口，且没有 `open/unknown` entry。
+- 矩阵 inventory revision、逐文件 SHA-256 与 digest 已按实现后的代码重新计算；静态 inventory 测试能因新增未登记 route/helper/task symbol 而失败。
+- manifest 使用临时文件、fsync 和原子替换，不留下半截 JSON。
+- commit marker 之前 API/health 均拒绝正常读取；resume-finalize 可从每个文件/marker 故障点幂等完成。
 
-## 测试与验收
+## 实时监控
 
-- 后端定向测试覆盖全部端点、状态码、媒体类型和边界。
-- 旧 KB、论文导入、问答、重建和删除回归通过。
+在线 Agent 正常运行时等待主动返回；仅在明确超时、错误、长期无返回或用户要求时读取日志。
 
-## 风险、停止与回滚
+## 测试与验收标准
 
-- 发现需要改变既有切片文本、point ID 或安全下载语义时停止并更新 Spec。
+- 固定 fixture 覆盖空库、未重建、finalize pending、非法媒体/编码/Range、容量/超时、202 manifest、409 状态、404、503、ETag/HEAD/cursor。
+- finalize fixture 覆盖 metadata/每份 manifest/旧 manifest 清理/commit marker 前后故障；marker 缺失或 hash 不符不得返回 completed。
+- block≤200,000、chunk≤100,000、anchor≤400,000、manifest≤256 MiB；上传≤50 MiB；inspection page_size≤500。
+- 旧 KB、论文导入、问答、单文档重建和删除回归通过。
+
+## 风险、停止条件与回滚
+
+- 发现需要改变安全下载语义或引入第二套 embedding/Qdrant 流程时停止并更新 Spec。
+- 测试不得修改用户 data 或真实 Qdrant。
 
 ## 产出物
 
-- 后端实现、schema、迁移和测试；评审与测试报告。
+- 后端实现、API schema、upload closure matrix、fixture、测试和评审报告。
 
 ## 执行结果
 
@@ -98,9 +110,6 @@ fixture index 必须分别记录 document≤50 MiB、block≤200,000 且 text≤
 
 ## 变更日志
 
-- 2026-09-08：架构师创建 Task。
-- 2026-09-08：根据 P0-5/P0-7 拆为 04-A DTO/application、04-B manifest store、04-C routes/schema、04-D 回归/评审；冻结 API schema、fixture-index、报告路径及每个本地 27B ≤2 文件/约 150 行约束。
-- 2026-09-08：修订 C 补齐 API v1 每个端点的成功/错误体、稳定 code、状态码优先级、headers、容量/超时/分页和 fixture 逐字段断言；仅更新计划文档，未修改业务代码。
-- 2026-09-08：P0-5 复核补丁明确 `limit` 的 `INVALID_LIMIT` 与 `cursor` 的 `INVALID_CURSOR` 分离；Task 04 只能以 `api-schema.json`/`api-fixture-index.json` 作为下游机器可校验契约，缺字段、header、优先级或退出码时保持阻塞，未修改业务代码。
-- 2026-09-08：P0-7 最终小修订确认 04-A～04-D 串行交接，固定 API schema/fixture/单端报告路径；每个本地 27B 子任务最多 2 个代码文件、约 150 行，缺少 backend-tester/reviewer 结论不得放行 Task 05。
-- 2026-09-08：自动重建修订要求 Task04 复用 Task02A provenance/upgrade/recovery，不重复 parser；API 新增 legacy upgrade、hash 冲突、仅手动重试和恢复失败状态。本轮仅更新文档。
+- 2026-09-08：创建 Task，并冻结 API/容量/PDF/Markdown 安全契约。
+- 2026-09-09：移除首次打开 legacy upgrade、snapshot restore 和仅手动重试协议；改为全库 rebuild/finalize 门禁与不可变原件。
+- 2026-09-09：根据独立技术复审 P1 增加逐路由/逐 symbol 的 `upload-closure-matrix.json`，作为 Task04/06 放行硬门。

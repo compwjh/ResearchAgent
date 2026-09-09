@@ -158,3 +158,42 @@ Markdown 需要明确解析版本与块切分规则（尤其列表、表格、�
 本轮自动重建修订已把 Grill 决策完整转化为可操作的用户旅程、状态/进度/交互模式、失败恢复和手动重试入口，并为 `partial`、原件 hash 冲突、升级中只读和 no-embedding/no-reslice 提供了固定验收断言。首轮 `NO-GO` 作为不可改写历史证据保留，Task02A/02B 的实现与重新验证门禁也已明确，未发现新的需求层阻塞项。
 
 本结论不改变 Spec 的 `待确认` 状态，也不授权修改业务代码。进入 Task02A 前仍必须满足：技术评审通过、用户明确确认 Spec；Task02A 完成后必须由 Task02B 以严格 `GO|NO-GO` 重新裁决，任何 `NO-GO` 都停止 Task03–07。实现阶段应把“重建索引”按钮在自动升级失败时绑定到 `reason="inspection_upgrade_retry"`，但该绑定已由接口契约冻结，不构成需求阻塞。
+
+## 全库索引替换修订待重新需求评审（2026-09-09）
+
+用户已撤销“旧 PDF 首次打开自动升级、逐 point/vector 快照恢复、失败后手动 retry”的未完成产品语义，并通过 Grill with Docs 确认：旧 vectors/manifest 可丢弃；原件、元数据与身份必须保留；重建由管理员在停服维护窗口显式执行；页面未迁移时只显示 `INDEX_REBUILD_REQUIRED`；原件不可原位修改，只能删除后重新提交并生成新 ID。
+
+因此以上历史“通过”仅保留审计价值，不覆盖当前修订。当前修订状态为：**待独立需求评审（未执行）**。复审至少核对全库失败语义、维护状态、用户可见提示、不可变原件、删除再提交、PDF/Markdown 双栏旅程和 Task06 真实切换验收；通过前不得继续业务代码。
+
+## 全库索引替换修订独立需求复审（2026-09-09）
+
+> 评审者：开发主管（独立需求评审） ｜ 模型：gpt-5.6-luna xhigh（仅本轮） ｜ 评审范围：Spec018、Plan README、Task02A/02B/03/04/05/06/07，以及本文件历史与最新待评审段。
+>
+> 本轮只读核对需求与验收契约；未修改 Spec、Plan、业务代码或任何历史评审段。仅在本文件末尾追加本次结论。
+
+### 逐项核对
+
+| 核对项 | 结论 | 证据与可测行为 |
+|---|---|---|
+| 用户旅程与维护提示 | 通过 | Spec 已给出桌面/窄屏 11 步旅程：文档与版本选择、空库/原件丢失、ready/partial/failed、双向联动、键盘、删除确认和新 ID 提交（Spec:351-363）。全库未完成只显示 `INDEX_REBUILD_REQUIRED`，`finalize_pending` 保持维护状态；页面、GET、启动和普通问答均不得隐式重建（Spec:171、264、362；Task05:20-29、66）。 |
+| 失败提示与恢复动作 | 通过 | 统一错误体、稳定 error code、HTTP 映射、`Location`、`Retry-After`、任务状态和建议动作已冻结（Spec:204-225）。Task04 明确 `INDEX_REBUILD_REQUIRED`、`INDEX_FINALIZE_REQUIRED`、`INSPECTION_BUILDING`、`DELETE_PENDING`；Task06 明确 build 失败清理、alias switch 失败的 `resume-switch`、finalize 失败的 `resume-finalize` 和拓扑歧义 fail-closed（Task04:42-49；Task06:50-53、95-98）。 |
+| 不可变原件与删除再提交 | 通过 | `document_id` 保留历史身份；原件提交后禁止 PUT/PATCH/同 ID 覆盖，删除成功后重新提交产生新 `document_id`，不建立版本链（Spec:162-167、217、322、362；Task03:31-44）。删除先写 tombstone，按 Qdrant→manifest→原件→metadata 顺序处理；部分失败只能返回 `DELETE_PENDING`，不得用不完整 200 掩盖（Spec:200、221）。 |
+| 全库失败语义与切换边界 | 通过 | 正式元数据是唯一权威集合，缺原件/损坏/配置不可用在 preflight 失败，孤立文件只报告；空库返回 `NO_DOCUMENTS_TO_REBUILD`；每篇文档必须同时成功生成 v1/v2、dense/sparse，任一失败删除未验证候选、保持当前入口不变并从头重建（Spec:172-179；README:28-37）。首次 alias 切换失败停服保留候选，finalize 失败禁止正常启动，未知拓扑不得猜测或删除；Task06 覆盖同一故障矩阵（Task06:60-62、95-98）。 |
+| PDF/Markdown 双栏与双向验收 | 通过 | 固定 PDF（普通、双栏重叠、跨页、无文本层、hostile）和 Markdown（结构块、hostile）样本、expected manifest/anchor、PDF bbox ±0.005、Markdown 行号 100%、双栏页面/列顺序/bbox、v1 重叠和 v2 跨页均有断言（Spec:327-342）。桌面 `>=761px` 双栏、窄屏 `<=760px` 切换器，要求保存两侧 `scrollTop`、焦点/目标、键盘等价且无横向溢出；Task05 将 vendored PDF.js、DOMPurify、图片零请求和真实浏览器网络记录列为交接硬门（Spec:344-348；Task05:39-59）。 |
+
+### 复审结论
+
+**通过（需求评审）。**
+
+本次全库索引替换修订已把产品旅程、维护窗口、失败/恢复提示、不可变原件、删除再提交新 ID、全库候选失败语义和 PDF/Markdown 桌面/窄屏双栏验收转化为稳定状态、动作、fixture、阈值和浏览器观测，需求层面没有新的阻断项。
+
+本结论不改变 Spec 的 `待确认` 状态，也不授权继续业务代码。后续必须先完成技术评审并取得用户对当前修订的明确确认；确认后按 Task02A-D/E → Task02B 严格 `GO|NO-GO` 门禁推进，真实用户索引只能在 Task06 停服维护窗口执行。实现时应保持“全库未迁移只显示 `INDEX_REBUILD_REQUIRED`、`finalize_pending` 不启动正常服务、删除部分失败只允许 tombstone 重试”的契约，但这些已由需求和 Task 文档冻结，不构成当前需求阻塞。
+
+### 检查记录
+
+- 读取命令：`wc -l`、`rg`、`sed`、`nl -ba`；退出码均为 `0`。
+- 检查范围：Spec018、Plan README、Task02A/02B/03/04/05/06/07 和本评审文档；未读取聊天或运行中 Agent 日志。
+- 本轮未运行会改变项目状态的命令，未修改业务代码、Spec、Plan 或历史评审内容；仅追加本节。
+- 风险：本结论只覆盖需求完整性，Task02A-D/E、Task02B、Task03–07 的实现、测试、评审和真实运行时证据仍未完成。
+- 主 Agent 后续动作：等待技术评审与用户确认；在此之前保持 Spec `待确认`、暂停 Task02A-D/E 及后续业务实现。
+- 复审耗时：约 10 分钟。

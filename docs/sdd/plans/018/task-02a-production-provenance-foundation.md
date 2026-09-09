@@ -1,113 +1,107 @@
-# Task 02A：生产级来源定位与旧索引安全升级基础
+# Task 02A：生产级来源定位与全库候选重建基础
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：首轮 Task02 `NO-GO` 证据、修订版 Spec 重新通过需求/技术评审并由用户确认；被依赖：Task02B；当前状态：`实施中`
+> 依赖：首轮 Task02 `NO-GO` 证据、全库替换修订重新通过评审并获用户确认；被依赖：Task02B；当前状态：`实施中（A–C 已完成；D 执行中；E 待 D）`
 
 ## 一句话目标
 
-把首轮审计缺失的 PDF block provenance、Markdown 行块、可追踪 v1/v2 和旧索引可恢复升级实现为正式基础能力，不做测试目录中的一次性原型。
+复用已完成的 PDF/Markdown provenance 与 `SourceProvenanceBundle`，补齐可验证但尚不操作真实用户索引的全库候选 Collection 重建基础。
 
 ## 当前证据
 
-- 首轮报告：`artifacts/task-02/source-anchor-feasibility-report.md`，结论为 `NO-GO`。
-- 现有 `extract_pages_normalized` 只返回 `(page, text)`；现有 `Chunk` 没有来源块关系。
-- 业务代码没有 Markdown parser/chunker。
-- Qdrant 旧 point 可按文档和 chunker 读取，但原地索引会先删后写，失败时存在数据缺口。
+- 02A-A PDF provenance 已完成并提交，定向测试通过。
+- 02A-B Markdown provenance 已完成并提交，定向测试通过。
+- 02A-C `SourceProvenanceBundle`、v1/v2 anchors 与 page-null 消费已完成并提交，定向测试通过。
+- 未提交的 `reindex-snapshot-v1` 代码、测试与报告已因需求改变废弃，不属于交付物。
+- 当前正式索引与用户数据在本 Task 中保持只读。
 
 ## 前置门禁
 
-- 本次自动重建修订的需求评审、技术评审均重新通过，用户再次确认 Spec。
-- 首轮 fixture、expected JSON、schema 和 `NO-GO` 报告只读，不得覆盖或改写。
-- 修改前记录目标文档旧 point 数、ID、payload/vector fingerprint 和原件 hash；测试只使用匿名 fixture/FakeQdrant。
+- Spec 018 全库替换修订的需求/技术评审通过，且用户再次明确确认。
+- 首轮 Task02 fixture、expected、schema 和 `NO-GO` 报告保持 hash 不变。
+- D 阶段只能使用固定样本、FakeQdrant、临时目录和临时候选 Collection。
+- 2026-09-09 独立需求评审与技术设计门通过，用户明确要求开始执行；本门禁已满足。
 
-## 思维链（预先设计的执行阶段与决策依据）
+## 思维链（可审计执行设计）
 
-1. 先让 parser 产出同源 block DTO，再让 normalize、chunker、index 消费该 DTO；禁止事后用另一遍文本提取补 bbox。
-2. PDF 首版只承诺 block bbox；line/word 是可选诊断，不能扩大硬门。
-3. Markdown 解析为带精确行号的块，参数化复用 v1/v2，不创建第三套切片器。
-4. 旧索引先完成全部计算，再保存恢复快照，最后进入短写窗口原地替换；任一版本失败恢复全部旧版本。
-5. Task02A 只冻结并生成 `SourceProvenanceBundle`，不持久化 manifest；Task03 定义唯一 manifest schema，Task04 才负责持久化，避免反向依赖。
+1. 保留 A–C 已验证能力，不重写 parser、chunker 或 anchor 算法。
+2. 把重建拆为 preflight、build、validate、switch、finalize 五个显式阶段。
+3. Task02A 只实现可复用服务与维护命令，并模拟 switch；最终 manifest schema 尚未冻结，因此只输出临时 `SourceProvenanceBundle` 证据。
+4. Task02B 使用首轮 fixture 和 FakeQdrant 独立裁决；真实元数据迁移由 Task03、manifest 由 Task04、真实全库切换由 Task06 负责。
 
 ## 子任务拆分与子 Agent 分派
 
-| 子任务 | 角色 | 目标 | 固定产物 |
+| 子任务 | 角色 | 内容 | 固定产物 |
 |---|---|---|---|
-| 02A-A | backend-dev | `PdfSourceProvenanceV1`、block bbox、同源 normalize 适配与固定样本测试 | `artifacts/task-02a/pdf-provenance-report.md` |
-| 02A-B | backend-dev | Markdown block parser、行号/heading_path/block_type、UTF-8/BOM/NUL/CRLF 测试 | `artifacts/task-02a/markdown-provenance-report.md` |
-| 02A-C | backend-dev | 参数化 v1/v2 消费来源块并生成 `SourceProvenanceBundle`；不定义/持久化 manifest | `artifacts/task-02a/source-provenance-bundle.schema.json`、`chunker-integration-report.md` |
-| 02A-D1 | backend-dev | 冻结 `reindex-snapshot-v1` 并实现 point/payload/dense+sparse round-trip store | `artifacts/task-02a/reindex-snapshot.schema.json`、`snapshot-roundtrip-report.md` |
-| 02A-D2 | backend-dev | 使用既有单线程 executor 的文档级 operation/claim、全部已有版本联合升级与启动恢复 | `artifacts/task-02a/legacy-upgrade-report.md` |
-| 02A-D3 | backend-dev | application 包装现有 `hybrid_search`，对 active upgrade 文档施加 dense+sparse 共用 `must_not` | `artifacts/task-02a/retrieval-exclusion-report.md` |
-| 02A-E | backend-tester + backend-reviewer + Tech Lead | 定向回归、故障注入、复用审计与交接签字 | `artifacts/task-02a/backend-test-report.md`、`backend-review-report.md`、`implementation-contract.md` |
+| 02A-A | backend-dev | PDF block provenance | `pdf-provenance-report.md`（已完成） |
+| 02A-B | backend-dev | Markdown block provenance | `markdown-provenance-report.md`（已完成） |
+| 02A-C | backend-dev | provenance-aware v1/v2 与 `SourceProvenanceBundle` | `source-provenance-bundle.schema.json`、`chunker-integration-report.md`（已完成） |
+| 02A-D | backend-dev | CandidateIndexPort、全库 rebuild CLI/FSM、topology/validation schema、dry-run、候选 build/validate、模拟 alias/finalize/cleanup | `candidate-rebuild-run.schema.json`、`topology-inventory.schema.json`、`candidate-validation.schema.json`、`candidate-rebuild-report.md` |
+| 02A-E | backend-tester + backend-reviewer + Tech Lead | 定向回归、故障注入、复用审计与交接签字 | `backend-test-report.md`、`backend-review-report.md`、`implementation-contract.md` |
 
-如果执行者是本地 Ollama 模型，每个编码子任务最多修改 2 个代码文件、目标约 150 行；使用线上 Agent 时取消该资源限制，但仍须遵守分派清单中的文件范围和单一职责。
-
-## 固定分派 Prompt
+## 02A-D 固定 Prompt
 
 ```text
-你是 Spec018 Task02A 的 backend-dev。先读取 Spec018、Task02 首轮 NO-GO 报告、本 Task 和当前子任务指定的最多量文件；不要扫描无关模块。你的产出必须是后续 Task03–07 直接复用的生产实现，不得在 tests 或临时目录建立第二套 parser、chunker、embedding、Qdrant 或索引流程。
+你是 Spec018 Task02A-D 的 backend-dev。只读取 Spec018、本 Task、首轮 Task02 固定证据、已完成的 02A-A～C 交接物，以及现有 knowledge_base 的 parser/chunker/embed/index/config 入口。允许修改分派清单明确列出的 backend 文件、对应后端测试和本子任务报告；禁止修改 frontend、用户 data/kb、真实 Qdrant、首轮 fixture/expected/NO-GO 报告和 Git 历史；禁止 reset/stash/clean/push/merge。
 
-实现约束：PDF 的规范化文本和 block bbox 必须来自同一个 PdfSourceProvenanceV1；首版硬门是 block，不要求 word。Markdown 输出精确 1-based 行范围并复用参数化 v1/v2。Task02A 只产出 SourceProvenanceBundle，不定义 manifest。旧 PDF 自动升级只重建已有可用版本；删除旧 points 前完成解析、v2 模型调用和 embedding，并保存符合 reindex-snapshot-v1 的 point/payload/dense+sparse vector。文档级 operation 必须使用现有单线程 executor，不能嵌套提交按 chunker 任务。v2 模型不可用或规则降级、写入失败、校验失败、进程恢复失败时恢复全部旧版本。application.hybrid_search 必须把 active upgrade IDs 作为同一个 must_not filter 传给 dense+sparse 两路。成功验证后删除快照；首次自动失败后仅允许手动重试。
+实现非交互维护入口 `python -m backend.app.knowledge_base.rebuild_index` 及可复用服务。默认等价于 `--dry-run`；实际写入必须显式 `--confirm-replace`。本 Task 只能在 tempfile、FakeQdrant 和临时 Collection 上验证，严禁运行真实替换。先冻结 candidate-rebuild-run、topology-inventory、candidate-validation 三份机器 schema，再实现。
 
-只允许修改分派清单列出的 backend 文件、对应后端测试和本子任务报告。禁止修改 frontend、用户 data/kb、真实 Qdrant、首轮 fixture/expected/NO-GO 报告、Git 历史；禁止 reset/stash/clean/push/merge。必须运行分派指定的 pytest 和静态检查。
+协议必须包含：元数据权威集合、孤立文件只报告、空库 `NO_DOCUMENTS_TO_REBUILD`、原件/哈希/解析/配置/模型/Qdrant preflight、create-exclusive 全局 lock 与显式 stale-lock recovery、`papers_rebuild_<run-id>`、每文档 v1+v2、dense+sparse、无规则降级、CandidateIndexPort 显式 destination/document_id 且零 metadata/delete-current 副作用、完整 validation、intent/observed FSM、首次物理 `papers` 到 alias 的模拟切换、后续 alias 原子更新、`switching/finalizing` 崩溃恢复、`cleanup_pending`、`--resume-switch`、`--resume-finalize`、`--cleanup-failed`、topology inventory/matrix、运行状态 JSON 与脱敏事件。dry-run 可解析和检查全部原件，但不得创建 runtime/lock、embedding、创建/删除/写 Collection 或修改 metadata/source/manifest。
 
-完成后的可观察状态：固定 fixture 可由正式实现生成预期 SourceProvenanceBundle；旧索引故障注入后 point ID/payload/dense+sparse vector/fingerprint 完整恢复；成功路径删除快照；并发首次打开只产生一个 operation；active upgrade 文档在 dense+sparse 两路均为零命中，恢复/完成后重新可召回。
-
-把结果写入 docs/sdd/plans/018/artifacts/task-02a/<子任务报告>.md，日志写入 .codebuddy/agent-logs/spec-018/task-02a/backend-dev/<timestamp>.md。返回固定字段：结果状态与摘要、改动文件、测试命令/退出码/结果、产物路径、决策依据、风险与阻塞、主 Agent 后续动作、开始/结束/总耗时，以及可用的模型/token/工具统计。
+Task02A 不定义或持久化最终 InspectionManifest；只复用 SourceProvenanceBundle。不得实现 point/vector snapshot、LegacyUpgradeStore、逐文档 must_not、首次打开自动升级或旧索引回滚。完成后运行定向 pytest 和静态检查，并返回：结果状态和摘要、改动文件、测试命令/退出码/结果、产物路径、决策依据、风险阻塞、主 Agent 后续动作、开始/结束/总耗时，以及可用的模型/token/工具统计。
 ```
 
 ## 子 Agent 必须返回
 
-- 结果状态、摘要和对应 02A 子任务编号。
+- 结果状态、02A 子任务编号和摘要。
 - 改动文件及每个文件的职责。
-- 测试命令、退出码、通过/失败数量和故障注入结果。
-- 首轮 fixture hash 是否保持不变。
-- snapshot 前后 point ID、payload、vector、fingerprint 对照。
-- dense/sparse 两路 query filter 与升级状态前后命中对照。
-- 产物与层级日志路径、风险、阻塞和主 Agent 后续动作。
-- 开始、结束、总耗时；可用时记录模型、token 和工具调用。
+- 测试命令、退出码、通过数量和耗时。
+- dry-run 写操作计数；build/validate/switch/finalize 状态轨迹。
+- 候选名称、文档/point 计数、dense/sparse 维度和 fingerprint。
+- 故障矩阵、清理/恢复结果、风险与主 Agent 后续动作。
+- 日志与固定产物路径；可用时记录模型、token 和工具调用统计。
 
 ## 主 Agent 校验
 
-- 确认正式 parser 是唯一事实源，生产代码没有二次文本抽取补坐标。
-- 确认 Task02A 没有私自定义或持久化 manifest，只有版本化 SourceProvenanceBundle。
-- 搜索是否新增第二套 embedding/Qdrant/index task 或第三套 Markdown chunker。
-- 对成功、embedding 失败、v2 模型失败、删除后写入失败、验证失败和重启恢复逐项核对旧索引恢复。
-- 确认首次自动失败后 GET 不会再次提交，只有手动 retry 可重试。
-- 确认首轮 Task02 证据完全未改写，再签字放行 Task02B。
+- `git diff` 不含真实用户数据、旧 D1 快照实现或首轮证据改写。
+- dry-run 的 embedding、Qdrant write、metadata write 均为 0。
+- CandidateIndexPort 不得隐式使用 `KB_COLLECTION`/`paper_id` 或调用带 metadata/delete 副作用的 `index_paper_chunker()`；所有目标 Collection 与 `document_id` 必须显式传入。
+- 构建失败只删除本次未验证候选；已验证候选的 switch/finalize 可幂等恢复。
+- 未知 alias/Collection 拓扑 fail-closed，不自动猜测或删除。
+- `switching/finalizing/cleanup_pending` 的每个动作前后都有可恢复 intent/observed，FakeQdrant 覆盖动作前后中断。
+- 02A 没有定义最终 manifest，也没有引入第二套 parser/chunker/embed/index。
 
 ## 实时监控
 
-- 日志固定写入 `.codebuddy/agent-logs/spec-018/task-02a/<role>/<timestamp>.md`。
-- 主 Agent 根据子任务复杂度和最近进度自适应读取，不固定高频轮询。
+在线 Agent 正常运行时等待主动返回，不轮询日志。只有明确超时、错误、长期无返回或用户要求时，才读取 `.codebuddy/agent-logs/spec-018/task-02a/` 的对应日志诊断。
 
-## 测试与验收标准
+## 测试与验收
 
-- PDF 单栏、双栏、跨页 fixture 的 block 文本、ordinal、bbox 和 chunk anchors 精确匹配 expected；bbox 误差 ≤0.005。
-- Markdown heading/paragraph/list/table/code/blockquote 块与行号 100% 匹配。
-- v1 overlap 和 v2 跨页保留多对多 anchors；word 缺失不导致失败。
-- 自动升级只覆盖已有版本；v2 模型失败不以规则降级结果替换旧 v2。
-- 写入/验证/恢复期间普通 RAG 入口排除该文档，不召回半套 points；报告记录短暂不可检索窗口。
-- dense/sparse 两路使用同一个 `must_not paper_id MatchAny`，升级状态结束后恢复命中，RRF/reranker 不接收被排除文档。
-- snapshot schema 验证 float32 little-endian base64 dense、uint32/float32 little-endian sparse、canonical payload、逐点/总 hash、损坏/截断 fail-closed 和幂等恢复。
-- 旧索引所有故障注入后可恢复；成功后快照删除，仅留脱敏摘要。
-- 真实用户数据、Qdrant 和 Git 历史未被测试修改。
+- 固定 PDF/Markdown fixture 可通过正式入口生成预期 bundle。
+- FakeQdrant 覆盖首次物理 Collection 切 alias、后续 alias 更新、alias 失败、finalize 失败、构建失败、中断残留、并发锁和拓扑歧义。
+- dry-run 覆盖两个并发 dry-run、dry-run 与 confirm 竞态、全部写 spy 为 0；真实命令锁覆盖 token、heartbeat、异常释放、崩溃残留和显式 `--recover-stale-lock`。
+- cleanup 覆盖删除超时/结果未知/幂等重试；已验证候选不可 cleanup。
+- 每文档 v1/v2 均至少一个 chunk；point ID 唯一且 chunk_index 无重复/缺口；dense/sparse 维度、payload、anchors、hash 和 fingerprint 正确。
+- 受控 dense 与 sparse 查询均命中候选。
 
 ## 风险、停止条件与回滚
 
-- 无法从同一 PDF DTO稳定得到 block 文本和 bbox：停止并回退 Spec，不进入 02B。
-- 无法完整恢复 dense/sparse vector 或跨版本原子性：停止，不允许原地替换上线。
-- 发现必须改变既有检索/RRF/reranker 语义：暂停并更新 Spec，不能顺手扩大范围。
-- 代码回滚只撤销本 Task 改动；不得通过 reset、clean 或覆盖用户修改回滚。
+- 任何路径触碰真实 `data/kb` 或真实 Qdrant：立即停止并报告。
+- 需要最终 manifest schema 才能继续：停止，不得在 Task02A 私自定义；交由 Task03。
+- 本 Task 的回滚仅删除临时测试候选和临时运行状态，不修改用户原件、元数据或正式索引。
 
 ## 产出物
 
-- 生产级来源定位基础、旧索引升级与恢复实现、定向测试、固定 schema 和五份交接报告。
+- 已完成的 production provenance/bundle 实现。
+- 候选重建服务与 CLI、三份机器 schema、定向测试、固定报告和实现交接契约。
 
 ## 执行结果
 
-待修订版 Spec 重新评审和用户确认后填写。
+- 02A-A～C：已完成并分别提交。
+- 02A-D/E：待修订版 Spec 重新评审和用户确认后执行。
 
 ## 变更日志
 
-- 2026-09-08：依据 Grill with Docs 决策创建；本轮只落盘文档，未执行代码任务。
+- 2026-09-08：创建 Task02A，最初采用逐 point/vector 快照和自动升级设计。
+- 2026-09-09：A–C 完成并通过定向评审。
+- 2026-09-09：用户确认旧索引可丢弃；经 Grill with Docs 将 D 改为候选 Collection 全库重建协议，废弃未提交快照草稿，暂停等待重新评审和确认。

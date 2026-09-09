@@ -1,96 +1,91 @@
-# Task 02B：使用正式实现重新验证来源锚点（Go/No-Go）
+# Task 02B：重新验证来源锚点与候选重建协议（Go/No-Go）
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
 > 依赖：Task02A 全部实现、测试和评审通过；被依赖：Task03；当前状态：`待执行`
 
 ## 一句话目标
 
-只读消费 Task02A 的正式实现和首轮匿名 fixture，重新给出可审计的 `GO|NO-GO`，不通过聊天摘要或放宽阈值绕过首轮问题。
+只读消费 Task02A 正式实现和首轮固定证据，严格验证来源定位与候选 Collection 重建协议，并给出可审计的 `GO|NO-GO`。
 
 ## 当前证据
 
-- 首轮报告结论为 `NO-GO`，固定路径为 `artifacts/task-02/source-anchor-feasibility-report.md`。
-- 首轮 fixture、expected JSON、schema 和 hash 已提交，必须作为不可变基线。
-- Task02A 计划补齐正式 block provenance、Markdown parser 和旧索引恢复能力。
+- 首轮 Task02 的 fixture、expected、schema 与 `NO-GO` 报告已冻结。
+- Task02A-A～C 已完成；Task02A-D/E 待修订确认后执行。
+- 真实用户索引只允许 Task06 在维护窗口操作，本 Task 禁止触碰。
 
 ## 前置门禁
 
-- `artifacts/task-02a/implementation-contract.md`、各实现报告、测试报告和评审报告全部存在且结论通过。
-- 首轮 fixture/expected SHA-256 与 `fixture-index.json` 一致。
-- 本 Task 不修改业务代码、用户数据、真实 Qdrant 或首轮报告。
+- Task02A 的 `implementation-contract.md`、三份 candidate/topology/validation schema、`candidate-rebuild-report.md`、`backend-test-report.md` 和评审结论齐全。
+- 首轮证据 SHA-256 与历史报告一致。
 
-## 思维链（预先设计的执行阶段与决策依据）
+## 思维链（可审计执行设计）
 
-1. 先验证交接物和 hash，避免针对被修改的样本“通过”。
-2. 再用正式生产入口重放 PDF/Markdown，不接受测试专用 parser。
-3. 分开验证来源映射、旧索引升级恢复和 hostile 后端安全。
-4. 浏览器 PDF.js 零网络证据明确留给 Task05，本 Task 不再形成循环依赖。
-5. 任一硬门失败即 `NO-GO`，不能以 conditional pass 放行 Task03。
+1. 先冻结证据 revision/hash，防止通过改 fixture 获得假通过。
+2. 用正式入口重放 PDF/Markdown block、chunk、anchor。
+3. 用 FakeQdrant 独立覆盖 preflight、candidate build、validate、switch/finalize 与故障恢复。
+4. 任何硬门失败即 `NO-GO`，不以条件通过或聊天解释放行。
 
 ## 子任务拆分与子 Agent 分派
 
-| 子任务 | 角色 | 范围 | 固定产物 |
+| 子任务 | 角色 | 内容 | 输出 |
 |---|---|---|---|
 | 02B-A | backend-tester | 校验首轮 fixture/expected/schema hash 与 Task02A 交接物 | 报告“证据冻结”段 |
-| 02B-B | backend-tester | 正式入口重放 PDF/Markdown block/chunk/anchor | 报告“映射结果”段 |
-| 02B-C | backend-tester | FakeQdrant 成功/失败/中断恢复、并发、仅手动重试与 dense+sparse RAG 排除 | 报告“升级恢复与检索排除”段 |
-| 02B-D | Tech Lead | 只读核验全部证据并签 `GO|NO-GO` | `artifacts/task-02b/source-anchor-revalidation-report.md` |
+| 02B-B | backend-tester | 正式入口重放 PDF/Markdown、v1/v2 与 anchors | 报告“来源映射”段 |
+| 02B-C | backend-tester | FakeQdrant 全库候选重建、验证、故障与恢复矩阵 | 报告“候选重建”段 |
+| 02B-D | Tech Lead | 只读复核并签 `GO|NO-GO` | `artifacts/task-02b/source-anchor-revalidation-report.md` |
 
-## 固定分派 Prompt
+## 固定 Prompt
 
 ```text
-你是 Spec018 Task02B 的 backend-tester。只读取 Spec018、Task02/02A/02B、首轮 artifacts/fixtures、Task02A 固定报告和被测生产入口。不得修改 backend、frontend、用户 data/kb、真实 Qdrant、首轮 fixture/expected/NO-GO 报告或 Git 历史；不得重新设计实现。
+你是 Spec018 Task02B 的 backend-tester。只读取 Spec018、Task02/02A/02B、首轮 artifacts/fixtures、Task02A 固定报告和被测生产入口。不得修改 backend、frontend、用户 data/kb、真实 Qdrant、首轮 fixture/expected/NO-GO 报告或 Git 历史；不得重新设计或放宽验收阈值。
 
-使用正式生产入口重放全部固定样本，验证 PDF block bbox、Markdown 行号、v1 overlap、v2 跨页和多对多 anchors。word 信息只作诊断，不是硬门。Hostile PDF 只验证后端不执行脚本/表单/附件/远程资源；真实浏览器零网络证据留给 Task05。使用 FakeQdrant 验证旧索引已有版本全部升级、预计算后短写入、reindex-snapshot-v1 对 point/payload/dense+sparse 的机器 round-trip、快照损坏/截断 fail-closed、故障/重启幂等恢复、并发单 operation 和首次失败后仅手动重试。捕获 hybrid_search 的 dense+sparse 两次 query：running/validating/restoring 时目标文档必须同时进入相同 must_not 且零命中，restored/completed/partial 后恢复命中，RRF/reranker 不得收到被排除文档。禁止触碰真实索引。
+先核对首轮证据 hash 与三份机器 schema。随后用正式入口重放全部固定样本，验证 PDF block bbox、Markdown 行号、v1 overlap、v2 跨页、多对多 anchors、page-null 和 hostile 后端安全。再使用 FakeQdrant 与临时目录验证：CandidateIndexPort 显式 destination/document_id 且正式 papers/metadata/source 零写；dry-run 全部写 spy 为 0；元数据权威集合与孤立文件报告；空库和缺失/损坏原件；全局 lock token/heartbeat/finally/stale recovery；v1+v2、dense+sparse 候选构建；规则降级拒绝；validation schema 与 fingerprint 复算；dense+sparse 查询；每个 switch/finalize 动作前后中断；intent/observed 收敛；cleanup_pending/删除超时/结果未知；首次 physical papers 到 alias；后续原子切换；resume-switch/finalize；完整 topology inventory/matrix 与 fail-closed。禁止触碰真实索引。
 
-必须输出严格 GO 或 NO-GO。固定报告写入 docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md；日志写入 .codebuddy/agent-logs/spec-018/task-02b/backend-tester/<timestamp>.md。返回：状态摘要、命令/退出码、样本 hash、映射率与 bbox/行号误差、快照恢复前后 fingerprint、失败样本、GO/NO-GO、风险、主 Agent 动作、开始结束耗时和可用的模型/token/工具统计。
+必须输出严格 GO 或 NO-GO。报告写入 docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md。返回：状态摘要、命令/退出码、样本 hash、映射率与 bbox/行号误差、候选验证计数/fingerprint、失败矩阵、GO/NO-GO、风险、主 Agent 动作、开始结束耗时和可用的模型/token/工具统计。
 ```
 
 ## 子 Agent 必须返回
 
-- 严格 `GO|NO-GO` 和逐硬门证据。
-- fixture/expected/schema/实现 revision 的 SHA-256。
-- 测试命令、退出码、结果和故障注入矩阵。
-- block/chunk/anchor 数、映射率、partial 原因、bbox 最大误差和 Markdown 行号精度。
-- point ID、payload、dense/sparse vector、fingerprint 恢复对照。
-- operation/claim/startup recovery 状态迁移，以及 dense/sparse query filter/命中/RRF 输入对照。
-- 产物/日志路径、风险、阻塞、主 Agent 后续动作和耗时。
+- 严格 `GO|NO-GO` 与逐项依据。
+- 读取的 revision、fixture/expected/schema hash。
+- 测试命令、退出码、数量、耗时。
+- 来源映射率、bbox 最大误差、Markdown 行号准确率。
+- dry-run 写计数、候选/alias/finalize 状态与故障矩阵。
+- 产物路径、风险阻塞和主 Agent 后续动作。
 
 ## 主 Agent 校验
 
-- 确认报告调用生产入口，未以测试原型代替。
-- 确认首轮证据 hash 未变化，真实 data/kb/Qdrant 未变化。
-- 确认 word 不再误作硬门，hostile 浏览器门清晰移交 Task05。
-- 只有报告为严格 `GO` 且字段完整，才更新 Task03 为可执行。
+- 报告未改写首轮证据，未接触真实 data/Qdrant。
+- `GO` 覆盖所有固定硬门，不存在“条件通过”。
+- 报告不引用旧 snapshot、upgrade、must_not 或自动首次打开协议。
 
 ## 实时监控
 
-- 日志固定写入 `.codebuddy/agent-logs/spec-018/task-02b/<role>/<timestamp>.md`；按预计阶段自适应读取。
+在线 Agent 正常运行时等待主动返回；仅在明确超时、错误、长期无返回或用户要求时读取对应日志。
 
 ## 测试与验收标准
 
-- 正常 PDF expected block/chunk/anchor 集合 100% 匹配，bbox 最大误差 ≤0.005。
-- Markdown block/行号 100% 匹配；v1/v2 保留真实来源关系。
-- `partial` 可提交但必须有覆盖率、未映射数量和稳定原因；零映射不得通过。
-- 所有旧索引故障注入恢复到相同 point/payload/vector/fingerprint。
-- 两个已有版本只产生一个持久 operation；delete 后中断由启动恢复先还原旧 points。
-- active upgrade 时 dense/sparse 两路均排除目标文档，恢复/完成/partial 后两路恢复命中。
-- Hostile 后端解析无网络、无活动内容执行；浏览器证据作为 Task05 必验项记录在 handoff。
+- 正常 PDF block bbox 最大误差 ≤0.005；Markdown 行号 100%；期望 block/chunk/anchor 集合 100% 匹配。
+- 新候选中每个正式 fixture 同时具有 v1/v2，point ID 唯一、chunk_index 无重复/缺口，dense/sparse 与 payload schema 完整。
+- dry-run 无 embedding 和写操作；任一构建硬门失败不切换。
+- CandidateIndexPort 对正式 `papers`、metadata、source 和 current-point delete 的写计数为 0。
+- `switching/finalizing/cleanup_pending` 在每个动作前后中断后均按 intent+fresh topology 幂等收敛；未知拓扑不自动处理。
+- candidate validation 由公开 builder 生成并复算，v2 `llm_used=true`，不接受报告手填关键值。
 
 ## 风险、停止条件与回滚
 
-- 任一硬门失败立即写 `NO-GO`，Spec 保持/退回 `待确认`，Task03–07 停止。
-- 报告缺 hash、命令、退出码或恢复证据视为 `NO-GO`。
-- 本 Task 只写报告与日志；删除未提交的派生报告即可回滚，不改固定历史证据。
+- 任一 hash 漂移、真实数据写入或阈值失败：立即 `NO-GO`，保持 Task03–07 阻塞。
+- 本 Task 不产生需要回滚的业务数据。
 
 ## 产出物
 
-- `docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md`。
+- `docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md`
 
 ## 执行结果
 
-待 Task02A 完成后填写。
+待 Task02A-D/E 完成后填写。
 
 ## 变更日志
 
-- 2026-09-08：依据 Grill with Docs 决策创建；本轮只落盘文档，未执行验证。
+- 2026-09-08：创建 Task02B，最初包含旧索引快照恢复验收。
+- 2026-09-09：经确认改为候选 Collection 全库重建协议验收，真实索引操作推迟到 Task06。

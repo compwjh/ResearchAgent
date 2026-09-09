@@ -26,7 +26,7 @@
 4. 右侧渲染切片元数据、映射状态和虚拟化/分段列表。
 5. 实现双向高亮、程序化滚动抑制、重叠全高亮和 partial 警告。
 6. 窄屏切换时保留两侧滚动位置，联动自动切到目标栏。
-7. 旧索引升级中显示原文、旧切片和进度，禁用联动；失败显示“手动重试”，不得在刷新时再次自动触发。
+7. 全库尚未重建时显示“需要管理员重建索引”；`finalize_pending` 显示维护状态。页面打开或刷新不得触发 embedding、索引切换或旧索引升级。
 
 ## 子 Agent 分派
 
@@ -35,7 +35,7 @@
 
 ## 可交接子任务与固定产物（P0-6/P0-7）
 
-Task 05 依次冻结依赖、DOM、renderer 和 interaction；每个本地 `qwen3.8:27b-mlx` 子任务最多修改 2 个已点名代码/资源文件、目标约 150 行。子任务串行执行，必须读取 Task 04 固定 `api-schema.json`，不得在前端自行解释状态码或引入第二套 API 客户端。
+Task 05 依次冻结依赖、DOM、renderer 和 interaction；仅使用本地 Ollama 时，每个子任务最多修改 2 个已点名代码/资源文件、目标约 150 行；线上 Agent 取消该资源限制但仍须遵守白名单和单一职责。子任务串行执行，必须读取 Task 04 固定 `api-schema.json`，不得在前端自行解释状态码或引入第二套 API 客户端。
 
 | 子任务 | 执行者/上下文 | 允许范围 | 固定输出/验收 |
 |---|---|---|---|
@@ -62,6 +62,8 @@ Task 05 依次冻结依赖、DOM、renderer 和 interaction；每个本地 `qwen
 
 ```text
 你是 Spec018 的 frontend-dev。只读取 Spec018、Task05、Task04 已冻结 API、当前 frontend 三个入口文件和前端技能。实现知识库二级 Tab、文档选择、v1/v2 单版本切换、PDF.js 本地渲染、Markdown 安全渲染、切片列表与块级双向联动。桌面双栏；窄屏原文/切片切换并保留滚动位置。v1 重叠必须高亮全部关联切片，v2 跨页必须高亮全部原文块。禁止 CDN、未净化 innerHTML、远程图片、客户端文件路径和 PDF 脚本。修改 JS/CSS 后同步 index.html 资源版本。返回固定结果字段及真实验证退出码、耗时。
+
+必须按 Task04 API 区分 INDEX_REBUILD_REQUIRED、INDEX_FINALIZE_REQUIRED、INSPECTION_BUILDING 和普通错误；前两者只能显示稳定维护提示，不得从前端触发全库重建、embedding 或自动重试旧索引。
 ```
 
 ## 主 Agent 校验
@@ -96,3 +98,4 @@ Task 05 依次冻结依赖、DOM、renderer 和 interaction；每个本地 `qwen
 - 2026-09-08：P0-6 复核补丁明确 `pdfjs-vendor-manifest.json`、`dom-contract.schema.json` 和 frontend fixture 是唯一下游输入；缺少主库/worker/LICENSE/NOTICE hash、display-only 配置或 `SourceBlock → renderMarkdownBlock → DOMPurify → block container` 证据时保持 Task 05–06 阻塞，未修改业务代码。
 - 2026-09-08：P0-7 最终小修订确认 05-A～05-D 串行交接，固定 PDF.js manifest、DOM contract、frontend fixture 和单端报告路径；每个本地 27B 子任务最多 2 个代码/资源文件、约 150 行，缺少 frontend-tester/reviewer 结论不得放行 Task 06。
 - 2026-09-08：自动重建修订增加升级中只读无联动、失败后手动重试和 Task05 hostile 真实浏览器零网络硬门；本轮仅更新文档。
+- 2026-09-09：全库替换修订移除旧索引升级 UI，改为 `INDEX_REBUILD_REQUIRED`/`INDEX_FINALIZE_REQUIRED` 维护提示；资源上限明确仅适用于本地 Ollama。

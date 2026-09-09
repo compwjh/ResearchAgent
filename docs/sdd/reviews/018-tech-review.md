@@ -349,3 +349,231 @@ hostile fixture 的验收断言尚不能替代上述依赖版本和 DOM 绑定�
 四项 P0 均已形成“Spec 条款 → Task owner → 固定 artifact/fixture → 观测字段 → 严格 GO/NO-GO”闭环；未发现新的技术阻塞或 02A→02B→03 循环。当前代码尚未实现新桥接，属于 Spec 仍为 `待确认` 时的预期状态，不应被误记为实现验收。
 
 本轮通过不改变 Spec 状态：仍须用户明确确认后才能执行 Task02A；Task02B 必须取得严格 `GO` 后才可放行 Task03。复审证据日志：`.codebuddy/agent-logs/spec-018/task-01/architect/20260908-221835.md`。
+
+## 全库索引替换修订待重新技术评审（2026-09-09）
+
+用户已确认旧 vectors/manifest 可丢弃，当前 Spec/Plan 撤销 `LegacyUpgradeStore`、检索期 `must_not`、`reindex-snapshot-v1`、逐文档恢复和首次打开自动升级，改为：Task02A-D 只在 fixture/FakeQdrant 实现并验证候选重建服务/CLI；Task03 冻结 metadata/manifest；Task04 实现 API 与 finalize 门禁；Task06 停服执行真实候选构建、严格验证、`papers` alias 切换和 finalize。
+
+因此以上历史技术结论只作审计记录，不覆盖当前修订。当前修订状态为：**待独立技术评审（未执行）**。复审必须核对阶段依赖、Qdrant 首次实体到 alias 的切换、全局锁、dry-run 零写、candidate cleanup、resume-switch/finalize、topology fail-closed、v1/v2+dense/sparse 完整性、metadata/manifest 提交顺序、不可变原件与真实 Task06 运行边界；通过前不得继续业务代码。
+
+## 全库索引替换修订独立技术复审（2026-09-09 03:52，Asia/Shanghai）
+
+### 复审范围与结论
+
+- 模型：gpt-5.6-luna xhigh（临时，仅本轮）；角色：独立技术评审/Architect。
+- 只读取本轮指定的 Spec、Plan README、Task02A/02B/03/04/05/06/07、本文最新待评审段，以及必要的 `knowledge_base` 配置、application、index、retrieve、store 和旧上传入口；未修改业务代码、Spec/Plan 或历史评审段。
+- **结论：打回。** 阶段编排和“02A 固定样本/FakeQdrant、Task06 停服真实切换”的边界已经清楚，但候选写入隔离、崩溃恢复状态机、拓扑证明、跨 metadata/manifest 提交和 dry-run/锁语义仍存在会导致误写、误删或无法恢复的 P0 缺口。完成下列契约修订和 FakeQdrant 故障证据前，不得放行 Task02A-D、Task02B 或 Task03–07。
+
+### 已核对通过的边界（非阻塞）
+
+1. 依赖图是单向的：README `:11-17,21-26` 为 `02A→02B→03→04→05→06→07`；Task02A `:27-29` 明确只输出 `SourceProvenanceBundle`，Spec `:182-185` 明确最终 `InspectionManifest` 由 Task03/04 定义和持久化，Task06 `:25-30` 才执行真实切换。因此没有发现反向依赖循环。02A 的候选切换测试若严格限制在 FakeQdrant/临时候选，和 Task06 的真实 alias 边界也成立。
+2. 首次“物理 `papers` → 同名稳定 alias”、后续 alias 原子更新、默认 dry-run、显式 `--confirm-replace`、停服运行和原件不可变的意图已经写入 Spec `:171-178`、Task02A `:46-50` 和 Task06 `:18-30,41-55`；问题在于故障窗口和生产复用入口尚未被写成可执行契约，见下列 P0。
+
+### P0 阻塞项与具体修改建议
+
+#### P0-1：候选写入没有与现有生产索引入口隔离，不能证明 dry-run/候选不会误写正式索引
+
+证据：Spec `:173-175,184-185` 要求候选 Collection、v1/v2、dense+sparse 和不降级；Task02A `:46-50,63-69` 又要求 dry-run 三类写入为 0、只能 FakeQdrant/临时 Collection。现有 `backend/app/knowledge_base/infrastructure/index.py:101-149` 的 `upsert_chunks()` 没有目标 Collection 参数，直接 `ensure_collection()` 并写固定 `KB_COLLECTION`（`:119-123`），payload 仍写 `paper_id`（`:130-145`）；`index_paper_chunker()` 在 `:289-320` 更新正式 metadata/执行解析切分，并在 `:328-341` 删除固定集合旧点后 upsert，在 `:348-356` 再写 indexed 状态。现有 `retrieve.py:101-115,170-198,519-529` 也固定读取 `paper_id` 和 `KB_COLLECTION`。这组入口不能直接作为候选 builder 复用，否则即使命令声称 dry-run 或 candidate，也可能修改正式集合/元数据或产出不兼容 payload。
+
+最小修订：在 `implementation-contract.md` 冻结唯一候选写入 port（显式 `destination_collection`、`document_id` payload、纯计算/写入分离、禁止 metadata update/delete-current-points），并规定正式索引与候选索引只能通过该 port 调用；为 dry-run、candidate 和 metadata/collection/upsert/delete/embedding 分别注入计数 spy。把 v1/v2 的 parser/chunker/embedding 配置和 `llm_used` 传入验证结果，禁止沿用 `index_paper_chunker()` 的隐式副作用。02B 必须用 FakeQdrant 证明正式 `papers`、metadata 和原件写计数为零，Task06 才能接入真实 destination。
+
+#### P0-2：`switching`/`finalizing` 崩溃窗口没有可执行的恢复路径
+
+证据：Spec `:117,123,176-178` 定义了 `switching`、`finalizing`、`finalize_pending`，并要求首次删除物理 `papers` 后创建 alias、失败仅 `resume-switch`；Task06 `:51-54` 却只允许 `ready_to_switch` 执行 `resume-switch`、只允许 `finalize_pending` 执行 `resume-finalize`。进程可能在 `ready_to_switch→switching` 写状态后、删除旧物理集合前后、或删除后 alias 创建前崩溃；此时状态既不是 `ready_to_switch`，又没有旧集合可恢复。后续 alias 原子更新成功后、metadata/manifest 尚未提交时同样可能停在 `finalizing`，而不是可执行的 `finalize_pending`。Task06 `:95-97` 只描述结果，没有定义这些中间状态如何安全收敛。
+
+最小修订：冻结持久化 FSM 和每个破坏性动作的 intent/observed 记录（包括 candidate、旧物理集合、alias 目标、操作序号、拓扑摘要）；规定崩溃重启时 `switching`/`finalizing` 的允许命令、双读拓扑证明、幂等动作和转入 `INDEX_TOPOLOGY_AMBIGUOUS` 的条件。`resume-switch` 不能只接受字符串状态，必须在删除发生后仍能安全完成首次 alias 创建；`resume-finalize` 必须能从任意 finalize 子步骤重试。FakeQdrant 要注入每个动作前后中断并验证不会误删/误切换。
+
+#### P0-3：拓扑 fail-closed 只有错误码，没有完整库存和动作矩阵
+
+证据：Spec `:179`、Task02A `:48,67-68`、Task06 `:53-55,98` 仅规定“不明确时返回 `INDEX_TOPOLOGY_AMBIGUOUS`”，未冻结可判定的拓扑输入。至少仍需区分：`papers` 是物理 Collection 还是 alias、alias target 是否存在且唯一、alias 是否指向当前/候选、多个 `papers_rebuild_*` 候选、候选名冲突、孤立运行目录、状态与 Qdrant 目标不一致、旧集合删除后 alias 尚未创建。现有 config `backend/app/platform/config.py:49-56` 和 index `:117-123` 只提供固定 `KB_COLLECTION="papers"`，不能承担这些判断。
+
+最小修订：冻结脱敏 topology inventory schema（物理集合、alias、目标、候选、run 状态、collection/alias hash 或版本）及每种 inventory 的命令结果矩阵：允许 dry-run、允许 build、允许 switch、允许 cleanup、必须停服/必须人工介入。所有 destructive 操作必须先以同一 inventory 和 run intent 双重校验；多个候选、未知 alias 类型、缺失 marker、候选已被其他 alias 指向均 fail-closed，不得通过“当前看起来唯一”推断。
+
+#### P0-4：alias、metadata 与 Task04 manifest 之间没有 run-level 原子 finalize 协议
+
+证据：Spec `:178` 要求 alias 成功后再原子提交文档状态、`indexed_source_sha256`、统计和 manifest，失败进入 `finalize_pending`；Task06 `:29,78-79,97` 同样要求 finalize 失败停服。但 Task03/04 只分别描述元数据/manifest 文件的迁移或临时文件替换（Task03 `:18-26,42-44`；Task04 `:70-76`），没有定义跨多个文件、多个文档和 alias 之间的提交 marker、完整清单 hash、恢复顺序或读门禁。现有 `backend/app/knowledge_base/infrastructure/store.py:101-108` 仍是直接 `write_text()`，若被错误复用，崩溃会留下半写 metadata；`load_papers()` `:87-98` 还把损坏/非 list 当空集合，和全局 fail-closed 相冲突。
+
+最小修订：在 Task03/04 交接物中冻结 run-level finalize bundle：所有待提交 metadata/manifest 的路径、内容 hash、schema/version、候选 fingerprint、alias 目标和 commit marker。实现顺序必须是 staging→文件/目录 fsync→完整 bundle hash→单一 commit marker→放开 API/health 读取；marker 之前所有正常读取均拒绝或保持 `INDEX_FINALIZE_REQUIRED`，marker 缺失/不匹配必须 fail-closed。`resume-finalize` 以 bundle hash 幂等补写，确认所有新 manifest 后才能删除旧派生 manifest；旧文件不可作为成功结果返回。Task06 要注入每个文件和 marker 的故障，证明不会将 alias 已切换误报为 completed。
+
+#### P0-5：dry-run 零写与全局 rebuild lock 的边界、生命周期和异常释放不明确
+
+证据：Spec `:171-172` 与 Task02A `:46-50,63-68` 要求默认 dry-run、embedding/Collection/metadata write 为 0；Spec `:123` 同时要求固定写入 `state.json/events.jsonl` 和全局 lock，Task06 `:25-26,51-55` 又要求真实运行获得 lock。当前没有说明 dry-run 是否创建 runtime 目录、state/events 或 lock；也没有 owner/token、进程崩溃后的 stale lock 处理、锁释放时机、跨命令续持和“只允许一个 run”的原子获取方式。
+
+最小修订：把写入按“Qdrant/Collection、embedding、metadata/original、candidate、run diagnostics、lock”逐项定义；若 dry-run 允许临时诊断文件，必须明确其不属于正式 runtime/metadata 且使用临时目录，否则 dry-run 对外报告所有 write counters 为 0。全局锁应采用 create-exclusive 的 owner/run/token/started_at/heartbeat 记录，异常 finally 释放；stale lock 只能在可验证进程不存在且人工确认或显式 cleanup 命令下处理，不能自动抢占。FakeQdrant/临时环境要覆盖两个 dry-run、dry-run 与 confirm 并发、异常/kill 后 lock 残留。
+
+#### P0-6：候选清理失败和“可保留候选”的生命周期没有状态契约
+
+证据：README `:33-36`、Spec `:174,176,179` 和 Task02A `:48,67-68` 要求失败候选清理、首次 alias 失败保留已验证候选；Task06 `:48,52-55,95-98` 只列 `--cleanup-failed`、从头重建和 `resume-switch`，没有规定删除候选本身失败、清理命令失败、已验证候选与未验证候选的状态差异，也没有规定清理失败后服务/正常命令的门禁。若删除 API 在异常后返回不确定，下一次执行可能把同名候选误认成安全候选或删除别的 run。
+
+最小修订：增加 `cleanup_pending`（含 candidate、run、validation state、delete attempt、topology digest）及稳定错误码；区分“未验证候选可清理”和“已验证但 switch 未完成只能 resume-switch，不能 cleanup”。`--cleanup-failed` 必须只接受状态/拓扑双证据匹配的未验证候选，删除成功才转 `failed/cleaned`，不确定或失败则保持停服/禁止新 destructive run 并返回明确错误。测试需注入 delete 超时、部分删除、重试幂等和同名冲突。
+
+#### P0-7：v1/v2+dense/sparse 的候选完整性和 fingerprint 交接仍不可机器验收
+
+证据：Spec `:173-175`、Task02A `:48,58-60,77-80`、Task02B（候选验证/故障矩阵条款）与 Task06 `:26-29,67-70,88-90` 虽列出文档、point、维度、payload、anchor、hash、fingerprint 和真实 dense/sparse 查询，但固定交接物只有 `implementation-contract.md`/报告（README `:39-48`），没有字段封闭的 candidate run/validation schema。现有 `index.py:121-145` 的 dense+sparse payload 仍是旧 `paper_id` 结构，`index_paper_chunker()` `:311-315` 接收 `_llm_used` 后丢弃该事实；这使“v2 无规则降级”和“所有新点属于同一次配置”的硬门无法由报告之外的机器检查复算。
+
+最小修订：在 02A-D 先冻结 candidate validation schema（run 状态、每文档/版本 chunk 数、point ID 集合/缺口、document_id、payload allowlist、dense/sparse name/dim/finite/nnz、source hash、anchor、parser/chunker/embed/model fingerprint、`llm_used`、canonical collection fingerprint、query probes），禁止 additional fields 或报告自填关键值。02B 必须通过公开 builder 从 fixture 真实生成并复算 schema/fingerprint；Task06 只能消费该 schema，不能另写一套计数器或接受规则降级/部分候选。
+
+#### P1（在 Task04 放行前必须关闭）：现有上传入口尚未形成不可变原件的迁移/禁用证据
+
+Spec `:165-166`、Task03 `:42-44`、Task04 `:41-49` 已声明原件不可原位修改、同 ID 不覆盖、删除后新 `document_id`。但现有 `backend/app/knowledge_base/infrastructure/store.py:179-191` 的 `save_upload()` 会按传入 `paper_id` 直接 `write_bytes()`，旧 `routes_kb.py:107-132` 上传后立即更新 metadata 并触发 v1/v2 索引。Task04 固定交接物尚未明确旧入口的关闭/迁移、并发上传的 source hash/ETag 约束及新入口如何证明同 ID 覆盖被拒绝。Task06 停服能暂时隔离重建，但不能替代上线后的不可变来源契约。
+
+最小修订：Task03/04 的 API schema/contract report 增加旧 upload route 的迁移或拒绝矩阵、同 ID/重复 hash/并发写测试、写入后 source SHA-256 与 immutable marker；在 Task06 前证明重建期间 metadata/original pre/post hash 不变，重建入口不会调用上传/索引副作用。
+
+### 检查命令与结果
+
+- 只读行号核对：`nl -ba docs/sdd/plans/018/README.md ...`、各 Task/Spec 的 `nl -ba ... | sed ...`、`nl -ba backend/app/knowledge_base/infrastructure/{index,retrieve,store}.py ...`，退出码均为 **0**。
+- 工作区边界核对：`git status --short`，退出码 **0**；现有修改仅作为上游待评审 Spec/Plan/评审上下文保留，本轮未回退或覆盖。
+- 未运行 pytest、真实 Qdrant、服务启动或重建 CLI：当前 Task02A-D 尚未形成可执行实现，运行这些命令既不能验证新契约，也可能触碰用户数据；本轮为文档技术门禁，故不以“未运行”冒充通过。
+
+### 风险、主 Agent 后续动作与放行条件
+
+1. 先把 P0-1/2/3/4/5/6/7 的 schema、FSM、topology inventory、lock/zero-write 计数和 candidate validation contract 落到 Task02A 固定交接物，保持 02A 只改 fixture/FakeQdrant/临时候选。
+2. 由独立 backend-tester/backend-reviewer 用公开入口注入每个 switch/finalize/cleanup/marker/lock 故障；报告必须给出退出码、状态轨迹、拓扑快照和前后写计数，不能只断言最终 alias。
+3. Task02B 取得严格 `GO` 后，再让 Task03 冻结 metadata/manifest 的 run-level finalize bundle；Task04 必须通过 API/health 读门禁和不可变原件测试，Task06 才能在停服维护窗口执行真实命令。
+4. 任何状态/拓扑不足以证明唯一动作时应保持停服并返回稳定错误；不得用旧 Collection 回滚、隐式重建、删除未知候选或以报告字段替代真实 Qdrant/metadata 观测。
+
+复审日志：`.codebuddy/agent-logs/spec-018/task-00/architect/20260909-034718.md`。
+
+## 全库索引替换修订 P0 补丁独立技术复审（第二轮）
+
+### 复审范围与结论
+
+- 时间：2026-09-09 10:24 +0800；模型：gpt-5.6-luna xhigh（临时，仅本轮）；角色：独立技术评审/Architect。
+- 只读核对当前 Spec、Plan README、Task02A/02B/03/04/05/06/07、本文最近两轮评审，以及 `knowledge_base` 的 `index/application/retrieve/store/tasks`、旧上传路由和配置入口；未修改业务代码、Spec/Plan 或既有评审段，仅在本文末尾追加本轮结论。
+- **结论：打回。** P0-1～P0-7 已在文档层形成较完整的候选隔离、零写观测、锁/FSM、拓扑、清理、验证和 finalize 契约；但上一轮明确要求的 P1“旧 upload 关闭矩阵”仍未落盘为可交接、可机械验收的矩阵，且当前旧入口仍可绕过新 documents application 直接写原件、metadata 和索引。在该矩阵和关闭门禁补齐前，不能将旧上传链路视为已关闭，也不能放行 Task04/Task06。
+
+### P0 逐项核对
+
+| 项 | 结论 | 当前证据 | 复核判断 |
+|---|---|---|---|
+| P0-1 CandidateIndexPort 与 dry-run 全写 spy | **通过（文档门）** | Spec `:184-186` 固定唯一 Port、显式 `destination_collection/document_id`、`document_id` payload、禁止固定 `KB_COLLECTION/paper_id`、metadata/current-point delete 和旧副作用入口；dry-run 逐项计数 `embedding/collection_create/upsert/delete/alias/metadata/source/manifest/runtime/lock=0`。Task02A `:46-50,66-67`、Task02B `:42,70-71` 固定 FakeQdrant/spy 放行。 | 契约方向正确；实现和 `implementation-contract.md`/candidate schema 尚未生成，符合当前 02A-D 待执行状态，必须继续作为硬门，不能以旧 `index.py` 现状代替实现证据。 |
+| P0-2 lock/stale recovery、intent/observed FSM | **通过（文档门）** | Spec `:190-193` 固定 create-exclusive lock 字段、token/heartbeat/finally、显式 stale recovery 条件、破坏性动作前后 `intent/observed`、`switching/finalizing` 收敛；Task06 `:52-56` 固定命令和 fail-closed。 | 已有可执行字段、动作顺序和恢复入口；Task02A/02B 必须在故障注入报告中给出每动作前后轨迹，不能只验最终 alias。 |
+| P0-3 TopologyInventory 动作矩阵 | **通过（文档门）** | Spec `:197-208` 固定 `TopologyInventoryV1` 字段、digest、build/switch/cleanup 唯一拓扑条件、歧义码和六行动作矩阵；Task02A `:48,67-70`、Task02B `:42,72` 固定 FakeQdrant 验证。 | 矩阵覆盖旧物理、alias、同 run candidate、finalize、cleanup_pending 和未知拓扑；机器 schema 文件仍待 02A-D 生成，缺失时不得放行 02B。 |
+| P0-4 cleanup_pending 生命周期 | **通过（文档门）** | Spec `:199` 固定 `candidate/run_id/validation_state/delete_attempt/last_error_code/topology_digest`、停服、阻止新 destructive run、双重匹配重试、未知删除结果不当作成功；Task06 `:97-100` 固定失败处置。 | 已闭合“失败候选可清理、已验证候选只可 switch”的边界；仍需 committed 故障矩阵证明超时/部分删除/重试幂等。 |
+| P0-5 CandidateValidation schema | **通过（文档门）** | Spec `:210-214` 固定 `additionalProperties:false`、run/topology/collection 字段、每文档 v1/v2 的 point/chunk/payload/anchor/dense/sparse/config/`llm_used` 字段和公开 builder 重算；README `:46`、Task02B `:68-73` 固定路径和放行条件。 | 已关闭“报告手填计数”歧义；`candidate-validation.schema.json` 尚不存在，须作为 02A-D 先行产物并由 02B 机械校验。 |
+| P0-6 FinalizeBundle/generation marker | **通过（文档门）** | Spec `:216-220` 固定 `FinalizeBundleV1` 字段、受控相对路径、staging→schema/hash→fsync→bundle→原子替换→复核→清理→`data/kb/index-generation.json` marker 的顺序和 API/health 读门禁；Task03 `:42,61`、Task04 `:33,79-80`、Task06 `:29,54` 一致。 | finalize 语义已明确；Task03/04 尚未生成 schema/实现，marker 缺失/不匹配必须继续保持 `INDEX_FINALIZE_REQUIRED`，不能以旧 `store.py` 直接 `write_text()` 代替。 |
+| P0-7 端到端候选验证与交接 | **通过（文档门）** | Spec `:173-179,212-225`、README `:24-26,46-51`、Task02A `:38,48-50,63-70`、Task02B `:42,68-73` 固定 v1/v2+dense+sparse、候选隔离、验证、切换、恢复、报告与依赖顺序。 | 阶段边界清楚；真实 Collection 仍只能由 Task06 在维护窗口操作，当前没有可宣称的实现验收。 |
+
+### P1 阻塞：旧 upload 关闭矩阵仍缺失
+
+当前文档只有泛化承诺，不是可交接矩阵：
+
+- Spec `:138,147` 说旧 `/api/kb/papers*`、`/api/kb/upload` 调用方和测试“迁移”或由别名转发，但未逐项写明旧路径/符号的最终动作（移除、固定 410/409、还是转发）、生效版本/截止点、owner、测试 ID、日志证据和误调用时必须为 0 的写计数。
+- Task04 `:42,58,78` 只要求“不可变原件”“必须迁移或关闭旧 upload 入口”和测试同 ID/重复 hash/并发上传，未提供固定 `upload-closure-matrix` 产物或 route/symbol-by-symbol 放行表。
+- 现有实现仍存在真实旁路：`backend/app/api/routes_kb.py:107-132` 的 `/kb/upload` 读取整文件后直接调用 `save_upload`、`upsert_paper`、`index_paper_chunker`；`routes_kb.py:14-38` 从 application 导入这些旧能力；`backend/app/knowledge_base/application.py:37-50,69-95` 继续暴露旧 store/index/task facade；`backend/app/knowledge_base/infrastructure/store.py:179-191` 按传入 `paper_id` 直接 `write_bytes()`，可覆盖同 ID 原件。文档说 Task04 将来处理，不能证明当前 P1 已关闭。
+
+**最小可执行修订（由主 Agent/架构师补入 Spec/Plan 后再评审）：**
+
+1. 在 Task04 固定新增 `docs/sdd/plans/018/artifacts/task-04/upload-closure-matrix.json`（或等价固定文件），每行封闭记录 `legacy_route_or_symbol`、`current_owner`、`final_action={removed|410|409|forward_documents_application}`、目标入口、HTTP/错误码、同 ID/重复 hash/并发测试 ID、source/metadata/index 写计数、启用版本/截止点和报告 hash；至少覆盖 `/api/kb/upload`、`/api/kb/papers*`、`save_upload`、`upsert_paper`、`index_paper_chunker`、论文导入适配器及 CLI/后台入口。
+2. 把矩阵列为 Task04/Task06 前置门：未逐项证明“旧入口不可写或只转发同一 documents application”、同 ID 覆盖拒绝、原件 SHA/metadata/ETag 一致、重建 Port 未调用旧 upload/index 副作用时，Task04 与 Task06 均保持阻塞；旧入口调用 spy 必须为 0 或明确计入同一新入口。
+3. 在 `api-schema.json`/`api-fixture-index.json` 和 `backend-contract-report.md` 交叉引用矩阵，记录退出码与实际 route inventory，避免只在 prose 中声称“已迁移”。
+
+### 交接与风险
+
+- Task02A-D 的四份候选交接物当前均不存在：`implementation-contract.md`、`candidate-rebuild-run.schema.json`、`topology-inventory.schema.json`、`candidate-validation.schema.json`；这与 README `:46` 和 Task02A `:38-40` 的“待执行”状态一致，不作为本轮另一个实现失败，但在这些文件落盘前不能从文档门进入 02B `GO`。
+- 旧实现的固定 `papers`、legacy `paper_id` 和直接上传路径是本轮观察到的主要误写风险；不应通过运行真实 Qdrant、服务或 pytest 伪造关闭证据。
+
+### 检查命令与结果
+
+- `nl -ba` 核对 Spec/README/Task02A/02B/03/04/06 与 `index/application/retrieve/store/tasks/routes_kb/config`：退出码 **0**。
+- `rg -n` 检索 CandidateIndexPort、dry-run spy、lock/FSM、TopologyInventory、cleanup_pending、CandidateValidation、FinalizeBundle、generation marker 和 upload 入口：退出码 **0**。
+- `git diff --check`：退出码 **0**。
+- 固定候选 schema/implementation-contract 存在性检查：四份尚未生成（按当前 Task02A-D `待执行` 状态预期）。
+- 未运行 pytest、真实 Qdrant、服务或 rebuild CLI；本轮为只读技术门禁，避免触碰真实用户索引和把未实现内容误报为验收通过。
+
+### 主 Agent 后续动作
+
+先补齐并固定旧 upload 关闭矩阵及 Task04/06 门禁，随后再由独立 backend-reviewer/backend-tester 复核实际 route inventory、同 ID 覆盖拒绝和新 application 唯一路径；同时按当前 Spec 生成四份 02A-D machine artifacts，取得严格 `GO` 后才放行 Task03–07。Spec 仍保持 `待确认`。
+
+复审日志：`.codebuddy/agent-logs/spec-018/task-00/architect/20260909-040000+0800.md`。
+
+## 全库索引替换修订 upload closure 设计门最终独立技术复审
+
+### 双门结论
+
+- 时间：2026-09-09 10:56 +0800；模型：gpt-5.6-luna xhigh（临时，仅本轮）；角色：独立技术评审/Architect。
+- 只读核对最新 `docs/sdd/plans/018/artifacts/task-04/upload-closure-matrix.json`、Spec 旧上传链路矩阵、Task04、Task06，以及真实 routes/application/store/index/tasks/paper-import 入口；未修改业务代码、Spec/Plan 或历史评审段。
+- **设计门：GO。** P1 的 baseline 设计已完整到足以在用户再次确认后开始 Task02A-D；P0-1～P0-7 沿用上一轮已关闭结论。
+- **Task04/06 实现门：当前未放行/未实现。** baseline 仍必须保持 `open/pending/baseline_frozen`；只有 Task04-D 未来把所有 entry/test 更新为 `closed/passed`、`exit_code=0`、证据路径非空且 `review_status=verified`，Task06 才可进入真实维护窗口。此结论不把设计 GO 误报为 Task04/06 已完成。
+
+### 设计门证据
+
+1. **实际入口完整且名称准确。** 最新矩阵 `:6-14` 固定 `main.py` 加七个既有入口文件，并绑定 `inventory_git_revision`、逐文件 SHA-256、排序 digest；`:23-176` 共 17 个 entry 覆盖 `/api/kb/upload`、旧 reindex/delete、`/api/papers/imports`、`/api/papers/import-batches` 及 retry/cancel/login/resume、route helpers、paper import application/adapter、`save_upload/save_papers/upsert_paper/remove_paper/update_chunker_state/mark_interrupted_tasks`、index/task、`main.lifespan` 和 rebuild CLI。此前不存在的单数 `/api/papers/import` 已在 Spec `:220` 与 Task04 `:60` 明确为文档笔误且不属于兼容契约。
+2. **字段、枚举和机械验证契约完整。** Spec `:218-220` 固定顶层/entry/test 的封闭字段、`closed_enums` 枚举、`required_status=closed`、真实 8 文件 inventory 和 digest 变化门；Task04 `:60,69,82-83` 固定实现后更新、所有 entry/test 关闭、退出码 0、证据非空和静态 inventory 防漏项。矩阵当前 `:16-21,178-192` 提供相同枚举、12 个 test、entry 映射、命令、`exit_code` 和 `evidence_paths` 字段。
+3. **baseline 分层正确。** 当前矩阵 `review_status=baseline_frozen`，17 个 entry 均 `current_status=open`/`required_status=closed`，12 个 test 均 `status=pending`、`exit_code=null`、证据为空；这是实现前可审计基线，不是失败或伪造完成态。Task06 `:18-20` 明确 baseline 不得进入真实任务，必须等待 `verified/closed/passed`。
+4. **hash/digest 可复算。** 本轮只读脚本确认 HEAD 等于矩阵 `inventory_git_revision`；8 个文件 SHA-256 全部匹配；按 `shasum -a 256` 行排序并带末尾换行计算的 digest 等于 `5ef5a5fd1d2ed100be950e462e52517536f003bd00bbde7ca189ac71abc8a9c7`；entry/test 引用无孤儿。
+
+### Task04/06 当前实现状态与后续门
+
+- Task04 的 `upload-closure-matrix.json` 目前是 baseline artifact，不代表 routes/store/index/application 已迁移；现有旧实现仍可观察到旧写路径，需由 04-C/04-D 实现和测试逐 entry 关闭。
+- Task04-D 必须取得所有 entry `closed`、required tests `passed`、`exit_code=0`、`evidence_paths` 非空、inventory hash/digest 按实现后代码重算、`review_status=verified`；否则保持阻塞。
+- Task06 仅在 Task04 verified、Spec 用户确认、dry-run 和其余 Task03–05 门禁均通过后执行真实 alias/finalize；不得因为本轮设计 GO 提前操作真实 Qdrant 或宣称实现验收。
+
+### 检查命令与结果
+
+- JSON 解析、entry/test 唯一性和映射检查：退出码 **0**；17 entries、12 tests，baseline 分层符合契约。
+- HEAD、8 个文件 SHA-256、inventory digest 复算：退出码 **0**，全部匹配。
+- `rg -n`/`nl -ba` 清点真实 routes、后台 symbols、Spec/Task 门禁：退出码 **0**。
+- `git diff --check`：退出码 **0**。
+- 未运行 pytest、服务、真实 Qdrant 或 rebuild CLI；实现门仍待 Task04/06 后续执行。
+
+复审日志：`.codebuddy/agent-logs/spec-018/task-00/architect/20260909-040000+0800.md`。
+
+## 全库索引替换修订 upload closure 独立技术复审（第二轮）
+
+### 结论
+
+- 时间：2026-09-09 10:50 +0800；模型：gpt-5.6-luna xhigh（临时，仅本轮）；角色：独立技术评审/Architect。
+- 只读核对 `upload-closure-matrix.json`、Spec 旧上传链路矩阵、Task04/Task06，以及真实 `routes_kb.py`、`routes_paper.py`、`application.py`、`store.py`、`index.py`、`tasks.py`、`paper_import.py`；未修改业务代码、Spec/Plan 或历史评审段。
+- **结论：NO-GO（打回）。** P0-1～P0-7 沿用上一轮“文档门已关闭”的结论；本轮矩阵已正确覆盖大部分旧路由/导入/task/index symbol，并正确区分 `baseline_frozen/open/pending` 与未来 `verified/closed/passed`，但仍遗漏真实后台写入口，不能关闭 P1，也不能放行用户确认后的 Task02A-D。
+
+### 剩余阻塞
+
+1. **遗漏启动期旧索引写入口。** 矩阵 `inventory_files`（`upload-closure-matrix.json:6-13`）只有七个文件，没有 `backend/app/main.py`；矩阵 entries 也没有 `backfill_chunker_defaults`。但 `main.py:12-15,34-46` 在 lifespan 中调用 `mark_interrupted_on_startup()` 和 `backfill_chunker_defaults()`，后者通过 `application`/`index` 更新旧固定 Collection。它是实际后台 index 写入口，不属于当前 16 entries，静态 inventory 因而无法证明“所有后台入口”已覆盖。
+2. **直接 store 写 symbol 仍未逐项封闭。** `store.py:101-122` 的 `save_papers()` 是公开 metadata 写函数，`store.py:161-176` 的 `remove_paper()`、`store.py:281-320` 的 `update_chunker_state()` 和 `store.py:322-...` 的 `mark_interrupted_tasks()` 也会写 metadata/source 状态；矩阵仅以 `store.save_upload and store.upsert_paper`（`upload-closure-matrix.json:132-138`）代表 store 边界，`T-DIRECT-SYMBOLS` 无法机械证明这些可直接调用 symbol 已删除、私有化或拒绝不安全调用。
+3. **baseline 证据尚未达到 Task04 实现放行，但这不是误判。** 当前矩阵 `review_status=baseline_frozen`、所有 entry `current_status=open`、所有 tests `status=pending`、`exit_code=null` 且 `evidence_paths=[]`（`upload-closure-matrix.json:15-20,168-181`），与 Spec `:218-226` 和 Task04 `:60,69,82-83` 的 baseline→verified 分层一致；它足以作为实现输入，但在补齐入口并由 Task04-D 产生 `verified/closed`, `passed`, `exit_code=0`, 非空证据后，才可解除 P1。不能把 baseline 当作 Task04 已完成，也不能用它放行 Task06。
+
+### 需补齐后复审
+
+- 将 `backend/app/main.py` 纳入 inventory 文件和 hash/digest，新增 `main.lifespan → application.backfill_chunker_defaults`（以及其 startup recovery 写入口）entry；明确它在新 generation/维护门禁下的删除、禁止或唯一 application 转发动作。
+- 将 `store.save_papers`、`store.remove_paper`、`store.update_chunker_state`、`store.mark_interrupted_tasks` 等直接写 symbol 纳入逐项 entry 或明确证明它们已变为私有且由已登记 owner 唯一调用；更新静态 inventory 与 `T-DIRECT-SYMBOLS`/`T-BACKGROUND-INVENTORY` 覆盖集。
+- 重新计算 inventory revision、逐文件 SHA-256 和 digest；Task04-D 再将所有 entry/test 更新为 `closed/passed`, `exit_code=0`, 非空 `evidence_paths`, `review_status=verified`。完成后即可重新提交本 P1 复审；此前 Spec 保持 `待确认`、Task02A-D 不放行。
+
+### 检查命令与结果
+
+- JSON 解析、entry/test 唯一性与映射检查：退出码 **0**；16 entries、11 tests，当前所有 entry 均 open、所有 tests 均 pending。
+- 7 个 inventory 文件 SHA-256 与矩阵逐项一致，`shasum -a 256` 行排序摘要可复算为 `inventory_digest`；退出码 **0**。
+- `rg -n`/`nl -ba` 路由和 symbol 清点：退出码 **0**；确认实际 plural import/batch 路由及 `main.lifespan` 写入口。
+- 未运行 pytest、服务、真实 Qdrant 或 rebuild CLI；本轮为只读技术门禁。
+
+复审日志：`.codebuddy/agent-logs/spec-018/task-00/architect/20260909-040000+0800.md`。
+
+## 全库索引替换修订 upload closure 独立技术复审
+
+### 范围与结论
+
+- 时间：2026-09-09 10:34 +0800；模型：gpt-5.6-luna xhigh（临时，仅本轮）；角色：独立技术评审/Architect。
+- 只读核对当前 Spec、README、Task04、Task06、本文上一轮复审，以及 `routes_kb.py`、`routes_paper.py`、`store.py`、`index.py`、`application.py`；未修改业务代码、Spec/Plan 或历史评审段，仅在本文末尾追加本轮结论。
+- **结论：打回。** 上一轮 P0-1～P0-7 的“文档门已关闭”结论沿用；本轮 P1 仍未形成真正逐路由/逐 symbol、可机械核验的 upload closure。新增条款已经明确目标，但覆盖清单仍与现有路由/后台入口不一致，固定矩阵和机器可判定的 route inventory 尚未落盘，因此不能宣称当前技术评审最终通过。
+
+### 残余缺口（仅 P1）
+
+1. **矩阵列出的论文导入路由与真实路由不一致且不完整。** Spec `:218-225`、Task04 `:60` 固定列出 `POST /api/papers/import`，但当前 `routes_paper.py:653-664` 的实际 POST 路由是 `/api/papers/imports` 与兼容别名 `/api/papers/import-batches`；另有 `routes_paper.py:680-700,742-769` 的 retry/cancel/resume 入口可能触发后台导入。若矩阵不逐项决定这些真实路径的删除、转发或禁止动作，不能证明旧导入链路已关闭。
+2. **“所有后台索引提交入口”仍是不可枚举的泛称。** Spec `:219,224`、Task04 `:60,82` 要求覆盖所有后台入口，但没有把当前实际 symbol 逐一列入固定集合：`routes_kb._submit_index_task`/`reindex_kb_paper`（`routes_kb.py:135-166`）、`tasks.submit_index_task`/`run_index_task_sync`（`tasks.py:43-90`）、`application.KnowledgeBasePaperImportAdapter._default_indexer`（`application.py:232-244`）以及仍暴露的 `application.index_paper`/`index_paper_chunker`（`application.py:386-388`）。仅写“所有”无法由 schema 或报告机械发现漏项。
+3. **schema 虽封闭字段，但没有闭合值/库存绑定。** Spec `:218` 只固定 `route_or_symbol` 等字段名和 `additionalProperties:false`，未固定 `entry_kind/status/review_status` 的枚举、required test 的 `test_id/exit_code` 结构，或 `route_inventory_sha256`/静态 inventory 作为“所有入口”证明。Task04 `:69,82` 的“逐 entry closed、无 open/unknown”仍依赖人工自报；当前 `docs/sdd/plans/018/artifacts/task-04/upload-closure-matrix.json`、`api-schema.json`、`api-fixture-index.json`、`backend-contract-report.md` 均尚未生成。
+4. **现有旁路尚未关闭，不能被文档承诺替代。** `routes_kb.py:107-132` 仍由 `/api/kb/upload` 直接调用 `save_upload`、`upsert_paper`、`index_paper_chunker`；`store.py:179-191` 仍按调用方 `paper_id` 直接 `write_bytes()`；`application.py:232-244,249-339` 的论文导入默认 indexer 仍走旧 `index_paper_chunker`，`index.py:101-149,260-356` 仍固定写 `KB_COLLECTION`/`paper_id`。这些可作为未来 04-D 的反例测试，但当前尚未有逐 entry 关闭证据。
+
+### 最小修订与放行门
+
+- 将矩阵覆盖集修正为真实路由和 symbol：至少加入 `/api/papers/imports`、`/api/papers/import-batches`、对应 retry/cancel/resume 入口、`routes_kb._submit_index_task`/`reindex_kb_paper`、`tasks.submit_index_task`/`run_index_task_sync`、`application` 默认 indexer/导出符号，并明确不存在的 `/api/papers/import` 是“删除/不提供”还是文档笔误。
+- 在 schema 中固定 `entry_kind`、`status`、`review_status` 枚举和 `tests[]` 的 `test_id/command/exit_code/result` 字段；加入仓库 route/symbol inventory 的 hash 或等价完整集合，禁止只用“all”作为覆盖证明。
+- 只有 `upload-closure-matrix.json` 实体存在、每个真实 entry 均 `closed`、测试命令/退出码和 source-write spy 均可复核，且 Task04 `:82` 与 Task06 `:19` 门禁实际消费该文件后，P1 才能关闭。此前保持 Task04/Task06 阻塞，Spec 继续保持 `待确认`。
+
+### 检查命令与结果
+
+- `nl -ba` 核对 Spec/README/Task04/Task06 和指定 routes/store/index/application：退出码 **0**。
+- `rg -n` 清点 `/api/papers/import*`、upload、index/task/import symbols：退出码 **0**；确认实际路由为 plural `imports`/`import-batches`。
+- 固定 Task04 upload closure/API/fixture/report 文件存在性检查：均为 **absent**（Task04 当前待执行）。
+- 未运行 pytest、服务、真实 Qdrant 或 rebuild CLI；本轮只读技术门禁。
+
+复审日志：`.codebuddy/agent-logs/spec-018/task-00/architect/20260909-040000+0800.md`。
