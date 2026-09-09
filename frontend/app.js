@@ -382,6 +382,12 @@ const paperState = {
   batchPollTimer: null,
   batchPollSerial: 0,
   pendingKbPaperId: null,
+  importPhase: 'idle',
+  failedGroups: [],
+  skippedImports: 0,
+  directSuccess: 0,
+  lastImportError: null,
+  currentRoundBatchIds: new Set(),
 };
 
 const PAPER_STATUS_TEXT = {
@@ -895,6 +901,92 @@ function showPaperError(code, details = null) {
   paperSearchError.hidden = false;
 }
 
+const PAPER_IMPORT_PHASES = ['idle', 'submitting', 'running', 'partial_success', 'completed', 'failed'];
+
+function setImportPhase(phase) {
+  if (!PAPER_IMPORT_PHASES.includes(phase)) return;
+  paperState.importPhase = phase;
+}
+
+function renderImportSummary() {
+  if (!paperImportStatus) return;
+  const roundBatchIds = paperState.currentRoundBatchIds || new Set();
+  const batches = [...paperState.batches.entries()]
+    .filter(([id]) => roundBatchIds.has(id))
+    .map(([, batch]) => batch);
+  let completedItems = 0;
+  let failedItems = 0;
+  let runningBatches = 0;
+  for (const batch of batches) {
+    const items = batch.items || [];
+    if (!paperBatchTerminal(batch)) runningBatches += 1;
+    for (const item of items) {
+      const st = item.status || item.state;
+      if (st === 'completed') completedItems += 1;
+      else if (st === 'failed') failedItems += 1;
+    }
+    if (paperBatchTerminal(batch) && (batch.status || batch.state) === 'failed' && items.length === 0) {
+      failedItems += Number(batch.total_count) || 1;
+    }
+  }
+  const submitFailed = paperState.failedGroups.length;
+  const skipped = paperState.skippedImports;
+  const totalSuccess = completedItems + (paperState.directSuccess || 0);
+  const totalFailed = failedItems + submitFailed;
+  const totalBatches = batches.length;
+
+  let phase = paperState.importPhase;
+  if (runningBatches > 0) {
+    phase = 'running';
+  } else if (totalSuccess > 0 && totalFailed > 0) {
+    phase = 'partial_success';
+  } else if (totalSuccess > 0) {
+    phase = 'completed';
+  } else if (totalSuccess === 0 && (totalFailed > 0 || skipped > 0)) {
+    phase = 'failed';
+  }
+  setImportPhase(phase);
+
+  if (paperImportSummary) {
+    paperImportSummary.textContent = `${totalBatches} 个批次 · ${totalSuccess} 成功 / ${totalFailed} 失败`;
+  }
+
+  let message;
+  let kind;
+  if (phase === 'submitting') {
+    message = `正在提交 ${totalBatches + submitFailed} 个导入批次…`;
+    kind = 'running';
+  } else if (phase === 'running') {
+    message = `正在导入：${completedItems} 篇完成${failedItems ? `，${failedItems} 篇失败` : ''}${submitFailed ? `，${submitFailed} 个分组提交失败` : ''}`;
+    kind = 'running';
+  } else if (phase === 'completed') {
+    message = `导入完成：${totalSuccess} 篇成功` + (skipped ? `；${skipped} 篇未能确定所属检索` : '');
+    kind = 'completed';
+  } else if (phase === 'partial_success') {
+    const reasons = [...new Set(paperState.failedGroups.map((g) => PAPER_ERROR_TEXT[g.code] || '导入失败'))];
+    message = `导入部分完成：${totalSuccess} 篇成功，${totalFailed} 篇失败`;
+    if (reasons.length) message += `（${reasons.join('；')}）`;
+    kind = 'partial';
+  } else {
+    kind = 'failed';
+    if (submitFailed) {
+      const reasons = [...new Set(paperState.failedGroups.map((g) => PAPER_ERROR_TEXT[g.code] || '导入失败'))];
+      message = `导入失败：${reasons.join('；')}`;
+    } else if (skipped) {
+      message = '未能确定该论文所属检索，请重新检索后再导入';
+    } else if (totalFailed) {
+      message = `导入失败：${totalFailed} 篇`;
+    } else {
+      message = '导入未完成';
+    }
+    if (paperState.lastImportError) {
+      const t = PAPER_ERROR_TEXT[paperState.lastImportError];
+      if (t) message += `（${t}）`;
+    }
+  }
+  setPaperStatus(paperImportStatus, message, kind);
+}
+
 async function changePaperPage(page) {
   if (!paperState.searchId || !paperState.searchController || page < 1 || page > paperState.searchTotalPages) return;
   const serial = paperState.searchSerial;
@@ -916,42 +1008,53 @@ async function changePaperPage(page) {
 async function importPaperCandidates(candidates) {
   if (!paperState.enabled) return;
   const groups = new Map();
+  let skipped = 0;
   candidates.filter((candidate) => candidate && !candidate.existing_paper_id).forEach((candidate) => {
     const searchId = paperState.candidateSearchIds.get(candidate.candidate_id) || candidate.search_id;
-    if (!searchId) return;
+    if (!searchId) { skipped += 1; return; }
     if (!groups.has(searchId)) groups.set(searchId, []);
     groups.get(searchId).push(candidate.candidate_id);
   });
-  if (!groups.size) return;
-  const created = [];
-  try {
-    for (const [search_id, candidate_ids] of groups) {
-      const importKey = `${search_id}:${candidate_ids.join('|')}`;
-      if (paperState.inFlightImports.has(importKey)) continue;
-      paperState.inFlightImports.add(importKey);
-      try {
-        const response = await fetch('/api/papers/imports', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(groups.size === 1 && candidate_ids.length === 1
-            ? { search_id, candidate_id: candidate_ids[0] }
-            : { search_id, candidate_ids, idempotency_key: paperIdempotencyKey(search_id, candidate_ids) }),
-        });
-        const data = await paperJson(response);
-        if (data.batch_id) {
-          paperState.batches.set(data.batch_id, data); created.push(data.batch_id); renderPaperBatch(data);
-        } else if (paperImportPanel) {
-          paperImportPanel.hidden = false;
-          if (paperImportStatus) paperImportStatus.textContent = data.existing ? '论文已在知识库中' : (PAPER_STATUS_TEXT[data.status] || '导入已提交');
-          if (data.paper_id) jumpToKnowledgeBase(data.paper_id);
-        }
-      } finally {
-        paperState.inFlightImports.delete(importKey);
-      }
-    }
-    if (created.length) { if (paperImportPanel) paperImportPanel.hidden = false; schedulePaperBatchPoll(); }
-  } catch (error) {
-    if (paperImportStatus) paperImportStatus.textContent = PAPER_ERROR_TEXT[error.code] || '导入服务暂时不可用';
+  paperState.skippedImports = skipped;
+  paperState.failedGroups = [];
+  paperState.lastImportError = null;
+  paperState.directSuccess = 0;
+  paperState.currentRoundBatchIds = new Set();
+  if (!groups.size) {
+    if (paperImportPanel) paperImportPanel.hidden = false;
+    setImportPhase('failed');
+    renderImportSummary();
+    return;
   }
+  setImportPhase('submitting');
+  if (paperImportPanel) paperImportPanel.hidden = false;
+  const created = [];
+  for (const [search_id, candidate_ids] of groups) {
+    const importKey = `${search_id}:${candidate_ids.join('|')}`;
+    if (paperState.inFlightImports.has(importKey)) continue;
+    paperState.inFlightImports.add(importKey);
+    try {
+      const response = await fetch('/api/papers/imports', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(groups.size === 1 && candidate_ids.length === 1
+          ? { search_id, candidate_id: candidate_ids[0] }
+          : { search_id, candidate_ids, idempotency_key: paperIdempotencyKey(search_id, candidate_ids) }),
+      });
+      const data = await paperJson(response);
+      if (data.batch_id) {
+        paperState.batches.set(data.batch_id, data); created.push(data.batch_id); paperState.currentRoundBatchIds.add(data.batch_id); renderPaperBatch(data);
+      } else {
+        paperState.directSuccess += 1;
+        if (data.paper_id) jumpToKnowledgeBase(data.paper_id);
+      }
+    } catch (error) {
+      paperState.failedGroups.push({ search_id, candidate_ids, code: error.code || 'IMPORT_BATCH_ERROR' });
+    } finally {
+      paperState.inFlightImports.delete(importKey);
+    }
+  }
+  if (created.length) schedulePaperBatchPoll();
+  renderImportSummary();
 }
 
 function paperBatchTerminal(batch) {
@@ -970,7 +1073,9 @@ function schedulePaperBatchPoll() {
     }
     const ids = [...paperState.batches.keys()];
     if (!ids.length || ids.every((id) => paperBatchTerminal(paperState.batches.get(id)))) {
-      window.clearInterval(paperState.batchPollTimer); paperState.batchPollTimer = null; return;
+      window.clearInterval(paperState.batchPollTimer); paperState.batchPollTimer = null;
+      renderImportSummary();
+      return;
     }
     await Promise.all(ids.map(async (batchId) => {
       if (!isCurrentPoll() || paperBatchTerminal(paperState.batches.get(batchId))) return;
@@ -980,7 +1085,7 @@ function schedulePaperBatchPoll() {
         if (!isCurrentPoll()) return;
         paperState.batches.set(batchId, data); renderPaperBatch(data);
       } catch (error) {
-        if (isCurrentPoll() && paperImportStatus) paperImportStatus.textContent = PAPER_ERROR_TEXT[error.code] || '导入状态暂时不可用';
+        if (isCurrentPoll()) paperState.lastImportError = error.code || 'IMPORT_BATCH_ERROR';
       }
     }));
   }, 2500);
@@ -1005,8 +1110,6 @@ function renderPaperBatch(batch) {
   const batchSummary = document.createElement('span'); batchSummary.textContent = `${batch.completed_count || 0}/${batch.total_count || batch.items?.length || 0} 已完成`;
   batchHeader.append(batchTitle, batchSummary); batchContainer.appendChild(batchHeader);
   const batchItems = document.createElement('ul'); batchItems.className = 'paper-import-items'; batchContainer.appendChild(batchItems);
-  if (paperImportStatus) paperImportStatus.textContent = `批次 ${label}`;
-  if (paperImportSummary) paperImportSummary.textContent = `${paperState.batches.size} 个批次`;
   const candidatesById = paperState.candidateById;
   const loginItems = [];
   (batch.items || []).forEach((item) => {
@@ -1031,7 +1134,7 @@ function renderPaperBatch(batch) {
       try {
         const response = await fetch(`/api/papers/imports/${encodeURIComponent(batch.batch_id)}/retry`, { method: 'POST' });
         const data = await paperJson(response); paperState.batches.set(data.batch_id, data); renderPaperBatch(data); schedulePaperBatchPoll();
-      } catch (error) { if (paperImportStatus) paperImportStatus.textContent = PAPER_ERROR_TEXT[error.code] || '重试暂时不可用'; retry.disabled = false; }
+      } catch (error) { paperState.lastImportError = error.code || 'IMPORT_BATCH_ERROR'; retry.disabled = false; renderImportSummary(); }
     });
     batchItems.appendChild(retry);
   }

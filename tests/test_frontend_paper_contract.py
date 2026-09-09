@@ -88,8 +88,30 @@ def test_paper_error_text_covers_missing_codes_and_range_details() -> None:
 
 def test_paper_app_version_bumped() -> None:
     # 改动 app.js 后必须同步递增 ?v= 版本号，确保浏览器刷新缓存（回归护栏 A7）。
-    assert "/assets/app.js?v=18" in INDEX
-    assert "/assets/styles.css?v=18" in INDEX
+    assert "/assets/app.js?v=20" in INDEX
+    assert "/assets/styles.css?v=20" in INDEX
+
+
+def test_paper_import_status_resets_per_round() -> None:
+    # P1-1/P1-2 回归：每次导入动作必须重置本轮累加器，且汇总只聚合本轮批次，
+    # 避免同会话重复"添加到知识库"时成功数翻倍、旧批次污染汇总。
+    import_start = APP.index("async function importPaperCandidates")
+    import_end = APP.index("function paperBatchTerminal", import_start)
+    import_fn = APP[import_start:import_end]
+
+    # P1-1：directSuccess 必须在导入起始重置块内归零。
+    assert "paperState.directSuccess = 0;" in import_fn
+    # 本轮其余累加器同样在起始重置（skippedImports / failedGroups / lastImportError）。
+    assert "paperState.skippedImports = skipped;" in import_fn
+
+    # P1-2：必须记录本轮 batch_id 集合，供汇总过滤旧批次。
+    assert "paperState.currentRoundBatchIds" in import_fn
+
+    # renderImportSummary 必须按本轮集合过滤，而非聚合整个 batches Map。
+    summary_start = APP.index("function renderImportSummary")
+    summary_end = APP.index("async function changePaperPage", summary_start)
+    summary_fn = APP[summary_start:summary_end]
+    assert "paperState.currentRoundBatchIds" in summary_fn
 
 
 def test_paper_error_notice_and_status_states_have_css() -> None:

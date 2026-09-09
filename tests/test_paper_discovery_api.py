@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -8,7 +8,14 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import common, routes_paper
 from backend.app.main import app
-from backend.app.paper_discovery.domain.paper_discovery import CatalogPaper, ConferenceSource, PaperCandidate, SearchSession
+from backend.app.paper_discovery.domain.paper_discovery import (
+    CatalogPaper,
+    ConferenceSource,
+    PaperCandidate,
+    SearchJob,
+    SearchResult,
+    SearchSession,
+)
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 from backend.app.paper_discovery.infrastructure.paper_download import PaperDownloadError
@@ -346,6 +353,218 @@ class AcceptedCatalogCompatibilityTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "CATALOG_NOT_READY")
         self.assertTrue(response.json()["retryable"])
         self.accepted_search.assert_not_called()
+
+
+class PaperSingleImportCatalogJobFallbackTests(unittest.TestCase):
+    """Task04 修复一：单篇导入在 search_sessions 为空的 catalog-search 场景下，
+    必须回退到 search_jobs 解析，而非误报 SEARCH_NOT_FOUND。"""
+
+    def setUp(self):
+        self.client = TestClient(app)
+        import tempfile
+        self.database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
+        self.store = PaperDiscoveryStore(self.database.name)
+        self.now = datetime.now(timezone.utc)
+        self.future = (self.now + timedelta(hours=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    def tearDown(self):
+        self.database.close()
+
+    def _job(self, search_id, status="partial", expires_at=None):
+        return SearchJob(
+            search_id, "security", [], [], status, "catalog-search-v1",
+            False, None, 1, self.now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            None, None, expires_at or self.future,
+            self.now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        )
+
+    def _result(self, search_id, catalog_paper_id):
+        snapshot = {
+            "catalog_paper_id": catalog_paper_id,
+            "candidate_id": catalog_paper_id,
+            "title": "A Safe Paper",
+            "conference_id": "ccs",
+            "conference_name": "CCS",
+            "year": 2025,
+            "authors": ["Author"],
+            "pdf_url": "https://papers.example/paper.pdf",
+            "article_url": "https://papers.example/paper.html",
+            "source_kind": "dblp",
+            "source_page_url": "https://papers.example/paper.html",
+            "source_links": [{"kind": "pdf", "url": "https://papers.example/paper.pdf"}],
+        }
+        return SearchResult(search_id, catalog_paper_id, 1, 0.0, None, 0.0, snapshot, "")
+
+    def _catalog_paper(self, catalog_paper_id):
+        ts = self.now.isoformat(timespec="seconds").replace("+00:00", "Z")
+        return CatalogPaper(
+            catalog_paper_id, "ccs", 2025, "A Safe Paper", "a safe paper",
+            ["Author"], None, [], None, None, "published",
+            "https://www.usenix.org/paper", "https://www.usenix.org/paper.pdf",
+            None, None, "hash-" + catalog_paper_id, "pending", 0, ts, ts,
+        )
+
+    def test_single_import_resolves_catalog_job_fallback_and_succeeds(self):
+        """无 search_session、只有 search_job 时，单篇导入应回退成功（不再误报 SEARCH_NOT_FOUND）。"""
+        self.store.upsert_catalog_paper(self._catalog_paper("cp-1"))
+        self.store.create_search_job(self._job("job-1"))
+        self.store.save_search_result(self._result("job-1", "cp-1"))
+        result = {
+            "paper_id": "paper-1", "stored_name": "2025-CCS-A-Safe-Paper.pdf",
+            "status": "indexed", "error_code": None, "existing": False,
+        }
+        with patch.object(routes_paper, "_paper_store", return_value=self.store), patch.object(
+            routes_paper, "import_candidate", return_value=result
+        ) as importer:
+            response = self.client.post(
+                "/api/papers/imports",
+                json={"search_id": "job-1", "candidate_id": "cp-1"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), result)
+        # 候选来自 by_id（dict 快照），而非 get_candidate
+        self.assertIsInstance(importer.call_args.args[0], dict)
+        self.assertEqual(importer.call_args.args[0]["catalog_paper_id"], "cp-1")
+        self.assertEqual(importer.call_args.kwargs["conference_short_name"], "CCS")
+
+    def test_single_import_three_search_context_codes_are_mutually_exclusive(self):
+        """同一合法 search_id 在不同检索上下文下一律只命中其一：不存在/未就绪/已过期互斥。"""
+        past = (self.now - timedelta(hours=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+        cases = [
+            ("SEARCH_NOT_FOUND", None, None, 404, "搜索会话不存在"),
+            ("SEARCH_NOT_READY", "running", self.future, 400, "搜索结果尚未冻结"),
+            ("SEARCH_EXPIRED", "partial", past, 400, "搜索会话已过期"),
+        ]
+        for code, status, expires_at, status_code, message in cases:
+            with self.subTest(code=code):
+                import tempfile
+                database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
+                store = PaperDiscoveryStore(database.name)
+                if status is not None:
+                    store.upsert_catalog_paper(self._catalog_paper("cp-x"))
+                    store.create_search_job(self._job("job-x", status=status, expires_at=expires_at))
+                    store.save_search_result(self._result("job-x", "cp-x"))
+                try:
+                    with patch.object(routes_paper, "_paper_store", return_value=store), patch.object(
+                        routes_paper, "import_candidate", side_effect=AssertionError("must not import")
+                    ):
+                        response = self.client.post(
+                            "/api/papers/imports",
+                            json={"search_id": "job-x", "candidate_id": "cp-x"},
+                        )
+                finally:
+                    database.close()
+                self.assertEqual(response.status_code, status_code)
+                body = response.json()
+                self.assertEqual(set(body), {"code", "message", "retryable", "request_id"})
+                self.assertEqual(body["code"], code)
+                self.assertEqual(body["message"], message)
+                self.assertFalse(body["retryable"])
+
+
+class PaperImportBatchErrorSemanticsTests(unittest.TestCase):
+    """Task04 修复二：未预期异常不得伪装成 503 IMPORT_BATCH_UNAVAILABLE，
+    须落日志并返回可诊断 424 IMPORT_BATCH_ERROR。"""
+
+    def setUp(self):
+        self.client = TestClient(app)
+
+    def _assert_unexpected_exception_returns_424_and_logs(self, response):
+        self.assertEqual(response.status_code, 424)
+        body = response.json()
+        self.assertEqual(set(body), {"code", "message", "retryable", "request_id"})
+        self.assertEqual(body["code"], "IMPORT_BATCH_ERROR")
+        self.assertFalse(body["retryable"])
+
+    def test_create_batch_unexpected_exception_returns_424_and_logs(self):
+        with patch.object(routes_paper, "_paper_server_snapshot", return_value=(SimpleNamespace(), [{}])), patch.object(
+            routes_paper, "_paper_batch_service"
+        ) as service, self.assertLogs("backend.app.api.routes_paper", level="ERROR") as logs:
+            service.return_value.create_batch.side_effect = RuntimeError("boom")
+            response = self.client.post(
+                "/api/papers/imports",
+                json={"search_id": "job-1", "candidate_ids": ["cp-1"]},
+            )
+        self._assert_unexpected_exception_returns_424_and_logs(response)
+        self.assertTrue(any("批量导入未预期异常" in record.getMessage() for record in logs.records))
+
+    def test_import_batches_alias_unexpected_exception_returns_424_and_logs(self):
+        with patch.object(routes_paper, "_paper_server_snapshot", return_value=(SimpleNamespace(), [{}])), patch.object(
+            routes_paper, "_paper_batch_service"
+        ) as service, self.assertLogs("backend.app.api.routes_paper", level="ERROR") as logs:
+            service.return_value.create_batch.side_effect = RuntimeError("boom")
+            response = self.client.post(
+                "/api/papers/import-batches",
+                json={"search_id": "job-1", "candidate_ids": ["cp-1"]},
+            )
+        self._assert_unexpected_exception_returns_424_and_logs(response)
+        self.assertTrue(any("批量导入未预期异常" in record.getMessage() for record in logs.records))
+
+    def test_get_batch_unexpected_exception_returns_424_and_logs(self):
+        with patch.object(routes_paper, "_paper_batch_service") as service, self.assertLogs(
+            "backend.app.api.routes_paper", level="ERROR"
+        ) as logs:
+            service.return_value.get_status.side_effect = RuntimeError("boom")
+            response = self.client.get("/api/papers/imports/does-not-matter")
+        self._assert_unexpected_exception_returns_424_and_logs(response)
+        self.assertTrue(any("批量导入未预期异常" in record.getMessage() for record in logs.records))
+
+    def test_retry_batch_unexpected_exception_returns_424_and_logs(self):
+        service = SimpleNamespace(
+            store=SimpleNamespace(
+                get_batch=Mock(return_value=SimpleNamespace(search_id="s1", status="running")),
+                get_items=Mock(return_value=[SimpleNamespace(candidate_id="c1")]),
+            ),
+            retry_batch=Mock(side_effect=RuntimeError("boom")),
+        )
+        with patch.object(routes_paper, "_paper_server_snapshot", return_value=(SimpleNamespace(), [{}])), patch.object(
+            routes_paper, "_paper_batch_service", return_value=service
+        ), self.assertLogs("backend.app.api.routes_paper", level="ERROR") as logs:
+            response = self.client.post("/api/papers/imports/bid/retry")
+        self._assert_unexpected_exception_returns_424_and_logs(response)
+        self.assertTrue(any("批量导入未预期异常" in record.getMessage() for record in logs.records))
+
+    def test_cancel_batch_unexpected_exception_returns_424_and_logs(self):
+        service = SimpleNamespace(
+            store=SimpleNamespace(
+                get_batch=Mock(return_value=SimpleNamespace(search_id="s1", status="queued")),
+            ),
+            cancel_batch=Mock(side_effect=RuntimeError("boom")),
+        )
+        with patch.object(routes_paper, "_paper_batch_service", return_value=service), self.assertLogs(
+            "backend.app.api.routes_paper", level="ERROR"
+        ) as logs:
+            response = self.client.post("/api/papers/import-batches/bid/cancel")
+        self._assert_unexpected_exception_returns_424_and_logs(response)
+        self.assertTrue(any("批量导入未预期异常" in record.getMessage() for record in logs.records))
+
+    def test_resume_item_unexpected_exception_returns_424_and_logs(self):
+        service = SimpleNamespace(
+            store=SimpleNamespace(get_item=Mock(side_effect=RuntimeError("boom"))),
+        )
+        with patch.object(routes_paper, "_paper_batch_service", return_value=service), self.assertLogs(
+            "backend.app.api.routes_paper", level="ERROR"
+        ) as logs:
+            response = self.client.post("/api/papers/import-items/iid/resume")
+        self._assert_unexpected_exception_returns_424_and_logs(response)
+        self.assertTrue(any("批量导入未预期异常" in record.getMessage() for record in logs.records))
+
+    def test_database_locked_conflict_still_returns_503_retryable(self):
+        """确属瞬时冲突（DATABASE_LOCKED）仍走 503 retryable，且不被意外异常分支吞掉。"""
+        from backend.app.paper_discovery.application.paper_import_batch_service import PaperImportBatchServiceError
+        with patch.object(routes_paper, "_paper_server_snapshot", return_value=(SimpleNamespace(), [{}])), patch.object(
+            routes_paper, "_paper_batch_service"
+        ) as service:
+            service.return_value.create_batch.side_effect = PaperImportBatchServiceError(
+                "DATABASE_LOCKED", "批次状态库正忙", retryable=True
+            )
+            response = self.client.post(
+                "/api/papers/imports",
+                json={"search_id": "job-1", "candidate_ids": ["cp-1"]},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["code"], "DATABASE_LOCKED")
+        self.assertTrue(response.json()["retryable"])
 
 
 if __name__ == "__main__":
