@@ -1,7 +1,7 @@
 # Task 02B：重新验证来源锚点与候选重建协议（Go/No-Go）
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task02A 全部实现、测试和评审通过；被依赖：Task03；当前状态：`待执行`
+> 依赖：Task02A 全部实现、测试和评审通过；被依赖：Task03；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -39,7 +39,7 @@
 ```text
 你是 Spec018 Task02B 的 backend-tester。只读取 Spec018、Task02/02A/02B、首轮 artifacts/fixtures、Task02A 固定报告和被测生产入口。不得修改 backend、frontend、用户 data/kb、真实 Qdrant、首轮 fixture/expected/NO-GO 报告或 Git 历史；不得重新设计或放宽验收阈值。
 
-先核对首轮证据 hash 与三份机器 schema。随后用正式入口重放全部固定样本，验证 PDF block bbox、Markdown 行号、v1 overlap、v2 跨页、多对多 anchors、page-null 和 hostile 后端安全。再使用 FakeQdrant 与临时目录验证：CandidateIndexPort 显式 destination/document_id 且正式 papers/metadata/source 零写；dry-run 全部写 spy 为 0；元数据权威集合与孤立文件报告；空库和缺失/损坏原件；全局 lock token/heartbeat/finally/stale recovery；v1+v2、dense+sparse 候选构建；规则降级拒绝；validation schema 与 fingerprint 复算；dense+sparse 查询；每个 switch/finalize 动作前后中断；intent/observed 收敛；cleanup_pending/删除超时/结果未知；首次 physical papers 到 alias；后续原子切换；resume-switch/finalize；完整 topology inventory/matrix 与 fail-closed。禁止触碰真实索引。
+先核对首轮证据 hash 与三份机器 schema。随后用正式入口重放全部固定样本，验证 PDF block bbox、Markdown 行号、v1 overlap、v2 跨页、多对多 anchors、page-null 和 hostile 后端安全。再使用 FakeQdrant 与临时目录验证候选构建的功能路径与既有测试；禁止触碰真实索引。输出必须分成 `functional_verdict=GO|NO_GO` 与 `production_cutover_verdict=GO|DEFERRED_SECURITY_DEBT|NO_GO`：来源锚点与隔离候选主链通过即可给出功能 GO 并放行 Task03–05；独立评审遗留的生产加固未关闭时必须给出 `DEFERRED_SECURITY_DEBT`，列出报告引用，并明确不放行 Task06。
 
 必须输出严格 GO 或 NO-GO。报告写入 docs/sdd/plans/018/artifacts/task-02b/source-anchor-revalidation-report.md。返回：状态摘要、命令/退出码、样本 hash、映射率与 bbox/行号误差、候选验证计数/fingerprint、失败矩阵、GO/NO-GO、风险、主 Agent 动作、开始结束耗时和可用的模型/token/工具统计。
 ```
@@ -89,3 +89,4 @@
 
 - 2026-09-08：创建 Task02B，最初包含旧索引快照恢复验收。
 - 2026-09-09：经确认改为候选 Collection 全库重建协议验收，真实索引操作推迟到 Task06。
+- 2026-09-09：按用户“功能优先”决定拆分功能裁决与生产切换安全裁决；带安全债务的功能 GO 只放行 Task03–05，不放行 Task06。

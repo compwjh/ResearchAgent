@@ -1,7 +1,7 @@
 # Task 02A：生产级来源定位与全库候选重建基础
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：首轮 Task02 `NO-GO` 证据、全库替换修订重新通过评审并获用户确认；被依赖：Task02B；当前状态：`实施中（A–C 已完成；D 执行中；E 待 D）`
+> 依赖：首轮 Task02 `NO-GO` 证据、全库替换修订重新通过评审并获用户确认；被依赖：Task02B；当前状态：`已完成（功能门 GO；生产切换门留至 Task06）`
 
 ## 一句话目标
 
@@ -89,6 +89,7 @@ Task02A 不定义或持久化最终 InspectionManifest；只复用 SourceProvena
 - 任何路径触碰真实 `data/kb` 或真实 Qdrant：立即停止并报告。
 - 需要最终 manifest schema 才能继续：停止，不得在 Task02A 私自定义；交由 Task03。
 - 本 Task 的回滚仅删除临时测试候选和临时运行状态，不修改用户原件、元数据或正式索引。
+- 用户决定功能优先：独立评审遗留的生产防御问题可以登记为 `security_debt`，不再阻塞隔离环境功能交接和 Task02B；报告必须保留原始证据，不得改写为已通过。遗留项统一转入 Task06 前置硬门，在关闭前禁止真实 Qdrant、`--confirm-replace`、alias 切换或 Collection 删除。
 
 ## 产出物
 
@@ -98,10 +99,15 @@ Task02A 不定义或持久化最终 InspectionManifest；只复用 SourceProvena
 ## 执行结果
 
 - 02A-A～C：已完成并分别提交。
-- 02A-D/E：待修订版 Spec 重新评审和用户确认后执行。
+- 02A-D：CandidateIndexPort、候选 rebuild/FSM/CLI、三份封闭 schema、验证与故障测试已完成；只使用固定样本、临时目录、FakeQdrant/stub，未触碰真实数据或真实 Qdrant。
+- 02A-E：`functional_verdict=GO/PASS`。主 Agent 与独立 tester/reviewer复跑候选测试 **37 passed**，独立恶意/故障探针 **16/16 passed**，ruff、py_compile、schema 和 diff 检查均退出码 0。
+- `production_cutover_verdict=DEFERRED_TO_TASK06`：本 Task 不宣称真实 Qdrant HTTP、线上 alias 原子性或正式全库切换通过；这些仅由 Task06 维护门验收。
+- 固定交接物：`candidate-rebuild-report.md`、`backend-test-report.md`、`backend-review-report.md`、`implementation-contract.md` 及三份 schema。
 
 ## 变更日志
 
 - 2026-09-08：创建 Task02A，最初采用逐 point/vector 快照和自动升级设计。
 - 2026-09-09：A–C 完成并通过定向评审。
 - 2026-09-09：用户确认旧索引可丢弃；经 Grill with Docs 将 D 改为候选 Collection 全库重建协议，废弃未提交快照草稿，暂停等待重新评审和确认。
+- 2026-09-09：用户调整为功能优先；安全评审遗留以 `security_debt` 留账，允许隔离功能链继续到 Task02B/03–05，但真实切换仍由 Task06 安全门阻断。
+- 2026-09-09：四轮加固后，37 项正式测试与 16 项独立探针通过；独立 tester/reviewer 给出功能门 GO，Task02A 收口并放行 Task02B。生产切换结论保持 `DEFERRED_TO_TASK06`。

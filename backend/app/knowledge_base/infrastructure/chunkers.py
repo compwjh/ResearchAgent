@@ -243,12 +243,12 @@ def build_chunks_v2(
 
 def _to_blocks(pages: Sequence[Tuple[Optional[int], str]]) -> List[Tuple[Optional[int], str]]:
     """把清洗后的页文本按空行切成 blocks，并保留各自页码。"""
-    blocks: List[Tuple[int, str]] = []
+    blocks: List[Tuple[Optional[int], str]] = []
     for page, text in pages:
         for raw in (text or "").split("\n\n"):
             block = raw.strip()
             if block:
-                blocks.append((int(page), block))
+                blocks.append((page, block))
     return blocks
 
 
@@ -277,7 +277,7 @@ def _heading_of(block_text: str) -> Optional[str]:
     return None
 
 
-def _rule_boundaries(blocks: Sequence[Tuple[int, str]]) -> List[int]:
+def _rule_boundaries(blocks: Sequence[Tuple[Optional[int], str]]) -> List[int]:
     """规则预筛出的边界下标。首个 block 恒为边界（其后才有内容可合并）。"""
     return [
         index
@@ -287,7 +287,7 @@ def _rule_boundaries(blocks: Sequence[Tuple[int, str]]) -> List[int]:
 
 
 def _judge_by_llm(
-    blocks: Sequence[Tuple[int, str]],
+    blocks: Sequence[Tuple[Optional[int], str]],
     boundaries: List[int],
     llm: Callable[[str], str],
     progress: Optional[Callable[[int], None]],
@@ -325,13 +325,13 @@ def _judge_by_llm(
 
 
 def _group_by_boundary(
-    blocks: Sequence[Tuple[int, str]],
+    blocks: Sequence[Tuple[Optional[int], str]],
     boundaries: Sequence[int],
-) -> List[List[Tuple[int, str]]]:
+) -> List[List[Tuple[Optional[int], str]]]:
     """按边界把 blocks 分组；**跨边界绝不合并**。"""
     boundary_set = set(boundaries)
-    groups: List[List[Tuple[int, str]]] = []
-    current: List[Tuple[int, str]] = []
+    groups: List[List[Tuple[Optional[int], str]]] = []
+    current: List[Tuple[Optional[int], str]] = []
     for index, block in enumerate(blocks):
         if index in boundary_set and current:
             groups.append(current)
@@ -402,7 +402,7 @@ def _split_by_sentence(text: str, limit: int) -> List[str]:
     return [piece for piece in pieces if piece.strip()]
 
 
-def _build_prompt(blocks: Sequence[Tuple[int, str]], batch: Sequence[int]) -> str:
+def _build_prompt(blocks: Sequence[Tuple[Optional[int], str]], batch: Sequence[int]) -> str:
     """构造边界判定 prompt。
 
     编号**严格按批内 1-based**（1..len(batch)），与 `_parse_verdicts` 的解析口径一致；

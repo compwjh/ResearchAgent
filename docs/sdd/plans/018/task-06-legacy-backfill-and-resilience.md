@@ -20,6 +20,7 @@
 - 已记录分支、commit、工作树、服务/Qdrant 状态、正式元数据数量和旧 Collection 拓扑。
 - dry-run 完整通过；用户已通过确认的 Spec 授权执行 `--confirm-replace`。
 - ResearchAgent 服务已停止；脚本检测到服务占用时必须拒绝运行，不能自动结束进程。
+- Task02A-E/02B 留账的全部 `security_debt` 已逐项关闭，并由独立 backend-tester/backend-reviewer 给出生产门 `GO`；尤其包括强制退休授权、恢复期拓扑漂移、state+validation 协同篡改防护、目录 fsync 失败收敛、Qdrant alias SDK 参数与动作 after-effect 故障。任一未关闭时禁止真实 Qdrant、`--confirm-replace`、alias 切换和 Collection 删除。
 
 ## 思维链（可审计执行设计）
 
@@ -117,3 +118,4 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
 - 2026-09-09：经 Grill with Docs 改为唯一真实全库索引替换阶段；删除逐 point 恢复、首次打开自动升级与旧索引保留要求。
+- 2026-09-09：承接 Task02A-E 功能优先留下的生产安全债务；全部关闭并独立签字前，本 Task 不得执行任何真实索引写删。

@@ -152,7 +152,7 @@
 
 - Task 02 的固定产物路径为 `docs/sdd/plans/018/artifacts/task-02/source-anchor-feasibility-report.md`、`docs/sdd/plans/018/artifacts/task-02/fixture-index.json`、`docs/sdd/plans/018/artifacts/task-02/provenance-dto.schema.json`；原件和期望输出必须位于 `docs/sdd/fixtures/spec-018/`。报告必须逐样本记录 `sample_id`、原件/期望 JSON SHA-256、git revision、parser/provenance/normalize/mapping 版本、命令与退出码、页数/列数/rotation、block/line/word 数、映射率、重复文本 tie-break、bbox 最大/中位误差、Markdown 行号结果、Qdrant point 数/ID/fingerprint、embedding/切分/Qdrant 写调用次数、失败码和 Go/No-Go。`fixture-index.json` 必须逐项列出原件、expected JSON、DTO schema 的相对路径、SHA-256、媒体类型、期望状态和阈值；报告结论只允许 `GO` 或 `NO-GO`，不得以“有条件通过/风险接受”代替。
 - 首轮 Task02 的 `NO-GO` 报告、fixture 和 schema 保持不可改写的历史证据。Task02A 在 Spec 修订重新确认后实现生产级 PDF/Markdown provenance 基础；Task02B 只读消费 Task02A 实现和原固定样本，重新裁决 `GO|NO-GO`。Task03–07 仅依赖 Task02B `GO`。
-- Task02B 的 Go 门槛固定为：`pdf-single-column-v1`、`pdf-two-column-v1-overlap`、`pdf-v2-cross-page` 和 `markdown-blocks` 的期望 block/chunk/anchor 集合全部匹配；正常 PDF 文本块 bbox 归一化最大误差 ≤0.005；Markdown 行号 100% 精确；重复文本按 ordinal/chunk_index tie-break；新文档索引的 duplicate/gap 为 0。word 级坐标仅为可选诊断，不是硬门。`pdf-no-text-layer` 只能为 `partial`/`failed` 且错误码为 `PDF_NO_TEXT`。
+- Task02B 的功能 Go 门槛固定为：`pdf-single-column-v1`、`pdf-two-column-v1-overlap`、`pdf-v2-cross-page` 和 `markdown-blocks` 的期望 block/chunk/anchor 集合全部匹配；正常 PDF 文本块 bbox 归一化最大误差 ≤0.005；Markdown 行号 100% 精确；重复文本按 ordinal/chunk_index tie-break；新文档索引的 duplicate/gap 为 0。word 级坐标仅为可选诊断，不是硬门。`pdf-no-text-layer` 只能为 `partial`/`failed` 且错误码为 `PDF_NO_TEXT`。2026-09-09 用户决定功能优先：Task02A-E 评审发现的生产加固项允许作为显式 `security_debt` 留账，不再阻塞 Task02B 的功能裁决与 Task03–05；但债务未全部关闭前，Task06 不得连接真实 Qdrant、不得执行 `--confirm-replace`、不得切换或删除真实 Collection。
 - Hostile PDF 在 Task02B 只验证后端 parser 不执行 JavaScript、表单动作、附件或远程资源，也不发起网络请求；真实浏览器中的 PDF.js 零外部网络记录移至 Task05 最终安全硬门，避免以尚未实现的前端阻塞后端基础实现。
 - 后端统一使用 `PdfSourceProvenanceV1` DTO 生成索引和 manifest：每页包含 `width`、`height`、`rotation`、`crop_box`；每个 block 必须包含稳定 ordinal、原始文本、原始字符 `start/end`、PDF point bbox 和 normalized 0–1 bbox。line/word 可作为诊断附带，但首版 UI 和 GO 门只承诺 block。规范化文本与字符区间必须来自同一 DTO；禁止再次调用只返回整页字符串的 `get_text("text")` 来补坐标。
 - PDF.js 坐标转换冻结为：后端保存未旋转 crop box 的 0–1 bbox；前端用同页 public `getViewport({scale, rotation})` 对 bbox 四角做 viewport transform，取转换后的 min/max 作为 CSS overlay，devicePixelRatio 只影响 canvas backing store 不改变 CSS 坐标；缩放、旋转和 crop box 变化重新计算 overlay，不使用 PDF.js 私有字段。任何转换误差超过 ±0.005、无法恢复原始 block 或只得到页级文本时，manifest 为 `partial` 并带 `PDF_PROVENANCE_UNAVAILABLE`，不得伪装为 `ready`。
@@ -236,6 +236,7 @@
 
 - Task02A 不生成或持久化 `InspectionManifest`。它只产出版本化 `SourceProvenanceBundle`：`pages/blocks/chunks/anchors/source_sha256/source_parser_version/chunker_config_fingerprint/payload_schema_version`，并证明该 bundle 可由正式索引流水线生成。
 - Task02A-D 实现 rebuild service/CLI，但只使用固定样本、FakeQdrant 和临时候选 Collection；Task02B 验证 bundle、候选构建、验证和切换协议，不触碰真实用户索引。Task03 在 Task02B `GO` 后定义唯一 `InspectionManifest` schema；Task04 实现持久化与 API；Task06 才执行真实全库切换和 finalize。Task03 不得反向修改 Task02A parser/chunker 语义。
+- Task02A/02B 的结果必须把“功能通过”与“生产切换安全门”分开记录。允许带 `security_debt` 的功能 `GO` 只放行 Task03–05；Task06 前必须由独立 backend-tester/backend-reviewer 重新执行候选删除授权、恢复拓扑、artifact 防篡改、目录 fsync、真实 SDK stub 和故障矩阵，并取得无 P0 的生产门 `GO`。
 
 ### Markdown、page-null 与上传资源边界
 
@@ -498,3 +499,4 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 2026-09-09 | 架构师（自身） | 按真实代码修正 upload closure 基线：枚举复数 imports/batches、retry/cancel/login/resume 与全部 route helper/application/store/index/task/maintenance 入口，冻结枚举、测试结构、Git revision、逐文件 hash 和 inventory digest；基线状态与实现后放行状态明确分离；未修改业务代码 |
 | 2026-09-09 | 独立技术复审 / 架构师（自身） | 复审发现 lifespan 旧索引回填及四个 store 直接写 symbol 漏项；补入 `main.py`、`save_papers/remove_paper/update_chunker_state/mark_interrupted_tasks`，重算八文件 inventory digest，并新增启动期 fail-closed 测试门；未修改业务代码 |
 | 2026-09-09 | 用户确认 / 架构师（自身） | 独立需求评审通过，技术设计门最终 `GO`；用户明确“继续开发…开始执行”，全库索引替换修订由 `待确认` 转为 `已确认` 并进入 `实施中`。仅放行 Task02A-D，Task04/06 实现门保持未放行 |
+| 2026-09-09 | 用户优先级决策 / 架构师（自身） | 用户要求安全加固问题先留账、优先完成功能；Task02A/02B 改为分别记录功能门与生产切换安全门。已知安全债务不再阻塞 Task03–05，但全部转为 Task06 真实 Qdrant/`--confirm-replace` 前置硬门；不降低真实数据操作门禁 |
