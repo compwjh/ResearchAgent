@@ -1,0 +1,108 @@
+{
+  "schema_version": "spec-018-task-05-frontend-fixture-index-v1",
+  "fixture_root": "docs/sdd/fixtures/spec-018/frontend/",
+  "fixtures": {
+    "hostile_markdown": {
+      "path": "docs/sdd/fixtures/spec-018/frontend/hostile-markdown.md",
+      "sha256": "d00e9ce52bb401d48cd1b34c325ad789910f68f95dabdbee9e052b7f2dfbb28a",
+      "expected": "DOMPurify/textContent, no script/event/remote image/attachment request"
+    },
+    "hostile_pdf_descriptor": {
+      "path": "docs/sdd/fixtures/spec-018/frontend/hostile-pdf.json",
+      "sha256": "d87e70af368ea9cdfc0ecf6e950953af2c7f7cc0d4b7c14149dfc7fc2c3c5e07",
+      "source_path": "docs/sdd/fixtures/spec-018/pdf-hostile-features.pdf",
+      "source_sha256": "1bc72165cc992f88ad28ef9a6ea24438e1024c305082f03bd3d554a59d664377"
+    },
+    "browser_entrypoint": {
+      "path": "docs/sdd/fixtures/spec-018/frontend/hostile-fixture.html",
+      "sha256": "606085832b297c9cab603d44bd25082ad002e4d8aa7805cb9424cf4bf11ca4ca",
+      "readme": "docs/sdd/fixtures/spec-018/frontend/README.md"
+    }
+  },
+  "vendor": {
+    "version": "4.10.38",
+    "main_path": "frontend/vendor/pdfjs/pdf.min.mjs",
+    "worker_path": "frontend/vendor/pdfjs/pdf.worker.min.mjs",
+    "license_path": "frontend/vendor/pdfjs/LICENSE",
+    "notice_path": "frontend/vendor/pdfjs/NOTICE",
+    "main_sha256": "27fc2a057a00f92a4334ad06e17dbd7259912954e9fb7f76400bcca5fd190a9c",
+    "worker_sha256": "1baa1844c89c80a5b2797c916e75ab29254be46d8e9cb53cb6364d7aad84be36",
+    "license_sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "notice_sha256": "6c91408f1c048deb3120a77b3b0930b52e5036fcaf051160190d5ee6183f2fac",
+    "resource_query": "?v=4.10.38",
+    "workerSrc": "/assets/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.38"
+  },
+  "dom_observations": {
+    "markdown_source_block": {
+      "selector": ".kb-source-markdown [data-block-id]",
+      "required_attributes": ["data-block-id", "data-ordinal", "role=article", "tabindex=0", "aria-current"]
+    },
+    "pdf_overlay_block": {
+      "selector": ".kb-source-pdf .kb-pdf-source-block",
+      "required_attributes": ["data-block-id", "role=article", "tabindex=0", "aria-current"]
+    },
+    "chunk_item": {
+      "selector": ".kb-chunk-content [data-chunk-id]",
+      "required_attributes": ["data-chunk-id", "data-block-ids", "role=listitem", "tabindex=0", "aria-current"]
+    },
+    "interaction_trigger": ["click", "Enter", "Space"],
+    "active_state": ["data-active=true", "aria-current=true"],
+    "narrow_pane_state": "#kb-inspection-layout[data-active-pane=source|chunks]"
+  },
+  "mapping_observations": {
+    "state_path": "controller.state.chunkRows[].anchorRelations[]",
+    "fields": ["block_id", "coverage", "is_primary", "unmapped_reason"],
+    "partial_status_selector": "#kb-chunk-status[data-status=partial]",
+    "unmapped_warning_selector": ".kb-chunk-warning",
+    "selection_order": "is_primary descending, coverage descending"
+  },
+  "hostile_inputs": [
+    {"id": "script", "input": "<script>alert(1)</script>", "expected": "sanitized_or_text_only"},
+    {"id": "event_attribute", "input": "<img src=x onerror=alert(1)>", "expected": "image_placeholder_no_src_or_request"},
+    {"id": "remote_protocol", "input": "[x](javascript:alert(1))", "expected": "sanitized_link"},
+    {"id": "image_srcset", "input": "![x](https://example.invalid/a.png)", "expected": "textContent_placeholder_max_2048"},
+    {"id": "attachment_embed", "input": "<iframe src=remote></iframe><object data=file.pdf></object>", "expected": "forbidden_tags_removed"}
+  ],
+  "network_observation": {
+    "mode": "real-browser-entrypoint-plus-node-contract",
+    "browser_entrypoint": "docs/sdd/fixtures/spec-018/frontend/hostile-fixture.html",
+    "browser_entrypoint_root_relative_paths": {
+      "vendor_assets": "../../../../../frontend/vendor/",
+      "renderer": "../../../../../frontend/kb-inspection.js?v=18",
+      "hostile_pdf": "../../../../../docs/sdd/fixtures/spec-018/pdf-hostile-features.pdf"
+    },
+    "browser_command": "python3 -m http.server 8765",
+    "allowed_same_origin": ["hostile-markdown.md", "pdf-hostile-features.pdf", "frontend/vendor/pdfjs/pdf.min.mjs", "frontend/vendor/pdfjs/pdf.worker.min.mjs", "frontend/vendor/marked.min.js", "frontend/vendor/purify.min.js", "frontend/kb-inspection.js"],
+    "expected_remote_requests": 0,
+    "source_requests": 2,
+    "worker_requests": 1,
+    "unexpected_remote_requests": 0,
+    "post_requests": 0,
+    "reindex_requests": 0,
+    "evidence_test": "tests/test_frontend_kb_inspection_interaction.js",
+    "browser_evidence": {
+      "status": "verified_real_browser",
+      "browser": "Codex In-app Browser",
+      "observed_remote_requests": 0,
+      "observed_console_result": {"markdown": "PASS", "pdf": "PASS", "remoteRequests": 0, "console_log": "empty"},
+      "har_path": null,
+      "note": "Verified by the parent agent in Codex In-app Browser against the root static server on port 8765. No external requests observed and console log was empty; no HAR was exported."
+    },
+    "lazy_page_materialization": "chunk click awaits block_id-to-page render before focus",
+    "lazy_chunk_materialization": "source click appends local batches until all related rows mount"
+  },
+  "library_fallback": {
+    "missing_marked_or_dompurify": "plain_text_only",
+    "error_code": "RENDERER_UNAVAILABLE",
+    "evidence_test": "tests/test_frontend_kb_inspection_renderer.js"
+  },
+  "tests": [
+    {"test_id": "T-FRONTEND-RENDERER", "command": "node tests/test_frontend_kb_inspection_renderer.js", "exit_code": 0},
+    {"test_id": "T-FRONTEND-RUNTIME", "command": "node tests/test_frontend_kb_inspection_runtime.js", "exit_code": 0},
+    {"test_id": "T-FRONTEND-PDF", "command": "node tests/test_frontend_kb_inspection_pdf.js", "exit_code": 0},
+    {"test_id": "T-FRONTEND-INTERACTION", "command": "node tests/test_frontend_kb_inspection_interaction.js", "exit_code": 0, "assertions": ["lazy PDF page materialization", "lazy chunk materialization", "v1 overlap", "v2 cross-page"]},
+    {"test_id": "T-FRONTEND-SYNTAX", "command": "node --check frontend/kb-inspection.js && node --check tests/test_frontend_kb_inspection_interaction.js", "exit_code": 0},
+    {"test_id": "T-FRONTEND-SCHEMA-VERSION", "command": "node -e 'JSON.parse(require(\"fs\").readFileSync(\"docs/sdd/plans/018/artifacts/task-05/dom-contract.schema.json\"))'", "exit_code": 0},
+    {"test_id": "T-FRONTEND-DIFF", "command": "git diff --check", "exit_code": 0}
+  ]
+}

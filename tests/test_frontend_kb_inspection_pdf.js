@@ -171,6 +171,7 @@ async function testPdfLazyOptionsAndOverlay() {
     disableAutoFetch: calls.getDocument[0].disableAutoFetch,
   }, PDF_GET_DOCUMENT_OPTIONS);
   assert.equal(pdfjs.GlobalWorkerOptions.workerSrc, PDFJS_WORKER_SRC);
+  assert.equal(FakeIntersectionObserver.instance.options.root, harness.elements['kb-source-content']);
   assert.equal(calls.render.length, 0);
   FakeIntersectionObserver.instance.trigger();
   await flush(); await flush();
@@ -199,6 +200,19 @@ async function testPdfImportErrorAndCancellation() {
   failed.elements['kb-inspection-document'].value = 'd'; failed.elements['kb-inspection-document'].dispatch('change');
   await flush(); await flush();
   assert.equal(failed.elements['kb-inspection-error'].getAttribute('data-error-code'), 'PDFJS_IMPORT_FAILED');
+
+  const mismatchPdfjs = makePdfjs();
+  mismatchPdfjs.pdfjs.workerVersion = '4.10.37';
+  const mismatch = makeHarness({
+    pdfjsLoader: async () => mismatchPdfjs.pdfjs,
+    fetchImpl: async (url) => url.startsWith('/api/kb/documents?')
+      ? response(200, { documents: [{ document_id: 'd', file_name: 'd.pdf', media_type: 'application/pdf' }] })
+      : response(200, { blocks: [], chunks: [], anchors: [] }),
+  });
+  mismatch.elements['kb-tab-inspection'].dispatch('click'); await flush();
+  mismatch.elements['kb-inspection-document'].value = 'd'; mismatch.elements['kb-inspection-document'].dispatch('change');
+  await flush(); await flush();
+  assert.equal(mismatch.elements['kb-inspection-error'].getAttribute('data-error-code'), 'PDFJS_WORKER_MISMATCH');
 
   let resolvePdf;
   const pendingTask = { promise: new Promise((resolve) => { resolvePdf = resolve; }), destroy() { this.cancelled = true; } };

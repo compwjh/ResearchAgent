@@ -71,10 +71,14 @@ class FakeDocument {
   }
 }
 
-function response(status, payload, retryAfter = null) {
+function response(status, payload, retryAfter = null, etag = null) {
   return {
     status,
-    headers: { get(name) { return name.toLowerCase() === 'retry-after' ? retryAfter : null; } },
+    headers: { get(name) {
+      if (name.toLowerCase() === 'retry-after') return retryAfter;
+      if (name.toLowerCase() === 'etag') return etag;
+      return null;
+    } },
     async json() { return payload; },
   };
 }
@@ -185,8 +189,38 @@ async function testMaintenanceAndCancellation() {
   assert.equal(pending.some(({ url }) => url.includes('/reindex')), false);
 }
 
+async function testInspection304Cache() {
+  const queue = [
+    response(200, { documents: [{ document_id: 'doc-1', file_name: 'cached.md', media_type: 'text/markdown' }], next_cursor: null, total: 1 }, null, '"docs-v1"'),
+    response(200, { manifest: { status: 'ready', mapped_count: 1, unmapped_count: 0, unmapped_reasons: {} }, blocks: [{ block_id: 'b1', ordinal: 0, text: 'cached', locator: {}, heading_path: [], block_type: 'paragraph' }], chunks: [{ chunker: 'v1', chunk_index: 0, text: 'cached' }], anchors: [{ block_id: 'b1', chunker: 'v1', chunk_index: 0, coverage: 1, is_primary: true }], next_cursor: null, total: { blocks: 1, chunks: 1, anchors: 1 } }, null, '"inspection-v1"'),
+    response(304, {}, null, '"inspection-v1"'),
+  ];
+  const calls = [];
+  const harness = makeHarness(async (url, options) => { calls.push({ url, options }); return queue.shift(); });
+  harness.elements['kb-tab-inspection'].dispatch('click'); await flush();
+  harness.elements['kb-inspection-document'].value = 'doc-1'; harness.elements['kb-inspection-document'].dispatch('change');
+  await flush(); await flush();
+  assert.equal(harness.elements['kb-inspection-error'].hidden, true);
+  await harness.controller.loadInspection();
+  await flush(); await flush();
+  assert.equal(calls[2].options.headers['If-None-Match'], '"inspection-v1"');
+  assert.equal(harness.elements['kb-inspection-error'].hidden, true);
+  assert.equal(harness.elements['kb-chunk-content'].childNodes.filter((node) => node.className === 'kb-chunk-item').length, 1);
+
+  const missQueue = [
+    response(200, { documents: [{ document_id: 'doc-1', file_name: 'miss.md', media_type: 'text/markdown' }], next_cursor: null, total: 1 }),
+    response(304, {}, null, '"missing"'),
+  ];
+  const missHarness = makeHarness(async () => missQueue.shift());
+  missHarness.elements['kb-tab-inspection'].dispatch('click'); await flush();
+  missHarness.elements['kb-inspection-document'].value = 'doc-1'; missHarness.elements['kb-inspection-document'].dispatch('change');
+  await flush(); await flush();
+  assert.equal(missHarness.elements['kb-inspection-error'].getAttribute('data-error-code'), 'INSPECTION_CACHE_MISS_304');
+}
+
 (async () => {
   await testTabsPaginationAndSafety();
   await testMaintenanceAndCancellation();
-  console.log('frontend runtime contract: PASS (tabs, roving keyboard, pagination, status, cancellation, GET-only safety)');
+  await testInspection304Cache();
+  console.log('frontend runtime contract: PASS (tabs, roving keyboard, pagination, status, cancellation, GET-only safety, 304 cache)');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

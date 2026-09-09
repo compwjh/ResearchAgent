@@ -12,7 +12,7 @@
 | [02B](./task-02b-revalidate-source-anchor-feasibility.md) | 用正式实现重新验证来源锚点与候选重建协议 | 02A | 已完成（功能 GO；生产切换债务留至 Task06） |
 | [03](./task-03-document-contract-and-migration.md) | 定义通用文档、manifest 与元数据迁移协议 | 02B `GO` | 已完成（功能门 GO；安全债务转 Task04/06） |
 | [04](./task-04-backend-document-inspection-api.md) | 实现后端文档、manifest 与检查接口 | 03 | 已完成（功能门 GO；生产债务留至 Task06） |
-| [05](./task-05-frontend-chunk-inspector.md) | 实现前端双栏切片检查器 | 04 | 实施中 |
+| [05](./task-05-frontend-chunk-inspector.md) | 实现前端双栏切片检查器 | 04 | 已完成（功能门；Task06 生产门待执行） |
 | [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 待执行 |
 | [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 待执行 |
 
@@ -47,7 +47,7 @@
 | 02B | `artifacts/task-02b/source-anchor-revalidation-report.md` | fixture hash 不变；来源映射、候选验证、故障矩阵均通过；结论严格为 `GO` |
 | 03 | `artifacts/task-03/knowledge-document.schema.json`、`inspection-manifest.schema.json`、`migration-fixture-index.json`、`migration-report.md` | 元数据/ID/原件无损，旧向量不迁移，损坏输入 fail-closed |
 | 04 | `artifacts/task-04/api-schema.json`、`upload-closure-matrix.json`、`api-fixture-index.json`、`backend-contract-report.md` | 检查路径不 embedding；旧 route/symbol 全关闭；`INDEX_REBUILD_REQUIRED` 与 immutable source 契约通过 |
-| 05 | `artifacts/task-05/pdfjs-vendor-manifest.json`、`dom-contract.schema.json`、`frontend-fixture-index.json`、`frontend-contract-report.md` | PDF/Markdown 安全渲染、双向定位、桌面/窄屏通过 |
+| 05 | `artifacts/task-05/pdfjs-vendor-manifest.json`、`dom-contract.schema.json`、`frontend-fixture-index.json`、`frontend-contract-report.md`、`frontend-test-final-report.md`、`frontend-review-final-report.md` | PDF/Markdown 安全渲染、双向定位、桌面/窄屏与真实 hostile fixture 通过；生产 worker 加固和 Task06 另行验收 |
 | 06 | `artifacts/task-06/full-index-rebuild-report.md`、`resilience-performance-report.md` | 真实候选验证、alias、manifest finalize、重启和查询通过 |
 | 07 | `reviews/018-acceptance-review.md`、复盘和部署证据 | 独立验收、全量回归、运行时验证和本地提交完成 |
 

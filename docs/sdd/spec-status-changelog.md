@@ -135,3 +135,4 @@
 - **018 Task04 后端文档 Manifest 与检查接口** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task03 功能门通过，开始实现通用文档 API、只读 source、真实索引 manifest、旧上传入口迁移与 generation/finalize 门禁。
 - **018 Task04 后端文档 Manifest 与检查接口** ｜ 实施中 → 已完成（功能门） ｜ 2026-09-09 19:14 +0800：两轮修复后，检查、上传、原件读取、reindex 与删除的功能契约获 backend-reviewer `GO` 与 backend-tester `PASS`；定向 54 passed、相关回归 394 passed。closure matrix 仍为 baseline_frozen，生产切换债务继续阻塞 Task06。
 - **018 Task05 前端双栏切片检查器** ｜ 待执行 → 实施中 ｜ 2026-09-09 19:14 +0800：Task04 功能门双签通过，放行本地 PDF.js、Markdown 块渲染、切片分页与双向定位实现；不触发全库重建或真实 Qdrant 变更。
+- **018 Task05 前端双栏切片检查器** ｜ 实施中 → 已完成（功能门） ｜ 2026-09-10：四套 Node 前端契约测试、Schema/资源版本/vendor hash/path 检查和真实浏览器 hostile fixture（Markdown/PDF PASS、remoteRequests=0、Console 为空）通过；frontend-tester `PASS`、frontend-reviewer `GO`。worker 运行时 hash 加固、真实索引替换和恢复仍移交 Task06，Spec018 整体继续实施中。

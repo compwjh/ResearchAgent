@@ -10,6 +10,7 @@
     "tabs",
     "inspection_controls",
     "state_regions",
+    "mapping",
     "panes",
     "responsive",
     "accessibility",
@@ -20,9 +21,11 @@
     "resource_query": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["styles"],
+      "required": ["styles", "kb_inspection", "app"],
       "properties": {
-        "styles": {"const": "?v=16"}
+        "styles": {"const": "?v=18"},
+        "kb_inspection": {"const": "?v=18"},
+        "app": {"const": "?v=18"}
       }
     },
     "tabs": {
@@ -88,6 +91,18 @@
         "finalize": {"const": {"id": "kb-inspection-finalize", "error_code": "INDEX_FINALIZE_REQUIRED", "role": "status"}},
         "loading": {"const": {"id": "kb-inspection-loading", "role": "status", "aria_busy": true}},
         "error": {"const": {"id": "kb-inspection-error", "error_code": "INSPECTION_BUILDING", "role": "alert"}}
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_block_selector", "chunk_selector", "dom_attributes", "relation_fields", "warning_text"],
+      "properties": {
+        "source_block_selector": {"const": "[data-block-id]"},
+        "chunk_selector": {"const": "[data-chunk-id]"},
+        "dom_attributes": {"const": ["data-block-id", "data-block-ids", "data-anchor-count", "data-primary-block-id", "data-unmapped-reason"]},
+        "relation_fields": {"const": ["block_id", "coverage", "is_primary", "unmapped_reason"]},
+        "warning_text": {"const": "textContent only for partial/unmapped"}
       }
     },
     "panes": {

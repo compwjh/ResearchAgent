@@ -31,6 +31,8 @@
   const PDFJS_VERSION = '4.10.38';
   const PDFJS_MODULE_URL = '/assets/vendor/pdfjs/pdf.min.mjs?v=4.10.38';
   const PDFJS_WORKER_SRC = '/assets/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.38';
+  const PDFJS_MAIN_SHA256 = '27fc2a057a00f92a4334ad06e17dbd7259912954e9fb7f76400bcca5fd190a9c';
+  const PDFJS_WORKER_SHA256 = '1baa1844c89c80a5b2797c916e75ab29254be46d8e9cb53cb6364d7aad84be36';
   const PDF_GET_DOCUMENT_OPTIONS = Object.freeze({
     isEvalSupported: false,
     enableXfa: false,
@@ -231,6 +233,10 @@
     return { code: String(code), message: String(message), payload, status: response?.status || 0 };
   }
 
+  function responseHeader(response, name) {
+    return response?.headers?.get ? String(response.headers.get(name) || '') : '';
+  }
+
   function createKbInspectionController(rootScope, options = {}) {
     const documentRef = options.document || rootScope.document;
     const fetchImpl = options.fetch || (rootScope.fetch && rootScope.fetch.bind(rootScope));
@@ -253,12 +259,14 @@
     const error = elementById(documentRef, 'kb-inspection-error');
     const sourceEmpty = elementById(documentRef, 'kb-source-empty');
     const sourceDocument = elementById(documentRef, 'kb-source-document');
+    const sourceContent = elementById(documentRef, 'kb-source-content');
     const sourcePdf = elementById(documentRef, 'kb-source-pdf');
     const sourceMarkdown = elementById(documentRef, 'kb-source-markdown');
     const sourceMeta = elementById(documentRef, 'kb-source-meta');
     const sourceKind = elementById(documentRef, 'kb-source-kind');
     const chunkContent = elementById(documentRef, 'kb-chunk-content');
     const chunkEmpty = elementById(documentRef, 'kb-chunk-empty');
+    const chunkLoadMore = elementById(documentRef, 'kb-chunk-load-more');
     const chunkMeta = elementById(documentRef, 'kb-chunk-meta');
     const chunkStatus = elementById(documentRef, 'kb-chunk-status');
     const layout = elementById(documentRef, 'kb-inspection-layout');
@@ -267,15 +275,24 @@
       documentsLoaded: false,
       documentsPromise: null,
       documents: [],
+      documentsCache: null,
       selectedDocument: null,
       selectedVersion: 'v1',
+      inspectionCache: new Map(),
+      inspectionManifest: null,
       sequence: 0,
       controller: null,
       pollTimer: null,
       pollResolve: null,
       pdfSession: null,
+      chunkRows: [],
+      chunkVisibleCount: 0,
+      activeSelection: null,
+      selectionToken: 0,
       paneScroll: { source: 0, chunks: 0 },
     };
+
+    const CHUNK_BATCH_SIZE = 100;
 
     function isActive(sequence) { return state.sequence === sequence; }
 
@@ -338,6 +355,7 @@
 
     function cancelPending() {
       state.sequence += 1;
+      state.selectionToken += 1;
       cancelPdfSession();
       state.documentsPromise = null;
       if (state.pollTimer !== null) {
@@ -402,6 +420,12 @@
       clearChildren(sourceMarkdown);
       clearChildren(chunkContent);
       if (chunkEmpty) chunkContent?.appendChild(chunkEmpty);
+      state.chunkRows = [];
+      state.chunkVisibleCount = 0;
+      state.activeSelection = null;
+      state.selectionToken += 1;
+      state.inspectionManifest = null;
+      setHidden(chunkLoadMore, true);
       if (sourceMeta) sourceMeta.textContent = '尚未选择文档';
       if (sourceKind) sourceKind.textContent = 'PDF / Markdown';
       if (chunkMeta) chunkMeta.textContent = '未选择 v1 / v2';
@@ -459,9 +483,10 @@
       if (!layout || !target) return;
       const pane = target.dataset?.paneTarget || target.getAttribute('data-pane-target');
       if (pane !== 'source' && pane !== 'chunks') return;
-      const previous = layout.getAttribute('data-active-pane') || 'source';
-      const previousPane = elementById(documentRef, previous === 'source' ? 'kb-source-content' : 'kb-chunk-content');
-      if (previousPane) state.paneScroll[previous] = previousPane.scrollTop || 0;
+      ['source', 'chunks'].forEach((paneName) => {
+        const paneElement = elementById(documentRef, paneName === 'source' ? 'kb-source-content' : 'kb-chunk-content');
+        if (paneElement) state.paneScroll[paneName] = paneElement.scrollTop || 0;
+      });
       layout.setAttribute('data-active-pane', pane);
       const tabs = childrenWithRole(paneSwitcher, 'tab');
       tabs.forEach((tab) => {
@@ -497,6 +522,140 @@
       });
     }
 
+    function setActiveState(node, active) {
+      if (!node) return;
+      node.setAttribute('data-active', active ? 'true' : 'false');
+      node.setAttribute('aria-current', active ? 'true' : 'false');
+    }
+
+    function sourceNodes() {
+      const nodes = [];
+      [sourceMarkdown, sourcePdf].forEach((container) => {
+        if (!container || typeof container.querySelectorAll !== 'function') return;
+        nodes.push(...Array.from(container.querySelectorAll('[data-block-id]')));
+      });
+      return nodes;
+    }
+
+    function chunkNodes() {
+      return chunkContent && typeof chunkContent.querySelectorAll === 'function'
+        ? Array.from(chunkContent.querySelectorAll('[data-chunk-id]'))
+        : [];
+    }
+
+    function chunkRowForNode(node) {
+      const chunkId = String(node?.getAttribute?.('data-chunk-id') || '');
+      return state.chunkRows.find((row) => row.chunkId === chunkId) || null;
+    }
+
+    function sourcePriority(node, relationByBlock) {
+      const relation = relationByBlock.get(String(node.getAttribute('data-block-id') || ''));
+      return relation ? [relation.is_primary ? 0 : 1, -relation.coverage] : [2, 0];
+    }
+
+    function clearHighlights() {
+      sourceNodes().forEach((node) => setActiveState(node, false));
+      chunkNodes().forEach((node) => setActiveState(node, false));
+    }
+
+    function scrollAndFocus(node, pane) {
+      if (!node) return;
+      const paneTab = pane === 'chunks'
+        ? elementById(documentRef, 'kb-inspection-chunk-tab')
+        : elementById(documentRef, 'kb-inspection-source-tab');
+      if (paneTab) activatePane(paneTab);
+      if (typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (typeof node.focus === 'function') node.focus({ preventScroll: true });
+    }
+
+    function bindActivatable(node, callback) {
+      if (!node || node.__kbInspectionInteractionBound) return;
+      node.__kbInspectionInteractionBound = true;
+      node.addEventListener('click', () => callback());
+      node.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        callback();
+      });
+    }
+
+    function selectFromBlock(blockId) {
+      const normalizedId = String(blockId || '');
+      if (!normalizedId) return;
+      const token = state.selectionToken + 1;
+      state.selectionToken = token;
+      clearHighlights();
+      const matchingSource = sourceNodes().filter((node) => node.getAttribute('data-block-id') === normalizedId);
+      matchingSource.forEach((node) => setActiveState(node, true));
+      state.activeSelection = { type: 'block', ids: [normalizedId] };
+      (async () => {
+        const totalMatches = state.chunkRows.filter((row) => row.blockIds.includes(normalizedId)).length;
+        while (state.chunkVisibleCount < state.chunkRows.length
+          && chunkNodes().filter((node) => String(node.getAttribute('data-block-ids') || '').split(/\s+/).includes(normalizedId)).length < totalMatches) {
+          renderChunkBatch();
+        }
+        if (token !== state.selectionToken) return;
+        const matchingChunks = chunkNodes().filter((node) => String(node.getAttribute('data-block-ids') || '').split(/\s+/).includes(normalizedId));
+        matchingChunks.sort((left, right) => {
+          const leftRow = chunkRowForNode(left);
+          const rightRow = chunkRowForNode(right);
+          const leftRelation = leftRow?.anchorRelations.find((anchor) => anchor.block_id === normalizedId);
+          const rightRelation = rightRow?.anchorRelations.find((anchor) => anchor.block_id === normalizedId);
+          const leftScore = leftRelation ? [leftRelation.is_primary ? 0 : 1, -leftRelation.coverage] : [2, 0];
+          const rightScore = rightRelation ? [rightRelation.is_primary ? 0 : 1, -rightRelation.coverage] : [2, 0];
+          return leftScore[0] - rightScore[0] || leftScore[1] - rightScore[1];
+        });
+        matchingChunks.forEach((node) => setActiveState(node, true));
+        scrollAndFocus(matchingChunks[0], 'chunks');
+      })();
+    }
+
+    function selectFromChunk(chunkNode) {
+      if (!chunkNode) return;
+      const token = state.selectionToken + 1;
+      state.selectionToken = token;
+      const ids = String(chunkNode.getAttribute('data-block-ids') || '').split(/\s+/).filter(Boolean);
+      clearHighlights();
+      setActiveState(chunkNode, true);
+      state.activeSelection = { type: 'chunk', ids };
+      (async () => {
+        try {
+          const session = state.pdfSession;
+          const pages = session && ids.length
+            ? [...new Set(ids.map((id) => session.blockPages.get(id)).filter((pageNumber) => Number.isInteger(pageNumber)))]
+            : [];
+          if (session && pages.length) {
+            await Promise.all(pages.map((pageNumber) => renderPdfPage(session, pageNumber, session.pageShells.get(pageNumber))));
+          }
+          if (token !== state.selectionToken) return;
+          const row = chunkRowForNode(chunkNode);
+          const relationByBlock = new Map((row?.anchorRelations || []).map((anchor) => [anchor.block_id, anchor]));
+          const matchingSource = sourceNodes().filter((node) => ids.includes(String(node.getAttribute('data-block-id') || '')));
+          matchingSource.sort((left, right) => {
+            const leftScore = sourcePriority(left, relationByBlock);
+            const rightScore = sourcePriority(right, relationByBlock);
+            return leftScore[0] - rightScore[0] || leftScore[1] - rightScore[1];
+          });
+          matchingSource.forEach((node) => setActiveState(node, true));
+          scrollAndFocus(matchingSource[0], 'source');
+        } catch (caught) {
+          if (token !== state.selectionToken) return;
+          const code = mapPdfError(caught);
+          showError({ code, message: pdfErrorMessage(code) });
+        }
+      })();
+    }
+
+    function bindSourceInteraction(node) {
+      bindActivatable(node, () => selectFromBlock(node.getAttribute('data-block-id')));
+      setActiveState(node, false);
+    }
+
+    function bindChunkInteraction(node) {
+      bindActivatable(node, () => selectFromChunk(node));
+      setActiveState(node, false);
+    }
+
     function renderDocumentOptions(documents) {
       if (!documentSelect) return;
       clearChildren(documentSelect);
@@ -518,8 +677,8 @@
       try { return await response.json(); } catch (_) { return {}; }
     }
 
-    async function loadDocuments() {
-      if (state.documentsLoaded) return state.documents;
+    async function loadDocuments(force = false) {
+      if (state.documentsLoaded && !force) return state.documents;
       if (state.documentsPromise) return state.documentsPromise;
       if (typeof fetchImpl !== 'function') {
         showError({ code: 'NETWORK_UNAVAILABLE', message: '文档列表服务不可用' });
@@ -532,14 +691,27 @@
           const documents = [];
           let cursor = null;
           let pageCount = 0;
+          let lastEtag = state.documentsCache?.etag || null;
           do {
             if (!isActive(request.sequence)) return [];
             const params = new URLSearchParams({ limit: '100' });
             if (cursor) params.set('cursor', cursor);
             const url = `/api/kb/documents?${params.toString()}`;
-            const response = await fetchImpl(url, { signal: request.signal });
+            const headers = !cursor && state.documentsCache?.etag
+              ? { 'If-None-Match': state.documentsCache.etag }
+              : undefined;
+            const response = await fetchImpl(url, { signal: request.signal, ...(headers ? { headers } : {}) });
             const payload = await readJson(response);
             if (!isActive(request.sequence)) return [];
+            if (response.status === 304) {
+              if (!state.documentsCache) {
+                showError({ code: 'DOCUMENT_CACHE_MISS_304', message: '文档列表缓存不可用，无法处理 304。' });
+                return [];
+              }
+              documents.push(...state.documentsCache.documents);
+              cursor = null;
+              break;
+            }
             if (response.status !== 200) {
               const failure = responseError(response, payload);
               if (failure.code === 'INDEX_FINALIZE_REQUIRED') showMaintenance(failure.code);
@@ -548,6 +720,7 @@
               return [];
             }
             if (Array.isArray(payload.documents)) documents.push(...payload.documents);
+            lastEtag = responseHeader(response, 'ETag') || lastEtag;
             cursor = payload.next_cursor || null;
             pageCount += 1;
             if (pageCount > 1000) {
@@ -557,6 +730,10 @@
             if (cursor) showLoading(`正在加载文档列表第 ${pageCount + 1} 页…`);
           } while (cursor);
           state.documents = documents;
+          state.documentsCache = {
+            documents: documents.slice(),
+            etag: lastEtag,
+          };
           state.documentsLoaded = true;
           renderDocumentOptions(state.documents);
           resetStates();
@@ -612,49 +789,60 @@
         blockOverlay.tabIndex = 0;
         blockOverlay.setAttribute('role', 'article');
         blockOverlay.setAttribute('data-block-id', String(block.block_id || ''));
+        blockOverlay.setAttribute('aria-current', 'false');
         blockOverlay.setAttribute('aria-label', `原文块 ${Number(block.ordinal || 0) + 1}`);
         blockOverlay.style.left = `${left * 100}%`;
         blockOverlay.style.top = `${top * 100}%`;
         blockOverlay.style.width = `${(right - left) * 100}%`;
         blockOverlay.style.height = `${(bottom - top) * 100}%`;
         overlay.appendChild(blockOverlay);
+        bindSourceInteraction(blockOverlay);
       });
       overlay.setAttribute('data-viewport-size', `${viewport.width}x${viewport.height}`);
     }
 
-    async function renderPdfPage(session, pageNumber, pageShell) {
-      if (session.cancelled || !isActive(session.sequence) || session.renderedPages.has(pageNumber)) return;
+    function renderPdfPage(session, pageNumber, pageShell) {
+      if (session.cancelled || !isActive(session.sequence) || !pageShell) return Promise.resolve();
+      if (session.renderedPages.has(pageNumber)) return Promise.resolve();
+      const pending = session.pageRenderPromises.get(pageNumber);
+      if (pending) return pending;
       session.renderedPages.add(pageNumber);
-      try {
-        const page = await session.pdf.getPage(pageNumber);
-        if (session.cancelled || !isActive(session.sequence)) return;
-        const viewport = page.getViewport({ scale: 1 });
-        const canvas = pageShell.querySelector('.kb-pdf-canvas');
-        const textLayer = pageShell.querySelector('.kb-pdf-text-layer');
-        const overlay = pageShell.querySelector('.kb-pdf-overlay');
-        if (!canvas || !textLayer || !overlay || typeof canvas.getContext !== 'function') {
-          throw pdfFailure('PDF_RENDER_FAILED', 'PDF 页面容器不可用');
+      const renderPromise = (async () => {
+        try {
+          const page = await session.pdf.getPage(pageNumber);
+          if (session.cancelled || !isActive(session.sequence)) return;
+          const viewport = page.getViewport({ scale: 1 });
+          const canvas = pageShell.querySelector('.kb-pdf-canvas');
+          const textLayer = pageShell.querySelector('.kb-pdf-text-layer');
+          const overlay = pageShell.querySelector('.kb-pdf-overlay');
+          if (!canvas || !textLayer || !overlay || typeof canvas.getContext !== 'function') {
+            throw pdfFailure('PDF_RENDER_FAILED', 'PDF 页面容器不可用');
+          }
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+          pageShell.style.width = `${viewport.width}px`;
+          pageShell.style.height = `${viewport.height}px`;
+          const canvasContext = canvas.getContext('2d');
+          if (!canvasContext) throw pdfFailure('PDF_RENDER_FAILED', 'PDF canvas 不可用');
+          const textContent = await page.getTextContent();
+          if (session.cancelled || !isActive(session.sequence)) return;
+          appendPdfTextLayer(textLayer, textContent);
+          appendPdfBlockOverlays(overlay, pageNumber, viewport, session.blocks);
+          const renderTask = page.render({ canvasContext, viewport });
+          session.renderTasks.add(renderTask);
+          await renderTask.promise;
+          session.renderTasks.delete(renderTask);
+        } catch (caught) {
+          session.renderedPages.delete(pageNumber);
+          if (!session.cancelled && isActive(session.sequence)) throw caught;
         }
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        pageShell.style.width = `${viewport.width}px`;
-        pageShell.style.height = `${viewport.height}px`;
-        const canvasContext = canvas.getContext('2d');
-        if (!canvasContext) throw pdfFailure('PDF_RENDER_FAILED', 'PDF canvas 不可用');
-        const textContent = await page.getTextContent();
-        if (session.cancelled || !isActive(session.sequence)) return;
-        appendPdfTextLayer(textLayer, textContent);
-        appendPdfBlockOverlays(overlay, pageNumber, viewport, session.blocks);
-        const renderTask = page.render({ canvasContext, viewport });
-        session.renderTasks.add(renderTask);
-        await renderTask.promise;
-        session.renderTasks.delete(renderTask);
-      } catch (caught) {
-        session.renderedPages.delete(pageNumber);
-        if (!session.cancelled && isActive(session.sequence)) throw caught;
-      }
+      })();
+      session.pageRenderPromises.set(pageNumber, renderPromise);
+      return renderPromise.finally(() => {
+        if (session.pageRenderPromises.get(pageNumber) === renderPromise) session.pageRenderPromises.delete(pageNumber);
+      });
     }
 
     async function loadPdfJsModule() {
@@ -671,8 +859,15 @@
       if (String(pdfjs.version || '') !== PDFJS_VERSION) {
         throw pdfFailure('PDFJS_VERSION_MISMATCH', 'PDF.js 版本不匹配');
       }
+      if (pdfjs.mainSha256 && String(pdfjs.mainSha256) !== PDFJS_MAIN_SHA256) {
+        throw pdfFailure('PDFJS_VERSION_MISMATCH', 'PDF.js 主库摘要不匹配');
+      }
       if (!pdfjs.GlobalWorkerOptions || typeof pdfjs.GlobalWorkerOptions !== 'object') {
         throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 配置不可用');
+      }
+      if ((pdfjs.workerVersion && String(pdfjs.workerVersion) !== PDFJS_VERSION)
+        || (pdfjs.workerSha256 && String(pdfjs.workerSha256) !== PDFJS_WORKER_SHA256)) {
+        throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 版本或摘要不匹配');
       }
       if (!PDFJS_WORKER_SRC.startsWith('/assets/vendor/pdfjs/') || PDFJS_WORKER_SRC.includes('://')) {
         throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 必须同源');
@@ -712,6 +907,9 @@
         observer: null,
         renderTasks: new Set(),
         renderedPages: new Set(),
+        pageRenderPromises: new Map(),
+        pageShells: new Map(),
+        blockPages: new Map(),
       };
       cancelPdfSession();
       state.pdfSession = session;
@@ -734,8 +932,16 @@
         for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
           const pageShell = createPdfPageShell(pageNumber);
           pageShells.push({ pageNumber, pageShell });
+          session.pageShells.set(pageNumber, pageShell);
           sourcePdf.appendChild(pageShell);
         }
+        blocks.forEach((block) => {
+          const blockId = String(block?.block_id || '');
+          const pageNumber = Number(block?.locator?.page);
+          if (blockId && Number.isInteger(pageNumber) && pageNumber >= 1 && pageNumber <= numPages) {
+            session.blockPages.set(blockId, pageNumber);
+          }
+        });
         if (typeof IntersectionObserverImpl === 'function') {
           session.observer = new IntersectionObserverImpl((entries) => {
             entries.forEach((entry) => {
@@ -748,7 +954,7 @@
                 }
               });
             });
-          }, { root: sourcePdf, rootMargin: '320px 0px' });
+          }, { root: sourceContent || sourcePdf, rootMargin: '320px 0px' });
           pageShells.forEach(({ pageShell }) => session.observer.observe(pageShell));
         } else {
           for (const { pageNumber, pageShell } of pageShells) {
@@ -783,11 +989,13 @@
       setHidden(sourceMarkdown, false);
       blocks.forEach((blockDto) => {
         try {
-          const block = renderer.renderMarkdownBlock(blockDto, {
+        const block = renderer.renderMarkdownBlock(blockDto, {
             document: documentRef,
             marked: markedImpl,
             DOMPurify: purifyImpl,
           });
+          block.setAttribute('aria-current', 'false');
+          bindSourceInteraction(block);
           sourceMarkdown.appendChild(block);
         } catch (caught) {
           const fallback = documentRef.createElement('p');
@@ -797,40 +1005,105 @@
       });
     }
 
-    function renderChunks(version, chunks, anchors) {
+    function createChunkItem(row) {
+      const { chunk, version, blockIds, anchorRelations, unmappedReason } = row;
+      const chunkIndex = Number.isInteger(chunk.chunk_index) ? chunk.chunk_index : 0;
+      const chunker = String(chunk.chunker || version);
+      const chunkId = String(chunk.chunk_id || `${chunker}:${chunkIndex}`);
+      const item = documentRef.createElement('article');
+      item.className = 'kb-chunk-item';
+      item.tabIndex = 0;
+      item.setAttribute('role', 'listitem');
+      item.setAttribute('data-chunk-id', chunkId);
+      item.setAttribute('data-chunk-index', chunkIndex);
+      item.setAttribute('data-block-ids', blockIds.join(' '));
+      item.setAttribute('data-anchor-count', anchorRelations.length);
+      if (unmappedReason) item.setAttribute('data-unmapped-reason', unmappedReason);
+      const primary = anchorRelations.find((anchor) => anchor.is_primary && anchor.block_id);
+      if (primary) item.setAttribute('data-primary-block-id', primary.block_id);
+      item.setAttribute('aria-current', 'false');
+      item.setAttribute('aria-label', `切片 ${chunkIndex + 1}`);
+      const meta = documentRef.createElement('p');
+      meta.className = 'kb-chunk-meta';
+      meta.textContent = `${chunker} · #${chunkIndex}${chunk.section ? ` · ${String(chunk.section)}` : ''}`;
+      const text = documentRef.createElement('p');
+      text.className = 'kb-chunk-text';
+      text.textContent = String(chunk.text || '');
+      const mapping = documentRef.createElement('p');
+      mapping.className = unmappedReason ? 'kb-chunk-warning' : 'kb-chunk-mapping';
+      mapping.setAttribute('role', 'status');
+      mapping.textContent = unmappedReason
+        ? `未映射：${unmappedReason}`
+        : anchorRelations.map((anchor) => `${anchor.block_id} · coverage ${anchor.coverage} · ${anchor.is_primary ? '主定位' : '关联'}`).join('；');
+      item.append(meta, text, mapping);
+      bindChunkInteraction(item);
+      return item;
+    }
+
+    function renderChunkBatch() {
+      if (!chunkContent) return;
+      const start = state.chunkVisibleCount;
+      const end = Math.min(state.chunkRows.length, start + CHUNK_BATCH_SIZE);
+      for (let index = start; index < end; index += 1) {
+        chunkContent.appendChild(createChunkItem(state.chunkRows[index]));
+      }
+      state.chunkVisibleCount = end;
+      setHidden(chunkEmpty, state.chunkRows.length > 0);
+      if (chunkLoadMore) {
+        chunkLoadMore.textContent = state.chunkVisibleCount < state.chunkRows.length ? '加载更多切片' : '已加载全部切片';
+        setHidden(chunkLoadMore, state.chunkVisibleCount >= state.chunkRows.length);
+      }
+    }
+
+    function renderChunks(version, chunks, anchors, manifest = {}) {
       clearChildren(chunkContent);
       if (chunkEmpty) chunkContent?.appendChild(chunkEmpty);
-      setHidden(chunkEmpty, chunks.length > 0);
       if (chunkMeta) chunkMeta.textContent = `${version} · ${chunks.length} 个切片`;
-      if (chunkStatus) chunkStatus.textContent = '已加载';
+      state.inspectionManifest = manifest || null;
+      const mappedCount = Number.isInteger(manifest?.mapped_count) ? manifest.mapped_count : null;
+      const unmappedCount = Number.isInteger(manifest?.unmapped_count) ? manifest.unmapped_count : 0;
+      const status = String(manifest?.status || 'ready');
+      if (chunkStatus) {
+        if (status === 'partial' || unmappedCount > 0) {
+          const mappedLabel = mappedCount === null ? '部分' : `${mappedCount}/${chunks.length}`;
+          const reasons = Object.keys(manifest?.unmapped_reasons || {}).join('、') || 'UNMAPPED';
+          chunkStatus.textContent = `partial · 已映射 ${mappedLabel} · 未映射 ${unmappedCount} · 原因 ${reasons}`;
+          chunkStatus.setAttribute('data-status', 'partial');
+        } else {
+          chunkStatus.textContent = `${status} · 已加载`;
+          chunkStatus.setAttribute('data-status', status);
+        }
+      }
       const byChunk = new Map();
       anchors.forEach((anchor) => {
         const key = anchorKey(anchor, version);
         if (!byChunk.has(key)) byChunk.set(key, []);
-        if (anchor.block_id) byChunk.get(key).push(String(anchor.block_id));
+        byChunk.get(key).push({
+          block_id: String(anchor.block_id || ''),
+          coverage: Number.isFinite(Number(anchor.coverage)) ? Number(anchor.coverage) : 0,
+          is_primary: anchor.is_primary === true,
+          unmapped_reason: anchor.unmapped_reason ? String(anchor.unmapped_reason) : null,
+        });
       });
-      chunks.forEach((chunk) => {
+      state.chunkRows = chunks.map((chunk) => {
         const chunkIndex = Number.isInteger(chunk.chunk_index) ? chunk.chunk_index : 0;
         const chunker = String(chunk.chunker || version);
-        const chunkId = String(chunk.chunk_id || `${chunker}:${chunkIndex}`);
-        const item = documentRef.createElement('article');
-        item.className = 'kb-chunk-item';
-        item.tabIndex = 0;
-        item.setAttribute('role', 'listitem');
-        item.setAttribute('data-chunk-id', chunkId);
-        item.setAttribute('data-chunk-index', chunkIndex);
-        const blockIds = byChunk.get(`${chunker}:${chunkIndex}`) || byChunk.get(`${version}:${chunkIndex}`) || [];
-        item.setAttribute('data-block-ids', blockIds.join(' '));
-        item.setAttribute('aria-label', `切片 ${chunkIndex + 1}`);
-        const meta = documentRef.createElement('p');
-        meta.className = 'kb-chunk-meta';
-        meta.textContent = `${chunker} · #${chunkIndex}${chunk.section ? ` · ${String(chunk.section)}` : ''}`;
-        const text = documentRef.createElement('p');
-        text.className = 'kb-chunk-text';
-        text.textContent = String(chunk.text || '');
-        item.append(meta, text);
-        chunkContent.appendChild(item);
+        const anchorRelations = byChunk.get(`${chunker}:${chunkIndex}`) || byChunk.get(`${version}:${chunkIndex}`) || [];
+        const reasons = Object.keys(manifest?.unmapped_reasons || {});
+        const unmappedReason = String(chunk.unmapped_reason || '')
+          || anchorRelations.find((anchor) => anchor.unmapped_reason)?.unmapped_reason
+          || (anchorRelations.length === 0 && unmappedCount > 0 ? (reasons[0] || 'UNMAPPED') : null);
+        return {
+          chunk,
+          version,
+          chunkId: String(chunk.chunk_id || `${chunker}:${chunkIndex}`),
+          anchorRelations,
+          unmappedReason,
+          blockIds: anchorRelations.map((anchor) => anchor.block_id).filter(Boolean),
+        };
       });
+      state.chunkVisibleCount = 0;
+      renderChunkBatch();
     }
 
     async function loadInspection() {
@@ -851,17 +1124,37 @@
       const blocks = [];
       const chunks = [];
       const anchors = [];
+      let manifest = {};
       let cursor = null;
       let pageCount = 0;
+      let lastEtag = null;
+      const cacheKey = `${documentId}|${version}`;
+      const cachedInspection = state.inspectionCache.get(cacheKey);
       try {
         do {
           if (!isActive(request.sequence)) return;
           const params = new URLSearchParams({ chunker: version });
           if (cursor) params.set('cursor', cursor);
           const url = `/api/kb/documents/${encodeURIComponent(documentId)}/inspection?${params.toString()}`;
-          const response = await fetchImpl(url, { signal: request.signal });
+          const headers = !cursor && cachedInspection?.etag
+            ? { 'If-None-Match': cachedInspection.etag }
+            : undefined;
+          const response = await fetchImpl(url, { signal: request.signal, ...(headers ? { headers } : {}) });
           const payload = await readJson(response);
           if (!isActive(request.sequence)) return;
+          if (response.status === 304) {
+            if (!cachedInspection) {
+              showError({ code: 'INSPECTION_CACHE_MISS_304', message: '检查清单缓存不可用，无法处理 304。' });
+              return;
+            }
+            blocks.push(...cachedInspection.blocks);
+            chunks.push(...cachedInspection.chunks);
+            anchors.push(...cachedInspection.anchors);
+            manifest = cachedInspection.manifest || {};
+            lastEtag = cachedInspection.etag || null;
+            cursor = null;
+            break;
+          }
           const failure = response.status === 200 ? null : responseError(response, payload);
           if (response.status === 202 || failure?.code === 'INSPECTION_BUILDING') {
             showLoading('检查清单正在构建，稍后自动重试…');
@@ -881,6 +1174,8 @@
           if (payload && Array.isArray(payload.blocks)) blocks.push(...payload.blocks);
           if (payload && Array.isArray(payload.chunks)) chunks.push(...payload.chunks);
           if (payload && Array.isArray(payload.anchors)) anchors.push(...payload.anchors);
+          if (payload && payload.manifest && typeof payload.manifest === 'object') manifest = payload.manifest;
+          lastEtag = responseHeader(response, 'ETag') || lastEtag;
           cursor = payload?.next_cursor || null;
           pageCount += 1;
           if (pageCount > 10000) {
@@ -893,7 +1188,14 @@
         await renderSource(documentValue, blocks, request.sequence);
         if (!isActive(request.sequence)) return;
         if (documentValue.media_type !== 'text/markdown' && error && !error.hidden) return;
-        renderChunks(version, chunks, anchors);
+        state.inspectionCache.set(cacheKey, {
+          blocks: blocks.slice(),
+          chunks: chunks.slice(),
+          anchors: anchors.slice(),
+          manifest,
+          etag: lastEtag,
+        });
+        renderChunks(version, chunks, anchors, manifest);
         resetStates();
       } catch (caught) {
         if (caught?.name === 'AbortError' || !isActive(request.sequence)) return;
@@ -909,6 +1211,7 @@
     });
     bindPrimaryTabs();
     bindPaneTabs();
+    chunkLoadMore?.addEventListener('click', renderChunkBatch);
     resetStates();
     clearInspectionView();
 
@@ -928,6 +1231,8 @@
     PDFJS_VERSION,
     PDFJS_MODULE_URL,
     PDFJS_WORKER_SRC,
+    PDFJS_MAIN_SHA256,
+    PDFJS_WORKER_SHA256,
     PDF_GET_DOCUMENT_OPTIONS,
     escapeHtml,
     renderMarkdownBlock,

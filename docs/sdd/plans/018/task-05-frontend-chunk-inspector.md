@@ -1,7 +1,7 @@
 # Task 05：实现前端双栏切片检查器
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task 04；被依赖：Task 06；当前状态：`实施中`
+> 依赖：Task 04；被依赖：Task 06；当前状态：`已完成（功能门；Task 06 生产门待执行）`
 
 ## 一句话目标
 
@@ -88,7 +88,17 @@ Task 05 依次冻结依赖、DOM、renderer 和 interaction；仅使用本地 Ol
 
 ## 执行结果
 
-待执行后填写。
+### 结果：`PASS（Task 05 功能门）`
+
+- 05-A：PDF.js 4.10.38 已本地 vendored，主库、worker、LICENSE、NOTICE 的 SHA-256 与 manifest 一致。
+- 05-B：知识库“切片检查”Tab、文档/版本选择、双栏与窄屏 pane 契约已冻结，资源 query 统一为 `?v=18`。
+- 05-C：Markdown 唯一入口保持 Marked → DOMPurify → block container；图片、脚本、事件属性、协议和附件均按安全降级处理。
+- 05-D1/D2：PDF Canvas/文本层/块 overlay、懒加载、v1 overlap、v2 跨页、点击/Enter/Space 双向定位、100 条本地分批加载、窄屏 scrollTop 保留和 304/ETag 缓存已完成。
+- 固定产物：`artifacts/task-05/pdfjs-vendor-manifest.json`、`dom-contract.schema.json`、`frontend-fixture-index.json`、`frontend-contract-report.md`、`frontend-test-final-report.md`、`frontend-review-final-report.md`。
+- Node renderer/runtime/PDF/interaction 四套契约测试、JavaScript 语法、Schema/版本、vendor hash、路径和 `git diff --check` 均为 exit 0。
+- 真实浏览器 fixture：`http://127.0.0.1:8765/docs/sdd/fixtures/spec-018/frontend/hostile-fixture.html` 显示 `markdown=PASS`、`pdf=PASS`、`remoteRequests=0`，Console 为空。
+- Worker 运行时 hash/version mismatch 尚无真实损坏 worker 证据，但已有稳定错误分支、静态 manifest 和注入式 seam；记录为后续生产加固债务，不阻塞 Task 05 功能门。
+- Task 06 的真实索引替换、迁移、恢复和 Qdrant 生产门禁未执行。
 
 ## 变更日志
 
@@ -100,3 +110,4 @@ Task 05 依次冻结依赖、DOM、renderer 和 interaction；仅使用本地 Ol
 - 2026-09-08：自动重建修订增加升级中只读无联动、失败后手动重试和 Task05 hostile 真实浏览器零网络硬门；本轮仅更新文档。
 - 2026-09-09：全库替换修订移除旧索引升级 UI，改为 `INDEX_REBUILD_REQUIRED`/`INDEX_FINALIZE_REQUIRED` 维护提示；资源上限明确仅适用于本地 Ollama。
 - 2026-09-09：Task04 功能门经 backend-reviewer `GO` 和 backend-tester `PASS` 独立签字，开始 Task05；Task06 生产切换门仍保持阻塞。
+- 2026-09-10：Task05-D2b 修复资源版本、hostile fixture 路径、anchor/partial 映射、304/ETag 缓存和 PDF observer 根；四套 Node 契约测试、静态检查与真实浏览器 hostile fixture（Markdown/PDF PASS、远程请求 0）通过。frontend-tester 与 frontend-reviewer 独立给出 `PASS/GO`；Task05 标记为“已完成（功能门）”，worker 运行时 hash 加固和 Task06 生产门继续留账。

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task05 hostile fixture</title>
+  <style>body{font-family:Arial,sans-serif;margin:2rem}#markdown-target{border:1px solid #ccc;padding:1rem}.pass{color:green}.fail{color:red}</style>
+</head>
+<body>
+  <h1>Task05 hostile fixture</h1>
+  <p id="result" role="status">运行中…</p>
+  <div id="markdown-target"></div>
+  <canvas id="pdf-canvas" width="320" height="240" aria-label="PDF fixture canvas"></canvas>
+  <script src="../../../../../frontend/vendor/purify.min.js?v=13"></script>
+  <script src="../../../../../frontend/vendor/marked.min.js?v=13"></script>
+  <script src="../../../../../frontend/kb-inspection.js?v=18"></script>
+  <script>
+    (async () => {
+      const result = { markdown: 'FAIL', pdf: 'FAIL', remoteRequests: 0 };
+      const resultNode = document.getElementById('result');
+      try {
+        const markdown = await fetch('./hostile-markdown.md', { cache: 'no-store' }).then((response) => response.text());
+        const block = window.KbInspectionRenderer.renderMarkdownBlock({
+          block_id: 'fixture-markdown-block', ordinal: 0, text: markdown,
+          locator: {}, heading_path: [], block_type: 'paragraph'
+        });
+        document.getElementById('markdown-target').appendChild(block);
+        const serialized = document.getElementById('markdown-target').textContent;
+        const hasImageRequest = Boolean(document.querySelector('#markdown-target img[src], #markdown-target img[srcset]'));
+        result.markdown = !hasImageRequest && !serialized.includes('__task05_remote_script__') ? 'PASS' : 'FAIL';
+
+        const pdfjs = await import('../../../../../frontend/vendor/pdfjs/pdf.min.mjs?v=4.10.38');
+        pdfjs.GlobalWorkerOptions.workerSrc = '../../../../../frontend/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.38';
+        const pdf = await pdfjs.getDocument({
+          url: '../../../../../docs/sdd/fixtures/spec-018/pdf-hostile-features.pdf',
+          isEvalSupported: false, enableXfa: false, useWorkerFetch: false,
+          stopAtErrors: true, disableAutoFetch: true
+        }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 0.5 });
+        const canvas = document.getElementById('pdf-canvas');
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.getTextContent();
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        result.pdf = 'PASS';
+      } catch (error) {
+        result.error = String(error && error.message || error);
+      }
+      result.remoteRequests = performance.getEntriesByType('resource').filter((entry) => {
+        try { return new URL(entry.name, location.href).origin !== location.origin; } catch (_) { return true; }
+      }).length;
+      window.__task05FixtureResult = result;
+      resultNode.textContent = JSON.stringify(result);
+      resultNode.className = result.markdown === 'PASS' && result.pdf === 'PASS' ? 'pass' : 'fail';
+    })();
+  </script>
+</body>
+</html>
