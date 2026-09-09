@@ -22,6 +22,11 @@ class PaperDiscoverySettings(BaseModel):
     paper_discovery_default_years: int = 5
     paper_discovery_request_timeout_seconds: float = 20.0
     paper_discovery_allowed_hosts: List[str] = Field(default_factory=list)
+    # DBLP now answers its publication API with a bot challenge page instead of
+    # JSON, so every request fails as DBLP_INVALID_RESPONSE.  The source stays
+    # wired but disabled until the upstream serves JSON again; setting the
+    # environment variable to a truthy value re-enables it without a code change.
+    paper_discovery_dblp_enabled: bool = False
 
     # Fixed server-side host allowlist for paper-discovery downloads.  It is
     # intentionally independent of candidate.pdf_url: snapshots are external

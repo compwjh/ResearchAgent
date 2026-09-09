@@ -13,6 +13,7 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
     PDF_NOT_FOUND,
     PDF_TOO_LARGE,
     PaperDownloadError,
+    _resolve_pdf_url_from_page,
     download_candidate,
 )
 from backend.app.platform.settings.settings_repository import ArticleSettings
@@ -189,3 +190,55 @@ def test_page_validator_failure_removes_renamed_file(tmp_path):
         run_download(tmp_path, lambda _request: httpx.Response(200, content=PDF), pdf_page_validator=lambda _path: 0)
     assert error.value.code == INVALID_PDF
     assert not list(tmp_path.rglob("*"))
+
+
+def test_resolves_pdf_from_citation_meta_on_landing_page():
+    html = (
+        "<html><head>"
+        '<meta name="citation_pdf_url" content="https://www.usenix.org/system/files/x.pdf">'
+        "</head></html>"
+    )
+
+    def handler(request):
+        return httpx.Response(200, text=html)
+
+    transport = httpx.MockTransport(handler)
+    url = _resolve_pdf_url_from_page(
+        "https://www.usenix.org/conference/usenixsecurity24/presentation/x",
+        allowed_hosts={"usenix.org", "www.usenix.org"},
+        transport=transport,
+        dns_resolver=lambda _host: [PUBLIC],
+    )
+    assert url == "https://www.usenix.org/system/files/x.pdf"
+
+
+def test_landing_page_pdf_host_outside_allowlist_is_blocked():
+    html = '<meta name="citation_pdf_url" content="https://evil.example/x.pdf">'
+
+    def handler(request):
+        return httpx.Response(200, text=html)
+
+    transport = httpx.MockTransport(handler)
+    with pytest.raises(PaperDownloadError) as error:
+        _resolve_pdf_url_from_page(
+            "https://www.usenix.org/conference/usenixsecurity24/presentation/x",
+            allowed_hosts={"usenix.org", "www.usenix.org"},
+            transport=transport,
+            dns_resolver=lambda _host: [PUBLIC],
+        )
+    assert error.value.code == DOWNLOAD_BLOCKED
+
+
+def test_landing_page_host_outside_allowlist_is_blocked():
+    def handler(request):
+        return httpx.Response(200, text="<html></html>")
+
+    transport = httpx.MockTransport(handler)
+    with pytest.raises(PaperDownloadError) as error:
+        _resolve_pdf_url_from_page(
+            "https://evil.example/page",
+            allowed_hosts={"usenix.org", "www.usenix.org"},
+            transport=transport,
+            dns_resolver=lambda _host: [PUBLIC],
+        )
+    assert error.value.code == DOWNLOAD_BLOCKED

@@ -36,6 +36,14 @@ class ArticleSettings(ArticleAssistantSettings, PaperDiscoverySettings):
 SETTINGS_PATH = BASE_DIR / "data" / "article_settings.json"
 
 
+def _env_bool(name: str) -> bool | None:
+    """Parse a tri-state boolean environment override; unset yields None."""
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def load_article_settings() -> ArticleSettings:
     settings: ArticleSettings
     if SETTINGS_PATH.exists():
@@ -54,6 +62,7 @@ def load_article_settings() -> ArticleSettings:
     # Paper discovery can be configured independently of the legacy settings
     # JSON. Environment values override persisted values when supplied.
     env_values = {
+        "paper_discovery_dblp_enabled": _env_bool("PAPER_DISCOVERY_DBLP_ENABLED"),
         "paper_discovery_db_path": os.getenv("PAPER_DISCOVERY_DB_PATH"),
         "paper_discovery_default_years": os.getenv("PAPER_DISCOVERY_DEFAULT_YEARS"),
         "paper_discovery_search_limit": os.getenv("PAPER_DISCOVERY_SEARCH_LIMIT"),

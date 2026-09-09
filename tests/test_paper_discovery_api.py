@@ -170,7 +170,10 @@ class PaperImportEndpointTests(unittest.TestCase):
             update={"paper_discovery_allowed_hosts": ["trusted.example"]}
         )
         try:
-            self.assertEqual(common._paper_candidate_hosts(self.store.get_candidate("search-1", "candidate-1")), {"trusted.example"})
+            self.assertEqual(
+                common._paper_candidate_hosts(self.store.get_candidate("search-1", "candidate-1")),
+                {"trusted.example", "usenix.org", "www.usenix.org"},
+            )
         finally:
             common.article_settings = self.original_settings
 

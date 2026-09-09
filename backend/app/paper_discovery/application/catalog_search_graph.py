@@ -60,6 +60,7 @@ EVENT_ERROR_CODES = frozenset({
 EVENT_MESSAGE_CODES = frozenset({
     "SOURCE_QUEUED", "CHECKING_CACHE", "FETCHING_SOURCE", "MERGING_METADATA",
     "SOURCE_COMPLETED", "CACHE_HIT", "SOURCE_FAILED", "INDEX_DEGRADED",
+    "SOURCE_SKIPPED",
 })
 
 
@@ -236,12 +237,16 @@ class CatalogSearchGraph:
     """Nine fixed nodes with SQLite checkpoints at every externally visible stage."""
 
     def __init__(self, *, store: Any, accepted_source: Any, dblp_source: Any,
-                 rag: Optional[CatalogRagAdapter] = None, ttl_seconds: int = 86400):
+                 rag: Optional[CatalogRagAdapter] = None, ttl_seconds: int = 86400,
+                 dblp_enabled: Optional[bool] = None):
         self.store = store
         self.accepted_source = accepted_source
         self.dblp_source = dblp_source
         self.rag = rag or CatalogRagAdapter()
         self.ttl_seconds = int(ttl_seconds)
+        # Explicit override wins so tests can exercise the DBLP path even though
+        # the source is disabled by default in production configuration.
+        self.dblp_enabled_override = dblp_enabled
         self.compiled_graph = self._build_graph()
 
     def _build_graph(self):
@@ -298,7 +303,7 @@ class CatalogSearchGraph:
                 "queued": "SOURCE_QUEUED", "checking_cache": "CHECKING_CACHE",
                 "fetching": "FETCHING_SOURCE", "merging": "MERGING_METADATA",
                 "completed": "SOURCE_COMPLETED", "cached": "CACHE_HIT",
-                "failed": "SOURCE_FAILED",
+                "failed": "SOURCE_FAILED", "skipped": "SOURCE_SKIPPED",
             }.get(status, "SOURCE_QUEUED"), _now(),
         ))
 
@@ -381,7 +386,28 @@ class CatalogSearchGraph:
             self._progress(job.search_id, "usenix", "failed", error_code="USENIX_UNAVAILABLE")
             return {"status": "failed", "error_code": "USENIX_UNAVAILABLE", "paper_count": 0}
 
+    def _dblp_enabled(self) -> bool:
+        """DBLP now answers with a bot challenge instead of JSON; default off."""
+        if self.dblp_enabled_override is not None:
+            return bool(self.dblp_enabled_override)
+        cached = getattr(self, "_dblp_enabled_cache", None)
+        if cached is None:
+            from backend.app.platform.settings.settings_repository import load_article_settings
+
+            cached = bool(getattr(load_article_settings(), "paper_discovery_dblp_enabled", False))
+            self._dblp_enabled_cache = cached
+        return cached
+
     def sync_dblp(self, job: SearchJob) -> dict[str, Any]:
+        if not self._dblp_enabled():
+            # ``completed`` keeps the persisted status inside the store's CHECK
+            # constraint; SOURCE_SKIPPED is what tells the UI the source is off
+            # rather than empty. A skipped source is never degraded, so the job
+            # can still complete instead of reporting a permanent partial.
+            self._progress(job.search_id, "dblp", "completed", message_code="SOURCE_SKIPPED")
+            self._event(job.search_id, "sync_dblp", "SOURCE_SKIPPED", "completed", "dblp")
+            return {"status": "skipped", "error_code": None, "paper_count": 0,
+                    "cached_units": [], "fetching_units": [], "waiting_units": []}
         self._progress(job.search_id, "dblp", "fetching")
         self._event(job.search_id, "sync_dblp", "SOURCE_STARTED", "fetching", "dblp")
         try:
@@ -749,7 +775,11 @@ class CatalogSearchGraph:
         seen = set()
         for item in ranked:
             paper = by_id.get(str(item.get("catalog_paper_id")))
-            if paper is None or not paper.abstract or paper.catalog_paper_id in seen:
+            # A missing abstract must not discard an accepted paper: USENIX
+            # listing pages carry no abstract, so requiring one dropped every
+            # catalog entry and left the user with an empty result set. The
+            # abstract is surfaced as ``abstract_status`` for the UI instead.
+            if paper is None or paper.catalog_paper_id in seen:
                 continue
             seen.add(paper.catalog_paper_id)
             candidates.append((paper, item))
@@ -765,6 +795,7 @@ class CatalogSearchGraph:
             snapshot = {"catalog_paper_id": paper.catalog_paper_id, "rank": rank, "title": paper.title,
                         "authors": paper.authors, "year": paper.year, "conference_id": paper.conference_id,
                         "conference_name": "USENIX Security", "abstract": paper.abstract, "keywords": paper.keywords,
+                        "abstract_status": "missing" if not paper.abstract else "available",
                         "doi": paper.doi, "publication_stage": paper.publication_stage,
                         "source_page_url": paper.official_page_url,
                         "source_kinds": self.store.get_catalog_source_kinds(paper.catalog_paper_id)

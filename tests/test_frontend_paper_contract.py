@@ -70,6 +70,42 @@ def test_async_search_uses_frozen_server_pagination_contract() -> None:
     assert "merging: '正在整理元数据'" in APP
 
 
+def test_paper_error_text_covers_missing_codes_and_range_details() -> None:
+    # 补齐的错误码映射必须出现在前端，避免回退到无信息量的固定兜底句。
+    for code in (
+        "UNSUPPORTED_CONFERENCE:",
+        "SEARCH_NO_RESULTS:",
+        "INVALID_PAGE:",
+        "CATALOG_NOT_READY:",
+        "CONFERENCE_NOT_FOUND:",
+        "INVALID_ACCEPTED_YEAR:",
+    ):
+        assert code in APP
+    # showPaperError 必须能消费后端下发的年份范围，渲染"仅支持 XXXX-XXXX"。
+    assert "details.min_year" in APP
+    assert "details.max_year" in APP
+
+
+def test_paper_app_version_bumped() -> None:
+    # 改动 app.js 后必须同步递增 ?v= 版本号，确保浏览器刷新缓存（回归护栏 A7）。
+    assert "/assets/app.js?v=18" in INDEX
+    assert "/assets/styles.css?v=18" in INDEX
+
+
+def test_paper_error_notice_and_status_states_have_css() -> None:
+    # 错误提示升级为告警条，且整体状态语义色 class 必有对应 CSS 规则（regression-guard）。
+    assert "#papers-view .paper-error" in STYLES
+    assert "border-left: 3px solid #b42318" in STYLES
+    for kind in ("running", "completed", "partial", "failed"):
+        assert f"#papers-view .paper-status.is-{kind}" in STYLES
+
+
+def test_paper_source_initial_placeholder_is_neutral() -> None:
+    # 来源初始占位不再使用"等待开始"，改为中性"未开始"（避免与进度状态混淆）。
+    assert "等待开始" not in INDEX
+    assert "未开始" in INDEX
+
+
 def test_paper_styles_cover_long_content_scrolling_and_focus() -> None:
     selectors = (
         "#papers-view .paper-search-form",

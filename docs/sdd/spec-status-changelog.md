@@ -131,3 +131,8 @@
 - **018 Task02B 来源锚点与候选协议重验证** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task02A 功能门通过，开始以首轮固定样本和正式入口重放 PDF/Markdown block/chunk/anchor oracle；本 Task 仍禁止真实数据和真实 Qdrant。
 - **018 Task02B 来源锚点与候选协议重验证** ｜ 实施中 → 已完成（功能 GO） ｜ 2026-09-09：修复 PDF-v2 同页 block 拼接导致 LLM 未调用的问题后，22/22 证据哈希、7/7 固定样本与 100 项联合测试通过；bbox 误差 0、Markdown 行号 100%。tester/Tech Lead 放行 Task03–05，生产切换仍延期至 Task06。
 - **018 Task03 通用文档、Manifest 与迁移协议** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task02B 功能 GO 后开始冻结 KnowledgeDocument/InspectionManifest/FinalizeBundle 契约与旧 metadata 迁移边界。
+
+## 2026-09-09
+
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中（范围扩展）｜ 确认 catalog→import 架构割裂（新表 `search_jobs`/`search_results` 与旧表 `search_sessions`/`paper_candidates` 不互通，导致 catalog `search_id` 导入报 `SEARCH_NOT_FOUND`）与摘要缺失（USENIX 列表页无 abstract，894 篇 `abstract` 全空）两个真实缺陷；用户选 C：本轮回接通导入（含补 PDF 来源 + `usenix.org` 白名单），摘要抓取作为后续任务单独排期，不遗忘。
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中（缺陷修复）｜ 修复年份检索误报与错误提示不可读两类缺陷：后端 `INVALID_YEARS` 下发 `min_year/max_year`、前端年份上界对齐当前年并补六类错误码映射、失败态不再残留“正在检索…”、错误提示升级为告警条并加状态语义色与中性来源占位；异步全量 768 passed、ruff 156 无新增，spec 不标记已完成（验收签字未达成）。

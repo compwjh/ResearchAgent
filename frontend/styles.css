@@ -837,7 +837,18 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #papers-view .paper-error {
   color: #b42318;
   font-weight: 700;
+  background: #fdecea;
+  border-left: 3px solid #b42318;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
 }
+
+#papers-view .paper-status.is-running { color: var(--accent); }
+#papers-view .paper-status.is-completed { color: #45BA77; }
+#papers-view .paper-status.is-partial { color: #b26a00; }
+#papers-view .paper-status.is-failed { color: #b42318; }
 
 #papers-view .paper-conference-fieldset {
   display: grid;

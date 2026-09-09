@@ -390,12 +390,12 @@ const PAPER_STATUS_TEXT = {
   partial_success: '部分完成', running: '处理中', completed_count: '已完成',
 };
 const PAPER_SOURCE_STATUS_TEXT = {
-  queued: '等待开始', checking_cache: '正在检查本地目录', cached: '已使用缓存',
+  queued: '未开始', checking_cache: '正在检查本地目录', cached: '已使用缓存',
   fetching: '正在从该来源获取', merging: '正在整理元数据', completed: '检索完成',
   failed: '该来源暂时不可用', partial: '部分完成',
 };
 const PAPER_SOURCE_MESSAGE_TEXT = {
-  SOURCE_QUEUED: '等待开始', CHECKING_CACHE: '正在检查本地目录', CACHE_HIT: '已使用缓存',
+  SOURCE_QUEUED: '未开始', CHECKING_CACHE: '正在检查本地目录', CACHE_HIT: '已使用缓存',
   FETCHING_SOURCE: '正在从该来源获取', MERGING_METADATA: '正在整理元数据',
   SOURCE_COMPLETED: '检索完成', SOURCE_PARTIAL: '部分完成', SOURCE_FAILED: '该来源暂时不可用',
 };
@@ -411,7 +411,10 @@ const PAPER_ERROR_TEXT = {
   PAPER_DISCOVERY_DISABLED: '论文检索功能当前已关闭', PAPER_DISCOVERY_UNAVAILABLE: '检索服务暂时不可用',
   PAPER_DISCOVERY_STORE_UNAVAILABLE: '检索配置暂时不可用', SEARCH_EXPIRED: '搜索会话已过期，请重新检索',
   SEARCH_NOT_FOUND: '搜索会话不存在，请重新检索', CANDIDATE_NOT_FOUND: '候选论文不存在，请重新检索',
-  INVALID_QUERY: '研究方向不能为空且最多 500 个字符', INVALID_YEARS: '发表年份范围无效',
+  INVALID_QUERY: '研究方向不能为空且最多 500 个字符', INVALID_YEARS: '年份需按从早到晚排序（例如 2021–2025），且在受支持范围内',
+  UNSUPPORTED_CONFERENCE: '异步目录检索当前仅支持 USENIX Security', CONFERENCE_NOT_FOUND: '会议配置不存在',
+  SEARCH_NO_RESULTS: '搜索没有可读结果', INVALID_PAGE: '页码必须从第 1 页开始',
+  CATALOG_NOT_READY: '论文目录尚未准备好，请稍后重试', INVALID_ACCEPTED_YEAR: '年份必须为 1900 到当前年份之间的整数',
   INVALID_CONFERENCE: '请选择已启用的会议', CONFERENCE_DISABLED: '所选会议已停用',
   CONFERENCE_NOT_CONFIGURED: '会议配置不存在', BATCH_LIMIT_EXCEEDED: '单批最多导入 20 篇',
   BROWSER_SESSION_REQUIRED: '请先完成受控登录后再续传', BROWSER_UNAVAILABLE: '浏览器当前不可用',
@@ -421,10 +424,11 @@ const PAPER_ERROR_TEXT = {
 };
 
 class PaperApiError extends Error {
-  constructor(code, retryable = false) {
+  constructor(code, retryable = false, details = null) {
     super(PAPER_ERROR_TEXT[code] || '论文服务暂时不可用');
     this.code = code || 'PAPER_API_ERROR';
     this.retryable = Boolean(retryable);
+    this.details = details;
   }
 }
 
@@ -433,7 +437,7 @@ async function paperJson(response) {
   try { data = await response.json(); } catch (_) {}
   if (!response.ok) {
     const detail = data && typeof data.detail === 'object' ? data.detail : data;
-    throw new PaperApiError(detail?.code || data?.code, detail?.retryable || data?.retryable);
+    throw new PaperApiError(detail?.code || data?.code, detail?.retryable || data?.retryable, detail?.details || data?.details);
   }
   return data;
 }
@@ -465,9 +469,9 @@ setPaperEnabled(paperState.enabled);
 function paperYearList() {
   const from = Number(paperYearFrom?.value);
   const to = Number(paperYearTo?.value);
-  if (!Number.isInteger(from) || !Number.isInteger(to) || from > to || to >= new Date().getFullYear()) return null;
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from > to || to > new Date().getFullYear()) return null;
   const years = [];
-  for (let year = to; year >= from; year -= 1) years.push(year);
+  for (let year = from; year <= to; year += 1) years.push(year);
   return years.length > 10 ? null : years;
 }
 
@@ -482,10 +486,12 @@ function renderPaperConferences() {
     label.className = 'paper-conference-option';
     const input = document.createElement('input');
     input.type = 'checkbox'; input.name = 'conference_id'; input.value = conference.conference_id;
-    input.checked = selected.size ? selected.has(conference.conference_id) : true;
+    input.checked = selected.size ? selected.has(conference.conference_id) : conference.conference_id === 'usenix-security';
     input.addEventListener('change', syncPaperConferenceSearchSelection);
     const text = document.createElement('span');
-    text.textContent = `${conference.short_name || conference.name || '未命名会议'} · ${conference.name || ''}`;
+    const onlyUsenix = conference.conference_id === 'usenix-security';
+    const note = onlyUsenix ? '' : '（暂仅支持 USENIX Security 异步检索）';
+    text.textContent = `${conference.short_name || conference.name || '未命名会议'}${note}`;
     label.append(input, text); paperConferenceList.appendChild(label);
   });
   updatePaperSelection();
@@ -792,16 +798,17 @@ async function pollPaperSearch(searchId, serial, controller) {
     if (serial !== paperState.searchSerial) return;
     renderPaperSourceProgress(data);
     const status = data.status || 'running';
-    if (paperSearchStatus) paperSearchStatus.textContent = status === 'partial'
-      ? '部分来源未完成，以下结果来自可用目录' : status === 'completed' ? '检索完成' : '正在检索…';
+    if (paperSearchStatus) setPaperStatus(paperSearchStatus, status === 'partial'
+      ? '部分来源未完成，以下结果来自可用目录' : status === 'completed' ? '检索完成' : status === 'failed' ? '检索失败' : '正在检索…',
+      status === 'partial' ? 'partial' : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'running');
     if (['completed', 'partial', 'failed'].includes(status)) {
       try {
         const resultData = await loadPaperResultsPage(searchId, 1, serial, controller);
         const visibleItems = resultData?.items || resultData?.results || [];
         if (status === 'failed' && !visibleItems.length) showPaperError('PAPER_DISCOVERY_UNAVAILABLE');
         else if (status === 'failed' && visibleItems.length) {
-          if (paperSearchStatus) paperSearchStatus.textContent = '部分来源未完成，以下结果来自可用目录';
-          if (paperProgressStatus) paperProgressStatus.textContent = '部分来源未完成，以下结果来自可用目录';
+          if (paperSearchStatus) setPaperStatus(paperSearchStatus, '部分来源未完成，以下结果来自可用目录', 'partial');
+          if (paperProgressStatus) setPaperStatus(paperProgressStatus, '部分来源未完成，以下结果来自可用目录', 'partial');
         }
       } catch (error) {
         if (status === 'partial' && error.name !== 'AbortError') showPaperError('SEARCH_NOT_READY');
@@ -810,7 +817,7 @@ async function pollPaperSearch(searchId, serial, controller) {
       }
       return;
     }
-    await waitForPaperPoll(1200, controller);
+    await waitForPaperPoll(1200, controller.signal);
   }
 }
 
@@ -834,7 +841,7 @@ async function searchPapers(event) {
   if (paperSearchButton) paperSearchButton.disabled = false;
   if (paperResults) paperResults.setAttribute('aria-busy', 'true');
   if (paperSearchError) paperSearchError.hidden = true;
-  if (paperSearchStatus) paperSearchStatus.textContent = '正在检索…';
+  if (paperSearchStatus) setPaperStatus(paperSearchStatus, '正在检索…', 'running');
   renderPaperSourceProgress({ status: 'queued' });
   if (paperResults) paperResults.replaceChildren();
   if (paperResultsEmpty) { paperResultsEmpty.hidden = false; paperResultsEmpty.textContent = '正在准备检索…'; }
@@ -854,7 +861,8 @@ async function searchPapers(event) {
     await pollPaperSearch(searchId, serial, controller);
   } catch (error) {
     if (error.name === 'AbortError' || serial !== paperState.searchSerial) return;
-    showPaperError(error.code);
+    showPaperError(error.code, error.details);
+    if (paperSearchStatus) setPaperStatus(paperSearchStatus, '检索失败', 'failed');
   } finally {
     if (serial === paperState.searchSerial) {
       if (paperSearchButton) paperSearchButton.disabled = false;
@@ -870,8 +878,21 @@ function cancelPaperSearchPolling() {
   if (paperSearchButton) paperSearchButton.disabled = false;
 }
 
-function showPaperError(code) {
-  if (paperSearchError) { paperSearchError.textContent = PAPER_ERROR_TEXT[code] || '论文服务暂时不可用，请稍后重试'; paperSearchError.hidden = false; }
+function setPaperStatus(element, text, kind) {
+  if (!element) return;
+  element.textContent = text;
+  element.classList.remove('is-running', 'is-completed', 'is-partial', 'is-failed');
+  if (kind) element.classList.add(`is-${kind}`);
+}
+
+function showPaperError(code, details = null) {
+  if (!paperSearchError) return;
+  let text = PAPER_ERROR_TEXT[code] || '论文服务暂时不可用，请稍后重试';
+  if (code === 'INVALID_YEARS' && details && Number.isInteger(details.min_year) && Number.isInteger(details.max_year)) {
+    text = `年份需按从早到晚排序，且必须在受支持范围内（仅支持 ${details.min_year}–${details.max_year}）`;
+  }
+  paperSearchError.textContent = text;
+  paperSearchError.hidden = false;
 }
 
 async function changePaperPage(page) {

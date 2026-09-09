@@ -94,8 +94,12 @@ def create_async_paper_search(request: AsyncPaperSearchRequest):
     years = list(dict.fromkeys(request.years))
     if request.conference_ids != ["usenix-security"]:
         return _paper_api_error(400, "UNSUPPORTED_CONFERENCE", "异步目录检索当前仅支持 USENIX Security")
-    if years != sorted(years) or any(year < 1900 or year > datetime.now(timezone.utc).year for year in years):
-        return _paper_api_error(400, "INVALID_YEARS", "years 必须为升序且在受控范围内")
+    current_year = datetime.now(timezone.utc).year
+    if years != sorted(years) or any(year < 1900 or year > current_year for year in years):
+        return _paper_api_error(
+            400, "INVALID_YEARS", "years 必须为升序且在受控范围内",
+            details={"min_year": 1900, "max_year": current_year},
+        )
     now = datetime.now(timezone.utc)
     ttl = getattr(common.article_settings, "paper_discovery_search_ttl_seconds", 86400)
     search_id = uuid.uuid4().hex
@@ -588,12 +592,42 @@ def _paper_batch_status_payload(service: PaperImportBatchService, batch_id: str)
     return _paper_batch_payload(result["batch"], list(result.get("items") or []))
 
 
+def _paper_catalog_import_inputs(store, search_id, candidate_ids):
+    """Resolve async catalog-search candidates for import.
+
+    Returns ``(job, by_id)`` where ``job`` is the SearchJob (carries expires_at
+    for the expiry check) and ``by_id`` maps candidate_id -> snapshot dict with
+    ``candidate_id`` injected (= catalog_paper_id). Raises
+    PaperImportBatchServiceError for not-found / not-ready.
+    """
+    job = store.get_search_job(search_id)
+    if job is None:
+        raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
+    if getattr(job, "status", "") not in {"completed", "partial", "failed"}:
+        raise PaperImportBatchServiceError("SEARCH_NOT_READY", "搜索结果尚未冻结")
+    results = store.get_search_results(search_id)
+    by_id: dict[str, object] = {}
+    for result in results:
+        snapshot = dict(result.snapshot)
+        cid = snapshot.get("catalog_paper_id") or getattr(result, "catalog_paper_id", None)
+        snapshot.setdefault("candidate_id", cid)
+        snapshot.setdefault("search_id", search_id)
+        by_id[cid] = snapshot
+    return job, by_id
+
+
 def _paper_server_snapshot(search_id: str, candidate_ids: list[str]) -> tuple[object, list[object]]:
     """Resolve all import inputs from the server-owned search snapshot."""
     store = _paper_store()
     session = store.get_search_session(search_id)
     if session is None:
-        raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
+        job, by_id = _paper_catalog_import_inputs(store, search_id, candidate_ids)
+        if _paper_search_expired(getattr(job, "expires_at", "")):
+            raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
+        candidates = [by_id[cid] for cid in candidate_ids if cid in by_id]
+        if not candidates:
+            raise PaperImportBatchServiceError("CANDIDATE_NOT_FOUND", "候选论文不存在")
+        return job, candidates
     if _paper_search_expired(getattr(session, "expires_at", "")):
         raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
     candidates = []
@@ -615,10 +649,23 @@ def _paper_snapshot_for_item(service: PaperImportBatchService, item_id: str) -> 
     discovery = getattr(service, "discovery_store", None) or _paper_store()
     session = discovery.get_search_session(batch.search_id)
     if session is None:
-        raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
-    if _paper_search_expired(getattr(session, "expires_at", "")):
-        raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
-    candidates = list(discovery.get_candidates(batch.search_id))
+        job = discovery.get_search_job(batch.search_id)
+        if job is None:
+            raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
+        if _paper_search_expired(getattr(job, "expires_at", "")):
+            raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
+        session = job
+        candidates = []
+        for result in discovery.get_search_results(batch.search_id):
+            snapshot = dict(result.snapshot)
+            cid = snapshot.get("catalog_paper_id") or getattr(result, "catalog_paper_id", None)
+            snapshot.setdefault("candidate_id", cid)
+            snapshot.setdefault("search_id", batch.search_id)
+            candidates.append(snapshot)
+    else:
+        if _paper_search_expired(getattr(session, "expires_at", "")):
+            raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
+        candidates = list(discovery.get_candidates(batch.search_id))
     if not any(_paper_candidate_value(candidate, "candidate_id") == item.candidate_id for candidate in candidates):
         raise PaperImportBatchServiceError("CANDIDATE_NOT_FOUND", "候选论文不存在")
     # The service validates a complete batch snapshot before resuming one item;

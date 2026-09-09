@@ -58,7 +58,7 @@ def test_dblp_persists_fk_fetch_unit_and_skips_completed_unit(tmp_path):
     job = _job()
     store.create_search_job(job)
     dblp = _DBLP()
-    graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=dblp)
+    graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=dblp, dblp_enabled=True)
 
     first = graph.sync_dblp(job)
     second = graph.sync_dblp(job)
@@ -82,7 +82,7 @@ def test_dblp_multi_year_warning_is_partial_without_downgrading_success_year(tmp
     store = PaperDiscoveryStore(tmp_path / "state.sqlite3")
     job = _job("search-dblp-partial", years=[2023, 2024])
     store.create_search_job(job)
-    graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=_PartialDBLP())
+    graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=_PartialDBLP(), dblp_enabled=True)
 
     result = graph.sync_dblp(job)
 
@@ -119,7 +119,7 @@ def test_inflight_dblp_unit_is_waiting_and_cannot_freeze_empty_results(tmp_path)
     ))
     assert store.acquire_fetch_unit(unit_id, "other-worker", 300, now="2099-01-01T00:00:00Z")
     dblp = _DBLP()
-    graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=dblp)
+    graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=dblp, dblp_enabled=True)
 
     result = graph.sync_dblp(job)
 
@@ -154,8 +154,8 @@ def test_concurrent_dblp_workers_only_one_fetches_and_other_waits(tmp_path):
     store.create_search_job(first_job)
     store.create_search_job(second_job)
     source = BlockingDBLP()
-    first_graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=source)
-    second_graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=source)
+    first_graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=source, dblp_enabled=True)
+    second_graph = CatalogSearchGraph(store=store, accepted_source=_Accepted(), dblp_source=source, dblp_enabled=True)
     results = {}
 
     first = threading.Thread(target=lambda: results.setdefault("first", first_graph.sync_dblp(first_job)))

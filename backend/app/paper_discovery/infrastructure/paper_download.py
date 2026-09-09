@@ -10,13 +10,16 @@ import stat
 import tempfile
 import time
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
+from urllib.parse import urljoin
 
 import httpx
 
 from backend.app.paper_discovery.domain.paper_download_security import (
     DEFAULT_MAX_REDIRECTS,
+    DNSResolver,
     URLSecurityError,
     ValidatedURL,
     validate_peer_ip,
@@ -143,6 +146,86 @@ def _timeouts(settings: ArticleSettings) -> tuple[httpx.Timeout, float]:
     return httpx.Timeout(total, connect=connect, read=read, write=read, pool=connect), total
 
 
+class _CitationPdfParser(HTMLParser):
+    """Extract a paper PDF URL from a landing page.
+
+    Prefers ``<meta name="citation_pdf_url">``; falls back to the first
+    ``<a href="...">`` whose href looks like a PDF link.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.pdf_url: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.pdf_url is not None:
+            return
+        data = {key.casefold(): value for key, value in attrs if value is not None}
+        if tag.casefold() == "meta":
+            if data.get("name", "").casefold() == "citation_pdf_url":
+                content = data.get("content")
+                if content:
+                    self.pdf_url = content
+        elif tag.casefold() == "a":
+            href = data.get("href", "")
+            if ".pdf" in href.lower():
+                self.pdf_url = href
+
+
+def _resolve_pdf_url_from_page(
+    page_url: str,
+    *,
+    allowed_hosts: Iterable[str],
+    dns_resolver: DNSResolver | None = None,
+    transport: httpx.BaseTransport | None = None,
+    max_bytes: int = 256 * 1024,
+) -> str:
+    """Fetch a paper landing page and return its PDF URL via SSRF-safe checks.
+
+    Only used when a candidate has no direct ``pdf_url`` but a ``source_page_url``
+    (USENIX presentation page). The landing page host must already be in
+    ``allowed_hosts`` (validated here), and the resolved PDF URL is re-validated
+    against the same allowlist so no untrusted host is ever downloaded.
+    """
+    try:
+        validate_url(page_url, allowed_hosts=allowed_hosts, dns_resolver=dns_resolver)
+    except URLSecurityError as error:
+        raise PaperDownloadError(DOWNLOAD_BLOCKED, "下载来源被安全策略拒绝") from error
+    client = httpx.Client(
+        timeout=httpx.Timeout(20.0),
+        follow_redirects=True,
+        trust_env=False,
+        transport=transport,
+    )
+    try:
+        with client.stream("GET", page_url) as response:
+            if response.status_code < 200 or response.status_code >= 300:
+                raise PaperDownloadError(PDF_NOT_FOUND, "无法从论文页解析 PDF 地址")
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                if not isinstance(chunk, bytes):
+                    chunk = bytes(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    break
+                chunks.append(chunk)
+            html = b"".join(chunks).decode("utf-8", errors="replace")
+    finally:
+        client.close()
+    parser = _CitationPdfParser()
+    parser.feed(html)
+    found = parser.pdf_url
+    if not isinstance(found, str) or not found:
+        raise PaperDownloadError(PDF_NOT_FOUND, "无法从论文页解析 PDF 地址")
+    pdf_url = urljoin(page_url, found)
+    try:
+        validate_url(pdf_url, allowed_hosts=allowed_hosts, dns_resolver=dns_resolver)
+    except URLSecurityError as error:
+        raise PaperDownloadError(DOWNLOAD_BLOCKED, "下载来源被安全策略拒绝") from error
+    return pdf_url
+
+
 def download_candidate(
     candidate: Any,
     settings: ArticleSettings,
@@ -163,7 +246,18 @@ def download_candidate(
     """Download one server-side candidate, manually validating every hop."""
     url = _candidate_value(candidate, "pdf_url")
     if not isinstance(url, str) or not url:
-        raise PaperDownloadError(PDF_NOT_FOUND, "候选没有公开 PDF 地址")
+        page_url = _candidate_value(candidate, "source_page_url") or _candidate_value(candidate, "official_page_url")
+        if isinstance(page_url, str) and page_url:
+            try:
+                url = _resolve_pdf_url_from_page(
+                    page_url, allowed_hosts=allowed_hosts, dns_resolver=dns_resolver, transport=transport,
+                )
+            except PaperDownloadError as error:
+                if error.code == DOWNLOAD_BLOCKED:
+                    raise
+                url = None
+        if not isinstance(url, str) or not url:
+            raise PaperDownloadError(PDF_NOT_FOUND, "候选没有公开 PDF 地址")
     if isinstance(max_redirects, bool) or max_redirects < 0 or max_bytes < 1 or max_header_bytes < 1:
         raise PaperDownloadError(DOWNLOAD_BLOCKED, "下载限制配置无效")
     started = clock()
