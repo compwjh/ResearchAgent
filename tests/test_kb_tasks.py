@@ -138,6 +138,35 @@ class TaskSubmissionTests(unittest.TestCase):
         finally:
             store_module.update_chunker_state = real_update
 
+    def test_run_index_task_sync_propagates_runner_result(self):
+        """同步索引必须把 runner 结果原样交给调用方。
+
+        `_guarded_run` 曾调用 runner 却不返回其结果，使 `run_index_task_sync`
+        恒为 None；导入/上传把已经成功的索引读成失败（KB_IMPORT_FAILED）。
+        """
+        payload = {"status": STATUS_INDEXED, "chunk_count": 5}
+        result = tasks_module.run_index_task_sync(
+            "sync-ok", CHUNKER_V1, lambda _progress: payload
+        )
+        self.assertEqual(result, payload)
+
+    def test_run_index_task_sync_reports_runner_failure(self):
+        updates = []
+        real_update = store_module.update_chunker_state
+        store_module.update_chunker_state = lambda *a, **k: updates.append((a, k))
+        try:
+            def boom(_progress):
+                raise RuntimeError("ollama down")
+
+            result = tasks_module.run_index_task_sync("sync-boom", CHUNKER_V1, boom)
+            self.assertIsInstance(result, dict)
+            self.assertTrue(result.get("error"), "失败必须带给调用方可诊断的原因")
+            self.assertTrue(
+                any(call[1].get("status") == STATUS_FAILED for call in updates)
+            )
+        finally:
+            store_module.update_chunker_state = real_update
+
 
 class IndexPaperChunkerTests(unittest.TestCase):
     def setUp(self):
