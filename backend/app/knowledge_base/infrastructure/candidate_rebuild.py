@@ -652,7 +652,15 @@ class CandidateRebuildService:
             self._store.write(self._state)
             self._store.event({"event": "state", "status": status, "progress": self._state.progress, "error_code": error})
 
-    def _action(self, action: str, operation: str, callback: Callable[[], Any], *, previous_target_override: Optional[str] = None) -> Any:
+    def _action(
+        self,
+        action: str,
+        operation: str,
+        callback: Callable[[], Any],
+        *,
+        previous_target_override: Optional[str] = None,
+        expected_retire_target: Optional[str] = None,
+    ) -> Any:
         if self._state is None or self._store is None:
             raise RebuildError("RUN_STATE_INVALID")
         self._action_sequence += 1
@@ -674,20 +682,32 @@ class CandidateRebuildService:
         except Exception as error:
             self._state.error_code = getattr(error, "code", type(error).__name__)
             observed_topology = self._observe_topology()
+            if not observed_topology:
+                self._state.error_code = "ACTION_RESULT_UNKNOWN"
             fresh_summary = {"schema_version": TOPOLOGY_SCHEMA, "inventory_digest": observed_topology["inventory_digest"]} if observed_topology else None
-            self._state.observed = {"sequence": self._action_sequence, "action": action, "phase": "after", "outcome": "error" if observed_topology else "unknown", "previous_target": intent["previous_target"], "expected_topology_digest": intent["expected_topology_digest"], "fresh_topology": fresh_summary, "topology_digest": observed_topology.get("inventory_digest") if observed_topology else None, "error_code": getattr(error, "code", type(error).__name__), "completed_at": _now()}
+            self._state.observed = {"sequence": self._action_sequence, "action": action, "phase": "after", "outcome": "error" if observed_topology else "unknown", "previous_target": intent["previous_target"], "expected_topology_digest": intent["expected_topology_digest"], "fresh_topology": fresh_summary, "topology_digest": observed_topology.get("inventory_digest") if observed_topology else None, "error_code": self._state.error_code, "completed_at": _now()}
             self._store.write(self._state)
             self._store.event({"event": "observed", **self._state.observed})
             raise
         observed_topology = self._observe_topology()
         fresh_summary = {"schema_version": TOPOLOGY_SCHEMA, "inventory_digest": observed_topology["inventory_digest"]} if observed_topology else None
-        self._state.observed = {"sequence": self._action_sequence, "action": action, "phase": "after", "outcome": "ok" if observed_topology else "unknown", "previous_target": intent["previous_target"], "expected_topology_digest": intent["expected_topology_digest"], "fresh_topology": fresh_summary, "topology_digest": observed_topology.get("inventory_digest") if observed_topology else None, "completed_at": _now()}
+        action_error = None
         if not observed_topology:
-            self._state.error_code = "ACTION_RESULT_UNKNOWN"
+            action_error = "ACTION_RESULT_UNKNOWN"
+        elif expected_retire_target is not None:
+            collection_names = {item["name"] for item in observed_topology.get("collections", ())}
+            alias_targets = {item["target"] for item in observed_topology.get("aliases", ())}
+            if expected_retire_target in collection_names or expected_retire_target in alias_targets:
+                action_error = "RETIRE_EFFECT_NOT_OBSERVED"
+        if action_error:
+            self._state.error_code = action_error
+        self._state.observed = {"sequence": self._action_sequence, "action": action, "phase": "after", "outcome": "ok" if observed_topology and not action_error else "error" if observed_topology else "unknown", "previous_target": intent["previous_target"], "expected_topology_digest": intent["expected_topology_digest"], "fresh_topology": fresh_summary, "topology_digest": observed_topology.get("inventory_digest") if observed_topology else None, "completed_at": _now()}
+        if action_error:
+            self._state.observed["error_code"] = action_error
         self._store.write(self._state)
         self._store.event({"event": "observed", **self._state.observed})
-        if not observed_topology:
-            raise RebuildError("ACTION_RESULT_UNKNOWN")
+        if action_error:
+            raise RebuildError(action_error)
         if self._lock:
             self._lock.heartbeat()
         return result
@@ -773,7 +793,7 @@ class CandidateRebuildService:
             self._authorize_retire(collection)
             return self.index.delete_collection(collection)
 
-        self._action(action, "delete_collection", delete, previous_target_override=collection)
+        self._action(action, "delete_collection", delete, previous_target_override=collection, expected_retire_target=collection)
 
     def _point_payload(self, record: Mapping[str, Any], bundle: Any, chunk: Mapping[str, Any]) -> Dict[str, Any]:
         anchor_digest = _fingerprint(list(bundle.anchors))

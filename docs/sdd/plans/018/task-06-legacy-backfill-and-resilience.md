@@ -132,6 +132,13 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - alias 失败恢复、FinalizeBundle marker-last、bundle/live hash 校验和幂等恢复定向测试共 47 passed；未访问真实 Qdrant/索引。
 - 尚未修复或验收：弱 CandidateIndexPort retire authorization 绕过、旧 upload/import/reindex/delete/startup closure 测试缺失、真实 alias/topology/stale-lock 行为。因此 06-C/06-D 仍禁止执行。
 
+### Retire fail-closed 修复：`PASS（隔离功能门）`
+
+- 每次退休旧 Collection 后重新读取 fresh topology；目标仍存在、仍被任意 alias 引用或拓扑不可读时，分别返回 `RETIRE_EFFECT_NOT_OBSERVED` / `ACTION_RESULT_UNKNOWN`。
+- 上述失败保持 `switching`，不会进入 finalize/completed；正常 FakeQdrant 退休和 FinalizeBundle 路径保持通过。
+- 定向回归 49 passed，独立临时故障探针 9/9；backend-tester `PASS`、backend-reviewer `GO`，未发现新增 P0/P1。
+- 本结论只关闭当前隔离实现缺口，不放行真实 Qdrant；closure matrix 仍需独立收口。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -139,3 +146,4 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-09：承接 Task02A-E 功能优先留下的生产安全债务；全部关闭并独立签字前，本 Task 不得执行任何真实索引写删。
 - 2026-09-10：06-A 在 FakeQdrant/临时目录完成 44 项定向测试与 32/32 故障探针，报告落盘；真实切换保持 NO-GO，等待 Task06-B 前置门禁和 closure matrix 收口。
 - 2026-09-10：06-B 审计确认 closure matrix 为 17 open/12 pending，真实生产门继续 NO-GO；完成默认 FinalizeBundle 主链和新进程恢复修复，47 项定向测试通过，仍未执行真实索引。
+- 2026-09-10：修复 retire no-op/未知 topology 仍继续完成的问题；49 项定向测试和 9/9 临时故障探针通过，独立 reviewer/tester 给出隔离功能门 GO/PASS。生产门继续被 closure matrix 与真实 Qdrant 维护窗口阻塞。

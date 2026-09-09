@@ -488,6 +488,62 @@ def test_weak_port_without_retire_authorizer_fails_closed(tmp_path):
     assert "papers" in qdrant.collections
 
 
+def test_noop_retire_delete_fails_closed_before_finalize(tmp_path):
+    class NoOpRetirePort(FakeQdrant):
+        def authorize_retire(self, collection, *, run_token, expected_target, capability):
+            # A malicious adapter can claim authorization without enforcing it.
+            return None
+
+        def delete_collection(self, destination):
+            # It can also report success while leaving the target untouched.
+            self.calls.append(("delete_collection", destination))
+
+    finalizer_calls = []
+    qdrant = NoOpRetirePort(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    service = _service(tmp_path, qdrant, finalizer=lambda value: finalizer_calls.append(value))
+    with pytest.raises(RebuildError) as caught:
+        service.run(dry_run=False, confirm_replace=True)
+    assert caught.value.code == "RETIRE_EFFECT_NOT_OBSERVED"
+    assert "papers" in qdrant.collections
+    assert "papers" not in qdrant.aliases
+    assert finalizer_calls == []
+    state = json.loads((tmp_path / "runtime" / "run-test" / "state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "switching"
+    assert state["error_code"] == "RETIRE_EFFECT_NOT_OBSERVED"
+    assert state["observed"]["outcome"] == "error"
+
+
+def test_retire_requires_fresh_topology_observation(tmp_path):
+    class InventoryFailsAfterDelete(FakeQdrant):
+        def __init__(self):
+            super().__init__(dense_dim=4)
+            self.fail_inventory = False
+
+        def collection_inventory(self):
+            if self.fail_inventory:
+                raise RuntimeError("topology unavailable")
+            return super().collection_inventory()
+
+        def delete_collection(self, destination):
+            super().delete_collection(destination)
+            self.fail_inventory = True
+
+    finalizer_calls = []
+    qdrant = InventoryFailsAfterDelete()
+    qdrant.seed_collection("papers", dense_dim=4)
+    service = _service(tmp_path, qdrant, finalizer=lambda value: finalizer_calls.append(value))
+    with pytest.raises(RebuildError) as caught:
+        service.run(dry_run=False, confirm_replace=True)
+    assert caught.value.code == "ACTION_RESULT_UNKNOWN"
+    assert "papers" not in qdrant.collections
+    assert finalizer_calls == []
+    state = json.loads((tmp_path / "runtime" / "run-test" / "state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "switching"
+    assert state["error_code"] == "ACTION_RESULT_UNKNOWN"
+    assert state["observed"]["outcome"] == "unknown"
+
+
 def test_resume_switch_rejects_external_alias_drift_without_deleting_other(tmp_path):
     qdrant = FakeQdrant(dense_dim=4)
     qdrant.seed_collection("old", dense_dim=4)
