@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/index-generation-v1",
+  "title": "Spec018 index-generation commit marker v1",
+  "description": "The last durable commit marker. Normal reads require this marker to match the alias, live metadata/manifests and FinalizeBundleV1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "alias_name",
+    "alias_target",
+    "bundle_sha256",
+    "collection_fingerprint",
+    "metadata_sha256",
+    "manifests_digest",
+    "committed_at"
+  ],
+  "x-field-order": [
+    "schema_version", "run_id", "alias_name", "alias_target", "bundle_sha256",
+    "collection_fingerprint", "metadata_sha256", "manifests_digest", "committed_at"
+  ],
+  "x-write-order": [
+    "verify_alias_and_live_artifacts", "atomic_write_marker", "fsync_marker_file_and_directory",
+    "reread_and_validate_marker"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "candidateCollection": {"type": "string", "pattern": "^papers_rebuild_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}
+  },
+  "properties": {
+    "schema_version": {"const": "index-generation-v1"},
+    "run_id": {"$ref": "#/$defs/runId"},
+    "alias_name": {"const": "papers"},
+    "alias_target": {"$ref": "#/$defs/candidateCollection"},
+    "bundle_sha256": {"$ref": "#/$defs/sha256"},
+    "collection_fingerprint": {"$ref": "#/$defs/sha256"},
+    "metadata_sha256": {"$ref": "#/$defs/sha256"},
+    "manifests_digest": {"$ref": "#/$defs/sha256"},
+    "committed_at": {"type": "string", "format": "date-time"}
+  }
+}

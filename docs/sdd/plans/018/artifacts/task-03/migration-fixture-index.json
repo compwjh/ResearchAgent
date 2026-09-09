@@ -1,0 +1,44 @@
+{
+  "schema_version": "migration-fixture-index-v1",
+  "migration_version": "018-document-v1",
+  "fixture_policy": "tests create all inputs under pytest tempfile; no user data or Qdrant vectors are referenced",
+  "cases": [
+    {
+      "case_id": "pdf-present",
+      "input": "legacy list with one paper_id and a present .pdf source",
+      "expected": "canonical document_id preserves paper_id; source_sha256 is current bytes; indexed_source_sha256=null; source_hash_state=legacy_unknown"
+    },
+    {
+      "case_id": "markdown-present",
+      "input": "legacy record with safe .md stored_name and present source",
+      "expected": "media_type=text/markdown; page_count=null; basename is preserved"
+    },
+    {
+      "case_id": "source-missing",
+      "input": "valid legacy record without a corresponding source",
+      "expected": "record retained with status=failed, error=SOURCE_MISSING and null source_sha256 for preflight failure"
+    },
+    {
+      "case_id": "invalid-input",
+      "input": "corrupt JSON, non-list root, duplicate/unsafe ID or malformed timestamp",
+      "expected": "MIGRATION_INPUT_INVALID; original bytes and metadata path remain unchanged"
+    },
+    {
+      "case_id": "naive-timestamp",
+      "input": "legacy uploaded_at without timezone",
+      "expected": "created_at deterministically normalized with UTC (+00:00); no host-local timezone lookup"
+    },
+    {
+      "case_id": "rerun",
+      "input": "already migrated canonical metadata",
+      "expected": "already_migrated=true and byte-for-byte no-op"
+    }
+  ],
+  "test_command": ".venv/bin/python -m pytest -q tests/test_kb_metadata_migration.py",
+  "last_exit_code": 0,
+  "last_test_count": 15,
+  "source_hashes": "computed only inside temporary fixtures; no source bytes are embedded here",
+  "qdrant_reads": 0,
+  "qdrant_writes": 0,
+  "embedding_calls": 0
+}

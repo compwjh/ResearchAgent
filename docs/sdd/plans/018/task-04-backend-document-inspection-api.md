@@ -1,7 +1,7 @@
 # Task 04：实现后端文档 Manifest 与检查接口
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task03；被依赖：Task05、06；当前状态：`待执行`
+> 依赖：Task03；被依赖：Task05、06；当前状态：`实施中`
 
 ## 一句话目标
 

@@ -5,10 +5,13 @@
 """
 
 import json
+import os
+import shutil
 import threading
 import uuid
+from contextlib import suppress
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Union
 
@@ -29,6 +32,28 @@ _lock = threading.RLock()
 
 # 用于区分"不更新 error"与"把 error 置为 None"
 _UNSET = object()
+
+
+class MetadataStoreError(RuntimeError):
+    """Stable error for metadata write-path corruption."""
+
+    def __init__(self, code: str = "METADATA_INVALID") -> None:
+        self.code = code
+        super().__init__(code)
+
+
+def record_id(item: Any) -> str:
+    """Return the canonical record identity with legacy compatibility.
+
+    A canonical record wins when both fields are present; callers must never
+    use the legacy field to replace a ``KnowledgeDocument`` identity.
+    """
+    if isinstance(item, Mapping):
+        return str(item.get("document_id") or item.get("paper_id") or "")
+    return str(getattr(item, "document_id", None) or getattr(item, "paper_id", None) or "")
+
+
+_record_id = record_id
 
 
 def default_chunkers() -> Dict[str, Any]:
@@ -98,10 +123,33 @@ def load_papers(meta_path: Optional[Path] = None) -> List[dict]:
     return data
 
 
+def load_papers_strict(meta_path: Optional[Path] = None) -> List[dict]:
+    """Read metadata for a write path; corruption is never an empty database."""
+    meta = Path(meta_path or KB_META_PATH)
+    if not meta.exists():
+        return []
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as error:
+        raise MetadataStoreError() from error
+    if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
+        raise MetadataStoreError()
+    try:
+        for item in data:
+            ensure_chunkers(item)
+    except (TypeError, ValueError, KeyError) as error:
+        raise MetadataStoreError() from error
+    return data
+
+
 def save_papers(papers: List[dict], meta_path: Optional[Path] = None) -> None:
     meta = Path(meta_path or KB_META_PATH)
-    ensure_dirs(meta_path=meta)
     with _lock:
+        # Verify the existing bytes before accepting any replacement.  The
+        # compatibility read API may return [], but write paths fail closed.
+        if meta.exists():
+            load_papers_strict(meta)
+        ensure_dirs(meta_path=meta)
         meta.write_text(
             json.dumps(papers, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -110,11 +158,29 @@ def save_papers(papers: List[dict], meta_path: Optional[Path] = None) -> None:
 
 def upsert_paper(record: PaperRecord, meta_path: Optional[Path] = None) -> PaperRecord:
     with _lock:
-        papers = load_papers(meta_path)
+        papers = load_papers_strict(meta_path)
         payload = record.to_dict()
         for index, item in enumerate(papers):
-            if item.get("paper_id") == record.paper_id:
-                papers[index] = payload
+            if _record_id(item) == record.paper_id:
+                if item.get("schema_version") == "knowledge-document-v1":
+                    # A legacy PaperRecord is metadata-only once a canonical
+                    # document exists.  It can never erase source identity,
+                    # hashes, media type, migration markers, or state-machine
+                    # fields; explicit state changes use patch_knowledge_document.
+                    merged = dict(item)
+                    optional_metadata = {
+                        "title", "authors", "year", "conference_id", "conference_name",
+                        "doi", "dblp_key", "source_url", "import_source",
+                    }
+                    for key in (
+                        "title", "authors", "year", "conference_id", "conference_name",
+                        "doi", "dblp_key", "source_url", "import_source",
+                    ):
+                        if key in payload and not (key in optional_metadata and payload[key] is None):
+                            merged[key] = payload[key]
+                    papers[index] = merged
+                else:
+                    papers[index] = payload
                 break
         else:
             papers.append(payload)
@@ -124,7 +190,7 @@ def upsert_paper(record: PaperRecord, meta_path: Optional[Path] = None) -> Paper
 
 def get_paper(paper_id: str, meta_path: Optional[Path] = None) -> Optional[dict]:
     for item in load_papers(meta_path):
-        if item.get("paper_id") == paper_id:
+        if _record_id(item) == paper_id:
             return item
     return None
 
@@ -144,10 +210,10 @@ def resolve_paper_path(
         paper_id = paper
         stored_name = None
     elif isinstance(paper, Mapping):
-        paper_id = str(paper.get("paper_id") or "")
+        paper_id = str(paper.get("document_id") or paper.get("paper_id") or "")
         stored_name = paper.get("stored_name")
     else:
-        paper_id = str(getattr(paper, "paper_id", "") or "")
+        paper_id = str(getattr(paper, "document_id", None) or getattr(paper, "paper_id", "") or "")
         stored_name = getattr(paper, "stored_name", None)
 
     candidate = str(stored_name or "").strip()
@@ -161,9 +227,9 @@ def resolve_paper_path(
 def remove_paper(paper_id: str, meta_path: Optional[Path] = None, papers_dir: Optional[Path] = None) -> bool:
     """删除元数据与原件；返回是否命中。"""
     with _lock:
-        papers = load_papers(meta_path)
-        record = next((item for item in papers if item.get("paper_id") == paper_id), None)
-        remaining = [item for item in papers if item.get("paper_id") != paper_id]
+        papers = load_papers_strict(meta_path)
+        record = next((item for item in papers if _record_id(item) == paper_id), None)
+        remaining = [item for item in papers if _record_id(item) != paper_id]
         if len(remaining) == len(papers):
             return False
         save_papers(remaining, meta_path)
@@ -191,6 +257,41 @@ def save_upload(
     return identifier, target
 
 
+def copy_source_exclusive(source: Path, target: Path) -> Path:
+    """Copy a trusted source into a server-owned basename without overwrite.
+
+    ``Path.write_bytes`` and ``os.rename`` are intentionally not used here:
+    both can replace an existing object on POSIX.  The destination is opened
+    with ``xb`` and fsynced before the temporary download is removed.
+    """
+    source_path = Path(source)
+    target_path = Path(target)
+    if source_path.resolve() == target_path.resolve():
+        raise FileExistsError("source and destination must differ")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with source_path.open("rb") as input_stream, target_path.open("xb") as output_stream:
+            shutil.copyfileobj(input_stream, output_stream, length=1024 * 1024)
+            output_stream.flush()
+            os.fsync(output_stream.fileno())
+        try:
+            descriptor = os.open(str(target_path.parent), os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError:
+            # The object itself is durable; directory durability is recorded as
+            # a production security debt until the Task06 cutover gate.
+            pass
+        source_path.unlink()
+    except Exception:
+        with suppress(OSError):
+            target_path.unlink(missing_ok=True)
+        raise
+    return target_path
+
+
 def new_record(
     file_name: str,
     uploaded_at: Optional[str] = None,
@@ -209,7 +310,7 @@ def new_record(
     return PaperRecord(
         paper_id=uuid.uuid4().hex,
         file_name=file_name,
-        uploaded_at=uploaded_at or datetime.now().isoformat(timespec="seconds"),
+        uploaded_at=uploaded_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         title=title,
         authors=authors,
         year=year,
@@ -273,7 +374,7 @@ def ensure_chunkers(item: dict) -> Dict[str, Any]:
 def get_chunker_state(paper_id: str, chunker: str, meta_path: Optional[Path] = None) -> Optional[dict]:
     """读取某论文某切分版本的状态；论文不存在返回 None。"""
     for item in load_papers(meta_path):
-        if item.get("paper_id") == paper_id:
+        if _record_id(item) == paper_id:
             return ensure_chunkers(item).get(chunker)
     return None
 
@@ -294,9 +395,9 @@ def update_chunker_state(
     使既有接口与前端无需改动即可继续工作。
     """
     with _lock:
-        papers = load_papers(meta_path)
+        papers = load_papers_strict(meta_path)
         for item in papers:
-            if item.get("paper_id") != paper_id:
+            if _record_id(item) != paper_id:
                 continue
             states = ensure_chunkers(item)
             state = dict(states.get(chunker) or default_chunker_state())
@@ -327,7 +428,7 @@ def mark_interrupted_tasks(meta_path: Optional[Path] = None, reason: str = "服�
     """
     marked = 0
     with _lock:
-        papers = load_papers(meta_path)
+        papers = load_papers_strict(meta_path)
         changed = False
         for item in papers:
             states = ensure_chunkers(item)

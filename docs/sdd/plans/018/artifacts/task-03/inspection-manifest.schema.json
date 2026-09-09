@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/inspection-manifest-v1",
+  "title": "Spec018 InspectionManifest v1",
+  "description": "唯一的文档来源块、真实 chunk snapshot 与 source anchor 清单；manifest 是可删除重建的派生数据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mapping_algorithm_version",
+    "source_parser_version",
+    "chunker_config_fingerprint",
+    "payload_schema_version",
+    "document_id",
+    "media_type",
+    "chunker",
+    "status",
+    "progress",
+    "source_sha256",
+    "indexed_source_sha256",
+    "source_hash_state",
+    "index_fingerprint",
+    "blocks",
+    "chunks",
+    "anchors",
+    "mapped_count",
+    "unmapped_count",
+    "unmapped_reasons",
+    "error"
+  ],
+  "$defs": {
+    "documentId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "bbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"type": "number"}
+    },
+    "normalizedBbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "pdfLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "page", "bbox"],
+      "properties": {
+        "kind": {"const": "pdf_bbox"},
+        "page": {"type": "integer", "minimum": 1},
+        "bbox": {"$ref": "#/$defs/normalizedBbox"}
+      }
+    },
+    "markdownLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "start_line", "end_line"],
+      "properties": {
+        "kind": {"const": "markdown_lines"},
+        "start_line": {"type": "integer", "minimum": 1},
+        "end_line": {"type": "integer", "minimum": 1}
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "text", "start", "end"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 0},
+        "text": {"type": "string"},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0}
+      }
+    },
+    "inlineResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_id", "kind", "alt", "destination", "title", "loadable", "placeholder"],
+      "properties": {
+        "resource_id": {"type": "string", "minLength": 1},
+        "kind": {"const": "image"},
+        "alt": {"type": "string"},
+        "destination": {"type": "string", "minLength": 1},
+        "title": {"type": ["string", "null"]},
+        "loadable": {"const": false},
+        "placeholder": {"type": "string", "minLength": 1}
+      }
+    },
+    "diagnostic": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,127}$"
+    },
+    "pdfBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-max-serialized-bytes": 2097152,
+      "required": [
+        "block_id", "ordinal", "display_ordinal", "page", "text", "raw_text",
+        "start", "end", "bbox", "normalized_bbox", "lines", "block_type",
+        "heading_path", "locator"
+      ],
+      "properties": {
+        "block_id": {"type": "string", "minLength": 1},
+        "ordinal": {"type": "integer", "minimum": 0},
+        "display_ordinal": {"type": "integer", "minimum": 0},
+        "page": {"type": "integer", "minimum": 1},
+        "text": {"type": "string", "x-max-utf8-bytes": 1048576},
+        "raw_text": {"type": "string", "x-max-utf8-bytes": 1048576},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "normalized_bbox": {"$ref": "#/$defs/normalizedBbox"},
+        "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}},
+        "block_type": {"type": "string", "minLength": 1},
+        "heading_path": {"type": "array", "items": {"type": "string"}},
+        "locator": {"$ref": "#/$defs/pdfLocator"}
+      }
+    },
+    "markdownBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-max-serialized-bytes": 2097152,
+      "required": [
+        "block_id", "ordinal", "text", "locator", "heading_path", "block_type",
+        "start", "end", "page", "page_end", "inline_resources", "diagnostics"
+      ],
+      "properties": {
+        "block_id": {"type": "string", "minLength": 1},
+        "ordinal": {"type": "integer", "minimum": 0},
+        "text": {"type": "string", "x-max-utf8-bytes": 1048576},
+        "locator": {"$ref": "#/$defs/markdownLocator"},
+        "heading_path": {"type": "array", "items": {"type": "string"}},
+        "block_type": {"type": "string", "minLength": 1},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0},
+        "page": {"type": "null"},
+        "page_end": {"type": "null"},
+        "inline_resources": {"type": "array", "items": {"$ref": "#/$defs/inlineResource"}},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-max-serialized-bytes": 524288,
+      "required": [
+        "chunker", "chunk_index", "text", "page", "page_end", "section",
+        "is_citation", "chunk_fingerprint"
+      ],
+      "properties": {
+        "chunker": {"enum": ["v1", "v2"]},
+        "chunk_index": {"type": "integer", "minimum": 0},
+        "text": {"type": "string", "x-max-utf8-bytes": 262144},
+        "page": {"type": ["integer", "null"], "minimum": 1},
+        "page_end": {"type": ["integer", "null"], "minimum": 1},
+        "start_line": {"type": ["integer", "null"], "minimum": 1},
+        "end_line": {"type": ["integer", "null"], "minimum": 1},
+        "section": {"type": "string"},
+        "is_citation": {"type": "boolean"},
+        "chunk_fingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-max-serialized-bytes": 4096,
+      "required": [
+        "block_id", "chunker", "chunk_index", "coverage", "is_primary",
+        "block_range", "chunk_range", "unmapped_reason"
+      ],
+      "properties": {
+        "block_id": {"type": "string", "minLength": 1},
+        "chunker": {"enum": ["v1", "v2"]},
+        "chunk_index": {"type": "integer", "minimum": 0},
+        "coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "is_primary": {"type": "boolean"},
+        "block_range": {
+          "anyOf": [
+            {"type": "null"},
+            {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 0}}
+          ]
+        },
+        "chunk_range": {
+          "anyOf": [
+            {"type": "null"},
+            {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 0}}
+          ]
+        },
+        "unmapped_reason": {"type": ["string", "null"], "$comment": "Non-null only for an explicit unmapped relation."}
+      }
+    },
+    "unmappedReasons": {
+      "type": "object",
+      "patternProperties": {"^[A-Z][A-Z0-9_]{1,127}$": {"type": "integer", "minimum": 1}},
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "inspection-manifest-v1"},
+    "mapping_algorithm_version": {"const": "source-anchor-v1"},
+    "source_parser_version": {"type": "string", "minLength": 1},
+    "chunker_config_fingerprint": {"$ref": "#/$defs/sha256"},
+    "payload_schema_version": {"const": "qdrant-payload-v1"},
+    "document_id": {"$ref": "#/$defs/documentId"},
+    "media_type": {"enum": ["application/pdf", "text/markdown"]},
+    "chunker": {"enum": ["v1", "v2"]},
+    "status": {"enum": ["pending", "building", "ready", "partial", "failed"]},
+    "progress": {"type": "integer", "minimum": 0, "maximum": 100},
+    "source_sha256": {"$ref": "#/$defs/sha256"},
+    "indexed_source_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "source_hash_state": {"enum": ["verified", "legacy_unknown", "mismatch"]},
+    "index_fingerprint": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "blocks": {
+      "type": "array",
+      "maxItems": 200000,
+      "items": {"oneOf": [{"$ref": "#/$defs/pdfBlock"}, {"$ref": "#/$defs/markdownBlock"}]}
+    },
+    "chunks": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/chunk"}},
+    "anchors": {"type": "array", "maxItems": 400000, "items": {"$ref": "#/$defs/anchor"}},
+    "mapped_count": {"type": "integer", "minimum": 0},
+    "unmapped_count": {"type": "integer", "minimum": 0},
+    "unmapped_reasons": {"$ref": "#/$defs/unmappedReasons"},
+    "error": {"type": ["string", "null"], "maxLength": 256}
+  },
+  "x-max-serialized-bytes": 268435456,
+  "allOf": [
+    {
+      "if": {"properties": {"media_type": {"const": "application/pdf"}}},
+      "then": {
+        "properties": {
+          "blocks": {"items": {"$ref": "#/$defs/pdfBlock"}},
+          "chunks": {"items": {"required": ["page", "page_end"]}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"media_type": {"const": "text/markdown"}}},
+      "then": {
+        "properties": {
+          "blocks": {"items": {"$ref": "#/$defs/markdownBlock"}},
+          "chunks": {
+            "items": {
+              "properties": {"page": {"const": null}, "page_end": {"const": null}}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"source_hash_state": {"const": "legacy_unknown"}}},
+      "then": {"properties": {"indexed_source_sha256": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"source_hash_state": {"const": "verified"}}},
+      "then": {"properties": {"indexed_source_sha256": {"$ref": "#/$defs/sha256"}}}
+    },
+    {
+      "if": {"properties": {"source_hash_state": {"const": "mismatch"}}},
+      "then": {"properties": {"indexed_source_sha256": {"$ref": "#/$defs/sha256"}}}
+    },
+    {
+      "if": {"properties": {"source_hash_state": {"const": "legacy_unknown"}}},
+      "then": {
+        "properties": {
+          "status": {"enum": ["pending", "building", "failed"]},
+          "indexed_source_sha256": {"type": "null"},
+          "index_fingerprint": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["ready", "partial"]}}},
+      "then": {
+        "properties": {
+          "progress": {"const": 100},
+          "index_fingerprint": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["pending", "building", "failed"]}}},
+      "then": {"properties": {"index_fingerprint": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}}}
+    }
+  ]
+}

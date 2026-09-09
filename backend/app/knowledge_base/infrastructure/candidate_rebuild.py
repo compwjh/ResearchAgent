@@ -26,6 +26,7 @@ from backend.app.knowledge_base.infrastructure.index import point_id
 from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.parse import extract_pdf_provenance
 from backend.app.knowledge_base.infrastructure.provenance import build_source_provenance_bundle
+from backend.app.knowledge_base.infrastructure.store import record_id
 from backend.app.platform.config import (
     CHUNK_V2_LLM_MODEL,
     EMBED_DIM,
@@ -538,7 +539,7 @@ class CandidateRebuildService:
         for item in raw:
             if not isinstance(item, Mapping):
                 raise RebuildError("METADATA_INVALID")
-            document_id = _safe_id(item.get("document_id") or item.get("paper_id"))
+            document_id = _safe_id(record_id(item))
             if document_id in seen:
                 raise RebuildError("DUPLICATE_DOCUMENT_ID")
             seen.add(document_id)

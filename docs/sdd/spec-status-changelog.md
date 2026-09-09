@@ -131,3 +131,5 @@
 - **018 Task02B 来源锚点与候选协议重验证** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task02A 功能门通过，开始以首轮固定样本和正式入口重放 PDF/Markdown block/chunk/anchor oracle；本 Task 仍禁止真实数据和真实 Qdrant。
 - **018 Task02B 来源锚点与候选协议重验证** ｜ 实施中 → 已完成（功能 GO） ｜ 2026-09-09：修复 PDF-v2 同页 block 拼接导致 LLM 未调用的问题后，22/22 证据哈希、7/7 固定样本与 100 项联合测试通过；bbox 误差 0、Markdown 行号 100%。tester/Tech Lead 放行 Task03–05，生产切换仍延期至 Task06。
 - **018 Task03 通用文档、Manifest 与迁移协议** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task02B 功能 GO 后开始冻结 KnowledgeDocument/InspectionManifest/FinalizeBundle 契约与旧 metadata 迁移边界。
+- **018 Task03 通用文档、Manifest 与迁移协议** ｜ 实施中 → 已完成（功能 GO） ｜ 2026-09-09：四份 schema、CONTEXT/ADR、幂等迁移与 canonical application 边界完成；30 项定向、370 项回归和 8/8 独立探针通过。旧 upload/delete/durability 问题留账转 Task04/06。
+- **018 Task04 后端文档 Manifest 与检查接口** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task03 功能门通过，开始实现通用文档 API、只读 source、真实索引 manifest、旧上传入口迁移与 generation/finalize 门禁。

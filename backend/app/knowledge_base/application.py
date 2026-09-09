@@ -18,21 +18,11 @@
 from __future__ import annotations
 
 import inspect
-import os
 import re
 import threading
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
-
-from backend.app.platform.config import KB_META_PATH, KB_PAPERS_DIR
-from backend.app.platform.ports import (
-    ImportIndexStatus,
-    PaperImportErrorCode,
-    PaperImportPort,
-    PaperImportRequest,
-    PaperImportResult as PortImportResult,
-)
 
 from backend.app.knowledge_base.infrastructure.embed import embed_texts, encode_sparse
 from backend.app.knowledge_base.infrastructure.index import (
@@ -48,6 +38,13 @@ from backend.app.knowledge_base.infrastructure.index import (
     index_paper_chunker,
     reset_client,
 )
+from backend.app.knowledge_base.infrastructure.migration import (
+    KnowledgeDocumentMigrationError,
+    build_import_knowledge_document,
+    migrate_papers_json,
+    patch_knowledge_document,
+    write_import_knowledge_document,
+)
 from backend.app.knowledge_base.infrastructure.parse import (
     PdfParseError,
     build_chunks,
@@ -61,9 +58,9 @@ from backend.app.knowledge_base.infrastructure.prompts import (
 from backend.app.knowledge_base.infrastructure.retrieve import (
     Hit,
     hybrid_search,
+    rerank_hits,
     reranker_available,
     reranker_health,
-    rerank_hits,
     rrf_fuse,
 )
 from backend.app.knowledge_base.infrastructure.store import (
@@ -76,11 +73,14 @@ from backend.app.knowledge_base.infrastructure.store import (
     STATUS_PARTIAL,
     STATUS_PENDING,
     PaperRecord,
+    copy_source_exclusive,
     get_chunker_state,
     get_paper,
     load_papers,
+    load_papers_strict,
     mark_interrupted_tasks,
     new_record,
+    record_id,
     remove_paper,
     resolve_paper_path,
     save_upload,
@@ -92,6 +92,16 @@ from backend.app.knowledge_base.infrastructure.tasks import (
     run_index_task_sync,
     running_count,
     submit_index_task,
+)
+from backend.app.platform.config import KB_META_PATH, KB_PAPERS_DIR
+from backend.app.platform.ports import (
+    ImportIndexStatus,
+    PaperImportErrorCode,
+    PaperImportPort,
+    PaperImportRequest,
+)
+from backend.app.platform.ports import (
+    PaperImportResult as PortImportResult,
 )
 
 
@@ -194,7 +204,7 @@ class KnowledgeBasePaperImportAdapter:
     def existing_names(self) -> set[str]:
         names = {
             str(item.get("stored_name"))
-            for item in load_papers(self.meta_path)
+            for item in load_papers_strict(self.meta_path)
             if isinstance(item, dict) and item.get("stored_name")
         }
         try:
@@ -205,11 +215,14 @@ class KnowledgeBasePaperImportAdapter:
 
     def find_existing(self, candidate_snapshot: Mapping[str, Any]) -> PortImportResult | None:
         with self._lock:
-            for record in load_papers(self.meta_path):
+            for record in load_papers_strict(self.meta_path):
                 if not isinstance(record, dict) or not _same_identity(candidate_snapshot, record):
                     continue
+                existing_id = record_id(record)
+                if not existing_id:
+                    continue
                 return PortImportResult(
-                    paper_id=str(record.get("paper_id") or ""),
+                    paper_id=existing_id,
                     index_status=_port_status(record.get("status")),
                     error_code=None,
                     stored_name=record.get("stored_name") or record.get("file_name"),
@@ -289,7 +302,13 @@ class KnowledgeBasePaperImportAdapter:
             )
             record.status = STATUS_INDEXING
             try:
-                os.rename(source, target)
+                copy_source_exclusive(source, target)
+                document = build_import_knowledge_document(record, target)
+                write_import_knowledge_document(document, self.meta_path)
+                # Keep the legacy failure-injection seam for callers that
+                # still patch ``upsert_paper``; the canonical record already
+                # exists, and store.upsert_paper is forbidden from downgrading
+                # it back to PaperRecord shape.
                 upsert_paper(record, self.meta_path)
             except Exception:
                 self._cleanup(record.paper_id, target)
@@ -307,15 +326,14 @@ class KnowledgeBasePaperImportAdapter:
             )
             if not _index_succeeded(index_result):
                 raise RuntimeError("index failed")
+            updates: dict[str, Any] = {"status": STATUS_INDEXED, "error": None}
             if isinstance(index_result, Mapping):
                 if isinstance(index_result.get("chunkers"), dict):
-                    record.chunkers = index_result["chunkers"]
+                    updates["chunkers"] = index_result["chunkers"]
                 for field in ("page_count", "chunk_count", "error"):
                     if field in index_result:
-                        setattr(record, field, index_result[field])
-            record.status = STATUS_INDEXED
-            record.error = None
-            upsert_paper(record, self.meta_path)
+                        updates[field] = index_result[field]
+            patch_knowledge_document(self.meta_path, record.paper_id, **updates)
             return PortImportResult(
                 paper_id=record.paper_id,
                 index_status=ImportIndexStatus.INDEXED,
@@ -407,6 +425,7 @@ __all__ = [
     "new_record",
     "remove_paper",
     "resolve_paper_path",
+    "record_id",
     "save_upload",
     "update_chunker_state",
     "upsert_paper",
@@ -415,4 +434,9 @@ __all__ = [
     "submit_index_task",
     "KnowledgeBasePaperImportAdapter",
     "create_paper_import_port",
+    "KnowledgeDocumentMigrationError",
+    "build_import_knowledge_document",
+    "migrate_papers_json",
+    "patch_knowledge_document",
+    "write_import_knowledge_document",
 ]

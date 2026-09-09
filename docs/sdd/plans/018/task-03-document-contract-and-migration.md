@@ -1,7 +1,7 @@
 # Task 03：定义通用文档、Manifest 与元数据迁移协议
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task02B `GO`；被依赖：Task04；当前状态：`待执行`
+> 依赖：Task02B `GO`；被依赖：Task04；当前状态：`已完成（功能门 GO；安全债务转 Task04/06）`
 
 ## 一句话目标
 
@@ -82,9 +82,14 @@
 
 ## 执行结果
 
-待执行后填写。
+- 03-A：`KnowledgeDocument`、`InspectionManifest`、`FinalizeBundleV1`、generation marker 四份 Draft 2020-12 schema，以及 `CONTEXT.md` 和 ADR 0001 已冻结；正负代表性实例通过。
+- 03-B/03-C：完成 versioned、备份、原子替换、幂等、fail-closed 元数据迁移和 canonical application/store identity 边界；论文导入直接生成完整 `knowledge-document-v1`，无时区旧时间固定按 UTC 归一。
+- `functional_verdict=PASS/GO`：定向测试 **30 passed**、KB+paper import **370 passed**、独立 tempfile 功能探针 **8/8**；四份 schema、py_compile 与 diff 检查通过，embedding/Qdrant 调用为 0。
+- `debt_verdict=SECURITY_DEBT`：旧 `save_upload` 同 ID 覆盖和旧 route 交 Task04；unlink 失败一致性、生产目录 fsync durability 与生产切换门交 Task04/06，不阻塞本 Task 功能收口。
+- 固定报告：`artifacts/task-03/migration-report.md`、`application-boundary-report.md`、`backend-test-report.md`、`backend-review-report.md`。
 
 ## 变更日志
 
 - 2026-09-08：创建 Task，原计划兼容迁移旧 Qdrant payload。
 - 2026-09-09：改为只迁移长期元数据与身份；旧向量不迁移，真实重建交由 Task06。
+- 2026-09-09：完成协议、迁移与 application 边界；修复 canonical 状态回退、损坏 JSON 覆盖、无时区历史时间、fsync 失败回滚和空 ID，独立 tester/reviewer 签功能 GO。

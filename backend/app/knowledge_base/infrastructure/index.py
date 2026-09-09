@@ -5,12 +5,12 @@
 
 import threading
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from qdrant_client import QdrantClient, models
 
-from backend.app.platform.config import EMBED_DIM, KB_COLLECTION, QDRANT_PATH
 from backend.app.knowledge_base.infrastructure.chunkers import build_chunks_v1, build_chunks_v2, ollama_boundary_judge
 from backend.app.knowledge_base.infrastructure.embed import EmbeddingError, embed_texts, encode_sparse
 from backend.app.knowledge_base.infrastructure.normalize import detect_citation, locate_reference_start
@@ -30,9 +30,11 @@ from backend.app.knowledge_base.infrastructure.store import (
     STATUS_INDEXING,
     STATUS_PARTIAL,
     get_paper,
+    record_id,
     update_chunker_state,
     upsert_paper,
 )
+from backend.app.platform.config import EMBED_DIM, KB_COLLECTION, QDRANT_PATH
 
 DENSE_VECTOR = "dense"
 SPARSE_VECTOR = "sparse"
@@ -43,6 +45,7 @@ MIN_TEXT_CHARS = 100
 _client: Optional[QdrantClient] = None
 _client_lock = threading.Lock()
 _write_lock = threading.Lock()
+
 
 _NAMESPACE = uuid.UUID("6f2caa19-8501-42e8-9db7-14c1796dddc6")
 
@@ -208,6 +211,10 @@ def index_paper(record, file_path, client: Optional[QdrantClient] = None) -> dic
 
     任何异常都收敛为 `failed` 状态并附带可读错误，不向调用方抛裸异常。
     """
+    paper_id = record_id(record)
+    file_name = getattr(record, "file_name", None)
+    if file_name is None and isinstance(record, Mapping):
+        file_name = record.get("file_name", "")
     try:
         pages = extract_pages(file_path)
     except PdfParseError as error:
@@ -231,8 +238,8 @@ def index_paper(record, file_path, client: Optional[QdrantClient] = None) -> dic
 
     try:
         record.chunk_count = upsert_chunks(
-            record.paper_id,
-            record.file_name,
+            paper_id,
+            file_name or "",
             chunks,
             uploaded_at=record.uploaded_at,
             client=client,
@@ -275,7 +282,7 @@ def index_paper_chunker(
     入库 70→100。任何异常都收敛为 `failed` 并附可读错误，**不向上抛裸异常**，
     以免异步线程带着异常退出导致状态永远卡在 indexing。
     """
-    paper_id = getattr(record, "paper_id", None) or record.get("paper_id")
+    paper_id = record_id(record)
 
     def _fail(message: str) -> dict:
         update_chunker_state(
