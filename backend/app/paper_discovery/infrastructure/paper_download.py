@@ -85,12 +85,20 @@ def _peer_from_response(response: httpx.Response) -> str | None:
         return str(direct)
     stream = extensions.get("network_stream")
     if stream is not None and hasattr(stream, "get_extra_info"):
-        peer = stream.get_extra_info("peername")
-        if isinstance(peer, tuple):
-            return str(peer[0])
-        if peer:
-            return str(peer)
-    peer = extensions.get("peername")
+        # httpcore exposes the connected remote address as ``server_addr``.
+        # ``peername`` is only populated by transports that mimic an
+        # anyio/SSL socket, so a real httpcore stream answers ``peername``
+        # with None and the peer check would reject every real download.
+        for key in ("peername", "server_addr"):
+            try:
+                peer = stream.get_extra_info(key)
+            except Exception:
+                peer = None
+            if isinstance(peer, tuple):
+                return str(peer[0])
+            if peer:
+                return str(peer)
+    peer = extensions.get("peername") or extensions.get("server_addr")
     return str(peer[0] if isinstance(peer, tuple) else peer) if peer else None
 
 

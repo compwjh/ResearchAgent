@@ -136,3 +136,4 @@
 
 - **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中（范围扩展）｜ 确认 catalog→import 架构割裂（新表 `search_jobs`/`search_results` 与旧表 `search_sessions`/`paper_candidates` 不互通，导致 catalog `search_id` 导入报 `SEARCH_NOT_FOUND`）与摘要缺失（USENIX 列表页无 abstract，894 篇 `abstract` 全空）两个真实缺陷；用户选 C：本轮回接通导入（含补 PDF 来源 + `usenix.org` 白名单），摘要抓取作为后续任务单独排期，不遗忘。
 - **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中（缺陷修复）｜ 修复年份检索误报与错误提示不可读两类缺陷：后端 `INVALID_YEARS` 下发 `min_year/max_year`、前端年份上界对齐当前年并补六类错误码映射、失败态不再残留“正在检索…”、错误提示升级为告警条并加状态语义色与中性来源占位；异步全量 768 passed、ruff 156 无新增，spec 不标记已完成（验收签字未达成）。
+- **015 安全顶会论文检索与知识库导入** ｜ 实施中 → 实施中（缺陷修复）｜ 2026-09-09：修复论文下载被 SSRF 对端复核误杀的根因——`_peer_from_response` 只查 `peername`，而 httpcore 以 `server_addr` 暴露远端地址，导致每次真实下载在拿到 HTTP 200 之后仍被判“无法复核实际连接地址”而以 `DOWNLOAD_BLOCKED` 拒绝；改为按 `peername` → `server_addr` 顺序取值（决策见 ADR-0003）。实测两篇 USENIX PDF 下载成功（3.34MB/21 页、19.6MB/18 页）；`test_paper_download.py` 23 passed（新增 4 条针对 httpcore 真实形状的回归）。既有 KB/API 用例失败与收集错误为环境缺 `jieba`/`fastapi`，与本次无关；spec 不标记已完成。
