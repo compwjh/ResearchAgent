@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import backend.app.knowledge_base.infrastructure.candidate_rebuild as candidate_rebuild_module
+import backend.app.knowledge_base.infrastructure.manifest_store as manifest_store_module
 from backend.app.knowledge_base import rebuild_index
 from backend.app.knowledge_base.infrastructure.candidate_index import (
     CandidateIndexError,
@@ -22,6 +23,7 @@ from backend.app.knowledge_base.infrastructure.candidate_rebuild import (
     topology_inventory,
 )
 from backend.app.knowledge_base.infrastructure.chunkers import build_chunks_v2
+from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
 
 
 def _fixture(tmp_path: Path, *, text: str = "# Title\n\nFirst paragraph.\n\nSecond paragraph."):
@@ -98,6 +100,46 @@ def test_build_validate_and_first_physical_switch(tmp_path):
     assert '"event":"intent"' in events and '"event":"observed"' in events
 
 
+def test_default_finalize_publishes_generation_marker(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    result = _service(tmp_path, qdrant).run(dry_run=False, confirm_replace=True)
+
+    marker = FinalizeBundleStore(tmp_path).require_generation()
+    bundle = json.loads((tmp_path / ".sdd" / "runtime" / "spec-018" / "rebuild" / "run-test" / "finalize" / "bundle.json").read_text(encoding="utf-8"))
+    assert result["status"] == "completed"
+    assert marker["run_id"] == "run-test"
+    assert marker["alias_target"] == result["candidate_collection"]
+    assert marker["bundle_sha256"] == bundle["bundle_sha256"]
+    assert marker["collection_fingerprint"] == result["validation"]["collection_fingerprint"]
+
+
+def test_default_finalize_marker_failure_enters_pending_and_resumes(tmp_path, monkeypatch):
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    original_atomic_bytes = manifest_store_module._atomic_bytes
+
+    def fail_marker(path, payload):
+        if Path(path).name == "index-generation.json":
+            raise manifest_store_module.ManifestStoreError(
+                "ATOMIC_WRITE_FAILED", status=503
+            )
+        return original_atomic_bytes(path, payload)
+
+    monkeypatch.setattr(manifest_store_module, "_atomic_bytes", fail_marker)
+    with pytest.raises(RebuildError) as caught:
+        _service(tmp_path, qdrant).run(dry_run=False, confirm_replace=True)
+    assert caught.value.code == "ATOMIC_WRITE_FAILED"
+    state = json.loads((tmp_path / "runtime" / "run-test" / "state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "finalize_pending"
+    assert not (tmp_path / "data" / "kb" / "index-generation.json").exists()
+
+    monkeypatch.setattr(manifest_store_module, "_atomic_bytes", original_atomic_bytes)
+    result = _service(tmp_path, qdrant).resume_finalize("run-test")
+    assert result["status"] == "completed"
+    assert FinalizeBundleStore(tmp_path).require_generation()["run_id"] == "run-test"
+
+
 def test_v2_rules_only_failure_cleans_candidate(tmp_path):
     qdrant = FakeQdrant(dense_dim=4)
     service = _service(tmp_path, qdrant, llm=None)
@@ -118,6 +160,22 @@ def test_alias_switch_failure_preserves_validated_candidate(tmp_path):
     assert any(name.startswith("papers_rebuild_") for name in qdrant.collections)
     state = json.loads((tmp_path / "runtime" / "run-test" / "state.json").read_text(encoding="utf-8"))
     assert state["status"] == "switching"
+
+
+def test_alias_switch_failure_stages_finalize_bundle_for_new_service(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    qdrant.inject_failure("create_alias", times=1)
+    with pytest.raises(RebuildError) as caught:
+        _service(tmp_path, qdrant).run(dry_run=False, confirm_replace=True)
+    assert caught.value.code == "INJECTED_FAILURE"
+    bundle = FinalizeBundleStore(tmp_path).read_bundle("run-test")
+    assert bundle["candidate_collection"] == "papers_rebuild_run-test"
+    assert not (tmp_path / "data" / "kb").exists()
+
+    result = _service(tmp_path, qdrant).resume_switch("run-test")
+    assert result["status"] == "completed"
+    assert FinalizeBundleStore(tmp_path).require_generation()["run_id"] == "run-test"
 
 
 def test_finalize_pending_can_resume(tmp_path):

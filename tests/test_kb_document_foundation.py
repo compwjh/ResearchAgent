@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import backend.app.knowledge_base.infrastructure.manifest_store as manifest_store_module
 from backend.app.knowledge_base.infrastructure.document_read import (
     DocumentReadError,
     DocumentSourceReader,
@@ -147,7 +148,7 @@ def test_manifest_claim_is_single_owner_and_tombstone_blocks_read(tmp_path):
     assert error.value.code == "MANIFEST_TOMBSTONED"
 
 
-def test_finalize_bundle_is_idempotent_and_marker_is_last(tmp_path):
+def test_finalize_bundle_is_idempotent_and_marker_is_last(tmp_path, monkeypatch):
     manifest = _markdown_manifest(tmp_path)
     finalizer = FinalizeBundleStore(tmp_path)
     with pytest.raises(ManifestStoreError) as error:
@@ -167,7 +168,16 @@ def test_finalize_bundle_is_idempotent_and_marker_is_last(tmp_path):
     marker = finalizer.commit("run-1")
     assert marker["schema_version"] == "index-generation-v1"
     assert finalizer.require_generation()["run_id"] == "run-1"
+    original_atomic_bytes = manifest_store_module._atomic_bytes
+    writes = []
+
+    def track_write(path, payload):
+        writes.append(Path(path))
+        return original_atomic_bytes(path, payload)
+
+    monkeypatch.setattr(manifest_store_module, "_atomic_bytes", track_write)
     assert finalizer.commit("run-1")["alias_target"] == "papers_rebuild_run-1"
+    assert writes == []
     assert (tmp_path / "data/kb/manifests/md-1/v1.json").exists()
     assert bundle["bundle_sha256"]
 

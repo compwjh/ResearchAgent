@@ -125,9 +125,17 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - Task02A/02B 记录的生产安全债务与真实 Qdrant 行为仍需 Tech Lead/backend-reviewer/backend-tester 独立关闭和签字。
 - 因此未停止服务、未连接真实 Qdrant、未删除或切换任何 Collection/alias、未写入真实 generation marker。
 
+### 06-B 前置审计与最小修复：`NO-GO；局部修复已验证`
+
+- `task06b-preflight-audit.md` 对 closure matrix 的 17 个 open entry、12 个 pending required test 和 Task02A/02B 生产债务完成逐项对账；不得将矩阵改为 `verified`。
+- 已接入默认 `FinalizeBundleStore` 主链：候选验证后先把 metadata/inspection manifests stage 到 run-scoped runtime，alias 切换后再执行 marker-last commit；新进程 `resume-switch`/`resume-finalize` 不依赖首进程内存。
+- alias 失败恢复、FinalizeBundle marker-last、bundle/live hash 校验和幂等恢复定向测试共 47 passed；未访问真实 Qdrant/索引。
+- 尚未修复或验收：弱 CandidateIndexPort retire authorization 绕过、旧 upload/import/reindex/delete/startup closure 测试缺失、真实 alias/topology/stale-lock 行为。因此 06-C/06-D 仍禁止执行。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
 - 2026-09-09：经 Grill with Docs 改为唯一真实全库索引替换阶段；删除逐 point 恢复、首次打开自动升级与旧索引保留要求。
 - 2026-09-09：承接 Task02A-E 功能优先留下的生产安全债务；全部关闭并独立签字前，本 Task 不得执行任何真实索引写删。
 - 2026-09-10：06-A 在 FakeQdrant/临时目录完成 44 项定向测试与 32/32 故障探针，报告落盘；真实切换保持 NO-GO，等待 Task06-B 前置门禁和 closure matrix 收口。
+- 2026-09-10：06-B 审计确认 closure matrix 为 17 open/12 pending，真实生产门继续 NO-GO；完成默认 FinalizeBundle 主链和新进程恢复修复，47 项定向测试通过，仍未执行真实索引。

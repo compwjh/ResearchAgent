@@ -136,3 +136,5 @@
 - **018 Task04 后端文档 Manifest 与检查接口** ｜ 实施中 → 已完成（功能门） ｜ 2026-09-09 19:14 +0800：两轮修复后，检查、上传、原件读取、reindex 与删除的功能契约获 backend-reviewer `GO` 与 backend-tester `PASS`；定向 54 passed、相关回归 394 passed。closure matrix 仍为 baseline_frozen，生产切换债务继续阻塞 Task06。
 - **018 Task05 前端双栏切片检查器** ｜ 待执行 → 实施中 ｜ 2026-09-09 19:14 +0800：Task04 功能门双签通过，放行本地 PDF.js、Markdown 块渲染、切片分页与双向定位实现；不触发全库重建或真实 Qdrant 变更。
 - **018 Task05 前端双栏切片检查器** ｜ 实施中 → 已完成（功能门） ｜ 2026-09-10：四套 Node 前端契约测试、Schema/资源版本/vendor hash/path 检查和真实浏览器 hostile fixture（Markdown/PDF PASS、remoteRequests=0、Console 为空）通过；frontend-tester `PASS`、frontend-reviewer `GO`。worker 运行时 hash 加固、真实索引替换和恢复仍移交 Task06，Spec018 整体继续实施中。
+- **018 Task06 真实全库索引替换、恢复与性能验收** ｜ 待执行 → 实施中（06-A 完成；06-B 前置门禁阻塞） ｜ 2026-09-10：FakeQdrant/临时目录故障矩阵 32/32、定向 pytest 44 passed，dry-run 写入 spy=0；真实 Qdrant、用户索引、原件和服务均未触碰。Task04 closure matrix 仍为 baseline/open/pending，生产切换保持 NO-GO。
+- **018 Task06-B 前置审计与 FinalizeBundle 主链修复** ｜ 实施中 ｜ 2026-09-10：审计确认 closure matrix 17 open/12 pending，生产门继续 NO-GO；默认 rebuild 已接入 run-scoped FinalizeBundle stage、marker-last commit 与新进程 resume，相关定向测试 47 passed。弱 retire capability、legacy closure 测试和真实 Qdrant 行为仍阻塞 06-C。

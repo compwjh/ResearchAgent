@@ -23,6 +23,15 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from backend.app.knowledge_base.infrastructure.candidate_index import CandidateIndexPort, CandidatePoint
 from backend.app.knowledge_base.infrastructure.embed import SPARSE_DIM, embed_texts, encode_sparse
 from backend.app.knowledge_base.infrastructure.index import point_id
+from backend.app.knowledge_base.infrastructure.inspection import (
+    InspectionError,
+    InspectionManifest,
+    build_inspection_manifest,
+)
+from backend.app.knowledge_base.infrastructure.manifest_store import (
+    FinalizeBundleStore,
+    ManifestStoreError,
+)
 from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.parse import extract_pdf_provenance
 from backend.app.knowledge_base.infrastructure.provenance import build_source_provenance_bundle
@@ -504,6 +513,7 @@ class CandidateRebuildService:
         embedder: Optional[Callable[[Sequence[str]], Sequence[Sequence[float]]]] = None,
         llm: Optional[Callable[[str], str]] = None,
         finalizer: Optional[Callable[[Mapping[str, Any]], None]] = None,
+        finalize_store: Optional[FinalizeBundleStore] = None,
         run_id_factory: Optional[Callable[[], str]] = None,
         lock_ttl_seconds: int = 900,
     ) -> None:
@@ -516,7 +526,9 @@ class CandidateRebuildService:
         self.dense_dim = int(dense_dim)
         self.embedder = embedder or embed_texts
         self.llm = llm
-        self.finalizer = finalizer or (lambda _state: None)
+        self._uses_default_finalizer = finalizer is None
+        self.finalizer = finalizer or self._finalize_bundle
+        self.finalize_store = finalize_store or FinalizeBundleStore(self._finalize_root())
         self.run_id_factory = run_id_factory or (lambda: uuid.uuid4().hex)
         self.lock_ttl_seconds = lock_ttl_seconds
         self._state: Optional[RunState] = None
@@ -524,6 +536,15 @@ class CandidateRebuildService:
         self._lock: Optional[_ExclusiveLock] = None
         self._action_sequence = 0
         self._retire_capability: Optional[object] = None
+        self._finalize_metadata: List[Dict[str, Any]] = []
+        self._finalize_manifests: Dict[Tuple[str, str], InspectionManifest] = {}
+
+    def _finalize_root(self) -> Path:
+        """Resolve the project root without assuming tests use ``data/kb``."""
+        parent = self.metadata_path.parent
+        if parent.name == "kb" and parent.parent.name == "data":
+            return parent.parent.parent
+        return parent
 
     def _load_metadata(self) -> List[Dict[str, Any]]:
         if not self.metadata_path.exists():
@@ -783,6 +804,8 @@ class CandidateRebuildService:
         if self._state is None:
             raise RebuildError("RUN_STATE_INVALID")
         candidate = self._state.candidate_collection
+        self._finalize_metadata = [dict(record) for record, _path, _provenance in parsed]
+        self._finalize_manifests = {}
         self._action("create_candidate", "ensure_collection", lambda: self.index.ensure_collection(candidate, dense_dim=self.dense_dim))
         self._transition("building", progress=5)
         expected: Dict[str, Dict[str, Any]] = {}
@@ -819,6 +842,14 @@ class CandidateRebuildService:
                     )
                     for index, chunk in enumerate(bundle.chunks)
                 ]
+                try:
+                    self._finalize_manifests[(document_id, chunker)] = build_inspection_manifest(
+                        record,
+                        bundle,
+                        [point.payload for point in points],
+                    )
+                except InspectionError as error:
+                    raise RebuildError(error.code) from error
                 self._action("upsert_document", "upsert_document", lambda points=points, document_id=document_id: self.index.upsert_document(candidate, document_id, points))
                 payload_projection = [_payload_digest_projection(point.payload) for point in points]
                 text_digest = _fingerprint([projection["text_digest"] for projection in payload_projection])
@@ -1096,6 +1127,7 @@ class CandidateRebuildService:
             self._store.write(self._state)
         if validation["errors"]:
             raise RebuildError("CANDIDATE_VALIDATION_FAILED")
+        self._stage_finalize_inputs(validation)
         self._transition("ready_to_switch", progress=85)
         return validation
 
@@ -1171,6 +1203,131 @@ class CandidateRebuildService:
         self._state.new_fingerprint["topology_artifact_sha256"] = _sha256(path)
         self._store.write(self._state)
 
+    def _obsolete_manifests(self) -> List[Dict[str, str]]:
+        """List only validated old manifest paths for the bundle cleanup set."""
+        live_root = self.finalize_store.live_root / "manifests"
+        if not live_root.exists():
+            return []
+        current = set(self._finalize_manifests)
+        obsolete: List[Dict[str, str]] = []
+        for path in sorted(live_root.glob("*/*.json")):
+            if not path.is_file() or len(path.parts) < 2:
+                continue
+            document_id = path.parent.name
+            chunker = path.stem
+            if (document_id, chunker) in current:
+                continue
+            if chunker not in CHUNKERS:
+                raise RebuildError("FINALIZE_OBSOLETE_MANIFEST_INVALID")
+            try:
+                digest = _sha256(path)
+            except RebuildError as error:
+                raise RebuildError("FINALIZE_OBSOLETE_MANIFEST_INVALID") from error
+            obsolete.append({
+                "document_id": document_id,
+                "chunker": chunker,
+                "live_path": f"data/kb/manifests/{document_id}/{chunker}.json",
+                "sha256": digest,
+            })
+        return obsolete
+
+    def _stage_finalize_inputs(self, validation: Mapping[str, Any]) -> None:
+        """Persist runtime-only finalize inputs before alias/live mutation."""
+        if not self._uses_default_finalizer:
+            return
+        if self._state is None:
+            raise RebuildError("RUN_STATE_INVALID")
+        collection_fingerprint = validation.get("collection_fingerprint")
+        if not isinstance(collection_fingerprint, str) or not collection_fingerprint:
+            raise RebuildError("FINALIZE_INPUT_INVALID")
+        if not self._finalize_metadata or not self._finalize_manifests:
+            raise RebuildError("FINALIZE_INPUT_MISSING")
+        try:
+            self.finalize_store.stage(
+                self._state.run_id,
+                candidate_collection=self._state.candidate_collection,
+                metadata=self._finalize_metadata,
+                manifests=self._finalize_manifests,
+                collection_fingerprint=collection_fingerprint,
+                alias_name=self.alias,
+                obsolete_manifests=self._obsolete_manifests(),
+            )
+        except ManifestStoreError as error:
+            raise RebuildError(error.code) from error
+
+    def _finalize_bundle(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Stage and commit the run-scoped bundle, with marker written last."""
+        run_id = str(payload.get("run_id") or "")
+        candidate = str(payload.get("candidate_collection") or "")
+        validation = payload.get("validation")
+        if not run_id or not candidate or not isinstance(validation, Mapping):
+            raise RebuildError("FINALIZE_INPUT_INVALID")
+        collection_fingerprint = validation.get("collection_fingerprint")
+        if not isinstance(collection_fingerprint, str) or not collection_fingerprint:
+            raise RebuildError("FINALIZE_INPUT_INVALID")
+        bundle_path = self.finalize_store.run_root(run_id) / "bundle.json"
+        try:
+            if not bundle_path.exists():
+                raise RebuildError("FINALIZE_INPUT_MISSING")
+            bundle = self.finalize_store.read_bundle(run_id)
+            if (
+                bundle.get("run_id") != run_id
+                or bundle.get("alias_name") != self.alias
+                or bundle.get("candidate_collection") != candidate
+                or bundle.get("collection_fingerprint") != collection_fingerprint
+            ):
+                raise RebuildError("FINALIZE_INPUT_MISMATCH")
+            marker = self.finalize_store.commit(run_id)
+            verified = self.finalize_store.require_generation(finalize_pending=True)
+        except RebuildError:
+            raise
+        except ManifestStoreError as error:
+            raise RebuildError(error.code) from error
+        except Exception as error:
+            raise RebuildError(getattr(error, "code", "FINALIZE_FAILED")) from error
+        if (
+            verified.get("run_id") != run_id
+            or verified.get("alias_name") != self.alias
+            or verified.get("alias_target") != candidate
+            or verified.get("collection_fingerprint") != collection_fingerprint
+            or marker != verified
+        ):
+            raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
+        return verified
+
+    def _invoke_finalize_and_commit(self, validation: Mapping[str, Any]) -> None:
+        if self._state is None or self._store is None:
+            raise RebuildError("RUN_STATE_INVALID")
+        finalizer_result = self._action(
+            "finalize",
+            "finalizer",
+            lambda: self.finalizer({
+                "run_id": self._state.run_id,
+                "candidate_collection": self._state.candidate_collection,
+                "validation": dict(validation),
+            }),
+        )
+        if self._uses_default_finalizer:
+            if not isinstance(finalizer_result, Mapping):
+                raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
+            if (
+                finalizer_result.get("run_id") != self._state.run_id
+                or finalizer_result.get("alias_target") != self._state.candidate_collection
+                or finalizer_result.get("collection_fingerprint") != validation.get("collection_fingerprint")
+            ):
+                raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
+        commit = {
+            "schema_version": "candidate-commit-v1",
+            "run_id": self._state.run_id,
+            "candidate_collection": self._state.candidate_collection,
+            "collection_fingerprint": validation.get("collection_fingerprint"),
+            "committed_at": _now(),
+        }
+        self._store.write_json("commit.json", commit)
+        stored_commit = self._store.read_json("commit.json")
+        if stored_commit != commit or stored_commit.get("collection_fingerprint") != validation.get("collection_fingerprint"):
+            raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
+
     def _switch_and_finalize(self, validation: Mapping[str, Any]) -> None:
         if self._state is None:
             raise RebuildError("RUN_STATE_INVALID")
@@ -1204,12 +1361,7 @@ class CandidateRebuildService:
             self._action("create_default_alias", "create_alias", lambda: self.index.create_alias(self.alias, self._state.candidate_collection))
         self._transition("finalizing", progress=94)
         try:
-            self._action("finalize", "finalizer", lambda: self.finalizer({"run_id": self._state.run_id, "candidate_collection": self._state.candidate_collection, "validation": dict(validation)}))
-            commit = {"schema_version": "candidate-commit-v1", "run_id": self._state.run_id, "candidate_collection": self._state.candidate_collection, "collection_fingerprint": collection_fingerprint, "committed_at": _now()}
-            self._store.write_json("commit.json", commit)
-            stored_commit = self._store.read_json("commit.json")
-            if stored_commit != commit or stored_commit.get("collection_fingerprint") != collection_fingerprint:
-                raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
+            self._invoke_finalize_and_commit(validation)
         except Exception as error:
             self._transition("finalize_pending", error=getattr(error, "code", "FINALIZE_FAILED"))
             raise RebuildError(getattr(error, "code", "FINALIZE_FAILED")) from error
@@ -1311,13 +1463,15 @@ class CandidateRebuildService:
                     commit = self._store.read_json("commit.json")
                     if commit.get("run_id") != state.run_id or commit.get("candidate_collection") != state.candidate_collection or commit.get("collection_fingerprint") != validation.get("collection_fingerprint"):
                         raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
+                    if self._uses_default_finalizer:
+                        try:
+                            marker = self.finalize_store.require_generation(finalize_pending=True)
+                        except ManifestStoreError as error:
+                            raise RebuildError(error.code) from error
+                        if marker.get("run_id") != state.run_id or marker.get("alias_target") != state.candidate_collection or marker.get("collection_fingerprint") != validation.get("collection_fingerprint"):
+                            raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
                 else:
-                    self._action("finalize", "finalizer", lambda: self.finalizer({"run_id": state.run_id, "candidate_collection": state.candidate_collection, "validation": dict(validation)}))
-                    commit = {"schema_version": "candidate-commit-v1", "run_id": state.run_id, "candidate_collection": state.candidate_collection, "collection_fingerprint": validation.get("collection_fingerprint"), "committed_at": _now()}
-                    self._store.write_json("commit.json", commit)
-                    stored_commit = self._store.read_json("commit.json")
-                    if stored_commit != commit or stored_commit.get("collection_fingerprint") != validation.get("collection_fingerprint"):
-                        raise RebuildError("FINALIZE_COMMIT_VERIFY_FAILED")
+                    self._invoke_finalize_and_commit(validation)
             except Exception as error:
                 self._transition("finalize_pending", error=getattr(error, "code", "FINALIZE_FAILED"))
                 raise RebuildError(getattr(error, "code", "FINALIZE_FAILED")) from error

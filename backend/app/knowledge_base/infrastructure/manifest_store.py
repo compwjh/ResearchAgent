@@ -375,6 +375,10 @@ class FinalizeBundleStore:
             raise ManifestStoreError("FINALIZE_BUNDLE_HASH_MISMATCH")
         return bundle
 
+    def read_bundle(self, run_id: str) -> dict[str, Any]:
+        """Read and verify a staged bundle without touching live files."""
+        return self._read_bundle(run_id)
+
     def _live_manifests_digest(self) -> str:
         entries: list[dict[str, str]] = []
         manifest_root = self.live_root / "manifests"
@@ -393,6 +397,21 @@ class FinalizeBundleStore:
     def commit(self, run_id: str) -> dict[str, Any]:
         bundle = self._read_bundle(run_id)
         root = self.run_root(run_id)
+        marker_path = self.live_root / "index-generation.json"
+        if marker_path.exists():
+            # A valid marker plus matching live files is already committed.  Do
+            # not rewrite metadata, manifests, or the marker during resume.
+            marker = _read_json(marker_path, "INDEX_FINALIZE_REQUIRED")
+            _validate("index-generation.schema.json", marker, "INDEX_FINALIZE_REQUIRED")
+            if (
+                marker.get("run_id") != bundle["run_id"]
+                or marker.get("alias_name") != bundle["alias_name"]
+                or marker.get("alias_target") != bundle["candidate_collection"]
+                or marker.get("bundle_sha256") != bundle["bundle_sha256"]
+                or marker.get("collection_fingerprint") != bundle["collection_fingerprint"]
+            ):
+                raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+            return self.require_generation(finalize_pending=True)
         metadata_path = root / "metadata.json"
         try:
             metadata_bytes = metadata_path.read_bytes()
@@ -401,6 +420,13 @@ class FinalizeBundleStore:
         if _sha256_bytes(metadata_bytes) != bundle["metadata_staged_sha256"]:
             raise ManifestStoreError("FINALIZE_STAGED_HASH_MISMATCH")
         _atomic_bytes(self.live_root / "papers.json", metadata_bytes)
+        try:
+            if _sha256_bytes((self.live_root / "papers.json").read_bytes()) != bundle["metadata_staged_sha256"]:
+                raise ManifestStoreError("FINALIZE_LIVE_HASH_MISMATCH")
+        except ManifestStoreError:
+            raise
+        except OSError as error:
+            raise ManifestStoreError("FINALIZE_LIVE_HASH_MISMATCH", status=503) from error
         live_entries: list[dict[str, str]] = []
         for entry in bundle["manifests"]:
             staged = self.root / entry["staged_path"]
@@ -430,7 +456,9 @@ class FinalizeBundleStore:
                 raise
             except OSError as error:
                 raise ManifestStoreError("FINALIZE_CLEANUP_PENDING", status=503) from error
-        manifests_digest = _sha256_json(sorted(live_entries, key=lambda item: item["live_path"]))
+        # Include every remaining live manifest, not only newly staged entries;
+        # this keeps the marker's digest identical to require_generation().
+        manifests_digest = self._live_manifests_digest()
         marker = {
             "schema_version": "index-generation-v1",
             "run_id": bundle["run_id"],
