@@ -28,6 +28,17 @@
     ],
   };
 
+  const PDFJS_VERSION = '4.10.38';
+  const PDFJS_MODULE_URL = '/assets/vendor/pdfjs/pdf.min.mjs?v=4.10.38';
+  const PDFJS_WORKER_SRC = '/assets/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.38';
+  const PDF_GET_DOCUMENT_OPTIONS = Object.freeze({
+    isEvalSupported: false,
+    enableXfa: false,
+    useWorkerFetch: false,
+    stopAtErrors: true,
+    disableAutoFetch: true,
+  });
+
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({
       '&': '&amp;',
@@ -227,6 +238,8 @@
     const markedImpl = options.marked || rootScope.marked;
     const purifyImpl = options.DOMPurify || rootScope.DOMPurify;
     const renderer = options.renderer || { renderMarkdownBlock };
+    const pdfjsLoader = options.pdfjsLoader || (() => import('/assets/vendor/pdfjs/pdf.min.mjs?v=4.10.38'));
+    const IntersectionObserverImpl = options.IntersectionObserver || rootScope.IntersectionObserver;
     const tablist = elementById(documentRef, 'kb-tabs');
     const inspectionTab = elementById(documentRef, 'kb-tab-inspection');
     const qaTab = elementById(documentRef, 'kb-tab-qa');
@@ -260,13 +273,72 @@
       controller: null,
       pollTimer: null,
       pollResolve: null,
+      pdfSession: null,
       paneScroll: { source: 0, chunks: 0 },
     };
 
     function isActive(sequence) { return state.sequence === sequence; }
 
+    function pdfFailure(code, message, cause) {
+      const failure = new Error(message);
+      failure.code = code;
+      failure.cause = cause || null;
+      return failure;
+    }
+
+    function mapPdfError(caught) {
+      if (caught?.code) return caught.code;
+      if (caught?.name === 'AbortException' || caught?.name === 'AbortError') return 'PDF_CANCELLED';
+      const name = String(caught?.name || '').toLowerCase();
+      const message = String(caught?.message || caught || '').toLowerCase();
+      if (name.includes('invalidpdf') || name.includes('format') || name.includes('missingpdf')
+        || message.includes('corrupt') || message.includes('invalid pdf')) return 'PDF_SOURCE_CORRUPT';
+      if (name.includes('unexpectedresponse') || name.includes('responseexception')
+        || message.includes('range') || message.includes('206') || message.includes('partial')) {
+        return 'PDF_SOURCE_RANGE_ERROR';
+      }
+      if (message.includes('worker')) return 'PDFJS_WORKER_FAILED';
+      return 'PDF_RENDER_FAILED';
+    }
+
+    function pdfErrorMessage(code) {
+      return ({
+        PDFJS_IMPORT_FAILED: 'PDF.js 本地模块加载失败。',
+        PDFJS_VERSION_MISMATCH: 'PDF.js 版本不匹配。',
+        PDFJS_WORKER_MISMATCH: 'PDF.js worker 来源不匹配。',
+        PDFJS_WORKER_FAILED: 'PDF.js worker 启动失败。',
+        PDF_SOURCE_RANGE_ERROR: 'PDF 分段读取失败。',
+        PDF_SOURCE_CORRUPT: 'PDF 文件损坏或格式不可读。',
+        PDF_CANCELLED: 'PDF 原文加载已取消。',
+        PDF_RENDER_FAILED: 'PDF 原文渲染失败。',
+      }[code] || 'PDF 原文暂时不可用。');
+    }
+
+    function cancelPdfSession() {
+      const session = state.pdfSession;
+      if (!session) return;
+      session.cancelled = true;
+      if (session.observer && typeof session.observer.disconnect === 'function') session.observer.disconnect();
+      session.renderTasks.forEach((task) => {
+        if (typeof task?.cancel === 'function') {
+          try { task.cancel(); } catch (_) { /* cancellation is best effort */ }
+        }
+      });
+      if (session.loadingTask) {
+        const cancel = session.loadingTask.cancel || session.loadingTask.destroy;
+        if (typeof cancel === 'function') {
+          try { cancel.call(session.loadingTask); } catch (_) { /* cancellation is best effort */ }
+        }
+      }
+      if (session.pdf && typeof session.pdf.destroy === 'function') {
+        try { session.pdf.destroy(); } catch (_) { /* cancellation is best effort */ }
+      }
+      if (state.pdfSession === session) state.pdfSession = null;
+    }
+
     function cancelPending() {
       state.sequence += 1;
+      cancelPdfSession();
       state.documentsPromise = null;
       if (state.pollTimer !== null) {
         (rootScope.clearTimeout || clearTimeout)(state.pollTimer);
@@ -509,7 +581,192 @@
       return `${anchor?.chunker || version}:${anchor?.chunk_index}`;
     }
 
-    function renderSource(documentValue, blocks) {
+    function clampUnit(value) {
+      return Math.min(1, Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0));
+    }
+
+    function appendPdfTextLayer(textLayer, textContent) {
+      const items = Array.isArray(textContent?.items) ? textContent.items : [];
+      items.forEach((item) => {
+        const span = documentRef.createElement('span');
+        span.className = 'kb-pdf-text';
+        span.textContent = String(item?.str || '');
+        textLayer.appendChild(span);
+      });
+    }
+
+    function appendPdfBlockOverlays(overlay, pageNumber, viewport, blocks) {
+      blocks.forEach((block) => {
+        const locator = block?.locator;
+        if (!locator || locator.kind !== 'pdf_bbox' || Number(locator.page) !== pageNumber) return;
+        const bbox = Array.isArray(locator.bbox) && locator.bbox.length === 4
+          ? locator.bbox.map(clampUnit)
+          : null;
+        if (!bbox) return;
+        const left = Math.min(bbox[0], bbox[2]);
+        const right = Math.max(bbox[0], bbox[2]);
+        const top = Math.min(bbox[1], bbox[3]);
+        const bottom = Math.max(bbox[1], bbox[3]);
+        const blockOverlay = documentRef.createElement('div');
+        blockOverlay.className = 'kb-pdf-source-block';
+        blockOverlay.tabIndex = 0;
+        blockOverlay.setAttribute('role', 'article');
+        blockOverlay.setAttribute('data-block-id', String(block.block_id || ''));
+        blockOverlay.setAttribute('aria-label', `原文块 ${Number(block.ordinal || 0) + 1}`);
+        blockOverlay.style.left = `${left * 100}%`;
+        blockOverlay.style.top = `${top * 100}%`;
+        blockOverlay.style.width = `${(right - left) * 100}%`;
+        blockOverlay.style.height = `${(bottom - top) * 100}%`;
+        overlay.appendChild(blockOverlay);
+      });
+      overlay.setAttribute('data-viewport-size', `${viewport.width}x${viewport.height}`);
+    }
+
+    async function renderPdfPage(session, pageNumber, pageShell) {
+      if (session.cancelled || !isActive(session.sequence) || session.renderedPages.has(pageNumber)) return;
+      session.renderedPages.add(pageNumber);
+      try {
+        const page = await session.pdf.getPage(pageNumber);
+        if (session.cancelled || !isActive(session.sequence)) return;
+        const viewport = page.getViewport({ scale: 1 });
+        const canvas = pageShell.querySelector('.kb-pdf-canvas');
+        const textLayer = pageShell.querySelector('.kb-pdf-text-layer');
+        const overlay = pageShell.querySelector('.kb-pdf-overlay');
+        if (!canvas || !textLayer || !overlay || typeof canvas.getContext !== 'function') {
+          throw pdfFailure('PDF_RENDER_FAILED', 'PDF 页面容器不可用');
+        }
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        pageShell.style.width = `${viewport.width}px`;
+        pageShell.style.height = `${viewport.height}px`;
+        const canvasContext = canvas.getContext('2d');
+        if (!canvasContext) throw pdfFailure('PDF_RENDER_FAILED', 'PDF canvas 不可用');
+        const textContent = await page.getTextContent();
+        if (session.cancelled || !isActive(session.sequence)) return;
+        appendPdfTextLayer(textLayer, textContent);
+        appendPdfBlockOverlays(overlay, pageNumber, viewport, session.blocks);
+        const renderTask = page.render({ canvasContext, viewport });
+        session.renderTasks.add(renderTask);
+        await renderTask.promise;
+        session.renderTasks.delete(renderTask);
+      } catch (caught) {
+        session.renderedPages.delete(pageNumber);
+        if (!session.cancelled && isActive(session.sequence)) throw caught;
+      }
+    }
+
+    async function loadPdfJsModule() {
+      let moduleValue;
+      try {
+        moduleValue = await pdfjsLoader();
+      } catch (caught) {
+        throw pdfFailure('PDFJS_IMPORT_FAILED', 'PDF.js 本地模块加载失败', caught);
+      }
+      const pdfjs = moduleValue?.default || moduleValue;
+      if (!pdfjs || typeof pdfjs.getDocument !== 'function') {
+        throw pdfFailure('PDFJS_IMPORT_FAILED', 'PDF.js display API 不可用');
+      }
+      if (String(pdfjs.version || '') !== PDFJS_VERSION) {
+        throw pdfFailure('PDFJS_VERSION_MISMATCH', 'PDF.js 版本不匹配');
+      }
+      if (!pdfjs.GlobalWorkerOptions || typeof pdfjs.GlobalWorkerOptions !== 'object') {
+        throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 配置不可用');
+      }
+      if (!PDFJS_WORKER_SRC.startsWith('/assets/vendor/pdfjs/') || PDFJS_WORKER_SRC.includes('://')) {
+        throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 必须同源');
+      }
+      pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
+      if (pdfjs.GlobalWorkerOptions.workerSrc !== PDFJS_WORKER_SRC) {
+        throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 来源不匹配');
+      }
+      return pdfjs;
+    }
+
+    function createPdfPageShell(pageNumber) {
+      const pageShell = documentRef.createElement('section');
+      pageShell.className = 'kb-pdf-page';
+      pageShell.setAttribute('data-page', pageNumber);
+      pageShell.setAttribute('aria-label', `PDF 第 ${pageNumber} 页`);
+      const canvas = documentRef.createElement('canvas');
+      canvas.className = 'kb-pdf-canvas';
+      canvas.setAttribute('aria-hidden', 'true');
+      const textLayer = documentRef.createElement('div');
+      textLayer.className = 'kb-pdf-text-layer';
+      textLayer.setAttribute('aria-label', `PDF 第 ${pageNumber} 页文本`);
+      const overlay = documentRef.createElement('div');
+      overlay.className = 'kb-pdf-overlay';
+      overlay.setAttribute('aria-label', `PDF 第 ${pageNumber} 页原文块`);
+      pageShell.append(canvas, textLayer, overlay);
+      return pageShell;
+    }
+
+    async function renderPdfSource(documentValue, blocks, sequence) {
+      const session = {
+        sequence,
+        blocks,
+        cancelled: false,
+        loadingTask: null,
+        pdf: null,
+        observer: null,
+        renderTasks: new Set(),
+        renderedPages: new Set(),
+      };
+      cancelPdfSession();
+      state.pdfSession = session;
+      const documentId = String(documentValue?.document_id || '');
+      const sourceUrl = `/api/kb/documents/${encodeURIComponent(documentId)}/source`;
+      try {
+        const pdfjs = await loadPdfJsModule();
+        if (session.cancelled || !isActive(sequence)) return;
+        session.loadingTask = pdfjs.getDocument({ url: sourceUrl, ...PDF_GET_DOCUMENT_OPTIONS });
+        if (!session.loadingTask || !session.loadingTask.promise) {
+          throw pdfFailure('PDF_RENDER_FAILED', 'PDF.js 加载任务不可用');
+        }
+        session.pdf = await session.loadingTask.promise;
+        if (session.cancelled || !isActive(sequence)) return;
+        const numPages = Number(session.pdf?.numPages || 0);
+        if (!Number.isInteger(numPages) || numPages < 1) {
+          throw pdfFailure('PDF_SOURCE_CORRUPT', 'PDF 没有可显示页面');
+        }
+        const pageShells = [];
+        for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
+          const pageShell = createPdfPageShell(pageNumber);
+          pageShells.push({ pageNumber, pageShell });
+          sourcePdf.appendChild(pageShell);
+        }
+        if (typeof IntersectionObserverImpl === 'function') {
+          session.observer = new IntersectionObserverImpl((entries) => {
+            entries.forEach((entry) => {
+              if (!entry?.isIntersecting || session.cancelled) return;
+              const pageNumber = Number(entry.target?.getAttribute('data-page'));
+              const pageShell = entry.target;
+              renderPdfPage(session, pageNumber, pageShell).catch((caught) => {
+                if (!session.cancelled && isActive(sequence)) {
+                  showError({ code: mapPdfError(caught), message: pdfErrorMessage(mapPdfError(caught)) });
+                }
+              });
+            });
+          }, { root: sourcePdf, rootMargin: '320px 0px' });
+          pageShells.forEach(({ pageShell }) => session.observer.observe(pageShell));
+        } else {
+          for (const { pageNumber, pageShell } of pageShells) {
+            await renderPdfPage(session, pageNumber, pageShell);
+          }
+        }
+      } catch (caught) {
+        if (session.cancelled || !isActive(sequence) || mapPdfError(caught) === 'PDF_CANCELLED') return;
+        const code = mapPdfError(caught);
+        showError({ code, message: pdfErrorMessage(code) });
+        const placeholder = documentRef.createElement('p');
+        placeholder.className = 'kb-inspection-empty';
+        placeholder.textContent = `${code}：${pdfErrorMessage(code)}`;
+        sourcePdf.appendChild(placeholder);
+      }
+    }
+
+    async function renderSource(documentValue, blocks, sequence) {
       clearChildren(sourcePdf);
       clearChildren(sourceMarkdown);
       setHidden(sourceEmpty, blocks.length > 0);
@@ -517,12 +774,9 @@
       if (sourceMeta) sourceMeta.textContent = `${String(documentValue.file_name || '未命名文档')} · ${blocks.length} 个原文块`;
       if (sourceKind) sourceKind.textContent = documentValue.media_type === 'text/markdown' ? 'Markdown' : 'PDF';
       if (documentValue.media_type !== 'text/markdown') {
-        const placeholder = documentRef.createElement('p');
-        placeholder.className = 'kb-inspection-empty';
-        placeholder.textContent = 'PDF 原文渲染将在下一段接入 PDF.js。';
-        sourcePdf?.appendChild(placeholder);
         setHidden(sourcePdf, false);
         setHidden(sourceMarkdown, true);
+        await renderPdfSource(documentValue, blocks, sequence);
         return;
       }
       setHidden(sourcePdf, true);
@@ -636,7 +890,9 @@
           if (cursor) showLoading(`正在加载检查清单第 ${pageCount + 1} 页…`);
         } while (cursor);
         if (!isActive(request.sequence)) return;
-        renderSource(documentValue, blocks);
+        await renderSource(documentValue, blocks, request.sequence);
+        if (!isActive(request.sequence)) return;
+        if (documentValue.media_type !== 'text/markdown' && error && !error.hidden) return;
         renderChunks(version, chunks, anchors);
         resetStates();
       } catch (caught) {
@@ -669,6 +925,10 @@
   const api = {
     REQUIRED_SOURCE_BLOCK_FIELDS,
     SANITIZE_OPTIONS,
+    PDFJS_VERSION,
+    PDFJS_MODULE_URL,
+    PDFJS_WORKER_SRC,
+    PDF_GET_DOCUMENT_OPTIONS,
     escapeHtml,
     renderMarkdownBlock,
     validateSourceBlock,

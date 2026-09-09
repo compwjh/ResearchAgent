@@ -934,6 +934,77 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #kb-view .kb-source-pdf,
 #kb-view .kb-source-markdown { min-height: 100%; }
 
+#kb-view .kb-source-pdf {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 18px;
+  overflow-x: auto;
+  padding: 16px;
+  background: #f3f4f8;
+}
+
+#kb-view .kb-pdf-page {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 240px;
+  min-height: 180px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(40, 44, 62, .16);
+}
+
+#kb-view .kb-pdf-canvas {
+  position: relative;
+  z-index: 1;
+  display: block;
+  max-width: none;
+}
+
+#kb-view .kb-pdf-text-layer,
+#kb-view .kb-pdf-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+#kb-view .kb-pdf-text-layer {
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px;
+  color: transparent;
+  user-select: text;
+  pointer-events: none;
+}
+
+#kb-view .kb-pdf-text {
+  display: block;
+  white-space: pre-wrap;
+  line-height: 1.35;
+}
+
+#kb-view .kb-pdf-overlay {
+  z-index: 3;
+  pointer-events: none;
+}
+
+#kb-view .kb-pdf-source-block {
+  position: absolute;
+  min-width: 4px;
+  min-height: 4px;
+  box-sizing: border-box;
+  border: 1px solid rgba(81, 75, 194, .58);
+  background: rgba(117, 108, 241, .08);
+  pointer-events: auto;
+}
+
+#kb-view .kb-pdf-source-block:focus-visible {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+
 #kb-view .kb-source-block,
 #kb-view .kb-chunk-item {
   border: 1px solid var(--line);
