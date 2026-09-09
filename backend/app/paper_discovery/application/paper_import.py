@@ -8,7 +8,11 @@ file moves, indexing, and compensation belong to the KB adapter.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
+import shutil
+import stat
+import tempfile
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
@@ -32,6 +36,7 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
 from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.ports import (
     ImportIndexStatus,
+    ImportResourceCapability,
     PaperImportPort,
     PaperImportRequest,
 )
@@ -70,11 +75,13 @@ def safe_import_error_code(code: object, fallback: str = KB_IMPORT_FAILED) -> st
 class PaperImportError(RuntimeError):
     """Stable error at the import orchestration boundary."""
 
-    def __init__(self, code: str, message: str = "论文导入失败", *, retryable: bool = False) -> None:
+    def __init__(self, code: str, message: str = "论文导入失败", *, retryable: bool = False,
+                 cleanup_status: str | None = None) -> None:
         self.code = code
         self.error_code = code
         self.message = safe_import_error_message(code, message)
         self.retryable = retryable
+        self.cleanup_status = cleanup_status
         super().__init__(self.message)
 
 
@@ -86,6 +93,13 @@ class PaperImportResult:
     error_code: Optional[str] = None
     message: Optional[str] = None
     existing: bool = False
+    source_sha256: Optional[str] = None
+    cleanup_status: Optional[str] = None
+    resource_capability: Optional[ImportResourceCapability] = None
+
+    @property
+    def created_resource(self) -> Optional[ImportResourceCapability]:
+        return self.resource_capability
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -95,6 +109,7 @@ class PaperImportResult:
             "error_code": self.error_code,
             "message": self.message,
             "existing": self.existing,
+            "cleanup_status": self.cleanup_status,
         }
 
     def __getitem__(self, key: str) -> Any:
@@ -164,23 +179,63 @@ def _download(
     )
 
 
-def _cleanup_download(download: Any) -> None:
+def _cleanup_download(
+    download: Any,
+    *,
+    attempt_root: Optional[Path] = None,
+    preexisting_paths: Iterable[Path] = (),
+    file_token: tuple[int, int] | None = None,
+) -> str:
+    """Record a downloaded path as pending; never unlink a single pathname.
+
+    A downloader path is untrusted even after the downloader returns.  No
+    pathname can provide compare-and-unlink ownership semantics: a directory
+    entry may be replaced after any fd/stat probe and before ``unlink``.  The
+    caller-owned ``temp_dir`` contract therefore retains every file.  For an
+    import-created private root, the owning orchestration layer removes the
+    whole root with ``_cleanup_attempt_root`` instead.
+    """
     path_value = getattr(download, "file_path", None)
     if path_value is None and isinstance(download, Mapping):
         path_value = download.get("file_path") or download.get("path")
     if not path_value:
+        return "completed"
+    # Keep the parameters for compatibility with existing callers and to make
+    # the ownership evidence available to a future maintenance workflow.  It
+    # is deliberately not used to authorize a single-file pathname deletion.
+    del attempt_root, preexisting_paths, file_token
+    return "cleanup_pending"
+
+
+def _cleanup_attempt_root(
+    root: Optional[Path],
+    *,
+    expected_token: tuple[int, int] | None = None,
+) -> None:
+    """Remove an import-owned root without following symlinks.
+
+    This function is called only when ``import_candidate`` created the root
+    with ``tempfile.mkdtemp``.  ``shutil.rmtree`` uses descriptor-relative
+    removal on platforms that advertise symlink-attack resistance; refusing
+    to run otherwise keeps a replaced root fail-closed.
+    """
+    if root is None:
         return
-    path = Path(str(path_value))
     try:
-        path.unlink(missing_ok=True)
+        root_path = Path(root)
+        if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
+            return
+        root_stat = root_path.lstat()
+        if not stat.S_ISDIR(root_stat.st_mode) or root_path.is_symlink():
+            return
+        if expected_token is not None and (root_stat.st_dev, root_stat.st_ino) != expected_token:
+            return
     except OSError:
-        pass
-    # Never recursively remove an injected caller directory. The secure
-    # downloader uses a private directory, and an empty rmdir is sufficient.
+        return
     try:
-        path.parent.rmdir()
+        shutil.rmtree(root_path)
     except OSError:
-        pass
+        return
 
 
 def _download_path(download: Any) -> Path:
@@ -242,6 +297,9 @@ def _application_result(result: Any, *, existing: bool = False) -> PaperImportRe
         error_code=error_code,
         message=safe_import_error_message(error_code) if error_code else None,
         existing=result_existing,
+        source_sha256=_port_value(result, "source_sha256"),
+        cleanup_status=_port_value(result, "cleanup_status"),
+        resource_capability=_port_value(result, "resource_capability"),
     )
 
 
@@ -327,7 +385,38 @@ def import_candidate(
     if existing:
         return _application_result(existing, existing=True)
 
+    cleanup_root: Optional[Path] = None
+    attempt_root_owned = False
+    attempt_root_token: tuple[int, int] | None = None
+    preexisting_paths: tuple[Path, ...] = ()
+    download: Any = None
+    file_token: tuple[int, int] | None = None
     try:
+        if temp_dir is None:
+            # The downloader creates its own private child below this root.
+            # Keeping a root per import attempt lets finally clean only
+            # resources created by this call, while preserving the configured
+            # article-download directory supplied by the caller/settings.
+            download_base = Path(getattr(settings, "article_download_dir", tempfile.gettempdir())).resolve()
+            download_base.mkdir(parents=True, exist_ok=True)
+            cleanup_root = Path(tempfile.mkdtemp(prefix="paper-import-", dir=download_base)).resolve()
+            try:
+                root_stat = cleanup_root.lstat()
+                if stat.S_ISDIR(root_stat.st_mode) and not cleanup_root.is_symlink():
+                    attempt_root_token = (root_stat.st_dev, root_stat.st_ino)
+                    attempt_root_owned = True
+            except OSError:
+                # If ownership cannot be recorded, retain the root rather
+                # than risk removing a replacement at the same pathname.
+                attempt_root_owned = False
+        else:
+            # An explicit temp_dir is caller-owned and is never removed.  Its
+            # complete pre-attempt inventory protects nested pre-existing
+            # files/directories, not just direct children.
+            cleanup_root = Path(temp_dir).resolve()
+            cleanup_root.mkdir(parents=True, exist_ok=True)
+            preexisting_paths = tuple(cleanup_root.rglob("*"))
+
         download = _download(
             downloader,
             candidate,
@@ -337,15 +426,22 @@ def import_candidate(
             client=client,
             dns_resolver=dns_resolver,
             peer_ip_resolver=peer_ip_resolver,
-            temp_dir=Path(temp_dir).resolve() if temp_dir else None,
+            temp_dir=cleanup_root,
             context=context,
         )
-    except PaperDownloadError:
-        raise
-    except Exception as error:
-        raise PaperImportError(KB_IMPORT_FAILED, "下载器执行失败", retryable=True) from error
-
-    try:
+        # Capture ownership immediately after the downloader returns.  A
+        # token collected in finally would describe a replacement installed
+        # by an untrusted downloader path, and could authorize deleting that
+        # replacement later.
+        try:
+            downloaded_path = _download_path(download)
+            resolved_path = downloaded_path.resolve()
+            if cleanup_root is not None and cleanup_root in resolved_path.parents:
+                stat_result = downloaded_path.lstat()
+                if not downloaded_path.is_symlink():
+                    file_token = (stat_result.st_dev, stat_result.st_ino)
+        except (OSError, PaperImportError):
+            pass
         source = _download_path(download)
         # The server-side conference short name is the only naming input.
         # Falling back to the sanitized conference id keeps direct service use
@@ -361,11 +457,23 @@ def import_candidate(
             max_length=max_filename_length,
         )
         snapshot["_stored_name"] = stored_name
-        result = port.import_paper(PaperImportRequest(snapshot, source))
+        source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        result = port.import_paper(PaperImportRequest(
+            snapshot,
+            source,
+            source_sha256=source_digest,
+        ))
         translated = _application_result(result)
         if translated.error_code and translated.error_code != PAPER_ALREADY_EXISTS:
-            raise PaperImportError(translated.error_code, translated.message or "论文导入失败", retryable=True)
+            raise PaperImportError(
+                translated.error_code,
+                translated.message or "论文导入失败",
+                retryable=True,
+                cleanup_status=translated.cleanup_status,
+            )
         return translated
+    except PaperDownloadError:
+        raise
     except PaperImportError:
         raise
     except Exception as error:
@@ -374,7 +482,14 @@ def import_candidate(
         # The adapter moves the file into the KB on success and removes its own
         # artifacts on failure; this only removes the downloader's private
         # temporary file/directory when it still exists.
-        _cleanup_download(download)
+        _cleanup_download(
+            download,
+            attempt_root=cleanup_root,
+            preexisting_paths=preexisting_paths,
+            file_token=file_token,
+        )
+        if attempt_root_owned:
+            _cleanup_attempt_root(cleanup_root, expected_token=attempt_root_token)
 
 
 __all__ = [

@@ -31,7 +31,9 @@ def test_import_boundary_uses_create_exclusive_source_and_keeps_discovery_outsid
     ))
     assert result.paper_id
     assert result.stored_name == "A.pdf"
-    assert not source.exists()
+    # The direct adapter receives a caller-owned path.  Downloader lifecycle
+    # cleanup belongs to import_candidate, so the adapter must not unlink it.
+    assert source.read_bytes() == b"new-source"
     assert (papers / "A.pdf").read_bytes() == b"new-source"
     record = get_paper(result.paper_id, meta)
     assert record["status"] == STATUS_INDEXED

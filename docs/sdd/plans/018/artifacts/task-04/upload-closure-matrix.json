@@ -1,17 +1,17 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "d0b177fa4147dbdb818e5bc0e4ad9c1630dd6d0b",
-  "inventory_digest": "b9149c86b89a45ca69b4b186a4497d8e7e175699ab631148619adc512d4e5501",
+  "inventory_digest": "53657086dc2a3cd9f9dc450c2ea3ba3d7a2ad3c95c3367420ccab8a89f2716a9",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {"path": "backend/app/main.py", "sha256": "74b6f4da2bac1bd0589ebb92cc5edd0ee18a1296be10c0c435d9761f578599c8"},
     {"path": "backend/app/api/routes_kb.py", "sha256": "77bd81c3867075ef5adec4e18a314a85c16fe3faaaa0ef58e353c33ef7479fe3"},
     {"path": "backend/app/api/routes_paper.py", "sha256": "ebf82010433f71c65b7b157baa85376f647d827340f6d224ddac4d15b57e3199"},
-    {"path": "backend/app/knowledge_base/application.py", "sha256": "13689bc167d6c3f88cb99b348c6fc05f6676bf1a0fd0b9fde323300c31749260"},
-    {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "71c792b6db61944638e232a094dcea38735e49d11b85aa08dcdee641f3c2c617"},
+    {"path": "backend/app/knowledge_base/application.py", "sha256": "d87d0a5aec5b9c0ed30485a92f68ad1a8e4f02ec7397786b224a3c3ada838d7c"},
+    {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "b3eaf2f173f3e4b0c92dccda75de3efe867a7855acec4dd00a38e0f8ddf7c7b8"},
     {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "2c60ef3c9f042d1412ed72098db2e37b790c22b5d5218dbb82c8c75a31310abc"},
     {"path": "backend/app/knowledge_base/infrastructure/tasks.py", "sha256": "0f11484d71bdbec738a671c7d93eda37b91de51ebd5be024a2c28a2806e38885"},
-    {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "4992a32a1a173a3c56510488e19f9ffc102721938bc280a9d5d1ba99c409cfa7"}
+    {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "71a81dab95dfde0b98ac0a9e101c4b5198b72e92916aaa5d388c17b572a3b4c8"}
   ],
   "closed_enums": {
     "entry_kind": ["route", "route_helper", "application", "store", "index", "task", "maintenance"],
@@ -113,7 +113,7 @@
     },
     {
       "entry_id": "kb-import-adapter", "entry_kind": "application",
-      "route_or_symbol": "KnowledgeBasePaperImportAdapter.import_paper and KnowledgeBasePaperImportAdapter._default_indexer",
+      "route_or_symbol": "KnowledgeBasePaperImportAdapter.import_paper, KnowledgeBasePaperImportAdapter.compensate_import and KnowledgeBasePaperImportAdapter._default_indexer",
       "current_behavior": "Moves a trusted PDF, writes metadata and indexes v1 through index_paper_chunker.",
       "target_behavior": "Adapt paper discovery to immutable document create/dedupe and document reindex boundaries.",
       "allowed_callers": ["paper-discovery import orchestration", "KnowledgeDocument create application", "KnowledgeDocument reindex application"],
@@ -131,7 +131,7 @@
     },
     {
       "entry_id": "store-source-metadata", "entry_kind": "store",
-      "route_or_symbol": "store.save_upload, store.save_papers, store.upsert_paper, store.remove_paper, store.update_chunker_state and store.mark_interrupted_tasks",
+      "route_or_symbol": "store.save_upload, store.save_papers, store.upsert_paper, store.remove_paper, store.register_import_capability, store.compensate_import_resource, store.update_chunker_state and store.mark_interrupted_tasks",
       "current_behavior": "save_upload can overwrite <paper_id>.pdf; save/upsert/update/interrupt rewrite metadata; remove_paper deletes metadata and source.",
       "target_behavior": "Source creation is server-ID create-exclusive; metadata writes are application-owned and version/owner checked; deletion is tombstone-driven and never best-effort.",
       "allowed_callers": ["immutable source repository", "KnowledgeDocument metadata repository", "migration/finalize application"],
@@ -178,7 +178,7 @@
   "tests": [
     {"test_id": "T-API-DOCUMENT-ROUTES", "entry_ids": ["kb-upload-route"], "assertions": ["Canonical upload/list/source/inspection-gate route smoke tests pass with tempfile or spies", "Embedding and Qdrant write counters are zero"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_routes.py", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_routes.py", "docs/sdd/plans/018/artifacts/task-04/api-fixture-index.json"]},
     {"test_id": "T-OLD-ROUTES", "entry_ids": ["kb-upload-route", "kb-reindex-route", "kb-delete-route"], "assertions": ["Legacy routes are removed or forward only to document applications", "Forbidden-call spies are zero"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_routes.py -k legacy", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_routes.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
-    {"test_id": "T-IMMUTABLE-CREATE", "entry_ids": ["kb-upload-route", "paper-import-create-routes", "kb-import-adapter", "store-source-metadata"], "assertions": ["Existing document_id cannot be overwritten", "Same hash dedupes", "Same name/different bytes creates a new ID", "Concurrent creates preserve SHA-256=metadata hash=ETag"], "command": "pytest -q tests/test_kb_document_routes.py tests/test_paper_import.py -k 'immutable or dedupe or same_name or concurrent'", "exit_code": null, "status": "pending", "evidence_paths": []},
+    {"test_id": "T-IMMUTABLE-CREATE", "entry_ids": ["kb-upload-route", "paper-import-create-routes", "kb-import-adapter", "store-source-metadata"], "assertions": ["Existing document_id cannot be overwritten", "Same hash dedupes", "Same name/different bytes creates a new ID", "Concurrent creates preserve SHA-256=metadata hash=ETag"], "command": ".venv/bin/python -m pytest -q tests/test_kb_immutable_create.py tests/test_kb_document_routes.py tests/test_paper_import.py -k 'immutable or dedupe or same_name or concurrent'", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-PAPER-IMPORT", "entry_ids": ["paper-import-create-routes", "paper-import-retry-routes", "paper-import-resume-route", "paper-import-route-helpers", "kb-import-adapter", "paper-import-application"], "assertions": ["Single/batch/retry/resume share immutable create/dedupe", "Secure download behavior is preserved"], "command": "pytest -q tests/test_paper_import.py tests/test_paper_import_batch.py", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-IMPORT-COMPENSATION", "entry_ids": ["paper-import-retry-routes", "paper-import-cancel-route", "paper-import-resume-route", "kb-import-adapter", "paper-import-application"], "assertions": ["Compensation deletes only same owner/token resources", "Pre-existing documents remain"], "command": "pytest -q tests/test_paper_import.py tests/test_paper_import_batch.py -k compensation", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-BROWSER-BOUNDARY", "entry_ids": ["paper-import-login-route", "paper-import-resume-route"], "assertions": ["Login has zero persistence writes", "Resume persists only through immutable create"], "command": "pytest -q tests/test_paper_browser.py tests/test_paper_import_batch.py -k 'login or resume'", "exit_code": null, "status": "pending", "evidence_paths": []},

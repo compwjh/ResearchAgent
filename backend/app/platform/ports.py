@@ -6,8 +6,10 @@
 适配层，禁止 import 任何业务模块（services / domain / qdrant / store / task 等）。
 """
 
+import secrets
+import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -17,8 +19,51 @@ __all__ = [
     "PaperImportErrorCode",
     "PaperImportRequest",
     "PaperImportResult",
+    "ImportResourceCapability",
     "PaperImportPort",
 ]
+
+
+def _new_attempt_owner() -> str:
+    """Return a non-secret, server-owned attempt identity."""
+    return f"paper-import:{uuid.uuid4().hex}"
+
+
+def _new_attempt_token() -> str:
+    """Return the secret capability half of an import attempt."""
+    return secrets.token_urlsafe(32)
+
+
+@dataclass(frozen=True)
+class ImportResourceCapability:
+    """Internal proof for resources created by one paper-import attempt.
+
+    This object is deliberately not part of the HTTP result serializer.  The
+    token is only passed between the import adapter and its compensation seam.
+    ``source_dev``/``source_ino`` bind cleanup to the directory entry observed
+    at create time, rather than to a reusable document id or pathname.
+    """
+
+    owner: str
+    token: str
+    document_id: str
+    source_sha256: str
+    stored_name: str
+    source_dev: int
+    source_ino: int
+    destination_collection: str | None = None
+
+    def to_internal_dict(self) -> dict[str, object]:
+        return {
+            "owner": self.owner,
+            "token": self.token,
+            "document_id": self.document_id,
+            "source_sha256": self.source_sha256,
+            "stored_name": self.stored_name,
+            "source_dev": self.source_dev,
+            "source_ino": self.source_ino,
+            "destination_collection": self.destination_collection,
+        }
 
 
 class ImportIndexStatus(str, Enum):
@@ -53,6 +98,19 @@ class PaperImportRequest:
 
     candidate_snapshot: Mapping[str, Any]   # 候选论文快照（只读映射）。
     trusted_pdf_path: Path   # 受信任的本地 PDF 路径。
+    attempt_owner: str = field(default_factory=_new_attempt_owner)
+    attempt_token: str = field(default_factory=_new_attempt_token)
+    source_sha256: str | None = None
+
+    @property
+    def owner(self) -> str:
+        """Compatibility alias for callers using the shorter capability name."""
+        return self.attempt_owner
+
+    @property
+    def token(self) -> str:
+        """Compatibility alias for callers using the shorter capability name."""
+        return self.attempt_token
 
 
 @dataclass(frozen=True)
@@ -67,6 +125,14 @@ class PaperImportResult:
     error_code: PaperImportErrorCode | None   # 失败时的错误码，成功为 None。
     stored_name: str | None = None   # 知识库侧最终保存的文件名。
     existing: bool = False   # 是否命中幂等已有记录。
+    source_sha256: str | None = None   # 内部对账字段；API 不回传。
+    cleanup_status: str | None = None   # ``cleanup_pending`` 表示未知补偿结果。
+    resource_capability: ImportResourceCapability | None = None
+
+    @property
+    def created_resource(self) -> ImportResourceCapability | None:
+        """Internal alias; never included in the HTTP serialization."""
+        return self.resource_capability
 
 
 @runtime_checkable
@@ -94,4 +160,8 @@ class PaperImportPort(Protocol):
 
     def existing_names(self) -> set[str]:
         """返回知识库侧已占用的展示文件名，供论文发现生成安全文件名。"""
+        ...
+
+    def compensate_import(self, capability: ImportResourceCapability) -> str:
+        """补偿本次 attempt 创建的资源，返回稳定 cleanup 状态。"""
         ...

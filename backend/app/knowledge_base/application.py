@@ -94,17 +94,25 @@ from backend.app.knowledge_base.infrastructure.store import (
     STATUS_INDEXING,
     STATUS_PARTIAL,
     STATUS_PENDING,
+    MetadataStoreError,
     PaperRecord,
-    copy_source_exclusive,
+    compensate_import_resource,
     get_chunker_state,
     get_paper,
+    immutable_directory_lock,
+    immutable_lock_domain,
     load_papers,
     load_papers_strict,
     new_record,
     record_id,
+    register_import_capability,
     remove_canonical_document,
     resolve_paper_path,
+    save_papers,
     update_chunker_state,
+)
+from backend.app.knowledge_base.infrastructure.store import (
+    _unlink_owned_source as _store_unlink_owned_source,
 )
 from backend.app.knowledge_base.infrastructure.tasks import (
     run_index_task_sync,
@@ -114,6 +122,7 @@ from backend.app.knowledge_base.infrastructure.tasks import (
 from backend.app.platform.config import KB_META_PATH, KB_PAPERS_DIR
 from backend.app.platform.ports import (
     ImportIndexStatus,
+    ImportResourceCapability,
     PaperImportErrorCode,
     PaperImportPort,
     PaperImportRequest,
@@ -133,13 +142,64 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _write_source_exclusive(path: Path, content: bytes) -> None:
+def _source_token(stream: Any) -> tuple[int, int]:
+    """Return the device/inode identity for a source owned by this call."""
+    stat_result = os.fstat(stream.fileno())
+    return stat_result.st_dev, stat_result.st_ino
+
+
+def _unlink_owned_source(path: Path, token: tuple[int, int] | None) -> bool:
+    """Probe a failed source target without deleting its directory entry.
+
+    The store-level helper uses the same lockfile and opens the target with
+    ``O_NOFOLLOW`` before comparing its fd identity, but intentionally never
+    unlinks by pathname.  Failed creates remain identifiable orphans for
+    compensation/maintenance, avoiding a replacement race after ``fstat``.
+    """
+    return _store_unlink_owned_source(path, token, process_locked=True)
+
+
+def _remove_created_metadata(document_id: str, meta_path: Path) -> None:
+    """Roll back this create's metadata without deleting any source path."""
+    records = load_papers_strict(meta_path)
+    if not any(record_id(item) == document_id for item in records):
+        return
+    save_papers([item for item in records if record_id(item) != document_id], meta_path)
+
+
+def _write_source_exclusive(path: Path, content: bytes) -> tuple[int, int]:
+    """Create and fsync a source, returning an ownership token.
+
+    The token is returned only after this call successfully created and
+    durably wrote the target.  If writing/fsyncing fails after ``O_EXCL`` has
+    created the file, the failed target is retained as an identifiable orphan
+    for later compensation/maintenance; callers never infer ownership from a
+    failed open.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("xb") as stream:
-        stream.write(content)
-        stream.flush()
-        os.fsync(stream.fileno())
-    _fsync_directory(path.parent)
+    descriptor: int | None = None
+    token: tuple[int, int] | None = None
+    try:
+        descriptor = os.open(
+            str(path),
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = None
+            token = _source_token(stream)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        _fsync_directory(path.parent)
+        return token
+    except Exception:
+        _unlink_owned_source(path, token)
+        raise
+    finally:
+        if descriptor is not None:
+            with suppress(OSError):
+                os.close(descriptor)
 
 
 def _generation_root(meta_path: Path) -> Path:
@@ -175,31 +235,82 @@ def _refresh_generation_digests(meta_path: Path) -> None:
     FinalizeBundleStore(_generation_root(meta_path)).refresh_live_digests()
 
 
-def create_uploaded_document(
+def _unique_server_name(root: Path, requested_name: str, document_id: str, media_type: str) -> str:
+    """Return a safe server-owned basename without replacing an existing object."""
+    suffix = ".md" if media_type == "text/markdown" else ".pdf"
+    requested = str(requested_name or "").strip()
+    candidate = Path(requested).name if requested and Path(requested).name == requested else ""
+    if not candidate or candidate in {".", ".."} or not candidate.lower().endswith(suffix):
+        candidate = f"{document_id}{suffix}"
+    if len(candidate.encode("utf-8")) > 255:
+        candidate = f"{document_id}{suffix}"
+    target = root / candidate
+    if not target.exists():
+        return candidate
+    stem = Path(candidate).stem
+    sequence = 2
+    while (root / f"{stem}-{sequence}{suffix}").exists():
+        sequence += 1
+    return f"{stem}-{sequence}{suffix}"
+
+
+def create_immutable_document(
     file_name: str,
     media_type: str,
-    content: bytes,
+    content: bytes | bytearray | memoryview | None = None,
     *,
+    source_path: Path | None = None,
+    metadata: Mapping[str, Any] | None = None,
     meta_path: Path | None = None,
     papers_dir: Path | None = None,
+    owner: str | None = None,
+    token: str | None = None,
+    attempt_owner: str | None = None,
+    attempt_token: str | None = None,
 ) -> dict[str, Any]:
     """Create or deduplicate one immutable canonical document.
 
-    This is the sole HTTP upload application entry.  It writes only a
-    server-generated basename and a canonical metadata record; indexing is a
-    separate explicit operation and is never invoked from this function.
+    This is the sole source-creation seam for HTTP uploads and paper imports.
+    The document id and stored basename are always server-owned, source bytes
+    are written exclusively, and hash/media dedupe happens while the same
+    process-wide lock protects the metadata append.  ``metadata`` is limited
+    to paper display/provenance fields and never controls source identity.
     """
-    if not isinstance(content, bytes):
-        content = bytes(content)
-    validate_source_bytes(content, media_type)
+    owner = owner if owner is not None else attempt_owner
+    token = token if token is not None else attempt_token
+    if media_type not in {"application/pdf", "text/markdown"}:
+        raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID")
+    if content is not None and source_path is not None:
+        raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID")
+    source = Path(source_path).resolve() if source_path is not None else None
+    if source is not None:
+        try:
+            source_content = source.read_bytes()
+        except OSError as error:
+            raise KnowledgeDocumentMigrationError("SOURCE_NOT_FOUND") from error
+    elif content is not None:
+        try:
+            source_content = bytes(content)
+        except (TypeError, ValueError) as error:
+            raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID") from error
+        validate_source_bytes(source_content, media_type)
+    else:
+        raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID")
     if media_type == "text/markdown":
-        normalized = content[3:] if content.startswith(b"\xef\xbb\xbf") else content
+        normalized = source_content[3:] if source_content.startswith(b"\xef\xbb\xbf") else source_content
         if not normalized.decode("utf-8").strip():
             raise DocumentReadError("MARKDOWN_PARSE_FAILED", status=400)
-    digest = hashlib.sha256(content).hexdigest()
+    digest = hashlib.sha256(source_content).hexdigest()
     meta = Path(meta_path or KB_META_PATH)
     root = Path(papers_dir or KB_PAPERS_DIR)
-    with _UPLOAD_LOCK:
+    try:
+        lock_domain = immutable_lock_domain(meta, root)
+    except MetadataStoreError as error:
+        raise KnowledgeDocumentMigrationError(error.code) from error
+    # The metadata directory is the shared lock domain for the source and its
+    # canonical append. Keeping the lockfile beside papers.json avoids making
+    # it look like an immutable source to existing directory inventories.
+    with _UPLOAD_LOCK, immutable_directory_lock(lock_domain):
         records = load_papers_strict(meta)
         for item in records:
             if item.get("schema_version") != "knowledge-document-v1":
@@ -208,28 +319,106 @@ def create_uploaded_document(
                 continue
             existing_path = resolve_paper_path(item, root)
             if existing_path.is_file():
-                return {"document": dict(item), "deduplicated": True, "task_id": None}
+                try:
+                    existing_digest = hashlib.sha256(existing_path.read_bytes()).hexdigest()
+                except OSError:
+                    existing_digest = None
+                if existing_digest == digest:
+                    return {
+                        "document": dict(item),
+                        "deduplicated": True,
+                        "etag": f'"sha256:{digest}"',
+                        "task_id": None,
+                    }
 
         document_id = uuid.uuid4().hex
-        suffix = ".md" if media_type == "text/markdown" else ".pdf"
-        stored_name = f"{document_id}{suffix}"
+        stored_name = _unique_server_name(root, file_name, document_id, media_type)
         target = root / stored_name
+        source_token: tuple[int, int] | None = None
+        resource_capability: ImportResourceCapability | None = None
         try:
-            _write_source_exclusive(target, content)
-            document = build_uploaded_knowledge_document(
-                document_id=document_id,
-                file_name=file_name,
-                stored_name=stored_name,
-                media_type=media_type,
-                source_path=target,
-            )
+            source_token = _write_source_exclusive(target, source_content)
+            if metadata is None:
+                document = build_uploaded_knowledge_document(
+                    document_id=document_id,
+                    file_name=file_name,
+                    stored_name=stored_name,
+                    media_type=media_type,
+                    source_path=target,
+                )
+            else:
+                values = dict(metadata)
+                record = new_record(
+                    file_name,
+                    uploaded_at=None,
+                    title=values.get("title"),
+                    authors=list(values.get("authors") or []),
+                    year=values.get("year"),
+                    conference_id=values.get("conference_id"),
+                    conference_name=values.get("conference_name"),
+                    doi=values.get("doi"),
+                    dblp_key=values.get("dblp_key"),
+                    source_url=values.get("source_url"),
+                    import_source=values.get("import_source"),
+                    stored_name=stored_name,
+                )
+                record.paper_id = document_id
+                record.status = STATUS_INDEXING
+                document = build_import_knowledge_document(record, target)
+            if document.get("source_sha256") != digest:
+                raise KnowledgeDocumentMigrationError("SOURCE_HASH_MISMATCH")
+            if owner is not None or token is not None:
+                if not owner or not token or source_token is None:
+                    raise KnowledgeDocumentMigrationError("COMPENSATION_CAPABILITY_INVALID")
+                resource_capability = ImportResourceCapability(
+                    owner=str(owner),
+                    token=str(token),
+                    document_id=document_id,
+                    source_sha256=digest,
+                    stored_name=stored_name,
+                    source_dev=source_token[0],
+                    source_ino=source_token[1],
+                )
+                # The ledger is intentionally separate from papers.json, whose
+                # frozen schema must remain compatible with older readers.
+                register_import_capability(resource_capability, meta, process_locked=True)
             write_import_knowledge_document(document, meta)
             _refresh_generation_digests(meta)
-        except Exception:
-            with suppress(OSError):
-                target.unlink(missing_ok=True)
+        except Exception as error:
+            _unlink_owned_source(target, source_token)
+            # A metadata writer may fail after exposing a partial append.  Roll
+            # back only the generated id and deliberately keep source cleanup
+            # separate, so a target replaced by another process is untouched.
+            with suppress(Exception):
+                _remove_created_metadata(document_id, meta)
+            if resource_capability is not None:
+                error.resource_capability = resource_capability
             raise
-        return {"document": document, "deduplicated": False, "task_id": None}
+        return {
+            "document": document,
+            "deduplicated": False,
+            "etag": f'"sha256:{digest}"',
+            "task_id": None,
+            "resource_capability": resource_capability,
+        }
+
+
+def create_uploaded_document(
+    file_name: str,
+    media_type: str,
+    content: bytes,
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Compatibility wrapper for the canonical upload application seam."""
+    return create_immutable_document(
+        file_name,
+        media_type,
+        content,
+        meta_path=meta_path,
+        papers_dir=papers_dir,
+    )
 
 
 def submit_document_reindex(
@@ -389,6 +578,23 @@ def _index_succeeded(value: Any) -> bool:
     return status == STATUS_INDEXED
 
 
+def _deletion_succeeded(value: Any) -> bool:
+    """Interpret an injected vector-delete result without guessing unknowns."""
+    if value is None:
+        # Existing tiny deleter doubles use a successful ``None`` return.
+        return True
+    if value is True:
+        return True
+    if value is False:
+        return False
+    status = getattr(value, "status", None)
+    if status is None and isinstance(value, Mapping):
+        status = value.get("status")
+    if status is None:
+        status = value
+    return str(getattr(status, "value", status)).casefold() in {"completed", "deleted", "success"}
+
+
 def _call_supported(function: Callable[..., Any], positional: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
     try:
         parameters = inspect.signature(function).parameters.values()
@@ -456,13 +662,18 @@ class KnowledgeBasePaperImportAdapter:
                 )
         return None
 
-    def _cleanup(self, paper_id: str | None, target: Path | None) -> None:
-        if paper_id:
-            with suppress(Exception):
-                remove_canonical_document(paper_id, self.meta_path, self.papers_dir)
-        if target is not None:
-            with suppress(OSError):
-                target.unlink(missing_ok=True)
+    def compensate_import(self, capability: ImportResourceCapability) -> str:
+        """Compensate only a resource proven to belong to this attempt."""
+        return compensate_import_resource(capability, self.meta_path, self.papers_dir)
+
+    def _cleanup(self, capability: ImportResourceCapability | None) -> str:
+        """Compatibility helper retaining fail-closed compensation semantics."""
+        if capability is None:
+            return "cleanup_pending"
+        try:
+            return self.compensate_import(capability)
+        except Exception:
+            return "cleanup_pending"
 
     def _default_indexer(self, record: PaperRecord, path: Path) -> Any:
         destination = _active_generation_collection(self.meta_path)
@@ -479,7 +690,7 @@ class KnowledgeBasePaperImportAdapter:
             ),
         )
 
-    def _default_deleter(self, paper_id: str) -> None:
+    def _default_deleter(self, paper_id: str, *, capability: ImportResourceCapability | None = None) -> None:
         destination = _active_generation_collection(self.meta_path)
         GenerationBoundIndexPort(destination, client=self.client).delete_document(paper_id, CHUNKER_V1)
 
@@ -492,51 +703,86 @@ class KnowledgeBasePaperImportAdapter:
                 index_status=ImportIndexStatus.FAILED,
                 error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
             )
+        try:
+            source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        except OSError:
+            return PortImportResult(
+                paper_id=None,
+                index_status=ImportIndexStatus.FAILED,
+                error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
+            )
+        if request.source_sha256 is not None and request.source_sha256 != source_digest:
+            return PortImportResult(
+                paper_id=None,
+                index_status=ImportIndexStatus.FAILED,
+                error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
+            )
 
         with self._lock:
             existing = self.find_existing(snapshot)
             if existing is not None:
                 return existing
             requested_name = str(_snapshot_value(snapshot, "_stored_name") or source.name)
-            safe_name = Path(requested_name).name
-            if safe_name != requested_name or not safe_name.lower().endswith(".pdf"):
-                safe_name = f"{source.stem}.pdf"
-            self.papers_dir.mkdir(parents=True, exist_ok=True)
-            target = self.papers_dir / safe_name
-            if target.exists():
-                stem, suffix = target.stem, target.suffix
-                sequence = 2
-                while target.exists():
-                    target = self.papers_dir / f"{stem}-{sequence}{suffix}"
-                    sequence += 1
-                safe_name = target.name
             identity_doi, identity_dblp, _, _, _ = _identity_parts(snapshot)
-            record = new_record(
-                safe_name,
-                title=_snapshot_value(snapshot, "title"),
-                authors=list(_snapshot_value(snapshot, "authors", []) or []),
-                year=_snapshot_value(snapshot, "year"),
-                conference_id=_snapshot_value(snapshot, "conference_id"),
-                conference_name=_snapshot_value(snapshot, "conference_name"),
-                doi=identity_doi or None,
-                dblp_key=identity_dblp or None,
-                source_url=_snapshot_value(snapshot, "article_url"),
-                import_source="paper-discovery",
-                stored_name=safe_name,
-            )
-            record.status = STATUS_INDEXING
             try:
-                copy_source_exclusive(source, target)
-                document = build_import_knowledge_document(record, target)
-                write_import_knowledge_document(document, self.meta_path)
-                _refresh_generation_digests(self.meta_path)
-            except Exception:
-                self._cleanup(record.paper_id, target)
+                created = create_immutable_document(
+                    requested_name,
+                    "application/pdf",
+                    source_path=source,
+                    metadata={
+                        "title": _snapshot_value(snapshot, "title"),
+                        "authors": list(_snapshot_value(snapshot, "authors", []) or []),
+                        "year": _snapshot_value(snapshot, "year"),
+                        "conference_id": _snapshot_value(snapshot, "conference_id"),
+                        "conference_name": _snapshot_value(snapshot, "conference_name"),
+                        "doi": identity_doi or None,
+                        "dblp_key": identity_dblp or None,
+                        "source_url": _snapshot_value(snapshot, "article_url"),
+                        "import_source": "paper-discovery",
+                    },
+                    meta_path=self.meta_path,
+                    papers_dir=self.papers_dir,
+                    owner=request.attempt_owner,
+                    token=request.attempt_token,
+                )
+            except Exception as error:
+                capability = getattr(error, "resource_capability", None)
                 return PortImportResult(
                     paper_id=None,
                     index_status=ImportIndexStatus.FAILED,
                     error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
+                    source_sha256=source_digest,
+                    cleanup_status="cleanup_pending" if capability is not None else None,
+                    resource_capability=capability,
                 )
+            document = created["document"]
+            safe_name = str(document["stored_name"])
+            target = resolve_paper_path(document, self.papers_dir)
+            if created["deduplicated"]:
+                return PortImportResult(
+                    paper_id=record_id(document),
+                    index_status=_port_status(document.get("status")),
+                    error_code=None,
+                    stored_name=safe_name,
+                    existing=True,
+                    source_sha256=document.get("source_sha256"),
+                )
+            record = PaperRecord(
+                paper_id=record_id(document),
+                file_name=str(document["file_name"]),
+                status=STATUS_INDEXING,
+                uploaded_at=str(document["created_at"]),
+                title=document.get("title"),
+                authors=list(document.get("authors") or []),
+                year=document.get("year"),
+                conference_id=document.get("conference_id"),
+                conference_name=document.get("conference_name"),
+                doi=document.get("doi"),
+                dblp_key=document.get("dblp_key"),
+                source_url=document.get("source_url"),
+                import_source=document.get("import_source"),
+                stored_name=safe_name,
+            )
 
         try:
             index_result = _call_supported(
@@ -560,19 +806,44 @@ class KnowledgeBasePaperImportAdapter:
                 index_status=ImportIndexStatus.INDEXED,
                 error_code=None,
                 stored_name=safe_name,
+                source_sha256=document.get("source_sha256"),
+                resource_capability=created.get("resource_capability"),
             )
         except Exception:
-            with suppress(Exception):
-                _call_supported(
-                    self.deleter or self._default_deleter,
-                    (record.paper_id, CHUNKER_V1),
-                    {"client": self.client},
-                )
-            self._cleanup(record.paper_id, target)
+            capability = created.get("resource_capability")
+            vector_unknown = False
+            try:
+                # A caller-supplied deleter is an explicit, testable seam.  In
+                # the isolated adapter (no client/marker) there is no vector
+                # resource to delete; production uses the marker-bound default.
+                if self.deleter is not None:
+                    delete_result = _call_supported(
+                        self.deleter,
+                        (record.paper_id, CHUNKER_V1),
+                        {"client": self.client, "capability": capability},
+                    )
+                elif self.client is not None:
+                    delete_result = _call_supported(
+                        self._default_deleter,
+                        (record.paper_id, CHUNKER_V1),
+                        {"client": self.client, "capability": capability},
+                    )
+                else:
+                    delete_result = None
+                if not _deletion_succeeded(delete_result):
+                    vector_unknown = True
+            except Exception:
+                vector_unknown = True
+            cleanup_status = "cleanup_pending"
+            if not vector_unknown:
+                cleanup_status = self._cleanup(capability)
             return PortImportResult(
-                paper_id=None,
+                paper_id=record.paper_id if cleanup_status != "completed" else None,
                 index_status=ImportIndexStatus.FAILED,
                 error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
+                source_sha256=document.get("source_sha256"),
+                cleanup_status=cleanup_status if cleanup_status != "completed" else None,
+                resource_capability=capability if cleanup_status != "completed" else None,
             )
 
 
@@ -672,6 +943,7 @@ __all__ = [
     # 索引任务
     "KnowledgeBasePaperImportAdapter",
     "create_paper_import_port",
+    "create_immutable_document",
     "create_uploaded_document",
     "submit_document_reindex",
     "delete_document",

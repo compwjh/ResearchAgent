@@ -88,7 +88,9 @@ def test_import_persists_metadata_renames_and_indexes(tmp_path):
     assert record["dblp_key"] == "conf/ccs/safe"
     assert record["import_source"] == "paper-discovery"
     assert (papers / result.stored_name).exists()
-    assert not (tmp_path / "private-download.pdf").exists()
+    # Explicit temp_dir belongs to the caller, so the orchestration layer
+    # retains the downloader path even after a successful import.
+    assert (tmp_path / "private-download.pdf").exists()
     assert len(calls) == 1
 
 
@@ -109,7 +111,7 @@ def test_duplicate_is_checked_before_download(tmp_path):
     assert len(calls) == 1
 
 
-def test_index_failure_removes_record_and_file(tmp_path):
+def test_index_failure_retains_owned_resources_for_cleanup_pending(tmp_path):
     papers = tmp_path / "papers"
     meta = tmp_path / "papers.json"
 
@@ -124,11 +126,15 @@ def test_index_failure_removes_record_and_file(tmp_path):
             ),
         )
     assert exc.value.code == KB_IMPORT_FAILED
-    assert list(papers.glob("*.pdf")) == []
-    assert get_paper("missing", meta) is None
+    assert exc.value.cleanup_status == "cleanup_pending"
+    stored = list(papers.glob("*.pdf"))
+    assert len(stored) == 1
+    records = load_papers(meta)
+    assert len(records) == 1
+    assert get_paper(records[0]["document_id"], meta) is not None
 
 
-def test_metadata_failure_after_rename_removes_target_and_record(tmp_path, monkeypatch):
+def test_metadata_failure_after_create_retains_orphan_and_removes_record(tmp_path, monkeypatch):
     papers = tmp_path / "papers"
     meta = tmp_path / "papers.json"
 
@@ -146,11 +152,14 @@ def test_metadata_failure_after_rename_removes_target_and_record(tmp_path, monke
             temp_dir=tmp_path,
         )
     assert exc.value.code == KB_IMPORT_FAILED
-    assert list(papers.glob("*.pdf")) == []
+    # Failed source cleanup is fail-closed: the create seam never unlinks by
+    # pathname. Compensation/maintenance can identify and reclaim this
+    # orphan later without risking a replacement owned by another writer.
+    assert len(list(papers.glob("*.pdf"))) == 1
     assert load_papers(meta) == []
 
 
-def test_index_failure_invokes_idempotent_vector_compensation(tmp_path):
+def test_index_failure_invokes_vector_compensation_and_retains_unknown_resources(tmp_path):
     papers = tmp_path / "papers"
     meta = tmp_path / "papers.json"
     deleted = []
@@ -162,7 +171,7 @@ def test_index_failure_invokes_idempotent_vector_compensation(tmp_path):
     def deleter(paper_id, chunker, client=None):
         deleted.append((paper_id, chunker))
 
-    with pytest.raises(PaperImportError):
+    with pytest.raises(PaperImportError) as exc:
         import_candidate(
             _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
             downloader=_downloader(tmp_path, []), paper_import_port=_port(
@@ -171,8 +180,9 @@ def test_index_failure_invokes_idempotent_vector_compensation(tmp_path):
         )
     assert deleted[1][0] == deleted[0][1]
     assert deleted[1][1] == "v1"
-    assert load_papers(meta) == []
-    assert list(papers.glob("*.pdf")) == []
+    assert exc.value.cleanup_status == "cleanup_pending"
+    assert len(load_papers(meta)) == 1
+    assert len(list(papers.glob("*.pdf"))) == 1
 
 
 def test_download_error_is_preserved_and_temp_file_is_cleaned(tmp_path):
@@ -214,7 +224,9 @@ def test_import_delegates_trusted_local_pdf_to_injected_port(tmp_path):
     assert result.paper_id == "paper-1"
     assert len(seen) == 1
     assert seen[0].candidate_snapshot["_stored_name"] == "2025-CCS-A-Safe-Paper.pdf"
-    assert not (tmp_path / "private-download.pdf").exists()
+    # An explicit temp_dir is caller-owned; paper discovery never removes its
+    # downloaded files or parent directory by pathname.
+    assert (tmp_path / "private-download.pdf").exists()
 
 
 def test_paper_import_error_message_is_fixed_by_stable_code():

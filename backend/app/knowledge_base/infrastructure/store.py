@@ -4,12 +4,16 @@
 所有写操作用同一把锁串行化，避免并发上传/删除产生半截状态。
 """
 
+import fcntl
+import hashlib
 import json
 import os
+import re
 import shutil
+import stat
 import threading
 import uuid
-from contextlib import suppress
+from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,8 +34,72 @@ CHUNKERS = (CHUNKER_V1, CHUNKER_V2)
 
 _lock = threading.RLock()
 
+_COMPENSATION_LEDGER_SUFFIX = ".paper-import-compensation.json"
+
+
+@contextmanager
+def immutable_directory_lock(directory: Path):
+    """Serialize immutable source/metadata creates across processes.
+
+    The lockfile lives in the metadata directory shared by the source and its
+    canonical record. Every writer that participates in the create protocol
+    uses this same path, so a process cannot observe metadata, choose a
+    basename, and append a record concurrently with another create.
+    """
+    directory = Path(directory).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / ".immutable-create.lock"
+    descriptor = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        with suppress(OSError):
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def _unlink_owned_source(
+    path: Path,
+    token: tuple[int, int] | None,
+    *,
+    process_locked: bool = False,
+) -> bool:
+    """Probe a failed source target without deleting any directory entry.
+
+    There is deliberately no pathname deletion in this helper.
+    The caller's process lock is part of the ownership protocol; the open fd
+    remains held while ownership is probed. If the target cannot be opened
+    without following a symlink, or its fd identity differs, the function
+    fails closed and leaves the object as an identifiable orphan. Even a
+    matching inode is retained for later compensation/maintenance because a
+    replacement can occur immediately after ``fstat``.
+    """
+    if token is None:
+        return False
+    lock = nullcontext() if process_locked else immutable_directory_lock(path.parent)
+    with lock:
+        descriptor: int | None = None
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(str(path), flags)
+            stat_result = os.fstat(descriptor)
+            if (stat_result.st_dev, stat_result.st_ino) != token or stat_result.st_nlink != 1:
+                return False
+            # Never unlink by pathname after this check: the directory entry
+            # may have been replaced immediately after fstat(). Retain the
+            # failed create as an identifiable orphan for later compensation.
+            return False
+        except OSError:
+            return False
+        finally:
+            if descriptor is not None:
+                with suppress(OSError):
+                    os.close(descriptor)
+
 # 用于区分"不更新 error"与"把 error 置为 None"
 _UNSET = object()
+_SERVER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class MetadataStoreError(RuntimeError):
@@ -40,6 +108,223 @@ class MetadataStoreError(RuntimeError):
     def __init__(self, code: str = "METADATA_INVALID") -> None:
         self.code = code
         super().__init__(code)
+
+
+IMMUTABLE_LOCK_DOMAIN_MISMATCH = "IMMUTABLE_LOCK_DOMAIN_MISMATCH"
+
+
+def immutable_lock_domain(meta_path: Path, papers_dir: Path) -> Path:
+    """Return the canonical lock domain shared by metadata and source paths.
+
+    The metadata file and source directory must resolve beneath the same
+    physical parent domain. Rejecting a mismatch is safer than letting the
+    two writers acquire different lockfiles and claiming process safety.
+    """
+    metadata_parent = Path(meta_path).resolve().parent
+    source_parent = Path(papers_dir).resolve().parent
+    if metadata_parent != source_parent:
+        raise MetadataStoreError(IMMUTABLE_LOCK_DOMAIN_MISMATCH)
+    return metadata_parent
+
+
+def _compensation_ledger_path(meta_path: Optional[Path] = None) -> Path:
+    meta = Path(meta_path or KB_META_PATH)
+    return meta.with_name(meta.name + _COMPENSATION_LEDGER_SUFFIX)
+
+
+def _capability_value(capability: Any, name: str, default: Any = None) -> Any:
+    if isinstance(capability, Mapping):
+        return capability.get(name, default)
+    return getattr(capability, name, default)
+
+
+def _read_compensation_ledger(path: Path) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise MetadataStoreError("COMPENSATION_LEDGER_INVALID") from error
+    if not isinstance(value, dict) or any(not isinstance(item, dict) for item in value.values()):
+        raise MetadataStoreError("COMPENSATION_LEDGER_INVALID")
+    return {str(key): dict(item) for key, item in value.items()}
+
+
+def _write_compensation_ledger(path: Path, ledger: Mapping[str, Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        payload = json.dumps(dict(ledger), ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        with temporary.open("wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        # The replacement is not durable until the containing directory has
+        # been flushed.  If this fails the caller must retain cleanup_pending;
+        # it must never infer a durable capability from an unknown result.
+        descriptor = os.open(str(path.parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    finally:
+        with suppress(OSError):
+            temporary.unlink()
+
+
+def register_import_capability(
+    capability: Any,
+    meta_path: Optional[Path] = None,
+    *,
+    process_locked: bool = False,
+) -> None:
+    """Persist an attempt capability outside the public document schema."""
+    owner = str(_capability_value(capability, "owner") or "")
+    token = str(_capability_value(capability, "token") or "")
+    document_id = str(_capability_value(capability, "document_id") or "")
+    if not owner or not token or not document_id:
+        raise MetadataStoreError("COMPENSATION_CAPABILITY_INVALID")
+    meta = Path(meta_path or KB_META_PATH)
+    lock = nullcontext() if process_locked else immutable_directory_lock(meta.parent)
+    with _lock, lock:
+        path = _compensation_ledger_path(meta)
+        ledger = _read_compensation_ledger(path)
+        current = ledger.get(token)
+        value = {
+            "owner": owner,
+            "document_id": document_id,
+            "source_sha256": str(_capability_value(capability, "source_sha256") or ""),
+            "stored_name": str(_capability_value(capability, "stored_name") or ""),
+            "source_dev": int(_capability_value(capability, "source_dev", -1)),
+            "source_ino": int(_capability_value(capability, "source_ino", -1)),
+            "destination_collection": _capability_value(capability, "destination_collection"),
+            "status": "created",
+        }
+        immutable_fields = tuple(key for key in value if key != "status")
+        if current is not None and any(current.get(key) != value[key] for key in immutable_fields):
+            raise MetadataStoreError("COMPENSATION_CAPABILITY_CONFLICT")
+        # A retry must not resurrect a capability already compensated.
+        if current is not None and current.get("status") == "completed":
+            value["status"] = "completed"
+        ledger[token] = value
+        _write_compensation_ledger(path, ledger)
+
+
+def _set_compensation_status(meta: Path, token: str, status: str, error_code: str | None = None) -> None:
+    path = _compensation_ledger_path(meta)
+    ledger = _read_compensation_ledger(path)
+    entry = ledger.get(token)
+    if entry is None:
+        raise MetadataStoreError("COMPENSATION_CAPABILITY_UNKNOWN")
+    entry["status"] = status
+    if error_code:
+        entry["last_error"] = error_code
+    else:
+        entry.pop("last_error", None)
+    ledger[token] = entry
+    _write_compensation_ledger(path, ledger)
+
+
+def compensate_import_resource(
+    capability: Any,
+    meta_path: Optional[Path] = None,
+    papers_dir: Optional[Path] = None,
+) -> str:
+    """Delete only a capability-owned source and metadata record.
+
+    Any owner/token/document/hash/inode mismatch fails closed.  A completed
+    capability is idempotent; uncertain I/O is recorded as ``cleanup_pending``
+    and never reported as completed.
+    """
+    meta = Path(meta_path or KB_META_PATH)
+    root = Path(papers_dir or KB_PAPERS_DIR)
+    token = str(_capability_value(capability, "token") or "")
+    owner = str(_capability_value(capability, "owner") or "")
+    document_id = str(_capability_value(capability, "document_id") or "")
+    source_hash = str(_capability_value(capability, "source_sha256") or "")
+    stored_name = str(_capability_value(capability, "stored_name") or "")
+    try:
+        source_dev = int(_capability_value(capability, "source_dev"))
+        source_ino = int(_capability_value(capability, "source_ino"))
+    except (TypeError, ValueError) as error:
+        raise MetadataStoreError("COMPENSATION_CAPABILITY_INVALID") from error
+    if not all((token, owner, document_id, source_hash, stored_name)) or source_dev < 0 or source_ino < 0:
+        raise MetadataStoreError("COMPENSATION_CAPABILITY_INVALID")
+    try:
+        lock_domain = immutable_lock_domain(meta, root)
+    except MetadataStoreError:
+        raise
+    with _lock, immutable_directory_lock(lock_domain):
+        ledger = _read_compensation_ledger(_compensation_ledger_path(meta))
+        entry = ledger.get(token)
+        expected = {
+            "owner": owner,
+            "document_id": document_id,
+            "source_sha256": source_hash,
+            "stored_name": stored_name,
+            "source_dev": source_dev,
+            "source_ino": source_ino,
+        }
+        if entry is None or any(entry.get(key) != value for key, value in expected.items()):
+            raise MetadataStoreError("COMPENSATION_DENIED")
+        if entry.get("status") == "completed":
+            return "completed"
+        records = load_papers_strict(meta)
+        record = next((item for item in records if _record_id(item) == document_id), None)
+        target = resolve_paper_path(record or {"document_id": document_id, "stored_name": stored_name}, root)
+        if record is not None and (
+            record.get("stored_name") != stored_name
+            or record.get("source_sha256") != source_hash
+            or record.get("document_id") != document_id
+        ):
+            _set_compensation_status(meta, token, "cleanup_pending", "COMPENSATION_DENIED")
+            raise MetadataStoreError("COMPENSATION_DENIED")
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            try:
+                descriptor = os.open(str(target), flags)
+            except FileNotFoundError:
+                # The source is already absent.  This is the only state in
+                # which compensation can complete without deleting a path.
+                if record is not None:
+                    save_papers([item for item in records if _record_id(item) != document_id], meta)
+                _set_compensation_status(meta, token, "completed")
+                return "completed"
+            try:
+                stat_result = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(stat_result.st_mode)
+                    or stat_result.st_nlink != 1
+                    or (stat_result.st_dev, stat_result.st_ino) != (source_dev, source_ino)
+                ):
+                    raise MetadataStoreError("COMPENSATION_DENIED")
+                digest = hashlib.sha256()
+                while True:
+                    block = os.read(descriptor, 1024 * 1024)
+                    if not block:
+                        break
+                    digest.update(block)
+                if digest.hexdigest() != source_hash:
+                    raise MetadataStoreError("COMPENSATION_DENIED")
+            finally:
+                os.close(descriptor)
+
+            # There is no POSIX compare-and-unlink primitive.  Even while the
+            # immutable lock-domain lock is held, a process that does not
+            # cooperate with that advisory lock can replace the pathname
+            # after the fd/hash check.  Retain the verified source as an
+            # identifiable orphan and let a future maintenance operation make
+            # an independently reviewed deletion decision.
+            _set_compensation_status(meta, token, "cleanup_pending", "COMPENSATION_SOURCE_DELETE_UNPROVEN")
+            return "cleanup_pending"
+        except MetadataStoreError:
+            _set_compensation_status(meta, token, "cleanup_pending", "COMPENSATION_DENIED")
+            raise
+        except Exception as error:
+            with suppress(Exception):
+                _set_compensation_status(meta, token, "cleanup_pending", type(error).__name__)
+            raise MetadataStoreError("COMPENSATION_RESULT_UNKNOWN") from error
 
 
 def record_id(item: Any) -> str:
@@ -276,12 +561,49 @@ def save_upload(
     papers_dir: Optional[Path] = None,
     paper_id: Optional[str] = None,
 ) -> tuple:
-    """落盘上传文件，返回 (paper_id, 文件路径)。同名文件各自独立，不互相覆盖。"""
+    """Legacy source writer with create-exclusive semantics.
+
+    New callers must use the application immutable-create seam.  The optional
+    id remains only for old maintenance/tests, and an existing target is a
+    stable conflict rather than an invitation to replace immutable bytes.
+    Failed writes retain their target for fail-closed compensation/maintenance
+    instead of attempting a pathname unlink that could remove a replacement.
+    """
     directory = Path(papers_dir or KB_PAPERS_DIR)
-    directory.mkdir(parents=True, exist_ok=True)
     identifier = paper_id or uuid.uuid4().hex
+    if not _SERVER_ID_RE.fullmatch(str(identifier)):
+        raise MetadataStoreError("SERVER_ID_REQUIRED")
     target = directory / f"{identifier}.pdf"
-    target.write_bytes(content)
+    directory.mkdir(parents=True, exist_ok=True)
+    with _lock, immutable_directory_lock(directory.parent):
+        source_token: tuple[int, int] | None = None
+        try:
+            descriptor = os.open(
+                str(target),
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    descriptor = -1
+                    stat_result = os.fstat(stream.fileno())
+                    source_token = stat_result.st_dev, stat_result.st_ino
+                    stream.write(bytes(content))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            finally:
+                if descriptor != -1:
+                    os.close(descriptor)
+            descriptor = os.open(str(directory), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except FileExistsError as error:
+            raise MetadataStoreError("SOURCE_ID_CONFLICT") from error
+        except Exception:
+            _unlink_owned_source(target, source_token, process_locked=True)
+            raise
     return identifier, target
 
 
