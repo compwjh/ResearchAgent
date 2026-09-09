@@ -1,0 +1,11 @@
+pdfjs-dist 4.10.38 vendoring notice
+
+This directory vendors the browser build of Mozilla PDF.js, distributed as
+the npm package `pdfjs-dist@4.10.38`. The upstream npm package and the
+corresponding v4.10.38 source tree provide `LICENSE` but no standalone
+`NOTICE` file. This project-added file records that provenance; it does not
+replace or amend the upstream Apache-2.0 license in `LICENSE`.
+
+Upstream project: https://github.com/mozilla/pdf.js
+Package: https://www.npmjs.com/package/pdfjs-dist/v/4.10.38
+Version: 4.10.38
