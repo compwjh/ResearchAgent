@@ -20,6 +20,10 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .workspace:not(.has-started) { justify-content: center; padding-top: 30px; }.workspace:not(.has-started) .welcome { margin: 0 0 28px; }.workspace:not(.has-started) .chat-panel { min-height: 0; border-color: transparent; background: transparent; box-shadow: none; }.workspace:not(.has-started) .chat-header { display: flex; width: min(560px, 100%); margin: 0 auto; padding: 0 4px 10px; border: 0; }.workspace:not(.has-started) .messages, .workspace:not(.has-started) .hint { display: none; }.workspace:not(.has-started) .composer { margin: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 13px; background: white; box-shadow: 0 14px 35px #272a3510; }.workspace:not(.has-started) .composer textarea { min-height: 44px; padding-top: 10px; }.workspace.has-started { padding-top: 28px; }.workspace.has-started .welcome { display: none; }.workspace.has-started .chat-panel { min-height: calc(100vh - 138px); }.workspace.has-started .footer-note { display: none; }
 .settings-dialog { width: min(520px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 14px; color: var(--ink); box-shadow: 0 25px 80px #25272b33; }.settings-dialog::backdrop { background: #25272b55; backdrop-filter: blur(3px); }.settings-form { display: grid; gap: 18px; padding: 24px; }.settings-title { display: flex; align-items: flex-start; justify-content: space-between; }.settings-title h2 { margin: 7px 0 0; font-size: 22px; letter-spacing: -.04em; }.settings-form label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 700; }.settings-form textarea, .settings-form input { width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 10px; outline: 0; background: #fafafd; color: var(--ink); font-size: 12px; }.settings-form textarea:focus, .settings-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }.settings-status { min-height: 16px; margin: -5px 0; color: var(--accent); font: 10px 'DM Mono', monospace; }.settings-actions { display: flex; justify-content: flex-end; gap: 8px; }.secondary-button { border-radius: 7px; padding: 9px 12px; background: var(--paper); color: var(--muted); font-size: 12px; }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes paperBatchPulse {
+  from { box-shadow: 0 0 0 2px rgba(43, 108, 176, 0.10); }
+  to { box-shadow: 0 0 0 5px rgba(43, 108, 176, 0.24); }
+}
 @media (max-width: 760px) { .app-shell { display: block; }.sidebar { display: none; }.topbar { height: 60px; padding: 0 16px; }.workspace { min-height: calc(100vh - 60px); padding: 34px 16px; }.welcome h1 { font-size: 35px; }.chat-panel { min-height: 460px; }.workspace.has-started .chat-panel { min-height: calc(100vh - 110px); }.messages { padding: 22px 16px; }.bubble { max-width: 88%; }.composer { margin: 0 14px; }.composer-tip { display: none; }.workspace:not(.has-started) .composer { margin: 0; }.footer-note { display: none; } }
 
 /* ===== 模型库视图（spec-007） ===== */
@@ -1232,6 +1236,15 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   max-height: 340px;
   padding: 14px 20px;
   overflow-y: auto;
+}
+
+#papers-view .paper-import-batch.is-progressing {
+  border-color: #2b6cb0;
+  animation: paperBatchPulse 1.4s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #papers-view .paper-import-batch.is-progressing { animation: none; }
 }
 
 #papers-view .paper-import-item {

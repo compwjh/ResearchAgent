@@ -388,6 +388,7 @@ const paperState = {
   directSuccess: 0,
   lastImportError: null,
   currentRoundBatchIds: new Set(),
+  pendingGroups: 0,
 };
 
 const PAPER_STATUS_TEXT = {
@@ -942,7 +943,7 @@ function renderImportSummary() {
     phase = 'partial_success';
   } else if (totalSuccess > 0) {
     phase = 'completed';
-  } else if (totalSuccess === 0 && (totalFailed > 0 || skipped > 0)) {
+  } else if (paperState.importPhase !== 'submitting' && totalSuccess === 0 && (totalFailed > 0 || skipped > 0)) {
     phase = 'failed';
   }
   setImportPhase(phase);
@@ -954,7 +955,7 @@ function renderImportSummary() {
   let message;
   let kind;
   if (phase === 'submitting') {
-    message = `正在提交 ${totalBatches + submitFailed} 个导入批次…`;
+    message = `正在提交 ${paperState.pendingGroups} 个导入批次…`;
     kind = 'running';
   } else if (phase === 'running') {
     message = `正在导入：${completedItems} 篇完成${failedItems ? `，${failedItems} 篇失败` : ''}${submitFailed ? `，${submitFailed} 个分组提交失败` : ''}`;
@@ -1016,6 +1017,7 @@ async function importPaperCandidates(candidates) {
     groups.get(searchId).push(candidate.candidate_id);
   });
   paperState.skippedImports = skipped;
+  paperState.pendingGroups = groups.size;
   paperState.failedGroups = [];
   paperState.lastImportError = null;
   paperState.directSuccess = 0;
@@ -1028,6 +1030,7 @@ async function importPaperCandidates(candidates) {
   }
   setImportPhase('submitting');
   if (paperImportPanel) paperImportPanel.hidden = false;
+  renderImportSummary();
   const created = [];
   for (const [search_id, candidate_ids] of groups) {
     const importKey = `${search_id}:${candidate_ids.join('|')}`;
@@ -1103,6 +1106,7 @@ function renderPaperBatch(batch) {
     batchContainer.dataset.batchId = batchId;
     paperImportItems.appendChild(batchContainer);
   }
+  batchContainer.classList.toggle('is-progressing', !paperBatchTerminal(batch));
   batchContainer.replaceChildren();
   const label = PAPER_STATUS_TEXT[batch.status || batch.state] || '处理中';
   const batchHeader = document.createElement('div'); batchHeader.className = 'paper-import-batch-header';

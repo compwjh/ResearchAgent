@@ -88,8 +88,8 @@ def test_paper_error_text_covers_missing_codes_and_range_details() -> None:
 
 def test_paper_app_version_bumped() -> None:
     # 改动 app.js 后必须同步递增 ?v= 版本号，确保浏览器刷新缓存（回归护栏 A7）。
-    assert "/assets/app.js?v=20" in INDEX
-    assert "/assets/styles.css?v=20" in INDEX
+    assert "/assets/app.js?v=21" in INDEX
+    assert "/assets/styles.css?v=21" in INDEX
 
 
 def test_paper_import_status_resets_per_round() -> None:
@@ -112,6 +112,26 @@ def test_paper_import_status_resets_per_round() -> None:
     summary_end = APP.index("async function changePaperPage", summary_start)
     summary_fn = APP[summary_start:summary_end]
     assert "paperState.currentRoundBatchIds" in summary_fn
+
+
+def test_paper_submit_feedback_uses_pending_groups() -> None:
+    # BUG-01：提交阶段文案必须取 pendingGroups（待提交分组数），不得依赖已创建批次数（旧口径恒为 0）。
+    import_start = APP.index("async function importPaperCandidates")
+    import_end = APP.index("function paperBatchTerminal", import_start)
+    import_fn = APP[import_start:import_end]
+    assert "paperState.pendingGroups = groups.size;" in import_fn
+
+    summary_start = APP.index("function renderImportSummary")
+    summary_end = APP.index("async function changePaperPage", summary_start)
+    summary_fn = APP[summary_start:summary_end]
+    assert "正在提交 ${paperState.pendingGroups}" in summary_fn
+    assert "totalBatches + submitFailed" not in summary_fn
+
+
+def test_paper_import_batch_progress_indicator() -> None:
+    # 非终态批次卡片带进行中样式类，且 CSS 提供作用域内的动画规则（终态移除类即停止动画）。
+    assert "is-progressing" in APP
+    assert "#papers-view .paper-import-batch.is-progressing" in STYLES
 
 
 def test_paper_error_notice_and_status_states_have_css() -> None:

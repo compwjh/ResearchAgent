@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import os
 import re
@@ -230,7 +231,8 @@ class KnowledgeBasePaperImportAdapter:
                 pass
 
     def _default_indexer(self, record: PaperRecord, path: Path) -> Any:
-        return run_index_task_sync(
+        # v1 同步建索引：完成后导入即可返回（spec-012），用户可马上用 v1 提问。
+        result = run_index_task_sync(
             record.paper_id,
             CHUNKER_V1,
             lambda progress: index_paper_chunker(
@@ -242,6 +244,54 @@ class KnowledgeBasePaperImportAdapter:
                 meta_path=self.meta_path,
             ),
         )
+        # BUG-02（spec-020 Task03）：与上传路径对齐，v1 建完后异步提交 v2。
+        # 不阻塞导入响应；复用同一单线程池避免 bge-m3 / 27B 争显存。
+        self._submit_v2_index(record, path)
+        return result
+
+    def _submit_v2_index(self, record: PaperRecord, path: Path) -> None:
+        """v1 索引成功后异步提交 v2（语义对齐上传路径 `_submit_index_task`）。
+
+        先置 v2 为 ``indexing`` 再入单线程池，使 v2 在池中排队时前端即可看到
+        「索引中 0%」而非停留在 pending。v2 失败不影响导入成功（状态置 ``failed``
+        并带原因，可由 reindex 补救）；提交异常同样不得把导入判定为失败。
+        """
+        try:
+            update_chunker_state(
+                record.paper_id,
+                CHUNKER_V2,
+                status=STATUS_INDEXING,
+                progress=0,
+                error=None,
+                meta_path=self.meta_path,
+            )
+        except Exception:
+            # 状态置位失败不得拖垮已成功的导入；交由后续 reindex 补救。
+            return
+
+        def _runner(progress) -> dict:
+            return index_paper_chunker(
+                record,
+                path,
+                CHUNKER_V2,
+                progress=progress,
+                client=self.client,
+                meta_path=self.meta_path,
+            )
+
+        try:
+            submit_index_task(record.paper_id, CHUNKER_V2, _runner)
+        except Exception:
+            # 提交失败同样不得判定导入失败；把 v2 状态置 failed 以便可见与补救。
+            with contextlib.suppress(Exception):
+                update_chunker_state(
+                    record.paper_id,
+                    CHUNKER_V2,
+                    status=STATUS_FAILED,
+                    progress=0,
+                    error="v2 索引任务提交失败",
+                    meta_path=self.meta_path,
+                )
 
     def _default_deleter(self, paper_id: str) -> None:
         delete_paper_chunker(paper_id, CHUNKER_V1, client=self.client)
