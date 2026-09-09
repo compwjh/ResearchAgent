@@ -1,7 +1,7 @@
 # Task 06：真实全库索引替换、恢复与性能验收
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task04、Task05；被依赖：Task07；当前状态：`待执行`
+> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（06-A 已完成；06-B 前置门禁阻塞）`
 
 ## 一句话目标
 
@@ -112,10 +112,22 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 
 ## 执行结果
 
-待执行后填写。
+### 06-A 隔离韧性验证：`PASS`
+
+- 报告：`artifacts/task-06/resilience-performance-report.md`。
+- 44 项定向 pytest 通过，独立故障探针 32/32 通过；dry-run Qdrant write spy=0，metadata/source/runtime 无副作用。
+- 覆盖 CandidateIndexPort 白名单、锁 token/heartbeat/finally/stale recovery、空库/孤立/缺失/损坏原件、模型/embedding/upsert/validation 失败、switch/finalize/cleanup 中断与恢复、FinalizeBundle/commit marker、topology ambiguous 和 alias SDK seam。
+- 真实 Qdrant、用户索引、原件和生产服务均未触碰。
+
+### 06-B/C/D：`待执行（前置门禁未满足）`
+
+- Task04 `upload-closure-matrix.json` 仍为 `baseline_frozen`，多项 entry 为 `open`、required test 为 `pending`，不能进入真实 dry-run 或 `--confirm-replace`。
+- Task02A/02B 记录的生产安全债务与真实 Qdrant 行为仍需 Tech Lead/backend-reviewer/backend-tester 独立关闭和签字。
+- 因此未停止服务、未连接真实 Qdrant、未删除或切换任何 Collection/alias、未写入真实 generation marker。
 
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
 - 2026-09-09：经 Grill with Docs 改为唯一真实全库索引替换阶段；删除逐 point 恢复、首次打开自动升级与旧索引保留要求。
 - 2026-09-09：承接 Task02A-E 功能优先留下的生产安全债务；全部关闭并独立签字前，本 Task 不得执行任何真实索引写删。
+- 2026-09-10：06-A 在 FakeQdrant/临时目录完成 44 项定向测试与 32/32 故障探针，报告落盘；真实切换保持 NO-GO，等待 Task06-B 前置门禁和 closure matrix 收口。
