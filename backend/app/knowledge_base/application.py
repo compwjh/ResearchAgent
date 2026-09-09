@@ -39,14 +39,10 @@ from backend.app.knowledge_base.infrastructure.embed import embed_texts, encode_
 from backend.app.knowledge_base.infrastructure.index import (
     DENSE_VECTOR,
     SPARSE_VECTOR,
-    backfill_chunker_defaults,
+    GenerationBoundIndexPort,
     count_points,
-    delete_paper,
-    delete_paper_chunker,
     ensure_collection,
     get_client,
-    index_paper,
-    index_paper_chunker,
     reset_client,
 )
 from backend.app.knowledge_base.infrastructure.inspection import (
@@ -104,17 +100,13 @@ from backend.app.knowledge_base.infrastructure.store import (
     get_paper,
     load_papers,
     load_papers_strict,
-    mark_interrupted_tasks,
     new_record,
     record_id,
-    remove_paper,
+    remove_canonical_document,
     resolve_paper_path,
-    save_upload,
     update_chunker_state,
-    upsert_paper,
 )
 from backend.app.knowledge_base.infrastructure.tasks import (
-    mark_interrupted_on_startup,
     run_index_task_sync,
     running_count,
     submit_index_task,
@@ -148,6 +140,39 @@ def _write_source_exclusive(path: Path, content: bytes) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     _fsync_directory(path.parent)
+
+
+def _generation_root(meta_path: Path) -> Path:
+    """Resolve the project root used by the generation marker store."""
+    parent = Path(meta_path).resolve().parent
+    if parent.name == "kb" and parent.parent.name == "data":
+        return parent.parent.parent
+    return parent
+
+
+def _active_generation_collection(meta_path: Path) -> str:
+    """Return the marker-bound collection; never fall back to fixed ``papers``."""
+    try:
+        marker = FinalizeBundleStore(_generation_root(meta_path)).require_generation()
+    except ManifestStoreError as error:
+        raise KnowledgeDocumentMigrationError(getattr(error, "code", "INDEX_REBUILD_REQUIRED")) from error
+    destination = marker.get("alias_target") if isinstance(marker, Mapping) else None
+    if not isinstance(destination, str) or not destination:
+        raise KnowledgeDocumentMigrationError("INDEX_REBUILD_REQUIRED")
+    return destination
+
+
+def _generation_bound_collection(meta_path: Path, requested: str | None = None) -> str:
+    """Resolve a destination and reject caller-supplied marker bypasses."""
+    active = _active_generation_collection(meta_path)
+    if requested is not None and requested != active:
+        raise KnowledgeDocumentMigrationError("INDEX_TOPOLOGY_AMBIGUOUS")
+    return active
+
+
+def _refresh_generation_digests(meta_path: Path) -> None:
+    """Keep a committed generation coherent after a canonical state write."""
+    FinalizeBundleStore(_generation_root(meta_path)).refresh_live_digests()
 
 
 def create_uploaded_document(
@@ -199,6 +224,7 @@ def create_uploaded_document(
                 source_path=target,
             )
             write_import_knowledge_document(document, meta)
+            _refresh_generation_digests(meta)
         except Exception:
             with suppress(OSError):
                 target.unlink(missing_ok=True)
@@ -213,6 +239,7 @@ def submit_document_reindex(
     meta_path: Path | None = None,
     papers_dir: Path | None = None,
     client: Any = None,
+    destination_collection: str | None = None,
 ) -> dict[str, Any]:
     """Queue reindexing for a canonical document without touching its source."""
     if chunker not in CHUNKERS and chunker != "all":
@@ -235,6 +262,8 @@ def submit_document_reindex(
     expected_hash = document.get("source_sha256")
     if not isinstance(expected_hash, str) or digest.hexdigest() != expected_hash:
         raise KnowledgeDocumentMigrationError("SOURCE_HASH_MISMATCH")
+    destination = _generation_bound_collection(meta, destination_collection)
+    index_port = GenerationBoundIndexPort(destination, client=client)
     targets = CHUNKERS if chunker == "all" else (chunker,)
     task_id = uuid.uuid4().hex
     submitted: dict[str, bool] = {}
@@ -242,12 +271,11 @@ def submit_document_reindex(
         update_chunker_state(document_id, name, status=STATUS_INDEXING, progress=0, error=None, meta_path=meta)
 
         def runner(progress, selected=name):
-            return index_paper_chunker(
+            return index_port.index_document(
                 document,
                 source,
                 selected,
                 progress=progress,
-                client=client,
                 meta_path=meta,
             )
 
@@ -261,6 +289,7 @@ def delete_document(
     meta_path: Path | None = None,
     papers_dir: Path | None = None,
     manifest_root: Path | None = None,
+    destination_collection: str | None = None,
 ) -> dict[str, Any] | None:
     """Delete one canonical document only after derived vector deletion succeeds."""
     meta = Path(meta_path or KB_META_PATH)
@@ -272,7 +301,8 @@ def delete_document(
     tombstoned = False
     store_root = Path(manifest_root or root.parent)
     try:
-        delete_paper(document_id)
+        destination = _generation_bound_collection(meta, destination_collection)
+        GenerationBoundIndexPort(destination).delete_document(document_id)
         manifest_store = InspectionManifestStore(store_root)
         for name in CHUNKERS:
             try:
@@ -285,13 +315,15 @@ def delete_document(
                     "error_code": "DELETE_PENDING",
                     "tombstoned": tombstoned,
                 }
-        if not remove_paper(document_id, meta, root):
+        if not remove_canonical_document(document_id, meta, root):
             raise KnowledgeDocumentMigrationError("DOCUMENT_NOT_FOUND")
-    except Exception as error:
+    except Exception:
         return {
             "document_id": document_id,
             "status": "DELETE_PENDING",
-            "error_code": getattr(error, "code", "DELETE_PENDING"),
+            # Deletion retries expose one stable public state regardless of
+            # whether the vector port, generation marker, or tombstone failed.
+            "error_code": "DELETE_PENDING",
             "tombstoned": tombstoned,
         }
     return {
@@ -427,27 +459,29 @@ class KnowledgeBasePaperImportAdapter:
     def _cleanup(self, paper_id: str | None, target: Path | None) -> None:
         if paper_id:
             with suppress(Exception):
-                remove_paper(paper_id, self.meta_path, self.papers_dir)
+                remove_canonical_document(paper_id, self.meta_path, self.papers_dir)
         if target is not None:
             with suppress(OSError):
                 target.unlink(missing_ok=True)
 
     def _default_indexer(self, record: PaperRecord, path: Path) -> Any:
+        destination = _active_generation_collection(self.meta_path)
+        index_port = GenerationBoundIndexPort(destination, client=self.client)
         return run_index_task_sync(
             record.paper_id,
             CHUNKER_V1,
-            lambda progress: index_paper_chunker(
+            lambda progress: index_port.index_document(
                 record,
                 path,
                 CHUNKER_V1,
                 progress=progress,
-                client=self.client,
                 meta_path=self.meta_path,
             ),
         )
 
     def _default_deleter(self, paper_id: str) -> None:
-        delete_paper_chunker(paper_id, CHUNKER_V1, client=self.client)
+        destination = _active_generation_collection(self.meta_path)
+        GenerationBoundIndexPort(destination, client=self.client).delete_document(paper_id, CHUNKER_V1)
 
     def import_paper(self, request: PaperImportRequest) -> PortImportResult:
         snapshot = request.candidate_snapshot
@@ -495,11 +529,7 @@ class KnowledgeBasePaperImportAdapter:
                 copy_source_exclusive(source, target)
                 document = build_import_knowledge_document(record, target)
                 write_import_knowledge_document(document, self.meta_path)
-                # Keep the legacy failure-injection seam for callers that
-                # still patch ``upsert_paper``; the canonical record already
-                # exists, and store.upsert_paper is forbidden from downgrading
-                # it back to PaperRecord shape.
-                upsert_paper(record, self.meta_path)
+                _refresh_generation_digests(self.meta_path)
             except Exception:
                 self._cleanup(record.paper_id, target)
                 return PortImportResult(
@@ -524,6 +554,7 @@ class KnowledgeBasePaperImportAdapter:
                     if field in index_result:
                         updates[field] = index_result[field]
             patch_knowledge_document(self.meta_path, record.paper_id, **updates)
+            _refresh_generation_digests(self.meta_path)
             return PortImportResult(
                 paper_id=record.paper_id,
                 index_status=ImportIndexStatus.INDEXED,
@@ -609,9 +640,6 @@ __all__ = [
     "STATUS_PARTIAL",
     "STATUS_PENDING",
     # 生命周期
-    "backfill_chunker_defaults",
-    "mark_interrupted_on_startup",
-    "mark_interrupted_tasks",
     "running_count",
     # 解析与分块
     "build_chunks",
@@ -620,10 +648,6 @@ __all__ = [
     # 向量化与索引
     "embed_texts",
     "encode_sparse",
-    "index_paper",
-    "index_paper_chunker",
-    "delete_paper",
-    "delete_paper_chunker",
     "count_points",
     "ensure_collection",
     "get_client",
@@ -642,15 +666,10 @@ __all__ = [
     "get_paper",
     "load_papers",
     "new_record",
-    "remove_paper",
     "resolve_paper_path",
     "record_id",
-    "save_upload",
     "update_chunker_state",
-    "upsert_paper",
     # 索引任务
-    "run_index_task_sync",
-    "submit_index_task",
     "KnowledgeBasePaperImportAdapter",
     "create_paper_import_port",
     "create_uploaded_document",

@@ -154,6 +154,15 @@ def save_papers(papers: List[dict], meta_path: Optional[Path] = None) -> None:
             json.dumps(papers, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        # A committed generation binds the live metadata digest.  Refresh it
+        # only for the canonical live path and only when a marker already
+        # exists; custom test/legacy paths and marker creation remain inert.
+        if meta.resolve().name == "papers.json" and meta.resolve().parent.name == "kb" and meta.resolve().parent.parent.name == "data":
+            marker_path = meta.resolve().parent / "index-generation.json"
+            if marker_path.exists():
+                from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
+
+                FinalizeBundleStore(meta.resolve().parent.parent.parent).refresh_live_digests()
 
 
 def upsert_paper(record: PaperRecord, meta_path: Optional[Path] = None) -> PaperRecord:
@@ -245,6 +254,20 @@ def remove_paper(paper_id: str, meta_path: Optional[Path] = None, papers_dir: Op
                 save_papers(papers, meta_path)
             return False
     return True
+
+
+def remove_canonical_document(
+    document_id: str,
+    meta_path: Optional[Path] = None,
+    papers_dir: Optional[Path] = None,
+) -> bool:
+    """Delete a canonical document after its application boundary is gated.
+
+    This named adapter keeps application consumers off the legacy
+    ``remove_paper`` symbol while preserving its atomic source/metadata
+    compensation behavior.
+    """
+    return remove_paper(document_id, meta_path, papers_dir)
 
 
 def save_upload(

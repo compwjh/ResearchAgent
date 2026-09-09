@@ -248,6 +248,53 @@ def test_candidate_port_allowlist_rejects_current_after_binding(tmp_path):
     qdrant.delete_collection("papers")
 
 
+def test_destination_write_requires_explicit_temporary_collection_and_document_id():
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    capability = object()
+    qdrant.bind_candidate(
+        "papers_rebuild_run",
+        source_collection="papers",
+        alias="papers",
+        run_token="run-test",
+        retire_capability=capability,
+    )
+    point = candidate_rebuild_module.CandidatePoint(
+        "point-1", {"dense": [1, 0, 0, 0], "sparse": {"indices": [1], "values": [1.0]}},
+        {"document_id": "doc-1"},
+    )
+    with pytest.raises(CandidateIndexError) as current:
+        qdrant.upsert_document("papers", "doc-1", [point])
+    assert current.value.code == "CANDIDATE_DESTINATION_FORBIDDEN"
+    qdrant.ensure_collection("papers_rebuild_run", dense_dim=4)
+    qdrant.upsert_document("papers_rebuild_run", "doc-1", [point])
+    assert qdrant.collections["papers"] == []
+    assert qdrant.collections["papers_rebuild_run"][0].payload["document_id"] == "doc-1"
+
+
+def test_candidate_rebuild_writes_only_candidate_and_keeps_metadata(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    papers, metadata = _fixture(tmp_path)
+    before = metadata.read_bytes()
+    service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=qdrant,
+        dense_dim=4,
+        embedder=lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts],
+        llm=lambda _prompt: "[]",
+        run_id_factory=lambda: "destination-test",
+    )
+    result = service.run(dry_run=False, confirm_replace=True)
+    writes = [(operation, target) for operation, target in qdrant.calls if operation in {"ensure_collection", "upsert_document"}]
+    assert writes
+    assert all(target.startswith("papers_rebuild_") for _operation, target in writes)
+    assert metadata.read_bytes() == before
+    assert result["candidate_collection"] == "papers_rebuild_destination-test"
+
+
 def test_subsequent_alias_switch_removes_previous_collection(tmp_path):
     qdrant = FakeQdrant(dense_dim=4)
     qdrant.seed_collection("old", dense_dim=4)

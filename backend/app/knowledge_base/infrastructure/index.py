@@ -3,9 +3,11 @@
 并发约束（011-tech-review R5）：模块级单例 client + 单 worker + 写锁。
 """
 
+import re
 import threading
 import uuid
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -38,6 +40,30 @@ from backend.app.platform.config import EMBED_DIM, KB_COLLECTION, QDRANT_PATH
 
 DENSE_VECTOR = "dense"
 SPARSE_VECTOR = "sparse"
+
+
+class IndexWriteBoundaryError(RuntimeError):
+    """Raised when a legacy index writer has no explicit destination.
+
+    The old helpers predate generation/candidate isolation and used the live
+    ``KB_COLLECTION`` whenever the caller omitted a collection.  Keeping the
+    error on this infrastructure boundary makes accidental direct consumers
+    fail closed instead of silently writing the formal index.
+    """
+
+    code = "DESTINATION_COLLECTION_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+_COLLECTION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _required_destination(destination: Optional[str]) -> str:
+    if not isinstance(destination, str) or not _COLLECTION_NAME.fullmatch(destination):
+        raise IndexWriteBoundaryError()
+    return destination
 
 # 扫描件判定阈值：整篇可提取字符数低于此值视为无文本层
 MIN_TEXT_CHARS = 100
@@ -76,12 +102,12 @@ def ensure_collection(
 ) -> None:
     """Ensure a dense+sparse collection exists.
 
-    ``collection_name`` is optional so the personal KB keeps its historical
-    behaviour while bounded contexts (paper discovery) can use an isolated
-    collection with the exact same vector configuration.
+    ``collection_name`` is deliberately required.  Callers must obtain the
+    destination from a generation-aware application port or pass an explicit
+    isolated collection; there is no implicit ``KB_COLLECTION`` fallback.
     """
     size = int(dim or EMBED_DIM)
-    target_collection = collection_name or KB_COLLECTION
+    target_collection = _required_destination(collection_name)
     if client.collection_exists(target_collection):
         return
     client.create_collection(
@@ -109,6 +135,7 @@ def upsert_chunks(
     client: Optional[QdrantClient] = None,
     chunker: str = CHUNKER_V1,
     ref_start_page: Optional[int] = None,
+    destination_collection: Optional[str] = None,
 ) -> int:
     """写入片段；`chunker` 与 `is_citation` 进入 payload 供检索过滤。
 
@@ -117,12 +144,13 @@ def upsert_chunks(
     """
     if not chunks:
         return 0
+    collection = _required_destination(destination_collection)
     target = client or get_client()
     with _write_lock:
-        ensure_collection(target)
+        ensure_collection(target, collection_name=collection)
         vectors = embed_texts([chunk.text for chunk in chunks])
         target.upsert(
-            collection_name=KB_COLLECTION,
+            collection_name=collection,
             points=[
                 models.PointStruct(
                     id=point_id(paper_id, chunk.chunk_index, chunker),
@@ -157,18 +185,20 @@ def delete_paper_chunker(
     paper_id: str,
     chunker: str,
     client: Optional[QdrantClient] = None,
+    destination_collection: Optional[str] = None,
 ) -> None:
     """按 `paper_id + chunker` 删除该版本的旧点（重建索引前必须调用）。
 
     spec-012 T3：确定性 point_id 无法自动清理多出的旧点
     （重建后片段数变少时，多余旧点会永久残留并污染检索）。
     """
+    collection = _required_destination(destination_collection)
     target = client or get_client()
-    if not target.collection_exists(KB_COLLECTION):
+    if not target.collection_exists(collection):
         return
     with _write_lock:
         target.delete(
-            collection_name=KB_COLLECTION,
+            collection_name=collection,
             points_selector=models.FilterSelector(
                 filter=models.Filter(
                     must=[
@@ -184,13 +214,19 @@ def delete_paper_chunker(
         )
 
 
-def delete_paper(paper_id: str, client: Optional[QdrantClient] = None) -> None:
+def delete_paper(
+    paper_id: str,
+    client: Optional[QdrantClient] = None,
+    *,
+    destination_collection: Optional[str] = None,
+) -> None:
+    collection = _required_destination(destination_collection)
     target = client or get_client()
-    if not target.collection_exists(KB_COLLECTION):
+    if not target.collection_exists(collection):
         return
     with _write_lock:
         target.delete(
-            collection_name=KB_COLLECTION,
+            collection_name=collection,
             points_selector=models.FilterSelector(
                 filter=models.Filter(
                     must=[models.FieldCondition(key="paper_id", match=models.MatchValue(value=paper_id))]
@@ -199,18 +235,30 @@ def delete_paper(paper_id: str, client: Optional[QdrantClient] = None) -> None:
         )
 
 
-def count_points(client: Optional[QdrantClient] = None) -> int:
+def count_points(
+    client: Optional[QdrantClient] = None,
+    *,
+    collection_name: Optional[str] = None,
+) -> int:
     target = client or get_client()
-    if not target.collection_exists(KB_COLLECTION):
+    collection = collection_name or KB_COLLECTION
+    if not target.collection_exists(collection):
         return 0
-    return target.count(collection_name=KB_COLLECTION).count
+    return target.count(collection_name=collection).count
 
 
-def index_paper(record, file_path, client: Optional[QdrantClient] = None) -> dict:
+def index_paper(
+    record,
+    file_path,
+    client: Optional[QdrantClient] = None,
+    *,
+    destination_collection: Optional[str] = None,
+) -> dict:
     """解析 -> 切片 -> 向量化 -> 入库；返回更新后的记录 dict。
 
     任何异常都收敛为 `failed` 状态并附带可读错误，不向调用方抛裸异常。
     """
+    destination = _required_destination(destination_collection)
     paper_id = record_id(record)
     file_name = getattr(record, "file_name", None)
     if file_name is None and isinstance(record, Mapping):
@@ -243,6 +291,7 @@ def index_paper(record, file_path, client: Optional[QdrantClient] = None) -> dic
             chunks,
             uploaded_at=record.uploaded_at,
             client=client,
+            destination_collection=destination,
         )
     except (EmbeddingError, ValueError, OSError) as error:
         record.status = STATUS_FAILED
@@ -258,10 +307,8 @@ def _report(progress: Optional[Callable[[int], None]], value: int) -> None:
     """进度回写；回调自身抛错不能影响索引流程。"""
     if progress is None:
         return
-    try:
+    with suppress(Exception):
         progress(max(0, min(100, int(value))))
-    except Exception:
-        pass
 
 
 def index_paper_chunker(
@@ -273,6 +320,7 @@ def index_paper_chunker(
     client: Optional[QdrantClient] = None,
     llm: Optional[Callable[[str], str]] = None,
     meta_path: Optional[Path] = None,
+    destination_collection: Optional[str] = None,
 ) -> dict:
     """按指定切分版本建索引（spec-012），返回更新后的论文 dict（含 `chunkers`）。
 
@@ -282,6 +330,7 @@ def index_paper_chunker(
     入库 70→100。任何异常都收敛为 `failed` 并附可读错误，**不向上抛裸异常**，
     以免异步线程带着异常退出导致状态永远卡在 indexing。
     """
+    destination = _required_destination(destination_collection)
     paper_id = record_id(record)
 
     def _fail(message: str) -> dict:
@@ -334,7 +383,8 @@ def index_paper_chunker(
     try:
         # T3：先按 paper_id + chunker 删除该版本旧点，避免残留污染检索。
         try:
-            delete_paper_chunker(paper_id, chunker, client=client)
+            delete_kwargs = {"client": client, "destination_collection": destination}
+            delete_paper_chunker(paper_id, chunker, **delete_kwargs)
         except Exception:
             pass  # 首次索引时 collection 可能不存在，忽略即可
         count = upsert_chunks(
@@ -345,6 +395,7 @@ def index_paper_chunker(
             client=client,
             chunker=chunker,
             ref_start_page=ref_start,
+            destination_collection=destination,
         )
     except (EmbeddingError, ValueError, OSError) as error:
         return _fail(f"索引失败：{error}")
@@ -367,7 +418,11 @@ def index_paper_chunker(
     )
 
 
-def backfill_chunker_defaults(client: Optional[QdrantClient] = None) -> int:
+def backfill_chunker_defaults(
+    client: Optional[QdrantClient] = None,
+    *,
+    destination_collection: Optional[str] = None,
+) -> int:
     """给 spec-011 遗留点补齐 `chunker` 等新增 payload 字段，返回补写数量。
 
     **为什么必须有这一步**：spec-012 的检索会按 `chunker` 等值过滤，
@@ -376,8 +431,9 @@ def backfill_chunker_defaults(client: Optional[QdrantClient] = None) -> int:
     这里统一补 `chunker=v1` / `is_citation=False` / `section=""` /
     `page_end=page`，使旧数据按 v1 语义继续可用。
     """
+    destination = _required_destination(destination_collection)
     target = client or get_client()
-    if not target.collection_exists(KB_COLLECTION):
+    if not target.collection_exists(destination):
         return 0
 
     updated = 0
@@ -386,7 +442,7 @@ def backfill_chunker_defaults(client: Optional[QdrantClient] = None) -> int:
     with _write_lock:
         while True:
             points, offset = target.scroll(
-                collection_name=KB_COLLECTION,
+                collection_name=destination,
                 limit=batch_size,
                 offset=offset,
                 with_payload=True,
@@ -395,7 +451,7 @@ def backfill_chunker_defaults(client: Optional[QdrantClient] = None) -> int:
             stale = [point for point in (points or []) if not (point.payload or {}).get("chunker")]
             if stale:
                 target.set_payload(
-                    collection_name=KB_COLLECTION,
+                    collection_name=destination,
                     payload={"chunker": CHUNKER_V1, "is_citation": False, "section": ""},
                     points=[point.id for point in stale],
                 )
@@ -406,7 +462,7 @@ def backfill_chunker_defaults(client: Optional[QdrantClient] = None) -> int:
                     grouped.setdefault(page, []).append(point.id)
                 for page, ids in grouped.items():
                     target.set_payload(
-                        collection_name=KB_COLLECTION,
+                        collection_name=destination,
                         payload={"page_end": page},
                         points=ids,
                     )
@@ -414,3 +470,47 @@ def backfill_chunker_defaults(client: Optional[QdrantClient] = None) -> int:
             if not offset:
                 break
     return updated
+
+
+class GenerationBoundIndexPort:
+    """Generation-authorized facade for the legacy chunker implementation.
+
+    The parser/embedder implementation remains in this module for backwards
+    compatibility, but application consumers receive a destination-bound
+    object instead of importing a write helper that can choose a collection.
+    The destination is validated once and is passed explicitly on every
+    operation.
+    """
+
+    def __init__(self, destination_collection: str, *, client: Optional[QdrantClient] = None) -> None:
+        self.destination_collection = _required_destination(destination_collection)
+        self.client = client
+
+    def index_document(
+        self,
+        record: Any,
+        file_path: Any,
+        chunker: str = CHUNKER_V1,
+        *,
+        progress: Optional[Callable[[int], None]] = None,
+        llm: Optional[Callable[[str], str]] = None,
+        meta_path: Optional[Path] = None,
+    ) -> dict:
+        return index_paper_chunker(
+            record,
+            file_path,
+            chunker,
+            progress=progress,
+            client=self.client,
+            llm=llm,
+            meta_path=meta_path,
+            destination_collection=self.destination_collection,
+        )
+
+    def delete_document(self, paper_id: str, chunker: str = CHUNKER_V1) -> None:
+        delete_paper_chunker(
+            paper_id,
+            chunker,
+            client=self.client,
+            destination_collection=self.destination_collection,
+        )

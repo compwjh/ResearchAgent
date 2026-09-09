@@ -166,6 +166,7 @@ class IndexPaperChunkerTests(unittest.TestCase):
         result = index_module.index_paper_chunker(
             self.record, "b.pdf", CHUNKER_V2, progress=progressed.append,
             llm=lambda p: "[]", meta_path=self.meta,
+            destination_collection=index_module.KB_COLLECTION,
         )
         state = result["chunkers"][CHUNKER_V2]
         self.assertEqual(state["status"], STATUS_INDEXED)
@@ -178,15 +179,22 @@ class IndexPaperChunkerTests(unittest.TestCase):
         """T3：重建前必须按 paper_id + chunker 先删旧点，否则残留污染检索。"""
         deleted = []
         with patch.object(index_module, "delete_paper_chunker",
-                          lambda pid, ch, client=None: deleted.append((pid, ch))):
-            index_module.index_paper_chunker(self.record, "b.pdf", CHUNKER_V1, meta_path=self.meta)
+                          lambda pid, ch, client=None, **kwargs: deleted.append((pid, ch))):
+            index_module.index_paper_chunker(
+                self.record,
+                "b.pdf",
+                CHUNKER_V1,
+                meta_path=self.meta,
+                destination_collection=index_module.KB_COLLECTION,
+            )
         self.assertIn((self.record.paper_id, CHUNKER_V1), deleted)
 
     def test_parse_failure_is_recorded(self):
         with patch.object(index_module, "extract_pages_normalized",
                           side_effect=PdfParseError("PDF 已加密")):
             result = index_module.index_paper_chunker(self.record, "c.pdf", CHUNKER_V1,
-                                                      meta_path=self.meta)
+                                                      meta_path=self.meta,
+                                                      destination_collection=index_module.KB_COLLECTION)
         state = result["chunkers"][CHUNKER_V1]
         self.assertEqual(state["status"], STATUS_FAILED)
         self.assertIn("加密", state["error"] or "")
@@ -194,7 +202,8 @@ class IndexPaperChunkerTests(unittest.TestCase):
     def test_low_text_is_failed_with_reason(self):
         with patch.object(index_module, "extract_pages_normalized", return_value=[(1, "  ")]):
             result = index_module.index_paper_chunker(self.record, "d.pdf", CHUNKER_V1,
-                                                      meta_path=self.meta)
+                                                      meta_path=self.meta,
+                                                      destination_collection=index_module.KB_COLLECTION)
         state = result["chunkers"][CHUNKER_V1]
         self.assertEqual(state["status"], STATUS_FAILED)
         self.assertIn("扫描件", state["error"] or "")
@@ -203,7 +212,8 @@ class IndexPaperChunkerTests(unittest.TestCase):
         with patch.object(index_module, "upsert_chunks",
                           side_effect=index_module.EmbeddingError("OOM")):
             result = index_module.index_paper_chunker(self.record, "e.pdf", CHUNKER_V1,
-                                                      meta_path=self.meta)
+                                                      meta_path=self.meta,
+                                                      destination_collection=index_module.KB_COLLECTION)
         state = result["chunkers"][CHUNKER_V1]
         self.assertEqual(state["status"], STATUS_FAILED)
         self.assertIn("OOM", state["error"] or "")

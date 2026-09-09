@@ -27,7 +27,6 @@ from backend.app.knowledge_base.application import (
     create_uploaded_document,
     delete_document,
     embed_texts,
-    ensure_collection,
     get_client,
     hybrid_search,
     load_papers,
@@ -63,10 +62,11 @@ paper_browser_sessions = {}
 def kb_component_status() -> dict:
     reranker_detail = reranker_health()
     generation = {"ready": False, "error_code": "INDEX_REBUILD_REQUIRED"}
+    generation_marker = None
     try:
+        generation_marker = _generation_store().require_generation()
         generation["ready"] = True
         generation["error_code"] = None
-        _generation_store().require_generation()
     except ManifestStoreError as error:
         generation["ready"] = False
         generation["error_code"] = getattr(error, "code", "INDEX_REBUILD_REQUIRED")
@@ -90,10 +90,14 @@ def kb_component_status() -> dict:
     except Exception:
         pass
     try:
+        destination = generation_marker.get("alias_target") if isinstance(generation_marker, dict) else None
+        if not isinstance(destination, str) or not destination:
+            raise RuntimeError("generation not ready")
         client = get_client()
-        ensure_collection(client)
+        if not client.collection_exists(destination):
+            raise RuntimeError("generation collection unavailable")
         status["qdrant"] = True
-        status["chunks"] = count_points(client)
+        status["chunks"] = count_points(client, collection_name=destination)
     except Exception:
         status["qdrant"] = False
     try:

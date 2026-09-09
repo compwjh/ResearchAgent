@@ -1,15 +1,15 @@
 {
   "schema_version": "upload-closure-matrix-v1",
-  "inventory_git_revision": "21b60fc7f8022d9b98f0a02a003b27db638dacdc",
-  "inventory_digest": "96036652978090cea85ffbefd0056d87bfbb7055df226f83e8353b6839b2962c",
+  "inventory_git_revision": "d0b177fa4147dbdb818e5bc0e4ad9c1630dd6d0b",
+  "inventory_digest": "b9149c86b89a45ca69b4b186a4497d8e7e175699ab631148619adc512d4e5501",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
-    {"path": "backend/app/main.py", "sha256": "990f1d4c8c03b0168996168d8e337c3737b2d847615b4488aec454e081007e42"},
-    {"path": "backend/app/api/routes_kb.py", "sha256": "1d6cb466557c918e9e8b11af480f752b4ca5e3e581aa1b02d465feb60051ba6f"},
+    {"path": "backend/app/main.py", "sha256": "74b6f4da2bac1bd0589ebb92cc5edd0ee18a1296be10c0c435d9761f578599c8"},
+    {"path": "backend/app/api/routes_kb.py", "sha256": "77bd81c3867075ef5adec4e18a314a85c16fe3faaaa0ef58e353c33ef7479fe3"},
     {"path": "backend/app/api/routes_paper.py", "sha256": "ebf82010433f71c65b7b157baa85376f647d827340f6d224ddac4d15b57e3199"},
-    {"path": "backend/app/knowledge_base/application.py", "sha256": "53587b1a9cd59255948af7e050880db62d5a87059457daf75201fcf244a99586"},
-    {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "8f036b73128c4eb172492d5e3ceb501e97278b2f83f513599407ad9009589c7c"},
-    {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "c22941a1668965de5da36370cfe20a2662c2c4ad90c595169ce18d02f92033a0"},
+    {"path": "backend/app/knowledge_base/application.py", "sha256": "13689bc167d6c3f88cb99b348c6fc05f6676bf1a0fd0b9fde323300c31749260"},
+    {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "71c792b6db61944638e232a094dcea38735e49d11b85aa08dcdee641f3c2c617"},
+    {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "2c60ef3c9f042d1412ed72098db2e37b790c22b5d5218dbb82c8c75a31310abc"},
     {"path": "backend/app/knowledge_base/infrastructure/tasks.py", "sha256": "0f11484d71bdbec738a671c7d93eda37b91de51ebd5be024a2c28a2806e38885"},
     {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "4992a32a1a173a3c56510488e19f9ffc102721938bc280a9d5d1ba99c409cfa7"}
   ],
@@ -37,7 +37,7 @@
       "target_behavior": "Migrate to the document reindex application and require a valid generation marker.",
       "allowed_callers": ["HTTP client", "KnowledgeDocument reindex application"],
       "forbidden_calls": ["source write", "implicit KB_COLLECTION write", "CandidateIndexPort without explicit destination_collection and document_id"],
-      "required_test_ids": ["T-OLD-ROUTES", "T-REINDEX-BOUNDARY"], "current_status": "open", "required_status": "closed"
+      "required_test_ids": ["T-OLD-ROUTES", "T-REINDEX-BOUNDARY"], "current_status": "closed", "required_status": "closed"
     },
     {
       "entry_id": "kb-delete-route", "entry_kind": "route",
@@ -46,7 +46,7 @@
       "target_behavior": "Migrate to document delete with tombstone ownership and no partial-success response.",
       "allowed_callers": ["HTTP client", "KnowledgeDocument delete application"],
       "forbidden_calls": ["best-effort partial success", "unowned compensation delete", "source overwrite"],
-      "required_test_ids": ["T-OLD-ROUTES", "T-DELETE-TOMBSTONE"], "current_status": "open", "required_status": "closed"
+      "required_test_ids": ["T-OLD-ROUTES", "T-DELETE-TOMBSTONE"], "current_status": "closed", "required_status": "closed"
     },
     {
       "entry_id": "kb-route-submit-helper", "entry_kind": "route_helper",
@@ -55,7 +55,7 @@
       "target_behavior": "Remove from route ownership or forward only to the immutable document reindex application.",
       "allowed_callers": ["KnowledgeDocument reindex application"],
       "forbidden_calls": ["source write", "implicit KB_COLLECTION write", "direct metadata mutation"],
-      "required_test_ids": ["T-BACKGROUND-INVENTORY", "T-REINDEX-BOUNDARY"], "current_status": "open", "required_status": "closed"
+      "required_test_ids": ["T-BACKGROUND-INVENTORY", "T-REINDEX-BOUNDARY"], "current_status": "closed", "required_status": "closed"
     },
     {
       "entry_id": "paper-import-create-routes", "entry_kind": "route",
@@ -140,12 +140,12 @@
     },
     {
       "entry_id": "index-entrypoints", "entry_kind": "index",
-      "route_or_symbol": "index.index_paper, index.index_paper_chunker, index.upsert_chunks, index.delete_paper_chunker and index.delete_paper",
+      "route_or_symbol": "index.index_paper, index.index_paper_chunker, index.index_document, index.upsert_chunks, index.delete_paper_chunker and index.delete_paper",
       "current_behavior": "Mutate fixed KB_COLLECTION points and metadata with paper_id payloads.",
       "target_behavior": "Reuse pure parsing/chunking/embedding; all candidate writes require explicit destination_collection/document_id through CandidateIndexPort.",
       "allowed_callers": ["KnowledgeDocument reindex application", "CandidateIndexPort implementation"],
       "forbidden_calls": ["implicit KB_COLLECTION", "paper_id-only candidate payload", "source write", "rebuild metadata mutation", "candidate build deleting current points"],
-      "required_test_ids": ["T-DIRECT-SYMBOLS", "T-CANDIDATE-BOUNDARY", "T-REBUILD-ZERO-WRITES"], "current_status": "open", "required_status": "closed"
+      "required_test_ids": ["T-DIRECT-SYMBOLS", "T-CANDIDATE-BOUNDARY", "T-REBUILD-ZERO-WRITES"], "current_status": "closed", "required_status": "closed"
     },
     {
       "entry_id": "index-task-entrypoints", "entry_kind": "task",
@@ -154,7 +154,7 @@
       "target_behavior": "Schedule only document reindex commands; normal startup recovery never writes source or guesses rebuild FSM state.",
       "allowed_callers": ["service startup", "KnowledgeDocument reindex application"],
       "forbidden_calls": ["source write", "upload entrypoint", "implicit KB_COLLECTION write", "alias mutation", "rebuild state guessing"],
-      "required_test_ids": ["T-BACKGROUND-INVENTORY", "T-REINDEX-BOUNDARY"], "current_status": "open", "required_status": "closed"
+      "required_test_ids": ["T-BACKGROUND-INVENTORY", "T-REINDEX-BOUNDARY"], "current_status": "closed", "required_status": "closed"
     },
     {
       "entry_id": "service-startup-index-migration", "entry_kind": "maintenance",
@@ -163,7 +163,7 @@
       "target_behavior": "Remove legacy fixed-collection backfill; startup may only validate the generation marker and recover document reindex state without source writes or rebuild-FSM guessing.",
       "allowed_callers": ["FastAPI lifespan", "generation health gate", "KnowledgeDocument reindex task store"],
       "forbidden_calls": ["index.backfill_chunker_defaults", "implicit KB_COLLECTION write", "source write/delete", "alias mutation", "rebuild state guessing"],
-      "required_test_ids": ["T-BACKGROUND-INVENTORY", "T-STARTUP-BOUNDARY"], "current_status": "open", "required_status": "closed"
+      "required_test_ids": ["T-BACKGROUND-INVENTORY", "T-STARTUP-BOUNDARY"], "current_status": "closed", "required_status": "closed"
     },
     {
       "entry_id": "rebuild-cli", "entry_kind": "maintenance",
@@ -172,23 +172,23 @@
       "target_behavior": "Read authoritative metadata/immutable sources and build through CandidateIndexPort; dry-run writes nothing.",
       "allowed_callers": ["operator in stopped-service maintenance window", "CandidateIndexPort", "FinalizeBundle application"],
       "forbidden_calls": ["store.save_upload", "KnowledgeDocument create/delete", "source write/delete", "implicit KB_COLLECTION write"],
-      "required_test_ids": ["T-REBUILD-ZERO-WRITES"], "current_status": "open", "required_status": "closed"
+      "required_test_ids": ["T-REBUILD-ZERO-WRITES"], "current_status": "closed", "required_status": "closed"
     }
   ],
   "tests": [
     {"test_id": "T-API-DOCUMENT-ROUTES", "entry_ids": ["kb-upload-route"], "assertions": ["Canonical upload/list/source/inspection-gate route smoke tests pass with tempfile or spies", "Embedding and Qdrant write counters are zero"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_routes.py", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_routes.py", "docs/sdd/plans/018/artifacts/task-04/api-fixture-index.json"]},
-    {"test_id": "T-OLD-ROUTES", "entry_ids": ["kb-upload-route", "kb-reindex-route", "kb-delete-route"], "assertions": ["Legacy routes are removed or forward only to document applications", "Forbidden-call spies are zero"], "command": "pytest -q tests/test_kb_document_routes.py -k legacy", "exit_code": null, "status": "pending", "evidence_paths": []},
+    {"test_id": "T-OLD-ROUTES", "entry_ids": ["kb-upload-route", "kb-reindex-route", "kb-delete-route"], "assertions": ["Legacy routes are removed or forward only to document applications", "Forbidden-call spies are zero"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_routes.py -k legacy", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_routes.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
     {"test_id": "T-IMMUTABLE-CREATE", "entry_ids": ["kb-upload-route", "paper-import-create-routes", "kb-import-adapter", "store-source-metadata"], "assertions": ["Existing document_id cannot be overwritten", "Same hash dedupes", "Same name/different bytes creates a new ID", "Concurrent creates preserve SHA-256=metadata hash=ETag"], "command": "pytest -q tests/test_kb_document_routes.py tests/test_paper_import.py -k 'immutable or dedupe or same_name or concurrent'", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-PAPER-IMPORT", "entry_ids": ["paper-import-create-routes", "paper-import-retry-routes", "paper-import-resume-route", "paper-import-route-helpers", "kb-import-adapter", "paper-import-application"], "assertions": ["Single/batch/retry/resume share immutable create/dedupe", "Secure download behavior is preserved"], "command": "pytest -q tests/test_paper_import.py tests/test_paper_import_batch.py", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-IMPORT-COMPENSATION", "entry_ids": ["paper-import-retry-routes", "paper-import-cancel-route", "paper-import-resume-route", "kb-import-adapter", "paper-import-application"], "assertions": ["Compensation deletes only same owner/token resources", "Pre-existing documents remain"], "command": "pytest -q tests/test_paper_import.py tests/test_paper_import_batch.py -k compensation", "exit_code": null, "status": "pending", "evidence_paths": []},
     {"test_id": "T-BROWSER-BOUNDARY", "entry_ids": ["paper-import-login-route", "paper-import-resume-route"], "assertions": ["Login has zero persistence writes", "Resume persists only through immutable create"], "command": "pytest -q tests/test_paper_browser.py tests/test_paper_import_batch.py -k 'login or resume'", "exit_code": null, "status": "pending", "evidence_paths": []},
-    {"test_id": "T-DELETE-TOMBSTONE", "entry_ids": ["kb-delete-route"], "assertions": ["Partial deletion returns DELETE_PENDING", "Retry is idempotent and owner-scoped"], "command": "pytest -q tests/test_kb_document_delete.py", "exit_code": null, "status": "pending", "evidence_paths": []},
-    {"test_id": "T-DIRECT-SYMBOLS", "entry_ids": ["store-source-metadata", "index-entrypoints"], "assertions": ["Unsafe direct symbols are private, removed or reject unsafe calls", "Metadata-only actions do not touch sources"], "command": "pytest -q tests/test_kb_document_boundary.py", "exit_code": null, "status": "pending", "evidence_paths": []},
-    {"test_id": "T-CANDIDATE-BOUNDARY", "entry_ids": ["index-entrypoints"], "assertions": ["Candidate writes only explicit temporary collection with document_id", "Current points and live metadata remain unchanged"], "command": "pytest -q tests/test_kb_candidate_rebuild.py -k destination", "exit_code": null, "status": "pending", "evidence_paths": []},
-    {"test_id": "T-REINDEX-BOUNDARY", "entry_ids": ["kb-reindex-route", "kb-route-submit-helper", "index-task-entrypoints"], "assertions": ["Reindex source-write/delete spies are zero", "Valid generation marker is required"], "command": "pytest -q tests/test_kb_document_reindex.py", "exit_code": null, "status": "pending", "evidence_paths": []},
-    {"test_id": "T-BACKGROUND-INVENTORY", "entry_ids": ["kb-route-submit-helper", "paper-import-route-helpers", "index-task-entrypoints", "service-startup-index-migration"], "assertions": ["Static scan matches every frozen route/helper/task/startup symbol", "New unregistered write-capable entry fails the test"], "command": "pytest -q tests/test_kb_upload_closure_matrix.py -k inventory", "exit_code": null, "status": "pending", "evidence_paths": []},
-    {"test_id": "T-STARTUP-BOUNDARY", "entry_ids": ["service-startup-index-migration"], "assertions": ["Startup never runs legacy fixed-collection backfill", "Startup source/alias/rebuild-FSM write spies are zero", "Inconsistent generation marker keeps normal API closed"], "command": "pytest -q tests/test_kb_startup_generation_gate.py", "exit_code": null, "status": "pending", "evidence_paths": []},
-    {"test_id": "T-REBUILD-ZERO-WRITES", "entry_ids": ["index-entrypoints", "rebuild-cli"], "assertions": ["Rebuild source create/write/delete spies are zero", "Dry-run embedding/collection/alias/metadata/source/manifest/runtime/lock writes are all zero", "Pre/post authoritative source ID/hash sets match"], "command": "pytest -q tests/test_kb_candidate_rebuild.py tests/test_kb_rebuild_cli.py -k 'spy or dry_run or source_hash'", "exit_code": null, "status": "pending", "evidence_paths": []}
+    {"test_id": "T-DELETE-TOMBSTONE", "entry_ids": ["kb-delete-route"], "assertions": ["Partial deletion returns DELETE_PENDING", "Retry is idempotent and owner-scoped"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_delete.py", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_delete.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
+    {"test_id": "T-DIRECT-SYMBOLS", "entry_ids": ["store-source-metadata", "index-entrypoints"], "assertions": ["Unsafe direct symbols are private, removed or reject unsafe calls", "Metadata-only actions do not touch sources"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_boundary.py", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_boundary.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
+    {"test_id": "T-CANDIDATE-BOUNDARY", "entry_ids": ["index-entrypoints"], "assertions": ["Candidate writes only explicit temporary collection with document_id", "Current points and live metadata remain unchanged"], "command": ".venv/bin/python -m pytest -q tests/test_kb_candidate_rebuild.py -k destination", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_candidate_rebuild.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
+    {"test_id": "T-REINDEX-BOUNDARY", "entry_ids": ["kb-reindex-route", "kb-route-submit-helper", "index-task-entrypoints"], "assertions": ["Reindex source-write/delete spies are zero", "Valid generation marker is required"], "command": ".venv/bin/python -m pytest -q tests/test_kb_document_reindex.py", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_document_reindex.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
+    {"test_id": "T-BACKGROUND-INVENTORY", "entry_ids": ["kb-route-submit-helper", "paper-import-route-helpers", "index-task-entrypoints", "service-startup-index-migration"], "assertions": ["Static scan matches every frozen route/helper/task/startup symbol", "New unregistered write-capable entry fails the test"], "command": ".venv/bin/python -m pytest -q tests/test_kb_upload_closure_matrix.py -k inventory", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_upload_closure_matrix.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
+    {"test_id": "T-STARTUP-BOUNDARY", "entry_ids": ["service-startup-index-migration"], "assertions": ["Startup never runs legacy fixed-collection backfill", "Startup source/alias/rebuild-FSM write spies are zero", "Inconsistent generation marker keeps normal API closed"], "command": ".venv/bin/python -m pytest -q tests/test_kb_startup_generation_gate.py", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_startup_generation_gate.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]},
+    {"test_id": "T-REBUILD-ZERO-WRITES", "entry_ids": ["index-entrypoints", "rebuild-cli"], "assertions": ["Rebuild source create/write/delete spies are zero", "Dry-run embedding/collection/alias/metadata/source/manifest/runtime/lock writes are all zero", "Pre/post authoritative source ID/hash sets match"], "command": ".venv/bin/python -m pytest -q tests/test_kb_candidate_rebuild.py tests/test_kb_rebuild_cli.py -k 'spy or dry_run or source_hash'", "exit_code": 0, "status": "passed", "evidence_paths": ["tests/test_kb_candidate_rebuild.py", "tests/test_kb_rebuild_cli.py", "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md", "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md", "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"]}
   ],
   "review_status": "baseline_frozen"
 }

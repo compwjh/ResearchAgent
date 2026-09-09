@@ -3,8 +3,16 @@ from dataclasses import dataclass
 
 import pytest
 
+import backend.app.knowledge_base.application as application_module
 from backend.app.knowledge_base.application import create_paper_import_port
-from backend.app.knowledge_base.infrastructure.store import STATUS_INDEXED, get_paper, load_papers, resolve_paper_path
+from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
+from backend.app.knowledge_base.infrastructure.store import (
+    STATUS_INDEXED,
+    get_paper,
+    load_papers,
+    new_record,
+    resolve_paper_path,
+)
 from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
     PAPER_ALREADY_EXISTS,
@@ -12,7 +20,8 @@ from backend.app.paper_discovery.application.paper_import import (
     import_candidate,
 )
 from backend.app.paper_discovery.infrastructure.paper_download import DownloadResult, PaperDownloadError
-from backend.app.platform.ports import ImportIndexStatus, PaperImportResult as PortImportResult
+from backend.app.platform.ports import ImportIndexStatus
+from backend.app.platform.ports import PaperImportResult as PortImportResult
 from backend.app.platform.settings.settings_repository import ArticleSettings
 
 
@@ -126,10 +135,10 @@ def test_metadata_failure_after_rename_removes_target_and_record(tmp_path, monke
     def failed_upsert(record, meta_path=None):
         # Simulate a write that reaches storage and then fails.
         meta_path.parent.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text("[" + json.dumps(record.to_dict()) + "]", encoding="utf-8")
+        meta_path.write_text("[" + json.dumps(record) + "]", encoding="utf-8")
         raise OSError("metadata disk failure")
 
-    monkeypatch.setattr("backend.app.knowledge_base.application.upsert_paper", failed_upsert)
+    monkeypatch.setattr("backend.app.knowledge_base.application.write_import_knowledge_document", failed_upsert)
     with pytest.raises(PaperImportError) as exc:
         import_candidate(
             _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
@@ -223,3 +232,38 @@ def test_paper_import_error_message_is_fixed_by_stable_code():
 def test_legacy_path_resolution_remains_available(tmp_path):
     legacy = {"paper_id": "old-id", "file_name": "old-id.pdf", "status": "indexed"}
     assert resolve_paper_path(legacy, tmp_path) == tmp_path / "old-id.pdf"
+
+
+def test_default_paper_import_consumer_uses_marker_bound_port(tmp_path, monkeypatch):
+    meta = tmp_path / "data" / "kb" / "papers.json"
+    papers = tmp_path / "data" / "kb" / "papers"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("[]", encoding="utf-8")
+    finalizer = FinalizeBundleStore(tmp_path)
+    finalizer.stage(
+        "generation-test",
+        candidate_collection="papers_rebuild_live",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    finalizer.commit("generation-test")
+    adapter = create_paper_import_port(papers_dir=papers, meta_path=meta, client=object())
+    record = new_record("import.pdf", stored_name="import.pdf")
+    source = papers / record.stored_name
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"%PDF-1.7\n")
+    seen = {}
+
+    def run_sync(_paper_id, _chunker, runner):
+        return runner(lambda _progress: None)
+
+    def index(self, _record, _path, _chunker, **kwargs):
+        seen["destination"] = self.destination_collection
+        seen["meta_path"] = kwargs["meta_path"]
+        return {"status": STATUS_INDEXED}
+
+    monkeypatch.setattr(application_module, "run_index_task_sync", run_sync)
+    monkeypatch.setattr(application_module.GenerationBoundIndexPort, "index_document", index)
+    adapter._default_indexer(record, source)
+    assert seen == {"destination": "papers_rebuild_live", "meta_path": meta}

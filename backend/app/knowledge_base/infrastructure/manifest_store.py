@@ -287,6 +287,22 @@ class InspectionManifestStore:
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         path = self.tombstone_path(document_id, chunker)
+        if path.exists():
+            current = _read_json(path, "TOMBSTONE_INVALID")
+            if current.get("document_id") != document_id or current.get("chunker") not in _CHUNKERS:
+                raise ManifestStoreError("TOMBSTONE_INVALID")
+            if current.get("owner") != value["owner"]:
+                raise ManifestStoreError("TOMBSTONE_OWNER_MISMATCH", status=409)
+            if isinstance(current.get("created_at"), str):
+                value["created_at"] = current["created_at"]
+            # Same owner retries are idempotent and preserve the original
+            # timestamp; only finish removing a manifest if one remains.  The
+            # tombstone file is shared by v1/v2, so a same-owner call for the
+            # other chunker may still need to remove that manifest.
+            manifest = self.path(document_id, chunker)
+            if current.get("chunker") == chunker and not manifest.exists():
+                FinalizeBundleStore(self.live_root.parents[1]).refresh_live_digests()
+                return path
         _atomic_bytes(path, json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8"))
         manifest = self.path(document_id, chunker)
         try:
@@ -295,6 +311,10 @@ class InspectionManifestStore:
                 _fsync_directory(manifest.parent)
         except OSError as error:
             raise ManifestStoreError("TOMBSTONE_PENDING", status=503) from error
+        # A committed generation covers the live manifest digest.  Keep the
+        # marker usable after a successful delete instead of leaving a
+        # transient tombstone-induced hash mismatch for the next request.
+        FinalizeBundleStore(self.live_root.parents[1]).refresh_live_digests()
         return path
 
 
@@ -393,6 +413,34 @@ class FinalizeBundleStore:
                     raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503) from error
                 entries.append({"live_path": relative, "sha256": digest})
         return _sha256_json(entries)
+
+    def refresh_live_digests(self) -> dict[str, Any] | None:
+        """Atomically refresh marker digests after an authorized metadata change.
+
+        Reindex progress and document deletion are ordinary, generation-bound
+        state transitions.  They update ``papers.json`` or tombstones after a
+        finalize commit, so retaining the old marker hash would make a valid
+        generation fail closed forever.  This method only operates when an
+        existing marker is present and never creates one or changes topology.
+        """
+        marker_path = self.live_root / "index-generation.json"
+        if not marker_path.exists():
+            return None
+        with _lock:
+            marker = _read_json(marker_path, "INDEX_FINALIZE_REQUIRED")
+            _validate("index-generation.schema.json", marker, "INDEX_FINALIZE_REQUIRED")
+            try:
+                metadata_hash = _sha256_bytes((self.live_root / "papers.json").read_bytes())
+            except OSError as error:
+                raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503) from error
+            marker["metadata_sha256"] = metadata_hash
+            marker["manifests_digest"] = self._live_manifests_digest()
+            _validate("index-generation.schema.json", marker, "GENERATION_MARKER_INVALID")
+            _atomic_bytes(
+                marker_path,
+                json.dumps(marker, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8"),
+            )
+            return self.require_generation()
 
     def commit(self, run_id: str) -> dict[str, Any]:
         bundle = self._read_bundle(run_id)

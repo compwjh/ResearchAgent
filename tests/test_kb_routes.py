@@ -195,8 +195,11 @@ class HealthTests(unittest.TestCase):
 
     def test_reports_component_status(self):
         client = Mock()
+        client.collection_exists.return_value = True
+        generation_store = Mock()
+        generation_store.require_generation.return_value = {"alias_target": "papers_rebuild_live"}
         with patch("backend.app.api.routes_kb.get_client", return_value=client):
-            with patch("backend.app.api.routes_kb.ensure_collection") as mock_collection:
+            with patch("backend.app.api.routes_kb._generation_store", return_value=generation_store):
                 with patch("backend.app.api.routes_kb.count_points", return_value=42):
                     with patch("backend.app.api.routes_kb.embed_texts", return_value=[[0.1]]):
                         with patch("backend.app.api.routes_kb.load_papers", return_value=[{"paper_id": "p1"}]):
@@ -208,7 +211,7 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(body["chunks"], 42)
         self.assertEqual(body["papers"], 1)
         self.assertIn("reranker", body)
-        mock_collection.assert_called_once_with(client)
+        client.collection_exists.assert_called_once_with("papers_rebuild_live")
 
     def test_degrades_when_components_down(self):
         with patch("backend.app.api.routes_kb.get_client", side_effect=RuntimeError("no qdrant")):

@@ -1,7 +1,7 @@
 # Task 06：真实全库索引替换、恢复与性能验收
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（06-A 已完成；06-B 前置门禁阻塞）`
+> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（06-A 已完成；06-B 核心隔离门 GO；论文导入门待执行）`
 
 ## 一句话目标
 
@@ -16,7 +16,7 @@
 ## 前置门禁
 
 - Task02B 严格 `GO`，Task03–05 完成并通过各自评审。
-- Task04 `upload-closure-matrix.json` 已按实现后代码重算 inventory hashes/digest，全部 entry 为 `closed`、required tests 为 `passed` 且退出码为 0、`review_status=verified`；旧 upload/store/index/import/CLI/background 入口的不可变原件测试通过。基线仍为 `open/pending/baseline_frozen` 时不得进入本 Task。
+- Task04 `upload-closure-matrix.json` 已按实现后代码重算 inventory hashes/digest；本轮核心隔离相关 entry 与 8 个 core tests 已按事实标记为 `closed/passed`，论文导入相关 entry 与 4 个导入 tests 仍为 `open/pending`，整体 `review_status` 仍未进入 `verified`。在导入门禁未完成前不得进入本 Task 的真实切换阶段。
 - 已记录分支、commit、工作树、服务/Qdrant 状态、正式元数据数量和旧 Collection 拓扑。
 - dry-run 完整通过；用户已通过确认的 Spec 授权执行 `--confirm-replace`。
 - ResearchAgent 服务已停止；脚本检测到服务占用时必须拒绝运行，不能自动结束进程。
@@ -139,6 +139,13 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 定向回归 49 passed，独立临时故障探针 9/9；backend-tester `PASS`、backend-reviewer `GO`，未发现新增 P0/P1。
 - 本结论只关闭当前隔离实现缺口，不放行真实 Qdrant；closure matrix 仍需独立收口。
 
+### Closure-core 旁路收口：`PASS（隔离功能门）`
+
+- 修复 legacy index 写入口的隐式 `KB_COLLECTION` 回落，候选 Port 的正式集合绑定，generation marker 绕过，reindex 后 marker digest 漂移，以及 paper-import 默认 indexer/deleter 旁路。
+- 启动边界测试改为执行真实 paper-catalog recovery 并证明不产生知识库持久写；inventory 测试逐文件校验 frozen SHA/digest 并检查调用图。
+- 8 个 core 固定命令全部退出 0；独立 backend-tester 报告 378 项 KB 回归通过，独立 backend-reviewer 判定 `isolated_core_closure=GO`。证据见 `artifacts/task-06/closure-core-implementation-report.md`、`core-retest-report.md`、`core-final-review-report.md`。
+- 该结果不覆盖同 ID 不可变导入、补偿 owner/token、批次 retry/resume 与浏览器登录边界；整体 production cutover 继续 `NO-GO`。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -147,3 +154,4 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：06-A 在 FakeQdrant/临时目录完成 44 项定向测试与 32/32 故障探针，报告落盘；真实切换保持 NO-GO，等待 Task06-B 前置门禁和 closure matrix 收口。
 - 2026-09-10：06-B 审计确认 closure matrix 为 17 open/12 pending，真实生产门继续 NO-GO；完成默认 FinalizeBundle 主链和新进程恢复修复，47 项定向测试通过，仍未执行真实索引。
 - 2026-09-10：修复 retire no-op/未知 topology 仍继续完成的问题；49 项定向测试和 9/9 临时故障探针通过，独立 reviewer/tester 给出隔离功能门 GO/PASS。生产门继续被 closure matrix 与真实 Qdrant 维护窗口阻塞。
+- 2026-09-10：closure-core 修复完成；8 项 core 门禁、378 项 KB 回归通过，独立 reviewer/tester 给出隔离 GO/PASS。矩阵哈希已刷新，论文导入四项门禁仍待实现与验收，生产切换继续禁止。

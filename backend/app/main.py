@@ -10,7 +10,6 @@ from backend.app.api.common import paper_request_validation_error_response, reco
 from backend.app.api.routes import router
 from backend.app.knowledge_base.application import (
     FinalizeBundleStore,
-    mark_interrupted_on_startup,
 )
 from backend.app.platform.config import FRONTEND_DIR, KB_DIR
 
@@ -30,13 +29,6 @@ async def lifespan(_app: FastAPI):
             print(f"[paper-search] 已将 {recovered} 个中断任务恢复为 queued")
     except Exception as error:
         print(f"[paper-search] 启动恢复失败（已忽略）：{error}")
-
-    try:
-        interrupted = mark_interrupted_on_startup()
-        if interrupted:
-            print(f"[kb] {interrupted} 个中断的索引任务已标记为失败，可点「重建索引」重跑")
-    except Exception as error:  # 启动清理失败不应阻止服务可用
-        print(f"[kb] 启动清理失败（已忽略）：{error}")
 
     try:
         FinalizeBundleStore(KB_DIR.parents[1]).require_generation()

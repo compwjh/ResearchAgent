@@ -9,6 +9,7 @@ small port used by the rebuild service plus an in-memory FakeQdrant for tests.
 
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
@@ -99,6 +100,30 @@ def _validate_name(value: str, *, label: str) -> str:
     return text
 
 
+_CANDIDATE_COLLECTION = re.compile(r"^papers_rebuild_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _validate_binding(
+    candidate: str,
+    source_collection: str,
+    alias: str,
+) -> tuple[str, str, str]:
+    """Validate candidate lifecycle at the port boundary itself.
+
+    Service-level naming is not an authorization boundary: callers can use a
+    port directly. A bound candidate therefore must be a run-scoped rebuild
+    collection and can never alias or equal its protected source collection.
+    """
+    candidate = _validate_name(candidate, label="candidate")
+    source_collection = _validate_name(source_collection, label="source_collection")
+    alias = _validate_name(alias, label="alias")
+    if not _CANDIDATE_COLLECTION.fullmatch(candidate):
+        raise CandidateIndexError("INVALID_CANDIDATE_NAME", code="INVALID_CANDIDATE_NAME")
+    if candidate in {source_collection, alias}:
+        raise CandidateIndexError("CANDIDATE_BOUNDARY_VIOLATION", code="CANDIDATE_BOUNDARY_VIOLATION")
+    return candidate, source_collection, alias
+
+
 def _vector_dimension(vector: Any) -> int:
     if isinstance(vector, models.SparseVector):
         return len(vector.indices)
@@ -142,9 +167,10 @@ class QdrantCandidateIndexPort:
         self._retire_allowlist = set()
 
     def bind_candidate(self, candidate: str, *, source_collection: str, alias: str, run_token: str, retire_capability: object) -> None:
-        self._candidate = _validate_name(candidate, label="candidate")
-        self._source_collection = _validate_name(source_collection, label="source_collection")
-        self._alias = _validate_name(alias, label="alias")
+        candidate, source_collection, alias = _validate_binding(candidate, source_collection, alias)
+        self._candidate = candidate
+        self._source_collection = source_collection
+        self._alias = alias
         self._run_token = _validate_name(run_token, label="run_token")
         self._retire_capability = retire_capability
         self._retire_allowlist = set()
@@ -307,9 +333,10 @@ class FakeQdrant:
 
     def bind_candidate(self, candidate: str, *, source_collection: str, alias: str, run_token: str, retire_capability: object) -> None:
         with self._lock:
-            self._candidate = _validate_name(candidate, label="candidate")
-            self._source_collection = _validate_name(source_collection, label="source_collection")
-            self._alias = _validate_name(alias, label="alias")
+            candidate, source_collection, alias = _validate_binding(candidate, source_collection, alias)
+            self._candidate = candidate
+            self._source_collection = source_collection
+            self._alias = alias
             self._run_token = _validate_name(run_token, label="run_token")
             self._retire_capability = retire_capability
             self._retire_allowlist = set()

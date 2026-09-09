@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 from pathlib import Path
 from unittest.mock import patch
 
@@ -203,3 +204,32 @@ def test_delete_pending_has_retry_location_and_details():
     assert response.headers["retry-after"] == "10"
     assert response.headers["location"] == "/api/kb/documents/d1"
     assert response.json()["details"]["retry_after_seconds"] == 10
+
+
+def test_legacy_routes_only_forward_to_canonical_document_routes():
+    """Compatibility routes must not regain the retired write pipeline."""
+    upload_source = inspect.getsource(routes_kb.upload_kb_paper)
+    reindex_source = inspect.getsource(routes_kb.reindex_kb_paper)
+    delete_source = inspect.getsource(routes_kb.delete_kb_paper)
+    forbidden = (
+        "save_upload",
+        "upsert_paper",
+        "index_paper_chunker",
+        "run_index_task_sync",
+        "_submit_index_task",
+        "delete_paper",
+    )
+    assert not any(name in upload_source for name in forbidden)
+    assert not any(name in reindex_source for name in forbidden)
+    assert not any(name in delete_source for name in forbidden)
+
+    sentinel = object()
+    with patch.object(routes_kb, "upload_document", return_value=sentinel) as upload:
+        assert __import__("asyncio").run(routes_kb.upload_kb_paper(None, None)) is sentinel
+        upload.assert_called_once_with(None, None)
+    with patch.object(routes_kb, "reindex_document_route", return_value=sentinel) as reindex:
+        assert routes_kb.reindex_kb_paper("doc-1", None, {"chunker": "v1"}) is sentinel
+        reindex.assert_called_once_with("doc-1", None, {"chunker": "v1"})
+    with patch.object(routes_kb, "delete_document_route", return_value=sentinel) as delete:
+        assert routes_kb.delete_kb_paper("doc-1", None) is sentinel
+        delete.assert_called_once_with("doc-1", None)

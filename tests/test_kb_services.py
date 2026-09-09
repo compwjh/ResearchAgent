@@ -387,7 +387,7 @@ class IndexTests(unittest.TestCase):
             target = Path(tmp) / "qdrant"
             first = index_module.get_client(str(target))
             second = index_module.get_client(str(target))
-            index_module.ensure_collection(first)
+            index_module.ensure_collection(first, collection_name=index_module.KB_COLLECTION)
             self.assertTrue(first.collection_exists(index_module.KB_COLLECTION))
             self.assertIs(first, second)
             self.assertTrue(target.exists())
@@ -395,7 +395,7 @@ class IndexTests(unittest.TestCase):
     def test_ensure_collection_configures_sparse_idf(self):
         client = Mock()
         client.collection_exists.return_value = False
-        index_module.ensure_collection(client, dim=1024)
+        index_module.ensure_collection(client, dim=1024, collection_name=index_module.KB_COLLECTION)
         kwargs = client.create_collection.call_args.kwargs
         self.assertEqual(kwargs["sparse_vectors_config"][index_module.SPARSE_VECTOR].modifier.value, "idf")
         self.assertEqual(kwargs["vectors_config"][index_module.DENSE_VECTOR].size, 1024)
@@ -403,7 +403,7 @@ class IndexTests(unittest.TestCase):
     def test_ensure_collection_is_idempotent(self):
         client = Mock()
         client.collection_exists.return_value = True
-        index_module.ensure_collection(client)
+        index_module.ensure_collection(client, collection_name=index_module.KB_COLLECTION)
         client.create_collection.assert_not_called()
 
     def test_count_points_without_collection(self):
@@ -428,7 +428,8 @@ class IndexTests(unittest.TestCase):
             parse_module.Chunk(text="第二段", page=2, chunk_index=1),
         ]
         with patch.object(index_module, "embed_texts", return_value=[[0.1] * 4, [0.2] * 4]):
-            count = index_module.upsert_chunks("p1", "a.pdf", chunks, "2026-01-01", client=client)
+            count = index_module.upsert_chunks("p1", "a.pdf", chunks, "2026-01-01", client=client,
+                                               destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(count, 2)
         payload = client.upsert.call_args.kwargs
         self.assertEqual(len(payload["points"]), 2)
@@ -439,7 +440,7 @@ class IndexTests(unittest.TestCase):
     def test_delete_paper_filters_by_paper_id(self):
         client = Mock()
         client.collection_exists.return_value = True
-        index_module.delete_paper("p1", client=client)
+        index_module.delete_paper("p1", client=client, destination_collection=index_module.KB_COLLECTION)
         selector = client.delete.call_args.kwargs["points_selector"]
         self.assertEqual(selector.filter.must[0].match.value, "p1")
 
@@ -447,7 +448,7 @@ class IndexTests(unittest.TestCase):
         record = store_module.new_record("scan.pdf")
         with patch.object(index_module, "extract_pages", return_value=[(1, " " * 5)]):
             with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                result = index_module.index_paper(record, "scan.pdf")
+                result = index_module.index_paper(record, "scan.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_PARTIAL)
         self.assertEqual(result["chunk_count"], 0)
 
@@ -455,7 +456,7 @@ class IndexTests(unittest.TestCase):
         record = store_module.new_record("broken.pdf")
         with patch.object(index_module, "extract_pages", side_effect=parse_module.PdfParseError("PDF 已加密")):
             with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                result = index_module.index_paper(record, "broken.pdf")
+                result = index_module.index_paper(record, "broken.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_FAILED)
         self.assertIn("加密", result["error"])
 
@@ -464,7 +465,7 @@ class IndexTests(unittest.TestCase):
         with patch.object(index_module, "extract_pages", return_value=[(1, "正文内容。" * 80)]):
             with patch.object(index_module, "upsert_chunks", return_value=4):
                 with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                    result = index_module.index_paper(record, "ok.pdf")
+                    result = index_module.index_paper(record, "ok.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_INDEXED)
         self.assertEqual(result["chunk_count"], 4)
         self.assertEqual(result["page_count"], 1)
@@ -474,7 +475,7 @@ class IndexTests(unittest.TestCase):
         with patch.object(index_module, "extract_pages", return_value=[(1, "正文内容。" * 80)]):
             with patch.object(index_module, "upsert_chunks", side_effect=embed_module.EmbeddingError("OOM")):
                 with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                    result = index_module.index_paper(record, "ok.pdf")
+                    result = index_module.index_paper(record, "ok.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_FAILED)
         self.assertIn("OOM", result["error"])
 
@@ -527,7 +528,7 @@ class DualChunkerIndexTests(unittest.TestCase):
         chunks = [index_module.Chunk(text="正文", page=1, chunk_index=0, section="1 Intro")]
         with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
             index_module.upsert_chunks("p1", "a.pdf", chunks, "2026-01-01", client=client,
-                                       chunker="v2")
+                                       chunker="v2", destination_collection=index_module.KB_COLLECTION)
         payload = client.upsert.call_args.kwargs["points"][0].payload
         self.assertEqual(payload["chunker"], "v2")
         self.assertEqual(payload["section"], "1 Intro")
@@ -542,7 +543,7 @@ class DualChunkerIndexTests(unittest.TestCase):
         chunks = [index_module.Chunk(text=text, page=9, chunk_index=0)]
         with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
             index_module.upsert_chunks("p1", "a.pdf", chunks, client=client, chunker="v1",
-                                       ref_start_page=8)
+                                       ref_start_page=8, destination_collection=index_module.KB_COLLECTION)
         self.assertTrue(client.upsert.call_args.kwargs["points"][0].payload["is_citation"])
 
     def test_upsert_keeps_citation_false_before_reference_zone(self):
@@ -552,7 +553,7 @@ class DualChunkerIndexTests(unittest.TestCase):
         chunks = [index_module.Chunk(text=text, page=3, chunk_index=0)]
         with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
             index_module.upsert_chunks("p1", "a.pdf", chunks, client=client, chunker="v1",
-                                       ref_start_page=8)
+                                       ref_start_page=8, destination_collection=index_module.KB_COLLECTION)
         self.assertFalse(client.upsert.call_args.kwargs["points"][0].payload["is_citation"])
 
     def test_upsert_without_reference_zone_leaves_citation_false(self):
@@ -560,21 +561,24 @@ class DualChunkerIndexTests(unittest.TestCase):
         client.collection_exists.return_value = True
         chunks = [index_module.Chunk(text="[1] A. Author, 2023.", page=9, chunk_index=0)]
         with patch.object(index_module, "embed_texts", return_value=[[0.1]]):
-            index_module.upsert_chunks("p1", "a.pdf", chunks, client=client, chunker="v1")
+            index_module.upsert_chunks("p1", "a.pdf", chunks, client=client, chunker="v1",
+                                       destination_collection=index_module.KB_COLLECTION)
         self.assertFalse(client.upsert.call_args.kwargs["points"][0].payload["is_citation"])
 
     def test_delete_paper_chunker_filters_by_both_keys(self):
         """T3：重建前必须按 paper_id + chunker 删除，否则残留旧点污染检索。"""
         client = Mock()
         client.collection_exists.return_value = True
-        index_module.delete_paper_chunker("p1", "v2", client=client)
+        index_module.delete_paper_chunker("p1", "v2", client=client,
+                                          destination_collection=index_module.KB_COLLECTION)
         conditions = client.delete.call_args.kwargs["points_selector"].filter.must
         self.assertEqual({cond.key for cond in conditions}, {"paper_id", "chunker"})
 
     def test_delete_paper_chunker_skips_missing_collection(self):
         client = Mock()
         client.collection_exists.return_value = False
-        index_module.delete_paper_chunker("p1", "v2", client=client)
+        index_module.delete_paper_chunker("p1", "v2", client=client,
+                                          destination_collection=index_module.KB_COLLECTION)
         client.delete.assert_not_called()
 
 
@@ -668,7 +672,9 @@ class BackfillTests(unittest.TestCase):
         client.collection_exists.return_value = True
         stale = SimpleNamespace(id="1", payload={"page": 4})
         client.scroll.return_value = ([stale], None)
-        count = index_module.backfill_chunker_defaults(client=client)
+        count = index_module.backfill_chunker_defaults(
+            client=client, destination_collection=index_module.KB_COLLECTION
+        )
         self.assertEqual(count, 1)
         written = [call.kwargs["payload"] for call in client.set_payload.call_args_list]
         self.assertTrue(any("chunker" in payload for payload in written))
@@ -677,12 +683,22 @@ class BackfillTests(unittest.TestCase):
         client = Mock()
         client.collection_exists.return_value = True
         client.scroll.return_value = ([SimpleNamespace(id="1", payload={"chunker": "v1"})], None)
-        self.assertEqual(index_module.backfill_chunker_defaults(client=client), 0)
+        self.assertEqual(
+            index_module.backfill_chunker_defaults(
+                client=client, destination_collection=index_module.KB_COLLECTION
+            ),
+            0,
+        )
 
     def test_backfill_skips_missing_collection(self):
         client = Mock()
         client.collection_exists.return_value = False
-        self.assertEqual(index_module.backfill_chunker_defaults(client=client), 0)
+        self.assertEqual(
+            index_module.backfill_chunker_defaults(
+                client=client, destination_collection=index_module.KB_COLLECTION
+            ),
+            0,
+        )
 
 
 class CitationPageRangeTests(unittest.TestCase):
