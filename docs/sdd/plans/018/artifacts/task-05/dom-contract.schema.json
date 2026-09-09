@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/task-05/dom-contract-v1",
+  "title": "Spec018 Task05-B chunk inspector DOM contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "resource_query",
+    "tabs",
+    "inspection_controls",
+    "state_regions",
+    "panes",
+    "responsive",
+    "accessibility",
+    "security"
+  ],
+  "properties": {
+    "schema_version": {"const": "dom-contract-v1"},
+    "resource_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["styles"],
+      "properties": {
+        "styles": {"const": "?v=16"}
+      }
+    },
+    "tabs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tablist_id", "qa", "inspection"],
+      "properties": {
+        "tablist_id": {"const": "kb-tabs"},
+        "qa": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "panel_id", "role", "selected", "tabindex"],
+          "properties": {
+            "id": {"const": "kb-tab-qa"},
+            "panel_id": {"const": "kb-panel-qa"},
+            "role": {"const": "tab"},
+            "selected": {"const": true},
+            "tabindex": {"const": 0}
+          }
+        },
+        "inspection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "panel_id", "role", "selected", "tabindex"],
+          "properties": {
+            "id": {"const": "kb-tab-inspection"},
+            "panel_id": {"const": "kb-panel-inspection"},
+            "role": {"const": "tab"},
+            "selected": {"const": false},
+            "tabindex": {"const": -1}
+          }
+        }
+      }
+    },
+    "inspection_controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["panel_id", "document_select_id", "version_group_id", "version_inputs"],
+      "properties": {
+        "panel_id": {"const": "kb-panel-inspection"},
+        "document_select_id": {"const": "kb-inspection-document"},
+        "version_group_id": {"const": "kb-inspection-version-group"},
+        "version_inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["v1", "v2", "name", "single_selected"],
+          "properties": {
+            "v1": {"const": "kb-inspection-chunker-v1"},
+            "v2": {"const": "kb-inspection-chunker-v2"},
+            "name": {"const": "kb-inspection-chunker"},
+            "single_selected": {"const": true}
+          }
+        }
+      }
+    },
+    "state_regions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root_id", "maintenance", "finalize", "loading", "error"],
+      "properties": {
+        "root_id": {"const": "kb-inspection-state"},
+        "maintenance": {"const": {"id": "kb-inspection-maintenance", "error_code": "INDEX_REBUILD_REQUIRED", "role": "status"}},
+        "finalize": {"const": {"id": "kb-inspection-finalize", "error_code": "INDEX_FINALIZE_REQUIRED", "role": "status"}},
+        "loading": {"const": {"id": "kb-inspection-loading", "role": "status", "aria_busy": true}},
+        "error": {"const": {"id": "kb-inspection-error", "error_code": "INSPECTION_BUILDING", "role": "alert"}}
+      }
+    },
+    "panes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout_id", "source", "chunks", "source_content_id", "chunk_content_id"],
+      "properties": {
+        "layout_id": {"const": "kb-inspection-layout"},
+        "source": {"const": {"id": "kb-source-panel", "title_id": "kb-source-title", "role": "region", "focusable": true}},
+        "chunks": {"const": {"id": "kb-chunk-panel", "title_id": "kb-chunk-title", "role": "region", "focusable": true}},
+        "source_content_id": {"const": "kb-source-content"},
+        "chunk_content_id": {"const": "kb-chunk-content"}
+      }
+    },
+    "responsive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["breakpoint_px", "switcher_id", "source_tab_id", "chunk_tab_id", "state_attribute"],
+      "properties": {
+        "breakpoint_px": {"const": 760},
+        "switcher_id": {"const": "kb-inspection-view-switcher"},
+        "source_tab_id": {"const": "kb-inspection-source-tab"},
+        "chunk_tab_id": {"const": "kb-inspection-chunk-tab"},
+        "state_attribute": {"const": "data-active-pane"}
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tab_roles", "tabpanel_relationship", "focusable_panes", "live_states"],
+      "properties": {
+        "tab_roles": {"const": "role=tab with aria-selected and roving tabindex"},
+        "tabpanel_relationship": {"const": "aria-controls on tab and aria-labelledby on panel"},
+        "focusable_panes": {"const": ["kb-source-panel", "kb-chunk-panel", "kb-source-content", "kb-chunk-content"]},
+        "live_states": {"const": ["kb-inspection-state", "kb-inspection-loading", "kb-inspection-error"]}
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_integration", "renderer_integration", "remote_resources"],
+      "properties": {
+        "api_integration": {"const": "none in Task05-B"},
+        "renderer_integration": {"const": "none in Task05-B; containers only"},
+        "remote_resources": {"const": "no CDN, iframe, remote image, or client file path"}
+      }
+    }
+  }
+}
