@@ -217,6 +217,38 @@ def _pdf_chunk_pages(provenance: Any) -> List[Tuple[int, str]]:
     return pages
 
 
+def _pdf_chunk_pages_v2(provenance: Any) -> List[Tuple[int, str]]:
+    """Prepare PDF-v2 input without erasing display-block boundaries.
+
+    v1 intentionally keeps its historical page-level input shape.  v2 needs
+    each parser display block as an observable candidate for its rule/LLM
+    boundary pass; joining same-page blocks here would make that pass silently
+    skip the injected LLM.
+    """
+    ordered_blocks = sorted(
+        getattr(provenance, "blocks", ()),
+        key=lambda block: (int(block.page), int(getattr(block, "display_ordinal", block.ordinal))),
+    )
+    raw_by_page: Dict[int, List[str]] = {}
+    for block in ordered_blocks:
+        raw_by_page.setdefault(int(block.page), []).append(
+            getattr(block, "raw_text", None) or block.text
+        )
+    raw_pages = [(page, "".join(parts)) for page, parts in raw_by_page.items()]
+    reference_start = locate_reference_start(raw_pages)
+    pages: List[Tuple[int, str]] = []
+    for block in ordered_blocks:
+        page = int(block.page)
+        text = getattr(block, "raw_text", None) or block.text
+        cleaned = normalize_text(
+            text,
+            ref_zone=reference_start is not None and page >= reference_start,
+        )
+        if cleaned:
+            pages.append((page, cleaned))
+    return pages
+
+
 def _markdown_chunk_pages(provenance: Any) -> List[Tuple[None, str]]:
     return [
         (None, block.text)
@@ -251,7 +283,9 @@ def _build_chunks(
 ) -> Tuple[List[Chunk], bool, Tuple[str, ...], Optional[Tuple[str, ...]]]:
     media_type = getattr(provenance, "media_type", "")
     if media_type == "application/pdf":
-        pages: Sequence[Tuple[Optional[int], str]] = _pdf_chunk_pages(provenance)
+        pages: Sequence[Tuple[Optional[int], str]] = (
+            _pdf_chunk_pages_v2(provenance) if chunker == "v2" else _pdf_chunk_pages(provenance)
+        )
     elif media_type == "text/markdown":
         pages = _markdown_chunk_pages(provenance)
     else:

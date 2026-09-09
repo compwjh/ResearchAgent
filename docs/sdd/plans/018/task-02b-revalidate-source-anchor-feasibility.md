@@ -1,7 +1,7 @@
 # Task 02B：重新验证来源锚点与候选重建协议（Go/No-Go）
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task02A 全部实现、测试和评审通过；被依赖：Task03；当前状态：`实施中`
+> 依赖：Task02A 全部实现、测试和评审通过；被依赖：Task03；当前状态：`已完成（功能 GO；生产切换债务留至 Task06）`
 
 ## 一句话目标
 
@@ -83,10 +83,16 @@
 
 ## 执行结果
 
-待 Task02A-D/E 完成后填写。
+- `functional_verdict=GO`：Task03–05 放行。
+- `production_cutover_verdict=DEFERRED_SECURITY_DEBT`：Task06 继续阻塞，禁止真实 Qdrant 与生产 Collection 写删。
+- 首轮冻结证据 22/22 SHA-256 无漂移；7/7 固定样本 block/chunk/anchor 均 0 mismatch。
+- PDF bbox 最大误差 `0.000000`；Markdown 行号准确率 `1.000000`。
+- 三个此前失败的 PDF 均触发合法 LLM 判定，`llm_used=true`、无 degradation，并通过 CandidateRebuildService 的 v1/v2、validation、dense+sparse、payload 与 alias 模拟链路。
+- 联合 pytest **100 passed**，ruff、py_compile、schema 与 diff 检查均通过；tester 与 Tech Lead 最终签字见 `artifacts/task-02b/source-anchor-revalidation-report.md`。
 
 ## 变更日志
 
 - 2026-09-08：创建 Task02B，最初包含旧索引快照恢复验收。
 - 2026-09-09：经确认改为候选 Collection 全库重建协议验收，真实索引操作推迟到 Task06。
 - 2026-09-09：按用户“功能优先”决定拆分功能裁决与生产切换安全裁决；带安全债务的功能 GO 只放行 Task03–05，不放行 Task06。
+- 2026-09-09：修复 PDF-v2 同页 display block 被无分隔拼接的问题；完整重放后 tester 与 Tech Lead 均签功能 GO，Task02B 收口。

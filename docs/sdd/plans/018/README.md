@@ -9,8 +9,8 @@
 |---|---|---|---|
 | [02（历史）](./task-02-validate-source-anchor-feasibility.md) | 首轮来源锚点可行性审计 | 01 | 已完成（`NO-GO`，证据只读） |
 | [02A](./task-02a-production-provenance-foundation.md) | 生产级 provenance 与全库候选重建基础 | 修订版 Spec 已确认 | 已完成（功能门 GO；生产切换门留至 Task06） |
-| [02B](./task-02b-revalidate-source-anchor-feasibility.md) | 用正式实现重新验证来源锚点与候选重建协议 | 02A | 实施中 |
-| [03](./task-03-document-contract-and-migration.md) | 定义通用文档、manifest 与元数据迁移协议 | 02B `GO` | 待执行 |
+| [02B](./task-02b-revalidate-source-anchor-feasibility.md) | 用正式实现重新验证来源锚点与候选重建协议 | 02A | 已完成（功能 GO；生产切换债务留至 Task06） |
+| [03](./task-03-document-contract-and-migration.md) | 定义通用文档、manifest 与元数据迁移协议 | 02B `GO` | 实施中 |
 | [04](./task-04-backend-document-inspection-api.md) | 实现后端文档、manifest 与检查接口 | 03 | 待执行 |
 | [05](./task-05-frontend-chunk-inspector.md) | 实现前端双栏切片检查器 | 04 | 待执行 |
 | [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 待执行 |

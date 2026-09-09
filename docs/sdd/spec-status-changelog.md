@@ -129,3 +129,5 @@
 - **018 功能优先与生产安全债务分层** ｜ 实施中 → 实施中 ｜ 2026-09-09：用户要求先完成功能，安全问题记录后续完善。Task02A/02B 改为功能门与生产切换安全门双结论：功能通过可继续 Task03–05；候选删除授权、恢复拓扑、防篡改与 fsync 等债务全部转为 Task06 前置硬门，关闭前禁止真实 Qdrant 与任何真实 Collection 写删。
 - **018 Task02A 生产级 provenance 与候选重建基础** ｜ 实施中 → 已完成（功能门） ｜ 2026-09-09：CandidateIndexPort、rebuild CLI/FSM、拓扑与验证 schema 完成四轮加固；候选测试 37 passed、独立探针 16/16 passed，tester/reviewer 均给出功能 GO。真实 Qdrant 与生产切换结论保留为 `DEFERRED_TO_TASK06`。
 - **018 Task02B 来源锚点与候选协议重验证** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task02A 功能门通过，开始以首轮固定样本和正式入口重放 PDF/Markdown block/chunk/anchor oracle；本 Task 仍禁止真实数据和真实 Qdrant。
+- **018 Task02B 来源锚点与候选协议重验证** ｜ 实施中 → 已完成（功能 GO） ｜ 2026-09-09：修复 PDF-v2 同页 block 拼接导致 LLM 未调用的问题后，22/22 证据哈希、7/7 固定样本与 100 项联合测试通过；bbox 误差 0、Markdown 行号 100%。tester/Tech Lead 放行 Task03–05，生产切换仍延期至 Task06。
+- **018 Task03 通用文档、Manifest 与迁移协议** ｜ 待执行 → 实施中 ｜ 2026-09-09：Task02B 功能 GO 后开始冻结 KnowledgeDocument/InspectionManifest/FinalizeBundle 契约与旧 metadata 迁移边界。

@@ -201,6 +201,33 @@ def test_v2_valid_empty_llm_decision_is_used_without_degradation() -> None:
     assert actual["degradation_diagnostics"] == []
 
 
+@pytest.mark.parametrize(
+    "sample_id",
+    [
+        "pdf-single-column-v1",
+        "pdf-two-column-v1-overlap",
+        "pdf-hostile-features",
+    ],
+)
+def test_pdf_v2_preserves_display_blocks_for_injected_llm(sample_id: str) -> None:
+    expected = json.loads((FIXTURES / f"{sample_id}.expected.json").read_text())
+    provenance = extract_pdf_provenance(
+        FIXTURES / f"{sample_id}.pdf",
+        document_id=expected["document_id"],
+        sample_id=sample_id,
+    )
+    calls = []
+
+    def llm(prompt: str) -> str:
+        calls.append(prompt)
+        return "[]"
+
+    actual = build_source_provenance_bundle(provenance, chunker="v2", llm=llm).to_dict()
+    assert len(calls) >= 1
+    assert actual["llm_used"] is True
+    assert actual["degradation_diagnostics"] == []
+
+
 def test_schema_rejects_malformed_anchor_locator() -> None:
     expected = json.loads((FIXTURES / "pdf-single-column-v1.expected.json").read_text())
     provenance = extract_pdf_provenance(
