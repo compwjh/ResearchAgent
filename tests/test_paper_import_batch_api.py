@@ -1,7 +1,13 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api import common, routes_paper
 from backend.app.main import app
+from backend.app.paper_discovery.application.entry import (
+    BROWSER_SESSION_EXPIRED,
+    BROWSER_SESSION_REQUIRED,
+    BrowserManagerError,
+)
 from backend.app.paper_discovery.application.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
 from backend.app.paper_discovery.application.paper_import_batch_service import PaperImportBatchService
 from backend.app.paper_discovery.domain.paper_discovery import PaperCandidate, SearchSession
@@ -11,8 +17,9 @@ from backend.app.paper_discovery.infrastructure.paper_import_batch_store import 
 
 
 class FakeLoginSession:
-    def __init__(self):
+    def __init__(self, download_error=None):
         self.closed = False
+        self.download_error = download_error
 
     def close(self):
         self.closed = True
@@ -20,20 +27,27 @@ class FakeLoginSession:
     def download_pdf(self, candidate, *_args, **kwargs):
         self.download_calls = getattr(self, "download_calls", [])
         self.download_calls.append((candidate.candidate_id, kwargs))
+        if self.download_error is not None:
+            raise BrowserManagerError(
+                self.download_error,
+                "https://evil.example Cookie=session=secret",
+                retryable=True,
+            )
         return None
 
 
 class FakeBrowser:
-    def __init__(self):
+    def __init__(self, download_error=None):
         self.opened = []
         self.sessions = []
+        self.download_error = download_error
 
     def health(self):
         return {"available": True, "version": "1.52.0", "supported_sites": ["acm", "ieee"], "reason": None}
 
     def open_session(self, site, url):
         self.opened.append((site, url))
-        session = FakeLoginSession()
+        session = FakeLoginSession(self.download_error)
         self.sessions.append(session)
         return session
 
@@ -52,7 +66,7 @@ def _candidate(candidate_id="candidate-1"):
     )
 
 
-def _setup(monkeypatch, tmp_path, importer):
+def _setup(monkeypatch, tmp_path, importer, *, browser_download_error=None):
     discovery = PaperDiscoveryStore(tmp_path / "state.sqlite3")
     discovery.save_search(
         SearchSession("search-1", "security", "2099-01-01T00:00:00Z"),
@@ -63,7 +77,7 @@ def _setup(monkeypatch, tmp_path, importer):
         discovery_store=discovery,
         importer=importer,
     )
-    browser = FakeBrowser()
+    browser = FakeBrowser(browser_download_error)
     monkeypatch.setattr(routes_paper, "_paper_store", lambda: discovery)
     monkeypatch.setattr(routes_paper, "_paper_batch_service", lambda: service)
     monkeypatch.setattr(routes_paper, "_paper_browser_manager", lambda: browser)
@@ -166,6 +180,46 @@ def test_resume_uses_item_session_callback_without_exposing_sensitive_data(monke
     assert "authorization" not in body
     assert "dl.acm.org/doi/10.1000" not in body
     assert browser.sessions[0].closed is True
+
+
+@pytest.mark.parametrize("browser_code", [BROWSER_SESSION_EXPIRED, BROWSER_SESSION_REQUIRED])
+def test_resume_browser_session_race_returns_424_without_reimport(monkeypatch, tmp_path, browser_code):
+    attempts = []
+
+    def importer(candidate, *_args, downloader=None, **_kwargs):
+        attempts.append(candidate.candidate_id)
+        if downloader is None:
+            raise PaperImportError(LOGIN_REQUIRED, "需要登录", retryable=True)
+        downloader(candidate)
+        return PaperImportResult("paper-1", "safe.pdf", "indexed")
+
+    service, browser = _setup(
+        monkeypatch,
+        tmp_path,
+        importer,
+        browser_download_error=browser_code,
+    )
+    client = TestClient(app)
+    created = client.post(
+        "/api/papers/import-batches",
+        json={"search_id": "search-1", "candidate_ids": ["candidate-1"]},
+    )
+    item_id = created.json()["items"][0]["item_id"]
+    client.post(f"/api/papers/import-items/{item_id}/login")
+
+    response = client.post(f"/api/papers/import-items/{item_id}/resume")
+
+    assert response.status_code == 424
+    assert response.json()["code"] == browser_code
+    assert response.json()["retryable"] is True
+    assert attempts == ["candidate-1", "candidate-1"]
+    assert browser.sessions[0].closed is True
+    body = response.text.lower()
+    assert "evil.example" not in body
+    assert "secret" not in body
+    current = service.store.get_item(item_id)
+    assert current.status == "failed"
+    assert current.error_code == browser_code
 
 
 def test_single_import_error_response_uses_fixed_safe_message():

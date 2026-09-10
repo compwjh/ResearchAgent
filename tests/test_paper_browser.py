@@ -75,6 +75,14 @@ class _BrowserSession:
     def __init__(self):
         self.closed = False
         self.context = object()
+        self.expired = False
+
+    @property
+    def is_closed(self):
+        return self.closed
+
+    def is_expired(self):
+        return self.expired
 
     def close(self):
         self.closed = True
@@ -193,6 +201,24 @@ def test_resume_delegates_session_downloader_and_closes_exact_session(monkeypatc
     assert call["downloader"].__self__ is session
     assert call["downloader"].__func__ is session.download_pdf.__func__
     assert call["context"] is session.context
+    assert session.closed is True
+    assert "item-1" not in sessions
+    assert service.store.writes == []
+
+
+def test_resume_expired_session_is_fail_closed_without_import(monkeypatch):
+    service = _BatchServiceSpy()
+    browser = _BrowserSpy()
+    sessions = _patch_boundary(monkeypatch, service, browser)
+    session = _BrowserSession()
+    session.expired = True
+    sessions["item-1"] = session
+
+    response = routes_paper.resume_paper_import_item("item-1")
+
+    assert response.status_code == 424
+    assert response.body and b"BROWSER_SESSION_EXPIRED" in response.body
+    assert service.resume_calls == []
     assert session.closed is True
     assert "item-1" not in sessions
     assert service.store.writes == []

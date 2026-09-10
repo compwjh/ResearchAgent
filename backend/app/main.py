@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.app.api import common
 from backend.app.api.common import paper_request_validation_error_response, recover_paper_catalog_searches
 from backend.app.api.routes import router
 from backend.app.knowledge_base.application import (
@@ -38,7 +39,25 @@ async def lifespan(_app: FastAPI):
         # collection as a side effect of boot.
         print(f"[kb] index generation gate not ready: {getattr(error, 'code', 'INDEX_REBUILD_REQUIRED')}")
 
-    yield
+    try:
+        yield
+    finally:
+        # Login pages hold both a site lock and the persistent profile lock.
+        # Close the item-scoped handles before releasing the manager so a
+        # graceful shutdown cannot leave a stale authenticated session behind.
+        sessions = tuple(common.paper_browser_sessions.values())
+        for session in sessions:
+            try:
+                session.close()
+            except Exception as error:
+                print(f"[paper-browser] 会话关闭失败（已忽略）：{error}")
+        common.paper_browser_sessions.clear()
+        manager = common.paper_browser_manager
+        if manager is not None:
+            try:
+                manager.close()
+            except Exception as error:
+                print(f"[paper-browser] 管理器关闭失败（已忽略）：{error}")
 
 
 app = FastAPI(title="Research Agent", lifespan=lifespan)

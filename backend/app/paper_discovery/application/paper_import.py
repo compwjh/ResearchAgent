@@ -13,10 +13,16 @@ import inspect
 import shutil
 import stat
 import tempfile
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
+from backend.app.paper_discovery.application.entry import (
+    BROWSER_SESSION_EXPIRED,
+    BROWSER_SESSION_REQUIRED,
+    BrowserManagerError,
+)
 from backend.app.paper_discovery.domain.paper_import_identity import (
     PaperImportIdentity,
     build_paper_identity,
@@ -57,6 +63,8 @@ _SAFE_IMPORT_ERROR_MESSAGES = {
     LOGIN_REQUIRED: "下载来源需要登录",
     PDF_NOT_FOUND: "PDF 不存在",
     PDF_TOO_LARGE: "PDF 超过大小限制",
+    BROWSER_SESSION_EXPIRED: "受控登录会话已过期，请重新登录",
+    BROWSER_SESSION_REQUIRED: "请先完成受控登录后再续传",
     KB_IMPORT_FAILED: "论文导入失败",
 }
 
@@ -179,6 +187,21 @@ def _download(
             "context": context,
         },
     )
+
+
+def _import_lifecycle_boundary(downloader: Callable[..., Any], context: Any = None):
+    """Return the optional browser-session guard for the KB write boundary.
+
+    Authenticated downloads use ``BrowserSession.download_pdf`` as a bound
+    method.  Keeping this discovery-side protocol narrow lets public
+    downloaders remain unchanged while allowing the browser session to make
+    its final TTL check atomic with entry into ``PaperImportPort``.
+    """
+    owner = getattr(downloader, "__self__", None)
+    guard = getattr(owner, "import_boundary", None)
+    if not callable(guard):
+        guard = getattr(context, "import_boundary", None)
+    return guard() if callable(guard) else nullcontext()
 
 
 def _cleanup_download(
@@ -469,7 +492,8 @@ def import_candidate(
                 attempt_owner=attempt_owner or request.attempt_owner,
                 attempt_token=attempt_token or request.attempt_token,
             )
-        result = port.import_paper(request)
+        with _import_lifecycle_boundary(downloader, context):
+            result = port.import_paper(request)
         translated = _application_result(result)
         if translated.error_code and translated.error_code != PAPER_ALREADY_EXISTS:
             raise PaperImportError(
@@ -484,6 +508,10 @@ def import_candidate(
         raise
     except PaperImportError:
         raise
+    except BrowserManagerError as error:
+        if error.code in {BROWSER_SESSION_EXPIRED, BROWSER_SESSION_REQUIRED}:
+            raise PaperImportError(error.code, retryable=error.retryable) from error
+        raise PaperImportError(KB_IMPORT_FAILED, "知识库 v1 索引失败", retryable=True) from error
     except Exception as error:
         raise PaperImportError(KB_IMPORT_FAILED, "知识库 v1 索引失败", retryable=True) from error
     finally:
@@ -502,6 +530,7 @@ def import_candidate(
 
 __all__ = [
     "DOWNLOAD_BLOCKED", "DOWNLOAD_TIMEOUT", "INVALID_PDF", "LOGIN_REQUIRED", "PDF_NOT_FOUND",
-    "PDF_TOO_LARGE", "KB_IMPORT_FAILED", "PAPER_ALREADY_EXISTS", "PaperImportError",
+    "PDF_TOO_LARGE", "BROWSER_SESSION_EXPIRED", "BROWSER_SESSION_REQUIRED",
+    "KB_IMPORT_FAILED", "PAPER_ALREADY_EXISTS", "PaperImportError",
     "safe_import_error_message", "safe_import_error_code", "PaperImportResult", "import_candidate",
 ]

@@ -21,6 +21,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Optional
 
+from backend.app.paper_discovery.application.entry import (
+    BROWSER_SESSION_EXPIRED,
+    BROWSER_SESSION_REQUIRED,
+)
 from backend.app.paper_discovery.application.paper_import import (
     LOGIN_REQUIRED,
     import_candidate,
@@ -693,5 +697,6 @@ class PaperImportBatchService:
 __all__ = [
     "IMPORT_FAILED", "INVALID_SEARCH_SNAPSHOT", "SEARCH_NOT_FOUND", "SEARCH_EXPIRED",
     "CANDIDATE_NOT_FOUND", "COMPENSATION_PENDING", "SNAPSHOT_REBUILD_REQUIRED",
+    "BROWSER_SESSION_EXPIRED", "BROWSER_SESSION_REQUIRED",
     "PaperImportBatchService", "PaperImportBatchServiceError",
 ]

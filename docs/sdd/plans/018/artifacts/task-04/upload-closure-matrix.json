@@ -1,17 +1,17 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "069b009",
-  "inventory_digest": "e700f39edd62aed329d82a1f218f3ba4594fd3066e60bc35c7d86942ca7d6b2b",
+  "inventory_digest": "68e017a2800395fa1e1bab0c7e80bd83cdeac88a774266737b18fcca72291869",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
-    {"path": "backend/app/main.py", "sha256": "74b6f4da2bac1bd0589ebb92cc5edd0ee18a1296be10c0c435d9761f578599c8"},
+    {"path": "backend/app/main.py", "sha256": "547ed00f729ca1970a0b872ee7b671a21f348770b451a27c1e17bf591bc79f4c"},
     {"path": "backend/app/api/routes_kb.py", "sha256": "b7b854cceeed5f38170205ff168f8e72b2d4a33576724ac4ac1e875e941ee86d"},
-    {"path": "backend/app/api/routes_paper.py", "sha256": "37037a1340314e380dc0f4200e8997c56450fa24d479481936a5466268eaa7ec"},
+    {"path": "backend/app/api/routes_paper.py", "sha256": "3e8723704ca6ebdcc149205b7b7741f58b3a9489f6a0148a6cd912a804035135"},
     {"path": "backend/app/knowledge_base/application.py", "sha256": "05a24af3a723cdf3f4b3a864467cb32e2c8bc80627571eac35b93f168139a39a"},
     {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "31fb4ad4f7287917ace93872012186344d61bff9f0d62b221395f9ec54562a87"},
     {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "2c60ef3c9f042d1412ed72098db2e37b790c22b5d5218dbb82c8c75a31310abc"},
     {"path": "backend/app/knowledge_base/infrastructure/tasks.py", "sha256": "0f11484d71bdbec738a671c7d93eda37b91de51ebd5be024a2c28a2806e38885"},
-    {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "b920f8d6a57f56ff871d2e92dde1fd35b233b89a60ec6434b44e39f5ac30e68d"}
+    {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "bab13cc43bce2cec2d3cc65d98b13906ced02cea387d95575670f5a6df707fa8"}
   ],
   "closed_enums": {
     "entry_kind": ["route", "route_helper", "application", "store", "index", "task", "maintenance"],

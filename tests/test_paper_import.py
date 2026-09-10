@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import pytest
@@ -12,6 +13,10 @@ from backend.app.knowledge_base.infrastructure.store import (
     load_papers,
     new_record,
     resolve_paper_path,
+)
+from backend.app.paper_discovery.application.entry import (
+    BROWSER_SESSION_EXPIRED,
+    BrowserManagerError,
 )
 from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
@@ -195,6 +200,81 @@ def test_download_error_is_preserved_and_temp_file_is_cleaned(tmp_path):
             paper_import_port=_port(tmp_path / "papers", tmp_path / "papers.json"),
         )
     assert exc.value.code == "DOWNLOAD_BLOCKED"
+
+
+def test_browser_session_expiry_crosses_import_boundary_without_kb_import(tmp_path):
+    imported = []
+
+    class RecordingPort:
+        def find_existing(self, _snapshot):
+            return None
+
+        def existing_names(self):
+            return set()
+
+        def import_paper(self, request):
+            imported.append(request)
+
+    def expired_downloader(*_args, **_kwargs):
+        raise BrowserManagerError(
+            BROWSER_SESSION_EXPIRED,
+            "https://evil.example Cookie=session=secret",
+            retryable=True,
+        )
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"},
+            downloader=expired_downloader, paper_import_port=RecordingPort(), temp_dir=tmp_path,
+        )
+
+    assert exc.value.code == BROWSER_SESSION_EXPIRED
+    assert exc.value.error_code == BROWSER_SESSION_EXPIRED
+    assert exc.value.message == "受控登录会话已过期，请重新登录"
+    assert "evil.example" not in str(exc.value)
+    assert "secret" not in str(exc.value)
+    assert imported == []
+
+
+def test_import_boundary_rechecks_expiry_before_port_write(tmp_path):
+    imported = []
+    now = [100.0]
+
+    class ExpiringSession:
+        def download_pdf(self, _candidate, _settings, _allowed_hosts, **_kwargs):
+            path = tmp_path / "expired-session.pdf"
+            path.write_bytes(b"%PDF-1.7\ncontent")
+            now[0] = 106.0
+            return DownloadResult(str(path), path.stat().st_size, "checksum", "https://dl.acm.org/paper.pdf")
+
+        @contextmanager
+        def import_boundary(self):
+            if now[0] >= 105.0:
+                raise BrowserManagerError(
+                    BROWSER_SESSION_EXPIRED,
+                    "expired session details must not cross the import boundary",
+                )
+            yield self
+
+    class RecordingPort:
+        def find_existing(self, _snapshot):
+            return None
+
+        def existing_names(self):
+            return set()
+
+        def import_paper(self, request):
+            imported.append(request)
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"},
+            downloader=ExpiringSession().download_pdf,
+            paper_import_port=RecordingPort(), temp_dir=tmp_path,
+        )
+
+    assert exc.value.code == BROWSER_SESSION_EXPIRED
+    assert imported == []
 
 
 def test_import_delegates_trusted_local_pdf_to_injected_port(tmp_path):

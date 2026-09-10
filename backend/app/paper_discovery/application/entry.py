@@ -12,9 +12,10 @@
 from backend.app.paper_discovery.infrastructure.dblp_publication_source import (
     DBLPPublicationSource,
 )
-from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedSource
 from backend.app.paper_discovery.infrastructure.openalex_enricher import OpenAlexEnricher
 from backend.app.paper_discovery.infrastructure.paper_browser_manager import (
+    BROWSER_SESSION_EXPIRED,
+    BROWSER_SESSION_REQUIRED,
     BrowserManagerError,
     PaperBrowserManager,
 )
@@ -33,6 +34,7 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
 from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     PaperImportBatchStore,
 )
+from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedSource
 
 __all__ = [
     # 数据源
@@ -42,6 +44,8 @@ __all__ = [
     # 浏览器
     "BrowserManagerError",
     "PaperBrowserManager",
+    "BROWSER_SESSION_EXPIRED",
+    "BROWSER_SESSION_REQUIRED",
     # 仓储
     "PaperDiscoveryStore",
     "PaperImportBatchStore",

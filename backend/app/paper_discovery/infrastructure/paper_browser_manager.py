@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import math
 import os
 import shutil
 import tempfile
 import threading
+import time
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Optional
@@ -77,6 +79,8 @@ BROWSER_ORIGIN_NOT_ALLOWED = "BROWSER_ORIGIN_NOT_ALLOWED"
 BROWSER_TIMEOUT = "BROWSER_TIMEOUT"
 BROWSER_CRASHED = "BROWSER_CRASHED"
 BROWSER_CANCELLED = "BROWSER_CANCELLED"
+BROWSER_SESSION_EXPIRED = "BROWSER_SESSION_EXPIRED"
+BROWSER_SESSION_REQUIRED = "BROWSER_SESSION_REQUIRED"
 
 
 class BrowserManagerError(RuntimeError):
@@ -151,7 +155,17 @@ class _ProfileLock:
 class BrowserSession:
     """A single site-owned page; closing it always releases its site lock."""
 
-    def __init__(self, manager: "PaperBrowserManager", site: str, page: Any, lock: threading.Lock, context: Any = None):
+    def __init__(
+        self,
+        manager: "PaperBrowserManager",
+        site: str,
+        page: Any,
+        lock: threading.Lock,
+        context: Any = None,
+        *,
+        expires_at: float | None = None,
+        timer_factory: Callable[[float, Callable[[], None]], Any] = threading.Timer,
+    ):
         self.manager = manager
         self.site = site
         self.page = page
@@ -160,11 +174,95 @@ class BrowserSession:
         self.context = context
         self._lock = lock
         self._closed = False
+        self._lock_held = True
+        self.expires_at = expires_at
+        self._timer_factory = timer_factory
+        self._timer_lock = threading.Lock()
+        self._ttl_timer = None
 
-    def goto(self, url: str, **kwargs: Any) -> Any:
-        self.manager.validate_origin(self.site, url)
+    @property
+    def is_closed(self) -> bool:
+        return self._closed
+
+    def is_expired(self) -> bool:
+        """Return whether the session TTL elapsed without exposing its deadline."""
+        return self.expires_at is not None and self.manager._clock() >= self.expires_at
+
+    def _ensure_active(self) -> None:
         if self._closed:
             raise BrowserManagerError(BROWSER_CANCELLED, "浏览器会话已关闭")
+        if self.is_expired():
+            self.close()
+            self.manager._release_if_idle()
+            raise BrowserManagerError(BROWSER_SESSION_EXPIRED, "浏览器登录会话已过期，请重新登录")
+
+    @contextmanager
+    def import_boundary(self) -> Iterator["BrowserSession"]:
+        """Hold lifecycle state while a trusted importer starts its write.
+
+        The downloader is a bound method of this session.  The importer uses
+        this narrow guard for its final fail-closed check: a TTL reaper cannot
+        close the session between checking the deadline and entering the KB
+        port.  The guard does not expose browser credentials or transport
+        objects and is intentionally useful only at that import boundary.
+        """
+        with self.manager._state_lock:
+            self._ensure_active()
+            yield self
+
+    def start_ttl_timer(self) -> None:
+        """Start the daemon timer that reaps this session at its deadline."""
+        if self.expires_at is None:
+            return
+        self._schedule_ttl_timer(max(0.0, self.expires_at - self.manager._clock()))
+
+    def _schedule_ttl_timer(self, delay: float) -> None:
+        timer = self._timer_factory(delay, self._expire_from_timer)
+        # A browser session must never keep the process alive while idle.
+        timer.daemon = True
+        with self._timer_lock:
+            if self._closed:
+                with suppress(Exception):
+                    timer.cancel()
+                return
+            self._ttl_timer = timer
+        try:
+            timer.start()
+        except Exception:
+            with self._timer_lock:
+                if self._ttl_timer is timer:
+                    self._ttl_timer = None
+            with suppress(Exception):
+                timer.cancel()
+            raise
+
+    def _cancel_ttl_timer(self) -> None:
+        with self._timer_lock:
+            timer, self._ttl_timer = self._ttl_timer, None
+        if timer is not None:
+            with suppress(Exception):
+                timer.cancel()
+
+    def _expire_from_timer(self) -> None:
+        with self._timer_lock:
+            self._ttl_timer = None
+        if self._closed:
+            return
+        remaining = (self.expires_at or 0.0) - self.manager._clock()
+        if remaining > 0:
+            try:
+                self._schedule_ttl_timer(remaining)
+            except Exception:
+                # If a re-arm fails, fail closed instead of leaking a session.
+                self.close()
+                self.manager._release_if_idle()
+            return
+        self.close()
+        self.manager._release_if_idle()
+
+    def goto(self, url: str, **kwargs: Any) -> Any:
+        self._ensure_active()
+        self.manager.validate_origin(self.site, url)
         try:
             return self.page.goto(url, **kwargs)
         except Exception as exc:  # Playwright's Error is optional at import time.
@@ -174,15 +272,32 @@ class BrowserSession:
             raise BrowserManagerError(BROWSER_CRASHED, "浏览器页面不可用，请重试") from exc
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        try:
-            self.page.close()
-        except Exception:
-            self.manager._recover_after_failure(None)
-        finally:
-            self._lock.release()
+        self._close(recover_on_error=True)
+
+    def _close_from_manager(self) -> None:
+        """Close during manager recovery without recursively recovering again."""
+        self._close(recover_on_error=False)
+
+    def _close(self, *, recover_on_error: bool) -> None:
+        # Serialize the closed flag, timer reaping, and import-boundary guard
+        # under one manager lock.  Without this, cleanup could observe an
+        # empty session set while an importer was about to enter the KB port.
+        with self.manager._state_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._cancel_ttl_timer()
+            try:
+                self.page.close()
+            except Exception:
+                if recover_on_error:
+                    self.manager._recover_after_failure(None)
+            finally:
+                if self._lock_held:
+                    self._lock_held = False
+                    with suppress(RuntimeError):
+                        self._lock.release()
+                self.manager._discard_session(self)
 
     def authenticated_pdf_request(
         self,
@@ -209,6 +324,7 @@ class BrowserSession:
             url = url.get("pdf_url") if isinstance(url, Mapping) else getattr(url, "pdf_url", None)
         if not isinstance(url, str) or not url:
             raise PaperDownloadError(PDF_NOT_FOUND, "候选没有 PDF 地址")
+        self._ensure_active()
         self.manager.validate_origin(self.site, url)
         if isinstance(max_redirects, bool) or max_redirects < 0:
             raise PaperDownloadError(DOWNLOAD_BLOCKED, "重定向次数超过限制")
@@ -216,8 +332,6 @@ class BrowserSession:
             current = self._validate_download_url(url)
         except URLSecurityError as error:
             raise PaperDownloadError(DOWNLOAD_BLOCKED, "下载地址被安全策略拒绝") from error
-        if self._closed:
-            raise BrowserManagerError(BROWSER_CANCELLED, "浏览器会话已关闭")
         if isinstance(max_bytes, bool) or max_bytes < 1:
             raise PaperDownloadError(PDF_TOO_LARGE, "PDF 大小限制无效")
         context = self.context or self.manager._context
@@ -300,6 +414,11 @@ class BrowserSession:
                 raise PaperDownloadError(INVALID_PDF, "PDF 无法读取") from error
             if page_count < 1:
                 raise PaperDownloadError(INVALID_PDF, "PDF 没有可读取页面")
+            # A request may have crossed the session deadline while the body
+            # or PDF validator was running. Re-check before returning a
+            # successful result; the importer also performs an atomic final
+            # check at its port boundary for the remaining race window.
+            self._ensure_active()
             final_path = candidate_path
             succeeded = True
             return DownloadResult(
@@ -365,6 +484,9 @@ class PaperBrowserManager:
         page_timeout_seconds: Optional[float] = None,
         launch_kwargs: Optional[Mapping[str, Any]] = None,
         dns_resolver: Optional[Callable[[str], Any]] = None,
+        session_ttl_seconds: Optional[float] = None,
+        clock: Optional[Callable[[], float]] = None,
+        timer_factory: Optional[Callable[[float, Callable[[], None]], Any]] = None,
     ):
         configured = getattr(settings, "paper_discovery_browser_profile_dir", None)
         configured = configured or os.getenv("PAPER_DISCOVERY_BROWSER_PROFILE_DIR")
@@ -373,6 +495,24 @@ class PaperBrowserManager:
             1000
             * (page_timeout_seconds if page_timeout_seconds is not None else getattr(settings, "article_login_timeout_seconds", 300))
         )
+        configured_ttl = session_ttl_seconds
+        if configured_ttl is None:
+            configured_ttl = getattr(settings, "paper_discovery_browser_session_ttl_seconds", None)
+        if configured_ttl is None:
+            configured_ttl = os.getenv("PAPER_DISCOVERY_BROWSER_SESSION_TTL_SECONDS")
+        if configured_ttl is None:
+            configured_ttl = getattr(settings, "article_login_timeout_seconds", 300)
+        if isinstance(configured_ttl, bool):
+            raise ValueError("浏览器登录会话 TTL 必须为正数")
+        try:
+            configured_ttl = float(configured_ttl)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("浏览器登录会话 TTL 必须为正数") from exc
+        if not math.isfinite(configured_ttl) or configured_ttl <= 0:
+            raise ValueError("浏览器登录会话 TTL 必须为正数")
+        self.session_ttl_seconds = configured_ttl
+        self._clock = clock or time.monotonic
+        self._timer_factory = timer_factory or threading.Timer
         self._playwright_factory = playwright_factory
         self._launch_kwargs = dict(launch_kwargs or {})
         self.dns_resolver = dns_resolver
@@ -382,6 +522,7 @@ class PaperBrowserManager:
         self._playwright = None
         self._context = None
         self._profile_owned = False
+        self._sessions: set[BrowserSession] = set()
 
     @property
     def available(self) -> bool:
@@ -503,22 +644,38 @@ class PaperBrowserManager:
         if not site_lock.acquire(blocking=False):
             raise BrowserManagerError(BROWSER_PROFILE_LOCKED, "该站点浏览器会话正被另一个任务使用")
         try:
-            if not self._profile_owned:
-                self._lock.acquire()
-                self._profile_owned = True
-            context = self._ensure_context()
-            page = context.new_page()
-            page.set_default_timeout(self.page_timeout_ms)
-            page.set_default_navigation_timeout(self.page_timeout_ms)
-            session = BrowserSession(self, site, page, site_lock, context=context)
+            # Keep ownership, context use, and registration in one state
+            # boundary.  In particular, idle TTL cleanup cannot close the
+            # context between new_page() and _sessions.add(session).
+            with self._state_lock:
+                if not self._profile_owned:
+                    self._lock.acquire()
+                    self._profile_owned = True
+                context = self._ensure_context()
+                page = context.new_page()
+                page.set_default_timeout(self.page_timeout_ms)
+                page.set_default_navigation_timeout(self.page_timeout_ms)
+                session = BrowserSession(
+                    self,
+                    site,
+                    page,
+                    site_lock,
+                    context=context,
+                    expires_at=self._clock() + self.session_ttl_seconds,
+                    timer_factory=self._timer_factory,
+                )
+                self._sessions.add(session)
+            session.start_ttl_timer()
             if url is not None:
                 session.goto(url)
             return session
-        except Exception:
-            site_lock.release()
-            if self._profile_owned:
-                self._lock.release()
-                self._profile_owned = False
+        except Exception as exc:
+            session = locals().get("session")
+            if session is not None:
+                session.close()
+            self._recover_after_failure(exc)
+            if site_lock.locked():
+                site_lock.release()
             raise
 
     @contextmanager
@@ -531,18 +688,40 @@ class PaperBrowserManager:
 
     def _recover_after_failure(self, _exc: Any) -> None:
         with self._state_lock:
+            sessions, self._sessions = tuple(self._sessions), set()
+            for session in sessions:
+                session._close_from_manager()
             context, self._context = self._context, None
             playwright, self._playwright = self._playwright, None
             for resource in (context, playwright):
                 if resource is not None:
                     with suppress(Exception):
                         resource.close()
+            if self._profile_owned:
+                self._lock.release()
+                self._profile_owned = False
 
     def close(self) -> None:
         self._recover_after_failure(None)
-        if self._profile_owned:
-            self._lock.release()
-            self._profile_owned = False
+
+    def _discard_session(self, session: BrowserSession) -> None:
+        with self._state_lock:
+            self._sessions.discard(session)
+
+    def _release_if_idle(self) -> None:
+        """Release browser/profile resources after an expired last session."""
+        with self._state_lock:
+            if self._sessions:
+                return
+            context, self._context = self._context, None
+            playwright, self._playwright = self._playwright, None
+            for resource in (context, playwright):
+                if resource is not None:
+                    with suppress(Exception):
+                        resource.close()
+            if self._profile_owned:
+                self._lock.release()
+                self._profile_owned = False
 
     def __enter__(self) -> "PaperBrowserManager":
         return self
@@ -553,6 +732,8 @@ class PaperBrowserManager:
 
 __all__ = [
     "BROWSER_CANCELLED",
+    "BROWSER_SESSION_EXPIRED",
+    "BROWSER_SESSION_REQUIRED",
     "BROWSER_CRASHED",
     "BROWSER_ORIGIN_NOT_ALLOWED",
     "BROWSER_PROFILE_LOCKED",

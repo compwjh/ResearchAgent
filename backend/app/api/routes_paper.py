@@ -22,6 +22,8 @@ from backend.app.api.schemas import (
     PaperImportResponse,
 )
 from backend.app.paper_discovery.application.entry import (
+    BROWSER_SESSION_EXPIRED,
+    BROWSER_SESSION_REQUIRED,
     DOWNLOAD_BLOCKED,
     DOWNLOAD_TIMEOUT,
     INVALID_PDF,
@@ -372,6 +374,8 @@ _PAPER_IMPORT_ERROR_STATUS = {
     PAPER_ALREADY_EXISTS: 409,
     DOWNLOAD_BLOCKED: 400,
     LOGIN_REQUIRED: 424,
+    BROWSER_SESSION_EXPIRED: 424,
+    BROWSER_SESSION_REQUIRED: 424,
     DOWNLOAD_TIMEOUT: 424,
     INVALID_PDF: 502,
     PDF_TOO_LARGE: 502,
@@ -746,6 +750,37 @@ def _paper_item_browser_target(service: PaperImportBatchService, item_id: str) -
     return item, candidates, site, article_url
 
 
+def _browser_session_is_expired(session: object) -> bool:
+    """Read the session lifecycle seam without inspecting credentials/state."""
+    checker = getattr(session, "is_expired", None)
+    if callable(checker):
+        try:
+            return bool(checker())
+        except BrowserManagerError as error:
+            return error.code == BROWSER_SESSION_EXPIRED
+    expired = getattr(session, "expired", False)
+    return bool(expired() if callable(expired) else expired)
+
+
+def _browser_session_is_closed(session: object) -> bool:
+    closed = getattr(session, "is_closed", False)
+    return bool(closed() if callable(closed) else closed)
+
+
+def _close_item_browser_session(item_id: str, session: object | None = None) -> None:
+    """Close and remove one item session, tolerating already-recovered pages."""
+    current = paper_browser_sessions.pop(item_id, None)
+    target = session if session is not None else current
+    if target is not None:
+        with suppress(Exception):
+            target.close()
+        manager = getattr(target, "manager", None)
+        release_if_idle = getattr(manager, "_release_if_idle", None)
+        if callable(release_if_idle):
+            with suppress(Exception):
+                release_if_idle()
+
+
 @router.post("/papers/import-items/{item_id}/login", response_model=PaperImportItemLoginResponse)
 def login_paper_import_item(item_id: str, _request: PaperImportItemActionRequest | None = None):
     """Open a headed login page using only the server-owned item snapshot."""
@@ -754,10 +789,7 @@ def login_paper_import_item(item_id: str, _request: PaperImportItemActionRequest
     try:
         service = _paper_batch_service()
         _item, _candidates, site, article_url = _paper_item_browser_target(service, item_id)
-        previous = paper_browser_sessions.pop(item_id, None)
-        if previous is not None:
-            with suppress(Exception):
-                previous.close()
+        _close_item_browser_session(item_id)
         session = _paper_browser_manager().open_session(site, article_url)
         paper_browser_sessions[item_id] = session
         return {"status": "opened", "item_id": item_id, "site": site}
@@ -780,7 +812,13 @@ def resume_paper_import_item(item_id: str, _request: PaperImportItemActionReques
         session_key = item_id
         session = paper_browser_sessions.get(item_id)
         if session is None:
-            return _paper_api_error(424, "BROWSER_SESSION_REQUIRED", "请先完成受控登录后再续传", True)
+            return _paper_api_error(424, BROWSER_SESSION_REQUIRED, "请先完成受控登录后再续传", True)
+        if _browser_session_is_expired(session):
+            _close_item_browser_session(item_id, session)
+            return _paper_api_error(424, BROWSER_SESSION_EXPIRED, "受控登录会话已过期，请重新登录", True)
+        if _browser_session_is_closed(session):
+            _close_item_browser_session(item_id, session)
+            return _paper_api_error(424, BROWSER_SESSION_REQUIRED, "请先完成受控登录后再续传", True)
         downloader = getattr(session, "download_pdf", None)
         context = getattr(session, "context", None)
         resumed = service.resume_item(
@@ -789,6 +827,13 @@ def resume_paper_import_item(item_id: str, _request: PaperImportItemActionReques
             downloader=downloader if callable(downloader) else None,
             context=context,
         )
+        # ``download_pdf`` can race the preflight TTL/closed checks above.
+        # The batch service records that stable item failure without running
+        # the success transitions; surface it as the same 424 browser-session
+        # contract instead of returning a misleading completed-shaped payload.
+        resumed_error = getattr(resumed, "error_code", None)
+        if resumed_error in {BROWSER_SESSION_EXPIRED, BROWSER_SESSION_REQUIRED}:
+            return _paper_import_error_response(resumed_error, "浏览器登录会话不可用", retryable=True)
         return _paper_batch_status_payload(service, resumed.batch_id)
     except PaperImportBatchServiceError as error:
         return _paper_batch_error_response(error)
@@ -829,4 +874,6 @@ _BROWSER_ERROR_STATUS = {
     "BROWSER_TIMEOUT": 424,
     "BROWSER_CRASHED": 424,
     "BROWSER_CANCELLED": 424,
+    BROWSER_SESSION_EXPIRED: 424,
+    BROWSER_SESSION_REQUIRED: 424,
 }

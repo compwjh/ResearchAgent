@@ -4,6 +4,11 @@ from threading import Event, Lock
 
 import pytest
 
+from backend.app.paper_discovery.application.entry import (
+    BROWSER_SESSION_EXPIRED,
+    BROWSER_SESSION_REQUIRED,
+    BrowserManagerError,
+)
 from backend.app.paper_discovery.application.paper_import import LOGIN_REQUIRED, PaperImportError, PaperImportResult
 from backend.app.paper_discovery.application.paper_import_batch_service import (
     CANDIDATE_NOT_FOUND,
@@ -334,3 +339,30 @@ def test_batch_item_persists_only_fixed_safe_error_message(tmp_path):
     assert "secret" not in item.error_message
     assert "token" not in item.error_message
     assert "password" not in item.error_message
+
+
+@pytest.mark.parametrize("browser_code", [BROWSER_SESSION_EXPIRED, BROWSER_SESSION_REQUIRED])
+def test_browser_session_failure_is_persisted_without_completed_transition(tmp_path, browser_code):
+    calls = 0
+
+    def importer(_candidate, *_args):
+        nonlocal calls
+        calls += 1
+        raise BrowserManagerError(
+            browser_code,
+            "https://evil.example Cookie=session=secret",
+            retryable=True,
+        )
+
+    service = _service(tmp_path, importer)
+    batch = _create(service, [_candidate(f"browser-{browser_code}")])
+    service.run_batch(batch.batch_id)
+
+    item = service.store.get_items(batch.batch_id)[0]
+    assert calls == 1
+    assert item.status == ITEM_FAILED
+    assert item.error_code == browser_code
+    assert item.error_message in {"受控登录会话已过期，请重新登录", "请先完成受控登录后再续传"}
+    assert item.status != ITEM_COMPLETED
+    assert "evil.example" not in item.error_message
+    assert "secret" not in item.error_message

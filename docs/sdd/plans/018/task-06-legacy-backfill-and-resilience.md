@@ -153,7 +153,7 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 登录只解析服务端搜索快照和 ACM/IEEE 白名单，零知识库 source/metadata/index 写入；受控浏览器 profile 的认证状态持久化是显式配置，resume 仍只委托既有 batch/import/immutable 链路。
 - 独立 reviewer/tester 对 T-IMMUTABLE-CREATE、T-PAPER-IMPORT、T-IMPORT-COMPENSATION、T-BROWSER-BOUNDARY 给出 GO/PASS；证据见 `artifacts/task-06/batch-compensation-review.md`、`batch-compensation-test-report.md`、`browser-boundary-review.md`、`browser-boundary-implementation-report.md`。
 - 该结果仍不覆盖真实 Qdrant、真实登录、generation-bound collection topology、session TTL/恢复清理和生产维护窗口；closure matrix 仍为 `implementation_ready`，真实切换继续 `NO-GO`。
-- 全量回归最新结果为 `882 passed / 3 failed`（另 38 个 subtests 通过）；失败集中在 `tests/test_legacy_kb_integration.py` 的历史索引/旧内部符号契约。只读配置别名已保留以便离线 fixture，剩余 3 项仍依赖已退休的 `index_paper_chunker` 无代际参数、`submit_index_task` 和 `delete_paper`，记录为 `legacy/migration_unverified`，不得用恢复旧写入口掩盖。新文档 API 相关回归 25 项通过，历史测试迁移不阻塞本轮隔离门，但阻塞最终“全量回归通过”收口。
+- 浏览器生命周期加固后的最新全量回归为 `898 passed / 3 failed / 1 skipped`（另 38 个 subtests 通过）；失败仍集中在 `tests/test_legacy_kb_integration.py` 的历史索引/旧内部符号契约。剩余 3 项仍依赖已退休的 `index_paper_chunker` 无代际参数、`submit_index_task` 和 `delete_paper`，记录为 `legacy/migration_unverified`，不得用恢复旧写入口掩盖。历史测试迁移不阻塞本轮浏览器隔离门，但阻塞最终“全量回归通过”收口。
 
 ### Generation-bound 导入与摘要刷新：`PASS（隔离功能门）`
 
@@ -162,6 +162,21 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - `FinalizeBundleStore.refresh_live_digests(expected_destination_collection=...)` 在 manifest-store 锁内完成期望 collection 比较、摘要计算和 marker 写入；`commit()` 共用该锁，修复 refresh 与 generation 发布之间的 TOCTOU。旧的无参刷新调用保持兼容。
 - 独立 generation hardening tester 对 63 项定向回归给出 `PASS`；独立 reviewer v2 对补偿/导入边界给出 `NO-GO`（发现 TOCTOU），修复后 reviewer v3 对 generation-bound TOCTOU 门给出 `GO`。证据见 `artifacts/task-06/generation-hardening-test-report-v2.md`、`generation-hardening-review-v2.md`、`generation-toctou-fix-report.md`、`generation-toctou-review-v2.md`。
 - 我复跑 generation、候选重建、reindex、论文导入、批量补偿与浏览器边界共 96 项测试，全部通过；未连接真实 Qdrant、未执行 `confirm-replace`。跨进程锁、真实 Qdrant 与维护窗口仍是生产门禁，整体 Task06 继续 `NO-GO`。
+
+### 浏览器登录会话生命周期与过期边界：`PASS（隔离功能门）`
+
+- 首轮生命周期评审发现两个 P1：认证请求期间 TTL 到期仍可能进入知识库，以及并发 reopen 与 idle cleanup 可能把新会话绑定到已关闭 context。两项均已修复并由独立 reviewer v2 复核关闭。
+- 会话使用 daemon TTL timer 到期回收；`open_session()` 在同一状态锁边界内完成 profile ownership、context 获取、`new_page()` 和 session 注册；关闭、恢复、启动失败、页面创建失败及应用 shutdown 均取消 timer、释放 page/context/Playwright/profile lock。
+- 下载返回前和 `PaperImportPort.import_paper()` 入口前均执行 fail-closed 生命周期检查。请求期间过期或缺少会话时保留 `BROWSER_SESSION_EXPIRED` / `BROWSER_SESSION_REQUIRED`，不调用知识库写入口，不将批次条目推进为 `completed`，路由返回稳定 HTTP 424。
+- 独立最终 reviewer v2 判定 browser lifecycle/expiry propagation 子门禁 `GO`；指定隔离回归 **85 passed**，focused fix tests **4 passed**，ruff、py_compile、`git diff --check` 均通过。证据见：
+  - `artifacts/task-06/browser-session-lifecycle-report.md`
+  - `artifacts/task-06/browser-idle-timer-fix-report.md`
+  - `artifacts/task-06/browser-expiry-error-fix-report.md`
+  - `artifacts/task-06/browser-expiry-boundary-fix-report.md`
+  - `artifacts/task-06/browser-manager-concurrency-fix-report.md`
+  - `artifacts/task-06/browser-lifecycle-final-test-report.md`
+  - `artifacts/task-06/browser-lifecycle-final-review-v2.md`
+- 本门只证明 fake Playwright/离线故障注入下的生命周期与错误传播；真实 Playwright、ACM/IEEE 登录、跨进程/多 worker、SIGTERM、真实 Qdrant、alias/cutover 和 `confirm-replace` 仍未验收，Task06 总体及 Spec018 继续 `NO-GO`。
 
 ## 变更日志
 
@@ -176,3 +191,4 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：全量 pytest 暴露 5 项 Spec015 历史旧索引集成测试与 Spec018 已收窄边界不一致；未恢复旧索引写链，已落盘 `artifacts/task-06/legacy-regression-analysis.md`，后续迁移为 canonical document API 测试。
 - 2026-09-10：generation-bound 加固完成；补偿 ledger 增加 `destination_collection` 绑定，缺绑定 capability fail-closed，marker drift 不再错误标记 `indexed`；独立 63 项回归通过。
 - 2026-09-10：修复 generation refresh/commit TOCTOU；refresh 与 commit 共用 manifest-store 锁并支持 expected collection 原子校验，独立 reviewer 给出隔离门 `GO`，生产切换仍保持 `NO-GO`。
+- 2026-09-10：浏览器生命周期首轮 reviewer 发现请求期间 TTL 过期导入和并发 reopen/idle cleanup 两个 P1；通过下载返回前与 import boundary 最终检查、状态锁注册边界、daemon TTL 回收和稳定错误码透传修复，85 项隔离回归通过，独立 reviewer v2 给出 browser 子门禁 `GO`；真实登录、跨进程和生产切换仍 `NO-GO`。
