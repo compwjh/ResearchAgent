@@ -178,3 +178,5 @@
 - **021 论文导入异步化与进度反馈** ｜ 已完成（Task06 收口）｜ 2026-09-11：`backend-tester` 单端回归通过（全量 **830 passed** 3 连跑 0 failed、ruff 无新增、Task06 新增用例 11/11 稳定）；顺带定位并修复**既有 flaky**（非本次引入，在父提交 `1ec85eb` 上 15 次复现 10 次）：`test_batch_status_and_resume_use_server_snapshot` 只等条目状态、未等批次聚合态 → 改为"条目 + 批次聚合双条件"等待（`_wait_for_batch_status`），同文件 10 处同类轮询一并收敛，修复后全量 3 连跑均 830 passed。需求评审复审**通过（APPROVE）**；`tester` Task06 补充跨端验收**通过**（5/5）。spec-021 全任务（01–06）完成。
 - **022 项目会话管理与自进化长期记忆** ｜ Task02 实施中 → Task02 已完成、Spec 实施中 ｜ 2026-09-11：桌面端项目/会话/项目记忆纵向 MVP 通过 35 项精确测试、旧聊天兼容回归与受控部署 smoke；全量回归保留至 Task08，进入 Task03。
 - **022 项目会话管理与自进化长期记忆** ｜ Task03 实施中 → Task03 已完成、Spec 实施中 ｜ 2026-09-11：项目/会话生命周期、全局/项目记忆治理、移动确认与删除边界通过后端/前端复审、跨端 API smoke 和定向测试；全量回归保留至 Task08，进入 Task04。
+- **022 项目会话管理与自进化长期记忆** ｜ Task04 待执行 → Task04 实施中 ｜ 2026-09-11：Task03 已收口，启动异步记忆整理、候选/摘要 checkpoint 与跨会话预算受控召回；前端仅在需要候选确认时追加。
+- **022 项目会话管理与自进化长期记忆** ｜ Task04 实施中 → Task04 已完成、Spec 实施中 ｜ 2026-09-11：SQLite v3 事件/摘要/checkpoint、Map/Reduce、stale 恢复、候选证据门和预算召回通过 backend-reviewer GO 与 backend-tester PASS；保留 worker 重启扫描 P2，进入 Task05/Task07。

@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -5,12 +7,13 @@ from fastapi.responses import StreamingResponse
 from backend.app.api.common import stream_event
 from backend.app.api.schemas import ConversationMessageRequest, ConversationPatchRequest, MemoryCreateRequest, MemoryPatchRequest, ProjectCreateRequest, ProjectPatchRequest
 from backend.app.chat.application.chat_runner import run_chat
-from backend.app.chat.application.conversation_service import classify_memory_intent, compose_chat_prompt
+from backend.app.chat.application.conversation_service import get_memory_evolution_worker, classify_memory_intent, compose_chat_prompt
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.ollama import get_available_models
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _repo() -> MemoryRepository:
@@ -101,6 +104,12 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         finished = False
         generation_started = False
         try:
+            # Raw events are an append-only audit/input stream for the local
+            # evolution worker.  They are advisory and never block SSE.
+            try:
+                repo.append_raw_event(OWNER_ID, conversation.conversation_id, "user_message", {"content": user_message.content}, message_id=user_message.message_id, idempotency_key=f"message:{user_message.message_id}")
+            except Exception:
+                pass
             yield stream_event("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode)
             classification_running = repo.create_processing_step(assistant_message.message_id, "memory_classification", "running", label="记忆分析")
             yield stream_event("progress", step_id=classification_running.step_id, kind=classification_running.kind, label=classification_running.label, status="running", summary=None)
@@ -115,6 +124,16 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 intent = MemoryIntent("none", current_task=user_message.content)
                 classification_status = "skipped"
                 classification_summary = "记忆未分析/未保存"
+            if intent.intent == "explicit":
+                try:
+                    repo.append_raw_event(OWNER_ID, conversation.conversation_id, "explicit_memory", {"statement": intent.statement or user_message.content, "scope": intent.scope, "confidence": intent.confidence}, message_id=user_message.message_id, idempotency_key=f"explicit:{user_message.message_id}")
+                except Exception:
+                    pass
+            elif any(marker in user_message.content for marker in ("不对", "纠正", "更正", "不是")):
+                try:
+                    repo.append_raw_event(OWNER_ID, conversation.conversation_id, "user_correction", {"replacement": user_message.content}, message_id=user_message.message_id, idempotency_key=f"correction:{user_message.message_id}")
+                except Exception:
+                    pass
             classification_done = repo.create_processing_step(assistant_message.message_id, "memory_classification", classification_status, classification_summary, label="记忆分析")
             yield stream_event("progress", step_id=classification_done.step_id, kind=classification_done.kind, label=classification_done.label, status=classification_status, summary=classification_summary)
             if classification_status == "skipped":
@@ -136,13 +155,16 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             recall_running = repo.create_processing_step(assistant_message.message_id, "memory_recall", "running", label="记忆召回")
             yield stream_event("progress", step_id=recall_running.step_id, kind=recall_running.kind, label=recall_running.label, status="running", summary=None)
             try:
-                memories = repo.list_recall_memories(OWNER_ID, conversation.project_id)
+                recall_context = repo.list_recall_context(OWNER_ID, conversation.project_id, query=user_message.content, memory_char_budget=4000, summary_char_budget=1500)
+                memories = recall_context["memories"]
+                summaries = recall_context["summaries"]
                 recall_status = "completed"
-                recall_summary = f"召回 {len(memories)} 条长期记忆"
+                recall_summary = f"召回 {len(memories)} 条长期记忆和 {len(summaries)} 条相关摘要"
             except Exception:
                 # Memory is advisory context. A corrupt/locked memory read must
                 # not prevent ordinary chat from continuing.
                 memories = []
+                summaries = []
                 recall_status = "failed"
                 recall_summary = "记忆召回失败，已跳过"
             usage_failures = 0
@@ -162,13 +184,24 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             if conversation.project_id:
                 project = repo.get_project(conversation.project_id, OWNER_ID)
                 project_instructions = project.instructions if project else None
-            prompt = compose_chat_prompt(user_message.content, repo.list_context_messages(conversation.conversation_id, OWNER_ID), memories, project_instructions)
+            history = [message for message in repo.list_context_messages(conversation.conversation_id, OWNER_ID) if message.message_id != user_message.message_id]
+            if sum(len(message.content or "") for message in history) > 12000:
+                try:
+                    repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
+                except Exception:
+                    pass
+            prompt = compose_chat_prompt(user_message.content, history, memories, project_instructions, summaries, summary_budget_chars=1500)
             repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
             generation_started = True
             generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
             yield stream_event("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
             run = run_chat(user_message.content, model, prompt=prompt)
             for event in run.events:
+                if event.get("type") in {"error", "tool_error"}:
+                    try:
+                        repo.append_raw_event(OWNER_ID, conversation.conversation_id, "tool_failure", {"error": event.get("message") or event.get("content") or "工具失败", "verified": False}, message_id=user_message.message_id, idempotency_key=f"tool-failure:{user_message.message_id}")
+                    except Exception:
+                        pass
                 if event.get("type") == "token":
                     token = event.get("content", ""); parts.append(token)
                     repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming")
@@ -194,6 +227,11 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 # a best-effort durable status update.
                 pass
         finally:
+            try:
+                get_memory_evolution_worker(repo).enqueue_session(conversation.conversation_id)
+            except Exception as error:
+                logger.warning("memory evolution enqueue unavailable: %s", error)
+                pass
             if not finished:
                 try:
                     current = repo.get_message(assistant_message.message_id, OWNER_ID)
@@ -221,6 +259,17 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
     if conversation_id:
         user = repo.create_message(conversation.conversation_id, OWNER_ID, "user", content, status="completed", model=payload.model, mode=payload.mode)
         assistant = repo.create_message(conversation.conversation_id, OWNER_ID, "assistant", "", status="pending", model=payload.model, mode=payload.mode, parent_message_id=user.message_id)
+    # Starting the local worker is cheap and scans durable retry work.  The
+    # current request only appends raw events; processing runs after/alongside
+    # SSE in a daemon thread and failures are checkpointed.
+    try:
+        get_memory_evolution_worker(repo)
+    except Exception as error:
+        # Worker startup/scanning is advisory.  The durable event is already
+        # written by the stream and can be picked up by a later retry/startup;
+        # never turn worker initialization into a chat failure.
+        logger.warning("memory evolution worker startup unavailable: %s", error)
+        pass
     return StreamingResponse(_message_stream(repo, conversation, user, assistant, payload.model, payload.mode), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 

@@ -14,14 +14,25 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
 from backend.app.platform.config import BASE_DIR
-from .models import Conversation, MemoryEvidence, MemoryRecord, Message, ProcessingStep, Project
+from .models import (
+    Conversation,
+    ConversationSummary,
+    EvolutionCheckpoint,
+    MemoryEvidence,
+    MemoryRecord,
+    Message,
+    ProcessingStep,
+    Project,
+    RawEvent,
+)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+EVOLUTION_LEASE_SECONDS = 300
 OWNER_ID = os.getenv("MEMORY_OWNER_ID", "local-user")
 _write_lock = threading.RLock()
 
@@ -113,6 +124,13 @@ class MemoryRepository:
                     # Repair the first Task03 draft, which marked version 2
                     # without applying its structural migration.
                     self._migrate_v1_to_v2(connection)
+                if current < 3:
+                    self._migrate_v2_to_v3(connection)
+                    connection.execute("INSERT INTO schema_version(version, applied_at) VALUES (?, ?)", (3, _now()))
+                elif not self._is_schema_v3(connection):
+                    raise RuntimeError("incomplete memory schema v3")
+                if not self._is_schema_v3(connection):
+                    raise RuntimeError("memory schema v3 validation failed")
                 connection.execute("COMMIT")
         except Exception as error:
             connection.rollback()
@@ -201,6 +219,99 @@ class MemoryRepository:
         if not {"memory_binding_at", "memory_binding_message_id"} <= columns:
             return False
         return any(row["table"] == "messages" and row["on_delete"] == "SET NULL" for row in connection.execute("PRAGMA foreign_key_list(memory_evidence)").fetchall())
+
+    @staticmethod
+    def _migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+        connection.execute("""CREATE TABLE IF NOT EXISTS raw_events (
+            event_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+            message_id TEXT REFERENCES messages(message_id) ON DELETE SET NULL,
+            event_kind TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            idempotency_key TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(owner_id, conversation_id, idempotency_key)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_raw_events_session ON raw_events(owner_id, conversation_id, created_at, event_id)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS conversation_summaries (
+            summary_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+            summary_text TEXT NOT NULL,
+            source_event_id TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(owner_id, conversation_id)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_summaries_scope ON conversation_summaries(owner_id, conversation_id, status, updated_at DESC)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS evolution_checkpoints (
+            checkpoint_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+            stage TEXT NOT NULL,
+            status TEXT NOT NULL,
+            cursor TEXT,
+            batch_index INTEGER NOT NULL DEFAULT 0,
+            total_batches INTEGER NOT NULL DEFAULT 0,
+            state_json TEXT NOT NULL DEFAULT '{}',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            idempotency_key TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(owner_id, conversation_id, stage)
+        )""")
+
+    @staticmethod
+    def _is_schema_v3(connection: sqlite3.Connection) -> bool:
+        required = {
+            "raw_events": {"event_id", "owner_id", "conversation_id", "message_id", "event_kind", "payload", "idempotency_key", "created_at"},
+            "conversation_summaries": {"summary_id", "owner_id", "conversation_id", "summary_text", "source_event_id", "status", "created_at", "updated_at"},
+            "evolution_checkpoints": {"checkpoint_id", "owner_id", "conversation_id", "stage", "status", "cursor", "batch_index", "total_batches", "state_json", "attempts", "idempotency_key", "error", "created_at", "updated_at"},
+        }
+        tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not set(required) <= tables:
+            return False
+        for table, columns in required.items():
+            actual = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if not columns <= actual:
+                return False
+        expected_fks = {
+            "raw_events": {("conversations", "CASCADE"), ("messages", "SET NULL")},
+            "conversation_summaries": {("conversations", "CASCADE")},
+            "evolution_checkpoints": {("conversations", "CASCADE")},
+        }
+        for table, expected in expected_fks.items():
+            fks = {(row["table"], row["on_delete"]) for row in connection.execute(f"PRAGMA foreign_key_list({table})")}
+            if not expected <= fks:
+                return False
+        expected_unique = {
+            "raw_events": {"owner_id", "conversation_id", "idempotency_key"},
+            "conversation_summaries": {"owner_id", "conversation_id"},
+            "evolution_checkpoints": {"owner_id", "conversation_id", "stage"},
+        }
+        for table, columns in expected_unique.items():
+            found = False
+            for index in connection.execute(f"PRAGMA index_list({table})"):
+                if not index["unique"]:
+                    continue
+                index_columns = {row["name"] for row in connection.execute(f"PRAGMA index_info({index['name']})")}
+                if columns <= index_columns:
+                    found = True
+                    break
+            if not found:
+                return False
+        expected_indexes = {
+            "idx_raw_events_session": "raw_events",
+            "idx_summaries_scope": "conversation_summaries",
+        }
+        for index, table in expected_indexes.items():
+            row = connection.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=? AND tbl_name=?", (index, table)).fetchone()
+            if not row:
+                return False
+        return True
 
     @staticmethod
     def _project(row: sqlite3.Row) -> Project:
@@ -430,7 +541,7 @@ class MemoryRepository:
             rows = db.execute(f"SELECT * FROM messages WHERE conversation_id=? AND owner_id=?{clause} ORDER BY created_at DESC, message_id DESC LIMIT ?", (*params, limit)).fetchall()
         return [self._message(row) for row in rows]
 
-    def create_memory(self, owner_id: str, scope: str, project_id: Optional[str], category: str, statement: str, source_kind: str, confidence: float, *, status: str = "active", supersedes_id: Optional[str] = None) -> MemoryRecord:
+    def create_memory(self, owner_id: str, scope: str, project_id: Optional[str], category: str, statement: str, source_kind: str, confidence: float, *, status: str = "active", supersedes_id: Optional[str] = None, evidence: Optional[tuple[Optional[str], Optional[str], str, Optional[str]]] = None) -> MemoryRecord:
         if scope not in MEMORY_SCOPES:
             raise ValueError("invalid memory scope")
         if scope == "project":
@@ -449,6 +560,8 @@ class MemoryRepository:
         now, memory_id = _now(), uuid.uuid4().hex
         with self.transaction() as db:
             db.execute("INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (memory_id, owner_id, scope, project_id, category, statement.strip(), source_kind, status, float(confidence), supersedes_id, now, now, None))
+            if evidence is not None:
+                self._insert_memory_evidence(db, memory_id, owner_id, evidence[0], evidence[1], evidence[2], evidence[3])
         return self.get_memory(memory_id, owner_id)
 
     def get_memory(self, memory_id: str, owner_id: str) -> Optional[MemoryRecord]:
@@ -563,29 +676,233 @@ class MemoryRepository:
             db.execute("UPDATE memories SET last_used_at=?, updated_at=? WHERE memory_id=? AND owner_id=? AND status='active'", (now, now, memory_id, owner_id))
         return self.get_memory(memory_id, owner_id)
 
+    def promote_memory(self, memory_id: str, owner_id: str) -> Optional[MemoryRecord]:
+        """Promote an automatically generated candidate only with evidence.
+
+        Manual confirmation remains available through ``confirm_memory``; this
+        stricter seam is used by the evolution worker and never changes scope.
+        """
+        memory = self.get_memory(memory_id, owner_id)
+        if not memory:
+            return None
+        if memory.status != "candidate":
+            raise ValueError("memory is not a candidate")
+        with self.connection() as db:
+            evidence = db.execute("SELECT 1 FROM memory_evidence WHERE memory_id=? LIMIT 1", (memory_id,)).fetchone()
+        if not evidence:
+            raise ValueError("memory promotion requires evidence")
+        with self.transaction() as db:
+            if memory.supersedes_id:
+                db.execute("UPDATE memories SET status='superseded', updated_at=? WHERE memory_id=? AND owner_id=?", (_now(), memory.supersedes_id, owner_id))
+            db.execute("UPDATE memories SET status='active', updated_at=? WHERE memory_id=? AND owner_id=? AND status='candidate'", (_now(), memory_id, owner_id))
+        return self.get_memory(memory_id, owner_id)
+
+    @staticmethod
+    def _raw_event(row: sqlite3.Row) -> RawEvent:
+        return RawEvent(row["event_id"], row["owner_id"], row["conversation_id"], row["message_id"], row["event_kind"], json.loads(row["payload"]), row["idempotency_key"], _dt(row["created_at"]))
+
+    def append_raw_event(self, owner_id: str, conversation_id: str, event_kind: str, payload: dict, *, message_id: Optional[str] = None, idempotency_key: Optional[str] = None) -> RawEvent:
+        """Append an immutable event; a repeated key returns the original row."""
+        if not event_kind or not isinstance(payload, dict):
+            raise ValueError("invalid raw event")
+        conversation = self.get_conversation(conversation_id, owner_id)
+        if not conversation:
+            raise LookupError("conversation not found")
+        now, event_id = _now(), uuid.uuid4().hex
+        try:
+            with self.transaction() as db:
+                if message_id:
+                    message_row = db.execute("SELECT owner_id, conversation_id FROM messages WHERE message_id=?", (message_id,)).fetchone()
+                    if not message_row or message_row["owner_id"] != owner_id:
+                        raise LookupError("message not found")
+                    if message_row["conversation_id"] != conversation_id:
+                        raise ValueError("message conversation mismatch")
+                db.execute("INSERT INTO raw_events(event_id, owner_id, conversation_id, message_id, event_kind, payload, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (event_id, owner_id, conversation_id, message_id, event_kind.strip()[:80], json.dumps(payload, ensure_ascii=False, sort_keys=True), idempotency_key, now))
+        except sqlite3.IntegrityError:
+            if idempotency_key:
+                with self.connection() as db:
+                    row = db.execute("SELECT * FROM raw_events WHERE owner_id=? AND conversation_id=? AND idempotency_key=?", (owner_id, conversation_id, idempotency_key)).fetchone()
+                if row:
+                    return self._raw_event(row)
+            raise
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM raw_events WHERE event_id=?", (event_id,)).fetchone()
+        return self._raw_event(row)
+
+    def list_raw_events(self, conversation_id: str, owner_id: str, *, after: Optional[str] = None, limit: int = 1000) -> list[RawEvent]:
+        if not self.get_conversation(conversation_id, owner_id):
+            raise LookupError("conversation not found")
+        limit = max(1, min(int(limit), 5000))
+        params: list[object] = [owner_id, conversation_id]
+        clause = ""
+        if after:
+            with self.connection() as db:
+                row = db.execute("SELECT created_at FROM raw_events WHERE event_id=? AND owner_id=? AND conversation_id=?", (after, owner_id, conversation_id)).fetchone()
+            if not row:
+                raise ValueError("invalid raw event cursor")
+            clause = " AND (created_at > ? OR (created_at = ? AND event_id > ?))"
+            params.extend([row["created_at"], row["created_at"], after])
+        with self.connection() as db:
+            rows = db.execute(f"SELECT * FROM raw_events WHERE owner_id=? AND conversation_id=?{clause} ORDER BY created_at, event_id LIMIT ?", (*params, limit)).fetchall()
+        return [self._raw_event(row) for row in rows]
+
+    def _summary(self, row: sqlite3.Row) -> ConversationSummary:
+        return ConversationSummary(row["summary_id"], row["owner_id"], row["conversation_id"], row["summary_text"], row["source_event_id"], row["status"], _dt(row["created_at"]), _dt(row["updated_at"]))
+
+    def upsert_conversation_summary(self, owner_id: str, conversation_id: str, summary_text: str, *, source_event_id: Optional[str] = None, status: str = "active") -> ConversationSummary:
+        if not summary_text or status not in {"active", "superseded", "disabled"}:
+            raise ValueError("invalid conversation summary")
+        if not self.get_conversation(conversation_id, owner_id):
+            raise LookupError("conversation not found")
+        now, summary_id = _now(), uuid.uuid4().hex
+        with self.transaction() as db:
+            existing = db.execute("SELECT summary_id, created_at FROM conversation_summaries WHERE owner_id=? AND conversation_id=?", (owner_id, conversation_id)).fetchone()
+            if existing:
+                summary_id = existing["summary_id"]
+                db.execute("UPDATE conversation_summaries SET summary_text=?, source_event_id=?, status=?, updated_at=? WHERE summary_id=? AND owner_id=?", (summary_text, source_event_id, status, now, summary_id, owner_id))
+            else:
+                db.execute("INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (summary_id, owner_id, conversation_id, summary_text, source_event_id, status, now, now))
+        with self.connection() as db:
+            return self._summary(db.execute("SELECT * FROM conversation_summaries WHERE summary_id=?", (summary_id,)).fetchone())
+
+    def list_conversation_summaries(self, conversation_id: str, owner_id: str, *, budget_chars: Optional[int] = None) -> list[ConversationSummary]:
+        with self.connection() as db:
+            rows = db.execute("SELECT * FROM conversation_summaries WHERE conversation_id=? AND owner_id=? AND status='active' ORDER BY updated_at DESC", (conversation_id, owner_id)).fetchall()
+        items = [self._summary(row) for row in rows]
+        if budget_chars is None:
+            return items
+        selected, used = [], 0
+        for item in items:
+            if used + len(item.summary_text) > max(0, int(budget_chars)):
+                break
+            selected.append(item); used += len(item.summary_text)
+        return selected
+
+    def list_recall_summaries(self, owner_id: str, project_id: Optional[str], *, query: str = "", budget_chars: int = 1500) -> list[ConversationSummary]:
+        params: list[object] = [owner_id]
+        clause = "c.owner_id=? AND s.status='active'"
+        if project_id:
+            clause += " AND c.project_id=?"; params.append(project_id)
+        else:
+            clause += " AND c.project_id IS NULL"
+        with self.connection() as db:
+            rows = db.execute(f"SELECT s.* FROM conversation_summaries s JOIN conversations c ON c.conversation_id=s.conversation_id WHERE {clause} ORDER BY s.updated_at DESC LIMIT 50", params).fetchall()
+        terms = {part.lower() for part in (query or "").split() if len(part) > 1}
+        items = [self._summary(row) for row in rows]
+        if terms:
+            relevant = [item for item in items if any(term in item.summary_text.lower() for term in terms)]
+            items = relevant
+        selected, used = [], 0
+        for item in items:
+            if used + len(item.summary_text) > max(0, int(budget_chars)):
+                break
+            selected.append(item); used += len(item.summary_text)
+        return selected
+
+    def _checkpoint(self, row: sqlite3.Row) -> EvolutionCheckpoint:
+        return EvolutionCheckpoint(row["checkpoint_id"], row["owner_id"], row["conversation_id"], row["stage"], row["status"], row["cursor"], int(row["batch_index"]), int(row["total_batches"]), json.loads(row["state_json"] or "{}"), int(row["attempts"]), row["idempotency_key"], row["error"], _dt(row["created_at"]), _dt(row["updated_at"]))
+
+    def get_evolution_checkpoint(self, conversation_id: str, owner_id: str, stage: str = "summarize") -> Optional[EvolutionCheckpoint]:
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM evolution_checkpoints WHERE conversation_id=? AND owner_id=? AND stage=?", (conversation_id, owner_id, stage)).fetchone()
+        return self._checkpoint(row) if row else None
+
+    def list_evolution_work_items(self, owner_id: str) -> list[str]:
+        """Return sessions with raw input or a retryable evolution checkpoint."""
+        with self.connection() as db:
+            rows = db.execute("""SELECT conversation_id FROM raw_events WHERE owner_id=?
+                UNION SELECT conversation_id FROM evolution_checkpoints
+                WHERE owner_id=? AND status IN ('failed', 'running')""", (owner_id, owner_id)).fetchall()
+        return [row["conversation_id"] for row in rows]
+
+    def claim_evolution_checkpoint(self, conversation_id: str, owner_id: str, *, stage: str = "summarize", idempotency_key: Optional[str] = None, total_batches: int = 0, input_last_event_id: Optional[str] = None) -> tuple[EvolutionCheckpoint, bool]:
+        if not self.get_conversation(conversation_id, owner_id):
+            raise LookupError("conversation not found")
+        now, checkpoint_id = _now(), uuid.uuid4().hex
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM evolution_checkpoints WHERE conversation_id=? AND owner_id=? AND stage=?", (conversation_id, owner_id, stage)).fetchone()
+            if row and row["status"] == "running":
+                stale_before = datetime.now(timezone.utc) - timedelta(seconds=EVOLUTION_LEASE_SECONDS)
+                updated_at = _dt(row["updated_at"])
+                if updated_at and updated_at <= stale_before:
+                    result = db.execute("UPDATE evolution_checkpoints SET status='running', total_batches=?, attempts=attempts+1, idempotency_key=?, error=NULL, updated_at=? WHERE checkpoint_id=? AND owner_id=? AND status='running' AND updated_at=?", (total_batches, idempotency_key, now, row["checkpoint_id"], owner_id, row["updated_at"]))
+                    if result.rowcount:
+                        row = db.execute("SELECT * FROM evolution_checkpoints WHERE checkpoint_id=?", (row["checkpoint_id"],)).fetchone()
+                        return self._checkpoint(row), True
+                return self._checkpoint(row), False
+            if row and row["status"] == "completed":
+                prior_last = json.loads(row["state_json"] or "{}").get("input_last_event_id")
+                if input_last_event_id and input_last_event_id != prior_last:
+                    db.execute("UPDATE evolution_checkpoints SET status='running', total_batches=?, batch_index=0, state_json='{}', attempts=attempts+1, idempotency_key=?, error=NULL, updated_at=? WHERE checkpoint_id=? AND status='completed'", (total_batches, idempotency_key, now, row["checkpoint_id"]))
+                    row = db.execute("SELECT * FROM evolution_checkpoints WHERE checkpoint_id=?", (row["checkpoint_id"],)).fetchone()
+                    return self._checkpoint(row), True
+                return self._checkpoint(row), False
+            if row:
+                db.execute("UPDATE evolution_checkpoints SET status='running', total_batches=?, attempts=attempts+1, idempotency_key=?, error=NULL, updated_at=? WHERE checkpoint_id=?", (total_batches, idempotency_key, now, row["checkpoint_id"]))
+                row = db.execute("SELECT * FROM evolution_checkpoints WHERE checkpoint_id=?", (row["checkpoint_id"],)).fetchone()
+                return self._checkpoint(row), True
+            db.execute("INSERT INTO evolution_checkpoints VALUES (?, ?, ?, ?, 'running', NULL, 0, ?, '{}', 1, ?, NULL, ?, ?)", (checkpoint_id, owner_id, conversation_id, stage, total_batches, idempotency_key, now, now))
+            row = db.execute("SELECT * FROM evolution_checkpoints WHERE checkpoint_id=?", (checkpoint_id,)).fetchone()
+        return self._checkpoint(row), True
+
+    def save_evolution_progress(self, checkpoint_id: str, owner_id: str, *, cursor: Optional[str], batch_index: int, state: dict) -> Optional[EvolutionCheckpoint]:
+        with self.transaction() as db:
+            db.execute("UPDATE evolution_checkpoints SET cursor=?, batch_index=?, state_json=?, updated_at=? WHERE checkpoint_id=? AND owner_id=? AND status='running'", (cursor, int(batch_index), json.dumps(state, ensure_ascii=False, sort_keys=True), _now(), checkpoint_id, owner_id))
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM evolution_checkpoints WHERE checkpoint_id=? AND owner_id=?", (checkpoint_id, owner_id)).fetchone()
+        return self._checkpoint(row) if row else None
+
+    def finish_evolution_checkpoint(self, checkpoint_id: str, owner_id: str, *, status: str, error: Optional[str] = None) -> Optional[EvolutionCheckpoint]:
+        if status not in {"completed", "failed", "skipped"}:
+            raise ValueError("invalid checkpoint status")
+        with self.transaction() as db:
+            db.execute("UPDATE evolution_checkpoints SET status=?, error=?, updated_at=? WHERE checkpoint_id=? AND owner_id=?", (status, (error or "")[:500] or None, _now(), checkpoint_id, owner_id))
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM evolution_checkpoints WHERE checkpoint_id=? AND owner_id=?", (checkpoint_id, owner_id)).fetchone()
+        return self._checkpoint(row) if row else None
+
+    def list_recall_context(self, owner_id: str, project_id: Optional[str], *, query: str = "", memory_char_budget: int = 4000, summary_char_budget: int = 1500, char_budget: Optional[int] = None, token_budget: Optional[int] = None) -> dict:
+        """Return scoped memories and summaries under independent budgets."""
+        if char_budget is not None:
+            summary_char_budget = min(summary_char_budget, max(0, int(char_budget)))
+        if token_budget is not None:
+            summary_char_budget = min(summary_char_budget, max(0, int(token_budget)) * 4)
+        memories, used = [], 0
+        for memory in self.list_recall_memories(owner_id, project_id):
+            if used + len(memory.statement) > max(0, int(memory_char_budget)):
+                continue
+            memories.append(memory); used += len(memory.statement)
+        return {"memories": memories, "summaries": self.list_recall_summaries(owner_id, project_id, query=query, budget_chars=summary_char_budget)}
+
     def create_memory_evidence(self, memory_id: str, conversation_id: Optional[str], message_id: Optional[str], evidence_type: str, excerpt: Optional[str]) -> None:
         if evidence_type not in {"user_statement", "repeated_sessions", "tool_failure", "manual"}:
             raise ValueError("invalid evidence type")
         with self.transaction() as db:
-            memory_row = db.execute("SELECT owner_id, scope, project_id FROM memories WHERE memory_id=?", (memory_id,)).fetchone()
+            memory_row = db.execute("SELECT owner_id FROM memories WHERE memory_id=?", (memory_id,)).fetchone()
             if not memory_row:
                 raise LookupError("memory not found")
-            conversation_row = None
-            if conversation_id:
-                conversation_row = db.execute("SELECT owner_id, project_id FROM conversations WHERE conversation_id=?", (conversation_id,)).fetchone()
-                if not conversation_row or conversation_row["owner_id"] != memory_row["owner_id"]:
-                    raise LookupError("conversation not found")
-                if memory_row["scope"] == "project" and conversation_row["project_id"] != memory_row["project_id"]:
-                    raise ValueError("memory evidence project mismatch")
-            if message_id:
-                message_row = db.execute("""SELECT m.owner_id, m.conversation_id, c.project_id
-                    FROM messages m JOIN conversations c ON c.conversation_id=m.conversation_id
-                    WHERE m.message_id=?""", (message_id,)).fetchone()
-                if not message_row or message_row["owner_id"] != memory_row["owner_id"] or (conversation_id and message_row["conversation_id"] != conversation_id):
-                    raise LookupError("message not found")
-                if memory_row["scope"] == "project" and message_row["project_id"] != memory_row["project_id"]:
-                    raise ValueError("memory evidence project mismatch")
-            db.execute("INSERT INTO memory_evidence VALUES (?, ?, ?, ?, ?)", (memory_id, conversation_id, message_id, evidence_type, (excerpt or "")[:500] or None))
+            self._insert_memory_evidence(db, memory_id, memory_row["owner_id"], conversation_id, message_id, evidence_type, excerpt)
+
+    @staticmethod
+    def _insert_memory_evidence(db: sqlite3.Connection, memory_id: str, owner_id: str, conversation_id: Optional[str], message_id: Optional[str], evidence_type: str, excerpt: Optional[str]) -> None:
+        memory_row = db.execute("SELECT scope, project_id FROM memories WHERE memory_id=? AND owner_id=?", (memory_id, owner_id)).fetchone()
+        if not memory_row:
+            raise LookupError("memory not found")
+        if conversation_id:
+            conversation_row = db.execute("SELECT owner_id, project_id FROM conversations WHERE conversation_id=?", (conversation_id,)).fetchone()
+            if not conversation_row or conversation_row["owner_id"] != owner_id:
+                raise LookupError("conversation not found")
+            if memory_row["scope"] == "project" and conversation_row["project_id"] != memory_row["project_id"]:
+                raise ValueError("memory evidence project mismatch")
+        if message_id:
+            message_row = db.execute("""SELECT m.owner_id, m.conversation_id, c.project_id
+                FROM messages m JOIN conversations c ON c.conversation_id=m.conversation_id
+                WHERE m.message_id=?""", (message_id,)).fetchone()
+            if not message_row or message_row["owner_id"] != owner_id or (conversation_id and message_row["conversation_id"] != conversation_id):
+                raise LookupError("message not found")
+            if memory_row["scope"] == "project" and message_row["project_id"] != memory_row["project_id"]:
+                raise ValueError("memory evidence project mismatch")
+        db.execute("INSERT INTO memory_evidence VALUES (?, ?, ?, ?, ?)", (memory_id, conversation_id, message_id, evidence_type, (excerpt or "")[:500] or None))
 
     def list_memory_evidence(self, memory_id: str, owner_id: str) -> list[MemoryEvidence]:
         with self.connection() as db:

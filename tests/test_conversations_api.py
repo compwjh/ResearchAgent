@@ -1,10 +1,12 @@
 import json
+import time
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
 from backend.app.api.routes_conversations import _message_stream
+from backend.app.chat.application.conversation_service import MemoryEvolutionService
 from backend.app.memory.repository import MemoryRepository
 
 
@@ -43,6 +45,9 @@ def test_project_and_lazy_conversation_flow(tmp_path):
         messages = client.get(f"/api/conversations/{conversation_id}/messages?target_chars=100")
         assert messages.status_code == 200
         assert len(messages.json()["messages"]) == 2
+        evolution_repo = MemoryRepository(tmp_path / "memory.sqlite3")
+        raw_kinds = [event.event_kind for event in evolution_repo.list_raw_events(conversation_id, "local-user")]
+        assert "user_message" in raw_kinds and "explicit_memory" in raw_kinds
 
 
 def test_unbound_conversation_does_not_recall_project_memory(tmp_path):
@@ -160,3 +165,66 @@ def test_memory_scope_project_parameter_conflicts_are_stable_errors(tmp_path):
         assert client.get(f"/api/memories?scope=global&project_id={project_id}").status_code == 400
         assert client.get("/api/memories?scope=project").status_code == 400
         assert client.get("/api/memories?scope=project&project_id=missing").status_code == 404
+
+
+def test_chat_wires_durable_worker_and_worker_failure_does_not_block_sse(tmp_path):
+    with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
+        client = TestClient(app)
+        project_id = client.post("/api/projects", json={"name": "P"}).json()["project_id"]
+        with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
+            "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
+        ):
+            response = client.post("/api/conversations/messages", json={"content": "纠正：回答简洁", "project_id": project_id, "model": "model"})
+        assert response.status_code == 200 and _events(response.text)[-1]["type"] == "done"
+        events = _events(response.text)
+        conversation_id = events[0]["conversation_id"]
+        repo = MemoryRepository(tmp_path / "memory.sqlite3")
+        deadline = time.monotonic() + 2
+        checkpoint = None
+        while time.monotonic() < deadline:
+            checkpoint = repo.get_evolution_checkpoint(conversation_id, "local-user")
+            if checkpoint and checkpoint.status == "completed":
+                break
+            time.sleep(0.01)
+        assert checkpoint and checkpoint.status == "completed"
+        assert repo.list_conversation_summaries(conversation_id, "local-user")
+        assert repo.list_memories("local-user", project_id, scope="project", status="candidate")
+
+        with patch("backend.app.api.routes_conversations.run_chat", return_value=FakeRun()), patch.object(
+            MemoryEvolutionService, "process_session", side_effect=RuntimeError("worker failure")
+        ), patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]):
+            failed_worker_response = client.post("/api/conversations/messages", json={"content": "普通问题", "project_id": project_id, "model": "model"})
+        assert failed_worker_response.status_code == 200 and _events(failed_worker_response.text)[-1]["type"] == "done"
+
+
+def test_worker_initialization_failure_does_not_block_sse(tmp_path):
+    with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
+        client = TestClient(app)
+        with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
+            "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
+        ), patch(
+            "backend.app.api.routes_conversations.get_memory_evolution_worker", side_effect=RuntimeError("worker init failure")
+        ):
+            response = client.post("/api/conversations/messages", json={"content": "worker init must not block", "model": "model"})
+        assert response.status_code == 200
+        events = _events(response.text)
+        assert events[-1]["type"] == "done" and events[-1]["status"] == "completed"
+        repo = MemoryRepository(tmp_path / "memory.sqlite3")
+        assert repo.list_raw_events(events[0]["conversation_id"], "local-user")
+
+
+def test_chat_prompt_does_not_duplicate_current_user_message(tmp_path):
+    with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
+        client = TestClient(app)
+        captured = {}
+        class CaptureRun(FakeRun):
+            pass
+        def capture_run(_question, _model, *, prompt):
+            captured["prompt"] = prompt
+            return CaptureRun()
+        with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
+            "backend.app.api.routes_conversations.run_chat", side_effect=capture_run
+        ):
+            response = client.post("/api/conversations/messages", json={"content": "CURRENT_UNIQUE_9f2", "model": "model"})
+        assert response.status_code == 200
+        assert captured["prompt"].count("CURRENT_UNIQUE_9f2") == 1

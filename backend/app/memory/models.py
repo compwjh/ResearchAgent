@@ -79,3 +79,45 @@ class ProcessingStep:
     summary: Optional[str]
     started_at: datetime
     completed_at: Optional[datetime]
+
+
+@dataclass(frozen=True)
+class RawEvent:
+    event_id: str
+    owner_id: str
+    conversation_id: str
+    message_id: Optional[str]
+    event_kind: str
+    payload: dict
+    idempotency_key: Optional[str]
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ConversationSummary:
+    summary_id: str
+    owner_id: str
+    conversation_id: str
+    summary_text: str
+    source_event_id: Optional[str]
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class EvolutionCheckpoint:
+    checkpoint_id: str
+    owner_id: str
+    conversation_id: str
+    stage: str
+    status: str
+    cursor: Optional[str]
+    batch_index: int
+    total_batches: int
+    state: dict
+    attempts: int
+    idempotency_key: Optional[str]
+    error: Optional[str]
+    created_at: datetime
+    updated_at: datetime

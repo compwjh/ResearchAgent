@@ -1,10 +1,11 @@
 import sqlite3
+import time
 from datetime import datetime, timezone
 
 import pytest
 
 from backend.app.memory.repository import MemoryRepository
-from backend.app.chat.application.conversation_service import compose_chat_prompt
+from backend.app.chat.application.conversation_service import MemoryEvolutionService, MemoryEvolutionWorker, compose_chat_prompt
 
 
 def test_sqlite_memory_schema_is_idempotent_and_isolated(tmp_path):
@@ -131,7 +132,7 @@ def test_v1_database_is_migrated_atomically_and_message_evidence_is_nullable(tmp
     _make_v1_database(path)
     repo = MemoryRepository(path)
     with repo.connection() as db:
-        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 2
+        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 3
         columns = {row["name"] for row in db.execute("PRAGMA table_info(conversations)")}
         assert {"memory_binding_at", "memory_binding_message_id"} <= columns
         foreign_keys = db.execute("PRAGMA foreign_key_list(memory_evidence)").fetchall()
@@ -204,3 +205,159 @@ def test_unbinding_keeps_cutoff_and_allows_only_later_unbound_history(tmp_path):
     later = repo.create_message(conversation.conversation_id, "owner-a", "user", "unbound question", status="completed")
     context_ids = {message.message_id for message in repo.list_context_messages(conversation.conversation_id, "owner-a")}
     assert context_ids == {later.message_id} and old.message_id not in context_ids
+
+
+def test_raw_events_are_append_only_and_duplicate_trigger_is_idempotent(tmp_path):
+    repo = MemoryRepository(tmp_path / "evolution.sqlite3")
+    conversation = repo.create_conversation("owner-a")
+    event = repo.append_raw_event("owner-a", conversation.conversation_id, "explicit_memory", {"statement": "结论优先"}, idempotency_key="m1")
+    duplicate = repo.append_raw_event("owner-a", conversation.conversation_id, "explicit_memory", {"statement": "changed"}, idempotency_key="m1")
+    assert duplicate.event_id == event.event_id
+    assert repo.list_raw_events(conversation.conversation_id, "owner-a")[0].payload["statement"] == "结论优先"
+    with pytest.raises(AttributeError):
+        repo.update_raw_event(event.event_id, "owner-a", payload={})
+
+
+def test_evolution_checkpoint_restarts_and_retries_without_duplicate_summary(tmp_path):
+    repo = MemoryRepository(tmp_path / "evolution.sqlite3")
+    conversation = repo.create_conversation("owner-a")
+    for index in range(5):
+        repo.append_raw_event("owner-a", conversation.conversation_id, "user_message", {"content": f"event-{index}"}, idempotency_key=f"e{index}")
+    service = MemoryEvolutionService(repo, batch_size=2, summary_budget_chars=80)
+    with pytest.raises(RuntimeError, match="injected"):
+        service.process_session(conversation.conversation_id, "owner-a", trigger="context_pressure", fail_after_batches=1)
+    failed = repo.get_evolution_checkpoint(conversation.conversation_id, "owner-a", "summarize")
+    assert failed.status == "failed" and failed.batch_index == 1 and failed.attempts == 1
+    restarted = MemoryRepository(tmp_path / "evolution.sqlite3")
+    result = MemoryEvolutionService(restarted, batch_size=2, summary_budget_chars=80).process_session(conversation.conversation_id, "owner-a", trigger="retry")
+    assert result.status == "completed"
+    assert restarted.get_evolution_checkpoint(conversation.conversation_id, "owner-a", "summarize").attempts == 2
+    summaries = restarted.list_conversation_summaries(conversation.conversation_id, "owner-a")
+    assert len(summaries) == 1 and len(summaries[0].summary_text) <= 80
+
+
+def test_evolution_session_mutex_and_candidate_promotion_require_evidence(tmp_path):
+    repo = MemoryRepository(tmp_path / "evolution.sqlite3")
+    project = repo.create_project("owner-a", "P")
+    conversation = repo.create_conversation("owner-a", project.project_id)
+    service = MemoryEvolutionService(repo, batch_size=10)
+    assert service.try_session_lock(conversation.conversation_id) is True
+    assert service.try_session_lock(conversation.conversation_id) is False
+    service.release_session_lock(conversation.conversation_id)
+    candidate = repo.create_memory("owner-a", "project", project.project_id, "project_rule", "候选", "repeated", 0.7, status="candidate")
+    with pytest.raises(ValueError, match="evidence"):
+        repo.promote_memory(candidate.memory_id, "owner-a")
+    repo.append_raw_event("owner-a", conversation.conversation_id, "user_correction", {"replacement": "候选"}, idempotency_key="correction-1")
+    repo.create_memory_evidence(candidate.memory_id, conversation.conversation_id, None, "user_statement", "候选")
+    promoted = repo.promote_memory(candidate.memory_id, "owner-a")
+    assert promoted.status == "active" and promoted.scope == "project"
+
+
+def test_evolution_scope_isolation_conflict_supersedes_and_budgeted_recall(tmp_path):
+    repo = MemoryRepository(tmp_path / "evolution.sqlite3")
+    p1 = repo.create_project("owner-a", "P1")
+    p2 = repo.create_project("owner-a", "P2")
+    c1 = repo.create_conversation("owner-a", p1.project_id)
+    repo.append_raw_event("owner-a", c1.conversation_id, "user_message", {"content": "数据库偏好"}, idempotency_key="s1")
+    MemoryEvolutionService(repo, batch_size=10, summary_budget_chars=40).process_session(c1.conversation_id, "owner-a", trigger="idle")
+    repo.create_memory("owner-a", "global", None, "user_preference", "全局", "manual", 1.0)
+    project_memory = repo.create_memory("owner-a", "project", p1.project_id, "project_rule", "项目规则", "manual", 1.0)
+    recall = repo.list_recall_context("owner-a", p1.project_id, char_budget=20)
+    assert recall["memories"] and all(len(item.statement) <= 1000 for item in recall["memories"])
+    assert repo.list_recall_context("owner-a", p2.project_id, char_budget=200)["summaries"] == []
+    edited = repo.update_memory(project_memory.memory_id, "owner-a", statement="新项目规则")
+    assert edited.supersedes_id == project_memory.memory_id
+    assert repo.get_memory(project_memory.memory_id, "owner-a").status == "superseded"
+
+
+def test_correction_candidate_uses_superseded_chain_only_when_promoted(tmp_path):
+    repo = MemoryRepository(tmp_path / "correction.sqlite3")
+    project = repo.create_project("owner-a", "P")
+    conversation = repo.create_conversation("owner-a", project.project_id)
+    previous = repo.create_memory("owner-a", "project", project.project_id, "project_rule", "旧规则", "manual", 1.0)
+    repo.append_raw_event("owner-a", conversation.conversation_id, "user_correction", {"replacement": "新规则"}, message_id=None, idempotency_key="correction")
+    service = MemoryEvolutionService(repo, batch_size=10)
+    service.process_session(conversation.conversation_id, "owner-a", trigger="user_correction")
+    candidate = next(item for item in repo.list_memories("owner-a", project.project_id, scope="project", status="candidate") if item.statement == "新规则")
+    assert candidate.supersedes_id == previous.memory_id
+    assert repo.get_memory(previous.memory_id, "owner-a").status == "active"
+    repo.promote_memory(candidate.memory_id, "owner-a")
+    assert repo.get_memory(previous.memory_id, "owner-a").status == "superseded"
+
+
+def test_v3_malformed_table_fails_closed_at_startup(tmp_path):
+    path = tmp_path / "malformed-v3.sqlite3"
+    repo = MemoryRepository(path)
+    with repo.transaction() as db:
+        db.execute("DROP TABLE raw_events")
+        db.execute("CREATE TABLE raw_events(event_id TEXT PRIMARY KEY)")
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        MemoryRepository(path)
+
+
+def test_raw_event_message_and_cursor_must_belong_to_same_conversation(tmp_path):
+    repo = MemoryRepository(tmp_path / "raw-scope.sqlite3")
+    first = repo.create_conversation("owner-a")
+    second = repo.create_conversation("owner-a")
+    message = repo.create_message(second.conversation_id, "owner-a", "user", "second", status="completed")
+    event = repo.append_raw_event("owner-a", second.conversation_id, "user_message", {"content": "second"}, message_id=message.message_id, idempotency_key="second")
+    with pytest.raises(ValueError, match="conversation"):
+        repo.append_raw_event("owner-a", first.conversation_id, "user_message", {"content": "wrong"}, message_id=message.message_id)
+    with pytest.raises(ValueError, match="cursor"):
+        repo.list_raw_events(first.conversation_id, "owner-a", after=event.event_id)
+
+
+def test_stale_running_checkpoint_is_taken_over_and_resumes(tmp_path):
+    path = tmp_path / "stale.sqlite3"
+    repo = MemoryRepository(path)
+    conversation = repo.create_conversation("owner-a")
+    for index in range(3):
+        repo.append_raw_event("owner-a", conversation.conversation_id, "user_message", {"content": str(index)}, idempotency_key=str(index))
+    checkpoint, claimed = repo.claim_evolution_checkpoint(conversation.conversation_id, "owner-a", total_batches=2, idempotency_key="crashed")
+    assert claimed
+    repo.save_evolution_progress(checkpoint.checkpoint_id, "owner-a", cursor=None, batch_index=1, state={"mapped": ["done"], "input_event_count": 3})
+    with repo.transaction() as db:
+        db.execute("UPDATE evolution_checkpoints SET updated_at=? WHERE checkpoint_id=?", ("2020-01-01T00:00:00+00:00", checkpoint.checkpoint_id))
+    restarted = MemoryRepository(path)
+    resumed = MemoryEvolutionService(restarted, batch_size=2).process_session(conversation.conversation_id, "owner-a", trigger="retry")
+    assert resumed.status == "completed" and resumed.attempts == 2 and resumed.batch_index == 2
+
+
+def test_evolution_worker_consumes_more_than_1000_events_and_recovers(tmp_path):
+    repo = MemoryRepository(tmp_path / "many-events.sqlite3")
+    conversation = repo.create_conversation("owner-a")
+    for index in range(1001):
+        repo.append_raw_event("owner-a", conversation.conversation_id, "user_message", {"content": f"e{index}"}, idempotency_key=f"e{index}")
+    worker = MemoryEvolutionWorker(repo, owner_id="owner-a", poll_interval=0.01).start()
+    worker.enqueue_session(conversation.conversation_id)
+    deadline = time.monotonic() + 5
+    checkpoint = None
+    while time.monotonic() < deadline:
+        checkpoint = repo.get_evolution_checkpoint(conversation.conversation_id, "owner-a")
+        if checkpoint and checkpoint.status == "completed":
+            break
+        time.sleep(0.01)
+    worker.stop()
+    assert checkpoint and checkpoint.status == "completed" and checkpoint.state["input_event_count"] == 1001
+    all_events = repo.list_raw_events(conversation.conversation_id, "owner-a", limit=5000)
+    assert checkpoint.state["input_last_event_id"] == all_events[-1].event_id
+    assert repo.list_conversation_summaries(conversation.conversation_id, "owner-a")[0].source_event_id == checkpoint.state["input_last_event_id"]
+
+
+def test_candidate_and_evidence_are_atomic(tmp_path, monkeypatch):
+    repo = MemoryRepository(tmp_path / "candidate-atomic.sqlite3")
+    project = repo.create_project("owner-a", "P")
+    def fail_evidence(*_args):
+        raise RuntimeError("evidence failure")
+    monkeypatch.setattr(repo, "_insert_memory_evidence", fail_evidence)
+    with pytest.raises(RuntimeError, match="evidence failure"):
+        repo.create_memory("owner-a", "project", project.project_id, "project_rule", "atomic", "repeated", 0.7, status="candidate", evidence=(None, None, "manual", "atomic"))
+    assert repo.list_memories("owner-a", project.project_id, scope="project", status="candidate") == []
+
+
+def test_summary_recall_without_match_is_empty(tmp_path):
+    repo = MemoryRepository(tmp_path / "summary-match.sqlite3")
+    project = repo.create_project("owner-a", "P")
+    conversation = repo.create_conversation("owner-a", project.project_id)
+    repo.upsert_conversation_summary("owner-a", conversation.conversation_id, "关于数据库索引的摘要")
+    assert repo.list_recall_summaries("owner-a", project.project_id, query="完全不相关", budget_chars=1000) == []

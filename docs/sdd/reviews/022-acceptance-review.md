@@ -149,3 +149,37 @@ Task03 的受影响后端、前端和旧聊天回归均通过；当前工作树�
 
 - 验收执行：tester（临时 Luna high）
 - 架构师签字：待主 Agent 按收口流程确认
+
+---
+
+# Spec022 Task04 后端验收章节
+
+> 验收角色：backend-tester（临时 Luna high）
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-04-memory-evolution-recall.md`
+> 范围：Task04 后端精确测试、Task02/03 受影响后端回归、旧聊天兼容、Python 静态检查；未运行前端、全量回归或部署。
+
+## 结论：PASS（后端定向范围）
+
+Task04 精确测试 **34 passed**；纳入 `tests/test_chat_route.py`、`tests/test_api.py` 的受影响与旧聊天兼容回归 **50 passed**。`py_compile` 与 `git diff --check` 均退出码 0。未发现 P0/P1 阻塞项；worker 重启触发时机存在 P2 生命周期提示。
+
+## 验收证据
+
+- Raw append-only、重复 trigger 幂等、message/cursor/session 隔离：通过。
+- v3 migration 原子性与半成品 fail-closed：通过。
+- Map/Reduce 分批、checkpoint 重启、stale lease 接管、同 session mutex、失败 retry、1001+ 完整分页：通过。
+- candidate evidence gate、evidence 原子回滚、correction `supersedes`、project 不升 global：通过。
+- recall scope 隔离、memory/summary 独立预算、无匹配 summary 空结果、当前问题不重复 history：通过。
+- worker enqueue、worker/初始化失败不阻塞 SSE：通过，HTTP 仍返回 `done=completed` 且 durable raw event 保留。
+
+详细命令、退出码、测试名称、API/service smoke 与风险见 [`docs/sdd/plans/022/artifacts/task-04/acceptance-report.md`](../plans/022/artifacts/task-04/acceptance-report.md)。当前 tester 沙箱无法监听本机端口，外部 health/OpenAPI smoke 由主 Agent 在可部署环境补做。
+
+## 主 Agent 后续动作
+
+1. 完成可部署环境的 health/OpenAPI/最小临时项目与 SSE smoke，并清理临时数据。
+2. 汇总跨端验收并由架构师签字；Spec 收口阶段继续执行全量回归、状态台账、部署与运行时验证。
+
+## 签字
+
+- 验收执行：backend-tester（临时 Luna high）
+- 进展日志：`.codebuddy/agent-logs/spec-022/task-04/backend-tester/20260911-acceptance.md`
+- 架构师签字：待主 Agent 按收口流程确认
