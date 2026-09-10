@@ -353,6 +353,28 @@ def test_inspection_building_has_stable_task_and_retry_contract(tmp_path: Path):
     assert (tmp_path / "manifests" / "d1" / "v1.claim").is_file()
 
 
+def test_inspection_missing_manifest_queues_reindex_for_canonical_document(tmp_path: Path):
+    client = TestClient(app)
+    record = {
+        "schema_version": "knowledge-document-v1",
+        "document_id": "d1",
+        "source_sha256": "a" * 64,
+    }
+    queued = {"task_id": "reindex-1", "submitted": {"v1": True}}
+    with patch.object(routes_kb, "KB_DIR", tmp_path), patch.object(
+        routes_kb, "load_papers_strict", return_value=[record]
+    ), patch.object(routes_kb, "_require_generation", return_value=None), patch.object(
+        routes_kb.InspectionManifestStore,
+        "read",
+        side_effect=routes_kb.ManifestStoreError("MANIFEST_NOT_FOUND", status=404),
+    ), patch.object(routes_kb, "submit_document_reindex", return_value=queued) as submit:
+        response = client.get("/api/kb/documents/d1/inspection")
+    assert response.status_code == 202
+    assert response.json()["status"] == "building"
+    submit.assert_called_once_with("d1", "v1")
+    assert not (tmp_path / "manifests" / "d1" / "v1.claim").exists()
+
+
 def test_inspection_ready_pages_all_arrays_and_supports_etag():
     client = TestClient(app)
     record = {"schema_version": "knowledge-document-v1", "document_id": "d1"}

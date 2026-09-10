@@ -260,6 +260,28 @@ def _canonical_document(document_id: str) -> bool:
     )
 
 
+def _canonical_source_is_indexable(document_id: str) -> bool:
+    """Tell the inspection route whether it can queue a real rebuild.
+
+    Old test/legacy records may only carry an id and intentionally retain the
+    durable claim-only response.  Canonical immutable documents have a source
+    hash; those can be sent through the existing reindex worker, which now
+    publishes the manifest together with the exact indexed chunks.
+    """
+    try:
+        records = load_papers_strict()
+    except Exception:
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("schema_version") == "knowledge-document-v1"
+        and (item.get("document_id") or item.get("paper_id")) == document_id
+        and isinstance(item.get("source_sha256"), str)
+        and bool(item.get("source_sha256"))
+        for item in records
+    )
+
+
 def _generation_store() -> Any:
     # FinalizeBundleStore receives the repository root; its live root is
     # ``data/kb``.  The inspection store receives that live root directly.
@@ -522,12 +544,31 @@ def inspect_document(
     except ManifestStoreError as error:
         if getattr(error, "code", "") == "MANIFEST_NOT_FOUND":
             task_id = hashlib.sha256(f"inspection:{document_id}:{chunker}".encode("utf-8")).hexdigest()[:32]
-            try:
-                manifest_store.claim(document_id, chunker, owner=f"inspection-{task_id}")
-            except ManifestStoreError as claim_error:
-                # An active claim is the durable idempotency record for the
-                # build request; all callers may safely poll the same task.
-                if getattr(claim_error, "code", "") != "MANIFEST_CLAIMED":
+            if _canonical_source_is_indexable(document_id):
+                # A canonical document has a source hash and can use the
+                # existing single-worker reindex path.  The indexer publishes
+                # the manifest from the same chunks it writes to Qdrant.
+                try:
+                    queued = submit_document_reindex(document_id, chunker)
+                except KnowledgeDocumentMigrationError as queue_error:
+                    status = {
+                        "DOCUMENT_NOT_FOUND": 404,
+                        "SOURCE_NOT_FOUND": 404,
+                        "SOURCE_HASH_MISMATCH": 409,
+                        "CHUNKER_UNSUPPORTED": 400,
+                        "INDEX_REBUILD_REQUIRED": 409,
+                    }.get(queue_error.code, 503)
+                    code = "INVALID_CHUNKER" if queue_error.code == "CHUNKER_UNSUPPORTED" else queue_error.code
+                    return _document_error(
+                        status,
+                        code,
+                        "检查清单构建任务暂时无法提交",
+                        request=request,
+                        document_id=document_id,
+                        chunker=chunker,
+                        retryable=status >= 500,
+                    )
+                except Exception:
                     return _document_error(
                         503,
                         "MANIFEST_FAILED",
@@ -537,6 +578,35 @@ def inspect_document(
                         chunker=chunker,
                         retryable=True,
                     )
+                submitted = queued.get("submitted", {}) if isinstance(queued, dict) else {}
+                if not isinstance(submitted, dict) or not submitted or not all(submitted.values()):
+                    return _document_error(
+                        409,
+                        "INDEX_ALREADY_RUNNING",
+                        "检查清单构建任务已有相同版本运行中",
+                        request=request,
+                        document_id=document_id,
+                        chunker=chunker,
+                        task_id=task_id,
+                        operation_status="running",
+                        progress=0,
+                    )
+            else:
+                try:
+                    manifest_store.claim(document_id, chunker, owner=f"inspection-{task_id}")
+                except ManifestStoreError as claim_error:
+                    # An active claim is the durable idempotency record for the
+                    # build request; all callers may safely poll the same task.
+                    if getattr(claim_error, "code", "") != "MANIFEST_CLAIMED":
+                        return _document_error(
+                            503,
+                            "MANIFEST_FAILED",
+                            "检查清单构建任务暂时无法提交",
+                            request=request,
+                            document_id=document_id,
+                            chunker=chunker,
+                            retryable=True,
+                        )
             return _document_error(
                 202,
                 "INSPECTION_BUILDING",

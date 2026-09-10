@@ -15,6 +15,16 @@ from qdrant_client import QdrantClient, models
 
 from backend.app.knowledge_base.infrastructure.chunkers import build_chunks_v1, build_chunks_v2, ollama_boundary_judge
 from backend.app.knowledge_base.infrastructure.embed import EmbeddingError, embed_texts, encode_sparse
+from backend.app.knowledge_base.infrastructure.inspection import (
+    InspectionError,
+    build_inspection_manifest,
+)
+from backend.app.knowledge_base.infrastructure.manifest_store import (
+    FinalizeBundleStore,
+    InspectionManifestStore,
+    ManifestStoreError,
+)
+from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.normalize import detect_citation, locate_reference_start
 from backend.app.knowledge_base.infrastructure.parse import (
     Chunk,
@@ -22,8 +32,10 @@ from backend.app.knowledge_base.infrastructure.parse import (
     build_chunks,
     extract_pages,
     extract_pages_normalized,
+    extract_pdf_provenance,
     total_chars,
 )
+from backend.app.knowledge_base.infrastructure.provenance import build_source_provenance_bundle
 from backend.app.knowledge_base.infrastructure.store import (
     CHUNKER_V1,
     CHUNKER_V2,
@@ -36,7 +48,7 @@ from backend.app.knowledge_base.infrastructure.store import (
     update_chunker_state,
     upsert_paper,
 )
-from backend.app.platform.config import EMBED_DIM, KB_COLLECTION, QDRANT_PATH
+from backend.app.platform.config import EMBED_DIM, KB_COLLECTION, KB_META_PATH, QDRANT_PATH
 
 DENSE_VECTOR = "dense"
 SPARSE_VECTOR = "sparse"
@@ -136,6 +148,8 @@ def upsert_chunks(
     chunker: str = CHUNKER_V1,
     ref_start_page: Optional[int] = None,
     destination_collection: Optional[str] = None,
+    document_id: Optional[str] = None,
+    source_sha256: Optional[str] = None,
 ) -> int:
     """写入片段；`chunker` 与 `is_citation` 进入 payload 供检索过滤。
 
@@ -149,34 +163,45 @@ def upsert_chunks(
     with _write_lock:
         ensure_collection(target, collection_name=collection)
         vectors = embed_texts([chunk.text for chunk in chunks])
-        target.upsert(
-            collection_name=collection,
-            points=[
+        points = []
+        for position, chunk in enumerate(chunks):
+            payload = {
+                "paper_id": paper_id,
+                "file_name": file_name,
+                "page": chunk.page,
+                "page_end": chunk.page_end,
+                "section": chunk.section,
+                "chunker": chunker,
+                "is_citation": (
+                    detect_citation(chunk.text, chunk.page, ref_start_page=ref_start_page)
+                    if ref_start_page is not None
+                    else False
+                ),
+                "chunk_index": chunk.chunk_index,
+                "text": chunk.text,
+                "uploaded_at": uploaded_at,
+            }
+            # New knowledge-document records need the identity and source
+            # hash required by the inspection-manifest contract.  Keep the
+            # legacy payload shape unchanged for callers that do not provide
+            # these values.
+            if document_id:
+                payload["document_id"] = document_id
+            if source_sha256:
+                payload["source_sha256"] = source_sha256
+            points.append(
                 models.PointStruct(
                     id=point_id(paper_id, chunk.chunk_index, chunker),
                     vector={
                         DENSE_VECTOR: vectors[position],
                         SPARSE_VECTOR: encode_sparse(chunk.text),
                     },
-                    payload={
-                        "paper_id": paper_id,
-                        "file_name": file_name,
-                        "page": chunk.page,
-                        "page_end": chunk.page_end,
-                        "section": chunk.section,
-                        "chunker": chunker,
-                        "is_citation": (
-                            detect_citation(chunk.text, chunk.page, ref_start_page=ref_start_page)
-                            if ref_start_page is not None
-                            else False
-                        ),
-                        "chunk_index": chunk.chunk_index,
-                        "text": chunk.text,
-                        "uploaded_at": uploaded_at,
-                    },
+                    payload=payload,
                 )
-                for position, chunk in enumerate(chunks)
-            ],
+            )
+        target.upsert(
+            collection_name=collection,
+            points=points,
         )
     return len(chunks)
 
@@ -311,6 +336,105 @@ def _report(progress: Optional[Callable[[int], None]], value: int) -> None:
         progress(max(0, min(100, int(value))))
 
 
+def _record_value(record: Any, name: str, default: Any = None) -> Any:
+    if isinstance(record, Mapping):
+        return record.get(name, default)
+    return getattr(record, name, default)
+
+
+def _source_pages(provenance: Any) -> List[tuple[Optional[int], str]]:
+    """Project parser provenance into the page text needed by citation detection."""
+    if getattr(provenance, "media_type", "") == "text/markdown":
+        return [(None, str(getattr(provenance, "normalized_text", "") or ""))]
+    by_page: Dict[int, List[str]] = {}
+    for block in getattr(provenance, "blocks", ()):
+        by_page.setdefault(int(block.page), []).append(str(getattr(block, "raw_text", "") or ""))
+    return [(page, "".join(texts)) for page, texts in sorted(by_page.items())]
+
+
+def _bundle_chunks(bundle: Any) -> List[Chunk]:
+    chunks: List[Chunk] = []
+    for value in bundle.chunks:
+        chunks.append(
+            Chunk(
+                text=str(value["text"]),
+                page=value.get("page"),
+                page_end=value.get("page_end"),
+                section=str(value.get("section") or ""),
+                chunk_index=int(value["chunk_index"]),
+            )
+        )
+    return chunks
+
+
+def _build_index_bundle(record: Any, file_path: Any, chunker: str, llm: Optional[Callable[[str], str]]) -> tuple[Any, Any, List[Chunk]] | None:
+    """Build provenance and chunks once for canonical document records.
+
+    Returning the chunks from the bundle is intentional: v2's LLM output is
+    consumed by both Qdrant and the manifest, so the two artifacts cannot
+    diverge because of a second LLM call.
+    """
+    document_id = str(_record_value(record, "document_id") or record_id(record) or "")
+    source_sha256 = _record_value(record, "source_sha256")
+    media_type = str(_record_value(record, "media_type") or "application/pdf")
+    if not document_id or not isinstance(source_sha256, str) or not source_sha256:
+        return None
+    if media_type == "text/markdown":
+        provenance = extract_markdown_provenance(
+            file_path,
+            document_id=document_id,
+            source_sha256=source_sha256,
+        )
+    elif media_type == "application/pdf":
+        provenance = extract_pdf_provenance(
+            file_path,
+            document_id=document_id,
+            source_sha256=source_sha256,
+        )
+    else:
+        return None
+    bundle = build_source_provenance_bundle(
+        provenance,
+        chunker=chunker,
+        llm=llm if chunker == CHUNKER_V2 else None,
+    )
+    return provenance, bundle, _bundle_chunks(bundle)
+
+
+def _publish_inspection_manifest(
+    record: Any,
+    bundle: Any,
+    chunks: List[Chunk],
+    *,
+    meta_path: Optional[Path],
+) -> None:
+    """Publish the manifest from the exact payloads sent to Qdrant."""
+    document = record.to_dict() if hasattr(record, "to_dict") else dict(record)
+    document_id = str(document.get("document_id") or record_id(document))
+    document["document_id"] = document_id
+    payloads = [
+        {
+            "document_id": document_id,
+            "source_sha256": bundle.source_sha256,
+            "chunker": bundle.chunker,
+            "chunk_index": int(chunk.chunk_index),
+            "text": chunk.text,
+            "page": chunk.page,
+            "page_end": chunk.page_end,
+            "section": chunk.section,
+        }
+        for chunk in chunks
+    ]
+    manifest = build_inspection_manifest(document, bundle, payloads)
+    root = Path(meta_path or KB_META_PATH).resolve().parent
+    InspectionManifestStore(root).write(manifest)
+    # Direct document indexing publishes a live derived manifest outside of
+    # the full-candidate finalizer.  Refresh the generation digest so the
+    # existing generation gate does not treat this legitimate publication as
+    # metadata corruption.
+    FinalizeBundleStore(root.parents[1]).refresh_live_digests()
+
+
 def index_paper_chunker(
     record,
     file_path,
@@ -347,39 +471,56 @@ def index_paper_chunker(
     )
     _report(progress, 0)
 
+    bundle = None
+    provenance = None
     try:
-        pages = extract_pages_normalized(file_path)
-    except PdfParseError as error:
+        bundle_result = _build_index_bundle(
+            record,
+            file_path,
+            chunker,
+            llm if llm is not None else ollama_boundary_judge,
+        )
+        if bundle_result is not None:
+            provenance, bundle, chunks = bundle_result
+            pages = _source_pages(provenance)
+            # Markdown is allowed to be a short document; the PDF threshold
+            # remains the existing scanned-PDF guard.
+            if (
+                getattr(provenance, "media_type", "") == "application/pdf"
+                and total_chars(pages) < MIN_TEXT_CHARS
+            ):
+                return _fail("未提取到足够文本（疑似扫描件），未建立索引")
+            _report(progress, 60)
+        else:
+            pages = extract_pages_normalized(file_path)
+            if total_chars(pages) < MIN_TEXT_CHARS:
+                return _fail("未提取到足够文本（疑似扫描件），未建立索引")
+            _report(progress, 10)
+            if chunker == CHUNKER_V2:
+                def _sub_progress(value: int) -> None:
+                    # 把 v2 自身 0-100 的进度映射到全局 10-70
+                    _report(progress, 10 + int(60 * max(0, min(100, int(value))) / 100))
+
+                chunks, _llm_used = build_chunks_v2(
+                    pages,
+                    llm=llm if llm is not None else ollama_boundary_judge,
+                    progress=_sub_progress,
+                )
+            else:
+                chunks = build_chunks_v1(pages)
+                _report(progress, 60)
+    except (PdfParseError, InspectionError, ManifestStoreError, ValueError) as error:
         return _fail(str(error))
     except Exception as error:  # 解析层以外的意外（文件被删、权限等）
-        return _fail(f"解析失败：{error}")
-
-    if total_chars(pages) < MIN_TEXT_CHARS:
-        return _fail("未提取到足够文本（疑似扫描件），未建立索引")
-    _report(progress, 10)
-
-    try:
-        if chunker == CHUNKER_V2:
-            def _sub_progress(value: int) -> None:
-                # 把 v2 自身 0-100 的进度映射到全局 10-70
-                _report(progress, 10 + int(60 * max(0, min(100, int(value))) / 100))
-
-            chunks, _llm_used = build_chunks_v2(
-                pages,
-                llm=llm if llm is not None else ollama_boundary_judge,
-                progress=_sub_progress,
-            )
-        else:
-            chunks = build_chunks_v1(pages)
-            _report(progress, 60)
-    except Exception as error:
-        return _fail(f"切分失败：{error}")
+        return _fail(f"解析/切分失败：{error}")
 
     if not chunks:
         return _fail("未能切分出可索引的文本")
     _report(progress, 70)
 
-    ref_start = locate_reference_start(pages)
+    ref_start = locate_reference_start(pages) if pages and pages[0][0] is not None else None
+    document_id = str(_record_value(record, "document_id") or "") or None
+    source_sha256 = _record_value(record, "source_sha256")
     try:
         # T3：先按 paper_id + chunker 删除该版本旧点，避免残留污染检索。
         try:
@@ -396,6 +537,8 @@ def index_paper_chunker(
             chunker=chunker,
             ref_start_page=ref_start,
             destination_collection=destination,
+            document_id=document_id,
+            source_sha256=source_sha256 if isinstance(source_sha256, str) else None,
         )
     except (EmbeddingError, ValueError, OSError) as error:
         return _fail(f"索引失败：{error}")
@@ -412,6 +555,11 @@ def index_paper_chunker(
         error=None,
         meta_path=meta_path,
     )
+    if bundle is not None:
+        try:
+            _publish_inspection_manifest(record, bundle, chunks, meta_path=meta_path)
+        except (InspectionError, ManifestStoreError, OSError, ValueError) as error:
+            return _fail(f"检查清单写入失败：{error}")
     _report(progress, 100)
     return get_paper(paper_id, meta_path) or (
         record.to_dict() if hasattr(record, "to_dict") else dict(record)

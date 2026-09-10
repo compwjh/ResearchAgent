@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_kb
 from backend.app.knowledge_base import application
 from backend.app.knowledge_base.infrastructure import index as index_module
-from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
+from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore, InspectionManifestStore
 from backend.app.main import app
 
 
@@ -116,3 +116,54 @@ def test_successful_reindex_keeps_generation_marker_metadata_hash_valid(tmp_path
     captured[0][2](lambda _progress: None)
     marker = FinalizeBundleStore(tmp_path).require_generation()
     assert marker["alias_target"] == "papers_rebuild_live"
+
+
+def test_canonical_markdown_reindex_publishes_manifest_from_indexed_chunks(tmp_path, monkeypatch):
+    meta = tmp_path / "data" / "kb" / "papers.json"
+    papers = tmp_path / "data" / "kb" / "papers"
+    content = "# Introduction\n\n" + ("This paragraph is indexed and inspected. " * 12) + "\n"
+    result = application.create_uploaded_document(
+        "inspection.md", "text/markdown", content.encode("utf-8"), meta_path=meta, papers_dir=papers
+    )
+    document = result["document"]
+    FinalizeBundleStore(tmp_path).stage(
+        "manifest-test",
+        candidate_collection="papers_rebuild_live",
+        metadata=[document],
+        manifests={},
+        collection_fingerprint="b" * 64,
+    )
+    FinalizeBundleStore(tmp_path).commit("manifest-test")
+
+    class Client:
+        def collection_exists(self, _name):
+            return True
+
+        def delete(self, **_kwargs):
+            return None
+
+        def upsert(self, **_kwargs):
+            self.payloads = _kwargs["points"]
+
+    client = Client()
+    captured = []
+    monkeypatch.setattr(application, "submit_index_task", lambda *args: captured.append(args) or True)
+    monkeypatch.setattr(index_module, "embed_texts", lambda texts: [[0.1, 0.2] for _ in texts])
+    monkeypatch.setattr(index_module, "encode_sparse", lambda _text: {"indices": [1], "values": [1.0]})
+
+    application.submit_document_reindex(
+        document["document_id"],
+        "v1",
+        meta_path=meta,
+        papers_dir=papers,
+        client=client,
+        destination_collection="papers_rebuild_live",
+    )
+    captured[0][2](lambda _progress: None)
+
+    manifest = InspectionManifestStore(meta.parent).read(document["document_id"], "v1").to_dict()
+    assert manifest["status"] in {"ready", "partial"}
+    assert manifest["chunks"]
+    assert manifest["chunks"][0]["text"] == client.payloads[0].payload["text"]
+    assert client.payloads[0].payload["document_id"] == document["document_id"]
+    assert client.payloads[0].payload["source_sha256"] == document["source_sha256"]
