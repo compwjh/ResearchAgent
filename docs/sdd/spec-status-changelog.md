@@ -144,3 +144,4 @@
 - **018 Task06-B generation-bound 补偿与导入** ｜ 实施中 → 实施中 ｜ 2026-09-10：补偿 ledger 纳入 `destination_collection`，默认 indexer/deleter 对缺绑定 capability fail-closed，marker drift 不会错误标记 `indexed`；独立 tester 63 项通过，首轮 reviewer 的问题已由下一轮修复。
 - **018 Task06-B generation refresh/commit TOCTOU** ｜ 实施中 → 实施中 ｜ 2026-09-10：refresh 与 FinalizeBundle commit 共用 manifest-store 锁，expected collection 在锁内 compare-before-write；独立 reviewer 给出 generation-bound 隔离门 GO。真实 Qdrant、跨进程锁和生产切换仍未放行。
 - **018 Task06-B 浏览器会话生命周期** ｜ 实施中 → 实施中 ｜ 2026-09-10：首轮 reviewer 发现请求期间 TTL 过期导入、并发 reopen/idle cleanup 两个 P1；已通过 daemon TTL 回收、import boundary 最终检查和 state-lock 注册边界修复，85 项隔离测试通过，独立 reviewer v2 判定 browser 子门禁 GO。真实浏览器、跨进程与生产 Qdrant 仍未验收。
+- **018 Task06-B 历史旧索引测试迁移** ｜ 实施中 → 实施中 ｜ 2026-09-10：3 项历史失败测试已迁移到 canonical document/generation-bound API，未恢复退休入口；历史文件 5 passed、相关集 30 passed、全量回归 902 passed，独立 reviewer 判定迁移范围 GO。真实 Qdrant、跨进程和生产切换仍未验收。

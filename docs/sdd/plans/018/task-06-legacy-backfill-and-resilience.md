@@ -153,7 +153,7 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 登录只解析服务端搜索快照和 ACM/IEEE 白名单，零知识库 source/metadata/index 写入；受控浏览器 profile 的认证状态持久化是显式配置，resume 仍只委托既有 batch/import/immutable 链路。
 - 独立 reviewer/tester 对 T-IMMUTABLE-CREATE、T-PAPER-IMPORT、T-IMPORT-COMPENSATION、T-BROWSER-BOUNDARY 给出 GO/PASS；证据见 `artifacts/task-06/batch-compensation-review.md`、`batch-compensation-test-report.md`、`browser-boundary-review.md`、`browser-boundary-implementation-report.md`。
 - 该结果仍不覆盖真实 Qdrant、真实登录、generation-bound collection topology、session TTL/恢复清理和生产维护窗口；closure matrix 仍为 `implementation_ready`，真实切换继续 `NO-GO`。
-- 浏览器生命周期加固后的最新全量回归为 `898 passed / 3 failed / 1 skipped`（另 38 个 subtests 通过）；失败仍集中在 `tests/test_legacy_kb_integration.py` 的历史索引/旧内部符号契约。剩余 3 项仍依赖已退休的 `index_paper_chunker` 无代际参数、`submit_index_task` 和 `delete_paper`，记录为 `legacy/migration_unverified`，不得用恢复旧写入口掩盖。历史测试迁移不阻塞本轮浏览器隔离门，但阻塞最终“全量回归通过”收口。
+- 浏览器生命周期加固后的全量回归曾为 `898 passed / 3 failed / 1 skipped`（另 38 个 subtests 通过）；3 项历史旧索引测试随后已迁移到 canonical document/generation-bound API，迁移后最新全量回归为 `902 passed`（另 1 个显式跳过项、38 个 subtests 通过）。
 
 ### Generation-bound 导入与摘要刷新：`PASS（隔离功能门）`
 
@@ -178,6 +178,12 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
   - `artifacts/task-06/browser-lifecycle-final-review-v2.md`
 - 本门只证明 fake Playwright/离线故障注入下的生命周期与错误传播；真实 Playwright、ACM/IEEE 登录、跨进程/多 worker、SIGTERM、真实 Qdrant、alias/cutover 和 `confirm-replace` 仍未验收，Task06 总体及 Spec018 继续 `NO-GO`。
 
+### 历史旧索引测试迁移：`PASS（回归收口）`
+
+- `tests/test_legacy_kb_integration.py` 中原先阻塞全量回归的 3 项测试已切换到 canonical document route/application；重建测试显式绑定 `papers_rebuild_live` generation marker，缺失原件测试断言 `SOURCE_NOT_FOUND`，同名删除测试验证按 `document_id` 与 `stored_name` 隔离，不误删 legacy 原件。
+- 未恢复或调用 `submit_index_task`、`delete_paper`，低层 `index_paper_chunker` 调用均显式传入 `destination_collection`。独立 backend-reviewer 判定迁移范围 `GO`；历史文件 5 passed，canonical 相关集 30 passed，全量回归 902 passed。
+- 评审记录的 P2 边界保留：路由 generation gate 和向量删除使用受控替身，不能表述为真实 Qdrant/完整路由集成；真实 Qdrant、跨进程锁、浏览器登录和生产切换仍按 Task06 总门禁执行。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -192,3 +198,4 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：generation-bound 加固完成；补偿 ledger 增加 `destination_collection` 绑定，缺绑定 capability fail-closed，marker drift 不再错误标记 `indexed`；独立 63 项回归通过。
 - 2026-09-10：修复 generation refresh/commit TOCTOU；refresh 与 commit 共用 manifest-store 锁并支持 expected collection 原子校验，独立 reviewer 给出隔离门 `GO`，生产切换仍保持 `NO-GO`。
 - 2026-09-10：浏览器生命周期首轮 reviewer 发现请求期间 TTL 过期导入和并发 reopen/idle cleanup 两个 P1；通过下载返回前与 import boundary 最终检查、状态锁注册边界、daemon TTL 回收和稳定错误码透传修复，85 项隔离回归通过，独立 reviewer v2 给出 browser 子门禁 `GO`；真实登录、跨进程和生产切换仍 `NO-GO`。
+- 2026-09-10：迁移 3 项历史旧索引集成测试到 canonical document/generation-bound API，未恢复退休入口；历史文件 5 passed、相关集 30 passed、全量回归 902 passed，独立 reviewer 给出迁移范围 `GO`。受控替身与真实 Qdrant/生产切换边界仍明确保留。

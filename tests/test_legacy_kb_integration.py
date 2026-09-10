@@ -4,6 +4,7 @@
 或项目 data 目录；重点验证旧 ``file_name`` 记录与 Spec015 新命名记录隔离。
 """
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,9 +15,11 @@ from fastapi.testclient import TestClient
 from qdrant_client import models
 
 from backend.app.api import routes_kb as routes
+from backend.app.knowledge_base import application
 from backend.app.knowledge_base.infrastructure import index as index_module
 from backend.app.knowledge_base.infrastructure import retrieve as retrieve_module
 from backend.app.knowledge_base.infrastructure import store as store_module
+from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
 from backend.app.main import app
 
 
@@ -71,6 +74,34 @@ def _new_record(paper_id="new-001"):
         "chunk_count": 1,
         "title": "A newly imported paper",
     }
+
+
+def _canonical_record(paper_id="legacy-001", stored_name="legacy-001.pdf"):
+    """Build the minimum v1 document record needed by canonical APIs."""
+    return {
+        "schema_version": "knowledge-document-v1",
+        "document_id": paper_id,
+        "paper_id": paper_id,
+        "file_name": "shared.pdf",
+        "stored_name": stored_name,
+        "media_type": "application/pdf",
+        "source_immutable": True,
+        "source_sha256": None,
+        "status": "indexed",
+        "chunkers": {},
+    }
+
+
+def _commit_generation(tmp_path, records):
+    """Publish the marker used by generation-bound application seams."""
+    FinalizeBundleStore(tmp_path).stage(
+        "legacy-migration-generation",
+        candidate_collection="papers_rebuild_live",
+        metadata=records,
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    FinalizeBundleStore(tmp_path).commit("legacy-migration-generation")
 
 
 def _configure_store(tmp_path, records):
@@ -165,11 +196,14 @@ def test_legacy_record_is_listed_and_ask_reads_legacy_qdrant_hit(tmp_path):
         _exit_patches(patches)
 
 
-def test_reindex_uses_legacy_physical_path_and_real_pdf_with_fake_qdrant(tmp_path):
-    record = _legacy_record()
+def test_reindex_uses_canonical_application_and_route_with_fake_qdrant(tmp_path):
+    record = _canonical_record()
     papers_dir, meta_path = _configure_store(tmp_path, [record])
     legacy_path = papers_dir / "legacy-001.pdf"
     _write_pdf(legacy_path)
+    record["source_sha256"] = hashlib.sha256(legacy_path.read_bytes()).hexdigest()
+    store_module.save_papers([record], meta_path)
+    _commit_generation(tmp_path, [record])
     fake_qdrant = FakeQdrant()
     patches = _store_patches(papers_dir, meta_path)
     _enter_patches(patches)
@@ -181,7 +215,12 @@ def test_reindex_uses_legacy_physical_path_and_real_pdf_with_fake_qdrant(tmp_pat
                  return_value=models.SparseVector(indices=[1], values=[1.0]),
              ):
             result = index_module.index_paper_chunker(
-                record, legacy_path, "v1", client=fake_qdrant, meta_path=meta_path
+                record,
+                legacy_path,
+                "v1",
+                client=fake_qdrant,
+                meta_path=meta_path,
+                destination_collection="papers_rebuild_live",
             )
         assert result["paper_id"] == "legacy-001"
         assert result["chunkers"]["v1"]["status"] == "indexed", result["chunkers"]["v1"].get("error")
@@ -189,28 +228,47 @@ def test_reindex_uses_legacy_physical_path_and_real_pdf_with_fake_qdrant(tmp_pat
         assert all(point.payload["paper_id"] == "legacy-001" for point in fake_qdrant.upserted)
 
         client = TestClient(app)
-        with patch.object(routes, "submit_index_task", return_value=True) as submit, \
-             patch.object(routes, "update_chunker_state"):
-            response = client.post("/api/kb/papers/legacy-001/reindex", json={"chunker": "v1"})
-        assert response.status_code == 200
-        assert submit.call_count == 1
-        assert response.json()["submitted"] == {"v1": True}
+        with patch.object(routes, "load_papers_strict", return_value=[record]), \
+             patch.object(routes, "_require_generation", return_value=None), \
+             patch.object(
+                 routes,
+                 "submit_document_reindex",
+                 return_value={"task_id": "migration-task", "submitted": {"v1": True}},
+             ) as submit:
+            response = client.post(
+                "/api/kb/documents/legacy-001/reindex", json={"chunker": "v1"}
+            )
+        assert response.status_code == 202
+        submit.assert_called_once_with("legacy-001", "v1")
+        assert response.json()["status"] == "queued"
     finally:
         _exit_patches(patches)
 
 
-def test_missing_legacy_file_returns_404_without_submitting_reindex(tmp_path):
-    papers_dir, meta_path = _configure_store(tmp_path, [_legacy_record()])
+def test_missing_canonical_file_returns_404_without_legacy_helper(tmp_path):
+    record = _canonical_record()
+    papers_dir, meta_path = _configure_store(tmp_path, [record])
     patches = _store_patches(papers_dir, meta_path)
     _enter_patches(patches)
     try:
-        with patch.object(routes, "submit_index_task") as submit:
+        with patch.object(routes, "load_papers_strict", return_value=[record]), \
+             patch.object(routes, "_require_generation", return_value=None), \
+             patch.object(
+                 routes,
+                 "submit_document_reindex",
+                 side_effect=lambda document_id, chunker: application.submit_document_reindex(
+                     document_id,
+                     chunker,
+                     meta_path=meta_path,
+                     papers_dir=papers_dir,
+                 ),
+             ) as submit:
             response = TestClient(app).post(
-                "/api/kb/papers/legacy-001/reindex", json={"chunker": "all"}
+                "/api/kb/documents/legacy-001/reindex", json={"chunker": "all"}
             )
         assert response.status_code == 404
-        assert "原件" in response.json()["detail"]
-        submit.assert_not_called()
+        assert response.json()["error_code"] == "SOURCE_NOT_FOUND"
+        submit.assert_called_once_with("legacy-001", "all")
     finally:
         _exit_patches(patches)
 
@@ -230,25 +288,39 @@ def test_corrupt_legacy_metadata_degrades_to_empty_list(tmp_path):
         _exit_patches(patches)
 
 
-def test_deleting_legacy_same_name_does_not_remove_new_record(tmp_path):
-    records = [_legacy_record(), _new_record()]
+def test_canonical_delete_does_not_remove_legacy_same_name_record(tmp_path):
+    canonical = _canonical_record("new-001", "2025-CCS-shared.pdf")
+    records = [_legacy_record(), canonical]
     papers_dir, meta_path = _configure_store(tmp_path, records)
     old_path = papers_dir / "legacy-001.pdf"
     new_path = papers_dir / "2025-CCS-shared.pdf"
     _write_pdf(old_path, "old paper ")
     _write_pdf(new_path, "new paper ")
+    canonical["source_sha256"] = hashlib.sha256(new_path.read_bytes()).hexdigest()
+    store_module.save_papers(records, meta_path)
+    _commit_generation(tmp_path, records)
     patches = _store_patches(papers_dir, meta_path)
     _enter_patches(patches)
     try:
-        fake_qdrant = FakeQdrant()
-        with patch.object(routes, "delete_paper", side_effect=lambda paper_id: fake_qdrant.deleted_paper_ids.append(paper_id)):
-            response = TestClient(app).delete("/api/kb/papers/legacy-001")
+        with patch.object(application.GenerationBoundIndexPort, "delete_document", return_value=None), \
+             patch.object(
+                 routes,
+                 "delete_document",
+                 side_effect=lambda document_id: application.delete_document(
+                     document_id,
+                     meta_path=meta_path,
+                     papers_dir=papers_dir,
+                     manifest_root=tmp_path / "data" / "kb",
+                     destination_collection="papers_rebuild_live",
+                 ),
+             ) as delete:
+            response = TestClient(app).delete("/api/kb/documents/new-001")
         assert response.status_code == 200
-        assert response.json() == {"deleted": True, "vectors_removed": True}
-        assert fake_qdrant.deleted_paper_ids == ["legacy-001"]
-        assert not old_path.exists()
-        assert new_path.exists()
+        assert response.json()["status"] == "completed"
+        delete.assert_called_once_with("new-001")
+        assert old_path.exists()
+        assert not new_path.exists()
         remaining = store_module.load_papers(meta_path)
-        assert [item["paper_id"] for item in remaining] == ["new-001"]
+        assert [item["paper_id"] for item in remaining] == ["legacy-001"]
     finally:
         _exit_patches(patches)

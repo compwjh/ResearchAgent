@@ -67,3 +67,4 @@
 - 2026-09-10：Task06 论文导入/批量补偿/浏览器隔离门完成并将 closure matrix 更新为 `implementation_ready`；全量回归中的 5 项历史旧索引测试与当前 canonical document 边界不一致，已记录为 `legacy/migration_unverified`，真实索引切换仍 NO-GO。
 - 2026-09-10：Task06 generation-bound 导入与摘要刷新隔离门完成；补偿 capability 固定创建代际 collection，refresh/commit 使用同一把锁防止 TOCTOU，独立 reviewer/tester 给出 GO/PASS；真实索引切换仍 NO-GO。
 - 2026-09-10：Task06 浏览器会话生命周期隔离门完成；首轮发现的请求期间 TTL 过期导入、并发 reopen/idle cleanup 两个 P1 已修复，85 项浏览器/导入定向回归与独立 reviewer v2 通过；真实 Playwright/登录、跨进程和 Qdrant 生产切换仍 NO-GO。
+- 2026-09-10：Task06 历史旧索引回归测试迁移完成；3 项失败测试改为 canonical document/generation-bound 断言，独立 reviewer `GO`，全量回归恢复为 902 passed（另 1 个显式跳过项）；真实 Qdrant、跨进程和生产切换仍 NO-GO。
