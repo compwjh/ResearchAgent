@@ -1,13 +1,14 @@
 import hashlib
 import json
+import math
 import multiprocessing
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 import pymupdf
+import pytest
 
 import backend.app.knowledge_base.infrastructure.candidate_rebuild as candidate_rebuild_module
 import backend.app.knowledge_base.infrastructure.manifest_store as manifest_store_module
@@ -18,6 +19,7 @@ from backend.app.knowledge_base.infrastructure.candidate_index import (
     QdrantCandidateIndexPort,
 )
 from backend.app.knowledge_base.infrastructure.candidate_rebuild import (
+    CHUNKERS,
     CandidateRebuildService,
     RebuildError,
     RunState,
@@ -197,7 +199,8 @@ def test_legacy_metadata_without_source_hash_publishes_hash_on_finalize(tmp_path
         (tmp_path / bundle["metadata_staged_path"]).read_text(encoding="utf-8")
     )
     assert staged_metadata[0]["source_sha256"] == source_hash
-    assert staged_metadata[0].get("indexed_source_sha256") is None
+    assert staged_metadata[0]["indexed_source_sha256"] == source_hash
+    assert staged_metadata[0]["source_hash_state"] == "verified"
 
 
 def test_source_path_preserves_existing_legacy_file_name(tmp_path):
@@ -327,6 +330,123 @@ def test_build_validate_and_first_physical_switch(tmp_path):
     assert '"event":"intent"' in events and '"event":"observed"' in events
 
 
+def test_successful_finalize_stages_and_publishes_metadata_stats(tmp_path):
+    root = tmp_path
+    papers = root / "data" / "kb" / "papers"
+    papers.mkdir(parents=True)
+    source = papers / "doc.pdf"
+    pdf = pymupdf.open()
+    for page_number in range(2):
+        page = pdf.new_page()
+        page.insert_text((72, 72), f"Page {page_number + 1} content")
+    pdf.save(str(source))
+    pdf.close()
+    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    metadata = root / "data" / "kb" / "papers.json"
+    metadata.write_text(json.dumps([{
+        "schema_version": "knowledge-document-v1",
+        "migration_version": "018-document-v1",
+        "paper_id": "doc-1",
+        "file_name": "Readable title.pdf",
+        "stored_name": source.name,
+        "media_type": "application/pdf",
+        "source_sha256": source_hash,
+        "indexed_source_sha256": None,
+        "source_hash_state": "legacy_unknown",
+        "source_immutable": True,
+        "status": "indexed",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "page_count": 0,
+        "chunk_count": 82,
+        "chunkers": {
+            "v1": {"status": "indexed", "chunk_count": 107, "progress": 100, "error": None},
+            "v2": {"status": "indexed", "chunk_count": 82, "progress": 100, "error": None},
+        },
+        "error": None,
+        "title": "Keep this title",
+    }]), encoding="utf-8")
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=root / "runtime",
+        index=qdrant,
+        dense_dim=4,
+        embedder=lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts],
+        llm=lambda _prompt: "[]",
+        run_id_factory=lambda: "metadata-stats-run",
+    )
+
+    result = service.run(dry_run=False, confirm_replace=True)
+
+    assert result["status"] == "completed"
+    bundle = FinalizeBundleStore(root).read_bundle("metadata-stats-run")
+    staged = json.loads((root / bundle["metadata_staged_path"]).read_text(encoding="utf-8"))
+    published = json.loads(metadata.read_text(encoding="utf-8"))
+    assert staged == published
+    record = published[0]
+    assert record["title"] == "Keep this title"
+    assert record["file_name"] == "Readable title.pdf"
+    assert record["stored_name"] == source.name
+    assert record["source_sha256"] == source_hash
+    assert record["indexed_source_sha256"] == source_hash
+    assert record["source_hash_state"] == "verified"
+    assert record["page_count"] == 2
+    assert record["status"] == "indexed"
+    assert record["error"] is None
+    assert record["chunk_count"] == record["chunkers"]["v1"]["chunk_count"]
+    for chunker in CHUNKERS:
+        assert record["chunkers"][chunker] == {
+            "status": "indexed",
+            "chunk_count": result["validation"]["documents"][0][chunker]["chunk_count"],
+            "progress": 100,
+            "error": None,
+        }
+    candidate_points = qdrant.collections[result["candidate_collection"]]
+    assert record["chunkers"]["v1"]["chunk_count"] == sum(
+        1 for point in candidate_points if point.payload["chunker"] == "v1"
+    )
+    assert record["chunkers"]["v2"]["chunk_count"] == sum(
+        1 for point in candidate_points if point.payload["chunker"] == "v2"
+    )
+
+
+def test_validation_sorts_scroll_points_before_order_sensitive_digests(tmp_path):
+    class ReorderedScrollQdrant(FakeQdrant):
+        def scroll_points(self, destination, *, offset=None, limit=256):
+            points, next_offset = super().scroll_points(destination, offset=offset, limit=limit)
+            return list(reversed(points)), next_offset
+
+    long_text = "\n\n".join(f"Paragraph {index}: " + ("content " * 180) for index in range(5))
+    papers, metadata = _fixture(tmp_path, text=long_text)
+    qdrant = ReorderedScrollQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=qdrant,
+        dense_dim=4,
+        embedder=lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts],
+        llm=lambda _prompt: "[]",
+        run_id_factory=lambda: "reordered-scroll-run",
+    )
+
+    result = service.run(dry_run=False, confirm_replace=True)
+
+    assert result["status"] == "completed"
+    assert result["validation"]["errors"] == []
+    for document in result["validation"]["documents"]:
+        for chunker in CHUNKERS:
+            chunk_data = document[chunker]
+            assert chunk_data["chunk_indexes"] == sorted(chunk_data["chunk_indexes"])
+            assert chunk_data["point_ids"] == [
+                candidate_rebuild_module.point_id(document["document_id"], chunk_index, chunker)
+                for chunk_index in chunk_data["chunk_indexes"]
+            ]
+
+
 def test_clean_lock_release_does_not_block_later_dry_run(tmp_path):
     qdrant = FakeQdrant(dense_dim=4)
     qdrant.seed_collection("papers", dense_dim=4)
@@ -348,6 +468,26 @@ def test_default_finalize_publishes_generation_marker(tmp_path):
     assert marker["alias_target"] == result["candidate_collection"]
     assert marker["bundle_sha256"] == bundle["bundle_sha256"]
     assert marker["collection_fingerprint"] == result["validation"]["collection_fingerprint"]
+
+
+def test_second_generation_replaces_marker_only_after_topology_authorization(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+
+    first = _service(tmp_path, qdrant)
+    first.run_id_factory = lambda: "generation-one"
+    first_result = first.run(dry_run=False, confirm_replace=True)
+
+    second = _service(tmp_path, qdrant)
+    second.run_id_factory = lambda: "generation-two"
+    second_result = second.run(dry_run=False, confirm_replace=True)
+
+    marker = FinalizeBundleStore(tmp_path).require_generation()
+    assert first_result["status"] == "completed"
+    assert second_result["status"] == "completed"
+    assert marker["run_id"] == "generation-two"
+    assert marker["alias_target"] == second_result["candidate_collection"]
+    assert marker["collection_fingerprint"] == second_result["validation"]["collection_fingerprint"]
 
 
 def test_default_finalize_marker_failure_enters_pending_and_resumes(tmp_path, monkeypatch):
@@ -474,6 +614,54 @@ def test_failed_cleanup_is_idempotent_when_candidate_was_already_removed(tmp_pat
         operation == "delete_collection" and target == candidate
         for operation, target in qdrant.calls[calls_before_cleanup:]
     )
+
+
+def test_cleanup_accepts_failed_validation_without_topology_when_candidate_absent(tmp_path):
+    class SearchUnavailable(FakeQdrant):
+        def search(self, destination, vector_name, vector, *, limit=1):
+            raise RuntimeError("search unavailable")
+
+    qdrant = SearchUnavailable(dense_dim=4)
+    service = _service(tmp_path, qdrant)
+    with pytest.raises(RebuildError) as caught:
+        service.run(dry_run=False, confirm_replace=True)
+    assert caught.value.code == "CANDIDATE_VALIDATION_FAILED"
+
+    run_dir = tmp_path / "runtime" / "run-test"
+    assert (run_dir / "validation.json").exists()
+    assert not (run_dir / "topology.json").exists()
+    assert "papers_rebuild_run-test" not in qdrant.collections
+
+    result = _service(tmp_path, qdrant).cleanup_failed("run-test")
+
+    assert result["status"] == "cleaned"
+    assert result["error_code"] is None
+
+
+def test_cleanup_strictly_checks_existing_candidate_without_topology(tmp_path):
+    class SearchUnavailable(FakeQdrant):
+        def search(self, destination, vector_name, vector, *, limit=1):
+            raise RuntimeError("search unavailable")
+
+    qdrant = SearchUnavailable(dense_dim=4)
+    # Keep the candidate after the automatic cleanup attempt so the explicit
+    # cleanup path must prove its fingerprint before deleting it.
+    qdrant.inject_failure("delete_collection")
+    service = _service(tmp_path, qdrant)
+    with pytest.raises(RebuildError) as caught:
+        service.run(dry_run=False, confirm_replace=True)
+    assert caught.value.code == "CANDIDATE_VALIDATION_FAILED"
+    candidate = "papers_rebuild_run-test"
+    assert candidate in qdrant.collections
+
+    run_dir = tmp_path / "runtime" / "run-test"
+    assert (run_dir / "validation.json").exists()
+    assert not (run_dir / "topology.json").exists()
+
+    result = _service(tmp_path, qdrant).cleanup_failed("run-test")
+
+    assert result["status"] == "cleaned"
+    assert candidate not in qdrant.collections
 
 
 def test_empty_authoritative_metadata_does_not_create_candidate(tmp_path):
@@ -884,6 +1072,42 @@ def test_candidate_payload_vector_and_config_tamper_is_rejected(tmp_path, tamper
     with pytest.raises(RebuildError) as caught:
         service.run(dry_run=False, confirm_replace=True)
     assert caught.value.code == "CANDIDATE_VALIDATION_FAILED"
+
+
+def test_dense_digest_accepts_qdrant_readback_noise_but_detects_tamper(tmp_path):
+    original = [0.1, 0.2, 0.3, 0.4]
+    norm = math.sqrt(sum(value * value for value in original))
+    normalized = [value / norm for value in original]
+    assert candidate_rebuild_module._dense_vector_digest_input(original) == candidate_rebuild_module._dense_vector_digest_input(normalized)
+    # Qdrant's cosine normalization plus float serialization can introduce
+    # small read-back error. Three decimals must absorb this storage noise
+    # without weakening the digest enough to accept a material vector change.
+    readback = [value + 2e-6 for value in normalized]
+    assert candidate_rebuild_module._dense_vector_digest_input(original) == candidate_rebuild_module._dense_vector_digest_input(readback)
+    changed = list(normalized)
+    changed[0] += 0.01
+    # A 0.01-level change is intentionally outside the three-decimal
+    # tolerance and must still be rejected by the aggregate digest.
+    assert candidate_rebuild_module._dense_vector_digest_input(original) != candidate_rebuild_module._dense_vector_digest_input(changed)
+
+    class CosineNormalizedQdrant(FakeQdrant):
+        def upsert_document(self, destination, document_id, points):
+            normalized_points = []
+            for point in points:
+                dense = list(point.vector["dense"])
+                norm = math.sqrt(sum(float(value) * float(value) for value in dense))
+                normalized_points.append(candidate_rebuild_module.CandidatePoint(
+                    id=point.id,
+                    vector={**point.vector, "dense": [float(value) / norm for value in dense]},
+                    payload=point.payload,
+                ))
+            return super().upsert_document(destination, document_id, normalized_points)
+
+    qdrant = CosineNormalizedQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    result = _service(tmp_path, qdrant).run(dry_run=False, confirm_replace=True)
+    assert result["status"] == "completed"
+    assert result["validation"]["errors"] == []
 
 
 def test_malformed_sparse_dict_is_stable_candidate_validation_failure(tmp_path):

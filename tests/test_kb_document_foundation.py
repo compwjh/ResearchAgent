@@ -21,6 +21,7 @@ from backend.app.knowledge_base.infrastructure.manifest_store import (
     ManifestStoreError,
 )
 from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
+from backend.app.knowledge_base.infrastructure.parse import extract_pdf_provenance
 from backend.app.knowledge_base.infrastructure.migration import (
     build_import_knowledge_document,
     write_import_knowledge_document,
@@ -117,6 +118,44 @@ def test_inspection_manifest_uses_real_payloads_without_index_writes(tmp_path):
     assert value["chunks"]
     assert value["anchors"]
     assert value["indexed_source_sha256"] == value["source_sha256"]
+
+
+def test_pdf_inspection_manifest_projects_line_geometry_to_frozen_schema():
+    fixture_root = Path(__file__).parents[1] / "docs" / "sdd" / "fixtures" / "spec-018"
+    expected = json.loads((fixture_root / "pdf-single-column-v1.expected.json").read_text())
+    provenance = extract_pdf_provenance(
+        fixture_root / "pdf-single-column-v1.pdf",
+        document_id=expected["document_id"],
+        sample_id="pdf-single-column-v1",
+    )
+    bundle = build_source_provenance_bundle(provenance, chunker="v1")
+    source_hash = bundle.source_sha256
+    payloads = [
+        {
+            **chunk,
+            "document_id": bundle.document_id,
+            "chunker": "v1",
+            "source_sha256": source_hash,
+        }
+        for chunk in bundle.chunks
+    ]
+
+    manifest = build_inspection_manifest(
+        {"document_id": bundle.document_id, "source_sha256": source_hash},
+        bundle,
+        payloads,
+    ).to_dict()
+
+    block = next(block for block in manifest["blocks"] if block["lines"])
+    source_block = next(source for source in bundle.blocks if source["block_id"] == block["block_id"])
+    assert block["bbox"] == source_block["bbox"]
+    assert block["normalized_bbox"] == source_block["normalized_bbox"]
+    assert block["locator"] == {
+        "kind": "pdf_bbox",
+        "page": block["page"],
+        "bbox": block["normalized_bbox"],
+    }
+    assert all(set(line) == {"ordinal", "text", "start", "end"} for line in block["lines"])
 
 
 def test_inspection_rejects_legacy_payload_without_source_hash(tmp_path):
@@ -253,7 +292,7 @@ def test_refresh_holds_generation_lock_against_concurrent_commit(tmp_path, monke
 
     def commit():
         try:
-            finalizer.commit("generation-two")
+            commit_result.append(finalizer.commit("generation-two"))
         except ManifestStoreError as error:
             commit_result.append(error.code)
 
@@ -262,8 +301,8 @@ def test_refresh_holds_generation_lock_against_concurrent_commit(tmp_path, monke
     assert entered_digest.wait(timeout=5)
     commit_thread = threading.Thread(target=commit)
     commit_thread.start()
-    # The commit must wait for refresh's lock; once released it observes the
-    # still-current marker and refuses to replace it with generation two.
+    # The commit must wait for refresh's lock; once released it still refuses
+    # an unapproved generation replacement.
     release_digest.set()
     refresh_thread.join(timeout=5)
     commit_thread.join(timeout=5)
@@ -272,7 +311,9 @@ def test_refresh_holds_generation_lock_against_concurrent_commit(tmp_path, monke
     assert not commit_thread.is_alive()
     assert refresh_result[0]["alias_target"] == "papers_rebuild_one"
     assert commit_result == ["INDEX_FINALIZE_REQUIRED"]
-    assert json.loads((live_root / "index-generation.json").read_text(encoding="utf-8"))["alias_target"] == "papers_rebuild_one"
+    replacement = finalizer.commit("generation-two", allow_replace=True)
+    assert replacement["alias_target"] == "papers_rebuild_two"
+    assert json.loads((live_root / "index-generation.json").read_text(encoding="utf-8"))["alias_target"] == "papers_rebuild_two"
 
 
 def test_manifest_claim_concurrent_winner(tmp_path):

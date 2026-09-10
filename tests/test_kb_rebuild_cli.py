@@ -45,3 +45,29 @@ def test_dry_run_has_zero_embedding_collection_alias_metadata_source_manifest_ru
 def test_cli_rejects_confirm_replace_for_resume_without_explicit_gate():
     qdrant = FakeQdrant()
     assert rebuild_index.main(["--resume-switch", "run-1"], index=qdrant) == 2
+
+
+def test_default_service_factory_receives_existing_ollama_boundary_judge(tmp_path, monkeypatch):
+    captured = {}
+
+    class SpyService:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self, *, dry_run, confirm_replace):
+            assert dry_run is True
+            assert confirm_replace is False
+            return {"status": "dry_run"}
+
+    monkeypatch.setattr(rebuild_index, "CandidateRebuildService", SpyService)
+
+    assert rebuild_index.main(
+        [
+            "--dry-run",
+            "--metadata-path", str(tmp_path / "papers.json"),
+            "--papers-dir", str(tmp_path / "papers"),
+            "--runtime-root", str(tmp_path / "runtime"),
+        ],
+        index=FakeQdrant(),
+    ) == 0
+    assert captured["llm"] is rebuild_index.ollama_boundary_judge

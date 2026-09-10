@@ -121,14 +121,62 @@ class InspectionManifest:
 
 
 def _manifest_block(block: Mapping[str, Any], media_type: str) -> dict[str, Any]:
-    result = dict(block)
     if media_type == "application/pdf":
+        result = {
+            key: block[key]
+            for key in (
+                "block_id",
+                "ordinal",
+                "display_ordinal",
+                "page",
+                "text",
+                "raw_text",
+                "start",
+                "end",
+                "bbox",
+                "normalized_bbox",
+                "lines",
+                "block_type",
+                "heading_path",
+            )
+            if key in block
+        }
+        raw_lines = block.get("lines")
+        if isinstance(raw_lines, Sequence) and not isinstance(raw_lines, (str, bytes, bytearray)):
+            result["lines"] = [
+                {
+                    key: line[key]
+                    for key in ("ordinal", "text", "start", "end")
+                    if key in line
+                }
+                if isinstance(line, Mapping)
+                else line
+                for line in raw_lines
+            ]
         normalized = result.get("normalized_bbox")
         page = result.get("page")
         if not isinstance(normalized, list) or not isinstance(page, int):
             raise InspectionError("MANIFEST_SOURCE_BLOCK_INVALID")
         result["locator"] = {"kind": "pdf_bbox", "page": page, "bbox": list(normalized)}
     else:
+        result = {
+            key: block[key]
+            for key in (
+                "block_id",
+                "ordinal",
+                "text",
+                "locator",
+                "heading_path",
+                "block_type",
+                "start",
+                "end",
+                "page",
+                "page_end",
+                "inline_resources",
+                "diagnostics",
+            )
+            if key in block
+        }
         locator = result.get("locator") or {}
         if "start_line" not in locator or "end_line" not in locator:
             raise InspectionError("MANIFEST_SOURCE_BLOCK_INVALID")

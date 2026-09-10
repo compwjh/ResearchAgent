@@ -114,6 +114,49 @@ def _vector_digest_input(vector: Any) -> Any:
     return _safe_digest_value(vector)
 
 
+# Qdrant cosine read-back can differ from the pre-write embedding by a few
+# ten-thousandths after normalization/serialization. Three decimal places
+# absorb that storage noise without treating materially different vectors as
+# equal.
+_DENSE_DIGEST_DECIMALS = 3
+
+
+def _dense_vector_digest_input(vector: Any) -> Any:
+    """Return the stable, storage-independent representation of a dense vector.
+
+    Qdrant cosine collections normalize vectors on write.  The rebuild
+    builder sees the pre-write embedding while validation reads the
+    post-write value, so exact floating-point digests would report a false
+    mismatch. Digest only a unit-normalized vector quantized to three decimal
+    places; this absorbs Qdrant normalization/serialization noise while still
+    detecting meaningful vector changes. Invalid/non-finite values are
+    returned in the ordinary safe representation so validation continues to
+    fail closed.
+    """
+    if not isinstance(vector, (list, tuple)):
+        return _vector_digest_input(vector)
+    # The aggregate digest passes a list of dense vectors.  Normalize each
+    # vector independently; normalizing the flattened list would change the
+    # meaning of every per-point embedding and would not match Qdrant.
+    if vector and all(isinstance(item, (list, tuple)) for item in vector):
+        return [_dense_vector_digest_input(item) for item in vector]
+    try:
+        values = [float(value) for value in vector]
+    except (TypeError, ValueError, OverflowError):
+        return _vector_digest_input(vector)
+    if not values or any(not math.isfinite(value) for value in values):
+        return _vector_digest_input(vector)
+    norm = math.sqrt(sum(value * value for value in values))
+    if not math.isfinite(norm) or norm == 0.0:
+        return [0.0 for _ in values] if norm == 0.0 else _vector_digest_input(vector)
+    quantized = []
+    for value in values:
+        rounded = round(value / norm, _DENSE_DIGEST_DECIMALS)
+        # Canonicalize negative zero so equivalent vectors have one digest.
+        quantized.append(0.0 if rounded == 0.0 else rounded)
+    return quantized
+
+
 def _payload_digest_projection(payload: Mapping[str, Any]) -> Dict[str, Any]:
     projection = {str(key): _safe_digest_value(value) for key, value in payload.items() if key != "text"}
     projection["text_digest"] = _fingerprint(_safe_digest_value(payload.get("text")))
@@ -1005,7 +1048,7 @@ class CandidateRebuildService:
                 self._action("upsert_document", "upsert_document", lambda points=points, document_id=document_id: self.index.upsert_document(candidate, document_id, points))
                 payload_projection = [_payload_digest_projection(point.payload) for point in points]
                 text_digest = _fingerprint([projection["text_digest"] for projection in payload_projection])
-                dense_vector_digest = _fingerprint(_vector_digest_input([point.vector["dense"] for point in points]))
+                dense_vector_digest = _fingerprint(_dense_vector_digest_input([point.vector["dense"] for point in points]))
                 sparse_vector_digest = _fingerprint(_vector_digest_input([_vector_digest_input(point.vector["sparse"]) for point in points]))
                 expected[document_id]["chunkers"][chunker] = {
                     "chunk_count": len(points),
@@ -1026,6 +1069,31 @@ class CandidateRebuildService:
                 }
                 self._state.point_counts[chunker] += len(points)
                 self._state.point_counts["total"] += len(points)
+            # Only after both chunkers have built valid bundles do we prepare
+            # the canonical metadata projection.  This remains an in-memory
+            # staging copy until `_stage_finalize_inputs()` succeeds after
+            # candidate validation; a failed build therefore cannot publish
+            # partial counters or an unverified source hash.
+            finalized = self._finalize_metadata[position - 1]
+            finalized["page_count"] = (
+                len(provenance.pages)
+                if provenance.media_type == "application/pdf"
+                else None
+            )
+            finalized["chunk_count"] = int(expected[document_id]["chunkers"]["v1"]["chunk_count"])
+            finalized["chunkers"] = {
+                chunker_name: {
+                    "status": "indexed",
+                    "chunk_count": int(expected[document_id]["chunkers"][chunker_name]["chunk_count"]),
+                    "progress": 100,
+                    "error": None,
+                }
+                for chunker_name in CHUNKERS
+            }
+            finalized["status"] = "indexed"
+            finalized["error"] = None
+            finalized["indexed_source_sha256"] = provenance.source_sha256
+            finalized["source_hash_state"] = "verified"
             self._state.document_counts["authoritative"] = position
             self._transition("building", progress=5 + int(65 * position / max(1, len(parsed))))
         return expected
@@ -1106,7 +1174,7 @@ class CandidateRebuildService:
                 errors.append("DENSE_VECTOR_INVALID")
             if not sparse_valid:
                 errors.append("SPARSE_VECTOR_INVALID")
-            rows.append({"document_id": document_id, "chunker": chunker, "chunk_index": chunk_index, "point_id": point.id, "dense_dimension": len(dense) if isinstance(dense, (list, tuple)) else 0, "dense_finite": dense_finite, "dense_digest": _fingerprint(_vector_digest_input(dense)), "sparse_nnz": len(sparse_indices), "sparse_digest": _fingerprint(_vector_digest_input({"indices": sparse_indices, "values": sparse_values})), "payload_digest": _fingerprint(_payload_digest_projection(payload)), "anchor_digest": payload.get("anchor_digest"), "chunker_config_fingerprint": payload.get("chunker_config_fingerprint"), "embedding_config_fingerprint": payload.get("embedding_config_fingerprint"), "model_config_fingerprint": payload.get("model_config_fingerprint"), "llm_used": payload.get("llm_used")})
+            rows.append({"document_id": document_id, "chunker": chunker, "chunk_index": chunk_index, "point_id": point.id, "dense_dimension": len(dense) if isinstance(dense, (list, tuple)) else 0, "dense_finite": dense_finite, "dense_digest": _fingerprint(_dense_vector_digest_input(dense)), "sparse_nnz": len(sparse_indices), "sparse_digest": _fingerprint(_vector_digest_input({"indices": sparse_indices, "values": sparse_values})), "payload_digest": _fingerprint(_payload_digest_projection(payload)), "anchor_digest": payload.get("anchor_digest"), "chunker_config_fingerprint": payload.get("chunker_config_fingerprint"), "embedding_config_fingerprint": payload.get("embedding_config_fingerprint"), "model_config_fingerprint": payload.get("model_config_fingerprint"), "llm_used": payload.get("llm_used")})
         if not points or errors:
             raise RebuildError("CANDIDATE_VALIDATION_FAILED")
         rows.sort(key=lambda item: (item["document_id"], item["chunker"], item["chunk_index"], item["point_id"]))
@@ -1202,7 +1270,7 @@ class CandidateRebuildService:
             )
             if not sparse_valid:
                 errors.append("SPARSE_VECTOR_INVALID")
-            dense_digest = _fingerprint(_vector_digest_input(dense))
+            dense_digest = _fingerprint(_dense_vector_digest_input(dense))
             sparse_digest = _fingerprint(_vector_digest_input({"indices": sparse_indices, "values": sparse_values}))
             collection_rows.append({"document_id": document_id, "chunker": chunker, "chunk_index": chunk_index, "point_id": point.id, "dense_dimension": len(dense) if isinstance(dense, (list, tuple)) else 0, "dense_finite": dense_finite, "dense_digest": dense_digest, "sparse_nnz": len(sparse_indices), "sparse_digest": sparse_digest, "payload_digest": _fingerprint(_payload_digest_projection(payload)), "anchor_digest": payload.get("anchor_digest"), "chunker_config_fingerprint": payload.get("chunker_config_fingerprint"), "embedding_config_fingerprint": payload.get("embedding_config_fingerprint"), "model_config_fingerprint": payload.get("model_config_fingerprint"), "llm_used": payload.get("llm_used")})
         for document_id, info in expected.items():
@@ -1212,6 +1280,8 @@ class CandidateRebuildService:
                 expected_count = int(expected_version.get("chunk_count", 0))
                 if indices != list(range(expected_count)) or len(indices) != len(set(indices)):
                     errors.append("CHUNK_INDEX_GAP")
+        for chunk_points in by_point.values():
+            chunk_points.sort(key=lambda point: (int(point.payload["chunk_index"]), str(point.id)))
         if len(points) != self._state.point_counts["total"]:
             errors.append("POINT_COUNT_MISMATCH")
         documents: List[Dict[str, Any]] = []
@@ -1242,12 +1312,12 @@ class CandidateRebuildService:
                 dense_finite = all(isinstance(vector, (list, tuple)) and len(vector) == self.dense_dim and all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)) for value in vector) for vector in dense_values) and len(dense_values) == len(chunk_points)
                 payload_digest = _fingerprint([_payload_digest_projection(point.payload) for point in chunk_points])
                 text_digest = _fingerprint([_payload_digest_projection(point.payload).get("text_digest") for point in chunk_points])
-                actual_dense_digest = _fingerprint(_vector_digest_input(dense_values))
+                actual_dense_digest = _fingerprint(_dense_vector_digest_input(dense_values))
                 actual_sparse_digest = _fingerprint(_vector_digest_input(sparse_pairs))
                 actual_anchor_digests = {point.payload.get("anchor_digest") for point in chunk_points}
                 if payload_digest != version["payload_digest"] or text_digest != version["text_digest"] or actual_dense_digest != version["dense_vector_digest"] or actual_sparse_digest != version["sparse_vector_digest"] or actual_anchor_digests != {version["anchor_digest"]} or not version["llm_used"] and chunker == "v2":
                     errors.append("BUNDLE_DIGEST_OR_VECTOR_MISMATCH")
-                document[chunker] = {"chunk_count": len(chunk_points), "point_ids": [point.id for point in chunk_points], "chunk_indexes": sorted(by_doc_chunker.get((document_id, chunker), [])), "payload_schema_version": version["payload_schema_version"], "chunker_config_fingerprint": version["chunker_config_fingerprint"], "embedding_config_fingerprint": version["embedding_config_fingerprint"], "model_config_fingerprint": version["model_config_fingerprint"], "llm_used": version["llm_used"], "anchor_count": version["anchor_count"], "unmapped_count": version["unmapped_count"], "dense": {"name": "dense", "dimension": self.dense_dim, "all_finite": dense_finite, "vector_digest": actual_dense_digest}, "sparse": {"name": "sparse", "point_count": len(sparse_values), "all_indices_sorted": all_indices_sorted, "all_values_finite": all_values_finite, "total_nnz": total_nnz, "vector_digest": actual_sparse_digest}, "payload_digest": payload_digest, "text_digest": text_digest, "anchor_digest": version["anchor_digest"]}
+                document[chunker] = {"chunk_count": len(chunk_points), "point_ids": [point.id for point in chunk_points], "chunk_indexes": [int(point.payload["chunk_index"]) for point in chunk_points], "payload_schema_version": version["payload_schema_version"], "chunker_config_fingerprint": version["chunker_config_fingerprint"], "embedding_config_fingerprint": version["embedding_config_fingerprint"], "model_config_fingerprint": version["model_config_fingerprint"], "llm_used": version["llm_used"], "anchor_count": version["anchor_count"], "unmapped_count": version["unmapped_count"], "dense": {"name": "dense", "dimension": self.dense_dim, "all_finite": dense_finite, "vector_digest": actual_dense_digest}, "sparse": {"name": "sparse", "point_count": len(sparse_values), "all_indices_sorted": all_indices_sorted, "all_values_finite": all_values_finite, "total_nnz": total_nnz, "vector_digest": actual_sparse_digest}, "payload_digest": payload_digest, "text_digest": text_digest, "anchor_digest": version["anchor_digest"]}
             documents.append(document)
         query_probes: Dict[str, Any] = {}
         if points:
@@ -1339,6 +1409,52 @@ class CandidateRebuildService:
                 raise RebuildError("CANDIDATE_VALIDATION_FAILED")
         return validation
 
+    def _load_cleanup_validation_artifact(self) -> Dict[str, Any]:
+        """Load the artifact proof needed only for failed-run cleanup.
+
+        Validation failures can persist ``validation.json`` before the switch
+        phase persists ``topology.json``.  Cleanup may handle that pre-switch
+        window, but must still prove the artifact belongs to this run.  The
+        strict loader used by resume_switch/resume_finalize is intentionally
+        unchanged.
+        """
+        if self._state is None or self._store is None:
+            raise RebuildError("RUN_STATE_INVALID")
+        try:
+            validation = self._store.read_json("validation.json")
+            self._validate_instance("candidate-validation.schema.json", validation)
+        except RebuildError as error:
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH") from error
+        if (
+            validation.get("run_id") != self._state.run_id
+            or validation.get("candidate_collection") != self._state.candidate_collection
+            or validation.get("status") not in {"failed", "passed"}
+        ):
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH")
+        collection_fingerprint = validation.get("collection_fingerprint")
+        totals = validation.get("collection_totals")
+        if not isinstance(collection_fingerprint, str) or not collection_fingerprint or not isinstance(totals, Mapping):
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH")
+        if self._state.new_fingerprint.get("sha256") != collection_fingerprint:
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH")
+        try:
+            point_count = int(totals.get("point_count", -1))
+            state_point_count = int(self._state.point_counts.get("total", -2))
+        except (TypeError, ValueError):
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH") from None
+        if point_count < 0 or state_point_count != point_count:
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH")
+        if validation.get("topology_digest") != self._state.validated_topology_digest:
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH")
+        validation_path = self._store.directory / "validation.json"
+        try:
+            validation_sha256 = _sha256(validation_path)
+        except RebuildError as error:
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH") from error
+        if self._state.new_fingerprint.get("validation_artifact_sha256") != validation_sha256:
+            raise RebuildError("VALIDATION_ARTIFACT_MISMATCH")
+        return validation
+
     def _persist_topology_artifact(self, inventory: Mapping[str, Any], validation: Mapping[str, Any]) -> None:
         if self._store is None or self._state is None:
             raise RebuildError("RUN_STATE_INVALID")
@@ -1407,6 +1523,60 @@ class CandidateRebuildService:
         except ManifestStoreError as error:
             raise RebuildError(error.code) from error
 
+    def _authorize_finalize_topology(
+        self,
+        candidate: str,
+        validation: Mapping[str, Any],
+    ) -> None:
+        """Prove the current alias owns this validated candidate.
+
+        FinalizeBundleStore is intentionally Qdrant-agnostic.  This service is
+        the composition boundary that can inspect the live index, so it must
+        make the replacement authorization explicit before asking the store to
+        replace an older generation marker.
+        """
+        if self._state is None:
+            raise RebuildError("RUN_STATE_INVALID")
+        intent = self._state.intent or {}
+        if (
+            intent.get("action") != "finalize"
+            or intent.get("candidate") != candidate
+            or self._state.status not in {"finalizing", "finalize_pending"}
+        ):
+            raise RebuildError("FINALIZE_TOPOLOGY_MISMATCH")
+        try:
+            if self.index.alias_target(self.alias) != candidate:
+                raise RebuildError("FINALIZE_TOPOLOGY_MISMATCH")
+            inventory = topology_inventory(
+                self.index,
+                alias=self.alias,
+                source_collection=self.source_collection,
+                runtime_root=self.runtime_root,
+                state_override=self._state.to_dict(),
+            )
+        except RebuildError:
+            raise
+        except Exception as error:
+            raise RebuildError("INDEX_TOPOLOGY_AMBIGUOUS") from error
+
+        aliases = [item for item in inventory.get("aliases", ()) if item.get("name") == self.alias]
+        candidates = [item for item in inventory.get("candidate_collections", ()) if item.get("name") == candidate]
+        all_candidates = list(inventory.get("candidate_collections", ()))
+        totals = validation.get("collection_totals")
+        expected_points = totals.get("point_count") if isinstance(totals, Mapping) else None
+        if (
+            not (inventory.get("matrix") or {}).get("safe_to_switch")
+            or len(aliases) != 1
+            or aliases[0].get("target") != candidate
+            or len(all_candidates) != 1
+            or len(candidates) != 1
+            or not bool(candidates[0].get("exists"))
+            or isinstance(expected_points, bool)
+            or not isinstance(expected_points, int)
+            or int(candidates[0].get("point_count", -1)) != expected_points
+        ):
+            raise RebuildError("INDEX_TOPOLOGY_AMBIGUOUS")
+
     def _finalize_bundle(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         """Stage and commit the run-scoped bundle, with marker written last."""
         run_id = str(payload.get("run_id") or "")
@@ -1429,7 +1599,12 @@ class CandidateRebuildService:
                 or bundle.get("collection_fingerprint") != collection_fingerprint
             ):
                 raise RebuildError("FINALIZE_INPUT_MISMATCH")
-            marker = self.finalize_store.commit(run_id)
+            # The file store accepts replacement only with this explicit
+            # authorization.  Same-run idempotence remains available without
+            # it, while a direct store caller cannot replace a live generation
+            # merely by presenting a different staged bundle.
+            self._authorize_finalize_topology(candidate, validation)
+            marker = self.finalize_store.commit(run_id, allow_replace=True)
             verified = self.finalize_store.require_generation(finalize_pending=True)
         except RebuildError:
             raise
@@ -1637,8 +1812,17 @@ class CandidateRebuildService:
         state = self._resume_state(run_id)
         if state.status not in {"failed", "cleanup_pending"}:
             raise RebuildError("CLEANUP_NOT_ALLOWED")
+        validation: Optional[Dict[str, Any]] = None
         if (self._store.directory / "validation.json").exists():
-            self._load_validation_artifact(require_candidate=False)
+            try:
+                # Complete validation/topology pairs use the strict proof.
+                # Only the known pre-switch window (validation exists while
+                # topology is absent) may use the cleanup-only proof.
+                validation = self._load_validation_artifact(require_candidate=False)
+            except RebuildError as error:
+                if (self._store.directory / "topology.json").exists() or error.code != "VALIDATION_ARTIFACT_MISMATCH":
+                    raise
+                validation = self._load_cleanup_validation_artifact()
         else:
             topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root, state_override=state.to_dict())
         self._lock = _ExclusiveLock(self.runtime_root, run_id=state.run_id, command="cleanup-failed", recover_stale_run_id=state.run_id if recover_stale_lock else None, recovery_check=self._recovery_check)
@@ -1659,6 +1843,17 @@ class CandidateRebuildService:
                 self._state.error_code = None
                 self._transition("cleaned", progress=100)
                 return state.to_dict()
+            candidate_info = next(item for item in inventory.get("candidate_collections", ()) if item["name"] == candidate)
+            try:
+                recomputed_fingerprint, recomputed_count = self._recompute_candidate_fingerprint()
+            except RebuildError as error:
+                raise RebuildError("CANDIDATE_VALIDATION_FAILED") from error
+            if recomputed_count != int(candidate_info.get("point_count", -1)):
+                raise RebuildError("CANDIDATE_VALIDATION_FAILED")
+            if validation is not None:
+                totals = validation.get("collection_totals") or {}
+                if recomputed_count != int(totals.get("point_count", -2)) or recomputed_fingerprint != validation.get("collection_fingerprint"):
+                    raise RebuildError("CANDIDATE_VALIDATION_FAILED")
             self._action("cleanup_failed_candidate", "delete_collection", lambda: self.index.delete_collection(state.candidate_collection))
             fresh = topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root, state_override=self._state.to_dict())
             if candidate in {item["name"] for item in fresh.get("candidate_collections", ())} or candidate in {item["target"] for item in fresh.get("aliases", ())}:

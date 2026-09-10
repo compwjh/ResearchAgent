@@ -1,7 +1,7 @@
 # Task 06：真实全库索引替换、恢复与性能验收
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（论文导入/浏览器隔离门已通过；真实索引切换仍 NO-GO）`
+> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（真实索引重建与运行时门已通过；完整双格式/性能验收待完成）`
 
 ## 一句话目标
 
@@ -226,6 +226,61 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
   真实 Qdrant 全库切换尚未放行的预期状态，不阻止上述上传验证。06-C/06-D 与完整 5 文档
   重建仍保持 NO-GO，待生产门禁满足后再执行。
 
+### 真实候选重建与运行时验证：`PASS（当前权威 metadata 集）`
+
+- 真实重建命令在服务停止、Qdrant 本地锁释放且 `LANGFUSE_ENABLED=false` 的维护窗口执行：
+  `python -m backend.app.knowledge_base.rebuild_index --confirm-replace`。
+- 最终运行 ID：`fa5b0ce87f3e4e549409c65401c33e0c`；状态 `completed`，验证状态
+  `passed`，退出码 0。当前权威 metadata 为 1 篇文档，生成 v1=107、v2=295、合计
+  402 个 points；dense/sparse 查询探针均命中新候选集合。
+- `papers` alias 已唯一指向
+  `papers_rebuild_fa5b0ce87f3e4e549409c65401c33e0c`，旧物理 collection 已删除；
+  `data/kb/index-generation.json`、bundle、validation、topology 和 commit 摘要均已生成
+  并通过一致性校验。4 个未被权威 metadata 引用的有效 PDF 保留为 orphan，未修改或删除。
+- 运行时以 `RERANKER_ENABLED=false` 启动服务：`/api/health`、`/api/kb/health`、
+  `/api/kb/documents?limit=5` 均 HTTP 200；`generation.ready=true`、Qdrant 可用、
+  1 篇文档可见。Reranker 仍按环境缺少模型文件而禁用，不影响索引代际门禁。
+
+### 本轮重建失败根因与修复：`PASS`
+
+- 首次失败是 PDF inspection manifest 将解析器内部字段（例如 block/line 的 bbox、
+  locator）原样写入冻结 schema；已改为显式投影，PDF line 只保留 schema 允许的
+  `ordinal/text/start/end` 字段，真实 fixture 回归通过。
+- 第二次失败是 CLI 默认没有向 `CandidateRebuildService` 注入既有
+  `ollama_boundary_judge`，v2 触发 `V2_RULES_ONLY_LLM_NOT_USED`；已在默认工厂注入
+  既有 judge，并保留自定义 factory seam。
+- 后续校验误报来自 Qdrant scroll 返回顺序与 build 顺序不同，以及 cosine collection
+  对 dense 向量做单位归一化和浮点存储。现已按 `(chunk_index, point.id)` 稳定排序，
+  dense 指纹使用单位归一化后 3 位量化；payload、text、sparse、anchor 仍保持精确
+  指纹。诊断证实剩余差异只在 dense，明显向量篡改回归仍会失败。
+- 失败候选清理也已加固：`validation.json` 已写入但 `topology.json` 尚未生成时，
+  `cleanup-failed` 使用受限的 cleanup proof；候选不存在时幂等标记 `cleaned`，候选
+  仍存在时先复算指纹和点数再删除，不放宽 resume-switch/resume-finalize 的生产校验。
+- 本轮修复的隔离/针对性测试为 79 项通过（含 manifest、CLI 注入、scroll 顺序、
+  dense cosine 归一化和早期失败清理）；报告见 `artifacts/task-06/*-report.md`。
+
+### 第二代真实重建与 finalize 恢复：`PASS（当前运行代际）`
+
+- 元数据统计修复后，第二次真实重建 run
+  `38efa91a33154fd097c61d1c745d408f` 已在停服维护窗口完成候选 build/validate/switch；
+  首次 finalize 因旧 generation marker 将新代际误判为不允许替换，进入
+  `finalize_pending`。修复后增加显式 `allow_replace` 授权：只有
+  `CandidateRebuildService` 重新证明 alias、候选唯一性、点数和安全拓扑后才可替换旧 marker，
+  直接文件仓储调用仍 fail-closed。
+- 使用 `--resume-finalize 38efa91a33154fd097c61d1c745d408f` 恢复成功，退出码 0，状态
+  `completed`；`papers` alias 唯一指向
+  `papers_rebuild_38efa91a33154fd097c61d1c745d408f`，旧候选已退休，generation marker、
+  metadata、manifest 和 collection fingerprint 一致。
+- 当前权威 metadata 为 1 篇 PDF：18 页，v1=107、v2=308、合计 415 points；
+  `indexed_source_sha256` 已写入且 `source_hash_state=verified`。孤立但有效的 4 个 PDF
+  仍保留，未修改或删除。
+- 服务以 `RERANKER_ENABLED=false` 启动并通过运行时验证：`/api/health`、`/api/kb/health`、
+  `/api/kb/documents?limit=5` 均 HTTP 200，generation `ready=true`，Qdrant 可用。
+- 聚焦回归 99 passed；全量回归 **927 passed、1 skipped、38 subtests passed**（68.78s）。
+  Reranker 因本机模型文件缺失按配置禁用，不影响重建和基础检索。
+- 由于本次只保留 1 条权威 metadata，Task06 的“全部用户文档 + 双格式检查器 +
+  性能/恢复完整验收”仍未完成；不得据此将 Spec018 标记为已完成。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -245,3 +300,5 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：真实 dry-run 发现旧 metadata 展示名与 `{document_id}.pdf` 原件布局不一致；复用既有路径解析器并补齐 document ID basename/Unicode 控制字符 fail-closed 门禁，独立复评 `GO`，候选重建 59 passed、全量回归 916 passed/1 skipped；随后真实数据暴露 4 个 42-byte `PDF_EMPTY` 失败原件，按权威 metadata 全集规则停止生产切换，等待数据处置决定。
 - 2026-09-10：用户明确授权一次性删除上述 4 条已核对的 `PDF_EMPTY` 空壳 PDF 与失败 metadata 行；清理前生成备份并记录清单，删除范围不扩展到其他原件或 metadata，随后重新执行 dry-run 与真实候选切换。
 - 2026-09-10：完成当前单文档旧 metadata 的 `018-document-v1` 原子迁移并生成回滚备份；服务重启后健康/文档列表均 HTTP 200，使用现有 PDF 做去重式上传返回 HTTP 201。真实 Qdrant 代际切换仍未放行。
+- 2026-09-10：修复 inspection manifest schema 投影、默认 v2 LLM 注入、scroll 顺序稳定校验、Qdrant cosine dense 指纹量化和早期失败候选清理；隔离回归 79 passed。
+- 2026-09-10：在停服维护窗口完成真实单文档候选重建与 alias/finalize 切换（run `fa5b0ce87f3e4e549409c65401c33e0c`），402 points、validation passed、generation ready；服务重启后三个健康/列表接口均 HTTP 200。Task06 仍保留“当前 metadata 全集已验证、完整双格式验收待补”的实施中状态。

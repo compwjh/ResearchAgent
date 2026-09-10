@@ -466,7 +466,14 @@ class FinalizeBundleStore:
             return self.require_generation()
 
     @_with_manifest_lock
-    def commit(self, run_id: str) -> dict[str, Any]:
+    def commit(self, run_id: str, *, allow_replace: bool = False) -> dict[str, Any]:
+        """Publish a staged bundle after the caller proves index topology.
+
+        ``allow_replace`` is deliberately explicit.  A direct file-store
+        caller may retry the same run, but may not replace a live generation
+        merely because it has a different bundle.  CandidateRebuildService
+        sets it only after its Qdrant alias/candidate/topology proof.
+        """
         bundle = self._read_bundle(run_id)
         root = self.run_root(run_id)
         marker_path = self.live_root / "index-generation.json"
@@ -476,14 +483,26 @@ class FinalizeBundleStore:
             marker = _read_json(marker_path, "INDEX_FINALIZE_REQUIRED")
             _validate("index-generation.schema.json", marker, "INDEX_FINALIZE_REQUIRED")
             if (
-                marker.get("run_id") != bundle["run_id"]
-                or marker.get("alias_name") != bundle["alias_name"]
-                or marker.get("alias_target") != bundle["candidate_collection"]
-                or marker.get("bundle_sha256") != bundle["bundle_sha256"]
-                or marker.get("collection_fingerprint") != bundle["collection_fingerprint"]
+                marker.get("run_id") == bundle["run_id"]
+                and marker.get("alias_name") == bundle["alias_name"]
+                and marker.get("alias_target") == bundle["candidate_collection"]
+                and marker.get("bundle_sha256") == bundle["bundle_sha256"]
+                and marker.get("collection_fingerprint") == bundle["collection_fingerprint"]
             ):
+                # Same-run retries must not rewrite live files.  The
+                # generation check below also keeps this path fail-closed if
+                # a live artifact was changed after the original commit.
+                return self.require_generation(finalize_pending=True)
+            if not allow_replace:
+                # A mismatch is not evidence that this bundle owns the live
+                # index.  Keep direct/resume-finalize store calls fail-closed;
+                # only the orchestrator can authorize a next-generation
+                # replacement after checking the actual index topology.
                 raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
-            return self.require_generation(finalize_pending=True)
+            # A marker for an older generation is expected during a later
+            # rebuild once CandidateRebuildService has proved the Qdrant
+            # alias, candidate and topology immediately before calling this
+            # file-only commit.
         metadata_path = root / "metadata.json"
         try:
             metadata_bytes = metadata_path.read_bytes()
@@ -491,6 +510,42 @@ class FinalizeBundleStore:
             raise ManifestStoreError("FINALIZE_STAGED_MISSING", status=503) from error
         if _sha256_bytes(metadata_bytes) != bundle["metadata_staged_sha256"]:
             raise ManifestStoreError("FINALIZE_STAGED_HASH_MISMATCH")
+
+        # Verify all staged files before touching any live file.  A late
+        # manifest mismatch must not leave a mixture of old and new live
+        # artifacts behind the marker.
+        staged_entries: list[tuple[dict[str, Any], bytes]] = []
+        for entry in bundle["manifests"]:
+            staged = self.root / entry["staged_path"]
+            try:
+                data = staged.read_bytes()
+            except OSError as error:
+                raise ManifestStoreError("FINALIZE_STAGED_MISSING", status=503) from error
+            if _sha256_bytes(data) != entry["sha256"]:
+                raise ManifestStoreError("FINALIZE_STAGED_HASH_MISMATCH")
+            staged_entries.append((entry, data))
+
+        # Validate the cleanup set before publishing too.  A missing obsolete
+        # file is already clean; an existing one must still have the digest
+        # recorded by this bundle, otherwise topology changed underneath the
+        # finalize operation and we stop fail-closed.
+        staged_live_paths = {str(entry["live_path"]) for entry, _data in staged_entries}
+        obsolete_entries: list[tuple[dict[str, Any], Path]] = []
+        for obsolete in bundle.get("obsolete_manifests", ()):
+            path_value = str(obsolete.get("live_path") or "")
+            if not path_value.startswith("data/kb/manifests/") or path_value in staged_live_paths:
+                continue
+            path = self.root / path_value
+            try:
+                if path.exists():
+                    if _sha256_bytes(path.read_bytes()) != obsolete.get("sha256"):
+                        raise ManifestStoreError("FINALIZE_CLEANUP_HASH_MISMATCH")
+                    obsolete_entries.append((obsolete, path))
+            except ManifestStoreError:
+                raise
+            except OSError as error:
+                raise ManifestStoreError("FINALIZE_CLEANUP_PENDING", status=503) from error
+
         _atomic_bytes(self.live_root / "papers.json", metadata_bytes)
         try:
             if _sha256_bytes((self.live_root / "papers.json").read_bytes()) != bundle["metadata_staged_sha256"]:
@@ -500,27 +555,14 @@ class FinalizeBundleStore:
         except OSError as error:
             raise ManifestStoreError("FINALIZE_LIVE_HASH_MISMATCH", status=503) from error
         live_entries: list[dict[str, str]] = []
-        for entry in bundle["manifests"]:
-            staged = self.root / entry["staged_path"]
-            try:
-                data = staged.read_bytes()
-            except OSError as error:
-                raise ManifestStoreError("FINALIZE_STAGED_MISSING", status=503) from error
-            if _sha256_bytes(data) != entry["sha256"]:
-                raise ManifestStoreError("FINALIZE_STAGED_HASH_MISMATCH")
+        for entry, data in staged_entries:
             live = self.root / entry["live_path"]
             _atomic_bytes(live, data)
             if _sha256_bytes(live.read_bytes()) != entry["sha256"]:
                 raise ManifestStoreError("FINALIZE_LIVE_HASH_MISMATCH")
             live_entries.append({"live_path": entry["live_path"], "sha256": entry["sha256"]})
-        for obsolete in bundle.get("obsolete_manifests", ()):
-            path_value = str(obsolete.get("live_path") or "")
-            if not path_value.startswith("data/kb/manifests/") or path_value in {item["live_path"] for item in live_entries}:
-                continue
-            path = self.root / path_value
+        for _obsolete, path in obsolete_entries:
             try:
-                if path.exists() and _sha256_bytes(path.read_bytes()) != obsolete.get("sha256"):
-                    raise ManifestStoreError("FINALIZE_CLEANUP_HASH_MISMATCH")
                 path.unlink(missing_ok=True)
                 if path.parent.exists():
                     _fsync_directory(path.parent)

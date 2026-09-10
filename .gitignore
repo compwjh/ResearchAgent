@@ -28,6 +28,10 @@ data/agent_tasks.sqlite3
 deploy/reranker/.runtime/
 deploy/run.pid
 
+# Spec018 rebuild staging/runtime artifacts (large manifests; canonical live
+# manifests and generation marker remain under ignored data/kb/).
+.sdd/runtime/
+
 # Langfuse vendor runtime/dependency artefacts; source code remains tracked.
 vendor/langfuse/.env
 vendor/langfuse/node_modules/

@@ -3,6 +3,7 @@ import inspect
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_kb
@@ -76,7 +77,16 @@ def test_source_route_forwards_range_and_head_headers():
 def test_inspection_without_generation_is_explicit_rebuild_gate():
     client = TestClient(app)
     record = {"schema_version": "knowledge-document-v1", "document_id": "d1"}
-    with patch.object(routes_kb, "load_papers_strict", return_value=[record]):
+    # The real fixture may contain a completed generation marker after the
+    # production rebuild.  Isolate this test's pre-generation contract at the
+    # route boundary instead of mutating the shared runtime state.
+    generation_gate = JSONResponse(
+        status_code=409,
+        content={"error_code": "INDEX_REBUILD_REQUIRED"},
+    )
+    with patch.object(routes_kb, "load_papers_strict", return_value=[record]), patch.object(
+        routes_kb, "_require_generation", return_value=generation_gate
+    ):
         response = client.get("/api/kb/documents/d1/inspection")
     assert response.status_code == 409
     assert response.json()["error_code"] == "INDEX_REBUILD_REQUIRED"

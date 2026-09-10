@@ -13,6 +13,7 @@ from typing import Any
 
 from backend.app.knowledge_base.infrastructure.candidate_index import QdrantCandidateIndexPort
 from backend.app.knowledge_base.infrastructure.candidate_rebuild import CandidateRebuildService, RebuildError
+from backend.app.knowledge_base.infrastructure.chunkers import ollama_boundary_judge
 from backend.app.knowledge_base.infrastructure.index import get_client
 from backend.app.platform.config import EMBED_DIM, KB_META_PATH, KB_PAPERS_DIR, QDRANT_PATH
 
@@ -47,12 +48,17 @@ def main(argv: Any = None, *, index: Any = None, service_factory: Any = None) ->
         client = get_client()
         index = QdrantCandidateIndexPort(client, dense_dim=EMBED_DIM)
     factory = service_factory or CandidateRebuildService
-    service = factory(
-        metadata_path=args.metadata_path,
-        papers_dir=args.papers_dir,
-        runtime_root=args.runtime_root,
-        index=index,
-    )
+    service_kwargs = {
+        "metadata_path": args.metadata_path,
+        "papers_dir": args.papers_dir,
+        "runtime_root": args.runtime_root,
+        "index": index,
+    }
+    # Keep injected factories source-compatible while wiring the production
+    # composition root to the same LLM boundary used by synchronous indexing.
+    if service_factory is None:
+        service_kwargs["llm"] = ollama_boundary_judge
+    service = factory(**service_kwargs)
     try:
         if args.resume_switch:
             result = service.resume_switch(args.resume_switch, recover_stale_lock=args.recover_stale_lock == args.resume_switch)
