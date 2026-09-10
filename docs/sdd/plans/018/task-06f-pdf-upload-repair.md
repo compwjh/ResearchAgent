@@ -79,9 +79,12 @@
 - 服务端现在在 generation gate 通过后自动复用既有 `submit_document_reindex(..., "all")`，新文档响应返回 `status=indexing`、双版本进度和 `task_id`，不再静默停留 `pending`；重复内容不重复入队。
 - 真实服务验证：合法去重 PDF 201、中文文件名新 PDF 201 后清理、非法 PDF 400 `INVALID_PDF`；已为 `2105.07447.pdf` 补提交索引并完成 v1/v2（79/61 片段）。
 - 定向上传/重建测试 69 passed；本轮未跑全量 pytest；ruff、`py_compile`、`git diff --check` 全部通过。
+- 追加修复：索引任务现在用同一批 provenance chunks 同时写入 Qdrant 和 `InspectionManifest`；缺失清单的 canonical 文档会复用既有 reindex worker 实际补建，重复检查请求在任务运行期间保持 202 可轮询，完成后返回非空 `chunks/anchors`。
+- 追加验证：切片检查定向测试 118 passed（含 foundation/routes/reindex）；真实 `2105.07447.pdf` 与 `MAD-HTLC...pdf` 的 v1/v2 检查请求均已验证可从 202 转为 200 且返回非空切片。
 
 ## 变更日志
 
 - 2026-09-10：用户反馈新 PDF 无法上传；已确认服务可用但历史上传 400 缺少响应体，进入受控复现与最小修复。
 - 2026-09-10：完成 MIME 兼容、魔数校验与错误可见性修复；真实服务 HTTP/探针上传和回归通过，Task06F 收口为已完成。
 - 2026-09-10：用户反馈合法上传长期显示“待索引”；确认上传只写入 immutable metadata、未调用既有 reindex seam，补充 generation gate 与自动入队，并为 `2105.07447.pdf` 完成一次真实索引恢复。
+- 2026-09-10：用户反馈索引完成后切片检查无内容；确认 direct reindex 只写向量且 inspection 缺失清单时没有实际 worker。修复为同批 provenance chunks 发布 manifest，并将重复检查请求保持为 202 轮询；完成定向测试、真实文档 v1/v2 运行时验证并提交本地修复。
