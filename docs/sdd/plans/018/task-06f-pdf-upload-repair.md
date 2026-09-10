@@ -76,10 +76,12 @@
 
 - 后端允许常见 PDF multipart part MIME（参数化、`application/x-pdf`、`application/octet-stream`、`binary/octet-stream` 或缺失），仍要求 `.pdf` 扩展名和 `%PDF-` 魔数。
 - 前端上传错误显示稳定 `message（error_code）`，兼容旧 `detail`，并通过 `app.js?v=19` 强制刷新浏览器缓存。
-- 真实服务验证：合法去重 PDF 201、固定样本新 PDF 201 后清理、非法 PDF 400 `INVALID_PDF`；探针清理后知识库只剩原有文档。
-- 定向上传测试 73 passed；全量 pytest 944 passed（38 个子测试）；前端 node 契约、ruff、`git diff --check` 全部通过。
+- 服务端现在在 generation gate 通过后自动复用既有 `submit_document_reindex(..., "all")`，新文档响应返回 `status=indexing`、双版本进度和 `task_id`，不再静默停留 `pending`；重复内容不重复入队。
+- 真实服务验证：合法去重 PDF 201、中文文件名新 PDF 201 后清理、非法 PDF 400 `INVALID_PDF`；已为 `2105.07447.pdf` 补提交索引并完成 v1/v2（79/61 片段）。
+- 定向上传/重建测试 69 passed；本轮未跑全量 pytest；ruff、`py_compile`、`git diff --check` 全部通过。
 
 ## 变更日志
 
 - 2026-09-10：用户反馈新 PDF 无法上传；已确认服务可用但历史上传 400 缺少响应体，进入受控复现与最小修复。
 - 2026-09-10：完成 MIME 兼容、魔数校验与错误可见性修复；真实服务 HTTP/探针上传和回归通过，Task06F 收口为已完成。
+- 2026-09-10：用户反馈合法上传长期显示“待索引”；确认上传只写入 immutable metadata、未调用既有 reindex seam，补充 generation gate 与自动入队，并为 `2105.07447.pdf` 完成一次真实索引恢复。

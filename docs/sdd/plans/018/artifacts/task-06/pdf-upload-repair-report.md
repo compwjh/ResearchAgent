@@ -205,3 +205,76 @@ stored_name_safe_basename=pass
 - 模型：临时 Luna xhigh（backend-dev）
 - Token：当前工具环境未提供精确统计
 - 工具：约 14 次读取/编辑/定向测试/静态检查调用
+
+## 追加：Task06 自动索引上传修复（2026-09-10）
+
+### 结果状态
+
+```text
+task=06-auto-index-upload
+result=IMPLEMENTED-AND-VERIFIED
+new_upload_auto_reindex=pass
+deduplicated_upload_no_duplicate_submit=pass
+generation_gate_fail_closed=pass
+reindex_failure_not_reported_as_success=pass
+application_modified=false
+```
+
+### 改动文件
+
+- `backend/app/api/routes_kb.py`
+  - canonical upload 在 immutable source/metadata 写入前复用 `_require_generation`；代际未提交时返回既有稳定错误，不产生新的 pending 原件。
+  - 仅对 application 明确返回 `deduplicated=False` 的新文档调用既有 `submit_document_reindex(document_id, "all")` seam；不直接调用 task/index/Qdrant infrastructure。
+  - 入队成功返回任务 ID，并以 `status=indexing`、v1/v2 `indexing` 进度 0 表示已进入队列；去重文档保留原状态且不重复提交。
+  - 复用现有错误协议：generation/索引状态冲突返回 409，finalize/Qdrant/未知提交失败返回 503；提交结果部分失败不会返回 201 成功。
+- `tests/test_kb_document_routes.py`
+  - 新增新文档自动入队与 task ID/队列状态断言。
+  - 新增重复上传不重复入队、generation gate fail-closed、reindex 提交失败不伪装成功断言。
+
+未修改 `backend/app/knowledge_base/application.py`、任务实现、Qdrant、embedding、前端或任何真实知识库数据；没有新增第二套索引实现。
+
+### 决策依据
+
+1. `create_uploaded_document` 是唯一 immutable upload application seam，但其当前返回 `task_id=None`；`submit_document_reindex` 已负责 generation marker、源哈希、GenerationBoundIndexPort 与单线程任务队列边界，因此路由只做受控编排。
+2. generation gate 放在 create 前，避免维护窗口中写入一个没有可执行索引任务、只能永久显示 pending 的新文档。去重不会发生新写入，但仍在 gate 通过后读取/复用 canonical 记录；生产 application 始终提供 `deduplicated` 布尔值，兼容旧测试 double 缺少该字段时不盲目重复提交。
+3. `submit_document_reindex(..., "all")` 返回两个 chunker 的提交结果；只有 v1/v2 均提交成功且 task ID 有效时才宣告队列成功。任一提交失败使用当前 reindex 路由的稳定状态码/错误码语义，不把 task ID 缺失、部分提交或异常包装成 201。
+
+### 验证命令、退出码与结果
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `./.venv/bin/python -m pytest -q tests/test_kb_document_routes.py tests/test_kb_document_reindex.py` | 0 | **39 passed** |
+| `./.venv/bin/python -m pytest -q tests/test_kb_routes.py` | 0 | **30 passed**（兼容 `/api/kb/upload` 回归） |
+| `./.venv/bin/ruff check backend/app/api/routes_kb.py tests/test_kb_document_routes.py` | 0 | `All checks passed!` |
+| `./.venv/bin/python -m py_compile backend/app/api/routes_kb.py` | 0 | 通过 |
+| `git diff --check` | 0 | 通过 |
+
+按任务要求未运行全量 pytest，未启动服务，未连接 Qdrant，未执行 embedding 或真实数据探针。
+
+最终组合重跑 `./.venv/bin/python -m pytest -q tests/test_kb_document_routes.py tests/test_kb_document_reindex.py tests/test_kb_routes.py` 退出码 0，共 **69 passed**。
+
+### 风险与阻塞
+
+- 新文档入队后，Qdrant/embedding 运行时故障仍由既有后台任务收敛为 chunker `failed`；本轮只处理提交边界，不新增同步索引或任务监控。
+- 若代际 marker 无效，上传现在在写入前返回 `INDEX_REBUILD_REQUIRED`/既有 finalize 错误，用户需在维护完成后重试；这是 fail-closed 行为而非上传后静默 pending。
+- `create_uploaded_document` 的生产返回值仍是 `task_id=None`，任务 ID 的唯一来源是既有 `submit_document_reindex` 返回值；application 未改动。
+- 无阻塞；未执行 reset/stash/clean/push/merge。
+
+### 主 Agent 后续动作
+
+1. 审阅 routes/test diff，确认只依赖 application upload/reindex seams，尤其确认 `deduplicated` 分支与错误映射符合当前 API 契约。
+2. 将本报告与进展日志随同本轮代码变更纳入同一交接提交；按主流程继续独立后端评审/验收，不将本轮定向测试冒充全量回归。
+3. 若需要运行时验收，使用隔离的已确认 generation/Qdrant 环境验证真实新 PDF 的两版本状态变化，并清理任何探针文档。
+
+### 时间、模型与工具统计
+
+- 开始：2026-09-10 22:34:39 CST（Asia/Shanghai）
+- 结束：2026-09-10 22:39:41 CST（Asia/Shanghai）
+- 总耗时：约 5 分钟
+- 模型：临时 Luna xhigh（backend-dev）
+- Token：当前工具环境未提供精确统计
+- 工具：约 16 次读取、编辑、定向测试与静态检查调用
+
+### 进展日志
+
+`.codebuddy/agent-logs/spec-018/task-06/auto-index-upload/backend-dev/20260910-223439.md`

@@ -129,6 +129,168 @@ def test_upload_accepts_common_pdf_mime_variants_when_magic_is_valid(content_typ
     create.assert_called_once_with("variant.pdf", "application/pdf", b"%PDF-1.7\nvalid")
 
 
+def test_upload_new_document_queues_all_chunkers_and_returns_task_id():
+    client = TestClient(app)
+    record = {
+        "document_id": "new-doc",
+        "media_type": "application/pdf",
+        "file_name": "new.pdf",
+        "source_sha256": "a" * 64,
+        "status": "pending",
+        "chunkers": {
+            "v1": {"status": "pending", "progress": 0},
+            "v2": {"status": "pending", "progress": 0},
+        },
+    }
+    queued = {
+        "task_id": "task-all",
+        "document_id": "new-doc",
+        "chunker": "all",
+        "submitted": {"v1": True, "v2": True},
+    }
+    with patch.object(
+        routes_kb,
+        "_require_generation",
+        return_value=None,
+    ), patch.object(
+        routes_kb,
+        "create_uploaded_document",
+        return_value={"document": record, "deduplicated": False, "task_id": None},
+    ), patch.object(
+        routes_kb,
+        "submit_document_reindex",
+        return_value=queued,
+    ) as submit:
+        response = client.post(
+            "/api/kb/documents/upload",
+            files={"file": ("new.pdf", b"%PDF-1.7\nvalid", "application/pdf")},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["document_id"] == "new-doc"
+    assert body["task_id"] == "task-all"
+    assert body["status"] == "indexing"
+    assert body["chunkers"]["v1"]["status"] == "indexing"
+    assert body["chunkers"]["v2"]["status"] == "indexing"
+    submit.assert_called_once_with("new-doc", "all")
+
+
+def test_upload_deduplicated_document_does_not_submit_reindex_again():
+    client = TestClient(app)
+    record = {
+        "document_id": "existing-doc",
+        "media_type": "application/pdf",
+        "file_name": "existing.pdf",
+        "source_sha256": "b" * 64,
+        "status": "indexed",
+        "chunkers": {
+            "v1": {"status": "indexed", "progress": 100},
+            "v2": {"status": "indexed", "progress": 100},
+        },
+    }
+    with patch.object(routes_kb, "_require_generation", return_value=None), patch.object(
+        routes_kb,
+        "create_uploaded_document",
+        return_value={"document": record, "deduplicated": True, "task_id": None},
+    ), patch.object(routes_kb, "submit_document_reindex") as submit:
+        response = client.post(
+            "/api/kb/documents/upload",
+            files={"file": ("existing.pdf", b"%PDF-1.7\nvalid", "application/pdf")},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["task_id"] is None
+    assert response.json()["status"] == "indexed"
+    submit.assert_not_called()
+
+
+def test_upload_generation_gate_failure_is_stable_and_does_not_write_source():
+    client = TestClient(app)
+    gate = routes_kb._document_error(
+        409,
+        "INDEX_REBUILD_REQUIRED",
+        "索引尚未完成全库重建",
+    )
+    with patch.object(routes_kb, "_require_generation", return_value=gate), patch.object(
+        routes_kb, "create_uploaded_document"
+    ) as create, patch.object(routes_kb, "submit_document_reindex") as submit:
+        response = client.post(
+            "/api/kb/documents/upload",
+            files={"file": ("blocked.pdf", b"%PDF-1.7\nvalid", "application/pdf")},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "INDEX_REBUILD_REQUIRED"
+    assert "detail" not in response.json()
+    create.assert_not_called()
+    submit.assert_not_called()
+
+
+def test_upload_reindex_failure_is_not_reported_as_success():
+    client = TestClient(app)
+    record = {
+        "document_id": "failed-doc",
+        "media_type": "application/pdf",
+        "file_name": "failed.pdf",
+        "source_sha256": "c" * 64,
+        "status": "pending",
+        "chunkers": {
+            "v1": {"status": "pending", "progress": 0},
+            "v2": {"status": "pending", "progress": 0},
+        },
+    }
+    with patch.object(routes_kb, "_require_generation", return_value=None), patch.object(
+        routes_kb,
+        "create_uploaded_document",
+        return_value={"document": record, "deduplicated": False, "task_id": None},
+    ), patch.object(
+        routes_kb,
+        "submit_document_reindex",
+        side_effect=KnowledgeDocumentMigrationError("INDEX_REBUILD_REQUIRED"),
+    ) as submit:
+        response = client.post(
+            "/api/kb/documents/upload",
+            files={"file": ("failed.pdf", b"%PDF-1.7\nvalid", "application/pdf")},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "INDEX_REBUILD_REQUIRED"
+    assert response.json()["document_id"] == "failed-doc"
+    assert "detail" not in response.json()
+    submit.assert_called_once_with("failed-doc", "all")
+
+
+def test_upload_reindex_without_task_id_is_not_reported_as_success():
+    client = TestClient(app)
+    record = {
+        "document_id": "missing-task-doc",
+        "media_type": "application/pdf",
+        "file_name": "missing-task.pdf",
+        "source_sha256": "d" * 64,
+        "status": "pending",
+        "chunkers": {"v1": {}, "v2": {}},
+    }
+    with patch.object(routes_kb, "_require_generation", return_value=None), patch.object(
+        routes_kb,
+        "create_uploaded_document",
+        return_value={"document": record, "deduplicated": False, "task_id": None},
+    ), patch.object(
+        routes_kb,
+        "submit_document_reindex",
+        return_value={"submitted": {"v1": True, "v2": True}},
+    ):
+        response = client.post(
+            "/api/kb/documents/upload",
+            files={"file": ("missing-task.pdf", b"%PDF-1.7\nvalid", "application/pdf")},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error_code"] == "QDRANT_UNAVAILABLE"
+    assert response.json()["document_id"] == "missing-task-doc"
+    assert "detail" not in response.json()
+
+
 def test_upload_rejects_non_pdf_mime_even_when_pdf_magic_is_present():
     client = TestClient(app)
     response = client.post(

@@ -347,6 +347,14 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
         return _document_error(413, "PAYLOAD_TOO_LARGE", "文件超过上传容量上限", request=request, retryable=False)
     if len(file_name.encode("utf-8")) > 255:
         return _document_error(413, "PAYLOAD_TOO_LARGE", "文件名超过 UTF-8 字节上限", request=request)
+    # Uploads create immutable source records, but a new record is not useful
+    # until it has an index task.  Check the same generation gate used by the
+    # explicit reindex route before writing a new source/metadata pair; this
+    # keeps a maintenance window from accepting documents that can only sit in
+    # ``pending`` forever.
+    gate = _require_generation(request)
+    if gate is not None:
+        return gate
     try:
         result = create_uploaded_document(file_name, media_type, content)
     except DocumentReadError as error:
@@ -364,14 +372,90 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
     except Exception:
         return _document_error(503, "SOURCE_WRITE_FAILED", "原件暂时无法保存", request=request, retryable=True)
     document = result["document"]
+    reindex_result = None
+    # The application seam always includes this boolean.  Requiring the
+    # explicit False value also keeps older test/compatibility doubles that
+    # predate the dedupe field from accidentally scheduling a second pipeline.
+    if result.get("deduplicated") is False:
+        try:
+            reindex_result = submit_document_reindex(document["document_id"], "all")
+        except KnowledgeDocumentMigrationError as error:
+            status = {
+                "DOCUMENT_NOT_FOUND": 404,
+                "SOURCE_NOT_FOUND": 404,
+                "CHUNKER_UNSUPPORTED": 400,
+                "SOURCE_HASH_MISMATCH": 409,
+                "INDEX_ALREADY_RUNNING": 409,
+                "INDEX_REBUILD_REQUIRED": 409,
+                "INDEX_NOT_READY": 409,
+                "INDEX_FAILED": 409,
+                "INDEX_FINALIZE_REQUIRED": 503,
+            }.get(error.code, 503)
+            code = "INVALID_CHUNKER" if error.code == "CHUNKER_UNSUPPORTED" else error.code
+            return _document_error(
+                status,
+                code,
+                "文档无法自动建立索引",
+                request=request,
+                document_id=document["document_id"],
+                chunker="all",
+                retryable=status >= 500,
+            )
+        except Exception:
+            return _document_error(
+                503,
+                "QDRANT_UNAVAILABLE",
+                "索引任务暂时无法启动",
+                request=request,
+                document_id=document["document_id"],
+                chunker="all",
+                retryable=True,
+            )
+        submitted = reindex_result.get("submitted", {}) if isinstance(reindex_result, dict) else {}
+        if not isinstance(submitted, dict) or not submitted or not all(submitted.values()):
+            return _document_error(
+                409,
+                "INDEX_ALREADY_RUNNING",
+                "文档已有索引任务运行中",
+                request=request,
+                document_id=document["document_id"],
+                chunker="all",
+                operation_status="running",
+                progress=0,
+            )
+        if not isinstance(reindex_result.get("task_id"), str) or not reindex_result["task_id"]:
+            return _document_error(
+                503,
+                "QDRANT_UNAVAILABLE",
+                "索引任务暂时无法启动",
+                request=request,
+                document_id=document["document_id"],
+                chunker="all",
+                retryable=True,
+            )
+
+    response_status = "indexing" if reindex_result is not None else document["status"]
+    response_chunkers = document["chunkers"]
+    if reindex_result is not None:
+        # ``create_uploaded_document`` returns its pre-queue snapshot.  Keep
+        # the upload response honest about the accepted all-version task while
+        # the background workers update the canonical metadata asynchronously.
+        response_chunkers = {
+            name: {
+                **(document["chunkers"].get(name) or {}),
+                "status": "indexing",
+                "progress": 0,
+            }
+            for name in CHUNKERS
+        }
     return {
         "document_id": document["document_id"],
         "media_type": document["media_type"],
         "file_name": document["file_name"],
         "source_sha256": document["source_sha256"],
-        "status": document["status"],
-        "chunkers": document["chunkers"],
-        "task_id": result.get("task_id"),
+        "status": response_status,
+        "chunkers": response_chunkers,
+        "task_id": (reindex_result or result).get("task_id"),
     }
 
 
