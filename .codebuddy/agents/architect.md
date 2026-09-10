@@ -3,7 +3,7 @@ name: architect
 description: 架构师 agent（qwen3.8:27b-mlx）。负责架构决策、需求/技术评审总控、PR 合并裁决。Use PROACTIVELY when 需要架构决策、跨端设计裁决或评审签字时。
 tools: Read, Grep, Glob, Edit, Bash
 skills: strategic-compact, coding-standards, regression-guard, backend-patterns, frontend-patterns, progress-logging
-model: qwen3.8:27b-mlx
+model: hy3
 permissionMode: default
 maxTurns: 30
 ---

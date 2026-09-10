@@ -39,6 +39,8 @@ from backend.app.platform.settings.settings_repository import ArticleSettings
 
 PAPER_ALREADY_EXISTS = "PAPER_ALREADY_EXISTS"
 KB_IMPORT_FAILED = "KB_IMPORT_FAILED"
+KB_STORAGE_LOCKED = "KB_STORAGE_LOCKED"
+DUPLICATE_IMPORT = "DUPLICATE_IMPORT"
 
 # Import errors cross both the single-item API and the durable batch store.
 # Keep this table keyed by stable error codes so an exception's text can never
@@ -53,6 +55,10 @@ _SAFE_IMPORT_ERROR_MESSAGES = {
     PDF_NOT_FOUND: "PDF 不存在",
     PDF_TOO_LARGE: "PDF 超过大小限制",
     KB_IMPORT_FAILED: "论文导入失败",
+    # 存储被另一个实例独占：可重试、可行动（spec-021 Task03）。
+    KB_STORAGE_LOCKED: "知识库存储被另一个实例占用，请关闭其他服务实例后重试",
+    # 同论文再次新建导入批次撞 import_item_title 唯一索引：指引回原批次重试。
+    DUPLICATE_IMPORT: "该论文已在导入批次中，请在原批次重试",
 }
 
 
@@ -65,6 +71,15 @@ def safe_import_error_code(code: object, fallback: str = KB_IMPORT_FAILED) -> st
     """Keep persisted/API error codes within the documented stable set."""
     value = str(code or "")
     return value if value in _SAFE_IMPORT_ERROR_MESSAGES else fallback
+
+
+def _is_storage_locked_error(error: BaseException) -> bool:
+    """Narrow-match a Qdrant storage-in-use RuntimeError (spec-021 Task03).
+
+    The fixed error code is the only durable detail; we never forward the raw
+    exception text (it may contain a filesystem path) into state or a response.
+    """
+    return isinstance(error, RuntimeError) and "already accessed by another instance" in str(error)
 
 
 class PaperImportError(RuntimeError):
@@ -284,6 +299,11 @@ def _find_existing(port: PaperImportPort, snapshot: Mapping[str, Any]) -> Any:
     except PaperImportError:
         raise
     except Exception as error:
+        if _is_storage_locked_error(error):
+            # 存储被另一个实例独占：可重试、可行动（spec-021 Task03）。
+            raise PaperImportError(
+                KB_STORAGE_LOCKED, "知识库存储被另一个实例占用，请关闭其他服务实例后重试", retryable=True
+            ) from error
         raise PaperImportError(KB_IMPORT_FAILED, "知识库导入状态不可用", retryable=True) from error
 
 
@@ -369,6 +389,11 @@ def import_candidate(
     except PaperImportError:
         raise
     except Exception as error:
+        if _is_storage_locked_error(error):
+            # 存储被另一个实例独占：可重试、可行动（spec-021 Task03）。
+            raise PaperImportError(
+                KB_STORAGE_LOCKED, "知识库存储被另一个实例占用，请关闭其他服务实例后重试", retryable=True
+            ) from error
         raise PaperImportError(KB_IMPORT_FAILED, "知识库 v1 索引失败", retryable=True) from error
     finally:
         # The adapter moves the file into the KB on success and removes its own
@@ -379,6 +404,7 @@ def import_candidate(
 
 __all__ = [
     "DOWNLOAD_BLOCKED", "DOWNLOAD_TIMEOUT", "INVALID_PDF", "LOGIN_REQUIRED", "PDF_NOT_FOUND",
-    "PDF_TOO_LARGE", "KB_IMPORT_FAILED", "PAPER_ALREADY_EXISTS", "PaperImportError",
+    "PDF_TOO_LARGE", "KB_IMPORT_FAILED", "PAPER_ALREADY_EXISTS", "KB_STORAGE_LOCKED",
+    "DUPLICATE_IMPORT", "PaperImportError",
     "safe_import_error_message", "safe_import_error_code", "PaperImportResult", "import_candidate",
 ]

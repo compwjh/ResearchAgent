@@ -10,15 +10,18 @@ never a reason to stop processing the other items in the batch.
 from __future__ import annotations
 
 import inspect
+import logging
 import sqlite3
+import threading
 import time
 import uuid
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Optional
 
 from backend.app.paper_discovery.application.paper_import import (
+    DUPLICATE_IMPORT,
     LOGIN_REQUIRED,
     import_candidate,
     safe_import_error_code,
@@ -42,6 +45,20 @@ from backend.app.paper_discovery.infrastructure.paper_import_batch_store import 
     INVALID_STATE_TRANSITION,
     PaperImportBatchStore,
     PaperImportBatchStoreError,
+)
+
+logger = logging.getLogger(__name__)
+
+# Process-local background batch executor.  A single shared pool means every
+# PaperImportBatchService instance routes runs through one bounded queue; the
+# capacity mirrors the existing per-batch item concurrency cap (spec-021
+# "全局并发上限：同时执行的批次执行器不得多于既有 max_workers 语义"), and
+# surplus batches queue instead of being dropped or falsely reported complete.
+# This is the only background pool introduced for batch running; run_batch's
+# item-level ThreadPoolExecutor is still created per call and is unchanged.
+BATCH_RUNNER_MAX_WORKERS = 3
+_batch_runner_executor = ThreadPoolExecutor(
+    max_workers=BATCH_RUNNER_MAX_WORKERS, thread_name_prefix="paper-import-batch"
 )
 
 IMPORT_FAILED = "IMPORT_FAILED"
@@ -143,6 +160,10 @@ class PaperImportBatchService:
         # worker must be given the server snapshot again; it cannot reconstruct
         # an import from client-provided IDs or URLs.
         self._snapshots: dict[str, dict[str, Any]] = {}
+        # In-flight background runners, keyed by batch_id, for single-flight
+        # submission (spec-021): at most one runner per batch at a time.
+        self._batch_runners: dict[str, Future] = {}
+        self._runner_lock = threading.Lock()
 
     @staticmethod
     def _store_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -243,11 +264,23 @@ class PaperImportBatchService:
         persistable_items = [self._persistable_snapshot(item) for item in item_snapshots]
         try:
             batch = self.store.create_batch(search_id, persistable_items, idempotency_key=idempotency_key)
+        except sqlite3.IntegrityError as error:
+            # 同论文再次新建批次撞 import_item_title 唯一索引：映射为可读、可行动的
+            # DUPLICATE_IMPORT，禁止再以 IMPORT_BATCH_ERROR 兜底（spec-021 Task03）。
+            # 仅当确为 import_item_title 冲突；其余完整性错误原样上抛，保留旧行为。
+            if "import_item_title" in str(error):
+                raise PaperImportBatchServiceError(
+                    DUPLICATE_IMPORT, "该论文已在导入批次中，请在原批次重试"
+                ) from error
+            raise
         except PaperImportBatchStoreError as error:
             raise PaperImportBatchServiceError(error.code, str(error)) from error
         self._snapshots[batch.batch_id] = {str(_value(item, "candidate_id")): item for item in item_snapshots}
         if auto_run:
-            self.run_batch(batch.batch_id)
+            # Submit the run to the background executor and return the queued
+            # batch immediately.  The HTTP request must not block on the
+            # (possibly long) download+index pass; the frontend polls status.
+            self.submit_batch(batch.batch_id, candidates=item_snapshots)
             batch = self.store.get_batch(batch.batch_id) or batch
         return batch
 
@@ -427,6 +460,65 @@ class PaperImportBatchService:
                 future.result()
         return self.store.get_batch(batch_id) or batch
 
+    def submit_batch(self, batch_id: str, *, candidates: Optional[Iterable[Any]] = None) -> Future:
+        """Enqueue a background run; single-flight per batch_id.
+
+        If a runner for this batch already exists and has not finished, the
+        existing Future is returned unchanged so callers never launch a
+        duplicate download pass.  The run is wrapped so an unexpected failure
+        cannot leave items permanently ``queued``.
+        """
+        with self._runner_lock:
+            existing = self._batch_runners.get(batch_id)
+            if existing is not None and not existing.done():
+                return existing
+            future = _batch_runner_executor.submit(
+                self._run_batch_in_background,
+                batch_id,
+                list(candidates) if candidates is not None else None,
+            )
+            self._batch_runners[batch_id] = future
+        return future
+
+    def _run_batch_in_background(self, batch_id: str, candidates: Optional[list[Any]] = None) -> Optional[PaperImportBatch]:
+        try:
+            return self.run_batch(batch_id, candidates=candidates)
+        except Exception:  # noqa: BLE001 - a background run must never hang the batch in queued
+            logger.exception("后台导入批次执行失败：%s", batch_id)
+            self._fail_remaining_queued(batch_id)
+            return None
+        finally:
+            with self._runner_lock:
+                self._batch_runners.pop(batch_id, None)
+
+    def _fail_remaining_queued(self, batch_id: str) -> None:
+        """Mark any still-queued items failed so the batch reaches a terminal state."""
+        try:
+            for item in self.store.get_items(batch_id):
+                if item.status == ITEM_QUEUED:
+                    self._store_call(
+                        self.store.mark_failed, item.item_id,
+                        "IMPORT_INTERRUPTED", "导入被中断，请重试", lease_owner=None,
+                    )
+        except Exception:  # noqa: BLE001 - recovery must not obscure the original failure
+            logger.exception("标记中断条目失败：%s", batch_id)
+
+    def maybe_recover_batch(self, batch_id: str) -> None:
+        """Re-submit a queued batch whose background runner is missing.
+
+        Used on first access / startup recovery (spec-021).  Relies on
+        process-local server snapshots; without them a queued batch cannot be
+        resumed and is left queued for the caller to surface (a user retry
+        re-supplies the snapshots).  Never starts a second runner if one is
+        already in flight (single-flight via ``submit_batch``).
+        """
+        batch = self.store.get_batch(batch_id)
+        if batch is None or batch.status != "queued":
+            return
+        if batch_id not in self._snapshots:
+            return
+        self.submit_batch(batch_id)
+
     process_batch = run_batch
     execute_batch = run_batch
     start_batch = run_batch
@@ -436,14 +528,43 @@ class PaperImportBatchService:
             self._store_call(self.store.retry_batch, batch_id)
         except PaperImportBatchStoreError as error:
             raise PaperImportBatchServiceError(error.code, str(error)) from error
-        return self.run_batch(batch_id, candidates=candidates)
+        except sqlite3.IntegrityError as error:
+            # 整批重试把 failed/waiting_login 条目回到 queued（活跃态）时撞 import_item_title
+            # 部分唯一索引（碰撞方多为另一批次中已 completed 的同名论文）→ 映射为可读、可行动的
+            # DUPLICATE_IMPORT，禁止再以 IMPORT_BATCH_ERROR 兜底（spec-021 Task03）。
+            if "import_item_title" in str(error):
+                raise PaperImportBatchServiceError(
+                    DUPLICATE_IMPORT, "该论文已在导入批次中，请在原批次重试"
+                ) from error
+            raise
+        # Re-queue failed/waiting_login items and run in the background; do not
+        # block the HTTP request on the (possibly long) download+index pass.
+        self.submit_batch(batch_id, candidates=candidates)
+        return self.store.get_batch(batch_id)  # type: ignore[return-value]
 
     def retry_item(self, item_id: str, *, candidates: Optional[Iterable[Any]] = None) -> PaperImportItem:
         try:
             self._store_call(self.store.retry_item, item_id)
         except PaperImportBatchStoreError as error:
             raise PaperImportBatchServiceError(error.code, str(error)) from error
-        return self.process_item(item_id, candidates=candidates)
+        except sqlite3.IntegrityError as error:
+            # 重试把 failed 条目回到 queued（活跃态）时撞 import_item_title 部分唯一索引
+            # （碰撞方多为另一批次中已 completed 的同名论文）→ 映射为可读、可行动的
+            # DUPLICATE_IMPORT，禁止再以 IMPORT_BATCH_ERROR 兜底（spec-021 Task03，复现 bf22eaa2）。
+            # 仅当确为 import_item_title 冲突；其余完整性错误原样上抛，保留旧行为。
+            if "import_item_title" in str(error):
+                raise PaperImportBatchServiceError(
+                    DUPLICATE_IMPORT, "该论文已在导入批次中，请在原批次重试"
+                ) from error
+            raise
+        item = self.store.get_item(item_id)
+        if item is None:
+            raise PaperImportBatchServiceError("ITEM_NOT_FOUND", "导入条目不存在")
+        # 仅把目标条目回到 queued，并后台提交执行；不在请求线程内等待下载+索引
+        # （与 Task02 的 submit_batch 语义一致，spec-021 Task03）。store.retry_item
+        # 已约束仅 failed → queued，故非 failed 条目会在上面抛 INVALID_STATE_TRANSITION。
+        self.submit_batch(item.batch_id, candidates=candidates)
+        return item
 
     def resume_item(
         self,

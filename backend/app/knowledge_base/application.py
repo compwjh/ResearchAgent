@@ -152,6 +152,16 @@ def _index_succeeded(value: Any) -> bool:
     return status == STATUS_INDEXED
 
 
+def _is_storage_locked_error(error: BaseException) -> bool:
+    """窄匹配 qdrant 存储被另一个实例独占的 RuntimeError（spec-021 Task03）。
+
+    知识库上下文不持有导入错误码表，故此处仅识别并上抛，由消费方
+    （paper_discovery.application.paper_import）映射为固定文案的 KB_STORAGE_LOCKED。
+    绝不把异常原文（可能含路径）作为返回内容。
+    """
+    return isinstance(error, RuntimeError) and "already accessed by another instance" in str(error)
+
+
 def _call_supported(function: Callable[..., Any], positional: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
     try:
         parameters = inspect.signature(function).parameters.values()
@@ -341,7 +351,10 @@ class KnowledgeBasePaperImportAdapter:
             try:
                 os.rename(source, target)
                 upsert_paper(record, self.meta_path)
-            except Exception:
+            except Exception as error:
+                if _is_storage_locked_error(error):
+                    # 让消费方映射为 KB_STORAGE_LOCKED，而非一律 KB_IMPORT_FAILED（spec-021 Task03）。
+                    raise
                 self._cleanup(record.paper_id, target)
                 return PortImportResult(
                     paper_id=None,
@@ -372,7 +385,10 @@ class KnowledgeBasePaperImportAdapter:
                 error_code=None,
                 stored_name=safe_name,
             )
-        except Exception:
+        except Exception as error:
+            if _is_storage_locked_error(error):
+                # 让消费方映射为 KB_STORAGE_LOCKED，而非一律 KB_IMPORT_FAILED（spec-021 Task03）。
+                raise
             try:
                 _call_supported(
                     self.deleter or self._default_deleter,

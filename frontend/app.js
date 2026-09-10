@@ -386,14 +386,19 @@ const paperState = {
   failedGroups: [],
   skippedImports: 0,
   directSuccess: 0,
+  directImports: [],
   lastImportError: null,
   currentRoundBatchIds: new Set(),
   pendingGroups: 0,
+  submitInflight: 0,
+  retryingBatchIds: new Set(),
 };
+
+const SLOW_IMPORT_MS = 3 * 60 * 1000; // 软提示阈值：批次非终态且 updated_at 超 3 分钟未变化时提示"仍在导入，可离开此页"。
 
 const PAPER_STATUS_TEXT = {
   queued: '排队中', downloading: '下载中', waiting_login: '等待登录', validating: '校验中',
-  indexing: '索引中', completed: '已完成', failed: '失败', cancelled: '已取消',
+  indexing: '建索引中', completed: '已完成', failed: '失败', cancelled: '已取消',
   partial_success: '部分完成', running: '处理中', completed_count: '已完成',
 };
 const PAPER_SOURCE_STATUS_TEXT = {
@@ -428,6 +433,8 @@ const PAPER_ERROR_TEXT = {
   BROWSER_ORIGIN_NOT_ALLOWED: '该论文不支持受控登录', IMPORT_BATCH_UNAVAILABLE: '导入服务暂时不可用',
   IMPORT_BATCH_ERROR: '导入批次失败', PAPER_ALREADY_EXISTS: '论文已在知识库中', LOGIN_REQUIRED: '需要登录后才能下载',
   SEARCH_NOT_READY: '结果正在整理，请稍后重试',
+  KB_STORAGE_LOCKED: '知识库存储被另一个实例占用，请关闭其他服务实例后重试',
+  DUPLICATE_IMPORT: '该论文已在导入批次中，请在原批次重试',
 };
 
 class PaperApiError extends Error {
@@ -904,6 +911,8 @@ function showPaperError(code, details = null) {
 
 const PAPER_IMPORT_PHASES = ['idle', 'submitting', 'running', 'partial_success', 'completed', 'failed'];
 
+// 仅作状态留痕（importPhase 字段不参与任何判定/渲染）；相位由 renderImportSummary 基于事实
+//（submitInflight、批次态等）重算后在此写入。外部不得再"先写相位、再被事实重算覆盖"。
 function setImportPhase(phase) {
   if (!PAPER_IMPORT_PHASES.includes(phase)) return;
   paperState.importPhase = phase;
@@ -936,15 +945,19 @@ function renderImportSummary() {
   const totalFailed = failedItems + submitFailed;
   const totalBatches = batches.length;
 
-  let phase = paperState.importPhase;
-  if (runningBatches > 0) {
+  let phase;
+  if (paperState.submitInflight > 0) {
+    phase = 'submitting';
+  } else if (runningBatches > 0) {
     phase = 'running';
   } else if (totalSuccess > 0 && totalFailed > 0) {
     phase = 'partial_success';
   } else if (totalSuccess > 0) {
     phase = 'completed';
-  } else if (paperState.importPhase !== 'submitting' && totalSuccess === 0 && (totalFailed > 0 || skipped > 0)) {
+  } else if (totalFailed > 0 || skipped > 0) {
     phase = 'failed';
+  } else {
+    phase = 'idle';
   }
   setImportPhase(phase);
 
@@ -954,7 +967,10 @@ function renderImportSummary() {
 
   let message;
   let kind;
-  if (phase === 'submitting') {
+  if (paperState.retryingBatchIds.size > 0) {
+    message = `正在重试 ${paperState.retryingBatchIds.size} 项…`;
+    kind = 'running';
+  } else if (phase === 'submitting') {
     message = `正在提交 ${paperState.pendingGroups} 个导入批次…`;
     kind = 'running';
   } else if (phase === 'running') {
@@ -985,6 +1001,13 @@ function renderImportSummary() {
       if (t) message += `（${t}）`;
     }
   }
+  let slow = false;
+  for (const batch of batches) {
+    if (paperBatchTerminal(batch)) continue;
+    const updated = batch.updated_at ? Date.parse(batch.updated_at) : NaN;
+    if (!Number.isNaN(updated) && Date.now() - updated > SLOW_IMPORT_MS) { slow = true; break; }
+  }
+  if (slow) message += '（仍在导入，可离开此页）';
   setPaperStatus(paperImportStatus, message, kind);
 }
 
@@ -1021,21 +1044,21 @@ async function importPaperCandidates(candidates) {
   paperState.failedGroups = [];
   paperState.lastImportError = null;
   paperState.directSuccess = 0;
+  paperState.directImports = [];
   paperState.currentRoundBatchIds = new Set();
   if (!groups.size) {
     if (paperImportPanel) paperImportPanel.hidden = false;
-    setImportPhase('failed');
     renderImportSummary();
     return;
   }
-  setImportPhase('submitting');
   if (paperImportPanel) paperImportPanel.hidden = false;
-  renderImportSummary();
   const created = [];
   for (const [search_id, candidate_ids] of groups) {
     const importKey = `${search_id}:${candidate_ids.join('|')}`;
     if (paperState.inFlightImports.has(importKey)) continue;
     paperState.inFlightImports.add(importKey);
+    paperState.submitInflight += 1;
+    renderImportSummary();
     try {
       const response = await fetch('/api/papers/imports', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1048,15 +1071,24 @@ async function importPaperCandidates(candidates) {
         paperState.batches.set(data.batch_id, data); created.push(data.batch_id); paperState.currentRoundBatchIds.add(data.batch_id); renderPaperBatch(data);
       } else {
         paperState.directSuccess += 1;
-        if (data.paper_id) jumpToKnowledgeBase(data.paper_id);
+        if (data.paper_id || data.stored_name) {
+          paperState.directImports.push({
+            candidate_id: candidate_ids[0],
+            paper_id: data.paper_id || null,
+            stored_name: data.stored_name || '',
+            existing: Boolean(data.existing),
+          });
+        }
       }
     } catch (error) {
       paperState.failedGroups.push({ search_id, candidate_ids, code: error.code || 'IMPORT_BATCH_ERROR' });
     } finally {
+      paperState.submitInflight -= 1;
       paperState.inFlightImports.delete(importKey);
     }
   }
   if (created.length) schedulePaperBatchPoll();
+  renderDirectImports();
   renderImportSummary();
 }
 
@@ -1091,6 +1123,7 @@ function schedulePaperBatchPoll() {
         if (isCurrentPoll()) paperState.lastImportError = error.code || 'IMPORT_BATCH_ERROR';
       }
     }));
+    renderImportSummary();
   }, 2500);
 }
 
@@ -1106,7 +1139,7 @@ function renderPaperBatch(batch) {
     batchContainer.dataset.batchId = batchId;
     paperImportItems.appendChild(batchContainer);
   }
-  batchContainer.classList.toggle('is-progressing', !paperBatchTerminal(batch));
+  batchContainer.classList.toggle('is-progressing', !paperBatchTerminal(batch) || paperState.retryingBatchIds.has(batchId));
   batchContainer.replaceChildren();
   const label = PAPER_STATUS_TEXT[batch.status || batch.state] || '处理中';
   const batchHeader = document.createElement('div'); batchHeader.className = 'paper-import-batch-header';
@@ -1127,20 +1160,77 @@ function renderPaperBatch(batch) {
       const jump = document.createElement('button'); jump.type = 'button'; jump.className = 'secondary-button'; jump.textContent = '在知识库中查看';
       jump.addEventListener('click', () => jumpToKnowledgeBase(item.paper_id)); row.appendChild(jump);
     }
+    if ((item.status || item.state) === 'failed' && item.item_id) {
+      const retryItem = document.createElement('button'); retryItem.type = 'button'; retryItem.className = 'secondary-button'; retryItem.textContent = '重试';
+      if (paperState.retryingBatchIds.has(batchId)) retryItem.disabled = true;
+      retryItem.addEventListener('click', async () => {
+        if (!paperState.enabled) return;
+        retryItem.disabled = true;
+        paperState.retryingBatchIds.add(batchId);
+        paperState.submitInflight += 1;
+        renderPaperBatch(batch);
+        renderImportSummary();
+        let ok = false;
+        try {
+          const response = await fetch(`/api/papers/import-items/${encodeURIComponent(item.item_id)}/retry`, { method: 'POST' });
+          const data = await paperJson(response);
+          paperState.batches.set(data.batch_id, data); renderPaperBatch(data); schedulePaperBatchPoll(); ok = true;
+        } catch (error) {
+          paperState.lastImportError = error.code || 'IMPORT_BATCH_ERROR';
+        } finally {
+          paperState.retryingBatchIds.delete(batchId);
+          paperState.submitInflight -= 1;
+          if (!ok) renderPaperBatch(batch);
+          renderImportSummary();
+        }
+      });
+      row.appendChild(retryItem);
+    }
     batchItems.appendChild(row);
   });
   const failedItems = (batch.items || []).filter((item) => (item.status || item.state) === 'failed');
   if (failedItems.length) {
     const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'secondary-button'; retry.textContent = '重试失败项';
+    if (paperState.retryingBatchIds.has(batchId)) retry.disabled = true;
     retry.addEventListener('click', async () => {
       if (!paperState.enabled) return;
       retry.disabled = true;
+      paperState.retryingBatchIds.add(batchId);
+      paperState.submitInflight += 1;
+      renderPaperBatch(batch);
+      renderImportSummary();
+      let ok = false;
       try {
         const response = await fetch(`/api/papers/imports/${encodeURIComponent(batch.batch_id)}/retry`, { method: 'POST' });
-        const data = await paperJson(response); paperState.batches.set(data.batch_id, data); renderPaperBatch(data); schedulePaperBatchPoll();
-      } catch (error) { paperState.lastImportError = error.code || 'IMPORT_BATCH_ERROR'; retry.disabled = false; renderImportSummary(); }
+        const data = await paperJson(response); paperState.batches.set(data.batch_id, data); renderPaperBatch(data); schedulePaperBatchPoll(); ok = true;
+      } catch (error) {
+        paperState.lastImportError = error.code || 'IMPORT_BATCH_ERROR';
+      } finally {
+        paperState.retryingBatchIds.delete(batchId);
+        paperState.submitInflight -= 1;
+        if (!ok) renderPaperBatch(batch);
+        renderImportSummary();
+      }
     });
     batchItems.appendChild(retry);
+  }
+  const batchState = batch.status || batch.state;
+  if (['queued', 'waiting_login', 'failed'].includes(batchState)) {
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button'; cancel.textContent = '取消';
+    cancel.addEventListener('click', async () => {
+      if (!paperState.enabled) return;
+      cancel.disabled = true;
+      try {
+        const response = await fetch(`/api/papers/import-batches/${encodeURIComponent(batch.batch_id)}/cancel`, { method: 'POST' });
+        const data = await paperJson(response);
+        paperState.batches.set(data.batch_id, data); renderPaperBatch(data);
+      } catch (error) {
+        paperState.lastImportError = error.code || 'IMPORT_BATCH_ERROR';
+        renderPaperBatch(batch);
+      }
+      renderImportSummary();
+    });
+    batchItems.appendChild(cancel);
   }
   const loginQueue = document.createElement('section'); loginQueue.className = 'paper-login-queue';
   loginQueue.hidden = loginItems.length === 0;
@@ -1154,6 +1244,42 @@ function renderPaperBatch(batch) {
     resume.addEventListener('click', () => paperResume(item, resume)); row.append(login, resume); loginList.appendChild(row);
   });
   batchContainer.appendChild(loginQueue);
+}
+
+function renderDirectImports() {
+  if (!paperImportPanel || !paperImportItems) return;
+  const existing = [...paperImportItems.children].find((node) => node.dataset.direct === '1');
+  if (!paperState.directImports.length) {
+    if (existing) existing.remove();
+    return;
+  }
+  paperImportPanel.hidden = false;
+  const container = existing || document.createElement('li');
+  container.className = 'paper-import-batch';
+  container.dataset.direct = '1';
+  if (!existing) paperImportItems.appendChild(container);
+  container.replaceChildren();
+  const header = document.createElement('div'); header.className = 'paper-import-batch-header';
+  const heading = document.createElement('h3'); heading.textContent = '直接导入';
+  const count = document.createElement('span'); count.textContent = `${paperState.directImports.length} 篇已完成`;
+  header.append(heading, count); container.appendChild(header);
+  const list = document.createElement('ul'); list.className = 'paper-import-items';
+  paperState.directImports.forEach((item) => {
+    const row = document.createElement('li'); row.className = 'paper-import-item';
+    const title = document.createElement('span'); title.className = 'paper-import-item-title';
+    title.textContent = paperText(paperState.candidateById.get(item.candidate_id)?.title, item.stored_name || '未命名论文');
+    row.appendChild(title);
+    const state = document.createElement('span'); state.textContent = item.existing ? '已在知识库' : '已完成';
+    row.appendChild(state);
+    if (item.paper_id) {
+      const jump = document.createElement('button'); jump.type = 'button'; jump.className = 'secondary-button';
+      jump.textContent = '在知识库中查看';
+      jump.addEventListener('click', () => jumpToKnowledgeBase(item.paper_id));
+      row.appendChild(jump);
+    }
+    list.appendChild(row);
+  });
+  container.appendChild(list);
 }
 
 function selectPaperConference(conferenceId) {

@@ -14,6 +14,8 @@
 | 02 | 前端即时反馈与批次卡片动画 | [task-02-frontend-live-feedback.md](./task-02-frontend-live-feedback.md) | 01(spec) | 已完成 |
 | 03 | 导入补齐 v2 异步索引 | [task-03-v2-index-for-imports.md](./task-03-v2-index-for-imports.md) | 01(spec) | 已完成 |
 | 04 | 评审、部署与复盘 | [task-04-review-deploy-retro.md](./task-04-review-deploy-retro.md) | 02,03 | 进行中 |
+| 05 | 导入面板展示与跳转回归修复（BUG-03） | [task-05-import-panel-and-jump-fix.md](./task-05-import-panel-and-jump-fix.md) | 01(spec) | 已完成 |
+| 06 | 导入相位死锁与重试无反馈修复（BUG-04） | [task-06-import-phase-and-retry-feedback.md](./task-06-import-phase-and-retry-feedback.md) | 05 | 进行中 |
 
 ## 执行约定
 

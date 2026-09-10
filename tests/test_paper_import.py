@@ -23,6 +23,7 @@ from backend.app.knowledge_base.infrastructure.store import (
 )
 from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
+    KB_STORAGE_LOCKED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,
     import_candidate,
@@ -348,3 +349,69 @@ def test_import_paper_submits_v2_with_default_indexer(tmp_path):
     assert mock_sync.call_args.args[1] == CHUNKER_V1
     mock_submit.assert_called_once()
     assert mock_submit.call_args.args[1] == CHUNKER_V2
+
+
+# ---------------------------------------------------------------------------
+# spec-021 Task03：KB 存储被另一个实例独占 → KB_STORAGE_LOCKED（窄匹配，固定文案）。
+# ---------------------------------------------------------------------------
+
+
+def test_storage_locked_runtime_error_maps_to_kb_storage_locked(tmp_path):
+    """假 port 在导入时抛存储占用 RuntimeError → KB_STORAGE_LOCKED，且文案固定。"""
+    class LockedPort:
+        def find_existing(self, _snapshot):
+            return None
+
+        def existing_names(self):
+            return set()
+
+        def import_paper(self, _request):
+            raise RuntimeError(
+                "Storage folder data/kb/qdrant is already accessed by another instance of Qdrant client"
+            )
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []), paper_import_port=LockedPort(), temp_dir=tmp_path,
+        )
+    assert exc.value.code == KB_STORAGE_LOCKED
+    assert exc.value.message == "知识库存储被另一个实例占用，请关闭其他服务实例后重试"
+    # 异常原文（含路径）绝不得进入 error_code / message。
+    assert "qdrant" not in str(exc.value)
+    assert "data/kb" not in exc.value.message
+
+
+def test_generic_runtime_error_still_maps_to_kb_import_failed(tmp_path):
+    """窄匹配：非存储占用的 RuntimeError 仍回落 KB_IMPORT_FAILED（不得一刀切）。"""
+    class BoomPort:
+        def find_existing(self, _snapshot):
+            return None
+
+        def existing_names(self):
+            return set()
+
+        def import_paper(self, _request):
+            raise RuntimeError("unrelated runtime failure")
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []), paper_import_port=BoomPort(), temp_dir=tmp_path,
+        )
+    assert exc.value.code == KB_IMPORT_FAILED
+
+
+def test_storage_locked_via_injected_indexer_maps_to_kb_storage_locked(tmp_path):
+    """假 indexer 在 KB 适配器内抛存储占用 RuntimeError → 适配器窄匹配后上抛 → KB_STORAGE_LOCKED。"""
+    def locked_indexer(_record, _path):
+        raise RuntimeError("data/kb/qdrant is already accessed by another instance of Qdrant client")
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []),
+            paper_import_port=_port(tmp_path / "papers", tmp_path / "papers.json", indexer=locked_indexer),
+            temp_dir=tmp_path,
+        )
+    assert exc.value.code == KB_STORAGE_LOCKED

@@ -3,7 +3,7 @@ name: doc-updater
 description: 文档更新 agent（qwen3.5:9b）。基于已确认 spec 梳理/补写「产品使用步骤 / 用户旅程 / 验收场景」等文档段落。Use PROACTIVELY when spec 已确认但缺少产品步骤描述时。
 tools: Read, Grep, Glob, Edit, Bash
 skills: strategic-compact, progress-logging
-model: qwen3.5:9b
+model: hy3
 permissionMode: default
 maxTurns: 20
 ---

@@ -114,3 +114,33 @@ FINAL chunkers: v1={status:indexed,progress:100}, v2={status:indexed,progress:10
 - 验收执行：由 tester 子代理（hy3）执行
 - 开发主管签字：**（由主 agent 代行开发主管签字）**
 - 备注：本报告结论基于真实代码读取（行号见上文）与 8002 运行时 curl 实测；实际浏览器点击体验由用户最终确认。
+
+---
+
+# 追加：第 2 批 BUG-04（导入相位死锁与重试无反馈）验收结论
+
+> **主模型代行（原因）**：`tester` 子代理连续 429 限流（间隔 60s/150s/240s 三次重试均失败：`Subagent execution failed (code=10006): Too Many Requests`）。本节不含任何代码改动，按 `AGENTS.md` 代行条款由主会话架构师代行并三处留痕。
+
+| # | 验收标准 | 证据 | 结论 |
+|---|---|---|---|
+| 1 | 本轮全部失败时状态栏显示"导入失败：N 篇（原因）"，不出现"正在提交" | `renderImportSummary` 相位改为事实重算（`app.js:949-961`）；`paperState.importPhase` 全文件仅 918 写入、无读取参与判定 | 通过 |
+| 2 | 点击"重试失败项"后 1 秒内卡片进入进行中态且状态栏切到重试中 | 点击回调内 `retryingBatchIds.add` + `submitInflight += 1` + `renderPaperBatch` + `renderImportSummary`（`app.js:1170-1182`） | 通过 |
+| 3 | 重试结束（无论成败）后状态栏与卡片同步刷新 | `finally` 中删除重试标记、失败时恢复按钮可用，并统一 `renderImportSummary()`（`app.js:1182`） | 通过 |
+| 4 | 成功数>0 且失败数>0 时仍为"导入部分完成" | 相位链保留 `partial_success` 分支（`app.js:952-955`） | 通过 |
+| 5 | `node --check` 与契约测试通过、`?v` 递增 | `node --check` OK；`tests/test_frontend_paper_contract.py` 22 passed；`index.html` 两处 `?v=25`，`curl /` 实测 `app.js?v=25` | 通过 |
+
+**运行时补充证据（8123 实例）**
+
+- 提交新候选 → `POST /api/papers/imports` **1 秒**返回 `state=queued`，轮询后 `state=completed`（批次 `122140bd-ddcb-45c2-b5ce-1487d05fab8d`，13:22:35 → 13:22:53）。
+- 重复导入同一候选 → **409** `DUPLICATE_IMPORT`「该论文已在导入批次中，请在原批次重试」（修复前为 424「批量导入失败」）。
+- 失败条目单条重试 → **409 `DUPLICATE_IMPORT`**（同名论文已在另一批次 completed，索引正确拒绝；修复前为 424）。
+
+**评审与遗留**
+
+- 前端评审：首轮**打回** P1（提交期间误显红色"导入未完成"：`setImportPhase('submitting')` 先写后算）→ 修复后复审**通过**。
+- 遗留（不阻塞）：失败/取消条目是否释放 `import_item_title` 唯一性，待另行评审；本轮只做冲突可读化。
+
+**签字**
+
+- 验收执行：架构师（主会话）代行执行（子代理 429 限流）
+- 开发主管签字：**架构师（主会话）代签**

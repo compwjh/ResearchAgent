@@ -32,6 +32,7 @@ from backend.app.paper_discovery.application.entry import (
 )
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.application.paper_import import (
+    DUPLICATE_IMPORT,
     KB_IMPORT_FAILED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,
@@ -514,6 +515,7 @@ _PAPER_BATCH_ERROR_STATUS = {
     "EMPTY_BATCH": 400,
     "BATCH_LIMIT_EXCEEDED": 400,
     "DATABASE_LOCKED": 503,
+    DUPLICATE_IMPORT: 409,
 }
 
 
@@ -539,6 +541,7 @@ def _paper_batch_error_response(error: PaperImportBatchServiceError) -> JSONResp
         "EMPTY_BATCH": "批量导入至少需要一项",
         "BATCH_LIMIT_EXCEEDED": "单批最多 20 项",
         "DATABASE_LOCKED": "批次状态库正忙，请稍后重试",
+        DUPLICATE_IMPORT: "该论文已在导入批次中，请在原批次重试",
         "IMPORT_BATCH_ERROR": "批量导入失败",
     }
     return _paper_api_error(status, code, messages.get(code, "批量导入失败"), bool(getattr(error, "retryable", False)))
@@ -742,7 +745,16 @@ def get_paper_import_batch(batch_id: str):
     if not _paper_discovery_enabled():
         return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
     try:
-        return _paper_batch_status_payload(_paper_batch_service(), batch_id)
+        service = _paper_batch_service()
+        # First-access recovery (spec-021): reuse the existing lease-recovery
+        # mechanism and re-submit any queued batch whose runner is missing, so a
+        # crashed runner / restart cannot leave it permanently in queued.
+        try:
+            service.recover_expired_leases()
+            service.maybe_recover_batch(batch_id)
+        except Exception:  # noqa: BLE001 - recovery must not block the status read
+            logger.exception("导入批次恢复失败：%s", batch_id)
+        return _paper_batch_status_payload(service, batch_id)
     except PaperImportBatchServiceError as error:
         return _paper_batch_error_response(error)
     except Exception as error:
@@ -888,6 +900,31 @@ def resume_paper_import_item(item_id: str, _request: PaperImportItemActionReques
                 pass
             if paper_browser_sessions.get(session_key) is session:
                 paper_browser_sessions.pop(session_key, None)
+
+
+@router.post("/papers/import-items/{item_id}/retry", response_model=PaperImportBatchResponse)
+def retry_paper_import_item(item_id: str, _request: PaperImportItemActionRequest | None = None):
+    """重试单个失败条目：仅把该条目回到 queued 并后台提交，立即返回批次负载。
+
+    复用 service.retry_item（store.retry_item 仅允许 failed → queued）；非 failed 条目
+    由 store 抛 INVALID_STATE_TRANSITION，缺失条目抛 ITEM_NOT_FOUND，均回落到稳定错误响应。
+    """
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    try:
+        service = _paper_batch_service()
+        # 复用既有的条目/批次/服务端快照解析（与 login/resume 同构），并校验条目存在。
+        candidates = _paper_snapshot_for_item(service, item_id)
+        item = service.store.get_item(item_id)
+        service.retry_item(item.item_id, candidates=candidates)
+        return _paper_batch_status_payload(service, item.batch_id)
+    except PaperImportBatchServiceError as error:
+        return _paper_batch_error_response(error)
+    except Exception as error:
+        logger.exception("单条目重试未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入失败")
+        )
 
 
 @router.get("/papers/browser/health")
