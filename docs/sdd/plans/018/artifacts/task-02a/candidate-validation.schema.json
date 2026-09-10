@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "spec-018/candidate-validation-v1",
   "title": "Spec018 CandidateValidationV1",
+  "description": "Run-level candidate validation artifact. A ``bootstrap`` run publishes an empty generation for a cold-start library and therefore carries no documents, points or query probes.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "candidate_collection", "topology_digest", "status", "documents", "collection_totals", "config_fingerprints", "query_probes", "collection_fingerprint", "validated_at", "errors"],
@@ -13,6 +14,21 @@
     "probe": {"type": "object", "additionalProperties": false, "required": ["query_digest", "top_document_ids", "candidate_hit"], "properties": {"query_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "top_document_ids": {"type": "array", "items": {"type": "string"}}, "candidate_hit": {"type": "boolean"}}}
   },
   "properties": {
-    "schema_version": {"const": "candidate-validation-v1"}, "run_id": {"type": "string", "minLength": 1}, "candidate_collection": {"type": "string", "minLength": 1}, "topology_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "status": {"enum": ["passed", "failed"]}, "documents": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/document"}}, "collection_totals": {"type": "object", "additionalProperties": false, "required": ["document_count", "point_count", "v1_point_count", "v2_point_count"], "properties": {"document_count": {"type": "integer", "minimum": 1}, "point_count": {"type": "integer", "minimum": 2}, "v1_point_count": {"type": "integer", "minimum": 1}, "v2_point_count": {"type": "integer", "minimum": 1}}}, "config_fingerprints": {"type": "object", "additionalProperties": false, "required": ["embedding", "v1_chunker", "v2_chunker", "model"], "properties": {"embedding": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "v1_chunker": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "v2_chunker": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "model": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}, "query_probes": {"type": "object", "additionalProperties": false, "required": ["dense", "sparse"], "properties": {"dense": {"$ref": "#/$defs/probe"}, "sparse": {"$ref": "#/$defs/probe"}}}, "collection_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "validated_at": {"type": "string", "minLength": 1}, "errors": {"type": "array", "items": {"type": "string"}}
+    "schema_version": {"const": "candidate-validation-v1"}, "run_id": {"type": "string", "minLength": 1}, "candidate_collection": {"type": "string", "minLength": 1}, "topology_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "status": {"enum": ["passed", "failed"]}, "documents": {"type": "array", "items": {"$ref": "#/$defs/document"}}, "collection_totals": {"type": "object", "additionalProperties": false, "required": ["document_count", "point_count", "v1_point_count", "v2_point_count"], "properties": {"document_count": {"type": "integer", "minimum": 0}, "point_count": {"type": "integer", "minimum": 0}, "v1_point_count": {"type": "integer", "minimum": 0}, "v2_point_count": {"type": "integer", "minimum": 0}}}, "config_fingerprints": {"type": "object", "additionalProperties": false, "required": ["embedding", "v1_chunker", "v2_chunker", "model"], "properties": {"embedding": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "v1_chunker": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "v2_chunker": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "model": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}, "query_probes": {"type": "object", "additionalProperties": false, "properties": {"dense": {"$ref": "#/$defs/probe"}, "sparse": {"$ref": "#/$defs/probe"}}}, "collection_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "validated_at": {"type": "string", "minLength": 1}, "errors": {"type": "array", "items": {"type": "string"}}, "bootstrap": {"type": "boolean"}
+  },
+  "if": {"properties": {"bootstrap": {"const": true}}, "required": ["bootstrap"]},
+  "then": {
+    "properties": {
+      "documents": {"maxItems": 0},
+      "query_probes": {"maxProperties": 0},
+      "collection_totals": {"properties": {"document_count": {"const": 0}, "point_count": {"const": 0}, "v1_point_count": {"const": 0}, "v2_point_count": {"const": 0}}}
+    }
+  },
+  "else": {
+    "properties": {
+      "documents": {"minItems": 1},
+      "query_probes": {"required": ["dense", "sparse"]},
+      "collection_totals": {"properties": {"document_count": {"minimum": 1}, "point_count": {"minimum": 2}, "v1_point_count": {"minimum": 1}, "v2_point_count": {"minimum": 1}}}
+    }
   }
 }
