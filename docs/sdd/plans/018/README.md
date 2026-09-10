@@ -1,7 +1,7 @@
 # Spec 018 执行计划：知识文档切片检查器
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md)
-> 当前状态：`实施中`。2026-09-09 全库索引替换修订已完成 Grill with Docs 共同理解确认，独立需求评审与技术设计门均通过，用户明确要求开始执行；当前仅放行 Task02A-D，Task02B `GO` 前不得进入 Task03–07。
+> 当前状态：`实施中`。2026-09-09 全库索引替换修订已完成 Grill with Docs 共同理解确认，独立需求评审与技术设计门均通过，用户明确要求开始执行；主线仍按 Task02A-D 门禁推进，Task06E/06F 为已完成的针对性热修复。
 
 ## 任务索引
 
@@ -15,6 +15,7 @@
 | [05](./task-05-frontend-chunk-inspector.md) | 实现前端双栏切片检查器 | 04 | 已完成（功能门；Task06 生产门待执行） |
 | [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 实施中（论文导入/浏览器隔离门已通过；真实索引切换仍 NO-GO） |
 | [06E](./task-06e-sparse-source-anchor-correction.md) | 修复模糊全连接 anchor，恢复真实双向定位 | 04、05、06 当前 manifest | 已完成 |
+| [06F](./task-06f-pdf-upload-repair.md) | 修复 PDF 上传失败与错误可见性 | 04、06E 当前服务 | 已完成 |
 | [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 待执行 |
 
 ## 当前路线

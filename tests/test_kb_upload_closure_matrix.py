@@ -49,7 +49,7 @@ def test_inventory_hashes_are_stable_and_write_entrypoints_are_registered():
     # The matrix is intentionally the registry for write-capable symbols; this
     # allowlist covers read-only or compatibility helpers in frozen modules.
     allowed = {
-        "_document_error", "_document_summary", "_decode_cursor", "_encode_cursor", "_encode_inspection_cursor",
+        "_document_error", "_document_summary", "_normalized_upload_content_type", "_decode_cursor", "_encode_cursor", "_encode_inspection_cursor",
         "_decode_inspection_cursor", "_canonical_document", "_generation_store", "_require_generation",
         "list_documents", "upload_document", "_read_document_source_response", "read_document_source_route",
         "head_document_source_route", "inspect_document", "reindex_document_route", "delete_document_route",

@@ -1658,6 +1658,13 @@ async function loadKbHealth() {
   }
 }
 
+function kbUploadErrorMessage(data) {
+  const message = typeof data?.message === 'string' ? data.message.trim() : '';
+  const code = typeof data?.error_code === 'string' ? data.error_code.trim() : '';
+  if (message && code) return `${message}（${code}）`;
+  return message || code || (typeof data?.detail === 'string' ? data.detail : '') || '上传失败';
+}
+
 if (kbDrop && kbFileInput) {
   kbDrop.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', async () => {
@@ -1668,8 +1675,13 @@ if (kbDrop && kbFileInput) {
     body.append('file', file);
     try {
       const response = await fetch('/api/kb/upload', { method: 'POST', body });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || '上传失败');
+      let data = {};
+      try { data = await response.json(); } catch (_) {}
+      if (!response.ok) {
+        const error = new Error(kbUploadErrorMessage(data));
+        error.code = data?.error_code || '';
+        throw error;
+      }
       if (kbStatus) {
         kbStatus.textContent = `${data.file_name}：${KB_STATUS_TEXT[data.status] || data.status}${data.error ? `（${data.error}）` : ''}`;
       }

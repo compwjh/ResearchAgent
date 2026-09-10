@@ -3,6 +3,7 @@ import inspect
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
@@ -57,6 +58,43 @@ def test_upload_rejects_extension_and_mime_mismatch():
     response = client.post(
         "/api/kb/documents/upload",
         files={"file": ("note.md", b"# note\n", "application/pdf")},
+    )
+    assert response.status_code == 415
+    assert response.json()["error_code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    ["application/pdf", "application/pdf; charset=binary", "application/x-pdf", "application/octet-stream", ""],
+)
+def test_upload_accepts_common_pdf_mime_variants_when_magic_is_valid(content_type):
+    client = TestClient(app)
+    record = {
+        "document_id": "pdf-variant",
+        "media_type": "application/pdf",
+        "file_name": "variant.pdf",
+        "source_sha256": "a" * 64,
+        "status": "pending",
+        "chunkers": {},
+    }
+    with patch.object(
+        routes_kb,
+        "create_uploaded_document",
+        return_value={"document": record, "task_id": None},
+    ) as create:
+        response = client.post(
+            "/api/kb/documents/upload",
+            files={"file": ("variant.pdf", b"%PDF-1.7\nvalid", content_type)},
+        )
+    assert response.status_code == 201
+    create.assert_called_once_with("variant.pdf", "application/pdf", b"%PDF-1.7\nvalid")
+
+
+def test_upload_rejects_non_pdf_mime_even_when_pdf_magic_is_present():
+    client = TestClient(app)
+    response = client.post(
+        "/api/kb/documents/upload",
+        files={"file": ("variant.pdf", b"%PDF-1.7\nvalid", "text/plain")},
     )
     assert response.status_code == 415
     assert response.json()["error_code"] == "UNSUPPORTED_MEDIA_TYPE"

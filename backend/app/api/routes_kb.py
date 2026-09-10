@@ -52,6 +52,18 @@ from backend.app.platform.settings.settings_repository import (
 )
 
 router = APIRouter()
+# Browsers and multipart proxies do not agree on the optional PDF media type
+# declaration.  Keep the content declaration allowlisted, then let the
+# canonical application seam validate the required `%PDF-` magic header.
+_PDF_UPLOAD_CONTENT_TYPES = frozenset(
+    {
+        "",
+        "application/pdf",
+        "application/x-pdf",
+        "application/octet-stream",
+        "binary/octet-stream",
+    }
+)
 # FastAPI evaluates ``File(...)``/``Query(...)`` defaults while importing the
 # module.  Keep the existing route signatures explicit while documenting the
 # framework-call rule for the static checker.
@@ -166,6 +178,11 @@ def _document_error(
         retry_details.setdefault("retry_after_seconds", 10)
         body["details"] = retry_details
     return JSONResponse(status_code=status, content=body, headers=response_headers)
+
+
+def _normalized_upload_content_type(value: str | None) -> str:
+    """Normalize a multipart media type without accepting arbitrary values."""
+    return str(value or "").split(";", 1)[0].strip().lower()
 
 
 def _document_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -315,7 +332,14 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
         media_type = "text/markdown"
     else:
         return _document_error(415, "UNSUPPORTED_MEDIA_TYPE", "只支持 PDF 或 UTF-8 Markdown", request=request)
-    if file.content_type != media_type:
+    content_type = _normalized_upload_content_type(file.content_type)
+    if (
+        media_type == "application/pdf"
+        and content_type not in _PDF_UPLOAD_CONTENT_TYPES
+    ) or (
+        media_type != "application/pdf"
+        and content_type != media_type
+    ):
         return _document_error(415, "UNSUPPORTED_MEDIA_TYPE", "文件扩展名与 MIME 类型不一致", request=request)
     max_bytes = KB_MAX_UPLOAD_MB * 1024 * 1024
     content = await file.read(max_bytes + 1)

@@ -90,3 +90,17 @@ def test_paper_styles_cover_long_content_scrolling_and_focus() -> None:
     assert "overflow-y: auto" in STYLES
     assert "@media (max-width: 760px)" in STYLES
     assert "@media (max-width: 430px)" in STYLES
+
+
+def test_kb_upload_surfaces_stable_backend_error_code_and_message() -> None:
+    upload_start = APP.index("function kbUploadErrorMessage")
+    upload_end = APP.index("function appendKbMessage", upload_start)
+    upload_handler = APP[upload_start:upload_end]
+    assert "if (message && code) return `${message}（${code}）`;" in upload_handler
+    assert "data.message" in upload_handler
+    assert "data.error_code" in upload_handler
+    assert "const error = new Error(kbUploadErrorMessage(data));" in upload_handler
+    assert "error.code = data?.error_code || '';" in upload_handler
+    assert "try { data = await response.json(); } catch (_) {}" in upload_handler
+    assert "上传失败：${error.message}" in upload_handler
+    assert "data.file_name}：${KB_STATUS_TEXT[data.status] || data.status}" in upload_handler

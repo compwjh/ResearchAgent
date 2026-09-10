@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：`实施中`（全库索引替换修订已确认；当前执行 Task02A-D）**
+**当前状态：`实施中`（全库索引替换修订已确认；主线门禁仍按 Task02A-D 推进，Task06E/06F 已完成针对性热修复）**
 
 > 2026-09-08 首轮 Task02 的 `NO-GO` 与固定证据永久保留；Task02A-A～C 已完成并分别通过独立后端评审。2026-09-09 用户明确旧 Qdrant 索引可以全部抛弃，只要求新索引生效，因此撤销此前“逐 point/vector 快照、原地恢复、首次打开自动升级”的未完成设计，改为一次性全库候选 Collection 重建与维护窗口切换。全库替换修订的独立需求评审与技术设计门均已通过，用户于 2026-09-09 明确要求“开始执行”；现仅放行 Task02A-D，Task02B `GO` 前继续阻塞 Task03–07，Task04/06 的实际 upload closure 门仍未放行。未提交的旧快照实现不属于交付物。
 
@@ -482,6 +482,7 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 05 | 实现前端双栏切片检查器 | [`task-05-frontend-chunk-inspector.md`](../plans/018/task-05-frontend-chunk-inspector.md) | 04 | 待执行 |
 | 06 | 真实全库索引替换、恢复与性能验收 | [`task-06-legacy-backfill-and-resilience.md`](../plans/018/task-06-legacy-backfill-and-resilience.md) | 04、05 | 待执行 |
 | 06E | 修复来源锚点稀疏映射与双向定位回归 | [`task-06e-sparse-source-anchor-correction.md`](../plans/018/task-06e-sparse-source-anchor-correction.md) | 04、05、当前 v1 manifest | 已完成 |
+| 06F | 修复 PDF 上传失败与错误可见性 | [`task-06f-pdf-upload-repair.md`](../plans/018/task-06f-pdf-upload-repair.md) | 04、06E 当前服务 | 已完成 |
 | 07 | 评审、验收、部署与复盘 | [`task-07-review-acceptance-deploy-retro.md`](../plans/018/task-07-review-acceptance-deploy-retro.md) | 06 | 待执行 |
 
 ## 评审记录
@@ -515,3 +516,5 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 2026-09-09 | 用户优先级决策 / 架构师（自身） | 用户要求安全加固问题先留账、优先完成功能；Task02A/02B 改为分别记录功能门与生产切换安全门。已知安全债务不再阻塞 Task03–05，但全部转为 Task06 真实 Qdrant/`--confirm-replace` 前置硬门；不降低真实数据操作门禁 |
 | 2026-09-10 | 用户授权 / 架构师（自身） | 真实 dry-run 确认 4 条 `status=failed`、42-byte、`PDF_EMPTY` 空壳原件无可恢复内容；用户明确授权一次性删除这些原件及对应 metadata 行。清理前必须备份并逐项核对固定 ID/大小/hash，其他数据范围不变 |
 | 2026-09-10 | 用户 / 架构师（自身） | 用户澄清标题或原文块应只关联实际包含它的少数切片；运行时 53,120 条关系证实 `source-anchor-v1` 的任意模糊正分全连接为错误实现。用户确认改用 `source-anchor-v2` 真实来源区间稀疏映射；新增 Task 06E，在实现前落盘其范围、重建和验收约束。 |
+| 2026-09-10 | 用户 / 架构师（自身） | 用户反馈无法上传新的 PDF。健康检查、去重上传和固定样本新文档上传均返回成功，但历史请求出现 400；新增 Task 06F，要求先复现实际失败条件，再修复 PDF 上传兼容性及前端错误可见性，不改变现有知识库数据。 |
+| 2026-09-10 | 架构师（自身） | Task06F 已完成：真实服务验证常见 PDF multipart MIME 与新文档上传均返回 201，非法 PDF 返回稳定 400；前端错误显示已刷新为 `app.js?v=19`，探针文档已清理。 |

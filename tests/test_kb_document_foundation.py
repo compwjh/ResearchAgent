@@ -105,6 +105,12 @@ def test_source_validation_accepts_pdf_and_utf8_markdown_only():
     with pytest.raises(DocumentReadError) as error:
         validate_source_bytes(b"# bad\x00markdown", "text/markdown")
     assert error.value.code == "INVALID_ENCODING"
+
+
+def test_source_validation_requires_pdf_version_header():
+    with pytest.raises(DocumentReadError) as error:
+        validate_source_bytes(b"%PDFx forged", "application/pdf")
+    assert error.value.code == "INVALID_PDF"
     with pytest.raises(DocumentReadError) as error:
         validate_source_bytes(b"x", "text/plain")
     assert error.value.code == "SOURCE_MEDIA_TYPE_UNSUPPORTED"

@@ -26,7 +26,10 @@ def validate_source_bytes(content: bytes, media_type: str) -> None:
     if not isinstance(content, (bytes, bytearray, memoryview)) or not content:
         raise DocumentReadError("SOURCE_EMPTY", status=400)
     if media_type == "application/pdf":
-        if not bytes(content).startswith(b"%PDF"):
+        # Require the complete PDF magic prefix.  A bare ``%PDF`` or forged
+        # ``%PDFx`` prefix is not a PDF header; the parser/indexer remains the
+        # authority for full document readability after this cheap gate.
+        if not bytes(content).startswith(b"%PDF-"):
             raise DocumentReadError("INVALID_PDF", status=400)
         return
     if media_type == "text/markdown":
