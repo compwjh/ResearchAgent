@@ -664,14 +664,56 @@ def test_cleanup_strictly_checks_existing_candidate_without_topology(tmp_path):
     assert candidate not in qdrant.collections
 
 
-def test_empty_authoritative_metadata_does_not_create_candidate(tmp_path):
+def _empty_library_service(tmp_path: Path, qdrant: FakeQdrant, *, with_metadata: bool = True):
+    papers = tmp_path / "papers"
+    papers.mkdir(exist_ok=True)
+    metadata = tmp_path / "papers.json"
+    if with_metadata:
+        metadata.write_text("[]", encoding="utf-8")
+    return CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=qdrant,
+        dense_dim=4,
+        llm=lambda _prompt: "[]",
+        run_id_factory=lambda: "run-test",
+    )
+
+
+def test_empty_library_dry_run_reports_bootstrap_without_writes(tmp_path):
     papers = tmp_path / "papers"
     papers.mkdir()
     (papers / "orphan.pdf").write_bytes(b"orphan")
-    metadata = tmp_path / "papers.json"
-    metadata.write_text("[]", encoding="utf-8")
-    qdrant = FakeQdrant()
-    service = CandidateRebuildService(metadata_path=metadata, papers_dir=papers, runtime_root=tmp_path / "runtime", index=qdrant)
+    service = _empty_library_service(tmp_path, FakeQdrant())
+    result = service.run()
+
+    assert result["status"] == "completed"
+    assert result["bootstrap"] is True
+    assert result["document_counts"]["authoritative"] == 0
+    assert result["orphan_files"] == ["orphan.pdf"]
+    assert not service.index.collections
+    assert not (tmp_path / "runtime").exists()
+
+
+def test_empty_library_confirm_replace_publishes_empty_generation(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+    service = _empty_library_service(tmp_path, qdrant)
+    result = service.run(dry_run=False, confirm_replace=True)
+
+    assert result["status"] == "completed"
+    assert result["bootstrap"] is True
+    marker = FinalizeBundleStore(tmp_path).require_generation()
+    assert marker["run_id"] == "run-test"
+    assert marker["alias_target"] == result["candidate_collection"]
+    assert result["candidate_collection"] in qdrant.collections
+    assert qdrant.alias_target("papers") == result["candidate_collection"]
+    assert json.loads(service.metadata_path.read_text(encoding="utf-8")) == []
+
+
+def test_missing_metadata_file_still_fails_closed_without_bootstrap(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+    service = _empty_library_service(tmp_path, qdrant, with_metadata=False)
     with pytest.raises(RebuildError) as caught:
         service.run()
     assert caught.value.code == "NO_DOCUMENTS_TO_REBUILD"

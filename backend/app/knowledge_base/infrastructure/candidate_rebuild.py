@@ -672,6 +672,24 @@ class CandidateRebuildService:
         self._retire_capability: Optional[object] = None
         self._finalize_metadata: List[Dict[str, Any]] = []
         self._finalize_manifests: Dict[Tuple[str, str], InspectionManifest] = {}
+        # Cold-start rebuilds publish an empty generation so the first upload
+        # or import can pass the generation gate.  See ``_preflight``.
+        self._bootstrap = False
+
+    def _is_bootstrap_run(self) -> bool:
+        """Report whether this run legitimately publishes an empty generation.
+
+        The flag is derived from persisted run state whenever possible so
+        ``--resume-*`` paths reach the same conclusion as the original run.
+        """
+        if self._bootstrap:
+            return True
+        state = self._state
+        return bool(
+            state is not None
+            and not state.document_counts.get("authoritative")
+            and not state.point_counts.get("total")
+        )
 
     def _finalize_root(self) -> Path:
         """Resolve the project root without assuming tests use ``data/kb``."""
@@ -733,7 +751,18 @@ class CandidateRebuildService:
     def _preflight(self) -> Tuple[List[Tuple[Dict[str, Any], Path, Any]], List[str]]:
         records = self._load_metadata()
         if not records:
-            raise RebuildError("NO_DOCUMENTS_TO_REBUILD")
+            # A missing metadata file is a deployment mistake and stays
+            # fail-closed.  An existing but empty library is the cold start:
+            # uploads, imports and deletes all require a generation marker that
+            # only a rebuild can publish, so refusing here deadlocks the very
+            # first document forever.  Publish an empty generation instead and
+            # only report stray source files.
+            if not self.metadata_path.exists():
+                raise RebuildError("NO_DOCUMENTS_TO_REBUILD")
+            self._bootstrap = True
+            orphan = sorted(path.name for path in self.papers_dir.iterdir() if path.is_file()) if self.papers_dir.exists() else []
+            return [], orphan
+        self._bootstrap = False
         known = set()
         parsed: List[Tuple[Dict[str, Any], Path, Any]] = []
         for record in records:
@@ -1175,7 +1204,9 @@ class CandidateRebuildService:
             if not sparse_valid:
                 errors.append("SPARSE_VECTOR_INVALID")
             rows.append({"document_id": document_id, "chunker": chunker, "chunk_index": chunk_index, "point_id": point.id, "dense_dimension": len(dense) if isinstance(dense, (list, tuple)) else 0, "dense_finite": dense_finite, "dense_digest": _fingerprint(_dense_vector_digest_input(dense)), "sparse_nnz": len(sparse_indices), "sparse_digest": _fingerprint(_vector_digest_input({"indices": sparse_indices, "values": sparse_values})), "payload_digest": _fingerprint(_payload_digest_projection(payload)), "anchor_digest": payload.get("anchor_digest"), "chunker_config_fingerprint": payload.get("chunker_config_fingerprint"), "embedding_config_fingerprint": payload.get("embedding_config_fingerprint"), "model_config_fingerprint": payload.get("model_config_fingerprint"), "llm_used": payload.get("llm_used")})
-        if not points or errors:
+        # An empty candidate is only valid for the cold-start bootstrap run;
+        # any other empty collection means the build or resume lost its points.
+        if errors or (not points and not self._is_bootstrap_run()):
             raise RebuildError("CANDIDATE_VALIDATION_FAILED")
         rows.sort(key=lambda item: (item["document_id"], item["chunker"], item["chunk_index"], item["point_id"]))
         return _fingerprint(rows), len(points)
@@ -1340,6 +1371,10 @@ class CandidateRebuildService:
         collection_fingerprint = _fingerprint(sorted(collection_rows, key=lambda item: (item["document_id"], item["chunker"], item["chunk_index"], item["point_id"])))
         first_document = next(iter(expected.values()), {})
         validation = {"schema_version": VALIDATION_SCHEMA, "run_id": self._state.run_id, "candidate_collection": self._state.candidate_collection, "topology_digest": topology_digest, "status": "failed" if errors else "passed", "documents": documents, "collection_totals": {"document_count": len(expected), "point_count": len(points), "v1_point_count": self._state.point_counts["v1"], "v2_point_count": self._state.point_counts["v2"]}, "config_fingerprints": {"embedding": _fingerprint({"model": EMBED_MODEL, "dimension": self.dense_dim}), "v1_chunker": first_document.get("chunkers", {}).get("v1", {}).get("chunker_config_fingerprint", _fingerprint({})), "v2_chunker": first_document.get("chunkers", {}).get("v2", {}).get("chunker_config_fingerprint", _fingerprint({})), "model": _fingerprint(CHUNK_V2_LLM_MODEL)}, "query_probes": query_probes, "collection_fingerprint": collection_fingerprint, "validated_at": _now(), "errors": sorted(set(errors))}
+        if self._bootstrap:
+            # The artifact contract requires documents, points and query probes
+            # unless the run is the documented cold-start bootstrap.
+            validation["bootstrap"] = True
         if self._store:
             self._store.write_json("validation.json", validation)
         self._validate_instance("candidate-validation.schema.json", validation)
@@ -1508,7 +1543,9 @@ class CandidateRebuildService:
         collection_fingerprint = validation.get("collection_fingerprint")
         if not isinstance(collection_fingerprint, str) or not collection_fingerprint:
             raise RebuildError("FINALIZE_INPUT_INVALID")
-        if not self._finalize_metadata or not self._finalize_manifests:
+        # The cold-start bootstrap publishes an empty metadata projection and
+        # no manifests; every other run must stage complete finalize inputs.
+        if not self._is_bootstrap_run() and (not self._finalize_metadata or not self._finalize_manifests):
             raise RebuildError("FINALIZE_INPUT_MISSING")
         try:
             self.finalize_store.stage(
@@ -1721,7 +1758,12 @@ class CandidateRebuildService:
                 raise RebuildError("PREFLIGHT_STALE")
             state.progress = 100
             state.status = "completed"
-            return {**state.to_dict(), "orphan_files": orphan, "topology": topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root)}
+            return {
+                **state.to_dict(),
+                "orphan_files": orphan,
+                "bootstrap": self._bootstrap,
+                "topology": topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root),
+            }
         if not confirm_replace:
             raise RebuildError("CONFIRM_REPLACE_REQUIRED")
         if (self.runtime_root / state.run_id).exists():
@@ -1738,7 +1780,7 @@ class CandidateRebuildService:
             expected = self._build(parsed)
             validation = self._validate(expected)
             self._switch_and_finalize(validation)
-            return {**state.to_dict(), "validation": validation, "orphan_files": orphan}
+            return {**state.to_dict(), "validation": validation, "orphan_files": orphan, "bootstrap": self._bootstrap}
         except Exception as raw_error:
             error = raw_error if isinstance(raw_error, RebuildError) else RebuildError(getattr(raw_error, "code", "REBUILD_FAILED"))
             if self._state.status not in {"switching", "finalizing", "finalize_pending", "completed"}:

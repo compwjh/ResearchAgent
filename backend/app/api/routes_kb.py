@@ -315,7 +315,9 @@ def _require_generation(request: Request, *, finalize_pending: bool = False) -> 
         return _document_error(
             status,
             getattr(error, "code", "INDEX_REBUILD_REQUIRED"),
-            "索引代际尚未完成提交" if status >= 500 else "索引尚未完成全库重建",
+            "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize"
+            if status >= 500
+            else "索引尚未完成全库重建，请先执行 python -m backend.app.knowledge_base.rebuild_index --confirm-replace",
             request=request,
             retryable=status >= 500,
         )
