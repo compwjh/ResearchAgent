@@ -15,6 +15,7 @@ import os
 import socket
 import tempfile
 import time
+import unicodedata
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -41,7 +42,7 @@ from backend.app.knowledge_base.infrastructure.manifest_store import (
 from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.parse import extract_pdf_provenance
 from backend.app.knowledge_base.infrastructure.provenance import build_source_provenance_bundle
-from backend.app.knowledge_base.infrastructure.store import record_id
+from backend.app.knowledge_base.infrastructure.store import record_id, resolve_paper_path
 from backend.app.platform.config import (
     CHUNK_V2_LLM_MODEL,
     EMBED_DIM,
@@ -143,8 +144,28 @@ def _sha256(path: Path) -> str:
 
 
 def _safe_id(value: Any) -> str:
-    result = str(value or "").strip()
-    if not result or len(result) > 256 or any(ord(char) < 32 for char in result):
+    raw = str(value or "")
+    # ID boundaries are security-sensitive: stripping would silently change
+    # the identity used for source filenames and runtime directories.  Keep
+    # the historical ``str(value or "")`` coercion, but reject any value whose
+    # original representation is not already the canonical boundary.
+    result = raw.strip()
+    if result != raw:
+        raise RebuildError("METADATA_INVALID")
+    # IDs are later used as the filename stem for legacy source fallback and
+    # runtime directories.  Treat them as a single portable basename rather
+    # than relying on the host platform's Path separator semantics: on POSIX
+    # a Windows backslash is an ordinary character and would otherwise pass
+    # through this boundary unchanged.
+    if (
+        not result
+        or result in {".", ".."}
+        or len(result) > 256
+        or any(unicodedata.category(char).startswith("C") for char in result)
+        or "/" in result
+        or "\\" in result
+        or Path(result).name != result
+    ):
         raise RebuildError("METADATA_INVALID")
     return result
 
@@ -636,11 +657,31 @@ class CandidateRebuildService:
         return records
 
     def _source_path(self, record: Mapping[str, Any]) -> Path:
-        filename = str(record.get("stored_name") or record.get("file_name") or f"{record['document_id']}.pdf")
-        candidate = Path(filename)
-        if candidate.name != filename or filename in {"", ".", ".."}:
-            raise RebuildError("SOURCE_PATH_INVALID")
-        return self.papers_dir / candidate
+        # ``stored_name`` is the authoritative name for canonical imports.
+        # Legacy records may retain only a human-readable ``file_name`` while
+        # the immutable source is stored under ``{document_id}.pdf``.  Reuse
+        # the store resolver for that legacy fallback instead of duplicating
+        # its naming policy here.
+        stored_name = str(record.get("stored_name") or "").strip()
+        if stored_name:
+            candidate = Path(stored_name)
+            if candidate.name != stored_name or stored_name in {".", ".."}:
+                raise RebuildError("SOURCE_PATH_INVALID")
+            return self.papers_dir / candidate
+
+        file_name = str(record.get("file_name") or "").strip()
+        if file_name:
+            candidate = Path(file_name)
+            if candidate.name != file_name or file_name in {".", ".."}:
+                raise RebuildError("SOURCE_PATH_INVALID")
+            file_path = self.papers_dir / candidate
+            # Preserve the pre-Spec018 behavior for a legacy record whose
+            # file_name still identifies an existing source.  If it does not
+            # exist, resolve_paper_path supplies the id-based legacy layout.
+            if file_path.is_file():
+                return file_path
+
+        return resolve_paper_path(record, self.papers_dir)
 
     def _preflight(self) -> Tuple[List[Tuple[Dict[str, Any], Path, Any]], List[str]]:
         records = self._load_metadata()

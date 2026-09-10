@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import pymupdf
 
 import backend.app.knowledge_base.infrastructure.candidate_rebuild as candidate_rebuild_module
 import backend.app.knowledge_base.infrastructure.manifest_store as manifest_store_module
@@ -102,6 +103,145 @@ def test_dry_run_has_no_write_side_effects(tmp_path):
     assert not embed_calls
     assert not any(operation in write_ops for operation, _target in qdrant.calls)
     assert service.metadata_path.read_text(encoding="utf-8") == before
+
+
+def test_dry_run_resolves_legacy_id_named_source_when_file_name_is_display_name(tmp_path):
+    papers = tmp_path / "papers"
+    papers.mkdir()
+    source = papers / "legacy-document.pdf"
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Legacy source fallback")
+    pdf.save(str(source))
+    pdf.close()
+    metadata = tmp_path / "papers.json"
+    metadata.write_text(json.dumps([{
+        "paper_id": "legacy-document",
+        "file_name": "Human Readable Legacy Paper.pdf",
+        "stored_name": None,
+        "media_type": "application/pdf",
+        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+    }]), encoding="utf-8")
+    service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=FakeQdrant(dense_dim=4),
+        dense_dim=4,
+        llm=lambda _prompt: "[]",
+    )
+
+    result = service.run()
+
+    assert result["status"] == "completed"
+    assert result["document_counts"]["authoritative"] == 1
+    assert not (tmp_path / "runtime").exists()
+
+
+def test_source_path_preserves_existing_legacy_file_name(tmp_path):
+    papers = tmp_path / "papers"
+    papers.mkdir()
+    readable = papers / "Human Readable Legacy Paper.pdf"
+    readable.write_bytes(b"source")
+    service = CandidateRebuildService(
+        metadata_path=tmp_path / "papers.json",
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=FakeQdrant(dense_dim=4),
+        dense_dim=4,
+    )
+
+    assert service._source_path({
+        "document_id": "legacy-document",
+        "file_name": readable.name,
+        "stored_name": None,
+    }) == readable
+
+
+@pytest.mark.parametrize("bad_document_id", ["../escape", "sub/escape", r"\\escape"])
+def test_metadata_document_id_must_be_a_portable_basename(tmp_path, monkeypatch, bad_document_id):
+    papers = tmp_path / "papers"
+    papers.mkdir()
+    # The POSIX-shaped case would resolve outside ``papers`` under the old
+    # fallback.  A real file makes an accidental read observable without
+    # modifying any project data.
+    outside = tmp_path / "escape.pdf"
+    outside.write_bytes(b"must-not-be-read")
+    metadata = tmp_path / "papers.json"
+    metadata.write_text(json.dumps([{
+        "paper_id": bad_document_id,
+        "file_name": None,
+        "stored_name": None,
+        "media_type": "application/pdf",
+    }]), encoding="utf-8")
+    service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=FakeQdrant(dense_dim=4),
+        dense_dim=4,
+    )
+    sha_calls = []
+    original_sha256 = candidate_rebuild_module._sha256
+
+    def track_source_reads(path):
+        sha_calls.append(Path(path))
+        return original_sha256(path)
+
+    monkeypatch.setattr(candidate_rebuild_module, "_sha256", track_source_reads)
+    with pytest.raises(RebuildError) as caught:
+        service._preflight()
+
+    assert caught.value.code == "METADATA_INVALID"
+    assert sha_calls == []
+    assert outside.read_bytes() == b"must-not-be-read"
+
+
+@pytest.mark.parametrize(
+    "bad_document_id",
+    [
+        "safe" + chr(0x7F) + "id",   # ASCII DEL
+        "safe" + chr(0x85) + "id",   # C1 NEL
+        "safe" + chr(0x9F) + "id",   # C1 application control
+        "\n safe-id",                 # leading C0 control plus whitespace
+        "safe-id\t",                 # trailing whitespace must not be trimmed
+        " safe-id ",                 # ordinary boundary changes are invalid
+    ],
+)
+def test_metadata_document_id_rejects_unicode_controls_and_trim_changes(
+    tmp_path, monkeypatch, bad_document_id
+):
+    papers = tmp_path / "papers"
+    papers.mkdir()
+    source = papers / "safe-id.pdf"
+    source.write_bytes(b"must-not-be-read")
+    metadata = tmp_path / "papers.json"
+    metadata.write_text(json.dumps([{
+        "paper_id": bad_document_id,
+        "file_name": source.name,
+        "stored_name": source.name,
+        "media_type": "application/pdf",
+    }]), encoding="utf-8")
+    service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=FakeQdrant(dense_dim=4),
+        dense_dim=4,
+    )
+    sha_calls = []
+    original_sha256 = candidate_rebuild_module._sha256
+
+    def track_source_reads(path):
+        sha_calls.append(Path(path))
+        return original_sha256(path)
+
+    monkeypatch.setattr(candidate_rebuild_module, "_sha256", track_source_reads)
+    with pytest.raises(RebuildError) as caught:
+        service._preflight()
+
+    assert caught.value.code == "METADATA_INVALID"
+    assert sha_calls == []
 
 
 def test_build_validate_and_first_physical_switch(tmp_path):

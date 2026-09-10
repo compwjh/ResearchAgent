@@ -191,6 +191,27 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 使用 `multiprocessing` spawn 验证跨进程互斥、异常退出后显式匹配 run_id/PID/recovery_check 接管、固定 inode、旧 token 操作不影响新 owner、缺失 state/topology fail-closed 及 clean release 后 dry-run。独立 reviewer v2 判定锁/恢复隔离门 `GO`；candidate rebuild + CLI **50 passed**，ruff、py_compile、`git diff --check` 均通过。
 - 非 POSIX 环境稳定返回 `REBUILD_LOCK_UNAVAILABLE`；外部手工删除/替换锁文件、真实 Qdrant、生产维护窗口、多机和 Task06 总体 cutover 仍未验收，Task06 继续 `NO-GO`。
 
+### 真实源文件解析与 ID 安全门：`隔离 GO；真实 dry-run 仍阻塞`
+
+- 真实 dry-run 首轮暴露旧 metadata 的 `file_name` 为展示名、磁盘原件为
+  `{document_id}.pdf`，导致误报 `SOURCE_MISSING`；`candidate_rebuild` 已复用
+  既有 `resolve_paper_path`，并保留安全 `stored_name`/`file_name` 命中行为。
+- 独立评审随后发现 `document_id` 路径逃逸和 Unicode 控制字符边界；已统一收紧
+  `_safe_id` 为可移植 basename，拒绝路径分隔符、点段、控制/格式字符及被
+  `strip()` 改变的原始值。源解析与 ID 安全独立复评均已 `GO`；候选重建测试
+  **59 passed**，全量回归 **916 passed / 1 skipped**。
+- 修复后的真实 dry-run 已能解析 5 个有效 PDF，但正式 metadata 仍包含 4 个
+  42-byte 的空壳 PDF（document_id：`dcd84d5a69df4a8780c85bd683a0c1bb`、
+  `0a657c3c109c4fe39f69674dbaa4d10a`、`a1172a31ff0342f98e24b4edffe04d39`、
+  `17be9f61e1734c4ba8e8462c13fca751`），解析返回 `PDF_EMPTY`；依据 Spec018
+  “正式 metadata 全集权威、任一损坏原件 preflight 失败”规则，当前真实索引切换
+  保持 `NO-GO`。未删除、重命名或覆盖任何原件/metadata。
+- 证据：`artifacts/task-06/source-resolution-fix-report.md`、
+  `source-resolution-fix-review.md`（历史 NO-GO，已由后续修复替代）、
+  `source-id-safety-fix-report.md`、`source-id-safety-review-v2.md`（历史 NO-GO，
+  已由后续控制字符修复替代）、`source-id-control-fix-report.md`、
+  `source-id-control-review-v2.md`。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -207,3 +228,4 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：浏览器生命周期首轮 reviewer 发现请求期间 TTL 过期导入和并发 reopen/idle cleanup 两个 P1；通过下载返回前与 import boundary 最终检查、状态锁注册边界、daemon TTL 回收和稳定错误码透传修复，85 项隔离回归通过，独立 reviewer v2 给出 browser 子门禁 `GO`；真实登录、跨进程和生产切换仍 `NO-GO`。
 - 2026-09-10：迁移 3 项历史旧索引集成测试到 canonical document/generation-bound API，未恢复退休入口；历史文件 5 passed、相关集 30 passed、全量回归 902 passed，独立 reviewer 给出迁移范围 `GO`。受控替身与真实 Qdrant/生产切换边界仍明确保留。
 - 2026-09-10：rebuild 锁首轮 stale unlink/recreate 与 token TOCTOU 评审为 `NO-GO`；改为固定 inode + POSIX `flock` 持有式协议，补齐跨进程互斥、异常退出接管和旧 owner 操作隔离测试，candidate+CLI 50 passed，独立 reviewer v2 给出锁/恢复隔离门 `GO`；锁协议加固后的全量回归为 `905 passed / 1 skipped`（38 个 subtests），真实 Qdrant 和生产切换仍 `NO-GO`。
+- 2026-09-10：真实 dry-run 发现旧 metadata 展示名与 `{document_id}.pdf` 原件布局不一致；复用既有路径解析器并补齐 document ID basename/Unicode 控制字符 fail-closed 门禁，独立复评 `GO`，候选重建 59 passed、全量回归 916 passed/1 skipped；随后真实数据暴露 4 个 42-byte `PDF_EMPTY` 失败原件，按权威 metadata 全集规则停止生产切换，等待数据处置决定。
