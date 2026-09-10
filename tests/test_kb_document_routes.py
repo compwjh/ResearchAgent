@@ -8,7 +8,11 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_kb
-from backend.app.knowledge_base.application import InspectionManifest, create_uploaded_document
+from backend.app.knowledge_base.application import (
+    InspectionManifest,
+    KnowledgeDocumentMigrationError,
+    create_uploaded_document,
+)
 from backend.app.main import app
 
 
@@ -30,6 +34,41 @@ def test_upload_same_hash_deduplicates_without_replacing_source(tmp_path: Path):
     assert second["deduplicated"] is True
     assert second["document"]["document_id"] == first["document"]["document_id"]
     assert len(list((tmp_path / "papers").iterdir())) == 1
+
+
+@pytest.mark.parametrize("file_name", ["report final.pdf", "安全论文.pdf"])
+def test_upload_preserves_display_name_and_generates_safe_server_name(tmp_path: Path, file_name: str):
+    content = b"%PDF-1.7\nvalid"
+    result = create_uploaded_document(
+        file_name,
+        "application/pdf",
+        content,
+        meta_path=tmp_path / "papers.json",
+        papers_dir=tmp_path / "papers",
+    )
+    document = result["document"]
+    stored_name = document["stored_name"]
+    assert document["file_name"] == file_name
+    assert stored_name != file_name
+    assert Path(stored_name).name == stored_name
+    assert stored_name.lower().endswith(".pdf")
+    assert all(char.isascii() and (char.isalnum() or char in "._-") for char in stored_name)
+    assert (tmp_path / "papers" / stored_name).read_bytes() == content
+
+
+@pytest.mark.parametrize("file_name", ["../escape.pdf", "nested/escape.pdf", r"nested\escape.pdf"])
+def test_upload_rejects_path_file_name_before_writing(tmp_path: Path, file_name: str):
+    with pytest.raises(KnowledgeDocumentMigrationError) as error:
+        create_uploaded_document(
+            file_name,
+            "application/pdf",
+            b"%PDF-1.7\nvalid",
+            meta_path=tmp_path / "papers.json",
+            papers_dir=tmp_path / "papers",
+        )
+    assert error.value.code == "MIGRATION_INPUT_INVALID"
+    assert not (tmp_path / "papers.json").exists()
+    assert not list((tmp_path / "papers").glob("*.pdf"))
 
 
 def test_documents_list_has_cursor_and_etag():

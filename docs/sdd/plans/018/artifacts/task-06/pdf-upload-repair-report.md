@@ -134,3 +134,68 @@ node tests/test_frontend_kb_inspection_pdf.js
 ### 收口结论
 
 Task06F 的受控兼容、稳定错误可见性和真实 HTTP 上传验收均通过；历史用户 400 的具体文件尚无原始请求体，因此不把根因伪造为单一字段。后续若再出现失败，页面已能直接展示后端错误码与原因，可据此继续定位。
+
+## 后续小修复：展示文件名与服务端存储名分离（Task06F 后续）
+
+### 结果状态与摘要
+
+```text
+task=06F-pdf-filename-upload-repair
+result=IMPLEMENTED-AND-VERIFIED
+valid_pdf_display_names=pass
+path_file_name_rejection=pass
+stored_name_safe_basename=pass
+```
+
+确认根因是 `create_immutable_document` 原先把含空格/中文的合法 PDF 展示名直接传给 `build_uploaded_knowledge_document` 的 `stored_name`，触发迁移层 ASCII basename 校验并返回 `MIGRATION_INPUT_INVALID`。现已保留原始展示 `file_name`，仅在服务端存储名候选不满足安全 basename 时回退到 document ID 加 `.pdf`；slash/backslash 路径名在写入前拒绝。
+
+### 改动文件
+
+- `backend/app/knowledge_base/application.py`
+  - `_unique_server_name` 仅保留迁移层允许的 ASCII `[A-Za-z0-9._-]` basename；不安全但合法的展示名使用服务端 UUID basename。
+  - `create_immutable_document` 提前拒绝空文件名、slash/backslash 路径名和超过 255 UTF-8 字节的文件名，避免任何源文件写入。
+- `tests/test_kb_document_routes.py`
+  - 新增空格/中文 PDF 展示名成功用例，断言 `file_name` 原样保留、`stored_name` 为安全 basename 且原件字节不变。
+  - 新增 `../`、slash、backslash 路径名拒绝用例，断言稳定错误码及无 metadata/PDF 原件。
+
+### 验证命令、退出码与结果
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `./.venv/bin/python -m pytest -q tests/test_kb_document_routes.py -k 'preserves_display_name or rejects_path_file_name'` | 0 | 5 passed；修复前基线为 5 failed，确认回归有效 |
+| `./.venv/bin/python -m pytest -q tests/test_kb_document_routes.py` | 0 | 30 passed |
+| `./.venv/bin/python -m pytest -q tests/test_kb_immutable_create.py tests/test_kb_document_routes.py` | 0 | 44 passed |
+| `./.venv/bin/ruff check backend/app/knowledge_base/application.py tests/test_kb_document_routes.py` | 0 | `All checks passed!` |
+| `git diff --check` | 0 | 通过 |
+
+### 产物路径
+
+- 报告：`docs/sdd/plans/018/artifacts/task-06/pdf-upload-repair-report.md`
+- 进展日志：`.codebuddy/agent-logs/spec-018/task-06/pdf-filename-upload-repair/backend-dev/20260910-220541.md`
+
+### 决策依据
+
+1. Spec018 明确 `file_name` 仅用于展示、`stored_name` 必须是服务端生成的安全 basename；因此不放宽迁移 schema 或 ASCII 校验。
+2. 空格/中文没有路径分隔符且在文件名 UTF-8 字节上限内，应被视为合法展示输入；安全存储名采用既有 document ID 回退策略，避免二次命名协议。
+3. slash/backslash 表示路径输入，必须在写入源之前拒绝；不修改 migration、Qdrant、索引、前端或数据。
+
+### 风险与阻塞
+
+- 本轮未运行全量回归，未启动服务，未触碰生产知识库原件或索引；相关运行时验收仍沿用前文 Task06F 记录。
+- 应用层仍允许不含路径分隔符的其他展示字符，统一由服务端存储名回退保护；PDF 内容/MIME 边界未改变。
+- 无阻塞。
+
+### 主 Agent 后续动作
+
+1. 审阅限定 diff，确认仅包含 application、对应测试和本报告/日志产物。
+2. 汇总本轮定向测试结果；按既有收口流程决定是否需要额外运行时复测。
+3. 不执行全量回归、reset/stash/clean/push/merge。
+
+### 时间、模型与工具统计
+
+- 开始：2026-09-10 22:05:41 CST（Asia/Shanghai）
+- 结束：2026-09-10 22:09:39 CST（Asia/Shanghai）
+- 总耗时：约 4 分钟
+- 模型：临时 Luna xhigh（backend-dev）
+- Token：当前工具环境未提供精确统计
+- 工具：约 14 次读取/编辑/定向测试/静态检查调用

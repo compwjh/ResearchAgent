@@ -133,6 +133,7 @@ from backend.app.platform.ports import (
 )
 
 _UPLOAD_LOCK = threading.RLock()
+_SAFE_SERVER_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 
 
 def _fsync_directory(path: Path) -> None:
@@ -336,7 +337,10 @@ def _unique_server_name(root: Path, requested_name: str, document_id: str, media
     suffix = ".md" if media_type == "text/markdown" else ".pdf"
     requested = str(requested_name or "").strip()
     candidate = Path(requested).name if requested and Path(requested).name == requested else ""
-    if not candidate or candidate in {".", ".."} or not candidate.lower().endswith(suffix):
+    if (
+        not _SAFE_SERVER_BASENAME_RE.fullmatch(candidate)
+        or not candidate.lower().endswith(suffix)
+    ):
         candidate = f"{document_id}{suffix}"
     if len(candidate.encode("utf-8")) > 255:
         candidate = f"{document_id}{suffix}"
@@ -376,6 +380,14 @@ def create_immutable_document(
     owner = owner if owner is not None else attempt_owner
     token = token if token is not None else attempt_token
     if media_type not in {"application/pdf", "text/markdown"}:
+        raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID")
+    if (
+        not isinstance(file_name, str)
+        or not file_name.strip()
+        or "/" in file_name
+        or "\\" in file_name
+        or len(file_name.encode("utf-8")) > 255
+    ):
         raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID")
     if destination_collection is not None:
         try:
