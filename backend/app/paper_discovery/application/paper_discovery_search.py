@@ -163,7 +163,7 @@ class PaperDiscoverySearchService:
         self.store.save_search(session, candidates)
         return SearchResult(session, candidates, warnings, error_code)
 
-    def _validate(self, source: ConferenceSource, query: str, years: Optional[Iterable[int]], limit: int,
+    def _validate(self, source: ConferenceSource, query: str, years: Optional[Iterable[int]], limit: Optional[int],
                   *, allow_current_year: bool = False):
         if not isinstance(source, ConferenceSource) or not source.enabled:
             raise PaperDiscoverySearchError("CONFERENCE_DISABLED", "conference must be an enabled configured source")
@@ -226,8 +226,9 @@ class PaperDiscoverySearchService:
         info = record.get("info", record) if isinstance(record, Mapping) else {}
         if not isinstance(info, Mapping):
             info = {}
+        year_raw = info.get("year")
         try:
-            year = int(info.get("year"))
+            year = int(year_raw) if year_raw is not None else 0
         except (TypeError, ValueError):
             year = 0
         # Prefer upstream identity fields, then canonical title. Every part
@@ -286,7 +287,7 @@ class PaperDiscoverySearchService:
             {"kind": "pdf", "url": info.get("ee")},
         ]
         candidate.source_links = [
-            item if isinstance(item, Mapping) else {"kind": "source", "url": item}
+            dict(item) if isinstance(item, Mapping) else {"kind": "source", "url": item}
             for item in links if (item.get("url") if isinstance(item, Mapping) else item)
         ]
         if info.get("pdf_url"):
@@ -340,7 +341,7 @@ class PaperDiscoverySearchService:
             matches = list(getattr(payload, "candidates", ()) or ())
             values = self._metadata_from_candidate(matches[0]) if matches else {}
         else:
-            values = dict(payload) if isinstance(payload, Mapping) else vars(payload)
+            values: Dict[str, Any] = dict(payload) if isinstance(payload, Mapping) else dict(vars(payload))
         for field_name in ("abstract", "article_url", "pdf_url", "pdf_access"):
             value = values.get(field_name)
             if value not in (None, ""):
