@@ -17,11 +17,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
-
 
 FIXTURE_VERSION = "v1"
 DEFAULT_MODEL = "qwen3.8:27b-mlx"

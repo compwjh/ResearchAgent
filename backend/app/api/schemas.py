@@ -1,8 +1,8 @@
-from typing import Literal
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from backend.app.core.config import MODEL_NAME
+from backend.app.platform.config import MODEL_NAME
 
 
 class ChatRequest(BaseModel):
@@ -28,3 +28,114 @@ class KBReindexRequest(BaseModel):
     """重建索引请求（spec-012）：不传 `chunker` 时重建全部版本。"""
 
     chunker: Literal["v1", "v2", "all"] = "all"
+
+
+class ConferenceUpdateRequest(BaseModel):
+    """受控会议配置更新；Task03 仅允许启停，不允许改写源身份。"""
+
+    enabled: bool
+
+
+class PaperSearchRequest(BaseModel):
+    """论文检索请求的服务端边界。
+
+    ``years`` 留空时由搜索服务按配置选择最近的完整年份；显式年份最多十个，
+    实际年份范围和当前年份边界仍由领域服务统一校验。
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    query: str = Field(min_length=1, max_length=500)
+    conference_id: str = Field(min_length=1, max_length=100)
+    years: Optional[List[StrictInt]] = Field(default=None, max_length=10)
+    limit: Optional[StrictInt] = Field(default=None, ge=1, le=100)
+    publication_scope: Literal["published", "accepted", "all"] = "published"
+
+
+class AsyncPaperSearchRequest(BaseModel):
+    """Task15 async catalog search: only server-controlled scope is accepted."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    query: str = Field(min_length=1, max_length=500)
+    conference_ids: List[str] = Field(min_length=1, max_length=1)
+    years: List[StrictInt] = Field(min_length=1, max_length=10)
+
+
+class PaperAcceptedRequest(BaseModel):
+    """受控 accepted-paper 查询参数；来源 URL 只来自服务端会议配置。"""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    # Query parameters arrive as strings; unlike JSON body fields they must
+    # use normal int coercion before the bounded Pydantic checks.
+    year: Optional[int] = Field(default=None, ge=1900)
+    cycle: Optional[str] = Field(default=None, min_length=1, max_length=20, pattern=r"^cycle[1-9][0-9]*$")
+    q: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    limit: Optional[int] = Field(default=None, ge=1, le=100)
+
+
+class PaperImportRequest(BaseModel):
+    """Single-paper import request.
+
+    URLs, titles, conference names, and other candidate metadata are not
+    accepted from the client.  The route resolves both identifiers against
+    the server-side search snapshot before invoking the importer.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    search_id: str = Field(min_length=1, max_length=200)
+    candidate_id: str = Field(min_length=1, max_length=200)
+
+
+class PaperImportResponse(BaseModel):
+    """Stable result fields returned by the single-paper import endpoint."""
+
+    paper_id: Optional[str] = None
+    stored_name: Optional[str] = None
+    status: str
+    error_code: Optional[str] = None
+    existing: bool = False
+
+
+class PaperImportBatchRequest(BaseModel):
+    """Create a batch from an opaque server-side search snapshot only."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    search_id: str = Field(min_length=1, max_length=200)
+    # The durable store is the authority for the 20-item limit so an oversized
+    # request receives the stable BATCH_LIMIT_EXCEEDED error rather than a
+    # generic Pydantic validation response.
+    candidate_ids: List[str] = Field(min_length=1)
+    idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
+class PaperImportBatchResponse(BaseModel):
+    """Public batch status payload shared by create/get/retry routes."""
+
+    batch_id: str
+    search_id: str
+    status: str
+    state: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    total_count: int = 0
+    completed_count: int = 0
+    failed_count: int = 0
+    waiting_login_count: int = 0
+    cancelled_count: int = 0
+    items: List[dict] = Field(default_factory=list)
+
+
+class PaperImportItemActionRequest(BaseModel):
+    """Empty item action body; URLs and credentials are never client input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PaperImportItemLoginResponse(BaseModel):
+    status: str
+    item_id: str
+    site: Literal["acm", "ieee"]

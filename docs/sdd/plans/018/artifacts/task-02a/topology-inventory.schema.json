@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/topology-inventory-v1",
+  "title": "Spec018 TopologyInventoryV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "default_alias", "physical_collections", "candidate_collections", "aliases", "run_directories", "active_generation", "state_run_id", "state_status", "state_candidate", "inventory_digest", "matrix"],
+  "$defs": {
+    "collection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "kind", "exists", "point_count", "vector_names"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1}, "kind": {"enum": ["physical", "candidate"]}, "exists": {"const": true}, "point_count": {"type": "integer", "minimum": 0}, "vector_names": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "alias": {"type": "object", "additionalProperties": false, "required": ["name", "target"], "properties": {"name": {"type": "string", "minLength": 1}, "target": {"type": "string", "minLength": 1}}}
+  },
+  "properties": {
+    "schema_version": {"const": "topology-inventory-v1"}, "default_alias": {"type": "string", "minLength": 1}, "physical_collections": {"type": "array", "items": {"$ref": "#/$defs/collection"}}, "candidate_collections": {"type": "array", "items": {"$ref": "#/$defs/collection"}}, "collections": {"type": "array", "items": {"$ref": "#/$defs/collection"}}, "aliases": {"type": "array", "items": {"$ref": "#/$defs/alias"}}, "run_directories": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}, "uniqueItems": true}, "active_generation": {"type": ["string", "null"]}, "state_run_id": {"type": ["string", "null"]}, "state_status": {"type": ["string", "null"]}, "state_candidate": {"type": ["string", "null"]}, "inventory_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "matrix": {"type": "object", "additionalProperties": false, "required": ["default_state", "candidate_state", "safe_to_switch"], "properties": {"default_state": {"enum": ["missing", "physical", "alias", "ambiguous"]}, "candidate_state": {"enum": ["missing", "single", "multiple", "ambiguous"]}, "safe_to_switch": {"type": "boolean"}}}
+  }
+}

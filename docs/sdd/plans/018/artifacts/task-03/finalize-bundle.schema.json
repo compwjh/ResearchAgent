@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spec-018/finalize-bundle-v1",
+  "title": "Spec018 FinalizeBundleV1",
+  "description": "Run-level staged/live commit inventory. bundle_sha256 is the canonical UTF-8 JSON hash with bundle_sha256 omitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "candidate_collection",
+    "alias_name",
+    "collection_fingerprint",
+    "metadata_staged_path",
+    "metadata_staged_sha256",
+    "manifests",
+    "obsolete_manifests",
+    "bundle_sha256"
+  ],
+  "x-field-order": [
+    "schema_version", "run_id", "candidate_collection", "alias_name",
+    "collection_fingerprint", "metadata_staged_path", "metadata_staged_sha256",
+    "manifests", "obsolete_manifests", "bundle_sha256"
+  ],
+  "x-write-order": [
+    "stage_metadata_and_manifests", "validate_schema_and_hashes", "fsync_files_and_directories",
+    "write_and_verify_finalize_bundle", "replace_live_metadata_and_manifests",
+    "recheck_live_hashes", "remove_obsolete_manifests", "write_and_verify_generation_marker"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "candidateCollection": {"type": "string", "pattern": "^papers_rebuild_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "documentId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "stagedMetadataPath": {
+      "type": "string",
+      "pattern": "^\\.sdd/runtime/spec-018/rebuild/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/finalize/metadata\\.json$"
+    },
+    "stagedManifestPath": {
+      "type": "string",
+      "pattern": "^\\.sdd/runtime/spec-018/rebuild/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/finalize/manifests/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/(v1|v2)\\.json$"
+    },
+    "liveManifestPath": {
+      "type": "string",
+      "pattern": "^data/kb/manifests/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/(v1|v2)\\.json$"
+    },
+    "manifestEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_id", "chunker", "staged_path", "live_path", "sha256"],
+      "properties": {
+        "document_id": {"$ref": "#/$defs/documentId"},
+        "chunker": {"enum": ["v1", "v2"]},
+        "staged_path": {"$ref": "#/$defs/stagedManifestPath"},
+        "live_path": {"$ref": "#/$defs/liveManifestPath"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "obsoleteManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_id", "chunker", "live_path", "sha256"],
+      "properties": {
+        "document_id": {"$ref": "#/$defs/documentId"},
+        "chunker": {"enum": ["v1", "v2"]},
+        "live_path": {"$ref": "#/$defs/liveManifestPath"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "finalize-bundle-v1"},
+    "run_id": {"$ref": "#/$defs/runId"},
+    "candidate_collection": {"$ref": "#/$defs/candidateCollection"},
+    "alias_name": {"const": "papers"},
+    "collection_fingerprint": {"$ref": "#/$defs/sha256"},
+    "metadata_staged_path": {"$ref": "#/$defs/stagedMetadataPath"},
+    "metadata_staged_sha256": {"$ref": "#/$defs/sha256"},
+    "manifests": {
+      "type": "array",
+      "maxItems": 400000,
+      "items": {"$ref": "#/$defs/manifestEntry"}
+    },
+    "obsolete_manifests": {
+      "type": "array",
+      "maxItems": 400000,
+      "items": {"$ref": "#/$defs/obsoleteManifest"}
+    },
+    "bundle_sha256": {"$ref": "#/$defs/sha256"}
+  }
+}

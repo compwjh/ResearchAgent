@@ -1,11 +1,13 @@
 # 任务 09 — 评审、部署与复盘
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 08；当前状态：`待执行`
+> 依赖：任务 08；当前状态：`实施中（离线回归与本地部署通过；外部验收阻塞）`
 
 ## 一句话目标
 
 完成独立验收、开发主管签字、文档和 Git 收口，并实际启动服务验证论文检索、公开导入、批量导入和 ACM/IEEE 登录续传后再将 spec-015 标为已完成。
+
+> 技术复审打回项必须在实现前回填并复审；在 T1–T13 未全部关闭、Spec 015 未获用户确认前，本任务不得执行。
 
 ## 背景与前置条件
 
@@ -36,7 +38,7 @@
 ## 子代理分派
 
 - `tester`：独立执行验收并写 `015-acceptance-review.md`，使用 `qwen3.5:9b`。
-- `tech-lead`：Code Review、风险裁决和验收签字，使用 `qwen3.8:27b`。
+- `tech-lead`：Code Review、风险裁决和验收签字，使用 `qwen3.8:27b-mlx`。
 - 若验收发现代码缺陷，必须回到 `junior-dev` 小任务分派，不能由架构师直接代写。
 - 架构师只负责门禁编排、文件读回、部署、最终状态和本地提交。
 
@@ -78,10 +80,12 @@ git diff --check
 ## 产出物与执行结果
 
 - 产出：验收评审、开发主管签字、复盘、部署证据、状态台账和本地 commit。
-- 执行结果：待执行后填写。
+- 执行结果：已完成离线收口检查与本地部署验证。全量 pytest `520 passed, 1 skipped, 5 warnings, 38 subtests`；首页 HTTP 200、`/api/health` HTTP 200 且返回 `paper_discovery_enabled`、会议列表接口可用；Reranker 因模型文件缺失按既定策略降级为 RRF。Task04 rerank/nDCG、DBLP Venue Search/自定义会议、旧 KB 物理端到端、真实 GUI/窄屏、公开 PDF 与 ACM/IEEE 合法登录仍无可验证环境，故任务保持实施中，不标记 Spec015 完成。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-03 | 架构师(自身) | 创建任务计划，状态为待执行 |
+| 2026-09-05 | 架构师（自身） | 补记用户 Chrome 的 ACM/IEEE 外站会话证据；项目 Playwright profile 尚未完成登录续传与知识库导入，Task09 保持实施中 |
+| 2026-09-05 | 架构师（自身） | 重启服务后复现 DBLP `DBLP_UNAVAILABLE`，服务健康与 Playwright 健康均通过；无搜索候选时无法进入登录流程，Task09 继续保持外部数据源阻塞 |

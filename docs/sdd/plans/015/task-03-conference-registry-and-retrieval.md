@@ -1,7 +1,9 @@
 # 任务 03 — 建立会议配置与论文召回
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 02 Go；当前状态：`待执行`
+> 依赖：任务 02 条件放行；当前状态：`已完成（内置会议与 OpenAlex 收窄范围）`
+
+> Task02 tech-lead 结论：先实现四个内置会议的 publication search、主会过滤、去重、OpenAlex 补全和搜索会话；DBLP Venue Search/自定义会议搜索新增保持 blocked，直到取得成功 live venue/api 样本。
 
 ## 一句话目标
 
@@ -20,6 +22,12 @@
 - 实现 `/api/papers/search` 的校验、DBLP 召回、主会过滤、去重、OpenAlex 补全和初排输出。
 - 候选必须生成服务端 `search_id/candidate_id`，保存 24 小时，后续导入不接受客户端 URL。
 
+### 技术复审修订门禁
+
+- SQLite 固定 schema version、UTC 时间、主外键、`ON DELETE`、唯一索引、WAL、`foreign_keys=ON`、`busy_timeout`、显式事务和过期清理；幂等由数据库唯一约束兜底。
+- 会议、搜索会话和候选的状态迁移、终态、非法迁移响应和启动恢复规则必须在 schema/测试中明确；批次计数不得作为可漂移的独立事实源。
+- v1 不实现查询扩展模型；检索只使用服务端校验后的原查询。后续扩展必须另立 spec，不得改变年份/会议过滤条件。
+
 ## 实施步骤与文件边界
 
 1. 先设计 SQLite schema、唯一约束、升级初始化和过期搜索清理，不修改现有知识库 schema。
@@ -31,7 +39,7 @@
 7. 建立 OpenAlex 补全器；按 DOI 优先、标题兜底，单源失败返回 warning。
 8. 计算可重复的初排分数，生成搜索会话和候选 id；分页和 limit 必须受服务端上限控制。
 9. 接入路由与配置开关，功能关闭时不初始化外部访问。
-10. 每个代码分派控制在最多 2 文件、150 行；仓储、客户端、服务、路由分别拆分执行并逐文件读回。
+10. 使用本地 Ollama junior-dev 时，每个代码分派控制在最多 2 个代码文件、150 行；线上模型不受该数量上限约束，但仓储、客户端、服务、路由仍应按风险拆分并逐文件读回。
 
 ## 子代理分派
 
@@ -62,10 +70,13 @@
 - 风险：会议出版物名称随年份变化；通过可编辑 alias 列表和冻结样本测试控制。
 - 回滚：关闭功能开关并移除新增路由；独立 SQLite 状态可保留，不影响知识库。
 - 产出：会议配置、召回/补全服务、搜索会话和接口测试。
-- 执行结果：待执行后填写。
+- 执行结果：已完成领域模型/SQLite 仓储、DBLP publication search、OpenAlex 补全、搜索编排及内置会议/搜索 API；最终定向验收 41 passed，Tech Lead 最终签核通过。自定义会议 Venue Search 保持 blocked，导入 FK/TTL 候选快照移交 Task05。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-03 | 架构师(自身) | 创建任务计划，状态为待执行 |
+| 2026-09-04 | 架构师(自身) | 基于 Task02 条件放行，启动内置会议 publication search、过滤、去重、OpenAlex 补全与搜索会话；Venue Search 保持 blocked |
+| 2026-09-04 | junior-dev / tech-lead | 完成 SQLite、DBLP、OpenAlex 与搜索编排首轮切片；Tech Lead 复核发现并推动修复跨会话主键冲突和 DBLP query 未透传两个 P0，定向测试累计 19 passed，P1 复审待完成 |
+| 2026-09-04 | tester / tech-lead | Task03 API 与核心功能验收、最终技术签核通过；定向测试 41 passed。内置会议与 OpenAlex 收窄范围完成，Venue Search/custom conference blocked，导入 FK/TTL 移交 Task05 |

@@ -10,6 +10,7 @@ frontend/.DS_Store
 .coverage.*
 htmlcov/
 .pytest_cache/
+.ruff_cache/
 # .codebuddy 下 agents/skills/models.json 属项目资产，需入库共享；
 # 仅忽略 IDE 运行数据（plans/本地设置/记忆）
 .codebuddy/plans/
@@ -17,12 +18,19 @@ htmlcov/
 .codebuddy/agent-memory/
 .codebuddy/agent-logs/
 data/articles/
+data/browser-profile/
+data/paper_search/
+**/.profile.lock
 data/article_settings.json
 data/kb/
 data/models/
 data/agent_tasks.sqlite3
 deploy/reranker/.runtime/
 deploy/run.pid
+
+# Spec018 rebuild staging/runtime artifacts (large manifests; canonical live
+# manifests and generation marker remain under ignored data/kb/).
+.sdd/runtime/
 
 # Langfuse vendor runtime/dependency artefacts; source code remains tracked.
 vendor/langfuse/.env

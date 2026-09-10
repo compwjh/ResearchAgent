@@ -1,7 +1,7 @@
 # 任务 08 — 执行测试、排序基准与安全回归
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 04、05、06、07；当前状态：`待执行`
+> 依赖：任务 04、05、06、07；当前状态：`实施中（离线安全/回归补测通过；排序质量与真实环境阻塞）`
 
 ## 一句话目标
 
@@ -78,10 +78,13 @@ grep -rn "^<<<<<<<\|^>>>>>>>\|^=======" .
 ## 产出物与执行结果
 
 - 产出：自动化测试、冻结排序集、指标报告、安全矩阵、真实网络与登录证据。
-- 执行结果：待执行后填写。
+- 执行结果：完成 QA 盘点及安全矩阵、加密 PDF、回归稳定性和旧 KB 集成补测。新增矩阵覆盖危险 IP/混淆地址/跨协议与端口/多跳循环/伪造与损坏 PDF/断流/头部上限/临时清理/敏感信息；加密 PDF 稳定返回 `INVALID_PDF`；旧 `use_skill` 503 回归改为离线模型 mock，browser fake 提供仅测试 resolver seam；新增真实旧 `papers.json`/PDF/FakeQdrant 端到端兼容测试。全量回归最新为 `525 passed, 1 skipped, 38 subtests passed`。尚缺冻结排序集与 nDCG/Recall、Task04 embedding/rerank 质量证据、真实 GUI/公开 PDF/ACM-IEEE 登录，故保持实施中。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-03 | 架构师(自身) | 创建任务计划，状态为待执行 |
+| 2026-09-05 | tester / junior-dev | 完成 Task08 盘点与安全/回归补测；全量 521 passed，补齐加密 PDF、SSRF 攻击矩阵和离线稳定性；排序质量与真实外部链路继续阻塞 |
+| 2026-09-05 | junior-dev | 新增旧 KB 真实旧 JSON/PDF/FakeQdrant 集成回归，覆盖列表、检索、重建、删除、缺文件/坏元数据/同名隔离；全量 525 passed |
+| 2026-09-05 | 架构师（自身） | 记录用户 Chrome 的 ACM/IEEE 真实外站可访问观察；因 Chrome profile 与项目 Playwright profile 隔离，不能将人工观察外推为 A10/A11 导入通过，详见 `docs/sdd/reviews/015-real-browser-session-20260905.md` |

@@ -1,0 +1,9 @@
+# 开发工具依赖（不参与运行时部署）
+# 安装： .venv/bin/python -m pip install -r requirements-dev.txt
+#
+# 上限锁在 <0.17：ruff 在 0.16 起改变了默认规则集（不再是 E4/E7/E9 + F），
+# 跨小版本升级可能让检查结果变化。本项目已在 ruff.toml 显式固定 select/ignore，
+# 但若升级主版本，请先跑一遍 `ruff check --statistics .` 对比基线再放开上限。
+ruff>=0.16.6,<0.17
+# Strict Draft 2020-12 validation for versioned provenance schemas
+jsonschema>=4.19,<5

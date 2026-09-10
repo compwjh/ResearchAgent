@@ -30,8 +30,17 @@
 | 架构师 | **自身**（当前执行任务的 Agent，**不写死模型代号**） | 200k | spec + 执行配置 + 落地校验 | 主会话 | —（本身就是） |
 | 产品经理 PM | `qwen3.5:9b` | 32k | spec「产品使用步骤」段 | `Task(pm)` | 可，须注明"不适用/跳过原因" |
 | 开发主管 Tech Lead | `qwen3.8:27b` | 32k | `reviews/NNN-requirement-review.md`、`NNN-tech-review.md`、验收签字 | `Task(tech-lead)` | **仅紧急且须显式标注** |
-| 初级开发 Junior Dev | `qwen3.8:27b` | 32k | 代码 + 自测结果 | `Task(junior-dev)` | 可，须在变更日志写明"架构师落地校验" |
-| 测试 QA | `qwen3.5:9b` | 32k | `reviews/NNN-acceptance-review.md` | `Task(tester)` | **仅紧急且须显式标注** |
+| 初级开发 Junior Dev（兼容保留） | `qwen3.8:27b-mlx` | 32k | 代码 + 自测结果 | `Task(junior-dev)` | 可，须在变更日志写明"架构师落地校验" |
+| 测试 QA（兼容保留，跨端验收） | `qwen3.5:9b` | 32k | `reviews/NNN-acceptance-review.md` | `Task(tester)` | **仅紧急且须显式标注** |
+| **后端开发 Backend Dev** | `qwen3.8:27b-mlx` | 32k | 后端代码 + 自测结果（只改 `backend/**`） | `Task(backend-dev)` | 同上（纯文档可代行） |
+| **前端开发 Frontend Dev** | `qwen3.8:27b-mlx` | 32k | 前端代码 + 三项自查（只改 `frontend/**`） | `Task(frontend-dev)` | 同上 |
+| **后端评审 Backend Reviewer** | `qwen3.8:27b-mlx` | 32k | 后端评审报告（只评 `backend/**`） | `Task(backend-reviewer)` | **仅紧急且须显式标注** |
+| **前端评审 Frontend Reviewer** | `qwen3.8:27b-mlx` | 32k | 前端评审报告（只评 `frontend/**`） | `Task(frontend-reviewer)` | **仅紧急且须显式标注** |
+| **后端回归 Backend Tester** | `qwen3.5:9b` | 32k | 后端验收结论（只跑后端 pytest） | `Task(backend-tester)` | **仅紧急且须显式标注** |
+| **前端回归 Frontend Tester** | `qwen3.5:9b` | 32k | 前端验收结论（只做静态核对） | `Task(frontend-tester)` | **仅紧急且须显式标注** |
+
+> **前后端分派原则**：改动只涉及一端时，只分派该端 agent 与该端回归，**不要让通吃 agent 一次做两端**，也不要让单端改动触发全套回归（省资源）。
+> `junior-dev` / `tester` 保留为**跨端或归属不确定**时的兼容选项；纯后端优先 `backend-dev`，纯前端优先 `frontend-dev`。
 
 > 模型名以 `ollama list` 实测为准，且必须是不含 `/` 的已注册名（含 `/` 会报 `Subagent model config is invalid`，见 `AGENTS.md`）。
 
@@ -73,15 +82,19 @@
 - [ ] 需求评审与技术评审**均已通过**（或已按上述规则显式标注代行/阻塞）
 - [ ] 用户明确表示确认后，spec 状态改 `已确认`，并在 `spec-status-changelog.md` 追加一条
 
-### Gate 4 — 实现（**junior-dev 子代理**；主会话只做最小增量落地与校验）
+### Gate 4 — 实现（**backend-dev / frontend-dev 专职子代理**；主会话只做最小增量落地与校验）
 
 - [ ] 开始当前任务前，task 文件、`plans/NNN/README.md` 与 spec「任务计划」三处状态已同步为 `进行中`
-- [ ] **分派前置（硬卡点）**：本次改动含 `.py` / `.js` / `.html` / `.css` 文件 → **已先发起 `Task(junior-dev)`**（写代码之前发起）。未发起即写代码 = 违规，必须停下。
+- [ ] **分派前置（硬卡点）**：本次改动含 `.py` / `.js` / `.html` / `.css` 文件 → **已先发起子代理 Task**（写代码之前发起）。未发起即写代码 = 违规，必须停下。
+  - 只改 `backend/**` → `Task(subagent_name="backend-dev")`
+  - 只改 `frontend/**` → `Task(subagent_name="frontend-dev")`
+  - 跨端改动 → **拆成两次分派**（后端一次、前端一次），不要派一个 agent 通吃
+  - 归属不确定 / 暂时无法拆分 → 才用兼容的 `Task(subagent_name="junior-dev")`
 - [ ] **任务已拆分**：涉及 ≥3 个文件的改动已拆成「每任务 ≤2 个文件」的子任务；未拆分就整体实现 = 违规。
 - [ ] **未代行自查**：含代码文件的改动，确认**没有**用「改动极小 / 上下文在手 / 自己写更快」等理由代行（代行仅允许纯文档改动）。
 - [ ] **分派 27B 前先保证显存独占**：`./deploy/stop.sh` 停后端 → 清空 `ollama ps` 里的常驻模型（`keep_alive:0`）→ 再分派（27B 与 bge-m3 并存会 OOM）
 - [ ] **防回传截断**：要求子代理「先给完整代码片段、再给说明」，并**把片段同时写进进展日志**（避免回传被截断后一无所有）
-- [ ] 用 `Task(subagent_name="junior-dev")` 分派，给出最小上下文（spec 的数据模型/接口/边界/明确不做 + 目标文件路径）
+- [ ] 用 `Task(subagent_name="backend-dev")` 或 `Task(subagent_name="frontend-dev")` 分派，给出最小上下文（spec 的数据模型/接口/边界/明确不做 + 目标文件路径）
 - [ ] 实现严格限制在已确认 spec 范围内；范围扩大 → **先停**，更新 spec 再确认
 - [ ] 子代理产出由架构师**读真实文件做最小增量修改**并跑 lint/语法校验，不整文件覆盖
 - [ ] 自测：lint 无错 + 测试全绿 + 覆盖率不降低（spec-010 门禁 ≥80%）

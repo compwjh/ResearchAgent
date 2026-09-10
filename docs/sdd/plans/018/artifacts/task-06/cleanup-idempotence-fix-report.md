@@ -1,0 +1,21 @@
+# Spec018 Task06：失败候选清理幂等修复报告
+
+- 结果状态：`PASS`
+- 摘要：修复 `candidate_rebuild.cleanup_failed()` 在候选 collection 已由失败路径自动删除时的状态机错误。现在 `failed -> cleaned` 是受控合法迁移；只有拓扑确认候选不存在、未被 alias 引用且不存在其他候选时才走该路径。候选仍存在时仍执行原有删除及删除后复核，拓扑不明确时仍 fail-closed。
+- 改动文件：
+  - `backend/app/knowledge_base/infrastructure/candidate_rebuild.py`
+  - `tests/test_kb_candidate_rebuild.py`
+- 测试命令、退出码和结果：
+  - `.venv/bin/python -m pytest -q tests/test_kb_candidate_rebuild.py -k 'cleanup'`：退出码 0，3 passed
+  - `.venv/bin/python -m pytest -q tests/test_kb_candidate_rebuild.py`：退出码 0，60 passed，5 warnings
+  - `.venv/bin/python -m py_compile backend/app/knowledge_base/infrastructure/candidate_rebuild.py tests/test_kb_candidate_rebuild.py`：退出码 0
+  - `git diff --check`：退出码 0
+- 固定回归场景：embedding 阶段失败后，失败处理已删除候选且状态保持 `failed`；随后执行 `cleanup_failed`，确认返回并持久化 `cleaned`，且没有再次发出删除操作。
+- 产物路径：本报告。
+- 决策依据：候选缺失是已观察到的安全终态；在 `topology_inventory()` 已确认不存在 alias 引用且候选集合唯一后，重复删除没有意义，直接完成清理状态迁移可恢复幂等性。未放宽 alias 引用或多候选拓扑的拒绝条件。
+- 风险与阻塞：未访问真实 `data/kb`、真实 Qdrant 或生产服务；全量 Task06 生产切换仍受其余门禁约束。
+- 主 Agent 后续动作：复核本轮 diff，运行 targeted/full candidate tests、`py_compile` 与 `git diff --check`，再合并到 Task06 收口提交。
+- 开始时间：2026-09-10T12:29:00+08:00（本轮任务开始）
+- 结束时间：2026-09-10T12:34:50+08:00
+- 总耗时：约 6 分钟
+- 模型、token、工具统计：由主 Agent 编排系统记录；本报告不伪造未提供的统计。

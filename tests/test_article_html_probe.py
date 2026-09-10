@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import patch
 
-from backend.app.core.article_settings import ArticleSettings
-from backend.app.domain.article import ArticleCandidate
-from backend.app.services.article_download import probe_pdf_url
+from backend.app.article_assistant.domain.article import ArticleCandidate
+from backend.app.article_assistant.infrastructure.article_download import probe_pdf_url
+from backend.app.platform.settings.settings_repository import ArticleSettings
 
 
 class ArticleHtmlProbeTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class ArticleHtmlProbeTests(unittest.TestCase):
                 yield b"%PDF-1.7"
 
         candidate = ArticleCandidate("candidate", "Paper", article_url="https://example.com/article")
-        with patch("backend.app.services.article_download.httpx.stream", side_effect=[HtmlResponse(), PdfResponse()]):
+        with patch("backend.app.article_assistant.infrastructure.article_download.httpx.stream", side_effect=[HtmlResponse(), PdfResponse()]):
             self.assertEqual(probe_pdf_url(candidate, ArticleSettings()), ("public_pdf", "https://example.com/download/paper.pdf"))
 
 

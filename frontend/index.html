@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=13">
+  <link rel="stylesheet" href="/assets/styles.css?v=18">
 </head>
 <body>
   <main class="app-shell">
@@ -16,6 +16,7 @@
         <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
         <a class="nav-item" data-view="models" role="button" tabindex="0"><span class="nav-icon">◈</span> 模型库 <span class="nav-count" id="model-count">0</span></a>
         <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count">0</span></a>
+        <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
       </nav>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="status-dot"></span><div><strong>本地服务</strong><small id="model-label">连接中</small></div></div>
@@ -81,40 +82,227 @@
         <div class="breadcrumb"><span>知识库</span><span class="slash">/</span><strong>论文 RAG</strong></div>
       </header>
       <section class="workspace kb-workspace" aria-label="论文知识库">
-        <div class="kb-layout">
-          <aside class="kb-side">
-            <input type="file" id="kb-file" accept="application/pdf" hidden>
-            <button class="kb-drop" id="kb-drop" type="button">
-              <span class="kb-drop-icon">＋</span>
-              <span class="kb-drop-text">点击上传 PDF 论文</span>
-              <span class="kb-drop-sub">本地解析 · 本地向量化 · 不出本机</span>
-            </button>
-            <p class="kb-status" id="kb-status"></p>
-            <div class="kb-list-head">已上传论文 <span id="kb-count">0</span></div>
-            <ul class="kb-list" id="kb-list"></ul>
-            <p class="kb-empty" id="kb-empty">还没有论文，先上传一篇 PDF。</p>
-            <p class="kb-health" id="kb-health">组件状态加载中…</p>
-          </aside>
-          <section class="kb-chat">
-            <div class="kb-answers" id="kb-answers">
-              <p class="kb-welcome">上传论文后即可基于本地知识库提问，回答会给出页码引用。</p>
-            </div>
-            <form class="kb-ask-form" id="kb-ask-form">
-              <textarea id="kb-question" rows="2" placeholder="基于知识库提问，例如：这篇论文的核心贡献是什么？" aria-label="知识库问题"></textarea>
-              <div class="kb-ask-footer">
-                <label class="kb-model" for="kb-model-select"><span class="model-symbol">◈</span><select id="kb-model-select" aria-label="选择生成模型"></select></label>
-                <label class="kb-chunker" for="kb-chunker-select"><span class="kb-chunker-symbol">切分</span><select id="kb-chunker-select" aria-label="选择切分版本">
-                  <option value="v1">v1 按页递归</option>
-                  <option value="v2">v2 结构感知</option>
-                </select></label>
-                <button type="submit" id="kb-send">发送</button>
-              </div>
-            </form>
-          </section>
+        <div class="kb-tabs" id="kb-tabs" role="tablist" aria-label="知识库功能">
+          <button class="kb-tab is-active" id="kb-tab-qa" type="button" role="tab" aria-controls="kb-panel-qa" aria-selected="true" tabindex="0">问答</button>
+          <button class="kb-tab" id="kb-tab-inspection" type="button" role="tab" aria-controls="kb-panel-inspection" aria-selected="false" tabindex="-1">切片检查</button>
         </div>
+
+        <section class="kb-tab-panel" id="kb-panel-qa" role="tabpanel" aria-labelledby="kb-tab-qa">
+          <div class="kb-layout">
+            <aside class="kb-side">
+              <input type="file" id="kb-file" accept="application/pdf" hidden>
+              <button class="kb-drop" id="kb-drop" type="button">
+                <span class="kb-drop-icon">＋</span>
+                <span class="kb-drop-text">点击上传 PDF 论文</span>
+                <span class="kb-drop-sub">本地解析 · 本地向量化 · 不出本机</span>
+              </button>
+              <p class="kb-status" id="kb-status"></p>
+              <div class="kb-list-head">已上传论文 <span id="kb-count">0</span></div>
+              <ul class="kb-list" id="kb-list"></ul>
+              <p class="kb-empty" id="kb-empty">还没有论文，先上传一篇 PDF。</p>
+              <p class="kb-health" id="kb-health">组件状态加载中…</p>
+            </aside>
+            <section class="kb-chat">
+              <div class="kb-answers" id="kb-answers">
+                <p class="kb-welcome">上传论文后即可基于本地知识库提问，回答会给出页码引用。</p>
+              </div>
+              <form class="kb-ask-form" id="kb-ask-form">
+                <textarea id="kb-question" rows="2" placeholder="基于知识库提问，例如：这篇论文的核心贡献是什么？" aria-label="知识库问题"></textarea>
+                <div class="kb-ask-footer">
+                  <label class="kb-model" for="kb-model-select"><span class="model-symbol">◈</span><select id="kb-model-select" aria-label="选择生成模型"></select></label>
+                  <label class="kb-chunker" for="kb-chunker-select"><span class="kb-chunker-symbol">切分</span><select id="kb-chunker-select" aria-label="选择切分版本">
+                    <option value="v1">v1 按页递归</option>
+                    <option value="v2">v2 结构感知</option>
+                  </select></label>
+                  <button type="submit" id="kb-send">发送</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <section class="kb-tab-panel kb-inspection-panel" id="kb-panel-inspection" role="tabpanel" aria-labelledby="kb-tab-inspection" hidden aria-busy="false">
+          <header class="kb-inspection-header">
+            <div>
+              <p class="eyebrow">DOCUMENT INSPECTION</p>
+              <h2>切片检查</h2>
+              <p class="kb-inspection-help" id="kb-inspection-help">选择一份知识文档和一个切分版本，查看真实索引切片及其原文定位。</p>
+            </div>
+            <div class="kb-inspection-controls" aria-label="检查器选择">
+              <label class="kb-inspection-field" for="kb-inspection-document">
+                <span>文档</span>
+                <select id="kb-inspection-document" aria-describedby="kb-inspection-help">
+                  <option value="">选择知识文档</option>
+                </select>
+              </label>
+              <fieldset class="kb-inspection-version" id="kb-inspection-version-group" aria-describedby="kb-inspection-help">
+                <legend>版本</legend>
+                <label for="kb-inspection-chunker-v1"><input id="kb-inspection-chunker-v1" name="kb-inspection-chunker" type="radio" value="v1" checked> v1</label>
+                <label for="kb-inspection-chunker-v2"><input id="kb-inspection-chunker-v2" name="kb-inspection-chunker" type="radio" value="v2"> v2</label>
+              </fieldset>
+            </div>
+          </header>
+
+          <div class="kb-inspection-state" id="kb-inspection-state" aria-live="polite">
+            <p class="kb-inspection-maintenance" id="kb-inspection-maintenance" data-error-code="INDEX_REBUILD_REQUIRED" role="status" hidden>索引正在维护，管理员完成全库重建后才能检查文档。</p>
+            <p class="kb-inspection-maintenance" id="kb-inspection-finalize" data-error-code="INDEX_FINALIZE_REQUIRED" role="status" hidden>索引正在完成切换，检查器暂时只读。</p>
+            <p class="kb-inspection-loading" id="kb-inspection-loading" role="status" aria-busy="true" hidden>正在加载检查清单…</p>
+            <p class="kb-inspection-error" id="kb-inspection-error" data-error-code="INSPECTION_BUILDING" role="alert" hidden>检查清单暂不可用，请稍后重试。</p>
+          </div>
+
+          <div class="kb-inspection-view-switcher" id="kb-inspection-view-switcher" role="tablist" aria-label="窄屏检查栏切换">
+            <button class="kb-inspection-view-tab is-active" id="kb-inspection-source-tab" type="button" role="tab" aria-controls="kb-source-panel" aria-selected="true" tabindex="0" data-pane-target="source">原文</button>
+            <button class="kb-inspection-view-tab" id="kb-inspection-chunk-tab" type="button" role="tab" aria-controls="kb-chunk-panel" aria-selected="false" tabindex="-1" data-pane-target="chunks">切片</button>
+          </div>
+
+          <div class="kb-inspection-layout" id="kb-inspection-layout" data-active-pane="source">
+            <section class="kb-inspection-pane kb-source-pane" id="kb-source-panel" role="region" aria-labelledby="kb-source-title" tabindex="-1">
+              <header class="kb-inspection-pane-head">
+                <div><h3 id="kb-source-title">原文</h3><p id="kb-source-meta">尚未选择文档</p></div>
+                <span class="kb-inspection-badge" id="kb-source-kind">PDF / Markdown</span>
+              </header>
+              <div class="kb-source-content" id="kb-source-content" role="document" aria-label="原文内容" tabindex="0">
+                <p class="kb-inspection-empty" id="kb-source-empty">选择文档后显示原文。</p>
+                <div class="kb-source-document" id="kb-source-document" hidden>
+                  <div class="kb-source-pdf" id="kb-source-pdf" data-renderer="pdfjs" hidden></div>
+                  <div class="kb-source-markdown" id="kb-source-markdown" data-renderer="markdown" hidden></div>
+                </div>
+              </div>
+            </section>
+            <section class="kb-inspection-pane kb-chunk-pane" id="kb-chunk-panel" role="region" aria-labelledby="kb-chunk-title" tabindex="-1">
+              <header class="kb-inspection-pane-head">
+                <div><h3 id="kb-chunk-title">切片</h3><p id="kb-chunk-meta">未选择 v1 / v2</p></div>
+                <span class="kb-inspection-badge" id="kb-chunk-status">等待检查</span>
+              </header>
+              <div class="kb-chunk-content" id="kb-chunk-content" role="list" aria-label="切片列表" tabindex="0">
+                <p class="kb-inspection-empty" id="kb-chunk-empty">选择文档和版本后显示切片。</p>
+              </div>
+              <button class="kb-chunk-load-more secondary-button" id="kb-chunk-load-more" type="button" hidden>加载更多切片</button>
+            </section>
+          </div>
+        </section>
+      </section>
+    </section>
+
+    <section class="main-area" id="papers-view" hidden aria-labelledby="papers-title">
+      <header class="topbar">
+        <div class="breadcrumb"><span>论文检索</span><span class="slash">/</span><strong>安全顶会</strong></div>
+      </header>
+      <section class="workspace paper-workspace" aria-label="论文检索工作区">
+        <header class="paper-page-header">
+          <p class="eyebrow">SECURITY PAPER DISCOVERY</p>
+          <h1 id="papers-title">论文检索</h1>
+          <p class="subtitle">按研究方向查找安全顶会论文，并将选中的论文导入知识库。</p>
+        </header>
+
+        <form class="paper-search-form" id="paper-search-form">
+          <div class="paper-query-field">
+            <label for="paper-query">研究方向</label>
+            <textarea id="paper-query" name="query" rows="2" maxlength="500" required
+              placeholder="例如：LLM Agent 安全" aria-describedby="paper-query-help"></textarea>
+            <p class="field-help" id="paper-query-help">请输入 1–500 个字符的研究方向。</p>
+          </div>
+
+          <fieldset class="paper-conference-fieldset">
+            <legend>会议</legend>
+            <p class="field-help" id="paper-conference-help">选择至少一个已启用会议。</p>
+            <div class="paper-conference-list" id="paper-conference-list" role="group" aria-describedby="paper-conference-help"></div>
+            <p class="paper-empty" id="paper-conference-empty" hidden>暂无可用会议配置。</p>
+            <div class="paper-conference-actions">
+              <label for="paper-conference-search">搜索会议</label>
+              <input id="paper-conference-search" type="search" autocomplete="off" placeholder="输入会议名称或简称" aria-controls="paper-conference-search-results">
+              <button class="secondary-button" id="paper-conference-search-button" type="button">搜索</button>
+              <button class="secondary-button" id="paper-conference-manage-button" type="button" aria-haspopup="dialog">管理会议</button>
+            </div>
+            <ul class="paper-conference-search-results" id="paper-conference-search-results" role="listbox" aria-label="会议搜索结果"></ul>
+            <p class="paper-status" id="paper-conference-status" role="status" aria-live="polite"></p>
+          </fieldset>
+
+          <fieldset class="paper-year-fieldset">
+            <legend>发表年份</legend>
+            <div class="paper-year-range">
+              <label for="paper-year-from">从 <input id="paper-year-from" name="year_from" type="number" inputmode="numeric" min="1900" step="1"></label>
+              <span aria-hidden="true">—</span>
+              <label for="paper-year-to">到 <input id="paper-year-to" name="year_to" type="number" inputmode="numeric" min="1900" step="1"></label>
+            </div>
+            <p class="field-help" id="paper-year-help">默认检索最近五个完整发表年份。</p>
+          </fieldset>
+
+        <button class="send-button" id="paper-search-button" type="submit">开始检索</button>
+        </form>
+
+        <section class="paper-progress-panel" id="paper-search-progress" aria-labelledby="paper-progress-title" hidden>
+          <header class="paper-section-header">
+            <div>
+              <h2 id="paper-progress-title">来源进度</h2>
+              <p class="paper-status" id="paper-progress-status" role="status" aria-live="polite">等待开始</p>
+            </div>
+          </header>
+          <div class="paper-source-grid" id="paper-source-progress">
+            <article class="paper-source-card" id="paper-source-usenix" data-source-kind="usenix" aria-live="polite">
+              <div class="paper-source-card-head"><h3>USENIX Security 官网</h3><span class="paper-source-status" id="paper-source-usenix-status">等待开始</span></div>
+              <p class="paper-source-counts" id="paper-source-usenix-counts">缓存 0 · 获取 0 · 完成 0 · 论文 0</p>
+              <p class="paper-source-error" id="paper-source-usenix-error" hidden></p>
+            </article>
+            <article class="paper-source-card" id="paper-source-dblp" data-source-kind="dblp" aria-live="polite">
+              <div class="paper-source-card-head"><h3>DBLP 辅助书目</h3><span class="paper-source-status" id="paper-source-dblp-status">等待开始</span></div>
+              <p class="paper-source-counts" id="paper-source-dblp-counts">缓存 0 · 获取 0 · 完成 0 · 论文 0</p>
+              <p class="paper-source-error" id="paper-source-dblp-error" hidden></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="paper-results-panel" aria-labelledby="paper-results-title">
+          <header class="paper-section-header">
+            <div>
+              <h2 id="paper-results-title">检索结果</h2>
+              <p class="paper-status" id="paper-search-status" role="status" aria-live="polite"></p>
+            </div>
+            <span class="paper-result-count" id="paper-result-count" aria-live="polite"></span>
+          </header>
+          <div class="paper-results-toolbar" id="paper-results-toolbar" hidden>
+            <label><input id="paper-select-all" type="checkbox" aria-controls="paper-results"> 全选结果</label>
+            <span id="paper-selected-count" aria-live="polite">已选 0 篇</span>
+            <button class="send-button" id="paper-import-selected" type="button" disabled>批量导入</button>
+          </div>
+          <p class="paper-empty" id="paper-results-empty">输入研究方向并开始检索。</p>
+          <ol class="paper-results" id="paper-results" aria-live="polite" aria-busy="false"></ol>
+          <nav class="paper-pagination" id="paper-pagination" aria-label="论文结果分页" hidden>
+            <button class="secondary-button" id="paper-prev-page" type="button" disabled>上一页</button>
+            <span class="paper-page-status" id="paper-page-status" aria-live="polite">第 1 / 1 页</span>
+            <button class="secondary-button" id="paper-next-page" type="button" disabled>下一页</button>
+          </nav>
+          <p class="paper-error" id="paper-search-error" role="alert" hidden></p>
+        </section>
+
+        <section class="paper-import-panel" id="paper-import-panel" aria-labelledby="paper-import-title" hidden>
+          <header class="paper-section-header">
+            <div>
+              <h2 id="paper-import-title">导入进度</h2>
+              <p class="paper-status" id="paper-import-status" role="status" aria-live="polite"></p>
+            </div>
+            <span id="paper-import-summary"></span>
+          </header>
+          <ul class="paper-import-items" id="paper-import-items"></ul>
+          <section class="paper-login-queue" id="paper-login-queue" aria-labelledby="paper-login-title" hidden>
+            <h3 id="paper-login-title">需要登录后继续</h3>
+            <ul id="paper-login-items"></ul>
+          </section>
+        </section>
       </section>
     </section>
   </main>
+  <dialog class="paper-conference-dialog" id="paper-conference-dialog" aria-labelledby="paper-conference-dialog-title">
+    <form method="dialog" class="settings-form" id="paper-conference-form">
+      <div class="settings-title">
+        <div><span class="conversation-kicker">CONFERENCE SOURCES</span><h2 id="paper-conference-dialog-title">管理会议</h2></div>
+        <button class="icon-button" value="cancel" aria-label="关闭会议管理">×</button>
+      </div>
+      <p class="paper-status" id="paper-conference-dialog-status" role="status" aria-live="polite"></p>
+      <ul class="paper-managed-conferences" id="paper-managed-conferences"></ul>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">关闭</button></div>
+    </form>
+  </dialog>
   <dialog class="settings-dialog" id="settings-dialog">
     <form method="dialog" class="settings-form" id="settings-form">
       <div class="settings-title"><div><span class="conversation-kicker">AGENT CONFIGURATION</span><h2>Agent 系统设置</h2></div><button class="icon-button" value="cancel" aria-label="关闭设置">×</button></div>
@@ -127,6 +315,7 @@
   </dialog>
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
-  <script src="/assets/app.js?v=14"></script>
+  <script src="/assets/kb-inspection.js?v=23"></script>
+  <script src="/assets/app.js?v=19"></script>
 </body>
 </html>

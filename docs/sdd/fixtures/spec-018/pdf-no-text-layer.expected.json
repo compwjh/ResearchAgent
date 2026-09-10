@@ -1,0 +1,55 @@
+{
+  "schema_version": "provenance-dto-v1",
+  "mapping_algorithm_version": "source-anchor-v2",
+  "sample_id": "pdf-no-text-layer",
+  "document_id": "fixture-pdf-no-text-layer",
+  "media_type": "application/pdf",
+  "source_sha256": "05e59443707b6976afedbf1b0c1de5ad9bf62609411c902feb241b5033303252",
+  "indexed_source_sha256": "05e59443707b6976afedbf1b0c1de5ad9bf62609411c902feb241b5033303252",
+  "source_hash_state": "verified_fixture",
+  "source_parser_version": "pymupdf-1.28.2-extract_pages_normalized-unversioned",
+  "normalize_version": "normalize.py-unversioned",
+  "chunker": "v1",
+  "chunker_config": {
+    "chunk_size": 1000,
+    "overlap": 200
+  },
+  "chunker_config_fingerprint": "5d528ea9973d0fa2a78e7b91e4bf84b3f4bb2a345a646a6d89d9cd3f056c2559",
+  "payload_schema_version": "qdrant-payload-v1",
+  "status": "failed",
+  "progress": 100,
+  "error": "PDF_NO_TEXT",
+  "index_fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "pages": [
+    {
+      "page": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "rotation": 0,
+      "crop_box": [
+        0.0,
+        0.0,
+        612.0,
+        792.0
+      ]
+    }
+  ],
+  "blocks": [],
+  "words": [],
+  "chunks": [],
+  "anchors": [],
+  "mapped_count": 0,
+  "unmapped_count": 0,
+  "unmapped_reasons": [],
+  "metrics": {
+    "page_count": 1,
+    "block_count": 0,
+    "word_count": 0,
+    "line_count": 0,
+    "mapped_chunk_rate": 0.0,
+    "anchor_count": 0,
+    "bbox_max_error": 0.0,
+    "bbox_median_error": 0.0,
+    "markdown_line_exact_rate": null
+  }
+}

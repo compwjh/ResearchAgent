@@ -39,13 +39,13 @@ class KbAskTraceTests(unittest.TestCase):
         self.client = TestClient(app)
 
     # ---- 正常流程：埋点接入、trace 包裹、report 一次 ----
-    @patch("backend.app.api.routes.start_trace")
-    @patch("backend.app.api.routes.end_trace")
-    @patch("backend.app.api.routes.record_ollama_generation")
-    @patch("backend.app.api.routes.hybrid_search")
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.api.routes_kb.start_trace")
+    @patch("backend.app.api.routes_kb.end_trace")
+    @patch("backend.app.api.routes_kb.record_ollama_generation")
+    @patch("backend.app.api.routes_kb.hybrid_search")
+    @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_normal_flow_reports_generation(
         self, mock_graph, _mock_model, _mock_models, mock_search,
         mock_report, mock_end_trace, mock_start_trace,
@@ -104,13 +104,13 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(streamed_state, {"question": prompt_content})
 
     # ---- 异常流程：仍输出 error 事件，且 end_trace 仍被调用 ----
-    @patch("backend.app.api.routes.start_trace")
-    @patch("backend.app.api.routes.end_trace")
-    @patch("backend.app.api.routes.record_ollama_generation")
-    @patch("backend.app.api.routes.hybrid_search")
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.api.routes_kb.start_trace")
+    @patch("backend.app.api.routes_kb.end_trace")
+    @patch("backend.app.api.routes_kb.record_ollama_generation")
+    @patch("backend.app.api.routes_kb.hybrid_search")
+    @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_generation_error_still_emits_error_and_ends_trace(
         self, mock_graph, _mock_model, _mock_models, mock_search,
         mock_report, mock_end_trace, mock_start_trace,
@@ -141,11 +141,11 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(mock_start_trace.call_count, 1)
 
     # ---- 空 hits 早退：输出提示 + done，不上报，但仍 end_trace ----
-    @patch("backend.app.api.routes.start_trace")
-    @patch("backend.app.api.routes.end_trace")
-    @patch("backend.app.api.routes.record_ollama_generation")
-    @patch("backend.app.api.routes.hybrid_search", return_value=[])
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
+    @patch("backend.app.api.routes_kb.start_trace")
+    @patch("backend.app.api.routes_kb.end_trace")
+    @patch("backend.app.api.routes_kb.record_ollama_generation")
+    @patch("backend.app.api.routes_kb.hybrid_search", return_value=[])
+    @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
     def test_empty_hits_early_return(
         self, _mock_models, mock_search, mock_report, mock_end_trace, mock_start_trace,
     ):
@@ -165,10 +165,10 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(mock_end_trace.call_count, 1)
         self.assertEqual(mock_start_trace.call_count, 1)
 
-    @patch("backend.app.api.routes.start_trace", side_effect=RuntimeError("observability init"))
-    @patch("backend.app.api.routes.end_trace", side_effect=RuntimeError("observability close"))
-    @patch("backend.app.api.routes.hybrid_search", return_value=[])
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
+    @patch("backend.app.api.routes_kb.start_trace", side_effect=RuntimeError("observability init"))
+    @patch("backend.app.api.routes_kb.end_trace", side_effect=RuntimeError("observability close"))
+    @patch("backend.app.api.routes_kb.hybrid_search", return_value=[])
+    @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
     def test_observability_errors_do_not_change_empty_result_sse(
         self, _mock_models, _mock_search, mock_end_trace, mock_start_trace,
     ):
@@ -179,18 +179,18 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(mock_start_trace.call_count, 1)
         self.assertEqual(mock_end_trace.call_count, 1)
 
-    @patch("backend.app.observability.config.enabled", return_value=False)
-    @patch("backend.app.api.routes.record_ollama_generation")
-    @patch("backend.app.api.routes.hybrid_search", return_value=[_fake_hit()])
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
+    @patch("backend.app.platform.observability.config.enabled", return_value=False)
+    @patch("backend.app.api.routes_kb.record_ollama_generation")
+    @patch("backend.app.api.routes_kb.hybrid_search", return_value=[_fake_hit()])
+    @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
     def test_langfuse_disabled_preserves_normal_sse(
         self, mock_model, _mock_models, mock_search, mock_report, mock_enabled,
     ):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [{"type": "token", "content": "答"}]
         mock_model.return_value = MagicMock()
-        with patch("backend.app.graphs.chat.build_chat_graph", return_value=fake_graph):
+        with patch("backend.app.chat.application.chat_graph.build_chat_graph", return_value=fake_graph):
             response = self.client.post("/api/kb/ask", json={"question": "关闭观测", "model": "m1"})
         self.assertEqual(response.status_code, 200)
         events = _sse_events(response.text)
@@ -200,10 +200,10 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(mock_search.call_count, 1)
         self.assertEqual(mock_report.call_count, 1)
 
-    @patch("backend.app.api.routes.end_trace")
-    @patch("backend.app.api.routes.record_ollama_generation")
-    @patch("backend.app.api.routes.hybrid_search", side_effect=RuntimeError("qdrant down"))
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
+    @patch("backend.app.api.routes_kb.end_trace")
+    @patch("backend.app.api.routes_kb.record_ollama_generation")
+    @patch("backend.app.api.routes_kb.hybrid_search", side_effect=RuntimeError("qdrant down"))
+    @patch("backend.app.api.routes_kb.get_available_models", return_value=["m1"])
     def test_retrieval_error_still_emits_error_and_ends_trace(
         self, _mock_models, _mock_search, mock_report, mock_end_trace,
     ):

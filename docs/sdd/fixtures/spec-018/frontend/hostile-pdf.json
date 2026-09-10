@@ -1,0 +1,22 @@
+{
+  "fixture_id": "task05-frontend-hostile-pdf",
+  "source_path": "docs/sdd/fixtures/spec-018/pdf-hostile-features.pdf",
+  "source_sha256": "1bc72165cc992f88ad28ef9a6ea24438e1024c305082f03bd3d554a59d664377",
+  "expected_path": "docs/sdd/fixtures/spec-018/pdf-hostile-features.expected.json",
+  "media_type": "application/pdf",
+  "status": "partial",
+  "pages": 1,
+  "hostile_features": ["remote-url-text", "javascript-text", "form-like-text"],
+  "display_policy": {
+    "allowed_api": ["getDocument", "getPage", "getViewport", "getTextContent", "render"],
+    "forbidden": ["annotation", "form", "XFA", "attachment", "JavaScript", "iframe", "native_pdf_navigation"],
+    "source_requests": "same-origin fixture PDF only",
+    "worker_requests": "same-origin vendored PDF.js worker only"
+  },
+  "expected_errors": {
+    "range": "PDF_SOURCE_RANGE_ERROR",
+    "cancel": "PDF_CANCELLED",
+    "corrupt": "PDF_SOURCE_CORRUPT",
+    "worker_mismatch": "PDFJS_WORKER_MISMATCH"
+  }
+}

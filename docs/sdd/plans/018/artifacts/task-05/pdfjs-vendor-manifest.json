@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "pdfjs-vendor-manifest-v1",
+  "package": "pdfjs-dist",
+  "version": "4.10.38",
+  "main_path": "frontend/vendor/pdfjs/pdf.min.mjs",
+  "worker_path": "frontend/vendor/pdfjs/pdf.worker.min.mjs",
+  "license_path": "frontend/vendor/pdfjs/LICENSE",
+  "notice_path": "frontend/vendor/pdfjs/NOTICE",
+  "main_sha256": "27fc2a057a00f92a4334ad06e17dbd7259912954e9fb7f76400bcca5fd190a9c",
+  "worker_sha256": "1baa1844c89c80a5b2797c916e75ab29254be46d8e9cb53cb6364d7aad84be36",
+  "license_sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+  "notice_sha256": "6c91408f1c048deb3120a77b3b0930b52e5036fcaf051160190d5ee6183f2fac",
+  "resource_query": "?v=4.10.38",
+  "workerSrc": "/assets/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.38",
+  "allowed_display_api": [
+    "getDocument",
+    "getPage",
+    "getViewport",
+    "getTextContent",
+    "render"
+  ],
+  "forbidden_api": [
+    "annotation",
+    "form",
+    "XFA",
+    "attachment",
+    "JavaScript",
+    "iframe",
+    "native_pdf_navigation",
+    "private_fields",
+    "remote_url"
+  ],
+  "get_document_options": {
+    "isEvalSupported": false,
+    "enableXfa": false,
+    "useWorkerFetch": false,
+    "stopAtErrors": true,
+    "disableAutoFetch": true
+  }
+}

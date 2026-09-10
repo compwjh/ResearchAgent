@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes
-from backend.app.domain.article import ArticleCandidate
+from backend.app.api import common
+from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.main import app
 
 
@@ -46,12 +46,12 @@ def _sse_events(text):
 class HealthAndSettingsTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
-        self._orig_settings = routes.article_settings
+        self._orig_settings = common.article_settings
 
     def tearDown(self):
-        routes.article_settings = self._orig_settings
+        common.article_settings = self._orig_settings
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1", "m2"])
+    @patch("backend.app.api.routes_system.get_available_models", return_value=["m1", "m2"])
     def test_health_returns_model_list(self, _mock_models):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
@@ -60,7 +60,7 @@ class HealthAndSettingsTests(unittest.TestCase):
         self.assertEqual(body["models"], ["m1", "m2"])
         self.assertIn("model", body)
 
-    @patch("backend.app.api.routes.get_available_models", side_effect=httpx.HTTPError("ollama down"))
+    @patch("backend.app.api.routes_system.get_available_models", side_effect=httpx.HTTPError("ollama down"))
     def test_health_degrades_to_empty_models_on_ollama_error(self, _mock_models):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
@@ -74,14 +74,14 @@ class HealthAndSettingsTests(unittest.TestCase):
         self.assertEqual(body["search_sources"], len(self._orig_settings.article_search_urls))
         self.assertEqual(body["download_sources"], len(self._orig_settings.article_download_urls))
 
-    @patch("backend.app.api.routes.save_article_settings")
+    @patch("backend.app.api.routes_article.save_article_settings")
     def test_put_settings_updates_in_memory_and_persists(self, mock_save):
         payload = self._orig_settings.model_dump()
         payload["article_max_candidates_per_source"] = 7
         response = self.client.put("/api/agent/settings", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["article_max_candidates_per_source"], 7)
-        self.assertEqual(routes.article_settings.article_max_candidates_per_source, 7)
+        self.assertEqual(common.article_settings.article_max_candidates_per_source, 7)
         mock_save.assert_called_once()
 
 
@@ -96,7 +96,7 @@ class TaskLookupTests(unittest.TestCase):
 
     def test_get_task_returns_task_with_candidates(self):
         candidate = _candidate(confidence=0.95)
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
         response = self.client.get(f"/api/agent/tasks/{task_id}")
@@ -117,10 +117,10 @@ class ProbeEndpointTests(unittest.TestCase):
 
     def test_probe_marks_public_pdf(self):
         candidate = _candidate(pdf_url=None)
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
-        with patch("backend.app.api.routes.probe_pdf_url", return_value=("public_pdf", "https://example.com/found.pdf")):
+        with patch("backend.app.api.routes_article.probe_pdf_url", return_value=("public_pdf", "https://example.com/found.pdf")):
             response = self.client.post("/api/agent/articles/probe", json={"task_id": task_id, "candidate_id": "c-1"})
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -130,10 +130,10 @@ class ProbeEndpointTests(unittest.TestCase):
 
     def test_probe_marks_login_required(self):
         candidate = _candidate(pdf_url=None, requires_login=False)
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
-        with patch("backend.app.api.routes.probe_pdf_url", return_value=("login_required", None)):
+        with patch("backend.app.api.routes_article.probe_pdf_url", return_value=("login_required", None)):
             response = self.client.post("/api/agent/articles/probe", json={"task_id": task_id, "candidate_id": "c-1"})
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -160,27 +160,27 @@ class ChatEndpointTests(unittest.TestCase):
 
     def test_chat_allows_longer_question_in_developer_mode(self):
         """developer 模式阈值 20000，2500 字应通过长度校验。"""
-        with patch("backend.app.api.routes.get_available_models", return_value=["m1"]):
+        with patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"]):
             response = self.client.post(
                 "/api/chat", json={"question": "x" * 2500, "mode": "developer", "model": "m1"}
             )
         self.assertNotEqual(response.status_code, 400)
 
-    @patch("backend.app.api.routes.get_available_models", side_effect=httpx.HTTPError("down"))
+    @patch("backend.app.api.routes_chat.get_available_models", side_effect=httpx.HTTPError("down"))
     def test_chat_returns_502_when_ollama_unreachable(self, _mock_models):
         response = self.client.post("/api/chat", json={"question": "你好"})
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["detail"], "无法连接 Ollama 服务")
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["installed-model"])
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["installed-model"])
     def test_chat_rejects_unknown_model(self, _mock_models):
         response = self.client.post("/api/chat", json={"question": "你好", "model": "ghost-model"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("不存在", response.json()["detail"])
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_chat_streams_tokens_and_done(self, mock_graph, mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [
@@ -198,9 +198,9 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(events[-1]["type"], "done")
         mock_model.assert_called_once_with("m1")
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_chat_emits_debug_event_in_developer_mode(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [{"type": "token", "content": "ok"}]
@@ -212,9 +212,9 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(debug[0]["debug"]["graph_node"], "ask_model")
         self.assertEqual(debug[0]["debug"]["input_length"], 2)
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.api.routes_chat.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_chat_stream_error_is_reported(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.side_effect = RuntimeError("boom")
@@ -240,13 +240,13 @@ class SearchEndpointBranchTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("不是论文下载意图", response.json()["detail"])
 
-    @patch("backend.app.api.routes.search_articles", side_effect=httpx.HTTPError("upstream down"))
+    @patch("backend.app.api.routes_article.search_articles", side_effect=httpx.HTTPError("upstream down"))
     def test_search_returns_502_on_upstream_error(self, _mock_search):
         response = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["detail"], "文章检索来源不可用")
 
-    @patch("backend.app.api.routes.search_articles", return_value=[_candidate(confidence=0.3)])
+    @patch("backend.app.api.routes_article.search_articles", return_value=[_candidate(confidence=0.3)])
     def test_search_fails_when_all_candidates_below_threshold(self, _mock_search):
         response = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         self.assertEqual(response.status_code, 200)
@@ -266,10 +266,10 @@ class DownloadEndpointBranchTests(unittest.TestCase):
 
     def test_download_probes_pdf_and_reports_login_required(self):
         candidate = _candidate(pdf_url=None)
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
-        with patch("backend.app.api.routes.probe_pdf_url", return_value=("login_required", None)):
+        with patch("backend.app.api.routes_article.probe_pdf_url", return_value=("login_required", None)):
             response = self.client.post("/api/agent/articles/download", json={"task_id": task_id, "candidate_id": "c-1"})
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -278,20 +278,20 @@ class DownloadEndpointBranchTests(unittest.TestCase):
 
     def test_download_reports_404_for_non_public_pdf(self):
         candidate = _candidate(pdf_url=None)
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
-        with patch("backend.app.api.routes.probe_pdf_url", return_value=("not_found", None)):
+        with patch("backend.app.api.routes_article.probe_pdf_url", return_value=("not_found", None)):
             response = self.client.post("/api/agent/articles/download", json={"task_id": task_id, "candidate_id": "c-1"})
         self.assertEqual(response.status_code, 404)
         detail = response.json()["detail"]
         self.assertEqual(detail["download_outcome"], "not_found")
         self.assertIn("没有找到可公开访问的 PDF", detail["user_message"])
 
-    @patch("backend.app.api.routes.download_article", side_effect=PermissionError("need login"))
+    @patch("backend.app.api.routes_article.download_article", side_effect=PermissionError("need login"))
     def test_download_permission_error_becomes_waiting_login(self, _mock_download):
         candidate = _candidate()
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
         response = self.client.post(
@@ -304,10 +304,10 @@ class DownloadEndpointBranchTests(unittest.TestCase):
         self.assertEqual(body["download_outcome"], "login_required")
         self.assertEqual(body["message"], "need login")
 
-    @patch("backend.app.api.routes.download_article", side_effect=httpx.HTTPError("network down"))
+    @patch("backend.app.api.routes_article.download_article", side_effect=httpx.HTTPError("network down"))
     def test_download_returns_502_on_network_error(self, _mock_download):
         candidate = _candidate()
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
         response = self.client.post(
@@ -316,13 +316,13 @@ class DownloadEndpointBranchTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 502)
 
-    @patch("backend.app.api.routes.download_article")
+    @patch("backend.app.api.routes_article.download_article")
     def test_download_reports_error_result_as_502(self, mock_download):
         mock_download.return_value = iter(
             [{"type": "error", "download_outcome": "rate_limited", "user_message": "文章来源当前限流，请稍后重试。"}]
         )
         candidate = _candidate()
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
         response = self.client.post(
@@ -339,7 +339,7 @@ class LoginCompletedTests(unittest.TestCase):
 
     def test_login_completed_rejects_task_not_waiting_login(self):
         candidate = _candidate()
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
         response = self.client.post(
@@ -351,10 +351,10 @@ class LoginCompletedTests(unittest.TestCase):
 
     def test_login_completed_rejects_unknown_candidate(self):
         candidate = _candidate(pdf_url=None, requires_login=True)
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
-        with patch("backend.app.api.routes.probe_pdf_url", return_value=("login_required", None)):
+        with patch("backend.app.api.routes_article.probe_pdf_url", return_value=("login_required", None)):
             self.client.post("/api/agent/articles/download", json={"task_id": task_id, "candidate_id": "c-1"})
         response = self.client.post(
             f"/api/agent/tasks/{task_id}/human-actions/login-completed",
@@ -362,9 +362,9 @@ class LoginCompletedTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    @patch("backend.app.api.routes.skill_status")
-    @patch("backend.app.api.routes.get_available_models", return_value=[])
-    @patch("backend.app.api.routes.download_article")
+    @patch("backend.app.api.routes_article.skill_status")
+    @patch("backend.app.api.routes_article.get_available_models", return_value=[])
+    @patch("backend.app.api.routes_article.download_article")
     def test_login_completed_resumes_download(self, mock_download, _mock_models, mock_status):
         # login_completed 内部会再调 download_article_endpoint（不带 use_skill），
         # 因此必须 mock skill_status / get_available_models，避免真实 Ollama 调用。
@@ -373,7 +373,7 @@ class LoginCompletedTests(unittest.TestCase):
             [{"type": "result", "file_path": "/tmp/x.pdf", "file_size": 1, "checksum": "abc"}]
         )
         candidate = _candidate(pdf_url="https://example.com/paper.pdf", requires_login=True)
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         task_id = search.json()["task_id"]
         paused = self.client.post(
@@ -403,7 +403,7 @@ class RunAgentBranchTests(unittest.TestCase):
         response = self.client.post("/api/agent/run", json={"question": "x" * 501})
         self.assertEqual(response.status_code, 400)
 
-    @patch("backend.app.api.routes.search_articles", side_effect=httpx.HTTPError("upstream down"))
+    @patch("backend.app.api.routes_article.search_articles", side_effect=httpx.HTTPError("upstream down"))
     def test_run_reports_search_failure(self, _mock_search):
         response = self.client.post("/api/agent/run", json={"question": "下载论文 A Paper"})
         self.assertEqual(response.status_code, 200)
@@ -411,14 +411,14 @@ class RunAgentBranchTests(unittest.TestCase):
         error = [e for e in events if e["type"] == "error"]
         self.assertEqual(error[0]["message"], "文章检索来源不可用")
 
-    @patch("backend.app.api.routes.search_articles", return_value=[])
+    @patch("backend.app.api.routes_article.search_articles", return_value=[])
     def test_run_reports_no_candidates(self, _mock_search):
         response = self.client.post("/api/agent/run", json={"question": "下载论文 A Paper"})
         events = _sse_events(response.text)
         error = [e for e in events if e["type"] == "error"]
         self.assertIn("没有找到候选文章", error[0]["message"])
 
-    @patch("backend.app.api.routes.search_articles", return_value=[_candidate(confidence=0.2)])
+    @patch("backend.app.api.routes_article.search_articles", return_value=[_candidate(confidence=0.2)])
     def test_run_reports_all_candidates_below_threshold(self, _mock_search):
         response = self.client.post("/api/agent/run", json={"question": "下载论文 A Paper"})
         events = _sse_events(response.text)
@@ -426,9 +426,9 @@ class RunAgentBranchTests(unittest.TestCase):
         self.assertIn("50%", error[0]["message"])
         self.assertIn("done", [e["type"] for e in events])
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.api.routes_article.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_run_chat_branch_streams_answer(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.return_value = [{"type": "token", "content": "hi"}]
@@ -438,16 +438,16 @@ class RunAgentBranchTests(unittest.TestCase):
         self.assertIn("token", [e["type"] for e in events])
         self.assertIn("done", [e["type"] for e in events])
 
-    @patch("backend.app.api.routes.get_available_models", return_value=[])
+    @patch("backend.app.api.routes_article.get_available_models", return_value=[])
     def test_run_chat_branch_reports_missing_model(self, _mock_models):
         response = self.client.post("/api/agent/run", json={"question": "帮我处理数据", "model": "m1"})
         events = _sse_events(response.text)
         error = [e for e in events if e["type"] == "error"]
         self.assertIn("不存在", error[0]["message"])
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["m1"])
-    @patch("backend.app.services.ollama.create_chat_model")
-    @patch("backend.app.graphs.chat.build_chat_graph")
+    @patch("backend.app.api.routes_article.get_available_models", return_value=["m1"])
+    @patch("backend.app.platform.ollama.create_chat_model")
+    @patch("backend.app.chat.application.chat_graph.build_chat_graph")
     def test_run_chat_branch_reports_exception(self, mock_graph, _mock_model, _mock_models):
         fake_graph = MagicMock()
         fake_graph.stream.side_effect = RuntimeError("boom")
@@ -464,7 +464,7 @@ class ChatGraphTests(unittest.TestCase):
     """覆盖 graphs/chat.py 的 ask_model 分支。"""
 
     def test_build_chat_graph_streams_content_chunks(self):
-        from backend.app.graphs.chat import build_chat_graph
+        from backend.app.chat.application.chat_graph import build_chat_graph
 
         class _Chunk:
             def __init__(self, content):
@@ -477,7 +477,7 @@ class ChatGraphTests(unittest.TestCase):
         self.assertEqual(result["answer"], "你好")
 
     def test_build_chat_graph_handles_non_string_content(self):
-        from backend.app.graphs.chat import build_chat_graph
+        from backend.app.chat.application.chat_graph import build_chat_graph
 
         class _Chunk:
             def __init__(self, content):

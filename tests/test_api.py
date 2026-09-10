@@ -1,11 +1,10 @@
-import json
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend.app.domain.article import ArticleCandidate
-from backend.app.services.download_paper_skill import SKILL_NAME
+from backend.app.article_assistant.application.download_paper_skill import SKILL_NAME
+from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.main import app
 
 
@@ -14,7 +13,7 @@ class AgentApiTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_run_emits_intent_events(self):
-        from backend.app.domain.article import ArticleTask
+        from backend.app.article_assistant.domain.article import ArticleTask
 
         task = ArticleTask(
             task_id="task-chat",
@@ -23,8 +22,8 @@ class AgentApiTests(unittest.TestCase):
             intent="chat",
             intent_confidence=0.9,
         )
-        with patch("backend.app.api.routes.build_task", return_value=task):
-            with patch("backend.app.api.routes.get_available_models", return_value=[]):
+        with patch("backend.app.api.routes_article.build_task", return_value=task):
+            with patch("backend.app.api.routes_article.get_available_models", return_value=[]):
                 response = self.client.post("/api/agent/run", json={"question": "帮我处理实验数据"})
         self.assertEqual(response.status_code, 200)
         self.assertIn('"type": "normalized"', response.text)
@@ -40,7 +39,7 @@ class AgentApiTests(unittest.TestCase):
             confidence=0.9,
             requires_login=True,
         )
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Paper"})
         self.assertEqual(search.status_code, 200)
         data = search.json()
@@ -48,8 +47,8 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(download.status_code, 200)
         self.assertEqual(download.json()["status"], "waiting_login")
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["deepseek-coder:33b"])
-    @patch("backend.app.api.routes.skill_status")
+    @patch("backend.app.api.routes_article.get_available_models", return_value=["deepseek-coder:33b"])
+    @patch("backend.app.api.routes_article.skill_status")
     def test_download_paper_skill_status(self, mock_status, _mock_models):
         mock_status.return_value = {
             "skill_name": "download-paper",
@@ -62,9 +61,9 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["skill_name"], "download-paper")
 
-    @patch("backend.app.api.routes.get_available_models", return_value=["deepseek-coder:33b"])
-    @patch("backend.app.api.routes.skill_status")
-    @patch("backend.app.api.routes.build_skill_plan")
+    @patch("backend.app.api.routes_article.get_available_models", return_value=["deepseek-coder:33b"])
+    @patch("backend.app.api.routes_article.skill_status")
+    @patch("backend.app.api.routes_article.build_skill_plan")
     def test_plan_download_is_skill_led(self, mock_plan, mock_status, _mock_models):
         candidate = ArticleCandidate(
             candidate_id="candidate-public",
@@ -80,7 +79,7 @@ class AgentApiTests(unittest.TestCase):
             "download_method": "public_https",
             "requires_credentials": False,
         }
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Public Paper"})
         response = self.client.post(
             "/api/agent/articles/plan-download",
@@ -92,9 +91,10 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(body["download_method"], "public_https")
         mock_plan.assert_called_once_with(candidate, "deepseek-coder:33b")
 
-    @patch("backend.app.api.routes.skill_status")
-    @patch("backend.app.api.routes.download_under_skill")
-    def test_download_with_use_skill_records_skill_name(self, mock_skill_exec, mock_status):
+    @patch("backend.app.api.routes_article.get_available_models", return_value=["deepseek-coder:33b"])
+    @patch("backend.app.api.routes_article.skill_status")
+    @patch("backend.app.api.routes_article.download_under_skill")
+    def test_download_with_use_skill_records_skill_name(self, mock_skill_exec, mock_status, _mock_models):
         mock_status.return_value = {"available": True, "worker_model": "deepseek-coder:33b"}
         mock_skill_exec.return_value = iter(
             [{"type": "result", "file_path": "/tmp/x.pdf", "file_size": 10, "checksum": "abc", "skill_name": SKILL_NAME}]
@@ -106,7 +106,7 @@ class AgentApiTests(unittest.TestCase):
             pdf_url_status="public_pdf",
             confidence=0.9,
         )
-        with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
             search = self.client.post("/api/agent/articles/search", json={"query": "下载论文 A Public Paper"})
         task_id = search.json()["task_id"]
         response = self.client.post(
@@ -120,7 +120,7 @@ class AgentApiTests(unittest.TestCase):
         mock_skill_exec.assert_called_once()
 
     def test_search_filters_low_confidence_and_caps_at_three(self):
-        from backend.app.domain.article import ArticleTask
+        from backend.app.article_assistant.domain.article import ArticleTask
 
         high = [
             ArticleCandidate(candidate_id=f"hi-{i}", title=f"Hi {i}", confidence=0.9 - i * 0.05)
@@ -131,7 +131,7 @@ class AgentApiTests(unittest.TestCase):
             for i in range(3)
         ]
         mixed = high + low + [ArticleCandidate(candidate_id="mid", title="Mid", confidence=0.6)]
-        with patch("backend.app.api.routes.build_task") as mock_build:
+        with patch("backend.app.api.routes_article.build_task") as mock_build:
             mock_build.return_value = ArticleTask(
                 task_id="task-mixed",
                 query="下载论文 Mixed",
@@ -139,7 +139,7 @@ class AgentApiTests(unittest.TestCase):
                 intent="download_paper",
                 intent_confidence=0.9,
             )
-            with patch("backend.app.api.routes.search_articles", return_value=mixed):
+            with patch("backend.app.api.routes_article.search_articles", return_value=mixed):
                 response = self.client.post("/api/agent/articles/search", json={"query": "下载论文 Mixed"})
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -150,7 +150,7 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(confidences, sorted(confidences, reverse=True))
 
     def test_run_intent_event_carries_skill_for_download_paper(self):
-        from backend.app.domain.article import ArticleTask
+        from backend.app.article_assistant.domain.article import ArticleTask
 
         task = ArticleTask(
             task_id="task-x",
@@ -166,8 +166,8 @@ class AgentApiTests(unittest.TestCase):
             pdf_url_status="public_pdf",
             confidence=0.92,
         )
-        with patch("backend.app.api.routes.build_task", return_value=task):
-            with patch("backend.app.api.routes.search_articles", return_value=[candidate]):
+        with patch("backend.app.api.routes_article.build_task", return_value=task):
+            with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
                 response = self.client.post("/api/agent/run", json={"question": "下载论文 X"})
         self.assertEqual(response.status_code, 200)
         intent_event = None

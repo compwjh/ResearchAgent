@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "frozen_at": "2026-09-05T00:00:00+08:00",
+  "frozen_before_final_rerank": true,
+  "scope": "offline diagnostic fixture only; not an A14 acceptance result",
+  "queries": [
+    {"query": "LLM agent security", "candidates": [{"title": "Prompt Injection Attacks in Tool-Using Language Models", "relevance": 3}, {"title": "Securing Autonomous Language Model Agents", "relevance": 2}, {"title": "Malware Detection in Cloud Containers", "relevance": 0}]},
+    {"query": "software supply chain attacks", "candidates": [{"title": "Detecting Dependency Confusion in Package Managers", "relevance": 3}, {"title": "Software Bill of Materials for Secure Builds", "relevance": 2}, {"title": "Blockchain Consensus Protocols", "relevance": 0}]},
+    {"query": "memory safety C", "candidates": [{"title": "Preventing Use-After-Free in Systems Code", "relevance": 3}, {"title": "Safe Systems Programming with Rust", "relevance": 2}, {"title": "Memory Efficient Databases", "relevance": 0}]},
+    {"query": "cloud container isolation", "candidates": [{"title": "A Study of Container Escape Vulnerabilities", "relevance": 3}, {"title": "Hardening Multi-Tenant Kubernetes", "relevance": 2}, {"title": "Encrypted Cloud Storage", "relevance": 0}]},
+    {"query": "privacy preserving ML", "candidates": [{"title": "Differential Privacy for Federated Learning", "relevance": 3}, {"title": "Private Aggregation of Distributed Models", "relevance": 2}, {"title": "Adversarial Examples", "relevance": 0}]},
+    {"query": "IoT firmware vulnerabilities", "candidates": [{"title": "Automated Discovery of Bugs in Embedded Firmware", "relevance": 3}, {"title": "Secure Firmware Update Protocols for IoT", "relevance": 2}, {"title": "Wireless Sensor Localization", "relevance": 0}]},
+    {"query": "side channel attacks", "candidates": [{"title": "Cache Timing Attacks on Shared CPUs", "relevance": 3}, {"title": "Defenses Against Microarchitectural Leakage", "relevance": 2}, {"title": "CPU Scheduling", "relevance": 0}]},
+    {"query": "web authentication phishing", "candidates": [{"title": "Detecting Phishing with Browser Signals", "relevance": 3}, {"title": "WebAuthn Deployment at Scale", "relevance": 2}, {"title": "Secure Web Caching", "relevance": 0}]},
+    {"query": "blockchain smart contract security", "candidates": [{"title": "Finding Reentrancy Bugs in Smart Contracts", "relevance": 3}, {"title": "Formally Verified Ethereum Contracts", "relevance": 2}, {"title": "Blockchain Throughput", "relevance": 0}]},
+    {"query": "malware behavior analysis", "candidates": [{"title": "Behavioral Analysis of Ransomware", "relevance": 3}, {"title": "Dynamic Malware Triage at Scale", "relevance": 2}, {"title": "Machine Learning for Image Classification", "relevance": 0}]},
+    {"query": "network intrusion detection", "candidates": [{"title": "Encrypted Traffic Classification for Intrusion Detection", "relevance": 3}, {"title": "Graph Neural Networks for Network Anomaly Detection", "relevance": 2}, {"title": "Reliable Network Time Sync", "relevance": 0}]},
+    {"query": "secure hardware enclaves", "candidates": [{"title": "Attacking and Defending Trusted Execution Environments", "relevance": 3}, {"title": "Remote Attestation for Confidential Computing", "relevance": 2}, {"title": "Hardware Performance Counters for Operating Systems", "relevance": 0}]}
+  ]
+}

@@ -1,0 +1,242 @@
+{
+  "schema_version": "provenance-dto-v1",
+  "mapping_algorithm_version": "source-anchor-v2",
+  "sample_id": "markdown-hostile",
+  "document_id": "fixture-markdown-hostile",
+  "media_type": "text/markdown",
+  "source_sha256": "8adfb117879523e8858d9346307cfcfce94eb8b71d144c7453802b2973cf9f32",
+  "indexed_source_sha256": "8adfb117879523e8858d9346307cfcfce94eb8b71d144c7453802b2973cf9f32",
+  "source_hash_state": "verified_fixture",
+  "source_parser_version": "fixture-markdown-block-parser-v1",
+  "normalize_version": "nfkc-crlf-lf-trim-horizontal-space-v1",
+  "chunker": "markdown-block-v1",
+  "chunker_config": {
+    "block_preserving": true
+  },
+  "chunker_config_fingerprint": "233376a789ab8487385fe7152f7339f05367ca8080a14f42a977ee2a1e857036",
+  "payload_schema_version": "qdrant-payload-v1",
+  "status": "partial",
+  "progress": 100,
+  "error": "HOSTILE_MARKDOWN_REQUIRES_SANITIZER_PROBE",
+  "index_fingerprint": "e85a418264a1c4997b9d7e80bc946bc7825174742b76f291c2327748706b8139",
+  "pages": [],
+  "blocks": [
+    {
+      "block_id": "markdown-hostile:b0",
+      "ordinal": 0,
+      "text": "# Hostile Markdown Fixture",
+      "locator": {
+        "start_line": 1,
+        "end_line": 1
+      },
+      "heading_path": [
+        "Hostile Markdown Fixture"
+      ],
+      "block_type": "heading",
+      "start": 0,
+      "end": 26
+    },
+    {
+      "block_id": "markdown-hostile:b1",
+      "ordinal": 1,
+      "text": "<script>window.__fixture_script__ = true;</script>",
+      "locator": {
+        "start_line": 3,
+        "end_line": 3
+      },
+      "heading_path": [
+        "Hostile Markdown Fixture"
+      ],
+      "block_type": "paragraph",
+      "start": 28,
+      "end": 78
+    },
+    {
+      "block_id": "markdown-hostile:b2",
+      "ordinal": 2,
+      "text": "<div onclick=\"alert(1)\">unsafe event</div>",
+      "locator": {
+        "start_line": 5,
+        "end_line": 5
+      },
+      "heading_path": [
+        "Hostile Markdown Fixture"
+      ],
+      "block_type": "paragraph",
+      "start": 80,
+      "end": 122
+    },
+    {
+      "block_id": "markdown-hostile:b3",
+      "ordinal": 3,
+      "text": "[bad link](javascript:alert(1))",
+      "locator": {
+        "start_line": 7,
+        "end_line": 7
+      },
+      "heading_path": [
+        "Hostile Markdown Fixture"
+      ],
+      "block_type": "paragraph",
+      "start": 124,
+      "end": 155
+    },
+    {
+      "block_id": "markdown-hostile:b4",
+      "ordinal": 4,
+      "text": "![remote image](https://remote.invalid/image.png)",
+      "locator": {
+        "start_line": 9,
+        "end_line": 9
+      },
+      "heading_path": [
+        "Hostile Markdown Fixture"
+      ],
+      "block_type": "paragraph",
+      "start": 157,
+      "end": 206
+    },
+    {
+      "block_id": "markdown-hostile:b5",
+      "ordinal": 5,
+      "text": "![relative image](./attachment.png)",
+      "locator": {
+        "start_line": 11,
+        "end_line": 11
+      },
+      "heading_path": [
+        "Hostile Markdown Fixture"
+      ],
+      "block_type": "paragraph",
+      "start": 208,
+      "end": 243
+    }
+  ],
+  "words": [],
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "# Hostile Markdown Fixture",
+      "page": null,
+      "page_end": null,
+      "section": "Hostile Markdown Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 1,
+      "text": "<script>window.__fixture_script__ = true;</script>",
+      "page": null,
+      "page_end": null,
+      "section": "Hostile Markdown Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 2,
+      "text": "<div onclick=\"alert(1)\">unsafe event</div>",
+      "page": null,
+      "page_end": null,
+      "section": "Hostile Markdown Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 3,
+      "text": "[bad link](javascript:alert(1))",
+      "page": null,
+      "page_end": null,
+      "section": "Hostile Markdown Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 4,
+      "text": "![remote image](https://remote.invalid/image.png)",
+      "page": null,
+      "page_end": null,
+      "section": "Hostile Markdown Fixture",
+      "chunker": "markdown-block-v1"
+    },
+    {
+      "chunk_index": 5,
+      "text": "![relative image](./attachment.png)",
+      "page": null,
+      "page_end": null,
+      "section": "Hostile Markdown Fixture",
+      "chunker": "markdown-block-v1"
+    }
+  ],
+  "anchors": [
+    {
+      "block_id": "markdown-hostile:b0",
+      "chunk_index": 0,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 1,
+        "end_line": 1
+      }
+    },
+    {
+      "block_id": "markdown-hostile:b1",
+      "chunk_index": 1,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 3,
+        "end_line": 3
+      }
+    },
+    {
+      "block_id": "markdown-hostile:b2",
+      "chunk_index": 2,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "block_id": "markdown-hostile:b3",
+      "chunk_index": 3,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 7,
+        "end_line": 7
+      }
+    },
+    {
+      "block_id": "markdown-hostile:b4",
+      "chunk_index": 4,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 9,
+        "end_line": 9
+      }
+    },
+    {
+      "block_id": "markdown-hostile:b5",
+      "chunk_index": 5,
+      "coverage": 1.0,
+      "is_primary": true,
+      "locator": {
+        "start_line": 11,
+        "end_line": 11
+      }
+    }
+  ],
+  "mapped_count": 6,
+  "unmapped_count": 0,
+  "unmapped_reasons": [],
+  "metrics": {
+    "page_count": null,
+    "block_count": 6,
+    "word_count": 0,
+    "line_count": 11,
+    "mapped_chunk_rate": 1.0,
+    "anchor_count": 6,
+    "bbox_max_error": null,
+    "bbox_median_error": null,
+    "markdown_line_exact_rate": 1.0
+  }
+}

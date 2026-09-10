@@ -6,7 +6,7 @@
 
 import unittest
 
-from backend.app.services.kb.normalize import (
+from backend.app.knowledge_base.infrastructure.normalize import (
     detect_citation,
     locate_reference_start,
     normalize_text,
@@ -124,6 +124,10 @@ class DetectCitationTests(unittest.TestCase):
     def test_body_text_is_not_citation(self):
         text = "Our method improves accuracy on three benchmarks in 2024."
         self.assertFalse(detect_citation(text, page=9, ref_start_page=8))
+
+    def test_markdown_null_page_is_not_citation_and_does_not_raise(self):
+        text = "[1] A. Author, 2023.\n[2] B. Author, 2022."
+        self.assertFalse(detect_citation(text, page=None, ref_start_page=8))
 
 
 if __name__ == "__main__":

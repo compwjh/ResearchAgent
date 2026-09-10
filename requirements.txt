@@ -5,6 +5,8 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.0
 python-multipart>=0.0.9
+# Spec015 headed ACM/IEEE login bridge and browser health checks
+playwright>=1.52.0,<1.53.0
 # 运行环境：Python 3.11（spec-013 从 3.9.7 升级）
 # 上限 1.17 沿用自 3.9 时代的约束；3.11 下 1.16.2 实测可用，未做放开评估
 qdrant-client>=1.9,<1.17
