@@ -1,4 +1,5 @@
 import hashlib
+import json
 import threading
 from pathlib import Path
 
@@ -180,6 +181,98 @@ def test_finalize_bundle_is_idempotent_and_marker_is_last(tmp_path, monkeypatch)
     assert writes == []
     assert (tmp_path / "data/kb/manifests/md-1/v1.json").exists()
     assert bundle["bundle_sha256"]
+
+
+def test_refresh_rejects_expected_generation_drift_without_marker_refresh(tmp_path):
+    root = tmp_path / "project"
+    live_root = root / "data" / "kb"
+    live_root.mkdir(parents=True)
+    (live_root / "papers.json").write_text("[]", encoding="utf-8")
+    finalizer = FinalizeBundleStore(root)
+    finalizer.stage(
+        "generation-one",
+        candidate_collection="papers_rebuild_one",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    finalizer.commit("generation-one")
+    marker_path = live_root / "index-generation.json"
+    marker_before = marker_path.read_bytes()
+
+    # Simulate the canonical metadata write that makes the old marker stale;
+    # the caller has since observed a different generation.
+    (live_root / "papers.json").write_text('[{"document_id":"doc-1"}]', encoding="utf-8")
+    with pytest.raises(ManifestStoreError) as error:
+        finalizer.refresh_live_digests(expected_destination_collection="papers_rebuild_two")
+
+    assert error.value.code == "INDEX_GENERATION_DRIFT"
+    assert marker_path.read_bytes() == marker_before
+    assert json.loads(marker_path.read_text(encoding="utf-8"))["alias_target"] == "papers_rebuild_one"
+
+
+def test_refresh_holds_generation_lock_against_concurrent_commit(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    live_root = root / "data" / "kb"
+    live_root.mkdir(parents=True)
+    (live_root / "papers.json").write_text("[]", encoding="utf-8")
+    finalizer = FinalizeBundleStore(root)
+    finalizer.stage(
+        "generation-one",
+        candidate_collection="papers_rebuild_one",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    finalizer.commit("generation-one")
+    finalizer.stage(
+        "generation-two",
+        candidate_collection="papers_rebuild_two",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="b" * 64,
+    )
+
+    entered_digest = threading.Event()
+    release_digest = threading.Event()
+    original_digest = finalizer._live_manifests_digest
+
+    def blocked_digest():
+        entered_digest.set()
+        assert release_digest.wait(timeout=5)
+        return original_digest()
+
+    monkeypatch.setattr(finalizer, "_live_manifests_digest", blocked_digest)
+    refresh_result = []
+    commit_result = []
+
+    def refresh():
+        refresh_result.append(
+            finalizer.refresh_live_digests(expected_destination_collection="papers_rebuild_one")
+        )
+
+    def commit():
+        try:
+            finalizer.commit("generation-two")
+        except ManifestStoreError as error:
+            commit_result.append(error.code)
+
+    refresh_thread = threading.Thread(target=refresh)
+    refresh_thread.start()
+    assert entered_digest.wait(timeout=5)
+    commit_thread = threading.Thread(target=commit)
+    commit_thread.start()
+    # The commit must wait for refresh's lock; once released it observes the
+    # still-current marker and refuses to replace it with generation two.
+    release_digest.set()
+    refresh_thread.join(timeout=5)
+    commit_thread.join(timeout=5)
+
+    assert not refresh_thread.is_alive()
+    assert not commit_thread.is_alive()
+    assert refresh_result[0]["alias_target"] == "papers_rebuild_one"
+    assert commit_result == ["INDEX_FINALIZE_REQUIRED"]
+    assert json.loads((live_root / "index-generation.json").read_text(encoding="utf-8"))["alias_target"] == "papers_rebuild_one"
 
 
 def test_manifest_claim_concurrent_winner(tmp_path):

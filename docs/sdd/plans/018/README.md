@@ -65,3 +65,4 @@
 - 2026-09-08：曾采用逐 point/vector 快照、首次打开自动升级与恢复旧索引方案；历史评审和证据保留。
 - 2026-09-09：用户确认旧索引可全部丢弃。经 Grill with Docs 确认改为候选 Collection 全库重建、显式维护命令、alias 切换和 Task06 真实执行；旧 D1 未提交草稿废弃，Spec 退回待确认并重新评审。
 - 2026-09-10：Task06 论文导入/批量补偿/浏览器隔离门完成并将 closure matrix 更新为 `implementation_ready`；全量回归中的 5 项历史旧索引测试与当前 canonical document 边界不一致，已记录为 `legacy/migration_unverified`，真实索引切换仍 NO-GO。
+- 2026-09-10：Task06 generation-bound 导入与摘要刷新隔离门完成；补偿 capability 固定创建代际 collection，refresh/commit 使用同一把锁防止 TOCTOU，独立 reviewer/tester 给出 GO/PASS；真实索引切换仍 NO-GO。

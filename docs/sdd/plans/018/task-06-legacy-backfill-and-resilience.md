@@ -153,7 +153,15 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 登录只解析服务端搜索快照和 ACM/IEEE 白名单，零知识库 source/metadata/index 写入；受控浏览器 profile 的认证状态持久化是显式配置，resume 仍只委托既有 batch/import/immutable 链路。
 - 独立 reviewer/tester 对 T-IMMUTABLE-CREATE、T-PAPER-IMPORT、T-IMPORT-COMPENSATION、T-BROWSER-BOUNDARY 给出 GO/PASS；证据见 `artifacts/task-06/batch-compensation-review.md`、`batch-compensation-test-report.md`、`browser-boundary-review.md`、`browser-boundary-implementation-report.md`。
 - 该结果仍不覆盖真实 Qdrant、真实登录、generation-bound collection topology、session TTL/恢复清理和生产维护窗口；closure matrix 仍为 `implementation_ready`，真实切换继续 `NO-GO`。
-- 全量回归本轮为 `870 passed / 5 failed`；失败集中在 `tests/test_legacy_kb_integration.py` 的历史索引/旧内部符号契约。已保留只读配置别名以便离线 fixture，另 3 项仍依赖已退休的 `index_paper_chunker` 无代际参数、`submit_index_task` 和 `delete_paper`，记录为 `legacy/migration_unverified`，不得用恢复旧写入口掩盖。新文档 API 相关回归 25 项通过，历史测试迁移不阻塞本轮隔离门，但阻塞最终“全量回归通过”收口。
+- 全量回归最新结果为 `882 passed / 3 failed`（另 38 个 subtests 通过）；失败集中在 `tests/test_legacy_kb_integration.py` 的历史索引/旧内部符号契约。只读配置别名已保留以便离线 fixture，剩余 3 项仍依赖已退休的 `index_paper_chunker` 无代际参数、`submit_index_task` 和 `delete_paper`，记录为 `legacy/migration_unverified`，不得用恢复旧写入口掩盖。新文档 API 相关回归 25 项通过，历史测试迁移不阻塞本轮隔离门，但阻塞最终“全量回归通过”收口。
+
+### Generation-bound 导入与摘要刷新：`PASS（隔离功能门）`
+
+- 单篇论文导入在创建 immutable resource 时捕获 `destination_collection`，并把该绑定写入补偿 capability 与 ledger；补偿会拒绝 owner/token 相同但 collection 被篡改的 capability。
+- 默认 indexer/deleter 对缺少 generation 绑定的 capability fail-closed；marker 漂移时使用创建代际的 collection，不回退到当前 marker。导入在状态写入前后复核 generation，漂移不会返回 `indexed`。
+- `FinalizeBundleStore.refresh_live_digests(expected_destination_collection=...)` 在 manifest-store 锁内完成期望 collection 比较、摘要计算和 marker 写入；`commit()` 共用该锁，修复 refresh 与 generation 发布之间的 TOCTOU。旧的无参刷新调用保持兼容。
+- 独立 generation hardening tester 对 63 项定向回归给出 `PASS`；独立 reviewer v2 对补偿/导入边界给出 `NO-GO`（发现 TOCTOU），修复后 reviewer v3 对 generation-bound TOCTOU 门给出 `GO`。证据见 `artifacts/task-06/generation-hardening-test-report-v2.md`、`generation-hardening-review-v2.md`、`generation-toctou-fix-report.md`、`generation-toctou-review-v2.md`。
+- 我复跑 generation、候选重建、reindex、论文导入、批量补偿与浏览器边界共 96 项测试，全部通过；未连接真实 Qdrant、未执行 `confirm-replace`。跨进程锁、真实 Qdrant 与维护窗口仍是生产门禁，整体 Task06 继续 `NO-GO`。
 
 ## 变更日志
 
@@ -166,3 +174,5 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：closure-core 修复完成；8 项 core 门禁、378 项 KB 回归通过，独立 reviewer/tester 给出隔离 GO/PASS。矩阵哈希已刷新，论文导入四项门禁仍待实现与验收，生产切换继续禁止。
 - 2026-09-10：完成批量补偿真实闭环加固和 browser boundary 隔离门；44 项批量/适配器回归、15 项 immutable、4 项 browser 精确测试通过，矩阵更新为 `implementation_ready`，零知识库写入语义与受控 profile 持久化边界明确；真实索引切换仍禁止。
 - 2026-09-10：全量 pytest 暴露 5 项 Spec015 历史旧索引集成测试与 Spec018 已收窄边界不一致；未恢复旧索引写链，已落盘 `artifacts/task-06/legacy-regression-analysis.md`，后续迁移为 canonical document API 测试。
+- 2026-09-10：generation-bound 加固完成；补偿 ledger 增加 `destination_collection` 绑定，缺绑定 capability fail-closed，marker drift 不再错误标记 `indexed`；独立 63 项回归通过。
+- 2026-09-10：修复 generation refresh/commit TOCTOU；refresh 与 commit 共用 manifest-store 锁并支持 expected collection 原子校验，独立 reviewer 给出隔离门 `GO`，生产切换仍保持 `NO-GO`。

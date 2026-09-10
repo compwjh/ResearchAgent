@@ -4,11 +4,19 @@ from pathlib import Path
 
 import pytest
 
+import backend.app.knowledge_base.application as application_module
 import backend.app.knowledge_base.infrastructure.store as store_module
 import backend.app.paper_discovery.application.paper_import as paper_import_module
-from backend.app.knowledge_base.application import create_immutable_document, create_paper_import_port
+from backend.app.knowledge_base.application import (
+    KnowledgeDocumentMigrationError,
+    create_immutable_document,
+    create_paper_import_port,
+)
+from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
 from backend.app.knowledge_base.infrastructure.store import (
+    STATUS_INDEXING,
     MetadataStoreError,
+    PaperRecord,
     compensate_import_resource,
     get_paper,
 )
@@ -39,6 +47,35 @@ def _capability(tmp_path, *, owner="owner-a", token="token-a"):
         papers_dir=papers,
     )
     return papers, meta, source, created["resource_capability"]
+
+
+def _generation_capability(tmp_path):
+    root = tmp_path / "project"
+    meta = root / "data" / "kb" / "papers.json"
+    papers = root / "data" / "kb" / "papers"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("[]", encoding="utf-8")
+    FinalizeBundleStore(root).stage(
+        "generation-one",
+        candidate_collection="papers_rebuild_one",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    FinalizeBundleStore(root).commit("generation-one")
+    source = tmp_path / "download.pdf"
+    source.write_bytes(PDF)
+    port = create_paper_import_port(
+        papers_dir=papers,
+        meta_path=meta,
+        indexer=lambda _record, _path: {"status": "indexed"},
+    )
+    result = port.import_paper(PaperImportRequest(
+        {"title": "Bound", "year": 2026, "conference_id": "ccs", "doi": "10/bound"},
+        source,
+    ))
+    assert result.resource_capability is not None
+    return root, meta, papers, source, port, result.resource_capability
 
 
 def test_compensation_is_fail_closed_for_same_owner_and_token(tmp_path):
@@ -82,6 +119,19 @@ def test_compensation_rejects_different_owner_or_token_and_keeps_source(tmp_path
         with pytest.raises(MetadataStoreError) as exc:
             compensate_import_resource(forged, meta, papers)
         assert exc.value.code == "COMPENSATION_DENIED"
+    assert (papers / capability.stored_name).read_bytes() == PDF
+    assert get_paper(capability.document_id, meta) is not None
+
+
+@pytest.mark.parametrize("destination", [None, "papers_rebuild_two"])
+def test_compensation_rejects_destination_collection_tampering(tmp_path, destination):
+    _root, meta, papers, _source, _port, capability = _generation_capability(tmp_path)
+    forged = replace(capability, destination_collection=destination)
+
+    with pytest.raises(MetadataStoreError) as exc:
+        compensate_import_resource(forged, meta, papers)
+
+    assert exc.value.code == "COMPENSATION_DENIED"
     assert (papers / capability.stored_name).read_bytes() == PDF
     assert get_paper(capability.document_id, meta) is not None
 
@@ -255,3 +305,182 @@ def test_cleanup_attempt_root_does_not_follow_replaced_root_symlink(tmp_path):
 
     assert root.is_symlink()
     assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_paper_import_capability_captures_generation_collection(tmp_path):
+    root = tmp_path / "project"
+    meta = root / "data" / "kb" / "papers.json"
+    papers = root / "data" / "kb" / "papers"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("[]", encoding="utf-8")
+    FinalizeBundleStore(root).stage(
+        "generation-one",
+        candidate_collection="papers_rebuild_one",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    FinalizeBundleStore(root).commit("generation-one")
+
+    source = tmp_path / "download.pdf"
+    source.write_bytes(PDF)
+    port = create_paper_import_port(
+        papers_dir=papers,
+        meta_path=meta,
+        indexer=lambda _record, _path: {"status": "indexed"},
+    )
+    result = port.import_paper(PaperImportRequest(
+        {"title": "Bound", "year": 2026, "conference_id": "ccs", "doi": "10/bound"},
+        source,
+    ))
+
+    assert result.resource_capability is not None
+    assert result.resource_capability.destination_collection == "papers_rebuild_one"
+
+
+def test_default_deleter_uses_creation_generation_after_marker_drift(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    meta = root / "data" / "kb" / "papers.json"
+    papers = root / "data" / "kb" / "papers"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("[]", encoding="utf-8")
+    FinalizeBundleStore(root).stage(
+        "generation-one",
+        candidate_collection="papers_rebuild_one",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    FinalizeBundleStore(root).commit("generation-one")
+    source = tmp_path / "download.pdf"
+    source.write_bytes(PDF)
+    port = create_paper_import_port(
+        papers_dir=papers,
+        meta_path=meta,
+        indexer=lambda _record, _path: {"status": "indexed"},
+    )
+    result = port.import_paper(PaperImportRequest(
+        {"title": "Drift", "year": 2026, "conference_id": "ccs", "doi": "10/drift"},
+        source,
+    ))
+    capability = result.resource_capability
+    assert capability is not None
+
+    seen: list[str] = []
+
+    def delete(self, _paper_id, _chunker):
+        seen.append(self.destination_collection)
+
+    monkeypatch.setattr(application_module.GenerationBoundIndexPort, "delete_document", delete)
+    monkeypatch.setattr(application_module, "_active_generation_collection", lambda _meta: "papers_rebuild_two")
+    port._default_deleter(result.paper_id, capability=capability)
+
+    assert seen == ["papers_rebuild_one"]
+
+
+def test_default_indexer_uses_creation_generation_after_marker_drift(tmp_path, monkeypatch):
+    _root, meta, papers, _source, port, capability = _generation_capability(tmp_path)
+    record = PaperRecord(
+        paper_id=capability.document_id,
+        file_name=capability.stored_name,
+        stored_name=capability.stored_name,
+    )
+    seen: list[str] = []
+
+    def index(self, *_args, **_kwargs):
+        seen.append(self.destination_collection)
+        return {"status": "indexed"}
+
+    monkeypatch.setattr(application_module.GenerationBoundIndexPort, "index_document", index)
+    monkeypatch.setattr(
+        application_module,
+        "run_index_task_sync",
+        lambda _paper_id, _chunker, runner: runner(lambda _progress: None),
+    )
+    monkeypatch.setattr(application_module, "_active_generation_collection", lambda _meta: "papers_rebuild_two")
+
+    port._default_indexer(
+        record,
+        papers / capability.stored_name,
+        capability=capability,
+    )
+
+    assert seen == ["papers_rebuild_one"]
+
+
+def test_default_indexer_and_deleter_fail_closed_for_unbound_capability(tmp_path):
+    _root, meta, papers, _source, port, capability = _generation_capability(tmp_path)
+    missing_binding = replace(capability, destination_collection=None)
+    record = PaperRecord(
+        paper_id=capability.document_id,
+        file_name=capability.stored_name,
+        stored_name=capability.stored_name,
+    )
+
+    for action in (
+        lambda: port._default_indexer(record, papers / capability.stored_name, capability=missing_binding),
+        lambda: port._default_deleter(capability.document_id, capability=missing_binding),
+    ):
+        with pytest.raises(KnowledgeDocumentMigrationError) as exc:
+            action()
+        assert exc.value.code == "COMPENSATION_CAPABILITY_INVALID"
+
+
+def test_import_generation_drift_never_marks_document_indexed(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    meta = root / "data" / "kb" / "papers.json"
+    papers = root / "data" / "kb" / "papers"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("[]", encoding="utf-8")
+    FinalizeBundleStore(root).stage(
+        "generation-one",
+        candidate_collection="papers_rebuild_one",
+        metadata=[],
+        manifests={},
+        collection_fingerprint="a" * 64,
+    )
+    FinalizeBundleStore(root).commit("generation-one")
+    source = tmp_path / "drift.pdf"
+    source.write_bytes(PDF)
+    current = {"collection": "papers_rebuild_one"}
+
+    def active_generation(_meta):
+        return current["collection"]
+
+    def indexer(_record, _path):
+        current["collection"] = "papers_rebuild_two"
+        return {"status": "indexed"}
+
+    monkeypatch.setattr(application_module, "_active_generation_collection", active_generation)
+    port = create_paper_import_port(papers_dir=papers, meta_path=meta, indexer=indexer)
+    result = port.import_paper(PaperImportRequest(
+        {"title": "Drift", "year": 2026, "conference_id": "ccs", "doi": "10/drift"},
+        source,
+    ))
+
+    assert result.index_status.value == "failed"
+    assert result.error_code.value == "KB_IMPORT_FAILED"
+    assert result.cleanup_status == "cleanup_pending"
+    assert result.paper_id
+    record = get_paper(result.paper_id, meta)
+    assert record is not None
+    assert record["status"] == STATUS_INDEXING
+    assert record["status"] != "indexed"
+
+
+def test_default_paper_import_without_generation_marker_fails_before_create(tmp_path):
+    meta = tmp_path / "papers.json"
+    papers = tmp_path / "papers"
+    source = tmp_path / "download.pdf"
+    source.write_bytes(PDF)
+    port = create_paper_import_port(papers_dir=papers, meta_path=meta)
+
+    result = port.import_paper(PaperImportRequest(
+        {"title": "No marker", "year": 2026, "conference_id": "ccs", "doi": "10/no-marker"},
+        source,
+    ))
+
+    assert result.index_status.value == "failed"
+    assert result.error_code.value == "KB_IMPORT_FAILED"
+    assert not papers.exists()
+    assert not meta.exists()

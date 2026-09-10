@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
 import os
 import re
 import threading
@@ -230,9 +231,104 @@ def _generation_bound_collection(meta_path: Path, requested: str | None = None) 
     return active
 
 
-def _refresh_generation_digests(meta_path: Path) -> None:
+def _capability_collection(capability: ImportResourceCapability | None) -> str | None:
+    """Return a capability's immutable collection binding, if it has one.
+
+    A capability is the proof for the generation which created its source.
+    Treat a malformed non-empty binding as an error rather than silently
+    falling back to the current marker (which may now point at a new index).
+    """
+    if capability is None:
+        return None
+    value = capability.destination_collection
+    if value is None:
+        # A capability is an explicit proof of the generation that created
+        # its resource.  Falling back to the live marker here would let a
+        # stale or forged capability write/delete in a newer generation.
+        raise KnowledgeDocumentMigrationError("COMPENSATION_CAPABILITY_INVALID")
+    try:
+        return GenerationBoundIndexPort(value).destination_collection
+    except Exception as error:
+        raise KnowledgeDocumentMigrationError("COMPENSATION_CAPABILITY_INVALID") from error
+
+
+def _read_marker_collection_after_state_write(meta_path: Path) -> str:
+    """Read the marker binding when metadata digests are intentionally stale.
+
+    A canonical metadata write makes the marker's old digest stale until the
+    following refresh.  ``require_generation`` therefore cannot be used in
+    that narrow pre-refresh window.  We still validate the marker shape and
+    collection name, and all ordinary reads remain fail-closed through
+    ``require_generation``.
+    """
+    marker_path = FinalizeBundleStore(_generation_root(meta_path)).live_root / "index-generation.json"
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise KnowledgeDocumentMigrationError("INDEX_FINALIZE_REQUIRED") from error
+    if not isinstance(marker, Mapping) or marker.get("schema_version") != "index-generation-v1":
+        raise KnowledgeDocumentMigrationError("GENERATION_MARKER_INVALID")
+    destination = marker.get("alias_target")
+    try:
+        return GenerationBoundIndexPort(destination).destination_collection
+    except Exception as error:
+        raise KnowledgeDocumentMigrationError("GENERATION_MARKER_INVALID") from error
+
+
+def _assert_generation_binding(
+    meta_path: Path,
+    destination_collection: str | None,
+    *,
+    allow_stale_metadata: bool = False,
+) -> None:
+    """Reject a paper import when its captured generation has drifted.
+
+    Marker-less custom indexer fixtures intentionally pass ``None`` and keep
+    their existing test seam.  The canonical/default paper-import path always
+    captures a collection and must prove it is still live before a metadata
+    state transition or digest refresh.
+    """
+    if destination_collection is None:
+        return
+    try:
+        current = _active_generation_collection(meta_path)
+    except KnowledgeDocumentMigrationError as error:
+        if not allow_stale_metadata or error.code != "INDEX_FINALIZE_REQUIRED":
+            raise
+        current = _read_marker_collection_after_state_write(meta_path)
+    if current != destination_collection:
+        raise KnowledgeDocumentMigrationError("INDEX_GENERATION_DRIFT")
+
+
+def _capture_import_generation(meta_path: Path, *, required: bool) -> str | None:
+    """Capture the marker-bound destination before creating an import resource.
+
+    Custom injected indexers remain usable in marker-less temporary fixtures.
+    The default composition path is fail-closed before it writes source or
+    metadata, so an import can never be created without a generation binding.
+    """
+    generation_store = FinalizeBundleStore(_generation_root(meta_path))
+    marker_path = generation_store.live_root / "index-generation.json"
+    if not marker_path.exists() and not required:
+        return None
+    return _active_generation_collection(meta_path)
+
+
+def _refresh_generation_digests(
+    meta_path: Path,
+    *,
+    expected_destination_collection: str | None = None,
+) -> None:
     """Keep a committed generation coherent after a canonical state write."""
-    FinalizeBundleStore(_generation_root(meta_path)).refresh_live_digests()
+    store = FinalizeBundleStore(_generation_root(meta_path))
+    if expected_destination_collection is None:
+        # Preserve the no-argument compatibility seam used by marker-less
+        # fixtures and injected stores.
+        store.refresh_live_digests()
+    else:
+        store.refresh_live_digests(
+            expected_destination_collection=expected_destination_collection,
+        )
 
 
 def _unique_server_name(root: Path, requested_name: str, document_id: str, media_type: str) -> str:
@@ -267,6 +363,7 @@ def create_immutable_document(
     token: str | None = None,
     attempt_owner: str | None = None,
     attempt_token: str | None = None,
+    destination_collection: str | None = None,
 ) -> dict[str, Any]:
     """Create or deduplicate one immutable canonical document.
 
@@ -280,6 +377,11 @@ def create_immutable_document(
     token = token if token is not None else attempt_token
     if media_type not in {"application/pdf", "text/markdown"}:
         raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID")
+    if destination_collection is not None:
+        try:
+            destination_collection = GenerationBoundIndexPort(destination_collection).destination_collection
+        except Exception as error:
+            raise KnowledgeDocumentMigrationError("INDEX_TOPOLOGY_AMBIGUOUS") from error
     if content is not None and source_path is not None:
         raise KnowledgeDocumentMigrationError("MIGRATION_INPUT_INVALID")
     source = Path(source_path).resolve() if source_path is not None else None
@@ -378,12 +480,28 @@ def create_immutable_document(
                     stored_name=stored_name,
                     source_dev=source_token[0],
                     source_ino=source_token[1],
+                    destination_collection=destination_collection,
                 )
                 # The ledger is intentionally separate from papers.json, whose
                 # frozen schema must remain compatible with older readers.
                 register_import_capability(resource_capability, meta, process_locked=True)
+            # Paper imports carry a captured generation.  Check immediately
+            # before the canonical metadata write so an already-drifted marker
+            # cannot make a resource look valid in the new generation.
+            _assert_generation_binding(meta, destination_collection)
             write_import_knowledge_document(document, meta)
-            _refresh_generation_digests(meta)
+            # The marker can drift while metadata is being written.  Check
+            # again before refreshing its digest; on failure the surrounding
+            # rollback/compensation path retains no successful metadata.
+            _assert_generation_binding(meta, destination_collection, allow_stale_metadata=True)
+            # Re-check and refresh under the manifest-store lock.  This closes
+            # the gap where commit could switch the marker after the check but
+            # before the digest write, which would bless old metadata in the
+            # new generation.
+            _refresh_generation_digests(
+                meta,
+                expected_destination_collection=destination_collection,
+            )
         except Exception as error:
             _unlink_owned_source(target, source_token)
             # A metadata writer may fail after exposing a partial append.  Roll
@@ -675,8 +793,21 @@ class KnowledgeBasePaperImportAdapter:
         except Exception:
             return "cleanup_pending"
 
-    def _default_indexer(self, record: PaperRecord, path: Path) -> Any:
-        destination = _active_generation_collection(self.meta_path)
+    def _default_indexer(
+        self,
+        record: PaperRecord,
+        path: Path,
+        *,
+        capability: ImportResourceCapability | None = None,
+    ) -> Any:
+        # Use the collection captured at immutable-create time.  If no
+        # capability exists (for example a direct reindex-style test seam),
+        # resolve the current marker as usual.
+        destination = (
+            _capability_collection(capability)
+            if capability is not None
+            else _active_generation_collection(self.meta_path)
+        )
         index_port = GenerationBoundIndexPort(destination, client=self.client)
         return run_index_task_sync(
             record.paper_id,
@@ -691,7 +822,11 @@ class KnowledgeBasePaperImportAdapter:
         )
 
     def _default_deleter(self, paper_id: str, *, capability: ImportResourceCapability | None = None) -> None:
-        destination = _active_generation_collection(self.meta_path)
+        destination = (
+            _capability_collection(capability)
+            if capability is not None
+            else _active_generation_collection(self.meta_path)
+        )
         GenerationBoundIndexPort(destination, client=self.client).delete_document(paper_id, CHUNKER_V1)
 
     def import_paper(self, request: PaperImportRequest) -> PortImportResult:
@@ -722,6 +857,18 @@ class KnowledgeBasePaperImportAdapter:
             existing = self.find_existing(snapshot)
             if existing is not None:
                 return existing
+            try:
+                generation_collection = _capture_import_generation(
+                    self.meta_path,
+                    required=self.indexer is None,
+                )
+            except KnowledgeDocumentMigrationError:
+                return PortImportResult(
+                    paper_id=None,
+                    index_status=ImportIndexStatus.FAILED,
+                    error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
+                    source_sha256=source_digest,
+                )
             requested_name = str(_snapshot_value(snapshot, "_stored_name") or source.name)
             identity_doi, identity_dblp, _, _, _ = _identity_parts(snapshot)
             try:
@@ -744,6 +891,7 @@ class KnowledgeBasePaperImportAdapter:
                     papers_dir=self.papers_dir,
                     owner=request.attempt_owner,
                     token=request.attempt_token,
+                    destination_collection=generation_collection,
                 )
             except Exception as error:
                 capability = getattr(error, "resource_capability", None)
@@ -788,7 +936,11 @@ class KnowledgeBasePaperImportAdapter:
             index_result = _call_supported(
                 self.indexer or self._default_indexer,
                 (record, target),
-                {"meta_path": self.meta_path, "client": self.client},
+                {
+                    "meta_path": self.meta_path,
+                    "client": self.client,
+                    "capability": created.get("resource_capability"),
+                },
             )
             if not _index_succeeded(index_result):
                 raise RuntimeError("index failed")
@@ -799,8 +951,14 @@ class KnowledgeBasePaperImportAdapter:
                 for field in ("page_count", "chunk_count", "error"):
                     if field in index_result:
                         updates[field] = index_result[field]
+            _assert_generation_binding(self.meta_path, generation_collection)
             patch_knowledge_document(self.meta_path, record.paper_id, **updates)
-            _refresh_generation_digests(self.meta_path)
+            _assert_generation_binding(self.meta_path, generation_collection, allow_stale_metadata=True)
+            # Re-check and refresh atomically with generation publication.
+            _refresh_generation_digests(
+                self.meta_path,
+                expected_destination_collection=generation_collection,
+            )
             return PortImportResult(
                 paper_id=record.paper_id,
                 index_status=ImportIndexStatus.INDEXED,

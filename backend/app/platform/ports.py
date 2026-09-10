@@ -51,6 +51,9 @@ class ImportResourceCapability:
     stored_name: str
     source_dev: int
     source_ino: int
+    # Captured when the immutable resource is created.  It is optional only
+    # for isolated/custom indexer tests which deliberately do not install a
+    # generation marker; the canonical/default production path must bind it.
     destination_collection: str | None = None
 
     def to_internal_dict(self) -> dict[str, object]:

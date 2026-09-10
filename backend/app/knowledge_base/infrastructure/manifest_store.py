@@ -18,6 +18,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -28,6 +29,17 @@ from backend.app.knowledge_base.infrastructure.inspection import InspectionManif
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _CHUNKERS = {"v1", "v2"}
 _lock = threading.RLock()
+
+
+def _with_manifest_lock(function):
+    """Serialize generation publication with other manifest-store mutations."""
+
+    @wraps(function)
+    def locked(*args, **kwargs):
+        with _lock:
+            return function(*args, **kwargs)
+
+    return locked
 
 # JSON Schema carries these as ``x-*`` annotations; the runtime must enforce
 # them on both publish and read because Draft 2020-12 has no byte-length rule.
@@ -414,7 +426,11 @@ class FinalizeBundleStore:
                 entries.append({"live_path": relative, "sha256": digest})
         return _sha256_json(entries)
 
-    def refresh_live_digests(self) -> dict[str, Any] | None:
+    def refresh_live_digests(
+        self,
+        *,
+        expected_destination_collection: str | None = None,
+    ) -> dict[str, Any] | None:
         """Atomically refresh marker digests after an authorized metadata change.
 
         Reindex progress and document deletion are ordinary, generation-bound
@@ -423,12 +439,19 @@ class FinalizeBundleStore:
         generation fail closed forever.  This method only operates when an
         existing marker is present and never creates one or changes topology.
         """
-        marker_path = self.live_root / "index-generation.json"
-        if not marker_path.exists():
-            return None
         with _lock:
+            marker_path = self.live_root / "index-generation.json"
+            if not marker_path.exists():
+                if expected_destination_collection is not None:
+                    raise ManifestStoreError("INDEX_GENERATION_DRIFT")
+                return None
             marker = _read_json(marker_path, "INDEX_FINALIZE_REQUIRED")
             _validate("index-generation.schema.json", marker, "INDEX_FINALIZE_REQUIRED")
+            if (
+                expected_destination_collection is not None
+                and marker.get("alias_target") != expected_destination_collection
+            ):
+                raise ManifestStoreError("INDEX_GENERATION_DRIFT")
             try:
                 metadata_hash = _sha256_bytes((self.live_root / "papers.json").read_bytes())
             except OSError as error:
@@ -442,6 +465,7 @@ class FinalizeBundleStore:
             )
             return self.require_generation()
 
+    @_with_manifest_lock
     def commit(self, run_id: str) -> dict[str, Any]:
         bundle = self._read_bundle(run_id)
         root = self.run_root(run_id)

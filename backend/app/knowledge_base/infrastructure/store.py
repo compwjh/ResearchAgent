@@ -265,6 +265,10 @@ def compensate_import_resource(
             "stored_name": stored_name,
             "source_dev": source_dev,
             "source_ino": source_ino,
+            # Compare this field even when both sides are ``None``.  A
+            # capability must remain bound to exactly the collection recorded
+            # at creation; owner/token alone are not sufficient proof.
+            "destination_collection": _capability_value(capability, "destination_collection"),
         }
         if entry is None or any(entry.get(key) != value for key, value in expected.items()):
             raise MetadataStoreError("COMPENSATION_DENIED")
