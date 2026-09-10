@@ -127,16 +127,16 @@
 
 ## 执行配置
 
-> 沿用用户 2026-09-09 指定：主会话（架构师）主导编排，子代理调用 0.00 倍率 `hy3` 模型执行（spec-019 实测可用）。
+> 沿用用户指定：主会话（架构师）主导编排，子代理调用 `Deepseek-V4.1-Flash` 模型执行（2026-09-10 起；同日早些时候为 `hy3`，与 `AGENTS.md` 选型表一致）。
 
 | 角色 | 模型 | 上下文 | 分派 | 职责 |
 |---|---|---|---|---|
 | 架构师 | 自身（不写死代号） | 200k | 主会话 | spec 维护、技术决策、落地校验 |
-| 后端开发 | `hy3` | 32k | `Task(backend-dev)` | 只改 `backend/**`（BUG-02） |
-| 前端开发 | `hy3` | 32k | `Task(frontend-dev)` | 只改 `frontend/**`（BUG-01） |
-| 后端/前端评审 | `hy3` | 32k | `Task(*-reviewer)` | 只评各自端 |
-| 回归 | `hy3` | 32k | `Task(*-tester)` | 单端回归 |
-| 验收总控 | `hy3` | 32k | `Task(tester)` | 跨端验收与报告 |
+| 后端开发 | `Deepseek-V4.1-Flash` | 32k | `Task(backend-dev)` | 只改 `backend/**`（BUG-02） |
+| 前端开发 | `Deepseek-V4.1-Flash` | 32k | `Task(frontend-dev)` | 只改 `frontend/**`（BUG-01） |
+| 后端/前端评审 | `Deepseek-V4.1-Flash` | 32k | `Task(*-reviewer)` | 只评各自端 |
+| 回归 | `Deepseek-V4.1-Flash` | 32k | `Task(*-tester)` | 单端回归 |
+| 验收总控 | `Deepseek-V4.1-Flash` | 32k | `Task(tester)` | 跨端验收与报告 |
 
 ## 评审记录
 

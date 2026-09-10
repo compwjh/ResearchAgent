@@ -102,20 +102,20 @@
 - **⚠️ 创建/修改 agent 定义时，必须复核 `tools` 是否满足「进展日志落盘」要求**：所有角色 agent 都被要求写 `.codebuddy/agent-logs/spec-<NNN>/task-<TT>/<role>/` 日志（思考可见），若无 `Bash` 则日志写不出。曾漏配 `doc-updater.md`（只有 Read/Grep/Glob/Edit），实战中 doc-updater 无法写日志——改为加 `Bash`。新增 agent 前先确认 `tools` 含 `Bash`（除非该角色明确无落盘需求）。
 - 新建的 agent 文件**即时生效**（实测新建 `planner.md` 后同一会话即可调用），无需重启。
 - **本地模型驱动子代理较慢**：实测单次分派 3–8 分钟（27B 量化模型），属正常成本，不要误判为卡死；追求速度可改用 `qwen3.5:9b`（需先在用户级 `models.json` 注册）。
-#### 角色模型分配（2026-09-10 修订：全部角色统一 `hy3`；用户指定「之后子 agent 都分配给 hy3 进行」）
+#### 角色模型分配（2026-09-10 修订：全部角色统一 `Deepseek-V4.1-Flash`；用户指定「调用 Deepseek-V4.1-Flash 作为子 agent」）
 
 | 角色 agent | 模型 | 理由 |
 |---|---|---|
-| `backend-dev` | `hy3` | 用户指定（2026-09-10）；后端含并发/事务/边界要求，需强推理档 |
-| `frontend-dev` | `hy3` | 用户指定（2026-09-10）；需可靠遵守 DOM 契约与 `?v=N` 约束 |
-| `backend-reviewer` | `hy3` | 用户指定（2026-09-10）；评审需强推理（原 `qwen3.8:27b-mlx`） |
-| `frontend-reviewer` | `hy3` | 用户指定（2026-09-10）；需可靠核对 DOM 契约并给出文件行号依据 |
-| `backend-tester` | `hy3` | 用户指定（2026-09-10）（原 `qwen3.5:9b`） |
-| `frontend-tester` | `hy3` | 用户指定（2026-09-10）（原 `qwen3.5:9b`） |
-| `tester` | `hy3` | 用户指定（2026-09-10）（原 `qwen3.5:9b`） |
-| `doc-updater` | `hy3` | 用户指定（2026-09-10）（原 `qwen3.5:9b`） |
-| `architect` | `hy3` | 用户指定（2026-09-10）（原 `qwen3.8:27b-mlx`） |
-| `planner` | `hy3` | 用户指定（2026-09-10）（原 `qwen3.8:27b-mlx`） |
+| `backend-dev` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10）；后端含并发/事务/边界要求，需强推理档 |
+| `frontend-dev` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10）；需可靠遵守 DOM 契约与 `?v=N` 约束 |
+| `backend-reviewer` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10）；评审需强推理 |
+| `frontend-reviewer` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10）；需可靠核对 DOM 契约并给出文件行号依据 |
+| `backend-tester` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10） |
+| `frontend-tester` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10） |
+| `tester` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10） |
+| `doc-updater` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10） |
+| `architect` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10） |
+| `planner` | `Deepseek-V4.1-Flash` | 用户指定（2026-09-10） |
 
 #### Agent ↔ Skill 绑定矩阵（分派前查此表）
 
@@ -152,7 +152,7 @@
 - 回归同理：**单端改动只跑该端回归**，杜绝"改一行 CSS 触发全套后端用例"。
 
 > ⚠️ **本表必须与 `.codebuddy/agents/*.md` front matter 的 `model:` 字段逐字一致**，否则照本表分派即踩坑（报 `model not found` 或静默回退到默认模型）。
-> 当前全部角色 agent 文件的实际值均为 **`hy3`**（2026-09-10 起，覆盖原 `qwen3.8:27b-mlx` / `qwen3.5:9b`）。
+> 当前全部角色 agent 文件的实际值均为 **`Deepseek-V4.1-Flash`**（2026-09-10 起，覆盖此前的 `hy3`、`qwen3.8:27b-mlx` / `qwen3.5:9b`）。
 > 历史教训仍适用：`model` 只接受**已注册**的模型名（填自定义 ID 会报 `Subagent model config is invalid`），本地 Ollama 名须经 `ollama list` 核实；`qwen3.8-27b-mlx`（连字符写法）在 Ollama 中**不存在**，填写会导致分派失败。
 
 **编码任务的模型选择依据**（实测，详见 `TOOLCALL_BENCHMARK.md`）：

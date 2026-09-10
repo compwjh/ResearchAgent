@@ -8,8 +8,10 @@ import pytest
 from backend.app.paper_discovery.application.paper_import import (
     KB_STORAGE_LOCKED,
     LOGIN_REQUIRED,
+    PAPER_ALREADY_EXISTS,
     PaperImportError,
     PaperImportResult,
+    import_candidate,
 )
 from backend.app.paper_discovery.application.paper_import_batch_service import (
     CANDIDATE_NOT_FOUND,
@@ -25,11 +27,13 @@ from backend.app.paper_discovery.domain.paper_import_batch import (
     ITEM_FAILED,
     ITEM_WAITING_LOGIN,
 )
+from backend.app.paper_discovery.infrastructure.paper_download import DownloadResult
 from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     DATABASE_LOCKED,
     PaperImportBatchStore,
     PaperImportBatchStoreError,
 )
+from backend.app.platform.settings.settings_repository import ArticleSettings
 
 
 def _candidate(candidate_id: str, search_id: str = "search-1") -> PaperCandidate:
@@ -530,13 +534,12 @@ def test_retry_item_missing_item_raises_item_not_found(tmp_path):
     assert exc.value.code == "ITEM_NOT_FOUND"
 
 
-def test_retry_item_hits_title_index_collision_maps_to_duplicate_import(tmp_path):
-    """重试一个 failed 条目，其同名论文已在另一批次 completed（活跃索引被占）→
-    store 抛的 sqlite3.IntegrityError 必须映射为 DUPLICATE_IMPORT，禁止被 IMPORT_BATCH_ERROR
-    兜底掩盖（spec-021 Task03；复现 bf22eaa2 场景）。
+def test_retry_item_hits_active_title_index_collision_maps_to_duplicate_import(tmp_path):
+    """重试一个 failed 条目，其同名论文已在另一批次处于**活跃态** → 必须映射为
+    DUPLICATE_IMPORT（spec-021 Task03/Task06：仅活跃态冲突映射 409）。
 
-    构建顺序刻意让被撞方先 failed（释放索引）再让同名方 completed（占住索引），从而
-    重试 failed 条目（failed→queued，回到活跃态）时撞到 import_item_title 部分唯一索引。
+    构建顺序：先建批次 A（同名候选 a）并 claim 到 downloading（活跃态，占索引），
+    再让 B 的 failed 条目回 queued（活跃态）时撞索引。
     """
     def importer(candidate, *_args):
         if candidate.candidate_id == "b":
@@ -551,24 +554,24 @@ def test_retry_item_hits_title_index_collision_maps_to_duplicate_import(tmp_path
     # 先建批次 B（candidate b）→ 失败（释放索引，不再活跃）
     batch_b = service.create_batch("search-1", ["b"], search_session=session, candidates=[cand_b])
     service.run_batch(batch_b.batch_id)
-    # 再建批次 A（candidate a）→ 完成（占住索引：completed 属于活跃态）
+    # 再建批次 A（candidate a）→ claim 到 downloading（活跃态，占住索引）
     batch_a = service.create_batch("search-1", ["a"], search_session=session, candidates=[cand_a])
-    service.run_batch(batch_a.batch_id)
+    a_item = service.store.get_items(batch_a.batch_id)[0]
+    service.store.claim_item(a_item.item_id, "worker")
 
     b_items = {it.candidate_id: it for it in service.store.get_items(batch_b.batch_id)}
-    a_items = {it.candidate_id: it for it in service.store.get_items(batch_a.batch_id)}
     assert b_items["b"].status == ITEM_FAILED
-    assert a_items["a"].status == ITEM_COMPLETED
+    assert service.store.get_item(a_item.item_id).status == ITEM_DOWNLOADING
 
-    # 重试 B 的失败条目 → failed→queued 撞 A 的 completed 索引 → DUPLICATE_IMPORT
+    # 重试 B 的失败条目 → failed→queued 撞 A 的活跃索引 → DUPLICATE_IMPORT
     with pytest.raises(PaperImportBatchServiceError) as exc:
         service.retry_item(b_items["b"].item_id, candidates=[cand_b])
     assert exc.value.code == "DUPLICATE_IMPORT"
 
 
-def test_retry_batch_hits_title_index_collision_maps_to_duplicate_import(tmp_path):
-    """整批重试：批次内含 failed 条目，其同名论文已在另一批次 completed（活跃索引被占）→
-    sqlite3.IntegrityError 必须映射为 DUPLICATE_IMPORT（spec-021 Task03）。
+def test_retry_batch_hits_active_title_index_collision_maps_to_duplicate_import(tmp_path):
+    """整批重试：批次内含 failed 条目，其同名论文已在另一批次处于活跃态 →
+    sqlite3.IntegrityError 必须映射为 DUPLICATE_IMPORT（spec-021 Task03/Task06）。
     """
     def importer(candidate, *_args):
         if candidate.candidate_id == "b":
@@ -582,15 +585,117 @@ def test_retry_batch_hits_title_index_collision_maps_to_duplicate_import(tmp_pat
     batch_b = service.create_batch("search-1", ["b"], search_session=session, candidates=[cand_b])
     service.run_batch(batch_b.batch_id)
     batch_a = service.create_batch("search-1", ["a"], search_session=session, candidates=[cand_a])
-    service.run_batch(batch_a.batch_id)
+    a_item = service.store.get_items(batch_a.batch_id)[0]
+    service.store.claim_item(a_item.item_id, "worker")
 
+    b_items = {it.candidate_id: it for it in service.store.get_items(batch_b.batch_id)}
+    assert b_items["b"].status == ITEM_FAILED
+    assert service.store.get_item(a_item.item_id).status == ITEM_DOWNLOADING
+
+    # 整批重试 B（failed→queued）撞 A 的活跃索引 → DUPLICATE_IMPORT
+    with pytest.raises(PaperImportBatchServiceError) as exc:
+        service.retry_batch(batch_b.batch_id, candidates=[cand_b])
+    assert exc.value.code == "DUPLICATE_IMPORT"
+
+
+def test_completed_item_no_longer_blocks_new_batch_or_retry(tmp_path, monkeypatch):
+    """已 completed 的同名条目释放索引 → 同论文可新建批次、failed 条目可重试
+    （spec-021 Task06；去重交由 KB find_existing，非批次层拒绝）。"""
+    attempts = {"b": 0}
+
+    def importer(candidate, *_args):
+        if candidate.candidate_id == "b":
+            attempts["b"] += 1
+            if attempts["b"] == 1:
+                raise PaperImportError("DOWNLOAD_TIMEOUT", "下载超时", retryable=True)
+        return PaperImportResult(f"paper-{candidate.candidate_id}", None, "indexed")
+
+    service = _service(tmp_path, importer)
+    cand_b = PaperCandidate("b", "search-1", "Collision Paper", "ccs", "CCS", year=2025, doi="10.1000/b")
+    cand_a = PaperCandidate("a", "search-1", "Collision Paper", "ccs", "CCS", year=2025, doi="10.1000/a")
+    cand_c = PaperCandidate("c", "search-1", "Collision Paper", "ccs", "CCS", year=2025, doi="10.1000/c")
+    session = SearchSession("search-1", "security", "2099-01-01T00:00:00Z")
+
+    batch_b = service.create_batch("search-1", ["b"], search_session=session, candidates=[cand_b])
+    service.run_batch(batch_b.batch_id)
+    batch_a = service.create_batch("search-1", ["a"], search_session=session, candidates=[cand_a])
+    service.run_batch(batch_a.batch_id)
     b_items = {it.candidate_id: it for it in service.store.get_items(batch_b.batch_id)}
     a_items = {it.candidate_id: it for it in service.store.get_items(batch_a.batch_id)}
     assert b_items["b"].status == ITEM_FAILED
     assert a_items["a"].status == ITEM_COMPLETED
 
-    # 整批重试 B（failed→queued）撞 A 的 completed 索引 → DUPLICATE_IMPORT
-    with pytest.raises(PaperImportBatchServiceError) as exc:
-        service.retry_batch(batch_b.batch_id, candidates=[cand_b])
-    assert exc.value.code == "DUPLICATE_IMPORT"
+    # (1) 重试 B 的 failed 条目不再 409（此时唯一占位者 A 已 completed），后台可重跑成功。
+    captured: dict[str, object] = {}
+    original_submit = service.submit_batch
+
+    def capture_submit(batch_id, *, candidates=None):
+        future = original_submit(batch_id, candidates=candidates)
+        captured["future"] = future
+        return future
+
+    with monkeypatch.context() as m:
+        m.setattr(service, "submit_batch", capture_submit)
+        retried = service.retry_item(b_items["b"].item_id, candidates=[cand_b])
+    assert retried.status == "queued"
+    assert "future" in captured
+    captured["future"].result(timeout=5)
+    assert service.store.get_item(b_items["b"].item_id).status == ITEM_COMPLETED
+
+    # (2) 新建批次同论文不再 409（B 此时已 completed，A 亦 completed，均不占位）。
+    batch_c = service.create_batch("search-1", ["c"], search_session=session, candidates=[cand_c])
+    assert batch_c.batch_id not in {batch_a.batch_id, batch_b.batch_id}
+
+
+def test_reimport_of_existing_paper_reports_existing_and_does_not_duplicate(tmp_path):
+    """重新导入已入库论文：批次层不再拒绝，结果由 KB find_existing 表达为
+    existing/PAPER_ALREADY_EXISTS，且不重复落盘（spec-021 Task06 §边界最后一条）。"""
+    # 用一个"已存在"的注入 port 模拟 KB：find_existing 命中 → 返回 existing。
+    papers = {}
+
+    class FakePort:
+        def find_existing(self, snapshot):
+            title = snapshot.get("title")
+            if title in papers:
+                return {
+                    "paper_id": papers[title],
+                    "status": "indexed",
+                    "existing": True,
+                    "stored_name": f"{title}.pdf",
+                }
+            return None
+
+        def existing_names(self):
+            return set(papers)
+
+        def import_paper(self, request):
+            title = request.candidate_snapshot["title"]
+            # 只在首次落盘；重复导入必须由 find_existing 拦住，不会走到这里。
+            assert title not in papers, "重复导入不得再次落盘"
+            papers[title] = "paper-1"
+            return {"paper_id": "paper-1", "index_status": "indexed", "stored_name": "p.pdf"}
+
+    def download(candidate, _settings, _hosts, **kwargs):
+        path = tmp_path / f"{candidate.candidate_id}.pdf"
+        path.write_bytes(b"%PDF-1.7\ncontent")
+        return DownloadResult(str(path), path.stat().st_size, "checksum", candidate.pdf_url)
+
+    cand = PaperCandidate(
+        "one", "search-1", "Unique Paper", "ccs", "CCS", year=2025,
+        doi="10.1000/one", article_url="https://papers.example/a",
+        pdf_url="https://papers.example/a.pdf",
+    )
+    first = import_candidate(
+        cand, ArticleSettings(), {"papers.example"}, downloader=download,
+        paper_import_port=FakePort(), temp_dir=tmp_path,
+    )
+    second = import_candidate(
+        cand, ArticleSettings(), {"papers.example"}, downloader=download,
+        paper_import_port=FakePort(), temp_dir=tmp_path,
+    )
+    assert first.status == "indexed"
+    assert second.existing is True
+    assert second.error_code == PAPER_ALREADY_EXISTS
+    assert second.paper_id == first.paper_id
+    assert len(papers) == 1, "重复导入不得产生第二条记录"
 

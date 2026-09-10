@@ -34,7 +34,7 @@ from backend.app.paper_discovery.domain.paper_import_batch import (
     PaperImportItem,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_BATCH_ITEMS = 20
 DEFAULT_LEASE_SECONDS = 15 * 60
 MIN_LEASE_RENEW_SECONDS = 5 * 60
@@ -145,8 +145,13 @@ class PaperImportBatchStore:
             raise RuntimeError("Invalid paper import schema metadata: expected exactly one row")
         if not rows:
             connection.execute("INSERT INTO paper_import_schema_meta(version) VALUES(?)", (SCHEMA_VERSION,))
-        elif rows[0][1] != "integer" or rows[0][0] != SCHEMA_VERSION:
-            raise RuntimeError(f"Unsupported or corrupt paper import schema version: {rows[0][0]!r}")
+        else:
+            if rows[0][1] != "integer" or rows[0][0] not in (1, SCHEMA_VERSION):
+                raise RuntimeError(f"Unsupported or corrupt paper import schema version: {rows[0][0]!r}")
+            # v1 -> v2：释放已终态（completed）条目占用的论文唯一身份，仅保留活跃态占位
+            # （spec-021 Task06）。索引重建在下方统一执行，这里只推进版本记录，保证幂等。
+            if rows[0][0] != SCHEMA_VERSION:
+                connection.execute("UPDATE paper_import_schema_meta SET version=?", (SCHEMA_VERSION,))
         connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS paper_import_schema_meta_singleton ON paper_import_schema_meta((1))")
         connection.execute(
             """CREATE TABLE IF NOT EXISTS paper_import_batches(
@@ -199,13 +204,18 @@ class PaperImportBatchStore:
         PaperImportBatchStore._validate_schema_contract(connection)
 
         # These identities are global so two searches cannot enqueue the same
-        # knowledge-base paper concurrently. Failed/cancelled history is
-        # intentionally excluded, allowing a legal future retry. COALESCE
-        # turns NULL title components into an explicit identity sentinel.
+        # knowledge-base paper concurrently. All terminal states (completed /
+        # failed / cancelled) are intentionally excluded, allowing a legal
+        # re-import or retry; duplicate papers are then caught by the knowledge
+        # base's own ``find_existing``. COALESCE turns NULL title components
+        # into an explicit identity sentinel.
         for index in ("import_item_doi", "import_item_dblp", "import_item_title", "import_item_idempotency", "import_item_paper_id"):
             connection.execute(f"DROP INDEX IF EXISTS {index}")
         connection.execute("DROP INDEX IF EXISTS paper_import_batch_idempotency")
-        active_sql = "state IN ('queued','downloading','waiting_login','validating','indexing','completed')"
+        # spec-021 Task06：论文身份（doi/dblp/title/idempotency/paper_id）只由**活跃态**
+        # 占位。completed/failed/cancelled 均为终态 → 一律释放，使同论文可重新导入或重试；
+        # 去重改由知识库既有的 find_existing 负责（PAPER_ALREADY_EXISTS / existing）。
+        active_sql = "state IN ('queued','downloading','waiting_login','validating','indexing')"
         # Release identities left behind by pre-v1 stores that did not clear
         # terminal batch keys. This is idempotent and also makes re-opened
         # databases follow the same effective-state policy as new ones.

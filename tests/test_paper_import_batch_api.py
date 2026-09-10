@@ -275,12 +275,26 @@ def test_batch_create_rejects_more_than_twenty_candidates(monkeypatch, tmp_path)
 
 
 def test_duplicate_batch_returns_duplicate_import_error(monkeypatch, tmp_path):
-    """同一论文再次新建批次撞 import_item_title → 409 DUPLICATE_IMPORT（不再 IMPORT_BATCH_ERROR）。"""
-    _setup(monkeypatch, tmp_path, lambda *_args: PaperImportResult("paper-1", "safe.pdf", "indexed"))
+    """同一论文在**活跃态**再次新建批次撞 import_item_title → 409 DUPLICATE_IMPORT。
+
+    用阻塞的 importer 把首个条目稳定停在 downloading（活跃态），消除后台 runner 抢跑竞态；
+    若首条目已 completed 则不再 409（见 test_completed_item_no_longer_blocks_new_batch_via_api）。
+    """
+    started = Event()
+    finish = Event()
+
+    def importer(candidate, *_args):
+        started.set()
+        assert finish.wait(timeout=5)
+        return PaperImportResult("paper-1", "safe.pdf", "indexed")
+
+    _setup(monkeypatch, tmp_path, importer)
     client = TestClient(app)
     first = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})
     assert first.status_code == 200
+    assert started.wait(timeout=5)  # 条目已进入活跃态
     second = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})
+    finish.set()
     assert second.status_code == 409
     assert second.json()["code"] == "DUPLICATE_IMPORT"
     assert second.json()["message"] == "该论文已在导入批次中，请在原批次重试"
@@ -430,13 +444,23 @@ def test_storage_locked_import_sets_item_error_code_via_api(monkeypatch, tmp_pat
     assert "qdrant" not in (item["error_message"] or "")
 
 
-def test_item_retry_route_hits_duplicate_title_returns_409(monkeypatch, tmp_path):
-    """POST /api/papers/import-items/{id}/retry：失败条目的同名论文已在另一批次 completed
-    → 409 DUPLICATE_IMPORT（不再 IMPORT_BATCH_ERROR/424）。spec-021 Task03（复现 bf22eaa2）。"""
+def _blocking_active_importer(started, finish):
+    """candidate-b 立即失败；candidate-a 阻塞在活跃态（downloading）直到 finish。"""
     def importer(candidate, *_args):
         if candidate.candidate_id == "candidate-b":
             raise PaperImportError("DOWNLOAD_TIMEOUT", "下载超时", retryable=True)
+        started.set()
+        assert finish.wait(timeout=5)
         return PaperImportResult(f"paper-{candidate.candidate_id}", "safe.pdf", "indexed")
+
+    return importer
+
+
+def test_item_retry_route_hits_active_duplicate_title_returns_409(monkeypatch, tmp_path):
+    """POST /api/papers/import-items/{id}/retry：失败条目的同名论文在另一批次处于**活跃态**
+    → 409 DUPLICATE_IMPORT（仅活跃态冲突映射 409）。spec-021 Task03/Task06。"""
+    started, finish = Event(), Event()
+    importer = _blocking_active_importer(started, finish)
 
     discovery = PaperDiscoveryStore(tmp_path / "state.sqlite3")
     # 同名候选必须落在不同 search session：paper_candidates 有
@@ -476,32 +500,24 @@ def test_item_retry_route_hits_duplicate_title_returns_409(monkeypatch, tmp_path
     failed_b = next(it for it in status_b["items"] if it["status"] == "failed")
     assert failed_b["error_code"] == "DOWNLOAD_TIMEOUT"
 
-    # 再建批次 A（candidate-a）→ 完成（占住索引：completed 属于活跃态）
+    # 再建批次 A（candidate-a）→ 其后台 runner 稳定停在 downloading（活跃态，占住索引）
     created_a = client.post("/api/papers/imports", json={"search_id": "search-2", "candidate_ids": ["candidate-a"]})
     assert created_a.status_code == 200
-    batch_a = created_a.json()["batch_id"]
-    status_a = created_a.json()
-    for _ in range(200):
-        status_a = client.get(f"/api/papers/imports/{batch_a}").json()
-        if status_a["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
-    assert next(it for it in status_a["items"] if it["status"] == "completed") is not None
+    assert started.wait(timeout=5)
 
-    # 重试 B 的失败条目 → 撞 A 的 completed 索引 → 409 DUPLICATE_IMPORT
+    # 重试 B 的失败条目 → 撞 A 的活跃索引 → 409 DUPLICATE_IMPORT
     resp = client.post(f"/api/papers/import-items/{failed_b['item_id']}/retry")
+    finish.set()
     assert resp.status_code == 409
     assert resp.json()["code"] == "DUPLICATE_IMPORT"
     assert resp.json()["message"] == "该论文已在导入批次中，请在原批次重试"
 
 
-def test_batch_retry_route_hits_duplicate_title_returns_409(monkeypatch, tmp_path):
+def test_batch_retry_route_hits_active_duplicate_title_returns_409(monkeypatch, tmp_path):
     """POST /api/papers/imports/{batch_id}/retry（及别名 import-batches）→ 整批重试把
-    failed→queued 撞同名活跃索引 → 409 DUPLICATE_IMPORT。spec-021 Task03。"""
-    def importer(candidate, *_args):
-        if candidate.candidate_id == "candidate-b":
-            raise PaperImportError("DOWNLOAD_TIMEOUT", "下载超时", retryable=True)
-        return PaperImportResult(f"paper-{candidate.candidate_id}", "safe.pdf", "indexed")
+    failed→queued 撞同名**活跃**索引 → 409 DUPLICATE_IMPORT。spec-021 Task03/Task06。"""
+    started, finish = Event(), Event()
+    importer = _blocking_active_importer(started, finish)
 
     discovery = PaperDiscoveryStore(tmp_path / "state.sqlite3")
     # 同名候选必须落在不同 search session：paper_candidates 有
@@ -541,16 +557,9 @@ def test_batch_retry_route_hits_duplicate_title_returns_409(monkeypatch, tmp_pat
 
     created_a = client.post("/api/papers/imports", json={"search_id": "search-2", "candidate_ids": ["candidate-a"]})
     assert created_a.status_code == 200
-    batch_a = created_a.json()["batch_id"]
-    status_a = created_a.json()
-    for _ in range(200):
-        status_a = client.get(f"/api/papers/imports/{batch_a}").json()
-        if status_a["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
-    assert next(it for it in status_a["items"] if it["status"] == "completed") is not None
+    assert started.wait(timeout=5)  # candidate-a 稳定停在活跃态
 
-    # 整批重试 B（failed→queued）撞 A 的 completed 索引 → 409 DUPLICATE_IMPORT
+    # 整批重试 B（failed→queued）撞 A 的活跃索引 → 409 DUPLICATE_IMPORT
     resp = client.post(f"/api/papers/imports/{batch_b}/retry")
     assert resp.status_code == 409
     assert resp.json()["code"] == "DUPLICATE_IMPORT"
@@ -558,5 +567,28 @@ def test_batch_retry_route_hits_duplicate_title_returns_409(monkeypatch, tmp_pat
 
     # 别名路径同样可读（事务已回滚，B 仍是 failed，可再次复现）
     resp_alias = client.post(f"/api/papers/import-batches/{batch_b}/retry")
+    finish.set()
     assert resp_alias.status_code == 409
     assert resp_alias.json()["code"] == "DUPLICATE_IMPORT"
+
+
+def test_completed_item_no_longer_blocks_new_batch_via_api(monkeypatch, tmp_path):
+    """已 completed 的论文再次新建批次 → 不再 409，正常入队（spec-021 Task06）。
+    去重交由 KB find_existing（结果表达 PAPER_ALREADY_EXISTS），不再由批次层拒绝。"""
+    _setup(monkeypatch, tmp_path, lambda *_args: PaperImportResult("paper-1", "safe.pdf", "indexed"))
+    client = TestClient(app)
+    first = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})
+    assert first.status_code == 200
+    batch_id = first.json()["batch_id"]
+    status = first.json()
+    for _ in range(200):
+        status = client.get(f"/api/papers/imports/{batch_id}").json()
+        if status["status"] in {"completed", "failed", "partial_success"}:
+            break
+        time.sleep(0.01)
+    assert status["status"] == "completed"
+
+    second = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})
+    assert second.status_code == 200
+    assert second.json()["batch_id"] != batch_id
+    assert second.json()["status"] == "queued"

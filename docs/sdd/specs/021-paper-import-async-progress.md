@@ -21,7 +21,9 @@
 ## 一句话目标
 
 把论文批量导入从"在 HTTP 请求线程里同步跑完整批"改为"**入队即返回、后台执行、前端轮询可见**"，
-并让"知识库存储被另一个实例占用"这类环境故障变成**可诊断、可行动**的错误，而不是笼统的"论文导入失败"。
+并让"知识库存储被另一个实例占用"这类环境故障变成**可诊断、可行动**的错误，而不是笼统的"论文导入失败"；
+同时释放终态条目对论文身份的长期占用——**已成功导入**的论文不再被自身历史批次挡住（去重交给知识库 `find_existing`），
+**未入库**的论文（失败/取消）可自由重新导入与重试。
 
 ## 背景与证据（实测，2026-09-10）
 
@@ -41,7 +43,7 @@
 
 | 字段 | 类型 | 约束（必填？范围？默认？）|
 |---|---|---|
-| `paper_import_batches.state` | 枚举 | 必填；创建后**立即**为 `queued` 并返回，不得由请求线程推进；沿用既有 `BATCH_STATES`（不改 CAS 语义，spec-019 约束） |
+| `paper_import_batches.state` | 枚举 | 必填；创建后**响应里的 `state` 即为 `queued` 并立即返回**（此处指接口返回值，非 DDL 默认值），不得由请求线程推进；沿用既有 `BATCH_STATES`（不改 CAS 语义，spec-019 约束） |
 | 后台批次执行句柄 `batch_runners: Mapping[batch_id, Future]` | 进程内映射 | 必填；**单飞**：同一 `batch_id` 同时最多一个执行中的 runner；进程内单线程池/线程池执行，进程退出即失效 |
 | 批次/条目进度读取 | 既有 `GET /api/papers/imports/{id}` 负载 | 必填；轮询间隔沿用 2.5s；每条 item 需可见 `queued/downloading/validating/indexing/completed/failed/waiting_login/cancelled` 与 `error_code` |
 | 错误码 `KB_STORAGE_LOCKED` | 字符串 | 必填（新增，可重试）；专指"知识库存储被另一个实例独占"，文案必须**可行动**："知识库存储被另一个实例占用，请关闭其他服务实例后重试" |
@@ -75,12 +77,15 @@
 - 前端：`submitting` 只在 `submitInflight > 0` 时成立；所有请求返回后必然落到 `running` / `partial_success` / `completed` / `failed` / `idle` 之一。
 - 前端：批次非终态超过 X（建议 3 分钟）未推进（`updated_at` 无变化）时提示"仍在导入，可离开此页"，**不得**谎报失败也**不得**无限静默。
 - 幂等行为不变：重复 POST 同一 `idempotency_key` 仍冲突报错，不静默复用旧批次。
-- **唯一索引冲突必须可读**：对已有条目（含**失败**条目）的同一论文再次新建批次，会撞 `UNIQUE constraint failed: index 'import_item_title'`（实测 2026-09-10，`routes_paper.py:707` → `store.py:364`），当前被 `except Exception` 兜底成 424 `IMPORT_BATCH_ERROR`（"批量导入失败"）。必须映射为**可行动**的专用错误码（如"该论文已在导入批次中，请在原批次重试"，或已入库时走 `PAPER_ALREADY_EXISTS` 语义），**禁止**继续以 `IMPORT_BATCH_ERROR` 兜底掩盖。
+- **唯一索引冲突必须可读**：同一论文在**活跃态**条目存在时再次导入，撞 `UNIQUE constraint failed: index 'import_item_title'`（实测 2026-09-10，`routes_paper.py:707` → `store.py:364`），必须映射为 409 `DUPLICATE_IMPORT`（"该论文已在导入批次中，请在原批次重试"），**禁止**继续以 `IMPORT_BATCH_ERROR` 兜底掩盖。
+- **已入库论文重新导入 → 去重而非重跑**：对已完成且已成功入库的论文新建批次，**不得**再返回 409；由知识库既有 `find_existing`（`application.py` 扫 `papers.json`）命中，结果表达为 `PAPER_ALREADY_EXISTS` / `existing`（"论文已在知识库中"），复用既有 `paper_id`，**不得**重复落盘、不得报成批量导入失败。
+- **未入库论文（失败/取消）释放后可真实重跑**：这类论文不在 `papers.json` 中，`find_existing` 不会命中，因此重新导入/重试会**真实重跑下载 + v1 索引 + 异步 v2**——这是预期行为（用户诉求正是能重来），但不得被唯一索引阻挡，也不得被误报为 `DUPLICATE_IMPORT`。
 
 ## 明确不做（划出范围，防 AI 自由发挥）
 
 - 不改 `paper_import_batch_store.py` 的 CAS 状态机、并发领用与租约语义（沿用 spec-019 约束）。
-- **不改 `import_item_title` 唯一索引本身**：本轮只做"冲突可读化"（映射专用错误码 + 指引回原批次重试）；"失败/取消条目是否应释放唯一性以便重新导入"属语义变更，**需另行评审**，不在本轮范围。
+- **释放唯一索引只改"哪些状态占位"，不改去重职责**：见下条。
+- **已完成 / 失败 / 取消条目不再占用 `import_item_title`**：用户 2026-09-10 决策"释放"。唯一索引的 WHERE 收缩为**仅活跃态**（`queued`/`downloading`/`waiting_login`/`validating`/`indexing`），保留"同一篇论文不得并发重复导入"的保护；已终态条目不再阻塞重新导入，去重交给知识库的既有 `find_existing`（返回 `PAPER_ALREADY_EXISTS` / `existing` 语义）。不得为此削弱 CAS / 并发领用 / 租约语义，也不得放弃活跃态冲突的 409 保护。
 - 不引入分布式/多进程任务队列（Celery/RQ/MQ 一律不做）；单进程内线程池即可。
 - 不改下载安全策略、USENIX/DBLP 来源逻辑与 `_peer_from_response` 复核。
 - 不做导入历史页、跨会话任务列表与后台任务中心（本轮只保证当前页面可见性）。
@@ -106,19 +111,19 @@
 
 ## 执行配置（由架构师填写，落盘可查）
 
-> 沿用用户 2026-09-10 指定：**子 agent 全部 `hy3`**。
+> 沿用用户 2026-09-10 指定：**子 agent 全部 `Deepseek-V4.1-Flash`**（同日早些时候为 `hy3`，已切换；本文件与 `AGENTS.md` 选型表口径一致）。
 
 | 角色 | 选用模型 | 上下文上限 | 分派方式 | 职责 |
 |---|---|---|---|---|
 | 架构师 | 自身（当前执行任务的 Agent，不写死模型代号） | 200k | 主会话 | 编写/修订本 spec、技术决策、落地校验 |
-| 产品经理 / 文档更新 | `hy3` | 32k | `Task(doc-updater)` | 补写产品使用步骤、用户旅程与验收场景 |
-| 后端开发 | `hy3` | 32k | `Task(backend-dev)` | 只改 `backend/**`：异步执行器、错误语义、单条重试路由 |
-| 前端开发 | `hy3` | 32k | `Task(frontend-dev)` | 只改 `frontend/**`：真实轮询进度、取消、软超时提示 |
-| 后端评审 | `hy3` | 32k | `Task(backend-reviewer)` | 只评 `backend/**` |
-| 前端评审 | `hy3` | 32k | `Task(frontend-reviewer)` | 只评 `frontend/**`（DOM 契约 / `?v=N` / XSS） |
-| 后端回归 | `hy3` | 32k | `Task(backend-tester)` | 只跑后端 pytest |
-| 前端回归 | `hy3` | 32k | `Task(frontend-tester)` | 前端契约 / 静态核对 |
-| 验收总控 | `hy3` | 32k | `Task(tester)` | 跨端验收与报告 |
+| 产品经理 / 文档更新 | `Deepseek-V4.1-Flash` | 32k | `Task(doc-updater)` | 补写产品使用步骤、用户旅程与验收场景 |
+| 后端开发 | `Deepseek-V4.1-Flash` | 32k | `Task(backend-dev)` | 只改 `backend/**`：异步执行器、错误语义、单条重试路由 |
+| 前端开发 | `Deepseek-V4.1-Flash` | 32k | `Task(frontend-dev)` | 只改 `frontend/**`：真实轮询进度、取消、软超时提示 |
+| 后端评审 | `Deepseek-V4.1-Flash` | 32k | `Task(backend-reviewer)` | 只评 `backend/**` |
+| 前端评审 | `Deepseek-V4.1-Flash` | 32k | `Task(frontend-reviewer)` | 只评 `frontend/**`（DOM 契约 / `?v=N` / XSS） |
+| 后端回归 | `Deepseek-V4.1-Flash` | 32k | `Task(backend-tester)` | 只跑后端 pytest |
+| 前端回归 | `Deepseek-V4.1-Flash` | 32k | `Task(frontend-tester)` | 前端契约 / 静态核对 |
+| 验收总控 | `Deepseek-V4.1-Flash` | 32k | `Task(tester)` | 跨端验收与报告 |
 
 ## 任务计划
 
@@ -129,12 +134,13 @@
 | 03 | 后端：`KB_STORAGE_LOCKED` 语义、单条目重试路由与唯一索引冲突可读化 | [`task-03-backend-error-semantics-and-item-retry.md`](../plans/021/task-03-backend-error-semantics-and-item-retry.md) | 02 | 完成 |
 | 04 | 前端：真实轮询进度、取消与软超时提示 | [`task-04-frontend-progress-cancel-timeout.md`](../plans/021/task-04-frontend-progress-cancel-timeout.md) | 03 | 完成 |
 | 05 | 评审、部署与复盘 | [`task-05-review-deploy-retro.md`](../plans/021/task-05-review-deploy-retro.md) | 02,03,04 | 完成 |
+| 06 | 后端：释放已完成/失败/取消条目占用的唯一索引（迁移 + 重新导入去重） | [`task-06-release-title-uniqueness.md`](../plans/021/task-06-release-title-uniqueness.md) | 03 | 进行中 |
 
 > 建议执行顺序的前置：**spec-020 / Task06（BUG-04）先行**，它修的是前端相位死锁与重试可见性，属即时止损，与本 spec 的后端异步化不冲突。
 
 ## 评审记录
 
-- 需求评审：**待补**（`architect` 子代理触发 429 限流，恢复后补做并落盘 `docs/sdd/reviews/021-requirement-review.md`；不阻塞，本 spec 已由用户两轮确认：grill Round1 五项决策 + "1 确认，2 停掉"）
+- 需求评审：`docs/sdd/reviews/021-requirement-review.md`（**打回（0 P0 / 3 P1 / 5 P2）→ 架构师已按 R1-1/R1-2/R1-3 修订本 spec 文本与 `plans/021/task-06`，待 `architect` 复审**）
 - 技术评审：`docs/sdd/reviews/021-tech-review.md`（**通过（APPROVE）**，`backend-reviewer`；0 CRITICAL / 0 HIGH，3 LOW + 1 INFO 已记录）
 - 前端评审：`docs/sdd/reviews/021-frontend-review.md`（首轮**打回** P1 → 修复后复审**通过（Approve）**，`frontend-reviewer`）
 - 验收评审：`docs/sdd/reviews/021-acceptance-review.md`（**通过**；`tester` 子代理 429 限流 → 主模型代行，报告头部已标注「代行（原因）」，开发主管签字栏填「架构师（主会话）代签」）
@@ -144,6 +150,7 @@
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-10 | 架构师(自身) | 由 spec-020 BUG-04 的 grill with docs 派生立项：实测确认导入在请求线程内同步执行、轮询从未发生、失败根因为 `data/kb/qdrant` 被另一实例独占且被压成无差别 `KB_IMPORT_FAILED`。用户 Round1 五项全部采纳推荐（异步化 / 相位去自我守卫 / 整批+单条重试 / 纳入环境根因 / 拆 spec-021），并要求子 agent 统一 `hy3` |
+| 2026-09-10 | 架构师(自身) | 用户就遗留语义拍板"**释放**"：已完成/失败/取消条目不再占用 `import_item_title` 唯一索引，仅保留活跃态并发保护，去重交给 KB 的 `find_existing`（`PAPER_ALREADY_EXISTS`）。已修订本 spec 的边界与明确不做，新增 Task06（含 store 迁移）。同期按用户要求把子 agent 模型由 `hy3` 统一改为 `Deepseek-V4.1-Flash` 并同步 `AGENTS.md` |
 | 2026-09-10 | 架构师(自身) | Task02 运行时验收通过（停掉占存储的多余实例 + 重启 8123 后，`POST /api/papers/imports` 0 秒返回 `queued`，轮询 25 秒后 `completed 2/2`）。同时新发现"已存在条目（含失败条目）再次新建批次 → `UNIQUE constraint failed: index 'import_item_title'` 被兜底为 424 `IMPORT_BATCH_ERROR`"：新增边界条目与"不改索引、只做冲突可读化"的明确不做什么，移交 Task03；"失败条目是否释放唯一性"列为待评审的语义变更 |
 
 ---
