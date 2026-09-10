@@ -53,6 +53,7 @@ class PaperImportBatch:
     waiting_login_count: int = 0
     cancelled_count: int = 0
     idempotency_key: Optional[str] = None
+    search_expires_at: Optional[str] = None
 
     @property
     def state(self) -> str:
@@ -76,6 +77,7 @@ class PaperImportBatch:
             "waiting_login_count": self.waiting_login_count,
             "cancelled_count": self.cancelled_count,
             "idempotency_key": self.idempotency_key,
+            "search_expires_at": self.search_expires_at,
         }
 
 
@@ -101,6 +103,15 @@ class PaperImportItem:
     conference_id: Optional[str] = None
     idempotency_key: Optional[str] = None
     lease_renewed_at: Optional[str] = None
+    # Attempt/resource fields are durable internal state.  ``attempt_token``
+    # is intentionally omitted from ``to_dict``; the HTTP boundary must never
+    # expose the compensation capability.
+    attempt_owner: Optional[str] = None
+    attempt_token: Optional[str] = None
+    resource_capability: Optional[dict[str, Any]] = None
+    cleanup_status: Optional[str] = None
+    snapshot_json: Optional[str] = None
+    snapshot_hash: Optional[str] = None
 
     @property
     def state(self) -> str:
@@ -111,6 +122,12 @@ class PaperImportItem:
         self.status = value
 
     def to_dict(self) -> dict[str, Any]:
-        result = {name: getattr(self, name) for name in self.__dataclass_fields__}
+        public_fields = {
+            "item_id", "batch_id", "candidate_id", "status", "stored_name", "paper_id",
+            "error_code", "error_message", "attempt_count", "lease_expires_at",
+            "created_at", "updated_at", "doi", "dblp_key", "normalized_title", "year",
+            "conference_id", "idempotency_key", "lease_renewed_at", "cleanup_status",
+        }
+        result = {name: getattr(self, name) for name in public_fields}
         result["state"] = self.status
         return result

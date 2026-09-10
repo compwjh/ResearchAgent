@@ -1,7 +1,7 @@
 # Task 06：真实全库索引替换、恢复与性能验收
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（06-A 已完成；06-B 核心隔离门 GO；论文导入门待执行）`
+> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（论文导入/浏览器隔离门已通过；真实索引切换仍 NO-GO）`
 
 ## 一句话目标
 
@@ -16,7 +16,7 @@
 ## 前置门禁
 
 - Task02B 严格 `GO`，Task03–05 完成并通过各自评审。
-- Task04 `upload-closure-matrix.json` 已按实现后代码重算 inventory hashes/digest；本轮核心隔离相关 entry 与 8 个 core tests 已按事实标记为 `closed/passed`，论文导入相关 entry 与 4 个导入 tests 仍为 `open/pending`，整体 `review_status` 仍未进入 `verified`。在导入门禁未完成前不得进入本 Task 的真实切换阶段。
+- Task04 `upload-closure-matrix.json` 已按当前实现重算 inventory hashes/digest；核心、论文导入和浏览器边界 entry 已按事实标记为 `closed`，对应固定测试均为 `passed`，矩阵 `review_status` 为 `implementation_ready`。这只关闭隔离导入门，不代表真实索引切换获准。
 - 已记录分支、commit、工作树、服务/Qdrant 状态、正式元数据数量和旧 Collection 拓扑。
 - dry-run 完整通过；用户已通过确认的 Spec 授权执行 `--confirm-replace`。
 - ResearchAgent 服务已停止；脚本检测到服务占用时必须拒绝运行，不能自动结束进程。
@@ -146,6 +146,15 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 8 个 core 固定命令全部退出 0；独立 backend-tester 报告 378 项 KB 回归通过，独立 backend-reviewer 判定 `isolated_core_closure=GO`。证据见 `artifacts/task-06/closure-core-implementation-report.md`、`core-retest-report.md`、`core-final-review-report.md`。
 - 该结果不覆盖同 ID 不可变导入、补偿 owner/token、批次 retry/resume 与浏览器登录边界；整体 production cutover 继续 `NO-GO`。
 
+### 论文导入、批量补偿与浏览器边界：`PASS（隔离功能门）`
+
+- 批次每次 attempt 持久化独立 owner/token、资源 capability、cleanup 状态及候选快照哈希；重启从 SQLite 恢复，失败/取消/过期先补偿，completed 不重复执行。
+- 单篇导入沿用既有 immutable create、去重和 fail-closed cleanup；默认 composition root 将同一 `PaperImportPort.compensate_import` 注入批服务，避免第二套资源删除逻辑。`cancel_batch` 只更新当前 attempt，历史 attempt 保留审计状态。
+- 登录只解析服务端搜索快照和 ACM/IEEE 白名单，零知识库 source/metadata/index 写入；受控浏览器 profile 的认证状态持久化是显式配置，resume 仍只委托既有 batch/import/immutable 链路。
+- 独立 reviewer/tester 对 T-IMMUTABLE-CREATE、T-PAPER-IMPORT、T-IMPORT-COMPENSATION、T-BROWSER-BOUNDARY 给出 GO/PASS；证据见 `artifacts/task-06/batch-compensation-review.md`、`batch-compensation-test-report.md`、`browser-boundary-review.md`、`browser-boundary-implementation-report.md`。
+- 该结果仍不覆盖真实 Qdrant、真实登录、generation-bound collection topology、session TTL/恢复清理和生产维护窗口；closure matrix 仍为 `implementation_ready`，真实切换继续 `NO-GO`。
+- 全量回归本轮为 `870 passed / 5 failed`；失败集中在 `tests/test_legacy_kb_integration.py` 的历史索引/旧内部符号契约。已保留只读配置别名以便离线 fixture，另 3 项仍依赖已退休的 `index_paper_chunker` 无代际参数、`submit_index_task` 和 `delete_paper`，记录为 `legacy/migration_unverified`，不得用恢复旧写入口掩盖。新文档 API 相关回归 25 项通过，历史测试迁移不阻塞本轮隔离门，但阻塞最终“全量回归通过”收口。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -155,3 +164,5 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：06-B 审计确认 closure matrix 为 17 open/12 pending，真实生产门继续 NO-GO；完成默认 FinalizeBundle 主链和新进程恢复修复，47 项定向测试通过，仍未执行真实索引。
 - 2026-09-10：修复 retire no-op/未知 topology 仍继续完成的问题；49 项定向测试和 9/9 临时故障探针通过，独立 reviewer/tester 给出隔离功能门 GO/PASS。生产门继续被 closure matrix 与真实 Qdrant 维护窗口阻塞。
 - 2026-09-10：closure-core 修复完成；8 项 core 门禁、378 项 KB 回归通过，独立 reviewer/tester 给出隔离 GO/PASS。矩阵哈希已刷新，论文导入四项门禁仍待实现与验收，生产切换继续禁止。
+- 2026-09-10：完成批量补偿真实闭环加固和 browser boundary 隔离门；44 项批量/适配器回归、15 项 immutable、4 项 browser 精确测试通过，矩阵更新为 `implementation_ready`，零知识库写入语义与受控 profile 持久化边界明确；真实索引切换仍禁止。
+- 2026-09-10：全量 pytest 暴露 5 项 Spec015 历史旧索引集成测试与 Spec018 已收窄边界不一致；未恢复旧索引写链，已落盘 `artifacts/task-06/legacy-regression-analysis.md`，后续迁移为 canonical document API 测试。

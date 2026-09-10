@@ -35,7 +35,16 @@ from backend.app.knowledge_base.application import (
     reranker_health,
     submit_document_reindex,
 )
-from backend.app.platform.config import CHUNK_V2_LLM_MODEL, KB_DIR, KB_MAX_UPLOAD_MB
+from backend.app.platform.config import (
+    CHUNK_V2_LLM_MODEL,
+    KB_DIR,
+    KB_MAX_UPLOAD_MB,
+    KB_PAPERS_DIR,  # noqa: F401
+)
+
+# Kept as a module-level read-only configuration alias for offline/legacy
+# fixtures that patch the historical source directory.  Canonical document
+# routes below continue to resolve paths through the knowledge-base boundary.
 from backend.app.platform.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (

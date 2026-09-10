@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import re
+import secrets
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any, Iterable, Iterator, Mapping, Optional
 
-from backend.app.platform.config import BASE_DIR
 from backend.app.paper_discovery.domain.paper_import_batch import (
     BATCH_CANCELLED,
     BATCH_COMPLETED,
@@ -33,6 +34,7 @@ from backend.app.paper_discovery.domain.paper_import_batch import (
     PaperImportBatch,
     PaperImportItem,
 )
+from backend.app.platform.config import BASE_DIR
 
 SCHEMA_VERSION = 1
 MAX_BATCH_ITEMS = 20
@@ -44,6 +46,7 @@ BATCH_NOT_FOUND = "BATCH_NOT_FOUND"
 ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
 BATCH_LIMIT_EXCEEDED = "BATCH_LIMIT_EXCEEDED"
 DATABASE_LOCKED = "DATABASE_LOCKED"
+SNAPSHOT_REBUILD_REQUIRED = "SNAPSHOT_REBUILD_REQUIRED"
 
 ACTIVE_LEASE_STATES = (ITEM_DOWNLOADING, ITEM_VALIDATING, ITEM_INDEXING)
 TITLE_YEAR_NULL = -2147483648
@@ -73,6 +76,48 @@ def _timestamp(value: Optional[str | datetime] = None) -> str:
 def _plus_seconds(value: str, seconds: int) -> str:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return (parsed + timedelta(seconds=seconds)).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _new_attempt_owner() -> str:
+    return f"paper-import:{uuid.uuid4().hex}"
+
+
+def _new_attempt_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def _encode_capability(value: Any) -> str:
+    """Serialize only the internal capability DTO, never an arbitrary object."""
+    if isinstance(value, Mapping):
+        raw = dict(value)
+    else:
+        raw = {
+            name: getattr(value, name, None)
+            for name in (
+                "owner", "token", "document_id", "stored_name", "source_sha256",
+                "source_dev", "source_ino", "destination_collection",
+            )
+        }
+    allowed = {
+        name: raw.get(name)
+        for name in (
+            "owner", "token", "document_id", "stored_name", "source_sha256",
+            "source_dev", "source_ino", "destination_collection",
+        )
+    }
+    return json.dumps(allowed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _decode_capability(value: Any) -> Optional[dict[str, Any]]:
+    if not value:
+        return None
+    try:
+        decoded = json.loads(str(value))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    return decoded
 
 
 class PaperImportBatchStore:
@@ -152,6 +197,7 @@ class PaperImportBatchStore:
             """CREATE TABLE IF NOT EXISTS paper_import_batches(
                 batch_id TEXT PRIMARY KEY,
                 search_id TEXT NOT NULL,
+                search_expires_at TEXT,
                 state TEXT NOT NULL CHECK(state IN ('queued','running','waiting_login','partial_success','completed','failed','cancelled')),
                 idempotency_key TEXT,
                 created_at TEXT NOT NULL,
@@ -180,15 +226,55 @@ class PaperImportBatchStore:
                 year INTEGER,
                 conference_id TEXT,
                 idempotency_key TEXT,
+                attempt_owner TEXT,
+                attempt_token TEXT,
+                resource_capability TEXT,
+                cleanup_status TEXT,
+                snapshot_json TEXT,
+                snapshot_hash TEXT,
                 UNIQUE(batch_id, candidate_id)
             )"""
         )
-        required_batches = {"batch_id", "search_id", "state", "idempotency_key", "created_at", "updated_at"}
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS paper_import_attempts(
+                attempt_id TEXT PRIMARY KEY,
+                item_id TEXT NOT NULL REFERENCES paper_import_items(item_id) ON DELETE RESTRICT,
+                attempt_number INTEGER NOT NULL CHECK(attempt_number > 0),
+                lease_owner TEXT NOT NULL,
+                attempt_owner TEXT NOT NULL,
+                attempt_token TEXT NOT NULL,
+                resource_capability TEXT,
+                cleanup_status TEXT,
+                state TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(item_id, attempt_number)
+            )"""
+        )
+        # Additive migration for databases created before durable attempt and
+        # snapshot state existed.  These columns are nullable so reopening a
+        # legacy database never fabricates a capability or a candidate.
+        item_columns = {row[1] for row in connection.execute("PRAGMA table_info(paper_import_items)")}
+        for name, type_name in (
+            ("attempt_owner", "TEXT"),
+            ("attempt_token", "TEXT"),
+            ("resource_capability", "TEXT"),
+            ("cleanup_status", "TEXT"),
+            ("snapshot_json", "TEXT"),
+            ("snapshot_hash", "TEXT"),
+        ):
+            if name not in item_columns:
+                connection.execute(f"ALTER TABLE paper_import_items ADD COLUMN {name} {type_name}")
+        batch_columns = {row[1] for row in connection.execute("PRAGMA table_info(paper_import_batches)")}
+        if "search_expires_at" not in batch_columns:
+            connection.execute("ALTER TABLE paper_import_batches ADD COLUMN search_expires_at TEXT")
+        required_batches = {"batch_id", "search_id", "search_expires_at", "state", "idempotency_key", "created_at", "updated_at"}
         required_items = {
             "item_id", "batch_id", "candidate_id", "state", "stored_name", "paper_id", "error_code",
             "error_message", "attempt_count", "lease_owner", "lease_expires_at", "lease_renewed_at",
             "created_at", "updated_at", "doi", "dblp_key", "normalized_title", "year", "conference_id",
-            "idempotency_key",
+            "idempotency_key", "attempt_owner", "attempt_token", "resource_capability", "cleanup_status",
+            "snapshot_json", "snapshot_hash",
         }
         for table, required in (("paper_import_batches", required_batches), ("paper_import_items", required_items)):
             actual = {row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -317,17 +403,20 @@ class PaperImportBatchStore:
         *,
         search_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        search_expires_at: Optional[str] = None,
     ) -> PaperImportBatch:
         if isinstance(batch, PaperImportBatch):
             batch_obj = batch
             item_values = list(items or [])
             search = batch_obj.search_id
             key = batch_obj.idempotency_key or idempotency_key
+            expires_at = batch_obj.search_expires_at or search_expires_at
         else:
             search = search_id or str(batch)
             batch_obj = PaperImportBatch(str(uuid.uuid4()), search, idempotency_key=idempotency_key)
             item_values = list(items or [])
             key = idempotency_key
+            expires_at = search_expires_at
         if not search:
             raise PaperImportBatchStoreError("INVALID_SEARCH_ID", "search_id 不能为空")
         if len(item_values) == 0:
@@ -348,8 +437,8 @@ class PaperImportBatchStore:
         try:
             with self._write_transaction() as connection:
                 connection.execute(
-                    "INSERT INTO paper_import_batches(batch_id,search_id,state,idempotency_key,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                    (batch_obj.batch_id, search, BATCH_QUEUED, key, batch_obj.created_at or now, now),
+                    "INSERT INTO paper_import_batches(batch_id,search_id,search_expires_at,state,idempotency_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                    (batch_obj.batch_id, search, expires_at, BATCH_QUEUED, key, batch_obj.created_at or now, now),
                 )
                 for value in unique_values:
                     if isinstance(value, str):
@@ -358,17 +447,20 @@ class PaperImportBatchStore:
                     else:
                         candidate_id = str(self._candidate_value(value, "candidate_id"))
                         fields = {name: self._candidate_value(value, name) for name in (
-                            "doi", "dblp_key", "normalized_title", "year", "conference_id", "idempotency_key", "stored_name"
+                            "doi", "dblp_key", "normalized_title", "year", "conference_id", "idempotency_key", "stored_name",
+                            "snapshot_json", "snapshot_hash",
                         )}
                     item_id = self._candidate_value(value, "item_id") or str(uuid.uuid4())
                     connection.execute(
                         """INSERT INTO paper_import_items(
                            item_id,batch_id,candidate_id,state,stored_name,created_at,updated_at,
-                           doi,dblp_key,normalized_title,year,conference_id,idempotency_key)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           doi,dblp_key,normalized_title,year,conference_id,idempotency_key,
+                           snapshot_json,snapshot_hash)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (item_id, batch_obj.batch_id, candidate_id, ITEM_QUEUED, fields.get("stored_name"), now, now,
                          fields.get("doi"), fields.get("dblp_key"), fields.get("normalized_title"), fields.get("year"),
-                         fields.get("conference_id"), fields.get("idempotency_key")),
+                         fields.get("conference_id"), fields.get("idempotency_key"), fields.get("snapshot_json"),
+                         fields.get("snapshot_hash")),
                     )
                 return self._batch_from_row(connection.execute("SELECT * FROM paper_import_batches WHERE batch_id=?", (batch_obj.batch_id,)).fetchone(), connection)
         except sqlite3.IntegrityError:
@@ -389,14 +481,17 @@ class PaperImportBatchStore:
             row["batch_id"], row["search_id"], row["state"], row["created_at"], row["updated_at"],
             int(counts["total"] or 0), int(counts["completed"] or 0), int(counts["failed"] or 0),
             int(counts["waiting"] or 0), int(counts["cancelled"] or 0), row["idempotency_key"],
+            row["search_expires_at"],
         )
 
     @staticmethod
     def _item_from_row(row: sqlite3.Row) -> PaperImportItem:
         names = PaperImportItem.__dataclass_fields__
-        values = {name: row[name] for name in names if name in row.keys()}
-        if "status" not in values and "state" in row.keys():
+        row_keys = set(row.keys())
+        values = {name: row[name] for name in names if name in row_keys}
+        if "status" not in values and "state" in row_keys:
             values["status"] = row["state"]
+        values["resource_capability"] = _decode_capability(values.get("resource_capability"))
         return PaperImportItem(**values)
 
     def get_batch(self, batch_id: str) -> Optional[PaperImportBatch]:
@@ -415,6 +510,92 @@ class PaperImportBatchStore:
         return [self._item_from_row(row) for row in rows]
 
     list_items = get_items
+
+    def get_snapshot(self, item_id: str) -> Optional[dict[str, Any]]:
+        """Return the persisted candidate snapshot after hash validation."""
+        item = self.get_item(item_id)
+        if item is None or not item.snapshot_json or not item.snapshot_hash:
+            return None
+        import hashlib
+
+        digest = hashlib.sha256(item.snapshot_json.encode("utf-8")).hexdigest()
+        if digest != item.snapshot_hash:
+            raise PaperImportBatchStoreError(SNAPSHOT_REBUILD_REQUIRED, "候选快照完整性校验失败")
+        try:
+            value = json.loads(item.snapshot_json)
+        except (TypeError, ValueError) as error:
+            raise PaperImportBatchStoreError(SNAPSHOT_REBUILD_REQUIRED, "候选快照无法恢复") from error
+        if not isinstance(value, dict) or not value.get("candidate_id") or not value.get("search_id"):
+            raise PaperImportBatchStoreError(SNAPSHOT_REBUILD_REQUIRED, "候选快照不完整")
+        return value
+
+    def record_attempt_resource(
+        self,
+        item_id: str,
+        resource_capability: Any,
+        *,
+        lease_owner: Optional[str] = None,
+        cleanup_status: Optional[str] = None,
+        now: Optional[str | datetime] = None,
+    ) -> bool:
+        """Durably bind a result capability to the currently owned attempt."""
+        timestamp = _timestamp(now)
+        encoded = _encode_capability(resource_capability)
+        decoded = _decode_capability(encoded) or {}
+        owner = str(decoded.get("owner") or "")
+        token = str(decoded.get("token") or "")
+        required = ("document_id", "stored_name", "source_sha256", "source_dev", "source_ino")
+        if not owner or not token or any(decoded.get(name) in (None, "") for name in required):
+            raise PaperImportBatchStoreError("COMPENSATION_CAPABILITY_INVALID", "补偿能力无效")
+        with self._write_transaction() as connection:
+            row = self._require_item(connection, item_id)
+            if lease_owner and row["lease_owner"] != lease_owner:
+                raise PaperImportBatchStoreError(INVALID_STATE_TRANSITION, "租约所有者不匹配")
+            condition = "item_id=?"
+            args: list[Any] = [item_id]
+            if lease_owner:
+                condition += " AND lease_owner=?"
+                args.append(lease_owner)
+            result = connection.execute(
+                "UPDATE paper_import_items SET attempt_owner=?,attempt_token=?,resource_capability=?,cleanup_status=?,updated_at=? WHERE " + condition,
+                (owner, token, encoded, cleanup_status, timestamp, *args),
+            )
+            if result.rowcount != 1:
+                raise PaperImportBatchStoreError(INVALID_STATE_TRANSITION, "条目状态已被其他执行者更新")
+            connection.execute(
+                "UPDATE paper_import_attempts SET attempt_owner=?,attempt_token=?,resource_capability=?,cleanup_status=?,updated_at=? WHERE item_id=? AND attempt_number=(SELECT attempt_count FROM paper_import_items WHERE item_id=?)",
+                (owner, token, encoded, cleanup_status, timestamp, item_id, item_id),
+            )
+        return True
+
+    def complete_compensation(self, item_id: str, capability: Any, *, now: Optional[str | datetime] = None) -> str:
+        """Mark compensation completed only for the exact persisted capability."""
+        timestamp = _timestamp(now)
+        supplied = _decode_capability(_encode_capability(capability)) or {}
+        owner = str(supplied.get("owner") or "")
+        token = str(supplied.get("token") or "")
+        if not owner or not token:
+            raise PaperImportBatchStoreError("COMPENSATION_CAPABILITY_INVALID", "补偿能力无效")
+        with self._write_transaction() as connection:
+            row = self._require_item(connection, item_id)
+            current = _decode_capability(row["resource_capability"])
+            capability_fields = (
+                "owner", "token", "document_id", "stored_name", "source_sha256",
+                "source_dev", "source_ino", "destination_collection",
+            )
+            if current is None or any(current.get(name) != supplied.get(name) for name in capability_fields) or row["attempt_owner"] != owner or row["attempt_token"] != token:
+                raise PaperImportBatchStoreError("COMPENSATION_DENIED", "补偿能力不匹配")
+            if row["cleanup_status"] == "completed":
+                return "completed"
+            connection.execute(
+                "UPDATE paper_import_items SET cleanup_status='completed',updated_at=? WHERE item_id=? AND attempt_owner=? AND attempt_token=?",
+                (timestamp, item_id, owner, token),
+            )
+            connection.execute(
+                "UPDATE paper_import_attempts SET cleanup_status='completed',updated_at=? WHERE item_id=? AND attempt_number=(SELECT attempt_count FROM paper_import_items WHERE item_id=?)",
+                (timestamp, item_id, item_id),
+            )
+        return "completed"
 
     def get_item(self, item_id: str) -> Optional[PaperImportItem]:
         with self._connect() as connection:
@@ -461,6 +642,7 @@ class PaperImportBatchStore:
         self, item_id: str, to_state: str, maybe_to_state: Optional[str] = None, *, expected_state: Optional[str] = None,
         lease_owner: Optional[str] = None, paper_id: Optional[str] = None, stored_name: Optional[str] = None,
         error_code: Optional[str] = None, error_message: Optional[str] = None, now: Optional[str | datetime] = None,
+        resource_capability: Optional[dict[str, Any]] = None, cleanup_status: Optional[str] = None,
     ) -> bool:
         # Also accept the natural positional form ``(item_id, from, to)``;
         # the keyword form is kept for callers that only know the target.
@@ -492,15 +674,29 @@ class PaperImportBatchStore:
             if to_state in {ITEM_WAITING_LOGIN, ITEM_FAILED, ITEM_COMPLETED, ITEM_QUEUED}:
                 updates.extend(["lease_owner=NULL", "lease_expires_at=NULL", "lease_renewed_at=NULL"])
             if paper_id is not None:
-                updates.append("paper_id=?"); values.append(paper_id)
+                updates.append("paper_id=?")
+                values.append(paper_id)
             if stored_name is not None:
-                updates.append("stored_name=?"); values.append(stored_name)
+                updates.append("stored_name=?")
+                values.append(stored_name)
+            if resource_capability is not None:
+                updates.append("resource_capability=?")
+                values.append(_encode_capability(resource_capability))
+            if cleanup_status is not None or to_state == ITEM_COMPLETED:
+                updates.append("cleanup_status=?")
+                values.append(cleanup_status)
             if error_code is not None or to_state == ITEM_QUEUED:
-                updates.append("error_code=?"); values.append(error_code)
-                updates.append("error_message=?"); values.append(error_message)
+                updates.append("error_code=?")
+                values.append(error_code)
+                updates.append("error_message=?")
+                values.append(error_message)
             result = connection.execute(f"UPDATE paper_import_items SET {','.join(updates)} WHERE {condition}", (*values, *args))
             if result.rowcount != 1:
                 raise PaperImportBatchStoreError(INVALID_STATE_TRANSITION, "条目状态已被其他执行者更新")
+            connection.execute(
+                "UPDATE paper_import_attempts SET state=?,updated_at=? WHERE item_id=? AND attempt_number=(SELECT attempt_count FROM paper_import_items WHERE item_id=?)",
+                (to_state, timestamp, item_id, item_id),
+            )
             self._refresh_batch(connection, current["batch_id"], timestamp)
         return True
 
@@ -508,33 +704,57 @@ class PaperImportBatchStore:
     update_item_state = transition_item
     transition = transition_item
 
-    def claim_item(self, item_id: str, lease_owner: str, *, now: Optional[str | datetime] = None, lease_seconds: int = DEFAULT_LEASE_SECONDS) -> bool:
+    def claim_item(
+        self, item_id: str, lease_owner: str, *, now: Optional[str | datetime] = None,
+        lease_seconds: int = DEFAULT_LEASE_SECONDS, attempt_owner: Optional[str] = None,
+        attempt_token: Optional[str] = None,
+    ) -> bool:
         timestamp = _timestamp(now)
         expires = _plus_seconds(timestamp, lease_seconds)
         with self._write_transaction() as connection:
             row = self._require_item(connection, item_id)
             result = connection.execute(
-                "UPDATE paper_import_items SET state=?,attempt_count=attempt_count+1,lease_owner=?,lease_expires_at=?,lease_renewed_at=?,updated_at=? "
+                "UPDATE paper_import_items SET state=?,attempt_count=attempt_count+1,lease_owner=?,lease_expires_at=?,lease_renewed_at=?,attempt_owner=?,attempt_token=?,updated_at=? "
                 "WHERE item_id=? AND state=?",
-                (ITEM_DOWNLOADING, lease_owner, expires, timestamp, timestamp, item_id, ITEM_QUEUED),
+                (ITEM_DOWNLOADING, lease_owner, expires, timestamp, attempt_owner or _new_attempt_owner(), attempt_token or _new_attempt_token(), timestamp, item_id, ITEM_QUEUED),
             )
             if result.rowcount != 1:
                 raise PaperImportBatchStoreError(INVALID_STATE_TRANSITION, "条目不可领取")
+            latest = connection.execute(
+                "SELECT attempt_count,attempt_owner,attempt_token FROM paper_import_items WHERE item_id=?",
+                (item_id,),
+            ).fetchone()
+            connection.execute(
+                "INSERT INTO paper_import_attempts(attempt_id,item_id,attempt_number,lease_owner,attempt_owner,attempt_token,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), item_id, latest["attempt_count"], lease_owner, latest["attempt_owner"], latest["attempt_token"], ITEM_DOWNLOADING, timestamp, timestamp),
+            )
             self._refresh_batch(connection, row["batch_id"], timestamp)
         return True
 
-    def resume_item(self, item_id: str, lease_owner: str, *, now: Optional[str | datetime] = None, lease_seconds: int = DEFAULT_LEASE_SECONDS) -> bool:
+    def resume_item(
+        self, item_id: str, lease_owner: str, *, now: Optional[str | datetime] = None,
+        lease_seconds: int = DEFAULT_LEASE_SECONDS, attempt_owner: Optional[str] = None,
+        attempt_token: Optional[str] = None,
+    ) -> bool:
         timestamp = _timestamp(now)
         expires = _plus_seconds(timestamp, lease_seconds)
         with self._write_transaction() as connection:
             row = self._require_item(connection, item_id)
             result = connection.execute(
-                "UPDATE paper_import_items SET state=?,attempt_count=attempt_count+1,lease_owner=?,lease_expires_at=?,lease_renewed_at=?,updated_at=? "
-                "WHERE item_id=? AND state=?",
-                (ITEM_DOWNLOADING, lease_owner, expires, timestamp, timestamp, item_id, ITEM_WAITING_LOGIN),
+                "UPDATE paper_import_items SET state=?,attempt_count=attempt_count+1,lease_owner=?,lease_expires_at=?,lease_renewed_at=?,attempt_owner=?,attempt_token=?,updated_at=? "
+                "WHERE item_id=? AND state IN (?,?)",
+                (ITEM_DOWNLOADING, lease_owner, expires, timestamp, attempt_owner or _new_attempt_owner(), attempt_token or _new_attempt_token(), timestamp, item_id, ITEM_WAITING_LOGIN, ITEM_FAILED),
             )
             if result.rowcount != 1:
                 raise PaperImportBatchStoreError(INVALID_STATE_TRANSITION, "条目不在等待登录状态")
+            latest = connection.execute(
+                "SELECT attempt_count,attempt_owner,attempt_token FROM paper_import_items WHERE item_id=?",
+                (item_id,),
+            ).fetchone()
+            connection.execute(
+                "INSERT INTO paper_import_attempts(attempt_id,item_id,attempt_number,lease_owner,attempt_owner,attempt_token,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), item_id, latest["attempt_count"], lease_owner, latest["attempt_owner"], latest["attempt_token"], ITEM_DOWNLOADING, timestamp, timestamp),
+            )
             self._refresh_batch(connection, row["batch_id"], timestamp)
         return True
 
@@ -570,11 +790,15 @@ class PaperImportBatchStore:
                 condition = "item_id=? AND state IN (?,?)"
                 args = (item_id, ITEM_QUEUED, ITEM_WAITING_LOGIN)
             result = connection.execute(
-                "UPDATE paper_import_items SET state=?,error_code=?,error_message=?,lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? WHERE " + condition,
+                "UPDATE paper_import_items SET state=?,error_code=?,error_message=?,cleanup_status=COALESCE(cleanup_status, CASE WHEN resource_capability IS NOT NULL THEN 'cleanup_pending' ELSE NULL END),lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? WHERE " + condition,
                 (ITEM_FAILED, error_code, error_message, timestamp, *args),
             )
             if result.rowcount != 1:
                 raise PaperImportBatchStoreError(INVALID_STATE_TRANSITION, "条目不可标记失败")
+            connection.execute(
+                "UPDATE paper_import_attempts SET state='failed',updated_at=? WHERE item_id=? AND attempt_number=(SELECT attempt_count FROM paper_import_items WHERE item_id=?)",
+                (timestamp, item_id, item_id),
+            )
             self._refresh_batch(connection, row["batch_id"], timestamp)
         return True
 
@@ -598,12 +822,16 @@ class PaperImportBatchStore:
         with self._write_transaction() as connection:
             row = self._require_item(connection, item_id)
             result = connection.execute(
-                "UPDATE paper_import_items SET state=?,lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? "
-                "WHERE item_id=? AND state IN (?,?,?)",
-                (ITEM_CANCELLED, timestamp, item_id, ITEM_QUEUED, ITEM_WAITING_LOGIN, ITEM_FAILED),
+                "UPDATE paper_import_items SET state=?,cleanup_status=CASE WHEN resource_capability IS NOT NULL THEN 'cleanup_pending' ELSE cleanup_status END,lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? "
+                "WHERE item_id=? AND state IN (?,?,?,?,?,?)",
+                (ITEM_CANCELLED, timestamp, item_id, ITEM_QUEUED, ITEM_WAITING_LOGIN, ITEM_FAILED, ITEM_DOWNLOADING, ITEM_VALIDATING, ITEM_INDEXING),
             )
             if result.rowcount != 1:
                 raise PaperImportBatchStoreError(INVALID_STATE_TRANSITION, "条目不可取消")
+            connection.execute(
+                "UPDATE paper_import_attempts SET state='cancelled',updated_at=? WHERE item_id=? AND attempt_number=(SELECT attempt_count FROM paper_import_items WHERE item_id=?)",
+                (timestamp, item_id, item_id),
+            )
             self._refresh_batch(connection, row["batch_id"], timestamp)
         return True
 
@@ -614,9 +842,17 @@ class PaperImportBatchStore:
         with self._write_transaction() as connection:
             self._ensure_batch(connection, batch_id)
             result = connection.execute(
-                "UPDATE paper_import_items SET state=?,lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? "
-                "WHERE batch_id=? AND state IN (?,?,?)",
-                (ITEM_CANCELLED, timestamp, batch_id, ITEM_QUEUED, ITEM_WAITING_LOGIN, ITEM_FAILED),
+                "UPDATE paper_import_items SET state=?,cleanup_status=CASE WHEN resource_capability IS NOT NULL THEN 'cleanup_pending' ELSE cleanup_status END,lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? "
+                "WHERE batch_id=? AND state IN (?,?,?,?,?,?)",
+                (ITEM_CANCELLED, timestamp, batch_id, ITEM_QUEUED, ITEM_WAITING_LOGIN, ITEM_FAILED, ITEM_DOWNLOADING, ITEM_VALIDATING, ITEM_INDEXING),
+            )
+            # Only the attempt currently represented by each item may be
+            # cancelled.  Historical attempts remain immutable audit facts.
+            connection.execute(
+                "UPDATE paper_import_attempts SET state='cancelled',updated_at=? "
+                "WHERE item_id IN (SELECT item_id FROM paper_import_items WHERE batch_id=? AND state='cancelled') "
+                "AND attempt_number=(SELECT attempt_count FROM paper_import_items WHERE item_id=paper_import_attempts.item_id)",
+                (timestamp, batch_id),
             )
             self._refresh_batch(connection, batch_id, timestamp)
             return result.rowcount
@@ -631,10 +867,15 @@ class PaperImportBatchStore:
             if not rows:
                 return 0
             result = connection.execute(
-                "UPDATE paper_import_items SET state=?,error_code=?,error_message=?,lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? "
+                "UPDATE paper_import_items SET state=?,error_code=?,error_message=?,cleanup_status=CASE WHEN resource_capability IS NOT NULL THEN 'cleanup_pending' ELSE cleanup_status END,lease_owner=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,updated_at=? "
                 "WHERE state IN (?,?,?) AND lease_expires_at IS NOT NULL AND lease_expires_at<=?",
                 (ITEM_FAILED, IMPORT_INTERRUPTED, "任务在服务重启时中断", timestamp, ITEM_DOWNLOADING, ITEM_VALIDATING, ITEM_INDEXING, timestamp),
             )
+            for row in rows:
+                connection.execute(
+                    "UPDATE paper_import_attempts SET state='failed',updated_at=? WHERE item_id=? AND attempt_number=(SELECT attempt_count FROM paper_import_items WHERE item_id=?)",
+                    (timestamp, row["item_id"], row["item_id"]),
+                )
             for batch_id in {row["batch_id"] for row in rows}:
                 self._refresh_batch(connection, batch_id, timestamp)
             return result.rowcount

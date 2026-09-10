@@ -15,17 +15,16 @@ from pydantic import ValidationError
 from backend.app.article_assistant.application.entry import TaskStore
 from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.knowledge_base.application import create_paper_import_port
-from backend.app.platform.config import BASE_DIR
+from backend.app.paper_discovery.application.catalog_search_graph import CatalogSearchGraph, reset_running_jobs
 from backend.app.paper_discovery.application.entry import (
     DBLPPublicationSource,
-    UsenixAcceptedSource,
     OpenAlexEnricher,
     PaperBrowserManager,
     PaperDiscoveryStore,
     PaperImportBatchStore,
+    UsenixAcceptedSource,
 )
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
-from backend.app.paper_discovery.application.catalog_search_graph import CatalogSearchGraph, reset_running_jobs
 from backend.app.paper_discovery.application.paper_import import (
     import_candidate,
 )
@@ -33,6 +32,7 @@ from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchService,
 )
 from backend.app.platform.bootstrap import get_provider, register_provider
+from backend.app.platform.config import BASE_DIR
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
@@ -190,10 +190,16 @@ def _build_paper_batch_service() -> PaperImportBatchService:
         configured_path = BASE_DIR / configured_path
     if paper_import_batch_service is None or paper_import_batch_store_path != configured_path:
         store = PaperImportBatchStore(database_path=configured_path)
+        # Batch cleanup must use the same application-owned paper import port
+        # as single-paper imports.  Passing the bound method keeps the batch
+        # layer independent from KB infrastructure while making compensation
+        # available in the default composition root.
+        paper_import_port = get_provider("paper_import_port")
         paper_import_batch_service = PaperImportBatchService(
             store=store,
             discovery_store=_paper_store(),
             importer=import_candidate,
+            compensator=paper_import_port.compensate_import,
             settings=article_settings,
             allowed_hosts_resolver=_paper_candidate_hosts,
             conference_short_name_resolver=lambda candidate: next(

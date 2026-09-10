@@ -1,4 +1,5 @@
 import uuid
+from contextlib import suppress
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -8,7 +9,9 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 from backend.app.api import common
+from backend.app.api.common import *  # noqa: F401,F403
 from backend.app.api.schemas import (
+    AsyncPaperSearchRequest,
     ConferenceUpdateRequest,
     PaperAcceptedRequest,
     PaperImportBatchRequest,
@@ -17,7 +20,6 @@ from backend.app.api.schemas import (
     PaperImportItemLoginResponse,
     PaperImportRequest,
     PaperImportResponse,
-    AsyncPaperSearchRequest,
 )
 from backend.app.paper_discovery.application.entry import (
     DOWNLOAD_BLOCKED,
@@ -45,9 +47,6 @@ from backend.app.paper_discovery.application.paper_import_batch_service import (
 from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchSession, SearchSourceProgress
 
 router = APIRouter()
-
-from backend.app.api.common import *  # noqa: F401,F403
-
 
 def _async_progress_payload(progress) -> dict:
     return {
@@ -489,6 +488,9 @@ _PAPER_BATCH_ERROR_STATUS = {
     "EMPTY_BATCH": 400,
     "BATCH_LIMIT_EXCEEDED": 400,
     "DATABASE_LOCKED": 503,
+    "SNAPSHOT_REBUILD_REQUIRED": 503,
+    "COMPENSATION_PENDING": 409,
+    "COMPENSATION_DENIED": 409,
 }
 
 
@@ -513,6 +515,9 @@ def _paper_batch_error_response(error: PaperImportBatchServiceError) -> JSONResp
         "EMPTY_BATCH": "批量导入至少需要一项",
         "BATCH_LIMIT_EXCEEDED": "单批最多 20 项",
         "DATABASE_LOCKED": "批次状态库正忙，请稍后重试",
+        "SNAPSHOT_REBUILD_REQUIRED": "批次候选快照需要重建",
+        "COMPENSATION_PENDING": "导入资源补偿仍在等待",
+        "COMPENSATION_DENIED": "导入资源补偿能力不匹配",
         "IMPORT_BATCH_ERROR": "批量导入失败",
     }
     return _paper_api_error(status, code, messages.get(code, "批量导入失败"), bool(getattr(error, "retryable", False)))
@@ -574,6 +579,7 @@ def _paper_batch_payload(batch: object, items: list[object]) -> dict:
             "paper_id": value.get("paper_id"),
             "error_code": value.get("error_code"),
             "error_message": _safe_import_error_message(value.get("error_message"), value.get("error_code")),
+            "cleanup_status": value.get("cleanup_status"),
             "attempt_count": int(value.get("attempt_count") or 0),
             "created_at": value.get("created_at"),
             "updated_at": value.get("updated_at"),
@@ -696,6 +702,7 @@ def retry_paper_import_batch(batch_id: str):
         return _paper_api_error(503, "IMPORT_BATCH_UNAVAILABLE", "批量导入服务暂时不可用", True)
 
 
+@router.post("/papers/imports/{batch_id}/cancel")
 @router.post("/papers/import-batches/{batch_id}/cancel")
 def cancel_paper_import_batch(batch_id: str):
     if not _paper_discovery_enabled():
@@ -705,7 +712,7 @@ def cancel_paper_import_batch(batch_id: str):
         current = service.store.get_batch(batch_id)
         if current is None:
             raise PaperImportBatchServiceError("BATCH_NOT_FOUND", "导入批次不存在")
-        if current.status in {"running", "completed", "cancelled"}:
+        if current.status in {"completed", "cancelled"}:
             raise PaperImportBatchServiceError("INVALID_STATE_TRANSITION", "批次当前状态不可取消")
         service.cancel_batch(batch_id)
         return _paper_batch_status_payload(service, batch_id)
@@ -749,10 +756,8 @@ def login_paper_import_item(item_id: str, _request: PaperImportItemActionRequest
         _item, _candidates, site, article_url = _paper_item_browser_target(service, item_id)
         previous = paper_browser_sessions.pop(item_id, None)
         if previous is not None:
-            try:
+            with suppress(Exception):
                 previous.close()
-            except Exception:
-                pass
         session = _paper_browser_manager().open_session(site, article_url)
         paper_browser_sessions[item_id] = session
         return {"status": "opened", "item_id": item_id, "site": site}
@@ -798,10 +803,8 @@ def resume_paper_import_item(item_id: str, _request: PaperImportItemActionReques
         session = locals().get("session")
         session_key = locals().get("session_key")
         if session is not None:
-            try:
+            with suppress(Exception):
                 session.close()
-            except Exception:
-                pass
             if paper_browser_sessions.get(session_key) is session:
                 paper_browser_sessions.pop(session_key, None)
 

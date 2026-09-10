@@ -13,12 +13,11 @@ import os
 import shutil
 import tempfile
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Optional
 from urllib.parse import urlsplit
 
-from backend.app.platform.config import BASE_DIR
 from backend.app.paper_discovery.domain.paper_download_security import (
     DEFAULT_MAX_REDIRECTS,
     URLSecurityError,
@@ -37,6 +36,7 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
     PaperDownloadError,
     _validate_pages,
 )
+from backend.app.platform.config import BASE_DIR
 
 try:  # Playwright is optional so public-PDF imports keep working without it.
     from playwright.async_api import TimeoutError as _PlaywrightAsyncTimeoutError
@@ -206,10 +206,7 @@ class BrowserSession:
         # directly.  Accept both forms without accepting a client URL from the
         # API (the route still resolves the candidate server-side).
         if not isinstance(url, str):
-            if isinstance(url, Mapping):
-                url = url.get("pdf_url")
-            else:
-                url = getattr(url, "pdf_url", None)
+            url = url.get("pdf_url") if isinstance(url, Mapping) else getattr(url, "pdf_url", None)
         if not isinstance(url, str) or not url:
             raise PaperDownloadError(PDF_NOT_FOUND, "候选没有 PDF 地址")
         self.manager.validate_origin(self.site, url)
@@ -538,10 +535,8 @@ class PaperBrowserManager:
             playwright, self._playwright = self._playwright, None
             for resource in (context, playwright):
                 if resource is not None:
-                    try:
+                    with suppress(Exception):
                         resource.close()
-                    except Exception:
-                        pass
 
     def close(self) -> None:
         self._recover_after_failure(None)

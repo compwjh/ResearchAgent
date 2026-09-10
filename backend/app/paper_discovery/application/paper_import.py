@@ -13,7 +13,7 @@ import inspect
 import shutil
 import stat
 import tempfile
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
@@ -76,12 +76,14 @@ class PaperImportError(RuntimeError):
     """Stable error at the import orchestration boundary."""
 
     def __init__(self, code: str, message: str = "论文导入失败", *, retryable: bool = False,
-                 cleanup_status: str | None = None) -> None:
+                 cleanup_status: str | None = None,
+                 resource_capability: ImportResourceCapability | None = None) -> None:
         self.code = code
         self.error_code = code
         self.message = safe_import_error_message(code, message)
         self.retryable = retryable
         self.cleanup_status = cleanup_status
+        self.resource_capability = resource_capability
         super().__init__(self.message)
 
 
@@ -364,6 +366,8 @@ def import_candidate(
     context: Any = None,
     max_filename_length: int = 180,
     paper_import_port: Optional[PaperImportPort] = None,
+    attempt_owner: Optional[str] = None,
+    attempt_token: Optional[str] = None,
 ) -> PaperImportResult:
     """Download a candidate and hand the trusted local file to the KB port.
 
@@ -458,11 +462,14 @@ def import_candidate(
         )
         snapshot["_stored_name"] = stored_name
         source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        result = port.import_paper(PaperImportRequest(
-            snapshot,
-            source,
-            source_sha256=source_digest,
-        ))
+        request = PaperImportRequest(snapshot, source, source_sha256=source_digest)
+        if attempt_owner is not None or attempt_token is not None:
+            request = replace(
+                request,
+                attempt_owner=attempt_owner or request.attempt_owner,
+                attempt_token=attempt_token or request.attempt_token,
+            )
+        result = port.import_paper(request)
         translated = _application_result(result)
         if translated.error_code and translated.error_code != PAPER_ALREADY_EXISTS:
             raise PaperImportError(
@@ -470,6 +477,7 @@ def import_candidate(
                 translated.message or "论文导入失败",
                 retryable=True,
                 cleanup_status=translated.cleanup_status,
+                resource_capability=translated.resource_capability,
             )
         return translated
     except PaperDownloadError:

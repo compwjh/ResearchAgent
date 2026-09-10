@@ -13,7 +13,7 @@
 | [03](./task-03-document-contract-and-migration.md) | 定义通用文档、manifest 与元数据迁移协议 | 02B `GO` | 已完成（功能门 GO；安全债务转 Task04/06） |
 | [04](./task-04-backend-document-inspection-api.md) | 实现后端文档、manifest 与检查接口 | 03 | 已完成（功能门 GO；生产债务留至 Task06） |
 | [05](./task-05-frontend-chunk-inspector.md) | 实现前端双栏切片检查器 | 04 | 已完成（功能门；Task06 生产门待执行） |
-| [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 实施中（06-A 完成；06-B 核心隔离门 GO；论文导入门待执行） |
+| [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 实施中（论文导入/浏览器隔离门已通过；真实索引切换仍 NO-GO） |
 | [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 待执行 |
 
 ## 当前路线
@@ -64,3 +64,4 @@
 - 2026-09-08：创建 Task 02–07，并在首轮 Task02 `NO-GO` 后增加 Task02A/02B。
 - 2026-09-08：曾采用逐 point/vector 快照、首次打开自动升级与恢复旧索引方案；历史评审和证据保留。
 - 2026-09-09：用户确认旧索引可全部丢弃。经 Grill with Docs 确认改为候选 Collection 全库重建、显式维护命令、alias 切换和 Task06 真实执行；旧 D1 未提交草稿废弃，Spec 退回待确认并重新评审。
+- 2026-09-10：Task06 论文导入/批量补偿/浏览器隔离门完成并将 closure matrix 更新为 `implementation_ready`；全量回归中的 5 项历史旧索引测试与当前 canonical document 边界不一致，已记录为 `legacy/migration_unverified`，真实索引切换仍 NO-GO。

@@ -269,7 +269,8 @@ def test_batch_creation_rejects_expired_or_cross_search_snapshots(tmp_path):
 def test_resume_passes_authenticated_downloader_and_context_only_to_current_item(tmp_path):
     received = []
     context = object()
-    downloader = lambda *_args, **_kwargs: None
+    def downloader(*_args, **_kwargs):
+        return None
 
     def importer(candidate, *_args, downloader=None, context=None, **_kwargs):
         received.append((candidate.candidate_id, downloader, context))
@@ -291,6 +292,26 @@ def test_resume_passes_authenticated_downloader_and_context_only_to_current_item
     service.resume_item(second.item_id, downloader=None, context=None)
 
     assert received == [("one", downloader, context), ("two", None, None)]
+
+
+def test_claim_credentials_are_forwarded_to_the_real_importer_contract(tmp_path):
+    received = []
+
+    def importer(candidate, *_args, attempt_owner=None, attempt_token=None):
+        received.append((candidate.candidate_id, attempt_owner, attempt_token))
+        return PaperImportResult("paper-credentials", None, "indexed")
+
+    service = _service(tmp_path, importer)
+    batch = _create(service, [_candidate("credentials")])
+    service.run_batch(batch.batch_id)
+
+    item = service.store.get_items(batch.batch_id)[0]
+    assert item.status == ITEM_COMPLETED
+    assert received[0][0] == "credentials"
+    assert received[0][1] == item.attempt_owner
+    assert received[0][2] == item.attempt_token
+    assert item.attempt_owner.startswith("paper-import:")
+    assert item.attempt_token
 
 
 def test_batch_item_persists_only_fixed_safe_error_message(tmp_path):
