@@ -397,6 +397,11 @@ def test_default_indexer_uses_creation_generation_after_marker_drift(tmp_path, m
         "run_index_task_sync",
         lambda _paper_id, _chunker, runner: runner(lambda _progress: None),
     )
+    monkeypatch.setattr(
+        application_module,
+        "submit_index_task",
+        lambda _paper_id, _chunker, runner: runner(lambda _progress: None) or True,
+    )
     monkeypatch.setattr(application_module, "_active_generation_collection", lambda _meta: "papers_rebuild_two")
 
     port._default_indexer(
@@ -405,7 +410,7 @@ def test_default_indexer_uses_creation_generation_after_marker_drift(tmp_path, m
         capability=capability,
     )
 
-    assert seen == ["papers_rebuild_one"]
+    assert seen == ["papers_rebuild_one", "papers_rebuild_one"]
 
 
 def test_default_indexer_and_deleter_fail_closed_for_unbound_capability(tmp_path):

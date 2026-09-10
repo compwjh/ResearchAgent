@@ -82,11 +82,19 @@ def _paper_discovery_enabled() -> bool:
     return os.getenv("PAPER_DISCOVERY_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _paper_api_error(status_code: int, code: str, message: str, retryable: bool = False) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={"code": code, "message": message, "retryable": retryable, "request_id": uuid.uuid4().hex},
-    )
+def _paper_api_error(
+    status_code: int, code: str, message: str, retryable: bool = False, *, details: dict | None = None
+) -> JSONResponse:
+    """统一的论文接口错误响应。
+
+    ``details`` 为可选的结构化补充信息（如 INVALID_YEARS 下的合法年份区间），
+    仅在调用方显式传入时包含在响应体中，保持向后兼容：原有
+    code/message/retryable/request_id 四字段语义不变。
+    """
+    content = {"code": code, "message": message, "retryable": retryable, "request_id": uuid.uuid4().hex}
+    if details is not None:
+        content["details"] = details
+    return JSONResponse(status_code=status_code, content=content)
 
 
 def _build_paper_store() -> PaperDiscoveryStore:
@@ -179,6 +187,10 @@ def _paper_candidate_hosts(candidate: object) -> set[str]:
         host = urlsplit(value).hostname if "://" in value else value
         if host:
             hosts.add(host.casefold())
+    # Paper discovery 服务端抓取的可信来源（USENIX Security）；导入其 PDF 为同源
+    # 可信。固定加入白名单，不依赖部署配置，也不从候选 pdf_url 推导主机名
+    # （详见 `_paper_candidate_hosts` 注释中的 SSRF 设计约束）。
+    hosts |= {"usenix.org", "www.usenix.org"}
     return hosts
 
 

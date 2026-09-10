@@ -1,17 +1,17 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "3ff53e1",
-  "inventory_digest": "8e094e4be4343eafcc88549ca2a49572a60a6c4225e87d0b7ca2e6d3825f0c6e",
+  "inventory_digest": "a380545f42f55ec33215b1817c15f241e5470880d51c66c3c398a2fc15a7c376",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {"path": "backend/app/main.py", "sha256": "547ed00f729ca1970a0b872ee7b671a21f348770b451a27c1e17bf591bc79f4c"},
     {"path": "backend/app/api/routes_kb.py", "sha256": "d6b9d6b5ddea7a397804e6eb39808b1ff1ae0130e4216faed31bb7e201c08b04"},
-    {"path": "backend/app/api/routes_paper.py", "sha256": "3e8723704ca6ebdcc149205b7b7741f58b3a9489f6a0148a6cd912a804035135"},
-    {"path": "backend/app/knowledge_base/application.py", "sha256": "6951515e02ac21e76fafe631e44b4d1a0fbd97b26f51170995581a7b31bb4117"},
+    {"path": "backend/app/api/routes_paper.py", "sha256": "c794fe0f8d722cf05398ae37f1d79c03bf43ed8b8eece341f5fcbc2730e501f4"},
+    {"path": "backend/app/knowledge_base/application.py", "sha256": "b91e2dc546c7720209acc6164e38e2cf28ae057d60dcd38024c3e61d084cdebc"},
     {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "31fb4ad4f7287917ace93872012186344d61bff9f0d62b221395f9ec54562a87"},
     {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "ee0b6295c1e78ae4f528623dd5f6a760fd860778a05d022276756ba521228404"},
-    {"path": "backend/app/knowledge_base/infrastructure/tasks.py", "sha256": "0f11484d71bdbec738a671c7d93eda37b91de51ebd5be024a2c28a2806e38885"},
-    {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "bab13cc43bce2cec2d3cc65d98b13906ced02cea387d95575670f5a6df707fa8"}
+    {"path": "backend/app/knowledge_base/infrastructure/tasks.py", "sha256": "860f5f0117fff4c11c1d96317f43f2d02f68e69e4282e0876fcd9598e99c744e"},
+    {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "ab17cb78a0bc9768ad287d21c168ce87fcc98c8d5ef07b4828e69fd4866c9eb0"}
   ],
   "closed_enums": {
     "entry_kind": ["route", "route_helper", "application", "store", "index", "task", "maintenance"],
@@ -68,7 +68,7 @@
     },
     {
       "entry_id": "paper-import-retry-routes", "entry_kind": "route",
-      "route_or_symbol": "POST /api/papers/imports/{batch_id}/retry and POST /api/papers/import-batches/{batch_id}/retry -> routes_paper.retry_paper_import_batch",
+      "route_or_symbol": "POST /api/papers/imports/{batch_id}/retry and POST /api/papers/import-batches/{batch_id}/retry -> routes_paper.retry_paper_import_batch; POST /api/papers/import-items/{item_id}/retry -> routes_paper.retry_paper_import_item",
       "current_behavior": "Reloads the server snapshot and retries a durable batch.",
       "target_behavior": "Retry only through the same immutable item import application and existing dedupe policy.",
       "allowed_callers": ["HTTP client", "paper-discovery batch service", "KnowledgeDocument create application"],
@@ -104,7 +104,7 @@
     },
     {
       "entry_id": "paper-import-route-helpers", "entry_kind": "route_helper",
-      "route_or_symbol": "routes_paper._import_single_paper and routes_paper._create_paper_import_batch",
+      "route_or_symbol": "routes_paper._import_single_paper, routes_paper._paper_catalog_import_inputs and routes_paper._create_paper_import_batch",
       "current_behavior": "Resolve server-owned candidates and call single/batch import services.",
       "target_behavior": "Retain orchestration only; persistence crosses the immutable KnowledgeDocument application.",
       "allowed_callers": ["routes_paper.import_paper", "routes_paper.create_paper_import_batch"],
@@ -113,9 +113,9 @@
     },
     {
       "entry_id": "kb-import-adapter", "entry_kind": "application",
-      "route_or_symbol": "KnowledgeBasePaperImportAdapter.import_paper, KnowledgeBasePaperImportAdapter.compensate_import and KnowledgeBasePaperImportAdapter._default_indexer",
-      "current_behavior": "Moves a trusted PDF, writes metadata and indexes v1 through index_paper_chunker.",
-      "target_behavior": "Adapt paper discovery to immutable document create/dedupe and document reindex boundaries.",
+      "route_or_symbol": "KnowledgeBasePaperImportAdapter.import_paper, KnowledgeBasePaperImportAdapter.compensate_import, KnowledgeBasePaperImportAdapter._default_indexer and KnowledgeBasePaperImportAdapter._submit_v2_index",
+      "current_behavior": "Moves a trusted PDF, writes metadata and indexes v1 synchronously with v2 queued through the generation-bound port.",
+      "target_behavior": "Adapt paper discovery to immutable document create/dedupe and document reindex boundaries while keeping both chunker writes generation-bound.",
       "allowed_callers": ["paper-discovery import orchestration", "KnowledgeDocument create application", "KnowledgeDocument reindex application"],
       "forbidden_calls": ["os.rename onto existing target", "direct source ownership via upsert_paper", "direct index_paper_chunker"],
       "required_test_ids": ["T-PAPER-IMPORT", "T-IMPORT-COMPENSATION", "T-IMMUTABLE-CREATE"], "current_status": "closed", "required_status": "closed"

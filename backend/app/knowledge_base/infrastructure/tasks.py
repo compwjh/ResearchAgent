@@ -90,17 +90,26 @@ def run_index_task_sync(
         return {"error": f"索引任务异常：{error}"}
 
 
-def _guarded_run(key: Tuple[str, str], runner: Callable[[Callable[[int], None]], object]) -> None:
+def _guarded_run(key: Tuple[str, str], runner: Callable[[Callable[[int], None]], object]) -> object:
+    """Run one indexer and **propagate its result**.
+
+    The return value is what ``run_index_task_sync`` hands back to callers
+    that must observe the outcome (import/upload).  Dropping it here made
+    every synchronous index return ``None``, which the caller reads as a
+    failure even when indexing actually succeeded.
+    """
     try:
-        runner(_make_progress_writer(key))
+        return runner(_make_progress_writer(key))
     except Exception as error:  # 兜底：确保状态不会永远停在 indexing
+        message = f"索引任务异常终止：{error}"
         store.update_chunker_state(
             key[0],
             key[1],
             status=store.STATUS_FAILED,
             progress=0,
-            error=f"索引任务异常终止：{error}",
+            error=message,
         )
+        return {"error": message}
     finally:
         with _running_lock:
             _running.pop(key, None)

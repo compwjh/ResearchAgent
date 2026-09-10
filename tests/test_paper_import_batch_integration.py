@@ -78,8 +78,19 @@ def test_batch_uses_real_kb_port_compensator_after_index_failure(tmp_path):
     # an independently reviewed maintenance action removes it.  Simulate that
     # maintenance outcome, then exercise the real adapter compensator.
     (papers / item.resource_capability["stored_name"]).unlink()
+    captured = {}
+    original_submit = service.submit_batch
+
+    def capture_submit(batch_id, *, candidates=None):
+        future = original_submit(batch_id, candidates=candidates)
+        captured["future"] = future
+        return future
+
+    service.submit_batch = capture_submit
     retried = service.retry_item(item.item_id)
-    assert retried.status == "completed"
+    assert retried.status == "queued"
+    assert captured["future"].result(timeout=5) is not None
+    assert service.store.get_item(item.item_id).status == "completed"
     assert index_calls["count"] == 2
 
 

@@ -1,18 +1,29 @@
 import json
 from contextlib import contextmanager
+import time
 from dataclasses import dataclass
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 import backend.app.knowledge_base.application as application_module
+from backend.app.knowledge_base import application as kb_application
 from backend.app.knowledge_base.application import create_paper_import_port
 from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
+from backend.app.knowledge_base.infrastructure import store as store_module
+from backend.app.knowledge_base.infrastructure import tasks as tasks_module
 from backend.app.knowledge_base.infrastructure.store import (
+    CHUNKER_V1,
+    CHUNKER_V2,
+    STATUS_FAILED,
     STATUS_INDEXED,
+    STATUS_INDEXING,
     get_paper,
     load_papers,
     new_record,
     resolve_paper_path,
+    upsert_paper,
 )
 from backend.app.paper_discovery.application.entry import (
     BROWSER_SESSION_EXPIRED,
@@ -20,13 +31,17 @@ from backend.app.paper_discovery.application.entry import (
 )
 from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
+    KB_STORAGE_LOCKED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,
     import_candidate,
 )
 from backend.app.paper_discovery.infrastructure.paper_download import DownloadResult, PaperDownloadError
-from backend.app.platform.ports import ImportIndexStatus
-from backend.app.platform.ports import PaperImportResult as PortImportResult
+from backend.app.platform.ports import (
+    ImportIndexStatus,
+    PaperImportRequest,
+    PaperImportResult as PortImportResult,
+)
 from backend.app.platform.settings.settings_repository import ArticleSettings
 
 
@@ -359,3 +374,194 @@ def test_default_paper_import_consumer_uses_marker_bound_port(tmp_path, monkeypa
     monkeypatch.setattr(application_module.GenerationBoundIndexPort, "index_document", index)
     adapter._default_indexer(record, source)
     assert seen == {"destination": "papers_rebuild_live", "meta_path": meta}
+
+# ---------------------------------------------------------------------------
+# BUG-02（spec-020 Task03）：导入路径须与上传对齐，v1 建完后异步提交 v2。
+# ---------------------------------------------------------------------------
+
+def _port_default(papers, meta):
+    papers = Path(papers)
+    meta = Path(meta)
+    root = meta.parent.parent.parent
+    live_root = root / "data" / "kb"
+    live_root.mkdir(parents=True, exist_ok=True)
+    live_meta = live_root / "papers.json"
+    if not live_meta.exists():
+        live_meta.write_text("[]", encoding="utf-8")
+    finalizer = FinalizeBundleStore(root)
+    if not (live_root / "index-generation.json").exists():
+        finalizer.stage(
+            "test-generation",
+            candidate_collection="papers_rebuild_test",
+            metadata=[],
+            manifests={},
+            collection_fingerprint="a" * 64,
+        )
+        finalizer.commit("test-generation")
+    return create_paper_import_port(papers_dir=papers, meta_path=meta)
+
+
+def _make_record(meta, name="paper.pdf"):
+    record = new_record(name)
+    record.status = STATUS_INDEXING
+    upsert_paper(record, meta)
+    FinalizeBundleStore(Path(meta).parent.parent.parent).refresh_live_digests()
+    return record
+
+
+def test_default_indexer_submits_v2_after_v1(tmp_path):
+    """v1 同步建完后必须异步提交 v2，使 v2 状态不再恒 pending。"""
+    papers = tmp_path / "data" / "kb" / "papers"
+    papers.mkdir(parents=True)
+    meta = tmp_path / "data" / "kb" / "papers.json"
+    path = papers / "paper.pdf"
+    path.write_bytes(b"%PDF-1.7\ncontent")
+    adapter = _port_default(papers, meta)
+    record = _make_record(meta)
+
+    writes = []
+    real_update = kb_application.update_chunker_state
+    kb_application.update_chunker_state = lambda *a, **k: (writes.append((a, k)), {"status": "indexing"})[1]
+    try:
+        with patch.object(kb_application, "run_index_task_sync", return_value={"status": STATUS_INDEXED}) as mock_sync, \
+             patch.object(kb_application, "submit_index_task", return_value=True) as mock_submit:
+            result = adapter._default_indexer(record, path)
+    finally:
+        kb_application.update_chunker_state = real_update
+
+    mock_sync.assert_called_once()
+    assert mock_sync.call_args.args[1] == CHUNKER_V1
+    mock_submit.assert_called_once()
+    assert mock_submit.call_args.args[1] == CHUNKER_V2
+    # 导入返回的是 v1 结果，v2 在后台跑，不阻塞。
+    assert result == {"status": STATUS_INDEXED}
+    # update_chunker_state(paper_id, chunker, status=..., ...)：chunker 为位置参数。
+    indexing_v2 = [
+        (a, k) for (a, k) in writes
+        if k.get("status") == STATUS_INDEXING and len(a) >= 2 and a[1] == CHUNKER_V2
+    ]
+    assert indexing_v2, "提交 v2 前必须把状态置为 indexing"
+
+
+def test_v2_failure_does_not_fail_import(tmp_path):
+    """v2 索引失败不得把导入判定为失败；v2 状态须真实置 failed 并带原因。"""
+    papers = tmp_path / "data" / "kb" / "papers"
+    papers.mkdir(parents=True)
+    meta = tmp_path / "data" / "kb" / "papers.json"
+    path = papers / "paper.pdf"
+    path.write_bytes(b"%PDF-1.7\ncontent")
+    adapter = _port_default(papers, meta)
+    record = _make_record(meta)
+
+    writes = []
+    real_update = store_module.update_chunker_state
+    # 捕获 _guarded_run 在后台线程内对 v2 的 failed 回写（不拘持久化）。
+    store_module.update_chunker_state = lambda *a, **k: (writes.append(k), {"status": "indexing"})[1]
+    try:
+        with patch.object(kb_application, "run_index_task_sync", return_value={"status": STATUS_INDEXED}), \
+             patch.object(
+                 kb_application.GenerationBoundIndexPort,
+                 "index_document",
+                 side_effect=RuntimeError("27B 模型不可用"),
+             ):
+            result = adapter._default_indexer(record, path)
+            time.sleep(1.0)  # 等待 v2 后台任务在单线程池内执行并失败
+    finally:
+        store_module.update_chunker_state = real_update
+        tasks_module.shutdown(wait=False)
+
+    assert result == {"status": STATUS_INDEXED}, "v2 失败不得影响导入成功"
+    failed = [w for w in writes if w.get("status") == STATUS_FAILED]
+    assert failed, "v2 失败后状态必须置 failed"
+    assert any(w.get("error") for w in failed), "v2 失败必须带原因"
+
+
+def test_import_paper_submits_v2_with_default_indexer(tmp_path):
+    """默认索引器（未经注入）下，import_paper 也须提交 v2 且返回成功。"""
+    papers = tmp_path / "data" / "kb" / "papers"
+    meta = tmp_path / "data" / "kb" / "papers.json"
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.7\ncontent")
+
+    adapter = _port_default(papers, meta)
+    snapshot = {
+        "title": "A Safe Paper", "year": 2025, "conference_id": "ccs",
+        "conference_name": "ACM CCS", "doi": "10.1234/example",
+        "dblp_key": "conf/ccs/Safe", "article_url": "https://papers.example/article",
+        "authors": ["A. Author"], "_stored_name": "2025-CCS-A-Safe-Paper.pdf",
+    }
+    with patch.object(kb_application, "run_index_task_sync", return_value={"status": STATUS_INDEXED}) as mock_sync, \
+         patch.object(kb_application, "submit_index_task", return_value=True) as mock_submit:
+        result = adapter.import_paper(PaperImportRequest(snapshot, source))
+
+    assert result.index_status == ImportIndexStatus.INDEXED
+    mock_sync.assert_called_once()
+    assert mock_sync.call_args.args[1] == CHUNKER_V1
+    mock_submit.assert_called_once()
+    assert mock_submit.call_args.args[1] == CHUNKER_V2
+
+
+# ---------------------------------------------------------------------------
+# spec-021 Task03：KB 存储被另一个实例独占 → KB_STORAGE_LOCKED（窄匹配，固定文案）。
+# ---------------------------------------------------------------------------
+
+
+def test_storage_locked_runtime_error_maps_to_kb_storage_locked(tmp_path):
+    """假 port 在导入时抛存储占用 RuntimeError → KB_STORAGE_LOCKED，且文案固定。"""
+    class LockedPort:
+        def find_existing(self, _snapshot):
+            return None
+
+        def existing_names(self):
+            return set()
+
+        def import_paper(self, _request):
+            raise RuntimeError(
+                "Storage folder data/kb/qdrant is already accessed by another instance of Qdrant client"
+            )
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []), paper_import_port=LockedPort(), temp_dir=tmp_path,
+        )
+    assert exc.value.code == KB_STORAGE_LOCKED
+    assert exc.value.message == "知识库存储被另一个实例占用，请关闭其他服务实例后重试"
+    # 异常原文（含路径）绝不得进入 error_code / message。
+    assert "qdrant" not in str(exc.value)
+    assert "data/kb" not in exc.value.message
+
+
+def test_generic_runtime_error_still_maps_to_kb_import_failed(tmp_path):
+    """窄匹配：非存储占用的 RuntimeError 仍回落 KB_IMPORT_FAILED（不得一刀切）。"""
+    class BoomPort:
+        def find_existing(self, _snapshot):
+            return None
+
+        def existing_names(self):
+            return set()
+
+        def import_paper(self, _request):
+            raise RuntimeError("unrelated runtime failure")
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []), paper_import_port=BoomPort(), temp_dir=tmp_path,
+        )
+    assert exc.value.code == KB_IMPORT_FAILED
+
+
+def test_storage_locked_via_injected_indexer_maps_to_kb_storage_locked(tmp_path):
+    """假 indexer 在 KB 适配器内抛存储占用 RuntimeError → 适配器窄匹配后上抛 → KB_STORAGE_LOCKED。"""
+    def locked_indexer(_record, _path):
+        raise RuntimeError("data/kb/qdrant is already accessed by another instance of Qdrant client")
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []),
+            paper_import_port=_port(tmp_path / "papers", tmp_path / "papers.json", indexer=locked_indexer),
+            temp_dir=tmp_path,
+        )
+    assert exc.value.code == KB_STORAGE_LOCKED

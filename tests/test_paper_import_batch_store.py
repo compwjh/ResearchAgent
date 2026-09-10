@@ -17,6 +17,7 @@ from backend.app.paper_discovery.domain.paper_import_batch import (
 from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     IMPORT_INTERRUPTED,
     INVALID_STATE_TRANSITION,
+    SCHEMA_VERSION,
     PaperImportBatchStore,
     PaperImportBatchStoreError,
 )
@@ -102,7 +103,8 @@ def test_deduplicates_before_hard_limit_and_constructor_cannot_raise_limit(tmp_p
     assert error.value.code == "BATCH_LIMIT_EXCEEDED"
 
 
-def test_failed_and_cancelled_identities_are_released_completed_is_not(tmp_path):
+def test_terminal_identities_including_completed_are_released(tmp_path):
+    """终态（failed/cancelled/completed）条目一律不占唯一索引（spec-021 Task06）。"""
     store = _store(tmp_path)
     failed = store.create_batch("search", [PaperImportItem("f", "b1", "f", doi="10/reusable")], idempotency_key="reuse")
     failed_item = store.get_items(failed.batch_id)[0]
@@ -121,9 +123,78 @@ def test_failed_and_cancelled_identities_are_released_completed_is_not(tmp_path)
     store.transition_item(done_item.item_id, ITEM_VALIDATING, expected_state=ITEM_DOWNLOADING, lease_owner="worker", now="2026-01-01T00:01:00Z")
     store.transition_item(done_item.item_id, ITEM_INDEXING, expected_state=ITEM_VALIDATING, lease_owner="worker", now="2026-01-01T00:02:00Z")
     store.transition_item(done_item.item_id, ITEM_COMPLETED, expected_state=ITEM_INDEXING, lease_owner="worker", paper_id="paper-done", now="2026-01-01T00:03:00Z")
+    # 该批次的 idempotency_key 仍被 completed 批次持有（幂等语义不变）。
     assert store.create_batch("search", ["other"], idempotency_key="done").batch_id == done.batch_id
+    # completed 已释放 doi / title 等论文身份，同论文可重新导入（去重交给 KB find_existing）。
+    assert store.create_batch("search", [PaperImportItem("d2", "b6", "d2", doi="10/completed")]).batch_id != done.batch_id
+
+
+def test_active_identities_still_block_new_batches(tmp_path):
+    """活跃态（queued/... 含 completed 之外的 5 态）条目仍互斥（spec-021 Task06 §边界）。"""
+    store = _store(tmp_path)
+    store.create_batch("search", [PaperImportItem("one", "b1", "one", normalized_title="same")])
+    # 第一个条目仍为 queued（活跃态）→ 同名新建批次必须被唯一索引拒绝。
     with pytest.raises(sqlite3.IntegrityError):
-        store.create_batch("search", [PaperImportItem("d2", "b6", "d2", doi="10/completed")])
+        store.create_batch("search", [PaperImportItem("two", "b2", "two", normalized_title="same")])
+
+    live = store.create_batch("search", [PaperImportItem("live", "b3", "live", doi="10/live")])
+    live_item = store.get_items(live.batch_id)[0]
+    store.claim_item(live_item.item_id, "worker", now="2026-01-01T00:00:00Z")
+    assert store.get_item(live_item.item_id).status == ITEM_DOWNLOADING
+    # downloading 亦为活跃态 → 仍互斥。
+    with pytest.raises(sqlite3.IntegrityError):
+        store.create_batch("search", [PaperImportItem("live2", "b4", "live2", doi="10/live")])
+
+
+def test_title_index_where_clause_excludes_terminal_states(tmp_path):
+    """迁移后 `import_item_title` 的 WHERE 只含活跃态（spec-021 Task06 验收 1）。"""
+    path = tmp_path / "state.sqlite3"
+    PaperImportBatchStore(path)
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='import_item_title'"
+        ).fetchone()
+    assert row is not None, "import_item_title 索引必须存在"
+    sql = " ".join(str(row[0]).split()).lower()
+    assert "state in ('queued','downloading','waiting_login','validating','indexing')" in sql
+    assert "completed" not in sql
+
+
+def test_legacy_title_index_with_completed_is_migrated_and_data_preserved(tmp_path):
+    """旧库形态（WHERE 含 completed）→ 重开 store 后索引被迁移，且数据不丢。"""
+    path = tmp_path / "legacy.sqlite3"
+    store = PaperImportBatchStore(path)
+    done = store.create_batch("search", [PaperImportItem("d", "b1", "d", doi="10/legacy")])
+    done_item = store.get_items(done.batch_id)[0]
+    store.claim_item(done_item.item_id, "worker", now="2026-01-01T00:00:00Z")
+    store.transition_item(done_item.item_id, ITEM_VALIDATING, expected_state=ITEM_DOWNLOADING, lease_owner="worker", now="2026-01-01T00:01:00Z")
+    store.transition_item(done_item.item_id, ITEM_INDEXING, expected_state=ITEM_VALIDATING, lease_owner="worker", now="2026-01-01T00:02:00Z")
+    store.transition_item(done_item.item_id, ITEM_COMPLETED, expected_state=ITEM_INDEXING, lease_owner="worker", paper_id="p", now="2026-01-01T00:03:00Z")
+
+    # 人工把索引回退成迁移前的旧 WHERE（含 completed），模拟历史库。
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP INDEX import_item_title")
+        connection.execute(
+            "CREATE UNIQUE INDEX import_item_title ON paper_import_items(normalized_title, "
+            "COALESCE(year, -2147483648), COALESCE(conference_id, X'00')) "
+            "WHERE normalized_title IS NOT NULL "
+            "AND state IN ('queued','downloading','waiting_login','validating','indexing','completed')"
+        )
+
+    migrated = PaperImportBatchStore(path)
+    # 数据不丢：批次与条目仍在。
+    assert migrated.get_batch(done.batch_id).completed_count == 1
+    with sqlite3.connect(path) as connection:
+        sql = " ".join(
+            str(connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name='import_item_title'"
+            ).fetchone()[0]).split()
+        ).lower()
+        version = connection.execute("SELECT version FROM paper_import_schema_meta").fetchone()[0]
+    assert "completed" not in sql
+    assert version == SCHEMA_VERSION
+    # 迁移后 completed 条目不再占用身份 → 同论文可新建批次。
+    assert migrated.create_batch("search", [PaperImportItem("d2", "b2", "d2", doi="10/legacy")]).batch_id != done.batch_id
 
 
 def test_null_title_components_are_part_of_identity(tmp_path):

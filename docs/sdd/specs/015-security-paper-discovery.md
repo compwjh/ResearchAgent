@@ -11,6 +11,13 @@
 > Task02–12 的真实实现与评审证据保留；Task13–17 需求/技术复审已通过（见 `docs/sdd/reviews/015-catalog-requirement-review.md`、`015-catalog-tech-review.md`），用户已授权进入实现。Task13/14 已落地，Task15–17 已完成 USENIX-only 实现与验收；不得通过回滚、stash、清理或覆盖现有成果。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
 
+## 2026-09-09 范围扩展：导入接通与摘要抓取
+
+> **用户确认（选项 C）**：在已确认的「错误提示+展示层」计划之外，新增两个真实缺陷修复。
+>
+> 1. **catalog→知识库导入接通（本轮回，功能优先）**：探索式 catalog 检索（新表 `search_jobs`/`search_results`）与「添加到知识库」导入（旧表 `search_sessions`/`paper_candidates`）架构割裂，按 catalog `search_id` 导入报 `SEARCH_NOT_FOUND`「搜索会话不存在」。本轮回接通——导入接口识别 catalog `search_id` 并从 `search_results` 取候选（以 `catalog_paper_id` 作为 `candidate_id`）；catalog 候选无 `pdf_url`（894 篇 `catalog_papers.official_pdf_url` 全空），由 `download_candidate` 在 `pdf_url` 缺失时从候选 `source_page_url`（USENIX 论文页）现抓并解析 `<meta name="citation_pdf_url">` 取得 PDF；`_paper_candidate_hosts` 固定追加 `usenix.org`/`www.usenix.org`（paper discovery 服务端抓取的可信来源，符合 SSRF 设计，不引入候选 URL 主机）。既有 `pdf_url` 路径完全不变。
+> 2. **摘要抓取（后续任务，明确不做在本轮回，但不得遗忘）**：catalog 抓取仅取列表元数据，894 篇 `abstract` 全为空（`abstract_status=missing`），USENIX 列表页无 abstract。本轮回导入接通已复用 USENIX 论文页解析器，摘要抓取应复用同一解析器在抓取阶段补全 `catalog_papers.abstract`。单独排期，不在本轮回完成。
+
 ## 架构变更（待确认）
 
 ### 变更原因
@@ -631,6 +638,8 @@ Task16 切换前端后删除旧同步 `POST /api/papers/search` 路由，不保�
 | 2026-09-06 | 架构师（自身） | 复盘 Task15–17 从未分派（`retro/2026-09-06-spec015-task15-16-not-dispatched.md`），确立任务链推进、状态与代码同批提交、已确认 spec 优先、交接检查点四条规则；用户确定顺序：先 017 后端重构 → 全量回归 → 再 015 Task15/16 |
 | 2026-09-07 | 架构师（自身） | 收口核对：验收报告结论为「不通过（阻塞）」且 Tech Lead 未签字，Task15–17 未实现，故**状态保持 `实施中`**；回填评审记录为真实结论（消除「待评审（未执行）」占位）并同步 changelog |
 | 2026-09-07 | 架构师（自身） | 引入 ruff（`ruff.toml` + `requirements-dev.txt`，显式固定 select 因 ruff 0.16 默认规则集过宽）；导入排序修复 58 处、删除确认无引用的死导入 18 处，全量回归 626 passed 无回归 |
+| 2026-09-09 | 架构师（自身，主会话代行） | 修复论文检索两处真实缺陷：后端 `_paper_api_error` 增加可选 `details`，`INVALID_YEARS` 下发 `min_year/max_year`；前端 `paperYearList` 对齐年份上界（允许当前年）、补齐六类缺失错误码映射、`showPaperError` 按后端范围渲染“仅支持 XXXX–XXXX”、失败态不再残留“正在检索…”；异步全量 768 passed、ruff 156 无新增 |
+| 2026-09-09 | 架构师（自身，主会话代行） | 依 ADR-0001/0002 改造论文区提示层：错误提示升级为带左边框告警条、整体状态条按生命周期切换语义色（running/completed/partial/failed）、来源初始占位由“等待开始”改为中性“未开始”；同步 `?v=18`；spec 保持 `实施中`（验收签字未达成，不标记已完成） |
 
 ---
 **六条自检**：①边界均可转为测试；②spec 说明需求、task 承载实施细节；③task 链接真实且依赖无环；④明确不做已划死范围；⑤执行配置五行齐全；⑥产品步骤可映射 A1–A15。

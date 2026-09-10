@@ -13,6 +13,8 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
     PDF_NOT_FOUND,
     PDF_TOO_LARGE,
     PaperDownloadError,
+    _peer_from_response,
+    _resolve_pdf_url_from_page,
     download_candidate,
 )
 from backend.app.platform.settings.settings_repository import ArticleSettings
@@ -189,3 +191,105 @@ def test_page_validator_failure_removes_renamed_file(tmp_path):
         run_download(tmp_path, lambda _request: httpx.Response(200, content=PDF), pdf_page_validator=lambda _path: 0)
     assert error.value.code == INVALID_PDF
     assert not list(tmp_path.rglob("*"))
+
+
+def test_resolves_pdf_from_citation_meta_on_landing_page():
+    html = (
+        "<html><head>"
+        '<meta name="citation_pdf_url" content="https://www.usenix.org/system/files/x.pdf">'
+        "</head></html>"
+    )
+
+    def handler(request):
+        return httpx.Response(200, text=html)
+
+    transport = httpx.MockTransport(handler)
+    url = _resolve_pdf_url_from_page(
+        "https://www.usenix.org/conference/usenixsecurity24/presentation/x",
+        allowed_hosts={"usenix.org", "www.usenix.org"},
+        transport=transport,
+        dns_resolver=lambda _host: [PUBLIC],
+    )
+    assert url == "https://www.usenix.org/system/files/x.pdf"
+
+
+def test_landing_page_pdf_host_outside_allowlist_is_blocked():
+    html = '<meta name="citation_pdf_url" content="https://evil.example/x.pdf">'
+
+    def handler(request):
+        return httpx.Response(200, text=html)
+
+    transport = httpx.MockTransport(handler)
+    with pytest.raises(PaperDownloadError) as error:
+        _resolve_pdf_url_from_page(
+            "https://www.usenix.org/conference/usenixsecurity24/presentation/x",
+            allowed_hosts={"usenix.org", "www.usenix.org"},
+            transport=transport,
+            dns_resolver=lambda _host: [PUBLIC],
+        )
+    assert error.value.code == DOWNLOAD_BLOCKED
+
+
+def test_landing_page_host_outside_allowlist_is_blocked():
+    def handler(request):
+        return httpx.Response(200, text="<html></html>")
+
+    transport = httpx.MockTransport(handler)
+    with pytest.raises(PaperDownloadError) as error:
+        _resolve_pdf_url_from_page(
+            "https://evil.example/page",
+            allowed_hosts={"usenix.org", "www.usenix.org"},
+            transport=transport,
+            dns_resolver=lambda _host: [PUBLIC],
+        )
+    assert error.value.code == DOWNLOAD_BLOCKED
+
+
+class _HttpCoreLikeStream:
+    """Mimic a real httpcore stream: only ``server_addr`` carries the peer.
+
+    A real ``httpcore._backends.sync.SyncStream`` answers ``peername`` with
+    ``None``; reading only ``peername`` made every real download look like a
+    peer-evidence failure and blocked it with DOWNLOAD_BLOCKED.
+    """
+
+    def get_extra_info(self, key):  # noqa: D102 - test double
+        if key == "server_addr":
+            return (PUBLIC, 443)
+        return None
+
+
+class _LegacyPeernameStream:
+    """Mimic transports that expose the peer as a socket-style ``peername``."""
+
+    def get_extra_info(self, key):  # noqa: D102 - test double
+        if key == "peername":
+            return (PUBLIC, 443)
+        return None
+
+
+def test_peer_is_read_from_httpcore_server_addr():
+    response = httpx.Response(200, extensions={"network_stream": _HttpCoreLikeStream()})
+    assert _peer_from_response(response) == PUBLIC
+
+
+def test_peer_from_response_still_supports_peername_streams():
+    response = httpx.Response(200, extensions={"network_stream": _LegacyPeernameStream()})
+    assert _peer_from_response(response) == PUBLIC
+
+
+def test_peer_from_response_prefers_explicit_peer_ip_extension():
+    response = httpx.Response(
+        200,
+        extensions={"peer_ip": PUBLIC, "network_stream": _HttpCoreLikeStream()},
+    )
+    assert _peer_from_response(response) == PUBLIC
+
+
+def test_peer_from_response_returns_none_without_any_peer_evidence():
+    class _SilentStream:
+        def get_extra_info(self, key):  # noqa: D102 - test double
+            return None
+
+    response = httpx.Response(200, extensions={"network_stream": _SilentStream()})
+    assert _peer_from_response(response) is None

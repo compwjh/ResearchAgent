@@ -1,6 +1,7 @@
 """Task06 durable batch compensation contracts (isolated SQLite only)."""
 
 import sqlite3
+import time
 
 import pytest
 
@@ -85,7 +86,18 @@ def test_failed_pending_retry_compensates_once_and_completed_never_reruns(tmp_pa
     item = service.run_batch(batch.batch_id).batch_id
     failed = service.store.get_items(item)[0]
     assert failed.status == "failed" and failed.cleanup_status == "cleanup_pending"
-    service.retry_item(failed.item_id)
+    captured = {}
+    original_submit = service.submit_batch
+
+    def capture_submit(batch_id, *, candidates=None):
+        future = original_submit(batch_id, candidates=candidates)
+        captured["future"] = future
+        return future
+
+    service.submit_batch = capture_submit
+    retried = service.retry_item(failed.item_id)
+    assert retried.status == "queued"
+    assert captured["future"].result(timeout=5) is not None
     assert service.store.get_item(failed.item_id).status == "completed"
     assert compensations == ["attempt-token"]
     service.process_item(failed.item_id)

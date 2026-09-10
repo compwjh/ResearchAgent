@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import inspect
 import json
@@ -725,6 +726,16 @@ def _deletion_succeeded(value: Any) -> bool:
     return str(getattr(status, "value", status)).casefold() in {"completed", "deleted", "success"}
 
 
+def _is_storage_locked_error(error: BaseException) -> bool:
+    """窄匹配 qdrant 存储被另一个实例独占的 RuntimeError（spec-021 Task03）。
+
+    知识库上下文不持有导入错误码表，故此处仅识别并上抛，由消费方
+    （paper_discovery.application.paper_import）映射为固定文案的 KB_STORAGE_LOCKED。
+    绝不把异常原文（可能含路径）作为返回内容。
+    """
+    return isinstance(error, RuntimeError) and "already accessed by another instance" in str(error)
+
+
 def _call_supported(function: Callable[..., Any], positional: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
     try:
         parameters = inspect.signature(function).parameters.values()
@@ -821,7 +832,8 @@ class KnowledgeBasePaperImportAdapter:
             else _active_generation_collection(self.meta_path)
         )
         index_port = GenerationBoundIndexPort(destination, client=self.client)
-        return run_index_task_sync(
+        # v1 同步建索引：完成后导入即可返回；v2 随后异步提交，不阻塞导入响应。
+        result = run_index_task_sync(
             record.paper_id,
             CHUNKER_V1,
             lambda progress: index_port.index_document(
@@ -832,6 +844,53 @@ class KnowledgeBasePaperImportAdapter:
                 meta_path=self.meta_path,
             ),
         )
+        # BUG-02（spec-020 Task03）：与上传路径对齐，v1 建完后异步提交 v2。
+        # 使用同一代际绑定，避免 paper-import 绕过候选 Collection 约束。
+        self._submit_v2_index(record, path, destination)
+        return result
+
+    def _submit_v2_index(self, record: PaperRecord, path: Path, destination: str) -> None:
+        """v1 索引成功后异步提交 v2（语义对齐上传路径 `_submit_index_task`）。
+
+        先置 v2 为 ``indexing`` 再入单线程池，使 v2 在池中排队时前端即可看到
+        「索引中 0%」而非停留在 pending。v2 失败不影响导入成功（状态置 ``failed``
+        并带原因，可由 reindex 补救）；提交异常同样不得把导入判定为失败。
+        """
+        try:
+            update_chunker_state(
+                record.paper_id,
+                CHUNKER_V2,
+                status=STATUS_INDEXING,
+                progress=0,
+                error=None,
+                meta_path=self.meta_path,
+            )
+        except Exception:
+            # 状态置位失败不得拖垮已成功的导入；交由后续 reindex 补救。
+            return
+
+        def _runner(progress) -> dict:
+            return GenerationBoundIndexPort(destination, client=self.client).index_document(
+                record,
+                path,
+                CHUNKER_V2,
+                progress=progress,
+                meta_path=self.meta_path,
+            )
+
+        try:
+            submit_index_task(record.paper_id, CHUNKER_V2, _runner)
+        except Exception:
+            # 提交失败同样不得判定导入失败；把 v2 状态置 failed 以便可见与补救。
+            with contextlib.suppress(Exception):
+                update_chunker_state(
+                    record.paper_id,
+                    CHUNKER_V2,
+                    status=STATUS_FAILED,
+                    progress=0,
+                    error="v2 索引任务提交失败",
+                    meta_path=self.meta_path,
+                )
 
     def _default_deleter(self, paper_id: str, *, capability: ImportResourceCapability | None = None) -> None:
         destination = (
@@ -907,6 +966,10 @@ class KnowledgeBasePaperImportAdapter:
                 )
             except Exception as error:
                 capability = getattr(error, "resource_capability", None)
+                if _is_storage_locked_error(error):
+                    # Preserve the stable storage-contention mapping at the
+                    # paper-discovery boundary; do not flatten it to import failure.
+                    raise
                 return PortImportResult(
                     paper_id=None,
                     index_status=ImportIndexStatus.FAILED,
@@ -979,7 +1042,8 @@ class KnowledgeBasePaperImportAdapter:
                 source_sha256=document.get("source_sha256"),
                 resource_capability=created.get("resource_capability"),
             )
-        except Exception:
+        except Exception as error:
+            storage_locked = _is_storage_locked_error(error)
             capability = created.get("resource_capability")
             vector_unknown = False
             try:
@@ -1007,6 +1071,10 @@ class KnowledgeBasePaperImportAdapter:
             cleanup_status = "cleanup_pending"
             if not vector_unknown:
                 cleanup_status = self._cleanup(capability)
+            if storage_locked:
+                # Let the paper-discovery boundary map this narrowly matched
+                # storage contention to its stable, retryable error code.
+                raise
             return PortImportResult(
                 paper_id=record.paper_id if cleanup_status != "completed" else None,
                 index_status=ImportIndexStatus.FAILED,

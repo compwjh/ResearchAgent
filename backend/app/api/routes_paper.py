@@ -1,3 +1,4 @@
+import logging
 import uuid
 from contextlib import suppress
 from dataclasses import replace
@@ -35,6 +36,7 @@ from backend.app.paper_discovery.application.entry import (
 )
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.application.paper_import import (
+    DUPLICATE_IMPORT,
     KB_IMPORT_FAILED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,
@@ -50,6 +52,7 @@ from backend.app.paper_discovery.domain.paper_discovery import SearchJob, Search
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
 def _async_progress_payload(progress) -> dict:
     return {
         "source_kind": progress.source_kind, "status": progress.status,
@@ -95,8 +98,12 @@ def create_async_paper_search(request: AsyncPaperSearchRequest):
     years = list(dict.fromkeys(request.years))
     if request.conference_ids != ["usenix-security"]:
         return _paper_api_error(400, "UNSUPPORTED_CONFERENCE", "异步目录检索当前仅支持 USENIX Security")
-    if years != sorted(years) or any(year < 1900 or year > datetime.now(timezone.utc).year for year in years):
-        return _paper_api_error(400, "INVALID_YEARS", "years 必须为升序且在受控范围内")
+    current_year = datetime.now(timezone.utc).year
+    if years != sorted(years) or any(year < 1900 or year > current_year for year in years):
+        return _paper_api_error(
+            400, "INVALID_YEARS", "years 必须为升序且在受控范围内",
+            details={"min_year": 1900, "max_year": current_year},
+        )
     now = datetime.now(timezone.utc)
     ttl = getattr(common.article_settings, "paper_discovery_search_ttl_seconds", 86400)
     search_id = uuid.uuid4().hex
@@ -431,10 +438,27 @@ def _import_single_paper(request: PaperImportRequest):
         store = _paper_store()
         session = store.get_search_session(request.search_id)
         if session is None:
-            return _paper_api_error(404, "SEARCH_NOT_FOUND", "搜索会话不存在")
-        if _paper_search_expired(session.expires_at):
-            return _paper_api_error(400, "SEARCH_EXPIRED", "搜索会话已过期，不能继续导入")
-        candidate = store.get_candidate(request.search_id, request.candidate_id)
+            # catalog async-search 的检索上下文只落在 search_jobs 表，search_sessions
+            # 对其恒为空；与批量路径 _paper_server_snapshot 保持一致，回退到 job 解析，
+            # 避免把"未就绪/已过期/可解析"的合法 search_id 误报为 SEARCH_NOT_FOUND。
+            try:
+                job, by_id = _paper_catalog_import_inputs(store, request.search_id, [request.candidate_id])
+            except PaperImportBatchServiceError as error:
+                return _paper_batch_error_response(error)
+            if _paper_search_expired(getattr(job, "expires_at", "")):
+                return _paper_batch_error_response(
+                    PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
+                )
+            candidate = by_id.get(request.candidate_id)
+            if candidate is None:
+                return _paper_batch_error_response(
+                    PaperImportBatchServiceError("CANDIDATE_NOT_FOUND", "候选论文不存在")
+                )
+            session = job
+        else:
+            if _paper_search_expired(session.expires_at):
+                return _paper_api_error(400, "SEARCH_EXPIRED", "搜索会话已过期，不能继续导入")
+            candidate = store.get_candidate(request.search_id, request.candidate_id)
     except Exception:
         return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "论文检索配置暂时不可用", True)
     if candidate is None:
@@ -485,6 +509,7 @@ _PAPER_BATCH_ERROR_STATUS = {
     "SEARCH_NOT_FOUND": 404,
     "CANDIDATE_NOT_FOUND": 404,
     "SEARCH_EXPIRED": 400,
+    "SEARCH_NOT_READY": 400,
     "INVALID_SEARCH_SNAPSHOT": 400,
     "INVALID_STATE_TRANSITION": 400,
     "INVALID_SEARCH_ID": 400,
@@ -495,6 +520,7 @@ _PAPER_BATCH_ERROR_STATUS = {
     "SNAPSHOT_REBUILD_REQUIRED": 503,
     "COMPENSATION_PENDING": 409,
     "COMPENSATION_DENIED": 409,
+    DUPLICATE_IMPORT: 409,
 }
 
 
@@ -512,6 +538,7 @@ def _paper_batch_error_response(error: PaperImportBatchServiceError) -> JSONResp
         "SEARCH_NOT_FOUND": "搜索会话不存在",
         "CANDIDATE_NOT_FOUND": "候选论文不存在",
         "SEARCH_EXPIRED": "搜索会话已过期",
+        "SEARCH_NOT_READY": "搜索结果尚未冻结",
         "INVALID_SEARCH_SNAPSHOT": "搜索候选快照无效",
         "INVALID_STATE_TRANSITION": "当前状态不允许此操作",
         "INVALID_SEARCH_ID": "搜索会话编号无效",
@@ -522,6 +549,7 @@ def _paper_batch_error_response(error: PaperImportBatchServiceError) -> JSONResp
         "SNAPSHOT_REBUILD_REQUIRED": "批次候选快照需要重建",
         "COMPENSATION_PENDING": "导入资源补偿仍在等待",
         "COMPENSATION_DENIED": "导入资源补偿能力不匹配",
+        DUPLICATE_IMPORT: "该论文已在导入批次中，请在原批次重试",
         "IMPORT_BATCH_ERROR": "批量导入失败",
     }
     return _paper_api_error(status, code, messages.get(code, "批量导入失败"), bool(getattr(error, "retryable", False)))
@@ -598,12 +626,42 @@ def _paper_batch_status_payload(service: PaperImportBatchService, batch_id: str)
     return _paper_batch_payload(result["batch"], list(result.get("items") or []))
 
 
+def _paper_catalog_import_inputs(store, search_id, candidate_ids):
+    """Resolve async catalog-search candidates for import.
+
+    Returns ``(job, by_id)`` where ``job`` is the SearchJob (carries expires_at
+    for the expiry check) and ``by_id`` maps candidate_id -> snapshot dict with
+    ``candidate_id`` injected (= catalog_paper_id). Raises
+    PaperImportBatchServiceError for not-found / not-ready.
+    """
+    job = store.get_search_job(search_id)
+    if job is None:
+        raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
+    if getattr(job, "status", "") not in {"completed", "partial", "failed"}:
+        raise PaperImportBatchServiceError("SEARCH_NOT_READY", "搜索结果尚未冻结")
+    results = store.get_search_results(search_id)
+    by_id: dict[str, object] = {}
+    for result in results:
+        snapshot = dict(result.snapshot)
+        cid = snapshot.get("catalog_paper_id") or getattr(result, "catalog_paper_id", None)
+        snapshot.setdefault("candidate_id", cid)
+        snapshot.setdefault("search_id", search_id)
+        by_id[cid] = snapshot
+    return job, by_id
+
+
 def _paper_server_snapshot(search_id: str, candidate_ids: list[str]) -> tuple[object, list[object]]:
     """Resolve all import inputs from the server-owned search snapshot."""
     store = _paper_store()
     session = store.get_search_session(search_id)
     if session is None:
-        raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
+        job, by_id = _paper_catalog_import_inputs(store, search_id, candidate_ids)
+        if _paper_search_expired(getattr(job, "expires_at", "")):
+            raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
+        candidates = [by_id[cid] for cid in candidate_ids if cid in by_id]
+        if not candidates:
+            raise PaperImportBatchServiceError("CANDIDATE_NOT_FOUND", "候选论文不存在")
+        return job, candidates
     if _paper_search_expired(getattr(session, "expires_at", "")):
         raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
     candidates = []
@@ -625,10 +683,23 @@ def _paper_snapshot_for_item(service: PaperImportBatchService, item_id: str) -> 
     discovery = getattr(service, "discovery_store", None) or _paper_store()
     session = discovery.get_search_session(batch.search_id)
     if session is None:
-        raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
-    if _paper_search_expired(getattr(session, "expires_at", "")):
-        raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
-    candidates = list(discovery.get_candidates(batch.search_id))
+        job = discovery.get_search_job(batch.search_id)
+        if job is None:
+            raise PaperImportBatchServiceError("SEARCH_NOT_FOUND", "搜索会话不存在")
+        if _paper_search_expired(getattr(job, "expires_at", "")):
+            raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
+        session = job
+        candidates = []
+        for result in discovery.get_search_results(batch.search_id):
+            snapshot = dict(result.snapshot)
+            cid = snapshot.get("catalog_paper_id") or getattr(result, "catalog_paper_id", None)
+            snapshot.setdefault("candidate_id", cid)
+            snapshot.setdefault("search_id", batch.search_id)
+            candidates.append(snapshot)
+    else:
+        if _paper_search_expired(getattr(session, "expires_at", "")):
+            raise PaperImportBatchServiceError("SEARCH_EXPIRED", "搜索会话已过期")
+        candidates = list(discovery.get_candidates(batch.search_id))
     if not any(_paper_candidate_value(candidate, "candidate_id") == item.candidate_id for candidate in candidates):
         raise PaperImportBatchServiceError("CANDIDATE_NOT_FOUND", "候选论文不存在")
     # The service validates a complete batch snapshot before resuming one item;
@@ -656,8 +727,11 @@ def _create_paper_import_batch(request: PaperImportBatchRequest):
         return _paper_batch_status_payload(service, batch.batch_id)
     except PaperImportBatchServiceError as error:
         return _paper_batch_error_response(error)
-    except Exception:
-        return _paper_api_error(503, "IMPORT_BATCH_UNAVAILABLE", "批量导入服务暂时不可用", True)
+    except Exception as error:
+        logger.exception("批量导入未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入失败")
+        )
 
 
 @router.post("/papers/imports", response_model=PaperImportBatchResponse | PaperImportResponse)
@@ -680,11 +754,23 @@ def get_paper_import_batch(batch_id: str):
     if not _paper_discovery_enabled():
         return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
     try:
-        return _paper_batch_status_payload(_paper_batch_service(), batch_id)
+        service = _paper_batch_service()
+        # First-access recovery (spec-021): reuse the existing lease-recovery
+        # mechanism and re-submit any queued batch whose runner is missing, so a
+        # crashed runner / restart cannot leave it permanently in queued.
+        try:
+            service.recover_expired_leases()
+            service.maybe_recover_batch(batch_id)
+        except Exception:  # noqa: BLE001 - recovery must not block the status read
+            logger.exception("导入批次恢复失败：%s", batch_id)
+        return _paper_batch_status_payload(service, batch_id)
     except PaperImportBatchServiceError as error:
         return _paper_batch_error_response(error)
-    except Exception:
-        return _paper_api_error(503, "IMPORT_BATCH_UNAVAILABLE", "批量导入服务暂时不可用", True)
+    except Exception as error:
+        logger.exception("批量导入未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入失败")
+        )
 
 
 @router.post("/papers/imports/{batch_id}/retry", response_model=PaperImportBatchResponse)
@@ -702,8 +788,11 @@ def retry_paper_import_batch(batch_id: str):
         return _paper_batch_status_payload(service, batch_id)
     except PaperImportBatchServiceError as error:
         return _paper_batch_error_response(error)
-    except Exception:
-        return _paper_api_error(503, "IMPORT_BATCH_UNAVAILABLE", "批量导入服务暂时不可用", True)
+    except Exception as error:
+        logger.exception("批量导入未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入失败")
+        )
 
 
 @router.post("/papers/imports/{batch_id}/cancel")
@@ -722,8 +811,11 @@ def cancel_paper_import_batch(batch_id: str):
         return _paper_batch_status_payload(service, batch_id)
     except PaperImportBatchServiceError as error:
         return _paper_batch_error_response(error)
-    except Exception:
-        return _paper_api_error(503, "IMPORT_BATCH_UNAVAILABLE", "批量导入服务暂时不可用", True)
+    except Exception as error:
+        logger.exception("批量导入未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入失败")
+        )
 
 
 def _paper_item_browser_target(service: PaperImportBatchService, item_id: str) -> tuple[object, list[object], str, str]:
@@ -840,8 +932,11 @@ def resume_paper_import_item(item_id: str, _request: PaperImportItemActionReques
     except BrowserManagerError as error:
         code = error.code if error.code in _BROWSER_ERROR_STATUS else "BROWSER_UNAVAILABLE"
         return _paper_api_error(_BROWSER_ERROR_STATUS.get(code, 503), code, _safe_browser_error_message(error), error.retryable)
-    except Exception:
-        return _paper_api_error(503, "IMPORT_BATCH_UNAVAILABLE", "批量导入服务暂时不可用", True)
+    except Exception as error:
+        logger.exception("批量导入未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入失败")
+        )
     finally:
         # Closing is scoped to the exact item, so another item's authenticated
         # browser page is untouched.
@@ -852,6 +947,31 @@ def resume_paper_import_item(item_id: str, _request: PaperImportItemActionReques
                 session.close()
             if paper_browser_sessions.get(session_key) is session:
                 paper_browser_sessions.pop(session_key, None)
+
+
+@router.post("/papers/import-items/{item_id}/retry", response_model=PaperImportBatchResponse)
+def retry_paper_import_item(item_id: str, _request: PaperImportItemActionRequest | None = None):
+    """重试单个失败条目：仅把该条目回到 queued 并后台提交，立即返回批次负载。
+
+    复用 service.retry_item（store.retry_item 仅允许 failed → queued）；非 failed 条目
+    由 store 抛 INVALID_STATE_TRANSITION，缺失条目抛 ITEM_NOT_FOUND，均回落到稳定错误响应。
+    """
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    try:
+        service = _paper_batch_service()
+        # 复用既有的条目/批次/服务端快照解析（与 login/resume 同构），并校验条目存在。
+        candidates = _paper_snapshot_for_item(service, item_id)
+        item = service.store.get_item(item_id)
+        service.retry_item(item.item_id, candidates=candidates)
+        return _paper_batch_status_payload(service, item.batch_id)
+    except PaperImportBatchServiceError as error:
+        return _paper_batch_error_response(error)
+    except Exception as error:
+        logger.exception("单条目重试未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入失败")
+        )
 
 
 @router.get("/papers/browser/health")
