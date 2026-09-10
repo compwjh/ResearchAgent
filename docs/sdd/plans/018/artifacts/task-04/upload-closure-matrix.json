@@ -1,15 +1,15 @@
 {
   "schema_version": "upload-closure-matrix-v1",
-  "inventory_git_revision": "9e5f37c",
-  "inventory_digest": "d8073fbd5667000338d1950c696b98dca41a05baac7f8b23dcf340a2354f2729",
+  "inventory_git_revision": "3ff53e1",
+  "inventory_digest": "8e094e4be4343eafcc88549ca2a49572a60a6c4225e87d0b7ca2e6d3825f0c6e",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {"path": "backend/app/main.py", "sha256": "547ed00f729ca1970a0b872ee7b671a21f348770b451a27c1e17bf591bc79f4c"},
-    {"path": "backend/app/api/routes_kb.py", "sha256": "c8f8219270d9a5b3119e2b813d0646ce50f5fb86e0a1d0b22db4402b6a7a2b6a"},
+    {"path": "backend/app/api/routes_kb.py", "sha256": "d6b9d6b5ddea7a397804e6eb39808b1ff1ae0130e4216faed31bb7e201c08b04"},
     {"path": "backend/app/api/routes_paper.py", "sha256": "3e8723704ca6ebdcc149205b7b7741f58b3a9489f6a0148a6cd912a804035135"},
-    {"path": "backend/app/knowledge_base/application.py", "sha256": "05a24af3a723cdf3f4b3a864467cb32e2c8bc80627571eac35b93f168139a39a"},
+    {"path": "backend/app/knowledge_base/application.py", "sha256": "6951515e02ac21e76fafe631e44b4d1a0fbd97b26f51170995581a7b31bb4117"},
     {"path": "backend/app/knowledge_base/infrastructure/store.py", "sha256": "31fb4ad4f7287917ace93872012186344d61bff9f0d62b221395f9ec54562a87"},
-    {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "2c60ef3c9f042d1412ed72098db2e37b790c22b5d5218dbb82c8c75a31310abc"},
+    {"path": "backend/app/knowledge_base/infrastructure/index.py", "sha256": "ee0b6295c1e78ae4f528623dd5f6a760fd860778a05d022276756ba521228404"},
     {"path": "backend/app/knowledge_base/infrastructure/tasks.py", "sha256": "0f11484d71bdbec738a671c7d93eda37b91de51ebd5be024a2c28a2806e38885"},
     {"path": "backend/app/paper_discovery/application/paper_import.py", "sha256": "bab13cc43bce2cec2d3cc65d98b13906ced02cea387d95575670f5a6df707fa8"}
   ],
@@ -23,7 +23,7 @@
   "entries": [
     {
       "entry_id": "kb-upload-route", "entry_kind": "route",
-      "route_or_symbol": "POST /api/kb/upload -> routes_kb.upload_kb_paper",
+      "route_or_symbol": "POST /api/kb/upload -> routes_kb.upload_kb_paper, routes_kb._canonical_source_is_indexable",
       "current_behavior": "Writes a PDF source, metadata and v1/v2 indexes through legacy helpers.",
       "target_behavior": "Remove or thin-forward without caller document_id to the sole immutable KnowledgeDocument create application.",
       "allowed_callers": ["HTTP client", "KnowledgeDocument create application"],
@@ -140,7 +140,7 @@
     },
     {
       "entry_id": "index-entrypoints", "entry_kind": "index",
-      "route_or_symbol": "index.index_paper, index.index_paper_chunker, index.index_document, index.upsert_chunks, index.delete_paper_chunker and index.delete_paper",
+      "route_or_symbol": "index.index_paper, index.index_paper_chunker, index.index_document, index.upsert_chunks, index.delete_paper_chunker, index.delete_paper and index._build_index_bundle",
       "current_behavior": "Mutate fixed KB_COLLECTION points and metadata with paper_id payloads.",
       "target_behavior": "Reuse pure parsing/chunking/embedding; all candidate writes require explicit destination_collection/document_id through CandidateIndexPort.",
       "allowed_callers": ["KnowledgeDocument reindex application", "CandidateIndexPort implementation"],

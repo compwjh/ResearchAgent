@@ -1,7 +1,7 @@
 # Task 07：评审、验收、部署与复盘
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task06；当前状态：`待执行`
+> 依赖：Task06；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -9,8 +9,10 @@
 
 ## 当前证据
 
-- Task06 将提供真实全库新 Collection、alias、manifest finalize 和重启证据。
-- 历史 snapshot/automatic-upgrade 评审只作审计历史，不再作为当前验收依据。
+- 独立验收报告 [`docs/sdd/reviews/018-acceptance-review.md`](../../reviews/018-acceptance-review.md) 判定 `PASS`，允许 Spec018 收口。
+- 最终全量回归按长期规则只执行一次：`.venv/bin/python3.11 -m pytest -q`，结果为 `956 passed, 0 failed, 1 skipped, 38 subtests passed`。
+- 已部署服务在 `http://127.0.0.1:8000` 完成 health、文档列表、v1/v2 检查清单、原件 Range 和错误契约 smoke；用户已验证双栏切片交互。
+- 历史 snapshot/automatic-upgrade 评审只作审计历史；一个旧 PDF v2 后台 `indexing` 与 reranker disabled 已在验收报告中如实记录为非阻塞遗留。
 
 ## 前置门禁
 
@@ -79,9 +81,23 @@
 
 ## 执行结果
 
-待执行后填写。
+### 验收与回归
+
+- tester 独立验收：`PASS`，报告见 [`docs/sdd/reviews/018-acceptance-review.md`](../../reviews/018-acceptance-review.md)。
+- 最终全量回归：命令 `.venv/bin/python3.11 -m pytest -q`，退出码 `0`，`956 passed / 0 failed / 1 skipped / 38 subtests passed`。
+- 任务阶段遵循长期规则，仅运行各 Task 相关定向测试；Spec 收口阶段统一运行上述一次全量回归。
+
+### 部署与运行时
+
+- 服务保持运行于 `127.0.0.1:8000`，health、知识库 health、documents、inspection v1/v2、source Range 和非法 ID smoke 全部通过。
+- 已知遗留：`MAD-HTLC...pdf` v2 仍可能处于后台 `indexing`/`INSPECTION_BUILDING`，未伪造为完成；reranker 按当前配置禁用。
+
+### 收口签字
+
+- 架构师（自身）已核对验收报告、状态台账、最终回归和部署证据，同意将 Spec018 标记为 `已完成`。
 
 ## 变更日志
 
 - 2026-09-08：创建 Task。
 - 2026-09-09：最终验收改为全库候选重建、alias/finalize、不可变原件与运行时门禁，不再验收旧 point 快照恢复。
+- 2026-09-10：独立 tester 完成最终验收与一次全量回归，架构师签字收口；同步 Spec、状态台账和长期测试范围规则。

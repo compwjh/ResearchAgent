@@ -1,0 +1,11 @@
+---
+description: SDD task testing scope and final Spec regression gate
+alwaysApply: true
+---
+
+# SDD 测试范围规则
+
+- 单个 Task 的开发、修复和交接阶段只运行该 Task 相关的定向测试；不得因为一个 Task 顺手触发全量回归。
+- 一个 Spec 收口前必须统一运行一次全量回归，并将命令、退出码、通过数量和阻塞项写入验收材料。
+- Task 的定向测试通过不等于 Spec 可收口；只有最终全量回归、验收评审、部署验证和状态台账均完成后，Spec 才能标记为 `已完成`。
+- 若定向测试或最终全量回归失败，记录真实失败原因并按 SDD 门禁处理，不得用未运行或部分运行冒充通过。

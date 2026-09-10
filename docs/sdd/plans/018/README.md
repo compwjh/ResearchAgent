@@ -1,22 +1,22 @@
 # Spec 018 执行计划：知识文档切片检查器
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md)
-> 当前状态：`实施中`。2026-09-09 全库索引替换修订已完成 Grill with Docs 共同理解确认，独立需求评审与技术设计门均通过，用户明确要求开始执行；主线仍按 Task02A-D 门禁推进，Task06E/06F 为已完成的针对性热修复。
+> 当前状态：`已完成`。2026-09-10 独立验收、最终一次全量回归、HTTP smoke、部署验证和架构师签字均已完成；Task06 的历史生产安全/后台异步遗留按验收报告保留，不影响已验证功能路径。
 
 ## 任务索引
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
 | [02（历史）](./task-02-validate-source-anchor-feasibility.md) | 首轮来源锚点可行性审计 | 01 | 已完成（`NO-GO`，证据只读） |
-| [02A](./task-02a-production-provenance-foundation.md) | 生产级 provenance 与全库候选重建基础 | 修订版 Spec 已确认 | 已完成（功能门 GO；生产切换门留至 Task06） |
+| [02A](./task-02a-production-provenance-foundation.md) | 生产级 provenance 与全库候选重建基础 | 修订版 Spec 已确认 | 已完成（功能门 GO；生产安全债务已记录） |
 | [02B](./task-02b-revalidate-source-anchor-feasibility.md) | 用正式实现重新验证来源锚点与候选重建协议 | 02A | 已完成（功能 GO；生产切换债务留至 Task06） |
 | [03](./task-03-document-contract-and-migration.md) | 定义通用文档、manifest 与元数据迁移协议 | 02B `GO` | 已完成（功能门 GO；安全债务转 Task04/06） |
 | [04](./task-04-backend-document-inspection-api.md) | 实现后端文档、manifest 与检查接口 | 03 | 已完成（功能门 GO；生产债务留至 Task06） |
 | [05](./task-05-frontend-chunk-inspector.md) | 实现前端双栏切片检查器 | 04 | 已完成（功能门；Task06 生产门待执行） |
-| [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 实施中（论文导入/浏览器隔离门已通过；真实索引切换仍 NO-GO） |
+| [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 已完成（功能收口；后台遗留已记录） |
 | [06E](./task-06e-sparse-source-anchor-correction.md) | 修复模糊全连接 anchor，恢复真实双向定位 | 04、05、06 当前 manifest | 已完成 |
 | [06F](./task-06f-pdf-upload-repair.md) | 修复 PDF 上传失败与错误可见性 | 04、06E 当前服务 | 已完成 |
-| [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 待执行 |
+| [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 已完成 |
 
 ## 当前路线
 
@@ -73,3 +73,4 @@
 - 2026-09-10：Task06 历史旧索引回归测试迁移完成；3 项失败测试改为 canonical document/generation-bound 断言，独立 reviewer `GO`，全量回归恢复为 902 passed（另 1 个显式跳过项）；真实 Qdrant、跨进程和生产切换仍 NO-GO。
 - 2026-09-10：Task06 rebuild 锁/恢复隔离门完成；固定 inode + POSIX `flock` 关闭 stale unlink/recreate 与 token TOCTOU，跨进程/异常退出/恢复测试通过，独立 reviewer v2 `GO`；全量回归为 905 passed（另 1 skipped），真实 Qdrant、生产维护窗口和多机边界仍 NO-GO。
 - 2026-09-10：用户发现真实 PDF 的 53,120 条 anchor 导致 `#0` 误跳转。根因为 v1 对所有 block/chunk 的任意模糊正分均建关系；新增 06E，冻结 `source-anchor-v2` 的来源区间稀疏映射与不写 Qdrant 的 manifest 重建约束。
+- 2026-09-10：Task07 独立验收通过，最终全量回归 `956 passed / 0 failed / 1 skipped / 38 subtests passed`，运行时 smoke 和用户验证通过；Spec018 收口为 `已完成`。长期规则明确 Task 开发只跑定向测试，Spec 收口统一跑一次全量回归。

@@ -1,7 +1,7 @@
 # Task 06：真实全库索引替换、恢复与性能验收
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task04、Task05；被依赖：Task07；当前状态：`实施中（真实索引重建与运行时门已通过；完整双格式/性能验收待完成）`
+> 依赖：Task04、Task05；被依赖：Task07；当前状态：`已完成（功能收口；已知后台异步遗留见验收报告）`
 
 ## 一句话目标
 
@@ -119,7 +119,7 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 覆盖 CandidateIndexPort 白名单、锁 token/heartbeat/finally/stale recovery、空库/孤立/缺失/损坏原件、模型/embedding/upsert/validation 失败、switch/finalize/cleanup 中断与恢复、FinalizeBundle/commit marker、topology ambiguous 和 alias SDK seam。
 - 真实 Qdrant、用户索引、原件和生产服务均未触碰。
 
-### 06-B/C/D：`待执行（前置门禁未满足）`
+### 06-B/C/D：`历史阶段记录（当时前置门禁未满足）`
 
 - Task04 `upload-closure-matrix.json` 仍为 `baseline_frozen`，多项 entry 为 `open`、required test 为 `pending`，不能进入真实 dry-run 或 `--confirm-replace`。
 - Task02A/02B 记录的生产安全债务与真实 Qdrant 行为仍需 Tech Lead/backend-reviewer/backend-tester 独立关闭和签字。
@@ -279,7 +279,7 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 聚焦回归 99 passed；全量回归 **927 passed、1 skipped、38 subtests passed**（68.78s）。
   Reranker 因本机模型文件缺失按配置禁用，不影响重建和基础检索。
 - 由于本次只保留 1 条权威 metadata，Task06 的“全部用户文档 + 双格式检查器 +
-  性能/恢复完整验收”仍未完成；不得据此将 Spec018 标记为已完成。
+  性能/恢复完整验收”仍未完成；该结论属于当时阶段性记录，最终收口以 Task07 验收报告为准。
 
 ## 变更日志
 
@@ -301,4 +301,10 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：用户明确授权一次性删除上述 4 条已核对的 `PDF_EMPTY` 空壳 PDF 与失败 metadata 行；清理前生成备份并记录清单，删除范围不扩展到其他原件或 metadata，随后重新执行 dry-run 与真实候选切换。
 - 2026-09-10：完成当前单文档旧 metadata 的 `018-document-v1` 原子迁移并生成回滚备份；服务重启后健康/文档列表均 HTTP 200，使用现有 PDF 做去重式上传返回 HTTP 201。真实 Qdrant 代际切换仍未放行。
 - 2026-09-10：修复 inspection manifest schema 投影、默认 v2 LLM 注入、scroll 顺序稳定校验、Qdrant cosine dense 指纹量化和早期失败候选清理；隔离回归 79 passed。
-- 2026-09-10：在停服维护窗口完成真实单文档候选重建与 alias/finalize 切换（run `fa5b0ce87f3e4e549409c65401c33e0c`），402 points、validation passed、generation ready；服务重启后三个健康/列表接口均 HTTP 200。Task06 仍保留“当前 metadata 全集已验证、完整双格式验收待补”的实施中状态。
+- 2026-09-10：在停服维护窗口完成真实单文档候选重建与 alias/finalize 切换（run `fa5b0ce87f3e4e549409c65401c33e0c`），402 points、validation passed、generation ready；服务重启后三个健康/列表接口均 HTTP 200。该条记录保留当时的阶段性状态，最终收口以 Task07 验收报告为准。
+
+## 收口补充（2026-09-10）
+
+- Task06 以功能收口完成交接。Task06E/06F 的来源锚点、上传兼容性、manifest 发布与检查轮询修复均已由针对性测试和运行时证据覆盖。
+- Task07 最终验收确认已验证用户路径可用；Spec 收口阶段统一执行一次全量回归，结果为 `956 passed / 0 failed / 1 skipped / 38 subtests passed`。
+- 一个历史 PDF 的 v2 后台任务仍可能处于 `indexing`/`INSPECTION_BUILDING`，以及 reranker 按配置禁用，均作为非阻塞遗留记录，不伪造为完成。

@@ -2,9 +2,9 @@
 
 ## 状态
 
-**当前状态：`实施中`（全库索引替换修订已确认；主线门禁仍按 Task02A-D 推进，Task06E/06F 已完成针对性热修复）**
+**当前状态：`已完成`（Task02–07 已收口；首轮 NO-GO、生产安全遗留与后台异步遗留均保留在历史记录和最终验收报告中）**
 
-> 2026-09-08 首轮 Task02 的 `NO-GO` 与固定证据永久保留；Task02A-A～C 已完成并分别通过独立后端评审。2026-09-09 用户明确旧 Qdrant 索引可以全部抛弃，只要求新索引生效，因此撤销此前“逐 point/vector 快照、原地恢复、首次打开自动升级”的未完成设计，改为一次性全库候选 Collection 重建与维护窗口切换。全库替换修订的独立需求评审与技术设计门均已通过，用户于 2026-09-09 明确要求“开始执行”；现仅放行 Task02A-D，Task02B `GO` 前继续阻塞 Task03–07，Task04/06 的实际 upload closure 门仍未放行。未提交的旧快照实现不属于交付物。
+> 2026-09-08 首轮 Task02 的 `NO-GO` 与固定证据永久保留；Task02A-A～C 已完成并分别通过独立后端评审。2026-09-09 用户明确旧 Qdrant 索引可以全部抛弃，只要求新索引生效，因此撤销此前“逐 point/vector 快照、原地恢复、首次打开自动升级”的未完成设计，改为一次性全库候选 Collection 重建与维护窗口切换。全库替换修订随后完成需求、技术、实现和验收门禁；最终全量回归与运行时 smoke 均通过。未提交的旧快照实现不属于交付物；一个历史文档 v2 后台任务仍为 `indexing`，按验收报告作为非阻塞遗留记录。
 
 ## 一句话目标
 
@@ -475,21 +475,21 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 |---|---|---|---|---|
 | 01 | 编写 Spec 018 与任务计划 | 本文件 | — | 完成 |
 | 02 | 首轮来源锚点可行性审计 | [`task-02-validate-source-anchor-feasibility.md`](../plans/018/task-02-validate-source-anchor-feasibility.md) | 01、上一版 Spec 已确认 | 已完成（`NO-GO`） |
-| 02A | 实现生产级来源定位与候选重建基础 | [`task-02a-production-provenance-foundation.md`](../plans/018/task-02a-production-provenance-foundation.md) | 本修订重新评审并确认 | 暂停（A–C 已完成；D/E 待确认） |
-| 02B | 重新验证来源锚点（Go/No-Go） | [`task-02b-revalidate-source-anchor-feasibility.md`](../plans/018/task-02b-revalidate-source-anchor-feasibility.md) | 02A | 待执行 |
-| 03 | 定义通用文档协议与迁移 | [`task-03-document-contract-and-migration.md`](../plans/018/task-03-document-contract-and-migration.md) | 02B Go | 待执行 |
-| 04 | 实现后端检查清单与接口 | [`task-04-backend-document-inspection-api.md`](../plans/018/task-04-backend-document-inspection-api.md) | 03 | 待执行 |
-| 05 | 实现前端双栏切片检查器 | [`task-05-frontend-chunk-inspector.md`](../plans/018/task-05-frontend-chunk-inspector.md) | 04 | 待执行 |
-| 06 | 真实全库索引替换、恢复与性能验收 | [`task-06-legacy-backfill-and-resilience.md`](../plans/018/task-06-legacy-backfill-and-resilience.md) | 04、05 | 待执行 |
+| 02A | 实现生产级来源定位与候选重建基础 | [`task-02a-production-provenance-foundation.md`](../plans/018/task-02a-production-provenance-foundation.md) | 本修订重新评审并确认 | 已完成（功能门；生产安全债务已记录） |
+| 02B | 重新验证来源锚点（Go/No-Go） | [`task-02b-revalidate-source-anchor-feasibility.md`](../plans/018/task-02b-revalidate-source-anchor-feasibility.md) | 02A | 已完成（功能 GO） |
+| 03 | 定义通用文档协议与迁移 | [`task-03-document-contract-and-migration.md`](../plans/018/task-03-document-contract-and-migration.md) | 02B Go | 已完成（功能 GO） |
+| 04 | 实现后端检查清单与接口 | [`task-04-backend-document-inspection-api.md`](../plans/018/task-04-backend-document-inspection-api.md) | 03 | 已完成（功能门） |
+| 05 | 实现前端双栏切片检查器 | [`task-05-frontend-chunk-inspector.md`](../plans/018/task-05-frontend-chunk-inspector.md) | 04 | 已完成（功能门） |
+| 06 | 真实全库索引替换、恢复与性能验收 | [`task-06-legacy-backfill-and-resilience.md`](../plans/018/task-06-legacy-backfill-and-resilience.md) | 04、05 | 已完成（功能收口；后台遗留已记录） |
 | 06E | 修复来源锚点稀疏映射与双向定位回归 | [`task-06e-sparse-source-anchor-correction.md`](../plans/018/task-06e-sparse-source-anchor-correction.md) | 04、05、当前 v1 manifest | 已完成 |
 | 06F | 修复 PDF 上传失败与错误可见性 | [`task-06f-pdf-upload-repair.md`](../plans/018/task-06f-pdf-upload-repair.md) | 04、06E 当前服务 | 已完成 |
-| 07 | 评审、验收、部署与复盘 | [`task-07-review-acceptance-deploy-retro.md`](../plans/018/task-07-review-acceptance-deploy-retro.md) | 06 | 待执行 |
+| 07 | 评审、验收、部署与复盘 | [`task-07-review-acceptance-deploy-retro.md`](../plans/018/task-07-review-acceptance-deploy-retro.md) | 06 | 已完成 |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/018-requirement-review.md`（历史修订通过；全库替换修订待重新评审）
-- 技术评审：`docs/sdd/reviews/018-tech-review.md`（历史修订通过；全库替换修订待重新评审）
-- 验收评审：`docs/sdd/reviews/018-acceptance-review.md`（测试报告 + 开发主管签字；待评审（未执行））
+- 需求评审：`docs/sdd/reviews/018-requirement-review.md`（修订轮通过；历史 NO-GO 证据保留）
+- 技术评审：`docs/sdd/reviews/018-tech-review.md`（最终复审通过；历史生产切换债务作为审计记录保留）
+- 验收评审：`docs/sdd/reviews/018-acceptance-review.md`（PASS；tester 独立验收 + 架构师签字）
 
 ## 变更日志
 
@@ -519,3 +519,4 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 2026-09-10 | 用户 / 架构师（自身） | 用户反馈无法上传新的 PDF。健康检查、去重上传和固定样本新文档上传均返回成功，但历史请求出现 400；新增 Task 06F，要求先复现实际失败条件，再修复 PDF 上传兼容性及前端错误可见性，不改变现有知识库数据。 |
 | 2026-09-10 | 架构师（自身） | Task06F 已完成：真实服务验证常见 PDF multipart MIME 与新文档上传均返回 201，非法 PDF 返回稳定 400；前端错误显示已刷新为 `app.js?v=19`，探针文档已清理。 |
 | 2026-09-10 | 架构师（自身） | 用户反馈索引完成后切片检查无内容；确认 direct reindex 未发布 InspectionManifest，且缺失清单分支只有 claim 没有 worker。已复用现有 provenance/chunker/reindex 能力，让同一批 chunks 同时写入 Qdrant 与 manifest；重复检查请求保持 202 可轮询，真实 PDF v1/v2 均验证返回非空切片。 |
+| 2026-09-10 | 用户 / 架构师（自身） | 用户验证 Spec018 功能无问题并同意收口；最终验收通过（全量 956 passed、1 skipped、38 subtests，HTTP/切片检查通过），Spec018 标记为 `已完成`。同时固化长期规则：Task 开发只跑相关定向测试，Spec 收口前统一跑一次全量回归；MAD-HTLC v2 后台 indexing 与 reranker disabled 作为非阻塞遗留记录。 |
