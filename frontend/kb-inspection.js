@@ -293,6 +293,11 @@
     };
 
     const CHUNK_BATCH_SIZE = 100;
+    // Hotfix: a large PDF can have tens of thousands of anchor relations.
+    // Render the first useful inspection batch immediately instead of waiting
+    // for the browser to serially download every relation page.
+    const INSPECTION_INITIAL_PAGE_SIZE = 500;
+    const MAX_VISIBLE_ANCHORS = 3;
 
     function isActive(sequence) { return state.sequence === sequence; }
 
@@ -1032,9 +1037,11 @@
       const mapping = documentRef.createElement('p');
       mapping.className = unmappedReason ? 'kb-chunk-warning' : 'kb-chunk-mapping';
       mapping.setAttribute('role', 'status');
+      const visibleAnchors = anchorRelations.slice(0, MAX_VISIBLE_ANCHORS);
+      const hiddenAnchorCount = Math.max(0, anchorRelations.length - visibleAnchors.length);
       mapping.textContent = unmappedReason
         ? `未映射：${unmappedReason}`
-        : anchorRelations.map((anchor) => `${anchor.block_id} · coverage ${anchor.coverage} · ${anchor.is_primary ? '主定位' : '关联'}`).join('；');
+        : `${visibleAnchors.map((anchor) => `${anchor.block_id} · coverage ${anchor.coverage} · ${anchor.is_primary ? '主定位' : '关联'}`).join('；')}${hiddenAnchorCount ? `；另有 ${hiddenAnchorCount} 条关联` : ''}`;
       item.append(meta, text, mapping);
       bindChunkInteraction(item);
       return item;
@@ -1055,7 +1062,7 @@
       }
     }
 
-    function renderChunks(version, chunks, anchors, manifest = {}) {
+    function renderChunks(version, chunks, anchors, manifest = {}, truncated = false) {
       clearChildren(chunkContent);
       if (chunkEmpty) chunkContent?.appendChild(chunkEmpty);
       if (chunkMeta) chunkMeta.textContent = `${version} · ${chunks.length} 个切片`;
@@ -1064,7 +1071,10 @@
       const unmappedCount = Number.isInteger(manifest?.unmapped_count) ? manifest.unmapped_count : 0;
       const status = String(manifest?.status || 'ready');
       if (chunkStatus) {
-        if (status === 'partial' || unmappedCount > 0) {
+        if (truncated) {
+          chunkStatus.textContent = `${status} · 已加载首批定位，其余映射暂未加载`;
+          chunkStatus.setAttribute('data-status', 'partial');
+        } else if (status === 'partial' || unmappedCount > 0) {
           const mappedLabel = mappedCount === null ? '部分' : `${mappedCount}/${chunks.length}`;
           const reasons = Object.keys(manifest?.unmapped_reasons || {}).join('、') || 'UNMAPPED';
           chunkStatus.textContent = `partial · 已映射 ${mappedLabel} · 未映射 ${unmappedCount} · 原因 ${reasons}`;
@@ -1127,13 +1137,17 @@
       let manifest = {};
       let cursor = null;
       let pageCount = 0;
+      let truncated = false;
       let lastEtag = null;
       const cacheKey = `${documentId}|${version}`;
       const cachedInspection = state.inspectionCache.get(cacheKey);
       try {
         do {
           if (!isActive(request.sequence)) return;
-          const params = new URLSearchParams({ chunker: version });
+          const params = new URLSearchParams({
+            chunker: version,
+            page_size: String(INSPECTION_INITIAL_PAGE_SIZE),
+          });
           if (cursor) params.set('cursor', cursor);
           const url = `/api/kb/documents/${encodeURIComponent(documentId)}/inspection?${params.toString()}`;
           const headers = !cursor && cachedInspection?.etag
@@ -1152,6 +1166,7 @@
             anchors.push(...cachedInspection.anchors);
             manifest = cachedInspection.manifest || {};
             lastEtag = cachedInspection.etag || null;
+            truncated = cachedInspection.truncated === true;
             cursor = null;
             break;
           }
@@ -1177,26 +1192,33 @@
           if (payload && payload.manifest && typeof payload.manifest === 'object') manifest = payload.manifest;
           lastEtag = responseHeader(response, 'ETag') || lastEtag;
           cursor = payload?.next_cursor || null;
+          truncated = Boolean(cursor);
           pageCount += 1;
           if (pageCount > 10000) {
             showError({ code: 'PAGINATION_LIMIT', message: '检查清单分页超过安全上限' });
             return;
           }
-          if (cursor) showLoading(`正在加载检查清单第 ${pageCount + 1} 页…`);
+          // A complete anchor graph can be very large. Do not block first
+          // paint on every page; the full on-demand mapping protocol follows.
+          cursor = null;
         } while (cursor);
         if (!isActive(request.sequence)) return;
         await renderSource(documentValue, blocks, request.sequence);
         if (!isActive(request.sequence)) return;
-        if (documentValue.media_type !== 'text/markdown' && error && !error.hidden) return;
+        // A PDF renderer failure must not hide already verified index chunks.
+        // Keep its error visible, while leaving the right-hand inspection pane
+        // usable until the source renderer can be retried.
+        const sourceRenderFailed = documentValue.media_type !== 'text/markdown' && error && !error.hidden;
         state.inspectionCache.set(cacheKey, {
           blocks: blocks.slice(),
           chunks: chunks.slice(),
           anchors: anchors.slice(),
           manifest,
           etag: lastEtag,
+          truncated,
         });
-        renderChunks(version, chunks, anchors, manifest);
-        resetStates();
+        renderChunks(version, chunks, anchors, manifest, truncated);
+        if (!sourceRenderFailed) resetStates();
       } catch (caught) {
         if (caught?.name === 'AbortError' || !isActive(request.sequence)) return;
         showError({ code: 'NETWORK_ERROR', message: '检查清单加载失败' });

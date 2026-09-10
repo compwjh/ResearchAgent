@@ -119,7 +119,6 @@ async function testTabsPaginationAndSafety() {
     response(200, { documents: [{ document_id: 'doc-1', file_name: '<unsafe>.md', media_type: 'text/markdown' }], next_cursor: 'docs-2', total: 2 }),
     response(200, { documents: [{ document_id: 'doc-2', file_name: 'second.pdf', media_type: 'application/pdf' }], next_cursor: null, total: 2 }),
     response(200, { blocks: [{ block_id: 'b1', ordinal: 0, text: '# Safe', locator: {}, heading_path: ['H'], block_type: 'heading' }], chunks: [{ chunker: 'v1', chunk_index: 0, text: '<chunk>' }], anchors: [{ block_id: 'b1', chunker: 'v1', chunk_index: 0 }], next_cursor: 'opaque-1', total: { blocks: 2, chunks: 2, anchors: 2 } }),
-    response(200, { blocks: [{ block_id: 'b2', ordinal: 1, text: 'body', locator: {}, heading_path: [], block_type: 'paragraph' }], chunks: [{ chunker: 'v1', chunk_index: 1, text: 'tail' }], anchors: [{ block_id: 'b2', chunker: 'v1', chunk_index: 1 }], next_cursor: null, total: { blocks: 2, chunks: 2, anchors: 2 } }),
     response(200, { blocks: [], chunks: [], anchors: [], next_cursor: null, total: { blocks: 0, chunks: 0, anchors: 0 } }),
   ];
   const harness = makeHarness(async (url, options) => { calls.push({ url, options }); return queue.shift(); });
@@ -136,20 +135,20 @@ async function testTabsPaginationAndSafety() {
   elements['kb-inspection-document'].value = 'doc-1';
   elements['kb-inspection-document'].dispatch('change');
   await flush(); await flush();
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 3);
   assert.ok(calls[2].url.includes('chunker=v1'));
-  assert.ok(calls[3].url.includes('cursor=opaque-1'));
+  assert.ok(calls[2].url.includes('page_size=500'));
   assert.equal(calls.every(({ options }) => !options.method), true);
   assert.equal(elements['kb-inspection-maintenance'].hidden, true);
   assert.equal(elements['kb-inspection-error'].hidden, true);
-  assert.equal(elements['kb-chunk-content'].childNodes.length, 3);
+  assert.equal(elements['kb-chunk-content'].childNodes.length, 2);
   const chunkItems = elements['kb-chunk-content'].childNodes.filter((node) => node.className === 'kb-chunk-item');
-  assert.equal(chunkItems.length, 2);
+  assert.equal(chunkItems.length, 1);
   assert.equal(chunkItems[0].getAttribute('data-chunk-id'), 'v1:0');
   assert.equal(chunkItems[0].getAttribute('data-block-ids'), 'b1');
   assert.equal(elements['kb-chunk-empty'].parentNode, elements['kb-chunk-content']);
   assert.equal(elements['kb-chunk-empty'].hidden, true);
-  assert.equal(elements['kb-source-markdown'].childNodes.length, 2);
+  assert.equal(elements['kb-source-markdown'].childNodes.length, 1);
   assert.equal(documentRef.activeElement, null);
   elements['kb-inspection-chunk-tab'].dispatch('click');
   assert.equal(elements['kb-inspection-layout'].getAttribute('data-active-pane'), 'chunks');
@@ -157,7 +156,7 @@ async function testTabsPaginationAndSafety() {
   assert.equal(elements['kb-inspection-layout'].getAttribute('data-active-pane'), 'source');
   v1.checked = false; v2.checked = true; v2.dispatch('change');
   await flush();
-  assert.ok(calls[4].url.includes('chunker=v2'));
+  assert.ok(calls[3].url.includes('chunker=v2'));
 }
 
 async function testMaintenanceAndCancellation() {
