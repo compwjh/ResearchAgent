@@ -1,6 +1,6 @@
 {
   "schema_version": "upload-closure-matrix-v1",
-  "inventory_git_revision": "069b009",
+  "inventory_git_revision": "9e5f37c",
   "inventory_digest": "68e017a2800395fa1e1bab0c7e80bd83cdeac88a774266737b18fcca72291869",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
