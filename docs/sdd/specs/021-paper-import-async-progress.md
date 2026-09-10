@@ -108,6 +108,7 @@
   2. 制造 1 篇失败：可单独重试该条，已成功条目不受影响。
   3. 另一个实例占用存储时：得到 `KB_STORAGE_LOCKED` 与可行动文案，而非 `KB_IMPORT_FAILED`。
   4. 长时间未推进：提示"仍在导入，可离开此页"，不谎报失败。
+  5. 重新导入一篇**已在别的批次成功导入**的论文：不再被 409 拦下，返回 `queued` 并最终"论文已在知识库中"，复用既有 `paper_id`，知识库中仍只有一条；同一篇在**导入进行中**重复提交时仍给 409 `DUPLICATE_IMPORT`。
 
 ## 执行配置（由架构师填写，落盘可查）
 
@@ -140,7 +141,7 @@
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/021-requirement-review.md`（**打回（0 P0 / 3 P1 / 5 P2）→ 架构师已按 R1-1/R1-2/R1-3 修订本 spec 文本与 `plans/021/task-06`，待 `architect` 复审**）
+- 需求评审：`docs/sdd/reviews/021-requirement-review.md`（**通过（APPROVE）**；首轮打回 0 P0 / 3 P1 / 5 P2，3 条 P1 已由架构师修订 spec 文本与 `plans/021/task-06` 后经 `architect` 定向复审闭环，残余 P2 见该文件「复审结论」段）
 - 技术评审：`docs/sdd/reviews/021-tech-review.md`（**通过（APPROVE）**，`backend-reviewer`；0 CRITICAL / 0 HIGH，3 LOW + 1 INFO 已记录）
 - 前端评审：`docs/sdd/reviews/021-frontend-review.md`（首轮**打回** P1 → 修复后复审**通过（Approve）**，`frontend-reviewer`）
 - 验收评审：`docs/sdd/reviews/021-acceptance-review.md`（**通过**；`tester` 子代理 429 限流 → 主模型代行，报告头部已标注「代行（原因）」，开发主管签字栏填「架构师（主会话）代签」）
