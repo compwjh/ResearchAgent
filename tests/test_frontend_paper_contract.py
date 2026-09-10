@@ -88,8 +88,8 @@ def test_paper_error_text_covers_missing_codes_and_range_details() -> None:
 
 def test_paper_app_version_bumped() -> None:
     # 改动 app.js 后必须同步递增 ?v= 版本号，确保浏览器刷新缓存（回归护栏 A7）。
-    assert "/assets/app.js?v=25" in INDEX
-    assert "/assets/styles.css?v=25" in INDEX
+    assert "/assets/app.js?v=26" in INDEX
+    assert "/assets/styles.css?v=26" in INDEX
 
 
 def test_paper_import_status_resets_per_round() -> None:

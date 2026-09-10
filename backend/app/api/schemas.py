@@ -11,6 +11,35 @@ class ChatRequest(BaseModel):
     model: str = MODEL_NAME
 
 
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    instructions: Optional[str] = Field(default=None, max_length=5000)
+
+
+class ProjectPatchRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    instructions: Optional[str] = Field(default=None, max_length=5000)
+    status: Optional[Literal["active", "archived", "deleted"]] = None
+
+
+class ConversationMessageRequest(BaseModel):
+    # ``question`` is accepted as a compatibility spelling for the existing
+    # chat payload; the new contract uses ``content``.
+    content: Optional[str] = Field(default=None, max_length=20000)
+    question: Optional[str] = Field(default=None, max_length=20000)
+    message: Optional[str] = Field(default=None, max_length=20000)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    model: str = MODEL_NAME
+    mode: Literal["normal", "developer"] = "normal"
+
+
+class ConversationPatchRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=200)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    status: Optional[Literal["active", "archived", "deleted"]] = None
+    memory_history_policy: Optional[Literal["from_binding", "include_prior_history"]] = None
+
+
 class KBAskRequest(BaseModel):
     """知识库问答请求（spec-011 / spec-012）。
 

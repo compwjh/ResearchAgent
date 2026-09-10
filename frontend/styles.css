@@ -24,6 +24,44 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 }
 @media (max-width: 760px) { .app-shell { display: block; }.sidebar { display: none; }.topbar { height: 60px; padding: 0 16px; }.workspace { min-height: calc(100vh - 60px); padding: 34px 16px; }.welcome h1 { font-size: 35px; }.chat-panel { min-height: 460px; }.workspace.has-started .chat-panel { min-height: calc(100vh - 110px); }.messages { padding: 22px 16px; }.bubble { max-width: 88%; }.composer { margin: 0 14px; }.composer-tip { display: none; }.workspace:not(.has-started) .composer { margin: 0; }.footer-note { display: none; } }
 
+/* ===== 项目会话记忆 MVP（spec-022 Task02） ===== */
+.conversation-memory { display: grid; gap: 10px; margin-top: 25px; min-height: 0; }
+.project-switcher { display: grid; gap: 6px; }
+.project-switcher .section-label { margin: 0; }
+.project-select-row { display: flex; align-items: center; gap: 4px; }
+#project-select { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 8px 7px; background: #fff; color: var(--ink); font-size: 11px; }
+#project-select:focus, #project-name-input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#new-project-button { flex: 0 0 auto; padding: 5px; color: var(--accent); font-size: 17px; }
+.new-project-form { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.new-project-form label { color: var(--muted); font-size: 10px; font-weight: 700; }
+#project-name-input { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px; font: 11px inherit; }
+.new-project-actions { display: flex; justify-content: flex-end; gap: 5px; }
+.new-project-actions .secondary-button, .new-project-actions .send-button { padding: 6px 8px; font-size: 10px; }
+.conversation-status, .conversation-memory-status { min-height: 14px; margin: 0; color: var(--muted); font: 10px/1.4 'DM Mono', monospace; }
+.conversation-status[data-state="error"] { color: #c0392b; }
+.conversation-list-head { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; color: var(--muted); font: 10px 'DM Mono', monospace; text-transform: uppercase; }
+.conversation-project-badge { max-width: 100px; overflow: hidden; color: var(--accent); text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
+.conversation-list { display: grid; gap: 3px; max-height: 230px; overflow-y: auto; }
+.conversation-list:empty::after { content: '暂无已保存会话'; padding: 8px 4px; color: #b9bbc0; font: 10px 'DM Mono', monospace; }
+.conversation-item { display: grid; gap: 3px; width: 100%; border-radius: 7px; padding: 8px; background: transparent; color: var(--muted); text-align: left; }
+.conversation-item:hover, .conversation-item[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+.conversation-item-title { overflow: hidden; color: inherit; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-item-meta { color: #b1b2ba; font: 9px 'DM Mono', monospace; }
+.load-older-messages { border-radius: 6px; padding: 6px; background: transparent; color: var(--muted); font: 10px 'DM Mono', monospace; }
+.load-older-messages:hover { background: var(--accent-soft); color: var(--accent); }
+.conversation-processing { display: grid; gap: 4px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.conversation-processing[aria-busy="true"] .conversation-processing-label { color: var(--accent); }
+.conversation-processing-item { display: flex; gap: 5px; align-items: baseline; }
+.conversation-processing-item::before { content: '•'; color: #9b8ffb; }
+.conversation-processing-item[data-status="failed"]::before { color: #c0392b; }
+.conversation-processing-item[data-status="skipped"]::before { color: #9c9da4; }
+.conversation-processing-label { color: var(--ink); font-weight: 700; }
+.conversation-memory-notice { display: block; margin-top: 8px; padding: 7px 9px; border-radius: 7px; background: #f5f2ff; color: #5e51c8; font: 10px/1.45 'DM Mono', monospace; }
+.conversation-memory-notice[data-status="needs_confirmation"], .conversation-memory-notice[data-status="not_analyzed"], .conversation-memory-notice[data-status="not_saved"] { background: #fff7ed; color: #9a5b16; }
+.conversation-memory-notice[data-status="used"] { background: #f1f7ff; color: #3e6eaa; }
+.message.assistant.is-failed .bubble { border-color: #efb3b3; }
+.message.assistant.is-interrupted .bubble { border-color: #e6c98e; }
+
 /* ===== 模型库视图（spec-007） ===== */
 @keyframes modelFadeIn {
   from { opacity: 0; transform: translateY(8px); }

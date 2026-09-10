@@ -153,6 +153,7 @@
 - **018 Task06-B 第二代真实重建与 finalize 恢复** ｜ 实施中 → 实施中 ｜ 2026-09-10：修复旧 generation marker 阻止后续合法发布的问题，并以显式替换授权保持文件仓储 fail-closed；run `38efa91a33154fd097c61d1c745d408f` 经 `resume-finalize` 完成 415-point 重建，metadata 统计/源哈希已验证，alias 与 generation marker 一致。服务三个健康/文档接口 HTTP 200，全量回归 927 passed、1 skipped；完整双格式与性能验收仍待执行。
 - **018 知识文档切片检查器与双向原文定位** ｜ 实施中 → 已完成 ｜ 2026-09-10：用户验证功能无问题并同意收口；最终验收通过，唯一最终全量回归为 `956 passed / 0 failed / 1 skipped / 38 subtests passed`，服务与 HTTP smoke 通过。Task 开发阶段按长期规则只跑定向测试；已知后台 v2 indexing 与 reranker disabled 遗留已记录，不影响已验证路径。
 - **022 项目会话管理与自进化长期记忆** ｜ 新建 → 待确认 ｜ 2026-09-11：经 Grill with Docs 多轮确认，落盘项目/持久会话、全局与项目记忆、动态两屏消息加载、真实处理过程、RAG 编号来源、手机端和能力方法建议的完整边界；Task02 为桌面纵向 MVP，Task02–08 均保持待执行，确认前不修改业务代码。
+- **022 项目会话管理与自进化长期记忆** ｜ 待确认 → 已确认 ｜ 2026-09-11：用户明确要求继续开发 Spec022，确认进入 Task02 桌面端项目记忆 MVP；其余 Task 仍按依赖顺序等待。
 
 ## 2026-09-09
 
@@ -175,3 +176,4 @@
 - **021 论文导入异步化与进度反馈** ｜ 已确认 → 实施中 → 已完成 ｜ 2026-09-10：Task02 入队即返回 + 后台单飞执行 + 恢复（`POST` 0–1 秒返回 `queued`，轮询到 `completed`）；Task03 `KB_STORAGE_LOCKED` / `DUPLICATE_IMPORT` 两类可行动错误 + `POST /api/papers/import-items/{id}/retry`（含重试路径唯一索引冲突可读化，424→409）；Task04 前端逐条进度 + 单条重试 + 取消 + "仍在导入"软提示（`?v=24→25`）。后端 819 passed、前端契约 22 passed；技术评审通过（3 LOW + 1 INFO）、前端评审通过、验收通过（tester 429 → 主会话代行留痕）。遗留：失败条目是否释放 `import_item_title` 唯一性，待另行评审。
 - **021 论文导入异步化与进度反馈** ｜ 已完成 → 已完成（追加 Task06）｜ 2026-09-10：用户就遗留语义拍板"**释放**"，Task06 由 `backend-dev`（`Deepseek-V4.1-Flash`）实施完成——`paper_import_schema_meta` v1→v2 幂等迁移（受事务保护、失败可回滚），`import_item_title` 等 5 个身份索引的 WHERE 收缩为**仅活跃态**，CAS/租约未动。全量 **830 passed, 0 failed**；相关三文件 54 passed。运行时（8123）：真实库 version 1→2、索引 WHERE 仅活跃态；已入库论文重新导入由 409 变为 **200 queued → completed**，item 复用既有 `paper_id`，`papers.json` 同名条目仍为 1（无重复落盘）；同一候选连续提交仍 200 + **409 `DUPLICATE_IMPORT`**（活跃态互斥保留）。需求评审（`architect`）**打回 3 P1**（边界口径/find_existing 适用范围缺区分、评审记录与状态矛盾、Task06 缺产品级验收）→ 架构师已按 R1-1/R1-2/R1-3 修订 spec 与 task 文本，待复审。同期按用户要求把全部子 agent 模型由 `hy3` 改为 **`Deepseek-V4.1-Flash`** 并同步 `AGENTS.md`。
 - **021 论文导入异步化与进度反馈** ｜ 已完成（Task06 收口）｜ 2026-09-11：`backend-tester` 单端回归通过（全量 **830 passed** 3 连跑 0 failed、ruff 无新增、Task06 新增用例 11/11 稳定）；顺带定位并修复**既有 flaky**（非本次引入，在父提交 `1ec85eb` 上 15 次复现 10 次）：`test_batch_status_and_resume_use_server_snapshot` 只等条目状态、未等批次聚合态 → 改为"条目 + 批次聚合双条件"等待（`_wait_for_batch_status`），同文件 10 处同类轮询一并收敛，修复后全量 3 连跑均 830 passed。需求评审复审**通过（APPROVE）**；`tester` Task06 补充跨端验收**通过**（5/5）。spec-021 全任务（01–06）完成。
+- **022 项目会话管理与自进化长期记忆** ｜ Task02 实施中 → Task02 已完成、Spec 实施中 ｜ 2026-09-11：桌面端项目/会话/项目记忆纵向 MVP 通过 35 项精确测试、旧聊天兼容回归与受控部署 smoke；全量回归保留至 Task08，进入 Task03。

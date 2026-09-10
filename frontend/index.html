@@ -4,13 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=25">
+    <link rel="stylesheet" href="/assets/styles.css?v=26">
 </head>
 <body>
   <main class="app-shell">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">R</span><span>ResearchAgent</span></div>
       <button class="new-chat" type="button"><span class="plus">+</span> 新建对话</button>
+      <section class="conversation-memory" aria-label="项目与会话">
+        <div class="project-switcher">
+          <label class="section-label" for="project-select">项目</label>
+          <div class="project-select-row">
+            <select id="project-select" aria-label="选择项目"><option value="">未绑定项目</option></select>
+            <button class="icon-button" id="new-project-button" type="button" aria-label="新建项目" title="新建项目">＋</button>
+          </div>
+        </div>
+        <form id="new-project-form" class="new-project-form" hidden>
+          <label for="project-name-input">项目名称</label>
+          <input id="project-name-input" maxlength="120" required placeholder="例如：记忆测试">
+          <div class="new-project-actions"><button class="secondary-button" id="cancel-project-button" type="button">取消</button><button class="send-button" type="submit">创建</button></div>
+        </form>
+        <p class="conversation-status" id="conversation-status" role="status" aria-live="polite"></p>
+        <div class="conversation-list-head"><span>最近会话</span><span class="conversation-project-badge" id="conversation-project-badge">未绑定</span></div>
+        <div class="conversation-list" id="conversation-list" role="listbox" aria-label="项目会话列表"></div>
+        <button class="load-older-messages" id="load-older-messages" type="button" hidden>加载更早消息</button>
+        <p class="conversation-memory-status" id="conversation-memory-status" role="status" aria-live="polite"></p>
+      </section>
       <nav class="side-nav" aria-label="主导航">
         <p class="nav-label">工作区</p>
         <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
@@ -316,6 +335,6 @@
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
-  <script src="/assets/app.js?v=25"></script>
+  <script src="/assets/app.js?v=26"></script>
 </body>
 </html>

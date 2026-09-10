@@ -1,13 +1,13 @@
 # Spec 022 执行计划：项目会话管理与自进化长期记忆
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md)
-> 当前状态：`待确认`。所有 Task 保持待执行，用户确认 Spec 前不修改业务代码。
+> 当前状态：`实施中`。Spec 已确认，Task02 已完成，当前进入 Task03。
 
 ## 任务索引
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
-| [02](./task-02-desktop-memory-mvp.md) | 交付可现场验证的桌面端项目记忆纵向 MVP | Spec 确认 | 待执行 |
+| [02](./task-02-desktop-memory-mvp.md) | 交付可现场验证的桌面端项目记忆纵向 MVP | Spec 确认 | 已完成 |
 | [03](./task-03-management-global-memory.md) | 完整项目/会话管理、全局记忆与治理 UI | 02 | 待执行 |
 | [04](./task-04-memory-evolution-recall.md) | 异步候选、摘要、冲突和跨会话召回 | 03 | 待执行 |
 | [05](./task-05-research-context-progress.md) | 项目文档、RAG 编号来源与完整处理过程 | 04 | 待执行 |
@@ -27,7 +27,7 @@
 
 ## 里程碑
 
-- M1 / Task02：用户能在桌面浏览器验证跨会话项目记忆。
+- M1 / Task02：用户能在桌面浏览器验证跨会话项目记忆（已完成）。
 - M2 / Task05：项目文档、RAG 来源和完整处理过程可验证。
 - M3 / Task06：手机端核心路径可验证。
 - M4 / Task08：全量回归、最终部署和 Spec 收口。
@@ -35,4 +35,4 @@
 ## 变更日志
 
 - 2026-09-11：依据 Grill with Docs 共同理解创建 Task02–08；将原 12 个细粒度任务压缩为 7 个用户可见里程碑任务。
-
+- 2026-09-11：Task02 通过精确测试与受控部署验收，放行 Task03；Task08 仍保留全量回归门禁。
