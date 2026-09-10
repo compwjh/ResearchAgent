@@ -38,6 +38,28 @@ class ConversationPatchRequest(BaseModel):
     project_id: Optional[str] = Field(default=None, max_length=100)
     status: Optional[Literal["active", "archived", "deleted"]] = None
     memory_history_policy: Optional[Literal["from_binding", "include_prior_history"]] = None
+    confirm_move: bool = False
+
+
+class MemoryCreateRequest(BaseModel):
+    """A user-authorized memory write; owner identity is server controlled."""
+
+    scope: Literal["global", "project"] = "global"
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    category: Literal["user_preference", "stable_fact", "project_rule", "capability_method"] = "user_preference"
+    statement: str = Field(min_length=1, max_length=1000)
+    source_kind: Literal["explicit", "repeated", "verified_failure", "manual"] = "manual"
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    status: Literal["candidate", "active"] = "active"
+
+
+class MemoryPatchRequest(BaseModel):
+    """Content edits create a superseding version; status changes govern it."""
+
+    statement: Optional[str] = Field(default=None, min_length=1, max_length=1000)
+    category: Optional[Literal["user_preference", "stable_fact", "project_rule", "capability_method"]] = None
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    status: Optional[Literal["candidate", "active", "disabled", "deleted"]] = None
 
 
 class KBAskRequest(BaseModel):

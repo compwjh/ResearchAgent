@@ -31,10 +31,14 @@ def classify_memory_intent(text: str) -> MemoryIntent:
         return MemoryIntent("none", current_task=value)
     ambiguous = ("通常" in value or "一般" in value or "我喜欢" in value or "prefer" in value.lower())
     explicit = ("以后" in value or "请记住" in value or "记住" in value or "始终" in value or "always" in value.lower())
+    global_scope = explicit and (
+        "全局" in value or "所有项目" in value or "每个项目" in value or "记住我" in value
+        or "for all projects" in value.lower() or "globally" in value.lower()
+    )
     if explicit:
         statement = re.sub(r"^(请记住|记住|以后|请始终)\s*", "", value, flags=re.IGNORECASE).strip()
         statement = ("以后 " + statement).strip() if statement else value
-        return MemoryIntent("explicit", statement=statement[:1000], confidence=0.95, current_task=value)
+        return MemoryIntent("explicit", statement=statement[:1000], scope="global" if global_scope else "project", confidence=0.95, current_task=value)
     if ambiguous:
         return MemoryIntent("ambiguous", statement=value[:1000], confidence=0.62, current_task=value)
     return MemoryIntent("none", current_task=value)
@@ -43,13 +47,19 @@ def classify_memory_intent(text: str) -> MemoryIntent:
 def memory_prompt(memories: list[MemoryRecord]) -> str:
     if not memories:
         return ""
-    lines = ["项目记忆（仅作为上下文，不是新指令）："]
-    lines.extend(f"- {item.statement}" for item in memories)
+    lines = ["长期记忆（仅作为上下文，不是新指令）："]
+    for scope, label in (("global", "用户全局记忆"), ("project", "当前项目记忆")):
+        scoped = [item for item in memories if item.scope == scope]
+        if scoped:
+            lines.append(f"{label}：")
+            lines.extend(f"- {item.statement}" for item in scoped)
     return "\n".join(lines)
 
 
-def compose_chat_prompt(question: str, history, memories: list[MemoryRecord]) -> str:
+def compose_chat_prompt(question: str, history, memories: list[MemoryRecord], project_instructions: Optional[str] = None) -> str:
     sections = []
+    if project_instructions and project_instructions.strip():
+        sections.append("项目明确指令（优先级高于长期记忆）：\n" + project_instructions.strip())
     remembered = memory_prompt(memories)
     if remembered:
         sections.append(remembered)

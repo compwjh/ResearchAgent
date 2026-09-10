@@ -1,14 +1,14 @@
 # Spec 022 执行计划：项目会话管理与自进化长期记忆
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md)
-> 当前状态：`实施中`。Spec 已确认，Task02 已完成，当前进入 Task03。
+> 当前状态：`实施中`。Spec 已确认，Task02、Task03 已完成，当前进入 Task04。
 
 ## 任务索引
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
 | [02](./task-02-desktop-memory-mvp.md) | 交付可现场验证的桌面端项目记忆纵向 MVP | Spec 确认 | 已完成 |
-| [03](./task-03-management-global-memory.md) | 完整项目/会话管理、全局记忆与治理 UI | 02 | 待执行 |
+| [03](./task-03-management-global-memory.md) | 完整项目/会话管理、全局记忆与治理 UI | 02 | 已完成 |
 | [04](./task-04-memory-evolution-recall.md) | 异步候选、摘要、冲突和跨会话召回 | 03 | 待执行 |
 | [05](./task-05-research-context-progress.md) | 项目文档、RAG 编号来源与完整处理过程 | 04 | 待执行 |
 | [06](./task-06-mobile-experience.md) | 手机端项目、会话、记忆和研究交互 | 05 | 待执行 |
@@ -36,3 +36,4 @@
 
 - 2026-09-11：依据 Grill with Docs 共同理解创建 Task02–08；将原 12 个细粒度任务压缩为 7 个用户可见里程碑任务。
 - 2026-09-11：Task02 通过精确测试与受控部署验收，放行 Task03；Task08 仍保留全量回归门禁。
+- 2026-09-11：Task03 通过后端/前端复审、跨端验收和 API smoke，放行 Task04；Task08 仍保留全量回归门禁。

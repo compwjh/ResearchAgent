@@ -24,6 +24,8 @@ class Conversation:
     memory_history_policy: str
     created_at: datetime
     updated_at: datetime
+    memory_binding_at: Optional[datetime] = None
+    memory_binding_message_id: Optional[str] = None
 
 
 @dataclass(frozen=True)

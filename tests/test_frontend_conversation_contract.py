@@ -62,5 +62,5 @@ def test_memory_and_processing_feedback_are_scoped() -> None:
 
 
 def test_static_asset_versions_are_bumped_together() -> None:
-    assert "/assets/app.js?v=26" in INDEX
-    assert "/assets/styles.css?v=26" in INDEX
+    assert "/assets/app.js?v=27" in INDEX
+    assert "/assets/styles.css?v=27" in INDEX

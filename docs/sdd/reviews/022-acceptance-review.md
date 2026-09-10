@@ -72,3 +72,80 @@
 
 - 验收执行：tester（临时 Luna high）
 - 架构师签字：待主 Agent 按收口流程确认
+
+---
+
+# Spec022 Task03 验收评审
+
+> 验收角色：tester（临时 Luna high）
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-03-management-global-memory.md`
+> 验收范围：Task03 后端管理/全局记忆、前端治理契约、Task02 受影响回归、旧聊天兼容及当前服务 API smoke；未运行全量 pytest。
+
+## 结论：PASS（无 P0/P1/P2）
+
+Task03 的受影响后端、前端和旧聊天回归均通过；当前工作树服务重启后，项目/全局记忆 CRUD、候选确认、版本化编辑、停用/删除/撤销、作用域召回、会话移动确认、项目级联删除和全局记忆保留均完成真实 API smoke。未发现 P0/P1/P2。此前前端评审记录的记忆治理导航键盘可达性问题已修复，并由新增契约测试覆盖。
+
+## 执行信息
+
+| 字段 | 结果 |
+|---|---|
+| 开始 | 2026-09-11 约 05:14 +0800 |
+| 结束 | 2026-09-11 05:27 +0800 |
+| 耗时 | 约 13 分钟（含一次运行服务版本校正与临时数据清理） |
+| 业务代码修改 | 无；仅新增/更新验收报告与进度日志 |
+| 模型 | 临时 Luna high（按主 Agent 分派） |
+| token / 工具统计 | 当前子代理运行时不可用；真实命令与退出码如下 |
+| 进度日志 | `.codebuddy/agent-logs/spec-022/task-03/tester/20260911-acceptance.md` |
+
+## 定向测试与结果
+
+| 检查 | 命令 | 退出码 | 结果 |
+|---|---|---:|---|
+| Task03 + Task02 后端及旧聊天 | `.venv/bin/python -m pytest -q tests/test_memory_repositories.py tests/test_conversations_api.py tests/test_chat_route.py tests/test_api.py` | 0 | **36 passed in 4.29s** |
+| Task03 + Task02 + 论文前端契约（含键盘激活修复） | `.venv/bin/python -m pytest -q tests/test_frontend_management_contract.py tests/test_frontend_conversation_contract.py tests/test_frontend_paper_contract.py` | 0 | **35 passed** |
+| JavaScript 语法 | `node --check frontend/app.js` | 0 | PASS |
+| 前端交互/PDF/渲染/runtime Node 合同 | `for test_file in tests/test_frontend_*.js; do node "$test_file" || exit 1; done` | 0 | **4/4 PASS** |
+
+按 Task03 边界未运行全量 pytest、浏览器 E2E 或与本 Task 无关的领域测试。
+
+## API smoke（当前工作树服务）
+
+初次检查发现端口已有旧服务：health=200，但其 OpenAPI 仅暴露 `GET /api/memories`，与当前工作树不一致；已停止该项目 PID，并以 `RERANKER_ENABLED=false ./deploy/start.sh` 前台启动当前服务。重启后 health=200，OpenAPI 同时暴露 POST/PATCH/DELETE、confirm/disable/undo、evidence/source 端点。该环境校正未修改业务代码。
+
+使用唯一 tag 的临时项目 A/B、global/project memory 和一条会话完成以下断言，全部通过；结束后项目、会话（随项目级联）和两条临时 global memory 均已清理，tag 查询无残留：
+
+| 场景 | 结果 | 观察到的 HTTP/数据 |
+|---|---|---|
+| health | PASS | `GET /api/health`=200 |
+| 项目创建 | PASS | A/B `POST /api/projects`=201 |
+| global candidate → confirm | PASS | create=201；confirm=200，status=`active` |
+| 记忆编辑版本化 | PASS | PATCH=200；返回新 `memory_id`，`supersedes_id` 指向旧记录，旧记录 status=`superseded` |
+| 停用/删除/撤销 | PASS | disable=200；delete=204；undo=200，恢复 `active` |
+| global/project 列表与召回 | PASS | 两作用域列表均返回对应记录；首条消息 SSE=200，meta/progress/memory/token/done 完整，global 与 project 各 1 条 `memory used` |
+| 会话跨项目移动确认 | PASS | 无 `confirm_move` PATCH=409；带 `confirm_move=true` PATCH=200，项目 ID 切换到 B |
+| 项目级联删除 | PASS | 删除附着会话的 B=204；会话 GET=404 |
+| 全局记忆保留 | PASS | 删除 A/B 后 `GET /api/memories?scope=global&status=active`=200，临时 global memory 仍可见，随后清理=204 |
+| 会话删除不联动记忆 | PASS | 补充 disposable 会话 SSE HTTP=200 且 `done=1`；DELETE conversation=204；关联 project memory GET=200；随后删除项目=204 清理 |
+
+## 固定用户旅程与代码依据
+
+| 验收点 | 判定 | 证据 |
+|---|---|---|
+| 项目与会话生命周期（创建、重命名/归档/恢复/删除、稳定 URL） | PASS | 前端管理动作 `frontend/app.js:495-559`；后端项目/会话 CRUD 与 restore `backend/app/api/routes_conversations.py:51-87,237-283`；`tests/test_conversations_api.py:72-110` 覆盖归档/恢复与稳定记录 |
+| 绑定/解绑/跨项目移动确认及旧历史隔离 | PASS | `backend/app/memory/repository.py:306-354,418-431` 要求确认、记录 binding cutoff、清理旧项目 evidence 并按 `from_binding` 过滤；`tests/test_memory_repositories.py:159-177,196-206` 通过；真实 smoke 无确认 409/确认 200 |
+| 全局/项目记忆隔离、优先级与治理 | PASS | recall owner + global/current project 且 global 优先 `repository.py:493-506`；前端 scope/status/filter/evidence/action `frontend/app.js:583-684`；后端 API `routes_conversations.py:293-380`；`tests/test_memory_repositories.py:54-82,180-193` 与 `tests/test_conversations_api.py:72-90,112-122` 通过 |
+| 项目删除级联、全局保留 | PASS | 单事务项目删除 `repository.py:253-256`，FK cascade/schema v2 证据见 `repository.py:100-203`；`tests/test_memory_repositories.py:84-95,129-140` 通过；真实 smoke 已验证附着会话 404、global 仍在 |
+| 会话删除不联动记忆 | PASS | repository 仅软删会话 `repository.py:356-359`；项目/记忆删除及版本撤销测试通过（`tests/test_memory_repositories.py:71-95`）。真实 smoke 的项目删除级联与全局保留不改变该单会话契约 |
+| 前端安全/兼容 | PASS | Task03 前端评审确认 DOM/CSS/资源版本/XSS 通过；治理渲染器使用 `textContent`，版本 `?v=27`；新增键盘契约已覆盖记忆治理入口 Enter/Space 激活 |
+
+## 风险与主 Agent 后续动作
+
+1. 当前服务已由验收 session 启动并保持运行；主 Agent 收口时应确认端口/进程归属，并按 Spec022 收口规则决定是否复用或重启。
+2. 本轮未做独立浏览器点击；运行时 API + 静态契约覆盖了项目级联、移动确认、记忆 evidence/governance 端点，后续若需 UX 级验收可在主 Agent 可见浏览器中补做。
+3. 一次带较长临时 tag 的 disposable 首条消息在生成阶段达到客户端 90 秒上限，后续简化为 `hello` 重试在 45 秒内完成；对象均已清理。该次延迟未改变 CRUD/删除结论，但提示运行时模型响应耗时具有波动。
+4. 不把本报告的定向通过当作 Spec022 完成条件；Spec 收口仍需最终全量回归、验收签字、状态台账更新、部署与运行时验证。
+
+## 签字
+
+- 验收执行：tester（临时 Luna high）
+- 架构师签字：待主 Agent 按收口流程确认

@@ -31,6 +31,23 @@ const conversationStatus = document.querySelector('#conversation-status');
 const conversationMemoryStatus = document.querySelector('#conversation-memory-status');
 const conversationProjectBadge = document.querySelector('#conversation-project-badge');
 const loadOlderMessagesButton = document.querySelector('#load-older-messages');
+const projectRenameButton = document.querySelector('#project-rename-button');
+const projectArchiveButton = document.querySelector('#project-archive-button');
+const projectDeleteButton = document.querySelector('#project-delete-button');
+const conversationRenameButton = document.querySelector('#conversation-rename-button');
+const conversationArchiveButton = document.querySelector('#conversation-archive-button');
+const conversationDeleteButton = document.querySelector('#conversation-delete-button');
+const memoryView = document.querySelector('#memory-view');
+const memoryScopeSelect = document.querySelector('#memory-scope-select');
+const memoryProjectSelect = document.querySelector('#memory-project-select');
+const memoryProjectLabel = document.querySelector('#memory-project-label');
+const memoryStatusSelect = document.querySelector('#memory-status-select');
+const memoryCreateButton = document.querySelector('#memory-create-button');
+const memoryRefreshButton = document.querySelector('#memory-refresh-button');
+const memoryList = document.querySelector('#memory-list');
+const memoryEmpty = document.querySelector('#memory-empty');
+const memoryStatus = document.querySelector('#memory-status');
+const memoryState = { items: [], evidence: new Map(), loading: false };
 const conversationState = {
   projectId: null,
   conversationId: null,
@@ -336,10 +353,12 @@ function renderProjectOptions(projects) {
   projectSelect.replaceChildren();
   const unbound = document.createElement('option'); unbound.value = ''; unbound.textContent = '未绑定项目'; projectSelect.appendChild(unbound);
   for (const project of projects || []) {
-    const option = document.createElement('option'); option.value = project.project_id; option.textContent = project.name || '未命名项目'; projectSelect.appendChild(option);
+    const option = document.createElement('option'); option.value = project.project_id; option.textContent = project.name || '未命名项目'; option.dataset.status = project.status || 'active'; projectSelect.appendChild(option);
   }
   projectSelect.value = conversationState.projectId || '';
   if (conversationProjectBadge) conversationProjectBadge.textContent = projectSelect.selectedOptions[0]?.textContent || '未绑定';
+  renderMemoryProjectOptions(projects);
+  updateGovernanceControls();
 }
 
 function renderConversationList(items, append = false) {
@@ -433,6 +452,7 @@ async function openConversation(conversationId, { replace = false } = {}) {
     await loadConversationMessages(conversationId); await loadConversationList();
     const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = conversationState.conversation?.title || '会话';
     const state = document.querySelector('.chat-state'); if (state) state.textContent = '已保存会话';
+    updateGovernanceControls();
     setConversationStatus('');
   } catch (error) { setConversationStatus(`会话打开失败：${error.message}`, 'error'); }
 }
@@ -444,6 +464,7 @@ function beginDraft() {
   const state = document.querySelector('.chat-state'); if (state) state.textContent = '新会话';
   if (conversationMemoryStatus) conversationMemoryStatus.textContent = '';
   resetConversationMessages(); loadConversationList(); input.focus();
+  updateGovernanceControls();
 }
 
 async function createProject(event) {
@@ -453,6 +474,214 @@ async function createProject(event) {
     conversationState.projectId = project.project_id; projectNameInput.value = ''; newProjectForm.hidden = true;
     await loadProjects(); projectSelect.value = project.project_id; beginDraft(); setConversationStatus(`已创建项目：${project.name || name}`);
   } catch (error) { setConversationStatus(`项目创建失败：${error.message}`, 'error'); }
+}
+
+function selectedProject() {
+  const id = conversationState.projectId;
+  if (!id || !projectSelect) return null;
+  const option = [...projectSelect.options].find((item) => item.value === id);
+  return option ? { project_id: id, name: option.textContent, status: option.dataset.status || 'active' } : null;
+}
+
+function updateGovernanceControls() {
+  const project = selectedProject();
+  const conversation = conversationState.conversation;
+  [projectRenameButton, projectArchiveButton, projectDeleteButton].forEach((button) => { if (button) button.disabled = !project; });
+  [conversationRenameButton, conversationArchiveButton, conversationDeleteButton].forEach((button) => { if (button) button.disabled = !conversation?.conversation_id; });
+  if (projectArchiveButton) projectArchiveButton.textContent = project?.status === 'archived' ? '恢复' : '归档';
+  if (conversationArchiveButton) conversationArchiveButton.textContent = conversation?.status === 'archived' ? '恢复' : '归档';
+}
+
+async function patchProjectStatus() {
+  const project = selectedProject();
+  if (!project) return;
+  const currentStatus = projectArchiveButton?.textContent === '恢复' ? 'archived' : 'active';
+  const nextStatus = currentStatus === 'archived' ? 'active' : 'archived';
+  if (!window.confirm(nextStatus === 'archived' ? '归档该项目？项目和会话仍会保留，可恢复。' : '恢复该项目？')) return;
+  try {
+    await conversationFetch(`/api/projects/${encodeURIComponent(project.project_id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) });
+    await loadProjects(); await loadConversationList(); setConversationStatus(nextStatus === 'archived' ? '项目已归档' : '项目已恢复');
+  } catch (error) { setConversationStatus(`项目状态更新失败：${error.message}`, 'error'); }
+}
+
+async function renameProject() {
+  const project = selectedProject();
+  if (!project) return;
+  const name = window.prompt('输入新的项目名称', project.name)?.trim();
+  if (!name || name === project.name) return;
+  try {
+    await conversationFetch(`/api/projects/${encodeURIComponent(project.project_id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    await loadProjects(); setConversationStatus('项目已重命名');
+  } catch (error) { setConversationStatus(`项目重命名失败：${error.message}`, 'error'); }
+}
+
+async function deleteProject() {
+  const project = selectedProject();
+  if (!project) return;
+  if (!window.confirm(`删除项目“${project.name}”？这会级联删除项目、所属会话和项目记忆；全局记忆会保留。`)) return;
+  try {
+    await conversationFetch(`/api/projects/${encodeURIComponent(project.project_id)}`, { method: 'DELETE' });
+    conversationState.projectId = null; await loadProjects(); beginDraft(); setConversationStatus('项目已删除；全局记忆仍保留');
+  } catch (error) { setConversationStatus(`项目删除失败：${error.message}`, 'error'); }
+}
+
+async function patchConversationStatus() {
+  const conversation = conversationState.conversation;
+  if (!conversation?.conversation_id) return;
+  const nextStatus = conversation.status === 'archived' ? 'active' : 'archived';
+  if (!window.confirm(nextStatus === 'archived' ? '归档该会话？消息和记忆不会被删除。' : '恢复该会话？')) return;
+  try {
+    conversationState.conversation = await conversationFetch(`/api/conversations/${encodeURIComponent(conversation.conversation_id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) });
+    updateGovernanceControls(); await loadConversationList(); setConversationStatus(nextStatus === 'archived' ? '会话已归档' : '会话已恢复');
+  } catch (error) { setConversationStatus(`会话状态更新失败：${error.message}`, 'error'); }
+}
+
+async function renameConversation() {
+  const conversation = conversationState.conversation;
+  if (!conversation?.conversation_id) return;
+  const title = window.prompt('输入新的会话名称', conversation.title || '新会话')?.trim();
+  if (!title || title === conversation.title) return;
+  try {
+    conversationState.conversation = await conversationFetch(`/api/conversations/${encodeURIComponent(conversation.conversation_id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+    const breadcrumb = document.querySelector('.breadcrumb strong'); if (breadcrumb) breadcrumb.textContent = title;
+    updateGovernanceControls(); await loadConversationList(); setConversationStatus('会话已重命名');
+  } catch (error) { setConversationStatus(`会话重命名失败：${error.message}`, 'error'); }
+}
+
+async function deleteConversation() {
+  const conversation = conversationState.conversation;
+  if (!conversation?.conversation_id) return;
+  if (!window.confirm('删除该会话？消息会被删除，但记忆及其审计记录不会被假装删除。')) return;
+  try {
+    await conversationFetch(`/api/conversations/${encodeURIComponent(conversation.conversation_id)}`, { method: 'DELETE' });
+    beginDraft(); setConversationStatus('会话已删除；记忆未联动删除');
+  } catch (error) { setConversationStatus(`会话删除失败：${error.message}`, 'error'); }
+}
+
+async function moveConversation(projectId) {
+  const conversation = conversationState.conversation;
+  const oldProjectId = conversation?.project_id || null;
+  if (!conversation?.conversation_id || projectId === oldProjectId) return;
+  const targetName = projectId ? projectSelect.selectedOptions[0]?.textContent || '目标项目' : '未绑定项目';
+  const detail = projectId ? `移动到“${targetName}”` : '解绑项目';
+  if (!window.confirm(`${detail}？会话历史仍保留；项目记忆关联会按作用域清理。需要确认后继续。`)) {
+    projectSelect.value = oldProjectId || ''; return;
+  }
+  const includePriorHistory = Boolean(projectId && window.confirm('是否纳入绑定前的历史消息？选择“取消”将只从本次绑定后开始参与项目记忆。'));
+  const memoryHistoryPolicy = includePriorHistory ? 'include_prior_history' : 'from_binding';
+  try {
+    conversationState.conversation = await conversationFetch(`/api/conversations/${encodeURIComponent(conversation.conversation_id)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId || null, memory_history_policy: memoryHistoryPolicy, confirm_move: true }),
+    });
+    conversationState.projectId = projectId || null; updateGovernanceControls(); await loadProjects(); await loadConversationList();
+    setConversationStatus(projectId ? '会话已绑定到新项目' : '会话已解绑；旧项目历史不会重新注入');
+  } catch (error) { projectSelect.value = oldProjectId || ''; setConversationStatus(`会话绑定更新失败：${error.message}`, 'error'); }
+}
+
+const MEMORY_STATUS_LABELS = { candidate: '待确认', active: '有效', superseded: '旧版本', disabled: '已停用', deleted: '已删除' };
+const MEMORY_SCOPE_LABELS = { global: '全局', project: '项目' };
+
+function setMemoryStatus(text, state = '') {
+  if (!memoryStatus) return;
+  memoryStatus.textContent = text || '';
+  if (state) memoryStatus.dataset.state = state; else delete memoryStatus.dataset.state;
+}
+
+function renderMemoryProjectOptions(projects) {
+  if (!memoryProjectSelect) return;
+  memoryProjectSelect.replaceChildren();
+  for (const project of projects || []) {
+    const option = document.createElement('option'); option.value = project.project_id; option.textContent = project.name || '未命名项目'; memoryProjectSelect.appendChild(option);
+  }
+  if (conversationState.projectId) memoryProjectSelect.value = conversationState.projectId;
+}
+
+function renderMemoryEvidence(memoryId, evidence, container) {
+  if (!container) return;
+  container.replaceChildren();
+  const heading = document.createElement('strong'); heading.textContent = '来源记录'; container.appendChild(heading);
+  if (!evidence?.length) { const empty = document.createElement('span'); empty.textContent = '暂无可见来源'; container.appendChild(empty); return; }
+  for (const item of evidence) {
+    const row = document.createElement('span');
+    row.textContent = [item.evidence_type || '来源', item.excerpt || '', item.conversation_id ? `会话 ${item.conversation_id}` : ''].filter(Boolean).join(' · ');
+    container.appendChild(row);
+  }
+  memoryState.evidence.set(memoryId, evidence);
+}
+
+function renderMemoryList(items) {
+  if (!memoryList) return;
+  memoryList.replaceChildren();
+  for (const item of items || []) {
+    const card = document.createElement('article'); card.className = 'memory-item'; card.dataset.memoryId = item.memory_id; card.setAttribute('role', 'listitem');
+    const head = document.createElement('div'); head.className = 'memory-item-head';
+    const scope = document.createElement('span'); scope.className = 'memory-scope'; scope.textContent = MEMORY_SCOPE_LABELS[item.scope] || item.scope || '未知作用域';
+    const state = document.createElement('span'); state.className = 'memory-status-badge'; state.dataset.status = item.status || ''; state.textContent = MEMORY_STATUS_LABELS[item.status] || item.status || '未知状态';
+    head.append(scope, state);
+    const statement = document.createElement('p'); statement.className = 'memory-statement'; statement.textContent = item.statement || '';
+    const meta = document.createElement('span'); meta.className = 'memory-meta'; meta.textContent = `${item.category || '未分类'} · 来源 ${item.source_kind || 'unknown'} · 置信度 ${Math.round(Number(item.confidence || 0) * 100)}%`;
+    const actions = document.createElement('div'); actions.className = 'memory-item-actions';
+    const addAction = (label, action, className = 'secondary-button') => { const button = document.createElement('button'); button.type = 'button'; button.className = className; button.dataset.memoryAction = action; button.dataset.memoryId = item.memory_id; button.textContent = label; actions.appendChild(button); };
+    addAction('查看来源', 'source');
+    if (item.status === 'candidate') addAction('确认候选', 'confirm', 'send-button');
+    if (item.status === 'deleted') addAction('撤销', 'undo');
+    else if (item.status !== 'superseded') { addAction('编辑为新版本', 'edit'); addAction('停用', 'disable'); addAction('删除', 'delete', 'secondary-button danger-button'); }
+    const evidence = document.createElement('div'); evidence.className = 'memory-evidence'; evidence.hidden = true; evidence.dataset.memoryEvidence = item.memory_id;
+    card.append(head, statement, meta, actions, evidence); memoryList.appendChild(card);
+  }
+  if (memoryEmpty) memoryEmpty.hidden = Boolean(items?.length);
+}
+
+async function loadMemories() {
+  if (!memoryList || memoryState.loading) return;
+  memoryState.loading = true; setMemoryStatus('正在加载记忆…');
+  const scope = memoryScopeSelect?.value || 'global'; const status = memoryStatusSelect?.value || 'active';
+  const params = new URLSearchParams({ scope, status });
+  if (scope === 'project' && memoryProjectSelect?.value) params.set('project_id', memoryProjectSelect.value);
+  try {
+    const data = await conversationFetch(`/api/memories?${params}`); memoryState.items = data.memories || []; renderMemoryList(memoryState.items); setMemoryStatus(`已加载 ${memoryState.items.length} 条${MEMORY_SCOPE_LABELS[scope] || ''}记忆`);
+  } catch (error) { renderMemoryList([]); setMemoryStatus(`记忆加载失败：${error.message}`, 'error'); }
+  finally { memoryState.loading = false; }
+}
+
+async function createManualMemory() {
+  const statement = window.prompt('输入要长期保留的记忆陈述')?.trim();
+  if (!statement) return;
+  const scope = memoryScopeSelect?.value || 'global'; const projectId = scope === 'project' ? memoryProjectSelect?.value || null : null;
+  if (scope === 'project' && !projectId) { setMemoryStatus('请先选择项目', 'error'); return; }
+  try {
+    await conversationFetch('/api/memories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, project_id: projectId, statement, source_kind: 'manual', category: scope === 'project' ? 'project_rule' : 'user_preference', status: 'active' }) });
+    await loadMemories(); setMemoryStatus('记忆已创建');
+  } catch (error) { setMemoryStatus(`记忆创建失败：${error.message}`, 'error'); }
+}
+
+async function handleMemoryAction(action, memoryId, card) {
+  const memory = memoryState.items.find((item) => item.memory_id === memoryId);
+  if (!memory) return;
+  try {
+    if (action === 'source') {
+      const evidence = card.querySelector(`[data-memory-evidence="${CSS.escape(memoryId)}"]`);
+      if (!evidence.hidden) { evidence.hidden = true; return; }
+      const data = await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/evidence`); renderMemoryEvidence(memoryId, data.evidence || [], evidence); evidence.hidden = false; return;
+    }
+    if (action === 'confirm') await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/confirm`, { method: 'POST' });
+    if (action === 'edit') {
+      const statement = window.prompt('编辑为新版本（旧版本和来源会保留）', memory.statement)?.trim();
+      if (!statement || statement === memory.statement) return;
+      await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ statement }) });
+    }
+    if (action === 'disable') {
+      if (!window.confirm('停用这条记忆？它将不再参与召回，但仍保留审计记录。')) return;
+      await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/disable`, { method: 'POST' });
+    }
+    if (action === 'delete') {
+      if (!window.confirm('删除这条记忆？系统会保留可撤销的治理记录。')) return;
+      await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' });
+    }
+    if (action === 'undo') await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/undo`, { method: 'POST' });
+    await loadMemories(); setMemoryStatus('记忆治理操作已完成');
+  } catch (error) { setMemoryStatus(`记忆操作失败：${error.message}`, 'error'); }
 }
 
 function appendConversationEvent(assistantMessage, processing, eventData) {
@@ -476,7 +705,7 @@ async function sendConversationMessage(question) {
       let eventData; try { eventData = JSON.parse(line.slice(6)); } catch (_) { return; }
       if (eventData.type === 'meta') {
         if (eventData.conversation_id && !conversationState.conversationId) {
-          conversationState.conversationId = eventData.conversation_id; conversationState.conversation = { conversation_id: eventData.conversation_id, project_id: eventData.project_id || conversationState.projectId, title: question.slice(0, 80) }; updateConversationUrl(eventData.conversation_id); loadConversationList();
+          conversationState.conversationId = eventData.conversation_id; conversationState.conversation = { conversation_id: eventData.conversation_id, project_id: eventData.project_id || conversationState.projectId, title: question.slice(0, 80), status: 'active' }; updateConversationUrl(eventData.conversation_id); updateGovernanceControls(); loadConversationList();
         }
         assistantMessage = createAssistantMessage(eventData.model || activeModel); processing = createConversationProcessing(assistantMessage); writer = createMarkdownWriter(assistantMessage.querySelector('.answer'), messages);
       } else if (eventData.type === 'progress') appendConversationEvent(assistantMessage, processing, eventData);
@@ -548,10 +777,35 @@ if (newProjectButton) newProjectButton.addEventListener('click', () => {
 if (cancelProjectButton) cancelProjectButton.addEventListener('click', () => { newProjectForm.hidden = true; projectNameInput.value = ''; });
 if (newProjectForm) newProjectForm.addEventListener('submit', createProject);
 if (projectSelect) projectSelect.addEventListener('change', () => {
-  conversationState.projectId = projectSelect.value || null;
+  const nextProjectId = projectSelect.value || null;
+  if (conversationState.conversationId && conversationState.conversation) {
+    moveConversation(nextProjectId);
+    return;
+  }
+  conversationState.projectId = nextProjectId;
   if (conversationProjectBadge) conversationProjectBadge.textContent = projectSelect.selectedOptions[0]?.textContent || '未绑定';
-  if (conversationState.conversationId) beginDraft();
-  else loadConversationList();
+  loadConversationList(); updateGovernanceControls();
+});
+if (projectRenameButton) projectRenameButton.addEventListener('click', renameProject);
+if (projectArchiveButton) projectArchiveButton.addEventListener('click', patchProjectStatus);
+if (projectDeleteButton) projectDeleteButton.addEventListener('click', deleteProject);
+if (conversationRenameButton) conversationRenameButton.addEventListener('click', renameConversation);
+if (conversationArchiveButton) conversationArchiveButton.addEventListener('click', patchConversationStatus);
+if (conversationDeleteButton) conversationDeleteButton.addEventListener('click', deleteConversation);
+if (memoryScopeSelect) memoryScopeSelect.addEventListener('change', () => {
+  const isProject = memoryScopeSelect.value === 'project';
+  if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
+  loadMemories();
+});
+if (memoryProjectSelect) memoryProjectSelect.addEventListener('change', loadMemories);
+if (memoryStatusSelect) memoryStatusSelect.addEventListener('change', loadMemories);
+if (memoryRefreshButton) memoryRefreshButton.addEventListener('click', loadMemories);
+if (memoryCreateButton) memoryCreateButton.addEventListener('click', createManualMemory);
+if (memoryList) memoryList.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-memory-action]');
+  if (!button) return;
+  const card = button.closest('.memory-item');
+  handleMemoryAction(button.dataset.memoryAction, button.dataset.memoryId, card);
 });
 if (loadOlderMessagesButton) loadOlderMessagesButton.addEventListener('click', loadOlderConversationMessages);
 if (conversationList) conversationList.addEventListener('scroll', () => {
@@ -1697,6 +1951,7 @@ function showView(view) {
   const isChat = nextView === 'chat';
   document.querySelector('#chat').hidden = !isChat;
   document.querySelector('#models-view').hidden = nextView !== 'models';
+  if (memoryView) memoryView.hidden = nextView !== 'memory';
   document.querySelector('#kb-view').hidden = nextView !== 'kb';
   if (paperView) paperView.hidden = nextView !== 'papers' || !paperState.enabled;
   document.querySelectorAll('.nav-item').forEach((item) => {
@@ -1709,11 +1964,21 @@ function showView(view) {
     loadKbPapers();
     loadKbHealth();
   }
+  if (nextView === 'memory') {
+    const isProject = memoryScopeSelect?.value === 'project';
+    if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
+    loadMemories();
+  }
   if (nextView === 'papers' && paperState.enabled && !paperState.conferencesLoaded) loadPaperConferences();
 }
 
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', (event) => {
+    event.preventDefault();
+    showView(item.dataset.view);
+  });
+  item.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     showView(item.dataset.view);
   });

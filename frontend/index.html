@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=26">
+    <link rel="stylesheet" href="/assets/styles.css?v=27">
 </head>
 <body>
   <main class="app-shell">
@@ -17,6 +17,11 @@
           <div class="project-select-row">
             <select id="project-select" aria-label="选择项目"><option value="">未绑定项目</option></select>
             <button class="icon-button" id="new-project-button" type="button" aria-label="新建项目" title="新建项目">＋</button>
+          </div>
+          <div class="governance-actions" aria-label="项目管理">
+            <button class="secondary-button" id="project-rename-button" type="button">重命名</button>
+            <button class="secondary-button" id="project-archive-button" type="button">归档</button>
+            <button class="secondary-button danger-button" id="project-delete-button" type="button">删除</button>
           </div>
         </div>
         <form id="new-project-form" class="new-project-form" hidden>
@@ -35,6 +40,7 @@
         <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
         <a class="nav-item" data-view="models" role="button" tabindex="0"><span class="nav-icon">◈</span> 模型库 <span class="nav-count" id="model-count">0</span></a>
         <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count">0</span></a>
+        <a class="nav-item" data-view="memory" role="button" tabindex="0"><span class="nav-icon">✧</span> 记忆治理</a>
         <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
       </nav>
       <div class="sidebar-bottom">
@@ -68,6 +74,11 @@
               <select id="model-select" disabled><option>加载中...</option></select>
             </label>
             <span class="chat-state">新会话</span>
+            <div class="governance-actions conversation-actions" aria-label="会话管理">
+              <button class="secondary-button" id="conversation-rename-button" type="button">重命名</button>
+              <button class="secondary-button" id="conversation-archive-button" type="button">归档</button>
+              <button class="secondary-button danger-button" id="conversation-delete-button" type="button">删除</button>
+            </div>
           </div>
           <div class="messages" id="messages">
             <div class="message assistant">
@@ -93,6 +104,46 @@
       <section class="workspace" aria-label="模型列表">
         <ul class="model-list" id="model-list"></ul>
         <p class="model-empty" id="model-empty" hidden>没有发现模型</p>
+      </section>
+    </section>
+
+    <section class="main-area" id="memory-view" hidden aria-labelledby="memory-title">
+      <header class="topbar">
+        <div class="breadcrumb"><span>记忆治理</span><span class="slash">/</span><strong id="memory-title">全局与项目记忆</strong></div>
+      </header>
+      <section class="workspace memory-workspace" aria-label="记忆治理工作区">
+        <header class="memory-page-header">
+          <div>
+            <p class="eyebrow">MEMORY GOVERNANCE</p>
+            <h1>可追溯、可修正、可遗忘</h1>
+            <p class="subtitle">全局记忆会跨项目保留；项目记忆只在绑定项目中生效。</p>
+          </div>
+          <div class="memory-filters">
+            <label for="memory-scope-select">作用域
+              <select id="memory-scope-select">
+                <option value="global">全局记忆</option>
+                <option value="project">项目记忆</option>
+              </select>
+            </label>
+            <label for="memory-project-select" id="memory-project-label" hidden>项目
+              <select id="memory-project-select"></select>
+            </label>
+            <label for="memory-status-select">状态
+              <select id="memory-status-select">
+                <option value="active">有效</option>
+                <option value="candidate">待确认</option>
+                <option value="disabled">已停用</option>
+                <option value="deleted">已删除</option>
+                <option value="superseded">旧版本</option>
+              </select>
+            </label>
+            <button class="secondary-button" id="memory-create-button" type="button">新建记忆</button>
+            <button class="send-button" id="memory-refresh-button" type="button">刷新</button>
+          </div>
+        </header>
+        <p class="conversation-status" id="memory-status" role="status" aria-live="polite"></p>
+        <div class="memory-list" id="memory-list" role="list" aria-label="记忆列表"></div>
+        <p class="memory-empty" id="memory-empty" hidden>此作用域没有符合条件的记忆。</p>
       </section>
     </section>
 
@@ -335,6 +386,6 @@
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
-  <script src="/assets/app.js?v=26"></script>
+  <script src="/assets/app.js?v=27"></script>
 </body>
 </html>

@@ -26,6 +26,11 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 /* ===== 项目会话记忆 MVP（spec-022 Task02） ===== */
 .conversation-memory { display: grid; gap: 10px; margin-top: 25px; min-height: 0; }
+.governance-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.governance-actions .secondary-button { padding: 5px 7px; font-size: 10px; }
+.danger-button { color: #b13a3a; }
+.conversation-actions { margin-left: auto; }
+.conversation-actions .secondary-button { padding: 5px 8px; }
 .project-switcher { display: grid; gap: 6px; }
 .project-switcher .section-label { margin: 0; }
 .project-select-row { display: flex; align-items: center; gap: 4px; }
@@ -61,6 +66,29 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-memory-notice[data-status="used"] { background: #f1f7ff; color: #3e6eaa; }
 .message.assistant.is-failed .bubble { border-color: #efb3b3; }
 .message.assistant.is-interrupted .bubble { border-color: #e6c98e; }
+
+/* ===== Task03 记忆治理（桌面） ===== */
+#memory-view .memory-workspace { max-width: min(1080px, 100%); margin: 0 auto; padding: 38px 30px; }
+#memory-view .memory-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 18px; }
+#memory-view .memory-page-header h1 { margin: 0; font-size: clamp(26px, 4vw, 42px); letter-spacing: -.06em; }
+.memory-filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+.memory-filters label { display: grid; gap: 5px; color: var(--muted); font: 10px 'DM Mono', monospace; }
+.memory-filters select { min-width: 112px; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: #fff; color: var(--ink); font-size: 11px; }
+.memory-filters .send-button { padding: 8px 11px; }
+.memory-list { display: grid; gap: 10px; }
+.memory-item { display: grid; gap: 10px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.9); box-shadow: 0 12px 35px #272a3508; }
+.memory-item-head { display: flex; align-items: center; gap: 8px; }
+.memory-statement { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-meta { color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.memory-scope, .memory-status-badge { display: inline-flex; border-radius: 99px; padding: 3px 8px; background: var(--accent-soft); color: var(--accent); font: 10px 'DM Mono', monospace; }
+.memory-status-badge[data-status="candidate"] { background: #fff7ed; color: #9a5b16; }
+.memory-status-badge[data-status="disabled"], .memory-status-badge[data-status="deleted"], .memory-status-badge[data-status="superseded"] { background: #f0f0f3; color: #777982; }
+.memory-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.memory-item-actions .secondary-button { padding: 6px 9px; font-size: 10px; }
+.memory-evidence { display: grid; gap: 5px; padding: 10px; border-left: 3px solid var(--accent); background: #fafaff; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.memory-evidence[hidden] { display: none; }
+.memory-empty { padding: 40px; color: var(--muted); text-align: center; font: 11px 'DM Mono', monospace; }
+@media (max-width: 860px) { #memory-view .memory-page-header { align-items: stretch; flex-direction: column; }.conversation-actions { margin-left: 0; } }
 
 /* ===== 模型库视图（spec-007） ===== */
 @keyframes modelFadeIn {
