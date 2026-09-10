@@ -184,6 +184,13 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 未恢复或调用 `submit_index_task`、`delete_paper`，低层 `index_paper_chunker` 调用均显式传入 `destination_collection`。独立 backend-reviewer 判定迁移范围 `GO`；历史文件 5 passed，canonical 相关集 30 passed，全量回归 902 passed。
 - 评审记录的 P2 边界保留：路由 generation gate 和向量删除使用受控替身，不能表述为真实 Qdrant/完整路由集成；真实 Qdrant、跨进程锁、浏览器登录和生产切换仍按 Task06 总门禁执行。
 
+### Rebuild 锁与 stale recovery：`PASS（隔离功能门）`
+
+- 首轮锁实现的 `stale 校验 → unlink → recreate`、旧 owner `release/heartbeat` 路径被独立 reviewer 判定为 P1 NO-GO，可能误删或覆盖新 owner 锁；该实现未提交，结论保留为历史证据。
+- 当前实现改为固定 inode 的 POSIX `fcntl.flock(LOCK_EX|LOCK_NB)`。descriptor 是唯一所有权证明；JSON 仅作诊断元数据。heartbeat 原地 `ftruncate/write/fsync`，release 只在持有 descriptor 且 token 匹配时清空内容并关闭 descriptor，stale 接管在取得同一 inode 独占锁后完成，不再 unlink/recreate 或 `os.replace`。
+- 使用 `multiprocessing` spawn 验证跨进程互斥、异常退出后显式匹配 run_id/PID/recovery_check 接管、固定 inode、旧 token 操作不影响新 owner、缺失 state/topology fail-closed 及 clean release 后 dry-run。独立 reviewer v2 判定锁/恢复隔离门 `GO`；candidate rebuild + CLI **50 passed**，ruff、py_compile、`git diff --check` 均通过。
+- 非 POSIX 环境稳定返回 `REBUILD_LOCK_UNAVAILABLE`；外部手工删除/替换锁文件、真实 Qdrant、生产维护窗口、多机和 Task06 总体 cutover 仍未验收，Task06 继续 `NO-GO`。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -199,3 +206,4 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：修复 generation refresh/commit TOCTOU；refresh 与 commit 共用 manifest-store 锁并支持 expected collection 原子校验，独立 reviewer 给出隔离门 `GO`，生产切换仍保持 `NO-GO`。
 - 2026-09-10：浏览器生命周期首轮 reviewer 发现请求期间 TTL 过期导入和并发 reopen/idle cleanup 两个 P1；通过下载返回前与 import boundary 最终检查、状态锁注册边界、daemon TTL 回收和稳定错误码透传修复，85 项隔离回归通过，独立 reviewer v2 给出 browser 子门禁 `GO`；真实登录、跨进程和生产切换仍 `NO-GO`。
 - 2026-09-10：迁移 3 项历史旧索引集成测试到 canonical document/generation-bound API，未恢复退休入口；历史文件 5 passed、相关集 30 passed、全量回归 902 passed，独立 reviewer 给出迁移范围 `GO`。受控替身与真实 Qdrant/生产切换边界仍明确保留。
+- 2026-09-10：rebuild 锁首轮 stale unlink/recreate 与 token TOCTOU 评审为 `NO-GO`；改为固定 inode + POSIX `flock` 持有式协议，补齐跨进程互斥、异常退出接管和旧 owner 操作隔离测试，candidate+CLI 50 passed，独立 reviewer v2 给出锁/恢复隔离门 `GO`；锁协议加固后的全量回归为 `905 passed / 1 skipped`（38 个 subtests），真实 Qdrant 和生产切换仍 `NO-GO`。

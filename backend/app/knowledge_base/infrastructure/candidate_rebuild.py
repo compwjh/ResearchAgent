@@ -7,6 +7,7 @@ go through :class:`CandidateIndexPort` with an explicit destination.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -19,6 +20,11 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - the deployed runtime is POSIX
+    fcntl = None
 
 from backend.app.knowledge_base.infrastructure.candidate_index import CandidateIndexPort, CandidatePoint
 from backend.app.knowledge_base.infrastructure.embed import SPARSE_DIM, embed_texts, encode_sparse
@@ -267,8 +273,11 @@ class _ExclusiveLock:
         self.recover_stale_run_id = recover_stale_run_id
         self.recovery_check = recovery_check
         self.token = uuid.uuid4().hex
+        self._descriptor: Optional[int] = None
 
     def acquire(self) -> None:
+        if fcntl is None:
+            raise RebuildError("REBUILD_LOCK_UNAVAILABLE")
         self.root.mkdir(parents=True, exist_ok=True)
         now = _now()
         payload = {
@@ -282,31 +291,53 @@ class _ExclusiveLock:
             "started_at": now,
             "heartbeat_at": now,
         }
+        descriptor: Optional[int] = None
         try:
-            descriptor = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            if not self.recover_stale_run_id:
-                raise RebuildError("REBUILD_LOCK_HELD") from None
-            self._prove_stale(self.recover_stale_run_id)
+            descriptor = os.open(str(self.path), os.O_CREAT | os.O_RDWR, 0o600)
             try:
-                self.path.unlink()
-            except OSError as error:
-                raise RebuildError("STALE_LOCK_RECOVERY_FAILED") from error
-            descriptor = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        try:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write((_canonical(payload) + "\n").encode("utf-8"))
-                handle.flush()
-                os.fsync(handle.fileno())
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (BlockingIOError, OSError) as error:
+                os.close(descriptor)
+                if isinstance(error, BlockingIOError) or getattr(error, "errno", None) in {errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES}:
+                    if self.recover_stale_run_id:
+                        # This is diagnostic-only: never use an unlocked path
+                        # read to grant ownership while another descriptor
+                        # holds the kernel lock. A mismatching requested run
+                        # is nevertheless an explicit ambiguity.
+                        try:
+                            existing = self._read()
+                        except RebuildError as read_error:
+                            raise RebuildError("REBUILD_LOCK_AMBIGUOUS") from read_error
+                        if existing and existing.get("run_id") != self.recover_stale_run_id:
+                            raise RebuildError("REBUILD_LOCK_AMBIGUOUS") from None
+                    raise RebuildError("REBUILD_LOCK_HELD") from None
+                raise RebuildError("REBUILD_LOCK_UNAVAILABLE") from error
+            self._descriptor = descriptor
+            existing = self._read()
+            if existing is not None:
+                if not self.recover_stale_run_id:
+                    raise RebuildError("REBUILD_LOCK_HELD")
+                self._prove_stale(self.recover_stale_run_id, existing)
+            self._write(payload)
             _fsync_directory(self.root)
         except Exception:
-            with suppress(OSError):
-                self.path.unlink()
+            if self._descriptor is not None:
+                self._close_descriptor()
+            elif descriptor is not None:
+                with suppress(OSError):
+                    os.close(descriptor)
             raise
 
-    def _read(self) -> Dict[str, Any]:
+    def _read(self) -> Optional[Dict[str, Any]]:
         try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
+            if self._descriptor is None:
+                raw = self.path.read_text(encoding="utf-8")
+            else:
+                os.lseek(self._descriptor, 0, os.SEEK_SET)
+                raw = os.read(self._descriptor, 1024 * 1024).decode("utf-8")
+            if not raw.strip():
+                return None
+            value = json.loads(raw)
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
             raise RebuildError("REBUILD_LOCK_AMBIGUOUS") from error
         required = {"schema_version", "run_id", "owner", "pid", "host", "token", "command", "started_at", "heartbeat_at"}
@@ -319,8 +350,8 @@ class _ExclusiveLock:
             raise RebuildError("REBUILD_LOCK_AMBIGUOUS")
         return value
 
-    def _prove_stale(self, requested_run_id: str) -> None:
-        value = self._read()
+    def _prove_stale(self, requested_run_id: str, value: Optional[Mapping[str, Any]] = None) -> None:
+        value = dict(value or self._read() or {})
         if str(value.get("run_id")) != str(requested_run_id):
             raise RebuildError("REBUILD_LOCK_AMBIGUOUS")
         try:
@@ -335,25 +366,60 @@ class _ExclusiveLock:
             raise RebuildError("REBUILD_LOCK_AMBIGUOUS")
         self.recovery_check(value)
 
+    def _write(self, value: Mapping[str, Any]) -> None:
+        if self._descriptor is None:
+            raise RebuildError("REBUILD_LOCK_LOST")
+        encoded = (_canonical(value) + "\n").encode("utf-8")
+        try:
+            os.ftruncate(self._descriptor, 0)
+            os.lseek(self._descriptor, 0, os.SEEK_SET)
+            view = memoryview(encoded)
+            while view:
+                written = os.write(self._descriptor, view)
+                if written <= 0:
+                    raise OSError("lock metadata write made no progress")
+                view = view[written:]
+            os.fsync(self._descriptor)
+        except OSError as error:
+            raise RebuildError("REBUILD_LOCK_LOST") from error
+
     def heartbeat(self) -> None:
         try:
             value = self._read()
-            if value.get("token") != self.token:
+            if not value or value.get("token") != self.token:
                 raise RebuildError("REBUILD_LOCK_LOST")
             value["heartbeat_at"] = _now()
-            _atomic_write(self.path, (_canonical(value) + "\n").encode("utf-8"))
+            self._write(value)
         except RebuildError:
             raise
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
             raise RebuildError("REBUILD_LOCK_LOST") from error
 
     def release(self) -> None:
-        try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
-            if value.get("token") == self.token:
-                self.path.unlink()
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        if self._descriptor is None:
             return
+        try:
+            value = self._read()
+            if value and value.get("token") == self.token:
+                # The descriptor owns the kernel lock. Do not unlink or
+                # replace the stable inode during release. Clearing the
+                # diagnostic payload distinguishes a clean release from a
+                # crash, while preserving the inode for the next flock.
+                os.ftruncate(self._descriptor, 0)
+                os.fsync(self._descriptor)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError, RebuildError):
+            pass
+        finally:
+            self._close_descriptor()
+
+    def _close_descriptor(self) -> None:
+        descriptor, self._descriptor = self._descriptor, None
+        if descriptor is None:
+            return
+        with suppress(OSError):
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        with suppress(OSError):
+            os.close(descriptor)
 
 
 def _now() -> str:
@@ -612,7 +678,10 @@ class CandidateRebuildService:
     def _preflight_snapshot(self) -> Tuple[Optional[str], str]:
         lock_path = self.runtime_root / "rebuild.lock"
         try:
-            lock_digest = hashlib.sha256(lock_path.read_bytes()).hexdigest() if lock_path.exists() else None
+            lock_bytes = lock_path.read_bytes() if lock_path.exists() else b""
+            # A clean release clears the stable lock inode but keeps the path;
+            # only non-empty metadata denotes an unresolved active/crashed run.
+            lock_digest = hashlib.sha256(lock_bytes).hexdigest() if lock_bytes.strip() else None
         except OSError as error:
             raise RebuildError("PREFLIGHT_STALE") from error
         inventory = topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root)
@@ -736,7 +805,13 @@ class CandidateRebuildService:
 
     def _recovery_check(self, lock_value: Mapping[str, Any]) -> None:
         run_id = str(lock_value.get("run_id") or "")
-        state = _RuntimeStore(self.runtime_root, run_id).read()
+        try:
+            state = _RuntimeStore(self.runtime_root, run_id).read()
+        except RebuildError as error:
+            # A stale lock without a readable matching run state is not
+            # recoverable. Keep the maintenance boundary fail-closed and
+            # expose the same stable code as every other ambiguity.
+            raise RebuildError("REBUILD_LOCK_AMBIGUOUS") from error
         if state.get("run_id") != run_id or state.get("status") not in {"ready_to_switch", "switching", "finalizing", "finalize_pending", "cleanup_pending"}:
             raise RebuildError("REBUILD_LOCK_AMBIGUOUS")
         observed = state.get("observed") or {}
@@ -749,7 +824,10 @@ class CandidateRebuildService:
             or observed.get("outcome") == "unknown"
         ):
             raise RebuildError("REBUILD_LOCK_AMBIGUOUS")
-        inventory = topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root, state_override=state)
+        try:
+            inventory = topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root, state_override=state)
+        except RebuildError as error:
+            raise RebuildError("REBUILD_LOCK_AMBIGUOUS") from error
         if inventory.get("state_run_id") != run_id or inventory.get("state_candidate") != state.get("candidate_collection"):
             raise RebuildError("REBUILD_LOCK_AMBIGUOUS")
         if intent and observed.get("topology_digest") != inventory.get("inventory_digest"):

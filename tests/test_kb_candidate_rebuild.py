@@ -1,5 +1,7 @@
 import hashlib
 import json
+import multiprocessing
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +26,29 @@ from backend.app.knowledge_base.infrastructure.candidate_rebuild import (
 )
 from backend.app.knowledge_base.infrastructure.chunkers import build_chunks_v2
 from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
+
+
+def _lock_attempt_process(runtime_root: str, result_pipe) -> None:
+    """Try to acquire a lock from a separate interpreter and report only its code."""
+    lock = _ExclusiveLock(Path(runtime_root), run_id="contender", command="test")
+    try:
+        lock.acquire()
+    except RebuildError as error:
+        result_pipe.send(error.code)
+    else:
+        result_pipe.send("ACQUIRED")
+        lock.release()
+    finally:
+        result_pipe.close()
+
+
+def _lock_holder_process(runtime_root: str, ready_pipe) -> None:
+    """Create a lock and exit without cleanup, simulating a crashed owner."""
+    lock = _ExclusiveLock(Path(runtime_root), run_id="crashed-run", command="test")
+    lock.acquire()
+    ready_pipe.send("READY")
+    ready_pipe.close()
+    os._exit(0)
 
 
 def _fixture(tmp_path: Path, *, text: str = "# Title\n\nFirst paragraph.\n\nSecond paragraph."):
@@ -98,6 +123,15 @@ def test_build_validate_and_first_physical_switch(tmp_path):
     assert all("document_id" in item.payload and "paper_id" not in item.payload for item in points)
     events = (tmp_path / "runtime" / "run-test" / "events.jsonl").read_text(encoding="utf-8")
     assert '"event":"intent"' in events and '"event":"observed"' in events
+
+
+def test_clean_lock_release_does_not_block_later_dry_run(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    service = _service(tmp_path, qdrant)
+    service.run(dry_run=False, confirm_replace=True)
+    assert (tmp_path / "runtime" / "rebuild.lock").read_text(encoding="utf-8") == ""
+    assert service.run()["status"] == "completed"
 
 
 def test_default_finalize_publishes_generation_marker(tmp_path):
@@ -359,8 +393,132 @@ def test_lock_schema_and_explicit_stale_recovery(tmp_path):
     assert {"schema_version", "run_id", "owner", "pid", "host", "token", "command", "started_at", "heartbeat_at"} <= set(lock_data)
     with pytest.raises(RebuildError) as caught:
         _ExclusiveLock(tmp_path, run_id="run-2", command="test", recover_stale_run_id="run-1", recovery_check=lambda _value: None).acquire()
-    assert caught.value.code == "REBUILD_LOCK_AMBIGUOUS"
+    # The first descriptor is still active; a recovery request cannot inspect
+    # it as stale and must fail closed as an ordinary lock conflict.
+    assert caught.value.code == "REBUILD_LOCK_HELD"
     first.release()
+
+
+def test_cross_process_lock_is_exclusive(tmp_path):
+    runtime = tmp_path / "runtime"
+    owner = _ExclusiveLock(runtime, run_id="owner", command="test")
+    owner.acquire()
+    receiver, sender = multiprocessing.get_context("spawn").Pipe(False)
+    contender = multiprocessing.get_context("spawn").Process(
+        target=_lock_attempt_process,
+        args=(str(runtime), sender),
+    )
+    try:
+        contender.start()
+        assert receiver.poll(10), "separate process did not report lock result"
+        assert receiver.recv() == "REBUILD_LOCK_HELD"
+        contender.join(10)
+        assert contender.exitcode == 0
+    finally:
+        if contender.is_alive():
+            contender.terminate()
+            contender.join(10)
+        receiver.close()
+        owner.release()
+
+
+def test_crashed_owner_can_be_recovered_only_with_matching_run_and_check(tmp_path):
+    runtime = tmp_path / "runtime"
+    receiver, sender = multiprocessing.get_context("spawn").Pipe(False)
+    crashed = multiprocessing.get_context("spawn").Process(
+        target=_lock_holder_process,
+        args=(str(runtime), sender),
+    )
+    try:
+        crashed.start()
+        assert receiver.poll(10), "crashed owner did not publish readiness"
+        assert receiver.recv() == "READY"
+        crashed.join(10)
+        assert crashed.exitcode == 0
+        lock_path = runtime / "rebuild.lock"
+        stale = json.loads(lock_path.read_text(encoding="utf-8"))
+        stale_inode = lock_path.stat().st_ino
+        seen = []
+        replacement = _ExclusiveLock(
+            runtime,
+            run_id="replacement-run",
+            command="resume-switch",
+            recover_stale_run_id="crashed-run",
+            recovery_check=lambda value: seen.append(dict(value)),
+        )
+        replacement.acquire()
+        try:
+            current = json.loads(lock_path.read_text(encoding="utf-8"))
+            assert seen and seen[0]["run_id"] == "crashed-run"
+            assert current["run_id"] == "replacement-run"
+            assert current["token"] != stale["token"]
+            assert lock_path.stat().st_ino == stale_inode
+            stale_owner = _ExclusiveLock(runtime, run_id="crashed-run", command="test")
+            stale_owner.token = stale["token"]
+            stale_owner.release()
+            with pytest.raises(RebuildError) as stale_heartbeat:
+                stale_owner.heartbeat()
+            assert stale_heartbeat.value.code == "REBUILD_LOCK_LOST"
+            assert json.loads(lock_path.read_text(encoding="utf-8"))["token"] == current["token"]
+        finally:
+            replacement.release()
+    finally:
+        receiver.close()
+        if crashed.is_alive():
+            crashed.terminate()
+            crashed.join(10)
+
+
+def test_stale_recovery_rejects_missing_state_and_topology_mismatch(tmp_path):
+    runtime = tmp_path / "runtime"
+    receiver, sender = multiprocessing.get_context("spawn").Pipe(False)
+    crashed = multiprocessing.get_context("spawn").Process(
+        target=_lock_holder_process,
+        args=(str(runtime), sender),
+    )
+    try:
+        crashed.start()
+        assert receiver.poll(10)
+        assert receiver.recv() == "READY"
+        crashed.join(10)
+        assert crashed.exitcode == 0
+        missing_state_service = _service(tmp_path / "missing-state", FakeQdrant(dense_dim=4))
+        with pytest.raises(RebuildError) as missing:
+            _ExclusiveLock(
+                runtime,
+                run_id="replacement-run",
+                command="resume-switch",
+                recover_stale_run_id="crashed-run",
+                recovery_check=missing_state_service._recovery_check,
+            ).acquire()
+        assert missing.value.code == "REBUILD_LOCK_AMBIGUOUS"
+        assert (runtime / "rebuild.lock").exists()
+
+        qdrant = FakeQdrant(dense_dim=4)
+        service = _service(tmp_path / "topology-mismatch", qdrant)
+        state = RunState(
+            run_id="crashed-run",
+            source_collection="papers",
+            candidate_collection="papers_rebuild_crashed-run",
+            dry_run=False,
+            status="ready_to_switch",
+        )
+        _RuntimeStore(runtime, "crashed-run").initialize(state)
+        with pytest.raises(RebuildError) as topology:
+            _ExclusiveLock(
+                runtime,
+                run_id="replacement-run",
+                command="resume-switch",
+                recover_stale_run_id="crashed-run",
+                recovery_check=service._recovery_check,
+            ).acquire()
+        assert topology.value.code == "REBUILD_LOCK_AMBIGUOUS"
+        assert (runtime / "rebuild.lock").exists()
+    finally:
+        receiver.close()
+        if crashed.is_alive():
+            crashed.terminate()
+            crashed.join(10)
 
 
 def test_cli_resume_requires_confirm_and_supports_injected_index(tmp_path):
@@ -650,7 +808,9 @@ def test_directory_fsync_failure_blocks_state_artifact_and_lock_success(tmp_path
     with pytest.raises(RebuildError) as lock_error:
         lock.acquire()
     assert lock_error.value.code == "RUNTIME_FSYNC_FAILED"
-    assert not (runtime / "rebuild.lock").exists()
+    # The fixed-inode lock remains as an ambiguous diagnostic artifact after
+    # directory fsync failure; it is never unlinked during error handling.
+    assert (runtime / "rebuild.lock").exists()
 
 
 def test_runtime_store_replace_fsyncs_directory(tmp_path, monkeypatch):
