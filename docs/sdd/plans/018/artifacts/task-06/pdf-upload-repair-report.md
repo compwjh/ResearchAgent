@@ -191,6 +191,12 @@ stored_name_safe_basename=pass
 2. 汇总本轮定向测试结果；按既有收口流程决定是否需要额外运行时复测。
 3. 不执行全量回归、reset/stash/clean/push/merge。
 
+## 主 Agent 追加真实验证（文件名兼容修复后）
+
+- 服务重启后，使用合法 PDF 内容、`application/octet-stream` part MIME 和中文展示名 `安全论文.pdf` 调用 `/api/kb/upload`，返回 HTTP 201；响应中的 `file_name` 保留中文展示名，服务端生成安全 ASCII `stored_name`。
+- 临时文档 `f762ca266e88434797e04d28d0cfec2c` 已通过 canonical DELETE 删除并返回 HTTP 200；删除前后未触碰用户已有文档。测试期间用户新增的文档记录保持不变。
+- 本轮仍只运行相关测试，不重复执行全量回归。
+
 ### 时间、模型与工具统计
 
 - 开始：2026-09-10 22:05:41 CST（Asia/Shanghai）
