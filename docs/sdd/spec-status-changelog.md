@@ -147,3 +147,5 @@
 - **018 Task06-B 历史旧索引测试迁移** ｜ 实施中 → 实施中 ｜ 2026-09-10：3 项历史失败测试已迁移到 canonical document/generation-bound API，未恢复退休入口；历史文件 5 passed、相关集 30 passed、全量回归 902 passed，独立 reviewer 判定迁移范围 GO。真实 Qdrant、跨进程和生产切换仍未验收。
 - **018 Task06-B rebuild 锁与 stale recovery** ｜ 实施中 → 实施中 ｜ 2026-09-10：首轮 stale unlink/recreate 与 token TOCTOU 评审为 NO-GO；改为固定 inode + POSIX flock 持有式协议并补齐跨进程/异常退出接管测试，candidate+CLI 50 passed、全量回归 905 passed/1 skipped，独立 reviewer v2 判定隔离门 GO。真实 Qdrant、生产维护窗口和多机边界仍未验收。
 - **018 Task06-B 真实源文件解析与 ID 安全门** ｜ 实施中 → 实施中（隔离 GO；真实 dry-run 阻塞） ｜ 2026-09-10：复用既有 `resolve_paper_path` 兼容旧 metadata 展示名与 `{document_id}.pdf` 原件布局，并收紧 basename/Unicode 控制字符校验；独立复评 GO，候选重建 59 passed、全量回归 916 passed/1 skipped。真实 dry-run 继续发现 4 个 42-byte `PDF_EMPTY` 原件；按 Spec018 权威 metadata 全集规则未执行 Qdrant 切换，等待数据处置决定。
+- **018 Task06-B 空壳失败原件清理授权** ｜ 实施中 → 实施中 ｜ 2026-09-10：用户明确授权一次性删除已核对的 4 条 `status=failed`、42-byte、`PDF_EMPTY` 原件及对应 metadata 行；执行前需生成可恢复备份并逐项核对固定 ID/大小/hash，其他原件、metadata、Qdrant 和代码范围不变。
+- **018 Task06-B 单文档 metadata 迁移与上传验证** ｜ 实施中 → 实施中 ｜ 2026-09-10：对当前保留的 1 条旧格式 metadata 完成 `018-document-v1` 原子迁移并生成备份；服务重启后健康/文档列表 HTTP 200，使用现有 PDF 做去重式上传返回 HTTP 201。真实 Qdrant 代际切换仍未放行。

@@ -164,7 +164,7 @@
 - JSON 元数据迁移使用 `migration_version="018-document-v1"`，输入不存在且确认是首次初始化时才可得到空集合；JSON 解码失败、根类型非 list、记录非 object 或必需 ID 重复时必须 fail-closed，返回 `MIGRATION_INPUT_INVALID`，不得把空列表写回。迁移前创建同目录只读备份，临时文件写入后 `fsync` 文件与目录再 `os.replace`；异常只保留原文件和备份，重复运行无副作用。
 - `source_sha256` 表示当前原件字节 hash；重建前的旧记录保持 `indexed_source_sha256=null`、`source_hash_state="legacy_unknown"`，不得把当前摘要冒充旧 embedding 来源。候选 Collection 中每个文档必须在解析前后双检原件 hash，一致后写入 `indexed_source_sha256` 并转为 `verified`。
 - 原件成功提交后是不可变对象，不提供原位修改或同 ID 覆盖；删除成功后重新提交生成新的 `document_id`，不建立版本链。重建中的多次 hash 只用于发现损坏或越界文件变更，不代表支持原位更新。
-- 迁移报告必须记录元数据迁移前后记录数、`document_id/paper_id` 集合、stored basename、时间、论文元数据、原件 hash，以及候选 Collection 的文档/point 数与 fingerprint。任何候选构建异常都不得删除原件或元数据；未进入切换阶段时当前查询入口保持不变。
+- 迁移报告必须记录元数据迁移前后记录数、`document_id/paper_id` 集合、stored basename、时间、论文元数据、原件 hash，以及候选 Collection 的文档/point 数与 fingerprint。默认任何候选构建异常都不得删除原件或元数据；本次 Task06-B 已由用户明确授权一次性清理已确认 `status=failed` 且解析错误为 `PDF_EMPTY` 的 42-byte 空壳原件及其 metadata 行，必须先生成可恢复备份并逐项核对 ID/尺寸/hash，除此之外仍不得删除或覆盖数据。
 
 ### 旧索引全量替换与 Collection 切换
 
@@ -500,3 +500,4 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 2026-09-09 | 独立技术复审 / 架构师（自身） | 复审发现 lifespan 旧索引回填及四个 store 直接写 symbol 漏项；补入 `main.py`、`save_papers/remove_paper/update_chunker_state/mark_interrupted_tasks`，重算八文件 inventory digest，并新增启动期 fail-closed 测试门；未修改业务代码 |
 | 2026-09-09 | 用户确认 / 架构师（自身） | 独立需求评审通过，技术设计门最终 `GO`；用户明确“继续开发…开始执行”，全库索引替换修订由 `待确认` 转为 `已确认` 并进入 `实施中`。仅放行 Task02A-D，Task04/06 实现门保持未放行 |
 | 2026-09-09 | 用户优先级决策 / 架构师（自身） | 用户要求安全加固问题先留账、优先完成功能；Task02A/02B 改为分别记录功能门与生产切换安全门。已知安全债务不再阻塞 Task03–05，但全部转为 Task06 真实 Qdrant/`--confirm-replace` 前置硬门；不降低真实数据操作门禁 |
+| 2026-09-10 | 用户授权 / 架构师（自身） | 真实 dry-run 确认 4 条 `status=failed`、42-byte、`PDF_EMPTY` 空壳原件无可恢复内容；用户明确授权一次性删除这些原件及对应 metadata 行。清理前必须备份并逐项核对固定 ID/大小/hash，其他数据范围不变 |

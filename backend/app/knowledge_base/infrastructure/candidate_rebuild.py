@@ -69,7 +69,11 @@ _ALLOWED_TRANSITIONS = {
     "switching": {"finalizing", "switching"},
     "finalizing": {"completed", "finalize_pending", "finalizing"},
     "finalize_pending": {"finalizing", "completed"},
-    "failed": {"cleanup_pending", "failed"},
+    # A failed build may have already deleted its candidate before the
+    # process returned (for example, an embedding failure).  Cleanup is still
+    # safe and must be idempotent once topology_inventory proves that the
+    # candidate is absent, unreferenced, and there is no competing candidate.
+    "failed": {"cleanup_pending", "cleaned", "failed"},
     "cleanup_pending": {"cleaned", "cleanup_pending"},
     "cleaned": set(),
     "completed": set(),
@@ -695,7 +699,9 @@ class CandidateRebuildService:
             if not path.exists() or not path.is_file():
                 raise RebuildError("SOURCE_MISSING")
             before = _sha256(path)
-            supplied = record.get("source_sha256") or record.get("sha256")
+            supplied = record.get("source_sha256")
+            if supplied is None:
+                supplied = record.get("sha256")
             if supplied is not None and str(supplied).lower() != before:
                 raise RebuildError("SOURCE_HASH_MISMATCH")
             media_type = str(record.get("media_type") or ("text/markdown" if path.suffix.lower() in {".md", ".markdown"} else "application/pdf"))
@@ -708,6 +714,13 @@ class CandidateRebuildService:
             after = _sha256(path)
             if before != after:
                 raise RebuildError("SOURCE_CHANGED_DURING_PREFLIGHT")
+            # Legacy metadata predates the source hash field.  Bind the hash
+            # observed across the complete preflight window to the in-memory
+            # document before building manifests/finalize metadata.  A
+            # supplied hash was already compared above; this assignment only
+            # fills the missing canonical field and never invents an indexed
+            # hash or weakens the source-integrity check.
+            record["source_sha256"] = after
             parsed.append((record, path, provenance))
         orphan = sorted(path.name for path in self.papers_dir.iterdir() if path.is_file() and path.name not in known) if self.papers_dir.exists() else []
         return parsed, orphan
@@ -1638,12 +1651,19 @@ class CandidateRebuildService:
             if candidate in referenced or len(candidate_names - {candidate}) > 0:
                 raise RebuildError("INDEX_TOPOLOGY_AMBIGUOUS")
             if candidate not in candidate_names:
+                # A prior cleanup attempt may have left a transient FSM or
+                # action error in the persisted state.  Once the topology
+                # proves the candidate is already absent, cleanup has
+                # succeeded idempotently and must not report that stale
+                # diagnostic as the result.
+                self._state.error_code = None
                 self._transition("cleaned", progress=100)
                 return state.to_dict()
             self._action("cleanup_failed_candidate", "delete_collection", lambda: self.index.delete_collection(state.candidate_collection))
             fresh = topology_inventory(self.index, alias=self.alias, source_collection=self.source_collection, runtime_root=self.runtime_root, state_override=self._state.to_dict())
             if candidate in {item["name"] for item in fresh.get("candidate_collections", ())} or candidate in {item["target"] for item in fresh.get("aliases", ())}:
                 raise RebuildError("CLEANUP_RESULT_UNKNOWN")
+            self._state.error_code = None
             self._transition("cleaned", progress=100)
             return state.to_dict()
         except Exception as error:

@@ -138,6 +138,68 @@ def test_dry_run_resolves_legacy_id_named_source_when_file_name_is_display_name(
     assert not (tmp_path / "runtime").exists()
 
 
+def test_legacy_metadata_without_source_hash_binds_hash_for_pdf_dry_run(tmp_path):
+    papers = tmp_path / "papers"
+    papers.mkdir()
+    source = papers / "legacy-document.pdf"
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Legacy source without metadata hash")
+    pdf.save(str(source))
+    pdf.close()
+    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    metadata = tmp_path / "papers.json"
+    metadata.write_text(json.dumps([{
+        "paper_id": "legacy-document",
+        "file_name": "Human Readable Legacy Paper.pdf",
+        "media_type": "application/pdf",
+    }]), encoding="utf-8")
+
+    dry_run_service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "dry-runtime",
+        index=FakeQdrant(dense_dim=4),
+        dense_dim=4,
+        llm=lambda _prompt: "[]",
+    )
+    dry_result = dry_run_service.run()
+    assert dry_result["status"] == "completed"
+    assert dry_run_service._preflight()[0][0][0]["source_sha256"] == source_hash
+
+
+def test_legacy_metadata_without_source_hash_publishes_hash_on_finalize(tmp_path):
+    papers, metadata = _fixture(tmp_path)
+    metadata.write_text(json.dumps([{
+        "paper_id": "doc-1",
+        "file_name": "doc.md",
+        "stored_name": "doc.md",
+        "media_type": "text/markdown",
+    }]), encoding="utf-8")
+    source_hash = hashlib.sha256((papers / "doc.md").read_bytes()).hexdigest()
+    qdrant = FakeQdrant(dense_dim=4)
+    qdrant.seed_collection("papers", dense_dim=4)
+    service = CandidateRebuildService(
+        metadata_path=metadata,
+        papers_dir=papers,
+        runtime_root=tmp_path / "runtime",
+        index=qdrant,
+        dense_dim=4,
+        llm=lambda _prompt: "[]",
+        embedder=lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts],
+        run_id_factory=lambda: "legacy-hash-run",
+    )
+    result = service.run(dry_run=False, confirm_replace=True)
+
+    assert result["status"] == "completed"
+    bundle = FinalizeBundleStore(tmp_path).read_bundle("legacy-hash-run")
+    staged_metadata = json.loads(
+        (tmp_path / bundle["metadata_staged_path"]).read_text(encoding="utf-8")
+    )
+    assert staged_metadata[0]["source_sha256"] == source_hash
+    assert staged_metadata[0].get("indexed_source_sha256") is None
+
+
 def test_source_path_preserves_existing_legacy_file_name(tmp_path):
     papers = tmp_path / "papers"
     papers.mkdir()
@@ -375,6 +437,43 @@ def test_failed_cleanup_pending_can_be_retried(tmp_path):
     resumed = _service(tmp_path, qdrant, llm=None)
     result = resumed.cleanup_failed("run-test")
     assert result["status"] == "cleaned"
+    assert result["error_code"] is None
+    assert json.loads((tmp_path / "runtime" / "run-test" / "state.json").read_text(encoding="utf-8"))["error_code"] is None
+
+
+def test_failed_cleanup_is_idempotent_when_candidate_was_already_removed(tmp_path):
+    qdrant = FakeQdrant(dense_dim=4)
+
+    def fail_embedding(_texts):
+        raise RuntimeError("embedding unavailable")
+
+    service = _service(tmp_path, qdrant, embedder=fail_embedding)
+    with pytest.raises(RebuildError):
+        service.run(dry_run=False, confirm_replace=True)
+
+    state_path = tmp_path / "runtime" / "run-test" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    candidate = "papers_rebuild_run-test"
+    assert state["status"] == "failed"
+    assert candidate not in qdrant.collections
+    # Reproduce the production symptom: an earlier failed FSM transition can
+    # leave its diagnostic in state.json even though cleanup is now safe.
+    state["error_code"] = "FSM_INVALID_TRANSITION"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    calls_before_cleanup = len(qdrant.calls)
+
+    resumed = _service(tmp_path, qdrant)
+    result = resumed.cleanup_failed("run-test")
+
+    assert result["status"] == "cleaned"
+    cleaned_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert cleaned_state["status"] == "cleaned"
+    assert result["error_code"] is None
+    assert cleaned_state["error_code"] is None
+    assert not any(
+        operation == "delete_collection" and target == candidate
+        for operation, target in qdrant.calls[calls_before_cleanup:]
+    )
 
 
 def test_empty_authoritative_metadata_does_not_create_candidate(tmp_path):

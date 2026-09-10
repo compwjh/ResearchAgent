@@ -9,7 +9,7 @@
 
 ## 当前证据
 
-- 旧 Qdrant vectors 与旧 manifest 可删除；用户原件、元数据和文档 ID 必须保留。
+- 旧 Qdrant vectors 与旧 manifest 可删除；用户原件、元数据和文档 ID 默认必须保留。本次用户已明确授权一次性删除已核对的 4 条 `status=failed`、42-byte、`PDF_EMPTY` 空壳 PDF 及对应 metadata 行；先做可恢复备份，严格按固定 ID/大小/hash 执行，其他原件和 metadata 不得触碰。
 - Task02A 只在测试环境验证 rebuild 协议；本 Task 是唯一允许操作真实知识库索引的阶段。
 - Task03/04 已在进入本 Task 前提供正式 metadata/manifest schema 与 API。
 
@@ -101,7 +101,7 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 候选删除失败或结果未知：进入 `cleanup_pending`，保持停服并阻止新 destructive run；只对状态+topology 唯一匹配的未验证候选重试清理。
 - 首次 alias 创建失败：保留已验证候选、保持停服，只执行 resume-switch，不恢复旧索引。
 - finalize 失败：保留新 alias/Collection，标记 `finalize_pending`，保持停服并 resume-finalize。
-- 不执行 reset/stash/clean，不删除原件或元数据，不自动修复未知拓扑。
+- 不执行 reset/stash/clean，不自动修复未知拓扑；除本次已获用户明确授权且列入清单的 4 条 `PDF_EMPTY` 空壳及 metadata 行外，不删除原件或元数据。清理前必须备份并完成 ID/大小/hash 二次核对。
 
 ## 产出物
 
@@ -212,6 +212,20 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
   已由后续控制字符修复替代）、`source-id-control-fix-report.md`、
   `source-id-control-review-v2.md`。
 
+### 临时单文档迁移与上传验证：`PASS（仅供用户测试）`
+
+- 2026-09-10 已对当前保留的 1 条旧格式 metadata 执行
+  `migrate_papers_json(data/kb/papers.json, data/kb/papers)`；迁移版本为
+  `018-document-v1`，生成备份 `data/kb/papers.json.pre-018-document-v1.bak`，原件
+  SHA-256 为 `71f8829f…a14a1`，未发现源文件缺失。
+- 服务已以 `RERANKER_ENABLED=false` 启动于 `http://127.0.0.1:8000`。健康接口、文档列表接口均返回 HTTP 200；列表返回 1 条 canonical document，且
+  `source_sha256` 已补齐。
+- 使用该现有 PDF 做去重式 `POST /api/kb/upload` 验证，返回 HTTP 201、同一
+  `document_id`、`task_id=null`，确认新的上传入口可写入/识别 canonical metadata，未新增第二份原件。
+- 当前 `/api/kb/health` 仍报告 `generation.ready=false / INDEX_REBUILD_REQUIRED`；这是 Task06
+  真实 Qdrant 全库切换尚未放行的预期状态，不阻止上述上传验证。06-C/06-D 与完整 5 文档
+  重建仍保持 NO-GO，待生产门禁满足后再执行。
+
 ## 变更日志
 
 - 2026-09-08：创建“旧文档补建、韧性与性能”Task。
@@ -229,3 +243,5 @@ python -m backend.app.knowledge_base.rebuild_index --recover-stale-lock <run-id>
 - 2026-09-10：迁移 3 项历史旧索引集成测试到 canonical document/generation-bound API，未恢复退休入口；历史文件 5 passed、相关集 30 passed、全量回归 902 passed，独立 reviewer 给出迁移范围 `GO`。受控替身与真实 Qdrant/生产切换边界仍明确保留。
 - 2026-09-10：rebuild 锁首轮 stale unlink/recreate 与 token TOCTOU 评审为 `NO-GO`；改为固定 inode + POSIX `flock` 持有式协议，补齐跨进程互斥、异常退出接管和旧 owner 操作隔离测试，candidate+CLI 50 passed，独立 reviewer v2 给出锁/恢复隔离门 `GO`；锁协议加固后的全量回归为 `905 passed / 1 skipped`（38 个 subtests），真实 Qdrant 和生产切换仍 `NO-GO`。
 - 2026-09-10：真实 dry-run 发现旧 metadata 展示名与 `{document_id}.pdf` 原件布局不一致；复用既有路径解析器并补齐 document ID basename/Unicode 控制字符 fail-closed 门禁，独立复评 `GO`，候选重建 59 passed、全量回归 916 passed/1 skipped；随后真实数据暴露 4 个 42-byte `PDF_EMPTY` 失败原件，按权威 metadata 全集规则停止生产切换，等待数据处置决定。
+- 2026-09-10：用户明确授权一次性删除上述 4 条已核对的 `PDF_EMPTY` 空壳 PDF 与失败 metadata 行；清理前生成备份并记录清单，删除范围不扩展到其他原件或 metadata，随后重新执行 dry-run 与真实候选切换。
+- 2026-09-10：完成当前单文档旧 metadata 的 `018-document-v1` 原子迁移并生成回滚备份；服务重启后健康/文档列表均 HTTP 200，使用现有 PDF 做去重式上传返回 HTTP 201。真实 Qdrant 代际切换仍未放行。
