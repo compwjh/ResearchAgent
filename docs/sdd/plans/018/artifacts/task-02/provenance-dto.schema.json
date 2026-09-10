@@ -23,7 +23,7 @@
       "const": "provenance-dto-v1"
     },
     "mapping_algorithm_version": {
-      "const": "source-anchor-v1"
+      "const": "source-anchor-v2"
     },
     "sample_id": {
       "type": "string"

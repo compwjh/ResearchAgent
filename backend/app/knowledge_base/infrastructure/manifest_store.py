@@ -24,7 +24,10 @@ from typing import Any, Mapping, Sequence
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from backend.app.knowledge_base.infrastructure.inspection import InspectionManifest
+from backend.app.knowledge_base.infrastructure.inspection import (
+    MAPPING_ALGORITHM_VERSION,
+    InspectionManifest,
+)
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _CHUNKERS = {"v1", "v2"}
@@ -135,6 +138,8 @@ def _schema(name: str) -> dict[str, Any]:
 
 
 def _validate(schema_name: str, value: Mapping[str, Any], code: str) -> None:
+    if schema_name == "inspection-manifest.schema.json" and value.get("mapping_algorithm_version") != MAPPING_ALGORITHM_VERSION:
+        raise ManifestStoreError("MANIFEST_MAPPING_VERSION_MISMATCH", status=409)
     try:
         errors = list(Draft202012Validator(_schema(schema_name), format_checker=FormatChecker()).iter_errors(value))
     except ManifestStoreError:

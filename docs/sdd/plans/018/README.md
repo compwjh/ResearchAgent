@@ -14,6 +14,7 @@
 | [04](./task-04-backend-document-inspection-api.md) | 实现后端文档、manifest 与检查接口 | 03 | 已完成（功能门 GO；生产债务留至 Task06） |
 | [05](./task-05-frontend-chunk-inspector.md) | 实现前端双栏切片检查器 | 04 | 已完成（功能门；Task06 生产门待执行） |
 | [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 实施中（论文导入/浏览器隔离门已通过；真实索引切换仍 NO-GO） |
+| [06E](./task-06e-sparse-source-anchor-correction.md) | 修复模糊全连接 anchor，恢复真实双向定位 | 04、05、06 当前 manifest | 已完成 |
 | [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 待执行 |
 
 ## 当前路线
@@ -49,6 +50,7 @@
 | 04 | `artifacts/task-04/api-schema.json`、`upload-closure-matrix.json`、`api-fixture-index.json`、`backend-contract-report.md` | 检查路径不 embedding；旧 route/symbol 全关闭；`INDEX_REBUILD_REQUIRED` 与 immutable source 契约通过 |
 | 05 | `artifacts/task-05/pdfjs-vendor-manifest.json`、`dom-contract.schema.json`、`frontend-fixture-index.json`、`frontend-contract-report.md`、`frontend-test-final-report.md`、`frontend-review-final-report.md` | PDF/Markdown 安全渲染、双向定位、桌面/窄屏与真实 hostile fixture 通过；生产 worker 加固和 Task06 另行验收 |
 | 06 | `artifacts/task-06/full-index-rebuild-report.md`、`resilience-performance-report.md` | 真实候选验证、alias、manifest finalize、重启和查询通过 |
+| 06E | `artifacts/task-06/sparse-anchor-*-report.md` | source-anchor-v2 稀疏关系、单文档 manifest 重建和真实双向点击通过 |
 | 07 | `reviews/018-acceptance-review.md`、复盘和部署证据 | 独立验收、全量回归、运行时验证和本地提交完成 |
 
 ## 分派约束
@@ -69,3 +71,4 @@
 - 2026-09-10：Task06 浏览器会话生命周期隔离门完成；首轮发现的请求期间 TTL 过期导入、并发 reopen/idle cleanup 两个 P1 已修复，85 项浏览器/导入定向回归与独立 reviewer v2 通过；真实 Playwright/登录、跨进程和 Qdrant 生产切换仍 NO-GO。
 - 2026-09-10：Task06 历史旧索引回归测试迁移完成；3 项失败测试改为 canonical document/generation-bound 断言，独立 reviewer `GO`，全量回归恢复为 902 passed（另 1 个显式跳过项）；真实 Qdrant、跨进程和生产切换仍 NO-GO。
 - 2026-09-10：Task06 rebuild 锁/恢复隔离门完成；固定 inode + POSIX `flock` 关闭 stale unlink/recreate 与 token TOCTOU，跨进程/异常退出/恢复测试通过，独立 reviewer v2 `GO`；全量回归为 905 passed（另 1 skipped），真实 Qdrant、生产维护窗口和多机边界仍 NO-GO。
+- 2026-09-10：用户发现真实 PDF 的 53,120 条 anchor 导致 `#0` 误跳转。根因为 v1 对所有 block/chunk 的任意模糊正分均建关系；新增 06E，冻结 `source-anchor-v2` 的来源区间稀疏映射与不写 Qdrant 的 manifest 重建约束。

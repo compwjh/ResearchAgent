@@ -205,7 +205,7 @@
   },
   "properties": {
     "schema_version": {"const": "inspection-manifest-v1"},
-    "mapping_algorithm_version": {"const": "source-anchor-v1"},
+    "mapping_algorithm_version": {"const": "source-anchor-v2"},
     "source_parser_version": {"type": "string", "minLength": 1},
     "chunker_config_fingerprint": {"$ref": "#/$defs/sha256"},
     "payload_schema_version": {"const": "qdrant-payload-v1"},

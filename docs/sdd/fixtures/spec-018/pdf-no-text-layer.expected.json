@@ -1,6 +1,6 @@
 {
   "schema_version": "provenance-dto-v1",
-  "mapping_algorithm_version": "source-anchor-v1",
+  "mapping_algorithm_version": "source-anchor-v2",
   "sample_id": "pdf-no-text-layer",
   "document_id": "fixture-pdf-no-text-layer",
   "media_type": "application/pdf",

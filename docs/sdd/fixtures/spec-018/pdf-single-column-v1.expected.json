@@ -1,6 +1,6 @@
 {
   "schema_version": "provenance-dto-v1",
-  "mapping_algorithm_version": "source-anchor-v1",
+  "mapping_algorithm_version": "source-anchor-v2",
   "sample_id": "pdf-single-column-v1",
   "document_id": "fixture-pdf-single-column-v1",
   "media_type": "application/pdf",

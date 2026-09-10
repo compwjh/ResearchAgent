@@ -9,7 +9,6 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from hashlib import sha256
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -33,7 +32,7 @@ __all__ = [
 
 
 _SCHEMA_VERSION = "source-provenance-bundle-v1"
-_MAPPING_ALGORITHM_VERSION = "source-anchor-v1"
+_MAPPING_ALGORITHM_VERSION = "source-anchor-v2"
 _PAYLOAD_SCHEMA_VERSION = "qdrant-payload-v1"
 _DEFAULT_V1_CONFIG = {"chunk_size": 1000, "overlap": 200}
 _DEFAULT_V2_CONFIG = {"max_chars": 1200, "llm": "disabled"}
@@ -166,18 +165,6 @@ def _mapping_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _match_count(block_text: str, chunk_text: str) -> int:
-    # SequenceMatcher's tie-breaking is direction-sensitive for repeated
-    # text.  The frozen source-anchor-v1 oracle compares chunk first, then
-    # source block; keep that order stable for duplicate/overlap anchors.
-    left = _mapping_text(chunk_text)
-    right = _mapping_text(block_text)
-    return sum(
-        match.size
-        for match in SequenceMatcher(None, left, right, autojunk=False).get_matching_blocks()
-    )
-
-
 def _parser_pages(provenance: Any) -> Tuple[dict, ...]:
     return tuple(page.to_dict() for page in getattr(provenance, "pages", ()))
 
@@ -215,6 +202,23 @@ def _pdf_chunk_pages(provenance: Any) -> List[Tuple[int, str]]:
         if cleaned:
             pages.append((page, cleaned))
     return pages
+
+
+def _pdf_reference_start(provenance: Any) -> Optional[int]:
+    """Return the reference-zone page used by the page chunk projection."""
+    raw_by_page: Dict[int, List[str]] = {
+        int(page.page): [] for page in getattr(provenance, "pages", ())
+    }
+    ordered_blocks = sorted(
+        getattr(provenance, "blocks", ()),
+        key=lambda block: (int(block.page), int(getattr(block, "display_ordinal", block.ordinal))),
+    )
+    for block in ordered_blocks:
+        raw_by_page.setdefault(int(block.page), []).append(
+            getattr(block, "raw_text", None) or block.text
+        )
+    raw_pages = [(page, "".join(parts)) for page, parts in raw_by_page.items()]
+    return locate_reference_start(raw_pages)
 
 
 def _pdf_chunk_pages_v2(provenance: Any) -> List[Tuple[int, str]]:
@@ -280,7 +284,13 @@ def _build_chunks(
     chunker: str,
     config: Dict[str, Any],
     llm: Optional[Callable[[str], str]],
-) -> Tuple[List[Chunk], bool, Tuple[str, ...], Optional[Tuple[str, ...]]]:
+) -> Tuple[
+    List[Chunk],
+    bool,
+    Tuple[str, ...],
+    Optional[Tuple[str, ...]],
+    Tuple[str, ...],
+]:
     media_type = getattr(provenance, "media_type", "")
     if media_type == "application/pdf":
         pages: Sequence[Tuple[Optional[int], str]] = (
@@ -306,16 +316,32 @@ def _build_chunks(
                 chunk.chunk_index = len(chunks)
                 chunks.append(chunk)
                 chunk_block_ids.append(source_block.block_id)
-        return chunks, False, (), tuple(chunk_block_ids)
-    if chunker == "v1":
-        chunks = build_chunks_v1(
-            pages,
-            chunk_size=int(config.get("chunk_size", 1000)),
-            overlap=int(config.get("overlap", 200)),
+        return (
+            chunks,
+            False,
+            (),
+            tuple(chunk_block_ids),
+            tuple(f"block:{block_id}" for block_id in chunk_block_ids),
         )
-        for index, chunk in enumerate(chunks):
-            chunk.chunk_index = index
-        return chunks, False, (), None
+    if chunker == "v1":
+        chunks: List[Chunk] = []
+        source_keys: List[str] = []
+        if media_type == "application/pdf":
+            page_keys = [f"page:{page}" for page, _ in pages]
+        else:
+            source_blocks = [block for block in getattr(provenance, "blocks", ()) if block.text.strip()]
+            page_keys = [f"block:{block.block_id}" for block in source_blocks]
+        for (page, text), source_key in zip(pages, page_keys, strict=True):
+            page_chunks = build_chunks_v1(
+                [(page, text)],
+                chunk_size=int(config.get("chunk_size", 1000)),
+                overlap=int(config.get("overlap", 200)),
+            )
+            for chunk in page_chunks:
+                chunk.chunk_index = len(chunks)
+                chunks.append(chunk)
+                source_keys.append(source_key)
+        return chunks, False, (), None, tuple(source_keys)
     if chunker == "v2":
         chunks, llm_used = build_chunks_v2(
             pages,
@@ -325,7 +351,7 @@ def _build_chunks(
         for index, chunk in enumerate(chunks):
             chunk.chunk_index = index
         diagnostics = () if llm_used else ("V2_RULES_ONLY_LLM_NOT_USED",)
-        return chunks, llm_used, diagnostics, None
+        return chunks, llm_used, diagnostics, None, ("document",) * len(chunks)
     raise SourceProvenanceBundleError("CHUNKER_UNSUPPORTED", code="CHUNKER_UNSUPPORTED")
 
 
@@ -460,41 +486,385 @@ def _block_locator(block: Any, media_type: str) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class _SourceBlockRange:
+    """A parser block's half-open interval in one normalized source stream."""
+
+    block: Any
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class _SourceStream:
+    """Normalized source text and the parser blocks that occupy its ranges."""
+
+    key: str
+    text: str
+    blocks: Tuple[_SourceBlockRange, ...]
+    valid: bool = True
+
+
+def _non_empty_source_blocks(provenance: Any) -> List[Any]:
+    return [
+        block
+        for block in getattr(provenance, "blocks", ())
+        if (getattr(block, "text", "") or "").strip()
+    ]
+
+
+def _ordered_pdf_blocks(provenance: Any) -> List[Any]:
+    return sorted(
+        _non_empty_source_blocks(provenance),
+        key=lambda block: (
+            int(block.page),
+            int(getattr(block, "display_ordinal", block.ordinal)),
+        ),
+    )
+
+
+def _stream_with_block_ranges(
+    key: str,
+    text: str,
+    blocks: Sequence[Any],
+    block_texts: Optional[Sequence[str]] = None,
+) -> _SourceStream:
+    """Attach parser blocks to exact occurrences in an already-built stream.
+
+    A block's position is resolved in parser order, not by textual similarity.
+    If a parser/normalizer change means that an expected block is absent from
+    the stream, the stream is marked invalid and all chunks using it fail
+    closed as ``SOURCE_RANGE_UNRESOLVED``.
+    """
+    # Normalize only the mapping copy.  Chunker input/output remains the
+    # parser/chunker text; this haystack must use the same NFKC/whitespace
+    # projection as chunk lookup so ligatures and line endings do not make
+    # otherwise exact ranges appear absent.
+    source = _mapping_text(text or "")
+    cursor = 0
+    ranges: List[_SourceBlockRange] = []
+    mapped_block_texts = (
+        tuple(block_texts)
+        if block_texts is not None
+        else tuple(_mapping_text(getattr(block, "text", "") or "") for block in blocks)
+    )
+    for block, block_text in zip(blocks, mapped_block_texts, strict=True):
+        if not block_text:
+            continue
+        start = source.find(block_text, cursor)
+        if start < 0:
+            return _SourceStream(key=key, text=source, blocks=(), valid=False)
+        end = start + len(block_text)
+        ranges.append(_SourceBlockRange(block=block, start=start, end=end))
+        cursor = end
+    return _SourceStream(key=key, text=source, blocks=tuple(ranges))
+
+
+def _pdf_mapping_block_texts(
+    blocks: Sequence[Any],
+    *,
+    ref_zone: bool,
+    trim_cross_block_hyphenation: bool = True,
+) -> Tuple[str, ...]:
+    """Project PDF blocks with the same page normalization as the source.
+
+    The page chunk projection normalizes the concatenated raw page.  A PDF
+    line-break hyphen can therefore cross a parser block boundary (for
+    example ``transac-`` + ``tion``); trim that one boundary hyphen from the
+    mapping copy only so both sides still occupy exact source intervals.
+    """
+    mapped: List[str] = []
+    for index, block in enumerate(blocks):
+        raw_text = getattr(block, "raw_text", None) or getattr(block, "text", "")
+        block_text = _mapping_text(normalize_text(raw_text, ref_zone=ref_zone))
+        if (
+            trim_cross_block_hyphenation
+            and index + 1 < len(blocks)
+            and re.search(r"(?<=\w)-\n$", raw_text or "")
+            and re.match(r"\w", getattr(blocks[index + 1], "raw_text", None)
+                         or getattr(blocks[index + 1], "text", ""))
+            and block_text.endswith("-")
+        ):
+            block_text = block_text[:-1]
+        mapped.append(block_text)
+    return tuple(mapped)
+
+
+def _source_streams(provenance: Any, chunker: str) -> Tuple[_SourceStream, ...]:
+    """Build the exact normalized source streams consumed by each chunker."""
+    media_type = getattr(provenance, "media_type", "")
+    if media_type == "application/pdf":
+        ordered_blocks = _ordered_pdf_blocks(provenance)
+        if chunker == "v1":
+            pages = _pdf_chunk_pages(provenance)
+            reference_start = _pdf_reference_start(provenance)
+            streams: List[_SourceStream] = []
+            for page, text in pages:
+                page_blocks = [block for block in ordered_blocks if int(block.page) == int(page)]
+                streams.append(
+                    _stream_with_block_ranges(
+                        f"page:{page}",
+                        text,
+                        page_blocks,
+                        _pdf_mapping_block_texts(
+                            page_blocks,
+                            ref_zone=reference_start is not None and page >= reference_start,
+                        ),
+                    )
+                )
+            return tuple(streams)
+
+        pages = _pdf_chunk_pages_v2(provenance)
+        source = "\n\n".join(text for _, text in pages)
+        reference_start = _pdf_reference_start(provenance)
+        block_texts = tuple(
+            _mapping_text(
+                normalize_text(
+                    getattr(block, "raw_text", None) or getattr(block, "text", ""),
+                    ref_zone=reference_start is not None and int(block.page) >= reference_start,
+                )
+            )
+            for block in ordered_blocks
+        )
+        return (
+            _stream_with_block_ranges(
+                "document",
+                source,
+                ordered_blocks,
+                block_texts,
+            ),
+        )
+
+    if media_type == "text/markdown":
+        source_blocks = _non_empty_source_blocks(provenance)
+        if chunker in {"v1", "markdown-block-v1"}:
+            return tuple(
+                _stream_with_block_ranges(
+                    f"block:{block.block_id}",
+                    _mapping_text(block.text),
+                    (block,),
+                )
+                for block in source_blocks
+            )
+        source = "\n\n".join(_mapping_text(block.text) for block in source_blocks)
+        return (_stream_with_block_ranges("document", source, source_blocks),)
+
+    return ()
+
+
+def _exact_positions(source: str, needle: str) -> Tuple[int, ...]:
+    """Return every exact occurrence, including overlapping occurrences."""
+    if not needle:
+        return ()
+    positions: List[int] = []
+    cursor = 0
+    while True:
+        position = source.find(needle, cursor)
+        if position < 0:
+            return tuple(positions)
+        positions.append(position)
+        cursor = position + 1
+
+
+def _unique_exact_position(source: str, needle: str, minimum: int = 0) -> Optional[int]:
+    positions = _exact_positions(source, needle)
+    if len(positions) != 1 or positions[0] < minimum:
+        return None
+    return positions[0]
+
+
+def _map_v1_chunks(
+    chunks: Sequence[dict],
+    stream: _SourceStream,
+    overlap: int,
+) -> Dict[int, Optional[Tuple[Tuple[int, int], ...]]]:
+    """Map v1 chunks to exact source pieces, preserving overlap evidence.
+
+    ``build_chunks_v1`` forms an overlap chunk by concatenating the tail of
+    the preceding source piece with the next piece.  The separator discarded
+    by that concatenation is allowed only when it contains whitespace; the
+    two exact source ranges remain separate evidence intervals.
+    """
+    result: Dict[int, Optional[Tuple[Tuple[int, int], ...]]] = {}
+    previous_piece: Optional[Tuple[str, int, int, str]] = None
+    cursor = 0
+    overlap = max(0, int(overlap))
+    for chunk in chunks:
+        chunk_index = int(chunk["chunk_index"])
+        chunk_text = _mapping_text(chunk.get("text", ""))
+        if not stream.valid or not chunk_text:
+            result[chunk_index] = None
+            previous_piece = None
+            cursor = 0
+            continue
+
+        overlap_text = ""
+        if previous_piece is not None and overlap:
+            # The chunker slices overlap in source code points, while the
+            # mapping copy may expand NFKC ligatures (e.g. ``ﬁ`` -> ``fi``).
+            # Map the raw suffix first so the overlap boundary stays exact.
+            overlap_text = _mapping_text(previous_piece[3][-overlap:])
+        has_overlap = bool(overlap_text and chunk_text.startswith(overlap_text))
+        piece_text = chunk_text[len(overlap_text):] if has_overlap else chunk_text
+        position = _unique_exact_position(stream.text, piece_text, cursor)
+        if position is None or (
+            previous_piece is not None
+            and stream.text[previous_piece[2] : position].strip()
+        ):
+            result[chunk_index] = None
+            previous_piece = None
+            cursor = 0
+            continue
+
+        piece_end = position + len(piece_text)
+        if has_overlap and previous_piece is not None:
+            segments = (
+                (previous_piece[2] - len(overlap_text), previous_piece[2]),
+                (position, piece_end),
+            )
+        else:
+            segments = ((position, piece_end),)
+        result[chunk_index] = segments
+        previous_piece = (piece_text, position, piece_end, chunk.get("text", ""))
+        cursor = piece_end
+    return result
+
+
+def _map_v2_chunks(
+    chunks: Sequence[dict],
+    stream: _SourceStream,
+) -> Dict[int, Optional[Tuple[Tuple[int, int], ...]]]:
+    """Map v2 chunks only when their complete text has one exact occurrence."""
+    result: Dict[int, Optional[Tuple[Tuple[int, int], ...]]] = {}
+    for chunk in chunks:
+        chunk_index = int(chunk["chunk_index"])
+        chunk_text = _mapping_text(chunk.get("text", ""))
+        if not stream.valid or not chunk_text:
+            result[chunk_index] = None
+            continue
+        position = _unique_exact_position(stream.text, chunk_text)
+        result[chunk_index] = (
+            ((position, position + len(chunk_text)),)
+            if position is not None
+            else None
+        )
+    return result
+
+
+def _range_intersection_length(
+    ranges: Sequence[Tuple[int, int]],
+    start: int,
+    end: int,
+) -> int:
+    intersections = sorted(
+        (
+            max(range_start, start),
+            min(range_end, end),
+        )
+        for range_start, range_end in ranges
+        if range_end > start and range_start < end
+    )
+    total = 0
+    merged_end = -1
+    for intersection_start, intersection_end in intersections:
+        if intersection_end <= intersection_start:
+            continue
+        if intersection_start <= merged_end:
+            merged_end = max(merged_end, intersection_end)
+            continue
+        total += intersection_end - intersection_start
+        merged_end = intersection_end
+    return total
+
+
 def _anchors(
     provenance: Any,
     chunks: Sequence[dict],
     chunk_block_ids: Optional[Sequence[str]] = None,
+    chunk_source_keys: Optional[Sequence[str]] = None,
+    overlap: int = int(_DEFAULT_V1_CONFIG["overlap"]),
 ) -> Tuple[Tuple[dict, ...], int, int, Tuple[dict, ...]]:
     media_type = getattr(provenance, "media_type", "")
-    blocks = list(getattr(provenance, "blocks", ()))
     anchors: List[dict] = []
     unmapped_reasons: List[dict] = []
     mapped_indices = set()
     chunker = chunks[0]["chunker"] if chunks else ""
+    streams = {stream.key: stream for stream in _source_streams(provenance, chunker)}
+    if chunk_source_keys is None:
+        if chunker == "v2":
+            chunk_source_keys = ("document",) * len(chunks)
+        elif chunk_block_ids is not None:
+            chunk_source_keys = tuple(f"block:{item}" for item in chunk_block_ids)
+        elif media_type == "application/pdf":
+            chunk_source_keys = tuple(
+                f"page:{chunk.get('page')}" for chunk in chunks
+            )
+        else:
+            chunk_source_keys = ("document",) * len(chunks)
+
+    ranges_by_chunk: Dict[int, Optional[Tuple[Tuple[int, int], ...]]] = {}
+    chunks_by_stream: Dict[str, List[dict]] = {}
+    for chunk, source_key in zip(chunks, chunk_source_keys, strict=True):
+        chunks_by_stream.setdefault(source_key, []).append(chunk)
+    source_key_by_chunk = {
+        int(chunk["chunk_index"]): source_key
+        for chunk, source_key in zip(chunks, chunk_source_keys, strict=True)
+    }
+    if chunker == "v2":
+        stream = streams.get("document")
+        if stream is None:
+            ranges_by_chunk = {int(chunk["chunk_index"]): None for chunk in chunks}
+        else:
+            ranges_by_chunk = _map_v2_chunks(chunks, stream)
+    else:
+        for source_key, grouped_chunks in chunks_by_stream.items():
+            stream = streams.get(source_key)
+            if stream is None:
+                ranges_by_chunk.update(
+                    {int(chunk["chunk_index"]): None for chunk in grouped_chunks}
+                )
+                continue
+            ranges_by_chunk.update(_map_v1_chunks(grouped_chunks, stream, overlap))
+
     for chunk in chunks:
-        candidate_blocks = blocks
-        if chunk_block_ids is not None:
-            block_id = chunk_block_ids[int(chunk["chunk_index"])]
-            candidate_blocks = [block for block in blocks if block.block_id == block_id]
-        scored = [
-            (_match_count(block.text, chunk["text"]), block)
-            for block in candidate_blocks
-        ]
-        scored = [(score, block) for score, block in scored if score > 0]
-        scored.sort(key=lambda item: (-item[0], int(item[1].ordinal), chunker, int(chunk["chunk_index"])))
+        chunk_index = int(chunk["chunk_index"])
+        source_key = source_key_by_chunk[chunk_index]
+        stream = streams.get(source_key)
+        chunk_ranges = ranges_by_chunk.get(chunk_index)
+        scored: List[Tuple[int, Any]] = []
+        if stream is not None and chunk_ranges is not None:
+            for block_range in stream.blocks:
+                score = _range_intersection_length(
+                    chunk_ranges,
+                    block_range.start,
+                    block_range.end,
+                )
+                if score > 0:
+                    scored.append((score, block_range.block))
+        scored.sort(
+            key=lambda item: (
+                -item[0],
+                int(item[1].ordinal),
+                chunker,
+                chunk_index,
+            )
+        )
         if not scored:
             unmapped_reasons.append(
-                {"chunk_index": int(chunk["chunk_index"]), "reason": "NO_SOURCE_BLOCK_OVERLAP"}
+                {
+                    "chunk_index": chunk_index,
+                    "reason": "SOURCE_RANGE_UNRESOLVED",
+                }
             )
             continue
-        mapped_indices.add(int(chunk["chunk_index"]))
+        mapped_indices.add(chunk_index)
         denominator = max(1, len(_mapping_text(chunk["text"])))
         for position, (score, block) in enumerate(scored):
             anchors.append(
                 {
                     "block_id": block.block_id,
-                    "chunk_index": int(chunk["chunk_index"]),
-                    "coverage": round(score / denominator, 6),
+                    "chunk_index": chunk_index,
+                    "coverage": round(min(1.0, score / denominator), 6),
                     "is_primary": position == 0,
                     "locator": _block_locator(block, media_type),
                 }
@@ -523,12 +893,16 @@ def build_source_provenance_bundle(
     _validate_serialized_capacity(bundle_blocks, (), ())
 
     config = _chunker_config(provenance, chunker, chunker_config, llm)
-    chunks, llm_used, diagnostics, chunk_block_ids = _build_chunks(
+    chunks, llm_used, diagnostics, chunk_block_ids, chunk_source_keys = _build_chunks(
         provenance, chunker, config, llm
     )
     chunk_payload_list = [_chunk_payload(chunk, chunker) for chunk in chunks]
     anchors, mapped_count, unmapped_count, unmapped_reasons = _anchors(
-        provenance, chunk_payload_list, chunk_block_ids
+        provenance,
+        chunk_payload_list,
+        chunk_block_ids,
+        chunk_source_keys,
+        int(config.get("overlap", _DEFAULT_V1_CONFIG["overlap"])),
     )
     if getattr(provenance, "media_type", "") == "text/markdown":
         _add_markdown_line_ranges(chunk_payload_list, anchors)
@@ -539,7 +913,7 @@ def build_source_provenance_bundle(
     error = getattr(provenance, "error", None)
     if unmapped_count and status == "ready":
         status = "partial"
-        error = "SOURCE_BLOCK_UNMAPPED"
+        error = "SOURCE_RANGE_UNRESOLVED"
     bundle = SourceProvenanceBundleV1(
         document_id=str(provenance.document_id),
         media_type=str(provenance.media_type),

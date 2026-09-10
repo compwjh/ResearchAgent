@@ -193,7 +193,7 @@
   },
   "properties": {
     "schema_version": { "const": "source-provenance-bundle-v1" },
-    "mapping_algorithm_version": { "const": "source-anchor-v1" },
+    "mapping_algorithm_version": { "const": "source-anchor-v2" },
     "sample_id": { "type": "string" },
     "document_id": { "type": "string", "minLength": 1 },
     "media_type": { "enum": ["application/pdf", "text/markdown"] },

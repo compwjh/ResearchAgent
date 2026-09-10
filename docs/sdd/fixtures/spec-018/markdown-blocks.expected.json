@@ -1,6 +1,6 @@
 {
   "schema_version": "provenance-dto-v1",
-  "mapping_algorithm_version": "source-anchor-v1",
+  "mapping_algorithm_version": "source-anchor-v2",
   "sample_id": "markdown-blocks",
   "document_id": "fixture-markdown-blocks",
   "media_type": "text/markdown",

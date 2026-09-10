@@ -442,6 +442,16 @@ def inspect_document(
                 retryable=True,
                 headers={"Location": f"/api/kb/documents/{document_id}/inspection", "Retry-After": "2"},
             )
+        if getattr(error, "code", "") == "MANIFEST_MAPPING_VERSION_MISMATCH":
+            return _document_error(
+                409,
+                "INDEX_REBUILD_REQUIRED",
+                "检查清单版本已过期，请重建后再打开",
+                request=request,
+                document_id=document_id,
+                chunker=chunker,
+                details={"cause": "MAPPING_VERSION_MISMATCH"},
+            )
         return _document_error(
             503,
             "MANIFEST_FAILED",

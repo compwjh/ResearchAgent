@@ -2,7 +2,7 @@
   "schema_version": "spec-018-task-02-fixture-index-v1",
   "generated_by": "backend-tester",
   "generated_at": "2026-09-08",
-  "mapping_algorithm_version": "source-anchor-v1",
+  "mapping_algorithm_version": "source-anchor-v2",
   "qdrant_fixture_policy": "no fixture writes; real payload read-only fingerprint recorded in report",
   "entries": [
     {

@@ -121,6 +121,7 @@ def test_inspection_ready_pages_all_arrays_and_supports_etag():
         {
             "document_id": "d1",
             "chunker": "v1",
+            "mapping_algorithm_version": "source-anchor-v2",
             "blocks": [{"ordinal": i} for i in range(3)],
             "chunks": [{"chunk_index": i} for i in range(3)],
             "anchors": [{"chunk_index": i} for i in range(3)],
@@ -140,6 +141,22 @@ def test_inspection_ready_pages_all_arrays_and_supports_etag():
     assert len(body["blocks"]) == len(body["chunks"]) == len(body["anchors"]) == 2
     assert body["next_cursor"]
     assert cached.status_code == 304
+
+
+def test_inspection_legacy_mapping_version_is_rebuild_gate():
+    client = TestClient(app)
+    record = {"schema_version": "knowledge-document-v1", "document_id": "d1"}
+    with patch.object(routes_kb, "load_papers_strict", return_value=[record]), patch.object(
+        routes_kb, "_require_generation", return_value=None
+    ), patch.object(
+        routes_kb.InspectionManifestStore,
+        "read",
+        side_effect=routes_kb.ManifestStoreError("MANIFEST_MAPPING_VERSION_MISMATCH", status=409),
+    ):
+        response = client.get("/api/kb/documents/d1/inspection")
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "INDEX_REBUILD_REQUIRED"
+    assert response.json()["details"]["cause"] == "MAPPING_VERSION_MISMATCH"
 
 
 def test_reindex_invalid_body_is_unified_400():

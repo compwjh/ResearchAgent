@@ -20,7 +20,8 @@ from jsonschema import Draft202012Validator, FormatChecker
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _CHUNKERS = {"v1", "v2"}
 _SCHEMA_VERSION = "inspection-manifest-v1"
-_MAPPING_VERSION = "source-anchor-v1"
+MAPPING_ALGORITHM_VERSION = "source-anchor-v2"
+_MAPPING_VERSION = MAPPING_ALGORITHM_VERSION
 
 
 class InspectionError(RuntimeError):
@@ -264,6 +265,8 @@ def build_inspection_manifest(
     bundle_dict = bundle.to_dict() if hasattr(bundle, "to_dict") else dict(bundle)
     if bundle_dict.get("document_id") != document_id:
         raise InspectionError("MANIFEST_DOCUMENT_ID_MISMATCH")
+    if bundle_dict.get("mapping_algorithm_version") != MAPPING_ALGORITHM_VERSION:
+        raise InspectionError("MAPPING_VERSION_MISMATCH")
     source_chunker = str(bundle_dict.get("chunker") or "")
     chunker = "v1" if source_chunker == "markdown-block-v1" else source_chunker
     if chunker not in _CHUNKERS:
@@ -353,6 +356,7 @@ __all__ = [
     "ChunkSnapshot",
     "InspectionError",
     "InspectionManifest",
+    "MAPPING_ALGORITHM_VERSION",
     "SourceAnchor",
     "SourceBlock",
     "build_inspection_manifest",

@@ -53,6 +53,9 @@ class FakeElement {
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   matches(selector) {
     if (selector === '[role="tab"]') return this.getAttribute('role') === 'tab';
+    if (selector === '[data-block-id]') return this.attributes.has('data-block-id');
+    if (selector === '[data-chunk-id]') return this.attributes.has('data-chunk-id');
+    if (selector === '[data-block-ids]') return this.attributes.has('data-block-ids');
     if (selector === 'input[name="kb-inspection-chunker"]') return this.tagName === 'input' && this.getAttribute('name') === 'kb-inspection-chunker';
     if (selector === 'input[name="kb-inspection-chunker"]:checked') return this.matches('input[name="kb-inspection-chunker"]') && this.checked;
     return false;
@@ -118,8 +121,26 @@ async function testTabsPaginationAndSafety() {
   const queue = [
     response(200, { documents: [{ document_id: 'doc-1', file_name: '<unsafe>.md', media_type: 'text/markdown' }], next_cursor: 'docs-2', total: 2 }),
     response(200, { documents: [{ document_id: 'doc-2', file_name: 'second.pdf', media_type: 'application/pdf' }], next_cursor: null, total: 2 }),
-    response(200, { blocks: [{ block_id: 'b1', ordinal: 0, text: '# Safe', locator: {}, heading_path: ['H'], block_type: 'heading' }], chunks: [{ chunker: 'v1', chunk_index: 0, text: '<chunk>' }], anchors: [{ block_id: 'b1', chunker: 'v1', chunk_index: 0 }], next_cursor: 'opaque-1', total: { blocks: 2, chunks: 2, anchors: 2 } }),
-    response(200, { blocks: [], chunks: [], anchors: [], next_cursor: null, total: { blocks: 0, chunks: 0, anchors: 0 } }),
+    response(200, {
+      manifest: { status: 'ready', mapping_algorithm_version: 'source-anchor-v2', mapped_count: 3, unmapped_count: 0 },
+      blocks: [{ block_id: 'b1', ordinal: 0, text: '# Safe', locator: {}, heading_path: ['H'], block_type: 'heading' }],
+      chunks: [{ chunker: 'v2', chunk_index: 0, text: '<chunk 0>' }],
+      anchors: [{ block_id: 'b1', chunker: 'v2', chunk_index: 0, coverage: 0.9, is_primary: true }],
+      next_cursor: 'opaque-1', total: { blocks: 2, chunks: 3, anchors: 3 },
+    }),
+    response(200, {
+      manifest: { status: 'ready', mapping_algorithm_version: 'source-anchor-v2', mapped_count: 3, unmapped_count: 0 },
+      blocks: [{ block_id: 'b2', ordinal: 1, text: 'second', locator: {}, heading_path: [], block_type: 'paragraph' }],
+      chunks: [
+        { chunker: 'v2', chunk_index: 1, text: '<chunk 1>' },
+        { chunker: 'v2', chunk_index: 2, text: '<chunk 2>' },
+      ],
+      anchors: [
+        { block_id: 'b2', chunker: 'v2', chunk_index: 1, coverage: 1, is_primary: true },
+        { block_id: 'b1', chunker: 'v2', chunk_index: 2, coverage: 0.4, is_primary: false },
+      ],
+      next_cursor: null, total: { blocks: 2, chunks: 3, anchors: 3 },
+    }),
   ];
   const harness = makeHarness(async (url, options) => { calls.push({ url, options }); return queue.shift(); });
   const { elements, documentRef, v1, v2 } = harness;
@@ -133,30 +154,39 @@ async function testTabsPaginationAndSafety() {
   assert.ok(calls[0].url.includes('/api/kb/documents?limit=100'));
   assert.ok(calls[1].url.includes('cursor=docs-2'));
   elements['kb-inspection-document'].value = 'doc-1';
+  v1.checked = false;
+  v2.checked = true;
   elements['kb-inspection-document'].dispatch('change');
   await flush(); await flush();
-  assert.equal(calls.length, 3);
-  assert.ok(calls[2].url.includes('chunker=v1'));
+  assert.equal(calls.length, 4);
+  assert.ok(calls[2].url.includes('chunker=v2'));
   assert.ok(calls[2].url.includes('page_size=500'));
+  assert.ok(calls[3].url.includes('cursor=opaque-1'));
   assert.equal(calls.every(({ options }) => !options.method), true);
   assert.equal(elements['kb-inspection-maintenance'].hidden, true);
   assert.equal(elements['kb-inspection-error'].hidden, true);
-  assert.equal(elements['kb-chunk-content'].childNodes.length, 2);
+  assert.equal(elements['kb-chunk-content'].childNodes.length, 4);
   const chunkItems = elements['kb-chunk-content'].childNodes.filter((node) => node.className === 'kb-chunk-item');
-  assert.equal(chunkItems.length, 1);
-  assert.equal(chunkItems[0].getAttribute('data-chunk-id'), 'v1:0');
+  assert.equal(chunkItems.length, 3);
+  assert.equal(chunkItems[0].getAttribute('data-chunk-id'), 'v2:0');
   assert.equal(chunkItems[0].getAttribute('data-block-ids'), 'b1');
+  assert.equal(chunkItems[2].getAttribute('data-block-ids'), 'b1');
+  assert.equal(elements['kb-inspection-loading'].textContent, '正在加载定位关系：已获取 3 / 约 3');
+  assert.equal(elements['kb-chunk-status'].textContent.includes('首批'), false);
   assert.equal(elements['kb-chunk-empty'].parentNode, elements['kb-chunk-content']);
   assert.equal(elements['kb-chunk-empty'].hidden, true);
-  assert.equal(elements['kb-source-markdown'].childNodes.length, 1);
+  assert.equal(elements['kb-source-markdown'].childNodes.length, 2);
   assert.equal(documentRef.activeElement, null);
+  const sourceBlock = elements['kb-source-markdown'].childNodes.find((node) => node.getAttribute('data-block-id') === 'b1');
+  sourceBlock.dispatch('click');
+  assert.deepEqual(
+    chunkItems.filter((node) => node.getAttribute('data-active') === 'true').map((node) => node.getAttribute('data-chunk-id')),
+    ['v2:0', 'v2:2'],
+  );
   elements['kb-inspection-chunk-tab'].dispatch('click');
   assert.equal(elements['kb-inspection-layout'].getAttribute('data-active-pane'), 'chunks');
   elements['kb-inspection-chunk-tab'].dispatch('keydown', { key: 'ArrowLeft' });
   assert.equal(elements['kb-inspection-layout'].getAttribute('data-active-pane'), 'source');
-  v1.checked = false; v2.checked = true; v2.dispatch('change');
-  await flush();
-  assert.ok(calls[3].url.includes('chunker=v2'));
 }
 
 async function testMaintenanceAndCancellation() {
@@ -172,6 +202,8 @@ async function testMaintenanceAndCancellation() {
   assert.equal(elements['kb-inspection-maintenance'].hidden, false);
   assert.equal(elements['kb-inspection-error'].hidden, true);
   assert.equal(elements['kb-inspection-error'].textContent.includes('<unsafe message>'), false);
+  assert.equal(harness.controller.state.chunkRows.length, 0);
+  assert.equal(calls.length, 2);
   assert.equal(calls.some(({ url }) => url.includes('/reindex')), false);
 
   const pending = [];

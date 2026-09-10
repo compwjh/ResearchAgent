@@ -324,11 +324,7 @@
     };
 
     const CHUNK_BATCH_SIZE = 100;
-    // Hotfix: a large PDF can have tens of thousands of anchor relations.
-    // Render the first useful inspection batch immediately instead of waiting
-    // for the browser to serially download every relation page.
     const INSPECTION_INITIAL_PAGE_SIZE = 500;
-    const MAX_VISIBLE_ANCHORS = 3;
 
     function isActive(sequence) { return state.sequence === sequence; }
 
@@ -1070,11 +1066,9 @@
       const mapping = documentRef.createElement('p');
       mapping.className = unmappedReason ? 'kb-chunk-warning' : 'kb-chunk-mapping';
       mapping.setAttribute('role', 'status');
-      const visibleAnchors = anchorRelations.slice(0, MAX_VISIBLE_ANCHORS);
-      const hiddenAnchorCount = Math.max(0, anchorRelations.length - visibleAnchors.length);
       mapping.textContent = unmappedReason
         ? `未映射：${unmappedReason}`
-        : `${visibleAnchors.map((anchor) => `${anchor.block_id} · coverage ${anchor.coverage} · ${anchor.is_primary ? '主定位' : '关联'}`).join('；')}${hiddenAnchorCount ? `；另有 ${hiddenAnchorCount} 条关联` : ''}`;
+        : anchorRelations.map((anchor) => `${anchor.block_id} · coverage ${anchor.coverage} · ${anchor.is_primary ? '主定位' : '关联'}`).join('；');
       item.append(meta, text, mapping);
       bindChunkInteraction(item);
       return item;
@@ -1095,7 +1089,7 @@
       }
     }
 
-    function renderChunks(version, chunks, anchors, manifest = {}, truncated = false) {
+    function renderChunks(version, chunks, anchors, manifest = {}) {
       clearChildren(chunkContent);
       if (chunkEmpty) chunkContent?.appendChild(chunkEmpty);
       if (chunkMeta) chunkMeta.textContent = `${version} · ${chunks.length} 个切片`;
@@ -1104,10 +1098,7 @@
       const unmappedCount = Number.isInteger(manifest?.unmapped_count) ? manifest.unmapped_count : 0;
       const status = String(manifest?.status || 'ready');
       if (chunkStatus) {
-        if (truncated) {
-          chunkStatus.textContent = `${status} · 已加载首批定位，其余映射暂未加载`;
-          chunkStatus.setAttribute('data-status', 'partial');
-        } else if (status === 'partial' || unmappedCount > 0) {
+        if (status === 'partial' || unmappedCount > 0) {
           const mappedLabel = mappedCount === null ? '部分' : `${mappedCount}/${chunks.length}`;
           const reasons = Object.keys(manifest?.unmapped_reasons || {}).join('、') || 'UNMAPPED';
           chunkStatus.textContent = `partial · 已映射 ${mappedLabel} · 未映射 ${unmappedCount} · 原因 ${reasons}`;
@@ -1163,14 +1154,13 @@
         return;
       }
       const request = beginRequest();
-      showLoading('正在加载检查清单…');
+      showLoading('正在加载定位关系：已获取 0');
       const blocks = [];
       const chunks = [];
       const anchors = [];
       let manifest = {};
       let cursor = null;
       let pageCount = 0;
-      let truncated = false;
       let lastEtag = null;
       const cacheKey = `${documentId}|${version}`;
       const cachedInspection = state.inspectionCache.get(cacheKey);
@@ -1183,7 +1173,7 @@
           });
           if (cursor) params.set('cursor', cursor);
           const url = `/api/kb/documents/${encodeURIComponent(documentId)}/inspection?${params.toString()}`;
-          const headers = !cursor && cachedInspection?.etag
+          const headers = !cursor && cachedInspection?.complete === true && cachedInspection?.etag
             ? { 'If-None-Match': cachedInspection.etag }
             : undefined;
           const response = await fetchImpl(url, { signal: request.signal, ...(headers ? { headers } : {}) });
@@ -1194,12 +1184,15 @@
               showError({ code: 'INSPECTION_CACHE_MISS_304', message: '检查清单缓存不可用，无法处理 304。' });
               return;
             }
+            if (cachedInspection.complete !== true) {
+              showError({ code: 'INSPECTION_CACHE_INCOMPLETE', message: '检查清单缓存不完整，请重新加载。' });
+              return;
+            }
             blocks.push(...cachedInspection.blocks);
             chunks.push(...cachedInspection.chunks);
             anchors.push(...cachedInspection.anchors);
             manifest = cachedInspection.manifest || {};
             lastEtag = cachedInspection.etag || null;
-            truncated = cachedInspection.truncated === true;
             cursor = null;
             break;
           }
@@ -1225,17 +1218,20 @@
           if (payload && payload.manifest && typeof payload.manifest === 'object') manifest = payload.manifest;
           lastEtag = responseHeader(response, 'ETag') || lastEtag;
           cursor = payload?.next_cursor || null;
-          truncated = Boolean(cursor);
           pageCount += 1;
           if (pageCount > 10000) {
             showError({ code: 'PAGINATION_LIMIT', message: '检查清单分页超过安全上限' });
             return;
           }
-          // A complete anchor graph can be very large. Do not block first
-          // paint on every page; the full on-demand mapping protocol follows.
-          cursor = null;
+          const totalAnchors = Number(payload?.total?.anchors);
+          const totalLabel = Number.isFinite(totalAnchors) && totalAnchors >= 0 ? ` / 约 ${totalAnchors}` : '';
+          if (loading) loading.textContent = `正在加载定位关系：已获取 ${anchors.length}${totalLabel}`;
         } while (cursor);
         if (!isActive(request.sequence)) return;
+        if (manifest?.mapping_algorithm_version && manifest.mapping_algorithm_version !== 'source-anchor-v2') {
+          showMaintenance('INDEX_REBUILD_REQUIRED');
+          return;
+        }
         await renderSource(documentValue, blocks, request.sequence);
         if (!isActive(request.sequence)) return;
         // A PDF renderer failure must not hide already verified index chunks.
@@ -1248,9 +1244,9 @@
           anchors: anchors.slice(),
           manifest,
           etag: lastEtag,
-          truncated,
+          complete: true,
         });
-        renderChunks(version, chunks, anchors, manifest, truncated);
+        renderChunks(version, chunks, anchors, manifest);
         if (!sourceRenderFailed) resetStates();
       } catch (caught) {
         if (caught?.name === 'AbortError' || !isActive(request.sequence)) return;

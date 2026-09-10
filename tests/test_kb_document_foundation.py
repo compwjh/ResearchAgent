@@ -12,6 +12,7 @@ from backend.app.knowledge_base.infrastructure.document_read import (
     validate_source_bytes,
 )
 from backend.app.knowledge_base.infrastructure.inspection import (
+    MAPPING_ALGORITHM_VERSION,
     InspectionError,
     build_inspection_manifest,
 )
@@ -21,11 +22,11 @@ from backend.app.knowledge_base.infrastructure.manifest_store import (
     ManifestStoreError,
 )
 from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
-from backend.app.knowledge_base.infrastructure.parse import extract_pdf_provenance
 from backend.app.knowledge_base.infrastructure.migration import (
     build_import_knowledge_document,
     write_import_knowledge_document,
 )
+from backend.app.knowledge_base.infrastructure.parse import extract_pdf_provenance
 from backend.app.knowledge_base.infrastructure.provenance import build_source_provenance_bundle
 from backend.app.knowledge_base.infrastructure.store import new_record
 
@@ -113,6 +114,7 @@ def test_inspection_manifest_uses_real_payloads_without_index_writes(tmp_path):
     manifest = _markdown_manifest(tmp_path)
     value = manifest.to_dict()
     assert value["schema_version"] == "inspection-manifest-v1"
+    assert value["mapping_algorithm_version"] == MAPPING_ALGORITHM_VERSION
     assert value["chunker"] == "v1"
     assert value["status"] in {"ready", "partial"}
     assert value["chunks"]
@@ -170,6 +172,36 @@ def test_inspection_rejects_legacy_payload_without_source_hash(tmp_path):
             [{**bundle.chunks[0], "document_id": "md-2", "chunker": "v1"}],
         )
     assert error.value.code == "INDEX_REBUILD_REQUIRED"
+
+
+def test_inspection_rejects_legacy_source_anchor_bundle(tmp_path):
+    manifest = _markdown_manifest(tmp_path).to_dict()
+    manifest["mapping_algorithm_version"] = "source-anchor-v1"
+    with pytest.raises(ManifestStoreError) as error:
+        InspectionManifestStore(tmp_path / "data" / "kb").write(manifest)
+    assert error.value.code == "MANIFEST_MAPPING_VERSION_MISMATCH"
+
+    store = InspectionManifestStore(tmp_path / "stale" / "data" / "kb")
+    stale_path = store.path("md-1", "v1")
+    stale_path.parent.mkdir(parents=True)
+    stale_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ManifestStoreError) as error:
+        store.read("md-1", "v1")
+    assert error.value.code == "MANIFEST_MAPPING_VERSION_MISMATCH"
+
+
+def test_inspection_build_rejects_mapping_version_mismatch(tmp_path):
+    source = b"# Heading\n"
+    digest = hashlib.sha256(source).hexdigest()
+    provenance = extract_markdown_provenance(source, document_id="md-legacy", source_sha256=digest)
+    bundle = build_source_provenance_bundle(provenance, chunker="markdown-block-v1").to_dict()
+    bundle["mapping_algorithm_version"] = "source-anchor-v1"
+    with pytest.raises(InspectionError, match="MAPPING_VERSION_MISMATCH"):
+        build_inspection_manifest(
+            {"document_id": "md-legacy", "source_sha256": digest},
+            bundle,
+            [{**bundle["chunks"][0], "document_id": "md-legacy", "chunker": "v1", "source_sha256": digest}],
+        )
 
 
 def test_manifest_claim_is_single_owner_and_tombstone_blocks_read(tmp_path):

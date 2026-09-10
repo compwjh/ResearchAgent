@@ -31,7 +31,7 @@ fi
 
 # 端口占用预检：避免静默启动失败
 if command -v lsof >/dev/null 2>&1; then
-  if lsof -ti:"$PORT" >/dev/null 2>&1; then
+  if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "端口 $PORT 已被占用，请先停止占用进程（./deploy/stop.sh）再启动。" >&2
     exit 1
   fi
