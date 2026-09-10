@@ -375,6 +375,33 @@ def test_inspection_missing_manifest_queues_reindex_for_canonical_document(tmp_p
     assert not (tmp_path / "manifests" / "d1" / "v1.claim").exists()
 
 
+def test_inspection_repeated_get_keeps_polling_when_reindex_is_running(tmp_path: Path):
+    client = TestClient(app)
+    record = {
+        "schema_version": "knowledge-document-v1",
+        "document_id": "d1",
+        "source_sha256": "a" * 64,
+        "chunkers": {"v2": {"status": "indexing", "progress": 37}},
+    }
+    queued = [
+        {"task_id": "reindex-1", "submitted": {"v2": True}},
+        {"task_id": "reindex-1", "submitted": {"v2": False}},
+    ]
+    with patch.object(routes_kb, "KB_DIR", tmp_path), patch.object(
+        routes_kb, "load_papers_strict", return_value=[record]
+    ), patch.object(routes_kb, "_require_generation", return_value=None), patch.object(
+        routes_kb.InspectionManifestStore,
+        "read",
+        side_effect=routes_kb.ManifestStoreError("MANIFEST_NOT_FOUND", status=404),
+    ), patch.object(routes_kb, "submit_document_reindex", side_effect=queued):
+        first = client.get("/api/kb/documents/d1/inspection?chunker=v2")
+        second = client.get("/api/kb/documents/d1/inspection?chunker=v2")
+    assert first.status_code == second.status_code == 202
+    assert second.json()["error_code"] == "INSPECTION_BUILDING"
+    assert second.json()["task_id"] == first.json()["task_id"]
+    assert second.json()["progress"] == 37
+
+
 def test_inspection_ready_pages_all_arrays_and_supports_etag():
     client = TestClient(app)
     record = {"schema_version": "knowledge-document-v1", "document_id": "d1"}

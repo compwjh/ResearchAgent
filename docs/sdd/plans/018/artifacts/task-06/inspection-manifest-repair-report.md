@@ -48,6 +48,27 @@ full_regression=not-run-by-request
 
 按用户要求未运行全量回归测试，也未执行真实 Qdrant 全库重建。
 
+## 追加修复：重复 inspection GET 的轮询状态
+
+运行时验证发现：首次 GET 已提交 v2 重建后，任务仍运行期间再次 GET 会得到 `submitted=False`。原逻辑把该正常的重复查询返回为 409 `INDEX_ALREADY_RUNNING`，前端因而停止轮询。
+
+已在 `backend/app/api/routes_kb.py` 修复：
+
+- 同一版本任务已运行时继续返回 202 `INSPECTION_BUILDING`；
+- 复用稳定的 inspection `task_id`；
+- 从 canonical metadata 的 chunker 状态读取并返回当前 progress；
+- 保留 `Location`、`Retry-After: 2` 和 generation gate；
+- legacy 无 source hash 的 claim 兼容分支不变。
+
+追加验证：
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `python -m py_compile backend/app/api/routes_kb.py` | 0 | 通过 |
+| `.venv/bin/ruff check backend/app/api/routes_kb.py tests/test_kb_document_routes.py` | 0 | `All checks passed!` |
+| `git diff --check` | 0 | 通过 |
+| `.venv/bin/python -m pytest -q tests/test_kb_document_routes.py tests/test_kb_document_reindex.py` | 0 | **42 passed** |
+
 ## 风险与停止条件
 
 - 现有旧记录若没有 `source_sha256`，仍不会被自动伪造 manifest；需完成正式迁移或显式重建后才可进入 source-anchor-v2 检查器。

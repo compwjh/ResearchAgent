@@ -282,6 +282,23 @@ def _canonical_source_is_indexable(document_id: str) -> bool:
     )
 
 
+def _inspection_chunker_progress(document_id: str, chunker: str) -> int:
+    """Read the best-known progress for an already queued rebuild."""
+    try:
+        records = load_papers_strict()
+    except Exception:
+        return 0
+    for item in records:
+        if not isinstance(item, dict) or (item.get("document_id") or item.get("paper_id")) != document_id:
+            continue
+        state = item.get("chunkers", {}).get(chunker) if isinstance(item.get("chunkers"), dict) else None
+        try:
+            return max(0, min(100, int((state or {}).get("progress", 0))))
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
 def _generation_store() -> Any:
     # FinalizeBundleStore receives the repository root; its live root is
     # ``data/kb``.  The inspection store receives that live root directly.
@@ -580,16 +597,22 @@ def inspect_document(
                     )
                 submitted = queued.get("submitted", {}) if isinstance(queued, dict) else {}
                 if not isinstance(submitted, dict) or not submitted or not all(submitted.values()):
+                    # A repeated inspection GET is a poll, not a conflict:
+                    # the single-worker reindex task is already producing the
+                    # manifest.  Keep the deterministic inspection task id so
+                    # the frontend can continue its normal polling loop.
                     return _document_error(
-                        409,
-                        "INDEX_ALREADY_RUNNING",
-                        "检查清单构建任务已有相同版本运行中",
+                        202,
+                        "INSPECTION_BUILDING",
+                        "检查清单正在生成",
                         request=request,
                         document_id=document_id,
                         chunker=chunker,
                         task_id=task_id,
-                        operation_status="running",
-                        progress=0,
+                        operation_status="building",
+                        progress=_inspection_chunker_progress(document_id, chunker),
+                        retryable=True,
+                        headers={"Location": f"/api/kb/documents/{document_id}/inspection", "Retry-After": "2"},
                     )
             else:
                 try:
