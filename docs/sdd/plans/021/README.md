@@ -17,7 +17,8 @@
 | 02 | 后端：批次入队即返回 + 后台单飞执行 + 启动恢复 | [task-02-backend-async-batch-runner.md](./task-02-backend-async-batch-runner.md) | 01 | 已完成（待评审） |
 | 03 | 后端：`KB_STORAGE_LOCKED` 语义、单条目重试路由与唯一索引冲突可读化 | [task-03-backend-error-semantics-and-item-retry.md](./task-03-backend-error-semantics-and-item-retry.md) | 02 | 进行中 |
 | 04 | 前端：真实轮询进度、取消与软超时提示 | [task-04-frontend-progress-cancel-timeout.md](./task-04-frontend-progress-cancel-timeout.md) | 03 | 待执行 |
-| 05 | 评审、部署与复盘 | [task-05-review-deploy-retro.md](./task-05-review-deploy-retro.md) | 02,03,04 | 待执行 |
+| 05 | 评审、部署与复盘 | [task-05-review-deploy-retro.md](./task-05-review-deploy-retro.md) | 02,03,04 | 完成 |
+| 06 | 释放终态条目占用的唯一索引（迁移 + 重新导入去重） | [task-06-release-title-uniqueness.md](./task-06-release-title-uniqueness.md) | 03 | 完成 |
 
 ## 执行约定
 

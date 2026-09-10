@@ -81,6 +81,27 @@ def _setup(monkeypatch, tmp_path, importer):
     return service, browser
 
 
+def _wait_for_batch_status(client, path, predicate, *, attempts=200, interval=0.01):
+    """按谓词轮询批次状态，直到**批次聚合状态与条目状态同时**稳定满足条件。
+
+    背景（既有 flaky，非本轮引入）：后台 runner 跑在模块级共享的
+    ``ThreadPoolExecutor(max_workers=3)``（paper_import_batch_service.py:60）上，
+    批次聚合行 ``state`` 与条目 ``state`` 由 store 的两次独立判读得出，读到的快照
+    可能是「条目已终态、批次聚合尚未刷新（仍为 running）」的中间态。只等条目会让
+    紧随其后的批次断言在全量套件的调度抖动下偶发失败。
+
+    因此统一用 ``predicate(status)`` 同时约束批次聚合状态与条目状态，消除该窗口；
+    谓词仍是对同一份服务端响应快照的断言，不改变用例语义，也不引入裸 sleep 等待。
+    """
+    status = None
+    for _ in range(attempts):
+        status = client.get(path).json()
+        if predicate(status):
+            return status
+        time.sleep(interval)
+    return status
+
+
 def test_batch_create_rejects_client_urls_with_stable_error(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path, lambda *_args: PaperImportResult("paper-1", "safe.pdf", "indexed"))
     response = TestClient(app).post(
@@ -109,15 +130,17 @@ def test_batch_status_and_resume_use_server_snapshot(monkeypatch, tmp_path):
     )
     assert created.status_code == 200
     # Create returns queued immediately; the background runner drives the item
-    # to waiting_login.  Poll until the first tick of progress is visible.
+    # to waiting_login.  Poll until the first tick of progress is visible —
+    # the item CAS and the batch aggregation are two independent reads, so wait
+    # for both to settle on waiting_login before asserting the snapshot.
     assert created.json()["status"] == "queued"
     batch_id = created.json()["batch_id"]
-    status = created.json()
-    for _ in range(200):
-        status = client.get(f"/api/papers/import-batches/{batch_id}").json()
-        if status["items"][0]["status"] == "waiting_login":
-            break
-        time.sleep(0.01)
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/import-batches/{batch_id}",
+        lambda body: body["items"][0]["status"] == "waiting_login"
+        and body["status"] == "waiting_login",
+    )
     assert status["status"] == "waiting_login"
     assert status["items"][0]["status"] == "waiting_login"
     item_id = status["items"][0]["item_id"]
@@ -151,12 +174,11 @@ def test_cancel_and_retry_routes_keep_stable_state_errors(monkeypatch, tmp_path)
     batch_id = created.json()["batch_id"]
     # Create now returns queued immediately; poll until the background run finishes.
     assert created.json()["status"] == "queued"
-    status = created.json()
-    for _ in range(200):
-        status = client.get(f"/api/papers/import-batches/{batch_id}").json()
-        if status["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/import-batches/{batch_id}",
+        lambda body: body["status"] in {"completed", "failed", "partial_success"},
+    )
     assert status["status"] == "completed"
     cancelled = client.post(f"/api/papers/import-batches/{batch_id}/cancel")
     assert cancelled.status_code == 400
@@ -222,12 +244,12 @@ def test_batch_create_returns_queued_and_completes_via_polling(monkeypatch, tmp_
     assert body["status"] == "queued"
     assert all(item["status"] == "queued" for item in body["items"])
     batch_id = body["batch_id"]
-    status = body
-    for _ in range(200):
-        status = client.get(f"/api/papers/imports/{batch_id}").json()
-        if status["status"] in {"completed", "failed", "partial_success", "waiting_login"}:
-            break
-        time.sleep(0.01)
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_id}",
+        lambda payload: payload["status"] == "completed"
+        and payload["items"][0]["status"] == "completed",
+    )
     assert status["status"] == "completed"
     assert status["items"][0]["status"] == "completed"
 
@@ -336,12 +358,12 @@ def test_item_retry_route_requeues_failed_item_and_returns_batch(monkeypatch, tm
         "/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1", "candidate-2"]}
     )
     batch_id = created.json()["batch_id"]
-    status = created.json()
-    for _ in range(200):
-        status = client.get(f"/api/papers/imports/{batch_id}").json()
-        if status["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_id}",
+        lambda body: body["status"] in {"completed", "failed", "partial_success"}
+        and any(item["status"] == "failed" for item in body["items"]),
+    )
     failed = next(item for item in status["items"] if item["status"] == "failed")
     assert failed["error_code"] == "DOWNLOAD_TIMEOUT"
 
@@ -353,12 +375,16 @@ def test_item_retry_route_requeues_failed_item_and_returns_batch(monkeypatch, tm
     other = next(item for item in resp.json()["items"] if item["candidate_id"] == "candidate-2")
     assert other["status"] == "completed"
 
-    for _ in range(200):
-        status = client.get(f"/api/papers/imports/{batch_id}").json()
-        target = next(item for item in status["items"] if item["item_id"] == failed["item_id"])
-        if target["status"] in {"completed", "failed"}:
-            break
-        time.sleep(0.01)
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_id}",
+        lambda body: body["status"] == "completed"
+        and next(
+            item for item in body["items"] if item["item_id"] == failed["item_id"]
+        )["status"]
+        == "completed",
+    )
+    target = next(item for item in status["items"] if item["item_id"] == failed["item_id"])
     assert target["status"] == "completed"
     assert attempts["candidate-1"] == 2
     assert attempts["candidate-2"] == 1
@@ -370,12 +396,11 @@ def test_item_retry_route_rejects_non_failed_item(monkeypatch, tmp_path):
     client = TestClient(app)
     created = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})
     batch_id = created.json()["batch_id"]
-    status = created.json()
-    for _ in range(200):
-        status = client.get(f"/api/papers/imports/{batch_id}").json()
-        if status["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_id}",
+        lambda body: body["status"] in {"completed", "failed", "partial_success"},
+    )
     item_id = status["items"][0]["item_id"]
     resp = client.post(f"/api/papers/import-items/{item_id}/retry")
     assert resp.status_code == 400
@@ -431,12 +456,13 @@ def test_storage_locked_import_sets_item_error_code_via_api(monkeypatch, tmp_pat
     created = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})
     assert created.status_code == 200
     batch_id = created.json()["batch_id"]
-    status = created.json()
-    for _ in range(200):
-        status = client.get(f"/api/papers/imports/{batch_id}").json()
-        if status["items"][0]["status"] in {"completed", "failed"}:
-            break
-        time.sleep(0.01)
+    # 条目进入终态与批次聚合刷新是两次独立判读，等两者同时收敛再断言。
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_id}",
+        lambda body: body["items"][0]["status"] in {"completed", "failed"}
+        and body["status"] in {"completed", "failed", "partial_success"},
+    )
     item = status["items"][0]
     assert item["status"] == "failed"
     assert item["error_code"] == KB_STORAGE_LOCKED
@@ -491,12 +517,13 @@ def test_item_retry_route_hits_active_duplicate_title_returns_409(monkeypatch, t
     created_b = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-b"]})
     assert created_b.status_code == 200
     batch_b = created_b.json()["batch_id"]
-    status_b = created_b.json()
-    for _ in range(200):
-        status_b = client.get(f"/api/papers/imports/{batch_b}").json()
-        if status_b["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
+    status_b = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_b}",
+        lambda body: body["status"] == "failed"
+        and next(it for it in body["items"] if it["status"] == "failed")["error_code"]
+        == "DOWNLOAD_TIMEOUT",
+    )
     failed_b = next(it for it in status_b["items"] if it["status"] == "failed")
     assert failed_b["error_code"] == "DOWNLOAD_TIMEOUT"
 
@@ -547,12 +574,13 @@ def test_batch_retry_route_hits_active_duplicate_title_returns_409(monkeypatch, 
     created_b = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-b"]})
     assert created_b.status_code == 200
     batch_b = created_b.json()["batch_id"]
-    status_b = created_b.json()
-    for _ in range(200):
-        status_b = client.get(f"/api/papers/imports/{batch_b}").json()
-        if status_b["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
+    status_b = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_b}",
+        lambda body: body["status"] == "failed"
+        and next(it for it in body["items"] if it["status"] == "failed")["error_code"]
+        == "DOWNLOAD_TIMEOUT",
+    )
     assert next(it for it in status_b["items"] if it["status"] == "failed")["error_code"] == "DOWNLOAD_TIMEOUT"
 
     created_a = client.post("/api/papers/imports", json={"search_id": "search-2", "candidate_ids": ["candidate-a"]})
@@ -580,12 +608,12 @@ def test_completed_item_no_longer_blocks_new_batch_via_api(monkeypatch, tmp_path
     first = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})
     assert first.status_code == 200
     batch_id = first.json()["batch_id"]
-    status = first.json()
-    for _ in range(200):
-        status = client.get(f"/api/papers/imports/{batch_id}").json()
-        if status["status"] in {"completed", "failed", "partial_success"}:
-            break
-        time.sleep(0.01)
+    status = _wait_for_batch_status(
+        client,
+        f"/api/papers/imports/{batch_id}",
+        lambda body: body["status"] == "completed"
+        and body["items"][0]["status"] == "completed",
+    )
     assert status["status"] == "completed"
 
     second = client.post("/api/papers/imports", json={"search_id": "search-1", "candidate_ids": ["candidate-1"]})

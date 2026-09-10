@@ -135,7 +135,7 @@
 | 03 | 后端：`KB_STORAGE_LOCKED` 语义、单条目重试路由与唯一索引冲突可读化 | [`task-03-backend-error-semantics-and-item-retry.md`](../plans/021/task-03-backend-error-semantics-and-item-retry.md) | 02 | 完成 |
 | 04 | 前端：真实轮询进度、取消与软超时提示 | [`task-04-frontend-progress-cancel-timeout.md`](../plans/021/task-04-frontend-progress-cancel-timeout.md) | 03 | 完成 |
 | 05 | 评审、部署与复盘 | [`task-05-review-deploy-retro.md`](../plans/021/task-05-review-deploy-retro.md) | 02,03,04 | 完成 |
-| 06 | 后端：释放已完成/失败/取消条目占用的唯一索引（迁移 + 重新导入去重） | [`task-06-release-title-uniqueness.md`](../plans/021/task-06-release-title-uniqueness.md) | 03 | 进行中 |
+| 06 | 后端：释放已完成/失败/取消条目占用的唯一索引（迁移 + 重新导入去重） | [`task-06-release-title-uniqueness.md`](../plans/021/task-06-release-title-uniqueness.md) | 03 | 完成 |
 
 > 建议执行顺序的前置：**spec-020 / Task06（BUG-04）先行**，它修的是前端相位死锁与重试可见性，属即时止损，与本 spec 的后端异步化不冲突。
 
@@ -144,7 +144,7 @@
 - 需求评审：`docs/sdd/reviews/021-requirement-review.md`（**通过（APPROVE）**；首轮打回 0 P0 / 3 P1 / 5 P2，3 条 P1 已由架构师修订 spec 文本与 `plans/021/task-06` 后经 `architect` 定向复审闭环，残余 P2 见该文件「复审结论」段）
 - 技术评审：`docs/sdd/reviews/021-tech-review.md`（**通过（APPROVE）**，`backend-reviewer`；0 CRITICAL / 0 HIGH，3 LOW + 1 INFO 已记录）
 - 前端评审：`docs/sdd/reviews/021-frontend-review.md`（首轮**打回** P1 → 修复后复审**通过（Approve）**，`frontend-reviewer`）
-- 验收评审：`docs/sdd/reviews/021-acceptance-review.md`（**通过**；`tester` 子代理 429 限流 → 主模型代行，报告头部已标注「代行（原因）」，开发主管签字栏填「架构师（主会话）代签」）
+- 验收评审：`docs/sdd/reviews/021-acceptance-review.md`（**通过**；Task02–05 段因 `tester` 子代理 429 限流由主模型代行，报告头部已标注「代行（原因）」；**Task06 补充验收由 `tester` 独立执行并通过**：真实库 v1→v2、已入库论文重新导入 200→completed 复用 `paper_id` 且无重复落盘、活跃态重复提交仍 409、前端 `?v=25` 与 22 passed、全量 830 passed 0 failed。签字栏：架构师（主会话）代签）
 
 ## 变更日志（Changelog）
 

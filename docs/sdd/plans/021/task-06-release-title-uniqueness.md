@@ -1,11 +1,11 @@
 > 关联：[spec-021 论文导入异步化与进度反馈](../../specs/021-paper-import-async-progress.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03；当前状态：`进行中`
+> 依赖：任务 03；当前状态：`完成`
 
 # Task06 释放已完成/失败/取消条目占用的唯一索引
 
 ## 状态与一句话目标
 
-`进行中`。把 `import_item_title` 部分唯一索引的占位范围收缩为**仅活跃态**，让已完成 / 失败 / 取消的条目不再阻塞同一论文的重新导入与重试；去重职责交给知识库既有 `find_existing`（`PAPER_ALREADY_EXISTS` / `existing`）。
+`完成`。把 `import_item_title` 部分唯一索引的占位范围收缩为**仅活跃态**，让已完成 / 失败 / 取消的条目不再阻塞同一论文的重新导入与重试；去重职责交给知识库既有 `find_existing`（`PAPER_ALREADY_EXISTS` / `existing`）。
 
 ## 背景与决策
 

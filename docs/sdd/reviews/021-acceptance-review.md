@@ -71,3 +71,140 @@ GET  → state=completed（created 13:22:35 → updated 13:22:53）
 
 - 测试（架构师代行，非独立测试执行）：2026-09-10
 - 开发主管签字：**架构师（主会话）代签**（子代理 429 限流，已三处留痕）
+
+---
+
+# 补充：Task06（释放终态条目唯一索引）验收
+
+> 由 `tester`（跨端验收总控）出具。分支 `fix/spec-021-import-async-progress`，相关提交 `ae749fa`（Task06）+ 后续 flaky 修复。服务实例 `http://127.0.0.1:8123`（后端最新代码、已重启、真实库已完成 v1→v2 迁移）。
+> 系统时间（UTC）实测 `2026-09-10T17:48Z`，环境唯一未过期搜索会话为 `87a2f82578fb4102a7f98f18a05acd7d`（expires 2026-09-10T19:46:41Z）。
+
+## 1. 真实库迁移核验
+
+**命令**
+```bash
+sqlite3 data/paper_search/state.sqlite3 "SELECT version FROM paper_import_schema_meta;"
+sqlite3 data/paper_search/state.sqlite3 "SELECT sql FROM sqlite_master WHERE name='import_item_title';"
+```
+
+**输出**
+```
+2
+CREATE UNIQUE INDEX import_item_title ON paper_import_items(normalized_title, COALESCE(year, -2147483648), COALESCE(conference_id, X'00')) WHERE normalized_title IS NOT NULL AND state IN ('queued','downloading','waiting_login','validating','indexing')
+```
+
+补充取证：5 个身份唯一索引（`import_item_title` / `import_item_dblp` / `import_item_doi` / `import_item_idempotency` / `import_item_paper_id`）的 WHERE 均为同一组 **5 个活跃态**，均**不含 `completed`**。
+
+**结论：通过**。迁移版本 = 2；唯一索引 WHERE 已由「活跃态 + completed」收缩为仅活跃态，终态条目不再占用身份唯一索引。
+
+## 2. 已入库论文重新导入（核心验收）
+
+> 题面样例修正：题给 `search_id=87a2f82578fb4102a7f98f18a05acd7d` 下 `0097e978e8e261e08b778db33dc0e657` 实为**候选** id（其对应已完成条目为 `1eeaad7e-e612-469e-8b41-d60dafc76e77`，paper_id `abe90779738541d387733e54fbffc4f0`，该 paper_id 已存在 2 条 completed 条目）；题给 item `0097e978e8e261e08b778db33dc0e657` 在 `paper_import_items` 中不存在。改用等价且更干净的样本完成验收。
+
+**选定样本**：候选 `fa2a52880478a38b95960e8634ae5fcd`（"A Comprehensive Formal Security Analysis of OPC UA"）→ 已存在 completed 条目 `5379d969-ebba-43c5-a675-1819ac7a3c85`（batch `a0bceb5c-…`）→ paper_id `ce376a7d68f04e0dbfdb8e99b402c858`。
+
+**命令**
+```bash
+# 基线
+python3 -c "import json;p=json.load(open('data/kb/papers.json'));print(len(p), sum(1 for x in p if x.get('paper_id')=='ce376a7d68f04e0dbfdb8e99b402c858'))"
+# 重新导入
+curl -s -w "\nHTTP=%{http_code}\n" -X POST http://127.0.0.1:8123/api/papers/imports \
+  -H 'Content-Type: application/json' \
+  -d '{"search_id":"87a2f82578fb4102a7f98f18a05acd7d","candidate_ids":["fa2a52880478a38b95960e8634ae5fcd"]}'
+# 轮询
+curl -s http://127.0.0.1:8123/api/papers/imports/2cb78c20-35a2-497b-bc4d-d0f8acac6935
+```
+
+**输出**
+```
+基线: total=59, paper_id count=1
+
+POST → HTTP=200
+{"batch_id":"2cb78c20-35a2-497b-bc4d-d0f8acac6935","state":"queued","total_count":1,
+ "items":[{"item_id":"5c58ed78-d254-4936-95d8-7906620cf769","candidate_id":"fa2a52880478a38b95960e8634ae5fcd",
+           "state":"queued","paper_id":null}]}
+
+轮询: batch_state=completed item_state=completed paper_id=ce376a7d68f04e0dbfdb8e99b402c858 err=None
+
+落盘核验: papers.json total=59（不变）, paper_id ce376a7d68f04e0dbfdb8e99b402c858 条目数=1, grep -c=1
+DB: paper_id 现有 2 条 completed 条目（5379d969… 旧 + 5c58ed78… 新），均指向同一 paper_id
+```
+
+**结论：通过**。重新导入**返回 200 且 `state=queued`（不再是 409）**，轮询到终态 `completed`，**复用既有 `paper_id`**，`papers.json` 该论文条目数仍为 **1**（无重复落盘）。
+
+## 3. 活跃态互斥仍生效
+
+**选定样本**：全新候选 `105970161424bd66da4379afae4ed057`（"Zero-Knowledge Middleboxes"，search `87a2f8…`，rank 894，从未导入）。
+
+**命令**
+```bash
+curl -s -w "\nHTTP=%{http_code}\n" -X POST http://127.0.0.1:8123/api/papers/imports \
+  -H 'Content-Type: application/json' \
+  -d '{"search_id":"87a2f82578fb4102a7f98f18a05acd7d","candidate_ids":["105970161424bd66da4379afae4ed057"]}'
+# 立即重复一次
+```
+
+**输出**
+```
+第 1 次 → HTTP=200 {"batch_id":"653d39ec-5bb9-4f35-b03d-e066c6c26c68","state":"queued", ...}
+第 2 次 → HTTP=409
+         {"code":"DUPLICATE_IMPORT","message":"该论文已在导入批次中，请在原批次重试","retryable":false}
+```
+
+（随后该批次轮询至 `completed`，新建 paper_id `df85d61015fc4a738662a84e8a2e9f39`。）
+
+**结论：通过**。活跃态（queued）条目仍占用 `import_item_title`，重复提交被正确拒绝为 **409 `DUPLICATE_IMPORT`**。收缩仅针对终态，活跃态互斥未被削弱。
+
+## 4. 前端未受影响
+
+**命令**
+```bash
+curl -s http://127.0.0.1:8123/ | grep -o 'app.js?v=[0-9]*'
+node --check frontend/app.js
+python3 -m pytest tests/test_frontend_paper_contract.py -q
+```
+
+**输出**
+```
+app.js?v=25
+NODE_CHECK_OK
+22 passed in 0.01s
+```
+
+**结论：通过**。资源版本号 `?v=25`（符合 Task02–05 验收基线），`app.js` 语法通过，前端论文契约测试 22 passed（与基线一致）。
+
+## 5. 全量回归复跑
+
+**命令**
+```bash
+.venv/bin/python -m pytest -q
+```
+
+**输出**
+```
+830 passed, 6 warnings, 41 subtests passed in 75.69s (0:01:15)
+```
+
+**结论：通过**。与 `backend-tester` 报告基线一致（830 passed / 0 failed），既有 flaky `test_batch_status_and_resume_use_server_snapshot` 未再复现。
+
+## 6. 附加说明与风险
+
+- **API 通路旁证**：探测过程中一次 POST（search `87a2f8…`, 候选 `dccbd20f…`）成功导入**新**论文 `e0f7218864df42c69405a266ab0c7110`（batch `49e590b4-…`，completed 1/1），佐证导入通路端到端可用（非重导入场景，不计入核心验收）。
+- **题面样例偏差（已修正，不影响结论）**：题给 item id 实为候选 id 且表中无对应 item；已换等价干净样本，核心行为结论不依赖该样例。
+- **未发现缺陷**：本轮补充验收未发现 Task06 引入的功能缺陷或回归。
+- **回归清单核对**：JS class/CSS 选择器一致（契约测试背书）；`?v=25` 未变（Task06 未改前端）；SQLite 迁移单事务幂等、外键仍 `RESTRICT`（未改动）；未引入新重复实现。
+
+## 7. 总体结论
+
+**通过。** Task06「释放终态条目占用的论文身份唯一索引」5 项补充跨端验收全部通过：
+
+| 项 | 结论 |
+|---|---|
+| 真实库迁移（version=2，WHERE 仅活跃态） | 通过 |
+| 已入库论文重新导入（200/queued → completed，复用 paper_id，KB 无重复） | 通过 |
+| 活跃态互斥（第 2 次 409 DUPLICATE_IMPORT） | 通过 |
+| 前端未受影响（`?v=25`、node --check、22 passed） | 通过 |
+| 全量回归（830 passed / 0 failed） | 通过 |
+
+- 测试（跨端验收总控 `tester`）：2026-09-10
+- 开发主管签字：**架构师（主会话）代签**（由 `tester` 出具）
