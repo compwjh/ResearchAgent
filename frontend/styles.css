@@ -54,10 +54,18 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-item-meta { color: #b1b2ba; font: 9px 'DM Mono', monospace; }
 .load-older-messages { border-radius: 6px; padding: 6px; background: transparent; color: var(--muted); font: 10px 'DM Mono', monospace; }
 .load-older-messages:hover { background: var(--accent-soft); color: var(--accent); }
-.conversation-processing { display: grid; gap: 4px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
-.conversation-processing[aria-busy="true"] .conversation-processing-label { color: var(--accent); }
-.conversation-processing-item { display: flex; gap: 5px; align-items: baseline; }
-.conversation-processing-item::before { content: '•'; color: #9b8ffb; }
+.conversation-processing { display: grid; gap: 5px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.conversation-processing-toggle { justify-self: start; padding: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 700; }
+.conversation-processing-toggle::before { content: '⌄'; display: inline-block; margin-right: 5px; color: var(--accent); transition: transform .16s ease; }
+.conversation-processing-toggle[aria-expanded="false"]::before { transform: rotate(-90deg); }
+.conversation-processing-list { display: grid; gap: 4px; }
+.conversation-processing-degraded { margin: 0; padding: 3px 6px; border-radius: 5px; background: #f0f1f3; color: #777982; }
+.conversation-processing-item { display: flex; gap: 5px; align-items: baseline; padding: 3px 6px; border-radius: 5px; background: #f1efff; }
+.conversation-processing-item[data-status="running"] { background: linear-gradient(100deg, #eeeaff, #d8d0ff, #eeeaff); background-size: 220% 100%; animation: conversation-wave 1.8s linear infinite; }
+.conversation-processing-item[data-status="completed"] { background: #f1efff; }
+.conversation-processing-item[data-status="failed"] { background: #fff0f0; color: #a33232; }
+.conversation-processing-item[data-status="skipped"] { background: #f0f1f3; color: #777982; }
+.conversation-processing-item::before { content: '•'; color: #7566ed; }
 .conversation-processing-item[data-status="failed"]::before { color: #c0392b; }
 .conversation-processing-item[data-status="skipped"]::before { color: #9c9da4; }
 .conversation-processing-label { color: var(--ink); font-weight: 700; }
@@ -66,6 +74,25 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-memory-notice[data-status="used"] { background: #f1f7ff; color: #3e6eaa; }
 .message.assistant.is-failed .bubble { border-color: #efb3b3; }
 .message.assistant.is-interrupted .bubble { border-color: #e6c98e; }
+
+@keyframes conversation-wave { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+.conversation-sources { display: grid; gap: 7px; margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--line); }
+.conversation-sources[hidden] { display: none; }
+.conversation-sources::before { content: '参考来源'; color: var(--muted); font: 10px 'DM Mono', monospace; }
+.conversation-sources-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-source-item { display: grid; gap: 7px; min-width: 0; }
+.conversation-source-button { display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid #d6d0ff; border-radius: 6px; background: #f3f0ff; color: var(--accent); font: 11px 'DM Mono', monospace; font-weight: 700; }
+.conversation-source-button:hover, .conversation-source-button.is-active, .conversation-source-button:focus-visible { border-color: var(--accent); background: var(--accent); color: white; outline: 0; }
+.conversation-source-detail { width: min(620px, 100%); padding: 10px 11px; border: 1px solid #e2defa; border-radius: 8px; background: #fafaff; }
+.conversation-source-detail[hidden] { display: none; }
+.conversation-source-detail-title { margin: 0 0 7px; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.conversation-source-detail-fields { display: grid; gap: 5px; margin: 0; }
+.conversation-source-detail-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; align-items: start; }
+.conversation-source-detail-label { color: var(--muted); font: 9px/1.5 'DM Mono', monospace; }
+.conversation-source-detail-value { min-width: 0; margin: 0; color: var(--ink); font: 10px/1.55 'DM Mono', monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.conversation-source-detail-value a { color: var(--accent); text-decoration: none; }
+.conversation-source-detail-value a:hover { text-decoration: underline; }
 
 /* ===== Task03 记忆治理（桌面） ===== */
 #memory-view .memory-workspace { max-width: min(1080px, 100%); margin: 0 auto; padding: 38px 30px; }
@@ -1647,6 +1674,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .conversation-processing-item[data-status="running"] { animation: none; }
   #papers-view .paper-import-batch.is-progressing { animation: none; }
 }
 

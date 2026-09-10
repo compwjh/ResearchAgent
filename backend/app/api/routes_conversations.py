@@ -8,6 +8,13 @@ from backend.app.api.common import stream_event
 from backend.app.api.schemas import ConversationMessageRequest, ConversationPatchRequest, MemoryCreateRequest, MemoryPatchRequest, ProjectCreateRequest, ProjectPatchRequest
 from backend.app.chat.application.chat_runner import run_chat
 from backend.app.chat.application.conversation_service import get_memory_evolution_worker, classify_memory_intent, compose_chat_prompt
+from backend.app.knowledge_base.application import (
+    citation_payloads,
+    clear_project_document_associations,
+    filter_hits_for_project,  # compatibility export; retrieval itself filters pre-RRF
+    hybrid_search,
+    list_documents_for_project,
+)
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.ollama import get_available_models
@@ -86,7 +93,16 @@ def restore_project(project_id: str):
 
 @router.delete("/projects/{project_id}", status_code=204)
 def remove_project(project_id: str):
-    if not _repo().delete_project(project_id, OWNER_ID): raise HTTPException(status_code=404, detail="项目不存在")
+    if not _repo().get_project(project_id, OWNER_ID):
+        raise HTTPException(status_code=404, detail="项目不存在")
+    # Knowledge-base source bytes and derived indexes are independent of the
+    # project lifecycle.  Detach first; a failure fails closed and preserves
+    # the project so an association cannot leak across a future project.
+    try:
+        detached = clear_project_document_associations(project_id, owner_id=OWNER_ID)
+    except Exception as error:
+        raise HTTPException(status_code=503, detail={"code": "DOCUMENT_ASSOCIATION_FAILED", "message": "项目文档关联暂时无法解除", "retryable": True}) from error
+    _repo().delete_project(project_id, OWNER_ID)
 
 
 def _validate_model(model: str):
@@ -96,6 +112,15 @@ def _validate_model(model: str):
         raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE", "message": "无法连接 Ollama 服务", "retryable": True}) from error
     if model not in available:
         raise HTTPException(status_code=400, detail={"code": "MODEL_NOT_FOUND", "message": f"模型 {model} 不存在", "retryable": False})
+
+
+def _redact_sensitive(value: object) -> str:
+    """Keep progress/tool summaries useful without persisting credentials or paths."""
+    text = " ".join(str(value or "").split())
+    import re
+    text = re.sub(r"(?i)(api[_-]?key|token|secret|password|authorization|cookie)\s*[:=]\s*[^\s,;]+", r"\1=[REDACTED]", text)
+    text = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~-]+", "Bearer [REDACTED]", text)
+    return text[:500]
 
 
 def _message_stream(repo: MemoryRepository, conversation, user_message, assistant_message, model: str, mode: str):
@@ -184,13 +209,50 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             if conversation.project_id:
                 project = repo.get_project(conversation.project_id, OWNER_ID)
                 project_instructions = project.instructions if project else None
+            rag_hits = []
+            # Retrieval is opt-in for a project with at least one visible
+            # document.  Unbound conversations never query project documents.
+            if conversation.project_id:
+                try:
+                    visible_documents = list_documents_for_project(conversation.project_id, owner_id=OWNER_ID)
+                except Exception:
+                    visible_documents = []
+                if visible_documents:
+                    rag_running = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "running", label="知识库检索")
+                    yield stream_event("progress", step_id=rag_running.step_id, kind=rag_running.kind, label=rag_running.label, status="running", summary=None)
+                    try:
+                        # Reuse the canonical dense+sparse/RRF/reranker facade.
+                        # The same canonical allowlist reaches both dense and
+                        # sparse query legs before RRF/reranking/top-k.
+                        document_ids = [record["document_id"] for record in visible_documents]
+                        rag_hits = hybrid_search(
+                            user_message.content,
+                            top_k=10,
+                            document_ids=document_ids,
+                        )[:5]
+                        rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索")
+                        yield stream_event("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
+                    except Exception as error:
+                        rag_hits = []
+                        rag_failed = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "failed", "知识库检索失败，已跳过", label="知识库检索")
+                        yield stream_event("progress", step_id=rag_failed.step_id, kind=rag_failed.kind, label=rag_failed.label, status="failed", summary=rag_failed.summary)
             history = [message for message in repo.list_context_messages(conversation.conversation_id, OWNER_ID) if message.message_id != user_message.message_id]
             if sum(len(message.content or "") for message in history) > 12000:
                 try:
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
                 except Exception:
                     pass
-            prompt = compose_chat_prompt(user_message.content, history, memories, project_instructions, summaries, summary_budget_chars=1500)
+            prompt = compose_chat_prompt(
+                user_message.content,
+                history,
+                memories,
+                project_instructions,
+                summaries,
+                summary_budget_chars=1500,
+                rag_hits=rag_hits,
+                rag_budget_chars=6000,
+                history_budget_chars=6000,
+            )
             repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
             generation_started = True
             generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
@@ -199,7 +261,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             for event in run.events:
                 if event.get("type") in {"error", "tool_error"}:
                     try:
-                        repo.append_raw_event(OWNER_ID, conversation.conversation_id, "tool_failure", {"error": event.get("message") or event.get("content") or "工具失败", "verified": False}, message_id=user_message.message_id, idempotency_key=f"tool-failure:{user_message.message_id}")
+                        repo.append_raw_event(OWNER_ID, conversation.conversation_id, "tool_failure", {"error": _redact_sensitive(event.get("message") or event.get("content") or "工具失败"), "verified": False}, message_id=user_message.message_id, idempotency_key=f"tool-failure:{user_message.message_id}")
                     except Exception:
                         pass
                 if event.get("type") == "token":
@@ -210,6 +272,12 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
             generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成", label="回答生成")
             yield stream_event("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
+            if rag_hits:
+                # Sources are deliberately emitted only after the final token
+                # and generation completion event.  The frontend may render
+                # either the canonical ``sources`` field or its citations alias.
+                sources = citation_payloads(rag_hits)[:5]
+                yield stream_event("sources", sources=sources, citations=sources)
             finished = True
             yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed")
         except GeneratorExit:
@@ -220,7 +288,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="failed")
                 generation_failed = repo.create_processing_step(assistant_message.message_id, "generation", "failed", "回答生成失败", label="回答生成")
                 yield stream_event("progress", step_id=generation_failed.step_id, kind=generation_failed.kind, label=generation_failed.label, status="failed", summary=generation_failed.summary)
-                yield stream_event("error", code="CHAT_FAILED", message=str(error), retryable=True)
+                yield stream_event("error", code="CHAT_FAILED", message=_redact_sensitive(error), retryable=True)
                 yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed")
             except Exception:
                 # Preserve the original failure and let the finally block make

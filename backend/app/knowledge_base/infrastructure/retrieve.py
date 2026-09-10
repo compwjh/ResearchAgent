@@ -144,6 +144,7 @@ def hybrid_search(
     chunker: Optional[str] = None,
     include_citations: Optional[bool] = None,
     paper_id: Optional[str] = None,
+    document_ids: Optional[Sequence[str]] = None,
     client=None,
 ) -> List[Hit]:
     """双路召回 + RRF 融合 + 可选重排。
@@ -162,8 +163,12 @@ def hybrid_search(
         "candidate_pool": limit,
         "chunker": chunker,
         "reranker_enabled": RERANKER_ENABLED,
+        "document_filter_count": None if document_ids is None else len(tuple(document_ids)),
      }
     try:
+       if document_ids is not None and not any(isinstance(value, str) and value for value in document_ids):
+           safe_call(record_event, name="kb.retrieval", metadata={**metadata, "hit_count": 0, "status": "ok"}, duration_ms=round((time.perf_counter() - started_at) * 1000, 3))
+           return []
        target = client or get_client()
        dense_vector = embed_texts([question])[0]
 
@@ -179,7 +184,10 @@ def hybrid_search(
            looks_like_citation_query(question) if include_citations is None else bool(include_citations)
          )
        query_filter = build_filter(
-           paper_id=paper_id, chunker=chunker, include_citations=allow_citations
+           paper_id=paper_id,
+           document_ids=document_ids,
+           chunker=chunker,
+           include_citations=allow_citations,
          )
 
        dense_points = target.query_points(
@@ -504,11 +512,14 @@ def _record_rerank_event(
 
 def build_filter(
     paper_id: Optional[str] = None,
+    document_ids: Optional[Sequence[str]] = None,
     chunker: Optional[str] = None,
     include_citations: bool = True,
 ):
     """构造 Qdrant 过滤条件（spec-012）。
 
+    - `document_ids`：canonical document_id 集合；在 dense/sparse 两路召回前
+      同时过滤，避免项目文档被全局 top-k 候选挤掉；
     - `chunker`：等值匹配切分版本，用于 v1/v2 隔离；
     - `include_citations=False`：追加 `is_citation == False`，把参考文献排除在默认召回外
       （参考文献仍入库，仅在问题明显在问参考文献时才纳入）。
@@ -519,6 +530,15 @@ def build_filter(
     if paper_id:
         must.append(
             models.FieldCondition(key="paper_id", match=models.MatchValue(value=paper_id))
+        )
+    if document_ids is not None:
+        normalized = [str(value) for value in document_ids if isinstance(value, str) and value]
+        if not normalized:
+            # An explicit empty allowlist is a valid fail-closed query.  The
+            # application facade normally short-circuits before reaching here.
+            normalized = ["__no_visible_document__"]
+        must.append(
+            models.FieldCondition(key="document_id", match=models.MatchAny(any=normalized))
         )
     if chunker:
         must.append(

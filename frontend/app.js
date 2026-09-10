@@ -57,6 +57,10 @@ const conversationState = {
   streamController: null,
   streamGeneration: 0,
   loadingMessages: false,
+  loadingConversationId: null,
+  messageLoadToken: null,
+  processingHydrationQueue: Promise.resolve(),
+  openToken: null,
 };
 
 // ===== 模型别名（spec-008）：前端 localStorage 偏好 =====
@@ -165,7 +169,7 @@ function addMessage(text, type) {
 function createAssistantMessage(model) {
   const message = document.createElement('div');
   message.className = 'message assistant';
-  message.innerHTML = '<div class="avatar">O</div><div class="bubble"><span class="model-tag"></span><div class="answer md-body"></div><span class="debug-tag"></span></div>';
+  message.innerHTML = '<div class="avatar">O</div><div class="bubble"><span class="model-tag"></span><div class="answer md-body"></div><span class="debug-tag"></span><section class="conversation-sources" hidden aria-label="参考来源"></section></div>';
   message.querySelector('.model-tag').textContent = `${model || activeModel}${modeSelect.value === 'developer' ? ' · Developer' : ''}`;
   messages.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
@@ -268,10 +272,23 @@ function renderConversationMessage(item) {
 }
 
 function createConversationProcessing(assistantMessage) {
-  const processing = document.createElement('div');
+  const processing = document.createElement('section');
   processing.className = 'conversation-processing';
   processing.setAttribute('aria-label', '处理过程');
   processing.setAttribute('aria-busy', 'true');
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'conversation-processing-toggle';
+  toggle.setAttribute('aria-expanded', 'true');
+  toggle.textContent = '处理过程';
+  const list = document.createElement('div');
+  list.className = 'conversation-processing-list';
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    list.hidden = expanded;
+  });
+  processing.append(toggle, list);
   assistantMessage.querySelector('.bubble').appendChild(processing);
   return processing;
 }
@@ -282,7 +299,8 @@ function setConversationAnswer(element, content) {
 
 function updateConversationProcessing(processing, step) {
   if (!processing || !step) return;
-  let item = processing.querySelector(`[data-step-id="${CSS.escape(String(step.step_id || ''))}"]`);
+  const list = processing.querySelector('.conversation-processing-list') || processing;
+  let item = list.querySelector(`[data-step-id="${CSS.escape(String(step.step_id || ''))}"]`);
   if (!item) {
     item = document.createElement('div');
     item.className = 'conversation-processing-item';
@@ -292,12 +310,87 @@ function updateConversationProcessing(processing, step) {
     const summary = document.createElement('span');
     summary.className = 'conversation-processing-summary';
     item.append(label, summary);
-    processing.appendChild(item);
+    list.appendChild(item);
   }
-  item.dataset.status = step.status || 'running';
+  const status = ['running', 'completed', 'failed', 'skipped'].includes(step.status) ? step.status : 'running';
+  item.dataset.status = status;
   item.querySelector('.conversation-processing-label').textContent = step.label || step.kind || '处理中';
   item.querySelector('.conversation-processing-summary').textContent = step.summary || step.status || '';
-  processing.setAttribute('aria-busy', step.status === 'running' ? 'true' : 'false');
+  processing.setAttribute('aria-busy', status === 'running' ? 'true' : 'false');
+}
+
+function collapseConversationProcessing(processing) {
+  if (!processing) return;
+  const toggle = processing.querySelector('.conversation-processing-toggle');
+  const list = processing.querySelector('.conversation-processing-list');
+  if (toggle && list) {
+    toggle.setAttribute('aria-expanded', 'false');
+    list.hidden = true;
+  }
+}
+
+function stopConversationProcessing(processing, status = 'failed', summary = '处理过程已结束') {
+  if (!processing) return;
+  const list = processing.querySelector('.conversation-processing-list');
+  if (list) {
+    list.querySelectorAll('.conversation-processing-item').forEach((item) => {
+      if (item.dataset.status !== 'running') return;
+      item.dataset.status = status;
+      const detail = item.querySelector('.conversation-processing-summary');
+      if (detail) detail.textContent = summary;
+    });
+  }
+  processing.setAttribute('aria-busy', 'false');
+}
+
+function showConversationProcessingDegraded(processing, message = '处理过程暂不可用，已降级显示') {
+  if (!processing) return;
+  const list = processing.querySelector('.conversation-processing-list');
+  if (!list) return;
+  const notice = document.createElement('p');
+  notice.className = 'conversation-processing-degraded';
+  notice.textContent = message;
+  list.appendChild(notice);
+  processing.dataset.degraded = 'true';
+  stopConversationProcessing(processing, 'skipped', message);
+  collapseConversationProcessing(processing);
+}
+
+async function hydrateConversationProcessing(messageElement, messageId, loadGeneration, conversationId) {
+  if (!messageElement || !messageId) return;
+  try {
+    const data = await conversationFetch(`/api/messages/${encodeURIComponent(messageId)}/processing-steps`);
+    if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId || messageElement.dataset.messageId !== messageId || !messageElement.parentNode) return;
+    const steps = Array.isArray(data.steps) ? data.steps : [];
+    if (!steps.length) return;
+    const processing = createConversationProcessing(messageElement);
+    steps.forEach((step) => updateConversationProcessing(processing, step));
+    processing.setAttribute('aria-busy', steps.some((step) => step.status === 'running') ? 'true' : 'false');
+    collapseConversationProcessing(processing);
+  } catch (error) {
+    if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId || messageElement.dataset.messageId !== messageId || !messageElement.parentNode) return;
+    const processing = createConversationProcessing(messageElement);
+    showConversationProcessingDegraded(processing);
+  }
+}
+
+function enqueueConversationProcessingHydration(rendered, loadGeneration, conversationId) {
+  if (!rendered?.length) return;
+  const previous = conversationState.processingHydrationQueue || Promise.resolve();
+  conversationState.processingHydrationQueue = previous.catch(() => {}).then(async () => {
+    for (const { item, element } of rendered) {
+      if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
+      if (item.role !== 'assistant') continue;
+      await hydrateConversationProcessing(element, item.message_id, loadGeneration, conversationId);
+      if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
+    }
+  });
+}
+
+function createConversationSources(assistantMessage) {
+  const container = assistantMessage?.querySelector('.conversation-sources');
+  const factory = window.ConversationResearch?.createSourceRenderer;
+  return container && factory ? factory({ document, container }) : null;
 }
 
 function showConversationMemoryNotice(bubble, eventData) {
@@ -374,7 +467,7 @@ function renderConversationList(items, append = false) {
   }
 }
 
-async function loadConversationList({ append = false } = {}) {
+async function loadConversationList({ append = false, guard = null } = {}) {
   if (!conversationList) return;
   const params = new URLSearchParams();
   if (conversationState.projectId) params.set('project_id', conversationState.projectId);
@@ -382,9 +475,13 @@ async function loadConversationList({ append = false } = {}) {
   params.set('limit', '20');
   try {
     const data = await conversationFetch(`/api/conversations?${params}`);
+    if (guard && !guard()) return;
     conversationState.conversationCursor = data.next_cursor || null;
     renderConversationList(data.conversations || [], append);
-  } catch (error) { setConversationStatus(`会话列表加载失败：${error.message}`, 'error'); }
+  } catch (error) {
+    if (guard && !guard()) return;
+    setConversationStatus(`会话列表加载失败：${error.message}`, 'error');
+  }
 }
 
 async function loadProjects() {
@@ -395,46 +492,88 @@ async function loadProjects() {
 }
 
 async function loadConversationMessages(conversationId, { replace = true } = {}) {
-  if (!conversationId || conversationState.loadingMessages) return;
+  if (!conversationId || (conversationState.loadingMessages && conversationState.loadingConversationId === conversationId)) return;
+  const loadGeneration = conversationState.streamGeneration;
+  const loadToken = Symbol('conversation-message-load');
+  conversationState.loadingConversationId = conversationId;
+  conversationState.messageLoadToken = loadToken;
   conversationState.loadingMessages = true;
   try {
     const params = new URLSearchParams({ target_chars: String(targetCharsForMessages()) });
     const data = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages?${params}`);
+    if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
     conversationState.messageCursor = data.next_cursor || null;
     if (replace) messages.replaceChildren();
-    for (const item of [...(data.messages || [])].reverse()) messages.appendChild(renderConversationMessage(item));
+    const items = [...(data.messages || [])].reverse();
+    const rendered = items.map((item) => ({ item, element: renderConversationMessage(item) }));
+    rendered.forEach(({ item, element }) => { element.dataset.messageId = item.message_id || ''; messages.appendChild(element); });
+    enqueueConversationProcessingHydration(rendered, loadGeneration, conversationId);
     workspace.classList.toggle('has-started', (data.messages || []).length > 0);
     messages.scrollTop = messages.scrollHeight;
     if (loadOlderMessagesButton) loadOlderMessagesButton.hidden = !conversationState.messageCursor;
-  } catch (error) { setConversationStatus(`消息加载失败：${error.message}`, 'error'); }
-  finally { conversationState.loadingMessages = false; }
+  } catch (error) {
+    if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
+    setConversationStatus(`消息加载失败：${error.message}`, 'error');
+  }
+  finally {
+    if (conversationState.messageLoadToken === loadToken) {
+      conversationState.loadingMessages = false;
+      conversationState.loadingConversationId = null;
+      conversationState.messageLoadToken = null;
+    }
+  }
 }
 
 async function loadOlderConversationMessages() {
-  if (!conversationState.conversationId || !conversationState.messageCursor || conversationState.loadingMessages) return;
+  if (!conversationState.conversationId || !conversationState.messageCursor) return;
+  const conversationId = conversationState.conversationId;
+  if (conversationState.loadingMessages && conversationState.loadingConversationId === conversationId) return;
+  const loadGeneration = conversationState.streamGeneration;
+  const loadToken = Symbol('conversation-older-message-load');
+  conversationState.loadingConversationId = conversationId;
+  conversationState.messageLoadToken = loadToken;
   conversationState.loadingMessages = true;
   const height = messages.scrollHeight; const top = messages.scrollTop;
   try {
     const params = new URLSearchParams({ before: conversationState.messageCursor, target_chars: String(targetCharsForMessages()) });
-    const data = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationState.conversationId)}/messages?${params}`);
+    const data = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages?${params}`);
+    if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
     const fragment = document.createDocumentFragment();
-    for (const item of [...(data.messages || [])].reverse()) fragment.appendChild(renderConversationMessage(item));
+    const items = [...(data.messages || [])].reverse();
+    const rendered = items.map((item) => ({ item, element: renderConversationMessage(item) }));
+    rendered.forEach(({ item, element }) => { element.dataset.messageId = item.message_id || ''; fragment.appendChild(element); });
     messages.insertBefore(fragment, messages.firstChild);
+    enqueueConversationProcessingHydration(rendered, loadGeneration, conversationId);
     conversationState.messageCursor = data.next_cursor || null;
     if (loadOlderMessagesButton) loadOlderMessagesButton.hidden = !conversationState.messageCursor;
     requestAnimationFrame(() => { messages.scrollTop = top + (messages.scrollHeight - height); });
-  } catch (error) { setConversationStatus(`更早消息加载失败：${error.message}`, 'error'); }
-  finally { conversationState.loadingMessages = false; }
+  } catch (error) {
+    if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
+    setConversationStatus(`更早消息加载失败：${error.message}`, 'error');
+  }
+  finally {
+    if (conversationState.messageLoadToken === loadToken) {
+      conversationState.loadingMessages = false;
+      conversationState.loadingConversationId = null;
+      conversationState.messageLoadToken = null;
+    }
+  }
 }
 
 function abortConversationStream() {
   conversationState.streamGeneration += 1;
+  conversationState.openToken = null;
   if (conversationState.streamController) { conversationState.streamController.abort(); conversationState.streamController = null; }
 }
 
 async function openConversation(conversationId, { replace = false } = {}) {
   if (!conversationId) return;
-  abortConversationStream(); conversationState.conversationId = conversationId; conversationState.messageCursor = null; updateConversationUrl(conversationId, replace);
+  abortConversationStream();
+  const openToken = Symbol('conversation-open');
+  const openGeneration = conversationState.streamGeneration;
+  conversationState.openToken = openToken;
+  const isCurrent = () => conversationState.openToken === openToken && conversationState.streamGeneration === openGeneration && conversationState.conversationId === conversationId;
+  conversationState.conversationId = conversationId; conversationState.messageCursor = null; updateConversationUrl(conversationId, replace);
   setConversationStatus('正在加载会话…');
   try {
     const scopes = [null, ...(projectSelect ? [...projectSelect.options].map((option) => option.value).filter(Boolean) : [])];
@@ -442,19 +581,27 @@ async function openConversation(conversationId, { replace = false } = {}) {
     for (const scope of scopes) {
       const query = scope ? `&project_id=${encodeURIComponent(scope)}` : '';
       const conversations = await conversationFetch(`/api/conversations?limit=100${query}`);
+      if (!isCurrent()) return;
       found = (conversations.conversations || []).find((item) => item.conversation_id === conversationId) || null;
       if (found) break;
     }
+    if (!isCurrent()) return;
     conversationState.conversation = found;
     conversationState.projectId = conversationState.conversation?.project_id || null;
     if (projectSelect) projectSelect.value = conversationState.projectId || '';
     if (conversationProjectBadge) conversationProjectBadge.textContent = projectSelect?.selectedOptions[0]?.textContent || '未绑定';
-    await loadConversationMessages(conversationId); await loadConversationList();
+    await loadConversationMessages(conversationId);
+    if (!isCurrent()) return;
+    await loadConversationList({ append: false, guard: isCurrent });
+    if (!isCurrent()) return;
     const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = conversationState.conversation?.title || '会话';
     const state = document.querySelector('.chat-state'); if (state) state.textContent = '已保存会话';
     updateGovernanceControls();
     setConversationStatus('');
-  } catch (error) { setConversationStatus(`会话打开失败：${error.message}`, 'error'); }
+  } catch (error) {
+    if (!isCurrent()) return;
+    setConversationStatus(`会话打开失败：${error.message}`, 'error');
+  }
 }
 
 function beginDraft() {
@@ -687,6 +834,18 @@ async function handleMemoryAction(action, memoryId, card) {
 function appendConversationEvent(assistantMessage, processing, eventData) {
   if (eventData.type === 'progress') updateConversationProcessing(processing, eventData);
   if (eventData.type === 'memory') showConversationMemoryNotice(assistantMessage?.querySelector('.bubble'), eventData);
+  if (eventData.type === 'reconnect') {
+    stopConversationProcessing(processing, 'skipped', '连接中断，可重试');
+    updateConversationProcessing(processing, {
+      step_id: eventData.step_id || 'connection',
+      kind: 'connection',
+      label: '连接状态',
+      status: 'skipped',
+      summary: '连接中断，可重试',
+    });
+    collapseConversationProcessing(processing);
+    if (conversationStatus) conversationStatus.textContent = '正在重新连接…';
+  }
 }
 
 async function sendConversationMessage(question) {
@@ -696,9 +855,10 @@ async function sendConversationMessage(question) {
   const endpoint = conversationState.conversationId ? `/api/conversations/${encodeURIComponent(conversationState.conversationId)}/messages` : '/api/conversations/messages';
   if (!conversationState.conversationId && conversationState.projectId) payload.project_id = conversationState.projectId;
   let assistantMessage = null; let processing = null; let writer = null; let streamError = null;
+  let sourcesRenderer = null; let pendingSources = null; let generationCompleted = false; let doneReceived = false;
   try {
     const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
-    if (!response.ok) { let data = null; try { data = await response.json(); } catch (_) {} throw new Error(conversationError(data)); }
+    if (!response.ok) { let data = null; try { data = await response.json(); } catch (_) {} const error = new Error(conversationError(data)); error.retryable = data?.detail?.retryable ?? data?.retryable ?? false; throw error; }
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
     const handleSse = (chunk) => {
       const line = chunk.split('\n').find((item) => item.startsWith('data: ')); if (!line) return;
@@ -707,18 +867,38 @@ async function sendConversationMessage(question) {
         if (eventData.conversation_id && !conversationState.conversationId) {
           conversationState.conversationId = eventData.conversation_id; conversationState.conversation = { conversation_id: eventData.conversation_id, project_id: eventData.project_id || conversationState.projectId, title: question.slice(0, 80), status: 'active' }; updateConversationUrl(eventData.conversation_id); updateGovernanceControls(); loadConversationList();
         }
-        assistantMessage = createAssistantMessage(eventData.model || activeModel); processing = createConversationProcessing(assistantMessage); writer = createMarkdownWriter(assistantMessage.querySelector('.answer'), messages);
+        assistantMessage = createAssistantMessage(eventData.model || activeModel); processing = createConversationProcessing(assistantMessage); sourcesRenderer = createConversationSources(assistantMessage); writer = createMarkdownWriter(assistantMessage.querySelector('.answer'), messages);
       } else if (eventData.type === 'progress') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'memory') appendConversationEvent(assistantMessage, processing, eventData);
+      else if (eventData.type === 'reconnect') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'token' && assistantMessage && writer) writer.write(eventData.content || '');
-      else if (eventData.type === 'error') { streamError = new Error(eventData.message || eventData.detail || '请求失败'); if (assistantMessage) showConversationMemoryNotice(assistantMessage.querySelector('.bubble'), { status: 'not_saved', message: streamError.message }); }
-      else if (eventData.type === 'done') { if (processing) processing.setAttribute('aria-busy', 'false'); if (assistantMessage && eventData.status !== 'completed') assistantMessage.classList.add(`is-${eventData.status || 'failed'}`); const state = document.querySelector('.chat-state'); if (state) state.textContent = eventData.status === 'completed' ? '已保存' : (eventData.status || '已结束'); }
+      else if (eventData.type === 'sources') { pendingSources = eventData.sources || eventData.citations || []; if (generationCompleted && sourcesRenderer) sourcesRenderer.render(pendingSources); }
+      else if (eventData.type === 'error') { streamError = new Error(eventData.message || eventData.detail || '请求失败'); pendingSources = null; if (sourcesRenderer) sourcesRenderer.clear(); if (assistantMessage) showConversationMemoryNotice(assistantMessage.querySelector('.bubble'), { status: 'not_saved', message: streamError.message }); }
+      else if (eventData.type === 'done') { doneReceived = true; if (processing) { processing.setAttribute('aria-busy', 'false'); collapseConversationProcessing(processing); } if (eventData.status !== 'completed' && sourcesRenderer) sourcesRenderer.clear(); if (assistantMessage && eventData.status !== 'completed') assistantMessage.classList.add(`is-${eventData.status || 'failed'}`); const state = document.querySelector('.chat-state'); if (state) state.textContent = eventData.status === 'completed' ? '已保存' : (eventData.status || '已结束'); }
+      if (eventData.type === 'progress' && eventData.kind === 'generation' && eventData.status === 'completed') { generationCompleted = true; if (pendingSources && sourcesRenderer) sourcesRenderer.render(pendingSources); }
     };
     while (true) { const result = await reader.read(); if (result.done) break; if (generation !== conversationState.streamGeneration) return; buffer += decoder.decode(result.value, { stream: true }); const chunks = buffer.split('\n\n'); buffer = chunks.pop(); chunks.forEach(handleSse); }
-    if (buffer.trim()) handleSse(buffer); if (streamError) throw streamError;
+    if (buffer.trim()) handleSse(buffer);
+    if (!doneReceived && !controller.signal.aborted && generation === conversationState.streamGeneration) {
+      stopConversationProcessing(processing, 'failed', '流式连接中断，可重试');
+      collapseConversationProcessing(processing);
+      pendingSources = null;
+      if (sourcesRenderer) sourcesRenderer.clear();
+      if (assistantMessage) {
+        assistantMessage.classList.add('is-interrupted');
+        showConversationMemoryNotice(assistantMessage.querySelector('.bubble'), { status: 'not_saved', message: '流式连接中断，已保存已生成内容' });
+      }
+      streamError = new Error('流式连接中断');
+      streamError.connectionInterrupted = true;
+    }
+    if (streamError) throw streamError;
   } catch (error) {
     if (error.name === 'AbortError' || generation !== conversationState.streamGeneration) return;
-    if (writer) writer.cancel(); if (!streamError) addMessage(`连接失败：${error.message}`, 'assistant');
+    if (error.connectionInterrupted) { if (writer) writer.flush(); }
+    else if (writer) writer.cancel();
+    if (processing) updateConversationProcessing(processing, { step_id: 'connection', kind: 'connection', label: '连接状态', status: error.retryable ? 'skipped' : 'failed', summary: error.retryable ? '连接中断，可重试' : '连接失败' });
+    if (sourcesRenderer) sourcesRenderer.clear();
+    if (!streamError) addMessage(`连接失败：${error.message}`, 'assistant');
   } finally {
     if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList();
   }

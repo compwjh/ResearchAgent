@@ -23,6 +23,7 @@ import inspect
 import json
 import os
 import re
+import tempfile
 import threading
 import uuid
 from collections.abc import Mapping
@@ -550,6 +551,252 @@ def create_uploaded_document(
         meta_path=meta_path,
         papers_dir=papers_dir,
     )
+
+
+def _document_record(document_id: str, meta_path: Path) -> dict[str, Any] | None:
+    """Return one canonical document record through the metadata boundary."""
+    return next(
+        (
+            item
+            for item in load_papers_strict(meta_path)
+            if isinstance(item, dict)
+            and item.get("schema_version") == "knowledge-document-v1"
+            and record_id(item) == str(document_id)
+        ),
+        None,
+    )
+
+
+_ASSOCIATION_SCHEMA = "project-document-associations-v1"
+
+
+def _association_path(meta_path: Path) -> Path:
+    """Return the sidecar relation store beside canonical ``papers.json``."""
+    return Path(meta_path).with_name("project-associations.json")
+
+
+def _load_associations(path: Path) -> dict[str, dict[str, str]]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise KnowledgeDocumentMigrationError("PROJECT_ASSOCIATIONS_INVALID") from error
+    if not isinstance(value, Mapping) or value.get("schema_version") != _ASSOCIATION_SCHEMA:
+        raise KnowledgeDocumentMigrationError("PROJECT_ASSOCIATIONS_INVALID")
+    associations = value.get("associations")
+    if not isinstance(associations, Mapping):
+        raise KnowledgeDocumentMigrationError("PROJECT_ASSOCIATIONS_INVALID")
+    normalized: dict[str, dict[str, str]] = {}
+    for document_id, relation in associations.items():
+        if not isinstance(document_id, str) or not document_id or not isinstance(relation, Mapping):
+            raise KnowledgeDocumentMigrationError("PROJECT_ASSOCIATIONS_INVALID")
+        owner_id = relation.get("owner_id")
+        project_id = relation.get("project_id")
+        if not isinstance(owner_id, str) or not owner_id or not isinstance(project_id, str) or not project_id:
+            raise KnowledgeDocumentMigrationError("PROJECT_ASSOCIATIONS_INVALID")
+        normalized[document_id] = {"owner_id": owner_id, "project_id": project_id}
+    return normalized
+
+
+def _save_associations(path: Path, associations: Mapping[str, Mapping[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(
+        {"schema_version": _ASSOCIATION_SCHEMA, "associations": dict(associations)},
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    ).encode("utf-8")
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        if descriptor >= 0:
+            with suppress(OSError):
+                os.close(descriptor)
+        with suppress(OSError):
+            temporary.unlink()
+
+
+def _validated_project_id(project_id: str | None) -> str | None:
+    if project_id is None:
+        return None
+    if not isinstance(project_id, str) or not project_id.strip() or len(project_id) > 100:
+        raise KnowledgeDocumentMigrationError("INVALID_PROJECT_ID")
+    return project_id.strip()
+
+
+def _relation_owner_ok(relation: Mapping[str, str], owner_id: str | None) -> bool:
+    return owner_id is None or relation.get("owner_id") == owner_id
+
+
+def set_document_project(
+    document_id: str,
+    project_id: str | None,
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+    owner_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Associate or disassociate a canonical document without touching its source.
+
+    The relation is kept in a sidecar store rather than the closed canonical
+    document schema.  The returned record is a presentation overlay only;
+    ``papers.json`` remains byte/schema-valid and immutable document identity
+    is unchanged.
+    """
+    meta = Path(meta_path or KB_META_PATH)
+    root = Path(papers_dir or KB_PAPERS_DIR)
+    normalized_project = _validated_project_id(project_id)
+    normalized_owner = str(owner_id or "local-user")
+    try:
+        lock_domain = immutable_lock_domain(meta, root)
+    except MetadataStoreError as error:
+        raise KnowledgeDocumentMigrationError(error.code) from error
+    with _UPLOAD_LOCK, immutable_directory_lock(lock_domain):
+        records = load_papers_strict(meta)
+        document = next(
+            (
+                item
+                for item in records
+                if isinstance(item, dict)
+                and item.get("schema_version") == "knowledge-document-v1"
+                and record_id(item) == str(document_id)
+            ),
+            None,
+        )
+        if document is None:
+            return None
+        # Repair a record written by the pre-review implementation, but never
+        # introduce this closed-schema field on the normal path.
+        if "project_id" in document:
+            document.pop("project_id", None)
+            save_papers(records, meta)
+        assoc_path = _association_path(meta)
+        associations = _load_associations(assoc_path)
+        current = associations.get(str(document_id))
+        if current is not None and not _relation_owner_ok(current, owner_id):
+            raise KnowledgeDocumentMigrationError("PROJECT_ASSOCIATION_FORBIDDEN")
+        if normalized_project is None:
+            associations.pop(str(document_id), None)
+        else:
+            associations[str(document_id)] = {
+                "owner_id": normalized_owner,
+                "project_id": normalized_project,
+            }
+        _save_associations(assoc_path, associations)
+        result = dict(document)
+        result["project_id"] = normalized_project
+        return result
+
+
+def clear_project_document_associations(
+    project_id: str,
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+    owner_id: str | None = None,
+) -> int:
+    """Detach all documents from a deleted project and retain their originals."""
+    meta = Path(meta_path or KB_META_PATH)
+    root = Path(papers_dir or KB_PAPERS_DIR)
+    try:
+        lock_domain = immutable_lock_domain(meta, root)
+    except MetadataStoreError as error:
+        raise KnowledgeDocumentMigrationError(error.code) from error
+    with _UPLOAD_LOCK, immutable_directory_lock(lock_domain):
+        normalized_project = _validated_project_id(project_id)
+        associations = _load_associations(_association_path(meta))
+        removed = [
+            document_id
+            for document_id, relation in associations.items()
+            if relation.get("project_id") == normalized_project and _relation_owner_ok(relation, owner_id)
+        ]
+        for document_id in removed:
+            associations.pop(document_id, None)
+        if removed:
+            _save_associations(_association_path(meta), associations)
+        changed = len(removed)
+        return changed
+
+
+def list_documents_for_project(
+    project_id: str | None = None,
+    *,
+    meta_path: Path | None = None,
+    owner_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List canonical records in one explicit scope.
+
+    ``None`` means the unbound/shared pool; a project ID means only that
+    project's documents.  Project chat must not silently absorb unrelated
+    global documents merely because they are unbound.
+    """
+    meta = Path(meta_path or KB_META_PATH)
+    records = load_papers_strict(meta)
+    associations = _load_associations(_association_path(meta))
+    return [
+        {
+            **dict(item),
+            "project_id": associations[record_id(item)]["project_id"],
+        }
+        for item in records
+        if isinstance(item, dict)
+        and item.get("schema_version") == "knowledge-document-v1"
+        and record_id(item) in associations
+        and associations[record_id(item)].get("project_id") == project_id
+        and _relation_owner_ok(associations[record_id(item)], owner_id)
+    ]
+
+
+def get_document_project(
+    document_id: str,
+    *,
+    meta_path: Path | None = None,
+    owner_id: str | None = None,
+) -> str | None:
+    associations = _load_associations(_association_path(Path(meta_path or KB_META_PATH)))
+    relation = associations.get(str(document_id))
+    if relation is None or not _relation_owner_ok(relation, owner_id):
+        return None
+    return relation["project_id"]
+
+
+def decorate_document_projects(
+    records: list[dict[str, Any]], *, meta_path: Path | None = None, owner_id: str | None = None
+) -> list[dict[str, Any]]:
+    associations = _load_associations(_association_path(Path(meta_path or KB_META_PATH)))
+    return [
+        {
+            **dict(record),
+            "project_id": (
+                associations.get(record_id(record), {}).get("project_id")
+                if _relation_owner_ok(associations.get(record_id(record), {}), owner_id)
+                else None
+            ),
+        }
+        for record in records
+    ]
+
+
+def filter_hits_for_project(
+    hits: list[Hit], project_id: str | None, *, meta_path: Path | None = None, owner_id: str | None = None
+) -> list[Hit]:
+    """Compatibility guard for callers outside the retrieval application seam."""
+    visible = {
+        record_id(item)
+        for item in list_documents_for_project(project_id, meta_path=meta_path, owner_id=owner_id)
+    }
+    return [hit for hit in hits if hit.paper_id in visible]
 
 
 def submit_document_reindex(
@@ -1183,6 +1430,12 @@ __all__ = [
     "create_paper_import_port",
     "create_immutable_document",
     "create_uploaded_document",
+    "set_document_project",
+    "clear_project_document_associations",
+    "list_documents_for_project",
+    "get_document_project",
+    "decorate_document_projects",
+    "filter_hits_for_project",
     "submit_document_reindex",
     "delete_document",
     "create_source_reader",

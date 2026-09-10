@@ -23,6 +23,7 @@ from backend.app.knowledge_base.application import (
     ManifestStoreError,
     build_prompt,
     citation_payloads,
+    clear_project_document_associations,
     count_points,
     create_uploaded_document,
     delete_document,
@@ -31,6 +32,10 @@ from backend.app.knowledge_base.application import (
     hybrid_search,
     load_papers,
     load_papers_strict,
+    filter_hits_for_project,
+    decorate_document_projects,
+    set_document_project,
+    list_documents_for_project,
     read_document_source,
     reranker_health,
     submit_document_reindex,
@@ -46,6 +51,8 @@ from backend.app.platform.config import (
 # fixtures that patch the historical source directory.  Canonical document
 # routes below continue to resolve paths through the knowledge-base boundary.
 from backend.app.platform.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
+from backend.app.platform.bootstrap import get_provider
+from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
@@ -135,8 +142,16 @@ def kb_health() -> dict:
 
 
 @router.get("/kb/papers")
-def list_kb_papers() -> dict:
-    return {"papers": load_papers()}
+def list_kb_papers(project_id: str | None = Query(default=None)) -> dict:
+    if project_id is None:
+        return {"papers": decorate_document_projects(load_papers(), owner_id=OWNER_ID)}
+    try:
+        _project_for_document(project_id)
+        return {"papers": list_documents_for_project(project_id, owner_id=OWNER_ID)}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="project_id 无效") from None
+    except LookupError:
+        raise HTTPException(status_code=404, detail="项目不存在") from None
 
 
 def _document_error(
@@ -198,7 +213,20 @@ def _document_summary(item: dict[str, Any]) -> dict[str, Any]:
         "chunk_count": item.get("chunk_count", 0),
         "chunkers": item.get("chunkers", {}),
         "error": item.get("error"),
+        "project_id": item.get("project_id"),
     }
+
+
+def _project_for_document(project_id: str | None):
+    """Validate a document association against the owner-scoped project store."""
+    if project_id is None:
+        return None
+    if not isinstance(project_id, str) or not project_id.strip() or len(project_id) > 100:
+        raise ValueError("invalid project_id")
+    project = get_provider("memory_repository").get_project(project_id, OWNER_ID)
+    if not project:
+        raise LookupError("project not found")
+    return project
 
 
 def _decode_cursor(cursor: str | None) -> int:
@@ -327,6 +355,7 @@ def list_documents(
     request: Request,
     limit: str = Query(default="50"),
     cursor: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
 ):
     try:
         limit_value = int(limit)
@@ -335,8 +364,18 @@ def list_documents(
     if limit_value < 1 or limit_value > 100:
         return _document_error(400, "INVALID_LIMIT", "limit 必须在 1 到 100 之间", request=request)
     try:
+        _project_for_document(project_id)
+    except ValueError:
+        return _document_error(400, "INVALID_PROJECT_ID", "project_id 无效", request=request)
+    except LookupError:
+        return _document_error(404, "PROJECT_NOT_FOUND", "项目不存在", request=request)
+    try:
         offset = _decode_cursor(cursor)
-        records = load_papers_strict()
+        records = (
+            decorate_document_projects(load_papers_strict(), owner_id=OWNER_ID)
+            if project_id is None
+            else list_documents_for_project(project_id, owner_id=OWNER_ID)
+        )
     except ValueError:
         return _document_error(400, "INVALID_CURSOR", "cursor 无效", request=request)
     except Exception:
@@ -359,8 +398,60 @@ def list_documents(
     return JSONResponse(status_code=200, content=payload, headers={"ETag": etag})
 
 
+def _association_response(document_id: str, project_id: str | None, request: Request):
+    try:
+        _project_for_document(project_id)
+        document = set_document_project(document_id, project_id, owner_id=OWNER_ID)
+    except ValueError:
+        return _document_error(400, "INVALID_PROJECT_ID", "project_id 无效", request=request, document_id=document_id)
+    except LookupError:
+        return _document_error(404, "PROJECT_NOT_FOUND", "项目不存在", request=request, document_id=document_id)
+    except KnowledgeDocumentMigrationError as error:
+        return _document_error(503, error.code, "文档关联暂时不可用", request=request, document_id=document_id, retryable=True)
+    except Exception:
+        return _document_error(503, "DOCUMENT_ASSOCIATION_FAILED", "文档关联暂时不可用", request=request, document_id=document_id, retryable=True)
+    if document is None:
+        return _document_error(404, "DOCUMENT_NOT_FOUND", "文档不存在", request=request, document_id=document_id)
+    return _document_summary(document)
+
+
+@router.patch("/kb/documents/{document_id}")
+def patch_document_project(document_id: str, request: Request, body: Any = Body(default=None)):
+    """Change only the optional project association of an immutable document."""
+    if not isinstance(body, dict) or "project_id" not in body:
+        return _document_error(400, "INVALID_REQUEST", "请求体必须包含 project_id", request=request, document_id=document_id)
+    project_id = body.get("project_id")
+    if project_id is not None and not isinstance(project_id, str):
+        return _document_error(400, "INVALID_PROJECT_ID", "project_id 无效", request=request, document_id=document_id)
+    return _association_response(document_id, project_id.strip() if isinstance(project_id, str) else None, request)
+
+
+@router.post("/kb/documents/{document_id}/project")
+@router.post("/kb/documents/{document_id}/associate")
+def associate_document_project(document_id: str, request: Request, body: Any = Body(default=None)):
+    if not isinstance(body, dict) or "project_id" not in body:
+        return _document_error(400, "INVALID_REQUEST", "请求体必须包含 project_id", request=request, document_id=document_id)
+    project_id = body.get("project_id")
+    if not isinstance(project_id, str):
+        return _document_error(400, "INVALID_PROJECT_ID", "project_id 无效", request=request, document_id=document_id)
+    return _association_response(document_id, project_id.strip(), request)
+
+
+@router.delete("/kb/documents/{document_id}/project")
+def disassociate_document_project(document_id: str, request: Request):
+    return _association_response(document_id, None, request)
+
+
 @router.post("/kb/documents/upload", status_code=201)
-async def upload_document(request: Request, file: UploadFile | None = File(default=None)):
+async def upload_document(
+    request: Request,
+    file: UploadFile | None = File(default=None),
+    project_id: str | None = Query(default=None),
+):
+    # The legacy /kb/upload alias invokes this application function directly;
+    # normalize FastAPI's Query default object for that compatibility seam.
+    if not isinstance(project_id, str):
+        project_id = None
     if file is None:
         return _document_error(400, "INVALID_REQUEST", "upload 请求缺少 file", request=request)
     file_name = (file.filename or "").strip()
@@ -386,6 +477,12 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
         return _document_error(413, "PAYLOAD_TOO_LARGE", "文件超过上传容量上限", request=request, retryable=False)
     if len(file_name.encode("utf-8")) > 255:
         return _document_error(413, "PAYLOAD_TOO_LARGE", "文件名超过 UTF-8 字节上限", request=request)
+    try:
+        _project_for_document(project_id)
+    except ValueError:
+        return _document_error(400, "INVALID_PROJECT_ID", "project_id 无效", request=request)
+    except LookupError:
+        return _document_error(404, "PROJECT_NOT_FOUND", "项目不存在", request=request)
     # Uploads create immutable source records, but a new record is not useful
     # until it has an index task.  Check the same generation gate used by the
     # explicit reindex route before writing a new source/metadata pair; this
@@ -411,6 +508,11 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
     except Exception:
         return _document_error(503, "SOURCE_WRITE_FAILED", "原件暂时无法保存", request=request, retryable=True)
     document = result["document"]
+    if project_id is not None:
+        associated = set_document_project(document["document_id"], project_id, owner_id=OWNER_ID)
+        if associated is None:
+            return _document_error(404, "DOCUMENT_NOT_FOUND", "文档不存在", request=request, document_id=document["document_id"])
+        document = associated
     reindex_result = None
     # The application seam always includes this boolean.  Requiring the
     # explicit False value also keeps older test/compatibility doubles that
@@ -491,6 +593,7 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
         "document_id": document["document_id"],
         "media_type": document["media_type"],
         "file_name": document["file_name"],
+        "project_id": document.get("project_id"),
         "source_sha256": document["source_sha256"],
         "status": response_status,
         "chunkers": response_chunkers,
@@ -498,7 +601,18 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
     }
 
 
-def _read_document_source_response(document_id: str, request: Request):
+def _read_document_source_response(document_id: str, request: Request, project_id: str | None = None):
+    if project_id is not None:
+        try:
+            _project_for_document(project_id)
+            if not any(record.get("document_id") == document_id for record in list_documents_for_project(project_id, owner_id=OWNER_ID)):
+                return _document_error(404, "DOCUMENT_NOT_FOUND", "文档不存在", request=request, document_id=document_id)
+        except ValueError:
+            return _document_error(400, "INVALID_PROJECT_ID", "project_id 无效", request=request, document_id=document_id)
+        except LookupError:
+            return _document_error(404, "PROJECT_NOT_FOUND", "项目不存在", request=request, document_id=document_id)
+        except Exception:
+            return _document_error(503, "METADATA_INVALID", "文档元数据暂时不可用", request=request, document_id=document_id, retryable=True)
     try:
         result = read_document_source(
             document_id,
@@ -517,13 +631,13 @@ def _read_document_source_response(document_id: str, request: Request):
 
 
 @router.get("/kb/documents/{document_id}/source")
-def read_document_source_route(document_id: str, request: Request):
-    return _read_document_source_response(document_id, request)
+def read_document_source_route(document_id: str, request: Request, project_id: str | None = Query(default=None)):
+    return _read_document_source_response(document_id, request, project_id)
 
 
 @router.head("/kb/documents/{document_id}/source")
-def head_document_source_route(document_id: str, request: Request):
-    return _read_document_source_response(document_id, request)
+def head_document_source_route(document_id: str, request: Request, project_id: str | None = Query(default=None)):
+    return _read_document_source_response(document_id, request, project_id)
 
 
 @router.get("/kb/documents/{document_id}/inspection")
@@ -774,9 +888,15 @@ def delete_document_route(document_id: str, request: Request):
 
 
 @router.post("/kb/upload", status_code=201)
-async def upload_kb_paper(request: Request, file: UploadFile | None = File(default=None)) -> dict:
+async def upload_kb_paper(
+    request: Request,
+    file: UploadFile | None = File(default=None),
+    project_id: str | None = Query(default=None),
+) -> dict:
     """Compatibility alias for the canonical immutable document upload."""
-    return await upload_document(request, file)
+    if not isinstance(project_id, str):
+        return await upload_document(request, file)
+    return await upload_document(request, file, project_id)
 
 
 @router.post("/kb/papers/{paper_id}/reindex")
@@ -803,6 +923,12 @@ def kb_ask(request: KBAskRequest):
     if len(question) > 2_000:
         raise HTTPException(status_code=400, detail="问题最多支持 2000 个字符")
     try:
+        _project_for_document(request.project_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="project_id 无效") from None
+    except LookupError:
+        raise HTTPException(status_code=404, detail="项目不存在") from None
+    try:
         available_models: List[str] = get_available_models()
     except httpx.HTTPError as error:
         raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
@@ -816,7 +942,7 @@ def kb_ask(request: KBAskRequest):
     def generate():
         started_at = time.perf_counter()
         started = utc_now()
-        yield stream_event("meta", model=request.model, top_k=top_k, chunker=chunker)
+        yield stream_event("meta", model=request.model, top_k=top_k, chunker=chunker, project_id=request.project_id)
         yield stream_event("stage", name="retrieving", message="正在检索知识库")
         try:
             # 观测初始化也必须隔离；例如 SDK/client 被替换或初始化异常时，
@@ -826,7 +952,17 @@ def kb_ask(request: KBAskRequest):
             except Exception:
                 pass
             try:
-                hits = hybrid_search(question, top_k=top_k, chunker=chunker)
+                if request.project_id is None:
+                    hits = hybrid_search(question, top_k=top_k, chunker=chunker)
+                else:
+                    visible = list_documents_for_project(request.project_id, owner_id=OWNER_ID)
+                    document_ids = [record["document_id"] for record in visible]
+                    hits = hybrid_search(
+                        question,
+                        top_k=top_k,
+                        chunker=chunker,
+                        document_ids=document_ids,
+                    )
             except Exception as error:
                 yield stream_event("error", message=f"知识库检索失败：{error}")
                 return

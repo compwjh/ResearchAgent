@@ -73,6 +73,9 @@ class KBAskRequest(BaseModel):
     model: str = MODEL_NAME
     top_k: int = 5
     chunker: Literal["v1", "v2"] = "v1"
+    # Optional owner-scoped project context; legacy callers omit it and keep
+    # the historical shared knowledge-base behavior.
+    project_id: Optional[str] = Field(default=None, max_length=100)
 
 
 class KBReindexRequest(BaseModel):

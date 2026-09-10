@@ -183,3 +183,56 @@ Task04 精确测试 **34 passed**；纳入 `tests/test_chat_route.py`、`tests/t
 - 验收执行：backend-tester（临时 Luna high）
 - 进展日志：`.codebuddy/agent-logs/spec-022/task-04/backend-tester/20260911-acceptance.md`
 - 架构师签字：待主 Agent 按收口流程确认
+
+---
+
+# Spec022 Task05 跨端验收章节
+
+> 验收角色：tester（临时 Luna high）
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-05-research-context-progress.md`
+> 范围：Task05 受影响后端、Task02/03/论文前端契约、KB Node 合同和固定安全/状态矩阵；未运行全量 pytest、部署或浏览器 E2E。
+
+## 结论：PASS（Task05 受影响范围）
+
+后端定向测试 **114 passed**，前端契约 **44 passed**，5 个 Node 合同、两份 JavaScript 语法检查、`py_compile` 和 `git diff --check` 均通过。未发现 P0/P1/P2 阻塞项；业务代码未被验收角色修改。
+
+## 执行信息
+
+| 字段 | 结果 |
+|---|---|
+| 开始 | 2026-09-11 约 07:42 +0800 |
+| 结束 | 2026-09-11 07:46 +0800 |
+| 耗时 | 约 4 分钟 |
+| 模型 | 临时 Luna high（按主 Agent 分派） |
+| token / 工具统计 | 当前子代理运行时不可用 |
+| 进展日志 | `.codebuddy/agent-logs/spec-022/task-05/tester/20260911-0745.md` |
+| 详细报告 | `docs/sdd/plans/022/artifacts/task-05/acceptance-report.md` |
+
+## 命令与结果
+
+| 检查 | 退出码 | 结果 |
+|---|---:|---|
+| `./.venv/bin/python -m pytest -q tests/test_task05_backend.py tests/test_conversations_api.py tests/test_memory_repositories.py tests/test_kb_document_routes.py tests/test_kb_routes.py tests/test_kb_ask_trace.py` | 0 | 114 passed in 13.43s |
+| `./.venv/bin/python -m py_compile backend/app/knowledge_base/application.py backend/app/knowledge_base/infrastructure/retrieve.py backend/app/knowledge_base/infrastructure/prompts.py backend/app/api/routes_kb.py backend/app/api/routes_conversations.py backend/app/api/schemas.py backend/app/chat/application/conversation_service.py` | 0 | 通过 |
+| `./.venv/bin/python -m pytest -q tests/test_frontend_conversation_contract.py tests/test_frontend_management_contract.py tests/test_frontend_paper_contract.py` | 0 | 44 passed in 0.03s |
+| `node --check frontend/app.js && node --check frontend/conversation-research.js` | 0 | 通过 |
+| 5 个 `tests/test_frontend_*.js` Node 合同 | 0 | 5/5 PASS |
+| `git diff --check` | 0 | 通过 |
+| `_redact_sensitive` 脱敏探针 | 0 | token/Bearer/authorization/password/cookie 值均为 `[REDACTED]` |
+
+## 固定验收结论
+
+- **文档关联与项目删除：PASS。** sidecar 独立保存 owner/project/document 关系；测试验证原件、document ID、hash、chunker 状态和 canonical schema 不变。删除路径先解除关联再删除项目，不删除 source、manifest 或 index。
+- **项目检索隔离：PASS。** 同一 document allowlist/filter 在 dense 与 sparse 两路、RRF、reranker、top-k 前生效；其他项目与未绑定作用域不会进入项目检索。
+- **来源展示：PASS。** 后端在最终 token、generation completed 后发送 sources，最多 5 条；前端以 pendingSources 延迟渲染，Node 合同验证编号 1–5、一次只展开一个且二次点击收起。
+- **处理过程：PASS。** 历史 steps 安全 hydrate 后默认折叠；运行中/完成/失败/跳过状态和 reduced-motion 样式具备；EOF 标记 interrupted、Abort 静默、reconnect 显示 skipped/可重试。
+- **安全：PASS。** 来源文本与元数据走 `textContent`，来源 URL 仅允许 `/api/kb/documents/.../source`；Markdown 经过 DOMPurify，工具错误/摘要中的敏感值脱敏。
+
+## 限制与主 Agent 后续
+
+tester 隔离环境访问 `http://127.0.0.1:8000/api/health` 返回 curl 退出码 7、HTTP 000，未启动服务；按任务约定不判产品失败。主 Agent 需在可监听环境完成部署 health/OpenAPI、临时项目文档关联/解绑/删除和项目会话 RAG SSE smoke，并在 Spec022 收口时执行全量回归、最终部署及运行时验收。本章节不单独将 Spec 标记为完成。
+
+## 签字
+
+- 验收执行：tester（临时 Luna high）
+- 架构师签字：待主 Agent 按收口流程确认

@@ -2,6 +2,8 @@
 
 from typing import List
 
+from backend.app.knowledge_base.infrastructure.index import point_id
+
 
 def _optional_int(value):
     """Keep null provenance coordinates null and ignore mock/non-numeric attrs."""
@@ -63,6 +65,9 @@ def citation_payloads(hits: List) -> List[dict]:
             "end_line": _optional_int(getattr(hit, "end_line", None)),
             "chunk_index": hit.chunk_index,
             "paper_id": hit.paper_id,
+            "document_id": hit.paper_id,
+            "chunk_id": point_id(hit.paper_id, hit.chunk_index, getattr(hit, "chunker", "v1")),
+            "source_url": f"/api/kb/documents/{hit.paper_id}/source" if hit.paper_id else None,
             "score": round(hit.score, 6),
             "text": hit.text,  # 供前端点击引用后展开原文片段
         })

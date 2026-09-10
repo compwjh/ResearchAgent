@@ -1,7 +1,7 @@
 # Spec 022 执行计划：项目会话管理与自进化长期记忆
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md)
-> 当前状态：`实施中`。Spec 已确认，Task02、Task03 已完成，当前进入 Task04。
+> 当前状态：`实施中`。Spec 已确认，Task02–Task05 已完成，当前进入 Task06。
 
 ## 任务索引
 
@@ -10,7 +10,7 @@
 | [02](./task-02-desktop-memory-mvp.md) | 交付可现场验证的桌面端项目记忆纵向 MVP | Spec 确认 | 已完成 |
 | [03](./task-03-management-global-memory.md) | 完整项目/会话管理、全局记忆与治理 UI | 02 | 已完成 |
 | [04](./task-04-memory-evolution-recall.md) | 异步候选、摘要、冲突和跨会话召回 | 03 | 已完成 |
-| [05](./task-05-research-context-progress.md) | 项目文档、RAG 编号来源与完整处理过程 | 04 | 待执行 |
+| [05](./task-05-research-context-progress.md) | 项目文档、RAG 编号来源与完整处理过程 | 04 | 已完成 |
 | [06](./task-06-mobile-experience.md) | 手机端项目、会话、记忆和研究交互 | 05 | 待执行 |
 | [07](./task-07-capability-memory-proposals.md) | 能力方法记忆与只读 Skill 改进建议 | 04 | 待执行 |
 | [08](./task-08-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 05、06、07 | 待执行 |
@@ -28,7 +28,7 @@
 ## 里程碑
 
 - M1 / Task02：用户能在桌面浏览器验证跨会话项目记忆（已完成）。
-- M2 / Task05：项目文档、RAG 来源和完整处理过程可验证。
+- M2 / Task05：项目文档、RAG 来源和完整处理过程可验证（已完成）。
 - M3 / Task06：手机端核心路径可验证。
 - M4 / Task08：全量回归、最终部署和 Spec 收口。
 
@@ -38,3 +38,4 @@
 - 2026-09-11：Task02 通过精确测试与受控部署验收，放行 Task03；Task08 仍保留全量回归门禁。
 - 2026-09-11：Task03 通过后端/前端复审、跨端验收和 API smoke，放行 Task04；Task08 仍保留全量回归门禁。
 - 2026-09-11：Task04 通过后端复审、精确测试和验收，放行 Task05/Task07；Task08 仍保留全量回归门禁。
+- 2026-09-11：Task05 通过双端复审、跨端验收和针对性测试，放行 Task06；Task08 仍保留全量回归门禁。
