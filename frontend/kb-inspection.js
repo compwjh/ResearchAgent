@@ -41,6 +41,37 @@
     disableAutoFetch: true,
   });
 
+  function pdfBaseUri(documentRef, rootScope) {
+    const base = documentRef?.baseURI || rootScope?.location?.href;
+    return typeof base === 'string' && base.trim() ? base : 'http://researchagent.invalid/';
+  }
+
+  function parsePdfWorkerUrl(value, documentRef, rootScope) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      return new URL(value, pdfBaseUri(documentRef, rootScope));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // PDF.js may expose workerSrc as an absolute URL after receiving a relative
+  // path. Compare URL semantics, not string spelling, while keeping the local
+  // path, exact PDF.js version query and same-origin boundary fixed.
+  function isAllowedPdfWorkerSource(value, documentRef, rootScope) {
+    const expected = parsePdfWorkerUrl(PDFJS_WORKER_SRC, documentRef, rootScope);
+    const candidate = parsePdfWorkerUrl(value, documentRef, rootScope);
+    if (!expected || !candidate || candidate.hash) return false;
+    return candidate.origin === expected.origin
+      && candidate.pathname === expected.pathname
+      && candidate.search === expected.search;
+  }
+
+  function resolvePdfWorkerSource(documentRef, rootScope) {
+    const resolved = parsePdfWorkerUrl(PDFJS_WORKER_SRC, documentRef, rootScope);
+    return resolved ? resolved.href : PDFJS_WORKER_SRC;
+  }
+
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({
       '&': '&amp;',
@@ -244,7 +275,7 @@
     const markedImpl = options.marked || rootScope.marked;
     const purifyImpl = options.DOMPurify || rootScope.DOMPurify;
     const renderer = options.renderer || { renderMarkdownBlock };
-    const pdfjsLoader = options.pdfjsLoader || (() => import('/assets/vendor/pdfjs/pdf.min.mjs?v=4.10.38'));
+    const pdfjsLoader = options.pdfjsLoader || (() => import(PDFJS_MODULE_URL));
     const IntersectionObserverImpl = options.IntersectionObserver || rootScope.IntersectionObserver;
     const tablist = elementById(documentRef, 'kb-tabs');
     const inspectionTab = elementById(documentRef, 'kb-tab-inspection');
@@ -867,18 +898,20 @@
       if (pdfjs.mainSha256 && String(pdfjs.mainSha256) !== PDFJS_MAIN_SHA256) {
         throw pdfFailure('PDFJS_VERSION_MISMATCH', 'PDF.js 主库摘要不匹配');
       }
-      if (!pdfjs.GlobalWorkerOptions || typeof pdfjs.GlobalWorkerOptions !== 'object') {
+      if (!pdfjs.GlobalWorkerOptions
+        || !['object', 'function'].includes(typeof pdfjs.GlobalWorkerOptions)) {
         throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 配置不可用');
       }
       if ((pdfjs.workerVersion && String(pdfjs.workerVersion) !== PDFJS_VERSION)
         || (pdfjs.workerSha256 && String(pdfjs.workerSha256) !== PDFJS_WORKER_SHA256)) {
         throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 版本或摘要不匹配');
       }
-      if (!PDFJS_WORKER_SRC.startsWith('/assets/vendor/pdfjs/') || PDFJS_WORKER_SRC.includes('://')) {
-        throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 必须同源');
+      const workerSrc = resolvePdfWorkerSource(documentRef, rootScope);
+      if (!isAllowedPdfWorkerSource(workerSrc, documentRef, rootScope)) {
+        throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 必须同源且版本正确');
       }
-      pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
-      if (pdfjs.GlobalWorkerOptions.workerSrc !== PDFJS_WORKER_SRC) {
+      pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+      if (!isAllowedPdfWorkerSource(pdfjs.GlobalWorkerOptions.workerSrc, documentRef, rootScope)) {
         throw pdfFailure('PDFJS_WORKER_MISMATCH', 'PDF.js worker 来源不匹配');
       }
       return pdfjs;
@@ -1256,6 +1289,8 @@
     PDFJS_MAIN_SHA256,
     PDFJS_WORKER_SHA256,
     PDF_GET_DOCUMENT_OPTIONS,
+    isAllowedPdfWorkerSource,
+    resolvePdfWorkerSource,
     escapeHtml,
     renderMarkdownBlock,
     validateSourceBlock,

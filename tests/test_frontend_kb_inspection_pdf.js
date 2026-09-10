@@ -6,6 +6,8 @@ const {
   PDFJS_MODULE_URL,
   PDFJS_WORKER_SRC,
   PDF_GET_DOCUMENT_OPTIONS,
+  isAllowedPdfWorkerSource,
+  resolvePdfWorkerSource,
 } = require('../frontend/kb-inspection.js');
 
 class FakeElement {
@@ -65,7 +67,7 @@ class FakeElement {
 }
 
 class FakeDocument {
-  constructor() { this.byId = new Map(); }
+  constructor() { this.byId = new Map(); this.baseURI = 'http://127.0.0.1:8000/'; }
   createElement(tagName) { return new FakeElement(tagName, this); }
   getElementById(id) { return this.byId.get(id) || null; }
   add(id, tagName, attrs = {}) {
@@ -170,7 +172,7 @@ async function testPdfLazyOptionsAndOverlay() {
     stopAtErrors: calls.getDocument[0].stopAtErrors,
     disableAutoFetch: calls.getDocument[0].disableAutoFetch,
   }, PDF_GET_DOCUMENT_OPTIONS);
-  assert.equal(pdfjs.GlobalWorkerOptions.workerSrc, PDFJS_WORKER_SRC);
+  assert.equal(pdfjs.GlobalWorkerOptions.workerSrc, resolvePdfWorkerSource(harness.documentRef, {}));
   assert.equal(FakeIntersectionObserver.instance.options.root, harness.elements['kb-source-content']);
   assert.equal(calls.render.length, 0);
   FakeIntersectionObserver.instance.trigger();
@@ -232,8 +234,44 @@ async function testPdfImportErrorAndCancellation() {
   resolvePdf({ numPages: 0 });
 }
 
+async function testPdfClassWorkerOptions() {
+  const { pdfjs } = makePdfjs();
+  class GlobalWorkerOptions {}
+  Object.defineProperty(GlobalWorkerOptions, 'workerSrc', {
+    get() { return this.__workerSrc || ''; },
+    set(value) { this.__workerSrc = value; },
+  });
+  pdfjs.GlobalWorkerOptions = GlobalWorkerOptions;
+  const harness = makeHarness({
+    pdfjsLoader: async () => pdfjs,
+    fetchImpl: async (url) => url.startsWith('/api/kb/documents?')
+      ? response(200, { documents: [{ document_id: 'd', file_name: 'd.pdf', media_type: 'application/pdf' }] })
+      : response(200, { blocks: [], chunks: [], anchors: [] }),
+  });
+  harness.elements['kb-tab-inspection'].dispatch('click'); await flush();
+  harness.elements['kb-inspection-document'].value = 'd';
+  harness.elements['kb-inspection-document'].dispatch('change');
+  await flush(); await flush();
+  assert.equal(harness.elements['kb-inspection-error'].getAttribute('data-error-code'), null);
+  assert.match(GlobalWorkerOptions.workerSrc, /pdf\.worker\.min\.mjs\?v=4\.10\.38$/);
+}
+
+function testPdfWorkerSourceAllowlist() {
+  const documentRef = { baseURI: 'http://127.0.0.1:8000/' };
+  const rootScope = { location: { href: documentRef.baseURI } };
+  const absolute = 'http://127.0.0.1:8000/assets/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.38';
+  assert.equal(resolvePdfWorkerSource(documentRef, rootScope), absolute);
+  assert.equal(isAllowedPdfWorkerSource(PDFJS_WORKER_SRC, documentRef, rootScope), true);
+  assert.equal(isAllowedPdfWorkerSource(absolute, documentRef, rootScope), true);
+  assert.equal(isAllowedPdfWorkerSource('https://cdn.example.test/assets/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.38', documentRef, rootScope), false);
+  assert.equal(isAllowedPdfWorkerSource('/assets/vendor/pdfjs/pdf.worker.min.mjs?v=4.10.37', documentRef, rootScope), false);
+  assert.equal(isAllowedPdfWorkerSource('/assets/vendor/pdfjs/other-worker.min.mjs?v=4.10.38', documentRef, rootScope), false);
+}
+
 (async () => {
+  testPdfWorkerSourceAllowlist();
   await testPdfLazyOptionsAndOverlay();
   await testPdfImportErrorAndCancellation();
+  await testPdfClassWorkerOptions();
   console.log('frontend PDF renderer contract: PASS (local module, worker/options, lazy canvas/text/bbox, error/cancel, GET allowlist)');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
