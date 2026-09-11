@@ -225,3 +225,7 @@
 - **024 Task04 前端推理档位与思考面板** ｜ 进行中 → 已完成（定向通过）；Task05 进行中 ｜ frontend-reviewer GO、frontend-tester PASS，24 个前端合同用例通过；真实 SSE 浏览器 smoke 因服务/Ollama 不可用留给最终收口，不提前声称全功能验证。
 - **024 Task05 最终评审、全量回归与部署** ｜ 待执行 → 进行中 ｜ Task04 定向评审 GO、前端验收 PASS 后启动双端复审、唯一全量回归、真实 Ollama 三档 smoke、部署和 Spec024 收口；Task05 前不声称完成。
 - **024 可见推理过程与会话级推理档位** ｜ 实施中 → 已完成（环境延期） ｜ Task05 完成双端 GO、全量回归 1341 passed/1 skipped/47 subtests、部署 health/home、Chromium 资源与 fake adapter 终态验收；真实 Ollama chat 的 xhigh/low/off telemetry 因固定通道 20 秒超时延期，复验步骤已写入验收报告，不以超时阻塞代码收口。
+
+## 2026-09-12
+
+- **027 Research Task 动态编排 MVP** ｜ 新建 → 待确认 ｜ 经 Grilling 共同确认深度研究入口、稳定 LangGraph 控制骨架、运行时 Task Graph、USENIX/DBLP 并行搜索、有界 Re-plan、动态模型路由、内存感知 9B Worker、初步报告和实时任务工作台；Spec 与 Task02–06 已落盘，确认前不实施。
