@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from backend.app.chat.application.reasoning import ReasoningStreamFilter, filter_reasoning
+
 from backend.app.platform.config import OLLAMA_BASE_URL
 
 
@@ -51,9 +53,10 @@ def _stream_chunks(
     messages: List[Dict[str, str]],
     model: str,
     timeout: float,
-    think: bool = True,
+    think: bool | str = True,
     options: Optional[dict] = None,
     tools: Optional[List[dict]] = None,
+    reasoning_effort: Optional[str] = None,
 ):
     """流式核心：逐块产出事件，结束时产出 OllamaChatResult。
 
@@ -76,7 +79,7 @@ def _stream_chunks(
         # 实测一次简单问答的思考就达 30+ 秒，会把 load/prefill 的差异完全淹没
         # （冷启动 4000ms vs 热调用 10ms 在 36 秒思考面前看不出来）。
         # 做受控耗时采样时必须能关掉。项目里已有先例：config.py 中 v2 切分模型即要求 think:false。
-        "think": think,
+        "think": (False if reasoning_effort == "off" else reasoning_effort) if reasoning_effort is not None else think,
     }
     if options is not None:
         payload["options"] = options
@@ -89,6 +92,7 @@ def _stream_chunks(
     intervals: List[float] = []
     content_parts: List[str] = []
     thinking_parts: List[str] = []
+    thinking_filter = ReasoningStreamFilter()
     # tool_calls 增量合并：按 index 聚合 name 与 arguments（dict 增量合并）
     tool_calls_by_index: Dict[int, dict] = {}
 
@@ -116,8 +120,13 @@ def _stream_chunks(
                 message = event.get("message") or {}
                 thinking = message.get("thinking")
                 if thinking:
-                    thinking_parts.append(thinking)
-                    yield {"type": "thinking", "content": thinking}
+                    clean = thinking_filter.push(thinking)
+                    if clean:
+                        thinking_parts.append(clean)
+                        # Keep the historical ``thinking`` type for direct
+                        # callers; the conversation stream maps it to the
+                        # public ``reasoning_delta`` event.
+                        yield {"type": "thinking", "content": clean}
 
                 chunk = message.get("content")
                 if chunk:
@@ -169,6 +178,10 @@ def _stream_chunks(
         if not content_parts and not thinking_parts and not tool_calls_by_index:
             raise RuntimeError(f"无法连接 Ollama：{error}") from error
 
+    tail = thinking_filter.finish()
+    if tail:
+        thinking_parts.append(tail)
+        yield {"type": "thinking", "content": tail}
     end = time.perf_counter()
     timings = OllamaTimings(
         load_ms=load_ms,
@@ -183,7 +196,7 @@ def _stream_chunks(
 
     yield OllamaChatResult(
         content="".join(content_parts),
-        thinking="".join(thinking_parts),
+        thinking=filter_reasoning(thinking_parts)[0],
         timings=timings,
         timings_available=timings_available,
         first_token_ms=first_token_ms,
@@ -198,9 +211,10 @@ def chat_direct(
     model: str,
     *,
     timeout: float = 300.0,
-    think: bool = True,
+    think: bool | str = True,
     options: Optional[dict] = None,
     tools: Optional[List[dict]] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> OllamaChatResult:
     """直连 Ollama /api/chat 做流式调用，并采集原生耗时。
 
@@ -212,7 +226,7 @@ def chat_direct(
     `tools` 为 function-calling schema（Task07），默认 None 不启用工具调用。
     """
     result: Optional[OllamaChatResult] = None
-    for item in _stream_chunks(messages, model, timeout, think, options, tools):
+    for item in _stream_chunks(messages, model, timeout, think, options, tools, reasoning_effort):
         result = item  # 内核最后一定 yield 的正是 OllamaChatResult
     assert result is not None
     return result
@@ -233,9 +247,10 @@ class ChatDirectStream:
         messages: List[Dict[str, str]],
         model: str,
         timeout: float = 300.0,
-        think: bool = True,
+        think: bool | str = True,
         options: Optional[dict] = None,
         tools: Optional[List[dict]] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> None:
         self._messages = messages
         self._model = model
@@ -243,12 +258,13 @@ class ChatDirectStream:
         self._think = think
         self._options = options
         self._tools = tools
+        self._reasoning_effort = reasoning_effort
         self.result: Optional[OllamaChatResult] = None
         self._exhausted = False
 
     def __iter__(self):
         for item in _stream_chunks(
-            self._messages, self._model, self._timeout, self._think, self._options, self._tools
+            self._messages, self._model, self._timeout, self._think, self._options, self._tools, self._reasoning_effort
         ):
             if isinstance(item, OllamaChatResult):
                 self.result = item
@@ -273,9 +289,10 @@ def chat_direct_stream(
     model: str,
     *,
     timeout: float = 300.0,
-    think: bool = True,
+    think: bool | str = True,
     options: Optional[dict] = None,
     tools: Optional[List[dict]] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> ChatDirectStream:
     """返回一个可迭代封装：逐块产出 token/thinking 事件，迭代结束后可读 .result。
 
@@ -286,4 +303,4 @@ def chat_direct_stream(
     `options` 透传给 Ollama（如 ``{"temperature": 0.0}``），默认 None 不改动请求体。
     `tools` 为 function-calling schema（Task07），默认 None 不启用工具调用。
     """
-    return ChatDirectStream(messages, model, timeout, think, options, tools)
+    return ChatDirectStream(messages, model, timeout, think, options, tools, reasoning_effort)

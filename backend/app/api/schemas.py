@@ -31,6 +31,7 @@ class ConversationMessageRequest(BaseModel):
     project_id: Optional[str] = Field(default=None, max_length=100)
     model: str = MODEL_NAME
     mode: Literal["normal", "developer"] = "normal"
+    reasoning_effort: Optional[Literal["off", "low", "medium", "high", "xhigh"]] = None
 
 
 class ConversationPatchRequest(BaseModel):
@@ -39,6 +40,10 @@ class ConversationPatchRequest(BaseModel):
     status: Optional[Literal["active", "archived", "deleted"]] = None
     memory_history_policy: Optional[Literal["from_binding", "include_prior_history"]] = None
     confirm_move: bool = False
+
+
+class ConversationReasoningRequest(BaseModel):
+    reasoning_effort: Literal["off", "low", "medium", "high", "xhigh"]
 
 
 class MemoryCreateRequest(BaseModel):

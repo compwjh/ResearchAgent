@@ -2,12 +2,22 @@ import json
 import time
 from unittest.mock import patch
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
 from backend.app.api.routes_conversations import _message_stream
 from backend.app.chat.application.conversation_service import MemoryEvolutionService, MemoryIntent
 from backend.app.memory.repository import MemoryRepository
+from backend.app.platform.ollama import ReasoningCapabilities
+
+
+@pytest.fixture(autouse=True)
+def _task03_reasoning_probe():
+    capabilities = ReasoningCapabilities("model", ("off", "low", "medium", "high", "xhigh"), "xhigh", "ollama_probe", "now", {effort: f"e-{effort}" for effort in ("off", "low", "medium", "high", "xhigh")})
+    with patch("backend.app.platform.ollama.probe_reasoning_capabilities", return_value=capabilities):
+        yield
 
 
 def _events(text):
@@ -238,7 +248,7 @@ def test_chat_prompt_does_not_duplicate_current_user_message(tmp_path):
         captured = {}
         class CaptureRun(FakeRun):
             pass
-        def capture_run(_question, _model, *, messages):
+        def capture_run(_question, _model, *, messages, reasoning_effort):
             captured["messages"] = messages
             return CaptureRun()
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(

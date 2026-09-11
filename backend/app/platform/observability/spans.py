@@ -103,29 +103,17 @@ def _build_metadata(
     input_chars: int,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    intervals = result.chunk_intervals_ms
-    avg_interval = (sum(intervals) / len(intervals)) if intervals else 0.0
-
     metadata: Dict[str, Any] = {
         "model": model,
         "route": route,
-        "timings_available": result.timings_available,
-        # 思考过程与正式输出分开存，便于在 UI 中区分查看
-        "thinking": _truncate(result.thinking, obs_config.max_output_chars()),
-        # 字符数字段一律取**截断前**的原始长度，供统计看板做不可复现的手工计算替代
-        "input_chars": input_chars,
-        "output_chars": len(result.content or ""),
-        "thinking_chars": len(result.thinking or ""),
-        "prompt_tokens": result.timings.prompt_tokens,
-        "completion_tokens": result.timings.completion_tokens,
-        "chunk_count": len(intervals),
-        "avg_chunk_interval_ms": round(avg_interval, 3),
+        "reasoning_present": bool(result.thinking),
+        "reasoning_chars": len(result.thinking or ""),
     }
-    # 各阶段耗时（毫秒，保留 3 位小数便于阅读）
-    for key, value in metrics.items():
-        metadata[key] = round(value, 3)
     if extra:
-        metadata.update(extra)
+        metadata.update({
+            key: value for key, value in extra.items()
+            if key in {"reasoning_status", "reasoning_duration_ms", "answer_duration_ms", "error_code", "stable_error_code", "reasoning_present", "reasoning_chars", "model", "route"}
+        })
     return metadata
 
 
@@ -181,17 +169,8 @@ def record_ollama_generation(
         input_chars=input_chars,
         extra=extra_metadata,
     )
-    # 统一为 generation 提供稳定的链路类型；显式非空值优先，空值回退到名称推断。
-    if not metadata.get("chain_type"):
-        metadata["chain_type"] = "kb" if name.startswith("kb.") else "chat"
-    # 成功/失败标记供统计看板做成功率与异常类型聚合。
-    metadata["success"] = success
-    metadata["success_flag"] = 1 if success else 0
-    metadata["error_type"] = error_type if (error_type and not success) else ""
-    if session_id:
-        metadata["session_id"] = session_id
-    if tags:
-        metadata["tags"] = tags
+    if error_type and not success:
+        metadata["error_code"] = str(error_type)
 
     # 首 token 时刻（TTFT）是本次诊断的核心指标，不能因为调用方漏传 started_at 就丢失：
     # 没有起点时，用「当前时刻 - 客户端墙钟」反推请求起点，再叠加首 token 延迟。

@@ -212,12 +212,13 @@ def test_current_sse_helper_is_not_yet_v7_envelope():
     assert set(payload) == {"type", "content"}
 
 
-def test_current_paths_are_separated_for_reasoning_audit():
+def test_current_paths_share_reasoning_extraction_and_redacted_observability():
     graph_source = Path("backend/app/chat/application/chat_graph.py").read_text()
     runner_source = Path("backend/app/chat/application/chat_runner.py").read_text()
     direct_source = Path("backend/app/platform/ollama_direct.py").read_text()
     spans_source = Path("backend/app/platform/observability/spans.py").read_text()
     assert "message.get(\"thinking\")" in direct_source
-    assert "additional_kwargs" not in graph_source
-    assert 'thinking=""' in runner_source
-    assert '"thinking": _truncate(result.thinking' in spans_source
+    assert "extract_reasoning" in graph_source
+    assert 'thinking="".join(reasoning_parts)' in runner_source
+    assert '"reasoning_present"' in spans_source
+    assert '"thinking": _truncate(result.thinking' not in spans_source

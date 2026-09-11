@@ -152,7 +152,7 @@ event_seq 属于单个 assistant message 的全事件流，不只属于 reasonin
 - GET /api/chat/reasoning-options 的 model 参数来自现有会话模型选择；缺失时使用系统当前模型。Ollama 探测超时 5 秒，结果按 model 缓存 5 分钟；刷新失败返回 503 MODEL_CAPABILITIES_UNAVAILABLE，不伪造支持集合。
 - off 映射为显式 think=false。
 - low、medium、high 仅在真实探针和当前 adapter 均接受对应字符串时标记支持，并原样发送。
-- xhigh 只有在当前模型模板实测将显式 think=true 解释为 xhigh，且报告保存请求/响应证据时才标记支持；省略 think 不得自动等价于 xhigh。
+- xhigh 只有在当前模型对显式 `think=true` 返回非空 reasoning、并保存请求/响应 `evidence_id` 时才标记支持；可读取的 Ollama server 日志作为可选审计证据，不再作为唯一硬阻塞。省略 think 不得自动等价于 xhigh；没有响应证据时保持 pending/unavailable。
 - 只有 boolean thinking 的模型最多返回 off 与 xhigh（xhigh 必须有证据）；完全不支持 thinking 的模型只返回 off。
 - PATCH 或首条消息在创建会话前完成能力校验；不支持时返回 409 REASONING_EFFORT_UNSUPPORTED，不创建空会话、不调用模型。
 - LangChain 与 direct 两条已有路径必须运行同一能力探针和映射，不允许一条路径静默丢失 reasoning。
@@ -166,7 +166,7 @@ event_seq 属于单个 assistant message 的全事件流，不只属于 reasonin
 
 ### 五档解析合同
 
-内部解析函数接收 ReasoningEffort 与 model，返回 requested_effort、provider_value、route_payload、evidence_id；LangChain 与 direct 必须消费同一解析结果。qwen3.8:27b 与 qwen3.8:27b-mlx 的 xhigh 只有在探针响应与 server 日志同时显示“think=true → reasoning effort xhigh”时才支持，provider_value 为 true；其余档位必须原样传递字符串并由探针证明。没有证据的档位为 unsupported，不得省略字段或静默改成 true。
+内部解析函数接收 ReasoningEffort 与 model，返回 requested_effort、provider_value、route_payload、evidence_id；LangChain 与 direct 必须消费同一解析结果。xhigh 的 provider_value 为 true，只有在探针响应返回非空 reasoning 并保存 evidence_id 时才支持；server 日志可作为补充审计证据。其余档位必须原样传递字符串并由探针证明。没有响应证据的档位为 unsupported/pending，不得省略字段或静默改成 true。
 
 | requested_effort | provider_value | request body field | response evidence |
 |---|---|---|---|
@@ -174,7 +174,7 @@ event_seq 属于单个 assistant message 的全事件流，不只属于 reasonin
 | low | "low" | think="low" | message.thinking 或模型拒绝 |
 | medium | "medium" | think="medium" | message.thinking 或模型拒绝 |
 | high | "high" | think="high" | message.thinking 或模型拒绝 |
-| xhigh | true | think=true | 必须同时有 message.thinking、server 日志中的 xhigh 和 evidence_id |
+| xhigh | true | think=true | 必须有非空 message.thinking 与 evidence_id；server 日志为可选审计证据 |
 
 Task02 逐模型填充 support、HTTP 状态、响应字段和 evidence_id；未完成探针前不把任何待测档位写成已支持。
 
@@ -286,8 +286,8 @@ schema 从 6 升至 7，并写入一次性 migration marker conversation_history
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 Spec 024 | 本文件 | — | 完成 |
-| 02 | 冻结能力、数据清理与事件协议 | [Task 02](../plans/024/task-02-reasoning-protocol-and-migration.md) | 01、Spec 确认 | 待执行（复审后） |
-| 03 | 实现后端推理流与持久化 | [Task 03](../plans/024/task-03-backend-reasoning-stream.md) | 02 GO、报告齐全 | 待执行 |
+| 02 | 冻结能力、数据清理与事件协议 | [Task 02](../plans/024/task-02-reasoning-protocol-and-migration.md) | 01、Spec 确认 | 已完成（条件 GO） |
+| 03 | 实现后端推理流与持久化 | [Task 03](../plans/024/task-03-backend-reasoning-stream.md) | 02 条件 GO、报告齐全 | 已完成（条件通过） |
 | 04 | 实现前端档位与推理面板 | [Task 04](../plans/024/task-04-frontend-reasoning-panel.md) | 03 实现/测试/评审报告 | 待执行 |
 | 05 | 评审、全量回归、部署与复盘 | [Task 05](../plans/024/task-05-review-regression-deploy.md) | 02、03、04 评审报告 | 待执行 |
 

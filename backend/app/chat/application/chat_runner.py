@@ -64,7 +64,7 @@ def _normalize_langchain_messages(messages: List[Dict[str, str]]) -> List[Dict[s
     return [merged_system, *(dict(message) for message in messages if message.get("role") != "system")]
 
 
-def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool):
+def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool | str):
     """默认链路驱动器：事件产出与改动前完全一致，并在结束后合成 OllamaChatResult。
 
     `messages` 是实际发给模型的 role/content 消息列表（KB 链路传入 role-aware messages，
@@ -72,11 +72,10 @@ def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool):
     合成结果的 timings_available 恒为 False（langchain 丢弃了原生耗时字段），
     并记录首片段延迟与总墙钟供埋点使用。
     """
-    chat_model = (
-        _ollama.create_chat_model(model)
-        if reasoning
-        else _ollama.create_chat_model(model, reasoning=False)
-    )
+    if reasoning is True:
+        chat_model = _ollama.create_chat_model(model)
+    else:
+        chat_model = _ollama.create_chat_model(model, reasoning=reasoning)
     from backend.app.chat.application.chat_graph import build_chat_graph
 
     graph = build_chat_graph(chat_model)
@@ -85,18 +84,22 @@ def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool):
     first_token_ms = 0.0
     first_seen = False
     parts: List[str] = []
+    reasoning_parts: List[str] = []
     try:
         for event in graph.stream({"messages": langchain_messages}, stream_mode="custom"):
             if not first_seen:
                 first_seen = True
                 first_token_ms = (time.perf_counter() - start) * 1000.0
-            parts.append(event.get("content") or "")
+            if event.get("type") in {"thinking", "reasoning_delta"}:
+                reasoning_parts.append(event.get("content") or "")
+            else:
+                parts.append(event.get("content") or "")
             yield event
     finally:
         client_wall_ms = (time.perf_counter() - start) * 1000.0
         run.result = OllamaChatResult(
             content="".join(parts),
-            thinking="",
+            thinking="".join(reasoning_parts),
             timings=OllamaTimings(),
             timings_available=False,
             first_token_ms=first_token_ms,
@@ -120,6 +123,7 @@ def run_chat(
     route: Optional[str] = None,
     prompt: Optional[str] = None,
     think: bool = True,
+    reasoning_effort: Optional[str] = None,
     messages: Optional[List[Dict[str, str]]] = None,
     system_messages: Optional[List[Dict[str, str]]] = None,
 ) -> "ChatRun":
@@ -145,12 +149,16 @@ def run_chat(
     else:
         messages = [{"role": str(item.get("role", "user")), "content": str(item.get("content", ""))} for item in messages]
 
+    provider_value = (False if reasoning_effort == "off" else reasoning_effort) if reasoning_effort is not None else think
     if resolved == "direct":
-        stream = chat_direct_stream(messages, model, think=think)
+        if reasoning_effort is None:
+            stream = chat_direct_stream(messages, model, think=think)
+        else:
+            stream = chat_direct_stream(messages, model, think=provider_value, reasoning_effort=reasoning_effort)
         run = ChatRun(route="direct")
         run.events = iter(_direct_drive(run, stream))
         return run
 
     run = ChatRun(route="langchain")
-    run.events = iter(_langchain_drive(run, model, messages, think))
+    run.events = iter(_langchain_drive(run, model, messages, provider_value))
     return run

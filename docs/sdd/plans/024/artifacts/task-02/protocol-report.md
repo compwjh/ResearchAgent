@@ -168,6 +168,10 @@ git diff --check
 4. 以临时库测试矩阵为基础实现一次性 schema v7 事务迁移和完整 SSE envelope/event_seq；真实库执行前必须重新备份、落盘计数并做 dry-run。
 5. 单独补采 xhigh server-log 证据（或由环境负责人提供等价的受信日志证据）。在证据补齐前，UI/API 不得把 xhigh 作为 supported/default；若环境始终无法提供日志，保持 xhigh pending/unsupported，但不回滚已确认的其他档位条件 GO。
 
+## 2026-09-12 证据口径修订
+
+结合正式 Spec024 的环境适配修订，xhigh 的支持判定以真实 HTTP `think=true` 且响应含非空 `message.thinking` 与 `evidence_id` 为必要条件；server log 作为可选审计证据，不再作为唯一硬阻塞。原始探针表中“缺 server log”的记录保留为历史审计事实；若响应证据缺失，仍必须返回 pending/unavailable，不得静默降档。
+
 ## 产物、改动文件和执行统计
 
 - 改动文件：

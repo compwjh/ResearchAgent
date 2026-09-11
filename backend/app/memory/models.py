@@ -29,6 +29,7 @@ class Conversation:
     updated_at: datetime
     memory_binding_at: Optional[datetime] = None
     memory_binding_message_id: Optional[str] = None
+    reasoning_effort: str = "xhigh"
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,15 @@ class Message:
     mode: Optional[str]
     created_at: datetime
     completed_at: Optional[datetime]
+    reasoning_content: Optional[str] = None
+    reasoning_status: Optional[str] = None
+    reasoning_started_at: Optional[datetime] = None
+    reasoning_completed_at: Optional[datetime] = None
+    first_reasoning_at: Optional[datetime] = None
+    first_answer_token_at: Optional[datetime] = None
+    reasoning_truncated: bool = False
+    reasoning_chars: int = 0
+    last_event_seq: int = 0
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,9 @@
 - **024 可见推理过程与会话级推理档位** ｜ 待确认 → 已确认 ｜ 用户明确要求 pull 后继续开发；需求最终复审与技术复审均通过，允许启动 Task02。
 - **024 可见推理过程与会话级推理档位** ｜ 已确认 → 实施中 ｜ 完成首条消息、SSE 耗时/终态和 PATCH `updated_at` 合同收紧；启动 Task02 真实 Ollama/临时数据库 Go/No-Go，业务代码暂不修改。
 - **024 Task02 运行时协议与迁移验证** ｜ 进行中 → 已完成（条件 GO） ｜ 三模型 provider 探针、临时 SQLite v7 清理与 8 个异常回滚点、event_seq/过滤合同测试通过；xhigh 保持 pending-evidence，应用接缝与生产迁移交由 Task03 实现并复测。
+- **024 Task03 后端推理流与持久化** ｜ 待执行 → 实施中 ｜ Task02 条件 GO；启动后端统一档位解析、推理事件、schema v7 迁移、过滤与隔离实现，暂不执行全量回归。
+- **024 Task03 xhigh 能力证据口径** ｜ 评审修订 ｜ 结合局域网 Ollama 实测：显式 `think=true` 且响应含非空 reasoning 与 evidence_id 即可判定 provider 支持；server 日志改为可选审计证据，缺响应证据仍保持 pending/unavailable，避免环境日志不可读阻塞功能实现。
+- **024 Task03 后端推理流与持久化** ｜ 实施中 → 已完成（条件通过） ｜ 后端实现、独立 backend-reviewer/tester 复核及 81 个定向用例通过；未执行全量回归，Task04 前端实现继续推进。
 
 ## 2026-09-11
 

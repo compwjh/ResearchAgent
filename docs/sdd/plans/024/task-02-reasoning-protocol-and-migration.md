@@ -42,7 +42,7 @@
 - 报告固定返回 model、supported_efforts、default_effort、source、cached_at；能力读取失败为 MODEL_CAPABILITIES_UNAVAILABLE。
 - 固定请求为 GET /api/chat/reasoning-options?model=<urlencoded-model>；统一错误 JSON 为 error.code、error.message、error.retryable。逐档报告必须包含 provider_value、route_payload、response_field、evidence_id。
 - LangChain/direct 的统一 adapter 方法签名为 resolve_reasoning_effort(model, requested_effort, route) -> requested_effort/provider_value/route_payload/evidence_id；chat_graph 的 chunk extraction 需明确从 additional_kwargs.reasoning_content 或等价字段生成 thinking 事件。
-- 固定五档矩阵：off→think=false；low/medium/high→think 为同名字符串；xhigh→think=true 且必须同时有 message.thinking、server 日志 xhigh 和 evidence_id。未知/未探明值统一 unsupported。
+- 固定五档矩阵：off→think=false；low/medium/high→think 为同名字符串；xhigh→think=true 且必须有非空 message.thinking 与 evidence_id，server 日志为可选审计证据。未知/未探明值统一 unsupported/pending。
 
 ### 迁移矩阵与事务
 

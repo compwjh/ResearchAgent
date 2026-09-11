@@ -1,7 +1,7 @@
 # Task 03：实现后端推理流与持久化
 
 > 关联：[Spec 024](../../specs/024-visible-reasoning-controls.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02 GO；被依赖：Task04、Task05；当前状态：待执行
+> 依赖：Task02 条件 GO；被依赖：Task04、Task05；当前状态：已完成（条件通过）
 
 ## 一句话目标
 
@@ -19,7 +19,7 @@
 - 实现一次性事务迁移，清理旧会话与严格依赖数据，保留项目、记忆、SystemRule 和知识库。
 - 扩展既有会话消息入口与 reasoning-options 能力接口。
 - SSE 使用 Spec 中冻结的 reasoning_started、reasoning_delta、reasoning_completed、token、done、error。
-- LangChain/direct 均走同一 effort 映射；xhigh 只能使用 Task02 的真实证据，不得把省略参数当作隐式降级。
+- LangChain/direct 均走同一 effort 映射；xhigh 只能使用 Task02 的真实 HTTP 响应证据，不得把省略参数当作隐式降级；server 日志仅作可选审计记录。
 - 每条事件带单调 event_seq；后端和持久化状态机拒绝重复、旧序号和终态回退。
 - observability metadata 只保留 reasoning_present、reasoning_chars、阶段耗时和状态，删除 thinking 文本。
 
@@ -125,7 +125,7 @@ docs/sdd/plans/024/artifacts/task-03/implementation-report.md
 
 ## 执行结果
 
-待执行后填写。
+已完成（条件通过）。后端实现、独立评审和定向验收报告已落盘；Task04 可启动，Task05 仍需全量回归和部署验收。
 
 ## 变更日志
 

@@ -12,7 +12,12 @@ Task07 会用 AST 静态检查强制）。因此这里只保留与业务无关�
 留在 platform 会构成反向依赖。
 """
 
-from dataclasses import dataclass
+import threading
+import time
+import hashlib
+import json
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from typing import Iterator, List, Optional
 
 import httpx
@@ -20,6 +25,108 @@ from langchain_ollama import ChatOllama
 
 from backend.app.platform.config import OLLAMA_BASE_URL
 from backend.app.platform.ollama_direct import OllamaChatResult
+
+REASONING_EFFORTS = ("off", "low", "medium", "high", "xhigh")
+_CAPABILITY_TTL_SECONDS = 300.0
+_capability_cache: dict[str, tuple[float, "ReasoningCapabilities"]] = {}
+_capability_lock = threading.RLock()
+
+
+@dataclass(frozen=True)
+class ReasoningCapabilities:
+    model: str
+    supported_efforts: tuple[str, ...]
+    default_effort: str
+    source: str = "cache"
+    cached_at: str = ""
+    evidence_ids: dict[str, str] = None
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+
+@dataclass(frozen=True)
+class ReasoningResolution:
+    model: str
+    requested_effort: str
+    provider_value: object
+    capabilities: ReasoningCapabilities
+    route_payload: dict
+    evidence_id: Optional[str] = None
+
+    @property
+    def effort(self) -> str:
+        return self.requested_effort
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+
+def _capabilities_for_model(model: str) -> ReasoningCapabilities:
+    return ReasoningCapabilities(str(model or "").strip(), ("off",), "off", "unavailable", datetime.now(timezone.utc).isoformat(), {})
+
+
+def probe_reasoning_capabilities(model: str) -> ReasoningCapabilities:
+    """Probe each effort with a short non-streaming Ollama request."""
+    model = str(model or "").strip()
+    supported, evidence = [], {}
+    for effort in REASONING_EFFORTS:
+        provider_value = False if effort == "off" else (True if effort == "xhigh" else effort)
+        payload = {"model": model, "messages": [{"role": "user", "content": "Reply with exactly OK."}], "stream": False, "think": provider_value, "options": {"temperature": 0, "num_predict": 1}}
+        try:
+            response = httpx.post(f"{OLLAMA_BASE_URL.rstrip('/')}/api/chat", json=payload, timeout=5, trust_env=False)
+            if response.status_code != 200:
+                continue
+            body = response.json() if response.content else {}
+            message = body.get("message") or {}
+            thinking = message.get("thinking")
+            if effort == "off" and not thinking:
+                supported.append(effort)
+            elif effort != "off" and isinstance(thinking, str) and thinking:
+                supported.append(effort)
+            else:
+                continue
+            evidence[effort] = f"OLLAMA-PROBE-{hashlib.sha256(json.dumps({'model': model, 'effort': effort, 'status': response.status_code}, sort_keys=True).encode()).hexdigest()[:16]}"
+        except (httpx.HTTPError, ValueError, TypeError):
+            continue
+    if not supported:
+        raise RuntimeError("MODEL_CAPABILITIES_UNAVAILABLE")
+    default = "xhigh" if "xhigh" in supported else supported[0]
+    return ReasoningCapabilities(model, tuple(supported), default, "ollama_probe", datetime.now(timezone.utc).isoformat(), evidence)
+
+
+def get_reasoning_capabilities(model: str, *, refresh: bool = False) -> ReasoningCapabilities:
+    key = str(model or "").strip()
+    now = time.monotonic()
+    with _capability_lock:
+        cached = _capability_cache.get(key)
+        if cached and not refresh and now - cached[0] < _CAPABILITY_TTL_SECONDS:
+            return replace(cached[1], source="cache")
+        capabilities = probe_reasoning_capabilities(key)
+        _capability_cache[key] = (now, capabilities)
+        return capabilities
+
+
+def clear_reasoning_capability_cache() -> None:
+    with _capability_lock:
+        _capability_cache.clear()
+
+
+def resolve_reasoning_effort(model: str, effort: Optional[str] = None) -> ReasoningResolution:
+    """Resolve a session effort to the exact provider value.
+
+    ``off`` maps to boolean ``False``; string efforts are never silently
+    downgraded.  Unsupported xhigh/high therefore fail before model creation.
+    """
+    capabilities = get_reasoning_capabilities(model)
+    requested = str(effort if effort is not None else "xhigh").strip().lower()
+    if requested not in REASONING_EFFORTS:
+        raise ValueError("INVALID_REASONING_EFFORT")
+    if requested not in capabilities.supported_efforts:
+        raise ValueError("REASONING_EFFORT_UNSUPPORTED")
+    provider_value: object = False if requested == "off" else requested
+    route_payload = {"think": provider_value}
+    return ReasoningResolution(str(model), requested, provider_value, capabilities, route_payload, capabilities.evidence_ids.get(requested) if capabilities.evidence_ids else None)
 
 
 def get_available_models() -> List[str]:
@@ -32,7 +139,7 @@ def get_available_models() -> List[str]:
     return [item["name"] for item in response.json().get("models", [])]
 
 
-def create_chat_model(model_name: str, *, reasoning: Optional[bool] = None) -> ChatOllama:
+def create_chat_model(model_name: str, *, reasoning: Optional[bool | str] = None) -> ChatOllama:
     """创建本地 Ollama 会话模型。
 
     `trust_env=False` 是必须的：httpx 默认会读取 macOS 系统代理配置，
