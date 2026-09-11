@@ -671,18 +671,26 @@ function acceptConversationEvent(assistantMessage, eventData) {
   if (assistantMessage.dataset.doneSeen === 'true') return false;
   if (assistantMessage.dataset.terminal === 'true' && assistantMessage.dataset.sequenceGap !== 'true') return false;
   if ((assistantMessage.dataset.sequenceGap === 'true' || assistantMessage.dataset.errorSeen === 'true') && !finalEnvelope) return false;
+  if (eventData.type === 'meta' && assistantMessage.dataset.metaSeen === 'true') return false;
   const seq = Number(eventData.event_seq);
-  if (!Number.isInteger(seq) || seq < 1) return true;
+  if (!Number.isInteger(seq) || seq < 1) {
+    assistantMessage.dataset.sequenceGap = 'true';
+    assistantMessage.dataset.terminal = 'true';
+    assistantMessage.dataset.status = 'interrupted';
+    finalizeConversationReasoning(assistantMessage.querySelector('.conversation-reasoning'), 'interrupted');
+    addConversationErrorNotice(assistantMessage, new Error('事件流中断：缺少有效事件序号'));
+    return false;
+  }
   const last = Number(assistantMessage.dataset.lastEventSeq || 0);
   if (seq <= last) return false;
-  if (last > 0 && seq > last + 1 && !finalEnvelope) {
+  if (last > 0 && seq > last + 1) {
     assistantMessage.dataset.sequenceGap = 'true';
     assistantMessage.dataset.terminal = 'true';
     assistantMessage.dataset.status = 'interrupted';
     const panel = assistantMessage.querySelector('.conversation-reasoning');
     finalizeConversationReasoning(panel, 'interrupted');
     addConversationErrorNotice(assistantMessage, new Error('事件流中断'));
-    return false;
+    if (!finalEnvelope) return false;
   }
   assistantMessage.dataset.lastEventSeq = String(seq);
   return true;
@@ -1806,20 +1814,53 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
     const handleSse = (chunk) => {
       const line = chunk.split('\n').find((item) => item.startsWith('data: ')); if (!line) return;
       let eventData; try { eventData = JSON.parse(line.slice(6)); } catch (_) { return; }
+      if (streamError) return;
       if (eventData.type === 'meta') {
+        if (!assistantMessage) {
+          const metaSeq = Number(eventData.event_seq);
+          if (!Number.isInteger(metaSeq) || metaSeq !== 1) {
+            streamError = new Error('事件流中断：首个 meta 序号无效');
+            return;
+          }
+          assistantMessage = createAssistantMessage(eventData.model || activeModel);
+          if (!acceptConversationEvent(assistantMessage, eventData)) {
+            assistantMessage.remove();
+            assistantMessage = null;
+            streamError = new Error('事件流中断：首个 meta 未被接受');
+            return;
+          }
+          assistantMessage.dataset.metaSeen = 'true';
+        } else if (!acceptConversationEvent(assistantMessage, eventData)) {
+          if (assistantMessage.dataset.sequenceGap === 'true') {
+            assistantMessage.dataset.streamActive = 'false';
+            assistantMessage.classList.add('is-interrupted');
+            finalizeConversationReasoning(assistantMessage.querySelector('.conversation-reasoning'), 'interrupted');
+            stopConversationProcessing(processing, 'interrupted', '事件流中断');
+            collapseConversationProcessing(processing);
+          }
+          return;
+        }
         userMessageId = eventData.user_message_id || userMessageId;
         if (userMessageId) userMessage.dataset.messageId = userMessageId;
         if (eventData.conversation_id && !conversationState.conversationId) {
           conversationState.conversationId = eventData.conversation_id; conversationState.conversation = { conversation_id: eventData.conversation_id, project_id: eventData.project_id || conversationState.projectId, title: question.slice(0, 80), status: 'active' }; updateConversationUrl(eventData.conversation_id); updateGovernanceControls(); loadConversationList();
         }
-        assistantMessage = createAssistantMessage(eventData.model || activeModel); processing = createConversationProcessing(assistantMessage); sourcesRenderer = createConversationSources(assistantMessage); writer = createMarkdownWriter(assistantMessage.querySelector('.answer'), messages);
+        processing = createConversationProcessing(assistantMessage); sourcesRenderer = createConversationSources(assistantMessage); writer = createMarkdownWriter(assistantMessage.querySelector('.answer'), messages);
         if (eventData.assistant_message_id) assistantMessage.dataset.messageId = eventData.assistant_message_id;
         if (eventData.user_message_id) assistantMessage.dataset.parentMessageId = eventData.user_message_id;
-        assistantMessage.dataset.lastEventSeq = String(Number(eventData.event_seq) || 0);
         assistantMessage.dataset.reasoningEffort = normalizeReasoningEffort(eventData.reasoning_effort || payload.reasoning_effort);
         assistantMessage.dataset.streamActive = 'true';
         setConversationStatus(assistantMessage.dataset.reasoningEffort === 'off' ? '正在生成回答…' : '模型正在准备思考…');
-      } else if (!acceptConversationEvent(assistantMessage, eventData)) return;
+      } else if (!acceptConversationEvent(assistantMessage, eventData)) {
+        if (assistantMessage?.dataset.sequenceGap === 'true') {
+          assistantMessage.dataset.streamActive = 'false';
+          assistantMessage.classList.add('is-interrupted');
+          finalizeConversationReasoning(assistantMessage.querySelector('.conversation-reasoning'), 'interrupted');
+          stopConversationProcessing(processing, 'interrupted', '事件流中断');
+          collapseConversationProcessing(processing);
+        }
+        return;
+      }
       if (eventData.type === 'progress') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'memory') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'reconnect') appendConversationEvent(assistantMessage, processing, eventData);

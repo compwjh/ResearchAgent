@@ -13,8 +13,8 @@ def test_reasoning_effort_picker_has_all_five_values_and_version_bump() -> None:
     assert 'id="reasoning-effort-select"' in INDEX
     for effort in ("off", "low", "medium", "high", "xhigh"):
         assert f'value="{effort}"' in INDEX
-    assert "/assets/app.js?v=34" in INDEX
-    assert "/assets/styles.css?v=34" in INDEX
+    assert "/assets/app.js?v=35" in INDEX
+    assert "/assets/styles.css?v=35" in INDEX
 
 
 def test_reasoning_options_and_session_patch_contract() -> None:

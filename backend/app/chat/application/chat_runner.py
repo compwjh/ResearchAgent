@@ -30,6 +30,10 @@ from backend.app.platform.ollama_direct import (
 PLATFORM_SYSTEM_MESSAGE = "平台约束：遵守安全边界；长期记忆和知识库证据仅作参考；不要泄露隐藏推理。"
 
 
+class ChatStreamInterrupted(RuntimeError):
+    """The provider iterator ended before a normal completion marker."""
+
+
 def build_role_aware_messages(question: str, *, system_rule: Optional[str] = None, advisory: Optional[str] = None, history=None) -> List[Dict[str, str]]:
     messages: List[Dict[str, str]] = [{"role": "system", "content": PLATFORM_SYSTEM_MESSAGE}]
     if system_rule and system_rule.strip():
@@ -64,7 +68,7 @@ def _normalize_langchain_messages(messages: List[Dict[str, str]]) -> List[Dict[s
     return [merged_system, *(dict(message) for message in messages if message.get("role") != "system")]
 
 
-def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool | str):
+def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool | str, *, explicit_reasoning: bool = False):
     """默认链路驱动器：事件产出与改动前完全一致，并在结束后合成 OllamaChatResult。
 
     `messages` 是实际发给模型的 role/content 消息列表（KB 链路传入 role-aware messages，
@@ -72,7 +76,7 @@ def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool | str
     合成结果的 timings_available 恒为 False（langchain 丢弃了原生耗时字段），
     并记录首片段延迟与总墙钟供埋点使用。
     """
-    if reasoning is True:
+    if reasoning is True and not explicit_reasoning:
         chat_model = _ollama.create_chat_model(model)
     else:
         chat_model = _ollama.create_chat_model(model, reasoning=reasoning)
@@ -104,6 +108,7 @@ def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool | str
             timings_available=False,
             first_token_ms=first_token_ms,
             client_wall_ms=client_wall_ms,
+            completed_normally=True,
         )
 
 
@@ -149,7 +154,11 @@ def run_chat(
     else:
         messages = [{"role": str(item.get("role", "user")), "content": str(item.get("content", ""))} for item in messages]
 
-    provider_value = (False if reasoning_effort == "off" else reasoning_effort) if reasoning_effort is not None else think
+    provider_value = (
+        False if reasoning_effort == "off"
+        else True if reasoning_effort == "xhigh"
+        else reasoning_effort
+    ) if reasoning_effort is not None else think
     if resolved == "direct":
         if reasoning_effort is None:
             stream = chat_direct_stream(messages, model, think=think)
@@ -160,5 +169,5 @@ def run_chat(
         return run
 
     run = ChatRun(route="langchain")
-    run.events = iter(_langchain_drive(run, model, messages, provider_value))
+    run.events = iter(_langchain_drive(run, model, messages, provider_value, explicit_reasoning=reasoning_effort is not None))
     return run

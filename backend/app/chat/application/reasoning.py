@@ -14,6 +14,9 @@ MAX_REASONING_CODEPOINTS = 20_000
 _TEMPLATE_MARKERS = (
     "<|assistant|>", "<|user|>", "<|system|>", "<|tool|>",
     "<|endoftext|>", "<|im_start|>", "<|im_end|>", "<|eot_id|>",
+    "<think>", "</think>", "<analysis>", "</analysis>",
+    "<reasoning>", "</reasoning>", "[INST]", "[/INST]",
+    "assistant:", "user:", "system:",
 )
 _TERMINAL = {"completed", "failed", "interrupted"}
 

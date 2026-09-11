@@ -42,6 +42,8 @@ class OllamaChatResult:
     client_wall_ms: float            # 客户端墙钟总耗时
     chunk_intervals_ms: Tuple[float, ...] = field(default_factory=tuple)  # 相邻内容片段间隔
     tool_calls: Tuple[dict, ...] = ()  # function calling 结果（已合并增量），每项 {"name": str, "arguments": dict}
+    interrupted: bool = False  # provider stream ended abnormally after partial output
+    completed_normally: bool = False  # provider emitted an explicit final done marker
 
 
 def _ms(nanoseconds: float) -> float:
@@ -63,7 +65,8 @@ def _stream_chunks(
     产出序列形如：若干 {"type": "token"/"thinking", "content": str} 事件，
     最后一定是一个 OllamaChatResult（含完整 timings 与客户端延迟）。
     thinking 与 content 分开累积；连接失败且尚未收到任何内容时抛 RuntimeError；
-    流中途断开则保留已收内容。这是 chat_direct 与 chat_direct_stream 的共同内核。
+    流中途断开则保留已收内容并将结果标记为 interrupted。这是 chat_direct 与
+    chat_direct_stream 的共同内核，调用方不得把部分流视为 completed。
 
     ``tools``：Ollama function-calling schema（Task07）。传入时启用原生工具调用，
     并在结束时把增量 ``tool_calls`` 合并为 ``{"name": str, "arguments": dict}`` 列表。
@@ -79,7 +82,11 @@ def _stream_chunks(
         # 实测一次简单问答的思考就达 30+ 秒，会把 load/prefill 的差异完全淹没
         # （冷启动 4000ms vs 热调用 10ms 在 36 秒思考面前看不出来）。
         # 做受控耗时采样时必须能关掉。项目里已有先例：config.py 中 v2 切分模型即要求 think:false。
-        "think": (False if reasoning_effort == "off" else reasoning_effort) if reasoning_effort is not None else think,
+        "think": (
+            False if reasoning_effort == "off"
+            else True if reasoning_effort == "xhigh"
+            else reasoning_effort
+        ) if reasoning_effort is not None else think,
     }
     if options is not None:
         payload["options"] = options
@@ -100,6 +107,8 @@ def _stream_chunks(
     load_ms = prompt_eval_ms = eval_ms = total_ms = 0.0
     prompt_tokens = completion_tokens = 0
     timings_available = False
+    interrupted = False
+    completed_normally = False
 
     duration_keys = ("load_duration", "prompt_eval_duration", "eval_duration", "total_duration")
 
@@ -165,6 +174,8 @@ def _stream_chunks(
                             except json.JSONDecodeError:
                                 pass
 
+                if event.get("done"):
+                    completed_normally = True
                 if event.get("done") and any(key in event for key in duration_keys):
                     load_ms = _ms(event.get("load_duration", 0.0))
                     prompt_eval_ms = _ms(event.get("prompt_eval_duration", 0.0))
@@ -174,9 +185,11 @@ def _stream_chunks(
                     completion_tokens = int(event.get("eval_count", 0))
                     timings_available = True
     except httpx.HTTPError as error:
-        # 连接失败（尚未收到任何内容）才抛异常；中途断开则保留已收内容
+        # 连接失败（尚未收到任何内容）仍是普通模型失败；中途断开必须
+        # 显式标记为 interrupted，让会话层持久化中止终态而非 completed。
         if not content_parts and not thinking_parts and not tool_calls_by_index:
             raise RuntimeError(f"无法连接 Ollama：{error}") from error
+        interrupted = True
 
     tail = thinking_filter.finish()
     if tail:
@@ -203,6 +216,8 @@ def _stream_chunks(
         client_wall_ms=client_wall_ms,
         chunk_intervals_ms=tuple(intervals),
         tool_calls=tuple(tool_calls_by_index.values()),
+        interrupted=interrupted,
+        completed_normally=completed_normally,
     )
 
 
@@ -281,6 +296,8 @@ class ChatDirectStream:
                 first_token_ms=0.0,
                 client_wall_ms=0.0,
                 tool_calls=(),
+                interrupted=True,
+                completed_normally=False,
             )
 
 

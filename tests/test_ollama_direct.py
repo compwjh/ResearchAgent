@@ -117,6 +117,16 @@ class LangchainReasoningCompatibilityTests(unittest.TestCase):
 
         create_model.assert_called_once_with("m", reasoning=False)
 
+    def test_explicit_xhigh_uses_boolean_provider_value_for_langchain(self):
+        graph = mock.Mock()
+        graph.stream.return_value = [{"type": "token", "content": "ok"}]
+        with mock.patch("backend.app.platform.ollama.create_chat_model") as create_model, mock.patch(
+            "backend.app.chat.application.chat_graph.build_chat_graph", return_value=graph
+        ):
+            list(run_chat("q", "m", route="langchain", reasoning_effort="xhigh").events)
+
+        create_model.assert_called_once_with("m", reasoning=True)
+
     def test_factory_does_not_force_thinking_by_default(self):
         """默认不得下发 reasoning，否则 langchain 会发 think=true。
 
@@ -227,6 +237,16 @@ class LatencyRecordingTests(unittest.TestCase):
 
         self.assertIs(capture["json"]["think"], False)
 
+    def test_explicit_xhigh_sends_think_true_not_effort_string(self):
+        capture = {}
+        with mock.patch(
+            "backend.app.platform.ollama_direct.httpx.stream",
+            _stream_patch(_FakeResponse([_done_event()]), capture=capture),
+        ):
+            chat_direct([{"role": "user", "content": "q"}], "m", reasoning_effort="xhigh")
+
+        self.assertIs(capture["json"]["think"], True)
+
 
 class ErrorHandlingTests(unittest.TestCase):
     def test_http_error_status_raises(self):
@@ -253,9 +273,9 @@ class ErrorHandlingTests(unittest.TestCase):
 
         events = [
             {"message": {"role": "assistant", "content": "前半段"}, "done": False},
-            _done_event(),
+            httpx.RemoteProtocolError("closed"),
         ]
-        response = _FakeResponse(events, raise_on_iter=httpx.RemoteProtocolError("closed"))
+        response = _FakeResponse(events, raise_on_iter=events[-1])
 
         with mock.patch(
             "backend.app.platform.ollama_direct.httpx.stream",
@@ -264,6 +284,20 @@ class ErrorHandlingTests(unittest.TestCase):
             result = chat_direct([{"role": "user", "content": "q"}], "m")
 
         self.assertEqual(result.content, "前半段")
+        self.assertTrue(result.interrupted)
+        self.assertFalse(result.completed_normally)
+
+    def test_eof_without_done_marker_is_not_normal_completion(self):
+        events = [{"message": {"role": "assistant", "content": "部分"}, "done": False}]
+        with mock.patch(
+            "backend.app.platform.ollama_direct.httpx.stream",
+            _stream_patch(_FakeResponse(events)),
+        ):
+            result = chat_direct([{"role": "user", "content": "q"}], "m")
+
+        self.assertEqual(result.content, "部分")
+        self.assertFalse(result.interrupted)
+        self.assertFalse(result.completed_normally)
 
 
 class DataclassTests(unittest.TestCase):
@@ -290,6 +324,7 @@ class StreamContractTests(unittest.TestCase):
             yielded = [event for event in stream]
 
         self.assertIsInstance(stream.result, OllamaChatResult)
+        self.assertTrue(stream.result.completed_normally)
         token_events = [e for e in yielded if e.get("type") == "token"]
         self.assertGreaterEqual(len(token_events), 1)
         self.assertTrue(all("content" in e for e in token_events))

@@ -1,6 +1,7 @@
 """Task03 backend contract tests (red first, then implementation)."""
 
 import json
+import sqlite3
 from unittest.mock import patch
 
 import pytest
@@ -61,6 +62,17 @@ def test_reasoning_filter_carries_split_template_markers():
     assert truncated is False
 
 
+def test_reasoning_filter_removes_wrappers_roles_and_controls_without_losing_text():
+    from backend.app.chat.application.reasoning import filter_reasoning, filter_reasoning_chunks
+
+    value, truncated = filter_reasoning(["合法<think>隐藏</think><analysis>分析</analysis><reasoning>推理</reasoning>", "[INST]指令[/INST]assistant:正文 user:内容 system:规则\x00\n"])
+    assert value == "合法隐藏分析推理指令正文 内容 规则\n"
+    assert truncated is False
+    value, truncated = filter_reasoning_chunks(["keep<ana", "lysis>split</an", "alysis>tail<rea", "soning>ok</reasoning>"])
+    assert value == "keepsplittailok"
+    assert truncated is False
+
+
 def test_event_sequencer_rejects_old_and_gap_sequences():
     from backend.app.chat.application.reasoning import EventSequencer
 
@@ -112,6 +124,61 @@ def test_schema_v7_marker_and_restart_are_idempotent(tmp_path):
         assert db.execute("SELECT count(*) FROM migration_markers WHERE marker='conversation_history_reset_v1'").fetchone()[0] == 1
 
 
+def test_schema_v7_conversation_reasoning_check_survives_restart(tmp_path):
+    from backend.app.memory.repository import MemoryRepository
+
+    path = tmp_path / "memory.sqlite3"
+    repo = MemoryRepository(path)
+    with repo.connection() as db:
+        sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone()[0].upper().replace(" ", "").replace("\n", "")
+        assert "CHECK(REASONING_EFFORTIN('OFF','LOW','MEDIUM','HIGH','XHIGH'))" in sql
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO conversations(conversation_id, owner_id, title, created_at, updated_at, reasoning_effort) VALUES ('bad', 'owner', 'bad', 'now', 'now', 'invalid')")
+    restarted = MemoryRepository(path)
+    with restarted.connection() as db:
+        assert restarted._is_schema_v7(db)
+
+
+def test_legacy_v7_check_repair_preserves_current_conversation_data(tmp_path):
+    from backend.app.memory.repository import MemoryRepository
+
+    path = tmp_path / "legacy-v7.sqlite3"
+    repo = MemoryRepository(path)
+    conversation = repo.create_conversation("local-user", reasoning_effort="low")
+    user = repo.create_message(conversation.conversation_id, "local-user", "user", "retained", status="completed")
+    with repo.connection() as db:
+        sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone()[0]
+        sql = sql.replace(", CHECK(reasoning_effort IN ('off','low','medium','high','xhigh'))", "")
+        db.execute("PRAGMA writable_schema=ON")
+        db.execute("UPDATE sqlite_master SET sql=? WHERE type='table' AND name='conversations'", (sql,))
+        db.execute("PRAGMA writable_schema=OFF")
+        db.execute("PRAGMA schema_version=211")
+    restarted = MemoryRepository(path)
+    assert restarted.get_conversation(conversation.conversation_id, "local-user").reasoning_effort == "low"
+    assert restarted.get_message(user.message_id, "local-user").content == "retained"
+    with restarted.connection() as db:
+        sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone()[0].upper().replace(" ", "").replace("\n", "")
+        assert "CHECK(REASONING_EFFORTIN('OFF','LOW','MEDIUM','HIGH','XHIGH'))" in sql
+
+
+def test_same_effort_updates_preserve_conversation_and_preference_timestamps(tmp_path):
+    from backend.app.memory.repository import MemoryRepository
+
+    repo = MemoryRepository(tmp_path / "timestamps.sqlite3")
+    conversation = repo.create_conversation("local-user", reasoning_effort="low")
+    fixed = "2026-01-01T00:00:00+00:00"
+    with repo.transaction() as db:
+        db.execute("UPDATE conversations SET updated_at=? WHERE conversation_id=?", (fixed, conversation.conversation_id))
+        db.execute("UPDATE user_chat_preferences SET last_reasoning_effort='low', updated_at=? WHERE owner_id=?", (fixed, "local-user"))
+    updated, _, returned_at = repo.update_conversation_reasoning(conversation.conversation_id, "local-user", "low")
+    assert updated.updated_at.isoformat() == fixed
+    assert returned_at.isoformat() == fixed
+    with repo.connection() as db:
+        assert db.execute("SELECT updated_at FROM user_chat_preferences WHERE owner_id='local-user'").fetchone()[0] == fixed
+    updated_again = repo.update_conversation(conversation.conversation_id, "local-user", reasoning_effort="low")
+    assert updated_again.updated_at.isoformat() == fixed
+
+
 def test_persisted_event_sequence_is_monotonic(tmp_path):
     from backend.app.memory.repository import MemoryRepository
 
@@ -121,3 +188,22 @@ def test_persisted_event_sequence_is_monotonic(tmp_path):
     assert repo.record_event_seq(message.message_id, "local-user", 2)
     assert not repo.record_event_seq(message.message_id, "local-user", 1)
     assert repo.get_message(message.message_id, "local-user").last_event_seq == 2
+
+
+def test_explicit_message_effort_updates_conversation_and_preference_atomically(tmp_path):
+    from backend.app.memory.repository import MemoryRepository
+
+    repo = MemoryRepository(tmp_path / "message-preference.sqlite3")
+    conversation = repo.create_conversation("local-user", reasoning_effort="low")
+    updated, user, assistant = repo.create_message_pair(
+        conversation.conversation_id,
+        "local-user",
+        "hello",
+        model="m",
+        mode="normal",
+        reasoning_effort="xhigh",
+        update_preference=True,
+    )
+    assert updated.reasoning_effort == "xhigh"
+    assert user.role == "user" and assistant.parent_message_id == user.message_id
+    assert repo.get_last_reasoning_effort("local-user") == "xhigh"

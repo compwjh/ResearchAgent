@@ -123,7 +123,7 @@ def test_management_and_global_memory_api(tmp_path):
         conversation = client.post("/api/conversations/messages", json={"content": "hello", "project_id": p1, "model": "missing"})
         # Model validation runs before creating a conversation; use repository
         # through the management endpoint for the lifecycle assertions below.
-        assert conversation.status_code in {400, 503}
+        assert conversation.status_code in {404, 503}
         repo = __import__("backend.app.memory.repository", fromlist=["MemoryRepository"]).MemoryRepository(tmp_path / "memory.sqlite3")
         conversation_record = repo.create_conversation("local-user", p1, title="Draft")
         repo.create_message(conversation_record.conversation_id, "local-user", "user", "old context", status="completed")
@@ -184,6 +184,109 @@ def test_stream_close_persists_interrupted_assistant(tmp_path):
                 break
     assert repo.get_message(assistant.message_id, "local-user").status == "interrupted"
     assert any(step.status == "interrupted" and step.label == "回答生成" for step in repo.list_processing_steps(assistant.message_id, "local-user"))
+
+
+def test_provider_iterator_failure_emits_interrupted_and_keeps_partial_answer(tmp_path):
+    repo = MemoryRepository(tmp_path / "provider-interrupted.sqlite3")
+    conversation = repo.create_conversation("local-user", reasoning_effort="xhigh")
+    user = repo.create_message(conversation.conversation_id, "local-user", "user", "hello", status="completed")
+    assistant = repo.create_message(conversation.conversation_id, "local-user", "assistant", "", status="pending", parent_message_id=user.message_id)
+
+    class BrokenRun:
+        route = "direct"
+        result = None
+
+        @property
+        def events(self):
+            yield {"type": "thinking", "content": "先想"}
+            yield {"type": "token", "content": "部分答案"}
+            raise RuntimeError("provider connection reset")
+
+    with patch("backend.app.api.routes_conversations.run_chat", return_value=BrokenRun()):
+        events = _events("\n\n".join(frame for frame in _message_stream(repo, conversation, user, assistant, "model", "normal")))
+
+    assert events[-1]["type"] == "done"
+    assert events[-1]["status"] == "interrupted"
+    assert any(event.get("type") == "error" and event.get("code") == "STREAM_INTERRUPTED" for event in events)
+    saved = repo.get_message(assistant.message_id, "local-user")
+    assert saved.status == "interrupted"
+    assert saved.content == "部分答案"
+    # The answer token closes the reasoning subphase before the provider
+    # iterator fails; the assistant turn itself still must be interrupted.
+    assert saved.reasoning_status == "completed"
+
+
+def test_provider_initial_iterator_failure_keeps_chat_failed_semantics(tmp_path):
+    repo = MemoryRepository(tmp_path / "provider-initial-failure.sqlite3")
+    conversation = repo.create_conversation("local-user", reasoning_effort="xhigh")
+    user = repo.create_message(conversation.conversation_id, "local-user", "user", "hello", status="completed")
+    assistant = repo.create_message(conversation.conversation_id, "local-user", "assistant", "", status="pending", parent_message_id=user.message_id)
+
+    class FailedRun:
+        route = "direct"
+        result = None
+
+        @property
+        def events(self):
+            raise RuntimeError("provider unavailable")
+            yield  # pragma: no cover
+
+    with patch("backend.app.api.routes_conversations.run_chat", return_value=FailedRun()):
+        events = _events("\n\n".join(frame for frame in _message_stream(repo, conversation, user, assistant, "model", "normal")))
+
+    assert events[-1]["type"] == "done"
+    assert events[-1]["status"] == "failed"
+    assert any(event.get("type") == "error" and event.get("code") == "CHAT_FAILED" for event in events)
+    assert repo.get_message(assistant.message_id, "local-user").status == "failed"
+
+
+def test_provider_eof_without_done_is_interrupted_at_consumer(tmp_path):
+    from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings
+
+    repo = MemoryRepository(tmp_path / "provider-eof-without-done.sqlite3")
+    conversation = repo.create_conversation("local-user", reasoning_effort="off")
+    user = repo.create_message(conversation.conversation_id, "local-user", "user", "hello", status="completed")
+    assistant = repo.create_message(conversation.conversation_id, "local-user", "assistant", "", status="pending", parent_message_id=user.message_id)
+
+    class EofRun:
+        route = "direct"
+        result = OllamaChatResult("partial", "", OllamaTimings(), False, 1, 2, completed_normally=False)
+
+        @property
+        def events(self):
+            yield {"type": "token", "content": "partial"}
+
+    with patch("backend.app.api.routes_conversations.run_chat", return_value=EofRun()):
+        events = _events("\n\n".join(frame for frame in _message_stream(repo, conversation, user, assistant, "model", "normal", "off")))
+
+    assert events[-1]["type"] == "done" and events[-1]["status"] == "interrupted"
+    assert repo.get_message(assistant.message_id, "local-user").status == "interrupted"
+
+
+def test_reasoning_sse_budget_includes_stream_filter_tail(tmp_path):
+    repo = MemoryRepository(tmp_path / "reasoning-sse-budget.sqlite3")
+    conversation = repo.create_conversation("local-user", reasoning_effort="xhigh")
+    user = repo.create_message(conversation.conversation_id, "local-user", "user", "hello", status="completed")
+    assistant = repo.create_message(conversation.conversation_id, "local-user", "assistant", "", status="pending", parent_message_id=user.message_id)
+
+    class CarryRun:
+        route = "langchain"
+        result = None
+
+        @property
+        def events(self):
+            # The trailing marker prefix is held by ReasoningStreamFilter and
+            # flushed after the token.  It must not add a 20,001st SSE code
+            # point after the first delta already consumed the budget.
+            yield {"type": "thinking", "content": "a" * 20_000 + "<thi"}
+            yield {"type": "token", "content": "answer"}
+
+    with patch("backend.app.api.routes_conversations.run_chat", return_value=CarryRun()):
+        events = _events("\n\n".join(frame for frame in _message_stream(repo, conversation, user, assistant, "model", "normal", "xhigh")))
+
+    deltas = [event["content"] for event in events if event["type"] == "reasoning_delta"]
+    assert sum(len(delta) for delta in deltas) <= 20_000
+    assert repo.get_message(assistant.message_id, "local-user").status == "completed"
 
 
 def test_memory_scope_project_parameter_conflicts_are_stable_errors(tmp_path):

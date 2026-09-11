@@ -124,7 +124,11 @@ def resolve_reasoning_effort(model: str, effort: Optional[str] = None) -> Reason
         raise ValueError("INVALID_REASONING_EFFORT")
     if requested not in capabilities.supported_efforts:
         raise ValueError("REASONING_EFFORT_UNSUPPORTED")
-    provider_value: object = False if requested == "off" else requested
+    # Ollama's boolean thinking mode is the provider representation of the
+    # application-level ``xhigh`` effort.  Keep ``requested_effort`` as the
+    # stable business value while exposing the exact transport value to both
+    # direct and LangChain callers.
+    provider_value: object = False if requested == "off" else (True if requested == "xhigh" else requested)
     route_payload = {"think": provider_value}
     return ReasoningResolution(str(model), requested, provider_value, capabilities, route_payload, capabilities.evidence_ids.get(requested) if capabilities.evidence_ids else None)
 

@@ -179,7 +179,14 @@ class MemoryRepository:
                     connection.execute("INSERT INTO schema_version(version, applied_at) VALUES (?, ?)", (7, _now()))
                     current = 7
                 elif not self._is_schema_v7(connection):
-                    raise RuntimeError("incomplete memory schema v7")
+                    # Early Spec024 builds added reasoning_effort with ALTER
+                    # TABLE but could not attach its CHECK constraint. Repair
+                    # that exact v7 shape in place; all other corruption stays
+                    # fail-closed.
+                    if self._is_schema_v7(connection, require_conversation_check=False):
+                        self._repair_v7_conversation_reasoning_check(connection)
+                    else:
+                        raise RuntimeError("incomplete memory schema v7")
                 # Task07 is an additive repository extension. Keep the public
                 # v6 number for Task10 compatibility while applying the table
                 # atomically to fresh and existing v6 databases.
@@ -566,24 +573,87 @@ class MemoryRepository:
         fk_check = connection.execute("PRAGMA foreign_key_check").fetchall()
         fk_result = "ok" if not fk_check else f"violations={len(fk_check)}"
         fk_results = {table: f"foreign_keys=ON; {fk_result}" for table in tables}
+        # The v7 contract requires the same bounded enum CHECK as the
+        # preference table.  Conversation history has already been reset at
+        # this point, so adding the constraint cannot discard retained data.
+        self._repair_v7_conversation_reasoning_check(connection)
         before = {table: {"before": before_counts[table], "after": after_counts[table], "action": actions[table], "foreign_key_result": fk_results[table]} for table in tables}
         import hashlib
         backup_id = hashlib.sha256(backup_path.read_bytes()).hexdigest()
         connection.execute("INSERT OR REPLACE INTO migration_markers(marker, applied_at, before_counts_json, backup_id) VALUES (?, ?, ?, ?)", ("conversation_history_reset_v1", _now(), json.dumps(before, sort_keys=True), backup_id))
 
     @staticmethod
-    def _is_schema_v7(connection: sqlite3.Connection) -> bool:
+    def _is_schema_v7(connection: sqlite3.Connection, *, require_conversation_check: bool = True) -> bool:
         conv_rows = connection.execute("PRAGMA table_info(conversations)").fetchall()
         msg_rows = connection.execute("PRAGMA table_info(messages)").fetchall()
         conv = {row["name"]: row for row in conv_rows}
         msg = {row["name"]: row for row in msg_rows}
         marker_rows = connection.execute("PRAGMA table_info(migration_markers)").fetchall()
-        marker = connection.execute("SELECT marker FROM migration_markers WHERE marker='conversation_history_reset_v1'").fetchone() if marker_rows else None
+        marker = connection.execute("SELECT marker, before_counts_json, backup_id FROM migration_markers WHERE marker='conversation_history_reset_v1'").fetchone() if marker_rows else None
         pref_sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='user_chat_preferences'").fetchone()
         pref_cols = {row["name"]: row for row in connection.execute("PRAGMA table_info(user_chat_preferences)").fetchall()}
-        pref_check = "CHECK(LAST_REASONING_EFFORTIN('OFF','LOW','MEDIUM','HIGH','XHIGH'))" in str(pref_sql["sql"] if pref_sql else "").upper().replace(" ", "").replace("\n", "")
+        normalize_sql = lambda value: str(value or "").upper().replace(" ", "").replace("\n", "")
+        pref_sql_text = normalize_sql(pref_sql["sql"] if pref_sql else "")
+        pref_check = "CHECK(LAST_REASONING_EFFORTIN('OFF','LOW','MEDIUM','HIGH','XHIGH'))" in pref_sql_text
+        conv_sql_row = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone()
+        conv_sql_text = normalize_sql(conv_sql_row["sql"] if conv_sql_row else "")
+        conv_check = "CHECK(REASONING_EFFORTIN('OFF','LOW','MEDIUM','HIGH','XHIGH'))" in conv_sql_text
+        marker_payload_valid = False
+        if marker and isinstance(marker["backup_id"], str) and len(marker["backup_id"]) == 64 and all(char in "0123456789abcdefABCDEF" for char in marker["backup_id"]):
+            try:
+                parsed_counts = json.loads(marker["before_counts_json"])
+                tracked_tables = ("conversations", "messages", "processing_steps", "raw_events", "conversation_summaries", "evolution_checkpoints", "memory_analysis_jobs", "memory_analysis_items", "memory_evidence", "projects", "memories", "system_rules", "skill_improvement_proposals", "user_chat_preferences", "migration_markers")
+                marker_payload_valid = all(
+                    table in parsed_counts
+                    and isinstance(parsed_counts[table], dict)
+                    and set(("before", "after", "action", "foreign_key_result")) <= set(parsed_counts[table])
+                    and isinstance(parsed_counts[table]["before"], int)
+                    and isinstance(parsed_counts[table]["after"], int)
+                    and parsed_counts[table]["before"] >= 0
+                    and parsed_counts[table]["after"] >= 0
+                    for table in tracked_tables
+                )
+            except (TypeError, ValueError, json.JSONDecodeError):
+                marker_payload_valid = False
         expected = {"reasoning_content", "reasoning_status", "reasoning_started_at", "reasoning_completed_at", "first_reasoning_at", "first_answer_token_at", "reasoning_truncated", "reasoning_chars", "last_event_seq"}
-        return bool(marker_rows and marker and {row["name"] for row in marker_rows} == {"marker", "applied_at", "before_counts_json", "backup_id"} and "reasoning_effort" in conv and conv["reasoning_effort"]["notnull"] == 1 and msg.keys() >= expected and pref_cols.keys() >= {"owner_id", "last_reasoning_effort", "updated_at"} and pref_check)
+        return bool(marker_rows and marker and {row["name"] for row in marker_rows} == {"marker", "applied_at", "before_counts_json", "backup_id"} and marker_payload_valid and "reasoning_effort" in conv and conv["reasoning_effort"]["notnull"] == 1 and conv["reasoning_effort"]["dflt_value"] in {"'xhigh'", '"xhigh"'} and (not require_conversation_check or conv_check) and msg.keys() >= expected and pref_cols.keys() >= {"owner_id", "last_reasoning_effort", "updated_at"} and pref_check)
+
+    @staticmethod
+    def _repair_v7_conversation_reasoning_check(connection: sqlite3.Connection) -> None:
+        """Add the v7 effort CHECK without rebuilding FK-dependent tables.
+
+        SQLite cannot ALTER an existing table to add a CHECK.  The migration
+        already deletes incompatible legacy conversation history; for an
+        existing v7 database we first validate every retained row, then update
+        sqlite_master in the same transaction and bump schema_version so the
+        next connection reparses the table definition.  No project, memory,
+        or current conversation row is deleted.
+        """
+        allowed = ("off", "low", "medium", "high", "xhigh")
+        placeholders = ", ".join("?" for _ in allowed)
+        invalid = connection.execute(
+            f"SELECT 1 FROM conversations WHERE reasoning_effort IS NULL OR reasoning_effort NOT IN ({placeholders}) LIMIT 1",
+            allowed,
+        ).fetchone()
+        if invalid:
+            raise RuntimeError("invalid conversation reasoning_effort values")
+        row = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone()
+        sql = str(row["sql"] if row else "")
+        normalized = sql.upper().replace(" ", "").replace("\n", "")
+        check = "CHECK(REASONING_EFFORTIN('OFF','LOW','MEDIUM','HIGH','XHIGH'))"
+        if check in normalized:
+            return
+        if not sql.rstrip().endswith(")"):
+            raise RuntimeError("invalid conversations table definition")
+        position = sql.rstrip().rfind(")")
+        updated_sql = sql.rstrip()[:position] + ", CHECK(reasoning_effort IN ('off','low','medium','high','xhigh'))" + sql.rstrip()[position:]
+        connection.execute("PRAGMA writable_schema=ON")
+        try:
+            connection.execute("UPDATE sqlite_master SET sql=? WHERE type='table' AND name='conversations'", (updated_sql,))
+            schema_version = int(connection.execute("PRAGMA schema_version").fetchone()[0])
+            connection.execute(f"PRAGMA schema_version={schema_version + 1}")
+        finally:
+            connection.execute("PRAGMA writable_schema=OFF")
 
     @staticmethod
     def _migrate_v6_to_task07(connection: sqlite3.Connection) -> None:
@@ -1169,6 +1239,9 @@ class MemoryRepository:
             raise ValueError("invalid reasoning effort")
         now = _now()
         with self.transaction() as db:
+            current = db.execute("SELECT last_reasoning_effort FROM user_chat_preferences WHERE owner_id=?", (owner_id,)).fetchone()
+            if current and current["last_reasoning_effort"] == effort:
+                return effort
             db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_id) DO UPDATE SET last_reasoning_effort=excluded.last_reasoning_effort, updated_at=excluded.updated_at", (owner_id, effort, now))
         return effort
 
@@ -1190,7 +1263,7 @@ class MemoryRepository:
             db.execute("INSERT INTO conversations(conversation_id, owner_id, project_id, title, status, memory_history_policy, created_at, updated_at, memory_binding_at, memory_binding_message_id, reasoning_effort) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, NULL, NULL, ?)", (conversation_id, owner_id, project_id, title.strip()[:200], memory_history_policy, now, now, selected_effort))
         return self.get_conversation(conversation_id, owner_id)
 
-    def create_conversation_messages(self, owner_id: str, content: str, project_id: Optional[str], model: Optional[str], mode: Optional[str], reasoning_effort: Optional[str] = None) -> tuple[Conversation, Message, Message]:
+    def create_conversation_messages(self, owner_id: str, content: str, project_id: Optional[str], model: Optional[str], mode: Optional[str], reasoning_effort: Optional[str] = None, *, update_preference: bool = False) -> tuple[Conversation, Message, Message]:
         """Atomically create a first conversation, user message and assistant placeholder."""
         if project_id:
             project = self.get_project(project_id, owner_id)
@@ -1208,6 +1281,53 @@ class MemoryRepository:
             db.execute("INSERT INTO conversations(conversation_id, owner_id, project_id, title, status, memory_history_policy, created_at, updated_at, memory_binding_at, memory_binding_message_id, reasoning_effort) VALUES (?, ?, ?, ?, 'active', 'from_binding', ?, ?, NULL, NULL, ?)", (conversation_id, owner_id, project_id, content[:80], now, now, reasoning_effort))
             db.execute("INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at) VALUES (?, ?, ?, NULL, 'user', ?, 'completed', ?, ?, ?, ?)", (user_id, conversation_id, owner_id, content, model, mode, now, now))
             db.execute("INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at) VALUES (?, ?, ?, ?, 'assistant', '', 'pending', ?, ?, ?, NULL)", (assistant_id, conversation_id, owner_id, user_id, model, mode, now))
+            if update_preference:
+                db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_id) DO UPDATE SET last_reasoning_effort=excluded.last_reasoning_effort, updated_at=excluded.updated_at", (owner_id, reasoning_effort, now))
+        return self.get_conversation(conversation_id, owner_id), self.get_message(user_id, owner_id), self.get_message(assistant_id, owner_id)
+
+    def create_message_pair(
+        self,
+        conversation_id: str,
+        owner_id: str,
+        content: str,
+        *,
+        model: Optional[str] = None,
+        mode: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
+        update_preference: bool = False,
+    ) -> tuple[Conversation, Message, Message]:
+        """Atomically freeze a turn and, when explicit, update its defaults.
+
+        The user/assistant rows and the conversation/preference pair share one
+        write transaction.  A preference write failure therefore cannot leave
+        a visible message whose next-turn default disagrees with its session.
+        """
+        allowed_efforts = {"off", "low", "medium", "high", "xhigh"}
+        if reasoning_effort is not None and reasoning_effort not in allowed_efforts:
+            raise ValueError("invalid reasoning effort")
+        now, user_id, assistant_id = _now(), uuid.uuid4().hex, uuid.uuid4().hex
+        with self.transaction() as db:
+            conversation_row = db.execute(
+                "SELECT * FROM conversations WHERE conversation_id=? AND owner_id=? AND status!='deleted'",
+                (conversation_id, owner_id),
+            ).fetchone()
+            if not conversation_row:
+                raise LookupError("conversation not found")
+            effort = reasoning_effort if reasoning_effort is not None else str(conversation_row["reasoning_effort"])
+            if update_preference:
+                db.execute(
+                    "UPDATE conversations SET reasoning_effort=?, updated_at=? WHERE conversation_id=? AND owner_id=?",
+                    (effort, now, conversation_id, owner_id),
+                )
+                preference = db.execute("SELECT last_reasoning_effort FROM user_chat_preferences WHERE owner_id=?", (owner_id,)).fetchone()
+                if not preference:
+                    db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?)", (owner_id, effort, now))
+                elif preference["last_reasoning_effort"] != effort:
+                    db.execute("UPDATE user_chat_preferences SET last_reasoning_effort=?, updated_at=? WHERE owner_id=?", (effort, now, owner_id))
+            else:
+                db.execute("UPDATE conversations SET updated_at=? WHERE conversation_id=? AND owner_id=?", (now, conversation_id, owner_id))
+            db.execute("INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at) VALUES (?, ?, ?, NULL, 'user', ?, 'completed', ?, ?, ?, ?)", (user_id, conversation_id, owner_id, content, model, mode, now, now))
+            db.execute("INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at) VALUES (?, ?, ?, ?, 'assistant', '', 'pending', ?, ?, ?, NULL)", (assistant_id, conversation_id, owner_id, user_id, model, mode, now))
         return self.get_conversation(conversation_id, owner_id), self.get_message(user_id, owner_id), self.get_message(assistant_id, owner_id)
 
     def update_conversation_reasoning(self, conversation_id: str, owner_id: str, effort: str) -> tuple[Optional[Conversation], str, Optional[datetime]]:
@@ -1215,12 +1335,21 @@ class MemoryRepository:
             raise ValueError("invalid reasoning effort")
         now = _now()
         with self.transaction() as db:
-            current = db.execute("SELECT conversation_id FROM conversations WHERE conversation_id=? AND owner_id=? AND status!='deleted'", (conversation_id, owner_id)).fetchone()
+            current = db.execute("SELECT conversation_id, reasoning_effort, updated_at FROM conversations WHERE conversation_id=? AND owner_id=? AND status!='deleted'", (conversation_id, owner_id)).fetchone()
             if not current:
                 return None, effort, None
-            db.execute("UPDATE conversations SET reasoning_effort=?, updated_at=? WHERE conversation_id=? AND owner_id=?", (effort, now, conversation_id, owner_id))
-            db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_id) DO UPDATE SET last_reasoning_effort=excluded.last_reasoning_effort, updated_at=excluded.updated_at", (owner_id, effort, now))
-        return self.get_conversation(conversation_id, owner_id), effort, _dt(now)
+            preference = db.execute("SELECT last_reasoning_effort, updated_at FROM user_chat_preferences WHERE owner_id=?", (owner_id,)).fetchone()
+            if current["reasoning_effort"] != effort:
+                db.execute("UPDATE conversations SET reasoning_effort=?, updated_at=? WHERE conversation_id=? AND owner_id=?", (effort, now, conversation_id, owner_id))
+            if not preference:
+                db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?)", (owner_id, effort, now))
+                returned_at = now
+            elif preference["last_reasoning_effort"] != effort:
+                db.execute("UPDATE user_chat_preferences SET last_reasoning_effort=?, updated_at=? WHERE owner_id=?", (effort, now, owner_id))
+                returned_at = now
+            else:
+                returned_at = preference["updated_at"]
+        return self.get_conversation(conversation_id, owner_id), effort, _dt(returned_at)
 
     def get_conversation(self, conversation_id: str, owner_id: str) -> Optional[Conversation]:
         with self.connection() as db:
@@ -1234,10 +1363,16 @@ class MemoryRepository:
         current = self.get_conversation(conversation_id, owner_id)
         if not current:
             return None
+        requested_reasoning = values.get("reasoning_effort")
         if "memory_history_policy" in values and values["memory_history_policy"] not in MEMORY_HISTORY_POLICIES:
             raise ValueError("invalid memory history policy")
         if "reasoning_effort" in values and values["reasoning_effort"] not in {"off", "low", "medium", "high", "xhigh"}:
             raise ValueError("invalid reasoning effort")
+        if "reasoning_effort" in values and values["reasoning_effort"] == current.reasoning_effort:
+            # A no-op effort update must not refresh either conversation or
+            # cross-session preference timestamps. Other patch fields, if
+            # present, continue through the normal update path.
+            values.pop("reasoning_effort")
         if "status" in values and values["status"] not in {"active", "archived", "deleted"}:
             raise ValueError("invalid conversation status")
         if "project_id" in values and values["project_id"]:
@@ -1254,6 +1389,14 @@ class MemoryRepository:
         if (project_changed or (values.get("memory_history_policy") == "include_prior_history" and has_messages)) and has_messages and not confirm_move:
             raise ValueError("conversation move requires confirmation")
         if not values:
+            if requested_reasoning is not None:
+                now = _now()
+                with self.transaction() as db:
+                    preference = db.execute("SELECT last_reasoning_effort FROM user_chat_preferences WHERE owner_id=?", (owner_id,)).fetchone()
+                    if not preference:
+                        db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?)", (owner_id, requested_reasoning, now))
+                    elif preference["last_reasoning_effort"] != requested_reasoning:
+                        db.execute("UPDATE user_chat_preferences SET last_reasoning_effort=?, updated_at=? WHERE owner_id=?", (requested_reasoning, now, owner_id))
             return current
         values["updated_at"] = _now()
         if project_changed:
@@ -1277,6 +1420,14 @@ class MemoryRepository:
             result = db.execute(f"UPDATE conversations SET {assignments} WHERE conversation_id=? AND owner_id=? AND status!='deleted'", (*values.values(), conversation_id, owner_id))
             if result.rowcount == 0:
                 return None
+            if requested_reasoning is not None:
+                # Keep the conversation snapshot and cross-session default in
+                # the same transaction for every update entry point.
+                preference = db.execute("SELECT last_reasoning_effort FROM user_chat_preferences WHERE owner_id=?", (owner_id,)).fetchone()
+                if not preference:
+                    db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?)", (owner_id, requested_reasoning, values["updated_at"]))
+                elif preference["last_reasoning_effort"] != requested_reasoning:
+                    db.execute("UPDATE user_chat_preferences SET last_reasoning_effort=?, updated_at=? WHERE owner_id=?", (requested_reasoning, values["updated_at"], owner_id))
         return self.get_conversation(conversation_id, owner_id)
 
     def delete_conversation(self, conversation_id: str, owner_id: str) -> bool:
