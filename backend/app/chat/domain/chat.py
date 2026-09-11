@@ -1,6 +1,6 @@
-from typing import TypedDict
+from typing import Dict, List, TypedDict
 
 
 class ConversationState(TypedDict, total=False):
-    question: str
+    messages: List[Dict[str, str]]
     answer: str

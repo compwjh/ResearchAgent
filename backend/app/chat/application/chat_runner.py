@@ -48,7 +48,8 @@ def build_role_aware_messages(question: str, *, system_rule: Optional[str] = Non
 def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool):
     """默认链路驱动器：事件产出与改动前完全一致，并在结束后合成 OllamaChatResult。
 
-    `prompt` 是实际发给模型的文本（KB 链路传入 build_prompt 的结果，否则等于原始问题）；
+    `messages` 是实际发给模型的 role/content 消息列表（KB 链路传入 role-aware messages，
+    否则由 `prompt` 或原始 `question` 规范化生成）；
     合成结果的 timings_available 恒为 False（langchain 丢弃了原生耗时字段），
     并记录首片段延迟与总墙钟供埋点使用。
     """
@@ -118,7 +119,6 @@ def run_chat(
         resolved = "langchain"
 
     text = prompt if prompt is not None else question
-    role_aware = messages is not None or system_messages is not None
     if messages is None:
         messages = [dict(item) for item in (system_messages or [])]
         messages.append({"role": "user", "content": text})
@@ -132,5 +132,5 @@ def run_chat(
         return run
 
     run = ChatRun(route="langchain")
-    run.events = iter(_langchain_drive(run, model, messages if role_aware else text, think))
+    run.events = iter(_langchain_drive(run, model, messages, think))
     return run

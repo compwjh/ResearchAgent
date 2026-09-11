@@ -473,7 +473,7 @@ class ChatGraphTests(unittest.TestCase):
         fake_model = MagicMock()
         fake_model.stream.return_value = [_Chunk("你"), _Chunk(""), _Chunk("好")]
         graph = build_chat_graph(fake_model)
-        result = graph.invoke({"question": "你好"})
+        result = graph.invoke({"messages": [{"role": "user", "content": "你好"}]})
         self.assertEqual(result["answer"], "你好")
 
     def test_build_chat_graph_handles_non_string_content(self):
@@ -486,7 +486,7 @@ class ChatGraphTests(unittest.TestCase):
         fake_model = MagicMock()
         fake_model.stream.return_value = [_Chunk(["list", "content"])]
         graph = build_chat_graph(fake_model)
-        result = graph.invoke({"question": "你好"})
+        result = graph.invoke({"messages": [{"role": "user", "content": "你好"}]})
         self.assertEqual(result["answer"], "['list', 'content']")
 
 

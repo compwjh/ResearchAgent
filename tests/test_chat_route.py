@@ -15,7 +15,7 @@ from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings
 
 
 class _FakeModel:
-    """模拟 ChatOllama：.stream(question) 产出带 .content 的片段。"""
+    """模拟 ChatOllama：.stream(messages) 产出带 .content 的片段。"""
 
     def __init__(self, chunks):
         self._chunks = chunks
@@ -47,7 +47,31 @@ def _mock_model(chunks):
     return lambda _name: _FakeModel(chunks)
 
 
+class _CapturingModel:
+    def __init__(self, chunks):
+        self._chunks = chunks
+        self.payloads = []
+
+    def stream(self, payload):
+        self.payloads.append(payload)
+        for text in self._chunks:
+            yield SimpleNamespace(content=text)
+
+
 class RunChatTests(unittest.TestCase):
+    def test_langchain_normalizes_prompt_and_question_to_messages(self):
+        model = _CapturingModel(["ok"])
+        with patch("backend.app.platform.ollama.create_chat_model", return_value=model):
+            prompt_run = run_chat("原始问题", "m", route="langchain", prompt="分类 Prompt")
+            list(prompt_run)
+            question_run = run_chat("旧 question 路径", "m", route="langchain")
+            list(question_run)
+
+        self.assertEqual(prompt_run.result.content, "ok")
+        self.assertEqual(question_run.result.content, "ok")
+        self.assertEqual(model.payloads[0], [{"role": "user", "content": "分类 Prompt"}])
+        self.assertEqual(model.payloads[1], [{"role": "user", "content": "旧 question 路径"}])
+
     def test_langchain_route_yields_tokens_and_synthesizes_result(self):
         with patch("backend.app.platform.ollama.create_chat_model", side_effect=_mock_model(["Hel", "lo", "!"])):
             run = run_chat("你好", "qwen3.5:9b", route="langchain")
