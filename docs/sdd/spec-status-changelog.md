@@ -210,3 +210,8 @@
 - **022 项目会话与长期记忆** ｜ 实施中（Task08） → 已完成 ｜ 2026-09-11：Task02–Task10 全部收口，验收报告与复盘已落盘；本机 Ollama `models=[]` 导致成功对话 SSE/RAG 仅保留为环境待复验，不伪造成功证据。
 - **024 可见推理过程与会话级推理档位** ｜ 新建 → 待确认 ｜ 2026-09-11：经 Grilling 确认默认 xhigh、会话级五档选择、过滤后推理流、自动折叠、一次性删除旧会话及预热模型 20 秒验收边界；Spec 与 Task02–05 已落盘，确认前不修改业务代码。
 - **025 会话上下文压缩与 Token 预算管理** ｜ 新建 → 待确认（占位待调研） ｜ 2026-09-11：登记当前缺少历史摘要替换、上下文压缩和 token 预算管理；按用户要求仅创建占位 Spec，不创建 Task、不实施，也不作为 Spec024 依赖。
+
+## 2026-09-12
+
+- **020 零碎 bug 解决** ｜ 已完成（第 3 批） → 实施中（第 4 批 BUG-06） ｜ 2026-09-12：追加第 4 批 **BUG-06**——从「模型库」等视图点「新建对话」不切回对话视图。根因：`beginDraft()`（`app.js:1102-1110`）只重置会话内容、**从不调用 `showView()`**，而视图切换依赖原生 `hidden` 属性（`app.js:2831-2836`），故 `#chat.hidden` 一直为 `true`；对照 `openConversation()`（`app.js:1063`）首行即有 `showView('chat')`。用户经 grill with docs 确认边界后批准实施。
+- **020 零碎 bug 解决** ｜ 实施中（第 4 批 BUG-06） → **已完成（第 4 批）** ｜ 2026-09-12：`frontend-dev` 实现——① `app.js:1103` 在 `beginDraft()` 首行前置 `showView('chat')`（覆盖 `1589`/`1651`/`1170` 三个调用点）；② 7 处「新会话」→「新对话」（`app.js:879/880/882/1105/1106`、`index.html:52/74`）；③ `index.html:492` `app.js?v=33`→`?v=34`、491 行兼容注释追加 `v33`。`frontend-tester` 验收通过：`node --check` OK、前端契约 pytest **35 passed / 0 failed**、`grep "新会话"` 0 命中、`git diff` 无夹带。架构师另用 Playwright+Chromium 在 127.0.0.1:8300 做真实点击验证：模型库 → 新建对话 后 `#chat.hidden=false`、`#models-view.hidden=true`、`activeNav=['chat']`、`page_errors=[]`、加载 `app.js?v=34`。**未跑全量回归**（单端改动，按规则只跑前端回归）。

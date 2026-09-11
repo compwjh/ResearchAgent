@@ -4,7 +4,11 @@
 
 ## 状态
 
-**当前状态：已完成（第 3 批 BUG-05 已实现并验收；主模型代行）**
+**当前状态：已完成（第 4 批 BUG-06 已实现并验收；前 3 批 BUG-01~05 亦已完成）**
+
+> 2026-09-12：追加第 4 批 **BUG-06（「新建对话」在非对话视图下点击无反应）**。经 grill with docs 定位：`beginDraft()`
+> 只重置会话内容、从不调用 `showView()`，因此从「模型库」等视图点「新建对话」时 `#chat.hidden` 仍为 `true`。
+> 用户确认修复边界（改 `beginDraft()` 内部 / 本次只修这个 bug / 顺手统一「新会话」→「新对话」/ 走 AGENTS.md 流程分派 `frontend-dev`）。
 
 > 2026-09-11：追加第 3 批 **BUG-05（首次部署空库上传被 `INDEX_REBUILD_REQUIRED` 拦截）**；
 > 根因 `manifest_store.require_generation()` 把「空库首次部署」与「旧索引需全库重建」混为一谈。
@@ -176,6 +180,52 @@
 | 06 | 导入相位死锁与重试无反馈修复（BUG-04） | [`task-06-import-phase-and-retry-feedback.md`](../plans/020/task-06-import-phase-and-retry-feedback.md) | 05 | 完成 |
 | 07 | 空库首次部署代际自动初始化（BUG-05） | [`task-07-empty-index-generation-bootstrap.md`](../plans/020/task-07-empty-index-generation-bootstrap.md) | 01 | 已完成（主模型代行） |
 
+## 第 4 批：BUG-06 —「新建对话」在非对话视图下点击无反应（视图未切回）
+
+- 状态：`已完成`（2026-09-12 由 `frontend-dev` 实现，`frontend-tester` 验收通过）
+- 范围：**仅 `frontend/**`**（`app.js` + `index.html`）；不碰后端，不涉及会话持久化
+
+### 现象与复现
+
+新部署实例（空数据）上：① 点左侧导航「模型库」→ 正常切到模型库视图；② 再点左上角「新建对话」→ **界面停在模型库，毫无变化**，用户感知为"点击没反应"。
+
+### 复现证据（已实测）
+
+- 视图切换机制是**原生 `hidden` 属性**，不是 class：`app.js:2831-2836` 的 `showView()` 内
+  `#chat.hidden = !isChat;`、`#models-view.hidden = nextView !== 'models';`
+  共 6 个视图：`#chat` / `#models-view` / `#memory-view` / `#kb-view` / `#papers-view` / `#skill-tool-view`。
+- 导航绑定：`app.js:2861-2878` 遍历 `.nav-item` → `app.js:2871 showView(item.dataset.view)`。
+- 「新建对话」按钮：`index.html:17` `<button class="new-chat">`；`app.js:12` 取元素、`app.js:1589` 调用 `beginDraft()`。
+- `beginDraft()`（`app.js:1102-1110`）只做：置空会话状态、移除 `has-started`、标题/状态改「新会话」、清消息、`input.focus()`。
+  **全程未触碰 `hidden`，也未调用 `showView()`**。
+
+### 根因
+
+点「模型库」后 `#chat.hidden = true` 持续留存；`beginDraft()` 只重置会话内容，**不负责把对话视图切回前景**，模型库面板继续占据主区。
+对比证据：`openConversation()` 首行即 `showView('chat')`（`app.js:1063`），而 `beginDraft()` 从未调用。
+同一缺陷波及 `beginDraft()` 的全部调用点：`app.js:1589`（新建按钮）、`app.js:1651`（popstate 后退）、`app.js:1170`（删除会话/项目后）。
+附带症状：`app.js:1108` 的 `input.focus()` 对隐藏元素静默失败，连光标都不动。
+
+### 修复方案
+
+1. `beginDraft()` 内补 `showView('chat');`（`showView` 为函数声明可提升，调用顺序无影响）。放**函数内部**而非 click handler，以覆盖上述全部调用点。
+2. 术语统一：前端「新会话」→「新对话」（`index.html:52`、`index.html:74`、`app.js:879/880/882/1105/1106`）。已核实 `tests/` 无任何断言依赖这些文案。代码库主流用词为 `conversation`（`routes_conversations.py` / `conversation_service.py`），故统一为「对话」。
+3. 静态资源版本号：`index.html:492` 的 `/assets/app.js?v=33` → `?v=34`，并把 `v33` 并入第 491 行兼容标记注释（沿用既有写法）。
+
+### 明确不做
+
+- 不做会话持久化 / 未保存草稿二次确认（属产品行为决策，另立 spec）。
+- 不修静态资源 `Cache-Control` 缺失与 `?v` 手工令牌问题（`main.py:79` 的 FileResponse 无缓存头），另立 spec。
+- 不动除 `#chat` 以外的视图切换逻辑。
+
+### 验收标准
+
+1. `node --check frontend/app.js` 通过。
+2. `showView('chat')` 出现在 `beginDraft()` 函数体内。
+3. 静态核对：在 `models` 视图下触发 `beginDraft()` 后，`#chat.hidden === false` 且 `#models-view.hidden === true`（由 `showView()` 保证）。
+4. `grep -rn "新会话" frontend/` 返回 0 命中。
+5. 既有前端契约测试不回归：`tests/test_frontend_management_contract.py`、`tests/test_frontend_task10_system_rule_contract.py`、`tests/test_frontend_paper_contract.py`。
+
 ## 执行配置
 
 > 沿用用户指定：主会话（架构师）主导编排，子代理调用 `Deepseek-V4.1-Flash` 模型执行（2026-09-10 起；同日早些时候为 `hy3`，与 `AGENTS.md` 选型表一致）。
@@ -204,4 +254,6 @@
 | 2026-09-10 | 架构师(自身) | 新回归：批次卡片显示"失败"但状态栏永久停在"正在提交 1 个导入批次…"，点"重试失败项"无任何反应。经 grill with docs 定位三处：`app.js:947` 与 `setImportPhase` 互锁导致 `submitting` 永不转 `failed`；`app.js:1147-1151` 重试无中间态且成功后不刷状态栏；后端 `retry_batch` 在请求线程内同步跑完整批（实测 ~120s）。追加第 2 批 **BUG-04 / Task06**（仅前端）；向后承接同步执行与存储占用的结构性问题至 **spec-021**；同期按用户要求将全部角色子代理模型统一为 `hy3` 并同步 `AGENTS.md` 选型表 |
 | 2026-09-11 | 架构师(自身) | 新缺陷：首次部署到新机器后上传即报 `INDEX_REBUILD_REQUIRED`。实测 `data/kb` 目录**完全不存在**（无 `papers.json`/`index-generation.json`/`rebuild-runs`）；根因为 `manifest_store.py:599-603` 的 `require_generation()` 只判 marker 是否存在、不存在即 409，把「空库首次部署」与「已有旧索引需全库重建」两种状态混为一谈（`routes_kb.py:310-324` 过这道门；`main.py:34-40` 启动时仅打印不初始化；同函数内 `papers.json` 缺失却走 503 `INDEX_FINALIZE_REQUIRED`，语义本就区别对待）。纳入第 3 批 **BUG-05 / Task07**（仅后端），方案为「空库自动 bootstrap 初始代际 + 非空库保持 fail-closed 仍 409」；spec 转 `待确认`，确认前不动业务代码 |
 | 2026-09-11 | 架构师(自身) | 用户确认「按这个执行，不需要全量回归」。分派 `backend-dev` 实施 Task07 **失败 2 次**：当前会话的 `Task` 工具无法解析项目自定义子代理 `backend-dev`（`.codebuddy/agents/backend-dev.md` 文件存在但工具报 `Subagent "backend-dev" not found`，加 `subagent_path` 显式指定仍失败，工具仅暴露内置只读的 `code-explorer`）。已按门禁硬规则 #2 停下并记录：**阻塞：Task07 未执行（原因：本会话无法分派 backend-dev 子代理）**；按硬规则 #3，改动含 `.py` 时**禁止主会话代行**，故未自行实现。已备妥可直接执行的 task 文件，待用户豁免代行或换用可调用子代理的环境后继续 |
+| 2026-09-12 | 架构师(自身) | 新缺陷：从「模型库」等视图点「新建对话」不切回对话视图。经 grill with docs 定位：`beginDraft()`（`app.js:1102-1110`）只重置会话内容、**从不调用 `showView()`**，而视图切换靠原生 `hidden` 属性（`app.js:2831-2836`），故 `#chat.hidden` 一直为 `true`；`openConversation()` 首行即有 `showView('chat')` 可作对照。追加第 4 批 **BUG-06**（仅前端）。用户确认边界：改 `beginDraft()` 内部（覆盖 `1589`/`1651`/`1170` 三个调用点）、本次只修这个 bug、顺手统一「新会话」→「新对话」、按 AGENTS.md 分派子代理 |
+| 2026-09-12 | `frontend-dev` + `frontend-tester`（架构师(自身)编排） | 实施并验收 BUG-06：① `app.js:1103` 前置于 `beginDraft()` 首行；② 7 处「新会话」→「新对话」；③ `index.html:492` `app.js?v=33`→`?v=34`、491 行兼容注释追加 `v33`。验收：`node --check` OK、前端契约 pytest **35 passed / 0 failed**、`grep "新会话"` 0 命中；架构师另用 Playwright+Chromium 在 8300 做真实点击验证——模型库 → 新建对话后 `#chat.hidden=false`、`#models-view.hidden=true`、`activeNav=['chat']`、`page_errors=[]`、加载 `app.js?v=34`。**未跑全量回归**（单端改动，按规则只跑前端回归）。详见 `reviews/020-acceptance-review.md` 第 4 批段 |
 | 2026-09-11 | 架构师(自身)（**主模型代行**） | 用户豁免代行后实施 Task07：① `manifest_store.py` 新增 `_is_empty_library()` / `_bootstrap_empty_generation()`，`require_generation()` 增加 `allow_bootstrap` 参数（**默认 `False`**，保证启动/状态/检查清单等读路径零副作用）；② `routes_kb.py` `_require_generation()` 透传该参数，**仅上传端点** opt-in `allow_bootstrap=True`；③ 新增 `tests/test_kb_empty_generation_bootstrap.py` 5 条定向测试。**未改 `main.py`**（默认即只读，天然满足既有启动只读测试）。同步按授权变更更新冻结清单 `upload-closure-matrix.json`（`routes_kb.py` sha256 与 `inventory_digest`）。定向测试 **157 passed / 0 failed**；运行时实测：全新环境首次上传 **HTTP 201**（原 409）、启动不创建 `data/kb`、第二次上传无 503、测试文档已清理（`papers.json` 归零）。**未跑全量回归**（用户要求）。已完成代行三处留痕 |

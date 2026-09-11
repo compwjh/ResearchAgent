@@ -876,10 +876,10 @@ function visibleProjects(projects) {
 function renderConversationRow(item, container, owner = 'recent') {
   if (!item?.conversation_id || container.querySelector(`[data-conversation-id="${CSS.escape(item.conversation_id)}"]`)) return;
   const row = document.createElement('div'); row.className = 'conversation-item'; row.dataset.conversationId = item.conversation_id; row.dataset.owner = owner; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', item.conversation_id === conversationState.conversationId ? 'true' : 'false');
-  const button = document.createElement('button'); button.type = 'button'; button.className = 'conversation-item-main'; button.setAttribute('aria-label', `打开会话 ${item.title || '新会话'}`);
-  const title = document.createElement('span'); title.className = 'conversation-item-title'; title.textContent = item.title || '新会话';
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'conversation-item-main'; button.setAttribute('aria-label', `打开会话 ${item.title || '新对话'}`);
+  const title = document.createElement('span'); title.className = 'conversation-item-title'; title.textContent = item.title || '新对话';
   button.append(title); button.addEventListener('click', () => openConversationFromWorkspace(item.conversation_id));
-  const menu = document.createElement('button'); menu.type = 'button'; menu.className = 'conversation-item-menu'; menu.setAttribute('aria-label', `管理会话 ${item.title || '新会话'}`); menu.setAttribute('aria-haspopup', 'menu'); menu.setAttribute('aria-expanded', 'false'); menu.textContent = '⋯';
+  const menu = document.createElement('button'); menu.type = 'button'; menu.className = 'conversation-item-menu'; menu.setAttribute('aria-label', `管理会话 ${item.title || '新对话'}`); menu.setAttribute('aria-haspopup', 'menu'); menu.setAttribute('aria-expanded', 'false'); menu.textContent = '⋯';
   menu.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton('重命名', () => openActionDialog('rename-conversation', item))); panel.append(menuButton('移动到项目', () => openActionDialog('move-conversation', item))); if (item.project_id) panel.append(menuButton('移出项目', () => moveConversation(item, null))); panel.append(menuButton(item.status === 'archived' ? '恢复' : '归档', () => confirmAction('conversation-status', item))); panel.append(menuButton('删除', () => confirmAction('conversation-delete', item), true)); openFloatingMenu(menu, panel); });
   row.append(button, menu); container.appendChild(row);
 }
@@ -1100,10 +1100,10 @@ async function openConversation(conversationId, { replace = false } = {}) {
 }
 
 function beginDraft() {
-  abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
+  showView('chat'); abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
   if (window.location.pathname.startsWith('/c/')) window.history.replaceState({}, '', '/');
-  const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = '新会话';
-  const state = document.querySelector('.chat-state'); if (state) state.textContent = '新会话';
+  const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = '新对话';
+  const state = document.querySelector('.chat-state'); if (state) state.textContent = '新对话';
   if (conversationMemoryStatus) conversationMemoryStatus.textContent = '';
   resetConversationMessages(); loadConversationList(); input.focus();
   updateGovernanceControls();

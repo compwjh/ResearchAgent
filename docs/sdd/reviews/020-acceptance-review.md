@@ -144,3 +144,92 @@ FINAL chunkers: v1={status:indexed,progress:100}, v2={status:indexed,progress:10
 
 - 验收执行：架构师（主会话）代行执行（子代理 429 限流）
 - 开发主管签字：**架构师（主会话）代签**
+
+---
+
+### 第 4 批 BUG-06 验收（2026-09-12）
+
+**范围**：仅前端单端回归与验收（BUG-06「从其它视图点『新建对话』不切回对话视图」+「新会话」→「新对话」文案 + 资源版本号）。本轮**未跑后端 pytest**、**未修改 `frontend/**` 与 `backend/**` 任何代码**，只写本文档。
+
+**执行角色**：`frontend-tester`。进展日志：`ResearchAgent/.codebuddy/agent-logs/spec-020/task-00/frontend-tester/20260912-025112.md`。
+
+#### 验收项 1：`node --check` 语法检查
+
+命令：
+
+```
+cd /Users/wjh/ResearchAgent_workbuddy/ResearchAgent && \
+  /Users/wjh/.workbuddy-ai/binaries/node/versions/22.22.2/bin/node --check frontend/app.js
+```
+
+输出摘要：无任何输出，`EXIT=0`。→ **PASS**
+
+#### 验收项 2：前端契约回归 pytest（仓库 venv，Python 3.11）
+
+命令：
+
+```
+cd /Users/wjh/ResearchAgent_workbuddy/ResearchAgent && \
+  .venv/bin/python -m pytest tests/test_frontend_management_contract.py \
+    tests/test_frontend_task10_system_rule_contract.py \
+    tests/test_frontend_paper_contract.py -q
+```
+
+输出摘要（复跑两次一致）：
+
+```
+...................................                                      [100%]
+35 passed in 0.18s
+PYTEST_EXIT=0
+```
+
+统计：**passed = 35，failed = 0，error = 0，skipped = 0**（退出码 0）。→ **PASS**
+
+#### 验收项 3：静态 DOM 契约核对
+
+| 命令 | 期望 | 真实输出 | 结论 |
+|---|---|---|---|
+| `grep -n "showView('chat')" frontend/app.js` | 命中含 1103 行 | `1063: showView('chat');` / `1103: showView('chat'); abortConversationStream(); ...` / `1341:` / `2880:` — **含 1103** | PASS |
+| `grep -rn "新会话" frontend/` | 0 命中 | 无输出，`EXIT=1`（**0 命中**） | PASS |
+| `grep -n "app.js?v=" frontend/index.html` | 实际引用为 34 | `491: <!-- ... /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 -->`；`492: <script src="/assets/app.js?v=34"></script>` | PASS |
+
+文案落点复核：`frontend/app.js:879/880/882`（`renderConversationRow` 的 `aria-label` 与 `title.textContent` 默认文案）、`frontend/index.html:52`（`.breadcrumb strong`）、`frontend/index.html:74`（`.chat-state`）均已为「新对话」。
+
+#### 验收项 4：`beginDraft()` 其它行为未改动
+
+命令与真实输出（`sed -n '1102,1112p' frontend/app.js`）：
+
+```
+function beginDraft() {
+  showView('chat'); abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
+  if (window.location.pathname.startsWith('/c/')) window.history.replaceState({}, '', '/');
+  const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = '新对话';
+  const state = document.querySelector('.chat-state'); if (state) state.textContent = '新对话';
+  if (conversationMemoryStatus) conversationMemoryStatus.textContent = '';
+  resetConversationMessages(); loadConversationList(); input.focus();
+  updateGovernanceControls();
+}
+```
+
+结论：新增语句仅为首行前缀 `showView('chat');`，其后 `abortConversationStream()` / 状态重置 / `history.replaceState` / 面包屑与状态文案置位 / `resetConversationMessages()` / `loadConversationList()` / `input.focus()` / `updateGovernanceControls()` **全部原样保留、顺序未变**。→ **PASS**
+
+#### 交叉验证（额外项，非清单要求）
+
+`git status --porcelain -- frontend/` 仅 `M frontend/app.js`、`M frontend/index.html`；`git diff` 显示改动面恰好为声明的 3 组（879/880/882 文案、1103 新增 `showView('chat')`、1105/1106 文案；index.html 52/74 文案、491 兼容注释追加 `?v=33`、492 `?v=33`→`?v=34`），**无夹带改动**。
+
+#### 对既有 Playwright 运行时验证的复核确认
+
+确认用户已完成的真实点击验证（`http://127.0.0.1:8300`）：初始 `#chat.hidden=false`/`activeNav=['chat']` → 点 `.nav-item[data-view="models"]` 后 `#chat.hidden=true`/`#models-view.hidden=false`/`activeNav=['models']` → 再点 `button.new-chat` 后 `#chat.hidden=false`/`#models-view.hidden=true`/`activeNav=['chat']`（**已切回**）；`page_errors=[]`；加载脚本为 `/assets/app.js?v=34`。该结果与本轮静态/契约结论一致，本次未重复执行。
+
+#### 结论
+
+**通过**。4 项验收全部 PASS，无 P0/P1 问题，无遗留阻塞项。
+
+| 维度 | 结果 |
+|---|---|
+| Syntax（`node --check`） | PASS |
+| Contract（前端契约 pytest） | PASS（35 passed / 0 failed） |
+| Version（`?v=34`） | PASS |
+| DOM 文案（「新会话」0 命中） | PASS |
+| XSS / 副作用（改动仅常量文案与 `showView` 调用，无 `innerHTML` 拼接） | PASS |
+| 总体 | **READY** |
