@@ -473,3 +473,210 @@ grep -n "setConversationStatus(" frontend/app.js
 `frontend/app.js:155`「正在重试…」与 `frontend/app.js:1084`「正在加载会话…」语义上属于进行中（loading）状态，但调用时传的是默认 `state=''`，因此**会被 4 秒定时器清除**。若重试/加载耗时超过 4 秒，这两条进行中文案会先于操作完成而消失。
 期望行为：这两处应传 `state='loading'`——`CONVERSATION_STATUS_PERSISTENT_STATES`（`app.js:361`）已包含 `'loading'` 豁免，但目前**无任何调用点使用** `'loading'`（16 个调用点中 10 个 `'error'`、6 个 `''`），该豁免分支实为预留的死代码。
 影响面：仅为观感（文案提前消失），不影响功能；两类操作成功后分别由 `app.js:1109` `setConversationStatus('')` 或后续 error 分支接管，不存在状态错乱。建议后续批次顺手补齐，不阻塞 BUG-07 验收。
+
+---
+
+# spec-020 验收评审 · 第 6 批 BUG-08（A 前端 CSS / B 依赖配置 / C 后端缓存头）
+
+- 验收角色：tester 子代理（跨端验收总控），只做验收与文档，未修改任何代码文件，未 commit
+- 评审日期：2026-09-12
+- 服务：`http://127.0.0.1:8300`（`deploy/run.pid=55719`），`/api/health` = 200
+- 工具约束：curl 全程 `--noproxy '*'`；Python 用 `.venv/bin/python`（3.11）
+
+## 验收结论
+
+**有条件通过**。A / B / C 三项改动的**本批验收点全部 PASS**（含 C 方案的关键约束：13 条 `?v` 字面断言全绿、未被 C 改动波及）；但**后端全量回归发现 1 条 P0**：C 修改 `backend/app/main.py` 后破坏了 spec-018 冻结清单的 sha256 校验，须先修复该清单才能合入。
+
+| 项 | 内容 | 结论 |
+|---|---|---|
+| 1 | 13 条 `?v` 字面断言（7 个前端契约文件） | **PASS**（79 passed / 0 failed） |
+| 2 | A：三分区标题颜色/左缩进 + toggle 折叠（Playwright 实测） | **PASS** |
+| 3 | C：`cache-control` / `etag` / 304 / health（curl 实测） | **PASS** |
+| 4 | B：三份 requirements 配置核对 + import | **PASS** |
+| 5 | 后端全量回归 `pytest tests -q` | **FAIL（1 条 P0 由 C 引入）** |
+
+---
+
+## 一、`?v` 字面断言（C 方案关键约束）
+
+命令：
+
+```
+.venv/bin/python -m pytest tests/test_frontend_paper_contract.py \
+  tests/test_frontend_task09_project_tree_contract.py \
+  tests/test_frontend_task05_repair_contract.py \
+  tests/test_frontend_management_contract.py \
+  tests/test_frontend_conversation_contract.py \
+  tests/test_frontend_task10_system_rule_contract.py \
+  tests/test_frontend_skill_tool_contract.py -q
+```
+
+真实输出：
+
+```
+........................................................................ [ 91%]
+.......                                                                  [100%]
+79 passed in 0.19s
+```
+
+补充核对（`grep -n '?v='` 于同一批 7 个文件）：共 **16 行命中**，分布 paper 3 / conversation 3 / management 2 / skill_tool 2 / task05 2 / task09 2 / task10 2。
+
+口径说明：任务书给出的"13 条"与 grep 命中的 16 行存在 3 行差，差额来自各文件中的兼容注释与期望值上下文行（非独立断言）；**判定以 pytest 结果为准——0 failed，无一断言失败**。
+
+`frontend/index.html` 代码事实：`index.html:8` 为 `<link rel="stylesheet" href="/assets/styles.css?v=34">`，`index.html:7` 兼容注释已追加 `.../assets/styles.css?v=33`。符合预期（C 明确未动 `?v` 令牌）。
+
+→ **PASS**（C 未破坏 `?v` 契约）
+
+---
+
+## 二、A：浏览器实测（Playwright + Chromium）
+
+脚本：`.venv/bin/python /tmp/verify_bug08_a.py`（`p.chromium.launch(args=["--no-proxy-server"])`，viewport 1440×900，`wait_until="networkidle"`）
+
+真实输出：
+
+```
+=== A-1 三个分区标题 color / left ===
+#project-tree-toggle .section-label  -> {"text": "项目",   "color": "rgb(139, 142, 150)", "display": "block", "visibility": "visible", "left": 18, "top": 158,   "width": 20,  "height": 14}
+.conversation-list-head span         -> {"text": "最近会话", "color": "rgb(139, 142, 150)", "display": "block", "visibility": "visible", "left": 18, "top": 267.5, "width": 40,  "height": 14}
+.nav-label                           -> {"text": "工作区", "color": "rgb(139, 142, 150)", "display": "block", "visibility": "visible", "left": 18, "top": 380,   "width": 191, "height": 14}
+
+唯一 color 集合: {'rgb(139, 142, 150)'}  -> 颜色一致
+唯一 left  集合: {18}  -> left一致
+
+=== A-2 #project-tree-toggle aria-expanded 切换 ===
+click 前 aria-expanded = true
+click 后 aria-expanded = false
+再 click aria-expanded = true
+toggle 盒子: {"padding": "3px 6px 3px 0px", "minHeight": "22px", "height": 28, "left": 18}
+```
+
+判定：
+
+- 三者 `color` 均为 `rgb(139, 142, 150)` = `#8b8e96` = `var(--muted)`（`styles.css:1`），**颜色一致** ✔
+- 三者 `left` 均为 **18px**（= `.sidebar` 的 `padding: 24px 18px` 内容左边界），**左缩进顶格一致** ✔
+- `#project-tree-toggle` 计算样式 `padding: 3px 6px 3px 0`、`min-height: 22px`，与 `styles.css:140` 改动一致；实测高度 28px ≥ 22px，未出现高度塌陷
+- `aria-expanded` 切换：`true → false → true`，折叠/展开交互正常 ✔
+
+→ **PASS**
+
+---
+
+## 三、C：响应头实测（curl）
+
+命令与真实输出：
+
+```
+$ curl -s --noproxy '*' -D - -o /dev/null http://127.0.0.1:8300/ | grep -i "cache-control\|HTTP/"
+HTTP/1.1 200 OK
+cache-control: no-cache
+
+$ curl -s --noproxy '*' -D - -o /dev/null "http://127.0.0.1:8300/assets/app.js?v=35" | grep -i "HTTP/\|cache-control\|etag\|content-length"
+HTTP/1.1 200 OK
+content-length: 204924
+etag: "d9707453932d1276cde9ab5b1b15f189"
+cache-control: no-cache
+
+$ ETAG=["d9707453932d1276cde9ab5b1b15f189"]
+$ curl -s --noproxy '*' -o /dev/null -w "If-None-Match 请求 -> HTTP %{http_code}\n" -H "If-None-Match: $ETAG" "http://127.0.0.1:8300/assets/app.js?v=35"
+If-None-Match 请求 -> HTTP 304
+
+$ curl -s --noproxy '*' -o /dev/null -w "HTTP %{http_code}\n" http://127.0.0.1:8300/api/health
+HTTP 200
+```
+
+判定：
+
+- 首页 `FileResponse` 带 `cache-control: no-cache` ✔（`backend/app/main.py:104`）
+- `/assets/app.js?v=35` 带 `cache-control: no-cache` 且**保留 etag** ✔ —— 证明 `NoCacheStaticFiles.file_response` 是先调 `super().file_response` 再覆写头（`main.py:77-84`），未丢掉 ETag
+- `If-None-Match` 回源校验命中 **304** ✔ —— 即"每次回源校验、命中则不传输"，带宽无损
+- `/api/health` = 200 ✔
+
+→ **PASS**
+
+---
+
+## 四、B：依赖配置核对
+
+```
+$ grep -n "jsonschema\|PyYAML\|pydantic" requirements.txt requirements-dev.txt requirements.lock.txt
+requirements.txt:19:# jsonschema 曾被误放进 requirements-dev.txt，但 knowledge_base 的 provenance
+requirements.txt:22:jsonschema>=4.19,<5
+requirements.txt:23:# PyYAML：app/skills/scanner.py 解析 SKILL.md front matter
+requirements.txt:24:PyYAML>=6.0
+requirements.txt:25:# pydantic：api 层 schema 直接 import，此前只靠 fastapi 传递依赖
+requirements.txt:26:pydantic>=2.0
+requirements-dev.txt:8:# 注：jsonschema 已于 2026-09-12 移入 requirements.txt（spec-020 BUG-08-B）——
+requirements.lock.txt:28:jsonschema==4.26.0
+requirements.lock.txt:53:pydantic==2.13.5
+requirements.lock.txt:54:pydantic_core==2.46.5
+requirements.lock.txt:62:PyYAML==6.0.3
+
+$ .venv/bin/python -c "import jsonschema, yaml, pydantic; ..."
+jsonschema 4.26.0
+yaml 6.0.3
+pydantic 2.13.5
+exit=0
+```
+
+判定：`requirements.txt` 三项齐全；`requirements-dev.txt` 中 jsonschema 已移除、仅留说明注释（`:8`）；`requirements.lock.txt` 已补 `jsonschema==4.26.0`，且与装好的版本一致；三个包 `.venv` 内均可 import。
+
+→ **PASS**
+
+---
+
+## 五、后端全量回归（C 动了 main.py，必跑）
+
+```
+$ .venv/bin/python -m pytest tests -q
+...
+4 failed, 1291 passed, 5 warnings, 47 subtests passed in 202.65s (0:03:22)
+
+FAILED tests/test_import_compensation.py::test_import_without_temp_dir_uses_attempt_private_root_and_cleans_only_it
+FAILED tests/test_kb_candidate_rebuild.py::test_empty_library_dry_run_reports_bootstrap_without_writes
+FAILED tests/test_kb_upload_closure_matrix.py::test_inventory_hashes_are_stable_and_write_entrypoints_are_registered
+FAILED tests/test_ollama_service.py::OllamaServiceTests::test_chat_model_bypasses_system_proxy
+```
+
+### 5.1 P0（阻塞合入，由 C 引入）
+
+**`tests/test_kb_upload_closure_matrix.py::test_inventory_hashes_are_stable_and_write_entrypoints_are_registered`**
+
+- 依据 1：`docs/sdd/plans/018/artifacts/task-04/upload-closure-matrix.json:8-10`，冻结清单**第一条**就是 `backend/app/main.py`，`sha256` 冻结为 `547ed00f729ca1970a0b872ee7b671a21f348770b451a27c1e17bf591bc79f4c`
+- 依据 2：`tests/test_kb_upload_closure_matrix.py:76-77` 逐文件重算 sha256 并与清单比对；`:78-81` 再比对汇总 `inventory_digest`
+- 结论：C 在 `backend/app/main.py:66-104` 新增 `NO_CACHE` / `NoCacheStaticFiles` 并改写 `/assets` 挂载与首页响应，**文件哈希必然变化**，该冻结清单断言必然失败。这是 C 的**直接回归**，不是偶发。
+- 影响面：仅此 1 条测试，不影响运行时功能（三、已实测缓存头行为正确）。
+- 修复口径：重新计算 `backend/app/main.py` 的 sha256 写入 `upload-closure-matrix.json:9`，并同步重算 `inventory_digest`（`:4`）；`inventory_git_revision`（`:3`，现为 `06c3412`）按 spec-018 约定一并核对。同时确认新增方法名 `file_response` 不落入 `:88-89` 的写能力符号白名单校验（名字不含 upload/save/upsert/index/delete/reindex/import/startup/task，**不会触发额外断言**）。
+
+### 5.2 与 C 无关 / 待确认（P1）
+
+| 失败用例 | 判定依据 | 结论 |
+|---|---|---|
+| `tests/test_ollama_service.py:17` | 断言 `base_url == "http://localhost:11434"`，实际 `'http://192.168.31.180:11434'`。该文件（`tests/test_ollama_service.py:1-10`）只 import `backend.app.platform.ollama`，**与 main.py 无任何引用关系**；失败源于本机 `OLLAMA_HOST` 环境变量 | 环境漂移，与 C 无关 |
+| `tests/test_import_compensation.py::test_import_without_temp_dir_uses_attempt_private_root_and_cleans_only_it` | 该文件（`:1-26`）仅 import `knowledge_base.application` / `infrastructure.store` / `paper_import`，**不 import `backend.app.main`** | 与 C 无引用关系，判为既有/环境失败；**待确认** |
+| `tests/test_kb_candidate_rebuild.py::test_empty_library_dry_run_reports_bootstrap_without_writes` | 该文件（`:1-26`）仅 import `knowledge_base` 系列模块，**不 import `backend.app.main`** | 与 C 无引用关系，判为既有/环境失败；**待确认** |
+
+**诚实声明**：本批验收执行到第 5 项收尾阶段时，Bash 工具突发全面失效（所有命令返回 exit 127，含 `echo` 探测），因此上述 2 条"待确认"用例**未能单独复跑以抓取断言详情**，判定依据仅为静态引用关系分析（两文件均不 import `backend.app.main`）+ 失败用例集中在 knowledge_base 域。**建议 Bash 恢复后补跑这两条以坐实"既有失败"结论，不要仅凭本报告的引用分析直接豁免。**
+
+---
+
+## P0 / P1 清单
+
+| 级别 | 位置 | 问题 | 归属 |
+|---|---|---|---|
+| **P0** | `docs/sdd/plans/018/artifacts/task-04/upload-closure-matrix.json:9`（`backend/app/main.py` 条目）+ `:4` `inventory_digest` | 冻结清单哈希未随 `backend/app/main.py:66-104` 的改动更新，导致 `tests/test_kb_upload_closure_matrix.py:76-81` 失败 | C（后端缓存头） |
+| P1（待确认） | `tests/test_import_compensation.py::test_import_without_temp_dir_uses_attempt_private_root_and_cleans_only_it` | 失败，未复跑取断言详情；静态上与该批改动无引用关系 | 既有/环境？ |
+| P1（待确认） | `tests/test_kb_candidate_rebuild.py::test_empty_library_dry_run_reports_bootstrap_without_writes` | 同上 | 既有/环境？ |
+| P1（环境） | `tests/test_ollama_service.py:17` | `OLLAMA_HOST` 指向 `192.168.31.180:11434`，与断言的 `localhost:11434` 不符 | 环境漂移，非本批引入 |
+
+## 放行建议
+
+1. **A（前端 CSS）、B（依赖配置）可单独放行** —— 实测与核对全绿，无 P0/P1。
+2. **C（后端缓存头）功能正确但未达合入条件** —— 行为已由 curl + 浏览器实测证明（`no-cache` + ETag 保留 + 304 回源 + 13 条 `?v` 断言未破），但必须补 `upload-closure-matrix.json` 的哈希刷新，并复跑 `tests/test_kb_upload_closure_matrix.py` 至全绿后方可合入。
+3. Bash 恢复后请补跑第 5.2 节两条待确认用例；若确认为既有失败，则本次 BUG-08 三项改动可整体放行。
+
+---
+
+## 开发主管签字
+
+（留空，交由架构师签署）

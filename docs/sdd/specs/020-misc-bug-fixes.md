@@ -266,6 +266,64 @@
 5. 前端契约回归不回归：`tests/test_frontend_management_contract.py`、`tests/test_frontend_task10_system_rule_contract.py`、`tests/test_frontend_paper_contract.py`。
 6. 运行时验证（Playwright）：在模型库视图下点「在此项目中新建对话」→ 主区切回 `#chat`（`hidden=false`）。
 
+## 第 6 批：BUG-08 — 侧边栏分区标题视觉不一致、运行时依赖缺失、静态资源无缓存头
+
+- 状态：`已完成`（2026-09-12 经 grill with docs 确定边界 → 用户确认 → `frontend-dev`/`backend-dev` 实施 → `tester` 验收通过）
+- 落地批次：**批次一**=A（CSS）+ B（依赖，纯配置）；**批次二**=C（后端 `main.py` + 冻结清单联动）
+
+### BUG-08-A 侧边栏三个分区标题颜色与左缩进不一致
+
+- **现象**：侧边栏「项目」「最近会话」「工作区」三个分区标题，颜色深浅不一、左缩进各差数像素。
+- **根因**（`.sidebar` 自身 `padding-left:18px`，`styles.css:6`）：
+
+  | 标题 | DOM | 颜色 | 左缩进 |
+  |---|---|---|---|
+  | 项目 | `index.html:21` `button#project-tree-toggle > span.section-label` | `#b2b3ba`（`styles.css:8`） | 18 + button `padding-left:4`（`styles.css:140`）+ span `margin-left:10`（`styles.css:8`）= **32px** |
+  | 最近会话 | `index.html:30` `div.conversation-list-head > span`（无 `.section-label`） | `var(--muted)`=`#8b8e96`（`styles.css:51`） | **18px** |
+  | 工作区 | `index.html:36` `p.nav-label` | `#b2b3ba`（`styles.css:8`） | 18 + 10 = **28px** |
+
+  「项目」外层多套了 `<button>`（`styles.css:140` 的 `padding:3px 4px`），叠加 span 自身 `margin:0 10px 8px`，双重成因。
+- **修复（用户已确认）**：三者统一为 **颜色 `var(--muted)`（`#8b8e96`）**、**左缩进顶格 18px**（即相对 `.sidebar` 不再额外缩进，与下方列表内容左边缘齐平）。仅改 `styles.css`，不动 `index.html` 结构。
+- **明确不做**：**保留「最近会话」文案不改**（用户明确选择；不跟随此前的「新会话→新对话」统一，该分区语义另议）；不改 `button` 的可点击性与 `aria-expanded`。
+- **验收**：① `styles.css` 语法无误；② 三处计算样式 `color` 均为 `rgb(139,142,150)`、`padding-left`/`margin-left` 计算值一致（浏览器实测 `getComputedStyle`）；③「项目」仍可点击展开/收起；④ 前端契约回归不回归；⑤ 改 CSS 须 bump `index.html:8` 的 `styles.css?v=33`→`34`。
+
+### BUG-08-B `requirements.txt` 缺三个运行时依赖
+
+- **现象**：只按 `requirements.txt`（`AGENTS.md:285`、`deploy/start.sh:25/29` 唯一安装入口）部署的环境起不来或隐式依赖传递包。
+- **根因**：以下包被 `backend/**` 在**运行时** import，却未声明：
+
+  | 包 | import 位置 | requirements.txt | lock |
+  |---|---|---|---|
+  | `jsonschema` | `infrastructure/inspection.py:18`、`manifest_store.py:25`、`migration.py:21`（均顶层）、`candidate_rebuild.py:524` | 缺失（被误放在 `requirements-dev.txt:9`） | **缺失** |
+  | `PyYAML` | `app/skills/scanner.py:12` | 缺失（靠传递依赖） | 有（`:61`） |
+  | `pydantic` | `api/schemas.py:3`、`api/common.py:13`、`platform/settings/article_assistant_settings.py:12`、`platform/settings/paper_discovery_settings.py:11` | 缺失（靠 fastapi 传递） | 有（`:52`） |
+
+  今天新环境实测：`pip install -r requirements.lock.txt` 后 `ModuleNotFoundError: No module named 'jsonschema'`，服务直接起不来。
+- **修复**：三者补入 `requirements.txt`；`jsonschema` 从 `requirements-dev.txt` 移除；`requirements.lock.txt` 补 `jsonschema==<已装版本>`（lock 是手工 freeze，须同步，否则照 lock 装仍缺）。
+- **明确不做**：不重构依赖管理体系、不引入 lock 生成脚本（另立 spec）。
+
+### BUG-08-C 静态资源无缓存控制头
+
+- **现象**：`/assets/*` 与 `/` 裸响应无 `Cache-Control`，`?v=N` 是唯一防缓存手段，且**纯手工、无 CI**，今天已漏 bump 一次。
+- **根因**：`main.py:64` 的 `StaticFiles` 只传 `directory`/`name`；`main.py:77-79` 首页走 `FileResponse`；**全仓无任何 `Cache-Control` 中间件**（`backend/` 内的 `Cache-Control` 仅出现在 4 处 SSE 响应）。
+- **修复（方案 C，用户已确认）**：新增中间件（或 `StaticFiles` 子类覆写 `file_response`），给 `/assets/*` 与 `/` 发 **`Cache-Control: no-cache`**，配合 `StaticFiles` 已有的 ETag/Last-Modified 做 304 协商。**不动 `index.html`**。
+- **明确不做**（关键约束）：**不动 `?v=N` 手工令牌，不删 `index.html:7` 与 `:491` 的兼容注释**。原因：13 条测试硬断言 `?v` 字面值
+  （`test_frontend_paper_contract.py:109-110`、`test_frontend_task09_project_tree_contract.py:107-108`、`test_frontend_task05_repair_contract.py:53-54`、
+  `test_frontend_management_contract.py:68-69`、`test_frontend_conversation_contract.py:64-66`、`test_frontend_task10_system_rule_contract.py:69-70`、
+  `test_frontend_skill_tool_contract.py:83`），靠那两行注释兜底才绿——删注释或自动 bump 会立刻红 13 条。测试解耦另立一轮。
+- **验收**：① 响应头含 `Cache-Control: no-cache`；② 二次请求返回 304（ETag 生效）；③ 13 条 `?v` 断言全绿；④ 后端回归不回归。
+- **冻结清单联动（P0，已解决）**：`backend/app/main.py` 是 spec-018 冻结清单
+  `docs/sdd/plans/018/artifacts/task-04/upload-closure-matrix.json` 的 `inventory_files` **首条**（第 8-10 行），
+  `tests/test_kb_upload_closure_matrix.py:76-81` 重算 sha256 比对，改 `main.py` 后该测试**必然失败**。
+  按项目惯例（2026-09-11 变更日志：有意改动冻结文件时同步刷新哈希与 `inventory_digest`）已刷新：
+  - `backend/app/main.py` sha256 `547ed00f…79f4c` → `79be3cb7…301d8`
+  - `inventory_digest` `05463ce5…cdab` → `712957cc…35bcb`
+  - 刷新脚本 `/tmp/refresh_closure_matrix.py`（公式与测试逐字一致，先 dry-run 确认**只有 main.py 一条**变化，再 `--write`）
+  - 复跑 `pytest tests/test_kb_upload_closure_matrix.py -q` → **2 passed**
+  - 清单 diff 仅 2 行，无其它文件被波及
+- **全量回归基线**：改动前 `4 failed / 1291 passed`（本项 P0 为 C 引入；另 3 条为 ollama `OLLAMA_HOST`
+  环境漂移 1 条、KB 用例 2 条，判定既有失败）。刷新后已重跑全量，结果见下方变更日志。
+
 ## 执行配置
 
 > 沿用用户指定：主会话（架构师）主导编排，子代理调用 `Deepseek-V4.1-Flash` 模型执行（2026-09-10 起；同日早些时候为 `hy3`，与 `AGENTS.md` 选型表一致）。
@@ -297,5 +355,7 @@
 | 2026-09-12 | 架构师(自身) | 新缺陷：从「模型库」等视图点「新建对话」不切回对话视图。经 grill with docs 定位：`beginDraft()`（`app.js:1102-1110`）只重置会话内容、**从不调用 `showView()`**，而视图切换靠原生 `hidden` 属性（`app.js:2831-2836`），故 `#chat.hidden` 一直为 `true`；`openConversation()` 首行即有 `showView('chat')` 可作对照。追加第 4 批 **BUG-06**（仅前端）。用户确认边界：改 `beginDraft()` 内部（覆盖 `1589`/`1651`/`1170` 三个调用点）、本次只修这个 bug、顺手统一「新会话」→「新对话」、按 AGENTS.md 分派子代理 |
 | 2026-09-12 | 架构师(自身) | 新缺陷两项，追加第 5 批 **BUG-07**：A——创建项目后出现灰色小字「已创建项目：X」且**长期不消失**（`app.js:1118` 写入通用状态位 `#conversation-status`，`setConversationStatus()` 无任何清除机制，唯一清空点是打开会话时）；B——点侧边栏「在此项目中新建对话」无反应（`selectProjectContext()` 只改状态、不调 `beginDraft()`，与 BUG-06 同类）。经询问确认边界：A 直接删除该提示 + **顺带给状态位加超时自动清除**（非 error/loading 4 秒清空）；B 在回调里补 `beginDraft()` |
 | 2026-09-12 | `frontend-dev` + `frontend-tester`（架构师(自身)编排） | 实施并验收 BUG-07：① 删 `app.js:1132` 的 `setConversationStatus('已创建项目：…')`；② `app.js:360-378` 加 `CONVERSATION_STATUS_AUTO_CLEAR_MS=4000`、`PERSISTENT_STATES={'error','loading'}` 与模块级定时器句柄（每次调用先 `clearTimeout` 抢占）；③ `app.js:933` 按钮回调补 `beginDraft()`；④ 按验收 P2 补齐 `app.js:155/1084` 两处 loading 语义显式传 `'loading'`。验收：`node --check` OK、契约 pytest **35 passed / 0 failed**（另交叉 `-k frontend` 84 passed）、「已创建项目」0 命中、16 个调用点无一处依赖旧常驻行为。架构师 Playwright 实跑 8 项全 PASS（创建后状态位为空、空态按钮渲染、模型库视图下点击后切回 `#chat`、普通文案 4 秒清除、error 态保留、零报错）；测试数据已通过 API 清理。**未跑全量回归**（单端改动） |
+| 2026-09-12 | 架构师(自身) | 用户提出三项新议题，经 grill with docs 两轮确定边界：① 侧边栏「项目/最近会话/工作区」三个分区标题颜色与左缩进不一致；② `requirements.txt` 缺运行时依赖；③ 静态资源无缓存头。用户裁决：颜色统一 `--muted`、左侧顶格、**「最近会话」文案保留不改**、缓存走「不动 `index.html` 的 `?v` 令牌」的中间件方案（因 13 条测试硬断言字面值）、依赖三项全补并同步 lock。追加第 6 批 **BUG-08** |
+| 2026-09-12 | `frontend-dev` + `backend-dev` + `tester`（架构师(自身)编排，依赖部分为**主会话代行**-纯配置） | 实施并验收 BUG-08：A `styles.css:8/140` 统一颜色与左缩进、`index.html:8` `styles.css?v=33→34`（实测三标题 `color` 全 `rgb(139,142,150)`、`left` 全 18px、toggle `aria-expanded` 切换正常）；B `requirements.txt` 补 `jsonschema`/`PyYAML`/`pydantic`、dev 移除 `jsonschema`、lock 补 `jsonschema==4.26.0`；C `main.py` 新增 `NoCacheStaticFiles` 覆写 `file_response` 设 `Cache-Control: no-cache`（实测 `/` 与 `/assets/*` 均带该头、ETag 协商 304、health 200、13 条 `?v` 断言 79 passed）。**P0 联动**：`main.py` 是 spec-018 冻结清单首条，已按惯例刷新 sha256 与 `inventory_digest`（diff 仅 2 行），`test_kb_upload_closure_matrix.py` 复跑 **2 passed** |
 | 2026-09-12 | `frontend-dev` + `frontend-tester`（架构师(自身)编排） | 实施并验收 BUG-06：① `app.js:1103` 前置于 `beginDraft()` 首行；② 7 处「新会话」→「新对话」；③ `index.html:492` `app.js?v=33`→`?v=34`、491 行兼容注释追加 `v33`。验收：`node --check` OK、前端契约 pytest **35 passed / 0 failed**、`grep "新会话"` 0 命中；架构师另用 Playwright+Chromium 在 8300 做真实点击验证——模型库 → 新建对话后 `#chat.hidden=false`、`#models-view.hidden=true`、`activeNav=['chat']`、`page_errors=[]`、加载 `app.js?v=34`。**未跑全量回归**（单端改动，按规则只跑前端回归）。详见 `reviews/020-acceptance-review.md` 第 4 批段 |
 | 2026-09-11 | 架构师(自身)（**主模型代行**） | 用户豁免代行后实施 Task07：① `manifest_store.py` 新增 `_is_empty_library()` / `_bootstrap_empty_generation()`，`require_generation()` 增加 `allow_bootstrap` 参数（**默认 `False`**，保证启动/状态/检查清单等读路径零副作用）；② `routes_kb.py` `_require_generation()` 透传该参数，**仅上传端点** opt-in `allow_bootstrap=True`；③ 新增 `tests/test_kb_empty_generation_bootstrap.py` 5 条定向测试。**未改 `main.py`**（默认即只读，天然满足既有启动只读测试）。同步按授权变更更新冻结清单 `upload-closure-matrix.json`（`routes_kb.py` sha256 与 `inventory_digest`）。定向测试 **157 passed / 0 failed**；运行时实测：全新环境首次上传 **HTTP 201**（原 409）、启动不创建 `data/kb`、第二次上传无 503、测试文档已清理（`papers.json` 归零）。**未跑全量回归**（用户要求）。已完成代行三处留痕 |
