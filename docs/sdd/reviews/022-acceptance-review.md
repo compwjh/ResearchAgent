@@ -322,3 +322,49 @@ Task10 指定后端测试 **64 passed**，前端 Task10/受影响合同 **44 pas
 - 验收执行：tester（临时 Luna high）
 - 进展日志：`.codebuddy/agent-logs/spec-022/task-10/tester/20260911-174203.md`
 - 架构师签字：已确认（Task10 定向验收与主 Agent runtime smoke 通过；全量回归留待 Task08）
+---
+
+# Spec022 Task06 验收评审：手机端体验
+
+> 验收角色：tester（临时 Luna high）
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-06-mobile-experience.md`
+> 范围：手机端前端定向合同、Task09/Task10/Task05 受影响合同、JavaScript 语法、5 个 Node 合同、diff/冲突检查；未运行全量 pytest。
+
+## 结论：PASS（Task06 前端定向范围）
+
+49 项 Task06/Task10/Task09/Conversation/Management/Task05 前端合同通过；两份 JavaScript 语法检查、5 个 Node 合同、`git diff --check` 和冲突标记检查均通过。未发现 P0/P1/P2 前端定向阻塞，业务代码未由验收角色修改。本结论不代表 Spec022 已完成。
+
+## 执行信息
+
+| 字段 | 结果 |
+|---|---|
+| 日期 | 2026-09-11（Asia/Shanghai） |
+| 业务代码修改 | 无；仅写验收报告、评审章节和进展日志 |
+| 详细报告 | [`docs/sdd/plans/022/artifacts/task-06/acceptance-report.md`](../plans/022/artifacts/task-06/acceptance-report.md) |
+| 进展日志 | `.codebuddy/agent-logs/spec-022/task-06/tester/20260911-181500.md` |
+
+## 命令与结果
+
+| 检查 | 退出码 | 结果 |
+|---|---:|---|
+| Task06 + Task10 + Task09 + Conversation + Management + Task05 前端合同 | 0 | **49 passed in 0.04s** |
+| `node --check frontend/app.js && node --check frontend/conversation-research.js` | 0 | PASS |
+| 5 个前端研究/知识库 Node 合同 | 0 | **5/5 PASS** |
+| `git diff --check`（Task06 文件） | 0 | PASS |
+| 冲突标记检查 | 0 | 未发现冲突标记 |
+
+## 固定验收结论
+
+- **移动抽屉与入口：PASS（静态/合同）。** 单一 sidebar/overlay/close DOM，项目树、会话列表、记忆入口和工作区导航沿用既有状态；抽屉支持遮罩、关闭按钮、Escape、选择后收起与可见入口焦点恢复。
+- **重试与数据安全：PASS。** 消息/历史失败仅提供 GET 重试；聊天流失败不自动重发 POST，统一提示用户确认后重新发送。Node 合同覆盖 GET-only、XSS 文本边界和 renderer 行为。
+- **移动可用性：PASS（静态）。** 44px 触控目标、safe-area、100dvh、软键盘空间、窄屏换行/滚动、RAG 详情和 reduced-motion CSS 均存在并由合同覆盖；桌面合同无回归。
+- **真实手机 smoke：代理环境限制，主 Agent 补做通过。** tester 的 `127.0.0.1:8000` 探针为 HTTP 000/退出码 7，指定 Chromium 及临时 profile 重试均因 Crashpad 权限以退出码 134、DOM 0 bytes 结束；主 Agent 随后在可监听环境以 390×844 Chromium 完成只读 DOM smoke（退出码 0，DOM 约 32 KB，四个 mobile drawer/overlay/close 节点唯一存在，`styles.css?v=32` 可见）。点击、软键盘和滚动交互留给 Task08。
+
+## 限制与主 Agent 后续
+
+本章节只签署 Task06 前端定向验收，不替代 Task08 的全量回归、部署、真实浏览器运行时验收和 Spec022 最终状态台账。主 Agent 应在服务可访问时补做 390×844 抽屉/焦点/键盘/滚动/RAG/processing smoke，并据结果决定是否追加修复。
+
+## 签字
+
+- 验收执行：tester（临时 Luna high）
+- 架构师签字：已确认（Task06 定向验收与主 Agent 390×844 Chromium DOM smoke 通过；全量回归留待 Task08）

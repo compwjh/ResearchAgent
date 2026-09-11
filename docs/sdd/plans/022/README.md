@@ -1,7 +1,7 @@
 # Spec 022 执行计划：项目会话管理与自进化长期记忆
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md)
-> 当前状态：`实施中（Task10 已完成）`。Task02–Task05、Task09–Task10 已完成；Task06–Task08 继续等待。
+> 当前状态：`实施中（Task06 已完成）`。Task02–Task06、Task09–Task10 已完成；Task07–Task08 继续等待。
 
 ## 任务索引
 
@@ -11,7 +11,7 @@
 | [03](./task-03-management-global-memory.md) | 完整项目/会话管理、全局记忆与治理 UI | 02 | 已完成 |
 | [04](./task-04-memory-evolution-recall.md) | 异步候选、摘要、冲突和跨会话召回 | 03 | 已完成 |
 | [05](./task-05-research-context-progress.md) | 项目文档、RAG、处理过程与桌面缺陷修复轮 | 04、Spec 变更确认 | 已完成（修复轮） |
-| [06](./task-06-mobile-experience.md) | 手机端项目、会话、记忆和研究交互 | 05、09、10 | 待执行 |
+| [06](./task-06-mobile-experience.md) | 手机端项目、会话、记忆和研究交互 | 05、09、10 | 已完成 |
 | [07](./task-07-capability-memory-proposals.md) | 能力方法记忆与只读 Skill 改进建议 | 04 | 待执行 |
 | [08](./task-08-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 05、06、07、09、10 | 待执行 |
 | [09](./task-09-desktop-project-tree-sidebar.md) | 桌面项目树、会话归属、浮层菜单与统一弹窗 | 05、范围确认 | 已完成 |
@@ -33,7 +33,7 @@
 - M2 / Task05：项目文档、RAG、桌面 turn、处理过程、异步记忆结果和侧栏修复轮已完成。
 - M2.5 / Task09：按 ChatGPT 项目树参考修正桌面侧栏信息架构和项目绑定体验（已完成）。
 - M2.6 / Task10：修复管理页会话直达和项目图标/布局，交付项目优先记忆与唯一用户系统规则（已完成）。
-- M3 / Task06：手机端核心路径可验证。
+- M3 / Task06：手机端核心路径可验证（已完成）。
 - M4 / Task08：全量回归、最终部署和 Spec 收口。
 
 ## 变更日志
@@ -49,3 +49,5 @@
 - 2026-09-11：Task09 需求/技术评审均 GO，用户确认实施；项目 API 的最近活动排序和 cursor 同键约束已冻结，开始后端/前端并行开发。
 - 2026-09-11：Task09 现场验证后，经 Grilling 确认会话直达、项目文件夹状态图标、project-first 记忆和独立用户系统规则，拆为 Task10；先落盘并暂停业务实现。
 - 2026-09-11：Task10 后端/前端实现、双端复审、64 项后端与 44 项前端定向验收、5 个 Node 合同及受控部署/Chromium DOM smoke 通过；Task10 收口，Task06–Task08 继续等待。
+- 2026-09-11：Task10 已完成并提交，Task06 依赖满足；按既定范围启动手机端前端适配，不新增后端接口。
+- 2026-09-11：Task06 前端适配、P1/P2 修复、reviewer GO、49 项定向验收与主 Agent 390×844 Chromium DOM smoke 通过；Task06 收口，Task07/Task08 继续等待。

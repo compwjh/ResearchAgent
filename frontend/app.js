@@ -10,6 +10,10 @@ const modeHint = document.querySelector('#mode-hint');
 const sendLabel = sendButton.innerHTML;
 const workspace = document.querySelector('.workspace');
 const newChatButton = document.querySelector('.new-chat');
+const mobileNavToggle = document.querySelector('#mobile-nav-toggle');
+const mobileNavClose = document.querySelector('#mobile-nav-close');
+const mobileNavBackdrop = document.querySelector('#mobile-nav-backdrop');
+const mobileSidebar = document.querySelector('#mobile-sidebar');
 const settingsButton = document.querySelector('#settings-button');
 const settingsDialog = document.querySelector('#settings-dialog');
 const settingsForm = document.querySelector('#settings-form');
@@ -107,6 +111,52 @@ const conversationState = {
   openToken: null,
   memoryAnalysis: new Map(),
 };
+const mobileDrawerState = { open: false, restoreFocus: null };
+
+function mobileTriggerIsVisible() {
+  if (!mobileNavToggle?.isConnected || mobileNavToggle.hidden) return false;
+  return window.getComputedStyle(mobileNavToggle).display !== 'none';
+}
+
+function openMobileDrawer() {
+  if (!mobileSidebar) return;
+  mobileDrawerState.restoreFocus = document.activeElement;
+  mobileDrawerState.open = true;
+  mobileSidebar.classList.add('mobile-nav-open');
+  if (mobileNavBackdrop) mobileNavBackdrop.hidden = false;
+  if (mobileNavToggle) mobileNavToggle.setAttribute('aria-expanded', 'true');
+  document.body.classList.add('mobile-nav-is-open');
+  mobileNavClose?.focus();
+}
+
+function closeMobileDrawer(restoreFocus = false) {
+  if (!mobileSidebar) return;
+  if (!mobileDrawerState.open) return;
+  mobileSidebar.classList.remove('mobile-nav-open');
+  if (mobileNavBackdrop) mobileNavBackdrop.hidden = true;
+  if (mobileNavToggle) mobileNavToggle.setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('mobile-nav-is-open');
+  const target = mobileTriggerIsVisible() ? (mobileDrawerState.restoreFocus || mobileNavToggle) : null;
+  mobileDrawerState.restoreFocus = null;
+  mobileDrawerState.open = false;
+  if (restoreFocus && target?.isConnected) target.focus();
+}
+
+function setConversationRetryStatus(text, retry) {
+  if (!conversationStatus) return;
+  conversationStatus.replaceChildren(document.createTextNode(text || ''));
+  if (typeof retry !== 'function') return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'conversation-retry-button conversation-status-retry';
+  button.textContent = '重试';
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    setConversationStatus('正在重试…');
+    retry();
+  });
+  conversationStatus.append(document.createTextNode(' '), button);
+}
 
 // ===== 模型别名（spec-008）：前端 localStorage 偏好 =====
 const ALIAS_KEY = 'model_aliases';
@@ -211,6 +261,21 @@ function addMessage(text, type) {
   messages.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
   return message;
+}
+
+function addConversationError(error) {
+  const message = addMessage(`连接失败：${error?.message || '请求失败'}。请确认后重新发送。`, 'assistant');
+  message.classList.add('is-failed');
+  return message;
+}
+
+function addConversationErrorNotice(message, error) {
+  if (!message || message.querySelector('.conversation-error-notice')) return;
+  const bubble = message.querySelector('.bubble') || message;
+  const notice = document.createElement('p');
+  notice.className = 'conversation-error-notice';
+  notice.textContent = `连接失败：${error?.message || '请求失败'}。请确认后重新发送。`;
+  bubble.appendChild(notice);
 }
 
 function createAssistantMessage(model) {
@@ -785,7 +850,7 @@ function openFloatingMenu(trigger, panel) {
 function menuButton(label, handler, danger = false) {
   const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'menuitem'); button.textContent = label;
   if (danger) button.classList.add('danger-button');
-  button.addEventListener('click', (event) => { event.stopPropagation(); closeFloatingMenu(false); handler(); }); return button;
+  button.addEventListener('click', (event) => { event.stopPropagation(); closeFloatingMenu(true); closeMobileDrawer(true); handler(); }); return button;
 }
 
 function renderProjectOptions(projects) {
@@ -933,7 +998,8 @@ async function loadConversationMessages(conversationId, { replace = true } = {})
     if (loadOlderMessagesButton) loadOlderMessagesButton.hidden = !conversationState.messageCursor;
   } catch (error) {
     if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
-    setConversationStatus(`消息加载失败：${error.message}`, 'error');
+    setConversationRetryStatus(`消息加载失败：${error.message}`, () => loadConversationMessages(conversationId));
+    conversationStatus.dataset.state = 'error';
   }
   finally {
     if (conversationState.messageLoadToken === loadToken) {
@@ -970,7 +1036,8 @@ async function loadOlderConversationMessages() {
     requestAnimationFrame(() => { messages.scrollTop = top + (messages.scrollHeight - height); });
   } catch (error) {
     if (conversationState.streamGeneration !== loadGeneration || conversationState.conversationId !== conversationId) return;
-    setConversationStatus(`更早消息加载失败：${error.message}`, 'error');
+    setConversationRetryStatus(`更早消息加载失败：${error.message}`, () => loadOlderConversationMessages());
+    conversationStatus.dataset.state = 'error';
   }
   finally {
     if (conversationState.messageLoadToken === loadToken) {
@@ -1398,9 +1465,12 @@ function appendConversationEvent(assistantMessage, processing, eventData) {
   }
 }
 
-async function sendConversationMessage(question) {
+async function sendConversationMessage(question, { appendUser = true } = {}) {
   abortConversationStream(); const generation = conversationState.streamGeneration; const controller = new AbortController(); conversationState.streamController = controller;
-  workspace.classList.add('has-started'); const userMessage = addMessage(question, 'user');
+  workspace.classList.add('has-started');
+  const userMessage = appendUser
+    ? addMessage(question, 'user')
+    : [...messages.querySelectorAll('.message.user')].at(-1);
   const payload = { content: question, mode: modeSelect.value, model: modelSelect.value };
   const endpoint = conversationState.conversationId ? `/api/conversations/${encodeURIComponent(conversationState.conversationId)}/messages` : '/api/conversations/messages';
   if (!conversationState.conversationId && conversationState.projectId) payload.project_id = conversationState.projectId;
@@ -1452,7 +1522,8 @@ async function sendConversationMessage(question) {
     else if (writer) writer.cancel();
     if (processing) { updateConversationProcessing(processing, { step_id: 'connection', kind: 'connection', label: '连接状态', status: error.retryable ? 'skipped' : 'failed', summary: error.retryable ? '连接中断，可重试' : '连接失败' }); stopConversationProcessing(processing, error.retryable ? 'skipped' : 'failed', error.retryable ? '连接中断，可重试' : '连接失败'); collapseConversationProcessing(processing); }
     if (sourcesRenderer) sourcesRenderer.clear();
-    if (!streamError) addMessage(`连接失败：${error.message}`, 'assistant');
+    if (assistantMessage) addConversationErrorNotice(assistantMessage, error);
+    else if (!streamError) addConversationError(error);
   } finally {
     if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList();
   }
@@ -1498,13 +1569,27 @@ messages.addEventListener('click', async (event) => {
   }
 });
 
+mobileNavToggle?.addEventListener('click', () => {
+  if (mobileSidebar?.classList.contains('mobile-nav-open')) closeMobileDrawer(true);
+  else openMobileDrawer();
+});
+mobileNavClose?.addEventListener('click', () => closeMobileDrawer(true));
+mobileNavBackdrop?.addEventListener('click', () => closeMobileDrawer(true));
+mobileSidebar?.addEventListener('click', (event) => {
+  if (!mobileSidebar.classList.contains('mobile-nav-open')) return;
+  if (event.target.closest('.mobile-nav-close')) return;
+  if (event.target.closest('#new-project-button')) { closeMobileDrawer(false); return; }
+  if (event.target.closest('.project-item-menu, .conversation-item-menu, .project-tree-menu-trigger, .conversation-list-menu-trigger')) return;
+  if (event.target.closest('button, .nav-item')) closeMobileDrawer(true);
+});
+
 newChatButton.addEventListener('click', () => {
   window.currentAgentTaskId = null;
   clearSkillHint();
   beginDraft();
 });
 
-if (newProjectButton) newProjectButton.addEventListener('click', () => { dialogState.restoreFocus = newProjectButton; projectDialogName.value = ''; projectDialog?.showModal(); projectDialogName?.focus(); });
+if (newProjectButton) newProjectButton.addEventListener('click', () => { dialogState.restoreFocus = mobileTriggerIsVisible() ? mobileNavToggle : newProjectButton; projectDialogName.value = ''; projectDialog?.showModal(); projectDialogName?.focus(); });
 if (projectDialogForm) projectDialogForm.addEventListener('submit', createProject);
 for (const dialogForm of [projectDialogForm, conversationActionForm, conversationConfirmForm]) {
   dialogForm?.addEventListener('click', closeDialogFromCancelClick);
@@ -1522,7 +1607,11 @@ projectDialog?.addEventListener('cancel', () => { dialogState.action = null; dia
 conversationActionDialog?.addEventListener('cancel', () => { dialogState.action = null; dialogState.target = null; });
 conversationConfirmDialog?.addEventListener('cancel', () => { dialogState.action = null; dialogState.target = null; });
 document.addEventListener('pointerdown', (event) => { if (menuState.panel && !menuState.panel.contains(event.target) && event.target !== menuState.trigger) closeFloatingMenu(); });
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && menuState.panel) closeFloatingMenu(); });
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (menuState.panel) closeFloatingMenu();
+  if (mobileSidebar?.classList.contains('mobile-nav-open')) closeMobileDrawer(true);
+});
 if (memoryScopeSelect) memoryScopeSelect.addEventListener('change', () => {
   const isProject = memoryScopeSelect.value === 'project';
   if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;

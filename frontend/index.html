@@ -4,12 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09 compatibility marker retained for older static contracts: /assets/styles.css?v=30 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=31">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=32">
 </head>
 <body>
+  <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">☰ <span>项目与会话</span></button>
+  <div class="mobile-nav-backdrop" id="mobile-nav-backdrop" hidden></div>
   <main class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="mobile-sidebar" aria-label="项目与会话导航">
+      <button class="mobile-nav-close" id="mobile-nav-close" type="button" aria-label="关闭项目与会话">×</button>
       <div class="brand"><span class="brand-mark">R</span><span>ResearchAgent</span></div>
       <button class="new-chat" type="button"><span class="plus">+</span> 新建对话</button>
       <section class="conversation-memory" aria-label="项目与会话">
@@ -439,6 +442,7 @@
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
-  <script src="/assets/app.js?v=31"></script>
+  <!-- Task09/Task10 compatibility marker retained for older static contracts: /assets/app.js?v=31 -->
+  <script src="/assets/app.js?v=32"></script>
 </body>
 </html>

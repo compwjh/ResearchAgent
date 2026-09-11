@@ -193,3 +193,5 @@
 - **022 Task10 技术门禁** ｜ 待复审 → 复审通过、待用户确认 ｜ 2026-09-11：临时 Luna high 技术复审确认 T1–T6 已具体冻结，四类用户可见入口、原文 global 门禁、SystemRule v6/Unicode/稳定错误体/fail-closed/快照、桌面状态恢复、单列 SVG aria 及文件白名单均可实现且可测；当前业务代码仍保持实施前基线，须用户明确确认后进入实现。
 - **022 项目会话与长期记忆** ｜ 待确认（Task10 增量） → 实施中（Task10） ｜ 2026-09-11：用户明确要求继续开发；需求评审 GO、技术复审 GO，按 Task10 T1–T6 契约分派 Luna high 后端与前端实现。Task06–Task08 保持待执行，全量回归仍留在 Task08。
 - **022 项目会话与长期记忆** ｜ 实施中（Task10） → 实施中（Task10 已完成） ｜ 2026-09-11：Task10 后端/前端实现、双端 reviewer GO、定向验收 PASS（64 项后端、44 项前端、5 个 Node 合同），受控服务 health/home/system-rule smoke 与 Chromium 无头 DOM 检查通过；Task06–Task08 继续等待，未执行全量回归。
+- **022 项目会话与长期记忆** ｜ Task06 待执行 → Task06 实施中 ｜ 2026-09-11：Task10 已完成并提交，Task06 依赖满足；按既定范围启动手机端前端适配，仅分派 frontend-dev，不新增后端接口。
+- **022 项目会话与长期记忆** ｜ Task06 实施中 → Task06 已完成 ｜ 2026-09-11：Task06 前端适配及 P1/P2 修复完成，reviewer GO、tester 定向验收 PASS（49 项合同、5 个 Node 合同），主 Agent 390×844 Chromium DOM smoke 通过；Task08 仍负责全量回归与最终交互。
