@@ -195,3 +195,5 @@
 - **022 项目会话与长期记忆** ｜ 实施中（Task10） → 实施中（Task10 已完成） ｜ 2026-09-11：Task10 后端/前端实现、双端 reviewer GO、定向验收 PASS（64 项后端、44 项前端、5 个 Node 合同），受控服务 health/home/system-rule smoke 与 Chromium 无头 DOM 检查通过；Task06–Task08 继续等待，未执行全量回归。
 - **022 项目会话与长期记忆** ｜ Task06 待执行 → Task06 实施中 ｜ 2026-09-11：Task10 已完成并提交，Task06 依赖满足；按既定范围启动手机端前端适配，仅分派 frontend-dev，不新增后端接口。
 - **022 项目会话与长期记忆** ｜ Task06 实施中 → Task06 已完成 ｜ 2026-09-11：Task06 前端适配及 P1/P2 修复完成，reviewer GO、tester 定向验收 PASS（49 项合同、5 个 Node 合同），主 Agent 390×844 Chromium DOM smoke 通过；Task08 仍负责全量回归与最终交互。
+- **022 项目会话与长期记忆** ｜ Task07 待执行 → Task07 实施中 ｜ 2026-09-11：Task06 已提交并收口，Task07 依赖满足；按既定范围启动能力方法记忆与只读 Skill 改进建议实现，不授予运行时文件写权限。
+- **022 项目会话与长期记忆** ｜ Task07 实施中 → Task07 已完成 ｜ 2026-09-11：Task07 后端实现及两轮 P1 修复完成，reviewer GO、backend-tester PASS（12 项 Task07、43 项受影响回归、worker smoke 1 项、综合边界探针），Task08 继续负责全量回归、部署与 Spec 收口。

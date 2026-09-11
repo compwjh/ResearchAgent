@@ -31,6 +31,7 @@ from .models import (
     ProcessingStep,
     Project,
     RawEvent,
+    SkillImprovementProposal,
     SystemRule,
 )
 
@@ -46,6 +47,7 @@ MEMORY_STATUSES = {"candidate", "active", "superseded", "disabled", "deleted"}
 MEMORY_HISTORY_POLICIES = {"from_binding", "include_prior_history"}
 ANALYSIS_STATUSES = {"pending", "running", "completed", "partial", "failed"}
 ANALYSIS_DECISIONS = {"auto_saved", "pending_confirmation", "duplicate", "superseded", "ignored", "failed"}
+SKILL_PROPOSAL_STATUSES = {"proposed", "accepted", "rejected", "applied"}
 
 
 class LeaseLostError(RuntimeError):
@@ -171,6 +173,18 @@ class MemoryRepository:
                         raise RuntimeError("incomplete memory schema v6")
                 if not self._is_schema_v6(connection):
                     raise RuntimeError("memory schema v6 validation failed")
+                # Task07 is an additive repository extension. Keep the public
+                # v6 number for Task10 compatibility while applying the table
+                # atomically to fresh and existing v6 databases.
+                task07_table = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='skill_improvement_proposals'"
+                ).fetchone()
+                if not task07_table:
+                    self._migrate_v6_to_task07(connection)
+                elif not self._is_task07_schema(connection):
+                    raise RuntimeError("incomplete Task07 proposal schema")
+                if not self._is_task07_schema(connection):
+                    raise RuntimeError("Task07 proposal schema validation failed")
                 connection.execute("COMMIT")
         except Exception as error:
             connection.rollback()
@@ -477,6 +491,93 @@ class MemoryRepository:
         )
 
     @staticmethod
+    def _migrate_v6_to_task07(connection: sqlite3.Connection) -> None:
+        connection.execute("""CREATE TABLE skill_improvement_proposals (
+            proposal_id TEXT NOT NULL PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE,
+            target_file TEXT NOT NULL,
+            problem_evidence TEXT NOT NULL,
+            diff_summary TEXT NOT NULL,
+            verification_plan TEXT NOT NULL,
+            risk_summary TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'proposed',
+            protected_hash_before TEXT NOT NULL DEFAULT '{}',
+            protected_hash_after TEXT NOT NULL DEFAULT '{}',
+            source_memory_id TEXT REFERENCES memories(memory_id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            decided_at TEXT,
+            CHECK (scope IN ('global', 'project')),
+            CHECK ((scope='project' AND project_id IS NOT NULL) OR (scope='global' AND project_id IS NULL)),
+            CHECK (status IN ('proposed', 'accepted', 'rejected', 'applied'))
+        )""")
+        connection.execute("CREATE INDEX idx_skill_proposals_scope ON skill_improvement_proposals(owner_id, scope, project_id, status, updated_at DESC, proposal_id DESC)")
+        connection.execute("CREATE INDEX idx_skill_proposals_source ON skill_improvement_proposals(owner_id, source_memory_id)")
+
+    @staticmethod
+    def _is_task07_schema(connection: sqlite3.Connection) -> bool:
+        table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='skill_improvement_proposals'"
+        ).fetchone()
+        if not table:
+            return False
+        expected_columns = [
+            ("proposal_id", "TEXT", 1, None, 1),
+            ("owner_id", "TEXT", 1, None, 0),
+            ("scope", "TEXT", 1, None, 0),
+            ("project_id", "TEXT", 0, None, 0),
+            ("target_file", "TEXT", 1, None, 0),
+            ("problem_evidence", "TEXT", 1, None, 0),
+            ("diff_summary", "TEXT", 1, None, 0),
+            ("verification_plan", "TEXT", 1, None, 0),
+            ("risk_summary", "TEXT", 1, None, 0),
+            ("status", "TEXT", 1, "'proposed'", 0),
+            ("protected_hash_before", "TEXT", 1, "'{}'", 0),
+            ("protected_hash_after", "TEXT", 1, "'{}'", 0),
+            ("source_memory_id", "TEXT", 0, None, 0),
+            ("created_at", "TEXT", 1, None, 0),
+            ("updated_at", "TEXT", 1, None, 0),
+            ("decided_at", "TEXT", 0, None, 0),
+        ]
+        columns = connection.execute("PRAGMA table_info(skill_improvement_proposals)").fetchall()
+        actual = [
+            (row["name"], str(row["type"]).upper(), int(row["notnull"]), row["dflt_value"], int(row["pk"]))
+            for row in columns
+        ]
+        if actual != expected_columns:
+            return False
+        sql_row = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='skill_improvement_proposals'").fetchone()
+        sql = str(sql_row["sql"] if sql_row else "").upper().replace(" ", "").replace("\n", "")
+        required_checks = (
+            "CHECK(SCOPEIN('GLOBAL','PROJECT'))",
+            "CHECK((SCOPE='PROJECT'ANDPROJECT_IDISNOTNULL)OR(SCOPE='GLOBAL'ANDPROJECT_IDISNULL))",
+            "CHECK(STATUSIN('PROPOSED','ACCEPTED','REJECTED','APPLIED'))",
+        )
+        if not all(check in sql for check in required_checks):
+            return False
+        fks = {(row["from"], row["table"], row["on_delete"]) for row in connection.execute("PRAGMA foreign_key_list(skill_improvement_proposals)").fetchall()}
+        if fks != {
+            ("project_id", "projects", "CASCADE"),
+            ("source_memory_id", "memories", "SET NULL"),
+        }:
+            return False
+        indexes = {row["name"]: row for row in connection.execute("PRAGMA index_list(skill_improvement_proposals)").fetchall()}
+        scope_index = indexes.get("idx_skill_proposals_scope")
+        source_index = indexes.get("idx_skill_proposals_source")
+        if not scope_index or not source_index or scope_index["unique"] or source_index["unique"]:
+            return False
+        def index_columns(name: str) -> list[str]:
+            return [row["name"] for row in connection.execute(f"PRAGMA index_info({name})").fetchall()]
+        if index_columns("idx_skill_proposals_scope") != ["owner_id", "scope", "project_id", "status", "updated_at", "proposal_id"]:
+            return False
+        if index_columns("idx_skill_proposals_source") != ["owner_id", "source_memory_id"]:
+            return False
+        primary = [row for row in connection.execute("PRAGMA index_list(skill_improvement_proposals)").fetchall() if row["unique"] and row["origin"] == "pk"]
+        return len(primary) == 1 and index_columns(primary[0]["name"]) == ["proposal_id"]
+
+    @staticmethod
     def _is_legacy_v6_shape(connection: sqlite3.Connection) -> bool:
         rows = connection.execute("PRAGMA table_info(system_rules)").fetchall()
         if {row["name"] for row in rows} != {"owner_id", "content", "enabled", "updated_at"}:
@@ -520,6 +621,287 @@ class MemoryRepository:
     @staticmethod
     def _memory(row: sqlite3.Row) -> MemoryRecord:
         return MemoryRecord(row["memory_id"], row["owner_id"], row["scope"], row["project_id"], row["category"], row["statement"], row["source_kind"], row["status"], float(row["confidence"]), row["supersedes_id"], _dt(row["created_at"]), _dt(row["updated_at"]), _dt(row["last_used_at"]))
+
+    @staticmethod
+    def _proposal(row: sqlite3.Row) -> SkillImprovementProposal:
+        def hashes(value: Optional[str]) -> dict:
+            try:
+                parsed = json.loads(value or "{}")
+            except (TypeError, json.JSONDecodeError):
+                parsed = {}
+            return parsed if isinstance(parsed, dict) else {}
+
+        return SkillImprovementProposal(
+            row["proposal_id"], row["owner_id"], row["scope"], row["project_id"],
+            row["target_file"], row["problem_evidence"], row["diff_summary"],
+            row["verification_plan"], row["risk_summary"], row["status"],
+            hashes(row["protected_hash_before"]), hashes(row["protected_hash_after"]),
+            row["source_memory_id"], _dt(row["created_at"]), _dt(row["updated_at"]),
+            _dt(row["decided_at"]),
+        )
+
+    @staticmethod
+    def _canonical_hashes(value: Optional[dict]) -> dict:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("protected hashes must be an object")
+        normalized = {}
+        for path, digest in value.items():
+            if not isinstance(path, str) or not path or "\x00" in path:
+                raise ValueError("invalid protected hash path")
+            if not isinstance(digest, str) or not digest or "\x00" in digest:
+                raise ValueError("invalid protected hash value")
+            normalized[path] = digest
+        return dict(sorted(normalized.items()))
+
+    @staticmethod
+    def _validate_capability_evidence(evidence: object) -> tuple[Optional[str], Optional[str], str, Optional[str]]:
+        if not isinstance(evidence, (tuple, list)) or len(evidence) != 4:
+            raise ValueError("capability method requires complete evidence")
+        conversation_id, message_id, evidence_type, excerpt = evidence
+        if not conversation_id and not message_id:
+            raise ValueError("capability method evidence needs a source reference")
+        if evidence_type not in {"user_statement", "repeated_sessions", "tool_failure", "manual"}:
+            raise ValueError("invalid capability method evidence type")
+        if not isinstance(excerpt, str) or not excerpt.strip():
+            raise ValueError("capability method evidence needs an excerpt")
+        return conversation_id, message_id, evidence_type, excerpt
+
+    def create_capability_method(
+        self,
+        owner_id: str,
+        *,
+        scope: str,
+        project_id: Optional[str],
+        statement: str,
+        source_kind: str,
+        confidence: float,
+        status: str = "active",
+        evidence: Optional[tuple[Optional[str], Optional[str], str, Optional[str]]] = None,
+        supersedes_id: Optional[str] = None,
+    ) -> MemoryRecord:
+        """Create one evidence-backed, scoped capability method card."""
+        if source_kind not in {"explicit", "repeated", "verified_failure", "manual"}:
+            raise ValueError("invalid capability method source")
+        evidence_value = self._validate_capability_evidence(evidence)
+        if scope not in MEMORY_SCOPES:
+            raise ValueError("invalid memory scope")
+        if scope == "project":
+            if not project_id or not self.get_project(project_id, owner_id):
+                raise LookupError("project not found")
+        elif project_id is not None:
+            raise ValueError("global method cannot have a project")
+        if status not in MEMORY_STATUSES:
+            raise ValueError("invalid memory status")
+        statement_clean = str(statement).strip() if isinstance(statement, str) else ""
+        confidence_value = float(confidence)
+        if not statement_clean or len(statement_clean) > 1000 or not 0 <= confidence_value <= 1:
+            raise ValueError("invalid capability method")
+        if supersedes_id:
+            previous = self.get_memory(supersedes_id, owner_id)
+            if not previous or previous.scope != scope or previous.project_id != project_id:
+                raise ValueError("invalid superseded memory")
+        normalized = " ".join(statement_clean.split()).casefold()
+        with self.transaction() as db:
+            scope_sql = "project_id IS NULL" if project_id is None else "project_id=?"
+            scope_params: tuple[object, ...] = (owner_id, scope, project_id) if project_id is not None else (owner_id, scope)
+            existing_rows = db.execute(
+                f"SELECT * FROM memories WHERE owner_id=? AND scope=? AND {scope_sql} AND category='capability_method' AND status IN ('active', 'candidate')",
+                scope_params,
+            ).fetchall()
+            for row in existing_rows:
+                if " ".join(row["statement"].split()).casefold() == normalized:
+                    return self._memory(row)
+            now, memory_id = _now(), uuid.uuid4().hex
+            db.execute(
+                "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (memory_id, owner_id, scope, project_id, "capability_method", statement_clean, source_kind, status, confidence_value, supersedes_id, now, now, None),
+            )
+            self._insert_memory_evidence(db, memory_id, owner_id, evidence_value[0], evidence_value[1], evidence_value[2], evidence_value[3])
+        return self.get_memory(memory_id, owner_id)
+
+    def list_capability_methods(
+        self,
+        owner_id: str,
+        project_id: Optional[str],
+        *,
+        query: str = "",
+        budget_chars: int = 2000,
+        limit: int = 5,
+        include_candidates: bool = False,
+    ) -> list[MemoryRecord]:
+        """Recall a small owner/scope-isolated set of method cards."""
+        statuses = {"active", "candidate"} if include_candidates else {"active"}
+        params: list[object] = [owner_id, "capability_method"]
+        placeholders = ",".join("?" for _ in statuses)
+        params.extend(sorted(statuses))
+        scope_clause = "(scope='global'"
+        if project_id:
+            scope_clause += " OR (scope='project' AND project_id=?)"
+            params.append(project_id)
+        scope_clause += ")"
+        with self.connection() as db:
+            rows = db.execute(
+                f"SELECT * FROM memories WHERE owner_id=? AND category=? AND status IN ({placeholders}) AND {scope_clause} ORDER BY confidence DESC, updated_at DESC, memory_id DESC LIMIT 100",
+                params,
+            ).fetchall()
+        terms = {part.casefold() for part in (query or "").split() if len(part.strip()) > 1}
+        items = [self._memory(row) for row in rows]
+        if terms:
+            items = [item for item in items if any(term in item.statement.casefold() for term in terms)]
+        selected, used = [], 0
+        for item in items:
+            if len(selected) >= max(1, min(int(limit), 20)):
+                break
+            if used + len(item.statement) > max(0, int(budget_chars)):
+                continue
+            selected.append(item)
+            used += len(item.statement)
+        for item in selected:
+            if item.status == "active":
+                self.mark_memory_used(item.memory_id, owner_id)
+        return selected
+
+    def record_capability_failure(
+        self,
+        owner_id: str,
+        memory_id: str,
+        conversation_id: Optional[str],
+        message_id: Optional[str],
+        excerpt: str,
+        *,
+        penalty: float = 0.5,
+    ) -> Optional[MemoryRecord]:
+        """Add failure evidence and move the method to review without erasing evidence."""
+        if not 0 < float(penalty) <= 1:
+            raise ValueError("invalid capability failure penalty")
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM memories WHERE memory_id=? AND owner_id=?", (memory_id, owner_id)).fetchone()
+            if not row or row["category"] != "capability_method":
+                raise LookupError("capability method not found")
+            self._insert_memory_evidence(db, memory_id, owner_id, conversation_id, message_id, "tool_failure", excerpt)
+            confidence = max(0.0, min(1.0, float(row["confidence"]) * float(penalty)))
+            db.execute("UPDATE memories SET confidence=?, status='candidate', updated_at=? WHERE memory_id=? AND owner_id=?", (confidence, _now(), memory_id, owner_id))
+        return self.get_memory(memory_id, owner_id)
+
+    def get_skill_improvement_proposal(self, proposal_id: str, owner_id: str) -> Optional[SkillImprovementProposal]:
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM skill_improvement_proposals WHERE proposal_id=? AND owner_id=?", (proposal_id, owner_id)).fetchone()
+        return self._proposal(row) if row else None
+
+    def create_skill_improvement_proposal(
+        self,
+        owner_id: str,
+        *,
+        scope: str,
+        project_id: Optional[str],
+        target_file: str,
+        problem_evidence: str,
+        diff_summary: str,
+        verification_plan: str,
+        risk_summary: str,
+        source_memory_id: Optional[str] = None,
+        protected_hash_before: Optional[dict] = None,
+    ) -> SkillImprovementProposal:
+        if scope not in MEMORY_SCOPES:
+            raise ValueError("invalid proposal scope")
+        if scope == "project":
+            if not project_id or not self.get_project(project_id, owner_id):
+                raise LookupError("project not found")
+        elif project_id is not None:
+            raise ValueError("global proposal cannot have a project")
+        values = (target_file, problem_evidence, diff_summary, verification_plan, risk_summary)
+        if any(not isinstance(value, str) or not value.strip() for value in values) or "\x00" in target_file:
+            raise ValueError("invalid skill improvement proposal")
+        if source_memory_id:
+            source = self.get_memory(source_memory_id, owner_id)
+            if not source or source.category != "capability_method":
+                raise ValueError("proposal source must be a capability method")
+            if source.scope != scope or source.project_id != project_id:
+                raise ValueError("proposal source scope mismatch")
+        before = self._canonical_hashes(protected_hash_before)
+        now, proposal_id = _now(), uuid.uuid4().hex
+        with self.transaction() as db:
+            if source_memory_id:
+                existing = db.execute(
+                    "SELECT * FROM skill_improvement_proposals WHERE owner_id=? AND source_memory_id=? AND target_file=? AND status IN ('proposed', 'accepted') ORDER BY updated_at DESC LIMIT 1",
+                    (owner_id, source_memory_id, target_file.strip()),
+                ).fetchone()
+                if existing:
+                    return self._proposal(existing)
+            db.execute("""INSERT INTO skill_improvement_proposals(
+                proposal_id, owner_id, scope, project_id, target_file, problem_evidence,
+                diff_summary, verification_plan, risk_summary, status,
+                protected_hash_before, protected_hash_after, source_memory_id,
+                created_at, updated_at, decided_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, '{}', ?, ?, ?, NULL)""", (
+                proposal_id, owner_id, scope, project_id, target_file.strip(), problem_evidence.strip(),
+                diff_summary.strip(), verification_plan.strip(), risk_summary.strip(),
+                json.dumps(before, ensure_ascii=False, sort_keys=True), source_memory_id, now, now,
+            ))
+        return self.get_skill_improvement_proposal(proposal_id, owner_id)
+
+    def list_skill_improvement_proposals(
+        self,
+        owner_id: str,
+        *,
+        project_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[SkillImprovementProposal]:
+        if status is not None and status not in SKILL_PROPOSAL_STATUSES:
+            raise ValueError("invalid proposal status")
+        params: list[object] = [owner_id]
+        clause = "owner_id=?"
+        if project_id is None:
+            clause += " AND scope='global'"
+        else:
+            clause += " AND (scope='global' OR (scope='project' AND project_id=?))"
+            params.append(project_id)
+        if status is not None:
+            clause += " AND status=?"
+            params.append(status)
+        with self.connection() as db:
+            rows = db.execute(f"SELECT * FROM skill_improvement_proposals WHERE {clause} ORDER BY updated_at DESC, proposal_id DESC LIMIT ?", (*params, max(1, min(int(limit), 100)))).fetchall()
+        return [self._proposal(row) for row in rows]
+
+    def update_skill_improvement_proposal(
+        self,
+        proposal_id: str,
+        owner_id: str,
+        *,
+        status: str,
+        external_confirmation: bool = False,
+        protected_hash_after: Optional[dict] = None,
+    ) -> SkillImprovementProposal:
+        if status not in SKILL_PROPOSAL_STATUSES:
+            raise ValueError("invalid proposal status")
+        after = self._canonical_hashes(protected_hash_after)
+        allowed = {
+            "proposed": {"accepted", "rejected"},
+            "accepted": {"rejected", "applied"},
+            "rejected": set(),
+            "applied": set(),
+        }
+        now = _now()
+        with self.transaction() as db:
+            current_row = db.execute("SELECT * FROM skill_improvement_proposals WHERE proposal_id=? AND owner_id=?", (proposal_id, owner_id)).fetchone()
+            if not current_row:
+                raise LookupError("proposal not found")
+            current_status = current_row["status"]
+            if status not in allowed[current_status]:
+                raise ValueError("invalid proposal transition")
+            current = self._proposal(current_row)
+            if status == "applied" and (not external_confirmation or after != current.protected_hash_before):
+                raise ValueError("applied proposal requires unchanged protected hashes and external confirmation")
+            result = db.execute(
+                "UPDATE skill_improvement_proposals SET status=?, protected_hash_after=?, updated_at=?, decided_at=? WHERE proposal_id=? AND owner_id=? AND status=?",
+                (status, json.dumps(after, ensure_ascii=False, sort_keys=True), now, now, proposal_id, owner_id, current_status),
+            )
+            if result.rowcount != 1:
+                raise ValueError("proposal state conflict")
+        return self.get_skill_improvement_proposal(proposal_id, owner_id)
 
     @staticmethod
     def _system_rule(row: sqlite3.Row) -> SystemRule:
@@ -1053,6 +1435,36 @@ class MemoryRepository:
             rows = db.execute(f"SELECT * FROM raw_events WHERE owner_id=? AND conversation_id=?{clause} ORDER BY created_at, event_id LIMIT ?", (*params, limit)).fetchall()
         return [self._raw_event(row) for row in rows]
 
+    def count_capability_method_evidence(self, owner_id: str, statement: str, *, project_id: Optional[str] = None) -> int:
+        """Count distinct user-message conversations for a persisted method signal."""
+        normalized = " ".join(str(statement or "").split()).casefold()
+        if not normalized:
+            return 0
+        params: list[object] = [owner_id]
+        clause = "r.owner_id=? AND m.role='user' AND r.event_kind IN ('method_repeated', 'repeated', 'method_explicit', 'explicit_memory')"
+        if project_id is None:
+            clause += " AND c.project_id IS NULL"
+        else:
+            clause += " AND c.project_id=?"
+            params.append(project_id)
+        with self.connection() as db:
+            rows = db.execute(
+                f"SELECT r.conversation_id, r.payload FROM raw_events r JOIN conversations c ON c.conversation_id=r.conversation_id AND c.owner_id=r.owner_id JOIN messages m ON m.message_id=r.message_id AND m.conversation_id=r.conversation_id AND m.owner_id=r.owner_id WHERE {clause}",
+                params,
+            ).fetchall()
+        conversation_ids: set[str] = set()
+        for row in rows:
+            try:
+                payload = json.loads(row["payload"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict) or payload.get("category") != "capability_method":
+                continue
+            candidate = payload.get("method_statement") or payload.get("method") or payload.get("statement")
+            if " ".join(str(candidate or "").split()).casefold() == normalized:
+                conversation_ids.add(row["conversation_id"])
+        return len(conversation_ids)
+
     def _summary(self, row: sqlite3.Row) -> ConversationSummary:
         return ConversationSummary(row["summary_id"], row["owner_id"], row["conversation_id"], row["summary_text"], row["source_event_id"], row["status"], _dt(row["created_at"]), _dt(row["updated_at"]))
 
@@ -1175,11 +1587,21 @@ class MemoryRepository:
         if token_budget is not None:
             summary_char_budget = min(summary_char_budget, max(0, int(token_budget)) * 4)
         memories, used = [], 0
-        for memory in self.list_recall_memories(owner_id, project_id):
+        all_memories = self.list_recall_memories(owner_id, project_id)
+        for memory in (item for item in all_memories if item.category != "capability_method"):
             if used + len(memory.statement) > max(0, int(memory_char_budget)):
                 continue
             memories.append(memory); used += len(memory.statement)
-        return {"memories": memories, "summaries": self.list_recall_summaries(owner_id, project_id, query=query, budget_chars=summary_char_budget)}
+        methods = self.list_capability_methods(
+            owner_id, project_id, query=query,
+            budget_chars=max(0, int(memory_char_budget) - used), limit=5,
+        )
+        memories.extend(methods)
+        return {
+            "memories": memories,
+            "capability_methods": methods,
+            "summaries": self.list_recall_summaries(owner_id, project_id, query=query, budget_chars=summary_char_budget),
+        }
 
     def create_memory_evidence(self, memory_id: str, conversation_id: Optional[str], message_id: Optional[str], evidence_type: str, excerpt: Optional[str]) -> None:
         if evidence_type not in {"user_statement", "repeated_sessions", "tool_failure", "manual"}:

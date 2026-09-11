@@ -169,3 +169,25 @@ class EvolutionCheckpoint:
     error: Optional[str]
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class SkillImprovementProposal:
+    """A review-only suggestion; applying it is owned by the external SDD flow."""
+
+    proposal_id: str
+    owner_id: str
+    scope: str
+    project_id: Optional[str]
+    target_file: str
+    problem_evidence: str
+    diff_summary: str
+    verification_plan: str
+    risk_summary: str
+    status: str
+    protected_hash_before: dict
+    protected_hash_after: dict
+    source_memory_id: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    decided_at: Optional[datetime]

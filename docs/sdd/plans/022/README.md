@@ -1,7 +1,7 @@
 # Spec 022 执行计划：项目会话管理与自进化长期记忆
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md)
-> 当前状态：`实施中（Task06 已完成）`。Task02–Task06、Task09–Task10 已完成；Task07–Task08 继续等待。
+> 当前状态：`实施中（Task07 已完成）`。Task02–Task07、Task09–Task10 已完成；Task08 等待。
 
 ## 任务索引
 
@@ -12,7 +12,7 @@
 | [04](./task-04-memory-evolution-recall.md) | 异步候选、摘要、冲突和跨会话召回 | 03 | 已完成 |
 | [05](./task-05-research-context-progress.md) | 项目文档、RAG、处理过程与桌面缺陷修复轮 | 04、Spec 变更确认 | 已完成（修复轮） |
 | [06](./task-06-mobile-experience.md) | 手机端项目、会话、记忆和研究交互 | 05、09、10 | 已完成 |
-| [07](./task-07-capability-memory-proposals.md) | 能力方法记忆与只读 Skill 改进建议 | 04 | 待执行 |
+| [07](./task-07-capability-memory-proposals.md) | 能力方法记忆与只读 Skill 改进建议 | 04 | 已完成 |
 | [08](./task-08-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 05、06、07、09、10 | 待执行 |
 | [09](./task-09-desktop-project-tree-sidebar.md) | 桌面项目树、会话归属、浮层菜单与统一弹窗 | 05、范围确认 | 已完成 |
 | [10](./task-10-system-rule-project-memory-navigation.md) | 系统规则、项目优先记忆与桌面导航修复 | 09、增量确认 | 已完成 |
@@ -51,3 +51,5 @@
 - 2026-09-11：Task10 后端/前端实现、双端复审、64 项后端与 44 项前端定向验收、5 个 Node 合同及受控部署/Chromium DOM smoke 通过；Task10 收口，Task06–Task08 继续等待。
 - 2026-09-11：Task10 已完成并提交，Task06 依赖满足；按既定范围启动手机端前端适配，不新增后端接口。
 - 2026-09-11：Task06 前端适配、P1/P2 修复、reviewer GO、49 项定向验收与主 Agent 390×844 Chromium DOM smoke 通过；Task06 收口，Task07/Task08 继续等待。
+- 2026-09-11：Task06 已提交，Task07 依赖满足；按既定范围启动能力方法记忆与只读 Skill 改进建议实现。
+- 2026-09-11：Task07 后端实现、两轮 P1 修复、reviewer GO、backend-tester PASS（12 项 Task07、43 项受影响回归、worker smoke 1 项）通过；Task07 收口，Task08 等待。

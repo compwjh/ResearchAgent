@@ -277,7 +277,10 @@ class MemoryEvolutionService:
 
     _session_locks: dict[str, threading.Lock] = {}
     _locks_guard = threading.Lock()
-    TRIGGERS = {"explicit_memory", "user_correction", "tool_failure", "context_pressure", "idle", "retry"}
+    TRIGGERS = {
+        "explicit_memory", "user_correction", "tool_failure", "context_pressure", "idle", "retry",
+        "method_explicit", "method_repeated", "repeated", "method_verified",
+    }
 
     def __init__(self, repository: MemoryRepository, *, batch_size: int = 20, summary_budget_chars: int = 1200) -> None:
         self.repository = repository
@@ -300,6 +303,10 @@ class MemoryEvolutionService:
     def record_trigger(self, owner_id: str, conversation_id: str, trigger: str, payload: dict, *, message_id: Optional[str] = None, idempotency_key: Optional[str] = None):
         if trigger not in self.TRIGGERS:
             raise ValueError("invalid memory evolution trigger")
+        if trigger == "method_explicit":
+            message = self.repository.get_message(message_id, owner_id) if message_id else None
+            if not message or message.conversation_id != conversation_id or message.role != "user":
+                raise ValueError("method_explicit requires a user message")
         return self.repository.append_raw_event(owner_id, conversation_id, trigger, payload, message_id=message_id, idempotency_key=idempotency_key)
 
     @staticmethod
@@ -344,6 +351,111 @@ class MemoryEvolutionService:
         evidence_type = "tool_failure" if event.event_kind == "tool_failure" else "user_statement"
         self.repository.create_memory(owner_id, scope, project_id, category, str(statement), source_kind, float(payload.get("confidence", 0.75)), status="candidate", supersedes_id=supersedes_id, evidence=(conversation.conversation_id, event.message_id, evidence_type, str(statement)[:500]))
 
+    def _capability_method_from_event(self, owner_id: str, conversation, event) -> None:
+        """Materialize only explicitly signaled, repeated, or verified methods."""
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        event_kind = event.event_kind
+        if event_kind == "method_explicit":
+            message = self.repository.get_message(event.message_id, owner_id) if event.message_id else None
+            if not message or message.conversation_id != conversation.conversation_id or message.role != "user":
+                return
+        statement = payload.get("method_statement") or payload.get("method")
+        is_method = payload.get("category") == "capability_method" or bool(statement) or event_kind in {"method_explicit", "method_repeated", "method_verified"}
+        if not is_method:
+            return
+        statement = " ".join(str(statement or payload.get("statement") or "").split())[:1000]
+        if not statement:
+            return
+        if event_kind == "tool_failure":
+            method_id = payload.get("memory_id") or payload.get("method_id")
+            verified = bool(
+                payload.get("verified")
+                and (
+                    payload.get("verification")
+                    or payload.get("verification_success")
+                    or payload.get("verified_success")
+                    or payload.get("verification_succeeded")
+                )
+            )
+            if not verified:
+                if not method_id:
+                    matching = self.repository.list_memories(owner_id, conversation.project_id, scope="project", status="active") if conversation.project_id else []
+                    method_id = next((item.memory_id for item in matching if item.category == "capability_method" and item.statement.casefold() == statement.casefold()), None)
+                if method_id:
+                    try:
+                        self.repository.record_capability_failure(owner_id, str(method_id), conversation.conversation_id, event.message_id, str(payload.get("error") or statement)[:500])
+                    except (LookupError, ValueError):
+                        pass
+                return
+            source_kind = "verified_failure"
+            evidence_type = "tool_failure"
+        elif event_kind in {"method_repeated", "repeated"} or payload.get("repeated"):
+            # The payload is untrusted metadata. Only durable user-message
+            # evidence across distinct conversations can establish repetition.
+            if self.repository.count_capability_method_evidence(owner_id, statement, project_id=conversation.project_id) < 2:
+                return
+            source_kind = "repeated"
+            evidence_type = "repeated_sessions"
+        elif event_kind in {"method_explicit"} or (event_kind == "explicit_memory" and (payload.get("category") == "capability_method" or payload.get("method") or payload.get("method_statement"))):
+            if payload.get("explicit", True) is False:
+                return
+            source_kind = "explicit"
+            evidence_type = "user_statement"
+        else:
+            return
+        scope = str(payload.get("scope") or "project").strip().lower()
+        source_text = str(payload.get("source_text") or payload.get("content") or statement)
+        if scope == "global" and not has_explicit_global_intent(source_text):
+            scope = "project"
+        project_id = conversation.project_id if scope == "project" else None
+        if scope == "project" and not project_id:
+            return
+        if scope not in {"global", "project"} or is_system_rule_intent(source_text):
+            return
+        existing = self.repository.list_memories(owner_id, project_id, scope=scope, status="active")
+        existing += self.repository.list_memories(owner_id, project_id, scope=scope, status="candidate")
+        if any(item.category == "capability_method" and item.statement.casefold() == statement.casefold() for item in existing):
+            return
+        self.repository.create_capability_method(
+            owner_id, scope=scope, project_id=project_id, statement=statement,
+            source_kind=source_kind, confidence=float(payload.get("confidence", 0.75)), status="candidate",
+            evidence=(conversation.conversation_id, event.message_id, evidence_type, statement[:500]),
+        )
+
+    def _proposal_from_event(self, owner_id: str, conversation, event) -> None:
+        """Persist a review item only when the event supplies a complete proposal."""
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if not payload.get("target_file") or not payload.get("diff_summary"):
+            return
+        statement = " ".join(str(payload.get("method_statement") or payload.get("method") or payload.get("statement") or "").split())[:1000]
+        if not statement:
+            return
+        scope = str(payload.get("scope") or "project").strip().lower()
+        project_id = conversation.project_id if scope == "project" else None
+        if scope not in {"global", "project"}:
+            return
+        if scope == "project" and not project_id:
+            return
+        source = self.repository.list_memories(owner_id, project_id, scope=scope, status="candidate")
+        source += self.repository.list_memories(owner_id, project_id, scope=scope, status="active")
+        method = next((item for item in source if item.category == "capability_method" and item.statement.casefold() == statement.casefold()), None)
+        if not method:
+            return
+        try:
+            self.repository.create_skill_improvement_proposal(
+                owner_id, scope=scope, project_id=project_id,
+                target_file=str(payload["target_file"]),
+                problem_evidence=str(payload.get("problem_evidence") or payload.get("error") or "工具失败后需要复审"),
+                diff_summary=str(payload["diff_summary"]),
+                verification_plan=str(payload.get("verification_plan") or "由外部 SDD 流程验证"),
+                risk_summary=str(payload.get("risk_summary") or "仅生成建议，不自动应用"),
+                source_memory_id=method.memory_id,
+                protected_hash_before=payload.get("protected_hash_before") or {},
+            )
+        except (LookupError, ValueError):
+            # Proposal generation is best-effort and never blocks evolution.
+            return
+
     def _all_raw_events(self, conversation_id: str, owner_id: str):
         events, after = [], None
         while True:
@@ -385,6 +497,8 @@ class MemoryEvolutionService:
             if events:
                 self.repository.upsert_conversation_summary(owner_id, conversation_id, summary, source_event_id=source_event_id)
                 for event in events:
+                    self._capability_method_from_event(owner_id, conversation, event)
+                    self._proposal_from_event(owner_id, conversation, event)
                     if event.event_kind in {"explicit_memory", "user_correction", "tool_failure"}:
                         self._candidate_from_event(owner_id, conversation, event)
             return self.repository.finish_evolution_checkpoint(checkpoint.checkpoint_id, owner_id, status="completed")

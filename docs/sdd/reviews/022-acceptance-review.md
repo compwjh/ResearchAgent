@@ -368,3 +368,47 @@ Task10 指定后端测试 **64 passed**，前端 Task10/受影响合同 **44 pas
 
 - 验收执行：tester（临时 Luna high）
 - 架构师签字：已确认（Task06 定向验收与主 Agent 390×844 Chromium DOM smoke 通过；全量回归留待 Task08）
+
+---
+
+# Spec022 Task07 验收评审：能力方法记忆与 Skill 改进建议
+
+> 验收角色：backend-tester（临时 Luna high）
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-07-capability-memory-proposals.md`
+> 范围：Task07 后端定向 pytest、受影响 memory/Task10 回归、worker timing 单测、隔离/证据/hash/状态机探针、py_compile 与 diff 检查；未运行前端或全量 pytest。
+
+## 初次验收结论：FAIL（已由后文修复复验修订）
+
+Task07 定向测试 **6 passed**，Task07 + memory/Task10 受影响后端回归 **37 passed**，worker timing 单测 **1 passed**，py_compile 与 `git diff --check` 均通过。补充边界探针确认 owner/project 隔离、重复方法合并、失败证据追加、applied hash 门禁和受保护文件 hash 不变；但发现 proposal 状态机允许不符合冻结契约的 `proposed -> applied` 直达迁移，因此本 Task 暂不通过。
+
+## 验收证据
+
+详细命令、退出码、覆盖项、失败证据与后续动作见 [`docs/sdd/plans/022/artifacts/task-07/acceptance-report.md`](../plans/022/artifacts/task-07/acceptance-report.md)。问题定位为 [`backend/app/memory/repository.py:815`](/Users/wjh/ResearchAgent/backend/app/memory/repository.py:815)：`proposed` 的允许集合虽仅有 `accepted/rejected`，但后续旁路条件显式放行 `proposed -> applied`。在 unchanged protected hash 且 `external_confirmation=True` 时，临时探针观察到状态直接变为 `applied`。
+
+## 通过项与后续
+
+- **通过：** Task07 与受影响 memory/Task10 后端测试、worker timing smoke、owner/project 隔离、重复合并、失败证据追加、changed-hash 拒绝、受保护文件 hash 零写、语法和空白检查。
+- **非阻塞提示：** 测试输出保留 1 条 Starlette/anyio 弃用 warning；不影响本 Task 验收结论。
+
+本章节不将 Task07 定向测试通过视为 Spec022 完成；仍需修复该 P1、完成复验、Task08 全量回归、部署运行时验证、架构师签字和状态台账更新。
+
+## 签字
+
+- 验收执行：backend-tester（临时 Luna high）
+- 进展日志：`.codebuddy/agent-logs/spec-022/task-07/backend-tester/20260911-acceptance.md`
+- 架构师签字：待修复并复验
+
+## Task07 修复复验修订（2026-09-11）
+
+以上初次验收结论及上一轮修订已由 backend-dev 第二轮修复后的最终复验结果 supersede。**最终修订结论：PASS（Task07 后端定向范围）。**
+
+- Task07 定向 pytest：**12 passed**；Task07 + memory/Task10 受影响回归：**43 passed**；worker timing：**1 passed**。
+- py_compile、`git diff --check` 与综合探针均通过；探针覆盖 schema 逐列/check/FK/index fail-closed、8 线程方法卡幂等、真实 user 角色门禁、同会话不计重复、跨会话 evidence、owner/project 隔离、重复合并、evidence 强制与失败追加、proposal CAS/非法状态迁移、changed-hash 拒绝、保护文件 hash 不变。
+- P1 `proposed -> applied` 旁路已移除，proposal expected-status CAS 已验证。保留 1 条 Starlette/anyio 弃用 warning，不阻断本 Task。
+
+本修订仍不替代 Task08 全量回归、部署运行时验证、架构师签字和 Spec022 最终状态台账。
+
+## Task07 最终签字
+
+- 验收执行：backend-tester（临时 Luna high）
+- 架构师签字：已确认（Task07 reviewer GO、backend-tester PASS；全量回归留待 Task08）

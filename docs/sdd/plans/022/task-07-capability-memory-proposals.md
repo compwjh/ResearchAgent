@@ -1,7 +1,7 @@
 # Task 07：能力方法记忆与 Skill 改进建议
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md) ｜ 索引：[README](./README.md)
-> 依赖：Task04；被依赖：Task08；当前状态：`待执行`
+> 依赖：Task04；被依赖：Task08；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -45,9 +45,10 @@
 
 ## 执行结果
 
-待执行后填写。
+已完成：后端实现、P1 修复轮、reviewer GO、backend-tester PASS（12 项 Task07、43 项受影响回归、worker smoke 1 项）均通过；Task08 继续负责全量回归与最终收口。
 
 ## 变更日志
 
 - 2026-09-11：创建能力方法与只读改进建议 Task。
-
+- 2026-09-11：Task06 已完成并提交，Task07 依赖满足；按既定范围启动后端方法卡与建议队列实现，不授予运行时文件写权限。
+- 2026-09-11：Task07 完成两轮 P1 修复；reviewer GO、backend-tester PASS，真实 user/evidence、schema fail-closed、CAS 并发和保护文件零写探针通过，Task07 收口。
