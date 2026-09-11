@@ -144,8 +144,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .project-item { display: grid; gap: 1px; border-radius: 7px; }
 .project-item:hover, .project-item:focus-within { background: var(--accent-soft); }
 .project-item-head { display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; align-items: center; min-width: 0; }
-.project-item-toggle, .project-item-main, .project-item-menu { background: transparent; color: var(--muted); }
-.project-item-toggle { padding: 6px 2px; color: var(--accent); font-size: 14px; }
+.project-item-main, .project-item-menu { background: transparent; color: var(--muted); }
 .project-item-main { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 4px; text-align: left; }
 .project-item-main[aria-pressed="true"] { color: var(--accent); }
 .project-item-menu { align-self: center; padding: 5px 7px; opacity: 0; }
@@ -167,6 +166,31 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .floating-menu button:hover, .floating-menu button:focus-visible { background: var(--accent-soft); color: var(--accent); outline: 0; }
 .dialog-checkbox { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 7px !important; color: var(--muted); font-size: 11px !important; }
 .dialog-checkbox input { width: auto !important; }
+
+/* ===== Task10 system rule, navigation and accessible project folders ===== */
+.project-item { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.project-item-head { grid-template-columns: minmax(0, 1fr) auto; }
+.project-item-main { min-width: 0; width: 100%; }
+.project-item-title { min-width: 0; overflow: visible; overflow-wrap: anywhere; white-space: normal; word-break: break-word; }
+.project-folder-icon { flex: 0 0 16px; color: var(--accent); }
+.project-item-menu { align-self: center; }
+.system-rule-card { display: grid; gap: 10px; margin-bottom: 18px; padding: 18px; border: 1px solid #dcd8ff; border-radius: 12px; background: linear-gradient(140deg, #fbfaff, #fff); box-shadow: 0 12px 30px #6d5dfc10; }
+.system-rule-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.system-rule-card h2 { margin: 0; font-size: 18px; }
+.system-rule-help, .system-rule-updated, .system-rule-input-help, .system-rule-count { margin: 5px 0 0; color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.system-rule-content { margin: 0; padding: 10px 12px; border-radius: 8px; background: #f6f4ff; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.system-rule-status { display: inline-flex; flex: 0 0 auto; border-radius: 99px; padding: 4px 9px; background: #f0f0f3; color: var(--muted); font: 10px 'DM Mono', monospace; }
+.system-rule-status[data-enabled="true"] { background: #e6f7ed; color: #20834c; }
+.system-rule-status-message { min-height: 14px; margin: 0; color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.system-rule-status-message[data-state="error"] { color: #b13a3a; }
+.system-rule-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.system-rule-dialog { width: min(560px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 14px; box-shadow: 0 25px 80px #25272b33; }
+.system-rule-dialog::backdrop { background: #25272b55; backdrop-filter: blur(3px); }
+.system-rule-dialog textarea { width: 100%; resize: vertical; }
+.system-rule-count[data-over-limit="true"] { color: #b13a3a; }
+.system-rule-suggestion { margin: 9px 0 6px; color: #9a5b16; font: 10px/1.45 'DM Mono', monospace; }
+.memory-open-conversation { margin-top: 5px; padding: 5px 7px; font-size: 10px; }
+.memory-analysis-project-select { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; background: #fff; color: var(--ink); font-size: 10px; }
 
 @keyframes conversation-wave { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 

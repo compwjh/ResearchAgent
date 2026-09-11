@@ -8,10 +8,12 @@ from fastapi.responses import StreamingResponse
 from backend.app.api.schemas import (
     ChatRequest,
 )
-from backend.app.chat.application.chat_runner import run_chat
+from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
 from backend.app.platform.config import MODEL_NAME
-from backend.app.platform.observability import flush, record_ollama_generation, utc_now
+from backend.app.platform.observability import flush, prompt_observation_metadata, redact_prompt_messages, record_ollama_generation, utc_now
 from backend.app.platform.ollama import get_available_models
+from backend.app.platform.bootstrap import get_provider
+from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
@@ -53,7 +55,17 @@ def chat(request: ChatRequest):
     def generate():
         started = utc_now()
         wall_start = time.perf_counter()
-        run = run_chat(question, selected_model)
+        try:
+            rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
+        except Exception:
+            yield stream_event("meta", model=selected_model, mode=request.mode)
+            yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
+            yield stream_event("done", status="failed")
+            return
+        prompt_messages = build_role_aware_messages(question, system_rule=rule.content if rule.enabled else None)
+        observation_messages = redact_prompt_messages(prompt_messages)
+        observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content))
+        run = run_chat(question, selected_model, messages=prompt_messages)
         yield stream_event("meta", model=selected_model, mode=request.mode)
         try:
             for event in run.events:
@@ -63,7 +75,7 @@ def chat(request: ChatRequest):
                 try:
                     record_ollama_generation(
                         model=selected_model,
-                        prompt_messages=[{"role": "user", "content": question}],
+                        prompt_messages=observation_messages,
                         result=run.result,
                         route=run.route,
                         started_at=started,
@@ -72,6 +84,7 @@ def chat(request: ChatRequest):
                         # 任务 06 的成功率/错误率统计也会失真。
                         success=False,
                         error_type=type(error).__name__,
+                        extra_metadata=observation_metadata,
                     )
                     flush()
                 except Exception:
@@ -88,11 +101,12 @@ def chat(request: ChatRequest):
             try:
                 record_ollama_generation(
                     model=selected_model,
-                    prompt_messages=[{"role": "user", "content": question}],
+                    prompt_messages=observation_messages,
                     result=run.result,
                     route=run.route,
                     started_at=started,
                     tags=["chat"],
+                    extra_metadata=observation_metadata,
                  )
                 flush()
             except Exception:

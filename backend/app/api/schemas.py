@@ -75,6 +75,17 @@ class MemoryAnalysisBatchDecisionRequest(BaseModel):
     project_id: Optional[str] = Field(default=None, max_length=100)
 
 
+class SystemRulePutRequest(BaseModel):
+    # Deliberately no Pydantic max_length: the API contract maps 12,001
+    # Unicode code points to a stable 400 from the repository validator.
+    content: str = ""
+    enabled: bool = False
+
+
+class SystemRulePatchRequest(BaseModel):
+    enabled: bool
+
+
 class KBAskRequest(BaseModel):
     """知识库问答请求（spec-011 / spec-012）。
 

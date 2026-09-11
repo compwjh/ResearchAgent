@@ -64,6 +64,16 @@ class MemoryRecord:
 
 
 @dataclass(frozen=True)
+class SystemRule:
+    """The single current, owner-scoped user rule (never a MemoryRecord)."""
+
+    owner_id: str
+    content: str
+    enabled: bool
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
 class MemoryEvidence:
     memory_id: str
     conversation_id: Optional[str]

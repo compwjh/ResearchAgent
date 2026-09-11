@@ -86,22 +86,27 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(kwargs["model"], "m1")
         self.assertEqual(kwargs["name"], "kb.generation")
         self.assertEqual(kwargs["tags"], ["kb"])
-        # prompt_messages 用的是 build_prompt 结果，而非原始问题
-        self.assertEqual(kwargs["prompt_messages"][0]["role"], "user")
-        prompt_content = kwargs["prompt_messages"][0]["content"]
-        self.assertNotEqual(prompt_content, "什么是RAG")
-        self.assertIn("RAG", prompt_content)
+        # 观测只保留 role 与脱敏 content；原始问题不进入 system 观测文本。
+        self.assertEqual([message["role"] for message in kwargs["prompt_messages"]], ["system", "system", "user"])
+        self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
+        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "system", "user"])
         self.assertEqual(kwargs["route"], "langchain")
         extra = kwargs["extra_metadata"]
         self.assertEqual(extra["top_k"], 3)
         self.assertEqual(extra["chunker"], "v1")
         self.assertEqual(extra["hit_count"], 1)
         self.assertEqual(extra["question_chars"], len("什么是RAG"))
-        self.assertEqual(extra["prompt_chars"], len(prompt_content))
+        self.assertGreater(extra["prompt_chars"], 0)
 
-        # 发给模型的 state 用的是 build_prompt 结果
+        # 发给模型的 state 是 role-aware messages：evidence/advisory 在 system，
+        # 当前问题只作为唯一 user message。
         streamed_state = fake_graph.stream.call_args.args[0]
-        self.assertEqual(streamed_state, {"question": prompt_content})
+        messages = streamed_state["messages"]
+        system_contents = [message["content"] for message in messages if message["role"] == "system"]
+        self.assertEqual(messages[-1], {"role": "user", "content": "什么是RAG"})
+        self.assertEqual(len([message for message in messages if message["role"] == "user"]), 1)
+        self.assertTrue(any("片段内容" in content for content in system_contents))
+        self.assertTrue(all("什么是RAG" not in content for content in system_contents))
 
     # ---- 异常流程：仍输出 error 事件，且 end_trace 仍被调用 ----
     @patch("backend.app.api.routes_kb.start_trace")

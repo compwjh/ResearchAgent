@@ -14,7 +14,7 @@ Ollama 能力（`create_chat_model` / `get_available_models` / 直连流式）�
 """
 
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from backend.app.platform.config import OLLAMA_ROUTE
 from backend.app.platform import ollama as _ollama
@@ -25,8 +25,27 @@ from backend.app.platform.ollama_direct import (
     chat_direct_stream,
 )
 
+# Stable, non-user-controlled platform policy.  It is deliberately short and
+# contains no hidden chain-of-thought or request-specific content.
+PLATFORM_SYSTEM_MESSAGE = "平台约束：遵守安全边界；长期记忆和知识库证据仅作参考；不要泄露隐藏推理。"
 
-def _langchain_drive(run: "ChatRun", model: str, prompt: str, reasoning: bool):
+
+def build_role_aware_messages(question: str, *, system_rule: Optional[str] = None, advisory: Optional[str] = None, history=None) -> List[Dict[str, str]]:
+    messages: List[Dict[str, str]] = [{"role": "system", "content": PLATFORM_SYSTEM_MESSAGE}]
+    if system_rule and system_rule.strip():
+        messages.append({"role": "system", "content": system_rule.strip()})
+    if advisory and advisory.strip():
+        messages.append({"role": "system", "content": advisory.strip()})
+    for item in history or []:
+        role = getattr(item, "role", None) or item.get("role")
+        content = getattr(item, "content", None) if not isinstance(item, dict) else item.get("content")
+        if role in {"user", "assistant", "tool"} and content:
+            messages.append({"role": role, "content": str(content)})
+    messages.append({"role": "user", "content": question})
+    return messages
+
+
+def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool):
     """默认链路驱动器：事件产出与改动前完全一致，并在结束后合成 OllamaChatResult。
 
     `prompt` 是实际发给模型的文本（KB 链路传入 build_prompt 的结果，否则等于原始问题）；
@@ -46,7 +65,7 @@ def _langchain_drive(run: "ChatRun", model: str, prompt: str, reasoning: bool):
     first_seen = False
     parts: List[str] = []
     try:
-        for event in graph.stream({"question": prompt}, stream_mode="custom"):
+        for event in graph.stream({"messages": messages}, stream_mode="custom"):
             if not first_seen:
                 first_seen = True
                 first_token_ms = (time.perf_counter() - start) * 1000.0
@@ -80,6 +99,8 @@ def run_chat(
     route: Optional[str] = None,
     prompt: Optional[str] = None,
     think: bool = True,
+    messages: Optional[List[Dict[str, str]]] = None,
+    system_messages: Optional[List[Dict[str, str]]] = None,
 ) -> "ChatRun":
     """按 OLLAMA_ROUTE 选择链路；route 显式传入时优先用它。
 
@@ -97,13 +118,19 @@ def run_chat(
         resolved = "langchain"
 
     text = prompt if prompt is not None else question
+    role_aware = messages is not None or system_messages is not None
+    if messages is None:
+        messages = [dict(item) for item in (system_messages or [])]
+        messages.append({"role": "user", "content": text})
+    else:
+        messages = [{"role": str(item.get("role", "user")), "content": str(item.get("content", ""))} for item in messages]
 
     if resolved == "direct":
-        stream = chat_direct_stream([{"role": "user", "content": text}], model, think=think)
+        stream = chat_direct_stream(messages, model, think=think)
         run = ChatRun(route="direct")
         run.events = iter(_direct_drive(run, stream))
         return run
 
     run = ChatRun(route="langchain")
-    run.events = iter(_langchain_drive(run, model, text, think))
+    run.events = iter(_langchain_drive(run, model, messages if role_aware else text, think))
     return run

@@ -286,3 +286,39 @@ tester 未启动服务或执行真实浏览器点击；随后主 Agent 已在当
 
 - 验收执行：tester（临时 Luna high）
 - 架构师签字：已确认（Task09 定向验收与桌面 Chromium smoke 通过；2026-09-11）
+
+# Spec022 Task10 验收评审
+
+> 验收角色：tester（临时 Luna high）
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-10-system-rule-project-memory-navigation.md`
+> 验收范围：Task10 后端/前端定向测试、旧 chat/KB 受影响门禁、项目优先记忆、SystemRule role/fail-closed、项目树/会话导航合同；未运行全量 pytest，未执行独立浏览器 Chromium 点击/视觉交互。
+
+## 结论：PASS（Task10 定向验收范围）
+
+Task10 指定后端测试 **64 passed**，前端 Task10/受影响合同 **44 passed**，JavaScript 语法检查与 **5/5 Node 合同**通过，`git diff --check` 退出码 0。后端与前端 reviewer 已分别给出 GO；未发现 P0/P1 验收阻塞。本结论不代表 Spec022 已完成。
+
+## 验收证据
+
+详细命令、退出码、风险与固定验收矩阵见 [`docs/sdd/plans/022/artifacts/task-10/acceptance-report.md`](../plans/022/artifacts/task-10/acceptance-report.md)。核心结果如下：
+
+| 检查 | 退出码 | 结果 |
+|---|---:|---|
+| `./.venv/bin/python -m pytest -q tests/test_task10_backend.py tests/test_memory_repositories.py tests/test_conversations_api.py tests/test_chat_route.py tests/test_kb_ask_trace.py tests/test_task05_backend.py --tb=short` | 0 | **64 passed in 5.78s** |
+| Task10/受影响前端五份合同 pytest | 0 | **44 passed in 0.04s** |
+| `node --check frontend/app.js frontend/conversation-research.js` | 0 | PASS |
+| 五个前端 Node 合同 | 0 | **5/5 PASS** |
+| `git diff --check` | 0 | PASS |
+
+固定验收项均有对应证据：项目树单列与顶部“项目 ▼”、长/空项目名称与文件夹可访问语义；会话点击先切换 chat 再打开并恢复管理页快照；SystemRule CRUD/Unicode 边界/owner 隔离；真正 system/user role、观测脱敏与读取失败 fail-closed；绑定项目 project-first、未绑定普通记忆待确认；旧 `/api/chat` 与 KB role 门禁；`system-rule-applied` 处理步骤稳定去重。
+
+## 主 Agent runtime smoke 与限制
+
+主 Agent 已提供当前工作树受控 smoke：`GET /api/health` HTTP 200、首页 `GET /` HTTP 200、`GET /api/system-rule` 成功返回稳定对象；并以 Chromium 无头 `--dump-dom` 检查唯一项目树标题、顶部“项目 ▼”、内联文件夹 SVG、项目名称与记忆治理入口存在，旧常驻创建表单/旧项目选择器不在首页 DOM。本 tester 隔离环境访问 8000 端口为 HTTP 000，未将该环境限制判为产品失败。
+
+本 tester 未执行真实 Chromium 交互；记忆页直达绑定/未绑定会话、筛选/滚动恢复、长名/空项目视觉折行、文件夹焦点与 SystemRule 对话框仍需主 Agent 在收口阶段覆盖。另保留 backend reviewer 已记录的两个 P2：analysis worker 时序波动、入口失败/后台模型隔离矩阵的少量自动化空白；本轮组合测试全绿，不阻断 Task10 定向验收。
+
+## 签字
+
+- 验收执行：tester（临时 Luna high）
+- 进展日志：`.codebuddy/agent-logs/spec-022/task-10/tester/20260911-174203.md`
+- 架构师签字：已确认（Task10 定向验收与主 Agent runtime smoke 通过；全量回归留待 Task08）

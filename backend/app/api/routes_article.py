@@ -21,9 +21,11 @@ from backend.app.article_assistant.application.entry import (
 )
 from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.api import common
-from backend.app.chat.application.chat_runner import run_chat
-from backend.app.platform.observability import flush, record_ollama_generation, utc_now
+from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
+from backend.app.platform.observability import flush, prompt_observation_metadata, redact_prompt_messages, record_ollama_generation, utc_now
 from backend.app.platform.ollama import get_available_models
+from backend.app.platform.bootstrap import get_provider
+from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,
     save_article_settings,
@@ -114,7 +116,16 @@ def run_agent(request: ChatRequest):
                     return
                 yield stream_event("meta", model=request.model, mode=request.mode)
                 started = utc_now()
-                run = run_chat(task.normalized_query, request.model)
+                try:
+                    rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
+                except Exception:
+                    yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
+                    yield stream_event("done", status="failed")
+                    return
+                prompt_messages = build_role_aware_messages(task.normalized_query, system_rule=rule.content if rule.enabled else None)
+                observation_messages = redact_prompt_messages(prompt_messages)
+                observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content))
+                run = run_chat(task.normalized_query, request.model, messages=prompt_messages)
                 try:
                     for event in run.events:
                         yield stream_event(event["type"], content=event["content"])
@@ -123,7 +134,7 @@ def run_agent(request: ChatRequest):
                         try:
                             record_ollama_generation(
                                 model=request.model,
-                                prompt_messages=[{"role": "user", "content": task.normalized_query}],
+                                prompt_messages=observation_messages,
                                 result=run.result,
                                 route=run.route,
                                 started_at=started,
@@ -131,6 +142,7 @@ def run_agent(request: ChatRequest):
                                 # 失败必须显式标记，避免污染成功耗时分位
                                 success=False,
                                 error_type=type(error).__name__,
+                                extra_metadata=observation_metadata,
                              )
                             flush()
                         except Exception:
@@ -140,11 +152,12 @@ def run_agent(request: ChatRequest):
                     try:
                         record_ollama_generation(
                             model=request.model,
-                            prompt_messages=[{"role": "user", "content": task.normalized_query}],
+                            prompt_messages=observation_messages,
                             result=run.result,
                             route=run.route,
                             started_at=started,
                             tags=["chat", "agent"],
+                            extra_metadata=observation_metadata,
                           )
                         flush()
                     except Exception:
@@ -329,4 +342,3 @@ def login_completed(task_id: str, payload: dict):
     task.human_action = "login_completed"
     article_tasks().save(task)
     return download_article_endpoint({"task_id": task_id, "candidate_id": candidate_id})
-

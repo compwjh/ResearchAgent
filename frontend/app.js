@@ -37,6 +37,24 @@ const memoryRefreshButton = document.querySelector('#memory-refresh-button');
 const memoryList = document.querySelector('#memory-list');
 const memoryEmpty = document.querySelector('#memory-empty');
 const memoryStatus = document.querySelector('#memory-status');
+const systemRuleCard = document.querySelector('#system-rule-card');
+const systemRuleContent = document.querySelector('#system-rule-content');
+const systemRuleUpdated = document.querySelector('#system-rule-updated');
+const systemRuleStatusBadge = document.querySelector('#system-rule-status-badge');
+const systemRuleStatus = document.querySelector('#system-rule-status');
+const systemRuleEditButton = document.querySelector('#system-rule-edit-button');
+const systemRuleToggleButton = document.querySelector('#system-rule-toggle-button');
+const systemRuleClearButton = document.querySelector('#system-rule-clear-button');
+const systemRuleDialog = document.querySelector('#system-rule-dialog');
+const systemRuleForm = document.querySelector('#system-rule-form');
+const systemRuleInput = document.querySelector('#system-rule-input');
+const systemRuleCount = document.querySelector('#system-rule-count');
+const systemRuleEnabledInput = document.querySelector('#system-rule-enabled-input');
+const systemRuleDialogStatus = document.querySelector('#system-rule-dialog-status');
+const systemRuleClearDialog = document.querySelector('#system-rule-clear-dialog');
+const systemRuleClearForm = document.querySelector('#system-rule-clear-form');
+const systemRuleClearSubmit = document.querySelector('#system-rule-clear-submit');
+const systemRuleClearStatus = document.querySelector('#system-rule-clear-status');
 const projectList = document.querySelector('#project-list');
 const projectTreeToggle = document.querySelector('#project-tree-toggle');
 const projectTreeMenuButton = document.querySelector('#project-tree-menu-button');
@@ -71,6 +89,8 @@ try {
   if (savedProjectSort === 'name' || savedProjectSort === 'recent') projectState.sort = savedProjectSort;
 } catch (_) { /* localStorage may be unavailable in privacy mode. */ }
 const memoryState = { items: [], evidence: new Map(), loading: false };
+const systemRuleState = { content: '', enabled: false, updatedAt: null, loaded: false, loading: false };
+const memoryNavigationSnapshot = { scope: null, status: null, projectId: null, scrollTop: 0, projectCollapsed: false, expandedProjectId: null };
 const conversationState = {
   projectId: null,
   draftProjectId: null,
@@ -187,6 +207,7 @@ function addMessage(text, type) {
     ? `<div class="avatar">O</div><div class="bubble"></div>`
     : '<div class="bubble"></div>';
   message.querySelector('.bubble').textContent = text;
+  if (type === 'user') attachSystemRuleSuggestion(message, text);
   messages.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
   return message;
@@ -326,6 +347,7 @@ function renderConversationMessage(item) {
   bubble.className = 'bubble';
   if (role === 'user' || role === 'tool') {
     bubble.textContent = item.content || '';
+    if (role === 'user') attachSystemRuleSuggestion(message, item.content || '');
     message.appendChild(bubble);
     return message;
   }
@@ -390,7 +412,8 @@ function setConversationAnswer(element, content) {
 function updateConversationProcessing(processing, step) {
   if (!processing || !step) return;
   const list = processing.querySelector('.conversation-processing-list') || processing;
-  const stepId = String(step.step_id || step.kind || `step-${list.children.length}`);
+  const isSystemRuleStep = step.kind === 'system_rule' || step.kind === 'system-rule' || /系统规则/.test(String(step.label || ''));
+  const stepId = isSystemRuleStep ? 'system-rule-applied' : String(step.step_id || step.kind || `step-${list.children.length}`);
   let item = [...list.querySelectorAll('.conversation-processing-item')].find((candidate) => candidate.dataset.stepId === stepId);
   if (!item) {
     item = document.createElement('div');
@@ -406,7 +429,7 @@ function updateConversationProcessing(processing, step) {
   const status = ['running', 'completed', 'failed', 'skipped', 'interrupted'].includes(step.status) ? step.status : 'running';
   if (item.dataset.status && item.dataset.status !== 'running' && status === 'running') return;
   item.dataset.status = status;
-  item.querySelector('.conversation-processing-label').textContent = step.label || step.kind || '处理中';
+  item.querySelector('.conversation-processing-label').textContent = isSystemRuleStep ? '已应用系统规则' : (step.label || step.kind || '处理中');
   item.querySelector('.conversation-processing-summary').textContent = step.summary || step.status || '';
   syncConversationProcessingState(processing);
 }
@@ -602,7 +625,16 @@ function renderMemoryAnalysisResult(section, userMessageId) {
     const buttons = document.createElement('div'); buttons.className = 'conversation-memory-result-actions';
     const addDecision = (label, decision) => { const button = document.createElement('button'); button.type = 'button'; button.className = decision === 'ignore' ? 'secondary-button' : 'send-button'; button.dataset.memoryDecision = decision; button.dataset.itemId = item.item_id || ''; button.textContent = label; button.disabled = !item.item_id || !['pending_confirmation', 'pending', 'conflict'].includes(item.decision_status); buttons.appendChild(button); };
     if (['pending_confirmation', 'pending', 'conflict'].includes(item.decision_status)) {
-      addDecision('保存到当前项目', 'save_project'); addDecision('保存为全局', 'save_global'); addDecision('不保存', 'ignore');
+      const currentProjectId = conversationState.projectId || null;
+      if (!currentProjectId) {
+        const picker = document.createElement('select'); picker.className = 'memory-analysis-project-select'; picker.dataset.memoryProject = item.item_id || ''; picker.setAttribute('aria-label', '选择要保存的项目');
+        const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '选择已有 active 项目'; picker.appendChild(placeholder);
+        projectState.items.filter((project) => project.status === 'active').forEach((project) => { const option = document.createElement('option'); option.value = project.project_id; option.textContent = project.name || '未命名项目'; picker.appendChild(option); });
+        row.appendChild(picker);
+      }
+      addDecision('保存到当前项目', 'save_project');
+      if (currentProjectId || item.suggested_scope === 'global' || item.scope === 'global') addDecision('保存为全局', 'save_global');
+      addDecision('不保存', 'ignore');
     }
     row.append(statement, meta);
     if (rationale.textContent) row.appendChild(rationale);
@@ -633,8 +665,10 @@ async function decideMemoryAnalysisItem(userMessageId, assistantMessage, section
   try {
     const payload = { decision };
     if (decision === 'save_project') {
-      if (!conversationState.projectId) { setConversationStatus('请先选择项目，再保存项目记忆', 'error'); state.deciding.delete(itemId); return; }
-      payload.project_id = conversationState.projectId;
+      const picker = section.querySelector(`[data-memory-project="${CSS.escape(itemId)}"]`);
+      const selectedProjectId = conversationState.projectId || picker?.value || null;
+      if (!selectedProjectId) { setConversationStatus('请选择一个已有 active 项目，再保存项目记忆', 'error'); state.deciding.delete(itemId); return; }
+      payload.project_id = selectedProjectId;
     }
     const data = await conversationFetch(`/api/memory-analysis/items/${encodeURIComponent(itemId)}/decision`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     state.items.set(itemId, { ...item, ...(data.item || data) });
@@ -649,8 +683,10 @@ async function decideMemoryAnalysisBatch(userMessageId, assistantMessage, sectio
   try {
     const payload = { decision };
     if (decision === 'save_project') {
-      if (!conversationState.projectId) { setConversationStatus('请先选择项目，再保存项目记忆', 'error'); return; }
-      payload.project_id = conversationState.projectId;
+      const picker = section.querySelector('[data-memory-project]');
+      const selectedProjectId = conversationState.projectId || picker?.value || null;
+      if (!selectedProjectId) { setConversationStatus('请选择一个已有 active 项目，再保存项目记忆', 'error'); return; }
+      payload.project_id = selectedProjectId;
     }
     const data = await conversationFetch(`/api/messages/${encodeURIComponent(userMessageId)}/memory-analysis/decisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     (data.items || data.results || []).forEach((item) => { if (item.item_id) state.items.set(item.item_id, item); });
@@ -777,7 +813,7 @@ function renderConversationRow(item, container, owner = 'recent') {
   const row = document.createElement('div'); row.className = 'conversation-item'; row.dataset.conversationId = item.conversation_id; row.dataset.owner = owner; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', item.conversation_id === conversationState.conversationId ? 'true' : 'false');
   const button = document.createElement('button'); button.type = 'button'; button.className = 'conversation-item-main'; button.setAttribute('aria-label', `打开会话 ${item.title || '新会话'}`);
   const title = document.createElement('span'); title.className = 'conversation-item-title'; title.textContent = item.title || '新会话';
-  button.append(title); button.addEventListener('click', () => openConversation(item.conversation_id));
+  button.append(title); button.addEventListener('click', () => openConversationFromWorkspace(item.conversation_id));
   const menu = document.createElement('button'); menu.type = 'button'; menu.className = 'conversation-item-menu'; menu.setAttribute('aria-label', `管理会话 ${item.title || '新会话'}`); menu.setAttribute('aria-haspopup', 'menu'); menu.setAttribute('aria-expanded', 'false'); menu.textContent = '⋯';
   menu.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton('重命名', () => openActionDialog('rename-conversation', item))); panel.append(menuButton('移动到项目', () => openActionDialog('move-conversation', item))); if (item.project_id) panel.append(menuButton('移出项目', () => moveConversation(item, null))); panel.append(menuButton(item.status === 'archived' ? '恢复' : '归档', () => confirmAction('conversation-status', item))); panel.append(menuButton('删除', () => confirmAction('conversation-delete', item), true)); openFloatingMenu(menu, panel); });
   row.append(button, menu); container.appendChild(row);
@@ -792,21 +828,28 @@ function renderConversationRows(items, container, owner, append = false) {
 
 function renderConversationList(items, append = false) { if (conversationList) renderConversationRows(items, conversationList, 'recent', append); }
 
+function createProjectFolderIcon(open = false) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('project-folder-icon'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '16'); svg.setAttribute('height', '16'); svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', open ? 'M3.5 7.5h6l1.7 2H20a1 1 0 0 1 .98 1.2l-1.5 7.2a1.5 1.5 0 0 1-1.47 1.2H5.2a1.5 1.5 0 0 1-1.47-1.2L2.5 9.2a1.5 1.5 0 0 1 1-1.7Z' : 'M3.5 6.5h6l1.7 2H20a1 1 0 0 1 1 1v7.5a1.5 1.5 0 0 1-1.5 1.5H4.5A1.5 1.5 0 0 1 3 17V8a1.5 1.5 0 0 1 .5-1.5Z');
+  path.setAttribute('fill', 'none'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '1.5'); path.setAttribute('stroke-linejoin', 'round'); svg.appendChild(path); return svg;
+}
+
 function renderProjectList(projects) {
   if (!projectList) return;
   projectList.replaceChildren(); projectList.hidden = projectState.collapsed;
   for (const project of visibleProjects(projects)) {
     const row = document.createElement('div'); row.className = 'project-item'; row.dataset.projectId = project.project_id; row.dataset.status = project.status || 'active';
     const head = document.createElement('div'); head.className = 'project-item-head';
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'project-item-toggle'; toggle.setAttribute('aria-label', `展开项目 ${project.name || ''}`); toggle.setAttribute('aria-expanded', projectState.expandedProjectId === project.project_id ? 'true' : 'false'); toggle.textContent = projectState.expandedProjectId === project.project_id ? '⌄' : '›';
     const selectedContextId = conversationState.conversationId ? conversationState.draftProjectId : conversationState.projectId;
-    const main = document.createElement('button'); main.type = 'button'; main.className = 'project-item-main'; main.setAttribute('aria-pressed', project.project_id === selectedContextId ? 'true' : 'false');
-    const icon = document.createElement('span'); icon.className = 'project-item-icon'; icon.textContent = '▰'; const title = document.createElement('span'); title.className = 'project-item-title'; title.textContent = project.name || '未命名项目'; main.append(icon, title);
-    toggle.addEventListener('click', () => { projectState.expandedProjectId = projectState.expandedProjectId === project.project_id ? null : project.project_id; renderProjectList(projectState.items); if (projectState.expandedProjectId === project.project_id) loadProjectConversations(project.project_id); });
-    main.addEventListener('click', () => selectProjectContext(project.project_id));
+    const isExpanded = projectState.expandedProjectId === project.project_id;
+    const main = document.createElement('button'); main.type = 'button'; main.className = 'project-item-main'; main.setAttribute('aria-pressed', project.project_id === selectedContextId ? 'true' : 'false'); main.setAttribute('aria-expanded', isExpanded ? 'true' : 'false'); main.setAttribute('aria-label', `${isExpanded ? '收起' : '展开'}项目 ${project.name || '未命名项目'}`);
+    const icon = createProjectFolderIcon(isExpanded); icon.classList.add('project-item-icon'); const title = document.createElement('span'); title.className = 'project-item-title'; title.textContent = project.name || '未命名项目'; main.append(icon, title);
+    main.addEventListener('click', () => { selectProjectContext(project.project_id); projectState.expandedProjectId = isExpanded ? null : project.project_id; renderProjectList(projectState.items); if (!isExpanded) loadProjectConversations(project.project_id); });
     const menu = document.createElement('button'); menu.type = 'button'; menu.className = 'project-item-menu'; menu.setAttribute('aria-label', `管理项目 ${project.name || ''}`); menu.setAttribute('aria-haspopup', 'menu'); menu.setAttribute('aria-expanded', 'false'); menu.textContent = '⋯';
     menu.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); if (project.status !== 'archived') panel.append(menuButton('重命名', () => openActionDialog('rename-project', project))); panel.append(menuButton(project.status === 'archived' ? '恢复' : '归档', () => confirmAction('project-status', project))); panel.append(menuButton('删除', () => confirmAction('project-delete', project), true)); openFloatingMenu(menu, panel); });
-    head.append(toggle, main, menu); row.appendChild(head);
+    head.append(main, menu); row.appendChild(head);
     const child = document.createElement('div'); child.className = 'project-conversation-list'; child.dataset.projectId = project.project_id; child.hidden = projectState.expandedProjectId !== project.project_id;
     const entry = projectState.conversations.get(project.project_id);
     if (entry?.items?.length) renderConversationRows(entry.items, child, `project:${project.project_id}`); else if (entry?.loaded && !entry.items.length) { const empty = document.createElement('button'); empty.type = 'button'; empty.className = 'project-empty-action'; empty.textContent = '＋ 在此项目中新建对话'; empty.addEventListener('click', () => selectProjectContext(project.project_id)); child.appendChild(empty); }
@@ -950,6 +993,7 @@ function abortConversationStream() {
 
 async function openConversation(conversationId, { replace = false } = {}) {
   if (!conversationId) return;
+  showView('chat');
   abortConversationStream();
   const openToken = Symbol('conversation-open');
   const openGeneration = conversationState.streamGeneration;
@@ -973,6 +1017,7 @@ async function openConversation(conversationId, { replace = false } = {}) {
     conversationState.draftProjectId = conversationState.projectId;
     projectState.expandedProjectId = conversationState.projectId || projectState.expandedProjectId;
     renderProjectList(projectState.items);
+    if (conversationState.projectId) await loadProjectConversations(conversationState.projectId);
     await loadConversationMessages(conversationId);
     if (!isCurrent()) return;
     await loadConversationList({ append: false, guard: isCurrent });
@@ -1074,6 +1119,162 @@ function setMemoryStatus(text, state = '') {
   if (state) memoryStatus.dataset.state = state; else delete memoryStatus.dataset.state;
 }
 
+function setSystemRuleStatus(text, state = '') {
+  [systemRuleStatus, systemRuleDialogStatus, systemRuleClearStatus].forEach((node) => {
+    if (!node) return;
+    node.textContent = text || '';
+    if (state) node.dataset.state = state; else delete node.dataset.state;
+  });
+}
+
+function renderSystemRule() {
+  if (!systemRuleCard) return;
+  const content = String(systemRuleState.content || '');
+  if (systemRuleContent) systemRuleContent.textContent = content || '尚未设置系统规则。';
+  if (systemRuleStatusBadge) {
+    systemRuleStatusBadge.dataset.enabled = systemRuleState.enabled ? 'true' : 'false';
+    systemRuleStatusBadge.textContent = systemRuleState.enabled ? '已启用' : '已停用';
+  }
+  if (systemRuleUpdated) systemRuleUpdated.textContent = systemRuleState.updatedAt ? `更新时间：${systemRuleState.updatedAt}` : '';
+  if (systemRuleToggleButton) {
+    systemRuleToggleButton.textContent = systemRuleState.enabled ? '停用' : '启用';
+    systemRuleToggleButton.disabled = !content && !systemRuleState.enabled;
+  }
+  if (systemRuleEditButton) systemRuleEditButton.disabled = systemRuleState.loading;
+  if (systemRuleClearButton) systemRuleClearButton.disabled = systemRuleState.loading || (!content && !systemRuleState.enabled);
+}
+
+async function loadSystemRule() {
+  if (!systemRuleCard || systemRuleState.loading) return;
+  systemRuleState.loading = true; renderSystemRule(); setSystemRuleStatus('正在读取系统规则…');
+  try {
+    const data = await conversationFetch('/api/system-rule');
+    const rule = data?.system_rule || data?.rule || data || {};
+    systemRuleState.content = String(rule.content || '');
+    systemRuleState.enabled = Boolean(rule.enabled) && Boolean(systemRuleState.content);
+    systemRuleState.updatedAt = rule.updated_at || rule.updatedAt || null;
+    systemRuleState.loaded = true;
+    setSystemRuleStatus('');
+  } catch (error) {
+    setSystemRuleStatus(`系统规则读取失败：${error.message}`, 'error');
+  } finally {
+    systemRuleState.loading = false; renderSystemRule();
+  }
+}
+
+function updateSystemRuleCount() {
+  if (!systemRuleCount || !systemRuleInput) return;
+  const length = Array.from(systemRuleInput.value).length;
+  systemRuleCount.textContent = `${length} / 12000`;
+  systemRuleCount.dataset.overLimit = length > 12000 ? 'true' : 'false';
+}
+
+function openSystemRuleEditor(prefill = null) {
+  if (!systemRuleDialog || !systemRuleInput) return;
+  systemRuleInput.value = prefill === null ? systemRuleState.content : String(prefill);
+  if (systemRuleEnabledInput) systemRuleEnabledInput.checked = Boolean(systemRuleState.enabled);
+  setSystemRuleStatus(''); updateSystemRuleCount(); systemRuleDialog.showModal(); systemRuleInput.focus();
+}
+
+async function saveSystemRule(event) {
+  if (event?.submitter?.value === 'cancel') { event.preventDefault(); systemRuleDialog?.close('cancel'); return; }
+  event?.preventDefault();
+  const content = String(systemRuleInput?.value || '');
+  if (Array.from(content).length > 12000) { setSystemRuleStatus('系统规则最多 12,000 个 Unicode 字符，请缩短后再保存。', 'error'); return; }
+  const enabled = Boolean(systemRuleEnabledInput?.checked);
+  try {
+    systemRuleState.loading = true; renderSystemRule(); setSystemRuleStatus('正在保存系统规则…');
+    const data = await conversationFetch('/api/system-rule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, enabled }) });
+    const rule = data?.system_rule || data?.rule || data || {};
+    systemRuleState.content = String(rule.content ?? content);
+    systemRuleState.enabled = Boolean(rule.enabled ?? enabled);
+    systemRuleState.updatedAt = rule.updated_at || rule.updatedAt || null;
+    systemRuleState.loaded = true; systemRuleDialog?.close(); setSystemRuleStatus('系统规则已保存');
+  } catch (error) { setSystemRuleStatus(`系统规则保存失败：${error.message}`, 'error'); }
+  finally { systemRuleState.loading = false; renderSystemRule(); }
+}
+
+async function toggleSystemRule() {
+  if (!systemRuleState.content && !systemRuleState.enabled) { openSystemRuleEditor(); return; }
+  try {
+    systemRuleState.loading = true; renderSystemRule(); setSystemRuleStatus('正在更新系统规则状态…');
+    const data = await conversationFetch('/api/system-rule', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !systemRuleState.enabled }) });
+    const rule = data?.system_rule || data?.rule || data || {};
+    systemRuleState.content = String(rule.content ?? systemRuleState.content);
+    systemRuleState.enabled = Boolean(rule.enabled);
+    systemRuleState.updatedAt = rule.updated_at || rule.updatedAt || systemRuleState.updatedAt;
+    setSystemRuleStatus(systemRuleState.enabled ? '系统规则已启用' : '系统规则已停用');
+  } catch (error) { setSystemRuleStatus(`系统规则状态更新失败：${error.message}`, 'error'); }
+  finally { systemRuleState.loading = false; renderSystemRule(); }
+}
+
+function openSystemRuleClearDialog() {
+  if (!systemRuleClearDialog) return;
+  setSystemRuleStatus(''); systemRuleClearDialog.showModal(); systemRuleClearSubmit?.focus();
+}
+
+async function clearSystemRule(event) {
+  if (event?.submitter?.value === 'cancel') { event.preventDefault(); systemRuleClearDialog?.close('cancel'); return; }
+  event?.preventDefault();
+  try {
+    systemRuleState.loading = true; renderSystemRule(); setSystemRuleStatus('正在清空系统规则…');
+    await conversationFetch('/api/system-rule', { method: 'DELETE' });
+    systemRuleState.content = ''; systemRuleState.enabled = false; systemRuleState.updatedAt = null; systemRuleState.loaded = true;
+    systemRuleClearDialog?.close(); setSystemRuleStatus('系统规则已清空');
+  } catch (error) { setSystemRuleStatus(`系统规则清空失败：${error.message}`, 'error'); }
+  finally { systemRuleState.loading = false; renderSystemRule(); }
+}
+
+function captureMemoryViewState() {
+  if (!memoryView || memoryView.hidden) return;
+  memoryNavigationSnapshot.scope = memoryScopeSelect?.value || 'global';
+  memoryNavigationSnapshot.status = memoryStatusSelect?.value || 'active';
+  memoryNavigationSnapshot.projectId = memoryProjectSelect?.value || null;
+  memoryNavigationSnapshot.scrollTop = Number(window.scrollY || document.documentElement?.scrollTop || 0);
+  memoryNavigationSnapshot.projectCollapsed = projectState.collapsed;
+  memoryNavigationSnapshot.expandedProjectId = projectState.expandedProjectId;
+}
+
+function restoreMemoryViewState() {
+  if (!memoryView || memoryNavigationSnapshot.scope === null) return;
+  if (memoryScopeSelect) memoryScopeSelect.value = memoryNavigationSnapshot.scope;
+  if (memoryStatusSelect) memoryStatusSelect.value = memoryNavigationSnapshot.status || 'active';
+  if (memoryProjectSelect && memoryNavigationSnapshot.projectId) memoryProjectSelect.value = memoryNavigationSnapshot.projectId;
+  const isProject = memoryScopeSelect?.value === 'project';
+  if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
+  projectState.collapsed = Boolean(memoryNavigationSnapshot.projectCollapsed);
+  projectState.expandedProjectId = memoryNavigationSnapshot.expandedProjectId || null;
+  projectTreeToggle?.setAttribute('aria-expanded', projectState.collapsed ? 'false' : 'true');
+  renderProjectList(projectState.items);
+  window.requestAnimationFrame(() => window.scrollTo(0, memoryNavigationSnapshot.scrollTop || 0));
+  loadMemories();
+}
+
+function systemRuleSuggestionFromText(text) {
+  const value = String(text || '');
+  if (!/设为系统规则/.test(value)) return '';
+  const suggestion = value.replace(/^[\s，,:：；;。.!！?？]*设为系统规则[\s，,:：；;。.!！?？-]*/u, '').trim();
+  return suggestion || value.trim();
+}
+
+function attachSystemRuleSuggestion(message, text) {
+  const suggestion = systemRuleSuggestionFromText(text);
+  if (!suggestion || !message) return;
+  const bubble = message.querySelector('.bubble');
+  if (!bubble || bubble.querySelector('[data-system-rule-suggestion]')) return;
+  const hint = document.createElement('p'); hint.className = 'system-rule-suggestion'; hint.textContent = '识别到系统规则建议；保存前请先确认。';
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary-button'; button.dataset.systemRuleSuggestion = 'true'; button.textContent = '预填系统规则编辑器';
+  button.addEventListener('click', () => openSystemRuleEditor(suggestion));
+  bubble.append(hint, button);
+}
+
+function openConversationFromWorkspace(conversationId) {
+  if (!conversationId) return;
+  captureMemoryViewState();
+  showView('chat');
+  openConversation(conversationId);
+}
+
 function renderMemoryProjectOptions(projects) {
   if (!memoryProjectSelect) return;
   memoryProjectSelect.replaceChildren();
@@ -1089,8 +1290,14 @@ function renderMemoryEvidence(memoryId, evidence, container) {
   const heading = document.createElement('strong'); heading.textContent = '来源记录'; container.appendChild(heading);
   if (!evidence?.length) { const empty = document.createElement('span'); empty.textContent = '暂无可见来源'; container.appendChild(empty); return; }
   for (const item of evidence) {
-    const row = document.createElement('span');
-    row.textContent = [item.evidence_type || '来源', item.excerpt || '', item.conversation_id ? `会话 ${item.conversation_id}` : ''].filter(Boolean).join(' · ');
+    const row = document.createElement('div');
+    const details = document.createElement('span');
+    details.textContent = [item.evidence_type || '来源', item.excerpt || ''].filter(Boolean).join(' · ');
+    row.appendChild(details);
+    if (item.conversation_id) {
+      const open = document.createElement('button'); open.type = 'button'; open.className = 'secondary-button memory-open-conversation'; open.dataset.openConversation = item.conversation_id; open.textContent = '打开来源会话';
+      row.appendChild(open);
+    }
     container.appendChild(row);
   }
   memoryState.evidence.set(memoryId, evidence);
@@ -1114,6 +1321,10 @@ function renderMemoryList(items) {
     if (item.status === 'deleted') addAction('撤销', 'undo');
     else if (item.status !== 'superseded') { addAction('编辑为新版本', 'edit'); addAction('停用', 'disable'); addAction('删除', 'delete', 'secondary-button danger-button'); }
     const evidence = document.createElement('div'); evidence.className = 'memory-evidence'; evidence.hidden = true; evidence.dataset.memoryEvidence = item.memory_id;
+    const sourceConversationId = item.conversation_id || item.source_conversation_id || item.evidence?.conversation_id;
+    if (sourceConversationId) {
+      const openSource = document.createElement('button'); openSource.type = 'button'; openSource.className = 'secondary-button memory-open-conversation'; openSource.dataset.openConversation = sourceConversationId; openSource.textContent = '打开来源会话'; actions.appendChild(openSource);
+    }
     card.append(head, statement, meta, actions, evidence); memoryList.appendChild(card);
   }
   if (memoryEmpty) memoryEmpty.hidden = Boolean(items?.length);
@@ -1298,7 +1509,7 @@ if (projectDialogForm) projectDialogForm.addEventListener('submit', createProjec
 for (const dialogForm of [projectDialogForm, conversationActionForm, conversationConfirmForm]) {
   dialogForm?.addEventListener('click', closeDialogFromCancelClick);
 }
-if (projectTreeToggle) projectTreeToggle.addEventListener('click', () => { projectState.collapsed = !projectState.collapsed; projectTreeToggle.setAttribute('aria-expanded', projectState.collapsed ? 'false' : 'true'); projectTreeToggle.querySelector('[aria-hidden]')?.replaceChildren(document.createTextNode(projectState.collapsed ? '›' : '⌄')); renderProjectList(projectState.items); });
+if (projectTreeToggle) projectTreeToggle.addEventListener('click', () => { projectState.collapsed = !projectState.collapsed; projectTreeToggle.setAttribute('aria-expanded', projectState.collapsed ? 'false' : 'true'); projectTreeToggle.querySelector('[aria-hidden]')?.replaceChildren(document.createTextNode(projectState.collapsed ? '▶' : '▼')); renderProjectList(projectState.items); });
 if (projectTreeMenuButton) projectTreeMenuButton.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton('最近更新', () => { projectState.showArchived = false; saveProjectSort('recent'); })); panel.append(menuButton('名称 A–Z', () => { projectState.showArchived = false; saveProjectSort('name'); })); panel.append(menuButton(projectState.showArchived ? '返回当前项目' : '查看归档项目', () => { projectState.showArchived = !projectState.showArchived; renderProjectList(projectState.items); })); openFloatingMenu(projectTreeMenuButton, panel); });
 if (conversationListMenuTrigger) conversationListMenuTrigger.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton(conversationListState.showArchived ? '返回最近会话' : '查看归档会话', () => { conversationListState.showArchived = !conversationListState.showArchived; loadConversationList(); })); openFloatingMenu(conversationListMenuTrigger, panel); });
 if (conversationActionForm) conversationActionForm.addEventListener('submit', submitActionDialog);
@@ -1321,7 +1532,18 @@ if (memoryProjectSelect) memoryProjectSelect.addEventListener('change', loadMemo
 if (memoryStatusSelect) memoryStatusSelect.addEventListener('change', loadMemories);
 if (memoryRefreshButton) memoryRefreshButton.addEventListener('click', loadMemories);
 if (memoryCreateButton) memoryCreateButton.addEventListener('click', createManualMemory);
+if (systemRuleEditButton) systemRuleEditButton.addEventListener('click', () => openSystemRuleEditor());
+if (systemRuleToggleButton) systemRuleToggleButton.addEventListener('click', toggleSystemRule);
+if (systemRuleClearButton) systemRuleClearButton.addEventListener('click', openSystemRuleClearDialog);
+if (systemRuleForm) systemRuleForm.addEventListener('submit', saveSystemRule);
+if (systemRuleClearForm) systemRuleClearForm.addEventListener('submit', clearSystemRule);
+if (systemRuleInput) systemRuleInput.addEventListener('input', updateSystemRuleCount);
+for (const dialogForm of [systemRuleForm, systemRuleClearForm]) dialogForm?.addEventListener('click', (event) => {
+  if (event.target?.closest?.('button[value="cancel"]')) { event.preventDefault(); dialogForm.closest('dialog')?.close('cancel'); }
+});
 if (memoryList) memoryList.addEventListener('click', (event) => {
+  const openButton = event.target.closest('[data-open-conversation]');
+  if (openButton) { openConversationFromWorkspace(openButton.dataset.openConversation); return; }
   const button = event.target.closest('[data-memory-action]');
   if (!button) return;
   const card = button.closest('.memory-item');
@@ -2487,7 +2709,9 @@ function showView(view) {
   if (nextView === 'memory') {
     const isProject = memoryScopeSelect?.value === 'project';
     if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
-    loadMemories();
+    restoreMemoryViewState();
+    loadSystemRule();
+    if (memoryNavigationSnapshot.scope === null) loadMemories();
   }
   if (nextView === 'papers' && paperState.enabled && !paperState.conferencesLoaded) loadPaperConferences();
 }
@@ -2495,6 +2719,7 @@ function showView(view) {
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', (event) => {
     event.preventDefault();
+    if (memoryView && !memoryView.hidden && item.dataset.view !== 'memory') captureMemoryViewState();
     if (item.dataset.view === 'chat') {
       conversationState.projectId = null;
       conversationState.draftProjectId = null;

@@ -12,11 +12,16 @@ from backend.app.api.schemas import (
     MemoryAnalysisDecisionRequest,
     MemoryCreateRequest,
     MemoryPatchRequest,
+    SystemRulePatchRequest,
+    SystemRulePutRequest,
     ProjectCreateRequest,
     ProjectPatchRequest,
 )
 from backend.app.chat.application.chat_runner import run_chat
-from backend.app.chat.application.conversation_service import get_memory_analysis_worker, get_memory_evolution_worker, compose_chat_prompt
+from backend.app.chat.application.conversation_service import (
+    get_memory_analysis_worker, get_memory_evolution_worker, compose_chat_prompt,
+    compose_chat_messages, has_explicit_global_intent, is_system_rule_intent,
+)
 from backend.app.knowledge_base.application import (
     citation_payloads,
     clear_project_document_associations,
@@ -24,9 +29,10 @@ from backend.app.knowledge_base.application import (
     hybrid_search,
     list_documents_for_project,
 )
-from backend.app.memory.repository import OWNER_ID, MemoryRepository
+from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.ollama import get_available_models
+from backend.app.platform.observability import prompt_observation_metadata, redact_prompt_messages, record_ollama_generation, utc_now
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -53,6 +59,47 @@ def _message_payload(item):
 
 def _memory_payload(item):
     return {"memory_id": item.memory_id, "owner_id": item.owner_id, "scope": item.scope, "project_id": item.project_id, "category": item.category, "statement": item.statement, "source_kind": item.source_kind, "status": item.status, "confidence": item.confidence, "supersedes_id": item.supersedes_id, "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat(), "last_used_at": item.last_used_at.isoformat() if item.last_used_at else None}
+
+
+def _system_rule_payload(item):
+    return {"content": item.content, "enabled": item.enabled, "updated_at": item.updated_at.isoformat()}
+
+
+@router.get("/system-rule")
+def get_system_rule():
+    try:
+        return _system_rule_payload(_repo().get_system_rule(OWNER_ID))
+    except SystemRuleUnavailableError as error:
+        raise HTTPException(status_code=503, detail={"code": "SYSTEM_RULE_UNAVAILABLE", "message": "系统规则暂时不可用", "retryable": True}) from error
+
+
+@router.put("/system-rule")
+def put_system_rule(payload: SystemRulePutRequest):
+    try:
+        return _system_rule_payload(_repo().upsert_system_rule(OWNER_ID, payload.content, payload.enabled))
+    except ValueError as error:
+        code = "SYSTEM_RULE_CONFLICT" if payload.enabled and not payload.content.strip() else "INVALID_SYSTEM_RULE"
+        raise HTTPException(status_code=409 if code == "SYSTEM_RULE_CONFLICT" else 400, detail={"code": code, "message": str(error), "retryable": False}) from error
+    except SystemRuleUnavailableError as error:
+        raise HTTPException(status_code=503, detail={"code": "SYSTEM_RULE_UNAVAILABLE", "message": "系统规则暂时不可用", "retryable": True}) from error
+
+
+@router.patch("/system-rule")
+def patch_system_rule(payload: SystemRulePatchRequest):
+    try:
+        return _system_rule_payload(_repo().set_system_rule_enabled(OWNER_ID, payload.enabled))
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail={"code": "SYSTEM_RULE_CONFLICT", "message": str(error), "retryable": False}) from error
+    except SystemRuleUnavailableError as error:
+        raise HTTPException(status_code=503, detail={"code": "SYSTEM_RULE_UNAVAILABLE", "message": "系统规则暂时不可用", "retryable": True}) from error
+
+
+@router.delete("/system-rule", status_code=204)
+def delete_system_rule():
+    try:
+        _repo().clear_system_rule(OWNER_ID)
+    except SystemRuleUnavailableError as error:
+        raise HTTPException(status_code=503, detail={"code": "SYSTEM_RULE_UNAVAILABLE", "message": "系统规则暂时不可用", "retryable": True}) from error
 
 
 def _memory_error(error: Exception) -> HTTPException:
@@ -138,6 +185,19 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         finished = False
         generation_started = False
         try:
+            system_rule = repo.get_system_rule(OWNER_ID)
+        except Exception:
+            # A rule-enabled request cannot safely continue when its state is
+            # unknown.  Persist failure before emitting any model event/token.
+            try:
+                repo.update_message(assistant_message.message_id, OWNER_ID, status="failed")
+            except Exception:
+                pass
+            yield stream_event("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode)
+            yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
+            yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed")
+            return
+        try:
             # Raw events are an append-only audit/input stream for the local
             # evolution worker.  They are advisory and never block SSE.
             try:
@@ -173,6 +233,9 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 recall_summary = f"召回 {len(memories)} 条长期记忆，其中 {usage_failures} 条使用记录未保存"
             recall_done = repo.create_processing_step(assistant_message.message_id, "memory_recall", recall_status, recall_summary, label="记忆召回")
             yield stream_event("progress", step_id=recall_done.step_id, kind=recall_done.kind, label=recall_done.label, status=recall_status, summary=recall_done.summary)
+            if system_rule.enabled and system_rule.content:
+                applied = repo.create_processing_step(assistant_message.message_id, "system_rule", "completed", "已应用系统规则", label="已应用系统规则")
+                yield stream_event("progress", step_id=applied.step_id, kind=applied.kind, label=applied.label, status="completed", summary=applied.summary)
             project_instructions = None
             if conversation.project_id:
                 project = repo.get_project(conversation.project_id, OWNER_ID)
@@ -210,22 +273,12 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
                 except Exception:
                     pass
-            prompt = compose_chat_prompt(
-                user_message.content,
-                history,
-                memories,
-                project_instructions,
-                summaries,
-                summary_budget_chars=1500,
-                rag_hits=rag_hits,
-                rag_budget_chars=6000,
-                history_budget_chars=6000,
-            )
+            messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None)
             repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
             generation_started = True
             generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
             yield stream_event("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
-            run = run_chat(user_message.content, model, prompt=prompt)
+            run = run_chat(user_message.content, model, messages=messages)
             for event in run.events:
                 if event.get("type") in {"error", "tool_error"}:
                     try:
@@ -238,6 +291,18 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     yield stream_event("token", content=token)
             content = "".join(parts)
             repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
+            try:
+                record_ollama_generation(
+                    model=model,
+                    prompt_messages=redact_prompt_messages(messages),
+                    result=run.result,
+                    route=run.route,
+                    started_at=utc_now(),
+                    tags=["conversation"],
+                    extra_metadata=prompt_observation_metadata(messages, system_rule_enabled=bool(system_rule.enabled and system_rule.content)),
+                )
+            except Exception:
+                pass
             generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成", label="回答生成")
             yield stream_event("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
             if rag_hits:
@@ -451,7 +516,15 @@ def _analysis_item_decision(item_id: str, payload: MemoryAnalysisDecisionRequest
         raise HTTPException(status_code=404, detail={"code": "MEMORY_ANALYSIS_NOT_FOUND", "message": "分析任务不存在", "retryable": False})
     if payload.decision == "ignore":
         return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="ignored")
+    source_message = repo.get_message(job.user_message_id, OWNER_ID)
+    source_text = source_message.content if source_message else ""
+    if is_system_rule_intent(source_text):
+        raise HTTPException(status_code=409, detail={"code": "SYSTEM_RULE_REQUIRES_EXPLICIT_SAVE", "message": "系统规则建议必须在系统规则编辑器中显式保存", "retryable": False})
     scope = "global" if payload.decision == "save_global" else "project"
+    if scope == "global" and not has_explicit_global_intent(source_text):
+        raise HTTPException(status_code=409, detail={"code": "GLOBAL_SCOPE_REQUIRES_EXPLICIT_INTENT", "message": "原始消息未明确要求全局范围", "retryable": False})
+    if scope == "project" and job.project_id_snapshot and payload.project_id and payload.project_id != job.project_id_snapshot:
+        raise HTTPException(status_code=409, detail={"code": "PROJECT_SCOPE_SNAPSHOT_MISMATCH", "message": "绑定项目记忆只能写入发送时项目", "retryable": False})
     project_id = None if scope == "global" else (payload.project_id or job.project_id_snapshot)
     if scope == "project":
         if not project_id:

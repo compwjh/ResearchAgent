@@ -238,12 +238,16 @@ def test_chat_prompt_does_not_duplicate_current_user_message(tmp_path):
         captured = {}
         class CaptureRun(FakeRun):
             pass
-        def capture_run(_question, _model, *, prompt):
-            captured["prompt"] = prompt
+        def capture_run(_question, _model, *, messages):
+            captured["messages"] = messages
             return CaptureRun()
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", side_effect=capture_run
         ):
             response = client.post("/api/conversations/messages", json={"content": "CURRENT_UNIQUE_9f2", "model": "model"})
         assert response.status_code == 200
-        assert captured["prompt"].count("CURRENT_UNIQUE_9f2") == 1
+        messages = captured["messages"]
+        assert [message["role"] for message in messages] == ["system", "user"]
+        assert [message for message in messages if message["role"] == "user"] == [
+            {"role": "user", "content": "CURRENT_UNIQUE_9f2"}
+        ]

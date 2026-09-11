@@ -143,18 +143,26 @@ class ChatApiTests(unittest.TestCase):
         kwargs = mock_record.call_args.kwargs
         self.assertEqual(kwargs["model"], "qwen3.5:9b")
         self.assertEqual(kwargs["route"], "langchain")
-        self.assertEqual(kwargs["prompt_messages"], [{"role": "user", "content": "hi"}])
+        self.assertEqual([message["role"] for message in kwargs["prompt_messages"]], ["system", "user"])
+        self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
+        self.assertEqual(kwargs["extra_metadata"]["role_count"], 2)
+        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "user"])
+        self.assertEqual(kwargs["extra_metadata"]["char_counts"][-1], len("hi"))
         self.assertEqual(kwargs["tags"], ["chat"])
         self.assertIsNotNone(kwargs["result"])
 
     def test_prompt_never_contains_secrets(self):
-        # 即便问题里含敏感样内容，prompt_messages 仍只回传用户文本本身
+        # 即便问题里含敏感样内容，观测只保留 role 与脱敏后的空 content。
         with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]):
             with patch("backend.app.platform.ollama.create_chat_model", side_effect=_mock_model(["ok"])):
                 with patch("backend.app.api.routes_chat.record_ollama_generation") as mock_record:
                     self.client.post("/api/chat", json={"question": "secret-token", "model": "qwen3.5:9b"})
         kwargs = mock_record.call_args.kwargs
-        self.assertEqual(kwargs["prompt_messages"], [{"role": "user", "content": "secret-token"}])
+        self.assertEqual([message["role"] for message in kwargs["prompt_messages"]], ["system", "user"])
+        self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
+        self.assertNotIn("secret-token", repr(kwargs["prompt_messages"]))
+        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "user"])
+        self.assertEqual(kwargs["extra_metadata"]["char_counts"][-1], len("secret-token"))
 
     def test_error_path_still_streams_error_and_does_not_crash(self):
         model = _FakeModelError(["par"], RuntimeError("boom"))

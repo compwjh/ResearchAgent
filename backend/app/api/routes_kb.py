@@ -12,7 +12,9 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from backend.app.api.common import *  # noqa: F401,F403
 from backend.app.api.schemas import KBAskRequest
-from backend.app.chat.application.chat_runner import run_chat
+from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
+from backend.app.platform.bootstrap import get_provider
+from backend.app.memory.repository import OWNER_ID
 from backend.app.knowledge_base.application import (
     CHUNKER_V1,
     CHUNKER_V2,
@@ -21,7 +23,6 @@ from backend.app.knowledge_base.application import (
     InspectionManifestStore,
     KnowledgeDocumentMigrationError,
     ManifestStoreError,
-    build_prompt,
     citation_payloads,
     clear_project_document_associations,
     count_points,
@@ -50,15 +51,29 @@ from backend.app.platform.config import (
 # Kept as a module-level read-only configuration alias for offline/legacy
 # fixtures that patch the historical source directory.  Canonical document
 # routes below continue to resolve paths through the knowledge-base boundary.
-from backend.app.platform.observability import end_trace, flush, record_ollama_generation, start_trace, utc_now
-from backend.app.platform.bootstrap import get_provider
-from backend.app.memory.repository import OWNER_ID
+from backend.app.platform.observability import end_trace, flush, prompt_observation_metadata, redact_prompt_messages, record_ollama_generation, start_trace, utc_now
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
 
 router = APIRouter()
+
+
+def _kb_evidence_advisory(hits) -> str:
+    """Render retrieved evidence without copying the current question."""
+    blocks = []
+    for index, hit in enumerate(hits[:10], start=1):
+        name = str(getattr(hit, "file_name", "知识库来源") or "知识库来源")
+        page = getattr(hit, "page", None)
+        location = f"第 {page} 页" if isinstance(page, int) and page > 0 else ""
+        blocks.append(f"[{index}] 来源：{name} {location}\n{getattr(hit, 'text', '')}".strip())
+    context = "\n\n".join(blocks)
+    return (
+        "你是一个严谨的论文助手。请只依据下列来自用户个人知识库的上下文回答用户问题。\n"
+        "引用时使用 [编号]；不要编造上下文中没有的信息；若上下文不足，明确说明。\n\n"
+        f"上下文：\n{context}"
+    )
 # Browsers and multipart proxies do not agree on the optional PDF media type
 # declaration.  Keep the content declaration allowlisted, then let the
 # canonical application seam validate the required `%PDF-` magic header.
@@ -980,8 +995,17 @@ def kb_ask(request: KBAskRequest):
                 yield stream_event("token", content=message)
                 yield stream_event("done")
                 return
-            prompt = build_prompt(question, hits)
-            run = run_chat(question, request.model, prompt=prompt, think=False)
+            prompt = _kb_evidence_advisory(hits)
+            try:
+                rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
+            except Exception:
+                yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
+                yield stream_event("done", status="failed")
+                return
+            prompt_messages = build_role_aware_messages(question, system_rule=rule.content if rule.enabled else None, advisory=prompt)
+            observation_messages = redact_prompt_messages(prompt_messages)
+            observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content))
+            run = run_chat(question, request.model, messages=prompt_messages, think=False)
             kb_metadata = {
                 "top_k": top_k,
                 "chunker": chunker,
@@ -999,13 +1023,13 @@ def kb_ask(request: KBAskRequest):
                     try:
                         record_ollama_generation(
                             model=request.model,
-                            prompt_messages=[{"role": "user", "content": prompt}],
+                            prompt_messages=observation_messages,
                             result=run.result,
                             route=run.route,
                             name="kb.generation",
                             started_at=started,
                             tags=["kb"],
-                            extra_metadata=kb_metadata,
+                            extra_metadata={**kb_metadata, **observation_metadata},
                             success=False,
                             error_type=type(error).__name__,
                         )
@@ -1016,13 +1040,13 @@ def kb_ask(request: KBAskRequest):
             try:
                 record_ollama_generation(
                     model=request.model,
-                    prompt_messages=[{"role": "user", "content": prompt}],
+                    prompt_messages=observation_messages,
                     result=run.result,
                     route=run.route,
                     name="kb.generation",
                     started_at=started,
                     tags=["kb"],
-                    extra_metadata=kb_metadata,
+                    extra_metadata={**kb_metadata, **observation_metadata},
                 )
                 flush()
             except Exception:

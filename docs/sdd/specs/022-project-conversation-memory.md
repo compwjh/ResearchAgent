@@ -2,7 +2,9 @@
 
 ## 状态
 
-**当前状态：`实施中`**
+**当前状态：`实施中（Task10 已完成）`**
+
+> Task02–Task05、Task09–Task10 已完成；Task06–Task08 仍未执行，Spec022 尚未进入最终全量回归和收口。
 
 ## 一句话目标
 
@@ -18,6 +20,8 @@
 - Task05 部署验证暴露桌面端交互缺陷：实时/历史消息可能失去用户—回答配对顺序，处理过程位于回答之后、无法真正折叠，且同一逻辑步骤的 `running/completed` 被写成不同记录，导致重复步骤和永久动画。
 - 当前项目区域仍采用下拉框、常驻创建表单和常驻治理按钮，不符合已确认的 ChatGPT 式项目/会话管理体验。
 - 当前“记忆分析”同步阻塞回答且依赖关键词；它应改为不影响本次回答的异步语义分类，并在回答后的独立记忆结果区完成自动保存或用户确认。
+- Task09 现场验证仍发现两处桌面缺陷：从记忆管理点击会话只加载数据却不切回对话视图；展开项目时遗留双列 CSS 会把项目名称挤压至不可见。
+- 普通“记住……”当前仍可能仅凭分类模型高置信度直接写入全局记忆；项目会话需要 project-first 硬边界。全局记忆也不足以承载必须对所有回答生效的最高优先级用户系统规则。
 
 ## 回滚点
 
@@ -45,6 +49,7 @@
 - 同一轮消息必须以用户消息和其 `parent_message_id` 指向的 assistant 消息组成稳定 turn；实时流和历史重载都不得仅依赖时间戳猜测顺序。
 - 当前同步关键词记忆分类替换为持久化异步语义分析；回答 SSE 不等待该任务，前端通过消息级结果接口恢复进度与结果。
 - 项目下拉框、侧栏常驻创建表单和常驻治理按钮替换为项目/会话平铺列表、悬停/聚焦菜单和弹窗创建流程。
+- 新增每个本地用户唯一的 `SystemRule`；它与普通长期记忆隔离，通过真正的 system role 注入所有面向用户的回答入口。
 
 ### 硬性禁止
 
@@ -79,6 +84,19 @@
 | `status` | enum | `active / archived / deleted` |
 | `memory_history_policy` | enum | `from_binding / include_prior_history` |
 | `created_at / updated_at` | UTC datetime | `updated_at` 用于最近会话排序 |
+
+### `SystemRule`
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| `owner_id` | str | 每个本地用户唯一，主键 |
+| `content` | str | 0–12,000 个 Unicode 字符；保存时不截断 |
+| `enabled` | bool | 默认 false；只有 true 且 content 非空时注入 |
+| `updated_at` | UTC datetime | 每次覆盖、启用、停用或清空时更新 |
+
+- 只保存当前值，不保存历史版本；编辑直接覆盖。
+- 停用保留内容；清空需二次确认，清空内容并停用，无法恢复。
+- `SystemRule` 不属于 `MemoryRecord`，不进入普通记忆搜索、筛选、召回预算或计数。
 
 ### `Message`
 
@@ -168,13 +186,19 @@
 
 ```text
 平台安全与系统约束
+→ 用户系统规则
 → 用户当前明确指令
 → 项目明确指令
 → 用户全局记忆
 → 项目长期记忆
+→ RAG 证据
 → 相关历史会话摘要
 ```
 
+- 平台规则与用户系统规则必须作为 system-role 消息传入模型；不得继续与用户问题拼成同一条 user-role 文本。平台规则不可由用户修改。
+- 用户系统规则覆盖普通聊天、项目聊天和 Agent 工具编排后的用户可见最终回答；不注入记忆分类、摘要、embedding、reranker 等后台模型任务。
+- 启用的系统规则读取失败时，本次回答以稳定 `SYSTEM_RULE_UNAVAILABLE` 失败，不能静默跳过；未启用或内容为空时正常回答。
+- 修改后的规则从下一条新消息开始对已有和新建会话生效；正在生成的回答使用发送时快照。
 - 未绑定项目的会话只能召回全局记忆；MVP 尚未开放全局记忆写入时等价于不召回长期记忆。
 - 单项目经验不得自动升格为全局记忆。跨项目重复只能产生候选，需用户确认。
 - 用户明确纠正时创建新记录并将旧记录标为 `superseded`；不原位覆盖审计证据。
@@ -191,6 +215,10 @@
 每条结果包含 `statement`、`scope`、`confidence` 和脱敏简短依据。回答生成不等待分析完成；记忆召回仍在回答前执行，因为它使用的是此前已经确认的记忆。
 
 - 只有用户明确要求记住、范围明确且高置信度的结果可自动保存。
+- 绑定项目的会话中，“记住……”及语义相近表达默认只能写入消息发送时的项目快照；只有用户原话明确表达“全局”“所有项目”“系统偏好”等全局意图时才允许保存为 global。
+- 未绑定会话中的普通记忆意图不能自动升格为 global；回答后进入待确认项，由用户从已有未归档项目中选择目标项目或忽略。只有原话明确表达全局意图时才可保存为 global。
+- 聊天中出现“设为系统规则”等表达不得直接修改 `SystemRule`；仅生成建议并预填系统规则编辑器，仍须用户显式保存。
+- 不提供 global 与 project 普通记忆之间的降级、迁移、复制或 scope 转换操作。
 - 推测偏好、低置信度、与已有记忆冲突或可能改变 scope 的结果进入 `pending_confirmation`。
 - 无需记忆时不产生结果项；分类失败不阻断回答且不假写记忆。
 - 分析默认使用独立可配置的小模型，当前默认 `qwen3.5:9b`；业务代码不得硬编码模型名。默认不可用时尝试模型库配置的其他小型分类模型，仍失败则终止本次分析，不占用回答模型。
@@ -209,6 +237,10 @@
 | `PATCH /api/conversations/{id}` | title/project/status/history policy | Conversation | 400/404/409 |
 | `DELETE /api/conversations/{id}` | id | 204；不联动记忆 | 404/409 |
 | `GET/POST/PATCH/DELETE /api/memories` | scope/project/filter/body | 记忆或列表 | 400/404/409 |
+| `GET /api/system-rule` | 当前 owner | 当前内容、enabled、updated_at | 503 |
+| `PUT /api/system-rule` | `content`、`enabled` | 覆盖后的 SystemRule | 400/503 |
+| `PATCH /api/system-rule` | `enabled` | 启用或停用后的 SystemRule | 400/409/503 |
+| `DELETE /api/system-rule` | 二次确认后的清空请求 | 204，内容清空且停用 | 503 |
 | `GET /api/messages/{id}/processing-steps` | message ID | 最终步骤列表 | 404 |
 | `GET /api/messages/{user_message_id}/memory-analysis` | cursor/limit（默认 10） | job 摘要、结果项、next_cursor | 400/404 |
 | `POST /api/memory-analysis/items/{item_id}/decision` | `save_project / save_global / ignore`、可选 project_id | 单项最终状态 | 400/404/409 |
@@ -255,6 +287,10 @@
 ## 项目与会话侧栏
 
 - 采用 ChatGPT 式项目树：只保留一个可整体折叠的“项目”标题；项目会话缩进显示在所属项目下，未绑定会话单独位于“最近会话”。
+- 顶部整体折叠控件显示为 `项目 ▼`，三角紧跟文字右侧；最右侧仍是 hover/focus 才显示的 `⋯ / ＋`。
+- 具体项目不再显示三角或平行四边形符号；使用 ResearchAgent 自绘的线框闭合/打开文件夹 SVG 表示收起/展开，不直接复制用户附件素材。
+- 点击文件夹或项目名称均展开/收起该项目；点击具体会话时，无论当前位于记忆管理或其他工作区，都必须立即切回对话视图、打开稳定 URL、高亮并展开所属项目。返回管理页时保留原筛选与滚动位置。
+- 项目容器必须为稳定单列，展开子会话不得挤压、隐藏或省略项目名称。
 - 标题右侧按 `⋯ / ＋` 排列，且只在 hover 或 `focus-within` 时显示；`⋯` 提供最近活动/名称排序和归档入口，`＋` 打开新建项目弹窗。
 - 项目一次只展开一个；箭头只控制展开，项目名称设置项目上下文。项目子会话每批 10 条，未绑定会话每批 20 条。
 - 项目内会话只显示单行标题并按最近活动倒序；绑定成功后立即从原位置移入目标项目下，不重复显示、不关闭当前聊天。
@@ -303,6 +339,7 @@
 
 - 不做多用户登录/权限、云同步、跨设备同步或团队共享项目。
 - Task02 不做手机端；手机端必须在 Task06 完成。
+- Task10 只实现桌面端系统规则治理和侧栏增量；手机端入口与布局由 Task06 复用同一数据/API 完成。
 - 不展示隐藏思维链，不保存完整 Prompt 或敏感运行参数。
 - 不把全部 raw 历史自动塞入上下文，不把普通陈述自动升格为长期记忆。
 - 不自动修改 Skill、代码或项目规则，不让记忆绕过工具权限和安全校验。
@@ -341,6 +378,15 @@
 4. 用户在侧栏底部打开会话菜单，浮层不会被列表或相邻区域裁剪，并可用 Esc 关闭。
 5. 用户新建、重命名、归档或删除项目/会话时只看到 ResearchAgent 自有弹窗，不出现浏览器原生输入框。
 
+### Task10 系统规则与桌面增量
+
+1. 用户在记忆管理页点击任一会话，页面立即切回该对话，URL、项目展开和高亮同步正确；返回记忆管理时恢复原筛选和滚动位置。
+2. 用户展开项目，项目名称始终可见；顶部显示 `项目 ▼`，具体项目以闭合/打开文件夹图标表示状态，名称左侧不再出现旧符号。
+3. 用户在已绑定项目会话中表达“记住……”或相近语义，系统默认保存到当前项目；只有明确说全局意图时才保存为全局。
+4. 用户在未绑定会话表达普通记忆意图，回答后从已有项目下拉框选择保存目标或忽略，不会自动升级为全局。
+5. 用户在全局记忆页顶部编辑并启用唯一系统规则；下一条任意用户可见回答以真正 system role 应用该规则，处理过程显示“已应用系统规则”。
+6. 用户可停用、覆盖或二次确认后清空系统规则；不显示历史版本，也不能从聊天中未经确认直接改写。
+
 ## 开发与验证策略
 
 - 开发中只跑精确测试；Task 收口跑受影响领域测试与静态检查。
@@ -362,6 +408,7 @@
 - 验证用户—回答 turn 在实时、历史、刷新和游标分页中顺序稳定；处理步骤无重复 ID、无永久 running、折叠真实有效。
 - 验证异步记忆分析不延迟回答和下一次发送；自动保存、重复、纠正、冲突确认、无限条目分批、partial checkpoint、项目快照和重启恢复正确。
 - 验证项目/会话平铺侧栏、悬停与键盘菜单、创建弹窗、两种排序、归档视图、会话移动和项目上下文新会话。
+- 验证管理页会话直达、项目名称不被挤压、两级折叠图标，以及 project-first 记忆分类、未绑定项目选择和系统规则真实 system-role 注入/失败关闭。
 - 验证知识库、论文检索/下载、文章任务和聊天回归；最终执行全量回归与真实部署。
 
 ## 执行配置
@@ -391,16 +438,18 @@
 | 03 | 完整管理、全局记忆与治理界面 | [`task-03-management-global-memory.md`](../plans/022/task-03-management-global-memory.md) | 02 | 已完成 |
 | 04 | 异步整理、摘要与跨会话召回 | [`task-04-memory-evolution-recall.md`](../plans/022/task-04-memory-evolution-recall.md) | 03 | 已完成 |
 | 05 | 项目文档、RAG、处理过程与桌面缺陷修复轮 | [`task-05-research-context-progress.md`](../plans/022/task-05-research-context-progress.md) | 04、Spec 变更确认 | 已完成（修复轮） |
-| 06 | 手机端适配 | [`task-06-mobile-experience.md`](../plans/022/task-06-mobile-experience.md) | 05 | 待执行 |
+| 06 | 手机端适配 | [`task-06-mobile-experience.md`](../plans/022/task-06-mobile-experience.md) | 05、09、10 | 待执行 |
 | 07 | 能力方法记忆与 Skill 改进建议 | [`task-07-capability-memory-proposals.md`](../plans/022/task-07-capability-memory-proposals.md) | 04 | 待执行 |
-| 08 | 最终评审、全量回归、部署与复盘 | [`task-08-review-regression-deploy.md`](../plans/022/task-08-review-regression-deploy.md) | 05、06、07、09 | 待执行 |
+| 08 | 最终评审、全量回归、部署与复盘 | [`task-08-review-regression-deploy.md`](../plans/022/task-08-review-regression-deploy.md) | 05、06、07、09、10 | 待执行 |
 | 09 | 桌面项目树与会话菜单重构 | [`task-09-desktop-project-tree-sidebar.md`](../plans/022/task-09-desktop-project-tree-sidebar.md) | 05、Task09 范围确认 | 已完成 |
+| 10 | 系统规则、项目优先记忆与桌面导航修复 | [`task-10-system-rule-project-memory-navigation.md`](../plans/022/task-10-system-rule-project-memory-navigation.md) | 09、Task10 增量确认 | 已完成 |
 
 ## 评审记录
 
 - 需求评审：`docs/sdd/reviews/022-task09-requirement-review.md`（Task09 增量 GO）
 - 技术评审：`docs/sdd/reviews/022-task09-tech-review.md`（Task09 增量 GO；项目排序/cursor 同键约束已冻结）
-- 验收评审：`docs/sdd/reviews/022-acceptance-review.md`（Task05 原轮次、修复轮与 Task09 定向验收均通过；Task09 全量回归仍留待 Task08）
+- 验收评审：`docs/sdd/reviews/022-acceptance-review.md`（Task05 原轮次、修复轮、Task09 与 Task10 定向验收均通过；全量回归仍留待 Task08）
+- Task10 增量需求评审：GO；技术评审：GO（T1–T6 复审通过）。
 
 ## 变更日志
 
@@ -412,3 +461,6 @@
 | 2026-09-11 | 用户 / 架构师（自身） | 根据三张现场截图完成 Grilling：前两张为错误证据，第三张 ChatGPT 项目树为结构参考；新增独立 Task09 承接项目树、菜单浮层、已有项目选择弹窗和归档视图，等待确认后实施。 |
 | 2026-09-11 | 用户 / 架构师（自身） | 用户确认并授权实施；临时以 Terra medium 完成需求/技术门禁，均为 GO。冻结 `last_activity_at DESC, project_id DESC` 与同键 cursor，开始由 Luna high 子 Agent 实现。 |
 | 2026-09-11 | 架构师（自身） | Task09 完成：单一桌面项目树、项目内会话、浮层菜单、已有项目选择弹窗、归档筛选和稳定活动排序已通过双端复审、定向验收及 Chromium smoke；Spec 保持实施中，后续 Task06/07/08 未提前启动。 |
+| 2026-09-11 | 用户 / 架构师（自身） | 通过 Grilling 确认 Task10 增量：管理页会话直达、项目名称布局与两级折叠图标、project-first 记忆写入，以及独立且无历史版本的最高优先级用户系统规则；Spec 退回待确认，先落盘不改业务代码。 |
+| 2026-09-11 | 用户 / 架构师（自身） | 用户明确要求继续开发 Task10；需求评审 GO、技术复审 GO，Task10 转实施中，按临时 Luna high 子 Agent 分派后端与前端实现。 |
+| 2026-09-11 | 架构师（自身） | Task10 完成：系统规则 CRUD/真正 system role/失败关闭、project-first 记忆、会话直达和项目树布局通过 reviewer GO、定向验收 PASS、HTTP 200 与 Chromium 无头 DOM smoke；Task06–Task08 未提前启动。 |

@@ -31,9 +31,10 @@ from .models import (
     ProcessingStep,
     Project,
     RawEvent,
+    SystemRule,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 EVOLUTION_LEASE_SECONDS = 300
 OWNER_ID = os.getenv("MEMORY_OWNER_ID", "local-user")
 _write_lock = threading.RLock()
@@ -49,6 +50,10 @@ ANALYSIS_DECISIONS = {"auto_saved", "pending_confirmation", "duplicate", "supers
 
 class LeaseLostError(RuntimeError):
     """Raised when a stale analysis worker attempts a durable write."""
+
+
+class SystemRuleUnavailableError(RuntimeError):
+    """Raised when the rule state cannot be determined safely."""
 
 
 def default_database_path() -> Path:
@@ -147,14 +152,29 @@ class MemoryRepository:
                 if current < 5:
                     self._migrate_v4_to_v5(connection)
                     connection.execute("INSERT INTO schema_version(version, applied_at) VALUES (?, ?)", (5, _now()))
+                    current = 5
                 elif not self._is_schema_v5(connection):
                     raise RuntimeError("incomplete memory schema v5")
                 if not self._is_schema_v5(connection):
                     raise RuntimeError("memory schema v5 validation failed")
+                if current < 6:
+                    self._migrate_v5_to_v6(connection)
+                    connection.execute("INSERT INTO schema_version(version, applied_at) VALUES (?, ?)", (6, _now()))
+                    current = 6
+                elif not self._is_schema_v6(connection):
+                    # v6 was briefly shipped with a nullable SQLite PRIMARY
+                    # KEY declaration. Repair only that exact legacy shape;
+                    # all other structural corruption remains fail-closed.
+                    if self._is_legacy_v6_shape(connection):
+                        self._repair_legacy_v6(connection)
+                    else:
+                        raise RuntimeError("incomplete memory schema v6")
+                if not self._is_schema_v6(connection):
+                    raise RuntimeError("memory schema v6 validation failed")
                 connection.execute("COMMIT")
         except Exception as error:
             connection.rollback()
-            raise RuntimeError("memory schema migration failed; startup is fail-closed") from error
+            raise SystemRuleUnavailableError("memory schema migration failed; startup is fail-closed") from error
         finally:
             connection.close()
 
@@ -425,6 +445,62 @@ class MemoryRepository:
         return {"lease_token", "lease_version"} <= columns
 
     @staticmethod
+    def _migrate_v5_to_v6(connection: sqlite3.Connection) -> None:
+        connection.execute("""CREATE TABLE IF NOT EXISTS system_rules (
+            owner_id TEXT NOT NULL PRIMARY KEY,
+            content TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0, 1)),
+            updated_at TEXT NOT NULL
+        )""")
+
+    @staticmethod
+    def _is_schema_v6(connection: sqlite3.Connection) -> bool:
+        rows = connection.execute("PRAGMA table_info(system_rules)").fetchall()
+        if {row["name"] for row in rows} != {"owner_id", "content", "enabled", "updated_at"}:
+            return False
+        by_name = {row["name"]: row for row in rows}
+        owner = by_name.get("owner_id")
+        content = by_name.get("content")
+        enabled = by_name.get("enabled")
+        updated = by_name.get("updated_at")
+        definition = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='system_rules'").fetchone()
+        sql = (definition["sql"] if definition else "").upper().replace(" ", "").replace("\n", "")
+        def default(row, expected: str) -> bool:
+            value = str(row["dflt_value"] or "").strip().upper().replace(" ", "")
+            return value in {expected, f"'{expected}'", f'"{expected}"'}
+        return bool(
+            owner and owner["type"].upper() == "TEXT" and owner["notnull"] == 1 and owner["pk"] == 1
+            and content and content["type"].upper() == "TEXT" and content["notnull"] == 1 and default(content, "''")
+            and enabled and enabled["type"].upper() == "INTEGER" and enabled["notnull"] == 1 and default(enabled, "0")
+            and updated and updated["type"].upper() == "TEXT" and updated["notnull"] == 1
+            and "CHECK(ENABLEDIN(0,1))" in sql
+        )
+
+    @staticmethod
+    def _is_legacy_v6_shape(connection: sqlite3.Connection) -> bool:
+        rows = connection.execute("PRAGMA table_info(system_rules)").fetchall()
+        if {row["name"] for row in rows} != {"owner_id", "content", "enabled", "updated_at"}:
+            return False
+        by_name = {row["name"]: row for row in rows}
+        sql_row = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='system_rules'").fetchone()
+        sql = (sql_row["sql"] if sql_row else "").upper().replace(" ", "").replace("\n", "")
+        return bool(
+            by_name["owner_id"]["type"].upper() == "TEXT" and by_name["owner_id"]["pk"] == 1
+            and by_name["owner_id"]["notnull"] == 0
+            and by_name["content"]["type"].upper() == "TEXT" and by_name["content"]["notnull"] == 1 and str(by_name["content"]["dflt_value"]).replace(" ", "") == "''"
+            and by_name["enabled"]["type"].upper() == "INTEGER" and by_name["enabled"]["notnull"] == 1 and str(by_name["enabled"]["dflt_value"]).replace(" ", "") == "0"
+            and by_name["updated_at"]["type"].upper() == "TEXT" and by_name["updated_at"]["notnull"] == 1
+            and "CHECK(ENABLEDIN(0,1))" in sql
+        )
+
+    @staticmethod
+    def _repair_legacy_v6(connection: sqlite3.Connection) -> None:
+        connection.execute("ALTER TABLE system_rules RENAME TO system_rules_legacy")
+        MemoryRepository._migrate_v5_to_v6(connection)
+        connection.execute("INSERT INTO system_rules(owner_id, content, enabled, updated_at) SELECT owner_id, content, enabled, updated_at FROM system_rules_legacy")
+        connection.execute("DROP TABLE system_rules_legacy")
+
+    @staticmethod
     def _project(row: sqlite3.Row) -> Project:
         columns = row.keys()
         last_activity_at = row["last_activity_at"] if "last_activity_at" in columns else row["updated_at"]
@@ -444,6 +520,51 @@ class MemoryRepository:
     @staticmethod
     def _memory(row: sqlite3.Row) -> MemoryRecord:
         return MemoryRecord(row["memory_id"], row["owner_id"], row["scope"], row["project_id"], row["category"], row["statement"], row["source_kind"], row["status"], float(row["confidence"]), row["supersedes_id"], _dt(row["created_at"]), _dt(row["updated_at"]), _dt(row["last_used_at"]))
+
+    @staticmethod
+    def _system_rule(row: sqlite3.Row) -> SystemRule:
+        return SystemRule(row["owner_id"], row["content"], bool(row["enabled"]), _dt(row["updated_at"]))
+
+    def get_system_rule(self, owner_id: str) -> SystemRule:
+        """Read one owner rule, failing closed when SQLite cannot answer."""
+        try:
+            with self.connection() as db:
+                row = db.execute("SELECT owner_id, content, enabled, updated_at FROM system_rules WHERE owner_id=?", (owner_id,)).fetchone()
+        except Exception as error:
+            raise SystemRuleUnavailableError("SYSTEM_RULE_UNAVAILABLE") from error
+        if not row:
+            return SystemRule(owner_id, "", False, datetime.now(timezone.utc))
+        return self._system_rule(row)
+
+    def upsert_system_rule(self, owner_id: str, content: str, enabled: bool) -> SystemRule:
+        if not isinstance(content, str) or len(content) > 12000:
+            raise ValueError("system rule content must be at most 12000 Unicode characters")
+        content = content.strip()
+        if enabled and not content:
+            raise ValueError("system rule cannot be enabled with empty content")
+        try:
+            with self.transaction() as db:
+                db.execute("""INSERT INTO system_rules(owner_id, content, enabled, updated_at) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(owner_id) DO UPDATE SET content=excluded.content, enabled=excluded.enabled, updated_at=excluded.updated_at""", (owner_id, content, int(bool(enabled)), _now()))
+        except ValueError:
+            raise
+        except Exception as error:
+            raise SystemRuleUnavailableError("SYSTEM_RULE_UNAVAILABLE") from error
+        return self.get_system_rule(owner_id)
+
+    def set_system_rule_enabled(self, owner_id: str, enabled: bool) -> SystemRule:
+        current = self.get_system_rule(owner_id)
+        if enabled and not current.content:
+            raise ValueError("system rule cannot be enabled with empty content")
+        return self.upsert_system_rule(owner_id, current.content, enabled)
+
+    def clear_system_rule(self, owner_id: str) -> None:
+        try:
+            with self.transaction() as db:
+                db.execute("""INSERT INTO system_rules(owner_id, content, enabled, updated_at) VALUES (?, '', 0, ?)
+                    ON CONFLICT(owner_id) DO UPDATE SET content='', enabled=0, updated_at=excluded.updated_at""", (owner_id, _now()))
+        except Exception as error:
+            raise SystemRuleUnavailableError("SYSTEM_RULE_UNAVAILABLE") from error
 
     @staticmethod
     def _analysis_job(row: sqlite3.Row) -> MemoryAnalysisJob:

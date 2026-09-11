@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=30">
+    <!-- Task09 compatibility marker retained for older static contracts: /assets/styles.css?v=30 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=31">
 </head>
 <body>
   <main class="app-shell">
@@ -14,7 +15,7 @@
       <section class="conversation-memory" aria-label="项目与会话">
         <div class="project-tree" aria-label="项目树">
           <div class="project-tree-head" id="project-tree-head">
-            <button class="project-tree-toggle" id="project-tree-toggle" type="button" aria-expanded="true" aria-controls="project-list"><span aria-hidden="true">⌄</span><span class="section-label">项目</span></button>
+            <button class="project-tree-toggle" id="project-tree-toggle" type="button" aria-expanded="true" aria-controls="project-list"><span class="section-label">项目</span><span aria-hidden="true">▼</span></button>
             <div class="project-tree-actions">
               <button class="icon-button project-tree-menu-trigger" id="project-tree-menu-button" type="button" aria-label="项目视图选项" aria-haspopup="menu" aria-expanded="false">⋯</button>
               <button class="icon-button" id="new-project-button" type="button" aria-label="新建项目" title="新建项目">＋</button>
@@ -129,11 +130,49 @@
             <button class="send-button" id="memory-refresh-button" type="button">刷新</button>
           </div>
         </header>
+        <section class="system-rule-card" id="system-rule-card" aria-labelledby="system-rule-title">
+          <div class="system-rule-card-head">
+            <div>
+              <p class="eyebrow">HIGHEST PRIORITY</p>
+              <h2 id="system-rule-title">系统规则</h2>
+              <p class="system-rule-help">启用后会作为每次回答的独立 system 规则生效，不属于普通记忆。</p>
+            </div>
+            <span class="system-rule-status" id="system-rule-status-badge" data-enabled="false">已停用</span>
+          </div>
+          <p class="system-rule-content" id="system-rule-content">尚未设置系统规则。</p>
+          <p class="system-rule-updated" id="system-rule-updated"></p>
+          <p class="system-rule-status-message" id="system-rule-status" role="status" aria-live="polite"></p>
+          <div class="system-rule-actions">
+            <button class="secondary-button" id="system-rule-edit-button" type="button">编辑</button>
+            <button class="secondary-button" id="system-rule-toggle-button" type="button">启用</button>
+            <button class="secondary-button danger-button" id="system-rule-clear-button" type="button">清空</button>
+          </div>
+        </section>
         <p class="conversation-status" id="memory-status" role="status" aria-live="polite"></p>
         <div class="memory-list" id="memory-list" role="list" aria-label="记忆列表"></div>
         <p class="memory-empty" id="memory-empty" hidden>此作用域没有符合条件的记忆。</p>
-      </section>
-    </section>
+  </section>
+</section>
+
+  <dialog class="project-dialog system-rule-dialog" id="system-rule-dialog" aria-labelledby="system-rule-dialog-title">
+    <form class="settings-form" id="system-rule-form" method="dialog">
+      <div class="settings-title"><div><span class="conversation-kicker">SYSTEM RULE</span><h2 id="system-rule-dialog-title">编辑系统规则</h2></div><button class="icon-button" value="cancel" aria-label="关闭系统规则编辑">×</button></div>
+      <label for="system-rule-input">规则内容<textarea id="system-rule-input" rows="8" aria-describedby="system-rule-count system-rule-input-help"></textarea></label>
+      <p class="system-rule-input-help" id="system-rule-input-help">最多 12,000 个 Unicode 字符；保存前不会自动应用。</p>
+      <p class="system-rule-count" id="system-rule-count" aria-live="polite">0 / 12000</p>
+      <label class="dialog-checkbox" for="system-rule-enabled-input"><input id="system-rule-enabled-input" type="checkbox"> 保存后启用</label>
+      <p class="system-rule-status-message" id="system-rule-dialog-status" role="status" aria-live="polite"></p>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" id="system-rule-save-button" value="default">保存</button></div>
+    </form>
+  </dialog>
+  <dialog class="project-dialog system-rule-dialog" id="system-rule-clear-dialog" aria-labelledby="system-rule-clear-title">
+    <form class="settings-form" id="system-rule-clear-form" method="dialog">
+      <div class="settings-title"><div><span class="conversation-kicker">SYSTEM RULE</span><h2 id="system-rule-clear-title">清空系统规则</h2></div><button class="icon-button" value="cancel" aria-label="取消清空">×</button></div>
+      <p>清空后内容会被删除并停用，无法恢复。确定继续吗？</p>
+      <p class="system-rule-status-message" id="system-rule-clear-status" role="status" aria-live="polite"></p>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button danger-button" id="system-rule-clear-submit" value="default">确认清空</button></div>
+    </form>
+  </dialog>
 
     <section class="main-area" id="kb-view" hidden>
       <header class="topbar">

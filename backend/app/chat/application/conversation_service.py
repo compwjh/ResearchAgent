@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass
 from typing import Optional
 
-from backend.app.chat.application.chat_runner import run_chat
+from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
 from backend.app.platform.config import MEMORY_ANALYSIS_MODEL
 from backend.app.memory.models import MemoryRecord
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
@@ -24,6 +24,36 @@ class MemoryIntent:
     current_task: str = ""
     rationale_summary: str = ""
     classification_error: Optional[str] = None
+
+
+def is_system_rule_intent(text: str) -> bool:
+    value = " ".join((text or "").casefold().split())
+    return any(marker in value for marker in ("设为系统规则", "设成系统规则", "system rule", "system instruction"))
+
+
+def has_explicit_global_intent(text: str) -> bool:
+    """Authorize global scope from the original user wording only.
+
+    Classifier scope/confidence and client suggested scope are never used here.
+    "设为系统规则" is deliberately excluded: it is a suggestion for the
+    separate SystemRule editor, not ordinary memory authorization.
+    """
+    value = " ".join((text or "").casefold().split())
+    if not value or is_system_rule_intent(value):
+        return False
+    chinese_memory = any(marker in value for marker in ("记住", "偏好", "遵守", "以后"))
+    chinese_global = any(marker in value for marker in ("全局", "所有项目", "所有对话", "所有会话", "系统偏好"))
+    global_action = any(marker in value for marker in ("所有对话都", "所有会话都", "所有项目都", "每个项目都")) and any(marker in value for marker in ("使用", "遵守", "回答", "采用", "用"))
+    english = (
+        "remember this as a global preference" in value
+        or "make this a preference for every project" in value
+        or ("global" in value and any(marker in value for marker in ("remember", "preference", "every project")))
+    )
+    return (chinese_memory and chinese_global) or global_action or english
+
+
+# Readable alias for API/tests that refer to the contract wording.
+is_explicit_global_intent = has_explicit_global_intent
 
 
 def classify_memory_intent(text: str, *, model: Optional[str] = None) -> MemoryIntent:
@@ -160,6 +190,24 @@ def memory_prompt(memories: list[MemoryRecord], summaries=None, *, summary_budge
     return "\n".join(lines)
 
 
+def compose_chat_messages(
+    question: str,
+    history,
+    memories: list[MemoryRecord],
+    project_instructions: Optional[str] = None,
+    summaries=None,
+    *,
+    rag_hits=None,
+    system_rule: Optional[str] = None,
+) -> list[dict[str, str]]:
+    """Build the one role-aware payload used by all user-facing chat paths."""
+    advisory = compose_chat_prompt(
+        question, [], memories, project_instructions, summaries,
+        rag_hits=rag_hits, include_question=False,
+    )
+    return build_role_aware_messages(question, system_rule=system_rule, advisory=advisory, history=reversed(history or []))
+
+
 def _bounded_text(value: str | None, budget: int) -> str:
     return str(value or "")[: max(0, int(budget))]
 
@@ -198,6 +246,7 @@ def compose_chat_prompt(
     rag_hits=None,
     rag_budget_chars: int = 6000,
     history_budget_chars: int = 6000,
+    include_question: bool = True,
 ) -> str:
     sections = []
     if project_instructions and project_instructions.strip():
@@ -205,7 +254,7 @@ def compose_chat_prompt(
     remembered = memory_prompt(memories, summaries, summary_budget_chars=summary_budget_chars)
     if remembered:
         sections.append(remembered)
-    prior = [message for message in reversed(history or []) if message.role in {"user", "assistant"}]
+    prior = [message for message in reversed(history or []) if message.role in {"user", "assistant"} and message.content]
     if rag_hits:
         rag_context = _rag_prompt_context(rag_hits, rag_budget_chars)
         if rag_context:
@@ -213,7 +262,8 @@ def compose_chat_prompt(
     if prior:
         history_text = "\n".join(f"{message.role}: {_bounded_text(message.content, 2000)}" for message in prior[-20:])
         sections.append("会话历史：\n" + _bounded_text(history_text, history_budget_chars))
-    sections.append("用户当前问题：\n" + question)
+    if include_question:
+        sections.append("用户当前问题：\n" + question)
     return "\n\n".join(sections)
 
 
@@ -268,7 +318,12 @@ class MemoryEvolutionService:
             return
         if event.event_kind == "tool_failure" and not payload.get("verified"):
             return
+        source_text = str(payload.get("source_text") or payload.get("content") or statement)
         scope = payload.get("scope", "project")
+        if scope == "global" and not has_explicit_global_intent(source_text):
+            scope = "project" if conversation.project_id else "pending"
+        if is_system_rule_intent(source_text) or scope == "pending":
+            return
         project_id = conversation.project_id if scope == "project" else None
         if scope == "project" and not project_id:
             return
@@ -468,7 +523,14 @@ class MemoryAnalysisWorker:
         return next((memory for memory in active if likely_conflict(memory)), None)
 
     def _decide_candidate(self, job, conversation, candidate: MemoryIntent, source_text: str) -> tuple[str, Optional[str]]:
-        scope = candidate.scope if candidate.scope in {"global", "project"} else "project"
+        # Scope is an authorization decision derived from the original text,
+        # never from the classifier's suggested scope.
+        explicit_global = has_explicit_global_intent(source_text)
+        if is_system_rule_intent(source_text):
+            return "pending_confirmation", None
+        scope = "global" if explicit_global else ("project" if job.project_id_snapshot else "pending")
+        if scope == "pending":
+            return "pending_confirmation", None
         project_id = job.project_id_snapshot if scope == "project" else None
         if scope == "project" and (not project_id or not self.repository.get_project(project_id, self.owner_id)):
             return "pending_confirmation", None
@@ -553,16 +615,17 @@ class MemoryAnalysisWorker:
                                     self.owner_id,
                                     conversation.conversation_id,
                                     event_kind,
-                                    {"statement": candidate.statement or message.content, "scope": candidate.scope, "confidence": candidate.confidence},
+                                    {"statement": candidate.statement or message.content, "source_text": message.content, "scope": candidate.scope, "confidence": candidate.confidence},
                                     message_id=job.user_message_id,
                                     idempotency_key=f"analysis:{job.analysis_id}:{offset}:{candidate.statement}",
                                 )
                             except Exception:
                                 pass
                         decision, memory_id = self._decide_candidate(job, conversation, candidate, message.content)
+                        suggested_scope = "global" if has_explicit_global_intent(message.content) else ("project" if job.project_id_snapshot else candidate.scope if candidate.scope in {"global", "project"} else "project")
                         self.repository.create_memory_analysis_item(
                             analysis_id, self.owner_id, candidate.statement or message.content,
-                            candidate.scope if candidate.scope in {"global", "project"} else "project",
+                            suggested_scope,
                             candidate.confidence, candidate.rationale_summary or ("明确表达" if candidate.intent == "explicit" else "需要用户确认"),
                             decision_status=decision, memory_id=memory_id,
                             lease_token=lease_token, lease_version=lease_version,
@@ -574,7 +637,7 @@ class MemoryAnalysisWorker:
                         try:
                             self.repository.create_memory_analysis_item(
                                 analysis_id, self.owner_id, candidate.statement or message.content,
-                                candidate.scope if candidate.scope in {"global", "project"} else "project",
+                                "global" if has_explicit_global_intent(message.content) else ("project" if job.project_id_snapshot else "project"),
                                 candidate.confidence, "分析结果未能保存", decision_status="failed",
                                 lease_token=lease_token, lease_version=lease_version,
                             )
