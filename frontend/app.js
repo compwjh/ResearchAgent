@@ -152,7 +152,7 @@ function setConversationRetryStatus(text, retry) {
   button.textContent = '重试';
   button.addEventListener('click', () => {
     button.disabled = true;
-    setConversationStatus('正在重试…');
+    setConversationStatus('正在重试…', 'loading');
     retry();
   });
   conversationStatus.append(document.createTextNode(' '), button);
@@ -357,11 +357,25 @@ async function conversationFetch(url, options = {}) {
   return data;
 }
 
+const CONVERSATION_STATUS_AUTO_CLEAR_MS = 4000;
+const CONVERSATION_STATUS_PERSISTENT_STATES = new Set(['error', 'loading']);
+let conversationStatusTimer = null;
+
 function setConversationStatus(text, state = '') {
   if (!conversationStatus) return;
+  if (conversationStatusTimer) { clearTimeout(conversationStatusTimer); conversationStatusTimer = null; }
   conversationStatus.textContent = text || '';
   if (state) conversationStatus.dataset.state = state;
   else delete conversationStatus.dataset.state;
+  const message = text || '';
+  if (message && !CONVERSATION_STATUS_PERSISTENT_STATES.has(state)) {
+    conversationStatusTimer = setTimeout(() => {
+      conversationStatusTimer = null;
+      if (!conversationStatus) return;
+      conversationStatus.textContent = '';
+      delete conversationStatus.dataset.state;
+    }, CONVERSATION_STATUS_AUTO_CLEAR_MS);
+  }
 }
 
 function conversationTime(item) {
@@ -917,7 +931,7 @@ function renderProjectList(projects) {
     head.append(main, menu); row.appendChild(head);
     const child = document.createElement('div'); child.className = 'project-conversation-list'; child.dataset.projectId = project.project_id; child.hidden = projectState.expandedProjectId !== project.project_id;
     const entry = projectState.conversations.get(project.project_id);
-    if (entry?.items?.length) renderConversationRows(entry.items, child, `project:${project.project_id}`); else if (entry?.loaded && !entry.items.length) { const empty = document.createElement('button'); empty.type = 'button'; empty.className = 'project-empty-action'; empty.textContent = '＋ 在此项目中新建对话'; empty.addEventListener('click', () => selectProjectContext(project.project_id)); child.appendChild(empty); }
+    if (entry?.items?.length) renderConversationRows(entry.items, child, `project:${project.project_id}`); else if (entry?.loaded && !entry.items.length) { const empty = document.createElement('button'); empty.type = 'button'; empty.className = 'project-empty-action'; empty.textContent = '＋ 在此项目中新建对话'; empty.addEventListener('click', () => { selectProjectContext(project.project_id); beginDraft(); }); child.appendChild(empty); }
     if (entry?.cursor) { const more = document.createElement('button'); more.type = 'button'; more.className = 'project-load-more'; more.textContent = '查看更多'; more.addEventListener('click', () => loadProjectConversations(project.project_id, true)); child.appendChild(more); }
     row.appendChild(child); projectList.appendChild(row);
   }
@@ -1067,7 +1081,7 @@ async function openConversation(conversationId, { replace = false } = {}) {
   conversationState.openToken = openToken;
   const isCurrent = () => conversationState.openToken === openToken && conversationState.streamGeneration === openGeneration && conversationState.conversationId === conversationId;
   conversationState.conversationId = conversationId; conversationState.messageCursor = null; updateConversationUrl(conversationId, replace);
-  setConversationStatus('正在加载会话…');
+  setConversationStatus('正在加载会话…', 'loading');
   try {
     const scopes = [null, ...projectState.items.map((item) => item.project_id).filter(Boolean)];
     let found = null;
@@ -1115,7 +1129,7 @@ async function createProject(event) {
   try {
     const project = await conversationFetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
     if (projectDialogName) projectDialogName.value = ''; if (projectDialog?.open) projectDialog.close();
-    conversationState.draftProjectId = project.project_id; projectState.expandedProjectId = project.project_id; await loadProjects(); beginDraft(); setConversationStatus(`已创建项目：${project.name || name}`);
+    conversationState.draftProjectId = project.project_id; projectState.expandedProjectId = project.project_id; await loadProjects(); beginDraft();
   } catch (error) { setConversationStatus(`项目创建失败：${error.message}`, 'error'); }
 }
 

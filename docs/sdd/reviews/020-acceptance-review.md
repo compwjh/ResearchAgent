@@ -233,3 +233,243 @@ function beginDraft() {
 | DOM 文案（「新会话」0 命中） | PASS |
 | XSS / 副作用（改动仅常量文案与 `showView` 调用，无 `innerHTML` 拼接） | PASS |
 | 总体 | **READY** |
+
+---
+
+### 第 5 批 BUG-07 验收（2026-09-12）
+
+验收人：`frontend-tester`（仅前端单端回归，未改 `frontend/**`、`backend/**` 任何代码，未跑后端 pytest）。
+代码库根目录：`/Users/wjh/ResearchAgent_workbuddy/ResearchAgent`。
+
+#### 验收项 1：JS 语法检查
+
+命令：
+
+```bash
+/Users/wjh/.workbuddy-ai/binaries/node/versions/22.22.2/bin/node --check frontend/app.js; echo "EXIT=$?"
+```
+
+真实输出：
+
+```
+EXIT=0
+```
+
+（无任何 stderr 输出）→ **PASS**
+
+#### 验收项 2：前端契约 pytest
+
+命令：
+
+```bash
+.venv/bin/python -m pytest tests/test_frontend_management_contract.py tests/test_frontend_task10_system_rule_contract.py tests/test_frontend_paper_contract.py -q
+```
+
+真实输出：
+
+```
+...................................                                      [100%]
+35 passed in 0.11s
+```
+
+**35 passed / 0 failed / 0 error** → **PASS**
+
+交叉验证（额外，非清单要求，仍属前端契约范围）：
+
+```bash
+.venv/bin/python -m pytest tests/ -q -k frontend
+```
+
+真实输出：
+
+```
+84 passed, 1211 deselected, 5 warnings in 8.28s
+```
+
+说明：额外覆盖 `tests/test_frontend_conversation_contract.py`（其 `148` 行含 `assert "if (!isCurrent()) setConversationStatus" not in open_fn` 这一与 `setConversationStatus` 直接相关的回归断言），仍全绿，说明本次改动未触碰该回归约束。→ **PASS**
+
+#### 验收项 3：确认「已创建项目」文案已移除
+
+命令：
+
+```bash
+grep -n "已创建项目" frontend/app.js; echo "grep_exit=$?"
+```
+
+真实输出：
+
+```
+=== grep 已创建项目 ===
+grep_exit=1
+```
+
+**0 命中**（exit 1 即无匹配）→ **PASS**
+
+配套核对 `createProject()` 主体（`frontend/app.js:1126-1134`）：
+
+```js
+async function createProject(event) {
+  if (event.submitter?.value === 'cancel') { event.preventDefault(); projectDialog?.close(); return; }
+  event?.preventDefault(); const name = projectDialogName?.value.trim(); if (!name) return;
+  try {
+    const project = await conversationFetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    if (projectDialogName) projectDialogName.value = ''; if (projectDialog?.open) projectDialog.close();
+    conversationState.draftProjectId = project.project_id; projectState.expandedProjectId = project.project_id; await loadProjects(); beginDraft();
+  } catch (error) { setConversationStatus(`项目创建失败：${error.message}`, 'error'); }
+}
+```
+
+`app.js:1132` 成功路径已无 `setConversationStatus`，且 `beginDraft()` **保留**；失败路径 `app.js:1133` 仍以 `state='error'` 报错。与声明一致 → **PASS**
+
+#### 验收项 4：自动清除逻辑与 error/loading 豁免
+
+命令：
+
+```bash
+sed -n '360,378p' frontend/app.js
+```
+
+真实输出（`frontend/app.js:360-378`）：
+
+```js
+const CONVERSATION_STATUS_AUTO_CLEAR_MS = 4000;
+const CONVERSATION_STATUS_PERSISTENT_STATES = new Set(['error', 'loading']);
+let conversationStatusTimer = null;
+
+function setConversationStatus(text, state = '') {
+  if (!conversationStatus) return;
+  if (conversationStatusTimer) { clearTimeout(conversationStatusTimer); conversationStatusTimer = null; }
+  conversationStatus.textContent = text || '';
+  if (state) conversationStatus.dataset.state = state;
+  else delete conversationStatus.dataset.state;
+  const message = text || '';
+  if (message && !CONVERSATION_STATUS_PERSISTENT_STATES.has(state)) {
+    conversationStatusTimer = setTimeout(() => {
+      conversationStatusTimer = null;
+      if (!conversationStatus) return;
+      conversationStatus.textContent = '';
+      delete conversationStatus.dataset.state;
+    }, CONVERSATION_STATUS_AUTO_CLEAR_MS);
+  }
+```
+
+逐条核对声明：
+
+| 声明项 | 实测 | 结果 |
+|---|---|---|
+| 常量 `CONVERSATION_STATUS_AUTO_CLEAR_MS = 4000` | `app.js:360` | PASS |
+| 豁免集合 `new Set(['error','loading'])` | `app.js:361` | PASS |
+| 模块级 timer 句柄 `conversationStatusTimer` | `app.js:362` | PASS |
+| 每次调用先 `clearTimeout` 取消上一个 | `app.js:366` 无条件 `clearTimeout` + 句柄置 null | PASS |
+| 仅当 state 非 error/loading **且**文本非空才排 4 秒定时器 | `app.js:371` `if (message && !...has(state))` | PASS |
+| 到点清空文本并删 `data-state` | `app.js:375-376` | PASS |
+
+→ **PASS**
+
+#### 验收项 5：「在此项目中新建对话」按钮回调
+
+命令：
+
+```bash
+sed -n '930,934p' frontend/app.js
+```
+
+真实输出（`frontend/app.js:933`，为单行长语句，摘取相关片段）：
+
+```js
+if (entry?.items?.length) renderConversationRows(entry.items, child, `project:${project.project_id}`);
+else if (entry?.loaded && !entry.items.length) {
+  const empty = document.createElement('button');
+  empty.type = 'button';
+  empty.className = 'project-empty-action';
+  empty.textContent = '＋ 在此项目中新建对话';
+  empty.addEventListener('click', () => { selectProjectContext(project.project_id); beginDraft(); });
+  child.appendChild(empty);
+}
+```
+
+回调内**同时含** `selectProjectContext(project.project_id)` 与 `beginDraft()`，顺序为先绑定项目上下文、再起新草稿 → **PASS**
+
+#### 验收项 6：`setConversationStatus(` 全量调用点依赖分析
+
+命令：
+
+```bash
+grep -n "setConversationStatus(" frontend/app.js
+```
+
+真实输出（16 处，含 1 处定义）：
+
+```
+155:    setConversationStatus('正在重试…');
+364:function setConversationStatus(text, state = '') {
+749:      if (!selectedProjectId) { setConversationStatus('请选择一个已有 active 项目，再保存项目记忆', 'error'); state.deciding.delete(itemId); return; }
+767:      if (!selectedProjectId) { setConversationStatus('请选择一个已有 active 项目，再保存项目记忆', 'error'); return; }
+775:  } catch (error) { setConversationStatus(`批量记忆决策失败：${error.message}`, 'error'); }
+951:  catch (error) { setConversationStatus(`项目会话加载失败：${error.message}`, 'error'); } finally { entry.loading = false; }
+959:  if (action === 'move-conversation') { ... if (!conversationActionProject.options.length) { setConversationStatus('没有可用的目标项目', 'error'); return; } }
+981:  ... setConversationStatus(targetProjectId ? '会话已移动到项目' : '会话已移出项目');
+987:  catch (error) { if (!guard || guard()) setConversationStatus(`最近会话加载失败：${error.message}`, 'error'); } finally { ... }
+990:async function loadProjects() { try { ... } catch (error) { setConversationStatus(`项目列表加载失败：${error.message}`, 'error'); } }
+1084:  setConversationStatus('正在加载会话…');
+1109:    setConversationStatus('');
+1112:    setConversationStatus(`会话打开失败：${error.message}`, 'error');
+1133:  } catch (error) { setConversationStatus(`项目创建失败：${error.message}`, 'error'); }
+1169:      ... setConversationStatus(action === 'rename-project' ? '项目已重命名' : '会话已重命名');
+1185:      ... setConversationStatus(action === 'project-delete' ? '项目已删除；文档原件仍保留' : '会话已删除；记忆未联动删除');
+1188:      ... setConversationStatus(nextStatus === 'archived' ? '已归档' : '已恢复');
+1191:  } catch (error) { setConversationStatus(`操作失败：${error.message}`, 'error'); }
+```
+
+分类结论：
+
+**A. `state='error'` 的 10 处 —— 全部被豁免，行为零变化**（749、767、775、951、959、987、990、1112、1133、1191）
+这是本次最关键的一类：报错文案命中 `CONVERSATION_STATUS_PERSISTENT_STATES`，**不排定时器**，与改动前一样常驻不消失。用户特别关注的"报错类调用点是否受影响"——**未受影响，无回归**。其中 `app.js:1133` 正是 `createProject()` 的失败分支，仍会持久显示「项目创建失败：…」。
+
+**B. 过程/成功提示 6 处 —— 4 秒自动清除，属预期改动目标**（981、1169、1185、1188、155、1084）
+均为操作性反馈（移动/重命名/删除/归档/重试中/加载中），自动消失正是 BUG-07 的修复意图。**无一处依赖"提示常驻不消失"**。
+
+**C. 空文本调用 1 处**（1109 `setConversationStatus('')`）
+`message` 为空 → 不排定时器，仅清空文本与 `data-state`，语义正确。
+
+**D. 绕过 `setConversationStatus` 的旁路写法 —— 均不受影响**
+- `app.js:145` `setConversationRetryStatus()`：用 `replaceChildren` 直接写入并 append 重试按钮，**不调用** `setConversationStatus`，无定时器，重试文案与重试按钮照常常驻。
+- `app.js:1016`、`app.js:1054`：直接 `conversationStatus.dataset.state = 'error'`，不经函数，无定时器。
+
+→ **PASS（无任何调用点依赖旧常驻行为）**
+
+#### 额外静态核对（frontend-patterns 要求项）
+
+| 检查项 | 命令/位置 | 结果 |
+|---|---|---|
+| 资源版本号 | `frontend/index.html:8` `/assets/styles.css?v=33`、`index.html:492` `/assets/app.js?v=34` | PASS（`?v=34` 沿用第 4 批已升级版本，本批在 `?v=34` 生命周期内，与上批一致） |
+| DOM 契约（class 存在） | `.project-empty-action` 由 `app.js:933` 渲染；`styles.css` 侧类名为既有类名，未新增 CSS | PASS |
+| XSS | 改动区域仅 `textContent` / 常量赋值，无 `innerHTML` 拼接用户输入 | PASS |
+| `data-state` 读取方 | `styles.css:47` `.conversation-status[data-state="error"] { color: #c0392b; }`；自动清除时同步 `delete dataset.state`，错误态红色样式不会残留 | PASS |
+
+#### 对既有 Playwright 运行时验证的复核确认
+
+确认用户已完成的实跑结论（`http://127.0.0.1:8300`，Chromium，8 项 PASS）：创建项目后 `#conversation-status` 为空且不含「已创建项目」；项目进入侧边栏；`.project-empty-action` 已渲染；切模型库视图后 `#chat.hidden=true`；点「在此项目中新建对话」后 `#chat.hidden=false` / `#models-view.hidden=true` / `activeNav=['chat']`；注入普通文案 4 秒后自动清空；`setConversationStatus('…','error')` 4 秒后仍保留；`page_errors=[]`。
+该运行时结果与本轮 6 项静态/契约结论**完全一致**（尤其与验收项 4 的豁免分支、验收项 5 的回调改动互相印证），本次未重复执行。测试项目已通过 API 删除清理，库内仅剩原有 `AI Agent`，无残留脏数据。
+
+#### 结论
+
+**通过**。6 项验收全部 PASS，无 P0/P1 问题，无遗留阻塞项。
+
+| 维度 | 结果 |
+|---|---|
+| Syntax（`node --check`） | PASS（EXIT=0） |
+| Contract（前端契约 pytest） | PASS（35 passed / 0 failed；全量前端 84 passed / 0 failed） |
+| 改动 1：删除「已创建项目」提示 | PASS（0 命中，`beginDraft()` 保留） |
+| 改动 2：4 秒自动清除 + error/loading 豁免 | PASS（`app.js:360-378`，含 `clearTimeout` 抢占） |
+| 改动 3：新建对话按钮回调 | PASS（`app.js:933` 同时含 `selectProjectContext` 与 `beginDraft`） |
+| 调用点依赖分析 | PASS（10 处 error 全部豁免，无一处依赖旧常驻行为） |
+| Version（`?v=34`） | PASS |
+| XSS / 副作用 | PASS |
+| 总体 | **READY** |
+
+#### 观察项（非阻塞，P2，无需本批修复）
+
+`frontend/app.js:155`「正在重试…」与 `frontend/app.js:1084`「正在加载会话…」语义上属于进行中（loading）状态，但调用时传的是默认 `state=''`，因此**会被 4 秒定时器清除**。若重试/加载耗时超过 4 秒，这两条进行中文案会先于操作完成而消失。
+期望行为：这两处应传 `state='loading'`——`CONVERSATION_STATUS_PERSISTENT_STATES`（`app.js:361`）已包含 `'loading'` 豁免，但目前**无任何调用点使用** `'loading'`（16 个调用点中 10 个 `'error'`、6 个 `''`），该豁免分支实为预留的死代码。
+影响面：仅为观感（文案提前消失），不影响功能；两类操作成功后分别由 `app.js:1109` `setConversationStatus('')` 或后续 error 分支接管，不存在状态错乱。建议后续批次顺手补齐，不阻塞 BUG-07 验收。
