@@ -11,12 +11,9 @@ STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 
 def test_management_dom_contract_is_present() -> None:
     for element_id in (
-        "project-rename-button",
-        "project-archive-button",
-        "project-delete-button",
-        "conversation-rename-button",
-        "conversation-archive-button",
-        "conversation-delete-button",
+        "project-tree-menu-button",
+        "conversation-action-dialog",
+        "conversation-confirm-dialog",
         "memory-view",
         "memory-scope-select",
         "memory-project-select",
@@ -69,8 +66,8 @@ def test_governance_renderers_use_safe_text_boundaries() -> None:
 
 
 def test_task03_keeps_static_asset_versions_and_scoped_css() -> None:
-    assert "/assets/app.js?v=29" in INDEX
-    assert "/assets/styles.css?v=29" in INDEX
+    assert "/assets/app.js?v=31" in INDEX
+    assert "/assets/styles.css?v=30" in INDEX
     assert "#memory-view" in STYLES
     assert ".memory-item" in STYLES
 

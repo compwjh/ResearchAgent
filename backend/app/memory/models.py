@@ -12,6 +12,9 @@ class Project:
     status: str
     created_at: datetime
     updated_at: datetime
+    # Read-only list projection.  It is not persisted on the projects table
+    # and defaults to the project's own update time for point reads/writes.
+    last_activity_at: Optional[datetime] = None
 
 
 @dataclass(frozen=True)

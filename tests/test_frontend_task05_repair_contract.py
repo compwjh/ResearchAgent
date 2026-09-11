@@ -47,25 +47,25 @@ def test_async_memory_analysis_contract_is_non_blocking_and_paginated() -> None:
 
 
 def test_flat_sidebar_is_keyboard_reachable_and_versioned() -> None:
-    for element_id in ("project-list", "project-sort-button", "project-dialog", "project-dialog-form", "conversation-archived-button"):
+    for element_id in ("project-list", "project-tree-menu-button", "project-dialog", "project-dialog-form", "conversation-archived-button"):
         assert f'id="{element_id}"' in INDEX
     assert "conversation_project_sort" in APP
     assert "focus-within" in STYLES
-    assert "/assets/app.js?v=29" in INDEX
-    assert "/assets/styles.css?v=29" in INDEX
+    assert "/assets/app.js?v=31" in INDEX
+    assert "/assets/styles.css?v=30" in INDEX
     assert ".conversation-actions { display: none" in STYLES
     assert "item.click();" in APP
 
 
 def test_project_selection_never_moves_an_open_conversation() -> None:
     start = APP.index("function selectProjectContext")
-    end = APP.index("async function renameProjectById", start)
+    end = APP.index("async function loadProjectConversations", start)
     selector = APP[start:end]
     assert "moveConversation(" not in selector
-    assert "loadConversationList();" in selector
+    assert "renderProjectList(projectState.items)" in selector
     assert "conversation-item-menu" in APP
-    assert "aria-expanded" in APP[APP.index("function renderConversationList") : APP.index("async function renameConversationById")]
-    move_start = APP.index("async function moveConversationById")
+    assert "aria-expanded" in APP[APP.index("function renderConversationRow") : APP.index("function renderProjectList")]
+    move_start = APP.index("async function moveConversation")
     move_end = APP.index("async function loadConversationList", move_start)
     move_fn = APP[move_start:move_end]
     assert "confirm_move" in move_fn

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=29">
+    <link rel="stylesheet" href="/assets/styles.css?v=30">
 </head>
 <body>
   <main class="app-shell">
@@ -12,40 +12,18 @@
       <div class="brand"><span class="brand-mark">R</span><span>ResearchAgent</span></div>
       <button class="new-chat" type="button"><span class="plus">+</span> 新建对话</button>
       <section class="conversation-memory" aria-label="项目与会话">
-        <div class="project-switcher">
-          <label class="section-label" for="project-select">项目</label>
-          <div class="project-select-row">
-            <select id="project-select" aria-label="选择项目"><option value="">未绑定项目</option></select>
-            <button class="icon-button" id="new-project-button" type="button" aria-label="新建项目" title="新建项目">＋</button>
-          </div>
-          <div class="governance-actions" aria-label="项目管理">
-            <button class="secondary-button" id="project-rename-button" type="button">重命名</button>
-            <button class="secondary-button" id="project-archive-button" type="button">归档</button>
-            <button class="secondary-button danger-button" id="project-delete-button" type="button">删除</button>
-          </div>
-        </div>
-        <div class="flat-projects" aria-label="项目列表">
-          <div class="flat-list-head">
-            <span>项目</span>
-            <div class="flat-list-head-actions">
-              <button class="icon-button" id="new-project-button-flat" type="button" aria-label="新建项目" title="新建项目">＋</button>
-              <button class="icon-button" id="project-sort-button" type="button" aria-label="项目排序" aria-expanded="false">最近更新</button>
-              <button class="icon-button" id="project-archived-button" type="button">归档项目</button>
+        <div class="project-tree" aria-label="项目树">
+          <div class="project-tree-head" id="project-tree-head">
+            <button class="project-tree-toggle" id="project-tree-toggle" type="button" aria-expanded="true" aria-controls="project-list"><span aria-hidden="true">⌄</span><span class="section-label">项目</span></button>
+            <div class="project-tree-actions">
+              <button class="icon-button project-tree-menu-trigger" id="project-tree-menu-button" type="button" aria-label="项目视图选项" aria-haspopup="menu" aria-expanded="false">⋯</button>
+              <button class="icon-button" id="new-project-button" type="button" aria-label="新建项目" title="新建项目">＋</button>
             </div>
-          </div>
-          <div id="project-sort-menu" class="project-sort-menu" hidden>
-            <button type="button" data-project-sort="recent">最近更新</button>
-            <button type="button" data-project-sort="name">名称 A–Z</button>
           </div>
           <div class="project-list" id="project-list" role="list" aria-label="项目列表"></div>
         </div>
-        <form id="new-project-form" class="new-project-form" hidden>
-          <label for="project-name-input">项目名称</label>
-          <input id="project-name-input" maxlength="120" required placeholder="例如：记忆测试">
-          <div class="new-project-actions"><button class="secondary-button" id="cancel-project-button" type="button">取消</button><button class="send-button" type="submit">创建</button></div>
-        </form>
         <p class="conversation-status" id="conversation-status" role="status" aria-live="polite"></p>
-        <div class="conversation-list-head"><span>最近会话</span><div class="conversation-list-head-actions"><span class="conversation-project-badge" id="conversation-project-badge">未绑定</span><button class="icon-button" id="conversation-archived-button" type="button">归档会话</button></div></div>
+        <div class="conversation-list-head" id="recent-conversations-head"><span>最近会话</span><button class="icon-button conversation-list-menu-trigger" id="conversation-archived-button" type="button" aria-label="最近会话选项" aria-haspopup="menu" aria-expanded="false">⋯</button></div>
         <div class="conversation-list" id="conversation-list" role="listbox" aria-label="项目会话列表"></div>
         <button class="load-older-messages" id="load-older-messages" type="button" hidden>加载更早消息</button>
         <p class="conversation-memory-status" id="conversation-memory-status" role="status" aria-live="polite"></p>
@@ -89,11 +67,6 @@
               <select id="model-select" disabled><option>加载中...</option></select>
             </label>
             <span class="chat-state">新会话</span>
-            <div class="governance-actions conversation-actions" aria-label="会话管理">
-              <button class="secondary-button" id="conversation-rename-button" type="button">重命名</button>
-              <button class="secondary-button" id="conversation-archive-button" type="button">归档</button>
-              <button class="secondary-button danger-button" id="conversation-delete-button" type="button">删除</button>
-            </div>
           </div>
           <div class="messages" id="messages">
             <div class="message assistant">
@@ -405,10 +378,28 @@
       <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" value="default">创建</button></div>
     </form>
   </dialog>
+  <dialog class="project-dialog" id="conversation-action-dialog" aria-labelledby="conversation-action-dialog-title">
+    <form class="settings-form" id="conversation-action-form" method="dialog">
+      <div class="settings-title"><div><span class="conversation-kicker">CONVERSATIONS</span><h2 id="conversation-action-dialog-title">会话操作</h2></div><button class="icon-button" value="cancel" aria-label="关闭对话框">×</button></div>
+      <label id="conversation-action-name-field" for="conversation-action-name">名称<input id="conversation-action-name" maxlength="120"></label>
+      <label id="conversation-action-project-search-field" for="conversation-action-project-search">搜索项目<input id="conversation-action-project-search" type="search" autocomplete="off" placeholder="搜索 active 项目"></label>
+      <label id="conversation-action-project-field" for="conversation-action-project">目标项目<select id="conversation-action-project"></select></label>
+      <label id="conversation-action-history-field" class="dialog-checkbox"><input id="conversation-action-history" type="checkbox"> 让绑定前的历史消息也参与项目记忆</label>
+      <p class="conversation-status" id="conversation-action-status" role="status" aria-live="polite"></p>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" id="conversation-action-submit" value="default">确定</button></div>
+    </form>
+  </dialog>
+  <dialog class="project-dialog" id="conversation-confirm-dialog" aria-labelledby="conversation-confirm-title">
+    <form class="settings-form" id="conversation-confirm-form" method="dialog">
+      <div class="settings-title"><div><span class="conversation-kicker">CONFIRM</span><h2 id="conversation-confirm-title">确认操作</h2></div><button class="icon-button" value="cancel" aria-label="取消操作">×</button></div>
+      <p id="conversation-confirm-message"></p>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button danger-button" id="conversation-confirm-submit" value="default">确认</button></div>
+    </form>
+  </dialog>
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
-  <script src="/assets/app.js?v=29"></script>
+  <script src="/assets/app.js?v=31"></script>
 </body>
 </html>

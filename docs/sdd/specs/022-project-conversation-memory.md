@@ -66,6 +66,8 @@
 | `status` | enum | `active / archived / deleted` |
 | `created_at / updated_at` | UTC datetime | 必填 |
 
+项目列表响应额外包含只读计算字段 `last_activity_at`，取项目 `updated_at` 与其未删除会话最新 `updated_at` 的较新值；该字段不新增持久化列。项目 API 默认以 `last_activity_at DESC, project_id DESC` 排序，cursor 必须编码并使用同一组键继续分页。
+
 ### `Conversation`
 
 | 字段 | 类型 | 约束 |
@@ -202,7 +204,7 @@
 | `GET /api/projects` | cursor/limit | 项目列表 | 400 |
 | `POST /api/conversations/messages` | 首条消息、可选 project/model/mode | 创建会话并返回 SSE | 400/404/503 |
 | `POST /api/conversations/{id}/messages` | 新消息、model/mode | 保存消息并返回 SSE | 400/404/409/503 |
-| `GET /api/conversations` | project_id/null、cursor/limit | 最近会话列表 | 400/404 |
+| `GET /api/conversations` | project_id/null、status、unbound_only、cursor/limit | 最近会话或归档会话列表 | 400/404 |
 | `GET /api/conversations/{id}/messages` | before cursor、`target_chars` | 从新到旧满足字符预算的完整消息批次 | 400/404 |
 | `PATCH /api/conversations/{id}` | title/project/status/history policy | Conversation | 400/404/409 |
 | `DELETE /api/conversations/{id}` | id | 204；不联动记忆 | 404/409 |
@@ -252,13 +254,17 @@
 
 ## 项目与会话侧栏
 
-- 采用 ChatGPT 式平铺结构：上方项目列表，下方最近会话列表；移除项目下拉框、常驻创建表单和聊天头部常驻治理按钮。
-- “项目”标题右侧 `＋ / ⋯` 只在 hover 或 `focus-within` 时显示；`＋` 打开只要求名称的创建弹窗，成功后进入新项目。
-- 项目标题菜单提供“最近更新 / 名称 A–Z”排序和归档项目入口；排序选择保存在浏览器本地，不新增后端排序字段或拖拽排序。
-- 每个项目行的 `⋯` 提供重命名、归档、删除；每个会话行的 `⋯` 提供重命名、移动到项目、移出项目、归档、删除。
-- 归档项目和会话默认不混入主列表，分别从对应标题菜单进入归档视图并支持恢复或删除。
-- 首页默认无项目上下文，新会话不绑定项目；点击项目后只显示该项目会话，此时新会话自动绑定当前项目；点击“对话”主导航返回全部最近会话并清除项目上下文。
-- 桌面端鼠标悬停和键盘聚焦都能发现操作；手机端不依赖 hover 的菜单交互留在 Task06 完成。
+- 采用 ChatGPT 式项目树：只保留一个可整体折叠的“项目”标题；项目会话缩进显示在所属项目下，未绑定会话单独位于“最近会话”。
+- 标题右侧按 `⋯ / ＋` 排列，且只在 hover 或 `focus-within` 时显示；`⋯` 提供最近活动/名称排序和归档入口，`＋` 打开新建项目弹窗。
+- 项目一次只展开一个；箭头只控制展开，项目名称设置项目上下文。项目子会话每批 10 条，未绑定会话每批 20 条。
+- 项目内会话只显示单行标题并按最近活动倒序；绑定成功后立即从原位置移入目标项目下，不重复显示、不关闭当前聊天。
+- 项目行和会话行的 `⋯` 只在自身 hover/focus 时出现；菜单使用不受滚动容器裁剪的浮层，支持碰撞翻转、外部点击、Esc 和焦点恢复。
+- 创建、移动、重命名、归档和删除统一使用项目内弹窗，不使用浏览器原生 `prompt/confirm`；移动只能从可搜索的现有未归档项目中选择。
+- 归档项目和会话默认不混入主列表，分别进入独立归档视图并支持恢复或删除；返回后恢复此前展开状态和滚动位置。
+- 归档会话视图覆盖所有项目归属；会话列表支持 `status=active|archived` 与 `unbound_only=true`，避免已绑定项目的归档会话因树过滤而不可恢复或删除。
+- “最近更新”依据项目及其未删除会话的最新活动时间；名称排序偏好仍保存在浏览器本地，不实现拖拽排序。
+- 首页默认无项目上下文，新会话不绑定项目；点击项目名称后，新的惰性草稿默认绑定该项目，但不得自动移动当前已打开会话。
+- 桌面结构修复由 Task09 完成；手机端不依赖 hover 的菜单交互留在 Task06。
 
 ## RAG 来源展示
 
@@ -317,7 +323,7 @@
 
 ### 后续 Task
 
-- Task03–Task07 分别补充管理、演化召回、研究上下文、手机端和能力建议步骤；Task08 统一执行最终全量验收。
+- Task03–Task07 分别补充管理、演化召回、研究上下文、手机端和能力建议步骤；Task09 单独修复桌面项目树；Task08 统一执行最终全量验收。
 
 ### Task05 桌面缺陷修复轮
 
@@ -326,12 +332,19 @@
 3. 回答完成后，异步分类模型继续判断当前消息是否值得记住；输入框已经可继续发送，不等待分析。
 4. 明确记忆自动保存并显示折叠摘要；不确定或冲突结果自动展开供确认；普通消息的分析提示最终消失。
 5. 一条消息可产生任意数量的独立记忆，结果区每次展示 10 条并支持逐条和批量决策。
-6. 用户通过侧栏项目/会话行的悬停菜单完成创建、排序、重命名、移动、归档、恢复和删除；常驻表单及按钮不再占据页面。
+
+### Task09 桌面项目树修复
+
+1. 用户看到唯一的“项目”标题；未悬停时无操作噪音，悬停后出现 `⋯ / ＋`。
+2. 用户展开项目，绑定会话以缩进单行标题显示；未绑定会话只在“最近会话”出现。
+3. 用户通过可搜索的已有项目选择框移动会话，成功后会话立即进入目标项目且聊天保持打开。
+4. 用户在侧栏底部打开会话菜单，浮层不会被列表或相邻区域裁剪，并可用 Esc 关闭。
+5. 用户新建、重命名、归档或删除项目/会话时只看到 ResearchAgent 自有弹窗，不出现浏览器原生输入框。
 
 ## 开发与验证策略
 
 - 开发中只跑精确测试；Task 收口跑受影响领域测试与静态检查。
-- Task02、Task05、Task06 作为用户可见里程碑，完成后直接部署并执行真实 smoke。
+- Task02、Task05、Task09、Task06 作为用户可见里程碑，完成后直接部署并执行真实 smoke。
 - 全量回归只在 Spec 收口阶段启动，并必须在最终候选版本上通过；失败后先用定向测试修复，再重新运行全量回归。
 - 一个 Task 在定向测试稳定后集中评审一次；P0/P1 批量修复后集中复审一次，不为每个微小修复重启完整门禁。
 - 每个 Task 固定复用少量报告并追加修复轮次，不生成 `final-v2-recheck-final` 式重复文件。
@@ -380,13 +393,14 @@
 | 05 | 项目文档、RAG、处理过程与桌面缺陷修复轮 | [`task-05-research-context-progress.md`](../plans/022/task-05-research-context-progress.md) | 04、Spec 变更确认 | 已完成（修复轮） |
 | 06 | 手机端适配 | [`task-06-mobile-experience.md`](../plans/022/task-06-mobile-experience.md) | 05 | 待执行 |
 | 07 | 能力方法记忆与 Skill 改进建议 | [`task-07-capability-memory-proposals.md`](../plans/022/task-07-capability-memory-proposals.md) | 04 | 待执行 |
-| 08 | 最终评审、全量回归、部署与复盘 | [`task-08-review-regression-deploy.md`](../plans/022/task-08-review-regression-deploy.md) | 05、06、07 | 待执行 |
+| 08 | 最终评审、全量回归、部署与复盘 | [`task-08-review-regression-deploy.md`](../plans/022/task-08-review-regression-deploy.md) | 05、06、07、09 | 待执行 |
+| 09 | 桌面项目树与会话菜单重构 | [`task-09-desktop-project-tree-sidebar.md`](../plans/022/task-09-desktop-project-tree-sidebar.md) | 05、Task09 范围确认 | 已完成 |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/022-requirement-review.md`（原轮次已通过；本次变更待补充评审）
-- 技术评审：`docs/sdd/reviews/022-tech-review.md`（原轮次已通过；本次变更待补充评审）
-- 验收评审：`docs/sdd/reviews/022-acceptance-review.md`（Task05 原轮次与缺陷修复轮均通过；修复轮已由 tester 验收、架构师签字）
+- 需求评审：`docs/sdd/reviews/022-task09-requirement-review.md`（Task09 增量 GO）
+- 技术评审：`docs/sdd/reviews/022-task09-tech-review.md`（Task09 增量 GO；项目排序/cursor 同键约束已冻结）
+- 验收评审：`docs/sdd/reviews/022-acceptance-review.md`（Task05 原轮次、修复轮与 Task09 定向验收均通过；Task09 全量回归仍留待 Task08）
 
 ## 变更日志
 
@@ -395,3 +409,6 @@
 | 2026-09-11 | 用户 / 架构师（自身） | 通过 Grill with Docs 确认项目—会话—消息—记忆层级、惰性会话、项目隔离、两屏消息分页、处理过程、RAG 编号展开、手机端后置和 MVP 优先交付边界；编号指定为 Spec022 |
 | 2026-09-11 | 用户 / 架构师（自身） | Task05 部署后通过 Grilling 完成桌面缺陷修复共同理解：稳定 turn 顺序、真实步骤状态机、异步无限条目记忆分析、9B 默认分类模型、记忆结果确认区和 ChatGPT 式项目/会话侧栏；Spec 退回待确认，业务代码暂停。 |
 | 2026-09-11 | 架构师（自身） | Task05 修复轮完成：后端 lease fencing/异步记忆分析、前端稳定 turn/真实处理步骤/折叠与侧栏菜单通过双端复审和跨端验收；主环境部署 smoke 通过，Task06 继续等待。 |
+| 2026-09-11 | 用户 / 架构师（自身） | 根据三张现场截图完成 Grilling：前两张为错误证据，第三张 ChatGPT 项目树为结构参考；新增独立 Task09 承接项目树、菜单浮层、已有项目选择弹窗和归档视图，等待确认后实施。 |
+| 2026-09-11 | 用户 / 架构师（自身） | 用户确认并授权实施；临时以 Terra medium 完成需求/技术门禁，均为 GO。冻结 `last_activity_at DESC, project_id DESC` 与同键 cursor，开始由 Luna high 子 Agent 实现。 |
+| 2026-09-11 | 架构师（自身） | Task09 完成：单一桌面项目树、项目内会话、浮层菜单、已有项目选择弹窗、归档筛选和稳定活动排序已通过双端复审、定向验收及 Chromium smoke；Spec 保持实施中，后续 Task06/07/08 未提前启动。 |

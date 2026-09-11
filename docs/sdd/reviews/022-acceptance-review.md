@@ -73,8 +73,6 @@
 - 验收执行：tester（临时 Luna high）
 - 架构师签字：待主 Agent 按收口流程确认
 
----
-
 # Spec022 Task03 验收评审
 
 > 验收角色：tester（临时 Luna high）
@@ -236,3 +234,55 @@ tester 隔离环境访问 `http://127.0.0.1:8000/api/health` 返回 curl 退出�
 
 - 验收执行：tester（临时 Luna high）
 - 架构师签字：待主 Agent 按收口流程确认
+
+---
+
+# Spec022 Task09 跨端验收章节
+
+> 验收角色：tester（临时 Luna high）
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-09-desktop-project-tree-sidebar.md`
+> 范围：Task09 后端项目活动/会话筛选、桌面项目树与会话菜单契约、Task05 受影响前端合同和 KB Node 合同；**未运行 Task08 全量回归**。
+
+## 结论：PASS（Task09 定向验收范围）
+
+指定后端/前端契约测试 **47 passed**；两份 JavaScript 语法检查、5 个前端 Node 合同与 `git diff --check` 均退出码 0。未发现 P0/P1/P2 的自动化验收阻塞，业务代码未由验收角色修改。
+
+**这不是全量回归。** Task08 负责 Spec022 收口阶段的全量回归；本 Task 仅执行冻结的定向验证命令。
+
+## 执行信息
+
+| 字段 | 结果 |
+|---|---|
+| 开始 | 2026-09-11 约 13:59 +0800 |
+| 结束 | 2026-09-11 14:00:43 +0800 |
+| 业务代码修改 | 无；仅写验收产物、追加本章节和进展日志 |
+| 详细报告 | [`docs/sdd/plans/022/artifacts/task-09/acceptance-report.md`](../plans/022/artifacts/task-09/acceptance-report.md) |
+| 进展日志 | `.codebuddy/agent-logs/spec-022/task-09/tester/20260911-acceptance.md` |
+
+## 命令与结果
+
+| 检查 | 退出码 | 结果 |
+|---|---:|---|
+| Task09 后端 + 前端契约精确测试 | 0 | **47 passed in 0.84s** |
+| `node --check frontend/app.js` | 0 | PASS |
+| `node --check frontend/conversation-research.js` | 0 | PASS |
+| 5 个前端 KB/研究 Node 合同 | 0 | **5/5 PASS** |
+| `git diff --check` | 0 | PASS |
+
+## 固定验收结论
+
+- **项目活动与会话筛选：PASS。** `last_activity_at` 聚合、稳定排序/cursor、active/archived/unbound 筛选和筛选 cursor scope 隔离均通过 Task09 后端定向用例。
+- **桌面项目树：PASS。** 唯一“项目”标题、旧选择器/常驻表单清理、项目内 10 条与最近会话 20 条分页、手风琴/空项目入口和归档状态隔离均通过契约。
+- **菜单/弹窗与移动：PASS。** 顶层浮层、键盘/外点/Esc 关闭、取消不提交、已有 active 项目搜索选择、移动确认字段、成功后目标展开/高亮与失败状态保持均通过契约。
+- **Task05 兼容与安全：PASS。** conversation、management、Task05 repair 合同和 5 个 Node 合同通过；处理过程、RAG 来源、XSS 文本边界和 GET-only 约束未回归。
+
+## 限制与主 Agent 后续
+
+tester 未启动服务或执行真实浏览器点击；随后主 Agent 已在当前部署的桌面 Chromium（1280×900）复核唯一项目标题、悬浮 `⋯ / ＋`、无常驻创建表单，以及“取消”关闭弹窗、不提交且焦点返回新建按钮。菜单底部翻转和完整滚动裁剪矩阵仍由 Task08 的最终运行时验收覆盖。该剩余范围不改变本轮自动化 PASS 结论。
+
+本章节不将 Task09 定向通过标记为 Spec022 完成；仍需 Task08 全量回归、部署运行时验证、架构师签字和状态台账更新。
+
+## 签字
+
+- 验收执行：tester（临时 Luna high）
+- 架构师签字：已确认（Task09 定向验收与桌面 Chromium smoke 通过；2026-09-11）

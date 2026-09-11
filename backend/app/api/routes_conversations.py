@@ -40,7 +40,7 @@ register_provider("memory_repository", MemoryRepository, singleton=False)
 
 
 def _project_payload(item):
-    return {"project_id": item.project_id, "owner_id": item.owner_id, "name": item.name, "instructions": item.instructions, "status": item.status, "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat()}
+    return {"project_id": item.project_id, "owner_id": item.owner_id, "name": item.name, "instructions": item.instructions, "status": item.status, "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat(), "last_activity_at": (item.last_activity_at or item.updated_at).isoformat()}
 
 
 def _conversation_payload(item):
@@ -338,10 +338,12 @@ def get_conversation(conversation_id: str):
 
 
 @router.get("/conversations")
-def list_conversations(project_id: str | None = None, cursor: str | None = None, limit: int = Query(20, ge=1, le=100)):
-    try: items, next_cursor = _repo().list_conversations(OWNER_ID, project_id, cursor, limit)
+def list_conversations(project_id: str | None = None, cursor: str | None = None, limit: int = Query(20, ge=1, le=100), status: str | None = None, unbound_only: bool = False):
+    try: items, next_cursor = _repo().list_conversations(OWNER_ID, project_id, cursor, limit, status=status, unbound_only=unbound_only)
     except LookupError as error: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
-    except ValueError as error: raise HTTPException(status_code=400, detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False}) from error
+    except ValueError as error:
+        code = "INVALID_CONVERSATION_FILTER" if str(error) in {"invalid conversation status", "unbound_only cannot be combined with project_id"} else "INVALID_CURSOR"
+        raise HTTPException(status_code=400, detail={"code": code, "message": str(error), "retryable": False}) from error
     return {"conversations": [_conversation_payload(item) for item in items], "next_cursor": next_cursor}
 
 

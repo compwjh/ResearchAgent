@@ -11,10 +11,10 @@ STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 
 def test_desktop_memory_dom_contract_is_present() -> None:
     for element_id in (
-        "project-select",
         "new-project-button",
-        "new-project-form",
-        "project-name-input",
+        "project-tree-toggle",
+        "project-list",
+        "project-dialog",
         "conversation-list",
         "conversation-status",
         "conversation-memory-status",
@@ -56,14 +56,14 @@ def test_memory_and_processing_feedback_are_scoped() -> None:
         ".conversation-processing",
         ".conversation-memory-notice",
         ".conversation-list",
-        ".project-switcher",
+        ".project-tree",
     ):
         assert css_selector in STYLES
 
 
 def test_static_asset_versions_are_bumped_together() -> None:
-    assert "/assets/app.js?v=29" in INDEX
-    assert "/assets/styles.css?v=29" in INDEX
+    assert "/assets/app.js?v=31" in INDEX
+    assert "/assets/styles.css?v=30" in INDEX
     assert "/assets/conversation-research.js?v=1" in INDEX
 
 
@@ -98,7 +98,7 @@ def test_processing_statuses_and_reduced_motion_contract() -> None:
 
 
 def test_legacy_desktop_dom_and_markdown_contract_remains() -> None:
-    for element_id in ("project-select", "conversation-list", "memory-view", "kb-view", "papers-view", "messages"):
+    for element_id in ("project-tree-toggle", "conversation-list", "memory-view", "kb-view", "papers-view", "messages"):
         assert f'id="{element_id}"' in INDEX
     assert "createMarkdownWriter" in APP
     assert "DOMPurify" in APP

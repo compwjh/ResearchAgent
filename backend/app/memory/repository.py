@@ -426,7 +426,12 @@ class MemoryRepository:
 
     @staticmethod
     def _project(row: sqlite3.Row) -> Project:
-        return Project(row["project_id"], row["owner_id"], row["name"], row["instructions"], row["status"], _dt(row["created_at"]), _dt(row["updated_at"]))
+        columns = row.keys()
+        last_activity_at = row["last_activity_at"] if "last_activity_at" in columns else row["updated_at"]
+        return Project(
+            row["project_id"], row["owner_id"], row["name"], row["instructions"], row["status"],
+            _dt(row["created_at"]), _dt(row["updated_at"]), _dt(last_activity_at),
+        )
 
     @staticmethod
     def _conversation(row: sqlite3.Row) -> Conversation:
@@ -503,13 +508,37 @@ class MemoryRepository:
         params: list[object] = [owner_id]
         clause = ""
         if cursor:
-            at, item_id = decode_cursor(cursor, "projects")
-            clause = " AND (updated_at < ? OR (updated_at = ? AND project_id < ?))"
+            # The cursor kind is deliberately versioned separately from the
+            # legacy updated_at ordering.  A cursor issued before this
+            # projection must fail rather than silently mixing keysets.
+            at, item_id = decode_cursor(cursor, "projects_activity")
+            clause = " AND (last_activity_at < ? OR (last_activity_at = ? AND project_id < ?))"
             params.extend([at, at, item_id])
         with self.connection() as db:
-            rows = db.execute(f"SELECT * FROM projects WHERE owner_id=? AND status!='deleted'{clause} ORDER BY updated_at DESC, project_id DESC LIMIT ?", (*params, limit + 1)).fetchall()
+            rows = db.execute(
+                f"""
+                WITH project_activity AS (
+                    SELECT p.*,
+                           CASE WHEN COALESCE(MAX(c.updated_at), p.updated_at) > p.updated_at
+                                THEN COALESCE(MAX(c.updated_at), p.updated_at)
+                                ELSE p.updated_at END AS last_activity_at
+                    FROM projects AS p
+                    LEFT JOIN conversations AS c
+                      ON c.project_id = p.project_id
+                     AND c.owner_id = p.owner_id
+                     AND c.status != 'deleted'
+                    WHERE p.owner_id=? AND p.status!='deleted'
+                    GROUP BY p.project_id
+                )
+                SELECT * FROM project_activity
+                WHERE 1=1{clause}
+                ORDER BY last_activity_at DESC, project_id DESC
+                LIMIT ?
+                """,
+                (*params, limit + 1),
+            ).fetchall()
         page = rows[:limit]
-        next_cursor = encode_cursor("projects", page[-1]["updated_at"], page[-1]["project_id"]) if len(rows) > limit else None
+        next_cursor = encode_cursor("projects_activity", page[-1]["last_activity_at"], page[-1]["project_id"]) if len(rows) > limit else None
         return [self._project(row) for row in page], next_cursor
 
     def create_conversation(self, owner_id: str, project_id: Optional[str] = None, title: str = "", memory_history_policy: str = "from_binding") -> Conversation:
@@ -601,19 +630,44 @@ class MemoryRepository:
             result = db.execute("UPDATE conversations SET status='deleted', updated_at=? WHERE conversation_id=? AND owner_id=? AND status!='deleted'", (_now(), conversation_id, owner_id))
         return result.rowcount > 0
 
-    def list_conversations(self, owner_id: str, project_id: Optional[str] = None, cursor: Optional[str] = None, limit: int = 20) -> tuple[list[Conversation], Optional[str]]:
+    def list_conversations(
+        self,
+        owner_id: str,
+        project_id: Optional[str] = None,
+        cursor: Optional[str] = None,
+        limit: int = 20,
+        *,
+        status: Optional[str] = None,
+        unbound_only: bool = False,
+    ) -> tuple[list[Conversation], Optional[str]]:
         limit = max(1, min(int(limit), 100)); params: list[object] = [owner_id]; clause = ""
+        if status is not None and status not in {"active", "archived"}:
+            raise ValueError("invalid conversation status")
+        if unbound_only and project_id is not None:
+            raise ValueError("unbound_only cannot be combined with project_id")
         if project_id is None:
-            clause += " AND project_id IS NULL"
+            # Preserve the legacy unbound default.  An explicit status is the
+            # archive/global view and therefore intentionally spans bindings;
+            # callers wanting only unbound rows use unbound_only=true.
+            if status is None or unbound_only:
+                clause += " AND project_id IS NULL"
         else:
             if not self.get_project(project_id, owner_id):
                 raise LookupError("project not found")
             clause += " AND project_id=?"; params.append(project_id)
+        if status is None:
+            clause += " AND status!='deleted'"
+        else:
+            clause += " AND status=?"; params.append(status)
+        # Every list scope gets its own opaque cursor namespace.  In
+        # particular, a project cursor must never be accepted by the default
+        # or another project's list, even when the status filter is omitted.
+        cursor_kind = f"conversations:v3:project={project_id or '*'}:status={status or '*'}:unbound={int(unbound_only)}"
         if cursor:
-            at, item_id = decode_cursor(cursor, "conversations"); clause += " AND (updated_at < ? OR (updated_at = ? AND conversation_id < ?))"; params.extend([at, at, item_id])
+            at, item_id = decode_cursor(cursor, cursor_kind); clause += " AND (updated_at < ? OR (updated_at = ? AND conversation_id < ?))"; params.extend([at, at, item_id])
         with self.connection() as db:
-            rows = db.execute(f"SELECT * FROM conversations WHERE owner_id=? AND status!='deleted'{clause} ORDER BY updated_at DESC, conversation_id DESC LIMIT ?", (*params, limit + 1)).fetchall()
-        page = rows[:limit]; next_cursor = encode_cursor("conversations", page[-1]["updated_at"], page[-1]["conversation_id"]) if len(rows) > limit else None
+            rows = db.execute(f"SELECT * FROM conversations WHERE owner_id=?{clause} ORDER BY updated_at DESC, conversation_id DESC LIMIT ?", (*params, limit + 1)).fetchall()
+        page = rows[:limit]; next_cursor = encode_cursor(cursor_kind, page[-1]["updated_at"], page[-1]["conversation_id"]) if len(rows) > limit else None
         return [self._conversation(row) for row in page], next_cursor
 
     def create_message(self, conversation_id: str, owner_id: str, role: str, content: str, *, status: str = "pending", model: Optional[str] = None, mode: Optional[str] = None, parent_message_id: Optional[str] = None) -> Message:
