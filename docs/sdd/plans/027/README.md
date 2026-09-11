@@ -7,7 +7,7 @@
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
-| [02](./task-02-orchestration-runtime-gate.md) | 冻结 Planner Schema、动态 fan-out、模型路由和资源额度 | Spec确认、双评审 | 待执行 |
+| [02](./task-02-orchestration-runtime-gate.md) | 冻结 Planner Schema、动态 fan-out、模型路由和资源额度 | Spec确认、双评审 | 已完成 |
 | [03](./task-03-backend-research-task-slice.md) | 持久化任务、计划、WorkItem、事件与最小后端闭环 | 02 | 待执行 |
 | [04](./task-04-frontend-research-workspace.md) | 深度研究入口、任务工作台、SSE 恢复与手机基础可用 | 03 | 待执行 |
 | [05](./task-05-replan-report-integration.md) | 覆盖评估、Re-plan、模型升级与初步报告 | 03、04 | 待执行 |

@@ -2,7 +2,9 @@
 
 ## 状态
 
-**当前状态：待确认**
+**当前状态：已确认**
+
+> 2026-09-12：技术评审（含需求评审维度）复审**通过**（P0-2 与 P1×8 全部关闭，P0-1 经 task-04 文案修正后闭环，无新增 P0）；用户明确指示开始开发，状态由 `待确认` 转为 `已确认`，按 Task02 → Task06 顺序执行。
 
 ## 一句话目标
 
@@ -44,6 +46,14 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 - 每次 Re-plan 创建新计划版本；已完成节点不可改写，只能新增、取消或替换未执行节点。
 - 论文内容一律视为不可信证据，不能修改权限、计划规则或工具集合。
 
+## 复用接缝（强制，禁止第二套实现）
+
+- `search_catalog` WorkItem **只能**调用 Spec015 既有能力：`backend/app/paper_discovery/application/catalog_search_graph.py:235` 的 `CatalogSearchGraph`，或等价的既有检索入口；检索结果一律写回 Spec015 全局目录后再引用。
+- RAG/证据检索**只能**复用 `CatalogRagAdapter`（`catalog_search_graph.py:79`）或既有知识库检索实现。
+- DBLP 默认关闭时只走 USENIX 缓存的策略以 `catalog_search_graph.py:388-398` 的既有判定为准，027 不另行实现来源开关。
+- **禁止**在 research 命名空间内新建论文采集、索引、缓存、目录、RAG、下载或导入实现；候选评估只能读取 Spec015 目录内已有字段（标题、摘要、来源、年份等），不得复制论文元数据到 027 的表。
+- 模型调用**只能**复用 `backend/app/platform/ollama.py`，不得新增第二套模型客户端。
+
 ## 数据模型
 
 ### ResearchTask
@@ -60,7 +70,7 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | review_plan_first | bool | 默认 false |
 | target_paper_count | int | 未指定默认 12，范围 1–20 |
 | soft_budget_seconds | int | 档位默认 600 / 1500 / 2700，可在硬上限内调整 |
-| status | enum | draft / planning / running / waiting_approval / paused / partial / completed / failed / cancelled / interrupted |
+| status | enum | draft / planning / running / waiting_approval / partial / completed / failed / cancelled / interrupted（**无 `paused`**：暂停/恢复随 Spec028 调度能力提供，见「明确不做」） |
 | current_plan_version | int | 从 1 开始 |
 | created_at / updated_at / completed_at | UTC datetime | completed_at 可空 |
 
@@ -111,6 +121,26 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | markdown | text | 只读正文，结论必须带论文引用 |
 | limitations_json | JSON | 来源失败、证据不足和未覆盖主题 |
 
+## 状态机、错误码与持久化约定
+
+### 状态机（可测）
+
+- `ResearchTask`：`draft → planning → running → {waiting_approval, partial, completed, failed, cancelled, interrupted}`；`waiting_approval` 可回到 `running`；**终态集合 = {completed, failed, cancelled, interrupted, partial}**，终态不得回到 `running`（对应边界 spec 原第 171 条）。
+- `ResearchWorkItem`：`queued → running → {completed, failed, cancelled, interrupted}`；`queued` 可直接 `cancelled`；终态不得回到 `running` 或 `queued`。
+- 状态转移由服务层单一函数校验，非法转移返回稳定错误码（下表），不静默纠正。
+
+### 稳定错误码词表（前端按 code 映射文案）
+
+`PLAN_VALIDATION_FAILED`、`UNKNOWN_TASK_TYPE`、`CYCLIC_DEPENDENCY`、`BUDGET_EXCEEDED`、`SOURCE_DEGRADED`、`SOURCE_UNAVAILABLE`、`MODEL_ESCALATED`（非错误，可见事件）、`RESOURCE_PROBE_FAILED`、`TASK_NOT_FOUND`、`TASK_TERMINAL_CONFLICT`、`TASK_RUNNING_CONFLICT`、`INVALID_STATE_TRANSITION`、`REPORT_NOT_READY`。
+
+### 持久化与并发
+
+- **独立库**：`data/research/research.sqlite3`（与 `data/memory`、`data/paper_search` 同范式），带 `schema_meta` 版本表；迁移单事务、幂等、可回滚；整体删除即完成回滚，不动 Spec015/022 任何数据。
+- **级联删除走应用层**：项目删除时由应用层显式删除其 Research Task、计划、事件、选集与报告，**不用 DB 外键 CASCADE**（外键按既有 RESTRICT 纪律）。
+- **`event_seq` 原子领号**：每任务独立计数器，在写事件的同一事务内 `UPDATE … SET last_seq = last_seq + 1` 领号，保证并发 Worker 不冲突、不重用、无洞。
+- **崩溃收敛**：027 自有启动审计把遗留 `running` 的 Task/WorkItem 置为 `interrupted`；**区别于** Spec015 `reset_running_jobs`(`catalog_search_graph.py:843`) 的 running→queued 重试语义，两者不得混用。
+- **owner 隔离**：沿用现有单 `OWNER_ID`（`backend/app/memory/repository.py:43`）模型，所有端点与 store 复用同一隔离范式，不引入新鉴权。
+
 ## Planner、Critic 与停止合同
 
 - Planner 输出必须通过 JSON Schema、任务类型白名单、依赖无环、数量预算和参数允许列表校验；失败先重试一次，仍失败则升级强模型或终止。
@@ -128,6 +158,7 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 - fast 模型输出不合法或低置信度时重试一次，仍失败升级 strong，并发出可见 `model_escalated` 事件。
 - 网络型搜索 Worker 可以并行。9B 级 fast 模型可多 Worker，但并发数由全局资源探针根据可用内存、已加载模型、上下文和至少 20% 系统余量裁决；探针失败降为单模型 Worker。
 - 27B 级 strong 模型默认单 Worker。Spec027 默认连接单个 Ollama 服务；多服务实例仅在 Spec031 基准证明有收益后进入实现。
+- **资源探针接口冻结**：`ResourceProbe` 只从既有 `backend/app/platform/ollama.py` 读取可用模型与 `/api/ps` 已加载模型/内存，裁决 9B Worker 并发上限并保留至少 20% 系统余量；探针失败降级为单 Worker 并发 `RESOURCE_PROBE_FAILED` 事件；调度为单进程全局公平轮转，两个 Task 同时运行时不各自独立估算内存。Task02 门禁需冻结该接口与 Fake 数据源。
 
 ## 上下文与记忆
 
@@ -160,7 +191,7 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 - 时间线逐步显示正在执行的角色、任务、依赖、模型档位、Worker 数量、升级原因、覆盖缺口和 Re-plan。
 - 展示结构化决策摘要，不显示隐藏思维链、完整 Prompt 或原始模型协议。
 - 发起会话保留任务卡片；completed、partial、waiting_approval 等状态更新到卡片及项目侧栏。
-- 桌面优先，但手机端必须能查看状态、暂停/取消和阅读报告。
+- 桌面优先，但手机端必须能查看状态、取消任务和阅读报告（**暂停/恢复不在 Spec027**，见「明确不做」）。
 
 ## 边界与失败场景
 
@@ -168,6 +199,7 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 - USENIX 或 DBLP 单源失败时继续使用缓存/另一来源并生成 partial；双源无缓存且失败时任务 failed。
 - 9B Worker 并发不得超出全局额度；两个 Research Task 同时运行时公平轮转，不能各自独立估算内存。
 - 摘要缺失只能标题级初筛，不能据此生成方法或结论。
+- 论文内容不可信：evaluator/critic 接收的论文文本不得改变计划、权限、工具集或任务类型白名单；以「注入恶意论文文本」的样本测试断言计划与工具集不变。
 - 重复 SSE、旧 event_seq、页面刷新、用户取消和超时不得使终态回到 running。
 - 报告语言默认跟随 goal，论文标题保留原文。
 - 外部网络或真实 Ollama 超时可以记录为环境延期，但固定样本、Fake Adapter 和状态机验收不得省略。
@@ -178,8 +210,10 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 - 不接入 OpenAlex、Crossref 或其他会议官网；属于 Spec032。
 - 不基于 Langfuse 历史数据自动学习路由，不启动多 Ollama 实例；属于 Spec031。
 - 不实现崩溃后自动续跑、租约、跨进程接管和完整审批恢复；属于 Spec028。
+- **不实现暂停/恢复（pause/resume）**：`ResearchTask.status` 无 `paused`，端点无 pause/resume，移动端只提供取消；暂停/恢复、租约与审批恢复统一由 Spec028「可靠调度、计划版本与恢复」承接（其范围已登记暂停/取消/审批）。
 - 不实现可编辑报告、任意代码 Agent、完整 Prompt 展示、隐藏思维链存储或任意网页浏览。
-- 不复制 Spec015 下载、安全、导入、目录、RAG 或知识库实现。
+- 不复制 Spec015 下载、安全、导入、目录、RAG 或知识库实现；`search_catalog` 与 RAG 的复用接缝见「复用接缝（强制）」。
+- 不在 research 命名空间新增第二套模型客户端、第二套论文目录或第二套事件流。
 
 ## 验收方式
 
@@ -214,7 +248,7 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 Spec027 | 本文件 | — | 完成 |
-| 02 | 验证动态规划、模型路由和资源调度协议 | [`task-02-orchestration-runtime-gate.md`](../plans/027/task-02-orchestration-runtime-gate.md) | 01、Spec确认、双评审 | 待执行 |
+| 02 | 验证动态规划、模型路由和资源调度协议 | [`task-02-orchestration-runtime-gate.md`](../plans/027/task-02-orchestration-runtime-gate.md) | 01、Spec确认、双评审 | 已完成 |
 | 03 | 实现持久化 Research Task 后端纵向切片 | [`task-03-backend-research-task-slice.md`](../plans/027/task-03-backend-research-task-slice.md) | 02 | 待执行 |
 | 04 | 实现研究任务页面、SSE 与会话入口 | [`task-04-frontend-research-workspace.md`](../plans/027/task-04-frontend-research-workspace.md) | 03 | 待执行 |
 | 05 | 完成 Re-plan、报告、模型升级与集成 | [`task-05-replan-report-integration.md`](../plans/027/task-05-replan-report-integration.md) | 03、04 | 待执行 |
@@ -222,8 +256,8 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/027-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/027-tech-review.md`（待评审（未执行））
+- 需求评审：`docs/sdd/reviews/027-tech-review.md`（通过（复审，2026-09-12）；需求维度随技术评审一并核对，Grilling 确认的产品边界全部落地）
+- 技术评审：`docs/sdd/reviews/027-tech-review.md`（通过（复审，2026-09-12）；首轮 P0×2、P1×8 已全部修订并复审确认）
 - 验收评审：`docs/sdd/reviews/027-acceptance-review.md`（待评审（未执行））
 
 ## 变更日志
@@ -231,3 +265,6 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-12 | 架构师（自身） | 根据多轮 Grilling 共同理解创建 Spec027，冻结动态编排 MVP、模型路由、弹性 Worker 与复用边界 |
+| 2026-09-12 | 开发主管（architect 代行） | 技术评审「打回」：P0-1 暂停功能在状态机/端点/UI 三处不一致；P0-2 `search_catalog` 未钉死 Spec015 复用接缝；另 8 项 P1（状态机、错误码词表、event_seq 生成器、崩溃收敛审计、DB 放置与级联、ResourceProbe 冻结、论文不可信断言、owner 隔离）。 |
+| 2026-09-12 | 架构师（自身） | 按评审修订：移除 `paused` 并把暂停/恢复 defer 到 Spec028；新增「复用接缝（强制）」冻结 `CatalogSearchGraph`/`CatalogRagAdapter`；新增「状态机、错误码与持久化约定」（转移表、错误码词表、独立库+应用层级联、event_seq 原子领号、崩溃审计、OWNER_ID 隔离）；冻结 `ResourceProbe`；补论文不可信可测断言。待复审。 |
+| 2026-09-12 | 架构师（自身） | 复审残留修复：`plans/027/task-04-frontend-research-workspace.md:15` 的「暂停/取消」改为「取消（不实现暂停/恢复）」，与 spec 状态机/端点/UI 三处对齐，P0-1 闭环。 |

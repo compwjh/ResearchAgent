@@ -1,7 +1,7 @@
 # Task 02：验证动态规划、模型路由和资源调度协议
 
 > 关联：[Spec 027](../../specs/027-research-task-dynamic-orchestration-mvp.md) ｜ 索引：[README](./README.md)
-> 依赖：Spec027 用户确认、需求/技术评审通过；被依赖：Task03–06；当前状态：`待执行`
+> 依赖：Spec027 用户确认、需求/技术评审通过；被依赖：Task03–06；当前状态：`已完成`（GO，含 1 项环境延期）
 
 ## 一句话目标
 
@@ -49,6 +49,16 @@
 - 仅新增合同测试/报告，回滚删除本 Task 新增产物。
 - 产出：`artifacts/task-02/runtime-gate-report.md`；执行结果初始为“待执行后填写”。
 
+## 执行结果（Task02）
+
+- 结论：**GO**（含 1 项环境延期）。非 NO-GO：Schema 可表达 Re-plan；复用接缝锚点存在且 `backend/app/research` 无第二套实现。
+- 产出：`artifacts/task-02/runtime-gate-report.md`、`artifacts/task-02/workitem-schemas.json`（五种 WorkItem 冻结 Schema 镜像）、`tests/test_spec027_runtime_contract.py`（37 用例）。
+- 命令：`python -m pytest tests/test_spec027_runtime_contract.py -q` → 37 passed（退出码 0）；`ruff check` → All checks passed。
+- 覆盖：A Schema/错误码、B 稳定骨架（≥2 路并行 fan-out、一次 Re-plan、≤2 次、连续两轮无新增即停）、C fast→重试→升级 strong + `MODEL_ESCALATED`、D 状态机终态不可逆、E `event_seq` 单调不重用、F 注入恶意论文文本白名单不变、G 复用接缝源码扫描、H 资源探针 Fake 分支（20% 余量/探针失败降单 Worker/跨任务公平）。
+- 环境延期：真实 1–4 个 9B 并发吞吐观察（`/api/ps` 无驻留模型，门禁只读不启多实例），复验步骤见报告 §6，由 Task05 关闭。
+- 移交 Task03 的约束：复用 `CatalogSearchGraph`/`CatalogRagAdapter`；模型只经 `platform/ollama.py`；独立库 `data/research/research.sqlite3`；保持本门禁冻结的 Schema/状态机/错误码/event_seq/复用接缝契约。
+
 ## 变更日志
 
 - 2026-09-12：创建协议 Go/No-Go Task。
+- 2026-09-12：执行完成，结论 GO；冻结五种 WorkItem Schema 与停止/路由/资源合同，遗留 1 项真实并发吞吐观察至 Task05 复验。

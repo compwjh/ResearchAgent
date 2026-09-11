@@ -1,0 +1,83 @@
+{
+  "contract": "spec027-task02-runtime-gate",
+  "frozen_at": "2026-09-12",
+  "note": "五种 WorkItem 的冻结 JSON Schema。权威副本为 tests/test_spec027_runtime_contract.py 的模块级常量 WORKITEM_SCHEMAS / TASK_TYPE_WHITELIST / ROLE_WHITELIST / ERROR_CODES / BUDGET_CAPS；本文件为人工可读镜像，Task03+ 实现必须与之对齐，不得自行扩展范围。",
+  "task_type_whitelist": [
+    "search_catalog",
+    "evaluate_papers",
+    "check_coverage",
+    "replan",
+    "synthesize_preliminary_report"
+  ],
+  "role_whitelist": [
+    "planner",
+    "search-worker",
+    "paper-evaluator",
+    "research-critic",
+    "synthesizer"
+  ],
+  "error_codes": [
+    "PLAN_VALIDATION_FAILED",
+    "UNKNOWN_TASK_TYPE",
+    "CYCLIC_DEPENDENCY",
+    "BUDGET_EXCEEDED",
+    "SOURCE_DEGRADED",
+    "SOURCE_UNAVAILABLE",
+    "MODEL_ESCALATED",
+    "RESOURCE_PROBE_FAILED",
+    "TASK_NOT_FOUND",
+    "TASK_TERMINAL_CONFLICT",
+    "TASK_RUNNING_CONFLICT",
+    "INVALID_STATE_TRANSITION",
+    "REPORT_NOT_READY"
+  ],
+  "budget_caps": {
+    "max_search_items": 12,
+    "max_candidates": 100,
+    "max_selected": 20,
+    "max_replan_rounds": 2
+  },
+  "workitem_schemas": {
+    "search_catalog": {
+      "role": "search-worker",
+      "parallel_allowed": true,
+      "allowed_params": ["query", "facets", "sources", "max_results", "language"],
+      "required_params": ["query"],
+      "depends_on_task_types": [],
+      "budget_field": "count",
+      "reuse_seam": "backend/app/paper_discovery/application/catalog_search_graph.py::CatalogSearchGraph / CatalogRagAdapter（Spec015 既有，禁止 research 命名空间重建）"
+    },
+    "evaluate_papers": {
+      "role": "paper-evaluator",
+      "parallel_allowed": false,
+      "allowed_params": ["catalog_paper_ids", "relevance_threshold", "facets"],
+      "required_params": ["catalog_paper_ids"],
+      "depends_on_task_types": ["search_catalog"],
+      "budget_field": "candidate_count"
+    },
+    "check_coverage": {
+      "role": "research-critic",
+      "parallel_allowed": false,
+      "allowed_params": ["goal", "selected_paper_ids", "gap_threshold"],
+      "required_params": ["goal"],
+      "depends_on_task_types": ["evaluate_papers"],
+      "budget_field": null
+    },
+    "replan": {
+      "role": "planner",
+      "parallel_allowed": false,
+      "allowed_params": ["rationale", "add_search_for_facets"],
+      "required_params": ["rationale"],
+      "depends_on_task_types": ["check_coverage"],
+      "budget_field": null
+    },
+    "synthesize_preliminary_report": {
+      "role": "synthesizer",
+      "parallel_allowed": false,
+      "allowed_params": ["goal", "selected_paper_ids", "language", "evidence_level"],
+      "required_params": ["goal", "selected_paper_ids"],
+      "depends_on_task_types": ["check_coverage"],
+      "budget_field": "selected_count"
+    }
+  }
+}
