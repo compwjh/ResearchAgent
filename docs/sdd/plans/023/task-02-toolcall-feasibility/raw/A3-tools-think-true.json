@@ -1,0 +1,119 @@
+{
+  "request": {
+    "model": "qwen3.8:27b-mlx",
+    "messages": [
+      {
+        "role": "user",
+        "content": "帮我找 2024 年 USENIX Security 关于 fuzzing 的论文。"
+      }
+    ],
+    "stream": false,
+    "think": true,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "search_paper_catalog",
+          "description": "检索 USENIX Security 论文目录元数据（只返回元数据，不下载 PDF）。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "研究方向或关键词"
+              },
+              "year": {
+                "type": "integer",
+                "description": "会议年份，例如 2024"
+              },
+              "page_size": {
+                "type": "integer",
+                "description": "每页条数，固定 10"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "download_and_import_paper",
+          "description": "对已选定论文执行 PDF 安全验证、下载与个人知识库导入。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "search_id": {
+                "type": "string"
+              },
+              "catalog_paper_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "search_id",
+              "catalog_paper_id"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": {
+    "http_status": 200,
+    "elapsed_s": 2.8,
+    "raw": {
+      "model": "qwen3.8:27b-mlx",
+      "created_at": "2026-09-11T11:34:01.37528Z",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "thinking": "用户需要检索2024年USENIX Security关于fuzzing的论文。应使用search_paper_catalog工具，query设为\"fuzzing\"，year设为2024，page_size按说明固定为10。",
+        "tool_calls": [
+          {
+            "id": "call_7thkmc0d",
+            "function": {
+              "index": 0,
+              "name": "search_paper_catalog",
+              "arguments": {
+                "query": "fuzzing",
+                "year": 2024,
+                "page_size": 10
+              }
+            }
+          }
+        ]
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 2732947084,
+      "load_duration": 9970250,
+      "prompt_eval_count": 444,
+      "prompt_eval_cached_count": 441,
+      "prompt_eval_duration": 69840792,
+      "eval_count": 108,
+      "eval_duration": 2650580667
+    },
+    "content": "",
+    "thinking": "用户需要检索2024年USENIX Security关于fuzzing的论文。应使用search_paper_catalog工具，query设为\"fuzzing\"，year设为2024，page_size按说明固定为10。",
+    "tool_calls": [
+      {
+        "id": "call_7thkmc0d",
+        "function": {
+          "index": 0,
+          "name": "search_paper_catalog",
+          "arguments": {
+            "query": "fuzzing",
+            "year": 2024,
+            "page_size": 10
+          }
+        }
+      }
+    ],
+    "done_reason": "stop",
+    "eval_count": 108,
+    "prompt_eval_count": 444
+  }
+}

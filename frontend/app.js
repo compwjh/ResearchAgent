@@ -2775,6 +2775,54 @@ if (paperManageButton) paperManageButton.addEventListener('click', () => {
   renderManagedConferences(); paperConferenceDialog?.showModal();
 });
 if (paperConferenceSearch) onEnterKey(paperConferenceSearch, (event) => { event.preventDefault(); searchPaperConferences(); });
+// ===== Skill / Tool 管理视图（spec-023 Task08）：DOM 引用 =====
+const stView = document.querySelector('#skill-tool-view');
+const stSkillList = document.querySelector('#st-skill-list');
+const stSkillEmpty = document.querySelector('#st-skill-empty');
+const stSkillStatus = document.querySelector('#st-skill-status');
+const stToolList = document.querySelector('#st-tool-list');
+const stToolEmpty = document.querySelector('#st-tool-empty');
+const stToolStatus = document.querySelector('#st-tool-status');
+const stSkillDialog = document.querySelector('#st-skill-dialog');
+const stDetailName = document.querySelector('#st-detail-name');
+const stDetailDesc = document.querySelector('#st-detail-desc');
+const stDetailTools = document.querySelector('#st-detail-tools');
+const stDetailBody = document.querySelector('#st-detail-body');
+
+// 后端错误体：{error_code, message, retryable, request_id}（见 routes_kb._document_error）。
+async function stJson(response) {
+  let data = {};
+  try { data = await response.json(); } catch (_) {}
+  if (!response.ok) {
+    const err = new Error(typeof data?.message === 'string' && data.message ? data.message : '请求失败');
+    err.code = typeof data?.error_code === 'string' ? data.error_code : '';
+    throw err;
+  }
+  return data;
+}
+
+// spec-023.1 F2：发送请求并归一化错误。
+// - 网络层失败（断网/后端未启动/CORS）→ 中文可读提示 + network: true；
+// - 请求被主动取消（切换视图/连点详情）→ network: false，由调用处静默忽略；
+// - 业务错误（4xx/5xx）→ 沿用 stJson 的后端 message 与 error_code。
+async function stFetchJson(input, init) {
+  let response;
+  try {
+    response = await fetch(input, init);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const aborted = new Error('请求已取消');
+      aborted.network = false;
+      aborted.aborted = true;
+      throw aborted;
+    }
+    const networkError = new Error('无法连接本地服务，请确认后端已启动');
+    networkError.network = true;
+    throw networkError;
+  }
+  return stJson(response);
+}
+
 // 模型库/知识库视图：导航切换 + 列表渲染（spec 006 / spec 011）
 function showView(view) {
   const nextView = view === 'papers' && !paperState.enabled ? 'chat' : view;
@@ -2785,6 +2833,7 @@ function showView(view) {
   if (memoryView) memoryView.hidden = nextView !== 'memory';
   document.querySelector('#kb-view').hidden = nextView !== 'kb';
   if (paperView) paperView.hidden = nextView !== 'papers' || !paperState.enabled;
+  if (stView) stView.hidden = nextView !== 'skill-tool';
   document.querySelectorAll('.nav-item').forEach((item) => {
     const isCurrent = item.dataset.view === nextView;
     item.classList.toggle('active', isCurrent);
@@ -2803,6 +2852,10 @@ function showView(view) {
     if (memoryNavigationSnapshot.scope === null) loadMemories();
   }
   if (nextView === 'papers' && paperState.enabled && !paperState.conferencesLoaded) loadPaperConferences();
+  if (nextView === 'skill-tool') {
+    loadSkills();
+    loadTools();
+  }
 }
 
 document.querySelectorAll('.nav-item').forEach((item) => {
@@ -2825,6 +2878,197 @@ document.querySelectorAll('.nav-item').forEach((item) => {
 });
 
 showView('chat');
+
+// ===== Skill / Tool 管理视图（spec-023 Task08） =====
+let stSkills = [];
+let stTools = [];
+// spec-023.1 F1：详情请求序号，保证只有最后一次请求的结果被渲染（丢弃慢到的旧响应）。
+const stState = { detailSeq: 0, detailController: null };
+
+async function loadSkills() {
+  if (stSkillStatus) stSkillStatus.textContent = '正在加载 Skill…';
+  try {
+    const data = await stFetchJson('/api/skills');
+    stSkills = Array.isArray(data.skills) ? data.skills : [];
+    renderSkillList();
+    if (stSkillStatus) stSkillStatus.textContent = '';
+  } catch (error) {
+    if (stSkillStatus) stSkillStatus.textContent = `Skill 加载失败：${error.message}`;
+    if (stSkillList) stSkillList.replaceChildren();
+    if (stSkillEmpty) { stSkillEmpty.hidden = false; stSkillEmpty.textContent = 'Skill 列表加载失败，请稍后重试。'; }
+  }
+}
+
+function renderSkillList() {
+  if (!stSkillList) return;
+  stSkillList.replaceChildren();
+  if (stSkillEmpty) {
+    stSkillEmpty.hidden = stSkills.length > 0;
+    if (stSkills.length === 0) stSkillEmpty.textContent = '还没有可用的 Skill。';
+  }
+  for (const skill of stSkills) {
+    const li = document.createElement('li');
+    li.className = 'st-item';
+
+    const textWrap = document.createElement('div');
+    textWrap.className = 'st-text';
+    const name = document.createElement('span');
+    name.className = 'st-name';
+    name.textContent = skill.name || '未命名 Skill';
+    const desc = document.createElement('p');
+    desc.className = 'st-desc';
+    desc.textContent = skill.description || '';
+    const tools = document.createElement('p');
+    tools.className = 'st-tools';
+    const toolNames = Array.isArray(skill.tools) ? skill.tools : [];
+    tools.textContent = toolNames.length ? `工具：${toolNames.join('、')}` : '未声明工具';
+    textWrap.append(name, desc, tools);
+
+    const actions = document.createElement('div');
+    actions.className = 'st-actions';
+    const detailBtn = document.createElement('button');
+    detailBtn.type = 'button';
+    detailBtn.className = 'secondary-button';
+    detailBtn.textContent = '详情';
+    detailBtn.disabled = !skill.name;
+    // spec-023.1 F1：点击即禁用并显示 loading，避免连点并发；请求结束后恢复。
+    detailBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (detailBtn.disabled) return;
+      detailBtn.disabled = true;
+      detailBtn.textContent = '加载中…';
+      openSkillDetail(skill.name, detailBtn);
+    });
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'secondary-button';
+    toggle.textContent = skill.enabled ? '停用' : '启用';
+    toggle.disabled = !skill.name;
+    toggle.addEventListener('click', (event) => { event.stopPropagation(); toggleSkill(skill, toggle); });
+    actions.append(detailBtn, toggle);
+
+    li.append(textWrap, actions);
+    stSkillList.appendChild(li);
+  }
+}
+
+async function toggleSkill(skill, button) {
+  if (!button || !skill.name) return;
+  button.disabled = true;
+  try {
+    const data = await stFetchJson(`/api/skills/${encodeURIComponent(skill.name)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !skill.enabled }),
+    });
+    skill.enabled = Boolean(data.enabled);
+    button.textContent = skill.enabled ? '停用' : '启用';
+    if (stSkillStatus) stSkillStatus.textContent = '';
+  } catch (error) {
+    if (stSkillStatus) stSkillStatus.textContent = `Skill「${skill.name}」状态更新失败：${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function openSkillDetail(name, button) {
+  if (!stSkillDialog) return;
+  // spec-023.1 F1：每次打开自增序号并中止上一次请求，慢响应后到时因令牌不符被丢弃。
+  const seq = ++stState.detailSeq;
+  if (stState.detailController) stState.detailController.abort();
+  const controller = new AbortController();
+  stState.detailController = controller;
+  if (stDetailName) stDetailName.textContent = name || '';
+  if (stDetailDesc) stDetailDesc.textContent = '';
+  if (stDetailTools) stDetailTools.textContent = '';
+  if (stDetailBody) stDetailBody.textContent = '加载中…';
+  stSkillDialog.showModal();
+  try {
+    const data = await stFetchJson(`/api/skills/${encodeURIComponent(name)}`, { signal: controller.signal });
+    if (stState.detailSeq !== seq || controller.signal.aborted) return;
+    if (stDetailDesc) stDetailDesc.textContent = data.description || '（无描述）';
+    const toolNames = Array.isArray(data.tools) ? data.tools : [];
+    if (stDetailTools) stDetailTools.textContent = toolNames.length ? `工具：${toolNames.join('、')}` : '未声明工具';
+    if (stDetailBody) stDetailBody.textContent = data.body || '（正文为空）';
+  } catch (error) {
+    if (stState.detailSeq !== seq || controller.signal.aborted) return;
+    // spec-023.1 F3：失败时 body/desc/tools 统一展示同一失败文案，避免「名称有值 + 描述/工具空白 + 正文报错」的割裂展示。
+    const failure = `加载失败：${error.message}`;
+    if (stDetailDesc) stDetailDesc.textContent = failure;
+    if (stDetailTools) stDetailTools.textContent = failure;
+    if (stDetailBody) stDetailBody.textContent = failure;
+  } finally {
+    if (stState.detailSeq === seq && stState.detailController === controller) stState.detailController = null;
+    if (button) { button.disabled = false; button.textContent = '详情'; }
+  }
+}
+
+async function loadTools() {
+  if (stToolStatus) stToolStatus.textContent = '正在加载 Tool…';
+  try {
+    const data = await stFetchJson('/api/tools');
+    stTools = Array.isArray(data.tools) ? data.tools : [];
+    renderToolList();
+    if (stToolStatus) stToolStatus.textContent = '';
+  } catch (error) {
+    if (stToolStatus) stToolStatus.textContent = `Tool 加载失败：${error.message}`;
+    if (stToolList) stToolList.replaceChildren();
+    if (stToolEmpty) { stToolEmpty.hidden = false; stToolEmpty.textContent = 'Tool 列表加载失败，请稍后重试。'; }
+  }
+}
+
+function renderToolList() {
+  if (!stToolList) return;
+  stToolList.replaceChildren();
+  if (stToolEmpty) {
+    stToolEmpty.hidden = stTools.length > 0;
+    if (stTools.length === 0) stToolEmpty.textContent = '还没有可用的 Tool。';
+  }
+  for (const tool of stTools) {
+    const li = document.createElement('li');
+    li.className = 'st-item';
+
+    const textWrap = document.createElement('div');
+    textWrap.className = 'st-text';
+    const name = document.createElement('span');
+    name.className = 'st-name';
+    name.textContent = tool.name || '未命名 Tool';
+    const desc = document.createElement('p');
+    desc.className = 'st-desc';
+    desc.textContent = tool.description || '';
+    textWrap.append(name, desc);
+
+    const actions = document.createElement('div');
+    actions.className = 'st-actions';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'secondary-button';
+    toggle.textContent = tool.enabled ? '停用' : '启用';
+    toggle.disabled = !tool.name;
+    toggle.addEventListener('click', () => toggleTool(tool, toggle));
+    actions.append(toggle);
+
+    li.append(textWrap, actions);
+    stToolList.appendChild(li);
+  }
+}
+
+async function toggleTool(tool, button) {
+  if (!button || !tool.name) return;
+  button.disabled = true;
+  try {
+    const data = await stFetchJson(`/api/tools/${encodeURIComponent(tool.name)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !tool.enabled }),
+    });
+    tool.enabled = Boolean(data.enabled);
+    button.textContent = tool.enabled ? '停用' : '启用';
+    if (stToolStatus) stToolStatus.textContent = '';
+  } catch (error) {
+    if (stToolStatus) stToolStatus.textContent = `Tool「${tool.name}」状态更新失败：${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
 
 function refreshModelOptions() {
   if (!modelSelect) return;

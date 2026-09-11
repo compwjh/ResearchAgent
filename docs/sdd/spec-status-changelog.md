@@ -5,6 +5,13 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-11
+
+- **023 Skill 与 Tool 管理模块** ｜ 新建 → 待确认 ｜ 2026-09-11：用 `grill-with-docs`（已安装 `grilling` / `domain-modeling`）三轮访谈冻结 Q1–Q10 全部根决策——Skill=编排层（SKILL.md 协议）/Tool=执行层（后端原子动作）、只管 `.agents/skills/` 并迁移废弃 `~/.codex/skills/download-paper` 硬编码、网页仅只读+启停、规则匹配与 LLM 意图双触发（27B 实测 `GO/NO-GO`）、Agent 读正文自编排且不改 SKILL.md 正文（仅 frontmatter 加 `tools:`）、状态落 `data/kb/skill-state.json`、Tool 交给模型采用「原生 function calling 优先 / 降级计划 JSON」混合策略。已落盘 spec 与 `plans/023/README.md`；**确认前不修改业务代码，task 文件待确认后创建**。
+- **023.1 Skill/Tool 评审遗留 P1 修复** ｜ 新建 → 已确认 → 实施中 → **已完成（已合并入 main）** ｜ 2026-09-11：用户指示「接着修」并建立派生分支 `fix/spec-023.1-p1-fixes`。后端修 B1（删除 `conferences[0]` 静默退化、`all` USENIX 优先、`dblp` 无匹配返回可读错误、`except` 收窄）、B2（多 tool_calls 聚合为单条 assistant 消息 + id 配对，并修掉"边校验边执行"的部分执行缺陷）、B3（全禁用时明确提示）；前端修 F1（序号 + AbortController 防 stale write）、F2（`stFetchJson` 区分网络/业务错误给中文提示）、F3（失败态三字段统一），`?v=26→27`。合并验证 **149 passed**，ruff 零新增；运行时 B3 复验通过
+- **023 Skill 与 Tool 管理模块** ｜ 待确认 → 实施中 → **已完成** ｜ 2026-09-11：Task02 可行性 GO（原生 tool call 5/6、意图识别误判 5%、发现 Ollama 静默忽略非法 tools）后，Task03/04/05/06/07/08 由子代理完成（注册表、启停 API、迁移废弃硬编码、规则+LLM 双触发识别、原生优先/降级计划 JSON 的执行、前端管理页）；Task09 三份评审**均为真实独立评审且通过、P0=0**，验收实测对话四路径端到端通过且模型真实编排 `search_paper_catalog` 返回 USENIX 2024 真实标题，回归 98 passed；架构师已签字，复盘落盘 `docs/sdd/retro/2026-09-11-spec023-skill-tool-management.md`。遗留 2 条后端 P1（选源静默退化、多 tool_calls 消息复制）已书面降级为「已知限制」，转已完成后排期修复
+- **020 零碎 bug 解决** ｜ 已完成（容器保持开放） → 待确认 → **已完成（第 3 批 BUG-05；主模型代行）** ｜ 2026-09-11：新缺陷——首次部署到新机器后上传即报 `INDEX_REBUILD_REQUIRED`。实测 `data/kb` 目录完全不存在（无 `papers.json` / `index-generation.json` / `rebuild-runs`）；根因为 `manifest_store.py:599-603` 的 `require_generation()` 只判断 marker 是否存在、缺失即抛 409，把「空库首次部署（无索引可重建）」与「已有旧索引但代际不符（需停服全库重建）」两种状态混为一谈（`routes_kb.py:310-324` 统一过这道门；`main.py:34-40` 启动时仅打印日志不初始化；同函数内 `papers.json` 缺失却走 503 `INDEX_FINALIZE_REQUIRED`，说明语义本就区别对待）。修复方案：空库自动 bootstrap 初始代际 marker，非空库保持 fail-closed 仍返回 409。纳入第 3 批 **BUG-05 / Task07**（仅后端）；**确认前不修改业务代码**。
+
 ## 2026-09-08
 
 - **017 后端限界上下文彻底重构** ｜ 已完成 → 实施中 ｜ Luna xhigh 独立审计发现旧 `agents/article_agent.py`、`core/config.py`、`api/routes.py` 兼容转发和未接线 `PaperImportPort` 仍不符合原 Spec 的“旧结构清零/跨域 port 接线”要求；保留历史验收证据，退回修复与重新验收。

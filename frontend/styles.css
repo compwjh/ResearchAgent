@@ -2126,3 +2126,169 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
     justify-self: start;
   }
 }
+
+/* ===== Skill / Tool 管理视图（spec-023 Task08） ===== */
+#skill-tool-view .st-workspace {
+  display: grid;
+  gap: 24px;
+  width: min(1080px, 100%);
+  min-height: calc(100vh - 68px);
+  margin: 0 auto;
+  padding: 30px;
+}
+
+#skill-tool-view .st-section {
+  display: grid;
+  gap: 12px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 18px 50px #272a350b;
+}
+
+#skill-tool-view .st-section-head h1 {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -.06em;
+}
+
+#skill-tool-view .st-section-head .subtitle {
+  max-width: 720px;
+  margin-top: 10px;
+}
+
+#skill-tool-view .st-status {
+  margin: 0;
+  min-height: 15px;
+  color: var(--accent);
+  font: 10px/1.5 'DM Mono', monospace;
+  word-break: break-word;
+}
+
+#skill-tool-view .st-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+#skill-tool-view .st-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  transition: background .2s ease, box-shadow .2s ease;
+}
+
+#skill-tool-view .st-item:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 18px 50px #272a3510;
+}
+
+#skill-tool-view .st-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+#skill-tool-view .st-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+#skill-tool-view .st-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+#skill-tool-view .st-tools {
+  margin: 0;
+  font: 10px/1.55 'DM Mono', monospace;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+#skill-tool-view .st-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#skill-tool-view .st-empty {
+  margin: 0;
+  padding: 18px 0;
+  color: var(--muted);
+  font: 12px 'DM Mono', monospace;
+  text-align: center;
+}
+
+.st-detail-dialog .st-detail-name {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.st-detail-dialog .st-detail-desc {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.st-detail-dialog .st-detail-tools {
+  margin: 0 0 14px;
+  font: 10px/1.55 'DM Mono', monospace;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.st-detail-dialog .st-detail-label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font: 10px 'DM Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+
+.st-detail-dialog .st-detail-body {
+  max-height: 50vh;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafd;
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+#skill-tool-view :is(button, input, textarea, select, [tabindex]):focus-visible,
+.st-detail-dialog :is(button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+#skill-tool-view .st-item .secondary-button,
+.st-detail-dialog .secondary-button {
+  min-height: 34px;
+}

@@ -1,0 +1,116 @@
+{
+  "request": {
+    "model": "qwen3.8:27b-mlx",
+    "messages": [
+      {
+        "role": "user",
+        "content": "帮我找 2024 年 USENIX Security 关于 fuzzing 的论文。"
+      }
+    ],
+    "stream": false,
+    "think": false,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "search_paper_catalog",
+          "description": "检索 USENIX Security 论文目录元数据（只返回元数据，不下载 PDF）。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "研究方向或关键词"
+              },
+              "year": {
+                "type": "integer",
+                "description": "会议年份，例如 2024"
+              },
+              "page_size": {
+                "type": "integer",
+                "description": "每页条数，固定 10"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "download_and_import_paper",
+          "description": "对已选定论文执行 PDF 安全验证、下载与个人知识库导入。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "search_id": {
+                "type": "string"
+              },
+              "catalog_paper_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "search_id",
+              "catalog_paper_id"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": {
+    "http_status": 200,
+    "elapsed_s": 11.66,
+    "raw": {
+      "model": "qwen3.8:27b-mlx",
+      "created_at": "2026-09-11T11:33:53.380236Z",
+      "message": {
+        "role": "assistant",
+        "content": "empty message",
+        "tool_calls": [
+          {
+            "id": "call_5huz0dba",
+            "function": {
+              "index": 0,
+              "name": "search_paper_catalog",
+              "arguments": {
+                "query": "fuzzing",
+                "year": 2024
+              }
+            }
+          }
+        ]
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 11475599583,
+      "load_duration": 6958013708,
+      "prompt_eval_count": 446,
+      "prompt_eval_cached_count": 0,
+      "prompt_eval_duration": 2909301708,
+      "eval_count": 45,
+      "eval_duration": 1605811792
+    },
+    "content": "empty message",
+    "thinking": "",
+    "tool_calls": [
+      {
+        "id": "call_5huz0dba",
+        "function": {
+          "index": 0,
+          "name": "search_paper_catalog",
+          "arguments": {
+            "query": "fuzzing",
+            "year": 2024
+          }
+        }
+      }
+    ],
+    "done_reason": "stop",
+    "eval_count": 45,
+    "prompt_eval_count": 446
+  }
+}

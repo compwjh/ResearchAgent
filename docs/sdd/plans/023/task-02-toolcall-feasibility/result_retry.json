@@ -1,0 +1,107 @@
+[
+  {
+    "tag": "P07",
+    "run": 1,
+    "name": "usenix-accepted-papers",
+    "elapsed_s": 1.9,
+    "http": 200
+  },
+  {
+    "tag": "P07",
+    "run": 2,
+    "name": "usenix-accepted-papers",
+    "elapsed_s": 1.54,
+    "http": 200
+  },
+  {
+    "tag": "P07",
+    "run": 3,
+    "name": "usenix-accepted-papers",
+    "elapsed_s": 1.44,
+    "http": 200
+  },
+  {
+    "tag": "P07",
+    "run": 4,
+    "name": "usenix-accepted-papers",
+    "elapsed_s": 1.56,
+    "http": 200
+  },
+  {
+    "tag": "P07",
+    "run": 5,
+    "name": "usenix-accepted-papers",
+    "elapsed_s": 1.55,
+    "http": 200
+  },
+  {
+    "tag": "P08",
+    "run": 1,
+    "name": "none",
+    "elapsed_s": 1.48,
+    "http": 200
+  },
+  {
+    "tag": "P08",
+    "run": 2,
+    "name": "none",
+    "elapsed_s": 1.65,
+    "http": 200
+  },
+  {
+    "tag": "P08",
+    "run": 3,
+    "name": "none",
+    "elapsed_s": 1.27,
+    "http": 200
+  },
+  {
+    "tag": "P08",
+    "run": 4,
+    "name": "none",
+    "elapsed_s": 1.26,
+    "http": 200
+  },
+  {
+    "tag": "P08",
+    "run": 5,
+    "name": "none",
+    "elapsed_s": 1.25,
+    "http": 200
+  },
+  {
+    "tag": "STABLE",
+    "run": 1,
+    "name": "usenix-paper-catalog-search",
+    "elapsed_s": 1.76,
+    "http": 200
+  },
+  {
+    "tag": "STABLE",
+    "run": 2,
+    "name": "usenix-paper-catalog-search",
+    "elapsed_s": 1.58,
+    "http": 200
+  },
+  {
+    "tag": "STABLE",
+    "run": 3,
+    "name": "usenix-paper-catalog-search",
+    "elapsed_s": 1.56,
+    "http": 200
+  },
+  {
+    "tag": "STABLE",
+    "run": 4,
+    "name": "usenix-paper-catalog-search",
+    "elapsed_s": 1.56,
+    "http": 200
+  },
+  {
+    "tag": "STABLE",
+    "run": 5,
+    "name": "usenix-paper-catalog-search",
+    "elapsed_s": 1.55,
+    "http": 200
+  }
+]

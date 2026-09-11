@@ -596,11 +596,77 @@ class FinalizeBundleStore:
     def resume_finalize(self, run_id: str) -> dict[str, Any]:
         return self.commit(run_id)
 
-    def require_generation(self, *, finalize_pending: bool = False) -> dict[str, Any]:
+    def _is_empty_library(self) -> bool:
+        """True when the live library holds no document at all (fresh deploy)."""
+        metadata_path = self.live_root / "papers.json"
+        try:
+            raw = metadata_path.read_bytes()
+        except OSError:
+            return True
+        try:
+            records = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return isinstance(records, list) and not records
+
+    def _bootstrap_empty_generation(self) -> None:
+        """Create the initial generation marker for a first-time deployment.
+
+        A fresh install has no index at all, so there is nothing to rebuild: the
+        marker simply never existed.  Bootstrapping it here keeps a brand-new
+        deployment usable for upload, list and health checks.
+
+        A **non-empty** library whose marker is missing still fails closed with
+        ``INDEX_REBUILD_REQUIRED`` — that state needs an authorized full rebuild
+        and must never be repaired automatically.
+
+        No Qdrant collection is created here: the indexing path ensures the
+        destination collection on demand (``index.ensure_collection``).
+        """
+        with _lock:
+            marker_path = self.live_root / "index-generation.json"
+            if marker_path.exists():
+                return
+            if not self._is_empty_library():
+                raise ManifestStoreError("INDEX_REBUILD_REQUIRED")
+            metadata_path = self.live_root / "papers.json"
+            if not metadata_path.exists():
+                _atomic_bytes(metadata_path, b"[]")
+            alias_target = "papers_rebuild_empty_bootstrap"
+            marker = {
+                "schema_version": "index-generation-v1",
+                "run_id": "empty-bootstrap",
+                "alias_name": "papers",
+                "alias_target": alias_target,
+                "bundle_sha256": _sha256_json({}),
+                "collection_fingerprint": _sha256_bytes(alias_target.encode("utf-8")),
+                "metadata_sha256": _sha256_bytes(metadata_path.read_bytes()),
+                "manifests_digest": self._live_manifests_digest(),
+                "committed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            _validate("index-generation.schema.json", marker, "GENERATION_MARKER_INVALID")
+            _atomic_bytes(
+                marker_path,
+                json.dumps(marker, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8"),
+            )
+
+    def require_generation(
+        self,
+        *,
+        finalize_pending: bool = False,
+        allow_bootstrap: bool = False,
+    ) -> dict[str, Any]:
         marker_path = self.live_root / "index-generation.json"
         if not marker_path.exists():
-            code = "INDEX_FINALIZE_REQUIRED" if finalize_pending else "INDEX_REBUILD_REQUIRED"
-            raise ManifestStoreError(code, status=503 if finalize_pending else 409)
+            if finalize_pending:
+                raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+            if not allow_bootstrap:
+                # Default stays fail-closed: read paths (startup gate, status,
+                # inspection) must never mutate the store as a side effect.
+                raise ManifestStoreError("INDEX_REBUILD_REQUIRED")
+            # A fresh deployment has no index at all: bootstrap the initial
+            # generation instead of demanding a rebuild of nothing.
+            self._bootstrap_empty_generation()
         marker = _read_json(marker_path, "INDEX_FINALIZE_REQUIRED")
         _validate("index-generation.schema.json", marker, "INDEX_FINALIZE_REQUIRED")
         try:

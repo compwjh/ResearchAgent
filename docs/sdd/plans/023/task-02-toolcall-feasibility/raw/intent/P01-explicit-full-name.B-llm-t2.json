@@ -1,0 +1,10 @@
+{
+  "http_status": 200,
+  "content": "{\"reason\": \"明确指定技能名\", \"name\": \"yes\"}",
+  "elapsed_s": 9.43,
+  "second_stage": {
+    "http_status": 200,
+    "content": "{\"reason\": \"明确指定技能名\", \"name\": \"usenix-paper-catalog-search\"}",
+    "elapsed_s": 3.17
+  }
+}

@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=32">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=33">
 </head>
 <body>
   <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">☰ <span>项目与会话</span></button>
@@ -39,6 +39,7 @@
         <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count">0</span></a>
         <a class="nav-item" data-view="memory" role="button" tabindex="0"><span class="nav-icon">✧</span> 记忆治理</a>
         <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
+        <a class="nav-item" data-view="skill-tool" role="button" tabindex="0"><span class="nav-icon">❖</span> Skill 与 Tool</a>
       </nav>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="status-dot"></span><div><strong>本地服务</strong><small id="model-label">连接中</small></div></div>
@@ -391,7 +392,52 @@
         </section>
       </section>
     </section>
+    <section class="main-area" id="skill-tool-view" hidden aria-labelledby="skill-tool-title">
+      <header class="topbar">
+        <div class="breadcrumb"><span>Skill 与 Tool</span><span class="slash">/</span><strong>能力管理</strong></div>
+      </header>
+      <section class="workspace st-workspace" aria-label="Skill 与 Tool 管理">
+        <div class="st-section">
+          <header class="st-section-head">
+            <div>
+              <p class="eyebrow">AGENT SKILLS</p>
+              <h1 id="skill-tool-title">Skill</h1>
+              <p class="subtitle">查看 Agent 可调用的 Skill 及其正文，并启停其可用性。</p>
+            </div>
+          </header>
+          <p class="st-status" id="st-skill-status" role="status" aria-live="polite"></p>
+          <ul class="st-list" id="st-skill-list" aria-live="polite"></ul>
+          <p class="st-empty" id="st-skill-empty" hidden>还没有可用的 Skill。</p>
+        </div>
+
+        <div class="st-section">
+          <header class="st-section-head">
+            <div>
+              <p class="eyebrow">AGENT TOOLS</p>
+              <h1>Tool</h1>
+              <p class="subtitle">查看 Agent 可调用的底层 Tool 并启停其可用性。</p>
+            </div>
+          </header>
+          <p class="st-status" id="st-tool-status" role="status" aria-live="polite"></p>
+          <ul class="st-list" id="st-tool-list" aria-live="polite"></ul>
+          <p class="st-empty" id="st-tool-empty" hidden>还没有可用的 Tool。</p>
+        </div>
+      </section>
+    </section>
   </main>
+
+  <dialog class="settings-dialog st-detail-dialog" id="st-skill-dialog" aria-labelledby="st-detail-title">
+    <form method="dialog" class="settings-form" id="st-skill-detail-form">
+      <div class="settings-title"><div><span class="conversation-kicker">SKILL DETAIL</span><h2 id="st-detail-title">Skill 详情</h2></div><button class="icon-button" value="cancel" aria-label="关闭详情">×</button></div>
+      <p class="st-detail-name" id="st-detail-name"></p>
+      <p class="st-detail-desc" id="st-detail-desc"></p>
+      <p class="st-detail-tools" id="st-detail-tools"></p>
+      <p class="st-detail-label">正文</p>
+      <pre class="st-detail-body" id="st-detail-body"></pre>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">关闭</button></div>
+    </form>
+  </dialog>
+
   <dialog class="paper-conference-dialog" id="paper-conference-dialog" aria-labelledby="paper-conference-dialog-title">
     <form method="dialog" class="settings-form" id="paper-conference-form">
       <div class="settings-title">
@@ -442,7 +488,7 @@
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
-  <!-- Task09/Task10 compatibility marker retained for older static contracts: /assets/app.js?v=31 -->
-  <script src="/assets/app.js?v=32"></script>
+  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 -->
+  <script src="/assets/app.js?v=33"></script>
 </body>
 </html>

@@ -111,6 +111,11 @@ LANGFUSE_TIMEOUT = int(os.getenv("LANGFUSE_TIMEOUT", "5"))
 OLLAMA_ROUTE = os.getenv("OLLAMA_ROUTE", "langchain").strip().lower()
 # 冷启动判定阈值（毫秒）：load_duration 超过该值即标记为冷启动
 OBS_COLD_START_THRESHOLD_MS = float(os.getenv("OBS_COLD_START_THRESHOLD_MS", "200"))
+# 对话内 Tool 执行（spec-023 Task07）：最大编排轮次、单次模型调用超时（秒）、重试次数。
+# 均为可配置常量，默认 max_rounds=4（3~5 之间）、timeout=60s（≥ Task02 冷启动上限）、retry=1。
+SKILL_TOOL_MAX_ROUNDS = int(os.getenv("SKILL_TOOL_MAX_ROUNDS", "4"))
+SKILL_TOOL_TIMEOUT_SECONDS = float(os.getenv("SKILL_TOOL_TIMEOUT_SECONDS", "60"))
+SKILL_TOOL_RETRY = int(os.getenv("SKILL_TOOL_RETRY", "1"))
 # 上报内容截断阈值（字符）：避免超长输入/输出/思考过程撑爆单事件大小限制
 OBS_MAX_INPUT_CHARS = int(os.getenv("OBS_MAX_INPUT_CHARS", "20000"))
 OBS_MAX_OUTPUT_CHARS = int(os.getenv("OBS_MAX_OUTPUT_CHARS", "20000"))
