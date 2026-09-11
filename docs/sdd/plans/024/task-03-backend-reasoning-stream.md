@@ -19,6 +19,9 @@
 - 实现一次性事务迁移，清理旧会话与严格依赖数据，保留项目、记忆、SystemRule 和知识库。
 - 扩展既有会话消息入口与 reasoning-options 能力接口。
 - SSE 使用 Spec 中冻结的 reasoning_started、reasoning_delta、reasoning_completed、token、done、error。
+- LangChain/direct 均走同一 effort 映射；xhigh 只能使用 Task02 的真实证据，不得把省略参数当作隐式降级。
+- 每条事件带单调 event_seq；后端和持久化状态机拒绝重复、旧序号和终态回退。
+- observability metadata 只保留 reasoning_present、reasoning_chars、阶段耗时和状态，删除 thinking 文本。
 
 ## 思维链（执行阶段、观察点与决策依据）
 
@@ -26,7 +29,9 @@
 2. 扩展既有 adapter 透传 reasoning_content，不新增模型客户端。
 3. 在 application 层冻结本轮档位、过滤增量并原子更新消息阶段。
 4. 确认正文首 token 前推理已进入终态。
-5. 验证记忆分类输入不含推理草稿。
+5. 验证记忆分类、raw_events、RAG/embedding 和观测输入不含推理草稿。
+6. 用跨 chunk 模板标记、Unicode、20,000 code point 和失败回滚向量验证过滤器。
+7. 使用固定输入向量“abc<|im_” + “start|>def”、emoji/组合字符和 20,001 个 code point，断言输出无协议标记且不超过 20,000。
 
 ## 子 Agent 分派
 
@@ -47,14 +52,19 @@
 5. backend/app/chat/application/chat_runner.py
 6. backend/app/chat/application/conversation_service.py
 7. backend/app/platform/ollama.py
-8. backend/app/api/routes_conversations.py
-9. 当前会话/记忆 repository、models、schemas 及相关定向测试
+8. backend/app/platform/ollama_direct.py
+9. backend/app/platform/observability/spans.py
+10. backend/app/api/routes_conversations.py
+11. 当前会话/记忆 repository、models、schemas 及相关定向测试
 允许修改：
 - backend/app/chat/**
 - backend/app/memory 中既有会话 schema/repository
 - backend/app/platform/ollama.py
+- backend/app/platform/ollama_direct.py
+- backend/app/platform/observability/**
 - backend/app/api 中既有会话相关 schemas/routes
 - tests 中 Spec024 后端定向测试
+- tests/test_spec024_backend.py（仅本 Task 新增/修改）
 - docs/sdd/plans/024/artifacts/task-03/implementation-report.md
 禁止：
 - 修改 frontend/**
@@ -74,6 +84,7 @@
 - tests/test_chat_route.py
 - tests/test_ollama_service.py
 - tests/test_ollama_direct.py 中受影响项
+- observability、memory worker 隔离和 event_seq 负例测试
 - git diff --check
 结果写入：
 docs/sdd/plans/024/artifacts/task-03/implementation-report.md
@@ -93,9 +104,12 @@ docs/sdd/plans/024/artifacts/task-03/implementation-report.md
 
 - 不支持档位在模型调用前返回稳定错误。
 - 事件偏序正确，终态不能回到 running，重复增量不会重复保存。
+- 重复/乱序 event_seq 被丢弃，LangChain/direct 两条路径行为一致。
 - 20,000 Unicode 字符边界、过滤和省略标记通过。
 - 一次性迁移删除旧会话但保留项目、记忆、SystemRule 和知识库。
-- 普通会话与项目会话走同一实现。
+- 普通会话与项目会话走同一实现；不支持档位时模型调用计数为 0。
+- Langfuse metadata、普通日志和 memory worker 输入不含原始 reasoning 片段。
+- 观测 metadata 只允许 model、route、reasoning_present、reasoning_chars、reasoning_status、reasoning_duration_ms、answer_duration_ms 和稳定错误码；logger 捕获原始 reasoning 片段即失败。
 
 ## 风险、停止条件与回滚
 

@@ -9,7 +9,7 @@
 
 ## 前置门禁
 
-- Task03、Task04 的实现、测试和评审报告均已落盘。
+- Task02 的 protocol-report、Task03/Task04 的实现、测试和评审报告均已落盘。
 - P0/P1 已清零；工作树无无关修改。
 - 旧会话清理数量和保留数据证据可审计。
 
@@ -30,8 +30,9 @@
 只需读取：
 1. docs/sdd/specs/024-visible-reasoning-controls.md
 2. docs/sdd/plans/024/task-05-review-regression-deploy.md
-3. artifacts/task-03 与 artifacts/task-04 的固定报告
-4. 实际最终 diff
+3. docs/sdd/plans/024/artifacts/task-02/protocol-report.md
+4. artifacts/task-03 与 artifacts/task-04 的固定报告
+5. 实际最终 diff
 允许修改：
 - docs/sdd/reviews/024-acceptance-review.md
 - docs/sdd/plans/024/artifacts/task-05/acceptance-report.md
@@ -57,6 +58,7 @@ docs/sdd/plans/024/artifacts/task-05/acceptance-report.md
 固定返回字段：
 结果状态和摘要；改动文件；测试命令、退出码和结果；产物路径；决策依据；风险与阻塞；主 Agent 后续动作；开始、结束和总耗时；可用时记录模型、token 和工具调用统计。
 若环境冷启动或 Ollama 忙，记录环境并重做一次预热样例；不得为满足 20 秒门槛修改业务语义。
+固定 smoke fixture：模型 qwen3.8:27b-mlx；问题“请用三点解释什么是向量数据库”；健康检查成功后发送一次短预热请求，再发送验收请求。报告记录 request_sent_at、reasoning_started_at、first_nonempty_reasoning_delta_at、reasoning_completed_at、first_answer_token_at、done_at、effort、event_seq、模型是否冷启动及 Ollama 忙状态。首段真实推理必须是过滤空白/模板标记后的非空 delta；本地准备状态不算通过。
 ~~~
 
 ## 主 Agent 必须校验
@@ -65,6 +67,7 @@ docs/sdd/plans/024/artifacts/task-05/acceptance-report.md
 - 确认全量回归只在本 Task 运行一次且最终为通过。
 - 确认服务实际启动并返回健康状态，浏览器资源为最新版本。
 - 确认 Spec025 仍为占位，无 Task、无业务实现。
+- 机械检查：Spec025 状态仍为待确认（占位待调研）；docs/sdd/plans/025/ 不存在；本次 backend/frontend diff 不包含 Spec025 文件或上下文压缩入口。
 
 ## 验收标准
 
@@ -73,6 +76,8 @@ docs/sdd/plans/024/artifacts/task-05/acceptance-report.md
 - 推理草稿过滤、20,000 字符上限、记忆隔离通过。
 - 旧会话删除且项目、长期记忆、SystemRule、知识库保留。
 - 预热 xhigh 首段真实推理内容在 20 秒内；硬件异常单独记录。
+- 固定 smoke fixture 的时间戳、event_seq、模型 tag 与环境分类全部落盘。
+- 故障 fixture 固定使用 fake adapter：started 后无 delta、started 后失败、reasoning_completed 后首 token 前失败、正文后断线、重复/乱序 event_seq；每个场景必须给出 SSE 序列、DOM 终态和持久化状态。
 - 全量回归通过，部署 smoke 通过，三份评审真实落盘。
 
 ## 风险、停止条件与回滚

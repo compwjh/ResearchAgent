@@ -5,6 +5,11 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-12
+
+- **024 可见推理过程与会话级推理档位** ｜ 待确认 → 已确认 ｜ 用户明确要求 pull 后继续开发；需求最终复审与技术复审均通过，允许启动 Task02。
+- **024 可见推理过程与会话级推理档位** ｜ 已确认 → 实施中 ｜ 完成首条消息、SSE 耗时/终态和 PATCH `updated_at` 合同收紧；启动 Task02 真实 Ollama/临时数据库 Go/No-Go，业务代码暂不修改。
+
 ## 2026-09-11
 
 - **023 / 023.1 分支合并入 main** ｜ 合并完成（merge commit `60f5bae`） ｜ 2026-09-11：将 `fix/spec-023.1-p1-fixes` 合并入 `main`。因两侧并行改动产生 5 处冲突，手工整合如下——① `routes.py`：保留 main 的 `routes_conversations` 并并入 `routes_skills`/`routes_tools`；② `routes_chat.py`（真实集成冲突）：采用本分支 Skill 识别 + Tool 执行编排，叠加 main 的记忆库 system-rule 与可观测性（`build_role_aware_messages` 组装 messages、`observation_messages`/`observation_metadata` 埋点含 `extra_metadata`）；③ `index.html`：以 main 为基础补入 “Skill 与 Tool” 导航/视图/详情对话框，版本 `?v=32→33`；④ 冻结清单 `upload-closure-matrix.json` 按合并后工作树重算 sha256 与 `inventory_digest`；⑤ `test_frontend_paper_contract.py` 取 main 版。合并后定向回归 **219 passed / 1 failed**（`test_conversations_api` 的 durable worker 用例，经 worktree 复核为 **main 合并前即存在的存量失败**，非本次引入）；运行时冒烟 `/`、`/api/skills`、`/api/tools`、`/api/memories?scope=global` 均 200
@@ -210,3 +215,5 @@
 - **022 项目会话与长期记忆** ｜ 实施中（Task08） → 已完成 ｜ 2026-09-11：Task02–Task10 全部收口，验收报告与复盘已落盘；本机 Ollama `models=[]` 导致成功对话 SSE/RAG 仅保留为环境待复验，不伪造成功证据。
 - **024 可见推理过程与会话级推理档位** ｜ 新建 → 待确认 ｜ 2026-09-11：经 Grilling 确认默认 xhigh、会话级五档选择、过滤后推理流、自动折叠、一次性删除旧会话及预热模型 20 秒验收边界；Spec 与 Task02–05 已落盘，确认前不修改业务代码。
 - **025 会话上下文压缩与 Token 预算管理** ｜ 新建 → 待确认（占位待调研） ｜ 2026-09-11：登记当前缺少历史摘要替换、上下文压缩和 token 预算管理；按用户要求仅创建占位 Spec，不创建 Task、不实施，也不作为 Spec024 依赖。
+- **024 可见推理过程与会话级推理档位** ｜ 待确认 → 待确认（评审打回） ｜ 2026-09-11：临时 Luna high 需求评审发现 8 项 P1，技术评审发现 4 项 P0、5 项 P1；暂停代码开发，补充能力映射、schema v7 清理矩阵、SSE event_seq/终态、历史字段、LangChain/direct 一致性和观测隔离后重新评审。
+- **024 可见推理过程与会话级推理档位** ｜ 待确认（修订后复审） → 待确认（再次打回） ｜ 2026-09-11：需求复审仍有 2 项 P1（能力接口失败体、SSE 完整字段/计时/中间失败序列），技术复审仍有 3 项 P0（五档双路径映射、schema v7 marker/Preference DDL/回滚、逐事件 event_seq 状态映射）；继续暂停业务开发，补齐最后合同后再复审。
