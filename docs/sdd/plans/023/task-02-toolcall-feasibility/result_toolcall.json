@@ -1,0 +1,165 @@
+{
+  "base_url": "http://192.168.31.180:11434",
+  "model": "qwen3.8:27b-mlx",
+  "time": "2026-09-11T19:33:42+0800",
+  "cases": [
+    {
+      "id": "A1-bare-tools",
+      "note": "无 system prompt，仅 tools，think=False",
+      "think": false,
+      "has_tools": true,
+      "verdict": "TOOL_CALL_OK",
+      "http_status": 200,
+      "elapsed_s": 11.66,
+      "content_preview": "empty message",
+      "tool_calls": [
+        {
+          "id": "call_5huz0dba",
+          "function": {
+            "index": 0,
+            "name": "search_paper_catalog",
+            "arguments": {
+              "query": "fuzzing",
+              "year": 2024
+            }
+          }
+        }
+      ],
+      "thinking_preview": "",
+      "error": null,
+      "done_reason": "stop",
+      "eval_count": 45,
+      "raw_file": "raw/A1-bare-tools.json"
+    },
+    {
+      "id": "A2-system-tools",
+      "note": "带 system prompt 说明 Skill 边界，tools，think=False",
+      "think": false,
+      "has_tools": true,
+      "verdict": "TOOL_CALL_OK",
+      "http_status": 200,
+      "elapsed_s": 5.19,
+      "content_preview": "我来帮你检索 2024 年 USENIX Security 关于 fuzzing 的论文。",
+      "tool_calls": [
+        {
+          "id": "call_gh826btv",
+          "function": {
+            "index": 0,
+            "name": "search_paper_catalog",
+            "arguments": {
+              "query": "fuzzing",
+              "year": 2024,
+              "page_size": 10
+            }
+          }
+        }
+      ],
+      "thinking_preview": "",
+      "error": null,
+      "done_reason": "stop",
+      "eval_count": 79,
+      "raw_file": "raw/A2-system-tools.json"
+    },
+    {
+      "id": "A3-tools-think-true",
+      "note": "对照组：think=True（验证是否返回空/超时），tools 存在",
+      "think": true,
+      "has_tools": true,
+      "verdict": "TOOL_CALL_OK",
+      "http_status": 200,
+      "elapsed_s": 2.8,
+      "content_preview": "",
+      "tool_calls": [
+        {
+          "id": "call_7thkmc0d",
+          "function": {
+            "index": 0,
+            "name": "search_paper_catalog",
+            "arguments": {
+              "query": "fuzzing",
+              "year": 2024,
+              "page_size": 10
+            }
+          }
+        }
+      ],
+      "thinking_preview": "用户需要检索2024年USENIX Security关于fuzzing的论文。应使用search_paper_catalog工具，query设为\"fuzzing\"，year设为2024，page_size按说明固定为10。",
+      "error": null,
+      "done_reason": "stop",
+      "eval_count": 108,
+      "raw_file": "raw/A3-tools-think-true.json"
+    },
+    {
+      "id": "A4-no-tool-needed",
+      "note": "不需要工具的普通提问，确认不会乱调工具",
+      "think": false,
+      "has_tools": false,
+      "verdict": "TEXT_ONLY",
+      "http_status": 200,
+      "elapsed_s": 5.94,
+      "content_preview": "你好！我是通义千问，由阿里巴巴通义实验室研发的大语言模型。我可以协助你处理各种任务，例如：\n\n- **回答问题**：涵盖知识、文化、科技等多个领域，提供准确信息。\n- **文本创作**：撰写文章、邮件、故事、诗歌等，风格可根据需求调整。\n- **代码相关**：支持多种编程语言的代码生成、调试和解释。\n- **逻辑推理与分析**：帮助拆解复杂问题，进行数据分析和决策支持。\n- **多语言支持**：提供跨语言的翻译与交流协助。\n- **学习与工作辅助**：帮助整理资料、总结文献、规划学习或工作任务。\n\n如果你有具体需求，欢迎随时告诉我，我会尽力提供精准且高效的帮助！",
+      "tool_calls": [],
+      "thinking_preview": "",
+      "error": null,
+      "done_reason": "stop",
+      "eval_count": 157,
+      "raw_file": "raw/A4-no-tool-needed.json"
+    },
+    {
+      "id": "A5-explicit-skill-name",
+      "note": "显式点名 Skill，是否映射到对应工具",
+      "think": false,
+      "has_tools": true,
+      "verdict": "TOOL_CALL_OK",
+      "http_status": 200,
+      "elapsed_s": 1.84,
+      "content_preview": "",
+      "tool_calls": [
+        {
+          "id": "call_cqqnup11",
+          "function": {
+            "index": 0,
+            "name": "search_paper_catalog",
+            "arguments": {
+              "query": "隐私",
+              "year": 2023
+            }
+          }
+        }
+      ],
+      "thinking_preview": "",
+      "error": null,
+      "done_reason": "stop",
+      "eval_count": 40,
+      "raw_file": "raw/A5-explicit-skill-name.json"
+    },
+    {
+      "id": "A6-download-intent",
+      "note": "下载意图应映射 download_and_import_paper",
+      "think": false,
+      "has_tools": true,
+      "verdict": "TOOL_CALL_OK",
+      "http_status": 200,
+      "elapsed_s": 1.72,
+      "content_preview": "",
+      "tool_calls": [
+        {
+          "id": "call_r5az9mbg",
+          "function": {
+            "index": 0,
+            "name": "download_and_import_paper",
+            "arguments": {
+              "catalog_paper_id": "42",
+              "search_id": "search-abc"
+            }
+          }
+        }
+      ],
+      "thinking_preview": "",
+      "error": null,
+      "done_reason": "stop",
+      "eval_count": 45,
+      "raw_file": "raw/A6-download-intent.json"
+    }
+  ]
+}

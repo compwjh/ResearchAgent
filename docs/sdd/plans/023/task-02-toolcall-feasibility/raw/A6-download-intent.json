@@ -1,0 +1,116 @@
+{
+  "request": {
+    "model": "qwen3.8:27b-mlx",
+    "messages": [
+      {
+        "role": "user",
+        "content": "用 usenix-accepted-papers 技能，把搜索任务 search-abc 里的论文 catalog_paper_id=42 下载并导入知识库。"
+      }
+    ],
+    "stream": false,
+    "think": false,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "search_paper_catalog",
+          "description": "检索 USENIX Security 论文目录元数据（只返回元数据，不下载 PDF）。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "研究方向或关键词"
+              },
+              "year": {
+                "type": "integer",
+                "description": "会议年份，例如 2024"
+              },
+              "page_size": {
+                "type": "integer",
+                "description": "每页条数，固定 10"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "download_and_import_paper",
+          "description": "对已选定论文执行 PDF 安全验证、下载与个人知识库导入。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "search_id": {
+                "type": "string"
+              },
+              "catalog_paper_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "search_id",
+              "catalog_paper_id"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": {
+    "http_status": 200,
+    "elapsed_s": 1.72,
+    "raw": {
+      "model": "qwen3.8:27b-mlx",
+      "created_at": "2026-09-11T11:34:10.885166Z",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_r5az9mbg",
+            "function": {
+              "index": 0,
+              "name": "download_and_import_paper",
+              "arguments": {
+                "catalog_paper_id": "42",
+                "search_id": "search-abc"
+              }
+            }
+          }
+        ]
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 1661185000,
+      "load_duration": 9050625,
+      "prompt_eval_count": 456,
+      "prompt_eval_cached_count": 415,
+      "prompt_eval_duration": 450452375,
+      "eval_count": 45,
+      "eval_duration": 1199875250
+    },
+    "content": "",
+    "thinking": "",
+    "tool_calls": [
+      {
+        "id": "call_r5az9mbg",
+        "function": {
+          "index": 0,
+          "name": "download_and_import_paper",
+          "arguments": {
+            "catalog_paper_id": "42",
+            "search_id": "search-abc"
+          }
+        }
+      }
+    ],
+    "done_reason": "stop",
+    "eval_count": 45,
+    "prompt_eval_count": 456
+  }
+}

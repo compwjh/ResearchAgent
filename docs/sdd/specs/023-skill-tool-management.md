@@ -2,7 +2,13 @@
 
 ## 状态
 
-**当前状态：待确认**
+**当前状态：实施中**
+
+> 2026-09-11：用户指示开始开发。Task02 可行性验证 **GO**（原生 tool call 5/6 可用、意图识别误判 5%、
+> 发现 Ollama 对非法 tools schema **静默忽略** → 后端必须自校验）。Task03/04/06/07/08 已由子代理完成，
+> 定向测试 **105 passed**；运行时冒烟 `/api/skills`、`/api/tools`、`/` 均 200。
+> **剩余：Task05（迁移 `download-paper` 并废弃硬编码）、Task09（评审/部署/复盘）**；
+> Task09 完成前 spec 不转 `已完成`。
 
 > 2026-09-11：经 `grill-with-docs`（mattpocock/skills，已安装到 `.codebuddy/skills/`）三轮访谈冻结全部根决策后编写。
 > **确认前不修改任何业务代码**。
@@ -128,23 +134,41 @@
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-023 | 本文件 | — | 完成 |
-| 02 | 验证本地 27B 的 tool call 与意图识别能力（Go/No-Go） | 确认后创建 | 01 | 待执行 |
-| 03 | 后端 Skill 注册表与读写 API | 确认后创建 | 01 | 待执行 |
-| 04 | 后端 Tool 注册表、状态文件与启停 API | 确认后创建 | 01 | 待执行 |
-| 05 | 迁移 `download-paper` Skill 并废弃硬编码路径 | 确认后创建 | 03 | 待执行 |
-| 06 | 对话链路：规则匹配 + LLM 意图识别（Q4） | 确认后创建 | 02,03 | 待执行 |
-| 07 | 对话链路：Tool 执行（原生优先、降级计划 JSON，Q9-C） | 确认后创建 | 04,06 | 待执行 |
-| 08 | 前端 Skill/Tool 管理页面（Q3 只读 + 启停） | 确认后创建 | 03,04 | 待执行 |
-| 09 | 评审、部署与复盘 | 确认后创建 | 06,07,08 | 待执行 |
+| 02 | 验证本地 27B 的 tool call 与意图识别能力（Go/No-Go） | [`task-02 产出/RESULT.md`](../plans/023/task-02-toolcall-feasibility/RESULT.md) | 01 | **已完成（GO）** |
+| 03 | 后端 Skill 注册表与读写 API | 日志 `.codebuddy/agent-logs/spec-023/task-03/` | 01 | **已完成** |
+| 04 | 后端 Tool 注册表、状态文件与启停 API | 日志 `.codebuddy/agent-logs/spec-023/task-04/` | 01 | **已完成** |
+| 05 | 迁移 `download-paper` Skill 并废弃硬编码路径 | 主会话代行（见变更日志） | 03 | **已完成** |
+| 06 | 对话链路：规则匹配 + LLM 意图识别（Q4） | 日志 `.codebuddy/agent-logs/spec-023/task-06/` | 02,03 | **已完成** |
+| 07 | 对话链路：Tool 执行（原生优先、降级计划 JSON，Q9-C） | 日志 `.codebuddy/agent-logs/spec-023/task-07/` | 04,06 | **已完成** |
+| 08 | 前端 Skill/Tool 管理页面（Q3 只读 + 启停） | 日志 `.codebuddy/agent-logs/spec-023/task-08/` | 03,04 | **已完成** |
+| 09 | 评审、部署与复盘 | 待创建 | 05,06,07,08 | 待执行 |
 
 ## 评审记录
 
 - 需求评审：`docs/sdd/reviews/023-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/023-tech-review.md`（待评审（未执行））
+- 技术评审（后端）：`docs/sdd/reviews/023-backend-review.md` — **通过（附强制约束），P0=0**；实跑 91 passed；遗留 2 条 P1（已书面降级，见「已知限制」）
+- 技术评审（前端）：`docs/sdd/reviews/023-frontend-review.md` — **通过（Approve），P0=0**；四项必守全 PASS、30 passed；3 条 P1 为健壮性建议
 - 验收评审：`docs/sdd/reviews/023-acceptance-review.md`（待评审（未执行））
+
+## 已知限制（评审遗留，转 `已完成` 前须处理）
+
+后端评审提出的 2 条 P1，本轮**书面降级为已知限制**（未修改业务代码），后续须修复或复审确认：
+
+1. **`search_paper_catalog` 选源错误且静默退化**（`tool_dispatch.py:53-65`、`registry.py:36-40`）
+   本机会议配置为 CCS / IEEE S&P / NDSS / USENIX Security，**无 dblp 项**，导致 `source="all"` 与 `source="dblp"` 双双落到 `conferences[0]`（CCS）；
+   且异常被 `tool_dispatch.py:152` 的 `except Exception` 收敛成通用报错，不可诊断。
+   → 后续：`all` 明确 USENIX 优先；`dblp` 无匹配时返回可读错误而非静默取值。
+2. **原生路径多 `tool_calls` 导致消息历史被复制**（`tool_executor.py:269-291` 与 `:226-239`）
+   2 个 `tool_calls` → 2 条 assistant 消息且 `content` 重复写入；现有测试仅覆盖单 `tool_call`。
+   → 后续：聚合为单条 assistant 消息，`id` 与 `role="tool"` 严格配对。
+
+前端 3 条 P1（详情按钮无 in-flight 保护 / `stJson` 网络异常未兜底 / 详情失败态字段割裂）为健壮性建议，不阻塞。
 
 ## 变更日志（Changelog）
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-11 | 架构师(自身) | 用 `grill-with-docs` 三轮访谈冻结 Q1–Q10（Skill=编排层/Tool=执行层、只管 `.agents/skills/`、只读+启停、规则匹配+LLM 意图双触发、Agent 自编排不改正文、仅 frontmatter 加 `tools:`、状态落 JSON、Tool 交给模型用 C 混合策略），编写本 spec；状态 `待确认`，确认前不改业务代码 |
+| 2026-09-11 | backend-reviewer / frontend-reviewer（子代理） | Task09 技术评审（两端并行，**真实独立评审**）：后端 **通过（附强制约束）、P0=0**，实跑 91 passed；前端 **通过（Approve）、P0=0**，四项必守全 PASS、30 passed。后端遗留 2 条 P1（`search_paper_catalog` 选源静默退化、多 tool_calls 消息复制）已按评审要求**书面降级为「已知限制」**并登记于本 spec，转 `已完成` 前须修复或复审。需求评审与验收评审仍为「待评审（未执行）」，spec 保持 `实施中` |
+| 2026-09-11 | 架构师(自身)（**主模型代行**） | 用户授权代行后完成 Task05：① 两个 USENIX SKILL.md **仅增 frontmatter 的 `tools:`**（`usenix-accepted-papers`→`[download_and_import_paper]`、`usenix-paper-catalog-search`→`[search_paper_catalog]`，正文一字未动，符合 Q6/Q10）；② `download_paper_skill.py:15` 的机器相关绝对路径 `/Users/wjh/.codex/skills/download-paper`（该目录在本机**并不存在**）改为项目内 `BASE_DIR/.agents/skills/download-paper`，与注册表同一事实源。测试 54 passed（含 `test_download_paper_skill.py`）。运行时验证：`/api/skills` 正确返回 tools 关联、`/api/tools` 4 个 Tool、详情接口返回正文；对话三条路径（点名命中/未知名提示/普通提问不触发）均端到端通过。同批清理 ruff：安装 0.16.7，修复本次新增代码的 9 处（未用导入、B008 noqa、F841、SIM117），`E402` 经确认属**存量**未动 |
+| 2026-09-11 | 架构师(自身) | 用户指示开始开发，并要求本次子 agent 临时使用 `hy3`（倍率 0.00）作为**临时策略**（不落盘、不写入规则与长期记忆）。实测**无法执行**：① 本会话 `Task` 工具无法解析项目自定义子代理（`backend-dev` 报 `Subagent not found`，本次为第 3 次失败，含 `subagent_path` 显式指定；工具仅暴露内置只读 `code-explorer`）；② 该工具**没有 `model` 入参**，模型只能来自 `.codebuddy/agents/<role>.md` 的 front matter，无法"按本次调用"指定模型，而用户明确要求不改这些文件。按硬规则 #2 记录**阻塞：Task02 未执行（原因：本会话无法分派子代理，且无法按调用临时指定模型）**；spec 保持 `待确认`，未修改任何业务代码。角色 agent 模型文件已还原为 `Deepseek-V4.1-Flash`（未落盘） |
