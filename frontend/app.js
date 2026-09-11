@@ -360,6 +360,124 @@ async function conversationFetch(url, options = {}) {
 const CONVERSATION_STATUS_AUTO_CLEAR_MS = 4000;
 const CONVERSATION_STATUS_PERSISTENT_STATES = new Set(['error', 'loading']);
 let conversationStatusTimer = null;
+/* ---------- Spec025：上下文占比与手动压缩 ----------
+ * 数据来自 GET /api/conversations/{id}/context-usage，只在「加载会话后」与
+ * 「每轮消息完成后」刷新，不做常驻轮询；手动压缩后做一次有上限的跟随刷新
+ * （终止即停，最多 ~12s），仅用于把「压缩中」中态收口。
+ */
+const contextMeter = document.getElementById('context-meter');
+const contextRing = document.getElementById('context-ring');
+const contextRingFill = document.getElementById('context-ring-fill');
+const contextMeterText = document.getElementById('context-meter-text');
+const contextMeterValue = document.getElementById('context-meter-value');
+const contextCompactButton = document.getElementById('context-compact-button');
+const contextStatus = document.getElementById('context-status');
+const contextState = { inflight: false, followTimer: null, followTries: 0 };
+
+function setContextStatus(text) {
+  if (!contextStatus) return;
+  const value = text || '';
+  contextStatus.textContent = value;
+  contextStatus.hidden = !value;
+}
+
+// r=15 的圆周长 2πr ≈ 94.25，与 CSS 的 stroke-dasharray 保持一致。
+const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * 15;
+
+function renderContextUsage(usage) {
+  if (!contextMeter || !contextRing || !contextRingFill || !contextMeterText) return;
+  // 无会话时保留占位（visibility 隐藏），避免底部行抖动，同时移出 Tab 焦点。
+  const idle = !usage;
+  contextMeter.classList.toggle('is-idle', idle);
+  if (contextCompactButton && !contextState.inflight) contextCompactButton.tabIndex = idle ? -1 : 0;
+  if (idle) {
+    if (contextMeterValue) contextMeterValue.textContent = '0%';
+    contextRing.setAttribute('aria-valuenow', '0');
+    return;
+  }
+  const ratio = Number(usage.ratio);
+  const safe = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
+  const percent = Math.round(safe * 100);
+  contextRingFill.style.strokeDasharray = `${CONTEXT_RING_CIRCUMFERENCE.toFixed(2)}`;
+  contextRingFill.style.strokeDashoffset = `${(CONTEXT_RING_CIRCUMFERENCE * (1 - safe)).toFixed(2)}`;
+  contextRing.setAttribute('aria-valuenow', String(percent));
+  if (contextMeterValue) contextMeterValue.textContent = `${percent}%`;
+  const status = usage.compaction_status;
+  if (status === 'queued' || status === 'running') setContextStatus('压缩中…');
+  else if (status === 'failed') setContextStatus('上次压缩失败，可重试');
+  else if (status === 'done') setContextStatus('');
+}
+
+async function loadContextUsage() {
+  const conversationId = conversationState.conversationId;
+  if (!conversationId) { renderContextUsage(null); return null; }
+  try {
+    const usage = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/context-usage`);
+    renderContextUsage(usage);
+    return usage;
+  } catch (error) {
+    renderContextUsage(null);
+    return null;
+  }
+}
+
+function stopContextFollow() {
+  if (contextState.followTimer) { clearTimeout(contextState.followTimer); contextState.followTimer = null; }
+  contextState.followTries = 0;
+}
+
+function followContextCompaction() {
+  stopContextFollow();
+  const tick = async () => {
+    const usage = await loadContextUsage();
+    contextState.followTimer = null;
+    if (!usage) { stopContextFollow(); return; }
+    const status = usage.compaction_status;
+    if (status === 'queued' || status === 'running') {
+      contextState.followTries += 1;
+      if (contextState.followTries >= 6) { setContextStatus('压缩仍在进行，稍后自动生效'); stopContextFollow(); return; }
+      contextState.followTimer = setTimeout(tick, 2000);
+      return;
+    }
+    stopContextFollow();
+  };
+  contextState.followTimer = setTimeout(tick, 1200);
+}
+
+async function compactConversationContext() {
+  if (!contextCompactButton || contextState.inflight) return;
+  const conversationId = conversationState.conversationId;
+  if (!conversationId) return;
+  contextState.inflight = true;
+  contextCompactButton.disabled = true;
+  const original = contextCompactButton.textContent;
+  contextCompactButton.textContent = '压缩中';
+  setContextStatus('已触发压缩');
+  try {
+    await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/compactions`, { method: 'POST' });
+    followContextCompaction();
+  } catch (error) {
+    if (error && error.status === 409) setContextStatus('压缩进行中');
+    else setContextStatus(error && error.message ? error.message : '压缩失败');
+  } finally {
+    contextState.inflight = false;
+    if (contextCompactButton) { contextCompactButton.disabled = false; contextCompactButton.textContent = original; }
+  }
+}
+
+if (contextCompactButton) contextCompactButton.addEventListener('click', compactConversationContext);
+
+// 输入框：3 行起步，随内容自适应增长到上限（与 CSS max-height 一致），避免底部行被推高。
+const COMPOSER_INPUT_MAX_HEIGHT = 176;
+function autoGrowInput() {
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, COMPOSER_INPUT_MAX_HEIGHT)}px`;
+}
+if (input) {
+  input.addEventListener('input', autoGrowInput);
+  autoGrowInput();
+}
 
 function setConversationStatus(text, state = '') {
   if (!conversationStatus) return;
@@ -1101,6 +1219,9 @@ async function openConversation(conversationId, { replace = false } = {}) {
     if (conversationState.projectId) await loadProjectConversations(conversationState.projectId);
     await loadConversationMessages(conversationId);
     if (!isCurrent()) return;
+    stopContextFollow();
+    await loadContextUsage();
+    if (!isCurrent()) return;
     await loadConversationList({ append: false, guard: isCurrent });
     if (!isCurrent()) return;
     const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = conversationState.conversation?.title || '会话';
@@ -1539,7 +1660,7 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
     if (assistantMessage) addConversationErrorNotice(assistantMessage, error);
     else if (!streamError) addConversationError(error);
   } finally {
-    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList();
+    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); autoGrowInput(); loadConversationList(); loadContextUsage();
   }
 }
 

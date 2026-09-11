@@ -14,10 +14,12 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
+from backend.app.chat.application.token_budget import chars_for_tokens
 from backend.app.platform.config import BASE_DIR, MEMORY_ANALYSIS_MODEL
 
 from .models import (
@@ -86,6 +88,42 @@ def decode_cursor(cursor: str, kind: str) -> tuple[str, str]:
         return str(value["at"]), str(value["id"])
     except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeDecodeError):
         raise ValueError("invalid cursor") from None
+
+
+@dataclass(frozen=True)
+class ConversationSegment:
+    """One append-only, non-overlapping compaction window of a conversation."""
+
+    segment_id: str
+    owner_id: str
+    conversation_id: str
+    project_id: Optional[str]
+    seq: int
+    from_message_id: str
+    to_message_id: str
+    char_count: int
+    est_tokens: int
+    generator: str
+    content_hash: str
+    summary_text: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class CompactionJob:
+    """A background conversation-compaction job; at most one non-terminal
+    job per conversation is enforced by a partial unique index."""
+
+    job_id: str
+    owner_id: str
+    conversation_id: str
+    status: str
+    trigger: str
+    est_tokens_before: Optional[int]
+    est_tokens_after: Optional[int]
+    error: Optional[str]
+    created_at: datetime
+    finished_at: Optional[datetime]
 
 
 class MemoryRepository:
@@ -186,6 +224,22 @@ class MemoryRepository:
                     raise RuntimeError("incomplete Task07 proposal schema")
                 if not self._is_task07_schema(connection):
                     raise RuntimeError("Task07 proposal schema validation failed")
+                # Task025 is another additive repository extension (Spec025
+                # conversation segments + compaction jobs). It keeps the public
+                # v6 number and is applied atomically to fresh and existing v6
+                # databases, exactly like the Task07 block above.
+                task025_segments = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_segments'"
+                ).fetchone()
+                task025_jobs = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_compaction_jobs'"
+                ).fetchone()
+                if not task025_segments or not task025_jobs:
+                    self._migrate_v6_to_task025(connection)
+                elif not self._is_task025_schema(connection):
+                    raise RuntimeError("incomplete Task025 compaction schema")
+                if not self._is_task025_schema(connection):
+                    raise RuntimeError("Task025 compaction schema validation failed")
                 connection.execute("COMMIT")
         except Exception as error:
             connection.rollback()
@@ -576,6 +630,108 @@ class MemoryRepository:
             return False
         primary = [row for row in connection.execute("PRAGMA index_list(skill_improvement_proposals)").fetchall() if row["unique"] and row["origin"] == "pk"]
         return len(primary) == 1 and index_columns(primary[0]["name"]) == ["proposal_id"]
+
+    @staticmethod
+    def _migrate_v6_to_task025(connection: sqlite3.Connection) -> None:
+        """Additive Spec025 tables for conversation segments and compaction jobs.
+
+        Kept at the public v6 number (like Task07) so Task10 stays compatible.
+        All statements are idempotent (CREATE TABLE/INDEX ... IF NOT EXISTS).
+        """
+        connection.execute("""CREATE TABLE IF NOT EXISTS conversation_segments (
+            segment_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+            project_id TEXT, seq INTEGER NOT NULL, from_message_id TEXT NOT NULL, to_message_id TEXT NOT NULL,
+            char_count INTEGER NOT NULL, est_tokens INTEGER NOT NULL,
+            generator TEXT NOT NULL DEFAULT 'rule', content_hash TEXT NOT NULL,
+            summary_text TEXT NOT NULL, created_at TEXT NOT NULL
+        )""")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_segments_seq ON conversation_segments(conversation_id, seq)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS conversation_compaction_jobs (
+            job_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+            status TEXT NOT NULL, trigger TEXT NOT NULL,
+            est_tokens_before INTEGER, est_tokens_after INTEGER, error TEXT,
+            created_at TEXT NOT NULL, finished_at TEXT
+        )""")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_compaction_job_active ON conversation_compaction_jobs(conversation_id) WHERE status IN ('queued','running')")
+
+    @staticmethod
+    def _is_task025_schema(connection: sqlite3.Connection) -> bool:
+        segments = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_segments'"
+        ).fetchone()
+        jobs = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_compaction_jobs'"
+        ).fetchone()
+        if not segments or not jobs:
+            return False
+        expected_segment_columns = [
+            ("segment_id", "TEXT", 0, None, 1),
+            ("owner_id", "TEXT", 1, None, 0),
+            ("conversation_id", "TEXT", 1, None, 0),
+            ("project_id", "TEXT", 0, None, 0),
+            ("seq", "INTEGER", 1, None, 0),
+            ("from_message_id", "TEXT", 1, None, 0),
+            ("to_message_id", "TEXT", 1, None, 0),
+            ("char_count", "INTEGER", 1, None, 0),
+            ("est_tokens", "INTEGER", 1, None, 0),
+            ("generator", "TEXT", 1, "'rule'", 0),
+            ("content_hash", "TEXT", 1, None, 0),
+            ("summary_text", "TEXT", 1, None, 0),
+            ("created_at", "TEXT", 1, None, 0),
+        ]
+        expected_job_columns = [
+            ("job_id", "TEXT", 0, None, 1),
+            ("owner_id", "TEXT", 1, None, 0),
+            ("conversation_id", "TEXT", 1, None, 0),
+            ("status", "TEXT", 1, None, 0),
+            ("trigger", "TEXT", 1, None, 0),
+            ("est_tokens_before", "INTEGER", 0, None, 0),
+            ("est_tokens_after", "INTEGER", 0, None, 0),
+            ("error", "TEXT", 0, None, 0),
+            ("created_at", "TEXT", 1, None, 0),
+            ("finished_at", "TEXT", 0, None, 0),
+        ]
+        for table, expected in (
+            ("conversation_segments", expected_segment_columns),
+            ("conversation_compaction_jobs", expected_job_columns),
+        ):
+            actual = [
+                (row["name"], str(row["type"]).upper(), int(row["notnull"]), row["dflt_value"], int(row["pk"]))
+                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            ]
+            if actual != expected:
+                return False
+        def index_columns(name: str) -> list[str]:
+            return [row["name"] for row in connection.execute(f"PRAGMA index_info({name})").fetchall()]
+        seq_index = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_conversation_segments_seq'"
+        ).fetchone()
+        if not seq_index:
+            return False
+        seq_list = {row["name"]: row for row in connection.execute("PRAGMA index_list(conversation_segments)").fetchall()}
+        seq_meta = seq_list.get("idx_conversation_segments_seq")
+        if not seq_meta or not seq_meta["unique"] or index_columns("idx_conversation_segments_seq") != ["conversation_id", "seq"]:
+            return False
+        active_index = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_compaction_job_active'"
+        ).fetchone()
+        if not active_index:
+            return False
+        active_list = {row["name"]: row for row in connection.execute("PRAGMA index_list(conversation_compaction_jobs)").fetchall()}
+        active_meta = active_list.get("idx_compaction_job_active")
+        active_sql = str(active_index["sql"] if active_index else "").upper().replace(" ", "").replace("\n", "")
+        if (
+            not active_meta
+            or not active_meta["unique"]
+            or index_columns("idx_compaction_job_active") != ["conversation_id"]
+            or "WHERESTATUSIN('QUEUED','RUNNING')" not in active_sql
+        ):
+            return False
+        primary_segments = [row for row in connection.execute("PRAGMA index_list(conversation_segments)").fetchall() if row["unique"] and row["origin"] == "pk"]
+        primary_jobs = [row for row in connection.execute("PRAGMA index_list(conversation_compaction_jobs)").fetchall() if row["unique"] and row["origin"] == "pk"]
+        if len(primary_segments) != 1 or index_columns(primary_segments[0]["name"]) != ["segment_id"]:
+            return False
+        return len(primary_jobs) == 1 and index_columns(primary_jobs[0]["name"]) == ["job_id"]
 
     @staticmethod
     def _is_legacy_v6_shape(connection: sqlite3.Connection) -> bool:
@@ -1627,12 +1783,171 @@ class MemoryRepository:
             row = db.execute("SELECT * FROM evolution_checkpoints WHERE checkpoint_id=? AND owner_id=?", (checkpoint_id, owner_id)).fetchone()
         return self._checkpoint(row) if row else None
 
+    def append_conversation_segment(
+        self,
+        conversation_id: str,
+        owner_id: str,
+        project_id: Optional[str],
+        seq: int,
+        from_message_id: str,
+        to_message_id: str,
+        char_count: int,
+        est_tokens: int,
+        content_hash: str,
+        summary_text: str,
+        *,
+        generator: str = "rule",
+    ) -> ConversationSegment:
+        """Append a compaction segment (append-only; never UPDATE/DELETE).
+
+        The segment window is caller-controlled; the store only persists it.
+        """
+        if not self.get_conversation(conversation_id, owner_id):
+            raise LookupError("conversation not found")
+        now, segment_id = _now(), uuid.uuid4().hex
+        with self.transaction() as db:
+            db.execute(
+                "INSERT INTO conversation_segments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    segment_id, owner_id, conversation_id, project_id, int(seq),
+                    from_message_id, to_message_id, int(char_count), int(est_tokens),
+                    generator, content_hash, summary_text, now,
+                ),
+            )
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM conversation_segments WHERE segment_id=?", (segment_id,)).fetchone()
+        return self._segment(row) if row else None
+
+    def list_conversation_segments(self, conversation_id: str, owner_id: str, project_id: Optional[str]) -> list[ConversationSegment]:
+        """Return segments for a conversation ordered by seq ascending.
+
+        project_id is matched strictly: when None, only segments with
+        project_id IS NULL are returned (unbound conversations).
+        """
+        if project_id is None:
+            clause, params = " AND project_id IS NULL", (conversation_id, owner_id)
+        else:
+            clause, params = " AND project_id=?", (conversation_id, owner_id, project_id)
+        with self.connection() as db:
+            rows = db.execute(
+                f"SELECT * FROM conversation_segments WHERE conversation_id=? AND owner_id=?{clause} ORDER BY seq ASC",
+                params,
+            ).fetchall()
+        return [self._segment(row) for row in rows]
+
+    def next_segment_start_message(self, conversation_id: str, owner_id: str) -> Optional[str]:
+        """Return the message id to start the next segment from.
+
+        - No prior segment: the conversation's earliest message id (ordered by
+          (created_at, message_id)), or None when there are no messages.
+        - Has prior segment: the message strictly after the last segment's
+          to_message_id; None when that is already the last message.
+        """
+        with self.connection() as db:
+            last = db.execute(
+                "SELECT to_message_id FROM conversation_segments WHERE conversation_id=? AND owner_id=? ORDER BY seq DESC LIMIT 1",
+                (conversation_id, owner_id),
+            ).fetchone()
+            if last is None:
+                row = db.execute(
+                    "SELECT message_id FROM messages WHERE conversation_id=? AND owner_id=? ORDER BY created_at ASC, message_id ASC LIMIT 1",
+                    (conversation_id, owner_id),
+                ).fetchone()
+                return row["message_id"] if row else None
+            anchor = db.execute(
+                "SELECT created_at, message_id FROM messages WHERE message_id=? AND conversation_id=? AND owner_id=?",
+                (last["to_message_id"], conversation_id, owner_id),
+            ).fetchone()
+            if anchor is None:
+                row = db.execute(
+                    "SELECT message_id FROM messages WHERE conversation_id=? AND owner_id=? ORDER BY created_at ASC, message_id ASC LIMIT 1",
+                    (conversation_id, owner_id),
+                ).fetchone()
+                return row["message_id"] if row else None
+            row = db.execute(
+                "SELECT message_id FROM messages WHERE conversation_id=? AND owner_id=? "
+                "AND (created_at > ? OR (created_at = ? AND message_id > ?)) "
+                "ORDER BY created_at ASC, message_id ASC LIMIT 1",
+                (conversation_id, owner_id, anchor["created_at"], anchor["created_at"], anchor["message_id"]),
+            ).fetchone()
+            return row["message_id"] if row else None
+
+    def create_compaction_job(self, conversation_id: str, owner_id: str, *, trigger: str, est_tokens_before: Optional[int] = None) -> Optional[CompactionJob]:
+        """Atomically claim a compaction job via the partial unique index.
+
+        INSERTs with status='queued'; a concurrent/duplicate claim collides with
+        idx_compaction_job_active (one active job per conversation) and raises
+        sqlite3.IntegrityError, which is caught and surfaced as None so the
+        caller can respond 409. No read-then-write race is introduced.
+        """
+        if trigger not in {"auto", "manual"}:
+            raise ValueError("invalid compaction trigger")
+        if not self.get_conversation(conversation_id, owner_id):
+            raise LookupError("conversation not found")
+        now, job_id = _now(), uuid.uuid4().hex
+        with self.transaction() as db:
+            try:
+                db.execute(
+                    "INSERT INTO conversation_compaction_jobs VALUES (?, ?, ?, 'queued', ?, ?, NULL, NULL, ?, NULL)",
+                    (job_id, owner_id, conversation_id, trigger, est_tokens_before, now),
+                )
+            except sqlite3.IntegrityError:
+                return None
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM conversation_compaction_jobs WHERE job_id=?", (job_id,)).fetchone()
+        return self._job(row) if row else None
+
+    def get_compaction_job(self, job_id: str, owner_id: str) -> Optional[CompactionJob]:
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM conversation_compaction_jobs WHERE job_id=? AND owner_id=?", (job_id, owner_id)).fetchone()
+        return self._job(row) if row else None
+
+    def get_latest_compaction_job(self, conversation_id: str, owner_id: str) -> Optional[CompactionJob]:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM conversation_compaction_jobs WHERE conversation_id=? AND owner_id=? ORDER BY created_at DESC, job_id DESC LIMIT 1",
+                (conversation_id, owner_id),
+            ).fetchone()
+        return self._job(row) if row else None
+
+    def finish_compaction_job(self, job_id: str, owner_id: str, *, status: str, est_tokens_after: Optional[int] = None, error: Optional[str] = None) -> Optional[CompactionJob]:
+        """Move a job to a terminal state (done/failed) and stamp finished_at."""
+        if status not in {"done", "failed"}:
+            raise ValueError("invalid compaction job status")
+        with self.transaction() as db:
+            db.execute(
+                "UPDATE conversation_compaction_jobs SET status=?, est_tokens_after=?, error=?, finished_at=? WHERE job_id=? AND owner_id=?",
+                (status, est_tokens_after, (error or "")[:500] or None, _now(), job_id, owner_id),
+            )
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM conversation_compaction_jobs WHERE job_id=? AND owner_id=?", (job_id, owner_id)).fetchone()
+        return self._job(row) if row else None
+
+    @staticmethod
+    def _segment(row: sqlite3.Row) -> ConversationSegment:
+        return ConversationSegment(
+            row["segment_id"], row["owner_id"], row["conversation_id"], row["project_id"],
+            int(row["seq"]), row["from_message_id"], row["to_message_id"],
+            int(row["char_count"]), int(row["est_tokens"]), row["generator"],
+            row["content_hash"], row["summary_text"], _dt(row["created_at"]),
+        )
+
+    @staticmethod
+    def _job(row: sqlite3.Row) -> CompactionJob:
+        return CompactionJob(
+            row["job_id"], row["owner_id"], row["conversation_id"], row["status"], row["trigger"],
+            row["est_tokens_before"], row["est_tokens_after"], row["error"],
+            _dt(row["created_at"]), _dt(row["finished_at"]),
+        )
+
     def list_recall_context(self, owner_id: str, project_id: Optional[str], *, query: str = "", memory_char_budget: int = 4000, summary_char_budget: int = 1500, char_budget: Optional[int] = None, token_budget: Optional[int] = None) -> dict:
         """Return scoped memories and summaries under independent budgets."""
         if char_budget is not None:
             summary_char_budget = min(summary_char_budget, max(0, int(char_budget)))
         if token_budget is not None:
-            summary_char_budget = min(summary_char_budget, max(0, int(token_budget)) * 4)
+            # 收敛旧口径：原 `token_budget * 4`（1 token≈4 字符英文口径）改为复用全链路唯一换算
+            # chars_for_tokens（1 token≈1.6 字符，中英混排保守口径）。
+            summary_char_budget = min(summary_char_budget, chars_for_tokens(token_budget))
         memories, used = [], 0
         all_memories = self.list_recall_memories(owner_id, project_id)
         for memory in (item for item in all_memories if item.category != "capability_method"):
