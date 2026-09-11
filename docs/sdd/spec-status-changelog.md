@@ -224,3 +224,8 @@
 - **025 会话上下文压缩与 Token 预算管理** ｜ 已确认 → 实施中（Task02–Task05） ｜ 2026-09-12：完成计量与预算配置、两张新表与迁移、装配消费改造与异步 worker、context-usage/compactions 端点与 80% 自动触发、前端占比条与一键压缩按钮（`?v=33→34`）；新增测试 52 项。
 - **025 会话上下文压缩与 Token 预算管理** ｜ 实施中 → 已完成 ｜ 2026-09-12：需求/技术/后端/前端/验收五份评审全部落盘并通过；唯一最终全量回归 1345 passed、1 skipped、47 subtests（唯一失败 `test_import_compensation` 已用 git stash 在干净树复现，属存量）；服务部署于 http://127.0.0.1:8000 并通过运行时 smoke；真实对话触发自动压缩因本机 Ollama 无可用模型未端到端验证，列为环境待复验，不伪造证据。
 - **027 Research Task 动态编排 MVP** ｜ 新建 → 待确认 ｜ 经 Grilling 共同确认深度研究入口、稳定 LangGraph 控制骨架、运行时 Task Graph、USENIX/DBLP 并行搜索、有界 Re-plan、动态模型路由、内存感知 9B Worker、初步报告和实时任务工作台；Spec 与 Task02–06 已落盘，确认前不实施。
+- **028 Research Task 可靠调度、计划版本与恢复** ｜ 新建 → 待确认 ｜ 登记全局公平调度、唯一租约、checkpoint、计划版本、暂停/取消/审批和单机多进程恢复；依赖 Spec027，Spec 与 Task02–06 已落盘。
+- **029 Research Task 全文获取与知识库联动** ｜ 新建 → 待确认 ｜ 登记用户确认后的安全下载、既有批量导入、全文 RAG 和可定位证据升级；硬性禁止复制下载、安全、导入、解析和索引实现，Spec 与 Task02–06 已落盘。
+- **030 跨论文证据矩阵与深度研究报告** ｜ 新建 → 待确认 ｜ 登记 Claim/Evidence、冲突与缺口矩阵、版本化只读报告、引用 manifest 及 Markdown/HTML/JSON 产物；Spec 与 Task02–06 已落盘。
+- **031 动态模型路由与资源调度优化** ｜ 新建 → 待确认 ｜ 登记 Langfuse 指标反馈、shadow policy、内存感知 Worker 扩缩和单/多 Ollama 实例基准；多实例只有实测 GO 才实现，Spec 与 Task02–06 已落盘。
+- **032 Research Task 数据源与安全会议扩展** ｜ 新建 → 待确认 ｜ 登记统一 Source Adapter、字段 provenance、OpenAlex/Crossref 以及 IEEE S&P、ACM CCS、NDSS 官方目录；搜索阶段不下载 PDF，Spec 与 Task02–06 已落盘。
