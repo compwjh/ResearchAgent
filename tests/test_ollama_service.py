@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import httpx
 
+from backend.app.platform.config import OLLAMA_BASE_URL
 from backend.app.platform.ollama import create_chat_model, get_available_models
 
 
@@ -14,7 +15,8 @@ class OllamaServiceTests(unittest.TestCase):
         self.assertFalse(model.client_kwargs["trust_env"])
         self.assertFalse(model.async_client_kwargs["trust_env"])
         self.assertFalse(model.sync_client_kwargs["trust_env"])
-        self.assertEqual(model.base_url, "http://localhost:11434")
+        # 跟随配置（允许 .env 覆盖为局域网地址），不硬编码 localhost。
+        self.assertEqual(model.base_url, OLLAMA_BASE_URL)
 
     def test_available_models_bypasses_system_proxy(self):
         request = httpx.Request("GET", "http://localhost:11434/api/tags")

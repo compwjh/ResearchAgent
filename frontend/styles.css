@@ -16,14 +16,42 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .skill-hint[hidden] { display: none; }
 .footer-note { margin-top: 18px; color: #b2b3ba; font: 10px 'DM Mono', monospace; text-align: center; }
 .mobile-nav-toggle, .mobile-nav-close, .mobile-nav-backdrop { display: none; }
-.workspace:not(.has-started) { justify-content: center; padding-top: 30px; }.workspace:not(.has-started) .welcome { margin: 0 0 28px; }.workspace:not(.has-started) .chat-panel { min-height: 0; border-color: transparent; background: transparent; box-shadow: none; }.workspace:not(.has-started) .chat-header { display: flex; width: min(560px, 100%); margin: 0 auto; padding: 0 4px 10px; border: 0; }.workspace:not(.has-started) .messages, .workspace:not(.has-started) .hint { display: none; }.workspace:not(.has-started) .composer { margin: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 13px; background: white; box-shadow: 0 14px 35px #272a3510; }.workspace:not(.has-started) .composer textarea { min-height: 44px; padding-top: 10px; }.workspace.has-started { padding-top: 28px; }.workspace.has-started .welcome { display: none; }.workspace.has-started .chat-panel { min-height: calc(100vh - 138px); }.workspace.has-started .footer-note { display: none; }
+.workspace:not(.has-started) { justify-content: center; padding-top: 30px; }.workspace:not(.has-started) .welcome { margin: 0 0 28px; }.workspace:not(.has-started) .chat-panel { min-height: 0; border-color: transparent; background: transparent; box-shadow: none; }.workspace:not(.has-started) .chat-header { display: flex; width: min(560px, 100%); margin: 0 auto; padding: 0 4px 10px; border: 0; }.workspace:not(.has-started) .messages, .workspace:not(.has-started) .hint { display: none; }.workspace:not(.has-started) .composer { margin: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 13px; background: white; box-shadow: 0 14px 35px #272a3510; }.workspace:not(.has-started) .composer textarea { min-height: 66px; padding-top: 10px; }.workspace.has-started { padding-top: 28px; }.workspace.has-started .welcome { display: none; }/* 138 → 190：composer 由 1 行改为 3 行起步（+45px）并新增压缩状态行（+7px）后的补偿。 */
+.workspace.has-started .chat-panel { min-height: calc(100vh - 190px); }.workspace.has-started .footer-note { display: none; }
 .settings-dialog { width: min(520px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 14px; color: var(--ink); box-shadow: 0 25px 80px #25272b33; }.settings-dialog::backdrop { background: #25272b55; backdrop-filter: blur(3px); }.settings-form { display: grid; gap: 18px; padding: 24px; }.settings-title { display: flex; align-items: flex-start; justify-content: space-between; }.settings-title h2 { margin: 7px 0 0; font-size: 22px; letter-spacing: -.04em; }.settings-form label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 700; }.settings-form textarea, .settings-form input { width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 10px; outline: 0; background: #fafafd; color: var(--ink); font-size: 12px; }.settings-form textarea:focus, .settings-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }.settings-status { min-height: 16px; margin: -5px 0; color: var(--accent); font: 10px 'DM Mono', monospace; }.settings-actions { display: flex; justify-content: flex-end; gap: 8px; }.secondary-button { border-radius: 7px; padding: 9px 12px; background: var(--paper); color: var(--muted); font-size: 12px; }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes paperBatchPulse {
   from { box-shadow: 0 0 0 2px rgba(43, 108, 176, 0.10); }
   to { box-shadow: 0 0 0 5px rgba(43, 108, 176, 0.24); }
 }
-@media (max-width: 760px) { .app-shell { display: block; }.sidebar { display: none; }.topbar { height: 60px; padding: 0 16px; }.workspace { min-height: calc(100vh - 60px); padding: 34px 16px; }.welcome h1 { font-size: 35px; }.chat-panel { min-height: 460px; }.workspace.has-started .chat-panel { min-height: calc(100vh - 110px); }.messages { padding: 22px 16px; }.bubble { max-width: 88%; }.composer { margin: 0 14px; }.composer-tip { display: none; }.workspace:not(.has-started) .composer { margin: 0; }.footer-note { display: none; } }
+@media (max-width: 760px) { .app-shell { display: block; }.sidebar { display: none; }.topbar { height: 60px; padding: 0 16px; }.workspace { min-height: calc(100vh - 60px); padding: 34px 16px; }.welcome h1 { font-size: 35px; }.chat-panel { min-height: 460px; }/* 110 → 162：窄屏占比区换行的补偿。 */
+.workspace.has-started .chat-panel { min-height: calc(100vh - 162px); }.messages { padding: 22px 16px; }.bubble { max-width: 88%; }.composer { margin: 0 14px; }.composer-tip { display: none; }.workspace:not(.has-started) .composer { margin: 0; }.footer-note { display: none; } }
+
+/* ===== 上下文占比与手动压缩（spec-025）===== */
+/* 输入框：3 行起步（14px * 1.5 * 3 ≈ 63px），自适应到 8 行上限后内部滚动。 */
+.composer { flex-wrap: nowrap; }
+.composer textarea { min-height: 66px; max-height: 176px; overflow-y: auto; padding: 4px 0; }
+.composer-footer { flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+.composer-context { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+/* 无会话时保留占位，避免底部行抖动。 */
+.composer-context.is-idle { visibility: hidden; }
+.context-meter-label { color: #b0b1b8; }
+.context-ring { flex: 0 0 auto; width: 30px; height: 30px; }
+.context-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.context-ring-track { fill: none; stroke: #ececf3; stroke-width: 3.5; }
+.context-ring-fill { fill: none; stroke: var(--accent); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 94.25; stroke-dashoffset: 94.25; transition: stroke-dashoffset .25s ease; }
+.context-meter-text { color: #b0b1b8; font: 10px 'DM Mono', monospace; white-space: nowrap; }
+.context-compact-button { border-radius: 6px; padding: 5px 9px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; }
+.context-compact-button:hover { background: #dedaff; }
+.context-compact-button:disabled { opacity: .6; cursor: default; }
+.context-status { margin: 6px 20px 0; color: #aaacb2; font: 10px 'DM Mono', monospace; text-align: right; }
+.context-status[hidden] { display: none; }
+/* 窄屏：底部行空间不足时占比区整体换行并右对齐，同时隐去"上下文"二字只留百分比。 */
+@media (max-width: 760px) {
+  .composer-footer { gap: 8px; }
+  .context-meter-label { display: none; }
+  .composer-context { flex: 1 0 100%; justify-content: flex-end; }
+}
 
 /* ===== 项目会话记忆 MVP（spec-022 Task02） ===== */
 .conversation-memory { display: grid; gap: 10px; margin-top: 25px; min-height: 0; }

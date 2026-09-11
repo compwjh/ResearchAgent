@@ -19,13 +19,16 @@ from backend.app.api.schemas import (
     SystemRulePutRequest,
 )
 from backend.app.chat.application.chat_runner import run_chat
+from backend.app.chat.application.context_compaction import get_compaction_worker
 from backend.app.chat.application.conversation_service import (
     compose_chat_messages,
+    compose_chat_prompt,
     get_memory_analysis_worker,
     get_memory_evolution_worker,
     has_explicit_global_intent,
     is_system_rule_intent,
 )
+from backend.app.chat.application.token_budget import estimate_tokens
 from backend.app.knowledge_base.application import (
     citation_payloads,
     clear_project_document_associations,
@@ -34,6 +37,7 @@ from backend.app.knowledge_base.application import (
 )
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
+from backend.app.platform.config import CHAT_COMPACT_TRIGGER_RATIO, CHAT_TOTAL_TOKEN_BUDGET
 from backend.app.platform.observability import (
     prompt_observation_metadata,
     record_ollama_generation,
@@ -71,6 +75,48 @@ def _memory_payload(item):
 
 def _system_rule_payload(item):
     return {"content": item.content, "enabled": item.enabled, "updated_at": item.updated_at.isoformat()}
+
+
+def compute_context_usage(repo: MemoryRepository, conversation) -> dict:
+    """Dry-run 用量估算：与真实装配同源（同一 ``compose_chat_prompt`` + 同一预算配置），
+    但只覆盖历史段 + 记忆/摘要段，不触发 RAG 检索、不调用模型、无副作用。
+
+    返回 ``{used_tokens, budget_tokens, ratio, segment_count, compaction_status}``；
+    ``budget_tokens <= 0`` 时 ``ratio`` 按 1.0 处理并记录观测，禁止除零崩溃；
+    ``compaction_status`` 取该会话最新 job 的 status，无 job 为 ``idle``。
+    """
+    history = repo.list_context_messages(conversation.conversation_id, OWNER_ID)
+    recall_context = repo.list_recall_context(
+        OWNER_ID, conversation.project_id, query="",
+        memory_char_budget=4000, summary_char_budget=1500,
+    )
+    memories = recall_context["memories"]
+    summaries = recall_context["summaries"]
+    segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
+    project_instructions = None
+    if conversation.project_id:
+        project = repo.get_project(conversation.project_id, OWNER_ID)
+        project_instructions = project.instructions if project else None
+    prompt_text = compose_chat_prompt(
+        "", history, memories, project_instructions, summaries,
+        rag_hits=None, include_question=False, segments=segments,
+    )
+    used_tokens = estimate_tokens(prompt_text)
+    budget_tokens = CHAT_TOTAL_TOKEN_BUDGET
+    if budget_tokens <= 0:
+        logger.warning("CHAT_TOTAL_TOKEN_BUDGET <= 0; context-usage ratio clamped to 1.0")
+        ratio = 1.0
+    else:
+        ratio = used_tokens / budget_tokens
+    latest_job = repo.get_latest_compaction_job(conversation.conversation_id, OWNER_ID)
+    compaction_status = latest_job.status if latest_job else "idle"
+    return {
+        "used_tokens": used_tokens,
+        "budget_tokens": budget_tokens,
+        "ratio": ratio,
+        "segment_count": len(segments),
+        "compaction_status": compaction_status,
+    }
 
 
 @router.get("/system-rule")
@@ -277,7 +323,19 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             if sum(len(message.content or "") for message in history) > 12000:
                 with contextlib.suppress(Exception):
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
-            messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None)
+            segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
+            messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None, segments=segments)
+            # Spec025 Task04：装配后按阈值自动触发后台异步压缩；绝不阻塞本次响应，
+            # 失败只记录观测（与既有 context_pressure 事件并存，不改其语义）。
+            try:
+                usage = compute_context_usage(repo, conversation)
+                if usage["ratio"] >= CHAT_COMPACT_TRIGGER_RATIO:
+                    get_compaction_worker(repo).enqueue(
+                        conversation.conversation_id, OWNER_ID, conversation.project_id,
+                        "auto", est_tokens_before=usage["used_tokens"],
+                    )
+            except Exception as error:
+                logger.warning("auto context compaction trigger failed: %s", error)
             repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
             generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
             yield stream_event("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
@@ -396,6 +454,35 @@ def create_first_message(payload: ConversationMessageRequest):
 @router.post("/conversations/{conversation_id}/messages")
 def create_message(conversation_id: str, payload: ConversationMessageRequest):
     return _start_message(payload, conversation_id)
+
+
+@router.get("/conversations/{conversation_id}/context-usage")
+def get_context_usage(conversation_id: str):
+    repo = _repo()
+    conversation = repo.get_conversation(conversation_id, OWNER_ID)
+    if not conversation:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+    return compute_context_usage(repo, conversation)
+
+
+@router.post("/conversations/{conversation_id}/compactions")
+def create_compaction(conversation_id: str):
+    repo = _repo()
+    conversation = repo.get_conversation(conversation_id, OWNER_ID)
+    if not conversation:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+    # 已有非终态 job：直接 409，不重复入队（DB 部分唯一索引仍为唯一可靠去重）。
+    existing = repo.get_latest_compaction_job(conversation_id, OWNER_ID)
+    if existing is not None and existing.status not in {"done", "failed"}:
+        raise HTTPException(status_code=409, detail={"code": "COMPACTION_IN_PROGRESS", "message": "压缩进行中", "retryable": False})
+    worker = get_compaction_worker(repo)
+    try:
+        job = worker.enqueue(conversation_id, OWNER_ID, conversation.project_id, "manual")
+    except Exception as error:
+        raise HTTPException(status_code=500, detail={"code": "COMPACTION_ENQUEUE_FAILED", "message": str(error) or "压缩入队失败", "retryable": True}) from error
+    if job is None:
+        raise HTTPException(status_code=409, detail={"code": "COMPACTION_IN_PROGRESS", "message": "压缩进行中", "retryable": False})
+    return {"job_id": job.job_id, "status": job.status, "trigger": "manual"}
 
 
 @router.get("/conversations/{conversation_id}")
