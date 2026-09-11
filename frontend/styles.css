@@ -1862,6 +1862,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   .project-list, .conversation-list { max-height: 34dvh; }
   .project-tree-toggle, .project-tree-menu-trigger, .conversation-list-menu-trigger, #new-project-button, .new-chat, .nav-item,
   .project-item-main, .conversation-item-main, .project-item-menu, .conversation-item-menu, .project-empty-action, .project-load-more, .load-older-messages { min-height: 44px; }
+  #new-project-button { min-width: 44px; }
   .project-item-main, .conversation-item-main { padding-top: 10px; padding-bottom: 10px; }
   .project-tree-menu-trigger, .conversation-list-menu-trigger, .project-item-menu, .conversation-item-menu { min-width: 44px; padding: 8px; }
   .conversation-item-title, .project-item-title { white-space: normal; overflow-wrap: anywhere; }

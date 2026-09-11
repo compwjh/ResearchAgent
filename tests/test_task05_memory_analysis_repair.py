@@ -95,8 +95,11 @@ def test_analysis_supports_multiple_items_pagination_and_idempotency(tmp_path: P
     first, cursor = repo.list_memory_analysis_items(user.message_id, "owner-a", limit=1)
     second, next_cursor = repo.list_memory_analysis_items(user.message_id, "owner-a", cursor=cursor, limit=1)
     assert len(first) == len(second) == 1 and next_cursor is None
-    assert {first[0].decision_status, second[0].decision_status} == {"auto_saved"}
-    assert len(repo.list_memories("owner-a", scope="global")) == 2
+    # The classifier's global suggestion is not authorization.  The original
+    # unbound text does not explicitly request a global scope, so both items
+    # remain pending confirmation under the Spec022 project-first gate.
+    assert {first[0].decision_status, second[0].decision_status} == {"pending_confirmation"}
+    assert repo.list_memories("owner-a", scope="global") == []
 
 
 def test_analysis_uses_project_snapshot_and_restart_after_failure(tmp_path: Path):

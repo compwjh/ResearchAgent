@@ -2,9 +2,9 @@
 
 ## 状态
 
-**当前状态：`实施中（Task07 已完成）`**
+**当前状态：`已完成`**
 
-> Task02–Task07、Task09–Task10 已完成；Task08 仍未执行，Spec022 尚未进入最终全量回归和收口。
+> Task02–Task10 均已完成；Task08 最终审计、全量回归、部署和运行时 smoke 已通过。成功对话 SSE/RAG 需在 Ollama 有可用模型的环境补验。
 
 ## 一句话目标
 
@@ -440,7 +440,7 @@
 | 05 | 项目文档、RAG、处理过程与桌面缺陷修复轮 | [`task-05-research-context-progress.md`](../plans/022/task-05-research-context-progress.md) | 04、Spec 变更确认 | 已完成（修复轮） |
 | 06 | 手机端适配 | [`task-06-mobile-experience.md`](../plans/022/task-06-mobile-experience.md) | 05、09、10 | 已完成 |
 | 07 | 能力方法记忆与 Skill 改进建议 | [`task-07-capability-memory-proposals.md`](../plans/022/task-07-capability-memory-proposals.md) | 04 | 已完成 |
-| 08 | 最终评审、全量回归、部署与复盘 | [`task-08-review-regression-deploy.md`](../plans/022/task-08-review-regression-deploy.md) | 05、06、07、09、10 | 待执行 |
+| 08 | 最终评审、全量回归、部署与复盘 | [`task-08-review-regression-deploy.md`](../plans/022/task-08-review-regression-deploy.md) | 05、06、07、09、10 | 已完成 |
 | 09 | 桌面项目树与会话菜单重构 | [`task-09-desktop-project-tree-sidebar.md`](../plans/022/task-09-desktop-project-tree-sidebar.md) | 05、Task09 范围确认 | 已完成 |
 | 10 | 系统规则、项目优先记忆与桌面导航修复 | [`task-10-system-rule-project-memory-navigation.md`](../plans/022/task-10-system-rule-project-memory-navigation.md) | 09、Task10 增量确认 | 已完成 |
 

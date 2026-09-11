@@ -197,3 +197,6 @@
 - **022 项目会话与长期记忆** ｜ Task06 实施中 → Task06 已完成 ｜ 2026-09-11：Task06 前端适配及 P1/P2 修复完成，reviewer GO、tester 定向验收 PASS（49 项合同、5 个 Node 合同），主 Agent 390×844 Chromium DOM smoke 通过；Task08 仍负责全量回归与最终交互。
 - **022 项目会话与长期记忆** ｜ Task07 待执行 → Task07 实施中 ｜ 2026-09-11：Task06 已提交并收口，Task07 依赖满足；按既定范围启动能力方法记忆与只读 Skill 改进建议实现，不授予运行时文件写权限。
 - **022 项目会话与长期记忆** ｜ Task07 实施中 → Task07 已完成 ｜ 2026-09-11：Task07 后端实现及两轮 P1 修复完成，reviewer GO、backend-tester PASS（12 项 Task07、43 项受影响回归、worker smoke 1 项、综合边界探针），Task08 继续负责全量回归、部署与 Spec 收口。
+- **022 项目会话与长期记忆** ｜ Task08 待执行 → Task08 实施中 ｜ 2026-09-11：Task02–Task07、Task09–Task10 均已完成并提交，启动最终前后端范围审计、全量回归、部署与收口验收；此前各 Task 均未运行全量回归。
+- **022 项目会话与长期记忆** ｜ Task08 实施中 → Task08 已完成 ｜ 2026-09-11：后端/前端最终复审 GO；修复 SSRF 共享边界、SystemRule fail-closed、记忆门禁测试基线、KB inventory digest 与资源合同后，唯一最终全量回归 1168 passed、1 skipped、5 warnings、41 subtests，退出码 0；8001 部署与桌面/手机 DOM smoke 通过。
+- **022 项目会话与长期记忆** ｜ 实施中（Task08） → 已完成 ｜ 2026-09-11：Task02–Task10 全部收口，验收报告与复盘已落盘；本机 Ollama `models=[]` 导致成功对话 SSE/RAG 仅保留为环境待复验，不伪造成功证据。

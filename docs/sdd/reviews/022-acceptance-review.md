@@ -71,7 +71,7 @@
 ## 签字
 
 - 验收执行：tester（临时 Luna high）
-- 架构师签字：待主 Agent 按收口流程确认
+- 架构师签字：已确认（Task08 后端/前端 reviewer GO；唯一最终全量回归、部署与桌面/手机 DOM smoke 通过；模型依赖成功路径按真实环境记录为待复验）
 
 # Spec022 Task03 验收评审
 
@@ -412,3 +412,47 @@ Task07 定向测试 **6 passed**，Task07 + memory/Task10 受影响后端回归 
 
 - 验收执行：backend-tester（临时 Luna high）
 - 架构师签字：已确认（Task07 reviewer GO、backend-tester PASS；全量回归留待 Task08）
+
+---
+
+# Spec022 Task08 最终候选验收评审：全量回归、部署与跨端 smoke
+
+> 验收角色：tester
+> 关联：`docs/sdd/specs/022-project-conversation-memory.md`、`docs/sdd/plans/022/task-08-review-regression-deploy.md`
+
+## 结论：PASS（自动化、静态、部署与 DOM smoke；模型依赖路径环境阻塞）
+
+责任 Task 修复后，本轮在当前工作树执行唯一最终候选全量回归，退出码 0；上一轮 3 个全量失败项均不再复现。由于本机 Ollama 没有可用模型，成功生成 SSE 与 RAG citations 只记录为环境待复验，不伪造成功。
+
+## 最终全量与静态证据
+
+| 检查 | 命令 | 退出码 | 结果 |
+|---|---|---:|---|
+| 唯一最终全量回归 | `./.venv/bin/python -m pytest -q` | 0 | **1168 passed、1 skipped、5 warnings、41 subtests passed**，72.91s |
+| 前端语法 | 3 个 `node --check`（app/research/kb） | 0 | 全部通过 |
+| Node 合同 | 5 个前端 Node 合同 | 0 | **5/5 PASS** |
+| 后端语法 | `find backend -name '*.py' -type f -exec ./.venv/bin/python -m py_compile {} +` | 0 | 全部通过 |
+| 冲突标记 | `rg -n '^<<<<<<<|^=======|^>>>>>>>' --glob '!**/.venv/**' --glob '!**/.git/**' .` | 0 | 无命中 |
+| 空白检查 | `git diff --check` | 0 | 通过；验收文档尾随空格已修复 |
+
+## 部署与跨端运行时证据
+
+8000 由 PID 60107 占用，未停止用户进程；当前工作树直接以 `RERANKER_ENABLED=false ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8001` 启动于 8001，服务保持运行。
+
+- `GET /api/health`、`GET /`、`GET /api/system-rule`：分别 HTTP 200；health 返回 `status=ok`、`models=[]`，首页返回当前 v32 资源。
+- 对话模型探针 `POST /api/conversations/messages`：HTTP 503，稳定 `detail.code=MODEL_UNAVAILABLE`、`retryable=true`；未伪造 token/progress/memory/done 或 RAG 成功。
+- CUA 1280×900 DOM smoke：项目树、项目列表、新建项目、会话列表、记忆治理导航、聊天输入和发送按钮存在。
+- CUA 390×844 DOM smoke：`mobile-nav-toggle`、`mobile-sidebar`、`mobile-nav-close` 唯一存在，项目/会话/记忆导航及聊天输入可见；验收后视口恢复默认。
+
+## 放行边界
+
+- 自动化与部署 DOM 验收通过，上一轮全量失败已关闭。
+- 需在有可用 Ollama 模型的环境补跑成功对话 SSE、RAG citations 及依赖模型的用户路径；该环境限制不改写为产品成功。
+- 业务代码未由 tester 修改，未 commit；详细命令/计数/响应见 [`docs/sdd/plans/022/artifacts/task-08/acceptance-report.md`](../plans/022/artifacts/task-08/acceptance-report.md)。
+
+## 签字
+
+- 验收执行：tester
+- 详细报告：[`docs/sdd/plans/022/artifacts/task-08/acceptance-report.md`](../plans/022/artifacts/task-08/acceptance-report.md)
+- 进展日志：`.codebuddy/agent-logs/spec-022/task-08/tester/20260911-full-regression.md`
+- 架构师签字：待主 Agent 按收口流程确认

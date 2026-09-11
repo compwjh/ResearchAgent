@@ -13,7 +13,7 @@ from backend.app.chat.application.conversation_service import (
 from backend.app.api.routes_kb import _kb_evidence_advisory
 from backend.app.chat.application.conversation_service import compose_chat_messages
 from backend.app.main import app
-from backend.app.memory.repository import MemoryRepository
+from backend.app.memory.repository import MemoryRepository, SystemRuleUnavailableError
 
 
 def test_v6_system_rule_is_idempotent_owner_scoped_and_unicode_bounded(tmp_path: Path):
@@ -95,6 +95,21 @@ def test_corrupt_v6_system_rule_table_fails_closed(tmp_path: Path):
         db.execute("CREATE TABLE system_rules(owner_id TEXT PRIMARY KEY, content TEXT, enabled TEXT, updated_at INTEGER)")
     with pytest.raises(RuntimeError, match="fail-closed"):
         MemoryRepository(path)
+
+
+def test_malformed_system_rule_row_returns_stable_unavailable_error(tmp_path: Path):
+    path = tmp_path / "malformed-rule.sqlite3"
+    repo = MemoryRepository(path)
+    repo.upsert_system_rule("local-user", "只给结论", True)
+    with repo.transaction() as db:
+        db.execute("UPDATE system_rules SET updated_at=? WHERE owner_id=?", ("not-a-timestamp", "local-user"))
+    with pytest.raises(SystemRuleUnavailableError, match="SYSTEM_RULE_UNAVAILABLE"):
+        repo.get_system_rule("local-user")
+
+    with patch("backend.app.api.routes_conversations._repo", return_value=repo):
+        response = TestClient(app).get("/api/system-rule")
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "SYSTEM_RULE_UNAVAILABLE"
 
 
 def test_observation_input_is_redacted_but_role_metadata_is_preserved():

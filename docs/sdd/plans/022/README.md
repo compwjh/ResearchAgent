@@ -1,7 +1,7 @@
 # Spec 022 执行计划：项目会话管理与自进化长期记忆
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md)
-> 当前状态：`实施中（Task07 已完成）`。Task02–Task07、Task09–Task10 已完成；Task08 等待。
+> 当前状态：`已完成`。Task02–Task10 均已完成；Task08 已通过最终审计、全量回归、部署和运行时 smoke。
 
 ## 任务索引
 
@@ -13,7 +13,7 @@
 | [05](./task-05-research-context-progress.md) | 项目文档、RAG、处理过程与桌面缺陷修复轮 | 04、Spec 变更确认 | 已完成（修复轮） |
 | [06](./task-06-mobile-experience.md) | 手机端项目、会话、记忆和研究交互 | 05、09、10 | 已完成 |
 | [07](./task-07-capability-memory-proposals.md) | 能力方法记忆与只读 Skill 改进建议 | 04 | 已完成 |
-| [08](./task-08-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 05、06、07、09、10 | 待执行 |
+| [08](./task-08-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 05、06、07、09、10 | 已完成 |
 | [09](./task-09-desktop-project-tree-sidebar.md) | 桌面项目树、会话归属、浮层菜单与统一弹窗 | 05、范围确认 | 已完成 |
 | [10](./task-10-system-rule-project-memory-navigation.md) | 系统规则、项目优先记忆与桌面导航修复 | 09、增量确认 | 已完成 |
 
@@ -53,3 +53,5 @@
 - 2026-09-11：Task06 前端适配、P1/P2 修复、reviewer GO、49 项定向验收与主 Agent 390×844 Chromium DOM smoke 通过；Task06 收口，Task07/Task08 继续等待。
 - 2026-09-11：Task06 已提交，Task07 依赖满足；按既定范围启动能力方法记忆与只读 Skill 改进建议实现。
 - 2026-09-11：Task07 后端实现、两轮 P1 修复、reviewer GO、backend-tester PASS（12 项 Task07、43 项受影响回归、worker smoke 1 项）通过；Task07 收口，Task08 等待。
+- 2026-09-11：Task07 已提交并收口，Task08 依赖满足；启动最终前后端审计、全量回归、部署和 Spec022 收口验收。
+- 2026-09-11：Task08 后端/前端最终复审 GO；修复后唯一最终全量回归 1168 passed、1 skipped、5 warnings、41 subtests，退出码 0；8001 部署与桌面/手机 DOM smoke 通过。Spec022 收口，模型依赖成功路径因 Ollama `models=[]` 留待可用模型环境复验。

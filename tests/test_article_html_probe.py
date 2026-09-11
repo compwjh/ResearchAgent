@@ -33,8 +33,11 @@ class ArticleHtmlProbeTests(unittest.TestCase):
                 yield b"%PDF-1.7"
 
         candidate = ArticleCandidate("candidate", "Paper", article_url="https://example.com/article")
-        with patch("backend.app.article_assistant.infrastructure.article_download.httpx.stream", side_effect=[HtmlResponse(), PdfResponse()]):
-            self.assertEqual(probe_pdf_url(candidate, ArticleSettings()), ("public_pdf", "https://example.com/download/paper.pdf"))
+        settings = ArticleSettings(article_download_urls=["https://example.com/fallback.pdf"])
+        with patch("backend.app.core.url_security.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]), patch(
+            "backend.app.article_assistant.infrastructure.article_download.httpx.stream", side_effect=[HtmlResponse(), PdfResponse()]
+        ):
+            self.assertEqual(probe_pdf_url(candidate, settings), ("public_pdf", "https://example.com/download/paper.pdf"))
 
 
 if __name__ == "__main__":

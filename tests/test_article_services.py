@@ -49,11 +49,31 @@ class ArticleServiceTests(unittest.TestCase):
 
         candidate = ArticleCandidate("candidate", "Paper", pdf_url="https://example.com/paper.pdf")
         with tempfile.TemporaryDirectory() as directory:
-            settings = ArticleSettings(article_download_dir=directory)
-            with patch("backend.app.article_assistant.infrastructure.article_download.httpx.stream", return_value=FakeResponse()):
+            settings = ArticleSettings(article_download_dir=directory, article_download_urls=["https://example.com/fallback.pdf"])
+            with patch("backend.app.core.url_security.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]), patch(
+                "backend.app.article_assistant.infrastructure.article_download.httpx.stream", return_value=FakeResponse()
+            ):
                 with self.assertRaises(ValueError):
                     next(download_article(candidate, settings))
             self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_private_ip_download_is_rejected_before_http_request(self):
+        candidate = ArticleCandidate("candidate", "Private", pdf_url="http://127.0.0.1/private.pdf")
+        with tempfile.TemporaryDirectory() as directory:
+            settings = ArticleSettings(article_download_dir=directory)
+            with patch("backend.app.article_assistant.infrastructure.article_download.httpx.stream") as stream:
+                with self.assertRaises(ValueError):
+                    next(download_article(candidate, settings))
+            stream.assert_not_called()
+
+    def test_unconfigured_public_candidate_host_is_rejected_before_download(self):
+        candidate = ArticleCandidate("candidate", "Unconfigured", pdf_url="https://example.com/paper.pdf")
+        with tempfile.TemporaryDirectory() as directory:
+            settings = ArticleSettings(article_download_dir=directory)
+            with patch("backend.app.article_assistant.infrastructure.article_download.httpx.stream") as stream:
+                with self.assertRaises(ValueError):
+                    next(download_article(candidate, settings))
+            stream.assert_not_called()
 
     def test_download_paper_skill_reports_missing_worker_model(self):
         status = skill_status([])

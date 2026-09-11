@@ -905,7 +905,22 @@ class MemoryRepository:
 
     @staticmethod
     def _system_rule(row: sqlite3.Row) -> SystemRule:
-        return SystemRule(row["owner_id"], row["content"], bool(row["enabled"]), _dt(row["updated_at"]))
+        owner_id = row["owner_id"]
+        content = row["content"]
+        enabled = row["enabled"]
+        updated_at = row["updated_at"]
+        if not isinstance(owner_id, str) or not owner_id:
+            raise ValueError("invalid system rule owner")
+        if not isinstance(content, str):
+            raise ValueError("invalid system rule content")
+        if enabled not in (0, 1, False, True):
+            raise ValueError("invalid system rule enabled value")
+        if not isinstance(updated_at, str) or not updated_at:
+            raise ValueError("invalid system rule updated_at")
+        parsed_updated_at = _dt(updated_at)
+        if parsed_updated_at is None:
+            raise ValueError("invalid system rule updated_at")
+        return SystemRule(owner_id, content, bool(enabled), parsed_updated_at)
 
     def get_system_rule(self, owner_id: str) -> SystemRule:
         """Read one owner rule, failing closed when SQLite cannot answer."""
@@ -916,7 +931,12 @@ class MemoryRepository:
             raise SystemRuleUnavailableError("SYSTEM_RULE_UNAVAILABLE") from error
         if not row:
             return SystemRule(owner_id, "", False, datetime.now(timezone.utc))
-        return self._system_rule(row)
+        try:
+            return self._system_rule(row)
+        except SystemRuleUnavailableError:
+            raise
+        except Exception as error:
+            raise SystemRuleUnavailableError("SYSTEM_RULE_UNAVAILABLE") from error
 
     def upsert_system_rule(self, owner_id: str, content: str, enabled: bool) -> SystemRule:
         if not isinstance(content, str) or len(content) > 12000:

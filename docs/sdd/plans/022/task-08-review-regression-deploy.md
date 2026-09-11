@@ -1,7 +1,7 @@
 # Task 08：最终评审、全量回归、部署与复盘
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md) ｜ 索引：[README](./README.md)
-> 依赖：Task05、Task06、Task07、Task09、Task10；当前状态：`待执行`
+> 依赖：Task05、Task06、Task07、Task09、Task10；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -53,8 +53,10 @@
 
 ## 执行结果
 
-待执行后填写。
+已完成：后端/前端最终范围审计通过；唯一最终全量回归 1168 passed、1 skipped、5 warnings、41 subtests，退出码 0；完成 8001 部署、health/home/system-rule 及 1280×900/390×844 DOM smoke。模型依赖的成功 SSE/RAG 因本机 Ollama `models=[]` 保留为环境待复验，不影响自动化与部署门禁。
 
 ## 变更日志
 
 - 2026-09-11：创建最终收口 Task；全量回归只在本阶段启动，但失败修复后必须对最终候选重新运行直至通过。
+- 2026-09-11：Task07 已完成并提交，全部实现依赖满足；Task08 转实施中，启动最终审计与唯一全量回归候选。
+- 2026-09-11：后端/前端最终复审 GO；修复 Article Assistant SSRF、SystemRule fail-closed、Task05 测试基线、KB inventory digest 及共享 URL 安全边界后，唯一最终全量回归通过并完成 8001 部署 smoke；Task08 收口。
