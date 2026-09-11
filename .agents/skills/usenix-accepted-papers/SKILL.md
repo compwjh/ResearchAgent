@@ -1,6 +1,7 @@
 ---
 name: usenix-accepted-papers
 description: ResearchAgent 项目级 USENIX Security accepted/prepublication 论文下载、PDF 安全验证、导入与失败恢复协议；不负责目录检索。
+tools: [download_and_import_paper]
 ---
 
 # USENIX accepted papers — 下载与导入版

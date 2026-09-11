@@ -8,11 +8,15 @@ from urllib.parse import urlparse
 
 from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.article_assistant.infrastructure.article_download import download_article, safe_filename
+from backend.app.platform.config import BASE_DIR
 from backend.app.platform.ollama import create_chat_model
 
 SKILL_NAME = "download-paper"
 WORKER_MODEL = "deepseek-coder:33b"
-SKILL_DIR = Path("/Users/wjh/.codex/skills/download-paper")
+# spec-023 Task05：原为机器相关绝对路径 `/Users/wjh/.codex/skills/download-paper`，
+# 在本机并不存在且无法跨机器复用。改为项目内相对路径，与 Skill 注册表
+# （`.agents/skills/`）保持同一事实源。
+SKILL_DIR = BASE_DIR / ".agents" / "skills" / "download-paper"
 SKILL_FILES = (SKILL_DIR / "SKILL.md", SKILL_DIR / "scripts" / "download_pdf.py")
 
 PUBLIC_HTTPS = "public_https"

@@ -1,6 +1,7 @@
 ---
 name: usenix-paper-catalog-search
 description: ResearchAgent 项目级 USENIX Security/DBLP 论文目录元数据检索、增量缓存、LangGraph 进度与 RAG 召回；禁止在搜索阶段下载或验证 PDF。
+tools: [search_paper_catalog]
 ---
 
 # USENIX paper catalog search — 目录元数据版
