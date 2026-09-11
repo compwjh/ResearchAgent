@@ -39,8 +39,43 @@ def test_context_meter_classes_are_styled() -> None:
 
 
 def test_asset_version_bumped_for_spec025() -> None:
-    assert "/assets/app.js?v=35" in INDEX
-    assert "/assets/styles.css?v=35" in INDEX
+    assert "/assets/app.js?v=36" in INDEX
+    assert "/assets/styles.css?v=36" in INDEX
+
+
+def test_context_meter_lives_in_composer_footer_right_side() -> None:
+    # 占比区必须与「Enter 发送」提示同排，且位于发送按钮之前（右下）。
+    start = INDEX.index('<div class="composer-footer">')
+    end = INDEX.index("</form>", start)
+    footer = INDEX[start:end]
+    assert 'id="context-meter"' in footer
+    assert 'class="composer-tip"' in footer
+    assert footer.index('class="composer-tip"') < footer.index('id="context-meter"')
+    assert footer.index('id="context-meter"') < footer.index('id="send-button"')
+    # 状态行移出表单，位于 composer 底部右下
+    assert INDEX.index("</form>") < INDEX.index('id="context-status"')
+
+
+def test_input_is_at_least_three_rows_and_grows() -> None:
+    assert 'id="question"' in INDEX
+    assert 'rows="3"' in INDEX
+    assert ".composer textarea" in STYLES
+    assert "min-height: 66px" in STYLES
+    assert "max-height: 176px" in STYLES
+    assert "autoGrowInput" in APP
+    assert "COMPOSER_INPUT_MAX_HEIGHT" in APP
+
+
+def test_idle_placeholder_keeps_layout_stable() -> None:
+    # 无会话时用 visibility 占位，不用 hidden，避免底部行抖动。
+    assert "is-idle" in INDEX
+    assert ".composer-context.is-idle" in STYLES
+    assert "visibility: hidden" in STYLES
+    start = APP.index("function renderContextUsage")
+    end = APP.index("async function loadContextUsage", start)
+    block = APP[start:end]
+    assert "classList.toggle('is-idle'" in block
+    assert "contextMeter.hidden" not in block
 
 
 def test_ring_is_svg_circle_not_bar() -> None:
@@ -72,7 +107,6 @@ def test_context_meter_inside_composer_form() -> None:
     block = INDEX[start:end]
     assert 'id="context-meter"' in block
     assert 'id="context-compact-button"' in block
-    assert 'id="context-status"' in block
 
 
 def test_progressbar_has_accessible_attributes() -> None:
@@ -115,7 +149,7 @@ def test_no_innerhtml_in_context_meter_code() -> None:
     block = APP[start:end]
     assert "innerHTML" not in block
     # 动态文本只允许 textContent
-    assert "contextMeterText.textContent" in block
+    assert "contextMeterValue.textContent" in block
     assert "contextStatus.textContent" in block
 
 

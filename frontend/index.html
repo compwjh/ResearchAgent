@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=35">
+    <link rel="stylesheet" href="/assets/styles.css?v=36">
 </head>
 <body>
   <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">☰ <span>项目与会话</span></button>
@@ -80,20 +80,23 @@
             </div>
           </div>
           <form class="composer" id="chat-form">
-            <textarea id="question" rows="1" placeholder="给 Ollama 发消息" aria-label="问题"></textarea>
-            <div class="composer-context" id="context-meter" hidden>
-              <div class="context-ring" id="context-ring" role="progressbar" aria-label="上下文占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                <svg viewBox="0 0 36 36" aria-hidden="true" focusable="false">
-                  <circle class="context-ring-track" cx="18" cy="18" r="15"></circle>
-                  <circle class="context-ring-fill" id="context-ring-fill" cx="18" cy="18" r="15"></circle>
-                </svg>
+            <textarea id="question" rows="3" placeholder="给 Ollama 发消息" aria-label="问题"></textarea>
+            <div class="composer-footer">
+              <span class="composer-tip">Enter 发送 · Shift + Enter 换行</span>
+              <div class="composer-context is-idle" id="context-meter">
+                <div class="context-ring" id="context-ring" role="progressbar" aria-label="上下文占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <svg viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                    <circle class="context-ring-track" cx="18" cy="18" r="15"></circle>
+                    <circle class="context-ring-fill" id="context-ring-fill" cx="18" cy="18" r="15"></circle>
+                  </svg>
+                </div>
+                <span class="context-meter-text" id="context-meter-text"><span class="context-meter-label">上下文</span> <span class="context-meter-value" id="context-meter-value">0%</span></span>
+                <button type="button" class="context-compact-button" id="context-compact-button" tabindex="-1">压缩</button>
               </div>
-              <span class="context-meter-text" id="context-meter-text">上下文 0%</span>
-              <button type="button" class="context-compact-button" id="context-compact-button">压缩</button>
+              <button type="submit" id="send-button" aria-label="发送"><span>↑</span></button>
             </div>
-            <p class="context-status" id="context-status" role="status" aria-live="polite" hidden></p>
-            <div class="composer-footer"><span class="composer-tip">Enter 发送 · Shift + Enter 换行</span><button type="submit" id="send-button" aria-label="发送"><span>↑</span></button></div>
           </form>
+          <p class="context-status" id="context-status" role="status" aria-live="polite" hidden></p>
           <p class="hint" id="mode-hint">Normal 模式 · 单次最多 2,000 字</p>
           <p class="skill-hint" id="skill-hint" hidden></p>
         </section>
@@ -500,6 +503,6 @@
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 -->
-  <script src="/assets/app.js?v=35"></script>
+  <script src="/assets/app.js?v=36"></script>
 </body>
 </html>

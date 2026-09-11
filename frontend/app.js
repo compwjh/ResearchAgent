@@ -366,6 +366,7 @@ const contextMeter = document.getElementById('context-meter');
 const contextRing = document.getElementById('context-ring');
 const contextRingFill = document.getElementById('context-ring-fill');
 const contextMeterText = document.getElementById('context-meter-text');
+const contextMeterValue = document.getElementById('context-meter-value');
 const contextCompactButton = document.getElementById('context-compact-button');
 const contextStatus = document.getElementById('context-status');
 const contextState = { inflight: false, followTimer: null, followTries: 0 };
@@ -382,15 +383,22 @@ const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * 15;
 
 function renderContextUsage(usage) {
   if (!contextMeter || !contextRing || !contextRingFill || !contextMeterText) return;
-  if (!usage) { contextMeter.hidden = true; return; }
+  // 无会话时保留占位（visibility 隐藏），避免底部行抖动，同时移出 Tab 焦点。
+  const idle = !usage;
+  contextMeter.classList.toggle('is-idle', idle);
+  if (contextCompactButton && !contextState.inflight) contextCompactButton.tabIndex = idle ? -1 : 0;
+  if (idle) {
+    if (contextMeterValue) contextMeterValue.textContent = '0%';
+    contextRing.setAttribute('aria-valuenow', '0');
+    return;
+  }
   const ratio = Number(usage.ratio);
   const safe = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
   const percent = Math.round(safe * 100);
-  contextMeter.hidden = false;
   contextRingFill.style.strokeDasharray = `${CONTEXT_RING_CIRCUMFERENCE.toFixed(2)}`;
   contextRingFill.style.strokeDashoffset = `${(CONTEXT_RING_CIRCUMFERENCE * (1 - safe)).toFixed(2)}`;
   contextRing.setAttribute('aria-valuenow', String(percent));
-  contextMeterText.textContent = `上下文 ${percent}%`;
+  if (contextMeterValue) contextMeterValue.textContent = `${percent}%`;
   const status = usage.compaction_status;
   if (status === 'queued' || status === 'running') setContextStatus('压缩中…');
   else if (status === 'failed') setContextStatus('上次压缩失败，可重试');
@@ -455,6 +463,18 @@ async function compactConversationContext() {
 }
 
 if (contextCompactButton) contextCompactButton.addEventListener('click', compactConversationContext);
+
+// 输入框：3 行起步，随内容自适应增长到上限（与 CSS max-height 一致），避免底部行被推高。
+const COMPOSER_INPUT_MAX_HEIGHT = 176;
+function autoGrowInput() {
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, COMPOSER_INPUT_MAX_HEIGHT)}px`;
+}
+if (input) {
+  input.addEventListener('input', autoGrowInput);
+  autoGrowInput();
+}
 
 function setConversationStatus(text, state = '') {
   if (!conversationStatus) return;
@@ -1627,7 +1647,7 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
     if (assistantMessage) addConversationErrorNotice(assistantMessage, error);
     else if (!streamError) addConversationError(error);
   } finally {
-    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList(); loadContextUsage();
+    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); autoGrowInput(); loadConversationList(); loadContextUsage();
   }
 }
 
