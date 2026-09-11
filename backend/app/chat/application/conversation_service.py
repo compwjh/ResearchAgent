@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
-import re
 import queue
+import re
 import threading
 from dataclasses import dataclass
 from typing import Optional
 
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
-from backend.app.platform.config import MEMORY_ANALYSIS_MODEL
 from backend.app.memory.models import MemoryRecord
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
+from backend.app.platform.config import MEMORY_ANALYSIS_MODEL
 
 
 @dataclass(frozen=True)
@@ -382,10 +383,8 @@ class MemoryEvolutionService:
                     matching = self.repository.list_memories(owner_id, conversation.project_id, scope="project", status="active") if conversation.project_id else []
                     method_id = next((item.memory_id for item in matching if item.category == "capability_method" and item.statement.casefold() == statement.casefold()), None)
                 if method_id:
-                    try:
+                    with contextlib.suppress(LookupError, ValueError):
                         self.repository.record_capability_failure(owner_id, str(method_id), conversation.conversation_id, event.message_id, str(payload.get("error") or statement)[:500])
-                    except (LookupError, ValueError):
-                        pass
                 return
             source_kind = "verified_failure"
             evidence_type = "tool_failure"
@@ -724,7 +723,7 @@ class MemoryAnalysisWorker:
                     try:
                         event_kind = "explicit_memory" if candidate.intent == "explicit" else ("user_correction" if self._is_correction(message.content) else None)
                         if event_kind:
-                            try:
+                            with contextlib.suppress(Exception):
                                 self.repository.append_raw_event(
                                     self.owner_id,
                                     conversation.conversation_id,
@@ -733,8 +732,6 @@ class MemoryAnalysisWorker:
                                     message_id=job.user_message_id,
                                     idempotency_key=f"analysis:{job.analysis_id}:{offset}:{candidate.statement}",
                                 )
-                            except Exception:
-                                pass
                         decision, memory_id = self._decide_candidate(job, conversation, candidate, message.content)
                         suggested_scope = "global" if has_explicit_global_intent(message.content) else ("project" if job.project_id_snapshot else candidate.scope if candidate.scope in {"global", "project"} else "project")
                         self.repository.create_memory_analysis_item(
@@ -744,19 +741,19 @@ class MemoryAnalysisWorker:
                             decision_status=decision, memory_id=memory_id,
                             lease_token=lease_token, lease_version=lease_version,
                         )
-                        if decision in {"auto_saved", "superseded"}: saved += 1
-                        elif decision == "pending_confirmation": pending += 1
+                        if decision in {"auto_saved", "superseded"}:
+                            saved += 1
+                        elif decision == "pending_confirmation":
+                            pending += 1
                     except Exception:
                         failed += 1
-                        try:
+                        with contextlib.suppress(Exception):
                             self.repository.create_memory_analysis_item(
                                 analysis_id, self.owner_id, candidate.statement or message.content,
                                 "global" if has_explicit_global_intent(message.content) else ("project" if job.project_id_snapshot else "project"),
                                 candidate.confidence, "分析结果未能保存", decision_status="failed",
                                 lease_token=lease_token, lease_version=lease_version,
                             )
-                        except Exception:
-                            pass
                 self.repository.save_memory_analysis_progress(
                     analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version,
                     cursor=str(offset + len(batch)), batch_no=(offset // self.batch_size) + 1,

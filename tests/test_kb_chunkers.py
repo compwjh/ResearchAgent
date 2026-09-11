@@ -207,7 +207,7 @@ class V2LlmTests(unittest.TestCase):
         build_chunks_v2(PAGES, max_chars=LIMIT, llm=lambda p: "[1]", progress=seen.append)
         self.assertTrue(seen)
         self.assertEqual(seen[-1], 100)
-        self.assertTrue(all(b >= a for a, b in zip(seen, seen[1:])))
+        self.assertTrue(all(b >= a for a, b in zip(seen, seen[1:], strict=False)))
         self.assertTrue(all(0 <= value <= 100 for value in seen))
 
     def test_progress_callback_errors_do_not_break_chunking(self):
@@ -222,17 +222,19 @@ class OllamaJudgeTests(unittest.TestCase):
     def test_raises_on_http_error(self):
         import httpx
 
-        with patch.object(chunkers_module.httpx, "post", side_effect=httpx.HTTPError("down")):
-            with self.assertRaises(chunkers_module.BoundaryLLMError):
-                chunkers_module.ollama_boundary_judge("prompt")
+        with patch.object(chunkers_module.httpx, "post", side_effect=httpx.HTTPError("down")), self.assertRaises(
+            chunkers_module.BoundaryLLMError
+        ):
+            chunkers_module.ollama_boundary_judge("prompt")
 
     def test_raises_on_empty_content(self):
         response = __import__("unittest.mock", fromlist=["Mock"]).Mock()
         response.status_code = 200
         response.json.return_value = {"message": {"content": ""}}
-        with patch.object(chunkers_module.httpx, "post", return_value=response):
-            with self.assertRaises(chunkers_module.BoundaryLLMError):
-                chunkers_module.ollama_boundary_judge("prompt")
+        with patch.object(chunkers_module.httpx, "post", return_value=response), self.assertRaises(
+            chunkers_module.BoundaryLLMError
+        ):
+            chunkers_module.ollama_boundary_judge("prompt")
 
     def test_returns_content_when_valid(self):
         from unittest.mock import Mock

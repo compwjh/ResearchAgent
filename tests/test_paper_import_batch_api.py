@@ -1,16 +1,17 @@
-import pytest
 import time
 from threading import Event
+
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api import common, routes_paper
 from backend.app.main import app
+from backend.app.paper_discovery.application import paper_import as paper_import_module
 from backend.app.paper_discovery.application.entry import (
     BROWSER_SESSION_EXPIRED,
     BROWSER_SESSION_REQUIRED,
     BrowserManagerError,
 )
-from backend.app.paper_discovery.application import paper_import as paper_import_module
 from backend.app.paper_discovery.application.paper_import import (
     KB_STORAGE_LOCKED,
     LOGIN_REQUIRED,

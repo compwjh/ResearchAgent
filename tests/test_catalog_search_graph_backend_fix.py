@@ -1,13 +1,13 @@
+import threading
+from types import SimpleNamespace
+
+import backend.app.paper_discovery.application.catalog_search_graph as catalog_graph_module
 from backend.app.paper_discovery.application.catalog_search_graph import (
     CatalogRagAdapter,
     CatalogSearchGraph,
     reset_running_job_ids,
     reset_running_jobs,
 )
-from types import SimpleNamespace
-import threading
-
-import backend.app.paper_discovery.application.catalog_search_graph as catalog_graph_module
 from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     SearchEvent,

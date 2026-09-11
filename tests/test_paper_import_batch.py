@@ -1,7 +1,6 @@
 """Task06 durable batch compensation contracts (isolated SQLite only)."""
 
 import sqlite3
-import time
 
 import pytest
 

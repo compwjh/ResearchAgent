@@ -6,11 +6,11 @@ for minimal test images, but both paths use the same persisted node contract.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Mapping, Optional, TypedDict
-from uuid import uuid4
 from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import models as qdrant_models
@@ -20,16 +20,6 @@ try:
 except ImportError:  # pragma: no cover - only for minimal runtime images
     END = START = StateGraph = None
 
-from backend.app.paper_discovery.domain.paper_discovery import (
-    CatalogPaper,
-    CatalogSourceRecord,
-    SearchEvent,
-    SearchJob,
-    SearchResult,
-    SearchSourceProgress,
-    SourceFetchUnit,
-)
-from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 from backend.app.knowledge_base.application import (
     DENSE_VECTOR,
     SPARSE_VECTOR,
@@ -40,8 +30,17 @@ from backend.app.knowledge_base.application import (
     rerank_hits,
     rrf_fuse,
 )
+from backend.app.paper_discovery.domain.paper_discovery import (
+    CatalogPaper,
+    CatalogSourceRecord,
+    SearchEvent,
+    SearchJob,
+    SearchResult,
+    SearchSourceProgress,
+    SourceFetchUnit,
+)
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 from backend.app.platform.config import EMBED_DIM
-
 
 GRAPH_VERSION = "catalog-search-v1"
 NODE_NAMES = (
@@ -144,7 +143,7 @@ class CatalogRagAdapter:
                         "metadata_hash": paper.metadata_hash,
                         "text": self._text(paper),
                     },
-                ) for paper, vector in zip(papers, vectors)],
+                ) for paper, vector in zip(papers, vectors, strict=False)],
             )
             self.degraded = False
             return True
@@ -204,7 +203,7 @@ class CatalogRagAdapter:
                 degraded = bool(getattr(reranked, "degraded", False))
                 scores = getattr(reranked, "scores_by_original_index", None)
                 if scores is not None:
-                    score_by_id = {id(hit): float(score) for hit, score in zip(original_hits, scores)}
+                    score_by_id = {id(hit): float(score) for hit, score in zip(original_hits, scores, strict=False)}
                     for hit in hits:
                         if id(hit) in score_by_id:
                             hit.rerank_score = score_by_id[id(hit)]
@@ -261,7 +260,7 @@ class CatalogSearchGraph:
         graph.add_node("sync_dblp", lambda state: {"dblp": self.sync_dblp(state["job"])})
         graph.add_node("merge_catalog_metadata", lambda state: (self.merge_catalog_metadata(state["job"], state.get("usenix"), state.get("dblp")) or {}))
         graph.add_node("index_changed_catalog_papers", lambda state: (self.index_changed_catalog_papers(state["job"]) or {}))
-        graph.add_node("retrieve_and_rerank", lambda state: dict(zip(("ranked", "degraded"), self.retrieve_and_rerank(state["job"]))))
+        graph.add_node("retrieve_and_rerank", lambda state: dict(zip(("ranked", "degraded"), self.retrieve_and_rerank(state["job"]), strict=True)))
         graph.add_node("freeze_search_results", lambda state: (self.freeze_search_results(
             state["job"], state.get("ranked", []), degraded=bool(state.get("degraded")),
             source_results=(state.get("usenix", {}), state.get("dblp", {})),
@@ -324,7 +323,7 @@ class CatalogSearchGraph:
                 ranked, degraded = self.retrieve_and_rerank(job)
                 self.freeze_search_results(job, ranked, degraded=degraded, source_results=(usenix, dblp))
                 self.finalize_job(job)
-        except Exception as error:  # checkpoint a stable failure, never leak internals
+        except Exception:  # checkpoint a stable failure, never leak internals
             self._event(search_id, "finalize_job", "JOB_FAILED", "failed",
                         payload={"error_code": "SEARCH_WORKFLOW_FAILED", "message_code": "SEARCH_WORKFLOW_FAILED"})
             self.store.create_search_job(SearchJob(
@@ -487,13 +486,13 @@ class CatalogSearchGraph:
                     if year in pending_years
                 }
                 failed_years.update(
-                    set(int(year) for year in pending_years) - observed_years
-                    or (set(int(year) for year in pending_years))
+                    {int(year) for year in pending_years} - observed_years
+                    or {int(year) for year in pending_years}
                 )
             warning_error = str(warnings[0]) if warnings else None
             effective_error = error or warning_error
             has_year_failure = bool(failed_years)
-            all_years_failed = bool(pending_years) and set(int(year) for year in pending_years).issubset(failed_years) and not records
+            all_years_failed = bool(pending_years) and {int(year) for year in pending_years}.issubset(failed_years) and not records
             for year in pending_years:
                 unit_id = f"dblp|{source.conference_id}|{year}|stream"
                 count = sum(1 for record in records if self._record_year(record) == year)
@@ -544,10 +543,8 @@ class CatalogSearchGraph:
             release = getattr(self.store, "release_lease", None)
             if callable(release):
                 for unit_id in locals().get("leased_units", []):
-                    try:
+                    with contextlib.suppress(Exception):
                         release(unit_id, locals().get("lease_owner", ""), status="failed", now=_now())
-                    except Exception:
-                        pass
             self._progress(job.search_id, "dblp", "failed", error_code="DBLP_UNAVAILABLE")
             return {"status": "failed", "error_code": "DBLP_UNAVAILABLE", "paper_count": 0}
 

@@ -19,13 +19,14 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from backend.app.platform.config import BASE_DIR, MEMORY_ANALYSIS_MODEL
+
 from .models import (
     Conversation,
     ConversationSummary,
     EvolutionCheckpoint,
-    MemoryEvidence,
     MemoryAnalysisItem,
     MemoryAnalysisJob,
+    MemoryEvidence,
     MemoryRecord,
     Message,
     ProcessingStep,
@@ -84,7 +85,7 @@ def decode_cursor(cursor: str, kind: str) -> tuple[str, str]:
             raise ValueError
         return str(value["at"]), str(value["id"])
     except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeDecodeError):
-        raise ValueError("invalid cursor")
+        raise ValueError("invalid cursor") from None
 
 
 class MemoryRepository:
@@ -437,11 +438,10 @@ class MemoryRepository:
             "memory_analysis_jobs": {"analysis_id", "user_message_id", "owner_id", "project_id_snapshot", "status", "model", "cursor", "batch_no", "saved_count", "pending_count", "failed_count", "error_code", "created_at", "updated_at", "completed_at"},
             "memory_analysis_items": {"item_id", "analysis_id", "statement", "suggested_scope", "confidence", "rationale_summary", "decision_status", "memory_id", "created_at", "decided_at"},
         }.items():
-            if not required <= {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}: return False
+            if not required <= {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}:
+                return False
         indexes = {row["name"] for row in connection.execute("PRAGMA index_list(processing_steps)") if row["unique"]}
-        if "uq_steps_message_kind_sequence" not in indexes:
-            return False
-        return True
+        return "uq_steps_message_kind_sequence" in indexes
 
     @staticmethod
     def _migrate_v4_to_v5(connection: sqlite3.Connection) -> None:
@@ -1010,13 +1010,16 @@ class MemoryRepository:
         values = {key: value for key, value in changes.items() if key in {"name", "instructions", "status"}}
         if "name" in values:
             values["name"] = str(values["name"]).strip()
-            if not values["name"] or len(values["name"]) > 120: raise ValueError("invalid project name")
-        if not values: return self.get_project(project_id, owner_id)
+            if not values["name"] or len(values["name"]) > 120:
+                raise ValueError("invalid project name")
+        if not values:
+            return self.get_project(project_id, owner_id)
         values["updated_at"] = _now()
         try:
             with self.transaction() as db:
                 result = db.execute(f"UPDATE projects SET {', '.join(f'{key}=?' for key in values)} WHERE project_id=? AND owner_id=? AND status!='deleted'", (*values.values(), project_id, owner_id))
-                if result.rowcount == 0: return None
+                if result.rowcount == 0:
+                    return None
         except sqlite3.IntegrityError as error:
             raise ValueError("project already exists") from error
         return self.get_project(project_id, owner_id)
@@ -1163,7 +1166,9 @@ class MemoryRepository:
         status: Optional[str] = None,
         unbound_only: bool = False,
     ) -> tuple[list[Conversation], Optional[str]]:
-        limit = max(1, min(int(limit), 100)); params: list[object] = [owner_id]; clause = ""
+        limit = max(1, min(int(limit), 100))
+        params: list[object] = [owner_id]
+        clause = ""
         if status is not None and status not in {"active", "archived"}:
             raise ValueError("invalid conversation status")
         if unbound_only and project_id is not None:
@@ -1177,20 +1182,25 @@ class MemoryRepository:
         else:
             if not self.get_project(project_id, owner_id):
                 raise LookupError("project not found")
-            clause += " AND project_id=?"; params.append(project_id)
+            clause += " AND project_id=?"
+            params.append(project_id)
         if status is None:
             clause += " AND status!='deleted'"
         else:
-            clause += " AND status=?"; params.append(status)
+            clause += " AND status=?"
+            params.append(status)
         # Every list scope gets its own opaque cursor namespace.  In
         # particular, a project cursor must never be accepted by the default
         # or another project's list, even when the status filter is omitted.
         cursor_kind = f"conversations:v3:project={project_id or '*'}:status={status or '*'}:unbound={int(unbound_only)}"
         if cursor:
-            at, item_id = decode_cursor(cursor, cursor_kind); clause += " AND (updated_at < ? OR (updated_at = ? AND conversation_id < ?))"; params.extend([at, at, item_id])
+            at, item_id = decode_cursor(cursor, cursor_kind)
+            clause += " AND (updated_at < ? OR (updated_at = ? AND conversation_id < ?))"
+            params.extend([at, at, item_id])
         with self.connection() as db:
             rows = db.execute(f"SELECT * FROM conversations WHERE owner_id=?{clause} ORDER BY updated_at DESC, conversation_id DESC LIMIT ?", (*params, limit + 1)).fetchall()
-        page = rows[:limit]; next_cursor = encode_cursor(cursor_kind, page[-1]["updated_at"], page[-1]["conversation_id"]) if len(rows) > limit else None
+        page = rows[:limit]
+        next_cursor = encode_cursor(cursor_kind, page[-1]["updated_at"], page[-1]["conversation_id"]) if len(rows) > limit else None
         return [self._conversation(row) for row in page], next_cursor
 
     def create_message(self, conversation_id: str, owner_id: str, role: str, content: str, *, status: str = "pending", model: Optional[str] = None, mode: Optional[str] = None, parent_message_id: Optional[str] = None) -> Message:
@@ -1209,29 +1219,43 @@ class MemoryRepository:
 
     def update_message(self, message_id: str, owner_id: str, *, content: Optional[str] = None, status: Optional[str] = None) -> Optional[Message]:
         values = {}
-        if content is not None: values["content"] = content
-        if status is not None: values["status"] = status; values["completed_at"] = _now() if status in {"completed", "failed", "interrupted"} else None
-        if not values: return self.get_message(message_id, owner_id)
+        if content is not None:
+            values["content"] = content
+        if status is not None:
+            values["status"] = status
+            values["completed_at"] = _now() if status in {"completed", "failed", "interrupted"} else None
+        if not values:
+            return self.get_message(message_id, owner_id)
         with self.transaction() as db:
             result = db.execute(f"UPDATE messages SET {', '.join(f'{key}=?' for key in values)} WHERE message_id=? AND owner_id=?", (*values.values(), message_id, owner_id))
-            if result.rowcount == 0: return None
+            if result.rowcount == 0:
+                return None
         return self.get_message(message_id, owner_id)
 
     def list_messages(self, conversation_id: str, owner_id: str, *, before: Optional[str] = None, target_chars: int = 4000, limit: int = 50) -> tuple[list[Message], Optional[str]]:
-        if not self.get_conversation(conversation_id, owner_id): raise LookupError("conversation not found")
-        target_chars = max(1, min(int(target_chars), 100_000)); limit = max(1, min(int(limit), 50)); params: list[object] = [conversation_id, owner_id]; clause = ""
+        if not self.get_conversation(conversation_id, owner_id):
+            raise LookupError("conversation not found")
+        target_chars = max(1, min(int(target_chars), 100_000))
+        limit = max(1, min(int(limit), 50))
+        params: list[object] = [conversation_id, owner_id]
+        clause = ""
         if before:
-            at, item_id = decode_cursor(before, "messages"); clause = " AND (created_at < ? OR (created_at = ? AND message_id < ?))"; params.extend([at, at, item_id])
+            at, item_id = decode_cursor(before, "messages")
+            clause = " AND (created_at < ? OR (created_at = ? AND message_id < ?))"
+            params.extend([at, at, item_id])
             with self.connection() as db:
                 cursor_row = db.execute("SELECT conversation_id, owner_id, created_at FROM messages WHERE message_id=?", (item_id,)).fetchone()
             if not cursor_row or cursor_row["conversation_id"] != conversation_id or cursor_row["owner_id"] != owner_id or cursor_row["created_at"] != at:
                 raise ValueError("invalid cursor")
         with self.connection() as db:
             rows = db.execute(f"SELECT * FROM messages WHERE conversation_id=? AND owner_id=?{clause} ORDER BY created_at DESC, message_id DESC LIMIT ?", (*params, limit + 1)).fetchall()
-        selected = []; chars = 0
+        selected = []
+        chars = 0
         for row in rows:
-            selected.append(self._message(row)); chars += len(row["content"] or "")
-            if chars >= target_chars: break
+            selected.append(self._message(row))
+            chars += len(row["content"] or "")
+            if chars >= target_chars:
+                break
         next_cursor = encode_cursor("messages", selected[-1].created_at.isoformat(), selected[-1].message_id) if len(rows) > len(selected) else None
         return selected, next_cursor
 
@@ -1274,7 +1298,8 @@ class MemoryRepository:
         return self.get_memory(memory_id, owner_id)
 
     def get_memory(self, memory_id: str, owner_id: str) -> Optional[MemoryRecord]:
-        with self.connection() as db: row = db.execute("SELECT * FROM memories WHERE memory_id=? AND owner_id=?", (memory_id, owner_id)).fetchone()
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM memories WHERE memory_id=? AND owner_id=?", (memory_id, owner_id)).fetchone()
         return self._memory(row) if row else None
 
     def list_memories(self, owner_id: str, project_id: Optional[str] = None, *, status: str = "active", scope: Optional[str] = None) -> list[MemoryRecord]:
@@ -1302,12 +1327,11 @@ class MemoryRepository:
             scope = "project"
         params: list[object] = [owner_id, status, scope]
         clause = " AND scope=?"
-        if scope == "global":
-            clause += " AND project_id IS NULL"
-        elif project_id is None:
+        if scope == "global" or project_id is None:
             clause += " AND project_id IS NULL"
         else:
-            clause += " AND project_id=?"; params.append(project_id)
+            clause += " AND project_id=?"
+            params.append(project_id)
         with self.connection() as db:
             rows = db.execute(f"SELECT * FROM memories WHERE owner_id=? AND status=?{clause} ORDER BY updated_at DESC, memory_id DESC", params).fetchall()
         return [self._memory(row) for row in rows]
@@ -1514,14 +1538,16 @@ class MemoryRepository:
         for item in items:
             if used + len(item.summary_text) > max(0, int(budget_chars)):
                 break
-            selected.append(item); used += len(item.summary_text)
+            selected.append(item)
+            used += len(item.summary_text)
         return selected
 
     def list_recall_summaries(self, owner_id: str, project_id: Optional[str], *, query: str = "", budget_chars: int = 1500) -> list[ConversationSummary]:
         params: list[object] = [owner_id]
         clause = "c.owner_id=? AND s.status='active'"
         if project_id:
-            clause += " AND c.project_id=?"; params.append(project_id)
+            clause += " AND c.project_id=?"
+            params.append(project_id)
         else:
             clause += " AND c.project_id IS NULL"
         with self.connection() as db:
@@ -1535,7 +1561,8 @@ class MemoryRepository:
         for item in items:
             if used + len(item.summary_text) > max(0, int(budget_chars)):
                 break
-            selected.append(item); used += len(item.summary_text)
+            selected.append(item)
+            used += len(item.summary_text)
         return selected
 
     def _checkpoint(self, row: sqlite3.Row) -> EvolutionCheckpoint:
@@ -1611,7 +1638,8 @@ class MemoryRepository:
         for memory in (item for item in all_memories if item.category != "capability_method"):
             if used + len(memory.statement) > max(0, int(memory_char_budget)):
                 continue
-            memories.append(memory); used += len(memory.statement)
+            memories.append(memory)
+            used += len(memory.statement)
         methods = self.list_capability_methods(
             owner_id, project_id, query=query,
             budget_chars=max(0, int(memory_char_budget) - used), limit=5,

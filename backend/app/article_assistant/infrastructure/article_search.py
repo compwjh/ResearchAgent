@@ -85,7 +85,6 @@ def _openalex_candidates(query: str, settings: ArticleSettings) -> Iterable[Arti
     for index, item in enumerate(payload.get("results", [])):
         location = item.get("primary_location") or {}
         best_oa = item.get("open_access") or {}
-        source = location.get("source") or {}
         pdf_url = location.get("pdf_url") or best_oa.get("oa_url")
         title = str(item.get("title", "")).strip()
         yield _candidate_from_payload({

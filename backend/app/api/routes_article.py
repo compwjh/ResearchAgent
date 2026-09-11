@@ -1,13 +1,16 @@
+import contextlib
 import uuid
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from backend.app.article_assistant.application.article_agent import build_task
+from backend.app.api import common
+from backend.app.api.common import *  # noqa: F401,F403
 from backend.app.api.schemas import (
     ChatRequest,
 )
+from backend.app.article_assistant.application.article_agent import build_task
 from backend.app.article_assistant.application.download_paper_skill import (
     SKILL_NAME,
     build_skill_plan,
@@ -20,20 +23,23 @@ from backend.app.article_assistant.application.entry import (
     search_articles,
 )
 from backend.app.article_assistant.domain.article import ArticleCandidate
-from backend.app.api import common
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
-from backend.app.platform.observability import flush, prompt_observation_metadata, redact_prompt_messages, record_ollama_generation, utc_now
-from backend.app.platform.ollama import get_available_models
-from backend.app.platform.bootstrap import get_provider
 from backend.app.memory.repository import OWNER_ID
+from backend.app.platform.bootstrap import get_provider
+from backend.app.platform.observability import (
+    flush,
+    prompt_observation_metadata,
+    record_ollama_generation,
+    redact_prompt_messages,
+    utc_now,
+)
+from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,
     save_article_settings,
 )
 
 router = APIRouter()
-
-from backend.app.api.common import *  # noqa: F401,F403
 
 
 @router.get("/agent/settings")
@@ -65,10 +71,8 @@ def update_agent_settings(settings: ArticleSettings) -> dict:
     paper_import_batch_service = None
     paper_import_batch_store_path = None
     if paper_browser_manager is not None:
-        try:
+        with contextlib.suppress(Exception):
             paper_browser_manager.close()
-        except Exception:
-            pass
     paper_browser_manager = None
     save_article_settings(settings)
     return get_agent_settings()
@@ -169,7 +173,7 @@ def run_agent(request: ChatRequest):
         yield stream_event("stage", name="searching", message="正在检索文章")
         try:
             task.candidates = search_articles(task.normalized_query, common.article_settings)
-        except httpx.HTTPError as error:
+        except httpx.HTTPError:
             task.status = "failed"
             task.error = "文章检索来源不可用"
             article_tasks().save(task)

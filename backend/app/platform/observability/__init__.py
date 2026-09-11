@@ -23,9 +23,9 @@ from backend.app.platform.observability.client import flush, get_client
 from backend.app.platform.observability.spans import (
     derive_metrics,
     prompt_observation_metadata,
-    redact_prompt_messages,
     record_event,
     record_ollama_generation,
+    redact_prompt_messages,
     utc_now,
 )
 from backend.app.platform.observability.trace import (

@@ -278,10 +278,10 @@ class PaperDiscoverySearchService:
                               0, _normal_title(title))
         # Optional Task11 metadata remains backward-compatible with older
         # domain/store snapshots; newer PaperCandidate versions expose fields.
-        setattr(candidate, "publication_stage", str(info.get("publication_stage") or "published"))
-        setattr(candidate, "source_kind", str(info.get("source_kind") or "dblp"))
-        setattr(candidate, "source_page_url", info.get("source_page_url") or info.get("url"))
-        setattr(candidate, "arxiv_id", info.get("arxiv_id"))
+        candidate.publication_stage = str(info.get("publication_stage") or "published")
+        candidate.source_kind = str(info.get("source_kind") or "dblp")
+        candidate.source_page_url = info.get("source_page_url") or info.get("url")
+        candidate.arxiv_id = info.get("arxiv_id")
         links = info.get("source_links") or [
             {"kind": "dblp_page", "url": info.get("url")},
             {"kind": "pdf", "url": info.get("ee")},

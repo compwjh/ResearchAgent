@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "frontend/index.html").read_text()
 APP = (ROOT / "frontend/app.js").read_text()

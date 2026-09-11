@@ -26,9 +26,9 @@ def test_reranker_config_defaults():
 
     assert loaded.RERANKER_ENABLED is True
     assert loaded.RERANKER_BASE_URL == "http://127.0.0.1:11435"
-    assert loaded.RERANKER_MODEL_PATH == str(
+    assert str(
         loaded.BASE_DIR / "data" / "models" / "qwen3-reranker-0.6b-q8_0.gguf"
-    )
+    ) == loaded.RERANKER_MODEL_PATH
     assert loaded.RERANKER_API_MODEL == ""
     assert loaded.KB_RERANK_CANDIDATES == 20
     assert loaded.RERANKER_CONNECT_TIMEOUT_SECONDS == 2.0

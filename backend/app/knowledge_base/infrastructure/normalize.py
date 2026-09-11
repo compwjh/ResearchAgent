@@ -62,13 +62,11 @@ def _is_structural_line(line: str) -> bool:
         return False
     if _STRUCT_PREFIX.match(line):
         return True
-    if (
+    return (
         len(content) <= _UPPERCASE_HEADING_MAX_LEN
         and content.isupper()
         and any(ch.isalpha() for ch in content)
-    ):
-        return True
-    return False
+    )
 
 
 def _rejoin_lines(lines: List[str], ref_zone: bool = False) -> str:

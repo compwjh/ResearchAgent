@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from backend.app.core.url_security import URLSecurityError, validate_url
 from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     CatalogSourceRecord,
@@ -24,7 +25,6 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SourceFetchUnit,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
-from backend.app.core.url_security import URLSecurityError, validate_url
 from backend.app.paper_discovery.infrastructure.arxiv_adapter import ArxivFallbackAdapter
 from backend.app.paper_discovery.infrastructure.paper_download import (
     INVALID_PDF,
@@ -197,9 +197,7 @@ class UsenixAcceptedSource:
         )
         # A non-empty selection that resolves to zero listings means every year is
         # out of range: surface it instead of silently returning an empty 200.
-        if selected_years and not listings:
-            error = "USENIX_UNAVAILABLE"
-        elif listing_years and failed_years == len(listing_years):
+        if selected_years and not listings or listing_years and failed_years == len(listing_years):
             error = "USENIX_UNAVAILABLE"
         else:
             error = None
@@ -390,7 +388,6 @@ class UsenixAcceptedSource:
         """Canonicalise a discovered page to its listing template form."""
         if route is None or not route.get("listing_url_template"):
             return page
-        template = str(route["listing_url_template"])
         norm = self._norm_path(page) or "/"
         # Match the slug itself rather than "everything after the year", so the
         # canonical form keeps ``summer``/``fall``/``cycleN`` intact instead of

@@ -26,9 +26,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 # 通过模块属性引用 run_chat，便于测试 patch `backend.app.chat.application.chat_runner.run_chat`。
-from backend.app.chat.application import chat_runner
-from backend.app.platform.config import MODEL_NAME
-from backend.app.platform.observability import derive_metrics
+from backend.app.chat.application import chat_runner  # noqa: E402
+from backend.app.platform.config import MODEL_NAME  # noqa: E402
+from backend.app.platform.observability import derive_metrics  # noqa: E402
 
 DEFAULT_QUESTION = "用一句话解释什么是向量数据库？"
 DEFAULT_ROUTES: Sequence[str] = ("langchain", "direct")
