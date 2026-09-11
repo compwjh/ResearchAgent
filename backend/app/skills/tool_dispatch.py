@@ -37,6 +37,54 @@ def _summarize(obj, limit: int = 5) -> str:
 
 # ----------------------------- 各工具适配器 ----------------------------- #
 
+def _matches_usenix(conference) -> bool:
+    """USENIX 识别：short_name / venue_aliases 含 usenix（本项目主场景来源）。"""
+    short = str(getattr(conference, "short_name", "")).lower()
+    venues = " ".join(str(a) for a in (getattr(conference, "venue_aliases", []) or [])).lower()
+    return "usenix" in short or "usenix" in venues
+
+
+def _matches_dblp(conference) -> bool:
+    """DBLP 识别：short_name / venue_aliases 含 dblp。本机默认无此配置。"""
+    short = str(getattr(conference, "short_name", "")).lower()
+    venues = " ".join(str(a) for a in (getattr(conference, "venue_aliases", []) or [])).lower()
+    return "dblp" in short or "dblp" in venues
+
+
+def _pick_conference(conferences: list, source_hint: str):
+    """按 source 提示明确选源。返回 (conference, error)；两者互斥。
+
+    规则（spec-023.1 B1，禁止静默退化）：
+    - ``usenix``：必须命中 USENIX 来源，否则返回可读错误（不得退到其它会议）。
+    - ``dblp``  ：必须命中 dblp 来源，否则返回可读错误（本机未配置 dblp 会议时**严禁**
+                  取 conferences[0]，否则会静默返回错误来源的结果）。
+    - ``all``  ：明确 USENIX 优先（本项目主场景）；无 USENIX 配置时才退到首个启用来源，
+                  并在结果里如实报告实际使用的来源。
+    """
+    if source_hint == "usenix":
+        for c in conferences:
+            if _matches_usenix(c):
+                return c, None
+        available = "、".join(str(getattr(c, "short_name", "?")) for c in conferences)
+        return None, f"未找到 USENIX 来源。当前已启用的论文来源：{available}"
+
+    if source_hint == "dblp":
+        for c in conferences:
+            if _matches_dblp(c):
+                return c, None
+        available = "、".join(str(getattr(c, "short_name", "?")) for c in conferences)
+        return None, (
+            "未找到 DBLP 来源：服务端未配置 dblp 会议，"
+            f"不会退化为其它会议结果。当前已启用的论文来源：{available}"
+        )
+
+    # source="all"：USENIX 优先（主场景），退路仅限「本机确实没有 USENIX 配置」。
+    for c in conferences:
+        if _matches_usenix(c):
+            return c, None
+    return conferences[0], None
+
+
 def _search_catalog(args: dict) -> DispatchResult:
     from backend.app.api.common import _build_paper_search_service, _paper_store
 
@@ -50,19 +98,10 @@ def _search_catalog(args: dict) -> DispatchResult:
     conferences = [c for c in _paper_store().list_conferences() if getattr(c, "enabled", True)]
     if not conferences:
         return DispatchResult(ok=False, name="search_paper_catalog", error="服务端未配置任何论文来源")
-    # 按 source 提示挑选会议来源（best-effort；无匹配则用首个启用来源）
-    chosen = None
-    for c in conferences:
-        short = str(getattr(c, "short_name", "")).lower()
-        venue = " ".join(getattr(c, "venue_aliases", []) or []).lower()
-        if source_hint == "dblp" and ("dblp" in short or "dblp" in venue):
-            chosen = c
-            break
-        if source_hint == "usenix" and "usenix" in short:
-            chosen = c
-            break
-    if chosen is None:
-        chosen = conferences[0]
+    chosen, selection_error = _pick_conference(conferences, source_hint)
+    if selection_error is not None:
+        # 无匹配来源 -> 可读错误，绝不拿 conferences[0] 冒充
+        return DispatchResult(ok=False, name="search_paper_catalog", error=selection_error)
 
     result = service.search(
         source=chosen,
@@ -147,10 +186,20 @@ def build_default_dispatch() -> Callable[[str, dict], DispatchResult]:
         adapter = _ADAPTERS.get(name)
         if adapter is None:
             return DispatchResult(ok=False, name=name, error=f"未找到工具「{name}」的执行器。")
+        # 预期内的业务/输入错误：保留可诊断信息（错误码 + 具体说明），不压成通用一句话。
+        from backend.app.paper_discovery.application.paper_discovery_search import (
+            PaperDiscoverySearchError,
+        )
+
         try:
             return adapter(args)
-        except Exception as exc:  # 任何执行异常都降级为错误结果，不中断对话
+        except PaperDiscoverySearchError as exc:
+            # 来源未配置 / 参数非法等可定位原因：直接透传错误码与消息
+            error_code = getattr(exc, "error_code", None) or getattr(exc, "code", None) or "SEARCH_INVALID"
+            logger.warning("工具 %s 检索参数/来源不可用：%s", name, exc)
+            return DispatchResult(ok=False, name=name, error=f"{error_code}：{exc}")
+        except Exception as exc:  # 兜底：非预期异常降级为错误结果，不中断对话
             logger.warning("工具 %s 执行失败，降级：%s", name, exc)
-            return DispatchResult(ok=False, name=name, error=f"执行失败：{type(exc).__name__}")
+            return DispatchResult(ok=False, name=name, error=f"执行失败：{type(exc).__name__}: {exc}")
 
     return dispatch

@@ -223,27 +223,47 @@ class ToolLoop:
             return DispatchResult(ok=False, name=name, error="执行器返回了非预期结果类型")
         return result
 
-    def _append_tool_turn(self, messages: list, content: str, name: str, args: dict, result: DispatchResult) -> None:
+    @staticmethod
+    def _tool_call_id(raw: object) -> str:
+        """复用模型给出的 tool_call.id；缺失/非法时生成一个（保证 assistant/tool 严格配对）。"""
+        if isinstance(raw, str) and raw.strip():
+            return raw
+        return f"call_{uuid.uuid4().hex[:12]}"
+
+    def _append_tool_turn(self, messages: list, content: str, executions: list) -> None:
+        """把**一轮内**的所有 tool_call 聚合为**单条** assistant 消息 + 对应 role="tool" 消息。
+
+        B2（spec-023.1）：原实现按每个 tool_call 各追加一条 assistant 消息，导致
+        2 个 tool_calls -> 2 条 assistant 消息且 ``content`` 重复写入，污染后续上下文。
+        这里改为：1 条 assistant（content 只写一次，tool_calls 列出全部）+ 每个
+        tool_call 一条配对的 role="tool"（``tool_call_id`` 与 assistant 侧 id 严格一致）。
+        """
+        tool_calls = []
+        tool_messages = []
+        for name, args, tool_call_id, result in executions:
+            tool_calls.append(
+                {
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {"name": name, "arguments": args},
+                }
+            )
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "name": name,
+                    "content": result.output if result.ok else f"错误：{result.error}",
+                }
+            )
         messages.append(
             {
                 "role": "assistant",
                 "content": content or "",
-                "tool_calls": [
-                    {
-                        "id": f"call_{uuid.uuid4().hex[:12]}",
-                        "type": "function",
-                        "function": {"name": name, "arguments": args},
-                    }
-                ],
+                "tool_calls": tool_calls,
             }
         )
-        messages.append(
-            {
-                "role": "tool",
-                "name": name,
-                "content": result.output if result.ok else f"错误：{result.error}",
-            }
-        )
+        messages.extend(tool_messages)
 
     def run(self, system_prompt: Optional[str], user_question: str) -> Iterator[dict]:
         messages: List[Dict[str, str]] = []
@@ -267,7 +287,9 @@ class ToolLoop:
 
             # ---------- 路径 A：原生 function calling ----------
             if tool_calls:
-                executed = False
+                # B2：先把**整批** tool_calls 全部校验完，任一非法则整轮拒绝、一个都不执行
+                # （保持原有「不确定就不执行」语义，且不产生「部分执行 + 半截消息」）。
+                validated = []  # [(name, normalized_args, tool_call_id)]
                 for tc in tool_calls:
                     fn = tc.get("function", tc) if isinstance(tc, dict) else {}
                     name = fn.get("name")
@@ -278,16 +300,22 @@ class ToolLoop:
                         yield {"type": "tool", "name": name, "status": "rejected", "content": norm_or_err}
                         yield {"type": "token", "content": f"⚠️ {norm_or_err}"}
                         return
-                    result = self._safe_dispatch(tool.name, norm_or_err)
-                    self._append_tool_turn(messages, content, tool.name, norm_or_err, result)
-                    yield {
-                        "type": "tool",
-                        "name": tool.name,
-                        "status": "ok" if result.ok else "error",
-                        "content": result.output if result.ok else result.error,
-                    }
-                    executed = True
-                if executed:
+                    raw_id = tc.get("id") if isinstance(tc, dict) else None
+                    validated.append((tool.name, norm_or_err, self._tool_call_id(raw_id)))
+                # 校验全部通过后才真正执行，再聚合为单条 assistant + 配对 role="tool" 消息
+                executions = [
+                    (name, norm, call_id, self._safe_dispatch(name, norm))
+                    for name, norm, call_id in validated
+                ]
+                if executions:
+                    self._append_tool_turn(messages, content, executions)
+                    for name, _args, _call_id, result in executions:
+                        yield {
+                            "type": "tool",
+                            "name": name,
+                            "status": "ok" if result.ok else "error",
+                            "content": result.output if result.ok else result.error,
+                        }
                     continue
 
             # ---------- 路径 B：降级计划 JSON（仅当原生不可用） ----------
@@ -302,7 +330,9 @@ class ToolLoop:
                         yield {"type": "token", "content": f"⚠️ {norm_or_err}"}
                         return
                     result = self._safe_dispatch(tool.name, norm_or_err)
-                    self._append_tool_turn(messages, content, tool.name, norm_or_err, result)
+                    self._append_tool_turn(
+                        messages, content, [(tool.name, norm_or_err, self._tool_call_id(None), result)]
+                    )
                     yield {
                         "type": "tool",
                         "name": tool.name,

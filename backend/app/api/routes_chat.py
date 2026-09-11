@@ -104,6 +104,13 @@ def chat(request: ChatRequest):
         enabled_tools = [
             t for t in _tool_routes.get_tool_registry().list_tools() if t.enabled
         ]
+        if decision.is_usable() and not enabled_tools:
+            # B3（spec-023.1）：全部 Tool 被禁用属「未定义行为」，不得静默回退。
+            # 明确告知用户本次未走 Tool 流程及原因，再按普通链路继续回答。
+            yield stream_event(
+                "token",
+                content="（提示：当前所有工具均已被禁用，本次未进入工具执行流程，将由模型直接回答。）\n",
+            )
         if decision.is_usable() and enabled_tools:
             from backend.app.skills import tool_dispatch as _tool_dispatch
             from backend.app.skills import tool_executor as _tool_executor

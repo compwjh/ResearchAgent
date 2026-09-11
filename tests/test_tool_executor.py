@@ -15,17 +15,17 @@ TDD：先写测试覆盖所有硬边界（来自 task 约束与 RESULT.md R1/R4�
 
 import unittest
 from typing import List
+from unittest.mock import patch
 
 from backend.app.skills.models import ToolEntry
+from backend.app.skills.tool_dispatch import build_default_dispatch
 from backend.app.skills.tool_executor import (
-    DEFAULT_MAX_TOOL_ROUNDS,
     DispatchResult,
     ModelResponse,
     ToolLoop,
     build_tool_schema,
     build_tool_schemas,
 )
-from backend.app.skills.tool_dispatch import build_default_dispatch
 
 
 def _tool(name, enabled=True, parameters=None, entry="mod.fn"):
@@ -297,9 +297,128 @@ class PlainAndDegradeTests(unittest.TestCase):
 
         rec = _Recorder([], raise_on_call=httpx.ReadTimeout("timeout"))
         loop = ToolLoop(tools=[_kb_tool()], model_call=rec.model_call, dispatch=rec.dispatch)
-        events = _run(loop)
+        _run(loop)
         # 超时降级为不执行，对话照常结束（空内容也算正常结束）
         self.assertEqual(rec.dispatch_calls, [])
+
+
+class MultiToolCallMessageTests(unittest.TestCase):
+    """B2（spec-023.1）：一次响应的多个 tool_calls 必须聚合成单条 assistant 消息。
+
+    现状缺陷：循环内每个 tc 都调 _append_tool_turn，每次追加单条 assistant 消息，
+    导致 2 个 tool_calls -> 2 条 assistant 消息且 content 重复写入，污染后续上下文。
+    """
+
+    def test_two_tool_calls_append_single_assistant_message(self):
+        rec = _Recorder(
+            [
+                ModelResponse(
+                    content="我先并行查两个动作",
+                    tool_calls=[
+                        {"id": "c1", "name": "kb_search", "arguments": {"question": "a"}},
+                        {"id": "c2", "name": "kb_ask", "arguments": {"question": "b"}},
+                    ],
+                ),
+                ModelResponse(content="最终回答", tool_calls=[]),
+            ]
+        )
+        loop = ToolLoop(
+            tools=[_kb_tool(), _tool("kb_ask", parameters={"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]})],
+            model_call=rec.model_call,
+            dispatch=rec.dispatch,
+        )
+        _run(loop)
+
+        # 第二轮模型调用看到的 messages = [system, user, assistant, tool, tool]
+        messages = rec.model_calls[1][0]
+        assistant_messages = [m for m in messages if m.get("role") == "assistant"]
+        self.assertEqual(len(assistant_messages), 1, "多个 tool_calls 只能产生 1 条 assistant 消息")
+        assistant = assistant_messages[0]
+        self.assertEqual(len(assistant["tool_calls"]), 2)
+        # content 只写一次（不再按 tc 数重复）
+        self.assertEqual(assistant["content"], "我先并行查两个动作")
+        # 每个 tool_call 有配对的 role="tool" 消息，顺序与 id 严格一致
+        tool_messages = [m for m in messages if m.get("role") == "tool"]
+        self.assertEqual(len(tool_messages), 2)
+        self.assertEqual(
+            [m["tool_call_id"] for m in tool_messages],
+            [tc["id"] for tc in assistant["tool_calls"]],
+        )
+        # 模型给出的 id 唯一且被保留（不重复、不丢失）
+        self.assertEqual(len({tc["id"] for tc in assistant["tool_calls"]}), 2)
+
+    def test_two_tool_calls_both_dispatched_in_order(self):
+        rec = _Recorder(
+            [
+                ModelResponse(
+                    content="",
+                    tool_calls=[
+                        {"id": "c1", "name": "kb_search", "arguments": {"question": "a"}},
+                        {"id": "c2", "name": "kb_ask", "arguments": {"question": "b"}},
+                    ],
+                ),
+                ModelResponse(content="最终回答", tool_calls=[]),
+            ]
+        )
+        loop = ToolLoop(
+            tools=[
+                _kb_tool(),
+                _tool("kb_ask", parameters={"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}),
+            ],
+            model_call=rec.model_call,
+            dispatch=rec.dispatch,
+        )
+        _run(loop)
+        self.assertEqual(rec.dispatch_calls, [("kb_search", {"question": "a"}), ("kb_ask", {"question": "b"})])
+
+    def test_invalid_tool_call_rejects_whole_batch_no_partial_execution(self):
+        # 边界：批内任一 tool_call 非法 -> 整轮拒绝，一个都不执行（不产生「部分执行 + 半截消息」）
+        rec = _Recorder(
+            [
+                ModelResponse(
+                    content="",
+                    tool_calls=[
+                        {"id": "c1", "name": "kb_search", "arguments": {"question": "a"}},
+                        {"id": "c2", "name": "ghost_tool", "arguments": {}},
+                    ],
+                ),
+            ]
+        )
+        loop = ToolLoop(tools=[_kb_tool()], model_call=rec.model_call, dispatch=rec.dispatch)
+        events = _run(loop)
+        self.assertEqual(rec.dispatch_calls, [], "批内非法时不得执行任何工具")
+        self.assertIn("ghost_tool", [e.get("content", "") for e in events if e["type"] == "token"][-1])
+
+    def test_missing_tool_call_id_is_generated_and_paired(self):
+        # 模型未给 id 时必须生成，且 assistant/tool 两侧 id 严格配对
+        rec = _Recorder(
+            [
+                ModelResponse(
+                    content="",
+                    tool_calls=[
+                        {"name": "kb_search", "arguments": {"question": "a"}},
+                        {"name": "kb_ask", "arguments": {"question": "b"}},
+                    ],
+                ),
+                ModelResponse(content="ok", tool_calls=[]),
+            ]
+        )
+        loop = ToolLoop(
+            tools=[
+                _kb_tool(),
+                _tool("kb_ask", parameters={"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}),
+            ],
+            model_call=rec.model_call,
+            dispatch=rec.dispatch,
+        )
+        _run(loop)
+        messages = rec.model_calls[1][0]
+        assistant = [m for m in messages if m.get("role") == "assistant"][0]
+        tool_messages = [m for m in messages if m.get("role") == "tool"]
+        ids = [tc["id"] for tc in assistant["tool_calls"]]
+        self.assertTrue(all(isinstance(i, str) and i for i in ids))
+        self.assertEqual(len(set(ids)), 2)
+        self.assertEqual([m["tool_call_id"] for m in tool_messages], ids)
 
 
 class DispatchRegistryTests(unittest.TestCase):
@@ -309,6 +428,140 @@ class DispatchRegistryTests(unittest.TestCase):
         self.assertIsInstance(result, DispatchResult)
         self.assertFalse(result.ok)
         self.assertIn("no_such_tool", result.error)
+
+
+class _CapturingSearchService:
+    """假检索服务：记录被选中的会议来源，不触发任何网络。"""
+
+    def __init__(self):
+        self.sources = []
+
+    def search(self, source, query, years, limit, publication_scope):
+        self.sources.append(source)
+        from backend.app.paper_discovery.application.paper_discovery_search import SearchResult
+        from backend.app.paper_discovery.domain.paper_discovery import SearchSession
+
+        session = SearchSession(search_id="s1", query=query, expires_at="", created_at="")
+        return SearchResult(session, [], [], None)
+
+
+class _FakeConference:
+    def __init__(self, conference_id, short_name, *, enabled=True, aliases=None):
+        self.conference_id = conference_id
+        self.name = f"{short_name} full name"
+        self.short_name = short_name
+        self.dblp_stream = f"conf/{conference_id}"
+        self.venue_aliases = list(aliases or [])
+        self.enabled = enabled
+
+
+class _FakeStore:
+    def __init__(self, conferences):
+        self._conferences = list(conferences)
+
+    def list_conferences(self):
+        # 与真实 store 同序：built_in DESC, short_name ASC —— 故意让 USENIX 排在最后，
+        # 以免「USENIX 优先」碰巧靠 conferences[0] 通过。
+        return sorted(self._conferences, key=lambda c: c.short_name)
+
+
+# 本机真实会议配置（2026-09-11 实测）：CCS / IEEE S&P / NDSS / USENIX Security，无任何 dblp 会议。
+_LOCAL_CONFERENCES = [
+    _FakeConference("ccs", "CCS"),
+    _FakeConference("ieee-sp", "IEEE S&P"),
+    _FakeConference("ndss", "NDSS"),
+    _FakeConference("usenix-security", "USENIX Security", aliases=["USENIX Security Symposium"]),
+]
+
+
+class SourceSelectionTests(unittest.TestCase):
+    """B1（spec-023.1）：search_paper_catalog 选源必须明确，禁止静默退化到 conferences[0]。"""
+
+    def setUp(self):
+        from backend.app.paper_discovery.application import paper_discovery_search as search_module
+
+        self.search_module = search_module
+        self.service = _CapturingSearchService()
+        self.store = _FakeStore(_LOCAL_CONFERENCES)
+        self._patches = [
+            patch(
+                "backend.app.api.common._build_paper_search_service",
+                return_value=self.service,
+            ),
+            patch("backend.app.api.common._paper_store", return_value=self.store),
+        ]
+        for p in self._patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self._patches:
+            p.stop()
+
+    def _dispatch(self, **args):
+        return build_default_dispatch()("search_paper_catalog", dict(args))
+
+    def test_source_all_prefers_usenix_not_first_conference(self):
+        # 边界：source="all" 结果必须来自 USENIX，不得退化为 conferences[0]（CCS）
+        result = self._dispatch(source="all", query="fuzzing")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual([s.conference_id for s in self.service.sources], ["usenix-security"])
+        self.assertIn("USENIX", result.output)
+
+    def test_source_usenix_selects_usenix(self):
+        result = self._dispatch(source="usenix", query="fuzzing")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual([s.conference_id for s in self.service.sources], ["usenix-security"])
+
+    def test_source_dblp_without_dblp_conference_is_readable_error(self):
+        # 边界：无 dblp 会议 -> 可读错误，绝不返回其它会议结果
+        result = self._dispatch(source="dblp", query="fuzzing")
+        self.assertFalse(result.ok)
+        self.assertEqual(self.service.sources, [], "无匹配来源时不得检索任何会议")
+        self.assertIn("dblp", result.error.lower())
+        # 不得把 conferences[0]（CCS）的**检索结果**冒充 dblp 结果（无 output、无候选）
+        self.assertEqual(result.output, "")
+        self.assertIn("不会退化", result.error)
+
+    def test_source_all_without_usenix_still_uses_a_real_conference(self):
+        # 无 USENIX 时：退到首个可用会议是允许的（结果可用但需报告实际来源）
+        self.store._conferences = [
+            _FakeConference("ndss", "NDSS"),
+            _FakeConference("ccs", "CCS"),
+        ]
+        result = self._dispatch(source="all", query="fuzzing")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual([s.conference_id for s in self.service.sources], ["ccs"])
+        self.assertIn("CCS", result.output)
+
+    def test_no_conference_at_all_reports_readable_error(self):
+        self.store._conferences = []
+        result = self._dispatch(source="all", query="fuzzing")
+        self.assertFalse(result.ok)
+        self.assertEqual(self.service.sources, [])
+        self.assertIn("论文来源", result.error)
+
+    def test_dblp_source_is_discovered_from_venue_aliases(self):
+        # 若服务端确实配置了 dblp 来源（别名含 dblp），必须被选中而不是报错
+        self.store._conferences = [
+            _FakeConference("ccs", "CCS"),
+            _FakeConference("dblp-cs", "DBLP", aliases=["dblp computer science bibliography"]),
+        ]
+        result = self._dispatch(source="dblp", query="fuzzing")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual([s.conference_id for s in self.service.sources], ["dblp-cs"])
+        self.assertIn("DBLP", result.output)
+
+    def test_search_error_keeps_diagnosable_message(self):
+        # 边界：来源不匹配的可诊断报错不得被压成通用「执行失败」（保留错误码）
+        def _raise(**kwargs):
+            raise self.search_module.PaperDiscoverySearchError(
+                "CONFERENCE_NOT_CONFIGURED", "conference must be configured by the server"
+            )
+
+        self.service.search = _raise
+        result = self._dispatch(source="all", query="fuzzing")
+        self.assertFalse(result.ok)
+        self.assertIn("CONFERENCE_NOT_CONFIGURED", result.error)
 
 
 if __name__ == "__main__":

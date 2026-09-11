@@ -59,6 +59,26 @@ def _fake_dispatch(name, args):
     return DispatchResult(ok=True, name=name, output=f"result-for-{name}")
 
 
+class _DefaultToolRegistryService:
+    """默认 Tool 注册表（全部启用），保证「有可用 Tool」路径不被 B3 改动误伤。"""
+
+    def list_tools(self):
+        from backend.app.skills.registry import build_default_tool_registry
+
+        return build_default_tool_registry()
+
+
+class _AllDisabledToolRegistryService:
+    """全部 Tool 已禁用 —— 用于验证 B3 的「不得静默回退」。"""
+
+    def list_tools(self):
+        from dataclasses import replace
+
+        from backend.app.skills.registry import build_default_tool_registry
+
+        return [replace(tool, enabled=False) for tool in build_default_tool_registry()]
+
+
 class _RecordingDispatch:
     """记录 (name, args) 调用，供路由集成测试断言 Tool 执行确实发生。"""
 
@@ -233,7 +253,15 @@ class ChatSkillRouteTests(unittest.TestCase):
     def _registry(self) -> SkillRegistryService:
         return SkillRegistryService(skills_dir=self.skills_dir, state_path=self.state)
 
-    def _post(self, decision: SkillDecision, question: str = "hello", *, tool_responses=None, dispatch=None):
+    def _post(
+        self,
+        decision: SkillDecision,
+        question: str = "hello",
+        *,
+        tool_responses=None,
+        dispatch=None,
+        all_tools_disabled=False,
+    ):
         if tool_responses is None:
             tool_responses = [ModelResponse(content="Hi there", tool_calls=[])]
         tool_responses = list(tool_responses)
@@ -247,25 +275,29 @@ class ChatSkillRouteTests(unittest.TestCase):
 
             return _call
 
-        with patch("backend.app.api.routes_skills.get_skill_registry", return_value=self._registry()):  # noqa: SIM117
-            with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]):
-                with patch("backend.app.skills.intent.detect_skill", return_value=decision):
-                    with patch(
-                        "backend.app.platform.ollama.create_chat_model",
-                        side_effect=_mock_model(["Hi", " there"]),
-                    ) as mock_model:
+        registry = self._registry()
+        tool_registry = _AllDisabledToolRegistryService() if all_tools_disabled else _DefaultToolRegistryService()
+
+        with patch("backend.app.api.routes_skills.get_skill_registry", return_value=registry):  # noqa: SIM117
+            with patch("backend.app.api.routes_tools.get_tool_registry", return_value=tool_registry):
+                with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]):
+                    with patch("backend.app.skills.intent.detect_skill", return_value=decision):
                         with patch(
-                            "backend.app.skills.tool_executor.make_model_call",
-                            _tool_model_factory,
-                        ):
+                            "backend.app.platform.ollama.create_chat_model",
+                            side_effect=_mock_model(["Hi", " there"]),
+                        ) as mock_model:
                             with patch(
-                                "backend.app.skills.tool_dispatch.build_default_dispatch",
-                                return_value=dispatch,
+                                "backend.app.skills.tool_executor.make_model_call",
+                                _tool_model_factory,
                             ):
-                                response = self.client.post(
-                                    "/api/chat", json={"question": question, "model": "qwen3.5:9b"}
-                                )
-                                return response, mock_model
+                                with patch(
+                                    "backend.app.skills.tool_dispatch.build_default_dispatch",
+                                    return_value=dispatch,
+                                ):
+                                    response = self.client.post(
+                                        "/api/chat", json={"question": question, "model": "qwen3.5:9b"}
+                                    )
+                                    return response, mock_model
 
     def test_none_no_extra_events_and_streams(self):
         response, mock_model = self._post(SkillDecision(status="none"))
@@ -367,6 +399,54 @@ class ChatSkillRouteTests(unittest.TestCase):
         self.assertEqual(recorder.calls, [])
         self.assertIn("ghost_tool", response.text)
         self.assertIn("不存在", response.text)
+
+    def test_all_tools_disabled_is_not_silent(self):
+        # B3（spec-023.1）：全部 Tool 禁用后点名 Skill -> 必须给出可读提示，不得静默。
+        # 允许「不进入 Tool 流程并说明原因」（继续由普通链路回答），关键是不能无感。
+        response, _mock_model = self._post(
+            SkillDecision(status="matched", skill="demo-skill", source="rule"),
+            all_tools_disabled=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        # 必须给出可读提示（说明何以未使用工具）
+        self.assertIn("工具", response.text)
+        self.assertIn("禁用", response.text)
+        self.assertIn("未进入工具执行流程", response.text)
+        # 提示应出现在回答之前
+        self.assertLess(response.text.index("未进入工具执行流程"), response.text.index("Hi") if "Hi" in response.text else len(response.text))
+
+    def test_tools_available_still_runs_tool_loop(self):
+        # 反向：有可用 Tool 时仍走 Tool 编排（保证 B3 修复没有误伤正常路径）
+        recorder = _RecordingDispatch()
+        response, mock_model = self._post(
+            SkillDecision(status="matched", skill="demo-skill", source="rule"),
+            tool_responses=[
+                ModelResponse(
+                    content="",
+                    tool_calls=[{"name": "kb_search", "arguments": {"question": "x"}}],
+                ),
+                ModelResponse(content="合成回答", tool_calls=[]),
+            ],
+            dispatch=recorder,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("合成回答", response.text)
+        self.assertEqual(recorder.calls, [("kb_search", {"question": "x"})])
+        mock_model.assert_not_called()
+
+    def test_plain_chat_unaffected_by_disabled_tools(self):
+        # 不回归：未点名 Skill 的普通对话必须与改动前完全一致（不受 Tool 禁用影响）
+        response, mock_model = self._post(
+            SkillDecision(status="none"),
+            all_tools_disabled=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"type": "meta"', response.text)
+        self.assertIn('"type": "token"', response.text)
+        self.assertIn('"type": "done"', response.text)
+        self.assertNotIn('"type": "intent"', response.text)
+        self.assertNotIn("工具", response.text)
+        mock_model.assert_called()
 
 
 if __name__ == "__main__":
