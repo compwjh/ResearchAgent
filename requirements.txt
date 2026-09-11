@@ -15,3 +15,12 @@ jieba>=0.42.1
 # Langfuse 观测 SDK（spec-013）
 # v4 server 要求 SDK >=4.7.0 才能实时写入，否则数据走 dual-write 管道延迟约 15 分钟
 langfuse>=4.7.0
+# 以下三项此前未声明，实际在运行时被 import（spec-020 BUG-08-B）：
+# jsonschema 曾被误放进 requirements-dev.txt，但 knowledge_base 的 provenance
+# 校验在模块顶层 import 它，只装 requirements.txt 的环境会 ModuleNotFoundError。
+# Strict Draft 2020-12 validation for versioned provenance schemas
+jsonschema>=4.19,<5
+# PyYAML：app/skills/scanner.py 解析 SKILL.md front matter
+PyYAML>=6.0
+# pydantic：api 层 schema 直接 import，此前只靠 fastapi 传递依赖
+pydantic>=2.0
