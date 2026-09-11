@@ -240,6 +240,45 @@ def test_provider_initial_iterator_failure_keeps_chat_failed_semantics(tmp_path)
     assert repo.get_message(assistant.message_id, "local-user").status == "failed"
 
 
+def test_provider_failure_after_reasoning_completed_keeps_reasoning_completed(tmp_path):
+    """A completed reasoning phase must not regress when no answer token arrived."""
+    repo = MemoryRepository(tmp_path / "reasoning-completed-before-failure.sqlite3")
+    conversation = repo.create_conversation("local-user", reasoning_effort="xhigh")
+    user = repo.create_message(conversation.conversation_id, "local-user", "user", "hello", status="completed")
+    assistant = repo.create_message(
+        conversation.conversation_id,
+        "local-user",
+        "assistant",
+        "",
+        status="pending",
+        parent_message_id=user.message_id,
+    )
+
+    class FailedAfterReasoningRun:
+        route = "direct"
+        result = None
+
+        @property
+        def events(self):
+            yield {"type": "thinking", "content": "先想"}
+            yield {"type": "reasoning_completed", "status": "completed"}
+            raise RuntimeError("provider unavailable before first answer token")
+
+    with patch("backend.app.api.routes_conversations.run_chat", return_value=FailedAfterReasoningRun()):
+        events = _events("\n\n".join(frame for frame in _message_stream(repo, conversation, user, assistant, "model", "normal")))
+
+    completed = [event for event in events if event.get("type") == "reasoning_completed"]
+    assert [event["status"] for event in completed] == ["completed"]
+    assert any(event.get("type") == "error" and event.get("code") == "CHAT_FAILED" for event in events)
+    assert events[-1]["type"] == "done" and events[-1]["status"] == "failed"
+    saved = repo.get_message(assistant.message_id, "local-user")
+    assert saved.status == "failed"
+    assert saved.reasoning_status == "completed"
+    assert saved.content == ""
+    steps = repo.list_processing_steps(assistant.message_id, "local-user")
+    assert any(step.kind == "generation" and step.status == "failed" for step in steps)
+
+
 def test_provider_eof_without_done_is_interrupted_at_consumer(tmp_path):
     from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings
 

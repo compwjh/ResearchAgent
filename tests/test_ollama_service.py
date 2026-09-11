@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import httpx
 
+from backend.app.platform import config
 from backend.app.platform.ollama import create_chat_model, get_available_models
 
 
@@ -14,7 +15,7 @@ class OllamaServiceTests(unittest.TestCase):
         self.assertFalse(model.client_kwargs["trust_env"])
         self.assertFalse(model.async_client_kwargs["trust_env"])
         self.assertFalse(model.sync_client_kwargs["trust_env"])
-        self.assertEqual(model.base_url, "http://localhost:11434")
+        self.assertEqual(model.base_url, config.OLLAMA_BASE_URL)
 
     def test_available_models_bypasses_system_proxy(self):
         request = httpx.Request("GET", "http://localhost:11434/api/tags")

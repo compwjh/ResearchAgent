@@ -236,18 +236,31 @@ def _iter_run_events(run):
     """Read provider events without confusing iterator failure with completion."""
     iterator = iter(run.events)
     saw_partial_output = False
+    saw_answer_token = False
+    reasoning_completed = False
     while True:
         try:
             event = next(iterator)
-            if event.get("type") in {"thinking", "reasoning_delta", "token"} and event.get("content"):
+            event_type = event.get("type")
+            if event_type in {"thinking", "reasoning_delta", "token"} and event.get("content"):
                 saw_partial_output = True
+            if event_type == "token" and event.get("content"):
+                saw_answer_token = True
+            if event_type == "reasoning_completed":
+                reasoning_completed = True
             yield event
         except StopIteration:
             return
         except GeneratorExit:
             raise
         except Exception as error:
-            if saw_partial_output:
+            # Once the provider has explicitly completed reasoning but has
+            # not emitted an answer token, a later provider exception remains
+            # a normal chat failure.  The reasoning subphase is already
+            # durably completed and must not be rewritten as failed (or
+            # emitted twice).  A failure after an answer token is still a
+            # resumable stream interruption.
+            if saw_partial_output and (saw_answer_token or not reasoning_completed):
                 raise ChatStreamInterrupted(f"流式迭代中断：{_redact_sensitive(error)}") from error
             # No provider output was observed. Preserve the normal model
             # failure path (CHAT_FAILED/MODEL_UNAVAILABLE) for initial errors.
@@ -272,6 +285,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         reasoning_stream_chars = 0
         reasoning_content_seen = False
         answer_started = False
+        reasoning_completed_emitted = False
         selected_effort = reasoning_effort or getattr(conversation, "reasoning_effort", "medium")
         reasoning_started_mono = None
         reasoning_duration_ms = None
@@ -421,6 +435,27 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                         reasoning_stream_chars += len(visible_clean)
                         if visible_clean:
                             yield frame("reasoning_delta", content=visible_clean)
+                if event.get("type") == "reasoning_completed" and selected_effort != "off" and reasoning_seen:
+                    # Some adapters expose an explicit reasoning terminal
+                    # event before the first answer token.  Treat it as the
+                    # authoritative subphase transition so a later provider
+                    # failure cannot regress the durable reasoning state.
+                    completed_iso = utc_now().isoformat()
+                    provider_status = event.get("status") or "completed"
+                    if provider_status not in {"completed", "failed", "interrupted"}:
+                        provider_status = "completed"
+                    duration = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
+                    reasoning_duration_ms = duration
+                    repo.update_message_reasoning(
+                        assistant_message.message_id,
+                        OWNER_ID,
+                        status=provider_status,
+                        completed_at=completed_iso,
+                        last_event_seq=sequencer.event_seq,
+                    )
+                    yield frame("reasoning_completed", status=provider_status, duration_ms=duration, completed_at=completed_iso)
+                    reasoning_seen = False
+                    reasoning_completed_emitted = True
                 if event.get("type") == "token":
                     token = event.get("content", ""); parts.append(token)
                     answer_started = True
@@ -445,6 +480,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                         repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="completed", completed_at=completed_iso, last_event_seq=sequencer.event_seq)
                         yield frame("reasoning_completed", status="completed", duration_ms=duration, completed_at=completed_iso)
                         reasoning_seen = False
+                        reasoning_completed_emitted = True
                     repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming", first_answer_token_at=utc_now().isoformat() if not parts[:-1] else None, last_event_seq=sequencer.event_seq)
                     yield frame("token", content=token)
             # A direct provider can return already-generated chunks together
@@ -494,6 +530,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="completed", completed_at=completed_iso, last_event_seq=sequencer.event_seq)
                 yield frame("reasoning_completed", status="completed", duration_ms=reasoning_duration_ms, completed_at=completed_iso)
                 reasoning_seen = False
+                reasoning_completed_emitted = True
             answer_duration_ms = max(0.0, (time.monotonic() - stream_started) * 1000.0)
             repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
             # All durable completed state and the final reasoning transition
@@ -508,12 +545,13 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             content = "".join(parts)
             try:
                 repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="interrupted")
-                if reasoning_seen:
+                if reasoning_seen and not reasoning_completed_emitted:
                     interrupted_iso = utc_now().isoformat()
                     reasoning_duration_ms = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
                     repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="interrupted", completed_at=interrupted_iso, chars=len(reasoning_parts[0]) if reasoning_parts else 0)
                     yield frame("reasoning_completed", status="interrupted", duration_ms=reasoning_duration_ms, completed_at=interrupted_iso)
                     reasoning_seen = False
+                    reasoning_completed_emitted = True
                 interrupted_step = repo.create_processing_step(assistant_message.message_id, "generation", "interrupted", "流式连接中断，已保存已生成内容", label="回答生成")
                 yield frame("progress", step_id=interrupted_step.step_id, kind=interrupted_step.kind, label=interrupted_step.label, status="interrupted", summary=interrupted_step.summary)
                 yield frame("error", code="STREAM_INTERRUPTED", message="流式连接中断，已保存已生成内容", retryable=True)
@@ -530,12 +568,13 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="failed")
                 generation_failed = repo.create_processing_step(assistant_message.message_id, "generation", "failed", "回答生成失败", label="回答生成")
                 yield frame("progress", step_id=generation_failed.step_id, kind=generation_failed.kind, label=generation_failed.label, status="failed", summary=generation_failed.summary)
-                if reasoning_seen:
+                if reasoning_seen and not reasoning_completed_emitted:
                     reasoning_duration_ms = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
                     completed_iso = utc_now().isoformat()
                     repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="failed", completed_at=completed_iso, last_event_seq=sequencer.event_seq)
                     yield frame("reasoning_completed", status="failed", duration_ms=reasoning_duration_ms, completed_at=completed_iso)
                     reasoning_seen = False
+                    reasoning_completed_emitted = True
                 yield frame("error", code="CHAT_FAILED", message=_redact_sensitive(error), retryable=True)
                 repo.finalize_processing_steps(assistant_message.message_id, status="failed", summary="回答失败，未完成步骤已终止")
                 answer_duration_ms = max(0.0, (time.monotonic() - stream_started) * 1000.0)
