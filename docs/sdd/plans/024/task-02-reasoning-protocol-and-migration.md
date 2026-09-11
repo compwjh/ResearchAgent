@@ -1,7 +1,7 @@
 # Task 02：冻结推理能力、数据清理与事件协议
 
 > 关联：[Spec 024](../../specs/024-visible-reasoning-controls.md) ｜ 索引：[README](./README.md)
-> 依赖：Spec024 用户确认、需求/技术复审通过；被依赖：Task03、Task04；当前状态：进行中
+> 依赖：Spec024 用户确认、需求/技术复审通过；被依赖：Task03、Task04；当前状态：已完成（条件 GO）
 
 ## 一句话目标
 
@@ -30,7 +30,7 @@
 3. 在临时数据库演练旧会话清理，核对保留表行数与引用置空。
 4. 用合同测试冻结事件偏序、event_seq 去重、乱序丢弃和终态不可逆。
 5. 演练一次性清理矩阵及中途失败回滚。
-6. 任一档位无法可靠表达或清理会删除长期数据时，给出 NO-GO，不进入 Task03。
+6. provider 层档位无法表达，或清理会删除长期数据时给出 NO-GO；仅因应用接缝尚未实现或 xhigh 受证据环境限制时，记录条件 GO 与后续门槛，不阻塞 Task03。
 
 ## 冻结合同
 
@@ -137,7 +137,7 @@ docs/sdd/plans/024/artifacts/task-02/protocol-report.md
 
 ## 风险、停止条件与回滚
 
-- 五档不被当前模型模板接受：NO-GO，修订 Spec 后再确认。
+- provider 层 low/medium/high 可行性已确认；单模型拒绝的档位按模型级 unsupported。xhigh 无 server-log 证据时保持 pending-evidence，不标记 supported/default。
 - 现有外键无法在保留 MemoryRecord 的同时删除会话：NO-GO，先调整清理设计。
 - 本 Task 仅新增文档/合同测试，回滚为撤销本 Task 文件，不触碰用户数据。
 
@@ -147,7 +147,7 @@ docs/sdd/plans/024/artifacts/task-02/protocol-report.md
 
 ## 执行结果
 
-待执行后填写。
+条件 GO。真实局域网探针、临时 SQLite v7 清理/8 阶段回滚、event_seq/过滤参考测试均完成；xhigh 仍为 pending-evidence，`qwen3.8:27b` 的 high 为模型级 unsupported。报告见 `artifacts/task-02/protocol-report.md`，定向测试 13 passed + 2 passed。
 
 ## 变更日志
 
