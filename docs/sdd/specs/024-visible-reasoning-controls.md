@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中**
+**当前状态：已完成（环境延期）**
 
 ## 一句话目标
 
@@ -289,7 +289,7 @@ schema 从 6 升至 7，并写入一次性 migration marker conversation_history
 | 02 | 冻结能力、数据清理与事件协议 | [Task 02](../plans/024/task-02-reasoning-protocol-and-migration.md) | 01、Spec 确认 | 已完成（条件 GO） |
 | 03 | 实现后端推理流与持久化 | [Task 03](../plans/024/task-03-backend-reasoning-stream.md) | 02 条件 GO、报告齐全 | 已完成（条件通过） |
 | 04 | 实现前端档位与推理面板 | [Task 04](../plans/024/task-04-frontend-reasoning-panel.md) | 03 实现/测试/评审报告 | 已完成（定向通过） |
-| 05 | 评审、全量回归、部署与复盘 | [Task 05](../plans/024/task-05-review-regression-deploy.md) | 02、03、04 评审报告 | 进行中 |
+| 05 | 评审、全量回归、部署与复盘 | [Task 05](../plans/024/task-05-review-regression-deploy.md) | 02、03、04 评审报告 | 已完成（环境延期） |
 
 ## 评审记录
 

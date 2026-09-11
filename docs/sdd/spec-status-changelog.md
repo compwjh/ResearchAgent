@@ -224,3 +224,4 @@
 - **024 Task04 前端推理档位与思考面板** ｜ 待执行 → 进行中 ｜ Task03 后端定向测试、独立评审和验收通过（条件）；启动五档选择器、SSE 思考面板、终态折叠与历史恢复实现，Task05 前不运行全量回归。
 - **024 Task04 前端推理档位与思考面板** ｜ 进行中 → 已完成（定向通过）；Task05 进行中 ｜ frontend-reviewer GO、frontend-tester PASS，24 个前端合同用例通过；真实 SSE 浏览器 smoke 因服务/Ollama 不可用留给最终收口，不提前声称全功能验证。
 - **024 Task05 最终评审、全量回归与部署** ｜ 待执行 → 进行中 ｜ Task04 定向评审 GO、前端验收 PASS 后启动双端复审、唯一全量回归、真实 Ollama 三档 smoke、部署和 Spec024 收口；Task05 前不声称完成。
+- **024 可见推理过程与会话级推理档位** ｜ 实施中 → 已完成（环境延期） ｜ Task05 完成双端 GO、全量回归 1341 passed/1 skipped/47 subtests、部署 health/home、Chromium 资源与 fake adapter 终态验收；真实 Ollama chat 的 xhigh/low/off telemetry 因固定通道 20 秒超时延期，复验步骤已写入验收报告，不以超时阻塞代码收口。

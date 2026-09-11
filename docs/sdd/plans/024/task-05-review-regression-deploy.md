@@ -1,7 +1,7 @@
 # Task 05：评审、全量回归、部署与复盘
 
 > 关联：[Spec 024](../../specs/024-visible-reasoning-controls.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03、Task04；被依赖：无；当前状态：进行中
+> 依赖：Task03、Task04；被依赖：无；当前状态：已完成（环境延期）
 
 ## 一句话目标
 
@@ -96,7 +96,8 @@ docs/sdd/plans/024/artifacts/task-05/acceptance-report.md
 
 ## 执行结果
 
-2026-09-12：Task04 定向评审与验收通过，启动最终双端复审、唯一全量回归、运行时验收和部署；本 Task 结束前不标记 Spec 完成。
+2026-09-12：Task04 定向评审与验收通过，启动最终双端复审、唯一全量回归、运行时验收和部署；Task05 最终 PASS with environment-deferred，真实 Ollama chat telemetry 因 20 秒通道超时延期。
+2026-09-12：最终验收报告 PASS with environment-deferred；全量 pytest 1341 passed、1 skipped、47 subtests，前端合同 96 passed，部署与 fake adapter 终态矩阵通过。Ollama `/api/chat` 固定通道超时按环境延期处理，复验命令已落盘。
 
 ## 变更日志
 
