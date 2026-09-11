@@ -5,6 +5,11 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-11
+
+- **023 Skill 与 Tool 管理模块** ｜ 新建 → 待确认 ｜ 2026-09-11：用 `grill-with-docs`（已安装 `grilling` / `domain-modeling`）三轮访谈冻结 Q1–Q10 全部根决策——Skill=编排层（SKILL.md 协议）/Tool=执行层（后端原子动作）、只管 `.agents/skills/` 并迁移废弃 `~/.codex/skills/download-paper` 硬编码、网页仅只读+启停、规则匹配与 LLM 意图双触发（27B 实测 `GO/NO-GO`）、Agent 读正文自编排且不改 SKILL.md 正文（仅 frontmatter 加 `tools:`）、状态落 `data/kb/skill-state.json`、Tool 交给模型采用「原生 function calling 优先 / 降级计划 JSON」混合策略。已落盘 spec 与 `plans/023/README.md`；**确认前不修改业务代码，task 文件待确认后创建**。
+- **020 零碎 bug 解决** ｜ 已完成（容器保持开放） → 待确认 → **已完成（第 3 批 BUG-05；主模型代行）** ｜ 2026-09-11：新缺陷——首次部署到新机器后上传即报 `INDEX_REBUILD_REQUIRED`。实测 `data/kb` 目录完全不存在（无 `papers.json` / `index-generation.json` / `rebuild-runs`）；根因为 `manifest_store.py:599-603` 的 `require_generation()` 只判断 marker 是否存在、缺失即抛 409，把「空库首次部署（无索引可重建）」与「已有旧索引但代际不符（需停服全库重建）」两种状态混为一谈（`routes_kb.py:310-324` 统一过这道门；`main.py:34-40` 启动时仅打印日志不初始化；同函数内 `papers.json` 缺失却走 503 `INDEX_FINALIZE_REQUIRED`，说明语义本就区别对待）。修复方案：空库自动 bootstrap 初始代际 marker，非空库保持 fail-closed 仍返回 409。纳入第 3 批 **BUG-05 / Task07**（仅后端）；**确认前不修改业务代码**。
+
 ## 2026-09-08
 
 - **017 后端限界上下文彻底重构** ｜ 已完成 → 实施中 ｜ Luna xhigh 独立审计发现旧 `agents/article_agent.py`、`core/config.py`、`api/routes.py` 兼容转发和未接线 `PaperImportPort` 仍不符合原 Spec 的“旧结构清零/跨域 port 接线”要求；保留历史验收证据，退回修复与重新验收。

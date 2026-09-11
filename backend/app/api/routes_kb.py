@@ -307,9 +307,17 @@ def _generation_store() -> Any:
     return FinalizeBundleStore(KB_DIR.parents[1])
 
 
-def _require_generation(request: Request, *, finalize_pending: bool = False) -> JSONResponse | None:
+def _require_generation(
+    request: Request,
+    *,
+    finalize_pending: bool = False,
+    allow_bootstrap: bool = False,
+) -> JSONResponse | None:
     try:
-        _generation_store().require_generation(finalize_pending=finalize_pending)
+        _generation_store().require_generation(
+            finalize_pending=finalize_pending,
+            allow_bootstrap=allow_bootstrap,
+        )
     except ManifestStoreError as error:
         status = int(getattr(error, "status", 409))
         return _document_error(
@@ -393,7 +401,10 @@ async def upload_document(request: Request, file: UploadFile | None = File(defau
     # explicit reindex route before writing a new source/metadata pair; this
     # keeps a maintenance window from accepting documents that can only sit in
     # ``pending`` forever.
-    gate = _require_generation(request)
+    # BUG-05: a first-time deployment has no index at all, so allow the initial
+    # generation to be bootstrapped here instead of demanding a rebuild of
+    # nothing.  Read paths stay fail-closed.
+    gate = _require_generation(request, allow_bootstrap=True)
     if gate is not None:
         return gate
     try:
