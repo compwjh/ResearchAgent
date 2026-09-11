@@ -45,6 +45,25 @@ def build_role_aware_messages(question: str, *, system_rule: Optional[str] = Non
     return messages
 
 
+def _normalize_langchain_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Make role-aware messages valid for LangChain's Ollama adapter.
+
+    The application keeps each system instruction as its own message so the
+    direct Ollama route and observability retain the original message shape.
+    ChatOllama requires system content to be at the beginning, however, and
+    qwen3.8 rejects a payload containing multiple system messages.  Combine
+    every system message into the first one while retaining the relative order
+    of all user/assistant/tool history messages.
+    """
+    system_messages = [message for message in messages if message.get("role") == "system"]
+    if not system_messages:
+        return [dict(message) for message in messages]
+
+    merged_system = dict(system_messages[0])
+    merged_system["content"] = "\n\n".join(message.get("content", "") for message in system_messages)
+    return [merged_system, *(dict(message) for message in messages if message.get("role") != "system")]
+
+
 def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool):
     """默认链路驱动器：事件产出与改动前完全一致，并在结束后合成 OllamaChatResult。
 
@@ -61,12 +80,13 @@ def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool):
     from backend.app.chat.application.chat_graph import build_chat_graph
 
     graph = build_chat_graph(chat_model)
+    langchain_messages = _normalize_langchain_messages(messages)
     start = time.perf_counter()
     first_token_ms = 0.0
     first_seen = False
     parts: List[str] = []
     try:
-        for event in graph.stream({"messages": messages}, stream_mode="custom"):
+        for event in graph.stream({"messages": langchain_messages}, stream_mode="custom"):
             if not first_seen:
                 first_seen = True
                 first_token_ms = (time.perf_counter() - start) * 1000.0

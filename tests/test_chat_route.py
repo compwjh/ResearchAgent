@@ -72,6 +72,58 @@ class RunChatTests(unittest.TestCase):
         self.assertEqual(model.payloads[0], [{"role": "user", "content": "分类 Prompt"}])
         self.assertEqual(model.payloads[1], [{"role": "user", "content": "旧 question 路径"}])
 
+    def test_langchain_merges_multiple_system_messages_before_history(self):
+        model = _CapturingModel(["ok"])
+        messages = [
+            {"role": "system", "content": "平台约束"},
+            {"role": "system", "content": "项目规则"},
+            {"role": "user", "content": "上一问"},
+            {"role": "assistant", "content": "上一答"},
+            {"role": "tool", "content": "工具结果"},
+            {"role": "user", "content": "当前问题"},
+        ]
+        with patch("backend.app.platform.ollama.create_chat_model", return_value=model):
+            list(run_chat("当前问题", "m", route="langchain", messages=messages))
+
+        self.assertEqual(
+            model.payloads[0],
+            [
+                {"role": "system", "content": "平台约束\n\n项目规则"},
+                {"role": "user", "content": "上一问"},
+                {"role": "assistant", "content": "上一答"},
+                {"role": "tool", "content": "工具结果"},
+                {"role": "user", "content": "当前问题"},
+            ],
+        )
+
+    def test_langchain_keeps_single_system_message_unchanged(self):
+        model = _CapturingModel(["ok"])
+        messages = [
+            {"role": "system", "content": "唯一系统规则"},
+            {"role": "user", "content": "当前问题"},
+        ]
+        with patch("backend.app.platform.ollama.create_chat_model", return_value=model):
+            list(run_chat("当前问题", "m", route="langchain", messages=messages))
+
+        self.assertEqual(model.payloads[0], messages)
+
+    def test_direct_keeps_multiple_system_messages_unchanged(self):
+        class _FakeStream:
+            result = OllamaChatResult("ok", "", OllamaTimings(), False, 0, 0)
+
+            def __iter__(self):
+                yield {"type": "token", "content": "ok"}
+
+        messages = [
+            {"role": "system", "content": "平台约束"},
+            {"role": "system", "content": "项目规则"},
+            {"role": "user", "content": "当前问题"},
+        ]
+        with patch("backend.app.chat.application.chat_runner.chat_direct_stream", return_value=_FakeStream()) as direct:
+            list(run_chat("当前问题", "m", route="direct", messages=messages))
+
+        self.assertEqual(direct.call_args.args[0], messages)
+
     def test_langchain_route_yields_tokens_and_synthesizes_result(self):
         with patch("backend.app.platform.ollama.create_chat_model", side_effect=_mock_model(["Hel", "lo", "!"])):
             run = run_chat("你好", "qwen3.5:9b", route="langchain")
