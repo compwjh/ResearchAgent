@@ -86,6 +86,27 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-processing-item[data-status="failed"]::before { color: #c0392b; }
 .conversation-processing-item[data-status="skipped"]::before { color: #9c9da4; }
 .conversation-processing-label { color: var(--ink); font-weight: 700; }
+.reasoning-effort-picker { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; background: #fafaff; color: var(--muted); font: 10px 'DM Mono', monospace; white-space: nowrap; }
+.reasoning-effort-picker:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.reasoning-effort-label { color: var(--accent); font-weight: 700; }
+.reasoning-effort-picker select { max-width: 58px; border: 0; outline: 0; padding: 1px 0; background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
+.reasoning-effort-picker select:disabled { color: var(--muted); cursor: not-allowed; }
+.conversation-reasoning { display: grid; gap: 5px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
+.conversation-reasoning[data-status="running"] { animation: reasoning-pulse 1.8s ease-in-out infinite; }
+.conversation-reasoning-toggle { display: inline-flex; align-items: baseline; justify-self: start; gap: 7px; padding: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 700; text-align: left; }
+.conversation-reasoning-toggle::before { content: '⌄'; display: inline-block; color: var(--accent); transition: transform .16s ease; }
+.conversation-reasoning-toggle[aria-expanded="false"]::before { transform: rotate(-90deg); }
+.conversation-reasoning-summary { color: var(--muted); font-weight: 400; }
+.conversation-reasoning-body { display: grid; gap: 5px; padding: 7px 8px; border-radius: 6px; background: #f7f5ff; }
+.conversation-reasoning-body[hidden] { display: none !important; }
+.conversation-reasoning-notice, .conversation-reasoning-truncated { margin: 0; color: #9a91d6; font-size: 9px; }
+.conversation-reasoning-content { max-height: 210px; overflow-y: auto; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.conversation-reasoning[data-status="completed"] .conversation-reasoning-body { background: #f7f5ff; }
+.conversation-reasoning[data-status="failed"] .conversation-reasoning-body { background: #fff0f0; color: #a33232; }
+.conversation-reasoning[data-status="interrupted"] .conversation-reasoning-body { background: #fff7ed; color: #94621c; }
+.conversation-reasoning:not([data-status="running"]) { animation: none; }
+@keyframes reasoning-pulse { 0%, 100% { opacity: .72; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .conversation-reasoning[data-status="running"] { animation: none; } }
 .conversation-memory-notice { display: block; margin-top: 8px; padding: 7px 9px; border-radius: 7px; background: #f5f2ff; color: #5e51c8; font: 10px/1.45 'DM Mono', monospace; }
 .conversation-memory-notice[data-status="needs_confirmation"], .conversation-memory-notice[data-status="not_analyzed"], .conversation-memory-notice[data-status="not_saved"] { background: #fff7ed; color: #9a5b16; }
 .conversation-memory-notice[data-status="used"] { background: #f1f7ff; color: #3e6eaa; }

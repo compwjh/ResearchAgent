@@ -6,6 +6,7 @@ const modelLabel = document.querySelector('#model-label');
 const statusDot = document.querySelector('.status-dot');
 const modeSelect = document.querySelector('#mode-select');
 const modelSelect = document.querySelector('#model-select');
+const reasoningEffortSelect = document.querySelector('#reasoning-effort-select');
 const modeHint = document.querySelector('#mode-hint');
 const sendLabel = sendButton.innerHTML;
 const workspace = document.querySelector('.workspace');
@@ -23,6 +24,8 @@ const downloadDir = document.querySelector('#download-dir');
 const settingsStatus = document.querySelector('#settings-status');
 let activeModel = 'Ollama';
 let currentModels = [];
+const REASONING_EFFORTS = ['off', 'low', 'medium', 'high', 'xhigh'];
+const reasoningOptionsState = { model: null, supported: null, defaultEffort: 'xhigh', loadToken: 0, lastEffort: 'xhigh', patchSerial: 0 };
 
 // ===== 项目会话记忆 MVP（spec-022 Task02） =====
 const newProjectButton = document.querySelector('#new-project-button');
@@ -241,6 +244,7 @@ fetch('/api/health')
     modelSelect.value = activeModel;
     document.querySelector('#model-count').textContent = models.length;
     modelLabel.textContent = displayName(activeModel);
+    loadReasoningOptions(activeModel);
     statusDot.classList.add('ready');
     if (typeof renderModelList === 'function') renderModelList(models, activeModel);
     if (typeof refreshKbModelOptions === 'function') refreshKbModelOptions();
@@ -290,6 +294,8 @@ function createAssistantMessage(model) {
   const sources = document.createElement('section'); sources.className = 'conversation-sources'; sources.hidden = true; sources.setAttribute('aria-label', '参考来源');
   bubble.append(modelTag, answer, memoryResults, sources);
   message.append(avatar, bubble);
+  message.dataset.lastEventSeq = '0';
+  message.dataset.reasoningEffort = normalizeReasoningEffort(reasoningOptionsState.lastEffort || 'xhigh');
   messages.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
   return message;
@@ -334,6 +340,80 @@ modeSelect.addEventListener('change', () => {
 modelSelect.addEventListener('change', () => {
   activeModel = modelSelect.value;
   modelLabel.textContent = displayName(activeModel);
+  loadReasoningOptions(activeModel);
+});
+
+function normalizeReasoningEffort(value, fallback = 'xhigh') {
+  const effort = String(value || '').trim().toLowerCase();
+  return REASONING_EFFORTS.includes(effort) ? effort : fallback;
+}
+
+function setReasoningEffort(value, { remember = true } = {}) {
+  const effort = normalizeReasoningEffort(value, reasoningOptionsState.defaultEffort || 'xhigh');
+  reasoningOptionsState.lastEffort = effort;
+  if (reasoningEffortSelect) reasoningEffortSelect.value = effort;
+  if (remember) reasoningOptionsState.defaultEffort = effort;
+  return effort;
+}
+
+function syncReasoningEffortOptions(supported) {
+  if (!reasoningEffortSelect) return;
+  const supportedSet = new Set(Array.isArray(supported) && supported.length ? supported : ['off']);
+  supportedSet.add('off');
+  [...reasoningEffortSelect.options].forEach((option) => {
+    option.disabled = !supportedSet.has(option.value);
+  });
+}
+
+async function loadReasoningOptions(model, { selectedEffort = null } = {}) {
+  if (!reasoningEffortSelect || !model) return;
+  const loadToken = ++reasoningOptionsState.loadToken;
+  const requestedModel = String(model);
+  try {
+    const response = await fetch(`/api/chat/reasoning-options?model=${encodeURIComponent(requestedModel)}`);
+    let data = null;
+    try { data = await response.json(); } catch (_) { data = null; }
+    if (!response.ok) throw new Error(conversationError(data, '思考档位暂不可用'));
+    if (loadToken !== reasoningOptionsState.loadToken || activeModel !== requestedModel) return;
+    reasoningOptionsState.model = requestedModel;
+    reasoningOptionsState.supported = Array.isArray(data?.supported_efforts) ? data.supported_efforts : null;
+    reasoningOptionsState.defaultEffort = normalizeReasoningEffort(data?.default_effort, 'xhigh');
+    syncReasoningEffortOptions(reasoningOptionsState.supported);
+    setReasoningEffort(selectedEffort || conversationState.conversation?.reasoning_effort || reasoningOptionsState.defaultEffort, { remember: false });
+  } catch (_) {
+    if (loadToken !== reasoningOptionsState.loadToken || activeModel !== requestedModel) return;
+    reasoningOptionsState.model = requestedModel;
+    reasoningOptionsState.supported = ['off'];
+    reasoningOptionsState.defaultEffort = 'off';
+    syncReasoningEffortOptions(['off']);
+    setReasoningEffort('off', { remember: false });
+  }
+}
+
+async function persistConversationReasoningEffort(effort, previousEffort, previousDefaultEffort) {
+  const conversationId = conversationState.conversationId;
+  if (!conversationId) return;
+  const serial = ++reasoningOptionsState.patchSerial;
+  try {
+    const data = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/reasoning`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reasoning_effort: effort }),
+    });
+    if (serial !== reasoningOptionsState.patchSerial || conversationState.conversationId !== conversationId) return;
+    conversationState.conversation = { ...(conversationState.conversation || {}), ...(data || {}), reasoning_effort: data?.reasoning_effort || effort };
+  } catch (error) {
+    if (serial !== reasoningOptionsState.patchSerial || conversationState.conversationId !== conversationId) return;
+    reasoningOptionsState.defaultEffort = previousDefaultEffort;
+    setReasoningEffort(previousEffort, { remember: false });
+    setConversationStatus(`思考档位更新失败：${error.message}`, 'error');
+  }
+}
+
+reasoningEffortSelect?.addEventListener('change', () => {
+  const previous = reasoningOptionsState.lastEffort;
+  const previousDefault = reasoningOptionsState.defaultEffort;
+  const effort = setReasoningEffort(reasoningEffortSelect.value);
+  persistConversationReasoningEffort(effort, previous, previousDefault);
 });
 
 function conversationError(data, fallback = '请求失败') {
@@ -400,6 +480,223 @@ function orderConversationMessages(items) {
   return ordered;
 }
 
+function formatReasoningDuration(durationMs) {
+  const value = Number(durationMs);
+  if (!Number.isFinite(value) || value < 0) return '';
+  return ` · 用时 ${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} 秒`;
+}
+
+const REASONING_PROTOCOL_MARKERS = [
+  '<think>', '</think>', '<analysis>', '</analysis>', '<reasoning>', '</reasoning>',
+  '[INST]', '[/INST]', '<<SYS>>', '<</SYS>>',
+  '<|assistant|>', '<|user|>', '<|system|>', '<|im_start|>', '<|im_end|>', '<|endoftext|>',
+  '<|start_header_id|>', '<|end_header_id|>', '<|eot_id|>', '<|eom_id|>',
+  '[[assistant]]', '[[user]]', '[[system]]', '[[thinking]]', '[[answer]]',
+  '### System:', '### User:', '### Assistant:',
+  '\nassistant:', '\nuser:', '\nsystem:', 'assistant:', 'user:', 'system:',
+];
+const reasoningFilters = new WeakMap();
+const KNOWN_CONVERSATION_EVENT_TYPES = new Set(['meta', 'progress', 'memory', 'reconnect', 'reasoning_started', 'reasoning_delta', 'reasoning_completed', 'token', 'sources', 'error', 'done']);
+
+function createReasoningFilter() {
+  let carry = '';
+  const isControl = (char) => /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(char);
+  const isBareRoleMarker = (marker) => ['assistant:', 'user:', 'system:'].includes(marker);
+  const markerAt = (value, index) => REASONING_PROTOCOL_MARKERS.find((marker) => value.startsWith(marker, index) && (!isBareRoleMarker(marker) || index === 0));
+  const hasMarkerPrefix = (value, index) => {
+    const suffix = value.slice(index);
+    return suffix.length > 0 && REASONING_PROTOCOL_MARKERS.some((marker) => marker.startsWith(suffix) && (!isBareRoleMarker(marker) || index === 0));
+  };
+  return {
+    push(value, { final = false } = {}) {
+      const input = carry + String(value || '');
+      carry = '';
+      let output = '';
+      let index = 0;
+      while (index < input.length) {
+        const marker = markerAt(input, index);
+        if (marker) { index += marker.length; continue; }
+        if (!final && hasMarkerPrefix(input, index)) { carry = input.slice(index); break; }
+        const char = input[index];
+        if (!isControl(char)) output += char;
+        index += 1;
+      }
+      if (final && carry) {
+        for (const char of carry) if (!isControl(char)) output += char;
+        carry = '';
+      }
+      return output;
+    },
+  };
+}
+
+function filterVisibleReasoning(value) {
+  return createReasoningFilter().push(value, { final: true });
+}
+
+function appendConversationReasoningText(panel, value) {
+  if (!panel || !value) return;
+  let filter = reasoningFilters.get(panel);
+  if (!filter) { filter = createReasoningFilter(); reasoningFilters.set(panel, filter); }
+  const visible = filter.push(value);
+  if (!visible) return;
+  const target = panel.querySelector('.conversation-reasoning-content');
+  if (target) {
+    target.appendChild(document.createTextNode(visible));
+    panel.dataset.hasContent = 'true';
+  }
+}
+
+function flushConversationReasoningText(panel) {
+  if (!panel) return;
+  let filter = reasoningFilters.get(panel);
+  if (!filter) return;
+  const visible = filter.push('', { final: true });
+  if (!visible) return;
+  const target = panel.querySelector('.conversation-reasoning-content');
+  if (target) {
+    target.appendChild(document.createTextNode(visible));
+    panel.dataset.hasContent = 'true';
+  }
+}
+
+function reasoningPanelStatusText(status, durationMs) {
+  if (status === 'running') return '正在思考…';
+  if (status === 'failed') return '思考失败';
+  if (status === 'interrupted') return '思考已中止';
+  if (status === 'completed') return `思考完成${formatReasoningDuration(durationMs)}`;
+  return '思考草稿';
+}
+
+function createConversationReasoning(assistantMessage, { effort = 'xhigh', status = 'running', content = '', durationMs = null, truncated = false } = {}) {
+  if (!assistantMessage || normalizeReasoningEffort(effort) === 'off') return null;
+  const existing = assistantMessage.querySelector('.conversation-reasoning');
+  if (existing) return existing;
+  const reasoningFilter = createReasoningFilter();
+  const visibleContent = reasoningFilter.push(content, { final: status !== 'running' });
+  const panel = document.createElement('section');
+  panel.className = 'conversation-reasoning';
+  panel.dataset.status = status;
+  panel.dataset.effort = normalizeReasoningEffort(effort);
+  panel.dataset.hasContent = visibleContent ? 'true' : 'false';
+  panel.setAttribute('aria-label', '思考草稿');
+  panel.setAttribute('aria-busy', status === 'running' ? 'true' : 'false');
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'conversation-reasoning-toggle';
+  toggle.setAttribute('aria-expanded', status === 'running' ? 'true' : 'false');
+  toggle.dataset.userToggled = 'false';
+  const title = document.createElement('span');
+  title.className = 'conversation-reasoning-title';
+  title.textContent = '思考草稿';
+  const summary = document.createElement('span');
+  summary.className = 'conversation-reasoning-summary';
+  summary.textContent = reasoningPanelStatusText(status, durationMs);
+  toggle.append(title, summary);
+  const body = document.createElement('div');
+  body.className = 'conversation-reasoning-body';
+  body.hidden = status !== 'running';
+  const notice = document.createElement('p');
+  notice.className = 'conversation-reasoning-notice';
+  notice.textContent = '思考草稿可能不准确';
+  const text = document.createElement('div');
+  text.className = 'conversation-reasoning-content';
+  text.setAttribute('aria-live', 'polite');
+  text.textContent = visibleContent;
+  if (truncated) {
+    const truncatedNotice = document.createElement('p');
+    truncatedNotice.className = 'conversation-reasoning-truncated';
+    truncatedNotice.textContent = '（思考草稿过长，已折叠部分内容）';
+    body.append(notice, text, truncatedNotice);
+  } else {
+    body.append(notice, text);
+  }
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    toggle.dataset.userToggled = 'true';
+    body.hidden = expanded;
+  });
+  panel.append(toggle, body);
+  reasoningFilters.set(panel, reasoningFilter);
+  const bubble = assistantMessage.querySelector('.bubble');
+  const answer = bubble?.querySelector('.answer');
+  if (answer) bubble.insertBefore(panel, answer);
+  else if (bubble) bubble.appendChild(panel);
+  return panel;
+}
+
+function updateConversationReasoning(panel, { status, content, durationMs = null, completedAt = null } = {}) {
+  if (!panel || ['terminal', 'completed', 'failed', 'interrupted'].includes(panel.dataset.status)) return;
+  if (content) {
+    appendConversationReasoningText(panel, content);
+  }
+  if (status) {
+    panel.dataset.status = status;
+    panel.setAttribute('aria-busy', status === 'running' ? 'true' : 'false');
+    const summary = panel.querySelector('.conversation-reasoning-summary');
+    if (summary) summary.textContent = reasoningPanelStatusText(status, durationMs);
+    if (status !== 'running') {
+      const toggle = panel.querySelector('.conversation-reasoning-toggle');
+      const body = panel.querySelector('.conversation-reasoning-body');
+      if (toggle && body) {
+        toggle.setAttribute('aria-expanded', 'false');
+        body.hidden = true;
+      }
+    }
+    if (completedAt) panel.dataset.completedAt = completedAt;
+  }
+}
+
+function finalizeConversationReasoning(panel, status = 'completed', durationMs = null) {
+  if (!panel) return;
+  const current = panel.dataset.status;
+  if (current === 'completed' && status !== 'completed') return;
+  if (['completed', 'failed', 'interrupted'].includes(current) && status === 'running') return;
+  if (status === 'completed') flushConversationReasoningText(panel);
+  updateConversationReasoning(panel, { status, durationMs });
+  panel.dataset.status = status;
+  panel.setAttribute('aria-busy', 'false');
+  const toggle = panel.querySelector('.conversation-reasoning-toggle');
+  const body = panel.querySelector('.conversation-reasoning-body');
+  if (toggle && body) {
+    toggle.setAttribute('aria-expanded', 'false');
+    body.hidden = true;
+  }
+}
+
+function acceptConversationEvent(assistantMessage, eventData) {
+  if (!assistantMessage || !eventData) return false;
+  const finalEnvelope = ['done', 'error'].includes(eventData.type);
+  if (assistantMessage.dataset.doneSeen === 'true') return false;
+  if (assistantMessage.dataset.terminal === 'true' && assistantMessage.dataset.sequenceGap !== 'true') return false;
+  if ((assistantMessage.dataset.sequenceGap === 'true' || assistantMessage.dataset.errorSeen === 'true') && !finalEnvelope) return false;
+  const seq = Number(eventData.event_seq);
+  if (!Number.isInteger(seq) || seq < 1) return true;
+  const last = Number(assistantMessage.dataset.lastEventSeq || 0);
+  if (seq <= last) return false;
+  if (last > 0 && seq > last + 1 && !finalEnvelope) {
+    assistantMessage.dataset.sequenceGap = 'true';
+    assistantMessage.dataset.terminal = 'true';
+    assistantMessage.dataset.status = 'interrupted';
+    const panel = assistantMessage.querySelector('.conversation-reasoning');
+    finalizeConversationReasoning(panel, 'interrupted');
+    addConversationErrorNotice(assistantMessage, new Error('事件流中断'));
+    return false;
+  }
+  assistantMessage.dataset.lastEventSeq = String(seq);
+  return true;
+}
+
+function markConversationEventTerminal(assistantMessage, status) {
+  if (!assistantMessage) return;
+  if (['completed', 'failed', 'interrupted'].includes(status)) {
+    if (assistantMessage.dataset.sequenceGap === 'true') status = 'interrupted';
+    assistantMessage.dataset.terminal = 'true';
+    assistantMessage.dataset.status = status;
+  }
+}
+
 function renderConversationMessage(item) {
   const message = document.createElement('div');
   const role = item.role === 'user' ? 'user' : item.role === 'tool' ? 'tool' : 'assistant';
@@ -422,10 +719,13 @@ function renderConversationMessage(item) {
   const model = document.createElement('span');
   model.className = 'model-tag';
   model.textContent = item.model || activeModel;
+  bubble.appendChild(model);
+  const historicalReasoningContent = String(item.reasoning_content || '');
+  const historicalReasoning = filterVisibleReasoning(historicalReasoningContent);
   const answer = document.createElement('div');
   answer.className = 'answer md-body';
   setConversationAnswer(answer, item.content || '');
-  bubble.append(model, answer);
+  bubble.append(answer);
   const memoryResults = document.createElement('section');
   memoryResults.className = 'conversation-memory-results';
   memoryResults.hidden = true;
@@ -437,6 +737,16 @@ function renderConversationMessage(item) {
   sources.setAttribute('aria-label', '参考来源');
   bubble.appendChild(sources);
   message.append(avatar, bubble);
+  if (historicalReasoning) {
+    createConversationReasoning(message, {
+      effort: item.reasoning_effort || 'xhigh',
+      status: item.reasoning_status === 'running' ? 'running' : (item.reasoning_status || 'completed'),
+      content: historicalReasoningContent,
+      durationMs: item.reasoning_duration_ms,
+      truncated: Boolean(item.reasoning_truncated),
+    });
+  }
+  message.dataset.lastEventSeq = String(Number(item.last_event_seq) || 0);
   return message;
 }
 
@@ -1049,10 +1359,19 @@ async function loadOlderConversationMessages() {
 }
 
 function abortConversationStream() {
+  const activeAssistant = [...(messages?.querySelectorAll('.message.assistant[data-stream-active="true"]') || [])].at(-1);
+  if (activeAssistant) {
+    markConversationEventTerminal(activeAssistant, 'interrupted');
+    activeAssistant.dataset.streamActive = 'false';
+    activeAssistant.dataset.doneSeen = 'true';
+    activeAssistant.classList.add('is-interrupted');
+    addConversationErrorNotice(activeAssistant, new Error('本轮已中止'));
+  }
   messages?.querySelectorAll('.conversation-processing[data-running="true"]').forEach((processing) => {
     stopConversationProcessing(processing, 'interrupted', '处理过程已中断');
     collapseConversationProcessing(processing);
   });
+  messages?.querySelectorAll('.conversation-reasoning[data-status="running"]').forEach((panel) => finalizeConversationReasoning(panel, 'interrupted'));
   conversationState.streamGeneration += 1;
   conversationState.openToken = null;
   if (conversationState.streamController) { conversationState.streamController.abort(); conversationState.streamController = null; }
@@ -1082,6 +1401,8 @@ async function openConversation(conversationId, { replace = false } = {}) {
     conversationState.conversation = found;
     conversationState.projectId = conversationState.conversation?.project_id || null;
     conversationState.draftProjectId = conversationState.projectId;
+    setReasoningEffort(conversationState.conversation?.reasoning_effort || reasoningOptionsState.defaultEffort, { remember: false });
+    loadReasoningOptions(activeModel, { selectedEffort: conversationState.conversation?.reasoning_effort || null });
     projectState.expandedProjectId = conversationState.projectId || projectState.expandedProjectId;
     renderProjectList(projectState.items);
     if (conversationState.projectId) await loadProjectConversations(conversationState.projectId);
@@ -1101,6 +1422,7 @@ async function openConversation(conversationId, { replace = false } = {}) {
 
 function beginDraft() {
   abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
+  setReasoningEffort(reasoningOptionsState.defaultEffort || reasoningOptionsState.lastEffort || 'xhigh', { remember: false });
   if (window.location.pathname.startsWith('/c/')) window.history.replaceState({}, '', '/');
   const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = '新会话';
   const state = document.querySelector('.chat-state'); if (state) state.textContent = '新会话';
@@ -1468,10 +1790,11 @@ function appendConversationEvent(assistantMessage, processing, eventData) {
 async function sendConversationMessage(question, { appendUser = true } = {}) {
   abortConversationStream(); const generation = conversationState.streamGeneration; const controller = new AbortController(); conversationState.streamController = controller;
   workspace.classList.add('has-started');
+  setConversationStatus('模型正在准备…');
   const userMessage = appendUser
     ? addMessage(question, 'user')
     : [...messages.querySelectorAll('.message.user')].at(-1);
-  const payload = { content: question, mode: modeSelect.value, model: modelSelect.value };
+  const payload = { content: question, mode: modeSelect.value, model: modelSelect.value, reasoning_effort: normalizeReasoningEffort(reasoningEffortSelect?.value || reasoningOptionsState.lastEffort || 'xhigh') };
   const endpoint = conversationState.conversationId ? `/api/conversations/${encodeURIComponent(conversationState.conversationId)}/messages` : '/api/conversations/messages';
   if (!conversationState.conversationId && conversationState.projectId) payload.project_id = conversationState.projectId;
   let assistantMessage = null; let processing = null; let writer = null; let streamError = null; let userMessageId = null;
@@ -1492,18 +1815,62 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
         assistantMessage = createAssistantMessage(eventData.model || activeModel); processing = createConversationProcessing(assistantMessage); sourcesRenderer = createConversationSources(assistantMessage); writer = createMarkdownWriter(assistantMessage.querySelector('.answer'), messages);
         if (eventData.assistant_message_id) assistantMessage.dataset.messageId = eventData.assistant_message_id;
         if (eventData.user_message_id) assistantMessage.dataset.parentMessageId = eventData.user_message_id;
-      } else if (eventData.type === 'progress') appendConversationEvent(assistantMessage, processing, eventData);
+        assistantMessage.dataset.lastEventSeq = String(Number(eventData.event_seq) || 0);
+        assistantMessage.dataset.reasoningEffort = normalizeReasoningEffort(eventData.reasoning_effort || payload.reasoning_effort);
+        assistantMessage.dataset.streamActive = 'true';
+        setConversationStatus(assistantMessage.dataset.reasoningEffort === 'off' ? '正在生成回答…' : '模型正在准备思考…');
+      } else if (!acceptConversationEvent(assistantMessage, eventData)) return;
+      if (eventData.type === 'progress') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'memory') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'reconnect') appendConversationEvent(assistantMessage, processing, eventData);
-      else if (eventData.type === 'token' && assistantMessage && writer) writer.write(eventData.content || '');
-      else if (eventData.type === 'sources') { pendingSources = eventData.sources || eventData.citations || []; if (generationCompleted && sourcesRenderer) sourcesRenderer.render(pendingSources); }
-      else if (eventData.type === 'error') { streamError = new Error(eventData.message || eventData.detail || '请求失败'); pendingSources = null; if (sourcesRenderer) sourcesRenderer.clear(); if (assistantMessage) showConversationMemoryNotice(assistantMessage.querySelector('.bubble'), { status: 'not_saved', message: streamError.message }); }
-      else if (eventData.type === 'done') { doneReceived = true; stopConversationProcessing(processing, eventData.status === 'completed' ? 'completed' : (eventData.status || 'failed'), eventData.status === 'completed' ? '处理完成' : '处理过程已结束'); collapseConversationProcessing(processing); if (eventData.status !== 'completed' && sourcesRenderer) sourcesRenderer.clear(); if (assistantMessage && eventData.status !== 'completed') assistantMessage.classList.add(`is-${eventData.status || 'failed'}`); if (assistantMessage && userMessageId && eventData.status === 'completed') startMemoryAnalysisPolling(userMessageId, assistantMessage, conversationState.projectId); const state = document.querySelector('.chat-state'); if (state) state.textContent = eventData.status === 'completed' ? '已保存' : (eventData.status || '已结束'); }
+      else if (eventData.type === 'reasoning_started') {
+        const effort = assistantMessage?.dataset.reasoningEffort || payload.reasoning_effort;
+        if (effort !== 'off') {
+          setConversationStatus('模型正在思考…');
+          const panel = createConversationReasoning(assistantMessage, { effort, status: 'running' });
+          updateConversationReasoning(panel, { status: 'running' });
+        }
+      } else if (eventData.type === 'reasoning_delta') {
+        const effort = assistantMessage?.dataset.reasoningEffort || payload.reasoning_effort;
+        if (effort !== 'off') {
+          const panel = createConversationReasoning(assistantMessage, { effort, status: 'running' });
+          updateConversationReasoning(panel, { content: eventData.content || '' });
+        }
+      } else if (eventData.type === 'reasoning_completed') {
+        finalizeConversationReasoning(assistantMessage?.querySelector('.conversation-reasoning'), eventData.status || 'completed', eventData.duration_ms);
+      } else if (eventData.type === 'token' && assistantMessage && writer) {
+        const panel = assistantMessage.querySelector('.conversation-reasoning');
+        if (panel?.dataset.status === 'running') finalizeConversationReasoning(panel, 'completed');
+        writer.write(eventData.content || '');
+      } else if (eventData.type === 'sources') { pendingSources = eventData.sources || eventData.citations || []; if (generationCompleted && sourcesRenderer) sourcesRenderer.render(pendingSources); }
+      else if (eventData.type === 'error') {
+        streamError = new Error(eventData.message || eventData.detail || '请求失败');
+        assistantMessage.dataset.errorSeen = 'true';
+        const panel = assistantMessage?.querySelector('.conversation-reasoning');
+        finalizeConversationReasoning(panel, eventData.code === 'STREAM_INTERRUPTED' ? 'interrupted' : 'failed', eventData.duration_ms);
+        pendingSources = null; if (sourcesRenderer) sourcesRenderer.clear(); if (assistantMessage) showConversationMemoryNotice(assistantMessage.querySelector('.bubble'), { status: 'not_saved', message: streamError.message });
+      }
+      else if (eventData.type === 'done') {
+        doneReceived = true;
+        const doneStatus = assistantMessage?.dataset.sequenceGap === 'true'
+          ? 'interrupted'
+          : (assistantMessage?.dataset.errorSeen === 'true' ? 'failed' : (['completed', 'failed', 'interrupted'].includes(eventData.status) ? eventData.status : 'failed'));
+        assistantMessage.dataset.doneSeen = 'true';
+        assistantMessage.dataset.streamActive = 'false';
+        finalizeConversationReasoning(assistantMessage?.querySelector('.conversation-reasoning'), doneStatus, eventData.reasoning_duration_ms);
+        markConversationEventTerminal(assistantMessage, doneStatus);
+        stopConversationProcessing(processing, doneStatus === 'completed' ? 'completed' : doneStatus, doneStatus === 'completed' ? '处理完成' : '处理过程已结束'); collapseConversationProcessing(processing);
+        if (doneStatus !== 'completed' && sourcesRenderer) sourcesRenderer.clear(); if (assistantMessage && doneStatus !== 'completed') assistantMessage.classList.add(`is-${doneStatus}`); if (assistantMessage && userMessageId && doneStatus === 'completed') startMemoryAnalysisPolling(userMessageId, assistantMessage, conversationState.projectId); const state = document.querySelector('.chat-state'); if (state) state.textContent = doneStatus === 'completed' ? '已保存' : doneStatus;
+      }
+      if (!KNOWN_CONVERSATION_EVENT_TYPES.has(eventData.type)) console.debug('Ignored conversation event type:', eventData.type);
       if (eventData.type === 'progress' && eventData.kind === 'generation' && eventData.status === 'completed') { generationCompleted = true; if (pendingSources && sourcesRenderer) sourcesRenderer.render(pendingSources); }
     };
     while (true) { const result = await reader.read(); if (result.done) break; if (generation !== conversationState.streamGeneration) return; buffer += decoder.decode(result.value, { stream: true }); const chunks = buffer.split('\n\n'); buffer = chunks.pop(); chunks.forEach(handleSse); }
     if (buffer.trim()) handleSse(buffer);
     if (!doneReceived && !controller.signal.aborted && generation === conversationState.streamGeneration) {
+      finalizeConversationReasoning(assistantMessage?.querySelector('.conversation-reasoning'), 'interrupted');
+      markConversationEventTerminal(assistantMessage, 'interrupted');
+      if (assistantMessage) assistantMessage.dataset.streamActive = 'false';
       stopConversationProcessing(processing, 'failed', '流式连接中断，可重试');
       collapseConversationProcessing(processing);
       pendingSources = null;
@@ -1521,6 +1888,11 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
     if (error.connectionInterrupted) { if (writer) writer.flush(); }
     else if (writer) writer.cancel();
     if (processing) { updateConversationProcessing(processing, { step_id: 'connection', kind: 'connection', label: '连接状态', status: error.retryable ? 'skipped' : 'failed', summary: error.retryable ? '连接中断，可重试' : '连接失败' }); stopConversationProcessing(processing, error.retryable ? 'skipped' : 'failed', error.retryable ? '连接中断，可重试' : '连接失败'); collapseConversationProcessing(processing); }
+    finalizeConversationReasoning(assistantMessage?.querySelector('.conversation-reasoning'), error.connectionInterrupted || error.retryable ? 'interrupted' : 'failed');
+    if (assistantMessage) {
+      assistantMessage.dataset.streamActive = 'false';
+      if (error.name !== 'AbortError') markConversationEventTerminal(assistantMessage, error.connectionInterrupted || error.retryable ? 'interrupted' : 'failed');
+    }
     if (sourcesRenderer) sourcesRenderer.clear();
     if (assistantMessage) addConversationErrorNotice(assistantMessage, error);
     else if (!streamError) addConversationError(error);

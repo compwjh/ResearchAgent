@@ -1,7 +1,7 @@
 # Task 04：实现前端推理档位与思考面板
 
 > 关联：[Spec 024](../../specs/024-visible-reasoning-controls.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；被依赖：Task05；当前状态：进行中
+> 依赖：Task03；被依赖：Task05；当前状态：已完成（定向通过）
 
 ## 一句话目标
 
@@ -107,6 +107,7 @@ docs/sdd/plans/024/artifacts/task-04/implementation-report.md
 ## 执行结果
 
 2026-09-12：Task03 条件通过后启动前端实现；仅允许修改 frontend/** 与本 Task 前端合同测试和产出报告。
+2026-09-12：frontend-reviewer 判定 GO、frontend-tester 判定 PASS；24 个前端合同用例通过。真实 SSE 浏览器 smoke 因 Ollama/服务不可用留给 Task05。
 
 ## 变更日志
 
