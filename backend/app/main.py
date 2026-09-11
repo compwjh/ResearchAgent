@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -5,6 +6,8 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from backend.app.api import common
 from backend.app.api.common import paper_request_validation_error_response, recover_paper_catalog_searches
@@ -60,8 +63,30 @@ async def lifespan(_app: FastAPI):
                 print(f"[paper-browser] 管理器关闭失败（已忽略）：{error}")
 
 
+NO_CACHE = "no-cache"
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """静态资源允许缓存，但每次使用前必须回源做 ETag / Last-Modified 校验。
+
+    这样前端就不必靠手工改 `?v=N` 令牌才能拿到新版本：命中校验时
+    `StaticFiles` 仍会返回 304，不产生实际传输。
+    """
+
+    def file_response(
+        self,
+        full_path: os.PathLike,
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        response.headers["Cache-Control"] = NO_CACHE
+        return response
+
+
 app = FastAPI(title="Research Agent", lifespan=lifespan)
-app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")
+app.mount("/assets", NoCacheStaticFiles(directory=FRONTEND_DIR), name="assets")
 app.include_router(router)
 
 
@@ -76,4 +101,4 @@ async def handle_request_validation_error(request: Request, exc: RequestValidati
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "index.html")
+    return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": NO_CACHE})
