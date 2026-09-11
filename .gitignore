@@ -25,6 +25,7 @@ data/article_settings.json
 data/kb/
 data/models/
 data/agent_tasks.sqlite3
+data/memory/
 deploy/reranker/.runtime/
 deploy/run.pid
 

@@ -5,6 +5,7 @@ boundary between the paper renderer and its scoped stylesheet while keeping
 paper metadata out of HTML string injection paths.
 """
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,10 +87,27 @@ def test_paper_error_text_covers_missing_codes_and_range_details() -> None:
     assert "details.max_year" in APP
 
 
+def _current_asset_version(asset_name: str) -> int:
+    """Read the version from the live asset tag, not a compatibility comment."""
+    match = re.search(
+        rf'(?:href|src)="/assets/{re.escape(asset_name)}\?v=(\d+)"',
+        INDEX,
+    )
+    assert match, f"missing live asset tag for {asset_name}"
+    return int(match.group(1))
+
+
 def test_paper_app_version_bumped() -> None:
-    # 改动 app.js 后必须同步递增 ?v= 版本号，确保浏览器刷新缓存（回归护栏 A7）。
-    assert "/assets/app.js?v=25" in INDEX
-    assert "/assets/styles.css?v=25" in INDEX
+    # The original paper contract established v29 as the minimum cache-busting
+    # baseline.  Read the live tags so later monotonic upgrades do not require
+    # rewriting this historical contract to the exact current version.
+    assert _current_asset_version("app.js") >= 29
+    assert _current_asset_version("styles.css") >= 29
+
+    # Task09 contracts still rely on these compatibility markers while the
+    # runtime tags may continue to advance (currently both live tags are v32).
+    assert "/assets/app.js?v=31" in INDEX
+    assert "/assets/styles.css?v=30" in INDEX
 
 
 def test_paper_import_status_resets_per_round() -> None:

@@ -153,6 +153,7 @@
 - **018 Task06-B 第二代真实重建与 finalize 恢复** ｜ 实施中 → 实施中 ｜ 2026-09-10：修复旧 generation marker 阻止后续合法发布的问题，并以显式替换授权保持文件仓储 fail-closed；run `38efa91a33154fd097c61d1c745d408f` 经 `resume-finalize` 完成 415-point 重建，metadata 统计/源哈希已验证，alias 与 generation marker 一致。服务三个健康/文档接口 HTTP 200，全量回归 927 passed、1 skipped；完整双格式与性能验收仍待执行。
 - **018 知识文档切片检查器与双向原文定位** ｜ 实施中 → 已完成 ｜ 2026-09-10：用户验证功能无问题并同意收口；最终验收通过，唯一最终全量回归为 `956 passed / 0 failed / 1 skipped / 38 subtests passed`，服务与 HTTP smoke 通过。Task 开发阶段按长期规则只跑定向测试；已知后台 v2 indexing 与 reranker disabled 遗留已记录，不影响已验证路径。
 - **022 项目会话管理与自进化长期记忆** ｜ 新建 → 待确认 ｜ 2026-09-11：经 Grill with Docs 多轮确认，落盘项目/持久会话、全局与项目记忆、动态两屏消息加载、真实处理过程、RAG 编号来源、手机端和能力方法建议的完整边界；Task02 为桌面纵向 MVP，Task02–08 均保持待执行，确认前不修改业务代码。
+- **022 项目会话管理与自进化长期记忆** ｜ 待确认 → 已确认 ｜ 2026-09-11：用户明确要求继续开发 Spec022，确认进入 Task02 桌面端项目记忆 MVP；其余 Task 仍按依赖顺序等待。
 
 ## 2026-09-09
 
@@ -175,3 +176,27 @@
 - **021 论文导入异步化与进度反馈** ｜ 已确认 → 实施中 → 已完成 ｜ 2026-09-10：Task02 入队即返回 + 后台单飞执行 + 恢复（`POST` 0–1 秒返回 `queued`，轮询到 `completed`）；Task03 `KB_STORAGE_LOCKED` / `DUPLICATE_IMPORT` 两类可行动错误 + `POST /api/papers/import-items/{id}/retry`（含重试路径唯一索引冲突可读化，424→409）；Task04 前端逐条进度 + 单条重试 + 取消 + "仍在导入"软提示（`?v=24→25`）。后端 819 passed、前端契约 22 passed；技术评审通过（3 LOW + 1 INFO）、前端评审通过、验收通过（tester 429 → 主会话代行留痕）。遗留：失败条目是否释放 `import_item_title` 唯一性，待另行评审。
 - **021 论文导入异步化与进度反馈** ｜ 已完成 → 已完成（追加 Task06）｜ 2026-09-10：用户就遗留语义拍板"**释放**"，Task06 由 `backend-dev`（`Deepseek-V4.1-Flash`）实施完成——`paper_import_schema_meta` v1→v2 幂等迁移（受事务保护、失败可回滚），`import_item_title` 等 5 个身份索引的 WHERE 收缩为**仅活跃态**，CAS/租约未动。全量 **830 passed, 0 failed**；相关三文件 54 passed。运行时（8123）：真实库 version 1→2、索引 WHERE 仅活跃态；已入库论文重新导入由 409 变为 **200 queued → completed**，item 复用既有 `paper_id`，`papers.json` 同名条目仍为 1（无重复落盘）；同一候选连续提交仍 200 + **409 `DUPLICATE_IMPORT`**（活跃态互斥保留）。需求评审（`architect`）**打回 3 P1**（边界口径/find_existing 适用范围缺区分、评审记录与状态矛盾、Task06 缺产品级验收）→ 架构师已按 R1-1/R1-2/R1-3 修订 spec 与 task 文本，待复审。同期按用户要求把全部子 agent 模型由 `hy3` 改为 **`Deepseek-V4.1-Flash`** 并同步 `AGENTS.md`。
 - **021 论文导入异步化与进度反馈** ｜ 已完成（Task06 收口）｜ 2026-09-11：`backend-tester` 单端回归通过（全量 **830 passed** 3 连跑 0 failed、ruff 无新增、Task06 新增用例 11/11 稳定）；顺带定位并修复**既有 flaky**（非本次引入，在父提交 `1ec85eb` 上 15 次复现 10 次）：`test_batch_status_and_resume_use_server_snapshot` 只等条目状态、未等批次聚合态 → 改为"条目 + 批次聚合双条件"等待（`_wait_for_batch_status`），同文件 10 处同类轮询一并收敛，修复后全量 3 连跑均 830 passed。需求评审复审**通过（APPROVE）**；`tester` Task06 补充跨端验收**通过**（5/5）。spec-021 全任务（01–06）完成。
+- **022 项目会话管理与自进化长期记忆** ｜ Task02 实施中 → Task02 已完成、Spec 实施中 ｜ 2026-09-11：桌面端项目/会话/项目记忆纵向 MVP 通过 35 项精确测试、旧聊天兼容回归与受控部署 smoke；全量回归保留至 Task08，进入 Task03。
+- **022 项目会话管理与自进化长期记忆** ｜ Task03 实施中 → Task03 已完成、Spec 实施中 ｜ 2026-09-11：项目/会话生命周期、全局/项目记忆治理、移动确认与删除边界通过后端/前端复审、跨端 API smoke 和定向测试；全量回归保留至 Task08，进入 Task04。
+- **022 项目会话管理与自进化长期记忆** ｜ Task04 待执行 → Task04 实施中 ｜ 2026-09-11：Task03 已收口，启动异步记忆整理、候选/摘要 checkpoint 与跨会话预算受控召回；前端仅在需要候选确认时追加。
+- **022 项目会话管理与自进化长期记忆** ｜ Task04 实施中 → Task04 已完成、Spec 实施中 ｜ 2026-09-11：SQLite v3 事件/摘要/checkpoint、Map/Reduce、stale 恢复、候选证据门和预算召回通过 backend-reviewer GO 与 backend-tester PASS；保留 worker 重启扫描 P2，进入 Task05/Task07。
+- **022 项目会话管理与自进化长期记忆** ｜ Task05 待执行 → Task05 实施中 ｜ 2026-09-11：Task04 已收口，启动项目文档关联、既有 RAG 来源和完整处理过程展示；严格复用知识库 facade 与真实 progress 事件。
+- **022 项目会话管理与自进化长期记忆** ｜ Task05 实施中 → Task05 已完成、Spec 实施中 ｜ 2026-09-11：项目文档关联、项目隔离 RAG、真实处理步骤和延迟来源展示完成；后端 130 项、前端 44 项定向测试通过，双端复审与跨端验收通过，部署 smoke 已验证，进入 Task06。
+- **022 项目会话管理与自进化长期记忆** ｜ 已确认 / Task05 已完成 → 待确认 / Task05 修复轮待确认 ｜ 2026-09-11：部署后用户确认消息 turn 顺序、处理过程位置/折叠/永久动画及项目侧栏存在缺陷；经 Grilling 确认稳定 parent turn、真实步骤原位状态机、回答后异步无限条目记忆分析（默认独立 `qwen3.5:9b`）、分页确认区和 ChatGPT 式项目/会话侧栏。数据模型、接口与用户行为已更新，确认前暂停业务代码和 Task06。
+- **022 项目会话与长期记忆** ｜ 待确认 / Task05 修复轮 → 实施中 ｜ 2026-09-11：用户确认共同理解并授权主 Agent 调度 Luna high 子 Agent 开始后端、前端修复实现，进入接口对齐、评审和针对性验收。
+- **022 项目会话与长期记忆** ｜ Task05 修复轮实施中 → Task05 已完成、Spec 实施中 ｜ 2026-09-11：后端/前端 reviewer 均 GO，tester 跨端验收 PASS；主环境 health/home smoke 通过，修复相关定向测试 121 passed。Task06 仍待执行，Spec022 不提前收口。
+- **022 项目会话与长期记忆** ｜ 实施中 → 待确认（Task09 增量） ｜ 2026-09-11：用户现场截图确认 Task05 侧栏仍存在双项目标题、常驻创建表单、菜单裁剪、平级会话和手输项目名称问题。经 Grilling 冻结 ChatGPT 式项目树、可搜索已有项目选择、统一弹窗及归档视图，并按用户要求拆为独立 Task09；确认前暂停业务代码和 Task06。
+- **022 项目会话与长期记忆** ｜ 待确认（Task09 增量） → 实施中（Task09） ｜ 2026-09-11：Task09 需求评审与技术评审均 GO，用户明确授权实施；冻结 `last_activity_at DESC, project_id DESC` 与同键 cursor，临时采用 Terra medium 总控和 Luna high 子 Agent 开发。
+- **022 项目会话与长期记忆** ｜ 实施中（Task09） → 实施中（Task09 已完成） ｜ 2026-09-11：单一桌面项目树、项目内会话归属、可搜索已有项目选择、浮层菜单、归档筛选和项目活动排序完成；后端/前端复审均 GO、tester 定向验收 PASS（47 passed），主 Agent 扩展受影响测试 81 passed，并完成 Chromium 交互 smoke（含取消弹窗修复）。全量回归明确留待 Task08，Spec 不提前收口。
+- **022 项目会话与长期记忆** ｜ 实施中（Task09 已完成） → 待确认（Task10 增量） ｜ 2026-09-11：用户现场验证发现管理页点击会话不切回对话、展开项目时名称被旧双列布局挤压，并提出项目文件夹状态图标、project-first 记忆与最高优先级用户系统规则。经 Grilling 确认无历史版本、不做全局记忆降级、真正 system-role 注入及失败关闭；Task10 已落盘，确认前不改业务代码。
+- **022 Task10 技术门禁** ｜ NO-GO → 待复审 ｜ 2026-09-11：技术评审指出统一 role-aware 接缝、原文 global 门禁、SystemRule v6/fail-closed、管理页状态快照和 SVG 可访问性契约不足；已将 T1–T6、入口清单、fixture 矩阵、稳定错误语义和文件白名单补入 Task10，等待复审。
+- **022 Task10 技术门禁** ｜ 待复审 → 复审通过、待用户确认 ｜ 2026-09-11：临时 Luna high 技术复审确认 T1–T6 已具体冻结，四类用户可见入口、原文 global 门禁、SystemRule v6/Unicode/稳定错误体/fail-closed/快照、桌面状态恢复、单列 SVG aria 及文件白名单均可实现且可测；当前业务代码仍保持实施前基线，须用户明确确认后进入实现。
+- **022 项目会话与长期记忆** ｜ 待确认（Task10 增量） → 实施中（Task10） ｜ 2026-09-11：用户明确要求继续开发；需求评审 GO、技术复审 GO，按 Task10 T1–T6 契约分派 Luna high 后端与前端实现。Task06–Task08 保持待执行，全量回归仍留在 Task08。
+- **022 项目会话与长期记忆** ｜ 实施中（Task10） → 实施中（Task10 已完成） ｜ 2026-09-11：Task10 后端/前端实现、双端 reviewer GO、定向验收 PASS（64 项后端、44 项前端、5 个 Node 合同），受控服务 health/home/system-rule smoke 与 Chromium 无头 DOM 检查通过；Task06–Task08 继续等待，未执行全量回归。
+- **022 项目会话与长期记忆** ｜ Task06 待执行 → Task06 实施中 ｜ 2026-09-11：Task10 已完成并提交，Task06 依赖满足；按既定范围启动手机端前端适配，仅分派 frontend-dev，不新增后端接口。
+- **022 项目会话与长期记忆** ｜ Task06 实施中 → Task06 已完成 ｜ 2026-09-11：Task06 前端适配及 P1/P2 修复完成，reviewer GO、tester 定向验收 PASS（49 项合同、5 个 Node 合同），主 Agent 390×844 Chromium DOM smoke 通过；Task08 仍负责全量回归与最终交互。
+- **022 项目会话与长期记忆** ｜ Task07 待执行 → Task07 实施中 ｜ 2026-09-11：Task06 已提交并收口，Task07 依赖满足；按既定范围启动能力方法记忆与只读 Skill 改进建议实现，不授予运行时文件写权限。
+- **022 项目会话与长期记忆** ｜ Task07 实施中 → Task07 已完成 ｜ 2026-09-11：Task07 后端实现及两轮 P1 修复完成，reviewer GO、backend-tester PASS（12 项 Task07、43 项受影响回归、worker smoke 1 项、综合边界探针），Task08 继续负责全量回归、部署与 Spec 收口。
+- **022 项目会话与长期记忆** ｜ Task08 待执行 → Task08 实施中 ｜ 2026-09-11：Task02–Task07、Task09–Task10 均已完成并提交，启动最终前后端范围审计、全量回归、部署与收口验收；此前各 Task 均未运行全量回归。
+- **022 项目会话与长期记忆** ｜ Task08 实施中 → Task08 已完成 ｜ 2026-09-11：后端/前端最终复审 GO；修复 SSRF 共享边界、SystemRule fail-closed、记忆门禁测试基线、KB inventory digest 与资源合同后，唯一最终全量回归 1168 passed、1 skipped、5 warnings、41 subtests，退出码 0；8001 部署与桌面/手机 DOM smoke 通过。
+- **022 项目会话与长期记忆** ｜ 实施中（Task08） → 已完成 ｜ 2026-09-11：Task02–Task10 全部收口，验收报告与复盘已落盘；本机 Ollama `models=[]` 导致成功对话 SSE/RAG 仅保留为环境待复验，不伪造成功证据。

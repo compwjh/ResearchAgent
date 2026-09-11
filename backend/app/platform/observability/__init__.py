@@ -22,6 +22,8 @@ from backend.app.platform.observability import client, config, safe  # noqa: F40
 from backend.app.platform.observability.client import flush, get_client
 from backend.app.platform.observability.spans import (
     derive_metrics,
+    prompt_observation_metadata,
+    redact_prompt_messages,
     record_event,
     record_ollama_generation,
     utc_now,
@@ -40,6 +42,8 @@ __all__ = [
  "get_client",
  "flush",
  "derive_metrics",
+ "prompt_observation_metadata",
+ "redact_prompt_messages",
  "record_event",
  "record_ollama_generation",
  "utc_now",

@@ -17,7 +17,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from backend.app.paper_discovery.domain.paper_download_security import (
+from backend.app.core.url_security import (
     DEFAULT_MAX_REDIRECTS,
     DNSResolver,
     URLSecurityError,

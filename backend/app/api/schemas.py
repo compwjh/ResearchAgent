@@ -11,6 +11,81 @@ class ChatRequest(BaseModel):
     model: str = MODEL_NAME
 
 
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    instructions: Optional[str] = Field(default=None, max_length=5000)
+
+
+class ProjectPatchRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    instructions: Optional[str] = Field(default=None, max_length=5000)
+    status: Optional[Literal["active", "archived", "deleted"]] = None
+
+
+class ConversationMessageRequest(BaseModel):
+    # ``question`` is accepted as a compatibility spelling for the existing
+    # chat payload; the new contract uses ``content``.
+    content: Optional[str] = Field(default=None, max_length=20000)
+    question: Optional[str] = Field(default=None, max_length=20000)
+    message: Optional[str] = Field(default=None, max_length=20000)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    model: str = MODEL_NAME
+    mode: Literal["normal", "developer"] = "normal"
+
+
+class ConversationPatchRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=200)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    status: Optional[Literal["active", "archived", "deleted"]] = None
+    memory_history_policy: Optional[Literal["from_binding", "include_prior_history"]] = None
+    confirm_move: bool = False
+
+
+class MemoryCreateRequest(BaseModel):
+    """A user-authorized memory write; owner identity is server controlled."""
+
+    scope: Literal["global", "project"] = "global"
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    category: Literal["user_preference", "stable_fact", "project_rule", "capability_method"] = "user_preference"
+    statement: str = Field(min_length=1, max_length=1000)
+    source_kind: Literal["explicit", "repeated", "verified_failure", "manual"] = "manual"
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    status: Literal["candidate", "active"] = "active"
+
+
+class MemoryPatchRequest(BaseModel):
+    """Content edits create a superseding version; status changes govern it."""
+
+    statement: Optional[str] = Field(default=None, min_length=1, max_length=1000)
+    category: Optional[Literal["user_preference", "stable_fact", "project_rule", "capability_method"]] = None
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    status: Optional[Literal["candidate", "active", "disabled", "deleted"]] = None
+
+
+class MemoryAnalysisDecisionRequest(BaseModel):
+    decision: Literal["save_project", "save_global", "ignore"]
+    project_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class MemoryAnalysisBatchDecisionRequest(BaseModel):
+    # ``save_suggested``/``ignore_all`` are the UI-level actions; the explicit
+    # save_project/save_global spellings remain useful to API clients.
+    decision: Literal["save_suggested", "save_all", "ignore_all", "ignore", "save_project", "save_global"] = "save_suggested"
+    item_ids: Optional[List[str]] = Field(default=None, max_length=1000)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class SystemRulePutRequest(BaseModel):
+    # Deliberately no Pydantic max_length: the API contract maps 12,001
+    # Unicode code points to a stable 400 from the repository validator.
+    content: str = ""
+    enabled: bool = False
+
+
+class SystemRulePatchRequest(BaseModel):
+    enabled: bool
+
+
 class KBAskRequest(BaseModel):
     """知识库问答请求（spec-011 / spec-012）。
 
@@ -22,6 +97,9 @@ class KBAskRequest(BaseModel):
     model: str = MODEL_NAME
     top_k: int = 5
     chunker: Literal["v1", "v2"] = "v1"
+    # Optional owner-scoped project context; legacy callers omit it and keep
+    # the historical shared knowledge-base behavior.
+    project_id: Optional[str] = Field(default=None, max_length=100)
 
 
 class KBReindexRequest(BaseModel):

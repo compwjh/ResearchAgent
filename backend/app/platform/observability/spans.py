@@ -169,13 +169,16 @@ def record_ollama_generation(
 
     metrics = derive_metrics(result)
     # input_chars 必须是**截断前**的原始长度：先格式化、量长度，再交给 _truncate 截断。
-    formatted_input = _format_messages(prompt_messages)
+    # Even callers that still pass the historical full list are sanitized at
+    # this seam; observability must never persist user/system prompt text.
+    formatted_input = _format_messages(redact_prompt_messages(prompt_messages))
+    input_chars = sum(len(str(message.get("content", "") or "")) for message in prompt_messages)
     metadata = _build_metadata(
         result,
         metrics,
         model=model,
         route=route,
-        input_chars=len(formatted_input),
+        input_chars=input_chars,
         extra=extra_metadata,
     )
     # 统一为 generation 提供稳定的链路类型；显式非空值优先，空值回退到名称推断。
@@ -232,6 +235,24 @@ def _format_messages(messages: Sequence[Dict[str, str]]) -> str:
         content = message.get("content", "") or ""
         parts.append(f"[{index}] {role}（{len(content)} 字符）:\n{content}")
     return "\n\n".join(parts)
+
+
+def redact_prompt_messages(messages: Sequence[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Return role-preserving observation input with all prompt text removed."""
+    return [{"role": str(message.get("role", "unknown")), "content": ""} for message in messages]
+
+
+def prompt_observation_metadata(messages: Sequence[Dict[str, str]], *, system_rule_enabled: Optional[bool] = None) -> Dict[str, Any]:
+    roles = [str(message.get("role", "unknown")) for message in messages]
+    chars = [len(str(message.get("content", "") or "")) for message in messages]
+    metadata: Dict[str, Any] = {
+        "role_count": len(roles),
+        "role_names": roles,
+        "char_counts": chars,
+    }
+    if system_rule_enabled is not None:
+        metadata["system_rule_enabled"] = bool(system_rule_enabled)
+    return metadata
 
 
 def record_event(

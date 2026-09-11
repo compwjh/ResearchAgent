@@ -24,7 +24,7 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SourceFetchUnit,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
-from backend.app.paper_discovery.domain.paper_download_security import URLSecurityError, validate_url
+from backend.app.core.url_security import URLSecurityError, validate_url
 from backend.app.paper_discovery.infrastructure.arxiv_adapter import ArxivFallbackAdapter
 from backend.app.paper_discovery.infrastructure.paper_download import (
     INVALID_PDF,

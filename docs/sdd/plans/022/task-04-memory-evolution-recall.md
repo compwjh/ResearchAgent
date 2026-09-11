@@ -1,7 +1,7 @@
 # Task 04：异步整理、摘要与跨会话召回
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；被依赖：Task05、Task07；当前状态：`待执行`
+> 依赖：Task03；被依赖：Task05、Task07；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -48,9 +48,16 @@
 
 ## 执行结果
 
-待执行后填写。
+已完成。既有 memory SQLite 扩展到 v3，提供追加式 Raw event、会话摘要、候选记忆与 evolution checkpoint；本地 worker 支持 Map/Reduce、幂等、session 互斥、stale lease 接管和重启恢复。自动候选保持 candidate，只有带 evidence 才能升格，project 不自动升 global；召回按 global/project 隔离并受独立预算约束，整理/召回失败不阻塞聊天。
+
+- Task04 精确测试：34 passed；Task02/03 及旧聊天兼容：50 passed。
+- `py_compile`、`git diff --check` 均通过。
+- backend-reviewer 最终 GO；backend-tester PASS；验收报告已追加至 `docs/sdd/reviews/022-acceptance-review.md`。
+- 已知非阻塞 P2：worker 进程重启后需下一次消息入口触发 durable work 扫描，后续可在 Task05/Task07 的 worker 生命周期中优化。
+- 全量回归未执行，按计划保留至 Task08。
 
 ## 变更日志
 
 - 2026-09-11：创建记忆进化与跨会话召回 Task。
-
+- 2026-09-11：Task03 已通过最终复审与验收，启动 Task04；本任务先实现后端异步整理与跨会话召回，前端按需追加。
+- 2026-09-11：后端实现、P1 修复、复审和验收完成，状态更新为已完成；放行 Task05/Task07。

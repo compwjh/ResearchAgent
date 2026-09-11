@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Optional
 from urllib.parse import urlsplit
 
-from backend.app.paper_discovery.domain.paper_download_security import (
+from backend.app.core.url_security import (
     DEFAULT_MAX_REDIRECTS,
     URLSecurityError,
     ValidatedURL,

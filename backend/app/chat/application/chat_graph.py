@@ -9,7 +9,8 @@ def build_chat_graph(model: ChatOllama):
     def ask_model(state: ConversationState) -> ConversationState:
         writer = get_stream_writer()
         answer_parts = []
-        for chunk in model.stream(state["question"]):
+        payload = state.get("messages", [])
+        for chunk in model.stream(payload):
             content = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
             if not content:
                 continue

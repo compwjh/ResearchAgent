@@ -1,7 +1,7 @@
 # Task 03：完整管理、全局记忆与治理界面
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02；被依赖：Task04；当前状态：`待执行`
+> 依赖：Task02；被依赖：Task04；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -53,9 +53,15 @@
 
 ## 执行结果
 
-待执行后填写。
+已完成。Task02 契约上补齐了项目/会话生命周期、绑定移动确认、全局与项目记忆治理和作用域优先级。后端 schema v2 原子迁移、证据隔离、解绑 cutoff、流式降级与项目删除级联通过最终复审；前端治理界面通过 DOM/XSS/键盘可访问性复审；跨端 API smoke 与受影响测试全部通过。
+
+- 后端 Task03 定向测试：20 passed；旧聊天兼容：16 passed。
+- 前端 Task03 定向契约：35 passed；Node 合同：4/4；`node --check frontend/app.js` 通过。
+- 最终评审：backend-reviewer GO、frontend-reviewer GO、tester PASS，均无 P0/P1/P2。
+- 运行时：项目/记忆 CRUD、候选确认、版本化编辑、停用/删除/撤销、移动确认、项目级联删除、全局记忆保留和会话删除不联动均已 smoke 验证。
+- 全量回归未执行，按计划保留到 Task08。
 
 ## 变更日志
 
 - 2026-09-11：创建完整管理与全局记忆 Task。
-
+- 2026-09-11：后端/前端实现、定向测试、三道评审与 API smoke 完成，状态更新为已完成；放行 Task04。

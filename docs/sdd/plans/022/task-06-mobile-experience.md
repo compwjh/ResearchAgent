@@ -1,7 +1,7 @@
 # Task 06：手机端适配
 
 > 关联：[Spec 022](../../specs/022-project-conversation-memory.md) ｜ 索引：[README](./README.md)
-> 依赖：Task05；被依赖：Task08；当前状态：`待执行`
+> 依赖：Task05、Task09、Task10；被依赖：Task08；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -24,6 +24,7 @@
 
 - 不做原生 App、离线 PWA、推送通知、云同步或多人协作。
 - 不复制桌面 DOM 为第二套业务页面；使用同一数据和交互状态。
+- 必须复用 Task09/Task10 已确认的项目树状态、系统规则数据和弹窗契约，不在手机端建立第二套项目/会话归属或规则存储逻辑。
 
 ## 测试与验收
 
@@ -46,9 +47,10 @@
 
 ## 执行结果
 
-待执行后填写。
+已完成：前端实现、修复轮、reviewer GO、49 项定向合同验收和主 Agent 390×844 Chromium DOM smoke 均通过；Task08 继续负责全量回归与最终运行时交互。
 
 ## 变更日志
 
 - 2026-09-11：手机端保留在 Spec022 内，但明确不进入 Task02 MVP。
-
+- 2026-09-11：Task10 已完成并提交，满足手机端依赖；按既定范围启动 Task06，仅分派 frontend-dev，不新增后端接口。
+- 2026-09-11：Task06 手机端前端适配完成；reviewer GO、tester 定向验收 PASS（49 passed、5 个 Node 合同），主 Agent 390×844 Chromium DOM smoke 通过，Task06 收口。

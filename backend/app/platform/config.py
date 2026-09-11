@@ -10,6 +10,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parents[3]
 FRONTEND_DIR = BASE_DIR / "frontend"
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen3.8:27b")
+# Independent, low-cost semantic classifier used by the durable post-answer
+# memory analysis worker.  It is configuration, not a business-logic literal.
+MEMORY_ANALYSIS_MODEL = os.getenv("MEMORY_ANALYSIS_MODEL", "qwen3.5:9b").strip() or "qwen3.5:9b"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 
