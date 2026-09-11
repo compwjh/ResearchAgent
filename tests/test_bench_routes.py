@@ -41,10 +41,10 @@ def _fake_run(route, *, result=None, explode=False):
 
 
 def _result(route, **overrides):
-    payload = dict(
-        content="答案",
-        thinking="",
-        timings=OllamaTimings(
+    payload = {
+        "content": "答案",
+        "thinking": "",
+        "timings": OllamaTimings(
             load_ms=7000.0,
             prompt_eval_ms=300.0,
             eval_ms=1100.0,
@@ -52,11 +52,11 @@ def _result(route, **overrides):
             prompt_tokens=15,
             completion_tokens=27,
         ),
-        timings_available=True,
-        first_token_ms=7300.0,
-        client_wall_ms=8500.0,
-        chunk_intervals_ms=(40.0, 41.0),
-    )
+        "timings_available": True,
+        "first_token_ms": 7300.0,
+        "client_wall_ms": 8500.0,
+        "chunk_intervals_ms": (40.0, 41.0),
+    }
     payload.update(overrides)
     return OllamaChatResult(**payload)
 

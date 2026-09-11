@@ -19,7 +19,8 @@ DEFAULT_BASE_URL = "http://127.0.0.1:11435"
 DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT, MIN_NEGATIVE_TTL = 2.0, 60.0, 30.0
 class RerankResult(NamedTuple, Generic[T]):
     hits: List[T]
-    used: bool; degraded: bool
+    used: bool
+    degraded: bool
     reason: Optional[RerankReason]
     elapsed_ms: float
     scores_by_original_index: Optional[Tuple[float, ...]] = None

@@ -1,11 +1,14 @@
 import sqlite3
 import time
-from datetime import datetime, timezone
 
 import pytest
 
+from backend.app.chat.application.conversation_service import (
+    MemoryEvolutionService,
+    MemoryEvolutionWorker,
+    compose_chat_prompt,
+)
 from backend.app.memory.repository import MemoryRepository
-from backend.app.chat.application.conversation_service import MemoryEvolutionService, MemoryEvolutionWorker, compose_chat_prompt
 
 
 def test_sqlite_memory_schema_is_idempotent_and_isolated(tmp_path):

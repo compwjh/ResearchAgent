@@ -135,11 +135,17 @@ class DBLPPublicationSource:
                 if response.status_code == 429 or response.status_code >= 500:
                     raise httpx.HTTPStatusError("retryable", request=response.request, response=response)
                 response.raise_for_status()
-                try: payload = response.json()
-                except ValueError: return {}, "DBLP_INVALID_RESPONSE"
+                try:
+                    payload = response.json()
+                except ValueError:
+                    return {}, "DBLP_INVALID_RESPONSE"
                 return (payload, None) if isinstance(payload, dict) else ({}, "DBLP_INVALID_RESPONSE")
-            except httpx.TimeoutException: code = "DBLP_TIMEOUT"
-            except httpx.HTTPStatusError as error: code = "DBLP_RATE_LIMITED" if error.response.status_code == 429 else "DBLP_HTTP_ERROR"
-            except (httpx.HTTPError, ValueError): code = "DBLP_NETWORK_ERROR"
-            if attempt < self.retries: self.sleep(self.backoff * (2 ** attempt))
+            except httpx.TimeoutException:
+                code = "DBLP_TIMEOUT"
+            except httpx.HTTPStatusError as error:
+                code = "DBLP_RATE_LIMITED" if error.response.status_code == 429 else "DBLP_HTTP_ERROR"
+            except (httpx.HTTPError, ValueError):
+                code = "DBLP_NETWORK_ERROR"
+            if attempt < self.retries:
+                self.sleep(self.backoff * (2 ** attempt))
         return {}, code

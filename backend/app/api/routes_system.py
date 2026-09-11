@@ -2,6 +2,7 @@
 import httpx
 from fastapi import APIRouter
 
+from backend.app.api.common import *  # noqa: F401,F403
 from backend.app.platform.config import MODEL_NAME
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
@@ -19,9 +20,6 @@ paper_browser_manager = None
 # Sessions are keyed by import item, so a resume request can never borrow a
 # different item's authenticated browser context.
 paper_browser_sessions = {}
-
-
-from backend.app.api.common import *  # noqa: F401,F403
 
 
 @router.get("/health")

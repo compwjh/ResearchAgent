@@ -22,6 +22,7 @@ LLM 由外部注入（`llm` 可调用对象，`llm(prompt) -> str`），便于�
 默认实现见 `ollama_boundary_judge`。
 """
 
+import contextlib
 import re
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
@@ -472,10 +473,8 @@ def _report(progress: Optional[Callable[[int], None]], value: int) -> None:
     """进度回调；回调自身抛错绝不能影响主流程。"""
     if progress is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         progress(max(0, min(100, int(value))))
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------

@@ -1,11 +1,12 @@
-import httpx
 from types import SimpleNamespace
 
+import httpx
+
+import backend.app.paper_discovery.infrastructure.usenix_publication_source as usenix_source_module
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
-from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource, SearchJob, SourceFetchUnit
+from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource, SearchJob
 from backend.app.paper_discovery.infrastructure.arxiv_adapter import ArxivFallbackResult, ArxivMatch
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
-import backend.app.paper_discovery.infrastructure.usenix_publication_source as usenix_source_module
 from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedSource
 
 SOURCE = ConferenceSource("usenix-security", "USENIX Security Symposium", "USENIX Security", "conf/uss", ["USENIX Security"], built_in=True)
@@ -196,9 +197,9 @@ SEC25_CYCLE1 = "https://www.usenix.org/conference/usenixsecurity25/cycle1-accept
 
 
 def _source(handler, **kwargs):
-    base = dict(client=httpx.Client(transport=httpx.MockTransport(handler)),
-                dns_resolver=lambda _host: [PUBLIC], pdf_page_validator=lambda _path: 1,
-                sleep=lambda _v: None)
+    base = {"client": httpx.Client(transport=httpx.MockTransport(handler)),
+                "dns_resolver": lambda _host: [PUBLIC], "pdf_page_validator": lambda _path: 1,
+                "sleep": lambda _v: None}
     base.update(kwargs)
     return UsenixAcceptedSource(**base)
 

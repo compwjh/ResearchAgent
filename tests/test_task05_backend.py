@@ -15,13 +15,12 @@ from backend.app.knowledge_base.application import (
     filter_hits_for_project,
     set_document_project,
 )
-from backend.app.knowledge_base.infrastructure.retrieve import Hit
+from backend.app.knowledge_base.infrastructure import retrieve as retrieve_module
 from backend.app.knowledge_base.infrastructure.index import point_id
 from backend.app.knowledge_base.infrastructure.migration import patch_knowledge_document
 from backend.app.knowledge_base.infrastructure.prompts import citation_payloads
-from backend.app.knowledge_base.infrastructure import retrieve as retrieve_module
+from backend.app.knowledge_base.infrastructure.retrieve import Hit
 from backend.app.main import app
-from backend.app.memory.repository import MemoryRepository
 
 
 def _events(text):

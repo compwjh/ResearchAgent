@@ -233,9 +233,8 @@ class ErrorHandlingTests(unittest.TestCase):
         with mock.patch(
             "backend.app.platform.ollama_direct.httpx.stream",
             _stream_patch(_FakeResponse([], status_code=503)),
-        ):
-            with self.assertRaises(RuntimeError):
-                chat_direct([{"role": "user", "content": "q"}], "m")
+        ), self.assertRaises(RuntimeError):
+            chat_direct([{"role": "user", "content": "q"}], "m")
 
     def test_connection_error_before_any_content_raises(self):
         import httpx
@@ -243,9 +242,8 @@ class ErrorHandlingTests(unittest.TestCase):
         def _raise(*args, **kwargs):
             raise httpx.ConnectError("refused")
 
-        with mock.patch("backend.app.platform.ollama_direct.httpx.stream", _raise):
-            with self.assertRaises(RuntimeError):
-                chat_direct([{"role": "user", "content": "q"}], "m")
+        with mock.patch("backend.app.platform.ollama_direct.httpx.stream", _raise), self.assertRaises(RuntimeError):
+            chat_direct([{"role": "user", "content": "q"}], "m")
 
     def test_broken_stream_keeps_partial_content(self):
         """流中途断开：已收到的内容仍应返回，不能被吞掉。"""
@@ -287,7 +285,7 @@ class StreamContractTests(unittest.TestCase):
             _stream_patch(_FakeResponse(events)),
         ):
             stream = chat_direct_stream([{"role": "user", "content": "hi"}], "m")
-            yielded = [event for event in stream]
+            yielded = list(stream)
 
         self.assertIsInstance(stream.result, OllamaChatResult)
         token_events = [e for e in yielded if e.get("type") == "token"]
@@ -306,7 +304,7 @@ class StreamContractTests(unittest.TestCase):
             _stream_patch(_FakeResponse(events)),
         ):
             stream = chat_direct_stream([{"role": "user", "content": "q"}], "m")
-            yielded = [event for event in stream]
+            yielded = list(stream)
 
         thinking_events = [e for e in yielded if e.get("type") == "thinking"]
         token_events = [e for e in yielded if e.get("type") == "token"]

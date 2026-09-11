@@ -4,8 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from jsonschema import Draft202012Validator
 import pytest
+from jsonschema import Draft202012Validator
 
 from backend.app.knowledge_base.infrastructure import parse as parse_module
 from backend.app.knowledge_base.infrastructure.normalize import (
@@ -95,7 +95,7 @@ def test_pdf_provenance_matches_fixed_display_fixture(sample_id: str) -> None:
     ):
         assert bundle_field not in actual
 
-    for actual_block, expected_block in zip(actual["blocks"], expected["blocks"]):
+    for actual_block, expected_block in zip(actual["blocks"], expected["blocks"], strict=False):
         for key in (
             "block_id",
             "ordinal",
@@ -113,7 +113,7 @@ def test_pdf_provenance_matches_fixed_display_fixture(sample_id: str) -> None:
             expected_block["normalized_bbox"], abs=0.005
         )
         assert len(actual_block["lines"]) == len(expected_block["lines"])
-        for actual_line, expected_line in zip(actual_block["lines"], expected_block["lines"]):
+        for actual_line, expected_line in zip(actual_block["lines"], expected_block["lines"], strict=False):
             for key in ("ordinal", "text", "start", "end", "bbox"):
                 assert actual_line[key] == expected_line[key]
             assert actual_line["normalized_bbox"] == pytest.approx(

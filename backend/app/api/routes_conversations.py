@@ -1,3 +1,4 @@
+import contextlib
 import logging
 
 import httpx
@@ -12,27 +13,34 @@ from backend.app.api.schemas import (
     MemoryAnalysisDecisionRequest,
     MemoryCreateRequest,
     MemoryPatchRequest,
-    SystemRulePatchRequest,
-    SystemRulePutRequest,
     ProjectCreateRequest,
     ProjectPatchRequest,
+    SystemRulePatchRequest,
+    SystemRulePutRequest,
 )
 from backend.app.chat.application.chat_runner import run_chat
 from backend.app.chat.application.conversation_service import (
-    get_memory_analysis_worker, get_memory_evolution_worker, compose_chat_prompt,
-    compose_chat_messages, has_explicit_global_intent, is_system_rule_intent,
+    compose_chat_messages,
+    get_memory_analysis_worker,
+    get_memory_evolution_worker,
+    has_explicit_global_intent,
+    is_system_rule_intent,
 )
 from backend.app.knowledge_base.application import (
     citation_payloads,
     clear_project_document_associations,
-    filter_hits_for_project,  # compatibility export; retrieval itself filters pre-RRF
     hybrid_search,
     list_documents_for_project,
 )
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
+from backend.app.platform.observability import (
+    prompt_observation_metadata,
+    record_ollama_generation,
+    redact_prompt_messages,
+    utc_now,
+)
 from backend.app.platform.ollama import get_available_models
-from backend.app.platform.observability import prompt_observation_metadata, redact_prompt_messages, record_ollama_generation, utc_now
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -133,9 +141,12 @@ def list_projects(cursor: str | None = None, limit: int = Query(20, ge=1, le=100
 
 @router.patch("/projects/{project_id}")
 def patch_project(project_id: str, payload: ProjectPatchRequest):
-    try: item = _repo().update_project(project_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
-    except ValueError as error: raise HTTPException(status_code=409, detail={"code": "PROJECT_EXISTS", "message": str(error), "retryable": False}) from error
-    if not item: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在", "retryable": False})
+    try:
+        item = _repo().update_project(project_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail={"code": "PROJECT_EXISTS", "message": str(error), "retryable": False}) from error
+    if not item:
+        raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在", "retryable": False})
     return _project_payload(item)
 
 
@@ -155,7 +166,7 @@ def remove_project(project_id: str):
     # project lifecycle.  Detach first; a failure fails closed and preserves
     # the project so an association cannot leak across a future project.
     try:
-        detached = clear_project_document_associations(project_id, owner_id=OWNER_ID)
+        clear_project_document_associations(project_id, owner_id=OWNER_ID)
     except Exception as error:
         raise HTTPException(status_code=503, detail={"code": "DOCUMENT_ASSOCIATION_FAILED", "message": "项目文档关联暂时无法解除", "retryable": True}) from error
     _repo().delete_project(project_id, OWNER_ID)
@@ -183,16 +194,13 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
     def generate():
         parts: list[str] = []
         finished = False
-        generation_started = False
         try:
             system_rule = repo.get_system_rule(OWNER_ID)
         except Exception:
             # A rule-enabled request cannot safely continue when its state is
             # unknown.  Persist failure before emitting any model event/token.
-            try:
+            with contextlib.suppress(Exception):
                 repo.update_message(assistant_message.message_id, OWNER_ID, status="failed")
-            except Exception:
-                pass
             yield stream_event("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode)
             yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
             yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed")
@@ -200,10 +208,8 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         try:
             # Raw events are an append-only audit/input stream for the local
             # evolution worker.  They are advisory and never block SSE.
-            try:
+            with contextlib.suppress(Exception):
                 repo.append_raw_event(OWNER_ID, conversation.conversation_id, "user_message", {"content": user_message.content}, message_id=user_message.message_id, idempotency_key=f"message:{user_message.message_id}")
-            except Exception:
-                pass
             yield stream_event("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode)
             recall_running = repo.create_processing_step(assistant_message.message_id, "memory_recall", "running", label="记忆召回")
             yield stream_event("progress", step_id=recall_running.step_id, kind=recall_running.kind, label=recall_running.label, status="running", summary=None)
@@ -263,35 +269,31 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                         )[:5]
                         rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索")
                         yield stream_event("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
-                    except Exception as error:
+                    except Exception:
                         rag_hits = []
                         rag_failed = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "failed", "知识库检索失败，已跳过", label="知识库检索")
                         yield stream_event("progress", step_id=rag_failed.step_id, kind=rag_failed.kind, label=rag_failed.label, status="failed", summary=rag_failed.summary)
             history = [message for message in repo.list_context_messages(conversation.conversation_id, OWNER_ID) if message.message_id != user_message.message_id]
             if sum(len(message.content or "") for message in history) > 12000:
-                try:
+                with contextlib.suppress(Exception):
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
-                except Exception:
-                    pass
             messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None)
             repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
-            generation_started = True
             generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
             yield stream_event("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
             run = run_chat(user_message.content, model, messages=messages)
             for event in run.events:
                 if event.get("type") in {"error", "tool_error"}:
-                    try:
+                    with contextlib.suppress(Exception):
                         repo.append_raw_event(OWNER_ID, conversation.conversation_id, "tool_failure", {"error": _redact_sensitive(event.get("message") or event.get("content") or "工具失败"), "verified": False}, message_id=user_message.message_id, idempotency_key=f"tool-failure:{user_message.message_id}")
-                    except Exception:
-                        pass
                 if event.get("type") == "token":
-                    token = event.get("content", ""); parts.append(token)
+                    token = event.get("content", "")
+                    parts.append(token)
                     repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming")
                     yield stream_event("token", content=token)
             content = "".join(parts)
             repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
-            try:
+            with contextlib.suppress(Exception):
                 record_ollama_generation(
                     model=model,
                     prompt_messages=redact_prompt_messages(messages),
@@ -301,8 +303,6 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     tags=["conversation"],
                     extra_metadata=prompt_observation_metadata(messages, system_rule_enabled=bool(system_rule.enabled and system_rule.content)),
                 )
-            except Exception:
-                pass
             generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成", label="回答生成")
             yield stream_event("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
             if rag_hits:
@@ -355,11 +355,15 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
     repo = _repo()
     if conversation_id:
         conversation = repo.get_conversation(conversation_id, OWNER_ID)
-        if not conversation: raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+        if not conversation:
+            raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
     else:
-        try: conversation, user, assistant = repo.create_conversation_messages(OWNER_ID, content, payload.project_id, payload.model, payload.mode)
-        except LookupError as error: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
-        except ValueError as error: raise HTTPException(status_code=409, detail={"code": "PROJECT_NOT_ACTIVE", "message": str(error), "retryable": False}) from error
+        try:
+            conversation, user, assistant = repo.create_conversation_messages(OWNER_ID, content, payload.project_id, payload.model, payload.mode)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail={"code": "PROJECT_NOT_ACTIVE", "message": str(error), "retryable": False}) from error
     if conversation_id:
         user = repo.create_message(conversation.conversation_id, OWNER_ID, "user", content, status="completed", model=payload.model, mode=payload.mode)
         assistant = repo.create_message(conversation.conversation_id, OWNER_ID, "assistant", "", status="pending", model=payload.model, mode=payload.mode, parent_message_id=user.message_id)
@@ -404,8 +408,10 @@ def get_conversation(conversation_id: str):
 
 @router.get("/conversations")
 def list_conversations(project_id: str | None = None, cursor: str | None = None, limit: int = Query(20, ge=1, le=100), status: str | None = None, unbound_only: bool = False):
-    try: items, next_cursor = _repo().list_conversations(OWNER_ID, project_id, cursor, limit, status=status, unbound_only=unbound_only)
-    except LookupError as error: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    try:
+        items, next_cursor = _repo().list_conversations(OWNER_ID, project_id, cursor, limit, status=status, unbound_only=unbound_only)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
     except ValueError as error:
         code = "INVALID_CONVERSATION_FILTER" if str(error) in {"invalid conversation status", "unbound_only cannot be combined with project_id"} else "INVALID_CURSOR"
         raise HTTPException(status_code=400, detail={"code": code, "message": str(error), "retryable": False}) from error
@@ -414,18 +420,25 @@ def list_conversations(project_id: str | None = None, cursor: str | None = None,
 
 @router.get("/conversations/{conversation_id}/messages")
 def get_messages(conversation_id: str, before: str | None = None, target_chars: int = Query(4000, ge=1, le=100000)):
-    try: items, next_cursor = _repo().list_messages(conversation_id, OWNER_ID, before=before, target_chars=target_chars)
-    except LookupError as error: raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": str(error), "retryable": False}) from error
-    except ValueError as error: raise HTTPException(status_code=400, detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False}) from error
+    try:
+        items, next_cursor = _repo().list_messages(conversation_id, OWNER_ID, before=before, target_chars=target_chars)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False}) from error
     return {"messages": [_message_payload(item) for item in items], "next_cursor": next_cursor}
 
 
 @router.patch("/conversations/{conversation_id}")
 def patch_conversation(conversation_id: str, payload: ConversationPatchRequest):
-    try: item = _repo().update_conversation(conversation_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
-    except LookupError as error: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
-    except ValueError as error: raise HTTPException(status_code=409, detail={"code": "CONVERSATION_CONFLICT", "message": str(error), "retryable": False}) from error
-    if not item: raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+    try:
+        item = _repo().update_conversation(conversation_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail={"code": "CONVERSATION_CONFLICT", "message": str(error), "retryable": False}) from error
+    if not item:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
     return _conversation_payload(item)
 
 
@@ -442,13 +455,15 @@ def restore_conversation(conversation_id: str):
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
 def remove_conversation(conversation_id: str):
-    if not _repo().delete_conversation(conversation_id, OWNER_ID): raise HTTPException(status_code=404, detail="会话不存在")
+    if not _repo().delete_conversation(conversation_id, OWNER_ID):
+        raise HTTPException(status_code=404, detail="会话不存在")
 
 
 @router.get("/messages/{message_id}/processing-steps")
 def get_processing_steps(message_id: str):
     steps = _repo().list_processing_steps(message_id, OWNER_ID)
-    if not steps and not _repo().get_message(message_id, OWNER_ID): raise HTTPException(status_code=404, detail="消息不存在")
+    if not steps and not _repo().get_message(message_id, OWNER_ID):
+        raise HTTPException(status_code=404, detail="消息不存在")
     return {"steps": [{"step_id": s.step_id, "message_id": s.message_id, "kind": s.kind, "label": s.label, "status": s.status, "summary": s.summary, "started_at": s.started_at.isoformat(), "completed_at": s.completed_at.isoformat() if s.completed_at else None} for s in steps]}
 
 

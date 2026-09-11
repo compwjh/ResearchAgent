@@ -31,12 +31,12 @@ if str(PROJECT_ROOT) not in sys.path:
 import httpx  # noqa: E402
 
 from backend.app.chat.application.chat_runner import run_chat  # noqa: E402
+from backend.app.knowledge_base.application import CHUNKER_V1, build_prompt, hybrid_search  # noqa: E402
 from backend.app.platform.config import (  # noqa: E402
     LANGFUSE_ENABLED,
     MODEL_NAME,
     OLLAMA_BASE_URL,
 )
-from backend.app.knowledge_base.application import CHUNKER_V1, build_prompt, hybrid_search  # noqa: E402
 from backend.app.platform.observability import (  # noqa: E402
     derive_metrics,
     end_trace,
@@ -162,7 +162,7 @@ def _run_kb_once(
     think: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """跑一次知识库问答（真实检索 + 生成），同一 trace 下记录各阶段。"""
-    started = utc_now()
+    utc_now()
     start_trace("kb-ask", tags=[TAG_KB, TAG_SAMPLE])
     try:
         hits = hybrid_search(question, top_k=top_k, chunker=chunker)

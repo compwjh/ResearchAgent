@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
 from backend.app.api.routes_conversations import _message_stream
 from backend.app.chat.application.conversation_service import MemoryEvolutionService, MemoryIntent
+from backend.app.main import app
 from backend.app.memory.repository import MemoryRepository
 
 
@@ -191,6 +191,9 @@ def test_chat_wires_durable_worker_and_worker_failure_does_not_block_sse(tmp_pat
         project_id = client.post("/api/projects", json={"name": "P"}).json()["project_id"]
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
+        ), patch(
+            "backend.app.chat.application.conversation_service.classify_memory_intent",
+            return_value=MemoryIntent("explicit", "回答简洁", "project", .95),
         ):
             response = client.post("/api/conversations/messages", json={"content": "纠正：回答简洁", "project_id": project_id, "model": "model"})
         assert response.status_code == 200 and _events(response.text)[-1]["type"] == "done"
@@ -206,7 +209,17 @@ def test_chat_wires_durable_worker_and_worker_failure_does_not_block_sse(tmp_pat
             time.sleep(0.01)
         assert checkpoint and checkpoint.status == "completed"
         assert repo.list_conversation_summaries(conversation_id, "local-user")
-        analysis = repo.get_memory_analysis_job(events[0]["user_message_id"], "local-user")
+        # The memory-analysis job is processed by an independent background worker
+        # (MemoryAnalysisWorker); its completion is not synchronized with the
+        # evolution checkpoint. Poll briefly for the worker to reach a terminal
+        # state instead of reading it once and racing the real classifier.
+        analysis = None
+        analysis_deadline = time.monotonic() + 5
+        while time.monotonic() < analysis_deadline:
+            analysis = repo.get_memory_analysis_job(events[0]["user_message_id"], "local-user")
+            if analysis and analysis.status in {"completed", "partial", "failed"}:
+                break
+            time.sleep(0.01)
         assert analysis and analysis.status in {"completed", "partial", "failed"}
 
         with patch("backend.app.api.routes_conversations.run_chat", return_value=FakeRun()), patch.object(

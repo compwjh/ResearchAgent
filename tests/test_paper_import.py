@@ -1,6 +1,6 @@
 import json
-from contextlib import contextmanager
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
@@ -10,9 +10,9 @@ import pytest
 import backend.app.knowledge_base.application as application_module
 from backend.app.knowledge_base import application as kb_application
 from backend.app.knowledge_base.application import create_paper_import_port
-from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
 from backend.app.knowledge_base.infrastructure import store as store_module
 from backend.app.knowledge_base.infrastructure import tasks as tasks_module
+from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
 from backend.app.knowledge_base.infrastructure.store import (
     CHUNKER_V1,
     CHUNKER_V2,
@@ -40,6 +40,8 @@ from backend.app.paper_discovery.infrastructure.paper_download import DownloadRe
 from backend.app.platform.ports import (
     ImportIndexStatus,
     PaperImportRequest,
+)
+from backend.app.platform.ports import (
     PaperImportResult as PortImportResult,
 )
 from backend.app.platform.settings.settings_repository import ArticleSettings

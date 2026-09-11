@@ -9,11 +9,11 @@
   等结构行，提升召回文本可读性；`extract_pages` 保留原始行为不变（供单测/排查）。
 """
 
+import math
+import re
 from dataclasses import dataclass
 from hashlib import sha256
-import math
 from pathlib import Path
-import re
 from typing import ClassVar, Dict, List, Optional, Tuple
 
 from backend.app.knowledge_base.infrastructure.chunkers import (

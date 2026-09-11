@@ -24,7 +24,8 @@ def test_filter_rejects_mixed_stream_records_and_deduplicates_identities():
 def test_adapter_retries_and_returns_structured_failure_with_explicit_user_agent():
     seen, calls = [], [0]
     def handler(request):
-        seen.append(request); calls[0] += 1
+        seen.append(request)
+        calls[0] += 1
         return httpx.Response(429 if calls[0] == 1 else 200, json={"result": {"hits": {"hit": [_item()]}}})
     result = DBLPPublicationSource(retries=1, backoff=0, transport=httpx.MockTransport(handler), sleep=lambda _: None).search(SOURCE, "secure search", [2024])
     assert [row["title"] for row in result.records] == ["Main"]

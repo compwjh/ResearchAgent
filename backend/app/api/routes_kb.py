@@ -13,8 +13,6 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from backend.app.api.common import *  # noqa: F401,F403
 from backend.app.api.schemas import KBAskRequest
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
-from backend.app.platform.bootstrap import get_provider
-from backend.app.memory.repository import OWNER_ID
 from backend.app.knowledge_base.application import (
     CHUNKER_V1,
     CHUNKER_V2,
@@ -24,23 +22,23 @@ from backend.app.knowledge_base.application import (
     KnowledgeDocumentMigrationError,
     ManifestStoreError,
     citation_payloads,
-    clear_project_document_associations,
     count_points,
     create_uploaded_document,
+    decorate_document_projects,
     delete_document,
     embed_texts,
     get_client,
     hybrid_search,
+    list_documents_for_project,
     load_papers,
     load_papers_strict,
-    filter_hits_for_project,
-    decorate_document_projects,
-    set_document_project,
-    list_documents_for_project,
     read_document_source,
     reranker_health,
+    set_document_project,
     submit_document_reindex,
 )
+from backend.app.memory.repository import OWNER_ID
+from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import (
     CHUNK_V2_LLM_MODEL,
     KB_DIR,
@@ -51,7 +49,15 @@ from backend.app.platform.config import (
 # Kept as a module-level read-only configuration alias for offline/legacy
 # fixtures that patch the historical source directory.  Canonical document
 # routes below continue to resolve paths through the knowledge-base boundary.
-from backend.app.platform.observability import end_trace, flush, prompt_observation_metadata, redact_prompt_messages, record_ollama_generation, start_trace, utc_now
+from backend.app.platform.observability import (
+    end_trace,
+    flush,
+    prompt_observation_metadata,
+    record_ollama_generation,
+    redact_prompt_messages,
+    start_trace,
+    utc_now,
+)
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
