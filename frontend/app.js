@@ -363,8 +363,8 @@ async function conversationFetch(url, options = {}) {
  * （终止即停，最多 ~12s），仅用于把「压缩中」中态收口。
  */
 const contextMeter = document.getElementById('context-meter');
-const contextProgress = document.getElementById('context-progress');
-const contextProgressFill = document.getElementById('context-progress-fill');
+const contextRing = document.getElementById('context-ring');
+const contextRingFill = document.getElementById('context-ring-fill');
 const contextMeterText = document.getElementById('context-meter-text');
 const contextCompactButton = document.getElementById('context-compact-button');
 const contextStatus = document.getElementById('context-status');
@@ -377,15 +377,19 @@ function setContextStatus(text) {
   contextStatus.hidden = !value;
 }
 
+// r=15 的圆周长 2πr ≈ 94.25，与 CSS 的 stroke-dasharray 保持一致。
+const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * 15;
+
 function renderContextUsage(usage) {
-  if (!contextMeter || !contextProgress || !contextProgressFill || !contextMeterText) return;
+  if (!contextMeter || !contextRing || !contextRingFill || !contextMeterText) return;
   if (!usage) { contextMeter.hidden = true; return; }
   const ratio = Number(usage.ratio);
   const safe = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
   const percent = Math.round(safe * 100);
   contextMeter.hidden = false;
-  contextProgressFill.style.width = `${percent}%`;
-  contextProgress.setAttribute('aria-valuenow', String(percent));
+  contextRingFill.style.strokeDasharray = `${CONTEXT_RING_CIRCUMFERENCE.toFixed(2)}`;
+  contextRingFill.style.strokeDashoffset = `${(CONTEXT_RING_CIRCUMFERENCE * (1 - safe)).toFixed(2)}`;
+  contextRing.setAttribute('aria-valuenow', String(percent));
   contextMeterText.textContent = `上下文 ${percent}%`;
   const status = usage.compaction_status;
   if (status === 'queued' || status === 'running') setContextStatus('压缩中…');

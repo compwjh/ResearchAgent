@@ -29,8 +29,10 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .composer { flex-wrap: wrap; }
 .composer-context { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; }
 .composer-context[hidden] { display: none; }
-.context-progress { flex: 1 1 auto; min-width: 60px; height: 4px; border-radius: 999px; background: #ececf3; overflow: hidden; }
-.context-progress-fill { width: 0; height: 100%; background: var(--accent); transition: width .25s ease; }
+.context-ring { flex: 0 0 auto; width: 30px; height: 30px; }
+.context-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.context-ring-track { fill: none; stroke: #ececf3; stroke-width: 3.5; }
+.context-ring-fill { fill: none; stroke: var(--accent); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 94.25; stroke-dashoffset: 94.25; transition: stroke-dashoffset .25s ease; }
 .context-meter-text { color: #b0b1b8; font: 10px 'DM Mono', monospace; white-space: nowrap; }
 .context-compact-button { border-radius: 6px; padding: 5px 9px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; }
 .context-compact-button:hover { background: #dedaff; }

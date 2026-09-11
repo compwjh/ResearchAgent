@@ -16,8 +16,8 @@ STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 def test_context_meter_dom_ids_exist() -> None:
     for element_id in {
         "context-meter",
-        "context-progress",
-        "context-progress-fill",
+        "context-ring",
+        "context-ring-fill",
         "context-meter-text",
         "context-compact-button",
         "context-status",
@@ -28,8 +28,9 @@ def test_context_meter_dom_ids_exist() -> None:
 def test_context_meter_classes_are_styled() -> None:
     for class_name in {
         "composer-context",
-        "context-progress",
-        "context-progress-fill",
+        "context-ring",
+        "context-ring-track",
+        "context-ring-fill",
         "context-meter-text",
         "context-compact-button",
         "context-status",
@@ -38,8 +39,31 @@ def test_context_meter_classes_are_styled() -> None:
 
 
 def test_asset_version_bumped_for_spec025() -> None:
-    assert "/assets/app.js?v=34" in INDEX
-    assert "/assets/styles.css?v=34" in INDEX
+    assert "/assets/app.js?v=35" in INDEX
+    assert "/assets/styles.css?v=35" in INDEX
+
+
+def test_ring_is_svg_circle_not_bar() -> None:
+    start = INDEX.index('id="context-ring"')
+    end = INDEX.index("</div>", start)
+    block = INDEX[start:end]
+    assert "<svg" in block
+    assert "context-ring-track" in block
+    assert "context-ring-fill" in block
+    assert 'aria-hidden="true"' in block
+    # 旧的进度条实现不得残留
+    assert "context-progress" not in INDEX
+    assert "context-progress-fill" not in INDEX
+
+
+def test_ring_dash_offset_driven_by_ratio() -> None:
+    start = APP.index("function renderContextUsage")
+    end = APP.index("async function loadContextUsage", start)
+    block = APP[start:end]
+    assert "CONTEXT_RING_CIRCUMFERENCE" in block
+    assert "strokeDashoffset" in block
+    assert "Math.min(1, Math.max(0, ratio))" in block
+    assert "aria-valuenow" in block
 
 
 def test_context_meter_inside_composer_form() -> None:
@@ -52,7 +76,7 @@ def test_context_meter_inside_composer_form() -> None:
 
 
 def test_progressbar_has_accessible_attributes() -> None:
-    start = INDEX.index('id="context-progress"')
+    start = INDEX.index('id="context-ring"')
     end = INDEX.index(">", start)
     block = INDEX[start:end]
     assert 'role="progressbar"' in block

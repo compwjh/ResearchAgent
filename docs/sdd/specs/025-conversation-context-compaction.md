@@ -328,3 +328,4 @@ CHAT_PROJECT_INSTR_CHARS: int     # 默认 5000，沿用现状
 | 2026-09-12 | 架构师（自身） | 采纳复审提示：修正 `repository.py:1607 → 1608` 三处引用；技术评审结论转为通过。 |
 | 2026-09-12 | 架构师（自身） | 用户确认后进入实施：完成 Task02（计量与预算配置）、Task03（两表 + 迁移 + 装配消费改造 + 异步 worker）、Task04（context-usage / compactions 端点 + 80% 自动触发）、Task05（前端占比条与压缩按钮，`?v=33→34`）、Task06（评审 + 全量回归 1345 passed + 部署 smoke + 复盘）。新增测试 52 项，唯一失败为 git stash 复现的存量问题。 |
 | 2026-09-12 | 架构师（自身） | 修正子代理越界改动：恢复 `build_role_aware_messages` 的 role-history 装配顺序（历史不再搬进 advisory），仅在有段时把最近原文收敛到 `CHAT_RECENT_RAW_MESSAGES` 条；修复两条测试夹具缺陷（历史顺序、`job` 未定义）。 |
+| 2026-09-12 | 架构师（自身） | 用户实测反馈：占比条过长，改为与发送按钮同尺寸量级的 SVG 圆环（`stroke-dasharray/dashoffset` 驱动），保留 `role="progressbar"` 与 `aria-valuenow`；`?v=34→35`。 |
