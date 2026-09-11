@@ -18,12 +18,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
-from backend.app.platform.config import BASE_DIR
+from backend.app.platform.config import BASE_DIR, MEMORY_ANALYSIS_MODEL
 from .models import (
     Conversation,
     ConversationSummary,
     EvolutionCheckpoint,
     MemoryEvidence,
+    MemoryAnalysisItem,
+    MemoryAnalysisJob,
     MemoryRecord,
     Message,
     ProcessingStep,
@@ -31,7 +33,7 @@ from .models import (
     RawEvent,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 EVOLUTION_LEASE_SECONDS = 300
 OWNER_ID = os.getenv("MEMORY_OWNER_ID", "local-user")
 _write_lock = threading.RLock()
@@ -41,6 +43,12 @@ MEMORY_CATEGORIES = {"user_preference", "stable_fact", "project_rule", "capabili
 MEMORY_SOURCE_KINDS = {"explicit", "repeated", "verified_failure", "manual"}
 MEMORY_STATUSES = {"candidate", "active", "superseded", "disabled", "deleted"}
 MEMORY_HISTORY_POLICIES = {"from_binding", "include_prior_history"}
+ANALYSIS_STATUSES = {"pending", "running", "completed", "partial", "failed"}
+ANALYSIS_DECISIONS = {"auto_saved", "pending_confirmation", "duplicate", "superseded", "ignored", "failed"}
+
+
+class LeaseLostError(RuntimeError):
+    """Raised when a stale analysis worker attempts a durable write."""
 
 
 def default_database_path() -> Path:
@@ -127,10 +135,22 @@ class MemoryRepository:
                 if current < 3:
                     self._migrate_v2_to_v3(connection)
                     connection.execute("INSERT INTO schema_version(version, applied_at) VALUES (?, ?)", (3, _now()))
+                    current = 3
                 elif not self._is_schema_v3(connection):
                     raise RuntimeError("incomplete memory schema v3")
-                if not self._is_schema_v3(connection):
-                    raise RuntimeError("memory schema v3 validation failed")
+                if current < 4:
+                    self._migrate_v3_to_v4(connection)
+                    connection.execute("INSERT INTO schema_version(version, applied_at) VALUES (?, ?)", (4, _now()))
+                    current = 4
+                elif not self._is_schema_v4(connection):
+                    raise RuntimeError("incomplete memory schema v4")
+                if current < 5:
+                    self._migrate_v4_to_v5(connection)
+                    connection.execute("INSERT INTO schema_version(version, applied_at) VALUES (?, ?)", (5, _now()))
+                elif not self._is_schema_v5(connection):
+                    raise RuntimeError("incomplete memory schema v5")
+                if not self._is_schema_v5(connection):
+                    raise RuntimeError("memory schema v5 validation failed")
                 connection.execute("COMMIT")
         except Exception as error:
             connection.rollback()
@@ -182,7 +202,7 @@ class MemoryRepository:
             )""",
             """CREATE TABLE IF NOT EXISTS processing_steps (
                 step_id TEXT PRIMARY KEY, message_id TEXT NOT NULL REFERENCES messages(message_id) ON DELETE CASCADE,
-                kind TEXT NOT NULL, label TEXT NOT NULL, status TEXT NOT NULL,
+                kind TEXT NOT NULL, logical_sequence INTEGER NOT NULL DEFAULT 0, label TEXT NOT NULL, status TEXT NOT NULL,
                 summary TEXT, started_at TEXT NOT NULL, completed_at TEXT
             )""",
             "CREATE INDEX IF NOT EXISTS idx_steps_message ON processing_steps(message_id, started_at)",
@@ -314,6 +334,97 @@ class MemoryRepository:
         return True
 
     @staticmethod
+    def _migrate_v3_to_v4(connection: sqlite3.Connection) -> None:
+        """Add stable processing-step identity and durable message analysis."""
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(processing_steps)").fetchall()}
+        if "logical_sequence" not in columns:
+            connection.execute("ALTER TABLE processing_steps ADD COLUMN logical_sequence INTEGER NOT NULL DEFAULT 0")
+        # Older repair-round databases may contain the two rows produced by
+        # the former running/terminal implementation.  Keep the earliest row
+        # and let the state machine update it in place.
+        connection.execute("""DELETE FROM processing_steps
+            WHERE status='running' AND EXISTS (
+                SELECT 1 FROM processing_steps terminal
+                WHERE terminal.message_id=processing_steps.message_id
+                  AND terminal.kind=processing_steps.kind
+                  AND terminal.logical_sequence=processing_steps.logical_sequence
+                  AND terminal.status!='running'
+            )""")
+        connection.execute("""DELETE FROM processing_steps
+            WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM processing_steps
+                GROUP BY message_id, kind, logical_sequence
+            )""")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_steps_message_kind_sequence ON processing_steps(message_id, kind, logical_sequence)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS memory_analysis_jobs (
+            analysis_id TEXT PRIMARY KEY,
+            user_message_id TEXT NOT NULL UNIQUE REFERENCES messages(message_id) ON DELETE CASCADE,
+            owner_id TEXT NOT NULL,
+            project_id_snapshot TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            model TEXT,
+            cursor TEXT,
+            batch_no INTEGER NOT NULL DEFAULT 0,
+            saved_count INTEGER NOT NULL DEFAULT 0,
+            pending_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            lease_token TEXT,
+            lease_version INTEGER NOT NULL DEFAULT 0
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_analysis_jobs_work ON memory_analysis_jobs(owner_id, status, updated_at)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS memory_analysis_items (
+            item_id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL REFERENCES memory_analysis_jobs(analysis_id) ON DELETE CASCADE,
+            statement TEXT NOT NULL,
+            suggested_scope TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            rationale_summary TEXT,
+            decision_status TEXT NOT NULL,
+            memory_id TEXT REFERENCES memories(memory_id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            decided_at TEXT,
+            UNIQUE(analysis_id, statement)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_analysis_items_page ON memory_analysis_items(analysis_id, created_at, item_id)")
+
+    @staticmethod
+    def _is_schema_v4(connection: sqlite3.Connection) -> bool:
+        step_columns = {row["name"] for row in connection.execute("PRAGMA table_info(processing_steps)").fetchall()}
+        if "logical_sequence" not in step_columns:
+            return False
+        tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"memory_analysis_jobs", "memory_analysis_items"} <= tables:
+            return False
+        for table, required in {
+            "memory_analysis_jobs": {"analysis_id", "user_message_id", "owner_id", "project_id_snapshot", "status", "model", "cursor", "batch_no", "saved_count", "pending_count", "failed_count", "error_code", "created_at", "updated_at", "completed_at"},
+            "memory_analysis_items": {"item_id", "analysis_id", "statement", "suggested_scope", "confidence", "rationale_summary", "decision_status", "memory_id", "created_at", "decided_at"},
+        }.items():
+            if not required <= {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}: return False
+        indexes = {row["name"] for row in connection.execute("PRAGMA index_list(processing_steps)") if row["unique"]}
+        if "uq_steps_message_kind_sequence" not in indexes:
+            return False
+        return True
+
+    @staticmethod
+    def _migrate_v4_to_v5(connection: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(memory_analysis_jobs)").fetchall()}
+        if "lease_token" not in columns:
+            connection.execute("ALTER TABLE memory_analysis_jobs ADD COLUMN lease_token TEXT")
+        if "lease_version" not in columns:
+            connection.execute("ALTER TABLE memory_analysis_jobs ADD COLUMN lease_version INTEGER NOT NULL DEFAULT 0")
+
+    @staticmethod
+    def _is_schema_v5(connection: sqlite3.Connection) -> bool:
+        if not MemoryRepository._is_schema_v4(connection):
+            return False
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(memory_analysis_jobs)").fetchall()}
+        return {"lease_token", "lease_version"} <= columns
+
+    @staticmethod
     def _project(row: sqlite3.Row) -> Project:
         return Project(row["project_id"], row["owner_id"], row["name"], row["instructions"], row["status"], _dt(row["created_at"]), _dt(row["updated_at"]))
 
@@ -328,6 +439,27 @@ class MemoryRepository:
     @staticmethod
     def _memory(row: sqlite3.Row) -> MemoryRecord:
         return MemoryRecord(row["memory_id"], row["owner_id"], row["scope"], row["project_id"], row["category"], row["statement"], row["source_kind"], row["status"], float(row["confidence"]), row["supersedes_id"], _dt(row["created_at"]), _dt(row["updated_at"]), _dt(row["last_used_at"]))
+
+    @staticmethod
+    def _analysis_job(row: sqlite3.Row) -> MemoryAnalysisJob:
+        return MemoryAnalysisJob(
+            row["analysis_id"], row["user_message_id"], row["owner_id"],
+            row["project_id_snapshot"], row["status"], row["model"],
+            row["cursor"], int(row["batch_no"]), int(row["saved_count"]),
+            int(row["pending_count"]), int(row["failed_count"]),
+            row["error_code"], _dt(row["created_at"]), _dt(row["updated_at"]),
+            _dt(row["completed_at"]),
+            row["lease_token"], int(row["lease_version"]),
+        )
+
+    @staticmethod
+    def _analysis_item(row: sqlite3.Row) -> MemoryAnalysisItem:
+        return MemoryAnalysisItem(
+            row["item_id"], row["analysis_id"], row["statement"],
+            row["suggested_scope"], float(row["confidence"]),
+            row["rationale_summary"], row["decision_status"], row["memory_id"],
+            _dt(row["created_at"]), _dt(row["decided_at"]),
+        )
 
     def create_project(self, owner_id: str, name: str, instructions: Optional[str] = None) -> Project:
         name = name.strip()
@@ -909,15 +1041,241 @@ class MemoryRepository:
             rows = db.execute("SELECT e.* FROM memory_evidence e JOIN memories m ON m.memory_id=e.memory_id WHERE e.memory_id=? AND m.owner_id=?", (memory_id, owner_id)).fetchall()
         return [MemoryEvidence(row["memory_id"], row["conversation_id"], row["message_id"], row["evidence_type"], row["excerpt"]) for row in rows]
 
-    def create_processing_step(self, message_id: str, kind: str, status: str, summary: Optional[str] = None, *, label: Optional[str] = None) -> ProcessingStep:
-        now, step_id = _now(), uuid.uuid4().hex; label = label or kind
-        with self.transaction() as db: db.execute("INSERT INTO processing_steps VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (step_id, message_id, kind, label, status, summary, now, now if status != "running" else None))
-        with self.connection() as db: row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (step_id,)).fetchone()
+    # ---------- durable post-answer memory analysis ----------
+    def create_memory_analysis_job(self, user_message_id: str, owner_id: str, *, model: Optional[str] = None) -> MemoryAnalysisJob:
+        model = model or MEMORY_ANALYSIS_MODEL
+        with self.transaction() as db:
+            row = db.execute("""SELECT m.role, m.conversation_id, m.owner_id, c.project_id
+                FROM messages m JOIN conversations c ON c.conversation_id=m.conversation_id
+                WHERE m.message_id=?""", (user_message_id,)).fetchone()
+            if not row or row["owner_id"] != owner_id or row["role"] != "user":
+                raise LookupError("user message not found")
+            existing = db.execute("SELECT * FROM memory_analysis_jobs WHERE user_message_id=? AND owner_id=?", (user_message_id, owner_id)).fetchone()
+            if existing:
+                return self._analysis_job(existing)
+            now, analysis_id = _now(), uuid.uuid4().hex
+            db.execute("""INSERT INTO memory_analysis_jobs(
+                analysis_id, user_message_id, owner_id, project_id_snapshot, status,
+                model, cursor, batch_no, saved_count, pending_count, failed_count,
+                error_code, created_at, updated_at, completed_at
+            ) VALUES (?, ?, ?, ?, 'pending', ?, NULL, 0, 0, 0, 0, NULL, ?, ?, NULL)""", (analysis_id, user_message_id, owner_id, row["project_id"], model, now, now))
+            row = db.execute("SELECT * FROM memory_analysis_jobs WHERE analysis_id=?", (analysis_id,)).fetchone()
+        return self._analysis_job(row)
+
+    def get_memory_analysis_job(self, user_message_id: str, owner_id: str) -> Optional[MemoryAnalysisJob]:
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM memory_analysis_jobs WHERE user_message_id=? AND owner_id=?", (user_message_id, owner_id)).fetchone()
+        return self._analysis_job(row) if row else None
+
+    def get_memory_analysis_job_by_id(self, analysis_id: str, owner_id: str) -> Optional[MemoryAnalysisJob]:
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM memory_analysis_jobs WHERE analysis_id=? AND owner_id=?", (analysis_id, owner_id)).fetchone()
+        return self._analysis_job(row) if row else None
+
+    def claim_memory_analysis_job(self, analysis_id: str, owner_id: str) -> tuple[Optional[MemoryAnalysisJob], bool]:
+        now = _now()
+        lease_token = uuid.uuid4().hex
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM memory_analysis_jobs WHERE analysis_id=? AND owner_id=?", (analysis_id, owner_id)).fetchone()
+            if not row:
+                return None, False
+            if row["status"] == "running":
+                updated = _dt(row["updated_at"])
+                stale = updated is None or updated <= datetime.now(timezone.utc) - timedelta(seconds=EVOLUTION_LEASE_SECONDS)
+                if not stale:
+                    return self._analysis_job(row), False
+            if row["status"] in {"completed"}:
+                return self._analysis_job(row), False
+            result = db.execute("""UPDATE memory_analysis_jobs SET status='running', model=COALESCE(model, ?),
+                lease_token=?, lease_version=lease_version+1, updated_at=?, error_code=NULL
+                WHERE analysis_id=? AND owner_id=? AND (status!='running' OR updated_at=?)""", (row["model"], lease_token, now, analysis_id, owner_id, row["updated_at"]))
+            if not result.rowcount:
+                return self._analysis_job(db.execute("SELECT * FROM memory_analysis_jobs WHERE analysis_id=?", (analysis_id,)).fetchone()), False
+            row = db.execute("SELECT * FROM memory_analysis_jobs WHERE analysis_id=?", (analysis_id,)).fetchone()
+        return self._analysis_job(row), True
+
+    def list_memory_analysis_work_items(self, owner_id: str) -> list[str]:
+        with self.connection() as db:
+            rows = db.execute("SELECT analysis_id FROM memory_analysis_jobs WHERE owner_id=? AND status IN ('pending', 'running', 'partial', 'failed') ORDER BY created_at", (owner_id,)).fetchall()
+        return [row["analysis_id"] for row in rows]
+
+    def save_memory_analysis_progress(self, analysis_id: str, owner_id: str, *, lease_token: str, lease_version: int, cursor: Optional[str], batch_no: int, saved_count: int, pending_count: int, failed_count: int, status: str = "running") -> Optional[MemoryAnalysisJob]:
+        if status not in ANALYSIS_STATUSES:
+            raise ValueError("invalid analysis status")
+        with self.transaction() as db:
+            db.execute("""UPDATE memory_analysis_jobs SET cursor=?, batch_no=?, saved_count=?, pending_count=?, failed_count=?, status=?, updated_at=?
+                WHERE analysis_id=? AND owner_id=? AND status='running' AND lease_token=? AND lease_version=?""", (cursor, int(batch_no), int(saved_count), int(pending_count), int(failed_count), status, _now(), analysis_id, owner_id, lease_token, int(lease_version)))
+        return self.get_memory_analysis_job_by_id(analysis_id, owner_id)
+
+    def finish_memory_analysis_job(self, analysis_id: str, owner_id: str, *, lease_token: str, lease_version: int, status: str, error_code: Optional[str] = None) -> Optional[MemoryAnalysisJob]:
+        if status not in {"completed", "partial", "failed"}:
+            raise ValueError("invalid analysis final status")
+        now = _now()
+        with self.transaction() as db:
+            db.execute("""UPDATE memory_analysis_jobs SET status=?, error_code=?, updated_at=?, completed_at=?
+                WHERE analysis_id=? AND owner_id=? AND status='running' AND lease_token=? AND lease_version=?""", (status, (error_code or "")[:100] or None, now, now if status in {"completed", "failed"} else None, analysis_id, owner_id, lease_token, int(lease_version)))
+        return self.get_memory_analysis_job_by_id(analysis_id, owner_id)
+
+    def create_memory_analysis_item(self, analysis_id: str, owner_id: str, statement: str, suggested_scope: str, confidence: float, rationale_summary: Optional[str], *, decision_status: str = "pending_confirmation", memory_id: Optional[str] = None, lease_token: Optional[str] = None, lease_version: Optional[int] = None) -> MemoryAnalysisItem:
+        if suggested_scope not in MEMORY_SCOPES or decision_status not in ANALYSIS_DECISIONS:
+            raise ValueError("invalid analysis item")
+        statement = " ".join(str(statement or "").split())[:1000]
+        if not statement or not 0 <= float(confidence) <= 1:
+            raise ValueError("invalid analysis item")
+        with self.transaction() as db:
+            job = db.execute("SELECT analysis_id FROM memory_analysis_jobs WHERE analysis_id=? AND owner_id=?", (analysis_id, owner_id)).fetchone()
+            if not job:
+                raise LookupError("memory analysis not found")
+            if lease_token is not None:
+                current = db.execute("SELECT status, lease_token, lease_version FROM memory_analysis_jobs WHERE analysis_id=? AND owner_id=?", (analysis_id, owner_id)).fetchone()
+                if not current or current["status"] != "running" or current["lease_token"] != lease_token or int(current["lease_version"]) != int(lease_version or 0):
+                    raise LeaseLostError("memory analysis lease lost")
+            existing = db.execute("SELECT * FROM memory_analysis_items WHERE analysis_id=? AND statement=?", (analysis_id, statement)).fetchone()
+            if existing:
+                return self._analysis_item(existing)
+            now, item_id = _now(), uuid.uuid4().hex
+            db.execute("""INSERT INTO memory_analysis_items(item_id, analysis_id, statement, suggested_scope, confidence, rationale_summary, decision_status, memory_id, created_at, decided_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (item_id, analysis_id, statement, suggested_scope, float(confidence), (rationale_summary or "")[:300] or None, decision_status, memory_id, now, now if decision_status not in {"pending_confirmation", "failed"} else None))
+            row = db.execute("SELECT * FROM memory_analysis_items WHERE item_id=?", (item_id,)).fetchone()
+        return self._analysis_item(row)
+
+    def create_analysis_memory(self, analysis_id: str, owner_id: str, *, lease_token: str, lease_version: int, statement: str, scope: str, project_id: Optional[str], category: str, source_kind: str, confidence: float, supersedes_id: Optional[str], evidence: Optional[tuple[Optional[str], Optional[str], str, Optional[str]]], rationale_summary: Optional[str], decision_status: str) -> tuple[MemoryRecord, MemoryAnalysisItem]:
+        """Atomically CAS the analysis lease, write memory/evidence and item."""
+        if scope not in MEMORY_SCOPES or category not in MEMORY_CATEGORIES or source_kind not in MEMORY_SOURCE_KINDS or decision_status not in ANALYSIS_DECISIONS:
+            raise ValueError("invalid analysis memory")
+        statement = " ".join(str(statement or "").split())[:1000]
+        if not statement or not 0 <= float(confidence) <= 1:
+            raise ValueError("invalid analysis memory")
+        if scope == "project":
+            if not project_id or not self.get_project(project_id, owner_id):
+                raise LookupError("project not found")
+        elif project_id is not None:
+            raise ValueError("global memory cannot have a project")
+        now, memory_id, item_id = _now(), uuid.uuid4().hex, uuid.uuid4().hex
+        with self.transaction() as db:
+            lease = db.execute("SELECT status, lease_token, lease_version FROM memory_analysis_jobs WHERE analysis_id=? AND owner_id=?", (analysis_id, owner_id)).fetchone()
+            if not lease or lease["status"] != "running" or lease["lease_token"] != lease_token or int(lease["lease_version"]) != int(lease_version):
+                raise LeaseLostError("memory analysis lease lost")
+            existing = db.execute("SELECT * FROM memory_analysis_items WHERE analysis_id=? AND statement=?", (analysis_id, statement)).fetchone()
+            if existing:
+                memory = self.get_memory(existing["memory_id"], owner_id) if existing["memory_id"] else None
+                if memory:
+                    return memory, self._analysis_item(existing)
+            db.execute("INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)", (memory_id, owner_id, scope, project_id, category, statement, source_kind, float(confidence), supersedes_id, now, now, None))
+            if supersedes_id:
+                db.execute("UPDATE memories SET status='superseded', updated_at=? WHERE memory_id=? AND owner_id=?", (now, supersedes_id, owner_id))
+            if evidence is not None:
+                self._insert_memory_evidence(db, memory_id, owner_id, evidence[0], evidence[1], evidence[2], evidence[3])
+            db.execute("INSERT INTO memory_analysis_items(item_id, analysis_id, statement, suggested_scope, confidence, rationale_summary, decision_status, memory_id, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (item_id, analysis_id, statement, scope, float(confidence), (rationale_summary or "")[:300] or None, decision_status, memory_id, now, now))
+            memory_row = db.execute("SELECT * FROM memories WHERE memory_id=?", (memory_id,)).fetchone()
+            item_row = db.execute("SELECT * FROM memory_analysis_items WHERE item_id=?", (item_id,)).fetchone()
+        return self._memory(memory_row), self._analysis_item(item_row)
+
+    def get_memory_analysis_item(self, item_id: str, owner_id: str) -> Optional[MemoryAnalysisItem]:
+        with self.connection() as db:
+            row = db.execute("""SELECT i.* FROM memory_analysis_items i JOIN memory_analysis_jobs j ON j.analysis_id=i.analysis_id
+                WHERE i.item_id=? AND j.owner_id=?""", (item_id, owner_id)).fetchone()
+        return self._analysis_item(row) if row else None
+
+    def list_memory_analysis_items(self, user_message_id: str, owner_id: str, *, cursor: Optional[str] = None, limit: int = 10) -> tuple[list[MemoryAnalysisItem], Optional[str]]:
+        job = self.get_memory_analysis_job(user_message_id, owner_id)
+        if not job:
+            raise LookupError("memory analysis not found")
+        limit = max(1, min(int(limit), 100))
+        params: list[object] = [job.analysis_id]
+        clause = ""
+        if cursor:
+            at, item_id = decode_cursor(cursor, f"memory-analysis:{job.analysis_id}")
+            clause = " AND (created_at > ? OR (created_at = ? AND item_id > ?))"
+            params.extend([at, at, item_id])
+        with self.connection() as db:
+            rows = db.execute(f"SELECT * FROM memory_analysis_items WHERE analysis_id=?{clause} ORDER BY created_at, item_id LIMIT ?", (*params, limit + 1)).fetchall()
+        page = rows[:limit]
+        next_cursor = encode_cursor(f"memory-analysis:{job.analysis_id}", page[-1]["created_at"], page[-1]["item_id"]) if len(rows) > limit else None
+        return [self._analysis_item(row) for row in page], next_cursor
+
+    def list_memory_analysis_item_ids(self, analysis_id: str, owner_id: str, item_ids: Optional[list[str]] = None) -> list[MemoryAnalysisItem]:
+        params: list[object] = [analysis_id, owner_id]
+        clause = ""
+        if item_ids:
+            placeholders = ",".join("?" for _ in item_ids)
+            clause = f" AND i.item_id IN ({placeholders})"
+            params.extend(item_ids)
+        with self.connection() as db:
+            rows = db.execute(f"""SELECT i.* FROM memory_analysis_items i JOIN memory_analysis_jobs j ON j.analysis_id=i.analysis_id
+                WHERE i.analysis_id=? AND j.owner_id=?{clause} ORDER BY i.created_at, i.item_id""", params).fetchall()
+        return [self._analysis_item(row) for row in rows]
+
+    def update_memory_analysis_item(self, item_id: str, owner_id: str, *, decision_status: str, memory_id: Optional[str] = None) -> Optional[MemoryAnalysisItem]:
+        if decision_status not in ANALYSIS_DECISIONS:
+            raise ValueError("invalid analysis decision")
+        with self.transaction() as db:
+            result = db.execute("""UPDATE memory_analysis_items SET decision_status=?, memory_id=?, decided_at=?
+                WHERE item_id=? AND analysis_id IN (SELECT analysis_id FROM memory_analysis_jobs WHERE owner_id=?)
+                AND decision_status='pending_confirmation'""", (decision_status, memory_id, _now(), item_id, owner_id))
+            if not result.rowcount:
+                row = db.execute("""SELECT i.* FROM memory_analysis_items i JOIN memory_analysis_jobs j ON j.analysis_id=i.analysis_id
+                    WHERE i.item_id=? AND j.owner_id=?""", (item_id, owner_id)).fetchone()
+                return self._analysis_item(row) if row else None
+            row = db.execute("SELECT * FROM memory_analysis_items WHERE item_id=?", (item_id,)).fetchone()
+        return self._analysis_item(row)
+
+    def create_processing_step(self, message_id: str, kind: str, status: str, summary: Optional[str] = None, *, label: Optional[str] = None, logical_sequence: int = 0) -> ProcessingStep:
+        """Create or advance one logical step without ever duplicating it.
+
+        The old implementation wrote a fresh row for the terminal event.  A
+        stable ``(message_id, kind, logical_sequence)`` identity means SSE
+        reconnects and terminal cleanup can safely update the same record.
+        """
+        aliases = {"done": "completed", "error": "failed", "abort": "interrupted"}
+        status = aliases.get(status, status)
+        if status not in {"running", "completed", "failed", "skipped", "interrupted"}:
+            raise ValueError("invalid processing step status")
+        label = label or kind
+        sequence = max(0, int(logical_sequence))
+        now = _now()
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM processing_steps WHERE message_id=? AND kind=? AND logical_sequence=?", (message_id, kind, sequence)).fetchone()
+            if row is None:
+                step_id = uuid.uuid4().hex
+                db.execute("INSERT INTO processing_steps(step_id, message_id, kind, logical_sequence, label, status, summary, started_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (step_id, message_id, kind, sequence, label, status, (summary or "")[:500] or None, now, now if status != "running" else None))
+                row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (step_id,)).fetchone()
+            elif row["status"] == "running" and status != "running":
+                db.execute("UPDATE processing_steps SET label=?, status=?, summary=?, completed_at=? WHERE step_id=?", (label, status, (summary or "")[:500] or None, now, row["step_id"]))
+                row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
+            elif row["status"] == "running" and summary:
+                db.execute("UPDATE processing_steps SET label=?, summary=? WHERE step_id=?", (label, summary[:500], row["step_id"]))
+                row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
+        return ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"]))
+
+    def finalize_processing_steps(self, message_id: str, *, status: str = "failed", summary: Optional[str] = None) -> int:
+        """Move all residual running steps to a real terminal state."""
+        status = {"error": "failed", "abort": "interrupted", "done": "completed"}.get(status, status)
+        if status not in {"completed", "failed", "skipped", "interrupted"}:
+            raise ValueError("invalid processing step status")
+        with self.transaction() as db:
+            result = db.execute("UPDATE processing_steps SET status=?, summary=COALESCE(?, summary), completed_at=? WHERE message_id=? AND status='running'", (status, (summary or "")[:500] or None, _now(), message_id))
+        return result.rowcount
+
+    def update_processing_step(self, step_id: str, status: str, summary: Optional[str] = None, *, label: Optional[str] = None) -> Optional[ProcessingStep]:
+        """Explicit step-id update seam for stream reconnect/cleanup callers."""
+        aliases = {"done": "completed", "error": "failed", "abort": "interrupted"}
+        status = aliases.get(status, status)
+        if status not in {"running", "completed", "failed", "skipped", "interrupted"}:
+            raise ValueError("invalid processing step status")
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (step_id,)).fetchone()
+            if not row:
+                return None
+            if row["status"] != "running" and status == "running":
+                return ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"]))
+            db.execute("UPDATE processing_steps SET status=?, label=?, summary=?, completed_at=? WHERE step_id=?", (status, label or row["label"], (summary or row["summary"] or "")[:500] or None, _now() if status != "running" else None, step_id))
+            row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (step_id,)).fetchone()
         return ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"]))
 
     def list_processing_steps(self, message_id: str, owner_id: str) -> list[ProcessingStep]:
         with self.connection() as db:
-            rows = db.execute("SELECT s.* FROM processing_steps s JOIN messages m ON m.message_id=s.message_id WHERE s.message_id=? AND m.owner_id=? ORDER BY s.started_at", (message_id, owner_id)).fetchall()
+            rows = db.execute("SELECT s.* FROM processing_steps s JOIN messages m ON m.message_id=s.message_id WHERE s.message_id=? AND m.owner_id=? ORDER BY s.started_at, s.logical_sequence", (message_id, owner_id)).fetchall()
         return [ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"])) for row in rows]
 
 

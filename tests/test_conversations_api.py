@@ -6,12 +6,25 @@ from fastapi.testclient import TestClient
 
 from backend.app.main import app
 from backend.app.api.routes_conversations import _message_stream
-from backend.app.chat.application.conversation_service import MemoryEvolutionService
+from backend.app.chat.application.conversation_service import MemoryEvolutionService, MemoryIntent
 from backend.app.memory.repository import MemoryRepository
 
 
 def _events(text):
     return [json.loads(line[6:]) for line in text.split("\n\n") if line.startswith("data: ")]
+
+
+def _wait_analysis(client, user_message_id, timeout=2):
+    deadline = time.monotonic() + timeout
+    result = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/messages/{user_message_id}/memory-analysis")
+        if response.status_code == 200:
+            result = response.json()
+            if result["job"]["status"] in {"completed", "partial", "failed"}:
+                return result
+        time.sleep(.01)
+    return result
 
 
 class FakeRun:
@@ -31,17 +44,18 @@ def test_project_and_lazy_conversation_flow(tmp_path):
         project_id = project.json()["project_id"]
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
-        ):
+        ), patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("explicit", "以后先给结论", "project", .95)):
             response = client.post("/api/conversations/messages", json={"content": "以后回答先给结论", "project_id": project_id, "model": "model"})
         assert response.status_code == 200
         events = _events(response.text)
         assert events[0]["type"] == "meta"
         assert events[-1]["type"] == "done"
         progress = [event for event in events if event["type"] == "progress"]
-        assert {event["label"] for event in progress} == {"记忆分析", "记忆召回", "回答生成"}
+        assert {event["label"] for event in progress} == {"记忆召回", "回答生成"}
         assert all(event["step_id"] and event["status"] in {"running", "completed", "failed", "skipped"} for event in progress)
-        assert any(event["type"] == "memory" and event["status"] == "saved" for event in events)
         conversation_id = events[0]["conversation_id"]
+        analysis = _wait_analysis(client, events[0]["user_message_id"])
+        assert analysis and analysis["items"][0]["decision_status"] == "auto_saved"
         messages = client.get(f"/api/conversations/{conversation_id}/messages?target_chars=100")
         assert messages.status_code == 200
         assert len(messages.json()["messages"]) == 2
@@ -56,7 +70,7 @@ def test_unbound_conversation_does_not_recall_project_memory(tmp_path):
         project_id = client.post("/api/projects", json={"name": "P"}).json()["project_id"]
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
-        ):
+        ), patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("explicit", "以后先给结论", "project", .95)):
             client.post("/api/conversations/messages", json={"content": "以后回答先给结论", "project_id": project_id, "model": "model"})
             response = client.post("/api/conversations/messages", json={"content": "普通问题", "model": "model"})
         assert response.status_code == 200
@@ -69,9 +83,11 @@ def test_ambiguous_memory_is_not_saved(tmp_path):
         project_id = client.post("/api/projects", json={"name": "P"}).json()["project_id"]
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
-        ):
+        ), patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("ambiguous", "我通常喜欢先说结论", "project", .62)):
             response = client.post("/api/conversations/messages", json={"content": "我通常喜欢先说结论", "project_id": project_id, "model": "model"})
-        assert any(event.get("status") == "needs_confirmation" for event in _events(response.text))
+            event = _events(response.text)[0]
+            analysis = _wait_analysis(client, event["user_message_id"])
+            assert analysis and analysis["items"][0]["decision_status"] == "pending_confirmation"
 
 
 def test_management_and_global_memory_api(tmp_path):
@@ -119,10 +135,12 @@ def test_explicit_global_memory_is_saved_and_recalled_for_unbound_chat(tmp_path)
         client = TestClient(app)
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
-        ):
+        ), patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("explicit", "回答要简洁", "global", .95)):
             saved = client.post("/api/conversations/messages", json={"content": "请记住我：回答要简洁，全局", "model": "model"})
             assert saved.status_code == 200
-            assert any(event.get("status") == "saved" and event.get("scope") == "global" for event in _events(saved.text))
+            saved_event = _events(saved.text)[0]
+            analysis = _wait_analysis(client, saved_event["user_message_id"])
+            assert analysis and analysis["items"][0]["decision_status"] == "auto_saved"
             recalled = client.post("/api/conversations/messages", json={"content": "普通问题", "model": "model"})
             assert any(event.get("status") == "used" and event.get("scope") == "global" for event in _events(recalled.text))
 
@@ -132,7 +150,7 @@ def test_memory_usage_write_failure_is_advisory_and_chat_completes(tmp_path):
         client = TestClient(app)
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
-        ):
+        ), patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("explicit", "回答要简洁", "global", .95)):
             saved = client.post("/api/conversations/messages", json={"content": "请记住我：简洁回答，全局", "model": "model"})
             assert saved.status_code == 200
             with patch.object(MemoryRepository, "mark_memory_used", side_effect=RuntimeError("injected lock")):
@@ -155,7 +173,7 @@ def test_stream_close_persists_interrupted_assistant(tmp_path):
                 stream.close()
                 break
     assert repo.get_message(assistant.message_id, "local-user").status == "interrupted"
-    assert any(step.status in {"failed", "skipped"} and step.label == "回答生成" for step in repo.list_processing_steps(assistant.message_id, "local-user"))
+    assert any(step.status == "interrupted" and step.label == "回答生成" for step in repo.list_processing_steps(assistant.message_id, "local-user"))
 
 
 def test_memory_scope_project_parameter_conflicts_are_stable_errors(tmp_path):
@@ -188,7 +206,8 @@ def test_chat_wires_durable_worker_and_worker_failure_does_not_block_sse(tmp_pat
             time.sleep(0.01)
         assert checkpoint and checkpoint.status == "completed"
         assert repo.list_conversation_summaries(conversation_id, "local-user")
-        assert repo.list_memories("local-user", project_id, scope="project", status="candidate")
+        analysis = repo.get_memory_analysis_job(events[0]["user_message_id"], "local-user")
+        assert analysis and analysis.status in {"completed", "partial", "failed"}
 
         with patch("backend.app.api.routes_conversations.run_chat", return_value=FakeRun()), patch.object(
             MemoryEvolutionService, "process_session", side_effect=RuntimeError("worker failure")

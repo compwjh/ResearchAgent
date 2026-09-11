@@ -62,6 +62,19 @@ class MemoryPatchRequest(BaseModel):
     status: Optional[Literal["candidate", "active", "disabled", "deleted"]] = None
 
 
+class MemoryAnalysisDecisionRequest(BaseModel):
+    decision: Literal["save_project", "save_global", "ignore"]
+    project_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class MemoryAnalysisBatchDecisionRequest(BaseModel):
+    # ``save_suggested``/``ignore_all`` are the UI-level actions; the explicit
+    # save_project/save_global spellings remain useful to API clients.
+    decision: Literal["save_suggested", "save_all", "ignore_all", "ignore", "save_project", "save_global"] = "save_suggested"
+    item_ids: Optional[List[str]] = Field(default=None, max_length=1000)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+
+
 class KBAskRequest(BaseModel):
     """知识库问答请求（spec-011 / spec-012）。
 

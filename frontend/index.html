@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=28">
+    <link rel="stylesheet" href="/assets/styles.css?v=29">
 </head>
 <body>
   <main class="app-shell">
@@ -24,13 +24,28 @@
             <button class="secondary-button danger-button" id="project-delete-button" type="button">删除</button>
           </div>
         </div>
+        <div class="flat-projects" aria-label="项目列表">
+          <div class="flat-list-head">
+            <span>项目</span>
+            <div class="flat-list-head-actions">
+              <button class="icon-button" id="new-project-button-flat" type="button" aria-label="新建项目" title="新建项目">＋</button>
+              <button class="icon-button" id="project-sort-button" type="button" aria-label="项目排序" aria-expanded="false">最近更新</button>
+              <button class="icon-button" id="project-archived-button" type="button">归档项目</button>
+            </div>
+          </div>
+          <div id="project-sort-menu" class="project-sort-menu" hidden>
+            <button type="button" data-project-sort="recent">最近更新</button>
+            <button type="button" data-project-sort="name">名称 A–Z</button>
+          </div>
+          <div class="project-list" id="project-list" role="list" aria-label="项目列表"></div>
+        </div>
         <form id="new-project-form" class="new-project-form" hidden>
           <label for="project-name-input">项目名称</label>
           <input id="project-name-input" maxlength="120" required placeholder="例如：记忆测试">
           <div class="new-project-actions"><button class="secondary-button" id="cancel-project-button" type="button">取消</button><button class="send-button" type="submit">创建</button></div>
         </form>
         <p class="conversation-status" id="conversation-status" role="status" aria-live="polite"></p>
-        <div class="conversation-list-head"><span>最近会话</span><span class="conversation-project-badge" id="conversation-project-badge">未绑定</span></div>
+        <div class="conversation-list-head"><span>最近会话</span><div class="conversation-list-head-actions"><span class="conversation-project-badge" id="conversation-project-badge">未绑定</span><button class="icon-button" id="conversation-archived-button" type="button">归档会话</button></div></div>
         <div class="conversation-list" id="conversation-list" role="listbox" aria-label="项目会话列表"></div>
         <button class="load-older-messages" id="load-older-messages" type="button" hidden>加载更早消息</button>
         <p class="conversation-memory-status" id="conversation-memory-status" role="status" aria-live="polite"></p>
@@ -383,10 +398,17 @@
       <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" id="save-settings" value="default">保存设置</button></div>
     </form>
   </dialog>
+  <dialog class="project-dialog" id="project-dialog" aria-labelledby="project-dialog-title">
+    <form class="settings-form" id="project-dialog-form" method="dialog">
+      <div class="settings-title"><div><span class="conversation-kicker">PROJECTS</span><h2 id="project-dialog-title">新建项目</h2></div><button class="icon-button" value="cancel" aria-label="关闭新建项目">×</button></div>
+      <label for="project-dialog-name">项目名称<input id="project-dialog-name" maxlength="120" required placeholder="例如：记忆测试"></label>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" value="default">创建</button></div>
+    </form>
+  </dialog>
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
-  <script src="/assets/app.js?v=28"></script>
+  <script src="/assets/app.js?v=29"></script>
 </body>
 </html>

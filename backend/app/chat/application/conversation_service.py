@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import re
 import queue
 import threading
 from dataclasses import dataclass
 from typing import Optional
 
+from backend.app.chat.application.chat_runner import run_chat
+from backend.app.platform.config import MEMORY_ANALYSIS_MODEL
 from backend.app.memory.models import MemoryRecord
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 
@@ -19,31 +22,119 @@ class MemoryIntent:
     scope: str = "project"
     confidence: float = 0.0
     current_task: str = ""
+    rationale_summary: str = ""
+    classification_error: Optional[str] = None
 
 
-def classify_memory_intent(text: str) -> MemoryIntent:
-    """Classify the small MVP contract without exposing chain-of-thought.
+def classify_memory_intent(text: str, *, model: Optional[str] = None) -> MemoryIntent:
+    """Ask the configured small model for a terse, structured memory intent.
 
-    Explicit language is intentionally conservative.  A future classifier can
-    replace this function behind the same seam; failures should be handled by
-    the caller as ``none``/skipped rather than blocking chat.
+    This function remains a narrow monkeypatch seam for tests and extensions.
+    It never returns model reasoning: only the public intent, statement,
+    scope, confidence and a short rationale are accepted.  Any unavailable
+    model, malformed JSON or invalid field falls back to ``none`` so the
+    durable background job cannot affect answer generation.
     """
     value = " ".join((text or "").split())
     if not value:
         return MemoryIntent("none", current_task=value)
-    ambiguous = ("通常" in value or "一般" in value or "我喜欢" in value or "prefer" in value.lower())
-    explicit = ("以后" in value or "请记住" in value or "记住" in value or "始终" in value or "always" in value.lower())
-    global_scope = explicit and (
-        "全局" in value or "所有项目" in value or "每个项目" in value or "记住我" in value
-        or "for all projects" in value.lower() or "globally" in value.lower()
+    prompt = (
+        "你是记忆意图分类器。分析用户消息，判断是否存在可长期复用的记忆。"
+        "只返回 JSON，不要 markdown、解释或思维过程。格式必须是："
+        '{"intent":"explicit|ambiguous|none","statement":"一条脱离会话仍可理解的短陈述或空字符串",'
+        '"scope":"global|project","confidence":0.0,"rationale_summary":"不超过30字的简短依据"}；若有多条独立记忆，可改用 items 数组，每项包含相同字段。'
+        "explicit 仅用于用户明确要求记住/纠正；ambiguous 用于可能长期有效但需确认的表达；"
+        "普通问题返回 none。scope 不明确时返回 project。\n用户消息：" + value
     )
-    if explicit:
-        statement = re.sub(r"^(请记住|记住|以后|请始终)\s*", "", value, flags=re.IGNORECASE).strip()
-        statement = ("以后 " + statement).strip() if statement else value
-        return MemoryIntent("explicit", statement=statement[:1000], scope="global" if global_scope else "project", confidence=0.95, current_task=value)
-    if ambiguous:
-        return MemoryIntent("ambiguous", statement=value[:1000], confidence=0.62, current_task=value)
-    return MemoryIntent("none", current_task=value)
+    try:
+        selected_model = (model or MEMORY_ANALYSIS_MODEL).strip() or MEMORY_ANALYSIS_MODEL
+        run = run_chat(value, selected_model, prompt=prompt, think=False)
+        output = "".join(
+            str(event.get("content") or "")
+            for event in (run.events or [])
+            if event.get("type") == "token"
+        ).strip()
+        if output.startswith("```"):
+            output = re.sub(r"^```(?:json)?\s*|\s*```$", "", output, flags=re.IGNORECASE | re.DOTALL).strip()
+        match = re.search(r"\{.*\}", output, flags=re.DOTALL)
+        payload = json.loads(match.group(0) if match else output)
+        if not isinstance(payload, dict):
+            raise ValueError("classifier output is not an object")
+        if isinstance(payload.get("items"), list):
+            parsed_items = []
+            for raw_item in payload["items"]:
+                if not isinstance(raw_item, dict):
+                    raise ValueError("invalid classifier item")
+                item_intent = str(raw_item.get("intent") or payload.get("intent") or "none").strip().lower()
+                if item_intent == "none":
+                    continue
+                item_statement = " ".join(str(raw_item.get("statement") or "").split())[:1000]
+                if item_intent not in {"explicit", "ambiguous"} or not item_statement:
+                    raise ValueError("invalid classifier item")
+                item_scope = str(raw_item.get("scope") or payload.get("scope") or "project").strip().lower()
+                if item_scope not in {"global", "project"}:
+                    item_scope = "project"
+                item_confidence = float(raw_item.get("confidence", payload.get("confidence", 0.0)))
+                if not 0 <= item_confidence <= 1:
+                    raise ValueError("invalid classifier item confidence")
+                parsed_items.append(MemoryIntent(item_intent, item_statement, item_scope, item_confidence, value, str(raw_item.get("rationale_summary") or payload.get("rationale_summary") or "")[:300]))
+            return parsed_items or MemoryIntent("none", current_task=value)
+        intent = str(payload.get("intent") or "none").strip().lower()
+        if intent not in {"explicit", "ambiguous", "none"}:
+            raise ValueError("invalid classifier intent")
+        if intent == "none":
+            return MemoryIntent("none", current_task=value)
+        statement = " ".join(str(payload.get("statement") or "").split())[:1000]
+        if not statement:
+            raise ValueError("classifier statement is empty")
+        scope = str(payload.get("scope") or "project").strip().lower()
+        if scope not in {"global", "project"}:
+            scope = "project"
+        confidence = float(payload.get("confidence", 0.0))
+        if not 0 <= confidence <= 1:
+            raise ValueError("invalid classifier confidence")
+        return MemoryIntent(intent, statement=statement, scope=scope, confidence=confidence, current_task=value, rationale_summary=str(payload.get("rationale_summary") or "")[:300])
+    except Exception:
+        return MemoryIntent("none", current_task=value, classification_error="CLASSIFIER_FAILED")
+
+
+def _analysis_candidates(value) -> list[MemoryIntent]:
+    """Normalize classifier output to zero or many public candidates."""
+    if value is None:
+        return []
+    if isinstance(value, MemoryIntent):
+        if value.intent == "none":
+            return []
+        # Keep separate user-authored clauses as independent durable items;
+        # this is a bounded parser convenience, not a business item limit.
+        statements = [part.strip() for part in re.split(r"[;；\n]", value.statement or "") if part.strip()]
+        if len(statements) > 1:
+            return [MemoryIntent(value.intent, statement=part, scope=value.scope, confidence=value.confidence, current_task=value.current_task) for part in statements]
+        return [value]
+    if isinstance(value, dict):
+        values = value.get("items") or value.get("candidates") or [value]
+    elif isinstance(value, (list, tuple)):
+        values = value
+    else:
+        values = [value]
+    result: list[MemoryIntent] = []
+    for item in values:
+        if isinstance(item, MemoryIntent):
+            candidate = item
+        elif isinstance(item, dict):
+            candidate = MemoryIntent(
+                str(item.get("intent") or item.get("decision") or "ambiguous"),
+                statement=item.get("statement"),
+                scope=str(item.get("scope") or item.get("suggested_scope") or "project"),
+                confidence=float(item.get("confidence", 0.0)),
+                current_task=str(item.get("current_task") or ""),
+                rationale_summary=str(item.get("rationale_summary") or item.get("rationale") or "")[:300],
+            )
+        else:
+            continue
+        if candidate.intent != "none" and candidate.statement:
+            result.append(candidate)
+    return result
 
 
 def memory_prompt(memories: list[MemoryRecord], summaries=None, *, summary_budget_chars: int = 1500) -> str:
@@ -313,12 +404,229 @@ class MemoryEvolutionWorker:
             thread.join(timeout=1)
 
 
+class MemoryAnalysisWorker:
+    """Durable, post-answer classifier worker.
+
+    Jobs and item decisions live in the memory repository.  The in-process
+    queue is only a wake-up mechanism, so a restart can scan pending/partial/
+    failed rows and resume without creating duplicate memories.
+    """
+
+    def __init__(self, repository: MemoryRepository, *, owner_id: str = OWNER_ID, poll_interval: float = 0.05, batch_size: int = 20) -> None:
+        self.repository = repository
+        self.owner_id = owner_id
+        self.poll_interval = max(0.01, float(poll_interval))
+        self.batch_size = max(1, int(batch_size))
+        self._queue: queue.Queue[str] = queue.Queue()
+        self._queued: set[str] = set()
+        self._guard = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> "MemoryAnalysisWorker":
+        with self._guard:
+            if self._thread and self._thread.is_alive():
+                return self
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, name="memory-analysis", daemon=True)
+            self._thread.start()
+        for analysis_id in self.repository.list_memory_analysis_work_items(self.owner_id):
+            self.enqueue(analysis_id)
+        return self
+
+    def enqueue(self, analysis_id: str) -> None:
+        with self._guard:
+            if analysis_id in self._queued:
+                return
+            self._queued.add(analysis_id)
+            self._queue.put(analysis_id)
+
+    @staticmethod
+    def _is_correction(text: str) -> bool:
+        return any(marker in (text or "") for marker in ("不对", "纠正", "更正", "不是", "改为", "改成"))
+
+    def _find_duplicate(self, statement: str, owner_id: str, scope: str, project_id: Optional[str]):
+        normalized = " ".join(statement.split()).casefold()
+        for status in ("active", "candidate", "superseded", "disabled", "deleted"):
+            for memory in self.repository.list_memories(owner_id, project_id, scope=scope, status=status):
+                if " ".join(memory.statement.split()).casefold() == normalized:
+                    return memory
+        return None
+
+    def _find_conflict(self, owner_id: str, scope: str, project_id: Optional[str], statement: str):
+        category = "user_preference" if scope == "global" else "project_rule"
+        active = self.repository.list_memories(owner_id, project_id, scope=scope, status="active")
+        normalized = " ".join(statement.split()).casefold()
+        contradiction_terms = ("简洁", "详细", "允许", "禁止", "中文", "英文", "先", "后", "要", "不要")
+        def likely_conflict(memory):
+            old = " ".join(memory.statement.split()).casefold()
+            if memory.category != category or old == normalized:
+                return False
+            shared_prefix = len(old) >= 2 and len(normalized) >= 2 and old[:2] == normalized[:2]
+            contrasting = any(term in old and term in normalized for term in contradiction_terms)
+            return shared_prefix or contrasting
+        return next((memory for memory in active if likely_conflict(memory)), None)
+
+    def _decide_candidate(self, job, conversation, candidate: MemoryIntent, source_text: str) -> tuple[str, Optional[str]]:
+        scope = candidate.scope if candidate.scope in {"global", "project"} else "project"
+        project_id = job.project_id_snapshot if scope == "project" else None
+        if scope == "project" and (not project_id or not self.repository.get_project(project_id, self.owner_id)):
+            return "pending_confirmation", None
+        duplicate = self._find_duplicate(candidate.statement or "", self.owner_id, scope, project_id)
+        if duplicate:
+            return "duplicate", duplicate.memory_id
+        conflict = self._find_conflict(self.owner_id, scope, project_id, candidate.statement or "")
+        correction = self._is_correction(source_text)
+        if correction and not conflict:
+            category = "user_preference" if scope == "global" else "project_rule"
+            conflict = next((memory for memory in self.repository.list_memories(self.owner_id, project_id, scope=scope, status="active") if memory.category == category), None)
+        explicit = candidate.intent == "explicit" and candidate.confidence >= 0.85
+        if conflict and not correction:
+            return "pending_confirmation", None
+        if not explicit and not correction:
+            return "pending_confirmation", None
+        category = "user_preference" if scope == "global" else "project_rule"
+        evidence = (conversation.conversation_id, job.user_message_id, "user_statement", (candidate.statement or source_text)[:500])
+        if scope == "project" and conversation.project_id != project_id:
+            # The conversation may have moved while this job was queued.  The
+            # snapshot still controls the target scope, but an evidence row
+            # from the new project would violate repository isolation.
+            evidence = None
+        decision = "superseded" if conflict and correction else "auto_saved"
+        record, _ = self.repository.create_analysis_memory(
+            job.analysis_id,
+            self.owner_id,
+            lease_token=job.lease_token or "",
+            lease_version=job.lease_version,
+            statement=candidate.statement or source_text,
+            scope=scope,
+            project_id=project_id,
+            category=category,
+            source_kind="explicit" if explicit else "manual",
+            confidence=max(0.0, min(1.0, float(candidate.confidence))),
+            supersedes_id=conflict.memory_id if conflict and correction else None,
+            evidence=evidence,
+            rationale_summary=candidate.rationale_summary or ("明确表达" if candidate.intent == "explicit" else "需要用户确认"),
+            decision_status=decision,
+        )
+        return decision, record.memory_id
+
+    def process(self, analysis_id: str) -> None:
+        job, claimed = self.repository.claim_memory_analysis_job(analysis_id, self.owner_id)
+        if not job or not claimed:
+            return
+        lease_token = job.lease_token or ""
+        lease_version = job.lease_version
+        message = self.repository.get_message(job.user_message_id, self.owner_id)
+        if not message:
+            self.repository.finish_memory_analysis_job(analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version, status="failed", error_code="MESSAGE_NOT_FOUND")
+            return
+        conversation = self.repository.get_conversation(message.conversation_id, self.owner_id)
+        if not conversation:
+            self.repository.finish_memory_analysis_job(analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version, status="failed", error_code="CONVERSATION_NOT_FOUND")
+            return
+        # A deleted project must never be replaced by the conversation's new
+        # project or by a caller-provided scope.
+        if job.project_id_snapshot and not self.repository.get_project(job.project_id_snapshot, self.owner_id):
+            self.repository.finish_memory_analysis_job(analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version, status="failed", error_code="PROJECT_SNAPSHOT_GONE")
+            return
+        try:
+            try:
+                classified = classify_memory_intent(message.content, model=job.model or MEMORY_ANALYSIS_MODEL)
+            except TypeError:
+                # Keep compatibility with test/extension classifiers that only
+                # accept the text positional argument.
+                classified = classify_memory_intent(message.content)
+            if isinstance(classified, MemoryIntent) and classified.classification_error:
+                self.repository.finish_memory_analysis_job(analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version, status="failed", error_code=classified.classification_error)
+                return
+            candidates = _analysis_candidates(classified)
+            saved = pending = failed = 0
+            for offset in range(0, len(candidates), self.batch_size):
+                batch = candidates[offset: offset + self.batch_size]
+                for candidate in batch:
+                    try:
+                        event_kind = "explicit_memory" if candidate.intent == "explicit" else ("user_correction" if self._is_correction(message.content) else None)
+                        if event_kind:
+                            try:
+                                self.repository.append_raw_event(
+                                    self.owner_id,
+                                    conversation.conversation_id,
+                                    event_kind,
+                                    {"statement": candidate.statement or message.content, "scope": candidate.scope, "confidence": candidate.confidence},
+                                    message_id=job.user_message_id,
+                                    idempotency_key=f"analysis:{job.analysis_id}:{offset}:{candidate.statement}",
+                                )
+                            except Exception:
+                                pass
+                        decision, memory_id = self._decide_candidate(job, conversation, candidate, message.content)
+                        self.repository.create_memory_analysis_item(
+                            analysis_id, self.owner_id, candidate.statement or message.content,
+                            candidate.scope if candidate.scope in {"global", "project"} else "project",
+                            candidate.confidence, candidate.rationale_summary or ("明确表达" if candidate.intent == "explicit" else "需要用户确认"),
+                            decision_status=decision, memory_id=memory_id,
+                            lease_token=lease_token, lease_version=lease_version,
+                        )
+                        if decision in {"auto_saved", "superseded"}: saved += 1
+                        elif decision == "pending_confirmation": pending += 1
+                    except Exception:
+                        failed += 1
+                        try:
+                            self.repository.create_memory_analysis_item(
+                                analysis_id, self.owner_id, candidate.statement or message.content,
+                                candidate.scope if candidate.scope in {"global", "project"} else "project",
+                                candidate.confidence, "分析结果未能保存", decision_status="failed",
+                                lease_token=lease_token, lease_version=lease_version,
+                            )
+                        except Exception:
+                            pass
+                self.repository.save_memory_analysis_progress(
+                    analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version,
+                    cursor=str(offset + len(batch)), batch_no=(offset // self.batch_size) + 1,
+                    saved_count=saved, pending_count=pending, failed_count=failed, status="running",
+                )
+            self.repository.finish_memory_analysis_job(analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version, status="partial" if failed else "completed")
+        except Exception:
+            self.repository.finish_memory_analysis_job(analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version, status="failed", error_code="CLASSIFIER_FAILED")
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                analysis_id = self._queue.get(timeout=self.poll_interval)
+            except queue.Empty:
+                continue
+            try:
+                self.process(analysis_id)
+            except Exception:
+                # A durable failed/running row will be retried on startup or
+                # by the next enqueue; analysis never affects chat delivery.
+                pass
+            finally:
+                with self._guard:
+                    self._queued.discard(analysis_id)
+                self._queue.task_done()
+
+    def stop(self) -> None:
+        self._stop.set()
+        thread = self._thread
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=1)
+
+
 _WORKERS: dict[str, MemoryEvolutionWorker] = {}
 _WORKERS_GUARD = threading.Lock()
+_ANALYSIS_WORKERS: dict[str, MemoryAnalysisWorker] = {}
 
 
 def get_memory_evolution_worker(repository: MemoryRepository) -> MemoryEvolutionWorker:
     key = str(repository.database_path.resolve())
     with _WORKERS_GUARD:
         worker = _WORKERS.setdefault(key, MemoryEvolutionWorker(repository))
+    return worker.start()
+
+
+def get_memory_analysis_worker(repository: MemoryRepository) -> MemoryAnalysisWorker:
+    key = str(repository.database_path.resolve())
+    with _WORKERS_GUARD:
+        worker = _ANALYSIS_WORKERS.setdefault(key, MemoryAnalysisWorker(repository))
     return worker.start()

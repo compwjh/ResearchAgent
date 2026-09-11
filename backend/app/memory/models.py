@@ -82,6 +82,41 @@ class ProcessingStep:
 
 
 @dataclass(frozen=True)
+class MemoryAnalysisJob:
+    analysis_id: str
+    user_message_id: str
+    owner_id: str
+    project_id_snapshot: Optional[str]
+    status: str
+    model: Optional[str]
+    cursor: Optional[str]
+    batch_no: int
+    saved_count: int
+    pending_count: int
+    failed_count: int
+    error_code: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime]
+    lease_token: Optional[str] = None
+    lease_version: int = 0
+
+
+@dataclass(frozen=True)
+class MemoryAnalysisItem:
+    item_id: str
+    analysis_id: str
+    statement: str
+    suggested_scope: str
+    confidence: float
+    rationale_summary: Optional[str]
+    decision_status: str
+    memory_id: Optional[str]
+    created_at: datetime
+    decided_at: Optional[datetime]
+
+
+@dataclass(frozen=True)
 class RawEvent:
     event_id: str
     owner_id: str

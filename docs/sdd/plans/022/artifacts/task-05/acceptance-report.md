@@ -60,3 +60,17 @@
 
 - 验收执行：tester（临时 Luna high）
 - 架构师签字：待主 Agent 按收口流程确认
+
+## 主 Agent 受控部署补充与架构师签字
+
+验收子 Agent 的隔离环境无法访问本机服务，故由主 Agent 在同一工作树完成部署复核：
+
+- `GET /api/health`：HTTP 200。
+- `GET /`：HTTP 200，返回 27949 bytes；资源版本为 `assets/app.js?v=29`、`assets/styles.css?v=29`。
+- 修复轮完整定向集合（含 `tests/test_task05_memory_analysis_repair.py`、后端受影响测试、前端契约与 Node 合同）再次运行：`121 passed in 4.74s`；`node --check`、5 个 Node 合同和 `git diff --check` 全部通过。
+- 本轮未运行全量 pytest，符合 Task 级测试边界；全量回归保留给 Task08。
+
+架构师复核结论：tester 报告的 PASS、双端 reviewer 的 GO、主环境部署 smoke 与定向测试结果相互一致，未发现阻塞项。Task05 修复轮验收签字完成；Spec022 仍保持 `实施中`，不因 Task05 完成而提前收口。
+
+- 验收执行：tester（临时 Luna high）
+- 架构师签字：主 Agent（自身）

@@ -5,9 +5,18 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from backend.app.api.common import stream_event
-from backend.app.api.schemas import ConversationMessageRequest, ConversationPatchRequest, MemoryCreateRequest, MemoryPatchRequest, ProjectCreateRequest, ProjectPatchRequest
+from backend.app.api.schemas import (
+    ConversationMessageRequest,
+    ConversationPatchRequest,
+    MemoryAnalysisBatchDecisionRequest,
+    MemoryAnalysisDecisionRequest,
+    MemoryCreateRequest,
+    MemoryPatchRequest,
+    ProjectCreateRequest,
+    ProjectPatchRequest,
+)
 from backend.app.chat.application.chat_runner import run_chat
-from backend.app.chat.application.conversation_service import get_memory_evolution_worker, classify_memory_intent, compose_chat_prompt
+from backend.app.chat.application.conversation_service import get_memory_analysis_worker, get_memory_evolution_worker, compose_chat_prompt
 from backend.app.knowledge_base.application import (
     citation_payloads,
     clear_project_document_associations,
@@ -39,7 +48,7 @@ def _conversation_payload(item):
 
 
 def _message_payload(item):
-    return {"message_id": item.message_id, "conversation_id": item.conversation_id, "role": item.role, "content": item.content, "status": item.status, "model": item.model, "mode": item.mode, "created_at": item.created_at.isoformat(), "completed_at": item.completed_at.isoformat() if item.completed_at else None}
+    return {"message_id": item.message_id, "conversation_id": item.conversation_id, "parent_message_id": item.parent_message_id, "role": item.role, "content": item.content, "status": item.status, "model": item.model, "mode": item.mode, "created_at": item.created_at.isoformat(), "completed_at": item.completed_at.isoformat() if item.completed_at else None}
 
 
 def _memory_payload(item):
@@ -136,47 +145,6 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             except Exception:
                 pass
             yield stream_event("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode)
-            classification_running = repo.create_processing_step(assistant_message.message_id, "memory_classification", "running", label="记忆分析")
-            yield stream_event("progress", step_id=classification_running.step_id, kind=classification_running.kind, label=classification_running.label, status="running", summary=None)
-            try:
-                intent = classify_memory_intent(user_message.content)
-                classification_status = "completed"
-                classification_summary = "已完成记忆意图分析"
-            except Exception:
-                # Classification is advisory: an unavailable parser/model must
-                # never prevent the ordinary answer from being generated.
-                from backend.app.chat.application.conversation_service import MemoryIntent
-                intent = MemoryIntent("none", current_task=user_message.content)
-                classification_status = "skipped"
-                classification_summary = "记忆未分析/未保存"
-            if intent.intent == "explicit":
-                try:
-                    repo.append_raw_event(OWNER_ID, conversation.conversation_id, "explicit_memory", {"statement": intent.statement or user_message.content, "scope": intent.scope, "confidence": intent.confidence}, message_id=user_message.message_id, idempotency_key=f"explicit:{user_message.message_id}")
-                except Exception:
-                    pass
-            elif any(marker in user_message.content for marker in ("不对", "纠正", "更正", "不是")):
-                try:
-                    repo.append_raw_event(OWNER_ID, conversation.conversation_id, "user_correction", {"replacement": user_message.content}, message_id=user_message.message_id, idempotency_key=f"correction:{user_message.message_id}")
-                except Exception:
-                    pass
-            classification_done = repo.create_processing_step(assistant_message.message_id, "memory_classification", classification_status, classification_summary, label="记忆分析")
-            yield stream_event("progress", step_id=classification_done.step_id, kind=classification_done.kind, label=classification_done.label, status=classification_status, summary=classification_summary)
-            if classification_status == "skipped":
-                yield stream_event("memory", status="not_analyzed", message="记忆未分析/未保存")
-            if intent.intent == "explicit" and (conversation.project_id or intent.scope == "global"):
-                try:
-                    scope = intent.scope if intent.scope == "global" else "project"
-                    project_id = conversation.project_id if scope == "project" else None
-                    category = "user_preference" if scope == "global" else "project_rule"
-                    record = repo.create_memory(OWNER_ID, scope, project_id, category, intent.statement or user_message.content, "explicit", intent.confidence)
-                    repo.create_memory_evidence(record.memory_id, conversation.conversation_id, user_message.message_id, "user_statement", intent.statement)
-                    yield stream_event("memory", status="saved", memory_id=record.memory_id, scope=record.scope, project_id=record.project_id, statement=record.statement)
-                except Exception:
-                    yield stream_event("memory", status="not_saved", message="记忆未保存")
-            elif intent.intent == "ambiguous" and conversation.project_id:
-                yield stream_event("memory", status="needs_confirmation", scope="project", project_id=conversation.project_id, statement=intent.statement)
-            elif intent.intent in {"explicit", "ambiguous"} and not conversation.project_id:
-                yield stream_event("memory", status="needs_confirmation", scope="project", statement=intent.statement, message="请先绑定项目后保存")
             recall_running = repo.create_processing_step(assistant_message.message_id, "memory_recall", "running", label="记忆召回")
             yield stream_event("progress", step_id=recall_running.step_id, kind=recall_running.kind, label=recall_running.label, status="running", summary=None)
             try:
@@ -279,6 +247,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 sources = citation_payloads(rag_hits)[:5]
                 yield stream_event("sources", sources=sources, citations=sources)
             finished = True
+            repo.finalize_processing_steps(assistant_message.message_id, status="completed")
             yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed")
         except GeneratorExit:
             raise
@@ -289,6 +258,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 generation_failed = repo.create_processing_step(assistant_message.message_id, "generation", "failed", "回答生成失败", label="回答生成")
                 yield stream_event("progress", step_id=generation_failed.step_id, kind=generation_failed.kind, label=generation_failed.label, status="failed", summary=generation_failed.summary)
                 yield stream_event("error", code="CHAT_FAILED", message=_redact_sensitive(error), retryable=True)
+                repo.finalize_processing_steps(assistant_message.message_id, status="failed", summary="回答失败，未完成步骤已终止")
                 yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed")
             except Exception:
                 # Preserve the original failure and let the finally block make
@@ -305,7 +275,8 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     current = repo.get_message(assistant_message.message_id, OWNER_ID)
                     if current and current.status in {"pending", "streaming"}:
                         repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="interrupted")
-                        repo.create_processing_step(assistant_message.message_id, "generation", "failed", "流式连接中断，已保存已生成内容", label="回答生成")
+                        repo.create_processing_step(assistant_message.message_id, "generation", "interrupted", "流式连接中断，已保存已生成内容", label="回答生成")
+                    repo.finalize_processing_steps(assistant_message.message_id, status="interrupted", summary="流式连接中断，未完成步骤已终止")
                 except Exception:
                     pass
     return generate()
@@ -327,9 +298,16 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
     if conversation_id:
         user = repo.create_message(conversation.conversation_id, OWNER_ID, "user", content, status="completed", model=payload.model, mode=payload.mode)
         assistant = repo.create_message(conversation.conversation_id, OWNER_ID, "assistant", "", status="pending", model=payload.model, mode=payload.mode, parent_message_id=user.message_id)
-    # Starting the local worker is cheap and scans durable retry work.  The
-    # current request only appends raw events; processing runs after/alongside
-    # SSE in a daemon thread and failures are checkpointed.
+    # Persist the message-bound analysis job before opening SSE.  Only queueing
+    # happens on the request path; classification and memory writes are fully
+    # independent of answer generation.
+    try:
+        analysis_job = repo.create_memory_analysis_job(user.message_id, OWNER_ID)
+        get_memory_analysis_worker(repo).enqueue(analysis_job.analysis_id)
+    except Exception as error:
+        logger.warning("memory analysis enqueue unavailable: %s", error)
+    # Starting the local evolution worker is cheap and scans durable retry
+    # work.  Its failures are advisory and never block chat delivery.
     try:
         get_memory_evolution_worker(repo)
     except Exception as error:
@@ -405,6 +383,133 @@ def get_processing_steps(message_id: str):
     steps = _repo().list_processing_steps(message_id, OWNER_ID)
     if not steps and not _repo().get_message(message_id, OWNER_ID): raise HTTPException(status_code=404, detail="消息不存在")
     return {"steps": [{"step_id": s.step_id, "message_id": s.message_id, "kind": s.kind, "label": s.label, "status": s.status, "summary": s.summary, "started_at": s.started_at.isoformat(), "completed_at": s.completed_at.isoformat() if s.completed_at else None} for s in steps]}
+
+
+def _analysis_job_payload(job):
+    return {
+        "analysis_id": job.analysis_id,
+        "user_message_id": job.user_message_id,
+        "project_id_snapshot": job.project_id_snapshot,
+        "status": job.status,
+        "model": job.model,
+        "cursor": job.cursor,
+        "batch_no": job.batch_no,
+        "saved_count": job.saved_count,
+        "pending_count": job.pending_count,
+        "failed_count": job.failed_count,
+        "error_code": job.error_code,
+        "created_at": job.created_at.isoformat(),
+        "updated_at": job.updated_at.isoformat(),
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+    }
+
+
+def _analysis_item_payload(item):
+    return {
+        "item_id": item.item_id,
+        "analysis_id": item.analysis_id,
+        "statement": item.statement,
+        "suggested_scope": item.suggested_scope,
+        "confidence": item.confidence,
+        "rationale_summary": item.rationale_summary,
+        "decision_status": item.decision_status,
+        "memory_id": item.memory_id,
+        "created_at": item.created_at.isoformat(),
+        "decided_at": item.decided_at.isoformat() if item.decided_at else None,
+    }
+
+
+@router.get("/messages/{user_message_id}/memory-analysis")
+def get_memory_analysis(user_message_id: str, cursor: str | None = None, limit: int = Query(10, ge=1, le=100)):
+    repo = _repo()
+    try:
+        job = repo.get_memory_analysis_job(user_message_id, OWNER_ID)
+        if not job:
+            if not repo.get_message(user_message_id, OWNER_ID):
+                raise LookupError("user message not found")
+            raise LookupError("memory analysis not found")
+        items, next_cursor = repo.list_memory_analysis_items(user_message_id, OWNER_ID, cursor=cursor, limit=limit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False}) from error
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "MEMORY_ANALYSIS_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    summary = _analysis_job_payload(job)
+    return {"job": summary, "analysis": summary, "items": [_analysis_item_payload(item) for item in items], "next_cursor": next_cursor}
+
+
+def _analysis_item_decision(item_id: str, payload: MemoryAnalysisDecisionRequest):
+    repo = _repo()
+    item = repo.get_memory_analysis_item(item_id, OWNER_ID)
+    if not item:
+        raise HTTPException(status_code=404, detail={"code": "MEMORY_ANALYSIS_ITEM_NOT_FOUND", "message": "分析结果不存在", "retryable": False})
+    if item.decision_status != "pending_confirmation":
+        return item
+    job = repo.get_memory_analysis_job_by_id(item.analysis_id, OWNER_ID)
+    if not job:
+        raise HTTPException(status_code=404, detail={"code": "MEMORY_ANALYSIS_NOT_FOUND", "message": "分析任务不存在", "retryable": False})
+    if payload.decision == "ignore":
+        return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="ignored")
+    scope = "global" if payload.decision == "save_global" else "project"
+    project_id = None if scope == "global" else (payload.project_id or job.project_id_snapshot)
+    if scope == "project":
+        if not project_id:
+            raise HTTPException(status_code=400, detail={"code": "PROJECT_REQUIRED", "message": "保存到项目需要 project_id", "retryable": False})
+        project = repo.get_project(project_id, OWNER_ID)
+        if not project or project.status != "active":
+            raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在或不可用", "retryable": False})
+    duplicate = None
+    for status in ("active", "candidate", "superseded", "disabled", "deleted"):
+        for memory in repo.list_memories(OWNER_ID, project_id, scope=scope, status=status):
+            if " ".join(memory.statement.split()).casefold() == " ".join(item.statement.split()).casefold():
+                duplicate = memory
+                break
+        if duplicate:
+            break
+    if duplicate:
+        return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="duplicate", memory_id=duplicate.memory_id)
+    category = "user_preference" if scope == "global" else "project_rule"
+    conflict = next((memory for memory in repo.list_memories(OWNER_ID, project_id, scope=scope, status="active") if memory.category == category and memory.statement.casefold() != item.statement.casefold()), None)
+    evidence = (None, job.user_message_id, "manual", item.statement[:500])
+    if scope == "project" and project_id != job.project_id_snapshot:
+        # A user may explicitly route an unbound result into a selected
+        # project; the original message is evidence, but cannot be attached
+        # across project scopes under the repository's isolation contract.
+        evidence = None
+    try:
+        record = repo.create_memory(
+            OWNER_ID, scope, project_id, category, item.statement, "manual", max(0.0, min(1.0, item.confidence)),
+            status="active", supersedes_id=conflict.memory_id if conflict else None,
+            evidence=evidence,
+        )
+        if conflict:
+            repo.update_memory(conflict.memory_id, OWNER_ID, status="superseded")
+    except (ValueError, LookupError) as error:
+        raise HTTPException(status_code=409, detail={"code": "MEMORY_DECISION_CONFLICT", "message": str(error), "retryable": False}) from error
+    return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="superseded" if conflict else "auto_saved", memory_id=record.memory_id)
+
+
+@router.post("/memory-analysis/items/{item_id}/decision")
+def decide_memory_analysis_item(item_id: str, payload: MemoryAnalysisDecisionRequest):
+    return {"item": _analysis_item_payload(_analysis_item_decision(item_id, payload))}
+
+
+@router.post("/messages/{user_message_id}/memory-analysis/decisions")
+def decide_memory_analysis_items(user_message_id: str, payload: MemoryAnalysisBatchDecisionRequest):
+    repo = _repo()
+    job = repo.get_memory_analysis_job(user_message_id, OWNER_ID)
+    if not job:
+        raise HTTPException(status_code=404, detail={"code": "MEMORY_ANALYSIS_NOT_FOUND", "message": "分析任务不存在", "retryable": False})
+    items = repo.list_memory_analysis_item_ids(job.analysis_id, OWNER_ID, payload.item_ids)
+    selected = [item for item in items if item.decision_status == "pending_confirmation"]
+    results = []
+    failures = []
+    for item in selected:
+        decision = "ignore" if payload.decision in {"ignore", "ignore_all"} else ("save_global" if payload.decision == "save_global" else ("save_project" if payload.decision == "save_project" else ("save_global" if item.suggested_scope == "global" else "save_project")))
+        try:
+            results.append(_analysis_item_decision(item.item_id, MemoryAnalysisDecisionRequest(decision=decision, project_id=payload.project_id)))
+        except HTTPException as error:
+            failures.append({"item_id": item.item_id, "code": error.detail.get("code") if isinstance(error.detail, dict) else "DECISION_FAILED", "message": error.detail.get("message") if isinstance(error.detail, dict) else str(error.detail)})
+    return {"analysis": _analysis_job_payload(repo.get_memory_analysis_job(user_message_id, OWNER_ID)), "items": [_analysis_item_payload(item) for item in results], "failed": failures, "selected_count": len(selected)}
 
 
 @router.get("/memories")
