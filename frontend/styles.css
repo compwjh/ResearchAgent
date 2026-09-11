@@ -25,6 +25,19 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 }
 @media (max-width: 760px) { .app-shell { display: block; }.sidebar { display: none; }.topbar { height: 60px; padding: 0 16px; }.workspace { min-height: calc(100vh - 60px); padding: 34px 16px; }.welcome h1 { font-size: 35px; }.chat-panel { min-height: 460px; }.workspace.has-started .chat-panel { min-height: calc(100vh - 110px); }.messages { padding: 22px 16px; }.bubble { max-width: 88%; }.composer { margin: 0 14px; }.composer-tip { display: none; }.workspace:not(.has-started) .composer { margin: 0; }.footer-note { display: none; } }
 
+/* ===== 上下文占比与手动压缩（spec-025）===== */
+.composer { flex-wrap: wrap; }
+.composer-context { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; }
+.composer-context[hidden] { display: none; }
+.context-progress { flex: 1 1 auto; min-width: 60px; height: 4px; border-radius: 999px; background: #ececf3; overflow: hidden; }
+.context-progress-fill { width: 0; height: 100%; background: var(--accent); transition: width .25s ease; }
+.context-meter-text { color: #b0b1b8; font: 10px 'DM Mono', monospace; white-space: nowrap; }
+.context-compact-button { border-radius: 6px; padding: 5px 9px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; }
+.context-compact-button:hover { background: #dedaff; }
+.context-compact-button:disabled { opacity: .6; cursor: default; }
+.context-status { margin: 0 20px 6px; color: #aaacb2; font: 10px 'DM Mono', monospace; }
+.context-status[hidden] { display: none; }
+
 /* ===== 项目会话记忆 MVP（spec-022 Task02） ===== */
 .conversation-memory { display: grid; gap: 10px; margin-top: 25px; min-height: 0; }
 .governance-actions { display: flex; flex-wrap: wrap; gap: 4px; }

@@ -357,6 +357,101 @@ async function conversationFetch(url, options = {}) {
   return data;
 }
 
+/* ---------- Spec025：上下文占比与手动压缩 ----------
+ * 数据来自 GET /api/conversations/{id}/context-usage，只在「加载会话后」与
+ * 「每轮消息完成后」刷新，不做常驻轮询；手动压缩后做一次有上限的跟随刷新
+ * （终止即停，最多 ~12s），仅用于把「压缩中」中态收口。
+ */
+const contextMeter = document.getElementById('context-meter');
+const contextProgress = document.getElementById('context-progress');
+const contextProgressFill = document.getElementById('context-progress-fill');
+const contextMeterText = document.getElementById('context-meter-text');
+const contextCompactButton = document.getElementById('context-compact-button');
+const contextStatus = document.getElementById('context-status');
+const contextState = { inflight: false, followTimer: null, followTries: 0 };
+
+function setContextStatus(text) {
+  if (!contextStatus) return;
+  const value = text || '';
+  contextStatus.textContent = value;
+  contextStatus.hidden = !value;
+}
+
+function renderContextUsage(usage) {
+  if (!contextMeter || !contextProgress || !contextProgressFill || !contextMeterText) return;
+  if (!usage) { contextMeter.hidden = true; return; }
+  const ratio = Number(usage.ratio);
+  const safe = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
+  const percent = Math.round(safe * 100);
+  contextMeter.hidden = false;
+  contextProgressFill.style.width = `${percent}%`;
+  contextProgress.setAttribute('aria-valuenow', String(percent));
+  contextMeterText.textContent = `上下文 ${percent}%`;
+  const status = usage.compaction_status;
+  if (status === 'queued' || status === 'running') setContextStatus('压缩中…');
+  else if (status === 'failed') setContextStatus('上次压缩失败，可重试');
+  else if (status === 'done') setContextStatus('');
+}
+
+async function loadContextUsage() {
+  const conversationId = conversationState.conversationId;
+  if (!conversationId) { renderContextUsage(null); return null; }
+  try {
+    const usage = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/context-usage`);
+    renderContextUsage(usage);
+    return usage;
+  } catch (error) {
+    renderContextUsage(null);
+    return null;
+  }
+}
+
+function stopContextFollow() {
+  if (contextState.followTimer) { clearTimeout(contextState.followTimer); contextState.followTimer = null; }
+  contextState.followTries = 0;
+}
+
+function followContextCompaction() {
+  stopContextFollow();
+  const tick = async () => {
+    const usage = await loadContextUsage();
+    contextState.followTimer = null;
+    if (!usage) { stopContextFollow(); return; }
+    const status = usage.compaction_status;
+    if (status === 'queued' || status === 'running') {
+      contextState.followTries += 1;
+      if (contextState.followTries >= 6) { setContextStatus('压缩仍在进行，稍后自动生效'); stopContextFollow(); return; }
+      contextState.followTimer = setTimeout(tick, 2000);
+      return;
+    }
+    stopContextFollow();
+  };
+  contextState.followTimer = setTimeout(tick, 1200);
+}
+
+async function compactConversationContext() {
+  if (!contextCompactButton || contextState.inflight) return;
+  const conversationId = conversationState.conversationId;
+  if (!conversationId) return;
+  contextState.inflight = true;
+  contextCompactButton.disabled = true;
+  const original = contextCompactButton.textContent;
+  contextCompactButton.textContent = '压缩中';
+  setContextStatus('已触发压缩');
+  try {
+    await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/compactions`, { method: 'POST' });
+    followContextCompaction();
+  } catch (error) {
+    if (error && error.status === 409) setContextStatus('压缩进行中');
+    else setContextStatus(error && error.message ? error.message : '压缩失败');
+  } finally {
+    contextState.inflight = false;
+    if (contextCompactButton) { contextCompactButton.disabled = false; contextCompactButton.textContent = original; }
+  }
+}
+
+if (contextCompactButton) contextCompactButton.addEventListener('click', compactConversationContext);
+
 function setConversationStatus(text, state = '') {
   if (!conversationStatus) return;
   conversationStatus.textContent = text || '';
@@ -1087,6 +1182,9 @@ async function openConversation(conversationId, { replace = false } = {}) {
     if (conversationState.projectId) await loadProjectConversations(conversationState.projectId);
     await loadConversationMessages(conversationId);
     if (!isCurrent()) return;
+    stopContextFollow();
+    await loadContextUsage();
+    if (!isCurrent()) return;
     await loadConversationList({ append: false, guard: isCurrent });
     if (!isCurrent()) return;
     const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = conversationState.conversation?.title || '会话';
@@ -1525,7 +1623,7 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
     if (assistantMessage) addConversationErrorNotice(assistantMessage, error);
     else if (!streamError) addConversationError(error);
   } finally {
-    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList();
+    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList(); loadContextUsage();
   }
 }
 

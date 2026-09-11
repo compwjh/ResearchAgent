@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=33">
+    <link rel="stylesheet" href="/assets/styles.css?v=34">
 </head>
 <body>
   <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">☰ <span>项目与会话</span></button>
@@ -81,6 +81,12 @@
           </div>
           <form class="composer" id="chat-form">
             <textarea id="question" rows="1" placeholder="给 Ollama 发消息" aria-label="问题"></textarea>
+            <div class="composer-context" id="context-meter" hidden>
+              <div class="context-progress" id="context-progress" role="progressbar" aria-label="上下文占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="context-progress-fill" id="context-progress-fill"></div></div>
+              <span class="context-meter-text" id="context-meter-text">上下文 0%</span>
+              <button type="button" class="context-compact-button" id="context-compact-button">压缩</button>
+            </div>
+            <p class="context-status" id="context-status" role="status" aria-live="polite" hidden></p>
             <div class="composer-footer"><span class="composer-tip">Enter 发送 · Shift + Enter 换行</span><button type="submit" id="send-button" aria-label="发送"><span>↑</span></button></div>
           </form>
           <p class="hint" id="mode-hint">Normal 模式 · 单次最多 2,000 字</p>
@@ -489,6 +495,6 @@
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 -->
-  <script src="/assets/app.js?v=33"></script>
+  <script src="/assets/app.js?v=34"></script>
 </body>
 </html>
