@@ -80,4 +80,73 @@ def test_skill_tool_css_scoped_to_view() -> None:
 
 def test_skill_tool_app_version_bumped() -> None:
     # 改动 app.js 后必须同步递增 ?v= 版本号（回归护栏）。
-    assert "/assets/app.js?v=26" in INDEX
+    assert "/assets/app.js?v=27" in INDEX
+
+
+def test_skill_detail_request_aborts_previous_inflight() -> None:
+    # spec-023.1 F1：每次打开详情都中止上一次在途请求，避免并发详情请求堆积。
+    start = APP.index("async function openSkillDetail")
+    end = APP.index("async function loadTools", start)
+    detail = APP[start:end]
+    assert "AbortController" in detail
+    assert "stState.detailController.abort()" in detail
+    assert "signal: controller.signal" in detail
+    # 请求未返回期间按钮保持禁用，防止连点。
+    assert "button.disabled = false;" in detail
+
+
+def test_skill_detail_discards_stale_response_writes() -> None:
+    # spec-023.1 F1：慢响应后到（序号已过期或已被 abort）绝不可写 DOM。
+    start = APP.index("async function openSkillDetail")
+    end = APP.index("async function loadTools", start)
+    detail = APP[start:end]
+    # 写入前必须有令牌校验：请求序号自增、比对后才渲染。
+    assert "const seq = ++stState.detailSeq;" in detail
+    assert "stState.detailSeq !== seq || controller.signal.aborted" in detail
+    # 成功与失败两条路径都必须先做同一身份校验再写 DOM。
+    assert detail.count("stState.detailSeq !== seq || controller.signal.aborted") >= 2
+    # 被中止的请求由 stFetchJson 归一化为中文「请求已取消」，不暴露英文 AbortError。
+    assert "AbortError" not in detail
+    assert "AbortError" in APP
+
+
+def test_skill_detail_list_button_has_inflight_loading_state() -> None:
+    # spec-023.1 F1：详情按钮点击后立即进入 loading 态（禁用 + 文案），避免并发重复请求。
+    start = APP.index("function renderSkillList")
+    end = APP.index("async function loadTools", start)
+    renderer = APP[start:end]
+    assert "openSkillDetail(skill.name, detailBtn)" in renderer
+    assert "button.disabled = true;" in renderer
+    assert "textContent = '加载中…';" in renderer
+
+
+def test_fetch_helper_distinguishes_network_error_from_business_error() -> None:
+    # spec-023.1 F2：fetch 抛错（断网）必须是中文可读提示，不得把 "Failed to fetch" 原文塞进状态文案。
+    start = APP.index("async function stFetchJson")
+    end = APP.index("// 模型库/知识库视图", start)
+    helper = APP[start:end]
+    # fetch 抛错分支必须重写为用户可读中文，且标记 network 供调用处区分。
+    assert "await fetch(input, init)" in helper
+    assert "无法连接本地服务，请确认后端已启动" in helper
+    assert "networkError.network = true;" in helper
+    # 主动取消走独立分支，不冒充网络错误（连点详情/切换视图时静默忽略）。
+    assert "error?.name === 'AbortError'" in helper
+    assert "aborted.network = false;" in helper
+    # 业务错误仍沿用 stJson，保留后端 message 与 error_code。
+    assert "return stJson(response);" in helper
+    assert "error_code" in APP[APP.index("async function stJson"):start + len(helper)]
+    # 前端任何位置都不得出现底层异常原文。
+    assert "Failed to fetch" not in APP
+
+
+def test_skill_detail_failure_marks_all_fields() -> None:
+    # spec-023.1 F3：详情请求失败时 body/desc/tools 三个字段统一展示失败态。
+    start = APP.index("async function openSkillDetail")
+    end = APP.index("async function loadTools", start)
+    detail = APP[start:end]
+    # 失败渲染必须集中在同一分支，且三个字段都回填同一失败文案。
+    assert "const failure = `加载失败：${error.message}`;" in detail
+    catch_start = detail.index("catch (error)")
+    catch_block = detail[catch_start:]
+    for field in ("stDetailBody", "stDetailDesc", "stDetailTools"):
+        assert f"{field}) {field}.textContent = failure;" in catch_block
