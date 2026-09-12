@@ -87,7 +87,12 @@ def test_all_meta_events_share_the_event_sequence_acceptor() -> None:
     meta_branch = stream[meta_start:meta_end]
     assert "acceptConversationEvent(assistantMessage, eventData)" in meta_branch
     assert "assistantMessage.dataset.lastEventSeq =" not in meta_branch
-    assert "assistantMessage = createAssistantMessage" in meta_branch
+    # spec-026 Task04 修订：卡片改为「乐观建卡」（在 await fetch 之前创建），
+    # meta 分支只负责填充既有卡片，**不得**再建第二张。
+    # 原断言 `assistantMessage = createAssistantMessage` 表达的「卡片在 meta 分支创建」
+    # 已被 spec 026 边界 B5/B6 取代，故此处改为断言新合同。
+    assert "assistantMessage = createAssistantMessage" not in meta_branch
+    assert "createAssistantMessage(" not in meta_branch
     assert "assistantMessage.dataset.metaSeen = 'true'" in meta_branch
     accept_start = APP.index("function acceptConversationEvent")
     accept_end = APP.index("function markConversationEventTerminal", accept_start)

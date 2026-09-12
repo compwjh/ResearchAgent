@@ -25,7 +25,7 @@ const settingsStatus = document.querySelector('#settings-status');
 let activeModel = 'Ollama';
 let currentModels = [];
 const REASONING_EFFORTS = ['off', 'low', 'medium', 'high', 'xhigh'];
-const reasoningOptionsState = { model: null, supported: null, defaultEffort: 'xhigh', loadToken: 0, lastEffort: 'xhigh', patchSerial: 0 };
+const reasoningOptionsState = { model: null, supported: null, defaultEffort: 'off', loadState: 'loading', staleCachedAt: null, correctedKeys: new Set(), loadToken: 0, lastEffort: 'off', patchSerial: 0 };
 
 // ===== 项目会话记忆 MVP（spec-022 Task02） =====
 const newProjectButton = document.querySelector('#new-project-button');
@@ -244,7 +244,7 @@ fetch('/api/health')
     modelSelect.value = activeModel;
     document.querySelector('#model-count').textContent = models.length;
     modelLabel.textContent = displayName(activeModel);
-    loadReasoningOptions(activeModel);
+    loadReasoningOptions(activeModel, { source: 'initial' });
     statusDot.classList.add('ready');
     if (typeof renderModelList === 'function') renderModelList(models, activeModel);
     if (typeof refreshKbModelOptions === 'function') refreshKbModelOptions();
@@ -267,19 +267,165 @@ function addMessage(text, type) {
   return message;
 }
 
-function addConversationError(error) {
-  const message = addMessage(`连接失败：${error?.message || '请求失败'}。请确认后重新发送。`, 'assistant');
+// ===== spec-026 Task04：乐观建卡 + 失败终态 + 错误文案按 code 分流 =====
+const REASONING_EFFORT_LABELS = { off: '关闭', low: '低', medium: '中', high: '高', xhigh: '极高' };
+
+function reasoningEffortLabel(effort) {
+  return REASONING_EFFORT_LABELS[normalizeReasoningEffort(effort)] || String(effort || '');
+}
+
+// 支持档位按 REASONING_EFFORTS 的固定序位过滤，不信任接口返回顺序，
+// 保证「最高支持档」恒为序位最高者（off < low < medium < high < xhigh）。
+function supportedReasoningEfforts() {
+  const supported = Array.isArray(reasoningOptionsState.supported) ? reasoningOptionsState.supported : [];
+  return REASONING_EFFORTS.filter((effort) => supported.includes(effort));
+}
+
+function highestSupportedReasoningEffort() {
+  return supportedReasoningEfforts().at(-1) || null;
+}
+
+// 文案只由 error.code 决定；retryable 仅用于状态条颜色，不参与文案。
+// 返回 { text, actions }，actions 项形如 { kind, label, effort? }。
+function errorTextFor(code, message, effort = null) {
+  const requested = normalizeReasoningEffort(effort || reasoningOptionsState.lastEffort || 'off');
+  if (code === 'REASONING_EFFORT_UNSUPPORTED') {
+    const labels = supportedReasoningEfforts().map(reasoningEffortLabel).join('、');
+    const highest = highestSupportedReasoningEffort();
+    return {
+      text: `该模型不支持『${reasoningEffortLabel(requested)}』推理档位${labels ? `，可选：${labels}` : ''}`,
+      actions: highest
+        ? [
+            { kind: 'switch', effort: highest, label: `用『${reasoningEffortLabel(highest)}』重发` },
+            { kind: 'switchOnly', effort: highest, label: '仅切换不重发' },
+          ]
+        : [],
+    };
+  }
+  if (code === 'MODEL_CAPABILITIES_UNAVAILABLE') {
+    return { text: '无法确认模型能力', actions: [{ kind: 'recheck', label: '重新检测能力' }] };
+  }
+  if (code === 'INVALID_REASONING_EFFORT') {
+    return { text: '推理档位无效', actions: [] };
+  }
+  if (code === 'MODEL_UNAVAILABLE') {
+    return { text: '无法连接 Ollama 服务', actions: [{ kind: 'retry', label: '重新发送' }] };
+  }
+  // 内部错误（非网络）：主动中止 / 事件流中断等，一律用中性文案，不套用网络类措辞
+  // （spec §前端错误文案映射：仅真网络错误允许出现网络类字样）。
+  if (code === 'ABORTED') {
+    return { text: '本轮已中止', actions: [] };
+  }
+  if (code === 'STREAM_INTERRUPTED') {
+    return { text: '事件流中断，请重新发送', actions: [{ kind: 'retry', label: '重新发送' }] };
+  }
+  // 兜底：仅真网络错误（fetch 抛出 / 无响应 / 流中途连接中断）落到此处，使用网络类措辞。
+  return { text: `连接失败：${message || '请求失败'}`, actions: [{ kind: 'retry', label: '重新发送' }] };
+}
+
+// 乐观建卡的占位态：卡片先出现「模型正在准备…」，meta 到达时由 clearConversationPending 清掉。
+function setConversationPending(message, text = '模型正在准备…') {
+  if (!message) return null;
+  let pending = message.querySelector('.conversation-pending');
+  if (!pending) {
+    pending = document.createElement('p');
+    pending.className = 'conversation-pending';
+    pending.setAttribute('role', 'status');
+    const bubble = message.querySelector('.bubble');
+    const answer = bubble?.querySelector('.answer');
+    if (answer) bubble.insertBefore(pending, answer);
+    else if (bubble) bubble.appendChild(pending);
+    else message.appendChild(pending);
+  }
+  pending.textContent = text;
+  message.dataset.phase = 'pending';
+  return pending;
+}
+
+function clearConversationPending(message) {
+  if (!message) return;
+  message.querySelector('.conversation-pending')?.remove();
+  if (message.dataset.phase === 'pending') message.dataset.phase = 'streaming';
+}
+
+// 失败终态：卡片保留不消失，就地清掉占位并渲染按 code 分流的文案 + 操作按钮。
+function renderConversationFailure(message, error, context = null) {
+  if (!message) return null;
+  clearConversationPending(message);
   message.classList.add('is-failed');
+  message.dataset.phase = 'error';
+  message.dataset.streamActive = 'false';
+  const bubble = message.querySelector('.bubble') || message;
+  let card = bubble.querySelector('.conversation-error-card');
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'conversation-error-card';
+    bubble.appendChild(card);
+  }
+  let notice = card.querySelector('.conversation-error-notice');
+  if (!notice) {
+    notice = document.createElement('p');
+    notice.className = 'conversation-error-notice';
+    card.appendChild(notice);
+  }
+  const { text, actions } = errorTextFor(error?.code, error?.message, error?.effort);
+  notice.textContent = text;
+  // 只有带重发上下文（发消息失败路径）才渲染操作按钮；事件流中断 / 主动中止
+  // 这类没有上下文的失败只显示文案，避免出现点了没反应的按钮。
+  const usableActions = context && typeof context.question === 'string' && context.question ? actions : [];
+  if (!usableActions.length || card.querySelector('.conversation-error-actions')) return message;
+  const group = document.createElement('div');
+  group.className = 'conversation-error-actions';
+  usableActions.forEach((action) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary-button conversation-error-action';
+    button.dataset.errorAction = action.kind;
+    button.textContent = action.label;
+    attachConversationErrorAction(button, action, context);
+    group.appendChild(button);
+  });
+  card.appendChild(group);
   return message;
 }
 
-function addConversationErrorNotice(message, error) {
-  if (!message || message.querySelector('.conversation-error-notice')) return;
-  const bubble = message.querySelector('.bubble') || message;
-  const notice = document.createElement('p');
-  notice.className = 'conversation-error-notice';
-  notice.textContent = `连接失败：${error?.message || '请求失败'}。请确认后重新发送。`;
-  bubble.appendChild(notice);
+function addConversationErrorNotice(message, error, context = null) {
+  if (!message) return null;
+  if (message.querySelector('.conversation-error-notice')) return null;
+  renderConversationFailure(message, error, context);
+  return message.querySelector('.conversation-error-notice');
+}
+
+function addConversationError(error, context = null) {
+  const message = addMessage('', 'assistant');
+  renderConversationFailure(message, error, context);
+  return message;
+}
+
+function attachConversationErrorAction(button, action, context) {
+  button.addEventListener('click', () => { handleConversationErrorAction(button, action, context); });
+}
+
+async function handleConversationErrorAction(button, action, context) {
+  if (!context || typeof context.question !== 'string' || !context.question) return;
+  if (action.kind === 'recheck') {
+    // 边界 B15：只带 refresh=1 重探能力，绝不重发用户消息。
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await loadReasoningOptions(activeModel, { refresh: true }); }
+    finally { button.disabled = false; }
+    return;
+  }
+  if (action.kind === 'switch' || action.kind === 'switchOnly') {
+    const previous = reasoningOptionsState.lastEffort;
+    const previousDefault = reasoningOptionsState.defaultEffort;
+    const effort = setReasoningEffort(action.effort);
+    persistConversationReasoningEffort(effort, previous, previousDefault);
+    if (action.kind === 'switchOnly') return;
+  }
+  if (button.disabled) return;
+  button.disabled = true;
+  await sendConversationMessage(context.question, { appendUser: false, userBubble: context.userMessage });
 }
 
 function createAssistantMessage(model) {
@@ -295,7 +441,7 @@ function createAssistantMessage(model) {
   bubble.append(modelTag, answer, memoryResults, sources);
   message.append(avatar, bubble);
   message.dataset.lastEventSeq = '0';
-  message.dataset.reasoningEffort = normalizeReasoningEffort(reasoningOptionsState.lastEffort || 'xhigh');
+  message.dataset.reasoningEffort = normalizeReasoningEffort(reasoningOptionsState.lastEffort || 'off');
   messages.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
   return message;
@@ -340,52 +486,205 @@ modeSelect.addEventListener('change', () => {
 modelSelect.addEventListener('change', () => {
   activeModel = modelSelect.value;
   modelLabel.textContent = displayName(activeModel);
-  loadReasoningOptions(activeModel);
+  loadReasoningOptions(activeModel, { source: 'model-switch' });
 });
 
-function normalizeReasoningEffort(value, fallback = 'xhigh') {
+function normalizeReasoningEffort(value, fallback = 'off') {
   const effort = String(value || '').trim().toLowerCase();
   return REASONING_EFFORTS.includes(effort) ? effort : fallback;
 }
 
+// P1-1：发出消息时选择 reasoning_effort。能力探测（loading）期间 select 的选中值尚未经
+// 后端确认，绝不能直接发出——否则模型不支持该档位会触发后端 409（即 spec 缺陷 C）。
+// loading 期间回落到所有模型都支持的 'off'；非 loading 用已确认的 select 值，空则回落 lastEffort。
+// 注意：loading 期间选择器被禁用，用户无法显式选档，回落 'off' 不构成对 B11（用户显式选择）的静默改写。
+function pickSendReasoningEffort(loadState, selectValue, lastEffort) {
+  if (loadState === 'loading') return 'off';
+  return normalizeReasoningEffort(selectValue || normalizeReasoningEffort(lastEffort || 'off'));
+}
+
 function setReasoningEffort(value, { remember = true } = {}) {
-  const effort = normalizeReasoningEffort(value, reasoningOptionsState.defaultEffort || 'xhigh');
+  const effort = normalizeReasoningEffort(value, reasoningOptionsState.defaultEffort || 'off');
   reasoningOptionsState.lastEffort = effort;
   if (reasoningEffortSelect) reasoningEffortSelect.value = effort;
   if (remember) reasoningOptionsState.defaultEffort = effort;
   return effort;
 }
 
-function syncReasoningEffortOptions(supported) {
+function syncReasoningEffortOptions(loadState, supported, staleCachedAt) {
   if (!reasoningEffortSelect) return;
-  const supportedSet = new Set(Array.isArray(supported) && supported.length ? supported : ['off']);
+  // B14：能力加载中（loading）选择器整体禁用，避免「全灰只剩 off」的闪烁。
+  if (loadState === 'loading') {
+    reasoningEffortSelect.disabled = true;
+    [...reasoningEffortSelect.options].forEach((option) => {
+      option.disabled = true;
+      option.setAttribute('aria-disabled', 'true');
+      option.title = '';
+    });
+    renderReasoningEffortState(loadState, staleCachedAt);
+    return;
+  }
+  // 非 loading 态：整体恢复可交互（个别不支持的档位在下面按 supported 禁用）。
+  reasoningEffortSelect.disabled = false;
+  const known = loadState === 'known' || loadState === 'stale';
+  const supportedSet = new Set(known && Array.isArray(supported) && supported.length ? supported : ['off']);
   supportedSet.add('off');
+  const disabledTitle = loadState === 'unknown' ? '能力未确认，暂不可选此档位' : '该模型不支持此档位';
   [...reasoningEffortSelect.options].forEach((option) => {
-    option.disabled = !supportedSet.has(option.value);
+    const enabled = supportedSet.has(option.value);
+    option.disabled = !enabled;
+    option.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    option.title = enabled ? '' : disabledTitle;
   });
+  renderReasoningEffortState(loadState, staleCachedAt);
 }
 
-async function loadReasoningOptions(model, { selectedEffort = null } = {}) {
+// 选中值校正（B9/B10）：能力已知（known/stale）且当前选中档不在 supported_efforts 内时，
+// 改到该模型支持的最高档，并在档位选择器旁弹一次性提示。
+// B11 红线：reason==='user'（用户显式 change）一律不改档；unknown 也不静默降级。
+function reconcileEffortWithCapabilities(reason, desired) {
+  const desiredNorm = normalizeReasoningEffort(desired || 'off');
+  if (reason === 'user') return desiredNorm;
+  if (reasoningOptionsState.loadState === 'unknown') return desiredNorm;
+  const supported = supportedReasoningEfforts();
+  if (supported.includes(desiredNorm)) return desiredNorm;
+  const highest = highestSupportedReasoningEffort();
+  if (!highest || highest === desiredNorm) return desiredNorm;
+  const key = `${reasoningOptionsState.model}|${conversationState.conversationId || ''}`;
+  if (!reasoningOptionsState.correctedKeys.has(key)) {
+    reasoningOptionsState.correctedKeys.add(key);
+    showEffortCorrectionNotice(reasoningEffortLabel(desiredNorm), reasoningEffortLabel(highest));
+  }
+  return highest;
+}
+
+// 档位选择器旁的状态条（四态）。loading 整体禁用 + 检测中；unknown 能力未确认 + 重新检测；
+// stale 沿用旧结果 + 重新检测；known 不显示额外文案（B12/B13/B14）。
+function renderReasoningEffortState(loadState, staleCachedAt) {
+  const stateEl = document.querySelector('#reasoning-effort-state');
+  if (!stateEl) return;
+  stateEl.textContent = '';
+  stateEl.className = 'reasoning-effort-state';
+  stateEl.hidden = false;
+  if (loadState === 'loading') {
+    stateEl.textContent = '检测能力中…';
+    stateEl.classList.add('is-loading');
+    return;
+  }
+  if (loadState === 'unknown') {
+    stateEl.textContent = '能力未确认';
+    stateEl.classList.add('is-unknown');
+    appendRecheckButton(stateEl);
+    return;
+  }
+  if (loadState === 'stale') {
+    const when = staleCachedAt ? formatStaleTime(staleCachedAt) : '';
+    stateEl.textContent = when ? `沿用 ${when} 前的能力检测结果` : '沿用旧能力检测结果';
+    stateEl.classList.add('is-stale');
+    appendRecheckButton(stateEl);
+    return;
+  }
+  stateEl.hidden = true;
+}
+
+function appendRecheckButton(stateEl) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'secondary-button reasoning-effort-recheck';
+  btn.textContent = '重新检测';
+  btn.setAttribute('aria-label', '重新检测模型能力');
+  btn.addEventListener('click', () => { loadReasoningOptions(activeModel, { refresh: true }); });
+  stateEl.appendChild(btn);
+}
+
+function formatStaleTime(cachedAt) {
+  const then = new Date(cachedAt).getTime();
+  if (!Number.isFinite(then)) return '';
+  const diff = Date.now() - then;
+  if (diff < 0) return '';
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec} 秒`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时`;
+  return `${Math.floor(hr / 24)} 天`;
+}
+
+function showEffortCorrectionNotice(fromLabel, toLabel) {
+  const el = document.querySelector('#reasoning-effort-notice');
+  if (!el) return;
+  el.textContent = `已因模型能力从『${fromLabel}』调整为『${toLabel}』`;
+  el.hidden = false;
+  clearTimeout(showEffortCorrectionNotice._timer);
+  showEffortCorrectionNotice._timer = setTimeout(() => { el.hidden = true; }, 4000);
+}
+
+async function loadReasoningOptions(model, { selectedEffort = null, refresh = false, source = null } = {}) {
   if (!reasoningEffortSelect || !model) return;
   const loadToken = ++reasoningOptionsState.loadToken;
   const requestedModel = String(model);
+  reasoningOptionsState.loadState = 'loading';
+  syncReasoningEffortOptions('loading', null, null);
   try {
-    const response = await fetch(`/api/chat/reasoning-options?model=${encodeURIComponent(requestedModel)}`);
+    const response = await fetch(`/api/chat/reasoning-options?model=${encodeURIComponent(requestedModel)}${refresh ? '&refresh=1' : ''}`);
     let data = null;
     try { data = await response.json(); } catch (_) { data = null; }
     if (!response.ok) throw new Error(conversationError(data, '思考档位暂不可用'));
     if (loadToken !== reasoningOptionsState.loadToken || activeModel !== requestedModel) return;
     reasoningOptionsState.model = requestedModel;
     reasoningOptionsState.supported = Array.isArray(data?.supported_efforts) ? data.supported_efforts : null;
-    reasoningOptionsState.defaultEffort = normalizeReasoningEffort(data?.default_effort, 'xhigh');
-    syncReasoningEffortOptions(reasoningOptionsState.supported);
-    setReasoningEffort(selectedEffort || conversationState.conversation?.reasoning_effort || reasoningOptionsState.defaultEffort, { remember: false });
+    const capSource = data?.source;
+    if (capSource === 'stale') {
+      reasoningOptionsState.loadState = 'stale';
+      reasoningOptionsState.staleCachedAt = data?.cached_at || null;
+    } else if (capSource === 'unknown') {
+      reasoningOptionsState.loadState = 'unknown';
+      reasoningOptionsState.staleCachedAt = null;
+    } else {
+      reasoningOptionsState.loadState = 'known';
+      reasoningOptionsState.staleCachedAt = data?.cached_at || null;
+    }
+    const backendDefault = normalizeReasoningEffort(data?.default_effort, null);
+    reasoningOptionsState.defaultEffort = backendDefault || highestSupportedReasoningEffort() || 'off';
+    syncReasoningEffortOptions(reasoningOptionsState.loadState, reasoningOptionsState.supported, reasoningOptionsState.staleCachedAt);
+    if (reasoningOptionsState.loadState === 'unknown') {
+      setReasoningEffort('off', { remember: false });
+    } else {
+      // 区分调用来源（spec 026 Task05 缺陷修复）：
+      // - 刷新（重新检测能力，source==='refresh'）：保留用户当前选中的档位（lastEffort），
+      //   越界再由 reconcileEffortWithCapabilities 校正到支持的最高档。
+      // - 首次加载 / 切换模型 / 载入会话：用户未显式选过时优先后端 default_effort
+      //   （Task02/03 已保证它 == 该模型支持的最高档），不沿用 lastEffort——其初值为
+      //   'off'，会在全新页面首次加载时错误地压过低档。
+      const callSource = source || (refresh ? 'refresh' : 'initial');
+      let desired;
+      if (callSource === 'refresh') {
+        // 重新检测：保留用户当前选中档位（lastEffort），越界再交由 reconcile 校正
+        desired = selectedEffort || reasoningOptionsState.lastEffort || conversationState.conversation?.reasoning_effort || reasoningOptionsState.defaultEffort || 'off';
+      } else if (callSource === 'initial') {
+        // 首屏：优先后端 default_effort（= 该模型支持的最高档），不沿用切换前选中的档位
+        // （其初值为 'off'，会在全新页面首次加载时错误地压过低档）
+        desired = selectedEffort || reasoningOptionsState.defaultEffort || 'off';
+      } else {
+        // model-switch / session：保留用户在切换前已选的档位（此刻 lastEffort 仍是切换前的值，
+        // 尚未被下方 setReasoningEffort 覆盖）。交由 reconcile 校正到新模型支持的最高档并弹一次性提示，
+        // 避免“显式选择被无声丢弃且无提示”的静默降档，违反 Spec024 红线（B9）。
+        // 注意 defaultEffort 已在上方被重置为新模型默认值，不能在此用它兜底——否则显式选择会
+        // 被当作“合法默认值”跳过校正与提示。
+        desired = selectedEffort || reasoningOptionsState.lastEffort || reasoningOptionsState.defaultEffort || 'off';
+      }
+      const corrected = reconcileEffortWithCapabilities('load', desired);
+      setReasoningEffort(corrected, { remember: false });
+    }
   } catch (_) {
     if (loadToken !== reasoningOptionsState.loadToken || activeModel !== requestedModel) return;
     reasoningOptionsState.model = requestedModel;
-    reasoningOptionsState.supported = ['off'];
+    reasoningOptionsState.supported = null;
     reasoningOptionsState.defaultEffort = 'off';
-    syncReasoningEffortOptions(['off']);
+    reasoningOptionsState.loadState = 'unknown';
+    reasoningOptionsState.staleCachedAt = null;
+    syncReasoningEffortOptions('unknown', null, null);
     setReasoningEffort('off', { remember: false });
   }
 }
@@ -678,7 +977,7 @@ function acceptConversationEvent(assistantMessage, eventData) {
     assistantMessage.dataset.terminal = 'true';
     assistantMessage.dataset.status = 'interrupted';
     finalizeConversationReasoning(assistantMessage.querySelector('.conversation-reasoning'), 'interrupted');
-    addConversationErrorNotice(assistantMessage, new Error('事件流中断：缺少有效事件序号'));
+    addConversationErrorNotice(assistantMessage, Object.assign(new Error('事件流中断：缺少有效事件序号'), { code: 'STREAM_INTERRUPTED', retryable: true }));
     return false;
   }
   const last = Number(assistantMessage.dataset.lastEventSeq || 0);
@@ -689,7 +988,7 @@ function acceptConversationEvent(assistantMessage, eventData) {
     assistantMessage.dataset.status = 'interrupted';
     const panel = assistantMessage.querySelector('.conversation-reasoning');
     finalizeConversationReasoning(panel, 'interrupted');
-    addConversationErrorNotice(assistantMessage, new Error('事件流中断'));
+    addConversationErrorNotice(assistantMessage, Object.assign(new Error('事件流中断'), { code: 'STREAM_INTERRUPTED', retryable: true }));
     if (!finalEnvelope) return false;
   }
   assistantMessage.dataset.lastEventSeq = String(seq);
@@ -1373,7 +1672,7 @@ function abortConversationStream() {
     activeAssistant.dataset.streamActive = 'false';
     activeAssistant.dataset.doneSeen = 'true';
     activeAssistant.classList.add('is-interrupted');
-    addConversationErrorNotice(activeAssistant, new Error('本轮已中止'));
+    addConversationErrorNotice(activeAssistant, Object.assign(new Error('本轮已中止'), { code: 'ABORTED' }));
   }
   messages?.querySelectorAll('.conversation-processing[data-running="true"]').forEach((processing) => {
     stopConversationProcessing(processing, 'interrupted', '处理过程已中断');
@@ -1410,7 +1709,7 @@ async function openConversation(conversationId, { replace = false } = {}) {
     conversationState.projectId = conversationState.conversation?.project_id || null;
     conversationState.draftProjectId = conversationState.projectId;
     setReasoningEffort(conversationState.conversation?.reasoning_effort || reasoningOptionsState.defaultEffort, { remember: false });
-    loadReasoningOptions(activeModel, { selectedEffort: conversationState.conversation?.reasoning_effort || null });
+    loadReasoningOptions(activeModel, { selectedEffort: conversationState.conversation?.reasoning_effort || null, source: 'session' });
     projectState.expandedProjectId = conversationState.projectId || projectState.expandedProjectId;
     renderProjectList(projectState.items);
     if (conversationState.projectId) await loadProjectConversations(conversationState.projectId);
@@ -1430,7 +1729,7 @@ async function openConversation(conversationId, { replace = false } = {}) {
 
 function beginDraft() {
   abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
-  setReasoningEffort(reasoningOptionsState.defaultEffort || reasoningOptionsState.lastEffort || 'xhigh', { remember: false });
+  setReasoningEffort(reasoningOptionsState.defaultEffort || reasoningOptionsState.lastEffort || 'off', { remember: false });
   if (window.location.pathname.startsWith('/c/')) window.history.replaceState({}, '', '/');
   const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = '新会话';
   const state = document.querySelector('.chat-state'); if (state) state.textContent = '新会话';
@@ -1795,41 +2094,47 @@ function appendConversationEvent(assistantMessage, processing, eventData) {
   }
 }
 
-async function sendConversationMessage(question, { appendUser = true } = {}) {
+async function sendConversationMessage(question, { appendUser = true, userBubble = null } = {}) {
+  // 校验不通过时直接返回，绝不留下空的乐观卡片。
+  if (!String(question || '').trim()) return;
   abortConversationStream(); const generation = conversationState.streamGeneration; const controller = new AbortController(); conversationState.streamController = controller;
   workspace.classList.add('has-started');
   setConversationStatus('模型正在准备…');
   const userMessage = appendUser
     ? addMessage(question, 'user')
-    : [...messages.querySelectorAll('.message.user')].at(-1);
-  const payload = { content: question, mode: modeSelect.value, model: modelSelect.value, reasoning_effort: normalizeReasoningEffort(reasoningEffortSelect?.value || reasoningOptionsState.lastEffort || 'xhigh') };
+    : (userBubble || [...messages.querySelectorAll('.message.user')].at(-1));
+  const payload = { content: question, mode: modeSelect.value, model: modelSelect.value, reasoning_effort: pickSendReasoningEffort(reasoningOptionsState.loadState, reasoningEffortSelect?.value, reasoningOptionsState.lastEffort) };
   const endpoint = conversationState.conversationId ? `/api/conversations/${encodeURIComponent(conversationState.conversationId)}/messages` : '/api/conversations/messages';
   if (!conversationState.conversationId && conversationState.projectId) payload.project_id = conversationState.projectId;
-  let assistantMessage = null; let processing = null; let writer = null; let streamError = null; let userMessageId = null;
+  // 乐观建卡：在 await fetch 之前就把卡片插进聊天流，避免协议建立前的空白等待。
+  let assistantMessage = createAssistantMessage(activeModel);
+  setConversationPending(assistantMessage);
+  let processing = null; let writer = null; let streamError = null; let userMessageId = null;
   let sourcesRenderer = null; let pendingSources = null; let generationCompleted = false; let doneReceived = false;
   try {
     const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
-    if (!response.ok) { let data = null; try { data = await response.json(); } catch (_) {} const error = new Error(conversationError(data)); error.retryable = data?.detail?.retryable ?? data?.retryable ?? false; throw error; }
+    if (!response.ok) { let data = null; try { data = await response.json(); } catch (_) {} const error = new Error(conversationError(data)); error.code = data?.detail?.code ?? data?.code; error.status = response.status; error.effort = payload.reasoning_effort; error.retryable = data?.detail?.retryable ?? data?.retryable ?? false; throw error; }
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
     const handleSse = (chunk) => {
       const line = chunk.split('\n').find((item) => item.startsWith('data: ')); if (!line) return;
       let eventData; try { eventData = JSON.parse(line.slice(6)); } catch (_) { return; }
       if (streamError) return;
       if (eventData.type === 'meta') {
-        if (!assistantMessage) {
+        if (assistantMessage.dataset.metaSeen !== 'true') {
           const metaSeq = Number(eventData.event_seq);
           if (!Number.isInteger(metaSeq) || metaSeq !== 1) {
-            streamError = new Error('事件流中断：首个 meta 序号无效');
+            streamError = Object.assign(new Error('事件流中断：首个 meta 序号无效'), { code: 'STREAM_INTERRUPTED', retryable: true });
             return;
           }
-          assistantMessage = createAssistantMessage(eventData.model || activeModel);
+          // 填充乐观卡片，绝不新建第二张。
           if (!acceptConversationEvent(assistantMessage, eventData)) {
-            assistantMessage.remove();
-            assistantMessage = null;
-            streamError = new Error('事件流中断：首个 meta 未被接受');
+            streamError = Object.assign(new Error('事件流中断：首个 meta 未被接受'), { code: 'STREAM_INTERRUPTED', retryable: true });
             return;
           }
           assistantMessage.dataset.metaSeen = 'true';
+          clearConversationPending(assistantMessage);
+          const modelTag = assistantMessage.querySelector('.model-tag');
+          if (modelTag) modelTag.textContent = `${eventData.model || activeModel}${modeSelect.value === 'developer' ? ' · Developer' : ''}`;
         } else if (!acceptConversationEvent(assistantMessage, eventData)) {
           if (assistantMessage.dataset.sequenceGap === 'true') {
             assistantMessage.dataset.streamActive = 'false';
@@ -1925,7 +2230,15 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
     }
     if (streamError) throw streamError;
   } catch (error) {
-    if (error.name === 'AbortError' || generation !== conversationState.streamGeneration) return;
+    if (error.name === 'AbortError' || generation !== conversationState.streamGeneration) {
+      // 被新一轮发送中止：卡片若仍停在占位阶段就清掉占位，避免永久「模型正在准备…」。
+      if (assistantMessage?.dataset.phase === 'pending') {
+        clearConversationPending(assistantMessage);
+        assistantMessage.dataset.phase = 'aborted';
+        assistantMessage.dataset.streamActive = 'false';
+      }
+      return;
+    }
     if (error.connectionInterrupted) { if (writer) writer.flush(); }
     else if (writer) writer.cancel();
     if (processing) { updateConversationProcessing(processing, { step_id: 'connection', kind: 'connection', label: '连接状态', status: error.retryable ? 'skipped' : 'failed', summary: error.retryable ? '连接中断，可重试' : '连接失败' }); stopConversationProcessing(processing, error.retryable ? 'skipped' : 'failed', error.retryable ? '连接中断，可重试' : '连接失败'); collapseConversationProcessing(processing); }
@@ -1935,8 +2248,9 @@ async function sendConversationMessage(question, { appendUser = true } = {}) {
       if (error.name !== 'AbortError') markConversationEventTerminal(assistantMessage, error.connectionInterrupted || error.retryable ? 'interrupted' : 'failed');
     }
     if (sourcesRenderer) sourcesRenderer.clear();
-    if (assistantMessage) addConversationErrorNotice(assistantMessage, error);
-    else if (!streamError) addConversationError(error);
+    // 失败终态：卡片就地转错误态，不移除、不把内容回填输入框。
+    if (assistantMessage) renderConversationFailure(assistantMessage, error, { question, userMessage });
+    else if (!streamError) addConversationError(error, { question });
   } finally {
     if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList();
   }

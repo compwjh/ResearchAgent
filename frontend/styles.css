@@ -48,6 +48,11 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-retry-button { min-height: 32px; margin-top: 7px; padding: 6px 9px; border: 1px solid #e3dfff; background: #f7f5ff; color: var(--accent); font-size: 10px; }
 .conversation-status-retry { margin: 0 0 0 6px; padding: 4px 8px; vertical-align: middle; }
 .conversation-error-notice { margin: 8px 0 0; color: #a33232; font: 10px/1.45 'DM Mono', monospace; overflow-wrap: anywhere; }
+/* ===== spec-026 Task04：乐观建卡占位 + 失败终态操作区 ===== */
+.conversation-pending { margin: 8px 0 0; color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.conversation-error-card { display: grid; gap: 7px; margin-top: 8px; }
+.conversation-error-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-error-actions .conversation-error-action { padding: 6px 9px; font-size: 10px; }
 .conversation-list-head { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; color: var(--muted); font: 10px 'DM Mono', monospace; text-transform: uppercase; }
 .conversation-list-head-actions { display: flex; align-items: center; gap: 5px; }
 .conversation-list-head-actions .icon-button { padding: 2px 4px; font: 10px 'DM Mono', monospace; }
@@ -2313,3 +2318,38 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .st-detail-dialog .secondary-button {
   min-height: 34px;
 }
+
+/* spec-026 Task05：档位选择器四态状态条与校正提示（作用域限定 .workspace） */
+.workspace .reasoning-effort-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 10px 'DM Mono', monospace;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.workspace .reasoning-effort-state[hidden] { display: none; }
+.workspace .reasoning-effort-state.is-loading::before {
+  content: '';
+  width: 9px; height: 9px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: reasoning-effort-spin 0.7s linear infinite;
+}
+@keyframes reasoning-effort-spin { to { transform: rotate(360deg); } }
+.workspace .reasoning-effort-state.is-unknown { color: #b45309; }
+.workspace .reasoning-effort-state.is-stale { color: var(--muted); }
+.workspace .reasoning-effort-recheck {
+  margin-left: 6px;
+  padding: 2px 8px;
+  min-height: 22px;
+  font: 10px 'DM Mono', monospace;
+}
+.workspace .reasoning-effort-notice {
+  display: block;
+  margin-top: 4px;
+  font: 10px 'DM Mono', monospace;
+  color: #b45309;
+}
+.workspace .reasoning-effort-notice[hidden] { display: none; }

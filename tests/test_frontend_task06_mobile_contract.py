@@ -33,9 +33,18 @@ def test_mobile_retry_and_history_contracts_preserve_existing_api_paths():
     assert "setConversationRetryStatus" in APP
     assert "loadConversationMessages(conversationId)" in APP
     assert "loadOlderConversationMessages()" in APP
+    # spec-026 Task04 修订：错误卡片内的「重新发送 / 用『Y』重发」改为用户点击触发，
+    # 复用 `appendUser: false` 重发同一条问题（不重复插入 user 气泡）。
+    # 原断言 `sendConversationMessage(question, { appendUser: false })` 不在 APP 中，
+    # 与 spec 026 §前端错误文案映射「快捷操作」列直接冲突，故改为断言新合同。
     assert "sendConversationMessage(question, { appendUser: false })" not in APP
-    assert "请确认后重新发送" in APP
-    assert "addConversationErrorNotice(assistantMessage, error)" in APP
+    # 重发复用 appendUser:false + context.question（不重复插入 user 气泡）；Task06 修复 P1-2 时
+    # 额外透传 userBubble: context.userMessage 以绑定正确气泡（避免 messageId 写错卡片），
+    # 故此处用前缀匹配，保留「重发不复制气泡」合同又容纳 userBubble 参数。
+    assert "sendConversationMessage(context.question, { appendUser: false" in APP
+    # spec-026 要求错误文案按 error.code 分流，禁止再出现硬编码的「请确认后重新发送」。
+    assert "请确认后重新发送" not in APP
+    assert "renderConversationFailure(assistantMessage, error, { question" in APP
     assert "conversation-error-notice" in APP
     assert "loadOlderConversationMessages" in APP
     assert "before: conversationState.messageCursor" in APP

@@ -12,10 +12,10 @@ Task07 会用 AST 静态检查强制）。因此这里只保留与业务无关�
 留在 platform 会构成反向依赖。
 """
 
-import threading
-import time
 import hashlib
 import json
+import threading
+import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Iterator, List, Optional
@@ -36,7 +36,9 @@ _capability_lock = threading.RLock()
 class ReasoningCapabilities:
     model: str
     supported_efforts: tuple[str, ...]
-    default_effort: str
+    # ``None`` when the support set is empty (``unknown``); never fabricate a
+    # default such as ``off`` for an unprobed model (spec-026 B1).
+    default_effort: Optional[str]
     source: str = "cache"
     cached_at: str = ""
     evidence_ids: dict[str, str] = None
@@ -62,12 +64,43 @@ class ReasoningResolution:
         return getattr(self, key)
 
 
-def _capabilities_for_model(model: str) -> ReasoningCapabilities:
-    return ReasoningCapabilities(str(model or "").strip(), ("off",), "off", "unavailable", datetime.now(timezone.utc).isoformat(), {})
+class EffortResolutionError(ValueError):
+    """Raised by ``resolve_reasoning_effort`` on validation failure.
+
+    Carries the already-probed ``capabilities`` so the caller can decide 409
+    vs 503 without re-probing the model (spec-026 P2-1): the failure path must
+    reuse this object, never call ``get_reasoning_capabilities`` again.  It is
+    a ``ValueError`` subclass so existing ``except ValueError`` callers stay
+    compatible and ``str(error)`` still yields the ``code``.
+    """
+
+    def __init__(self, code: str, capabilities: "ReasoningCapabilities"):
+        super().__init__(code)
+        self.code = code
+        self.capabilities = capabilities
+
+
+def _highest_supported(supported: "tuple[str, ...] | list[str] | set[str]") -> Optional[str]:
+    """Return the highest supported effort by ``REASONING_EFFORTS`` ordering.
+
+    ``supported`` is normally already ordered, but callers/tests may pass an
+    arbitrary order, so filter through the canonical ordering first.  An empty
+    set yields ``None`` — the previous ``supported[0]`` fallback silently
+    returned the *lowest* effort (``off``), which is the spec-026 bug.
+    """
+    ordered = [effort for effort in REASONING_EFFORTS if effort in supported]
+    return ordered[-1] if ordered else None
 
 
 def probe_reasoning_capabilities(model: str) -> ReasoningCapabilities:
-    """Probe each effort with a short non-streaming Ollama request."""
+    """Probe each effort with a short non-streaming Ollama request.
+
+    A failed probe is a normal condition (Ollama not running / model cold), so
+    it never raises: an empty support set yields an ``unknown`` capability
+    object with ``supported_efforts=()`` and ``default_effort=None``.  It is
+    never downgraded to ``('off',)`` — fabricating support is exactly the bug
+    this contract fixes.
+    """
     model = str(model or "").strip()
     supported, evidence = [], {}
     for effort in REASONING_EFFORTS:
@@ -80,9 +113,7 @@ def probe_reasoning_capabilities(model: str) -> ReasoningCapabilities:
             body = response.json() if response.content else {}
             message = body.get("message") or {}
             thinking = message.get("thinking")
-            if effort == "off" and not thinking:
-                supported.append(effort)
-            elif effort != "off" and isinstance(thinking, str) and thinking:
+            if (effort == "off" and not thinking) or (effort != "off" and isinstance(thinking, str) and thinking):
                 supported.append(effort)
             else:
                 continue
@@ -90,9 +121,8 @@ def probe_reasoning_capabilities(model: str) -> ReasoningCapabilities:
         except (httpx.HTTPError, ValueError, TypeError):
             continue
     if not supported:
-        raise RuntimeError("MODEL_CAPABILITIES_UNAVAILABLE")
-    default = "xhigh" if "xhigh" in supported else supported[0]
-    return ReasoningCapabilities(model, tuple(supported), default, "ollama_probe", datetime.now(timezone.utc).isoformat(), evidence)
+        return ReasoningCapabilities(model, (), None, "unknown", "", {})
+    return ReasoningCapabilities(model, tuple(supported), _highest_supported(supported), "ollama_probe", datetime.now(timezone.utc).isoformat(), evidence)
 
 
 def get_reasoning_capabilities(model: str, *, refresh: bool = False) -> ReasoningCapabilities:
@@ -103,6 +133,14 @@ def get_reasoning_capabilities(model: str, *, refresh: bool = False) -> Reasonin
         if cached and not refresh and now - cached[0] < _CAPABILITY_TTL_SECONDS:
             return replace(cached[1], source="cache")
         capabilities = probe_reasoning_capabilities(key)
+        if capabilities.source == "unknown":
+            # A failed probe must not evict or overwrite a previously valid
+            # entry (spec-026 B16).  Reuse the stale result — including its
+            # original ``cached_at`` — when anything is cached, otherwise
+            # report ``unknown``.
+            if cached is not None:
+                return replace(cached[1], source="stale")
+            return capabilities
         _capability_cache[key] = (now, capabilities)
         return capabilities
 
@@ -112,23 +150,38 @@ def clear_reasoning_capability_cache() -> None:
         _capability_cache.clear()
 
 
+def _provider_value(requested: str) -> object:
+    """Map an application effort to Ollama's transport ``think`` value.
+
+    ``off`` → boolean ``False``; ``xhigh`` → boolean ``True`` (Ollama's
+    thinking mode); every other effort passes the string through untouched.
+    Single source of truth shared by ``resolve_reasoning_effort`` and the
+    ``unknown``+``off`` fallback in ``routes_conversations._resolve_request_effort``
+    (spec-026 P2-3) so the two mappings cannot drift.
+    """
+    return False if requested == "off" else (True if requested == "xhigh" else requested)
+
+
 def resolve_reasoning_effort(model: str, effort: Optional[str] = None) -> ReasoningResolution:
     """Resolve a session effort to the exact provider value.
 
     ``off`` maps to boolean ``False``; string efforts are never silently
     downgraded.  Unsupported xhigh/high therefore fail before model creation.
+
+    Validation failures raise ``EffortResolutionError`` carrying the already
+    probed ``capabilities`` (spec-026 P2-1) so the caller need not re-probe.
     """
     capabilities = get_reasoning_capabilities(model)
     requested = str(effort if effort is not None else "xhigh").strip().lower()
     if requested not in REASONING_EFFORTS:
-        raise ValueError("INVALID_REASONING_EFFORT")
+        raise EffortResolutionError("INVALID_REASONING_EFFORT", capabilities)
     if requested not in capabilities.supported_efforts:
-        raise ValueError("REASONING_EFFORT_UNSUPPORTED")
+        raise EffortResolutionError("REASONING_EFFORT_UNSUPPORTED", capabilities)
     # Ollama's boolean thinking mode is the provider representation of the
     # application-level ``xhigh`` effort.  Keep ``requested_effort`` as the
     # stable business value while exposing the exact transport value to both
     # direct and LangChain callers.
-    provider_value: object = False if requested == "off" else (True if requested == "xhigh" else requested)
+    provider_value: object = _provider_value(requested)
     route_payload = {"think": provider_value}
     return ReasoningResolution(str(model), requested, provider_value, capabilities, route_payload, capabilities.evidence_ids.get(requested) if capabilities.evidence_ids else None)
 

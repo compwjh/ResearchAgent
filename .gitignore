@@ -10,6 +10,11 @@ frontend/.DS_Store
 .coverage.*
 htmlcov/
 .pytest_cache/
+# pytest --basetemp 残留目录（子代理跑定向测试时生成，含临时 sqlite，勿入库）
+.pytest-tmp-*
+**/.pytest-tmp-*
+# WorkBuddy 项目运行数据（进度日志、会话记忆等），非源码资产
+.workbuddy-ai/
 .ruff_cache/
 # .codebuddy 下 agents/skills/models.json 属项目资产，需入库共享；
 # 仅忽略 IDE 运行数据（plans/本地设置/记忆）

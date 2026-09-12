@@ -9,6 +9,33 @@ APP = (ROOT / "frontend/app.js").read_text(encoding="utf-8")
 STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 
 
+def _function_source(name: str) -> str:
+    """Return the source of ``function <name>(...) { ... }`` with balanced braces."""
+    start = APP.index(f"function {name}(")
+    position = APP.index("(", start)
+    depth = 0
+    while position < len(APP):
+        char = APP[position]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        position += 1
+    opening = APP.index("{", position)
+    depth = 0
+    for cursor in range(opening, len(APP)):
+        char = APP[cursor]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return APP[start : cursor + 1]
+    raise AssertionError(f"unbalanced braces while extracting {name}")
+
+
 def test_reasoning_effort_picker_has_all_five_values_and_version_bump() -> None:
     assert 'id="reasoning-effort-select"' in INDEX
     for effort in ("off", "low", "medium", "high", "xhigh"):
@@ -76,9 +103,13 @@ def test_event_gap_failure_and_abort_are_sticky_terminals() -> None:
     assert "if (assistantMessage.dataset.doneSeen === 'true') return false" in APP
 
 
-def test_reasoning_options_failure_is_off_only_and_patch_rolls_back_default() -> None:
-    assert "reasoningOptionsState.supported = ['off']" in APP
-    assert "syncReasoningEffortOptions(['off'])" in APP
-    assert "reasoningOptionsState.defaultEffort = 'off'" in APP
+def test_reasoning_options_failure_marks_unknown_without_faking_support() -> None:
+    # spec 026 修订 spec 024：能力探测失败/未知不再编造 supported=['off']，
+    # 改为 supported=null + loadState='unknown'（B12：不得伪装成「只支持关闭」）。
+    load = _function_source("loadReasoningOptions")
+    assert "reasoningOptionsState.supported = ['off']" not in load
+    assert "reasoningOptionsState.supported = null" in load
+    assert "reasoningOptionsState.loadState = 'unknown'" in load
+    assert "reasoningOptionsState.defaultEffort = 'off'" in load
     assert "previousDefaultEffort" in APP
     assert "reasoningOptionsState.defaultEffort = previousDefaultEffort" in APP

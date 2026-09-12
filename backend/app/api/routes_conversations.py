@@ -14,16 +14,26 @@ from backend.app.api.schemas import (
     MemoryAnalysisDecisionRequest,
     MemoryCreateRequest,
     MemoryPatchRequest,
-    SystemRulePatchRequest,
-    SystemRulePutRequest,
     ProjectCreateRequest,
     ProjectPatchRequest,
+    SystemRulePatchRequest,
+    SystemRulePutRequest,
 )
 from backend.app.chat.application.chat_runner import ChatStreamInterrupted, run_chat
-from backend.app.chat.application.reasoning import EventSequencer, MAX_REASONING_CODEPOINTS, ReasoningStreamFilter, filter_reasoning, REASONING_EFFORTS
 from backend.app.chat.application.conversation_service import (
-    get_memory_analysis_worker, get_memory_evolution_worker, compose_chat_prompt,
-    compose_chat_messages, has_explicit_global_intent, is_system_rule_intent,
+    compose_chat_messages,
+    compose_chat_prompt,
+    get_memory_analysis_worker,
+    get_memory_evolution_worker,
+    has_explicit_global_intent,
+    is_system_rule_intent,
+)
+from backend.app.chat.application.reasoning import (
+    MAX_REASONING_CODEPOINTS,
+    REASONING_EFFORTS,
+    EventSequencer,
+    ReasoningStreamFilter,
+    filter_reasoning,
 )
 from backend.app.knowledge_base.application import (
     citation_payloads,
@@ -34,8 +44,16 @@ from backend.app.knowledge_base.application import (
 )
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
-from backend.app.platform.ollama import get_available_models, get_reasoning_capabilities, resolve_reasoning_effort
-from backend.app.platform.observability import redact_prompt_messages, record_ollama_generation, utc_now
+from backend.app.platform.observability import record_ollama_generation, redact_prompt_messages, utc_now
+from backend.app.platform.ollama import (
+    EffortResolutionError,
+    ReasoningCapabilities,
+    ReasoningResolution,
+    _provider_value,
+    get_available_models,
+    get_reasoning_capabilities,
+    resolve_reasoning_effort,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -174,29 +192,58 @@ def _validate_model(model: str):
 
 
 def _resolve_request_effort(model: str, requested: str | None):
+    # ``resolve_reasoning_effort`` 只抛 ``EffortResolutionError``（``ValueError``
+    # 子类）：能力探测失败已被 ``get_reasoning_capabilities`` 吸收为 ``stale``/``unknown``
+    # （spec-026 Task 02），因此这里不再需要 ``RuntimeError`` 分支（历史实现里的该分支
+    # 已成死代码）。异常携带上一轮探测得到的 ``capabilities``，本规范 P2-1 要求**复用**
+    # 它而非二次探测（最坏再跑一轮 5 档串行探测，最多 25s）。
+    requested_effort = str(requested if requested is not None else "xhigh").strip().lower()
     try:
         return resolve_reasoning_effort(model, requested)
-    except (ValueError, RuntimeError) as error:
-        code = str(error)
-        if isinstance(error, RuntimeError):
-            raise HTTPException(status_code=503, detail={"code": "MODEL_CAPABILITIES_UNAVAILABLE", "message": "模型能力暂时不可用", "retryable": True}) from error
+    except EffortResolutionError as error:
+        code = error.code
         if code == "INVALID_REASONING_EFFORT":
             raise HTTPException(status_code=400, detail={"code": code, "message": "推理档位无效", "retryable": False}) from error
-        raise HTTPException(status_code=409, detail={"code": "REASONING_EFFORT_UNSUPPORTED", "message": "当前模型不支持该推理档位", "retryable": False}) from error
+        # 走到这里只可能是 REASONING_EFFORT_UNSUPPORTED。``error.capabilities`` 已是
+        # 上一轮探测结果，必须区分「能力未知」与「确实不支持」：探测失败且无缓存时
+        # ``supported_efforts`` 为空，此时把未知说成「不支持」会误导用户（spec-026 裁决 B）。
+        # 有旧缓存（``stale``）时按旧能力集判断，仍不支持才 409。
+        capabilities = error.capabilities
+        if capabilities.supported_efforts:
+            raise HTTPException(status_code=409, detail={"code": "REASONING_EFFORT_UNSUPPORTED", "message": "当前模型不支持该推理档位", "retryable": False}) from error
+        if requested_effort == "off":
+            # ``off`` 即 ``think=false``，不需要模型具备 thinking 能力，任何模型都安全，
+            # 因此能力未知时仍然放行（provider 取值复用 ``_provider_value``，与
+            # ``resolve_reasoning_effort`` 一致，避免两处映射漂移，spec-026 P2-3）。
+            provider_value = _provider_value("off")
+            return ReasoningResolution(str(model), "off", provider_value, capabilities, {"think": provider_value})
+        raise HTTPException(status_code=503, detail={"code": "MODEL_CAPABILITIES_UNAVAILABLE", "message": "模型能力暂时不可用", "retryable": True}) from error
+
+
+def _reasoning_options_payload(capabilities: "ReasoningCapabilities") -> dict:
+    """Serialize capabilities for ``GET /chat/reasoning-options``（spec-026 §端点/接口）。"""
+    cached_at = capabilities.cached_at
+    if capabilities.source == "unknown" and not cached_at:
+        # 探测失败且无任何缓存：该字段表示「本次尝试时间」，不是缓存写入时间。
+        cached_at = utc_now().isoformat()
+    return {"model": capabilities.model, "supported_efforts": list(capabilities.supported_efforts), "default_effort": capabilities.default_effort, "source": capabilities.source, "cached_at": cached_at}
 
 
 @router.get("/chat/reasoning-options")
-def reasoning_options(model: str | None = None):
+def reasoning_options(model: str | None = None, refresh: int = 0):
     selected = (model or "").strip()
     if not selected:
         from backend.app.platform.config import MODEL_NAME
         selected = MODEL_NAME
     try:
-        _validate_model(selected)
-        capabilities = get_reasoning_capabilities(selected)
-    except (httpx.HTTPError, RuntimeError) as error:
-        raise HTTPException(status_code=503, detail={"code": "MODEL_CAPABILITIES_UNAVAILABLE", "message": "模型能力暂时不可用", "retryable": True}) from error
-    return {"model": capabilities.model, "supported_efforts": list(capabilities.supported_efforts), "default_effort": capabilities.default_effort, "source": capabilities.source, "cached_at": capabilities.cached_at}
+        available = get_available_models()
+    except httpx.HTTPError:
+        # Ollama 不可达时无法区分「服务不可用」与「模型不存在」，因此既不判 404，
+        # 也不返回 503：交给能力缓存层给出 ``stale``（有旧结果）或 ``unknown``。
+        return _reasoning_options_payload(get_reasoning_capabilities(selected, refresh=bool(refresh)))
+    if selected not in available:
+        raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"模型 {selected} 不存在", "retryable": False})
+    return _reasoning_options_payload(get_reasoning_capabilities(selected, refresh=bool(refresh)))
 
 
 @router.patch("/conversations/{conversation_id}/reasoning")
