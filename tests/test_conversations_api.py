@@ -2,12 +2,24 @@ import json
 import time
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api.routes_conversations import _message_stream
-from backend.app.chat.application.conversation_service import MemoryEvolutionService, MemoryIntent
+from backend.app.chat.application.conversation_service import MemoryEvolutionService, MemoryIntent, stop_all_workers
 from backend.app.main import app
 from backend.app.memory.repository import MemoryRepository
+
+
+@pytest.fixture(autouse=True)
+def _stop_conversation_workers():
+    """Teardown 顺序保证：本模块用例都走消息链路，会启动按库路径永久驻留的 worker。
+
+    先注册的 cleanup 后执行，且 pytest 的 tmp_path 拆除发生在本 yield fixture 之后，
+    因此这里 yield 之后再停 worker，可确保「worker 先停、临时目录后删」。
+    """
+    yield
+    stop_all_workers()
 
 
 def _events(text):

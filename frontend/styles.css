@@ -2267,6 +2267,22 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   text-align: center;
 }
 
+#skill-tool-view .st-legacy-badge,
+.st-detail-dialog .st-legacy-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font: 10px/1.5 'DM Mono', monospace;
+  font-weight: 600;
+  letter-spacing: .04em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 .st-detail-dialog .st-detail-name {
   margin: 0 0 6px;
   font-size: 16px;

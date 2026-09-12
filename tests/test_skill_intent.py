@@ -19,6 +19,7 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
+from backend.app.chat.application.conversation_service import stop_all_workers
 from backend.app.main import app
 from backend.app.skills import intent as intent_module
 from backend.app.skills.intent import (
@@ -234,6 +235,9 @@ class ChatSkillRouteTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
+        # 会话消息链路会按库路径永久缓存 worker 线程；必须在本用例的临时目录删除前
+        # 停掉它们，否则线程会重建 WAL/shm 与 rmtree 竞态（Errno 66）。
+        stop_all_workers()
         self.tmp.cleanup()
 
     def _write_skill(self, name, body, *, enabled=True):

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterable, Mapping, Optional
 from urllib.parse import urlsplit
 
@@ -35,19 +36,28 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
 from backend.app.paper_discovery.infrastructure.usenix_paper_parser import (
     UsenixAcceptedParser,
     parse_accepted_papers,
+    parse_usenix_detail,
 )
 
 
 class _SyncResult:
     """Outcome of a single ``sync_usenix_units`` run over discovered pages."""
-    __slots__ = ("status", "error_code", "cached", "completed", "failed", "waiting", "paper_count")
+    __slots__ = ("status", "error_code", "cached", "completed", "failed", "detail_failed",
+                 "waiting", "paper_count")
 
     def __init__(self) -> None:
         self.status = "completed"
         self.error_code: Optional[str] = None
         self.cached: list[str] = []
         self.completed: list[str] = []
+        # ``failed`` is the listing-page (recall path) failure bucket: it is what
+        # drives ``partial``/``degraded`` for the source and the whole search job.
         self.failed: list[str] = []
+        # ``detail_failed`` tracks presentation-page (abstract backfill) failures.
+        # An abstract is an enhancement, not the recall path, so these units stay
+        # ``failed``/retryable and emit their own event, but they never degrade
+        # the source status or the job.
+        self.detail_failed: list[str] = []
         self.waiting: list[str] = []
         self.paper_count = 0
 
@@ -65,6 +75,57 @@ def _lease_expires_at(now: str, lease_seconds: int) -> str:
     return (parsed + timedelta(seconds=max(0, int(lease_seconds)))).isoformat(
         timespec="seconds"
     ).replace("+00:00", "Z")
+
+
+def _paper_metadata(*, title: str, authors: Iterable[str], year: Any, abstract: Optional[str],
+                    article_url: Optional[str], page_unit_id: Optional[str]) -> dict[str, Any]:
+    """Build the exact metadata dict every catalog hash is computed over.
+
+    ``_persist_paper`` (listing sync) and ``_catalog_metadata_hash`` (detail
+    backfill) MUST hash the same field set, otherwise re-persisting an unchanged
+    row produces a different hash, ``upsert_catalog_paper`` treats it as new
+    metadata and resets ``index_status`` to ``pending`` - re-embedding an
+    abstract that was already indexed.  Sharing this builder makes that parity
+    structural instead of a convention two call sites have to remember.
+    """
+    return {
+        "title": title,
+        "authors": list(authors),
+        "year": year,
+        "abstract": abstract or "",
+        "article_url": article_url,
+        "page_unit_id": page_unit_id,
+    }
+
+
+def _catalog_metadata_hash(paper: Any, abstract: Optional[str]) -> str:
+    """Recompute a catalog row's ``metadata_hash`` for a new abstract.
+
+    ``upsert_catalog_paper`` short-circuits when the hash is unchanged, so a
+    detail-page backfill MUST change it or the write is silently dropped.  The
+    field set is the shared one ``_persist_paper`` hashes, and the
+    ``page_unit_id`` is the deterministic per-paper key (``_page_unit_key``)
+    rather than the listing unit, so re-persisting the same row from either path
+    keeps yielding the same hash.
+    """
+    metadata = _paper_metadata(
+        title=paper.title, authors=paper.authors, year=paper.year, abstract=abstract,
+        article_url=paper.official_page_url,
+        page_unit_id=_page_unit_key(paper.official_page_url),
+    )
+    return hashlib.sha256(
+        json.dumps(metadata, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def _page_unit_key(article_url: Optional[str]) -> Optional[str]:
+    """Deterministic per-paper key used for BOTH catalog metadata hashes.
+
+    The listing unit id is not available on the detail (backfill) path, so the
+    two paths share this URL-derived key instead.  Any stable value works as
+    long as both sides agree; the article URL is the one field they both hold.
+    """
+    return article_url or None
 
 
 @dataclass(frozen=True)
@@ -456,7 +517,9 @@ class UsenixAcceptedSource:
 
     def _sync_one_page(self, search_id: str, conference_id: str, page: str,
                        owner: str, lease_seconds: int, now: str,
-                       result: "_SyncResult", route: Any) -> None:
+                       result: "_SyncResult", route: Any,
+                       attempted: Optional[set[str]] = None,
+                       years: Optional[Iterable[int]] = None) -> None:
         """Fetch, dedup and persist one accepted-paper listing page."""
         path = self._norm_path(page)
         if path is None or not self._accepted_path_ok(path.rstrip("/")):
@@ -471,6 +534,12 @@ class UsenixAcceptedSource:
         if existing is not None and existing.status == "completed" and existing.content_hash:
             with self._lock:
                 result.cached.append(unit_id)
+            # The listing is cached, but its detail pages may still be missing
+            # (a previous run failed, timed out or was interrupted).  Resume the
+            # detail stage from the catalog so a later search keeps filling the
+            # gaps; no listing request is repeated.
+            self._resume_detail_units(search_id, conference_id, owner, lease_seconds,
+                                      now, result, attempted, years)
             return
 
         pending_unit = SourceFetchUnit(
@@ -521,6 +590,12 @@ class UsenixAcceptedSource:
             for paper in papers:
                 self._persist_paper(search_id, unit_id, conference_id, paper, now, result)
                 paper_count += 1
+            # The listing carries no abstract, so every paper whose catalog row
+            # still has one missing gets a second, independently lease-guarded
+            # detail unit.  Failures there degrade the unit, never the job.
+            self._sync_detail_units(search_id, conference_id, papers, owner,
+                                    lease_seconds, now, result,
+                                    attempted if attempted is not None else set())
 
             completed_unit = SourceFetchUnit(
                 fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
@@ -550,21 +625,32 @@ class UsenixAcceptedSource:
         title = paper.title
         key = normalize_title(title)
         catalog_paper_id = hashlib.sha256(f"{conference_id}|{key}".encode("utf-8")).hexdigest()[:32]
-        metadata = {
-            "title": title,
-            "authors": list(paper.authors),
-            "year": paper.year,
-            "abstract": paper.abstract,
-            "article_url": paper.article_url,
-            "page_unit_id": unit_id,
-        }
+        # The detail (backfill) path cannot see the listing unit, so both paths
+        # hash the SAME shared field set, keyed by the article URL.  Otherwise
+        # re-persisting an unchanged row looks like new metadata and resets
+        # ``index_status`` to ``pending``, re-embedding an indexed abstract.
+        metadata = _paper_metadata(
+            title=title, authors=paper.authors, year=paper.year, abstract=paper.abstract,
+            article_url=paper.article_url, page_unit_id=_page_unit_key(paper.article_url),
+        )
         metadata_hash = hashlib.sha256(
             json.dumps(metadata, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()
+        existing = self._existing_catalog_paper(catalog_paper_id)
+        if existing is not None:
+            # A second listing may publish the same paper (summer + fall, or a
+            # re-run of the same cycle).  Abstracts already backfilled from the
+            # detail stage must survive, so metadata and the hash are computed
+            # from the stored abstract rather than the listing's empty one.
+            metadata["abstract"] = existing.abstract or paper.abstract
+            metadata_hash = hashlib.sha256(
+                json.dumps(metadata, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
         catalog = CatalogPaper(
             catalog_paper_id=catalog_paper_id, conference_id=conference_id, year=paper.year,
             title=title, normalized_title=key, authors=list(paper.authors),
-            abstract=paper.abstract or None, publication_stage="accepted",
+            abstract=(existing.abstract if existing is not None else None) or paper.abstract or None,
+            publication_stage=existing.publication_stage if existing is not None else "accepted",
             official_page_url=paper.article_url,
             official_pdf_url=paper.official_pdf_url,
             prepublication_pdf_url=paper.prepublication_pdf_url,
@@ -573,12 +659,399 @@ class UsenixAcceptedSource:
         )
         self.store.upsert_catalog_paper(catalog, now)
         source_record = CatalogSourceRecord(
+            # ``catalog_source_records`` is unique on (source_kind, source_key),
+            # so the key must identify this paper.  Keying it by the listing unit
+            # made every paper of one page collide, and the survivors kept the
+            # last paper's id — which then made this source look like it did not
+            # own the other rows.  The catalog id is the stable per-paper key.
             source_record_id=f"{unit_id}|{catalog_paper_id}".replace("/", "-"),
             catalog_paper_id=catalog_paper_id, fetch_unit_id=unit_id,
             source_kind="usenix", source_key=catalog_paper_id,
             raw_metadata=metadata, observed_at=now,
         )
         self.store.save_source_record(source_record, now)
+
+    # --- Detail fetch units (Spec032.1 Task03) ------------------------------
+    #
+    # Accepted-paper listings carry no abstract, so a second unit per
+    # presentation page backfills it.  The stage reuses the existing lease,
+    # rate-limit, content-hash, event and parser machinery; the only new
+    # behaviour is the fill-if-missing write and the per-unit isolation.
+
+    @staticmethod
+    def _catalog_paper_id(conference_id: str, title: str) -> str:
+        """Derive the catalog key exactly as ``_persist_paper`` does."""
+        return hashlib.sha256(f"{conference_id}|{normalize_title(title)}".encode("utf-8")).hexdigest()[:32]
+
+    @staticmethod
+    def _detail_url_ok(url: Any) -> Optional[str]:
+        """Allowlist a presentation page and return its canonical path prefix.
+
+        ``parse_usenix_detail`` only accepts pages the parser itself would
+        accept, so a caller can never smuggle an arbitrary URL into the detail
+        stage: scheme/host are fixed to https + www.usenix.org and the path must
+        be ``/conference/<slug>/presentation/<slug>``.
+        """
+        if not isinstance(url, str) or not url:
+            return None
+        try:
+            parts = urlsplit(url)
+            port = parts.port
+        except ValueError:
+            return None
+        if (parts.scheme, parts.hostname, port) != ("https", "www.usenix.org", None):
+            return None
+        if parts.username or parts.password or parts.query or parts.fragment or "\\" in parts.path:
+            return None
+        match = re.fullmatch(r"/conference/[^/]+/presentation/[^/]+/?", parts.path)
+        return match.group(0).rstrip("/") if match else None
+
+    def _detail_unit_id(self, conference_id: str, url: str) -> Optional[str]:
+        """Return the deterministic detail unit id, or None for an unsafe URL."""
+        path = self._detail_url_ok(url)
+        return f"usenix|{conference_id}|{path}|detail" if path else None
+
+    def _page_paper_ids(self, conference_id: str) -> set[str]:
+        """Catalog ids persisted by this source, read defensively.
+
+        Freshly synced rows are ``pending`` (they are only marked ``indexed``
+        once embedded), so the read must not keep the default
+        ``index_status="indexed"`` filter.  Narrow stores (and tests) may not
+        expose a catalog reader; without one the stage cannot prove an abstract
+        is missing, so it does nothing rather than risk overwriting one.
+        """
+        reader = getattr(self.store, "list_catalog_papers", None)
+        if not callable(reader):
+            return set()
+        try:
+            papers = reader([conference_id], None, index_status=None)
+        except TypeError:
+            # A narrow store may not implement the index_status argument.
+            try:
+                papers = reader([conference_id])
+            except Exception:  # noqa: BLE001
+                return set()
+        except Exception:  # noqa: BLE001 - a store read must never abort the sync
+            return set()
+        return {paper.catalog_paper_id for paper in papers}
+
+    def _existing_catalog_paper(self, catalog_paper_id: str) -> Any:
+        """Read a catalog row defensively; narrow stores may not expose a reader."""
+        get = getattr(self.store, "get_catalog_paper", None)
+        if not callable(get):
+            return None
+        try:
+            return get(catalog_paper_id)
+        except Exception:  # noqa: BLE001 - a store read must never abort the sync
+            return None
+
+    def _catalog_record(self, catalog_paper_id: str) -> tuple[Optional[str], bool]:
+        """Return (abstract, record_is_ours) for fill-if-missing."""
+        paper = self._existing_catalog_paper(catalog_paper_id)
+        if paper is None:
+            return None, False
+        kinds = getattr(self.store, "get_catalog_source_kinds", None)
+        ours = not callable(kinds)
+        if callable(kinds):
+            try:
+                ours = "usenix" in (kinds(catalog_paper_id) or [])
+            except Exception:  # noqa: BLE001
+                ours = False
+        return paper.abstract or None, ours
+
+    def _sync_detail_units(self, search_id: str, conference_id: str, papers: Iterable[Any],
+                           owner: str, lease_seconds: int, now: str,
+                           result: "_SyncResult", attempted: set[str]) -> None:
+        """Backfill missing abstracts from each paper's presentation page.
+
+        The listing is authoritative: papers it already annotated are skipped
+        entirely (fill-if-missing), so a second search only fetches the pages
+        that are still missing an abstract.  ``attempted`` is owned by the
+        caller because USENIX serves the same papers from both 2024 slugs, and
+        one run must not fetch the same presentation page twice.
+        """
+        persist_ids = self._page_paper_ids(conference_id)
+        for paper in papers:
+            if (getattr(paper, "abstract", "") or "").strip():
+                continue
+            url = paper.article_url
+            unit_id = self._detail_unit_id(conference_id, url)
+            if unit_id is None or unit_id in attempted:
+                continue
+            catalog_paper_id = self._catalog_paper_id(conference_id, paper.title)
+            if not self._abstract_missing(catalog_paper_id, persist_ids):
+                continue
+            attempted.add(unit_id)
+            self._sync_detail_unit(search_id, conference_id, url,
+                                   owner, lease_seconds, now, result,
+                                   catalog_paper_id=catalog_paper_id)
+
+    def _abstract_missing(self, catalog_paper_id: str, persist_ids: set[str]) -> bool:
+        """True only when we can prove this paper's abstract is still empty."""
+        abstract, ours = self._catalog_record(catalog_paper_id)
+        if not ours and catalog_paper_id in persist_ids:
+            ours = True
+        return ours and not abstract
+
+    def _resume_detail_units(self, search_id: str, conference_id: str, owner: str,
+                             lease_seconds: int, now: str, result: "_SyncResult",
+                             attempted: Optional[set[str]],
+                             years: Optional[Iterable[int]] = None) -> None:
+        """Retry detail pages whose catalog row still has no abstract.
+
+        A cached listing unit must not end the run: incomplete detail units stay
+        ``pending``/``failed`` so the next search keeps backfilling.  Only the
+        presentation URL is taken from the catalog row, and it is re-validated
+        by ``_sync_detail_unit`` before any request.
+
+        The read is narrowed to the years THIS request asked for.  Without that
+        filter a search limited to 2024 would resume the 2025 rows a previous
+        search left pending and fetch their presentation pages, which both
+        violates the per-year contract and multiplies the load on usenix.org.
+        """
+        reader = getattr(self.store, "list_catalog_papers", None)
+        if not callable(reader):
+            return
+        selected_years = list(dict.fromkeys(int(year) for year in years)) if years else None
+        try:
+            papers = reader([conference_id], selected_years, index_status=None)
+        except TypeError:
+            # A narrow store may not implement the year/index_status arguments.
+            try:
+                papers = reader([conference_id])
+            except Exception:  # noqa: BLE001
+                return
+        except Exception:  # noqa: BLE001
+            return
+        resumed = attempted if attempted is not None else set()
+        for paper in papers:
+            if (paper.abstract or "").strip():
+                continue
+            url = paper.official_page_url
+            unit_id = self._detail_unit_id(conference_id, url)
+            if unit_id is None or unit_id in resumed:
+                continue
+            resumed.add(unit_id)
+            self._sync_detail_unit(search_id, conference_id, url, owner,
+                                   lease_seconds, now, result,
+                                   catalog_paper_id=paper.catalog_paper_id)
+
+    def _sync_detail_unit(self, search_id: str, conference_id: str, url: Any,
+                          owner: str, lease_seconds: int, now: str,
+                          result: "_SyncResult", *, catalog_paper_id: str) -> None:
+        """Fetch, parse and fill one presentation page's abstract."""
+        unit_id = self._detail_unit_id(conference_id, url)
+        if unit_id is None:
+            # An unsafe URL is rejected outright and never reaches the network.
+            self._append_event(search_id, conference_id, "USENIX_DETAIL_REJECTED",
+                               "rejected", {"error_code": "USENIX_PARSE_FAILED"}, now)
+            return
+
+        existing = self.store.get_fetch_unit(unit_id)
+        if existing is not None and existing.status == "completed" and existing.content_hash:
+            with self._lock:
+                result.cached.append(unit_id)
+            return
+
+        pending_unit = SourceFetchUnit(
+            fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+            unit_key=url, status="pending",
+            created_at=existing.created_at if existing is not None and existing.created_at else now,
+            updated_at=now,
+        )
+        ensure = getattr(self.store, "ensure_fetch_unit", None)
+        if callable(ensure):
+            ensure(pending_unit, now)
+        elif existing is None:
+            self.store.save_fetch_unit(pending_unit, now)
+
+        acquired = self.store.acquire_fetch_unit(unit_id, owner, lease_seconds, now)
+        if not acquired:
+            # Another owner holds a valid lease; stay retryable and never
+            # report this unit as a cache hit.
+            with self._lock:
+                result.waiting.append(unit_id)
+            return
+
+        try:
+            text, error_code = self._fetch_detail(url)
+            if text is None:
+                self._fail_detail_unit(search_id, conference_id, unit_id, url, owner,
+                                       lease_seconds, now, result, error_code, existing)
+                return
+            detail = parse_usenix_detail(text, page_url=url)
+            self._fill_abstract(conference_id, catalog_paper_id, detail, now)
+            detail_hash = self._content_hash(text)
+            completed_unit = SourceFetchUnit(
+                fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+                unit_key=url, status="completed", content_hash=detail_hash, paper_count=1,
+                lease_owner=owner, last_attempt_at=now, last_success_at=now,
+                created_at=existing.created_at if existing is not None and existing.created_at else now,
+                updated_at=now,
+            )
+            self.store.save_fetch_unit(completed_unit, now)
+            self._release_owned_fetch_unit(unit_id, owner, status="completed", now=now,
+                                           lease_seconds=lease_seconds, fallback=completed_unit)
+            with self._lock:
+                result.completed.append(unit_id)
+        except Exception:  # noqa: BLE001 - one detail page must never abort the page
+            self._fail_detail_unit(search_id, conference_id, unit_id, url, owner,
+                                   lease_seconds, now, result, "USENIX_PARSE_FAILED", existing)
+
+    def _fetch_detail(self, url: str) -> tuple[Optional[str], Optional[str]]:
+        """Fetch one allowlisted presentation page; returns (text, error_code).
+
+        The body reuses the source's existing response cache (the same
+        ``("text", url)`` entry ``_get_text`` maintains), so a repeated request
+        for one presentation page is served locally instead of hitting
+        usenix.org again.  The cache only lives as long as the instance, which is
+        why the Tool adapter now shares one instance process-wide.
+        """
+        cached = self._cached(self._cache, ("text", url))
+        if cached is not None:
+            return str(cached), None
+        try:
+            validate_url(url, allowed_hosts={"www.usenix.org"}, dns_resolver=self.dns_resolver)
+        except URLSecurityError as error:
+            return None, f"URL_SECURITY:{error}"
+        try:
+            self._before_request(self._detail_interval())
+            response = self._client().get(url, timeout=self.timeout, follow_redirects=False)
+        except (httpx.HTTPError, OSError):
+            return None, "USENIX_UNAVAILABLE"
+        if response.status_code >= 400:
+            return None, f"USENIX_HTTP_{response.status_code}"
+        with self._lock:
+            self._cache[("text", url)] = (self._now(), response.text)
+        return response.text, None
+
+    def _detail_interval(self) -> float:
+        """Reuse the configured accepted-paper route's rate limit."""
+        route = self._discovery_route("usenix-security")
+        return self._rate_limit(route) if route else 1.0
+
+    def _fail_detail_unit(self, search_id: str, conference_id: str, unit_id: str, url: str,
+                          owner: str, lease_seconds: int, now: str, result: "_SyncResult",
+                          error_code: Optional[str], existing: Optional[SourceFetchUnit]) -> None:
+        """Mark a detail unit failed and always hand its lease back."""
+        failed_unit = SourceFetchUnit(
+            fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+            unit_key=url, status="failed", error_code=error_code, lease_owner=owner,
+            lease_expires_at=_lease_expires_at(now, lease_seconds), last_attempt_at=now,
+            created_at=existing.created_at if existing is not None and existing.created_at else now,
+            updated_at=now,
+        )
+        with contextlib.suppress(Exception):
+            # Bookkeeping a failed unit must not abort the batch.
+            self.store.save_fetch_unit(failed_unit, now)
+        self._release_owned_fetch_unit(unit_id, owner, status="failed", now=now,
+                                       lease_seconds=lease_seconds, fallback=failed_unit)
+        with self._lock:
+            # Recorded in the detail bucket, NOT ``failed``: a missing abstract
+            # must stay observable and retryable without flipping the source to
+            # ``partial`` (which would degrade the whole search job).
+            result.detail_failed.append(unit_id)
+        self._append_event(search_id, conference_id, "USENIX_DETAIL_FAILED", "failed",
+                           {"unit_id": unit_id, "error_code": error_code or "USENIX_PARSE_FAILED"}, now)
+
+    def _fill_abstract(self, conference_id: str, catalog_paper_id: str, detail: Any, now: str) -> None:
+        """Write the parsed abstract only when the catalog row still lacks one.
+
+        fill-if-missing is a hard rule: the detail page may only ever fill an
+        empty abstract, never replace an existing one (a listing-supplied or
+        another source's abstract keeps winning).
+        """
+        abstract = (getattr(detail, "abstract", "") or "").strip()
+        if not abstract:
+            return
+        paper = self._existing_catalog_paper(catalog_paper_id)
+        if paper is None or (paper.abstract or "").strip():
+            return
+        # ``upsert_catalog_paper`` treats an unchanged ``metadata_hash`` as a
+        # no-op, so the hash must be recomputed for the new abstract or the
+        # write would be skipped entirely.  The store resets ``index_status`` to
+        # ``pending`` so the new abstract gets re-embedded.
+        updated = replace(
+            paper, abstract=abstract, updated_at=now,
+            metadata_hash=_catalog_metadata_hash(paper, abstract),
+        )
+        try:
+            self.store.upsert_catalog_paper(updated, now)
+        except Exception:  # noqa: BLE001 - a failed write must not abort the batch
+            return
+
+    # --- Public detail entry point (Spec032.1 Task04) ------------------------
+    #
+    # ``fetch_paper_detail`` is the stable, Tool-callable face of the detail
+    # stage.  It adds no new fetch/parse behaviour: the allowlist check, the
+    # rate-limited request seam and the parser are the SAME ones the sync path
+    # uses (``_detail_url_ok`` / ``_fetch_detail`` / ``parse_usenix_detail``),
+    # so there is exactly one implementation of each.  Only the abstract page
+    # is read -- no PDF is ever downloaded here.
+
+    USENIX_DETAIL_URL_REJECTED = "USENIX_DETAIL_URL_REJECTED"
+
+    def fetch_paper_detail(self, url: Any) -> dict[str, Any]:
+        """Fetch one allowlisted USENIX presentation page and parse it.
+
+        ``url`` MUST be an official presentation page
+        (``https://www.usenix.org/conference/<slug>/presentation/<slug>``);
+        an arbitrary URL is never accepted.  A rejected URL returns a readable
+        error and performs **no** network request at all.
+
+        Returns a flat dict with ``ok`` / ``error_code`` / ``error`` plus the
+        parsed ``title`` / ``authors`` / ``abstract`` / ``keywords`` /
+        ``official_pdf_url`` / ``prepublication_pdf_url`` / ``article_url`` /
+        ``year`` / ``publication_stage`` / ``source_kind`` fields.
+        """
+        safe_url = url if isinstance(url, str) else ""
+        if self._detail_url_ok(safe_url) is None:
+            return {
+                "ok": False,
+                "url": safe_url,
+                "error_code": self.USENIX_DETAIL_URL_REJECTED,
+                "error": (
+                    "只接受 USENIX 官方 presentation 详情页（"
+                    "https://www.usenix.org/conference/<conference>/presentation/<paper>，"
+                    "不得带 query 或 fragment）；不接受任意 URL。"
+                ),
+            }
+        text, error_code = self._fetch_detail(safe_url)
+        if text is None:
+            return {
+                "ok": False,
+                "url": safe_url,
+                "error_code": error_code or "USENIX_PARSE_FAILED",
+                "error": f"详情页抓取失败：{error_code or 'USENIX_PARSE_FAILED'}",
+            }
+        try:
+            # ``parse_usenix_detail`` re-validates the URL, so a page whose
+            # markup cannot be parsed raises rather than yielding junk.
+            paper = parse_usenix_detail(text, page_url=safe_url)
+        except Exception as error:  # noqa: BLE001 - unparsable page is a readable error
+            return {
+                "ok": False,
+                "url": safe_url,
+                "error_code": "USENIX_PARSE_FAILED",
+                "error": f"详情页解析失败：{type(error).__name__}",
+            }
+        return {
+            "ok": True,
+            "url": safe_url,
+            "error_code": None,
+            "error": None,
+            "title": paper.title,
+            "authors": list(paper.authors),
+            "year": paper.year,
+            "abstract": paper.abstract,
+            "keywords": list(paper.keywords),
+            "article_url": paper.article_url,
+            "official_pdf_url": paper.official_pdf_url,
+            "prepublication_pdf_url": paper.prepublication_pdf_url,
+            "absolute_pdf_url": paper.pdf_url,
+            "publication_stage": paper.publication_stage,
+            "source_kind": paper.source_kind,
+        }
 
     def _append_event(self, search_id: str, conference_id: str, event_type: str,
                       status: str, payload: Mapping[str, Any], now: str) -> None:
@@ -606,10 +1079,15 @@ class UsenixAcceptedSource:
         route = self._discovery_route(conference_id)
         result = _SyncResult()
         pages = self._discovered_pages(conference_id, years)
+        selected_years = list(dict.fromkeys(int(year) for year in years))
+        # Detail pages are deduped across every listing slug of this run, because
+        # USENIX serves the same papers from both 2024 slugs.
+        attempted: set[str] = set()
         for page in pages:
             try:
                 self._sync_one_page(search_id, conference_id, page, owner,
-                                    lease_seconds, now, result, route)
+                                    lease_seconds, now, result, route, attempted,
+                                    selected_years)
             except Exception as error:  # noqa: BLE001 - one page must not abort the batch
                 with self._lock:
                     result.failed.append(page)

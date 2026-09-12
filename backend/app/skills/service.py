@@ -35,6 +35,7 @@ class SkillRegistryService:
                 description=record.description,
                 tools=record.tools,
                 enabled=self._enabled_for(record.name),
+                legacy=getattr(record, "legacy", False),
             )
             for record in self._scanner.scan()
         ]
@@ -47,6 +48,7 @@ class SkillRegistryService:
                     description=record.description,
                     tools=record.tools,
                     enabled=self._enabled_for(record.name),
+                    legacy=getattr(record, "legacy", False),
                     body=record.body,
                 )
         return None
@@ -61,6 +63,7 @@ class SkillRegistryService:
             description=record.description,
             tools=record.tools,
             enabled=bool(enabled),
+            legacy=getattr(record, "legacy", False),
         )
 
     def _find_record(self, name: str) -> SkillRecord | None:

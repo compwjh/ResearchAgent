@@ -1,10 +1,13 @@
 import contextlib
 import logging
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from backend.app.api import routes_skills as _skill_routes
+from backend.app.api import routes_tools as _tool_routes
 from backend.app.api.common import stream_event
 from backend.app.api.schemas import (
     ConversationMessageRequest,
@@ -37,7 +40,13 @@ from backend.app.knowledge_base.application import (
 )
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
-from backend.app.platform.config import CHAT_COMPACT_TRIGGER_RATIO, CHAT_TOTAL_TOKEN_BUDGET
+from backend.app.platform.config import (
+    CHAT_COMPACT_TRIGGER_RATIO,
+    CHAT_TOTAL_TOKEN_BUDGET,
+    SKILL_TOOL_MAX_ROUNDS,
+    SKILL_TOOL_RETRY,
+    SKILL_TOOL_TIMEOUT_SECONDS,
+)
 from backend.app.platform.observability import (
     prompt_observation_metadata,
     record_ollama_generation,
@@ -45,6 +54,13 @@ from backend.app.platform.observability import (
     utc_now,
 )
 from backend.app.platform.ollama import get_available_models
+from backend.app.skills import intent as _skill_intent
+from backend.app.skills.intent import SkillDecision, detect_skill
+
+# 注册表在模块级按名绑定，路由内按 `get_skill_registry()` / `get_tool_registry()` 调用：
+# 与 routes_chat.py 一致，测试可 patch 本模块属性作为接缝（生产语义仍是进程级单例）。
+get_skill_registry = _skill_routes.get_skill_registry
+get_tool_registry = _tool_routes.get_tool_registry
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -236,6 +252,106 @@ def _redact_sensitive(value: object) -> str:
     return text[:500]
 
 
+# Spec032.1 Task10：会话级 Skill 粘性的退出语义。
+# 词表刻意保守（宁可漏判退出，也不误退）：只接受「动词 + 技能/对话」的完整短语，
+# 不匹配「这个技能很好用」「技能还能用吗」「先不要结束」等只是提及/询问的表述。
+_SKILL_EXIT_PHRASES = (
+    "结束技能",
+    "退出技能",
+    "关闭技能",
+    "停止技能",
+    "取消技能",
+    "不用技能",
+    "不要技能",
+    "不用这个技能",
+    "不使用技能",
+    "不调用技能",
+    "结束这个技能",
+    "退出这个技能",
+    "回到普通对话",
+    "回到普通聊天",
+    "恢复正常对话",
+)
+
+
+def _is_skill_exit(message: str) -> bool:
+    """保守判定用户是否明确要求结束当前 Skill（退出粘性）。"""
+    text = "".join((message or "").split())
+    return any(phrase in text for phrase in _SKILL_EXIT_PHRASES)
+
+
+def _resolve_sticky_skill(
+    repo: MemoryRepository,
+    registry,
+    conversation_id: str,
+    message: str,
+    decision: SkillDecision,
+    available_names: list[str],
+) -> tuple[SkillDecision, Optional[str]]:
+    """把「本轮识别结果」叠加到会话级粘性状态上，返回 (生效决策, 技能正文)。
+
+    规则（Spec032.1 Task10）：
+    - 明确退出语义 -> 清除粘性，返回 none（本轮走原 run_chat）。
+    - 本轮命中可用 Skill -> 写入/更新粘性，本轮生效。
+    - 本轮 none 且存在粘性且该 Skill 仍可用 -> 沿用（等价于当轮命中）。
+    - 粘性指向的 Skill 已禁用/删除/不存在 -> 清除并回退为无技能，绝不报错。
+    - 从未命中的会话 -> 行为与改动前完全一致。
+    任何状态读写失败都降级为「无粘性」，不阻塞会话。
+    """
+    def _none() -> SkillDecision:
+        return SkillDecision(status="none")
+
+    if _is_skill_exit(message):
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return _none(), None
+
+    if decision.is_usable():
+        with contextlib.suppress(Exception):
+            repo.set_conversation_active_skill(conversation_id, OWNER_ID, decision.skill)
+        return decision, _skill_body(registry, decision.skill)
+
+    # 本轮未点名 / 点名失效 / 名称不存在：只有「完全没点名」才沿用粘性；
+    # disabled / not_found / ambiguous 属于用户明确表态，不沿用（并清掉旧粘性）。
+    if decision.status != "none":
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return decision, None
+
+    try:
+        active = repo.get_conversation_active_skill(conversation_id, OWNER_ID)
+    except Exception as error:
+        logger.warning("会话 Skill 粘性读取异常，按无技能继续：%s", error)
+        active = None
+    if active is None:
+        return _none(), None
+
+    skill = next((item for item in registry.list_skills() if item.name == active.skill_name), None)
+    if skill is None or not skill.enabled:
+        # 粘性技能已被禁用/删除/不存在 -> 清除并回退，不报错、不沿用失效技能。
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return _none(), None
+
+    body = _skill_body(registry, active.skill_name)
+    if body is None:
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return _none(), None
+    # 沿用：等价于当轮命中（同一 SkillDecision 语义，source 标注为 sticky 便于排查）。
+    return SkillDecision(status="matched", skill=active.skill_name, source="sticky"), body
+
+
+def _skill_body(registry, skill_name: str) -> Optional[str]:
+    """读取技能正文，供注入 messages / ToolLoop system prompt。失败返回 None。"""
+    try:
+        detail = registry.get_skill(skill_name)
+    except Exception as error:
+        logger.warning("会话 Skill 正文读取异常：%s", error)
+        return None
+    return detail.body if detail is not None else None
+
+
 def _message_stream(repo: MemoryRepository, conversation, user_message, assistant_message, model: str, mode: str):
     def generate():
         parts: list[str] = []
@@ -325,6 +441,87 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
             segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
             messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None, segments=segments)
+            # Spec032.1 Task09：会话链路接入 Skill 识别 + Tool 执行（复用 spec-023 既有能力，
+            # 不新增第二套实现）。识别异常一律降级：退回原 run_chat 路径，绝不中断会话。
+            # Spec032.1 Task10：在识别结果上叠加会话级粘性（命中一次后整个会话持续生效）。
+            decision: SkillDecision = SkillDecision(status="none")
+            available_names: list[str] = []
+            skill_prompt = None
+            skill_body: Optional[str] = None
+            try:
+                skill_registry = get_skill_registry()
+                skills = skill_registry.list_skills()
+                available_names = [skill.name for skill in skills]
+                decision = detect_skill(user_message.content, skills)
+                decision, skill_body = _resolve_sticky_skill(
+                    repo, skill_registry, conversation.conversation_id, user_message.content, decision, available_names,
+                )
+                if skill_body is not None:
+                    skill_prompt = _skill_intent.build_skill_prompt(user_message.content, skill_body)
+            except Exception as error:
+                logger.warning("会话链路 Skill 识别异常，降级为无技能：%s", error)
+                decision = SkillDecision(status="none")
+            # 命中 Skill 时给出结构化 intent 事件（与普通聊天链路同源构造，保留会话上下文）。
+            intent_event = _skill_intent.to_intent_event(decision, available_names)
+            if intent_event:
+                stream_event_type = intent_event.pop("type")
+                yield stream_event("progress", step_id=repo.create_processing_step(assistant_message.message_id, "skill_intent", "completed", f"命中技能 {decision.skill}" if decision.is_usable() else "未使用技能", label="技能识别").step_id, kind="skill_intent", label="技能识别", status="completed", summary=f"命中技能 {decision.skill}" if decision.is_usable() else "未使用技能")
+                yield stream_event(stream_event_type, **intent_event)
+            if decision.status in ("disabled", "not_found", "ambiguous"):
+                # 不调用模型，直接提示并正常结束，会话不中断。
+                hint = _skill_intent.format_skill_hint(decision, available_names)
+                if hint:
+                    parts.append(hint)
+                    repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming")
+                    yield stream_event("token", content=hint)
+                repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="completed")
+                repo.create_processing_step(assistant_message.message_id, "generation", "completed", "技能提示已返回", label="回答生成")
+                finished = True
+                repo.finalize_processing_steps(assistant_message.message_id, status="completed")
+                yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed")
+                return
+            if skill_prompt is not None:
+                messages.append({"role": "system", "content": skill_prompt})
+            enabled_tools = [tool for tool in get_tool_registry().list_tools() if tool.enabled]
+            if skill_prompt is not None and enabled_tools:
+                # 命中 Skill 且有可用 Tool -> 复用 ToolLoop 编排（与普通聊天链路同一实现）。
+                from backend.app.skills import tool_dispatch as _tool_dispatch
+                from backend.app.skills import tool_executor as _tool_executor
+
+                loop = _tool_executor.ToolLoop(
+                    tools=enabled_tools,
+                    model_call=_tool_executor.make_model_call(
+                        model,
+                        timeout=SKILL_TOOL_TIMEOUT_SECONDS,
+                        retry=SKILL_TOOL_RETRY,
+                    ),
+                    dispatch=_tool_dispatch.build_default_dispatch(),
+                    max_rounds=SKILL_TOOL_MAX_ROUNDS,
+                )
+                repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
+                generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
+                yield stream_event("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
+                try:
+                    for event in loop.run(system_prompt=skill_prompt, user_question=user_message.content):
+                        if event.get("type") == "token":
+                            token = event.get("content", "")
+                            parts.append(token)
+                            repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming")
+                            yield stream_event("token", content=token)
+                except Exception as error:
+                    # Tool 执行异常 -> 不中断会话：以已生成内容收尾。
+                    logger.warning("会话链路 Tool 执行异常，以已生成内容收尾：%s", error)
+                content = "".join(parts)
+                repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
+                generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成（技能 + 工具）", label="回答生成")
+                yield stream_event("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
+                if rag_hits:
+                    sources = citation_payloads(rag_hits)[:5]
+                    yield stream_event("sources", sources=sources, citations=sources)
+                finished = True
+                repo.finalize_processing_steps(assistant_message.message_id, status="completed")
+                yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed")
+                return
             # Spec025 Task04：装配后按阈值自动触发后台异步压缩；绝不阻塞本次响应，
             # 失败只记录观测（与既有 context_pressure 事件并存，不改其语义）。
             try:

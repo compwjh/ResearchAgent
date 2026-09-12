@@ -666,6 +666,11 @@ class MemoryAnalysisWorker:
         self._guard = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        # Serializes stop() against an in-flight process() call.  A job that has
+        # already been claimed keeps writing to the repository; without this a
+        # caller that stops the worker and then removes the database (test
+        # teardown) could race that write and leave WAL/shm side files behind.
+        self._process_guard = threading.Lock()
 
     def start(self) -> "MemoryAnalysisWorker":
         with self._guard:
@@ -763,6 +768,13 @@ class MemoryAnalysisWorker:
         return decision, record.memory_id
 
     def process(self, analysis_id: str) -> None:
+        # Held for the whole job so ``stop()`` can wait for an in-flight write
+        # before the caller tears down the database.  Never blocks a caller:
+        # stop() only takes it briefly after the thread is already joined.
+        with self._process_guard:
+            self._process(analysis_id)
+
+    def _process(self, analysis_id: str) -> None:
         job, claimed = self.repository.claim_memory_analysis_job(analysis_id, self.owner_id)
         if not job or not claimed:
             return
@@ -861,6 +873,11 @@ class MemoryAnalysisWorker:
         thread = self._thread
         if thread and thread is not threading.current_thread():
             thread.join(timeout=1)
+        # ``join`` giving up on the timeout does not mean the worker stopped:
+        # wait for an in-flight process() to finish so the caller can safely
+        # tear down the repository/database that job was writing to.
+        with self._process_guard:
+            pass
 
 
 _WORKERS: dict[str, MemoryEvolutionWorker] = {}
@@ -880,3 +897,25 @@ def get_memory_analysis_worker(repository: MemoryRepository) -> MemoryAnalysisWo
     with _WORKERS_GUARD:
         worker = _ANALYSIS_WORKERS.setdefault(key, MemoryAnalysisWorker(repository))
     return worker.start()
+
+
+def stop_all_workers() -> None:
+    """Stop every cached worker thread and drop the module-level caches.
+
+    The caches are keyed by database path and never evicted at runtime, so a
+    process that outlives a database (tests using a temporary directory) would
+    keep daemon threads polling a deleted file.  This entry point lets a caller
+    (test teardown, shutdown hooks) end that: each worker is stopped with its
+    existing ``stop()`` and both caches are cleared.
+
+    Purely additive: normal startup/scheduling is untouched, and calling it
+    repeatedly (or with empty caches) is safe -- errors are swallowed so cleanup
+    can never mask the real failure.
+    """
+    with _WORKERS_GUARD:
+        workers = list(_WORKERS.values()) + list(_ANALYSIS_WORKERS.values())
+        _WORKERS.clear()
+        _ANALYSIS_WORKERS.clear()
+    for worker in workers:
+        with contextlib.suppress(Exception):
+            worker.stop()

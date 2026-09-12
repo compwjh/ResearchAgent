@@ -2,9 +2,14 @@
 name: usenix-paper-catalog-search
 description: ResearchAgent 项目级 USENIX Security/DBLP 论文目录元数据检索、增量缓存、LangGraph 进度与 RAG 召回；禁止在搜索阶段下载或验证 PDF。
 tools: [search_paper_catalog]
+status: legacy
 ---
 
 # USENIX paper catalog search — 目录元数据版
+
+> ⚠️ **遗留版本（待迁移）**：本文件保留以确保既有引用不失效。
+> 新的编排协议请使用 `usenix-catalog-orchestration`（只含编排决策，不含研发流程与调度规则）。
+> 论文检索模块迁移到新技能后，本文件将被废弃。
 
 ## 适用范围
 

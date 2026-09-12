@@ -7,6 +7,8 @@
 已确认的既有能力入口：
 - search_paper_catalog    → backend.app.paper_discovery.application.paper_discovery_search.PaperDiscoverySearchService.search
 - download_and_import_paper → backend.app.paper_discovery.application.paper_import.import_candidate
+- fetch_paper_detail      → backend.app.paper_discovery.infrastructure.usenix_publication_source.UsenixAcceptedSource.fetch_paper_detail
+  （复用既有详情页抓取 + parse_usenix_detail，只取 HTML 摘要，不下载 PDF）
 - kb_search               → backend.app.knowledge_base.infrastructure.retrieve.hybrid_search
 - kb_ask                  → backend.app.api.routes_kb.kb_ask（hybrid_search + run_chat 编排）
 """
@@ -91,6 +93,35 @@ def build_default_tool_registry() -> list[ToolEntry]:
                     }
                 },
                 "required": ["candidate"],
+            },
+        ),
+        ToolEntry(
+            name="fetch_paper_detail",
+            description=(
+                "抓取并解析单篇 USENIX 官方 presentation 详情页，返回标题、作者、摘要、"
+                "关键词与官方 PDF 链接（只读 HTML 详情页，不下载 PDF）。"
+                "参数：url（必填）——**必须是** USENIX 官方详情页地址，形如 "
+                "https://www.usenix.org/conference/<conference>/presentation/<paper>；"
+                "该地址应取自 search_paper_catalog 返回的候选论文 article_url/official_page_url。"
+                "**不接受任意 URL**：其它域名、带 query/fragment 的地址、非 presentation 路径"
+                "一律被服务端白名单拒绝并返回可读错误（不发起任何网络请求）。"
+            ),
+            entry=(
+                "backend.app.paper_discovery.infrastructure.usenix_publication_source"
+                ".UsenixAcceptedSource.fetch_paper_detail"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": (
+                            "USENIX 官方 presentation 详情页 URL（来自 search_paper_catalog 的"
+                            " article_url / official_page_url），不接受任意其它 URL"
+                        ),
+                    },
+                },
+                "required": ["url"],
             },
         ),
         ToolEntry(

@@ -8,6 +8,7 @@ hold a connection/transaction while waiting for a model.
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import sqlite3
@@ -110,6 +111,19 @@ class ConversationSegment:
 
 
 @dataclass(frozen=True)
+class ActiveSkill:
+    """Spec032.1 Task10: the one sticky Skill of a conversation.
+
+    Kept in its own table (never on the frozen ``conversations`` row) so the
+    legacy schema and its ``Conversation`` dataclass stay untouched."""
+
+    conversation_id: str
+    owner_id: str
+    skill_name: str
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
 class CompactionJob:
     """A background conversation-compaction job; at most one non-terminal
     job per conversation is enforced by a partial unique index."""
@@ -131,33 +145,46 @@ class MemoryRepository:
         self.database_path = Path(database_path) if database_path is not None else default_database_path()
         self.initialize()
 
-    def connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        """Yield a short-lived connection that is closed on exit.
+
+        ``sqlite3.Connection.__exit__`` only ends the transaction, it never
+        closes the handle, so returning a bare connection leaked one file
+        handle per call (all ``with self.connection()`` reads) and left WAL
+        side-files behind, breaking temp-directory cleanup.
+        """
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(str(self.database_path), timeout=5.0, isolation_level=None, check_same_thread=False)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=5000")
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA journal_mode=WAL")
-        return connection
+        try:
+            yield connection
+        finally:
+            connection.close()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        connection = self.connection()
         try:
-            with _write_lock:
+            with _write_lock, self.connection() as connection:
                 connection.execute("BEGIN IMMEDIATE")
                 yield connection
                 connection.execute("COMMIT")
         except Exception:
-            connection.rollback()
+            # ``self.connection()`` closes the handle, but a rollback is still
+            # required to release the writer lock held by BEGIN IMMEDIATE.
+            # Inside the ``with`` this is normally a no-op (sqlite3.__exit__
+            # already rolled back); it only does real work if the caller
+            # swallows GeneratorExit.
+            with contextlib.suppress(sqlite3.ProgrammingError):
+                connection.rollback()
             raise
-        finally:
-            connection.close()
 
     def initialize(self) -> None:
-        connection = self.connection()
         try:
-            with _write_lock:
+            with self.connection() as connection, _write_lock:
                 # DDL is deliberately executed one statement at a time.  The
                 # old implementation used executescript(), which implicitly
                 # committed and could leave a half-applied migration.
@@ -240,12 +267,24 @@ class MemoryRepository:
                     raise RuntimeError("incomplete Task025 compaction schema")
                 if not self._is_task025_schema(connection):
                     raise RuntimeError("Task025 compaction schema validation failed")
+                # Task10 is another additive repository extension (Spec032.1
+                # sticky skill). It keeps the public v6 number and is applied
+                # atomically to fresh and existing v6 databases, exactly like
+                # the Task07 / Task025 blocks above.
+                task10_table = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_active_skill'"
+                ).fetchone()
+                if not task10_table:
+                    self._ensure_skill_stickiness_schema(connection)
                 connection.execute("COMMIT")
         except Exception as error:
-            connection.rollback()
+            # Rollback still matters for the writer lock held by BEGIN
+            # IMMEDIATE; the handle is closed by ``self.connection()``.  A
+            # connection closed after its own rollback raises
+            # ProgrammingError, which must not mask the original failure.
+            with contextlib.suppress(sqlite3.ProgrammingError):
+                connection.rollback()
             raise SystemRuleUnavailableError("memory schema migration failed; startup is fail-closed") from error
-        finally:
-            connection.close()
 
     @staticmethod
     def _create_schema_v1(connection: sqlite3.Connection) -> None:
@@ -653,6 +692,23 @@ class MemoryRepository:
             created_at TEXT NOT NULL, finished_at TEXT
         )""")
         connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_compaction_job_active ON conversation_compaction_jobs(conversation_id) WHERE status IN ('queued','running')")
+
+    @staticmethod
+    def _ensure_skill_stickiness_schema(connection: sqlite3.Connection) -> None:
+        """Spec032.1 Task10: additive ``conversation_active_skill`` table.
+
+        Idempotent (``IF NOT EXISTS``) and never touches existing tables, so a
+        fresh and an already-migrated v6 database converge on the same shape.
+        ``ON DELETE CASCADE`` keeps the sticky row from outliving its
+        conversation (RESTRICT would block legitimate conversation deletes).
+        """
+        connection.execute("""CREATE TABLE IF NOT EXISTS conversation_active_skill (
+            conversation_id TEXT NOT NULL PRIMARY KEY
+                REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+            owner_id TEXT NOT NULL,
+            skill_name TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
 
     @staticmethod
     def _is_task025_schema(connection: sqlite3.Connection) -> bool:
@@ -1124,6 +1180,62 @@ class MemoryRepository:
         except Exception as error:
             raise SystemRuleUnavailableError("SYSTEM_RULE_UNAVAILABLE") from error
 
+    def get_conversation_active_skill(self, conversation_id: str, owner_id: str) -> Optional[ActiveSkill]:
+        """Read the sticky Skill of one conversation (owner-scoped), if any.
+
+        Advisory state: a corrupt/unreadable row degrades to ``None`` (no
+        sticky skill) instead of breaking the conversation.
+        """
+        try:
+            with self.connection() as db:
+                row = db.execute(
+                    "SELECT conversation_id, owner_id, skill_name, updated_at FROM conversation_active_skill"
+                    " WHERE conversation_id=? AND owner_id=?",
+                    (conversation_id, owner_id),
+                ).fetchone()
+        except Exception:
+            return None
+        if not row:
+            return None
+        try:
+            return ActiveSkill(
+                row["conversation_id"], row["owner_id"], row["skill_name"], _dt(row["updated_at"]),
+            )
+        except Exception:
+            return None
+
+    def set_conversation_active_skill(self, conversation_id: str, owner_id: str, skill_name: str) -> None:
+        """Activate (or switch) the sticky Skill of a conversation."""
+        name = (skill_name or "").strip()
+        if not name:
+            raise ValueError("active skill name must not be empty")
+        try:
+            with self.transaction() as db:
+                db.execute(
+                    """INSERT INTO conversation_active_skill(conversation_id, owner_id, skill_name, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(conversation_id) DO UPDATE SET
+                            owner_id=excluded.owner_id,
+                            skill_name=excluded.skill_name,
+                            updated_at=excluded.updated_at""",
+                    (conversation_id, owner_id, name, _now()),
+                )
+        except ValueError:
+            raise
+        except Exception as error:
+            raise SystemRuleUnavailableError("SKILL_STICKINESS_UNAVAILABLE") from error
+
+    def clear_conversation_active_skill(self, conversation_id: str, owner_id: str) -> None:
+        """Drop the sticky Skill (explicit exit or an unusable skill). Idempotent."""
+        try:
+            with self.transaction() as db:
+                db.execute(
+                    "DELETE FROM conversation_active_skill WHERE conversation_id=? AND owner_id=?",
+                    (conversation_id, owner_id),
+                )
+        except Exception as error:
+            raise SystemRuleUnavailableError("SKILL_STICKINESS_UNAVAILABLE") from error
+
     @staticmethod
     def _analysis_job(row: sqlite3.Row) -> MemoryAnalysisJob:
         return MemoryAnalysisJob(
@@ -1310,6 +1422,12 @@ class MemoryRepository:
     def delete_conversation(self, conversation_id: str, owner_id: str) -> bool:
         with self.transaction() as db:
             result = db.execute("UPDATE conversations SET status='deleted', updated_at=? WHERE conversation_id=? AND owner_id=? AND status!='deleted'", (_now(), conversation_id, owner_id))
+            if result.rowcount > 0:
+                # Spec032.1 Task10: a soft-deleted conversation must not keep a
+                # sticky skill alive (nothing else reads it, but a later
+                # restore would silently resurrect it).  The conversations
+                # table predates the FK, so clean up explicitly.
+                db.execute("DELETE FROM conversation_active_skill WHERE conversation_id=? AND owner_id=?", (conversation_id, owner_id))
         return result.rowcount > 0
 
     def list_conversations(
