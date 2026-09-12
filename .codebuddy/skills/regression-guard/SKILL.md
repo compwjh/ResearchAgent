@@ -510,3 +510,16 @@ Before ANY production deployment:
 7. **SSRF**：外发请求须白名单/内网隔离，禁止对任意用户输入 URL 直连。
 8. **USENIX 来源**：论文/数据源须来自可信同源，标注出处。
 9. **禁止重复实现**：下载 / 安全 / 导入 / 批任务 / 身份 / embedding 只保留一套实现，复用优先。
+10. **资源额度 acquire/release 必须同 `try/finally` 保护**（2026-09-12 Spec027 Task03 P0 事故）：向全局调度器/连接池/信号量**领额度**的调用，必须与**归还额度**处于同一个 `try/finally`。把 `acquire` 留在 `try` 之外，二者之间任何一步（哪怕只是写日志/写库）抛异常，额度就永久泄漏，后续请求全部拿到 0，直到进程重启。
+    - 反例：`granted = scheduler.acquire(...)` 在 `try:` 之前，`finally: scheduler.release(...)` 在 `try` 之后 → 泄漏。
+    - 正例：`try:` 内第一行就 `acquire`，`finally:` 无条件 `release`（`release` 做成幂等 `pop`，即使 `acquire` 自身抛了也安全）。
+    - 必配测试：让 `acquire` 之后的某一步抛异常，断言 `scheduler.in_use() == 0` 且**下一个任务仍能领到额度**（不是 0）。
+11. **端点内新增的外部依赖调用必须纳入 `try/except`，保持稳定错误体**（2026-09-12 Spec027 Task03 P2-A）：在 FastAPI 端点里新加的任何跨库/跨服务调用（如查另一个 repository 做归属校验），若放在 `try` 之外，依赖故障会冒泡成**裸 500**（`{"detail": "Internal Server Error"}`，不含 `error.code`），破坏「稳定错误体」契约、前端无法按码映射文案。
+    - 正例：把校验调用放进 `try`，捕获意外异常后返回该模块既有的 503 + 稳定 code；同时确保**正常返回的业务错误响应（404 等）原样透传**，不被 `except` 吞掉。
+    - 必配测试：monkeypatch 依赖使其抛异常，断言返回 503 + 稳定错误体（不是 500），且正常 404/200 路径不回归。
+12. **测试断言不得恒真、不得可静默失效**（2026-09-12 Spec027 Task03 P2-C）：
+    - 恒真反例：`assertEqual(resp.json(), {"message": resp.json()["error"]["message"]})` —— 右侧从同一个响应里读出再和自己比，只验证了 `code`，`message` 实际没断言。改为**逐字期望字符串**（先读实现里的真实文案）。
+    - 静默失效反例：`if not candidates: return` 这类「无输入就直接返回」的守卫，会在**被测实现被整目录删除**时静默通过。改为 `assert candidates` / `assert scanned > 0`，并可用「临时移开实现目录再跑」验证门禁确实会失败（**验证后务必复原**）。
+    - 过滤反例：按 `event_type != "terminal"` 排除事件时，先确认 `"terminal"` 不是**真实事件类型**（在 `contracts.EVENT_TYPES` 里就是），否则会连真实事件一起排除、掩盖断洞。应按「是否合成帧」（`event_seq is None` / 无 `id:` 行）区分。
+13. **SSE 合成帧不得带 `id:` 行**（2026-09-12 Spec027 Task03 P2-8）：服务端凭空补出的收尾帧（如 `terminal`）若沿用上一条真实事件的 `seq` 当 `id:`，客户端会把它记成 `Last-Event-ID`（任务无事件时甚至是 `0`），污染续传游标，使「带游标重连已删除资源 → 410」退化成 404。合成帧省略 `id:`，真实事件帧必须带 `id: {seq}`。
+14. **事件/日志 payload 只放稳定错误码，不放原始异常文本**（2026-09-12 Spec027 Task03 P2-7）：`str(exc)` 可能含文件路径、SQL、凭据片段；原始异常只进服务端 `logger.exception`，对外/落库的事件 payload 用稳定 `error_code`。

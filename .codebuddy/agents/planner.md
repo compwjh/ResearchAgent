@@ -3,7 +3,7 @@ name: planner
 description: 实现规划/编排顾问 agent（qwen3.8:27b-mlx）。为一次需求产出「分派计划」（每个角色子代理的任务、最小上下文、产出路径、行为边界），供主会话执行分派并汇总。Use PROACTIVELY when 需要端到端跑一个 spec 的多角色流程、需要编排方案时。
 tools: Read, Grep, Glob
 skills: strategic-compact, progress-logging
-model: Deepseek-V4.1-Flash
+model: hy3
 permissionMode: default
 maxTurns: 30
 ---

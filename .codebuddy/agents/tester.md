@@ -3,7 +3,7 @@ name: tester
 description: 跨端验收总控 agent（qwen3.5:9b）。实现完成后，按 spec 验收点做跨端集成验收、汇总 backend-tester/frontend-tester 的单端报告，产出 NNN-acceptance-review.md。Use PROACTIVELY when 某个 spec 的实现已完成、需要做跨端验收评审时。
 tools: Read, Grep, Glob, Bash
 skills: verification-loop, strategic-compact, progress-logging, regression-guard
-model: Deepseek-V4.1-Flash
+model: hy3
 permissionMode: default
 maxTurns: 30
 ---
