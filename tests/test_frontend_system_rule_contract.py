@@ -68,7 +68,7 @@ def test_system_rule_suggestion_never_saves_automatically_and_processing_is_dedu
     assert "已应用系统规则" in APP
 
 
-def test_task10_asset_versions_and_safe_dynamic_content() -> None:
+def test_asset_versions_and_safe_dynamic_content() -> None:
     assert "/assets/app.js?v=31" in INDEX
     assert "/assets/styles.css?v=31" in INDEX
     assert "textContent" in APP
