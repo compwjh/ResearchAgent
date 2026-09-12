@@ -203,7 +203,7 @@ def test_proposal_decision_is_compare_and_set_under_concurrency(tmp_path):
     assert repo.get_skill_improvement_proposal(proposal.proposal_id, "owner-a").status in {"applied", "rejected"}
 
 
-def test_task07_schema_validation_checks_column_shape_and_indexes(tmp_path):
+def test_schema_validation_checks_column_shape_and_indexes(tmp_path):
     path = tmp_path / "corrupt-task07.sqlite3"
     repo = MemoryRepository(path)
     with repo.connection() as db:

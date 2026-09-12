@@ -50,7 +50,7 @@ def test_move_dialog_uses_independent_active_projects_and_project_id_values() ->
     assert "conversation-action-project-search" in INDEX
 
 
-def test_task09_uses_dialogs_and_central_overlay_menus() -> None:
+def test_uses_dialogs_and_central_overlay_menus() -> None:
     for marker in ("conversation-action-dialog", "conversation-confirm-dialog", "showModal()", "openFloatingMenu", "floating-menu", "closeFloatingMenu"):
         assert marker in (INDEX + APP + STYLES)
     task09_start = APP.index("function renderProjectOptions")

@@ -344,6 +344,18 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：�
 - 序号按现有最大编号递增，不复用已归档编号。
 - 模板只维护在 `docs/sdd/00-sdd-spec-template.md`，不要在根目录新增散落模板。
 
+### 测试文件命名（2026-09-12 约定）
+
+- **测试文件名按被测功能命名，禁止带 spec / task 编号**（如 `test_spec025_*`、`test_task05_*`）。
+- 理由：编号来自某一次交付的临时切分，功能会演进、会跨 spec 改动，编号会长期误导；
+  按功能命名才能在 `ls tests/` 时直接看出"这块是测什么的"。
+- 示例：`test_spec025_token_budget.py` → `test_token_budget_estimation.py`；
+  `test_task09_project_activity.py` → `test_project_activity.py`。
+- 前端契约测试同理：`test_frontend_task10_system_rule_contract.py` → `test_frontend_system_rule_contract.py`。
+- **测试函数名同样不带编号**（`test_task07_schema_validation_*` → `test_schema_validation_*`）；
+  唯一例外是被测生产符号本身带编号时（如 `_is_task025_schema`），测试名与之保持一致。
+- `docs/sdd/plans/` 下历史报告里对旧文件名的引用属归档文本，不随重命名改写。
+
 ## 执行边界
 
 - 用户只说“分析一下”“规划一下”或提出新需求但未确认 spec 时，只产出或修改 spec，不实现代码。

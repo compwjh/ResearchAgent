@@ -12,7 +12,7 @@ def _make_repo(tmp_path):
     return MemoryRepository(tmp_path / "memory.sqlite3")
 
 
-def test_task025_tables_created_and_indexes_idempotent(tmp_path):
+def test_tables_created_and_indexes_idempotent(tmp_path):
     path = tmp_path / "memory.sqlite3"
     repo = MemoryRepository(path)
     repo.initialize()
