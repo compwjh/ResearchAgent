@@ -70,3 +70,30 @@
 
 - 未覆盖真实 Ollama fast 失败与 strong 重试；当前使用可注入 Router 接缝验证事件投影，默认确定性骨架不主动发起 LLM 调用。
 - 完整 Spec027 全量回归、最终验收、真实 USENIX/DBLP/Ollama 与 390px 浏览器 smoke 仍由 Task06 收口。
+
+## Task05 收口复验（2026-09-13）
+
+### 决策
+
+本轮不补业务代码。`ModelRouter.execute` 已实现 fast 首次失败 → fast 重试一次 → strong 的真实路由算法；`Orchestrator` 的生产骨架按 Spec027 明确的确定性评估/覆盖/报告合同运行，模型路由作为可注入调用接缝并投影安全 `MODEL_ESCALATED` 事件，不在本 Task 新建第二套模型客户端。`CatalogSearchAdapter` 已通过唯一受控入口惰性装配既有 Spec015 `CatalogSearchGraph`/`CatalogRagAdapter`；无来源时诚实降级，有固定来源时进入既有 Graph，未发现需要第二套目录或 RAG 实现的缺口。
+
+### 固定样本与真实环境结果
+
+- 固定路由样本使用已安装模型名 `qwen3.5:9b`、`qwen3.8:27b-mlx` 驱动 `ModelRouter`：调用序列为 `fast, fast, strong`，最终选择 `strong/qwen3.8:27b-mlx`，事件为 `MODEL_ESCALATED`（含固定升级原因）。这证明真实 `ModelRouter` 实现的升级分支，不伪称为 Ollama 推理成功。
+- 真实 Ollama 只读探测（`get_available_models()` 与 `chat_direct(..., think=False, num_predict=1)`）均被环境阻断：`http://0.0.0.0:11434` 连接返回 `ConnectError [Errno 1] Operation not permitted`；没有把 CLI 的本地模型清单或失败请求记作服务成功。
+- 固定目录装配样本使用真实 `CatalogSearchAdapter`、`CatalogRagAdapter`、`CatalogSearchGraph` 与临时 `PaperDiscoveryStore`，注入不触网的 fixed source/RAG failure seam：无 source 返回 `SearchOutcome((), 0, degraded=True, error_code='SOURCE_DEGRADED')`；固定 source 分支返回 `('fixed-catalog-1',), count=1, degraded=False`。这证明装配与诚实降级路径，不冒充 USENIX/DBLP 网络成功。
+
+### 验证命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `.venv/bin/python -m pytest tests/test_spec027_backend_research_slice.py tests/test_spec027_runtime_contract.py -q` | 退出码 0；95 passed、5 subtests passed（2.18s） |
+| `ollama list` | 退出码 0；本机 CLI 列出 11 个已安装模型，不能证明 HTTP 服务可达 |
+| `OLLAMA_BASE_URL=http://0.0.0.0:11434 PYTHONPATH=. .venv/bin/python docs/sdd/plans/027/artifacts/task-05/task05-close-probe.py` | 退出码 0；固定路由与 Adapter 通过；真实 `/api/tags`、`/api/chat` 如实记录环境阻断 |
+| `.venv/bin/python -m py_compile backend/app/research/application/orchestrator.py` | 退出码 0 |
+| `.venv/bin/ruff check backend/app/research/application/orchestrator.py tests/test_spec027_backend_research_slice.py` | 退出码 0 |
+| `git diff --check` | 退出码 0 |
+
+### 当前状态与交接
+
+Task05 可标记为 **已完成（固定样本通过；真实 Ollama/外部来源环境延期）**。真实 USENIX/DBLP/Ollama、浏览器、全量回归和部署仍是 Task06 的范围；复验步骤是先恢复 `OLLAMA_BASE_URL` 对应服务可达，再运行同一只读探针并记录 `/api/tags`、`/api/chat` 的真实响应，禁止用 CLI 模型清单替代 HTTP 证据。可重跑探针：`docs/sdd/plans/027/artifacts/task-05/task05-close-probe.py`。耗时：2026-09-13 03:39:28+08:00–03:40:43+08:00，约 1 分 15 秒。执行 Agent：当前任务 Agent；模型/上下文：自身（上下文上限 200k）；本轮工具统计详见主 Agent 回传（含定向 pytest、`ollama list`、固定探针与文档校验），未调用网络搜索、未调用子 Agent；业务代码改动：0。

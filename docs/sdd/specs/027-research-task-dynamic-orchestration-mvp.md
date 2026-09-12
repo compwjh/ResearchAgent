@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：已确认**
+**当前状态：已完成（Task06 最终验收通过；真实 Ollama chat/USENIX/DBLP 环境延期）**
 
 > 2026-09-12：技术评审（含需求评审维度）复审**通过**（P0-2 与 P1×8 全部关闭，P0-1 经 task-04 文案修正后闭环，无新增 P0）；用户明确指示开始开发，状态由 `待确认` 转为 `已确认`，按 Task02 → Task06 顺序执行。
 
@@ -251,8 +251,8 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | 02 | 验证动态规划、模型路由和资源调度协议 | [`task-02-orchestration-runtime-gate.md`](../plans/027/task-02-orchestration-runtime-gate.md) | 01、Spec确认、双评审 | 已完成 |
 | 03 | 实现持久化 Research Task 后端纵向切片 | [`task-03-backend-research-task-slice.md`](../plans/027/task-03-backend-research-task-slice.md) | 02 | 已完成（评审：打回 → 修订 → 复审通过） |
 | 04 | 实现研究任务页面、SSE 与会话入口 | [`task-04-frontend-research-workspace.md`](../plans/027/task-04-frontend-research-workspace.md) | 03 | 已完成（评审 GO；390px 运行时 smoke 延 Task06） |
-| 05 | 完成 Re-plan、报告、模型升级与集成 | [`task-05-replan-report-integration.md`](../plans/027/task-05-replan-report-integration.md) | 03、04 | 实施中 |
-| 06 | 最终评审、全量回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/027/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
+| 05 | 完成 Re-plan、报告、模型升级与集成 | [`task-05-replan-report-integration.md`](../plans/027/task-05-replan-report-integration.md) | 03、04 | 已完成（固定样本通过；真实 Ollama/外部来源环境延期） |
+| 06 | 最终评审、全量回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/027/task-06-review-regression-deploy.md) | 02–05 | 已完成（最终全量通过；真实外部/Ollama chat 延期） |
 
 ## 评审记录
 
@@ -273,3 +273,5 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | 2026-09-12 | 架构师（自身） | 复审残留修复：`plans/027/task-04-frontend-research-workspace.md:15` 的「暂停/取消」改为「取消（不实现暂停/恢复）」，与 spec 状态机/端点/UI 三处对齐，P0-1 闭环。 |
 | 2026-09-12 | 架构师（自身） | **Task02 门禁追认**：`tests/test_spec027_runtime_contract.py` 的 `test_reuse_seam_no_research_namespace_impl` 原断言「`backend/app/research/` 不得有任何 `.py`」与本 spec 明文新增 `backend/app/research/**` 限界上下文**互斥**；Task03 已把它精化为源码内容扫描（禁止第二套采集/索引/缓存/目录/RAG/下载/导入与模型客户端）并新增「research 必须有文件锚定 `CatalogSearchGraph`/`CatalogRagAdapter`」断言，口径更强，**追认有效**；Task03 复审（`artifacts/task-03/backend-review-r2.md`）确认该主张成立，另提「黑名单可被 `urllib`/`aiohttp`/`httpx.post` 绕过」的保留意见，登记为 Task06 收口时升级为导入白名单的约束。 |
 | 2026-09-12 | 后端开发（backend-dev，16 批次）+ 开发主管（backend-reviewer） | **Task03 完成**：新增 `backend/app/research/**` 限界上下文（domain/application/infrastructure，约 3530 行）+ `backend/app/api/routes_research.py` 9 端点 + 独立库 `data/research/research.sqlite3`（5 张业务表、幂等迁移、`event_seq` 同事务原子领号、应用层级联、崩溃收敛 `interrupted`）+ `platform/ollama.py` 的 `ResourceProbe`/`_GlobalWorkerScheduler` + `routes_conversations.remove_project` 级联接线。评审：首轮**打回**（P0×1 Worker 额度泄漏 / P1×3 404 校验缺失、`.gitignore`、交付报告缺失 / P2×9），批量修复后**复审通过（附意见）**，复审新增 P2-A/P2-C 亦已关闭。定向测试 `tests/test_spec027_backend_research_slice.py` 50 passed、Task02 门禁 38 passed（合计 88 passed），ruff 干净，未碰 `frontend/**`。延期：P2-2（新增码 `TASK_DELETED`/`RESEARCH_CASCADE_FAILED`/`INTERNAL_ERROR` 待登记）、P2-4（`update_plan_status` 死代码，计划状态恒 `proposed`）、P2-9/环境（真实 1–4 个 9B 并发吞吐未实测），均交 Task05/Task06。 |
+| 2026-09-13 | 架构师（自身） | **Task05 完成（环境延期）**：固定样本复验真实 `ModelRouter` fast→fast 重试→strong 路由、`MODEL_ESCALATED` 安全事件和真实 Spec015 `CatalogSearchAdapter`/`CatalogSearchGraph` 装配与诚实降级；定向后端回归 95 passed、5 subtests。真实 Ollama HTTP 因当前环境 `Operation not permitted` 阻断，未伪造成功；真实 USENIX/DBLP/Ollama、浏览器 smoke、全量回归、部署与最终验收交 Task06。 |
+| 2026-09-13 | 架构师（自身） | **Task06 最终验收通过，Spec027 完成**：复用审计无 P0/P1；最终全量回归 `1700 passed、1 skipped、52 subtests`，前端 Node 5/5、Python 173 passed、ruff/diff check 通过；固定 Router/Adapter 样本通过；服务以 `PORT=18081 RERANKER_ENABLED=false ./deploy/start.sh` 启动并完成 health/home/Research Task 入口 smoke 后正常停止。全量回归发现并修正 Spec027 启动收敛引入的 Spec018 冻结清单 hash/digest 漂移。localhost Ollama `/api/tags` 成功但最小 chat 超时，USENIX/DBLP 分别不可用/网络错误；均保留环境延期与复验步骤，未伪造成功。 |

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**前端实现完成；等待 Task05 后端动态事件合同与 Task06 集成验收。**
+**前端实现完成；Task05 后端动态事件合同已由固定样本复验，等待 Task06 集成验收。**
 
 本轮严格按 `frontend-dev` 边界执行：只新增/修改 `frontend/research-tasks.js`；未修改 `backend/**`、`AGENTS.md`、`.codebuddy/**`、长期模型配置或前端 HTML/CSS。当前工作树中的其它后端、文档、`frontend/index.html`、`frontend/styles.css` 和测试变更属于本轮开始前已存在的并行工作，未由本交付代行处理。
 
@@ -26,11 +26,11 @@
 
 后续后端增量已补齐 coverage 缺口触发的有界 Re-plan：最多两轮、计划版本不可覆盖、旧 WorkItem 保留；并已接入阶段边界软预算 `budget_exhausted` 停止语义，以及安全的 `MODEL_ESCALATED` model 事件投影。对应后端合同测试已通过。
 
-当前仍未完成的 Task05/Task06 收口项为：
+当前仍未完成的 Task06 收口项为：
 
-1. 当前升级事件通过可注入 Router 接缝验证；真实应用默认确定性骨架不主动发起 Ollama fast 失败/strong 重试。
-2. 当前真实应用装配仍可能因目录适配器未注入而以 `SOURCE_DEGRADED`/`partial` 收敛；未伪造完整来源成功。
-3. 未执行真实 USENIX/DBLP/Ollama、真实浏览器桌面/390px smoke 或跨端 Task05 端到端验收；这些留给 Task06。
+1. 固定样本已证明真实 `ModelRouter` 的 fast→重试→strong 算法和安全升级事件投影；真实 Ollama HTTP 探测因当前环境 `Operation not permitted` 延期，未伪造推理成功。
+2. 固定样本已证明真实 `CatalogSearchAdapter` 惰性装配既有 Spec015 `CatalogSearchGraph`/`CatalogRagAdapter`，无 source 时 `SOURCE_DEGRADED`，固定 source 时可返回目录 ID；未伪造 USENIX/DBLP 网络成功。
+3. 未执行真实 USENIX/DBLP/Ollama、真实浏览器桌面/390px smoke、跨端 Task05 端到端验收或全量回归；这些留给 Task06。
 
 ## 验证命令与结果
 

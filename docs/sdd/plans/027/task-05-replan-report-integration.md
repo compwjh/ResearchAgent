@@ -1,7 +1,7 @@
 # Task 05：完成 Re-plan、报告、模型升级与集成
 
 > 关联：[Spec 027](../../specs/027-research-task-dynamic-orchestration-mvp.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03、Task04；被依赖：Task06；当前状态：`实施中`
+> 依赖：Task03、Task04；被依赖：Task06；当前状态：`已完成（固定样本通过；真实 Ollama/外部来源环境延期）`
 
 ## 一句话目标
 
@@ -44,3 +44,12 @@
 - 2026-09-12：Task04 已收口，按依赖满足启动 Task05；前后端分端并行实现，模型仅本轮临时使用 Luna high。
 - 2026-09-12：完成第一阶段后端 Re-plan 与前端动态事件展示；Task05 定向后端回归 92 passed、前端 Python 101 passed、Node 合同 5/5，仍保留软预算与真实 fast→strong 升级未完成项，Task05 不收口。
 - 2026-09-12：完成第二阶段后端接线：阶段边界软预算耗尽收敛为 partial 并写入稳定 `budget_exhausted` 摘要；可注入 ModelRouter 的 `MODEL_ESCALATED` 安全事件接入任务事件流，含 search-worker 路径。后端定向回归 95 passed、5 subtests，Task05 仍因真实 Ollama 路由与 Task06 验收未收口。
+- 2026-09-13：Task05 收口复验完成。固定真实 `ModelRouter` 路由算法（fast→fast 重试→strong）与真实 Spec015 `CatalogSearchAdapter`/`CatalogSearchGraph` 装配及降级样本通过；真实 Ollama `/api/tags`/`/api/chat` 因当前环境 `Operation not permitted` 阻断，如实列为环境延期，不补第二套模型客户端或目录实现。定向后端回归 95 passed、5 subtests，Task05 标记为已完成（环境延期），真实外部 smoke/全量回归交 Task06。
+
+## 执行结果（2026-09-13）
+
+- 状态：**已完成（固定样本通过；真实 Ollama/外部来源环境延期）**。
+- 固定路由：`ModelRouter.execute` 调用序列 `qwen3.5:9b → qwen3.5:9b → qwen3.8:27b-mlx`，最终 `strong`，产生安全 `MODEL_ESCALATED` 事件。
+- 固定目录装配：真实 `CatalogSearchAdapter` 惰性装配既有 `CatalogRagAdapter`/`CatalogSearchGraph`；无 source 返回 `SOURCE_DEGRADED`，fixed source 返回 `fixed-catalog-1`，未伪造 USENIX/DBLP 成功。
+- 真实 Ollama：`get_available_models()` 与 `chat_direct` 均因 `http://0.0.0.0:11434` 的 `ConnectError [Errno 1] Operation not permitted` 阻断；`ollama list` 仅证明 CLI 本地清单存在，不替代 HTTP 证据。
+- 产物：[`backend-report.md`](./artifacts/task-05/backend-report.md)、[`frontend-report.md`](./artifacts/task-05/frontend-report.md)。Task06 继续负责真实 USENIX/DBLP/Ollama、浏览器 smoke、全量回归、部署与最终 Spec027 验收。
