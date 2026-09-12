@@ -22,9 +22,10 @@ class AgentApiTests(unittest.TestCase):
             intent="chat",
             intent_confidence=0.9,
         )
-        with patch("backend.app.api.routes_article.build_task", return_value=task):
-            with patch("backend.app.api.routes_article.get_available_models", return_value=[]):
-                response = self.client.post("/api/agent/run", json={"question": "帮我处理实验数据"})
+        with patch("backend.app.api.routes_article.build_task", return_value=task), patch(
+            "backend.app.api.routes_article.get_available_models", return_value=[]
+        ):
+            response = self.client.post("/api/agent/run", json={"question": "帮我处理实验数据"})
         self.assertEqual(response.status_code, 200)
         self.assertIn('"type": "normalized"', response.text)
         self.assertIn('"intent": "chat"', response.text)
@@ -166,9 +167,10 @@ class AgentApiTests(unittest.TestCase):
             pdf_url_status="public_pdf",
             confidence=0.92,
         )
-        with patch("backend.app.api.routes_article.build_task", return_value=task):
-            with patch("backend.app.api.routes_article.search_articles", return_value=[candidate]):
-                response = self.client.post("/api/agent/run", json={"question": "下载论文 X"})
+        with patch("backend.app.api.routes_article.build_task", return_value=task), patch(
+            "backend.app.api.routes_article.search_articles", return_value=[candidate]
+        ):
+            response = self.client.post("/api/agent/run", json={"question": "下载论文 X"})
         self.assertEqual(response.status_code, 200)
         intent_event = None
         for line in response.text.split("\n\n"):

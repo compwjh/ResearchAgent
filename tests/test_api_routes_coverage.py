@@ -18,14 +18,14 @@ from backend.app.main import app
 
 
 def _candidate(candidate_id="c-1", **kwargs):
-    defaults = dict(
-        candidate_id=candidate_id,
-        title="A Paper",
-        article_url="https://example.com/paper",
-        pdf_url="https://example.com/paper.pdf",
-        source_name="Example",
-        confidence=0.9,
-    )
+    defaults = {
+        "candidate_id": candidate_id,
+        "title": "A Paper",
+        "article_url": "https://example.com/paper",
+        "pdf_url": "https://example.com/paper.pdf",
+        "source_name": "Example",
+        "confidence": 0.9,
+    }
     defaults.update(kwargs)
     return ArticleCandidate(**defaults)
 

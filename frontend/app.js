@@ -155,7 +155,7 @@ function setConversationRetryStatus(text, retry) {
   button.textContent = '重试';
   button.addEventListener('click', () => {
     button.disabled = true;
-    setConversationStatus('正在重试…');
+    setConversationStatus('正在重试…', 'loading');
     retry();
   });
   conversationStatus.append(document.createTextNode(' '), button);
@@ -736,11 +736,143 @@ async function conversationFetch(url, options = {}) {
   return data;
 }
 
+const CONVERSATION_STATUS_AUTO_CLEAR_MS = 4000;
+const CONVERSATION_STATUS_PERSISTENT_STATES = new Set(['error', 'loading']);
+let conversationStatusTimer = null;
+/* ---------- Spec025：上下文占比与手动压缩 ----------
+ * 数据来自 GET /api/conversations/{id}/context-usage，只在「加载会话后」与
+ * 「每轮消息完成后」刷新，不做常驻轮询；手动压缩后做一次有上限的跟随刷新
+ * （终止即停，最多 ~12s），仅用于把「压缩中」中态收口。
+ */
+const contextMeter = document.getElementById('context-meter');
+const contextRing = document.getElementById('context-ring');
+const contextRingFill = document.getElementById('context-ring-fill');
+const contextMeterText = document.getElementById('context-meter-text');
+const contextMeterValue = document.getElementById('context-meter-value');
+const contextCompactButton = document.getElementById('context-compact-button');
+const contextStatus = document.getElementById('context-status');
+const contextState = { inflight: false, followTimer: null, followTries: 0 };
+
+function setContextStatus(text) {
+  if (!contextStatus) return;
+  const value = text || '';
+  contextStatus.textContent = value;
+  contextStatus.hidden = !value;
+}
+
+// r=15 的圆周长 2πr ≈ 94.25，与 CSS 的 stroke-dasharray 保持一致。
+const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * 15;
+
+function renderContextUsage(usage) {
+  if (!contextMeter || !contextRing || !contextRingFill || !contextMeterText) return;
+  // 无会话时保留占位（visibility 隐藏），避免底部行抖动，同时移出 Tab 焦点。
+  const idle = !usage;
+  contextMeter.classList.toggle('is-idle', idle);
+  if (contextCompactButton && !contextState.inflight) contextCompactButton.tabIndex = idle ? -1 : 0;
+  if (idle) {
+    if (contextMeterValue) contextMeterValue.textContent = '0%';
+    contextRing.setAttribute('aria-valuenow', '0');
+    return;
+  }
+  const ratio = Number(usage.ratio);
+  const safe = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
+  const percent = Math.round(safe * 100);
+  contextRingFill.style.strokeDasharray = `${CONTEXT_RING_CIRCUMFERENCE.toFixed(2)}`;
+  contextRingFill.style.strokeDashoffset = `${(CONTEXT_RING_CIRCUMFERENCE * (1 - safe)).toFixed(2)}`;
+  contextRing.setAttribute('aria-valuenow', String(percent));
+  if (contextMeterValue) contextMeterValue.textContent = `${percent}%`;
+  const status = usage.compaction_status;
+  if (status === 'queued' || status === 'running') setContextStatus('压缩中…');
+  else if (status === 'failed') setContextStatus('上次压缩失败，可重试');
+  else if (status === 'done') setContextStatus('');
+}
+
+async function loadContextUsage() {
+  const conversationId = conversationState.conversationId;
+  if (!conversationId) { renderContextUsage(null); return null; }
+  try {
+    const usage = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/context-usage`);
+    renderContextUsage(usage);
+    return usage;
+  } catch (error) {
+    renderContextUsage(null);
+    return null;
+  }
+}
+
+function stopContextFollow() {
+  if (contextState.followTimer) { clearTimeout(contextState.followTimer); contextState.followTimer = null; }
+  contextState.followTries = 0;
+}
+
+function followContextCompaction() {
+  stopContextFollow();
+  const tick = async () => {
+    const usage = await loadContextUsage();
+    contextState.followTimer = null;
+    if (!usage) { stopContextFollow(); return; }
+    const status = usage.compaction_status;
+    if (status === 'queued' || status === 'running') {
+      contextState.followTries += 1;
+      if (contextState.followTries >= 6) { setContextStatus('压缩仍在进行，稍后自动生效'); stopContextFollow(); return; }
+      contextState.followTimer = setTimeout(tick, 2000);
+      return;
+    }
+    stopContextFollow();
+  };
+  contextState.followTimer = setTimeout(tick, 1200);
+}
+
+async function compactConversationContext() {
+  if (!contextCompactButton || contextState.inflight) return;
+  const conversationId = conversationState.conversationId;
+  if (!conversationId) return;
+  contextState.inflight = true;
+  contextCompactButton.disabled = true;
+  const original = contextCompactButton.textContent;
+  contextCompactButton.textContent = '压缩中';
+  setContextStatus('已触发压缩');
+  try {
+    await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/compactions`, { method: 'POST' });
+    followContextCompaction();
+  } catch (error) {
+    if (error && error.status === 409) setContextStatus('压缩进行中');
+    else setContextStatus(error && error.message ? error.message : '压缩失败');
+  } finally {
+    contextState.inflight = false;
+    if (contextCompactButton) { contextCompactButton.disabled = false; contextCompactButton.textContent = original; }
+  }
+}
+
+if (contextCompactButton) contextCompactButton.addEventListener('click', compactConversationContext);
+
+// 输入框：3 行起步，随内容自适应增长到上限（与 CSS max-height 一致），避免底部行被推高。
+const COMPOSER_INPUT_MAX_HEIGHT = 176;
+function autoGrowInput() {
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, COMPOSER_INPUT_MAX_HEIGHT)}px`;
+}
+if (input) {
+  input.addEventListener('input', autoGrowInput);
+  autoGrowInput();
+}
+
 function setConversationStatus(text, state = '') {
   if (!conversationStatus) return;
+  if (conversationStatusTimer) { clearTimeout(conversationStatusTimer); conversationStatusTimer = null; }
   conversationStatus.textContent = text || '';
   if (state) conversationStatus.dataset.state = state;
   else delete conversationStatus.dataset.state;
+  const message = text || '';
+  if (message && !CONVERSATION_STATUS_PERSISTENT_STATES.has(state)) {
+    conversationStatusTimer = setTimeout(() => {
+      conversationStatusTimer = null;
+      if (!conversationStatus) return;
+      conversationStatus.textContent = '';
+      delete conversationStatus.dataset.state;
+    }, CONVERSATION_STATUS_AUTO_CLEAR_MS);
+  }
 }
 
 function conversationTime(item) {
@@ -1493,10 +1625,10 @@ function visibleProjects(projects) {
 function renderConversationRow(item, container, owner = 'recent') {
   if (!item?.conversation_id || container.querySelector(`[data-conversation-id="${CSS.escape(item.conversation_id)}"]`)) return;
   const row = document.createElement('div'); row.className = 'conversation-item'; row.dataset.conversationId = item.conversation_id; row.dataset.owner = owner; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', item.conversation_id === conversationState.conversationId ? 'true' : 'false');
-  const button = document.createElement('button'); button.type = 'button'; button.className = 'conversation-item-main'; button.setAttribute('aria-label', `打开会话 ${item.title || '新会话'}`);
-  const title = document.createElement('span'); title.className = 'conversation-item-title'; title.textContent = item.title || '新会话';
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'conversation-item-main'; button.setAttribute('aria-label', `打开会话 ${item.title || '新对话'}`);
+  const title = document.createElement('span'); title.className = 'conversation-item-title'; title.textContent = item.title || '新对话';
   button.append(title); button.addEventListener('click', () => openConversationFromWorkspace(item.conversation_id));
-  const menu = document.createElement('button'); menu.type = 'button'; menu.className = 'conversation-item-menu'; menu.setAttribute('aria-label', `管理会话 ${item.title || '新会话'}`); menu.setAttribute('aria-haspopup', 'menu'); menu.setAttribute('aria-expanded', 'false'); menu.textContent = '⋯';
+  const menu = document.createElement('button'); menu.type = 'button'; menu.className = 'conversation-item-menu'; menu.setAttribute('aria-label', `管理会话 ${item.title || '新对话'}`); menu.setAttribute('aria-haspopup', 'menu'); menu.setAttribute('aria-expanded', 'false'); menu.textContent = '⋯';
   menu.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton('重命名', () => openActionDialog('rename-conversation', item))); panel.append(menuButton('移动到项目', () => openActionDialog('move-conversation', item))); if (item.project_id) panel.append(menuButton('移出项目', () => moveConversation(item, null))); panel.append(menuButton(item.status === 'archived' ? '恢复' : '归档', () => confirmAction('conversation-status', item))); panel.append(menuButton('删除', () => confirmAction('conversation-delete', item), true)); openFloatingMenu(menu, panel); });
   row.append(button, menu); container.appendChild(row);
 }
@@ -1534,7 +1666,7 @@ function renderProjectList(projects) {
     head.append(main, menu); row.appendChild(head);
     const child = document.createElement('div'); child.className = 'project-conversation-list'; child.dataset.projectId = project.project_id; child.hidden = projectState.expandedProjectId !== project.project_id;
     const entry = projectState.conversations.get(project.project_id);
-    if (entry?.items?.length) renderConversationRows(entry.items, child, `project:${project.project_id}`); else if (entry?.loaded && !entry.items.length) { const empty = document.createElement('button'); empty.type = 'button'; empty.className = 'project-empty-action'; empty.textContent = '＋ 在此项目中新建对话'; empty.addEventListener('click', () => selectProjectContext(project.project_id)); child.appendChild(empty); }
+    if (entry?.items?.length) renderConversationRows(entry.items, child, `project:${project.project_id}`); else if (entry?.loaded && !entry.items.length) { const empty = document.createElement('button'); empty.type = 'button'; empty.className = 'project-empty-action'; empty.textContent = '＋ 在此项目中新建对话'; empty.addEventListener('click', () => { selectProjectContext(project.project_id); beginDraft(); }); child.appendChild(empty); }
     if (entry?.cursor) { const more = document.createElement('button'); more.type = 'button'; more.className = 'project-load-more'; more.textContent = '查看更多'; more.addEventListener('click', () => loadProjectConversations(project.project_id, true)); child.appendChild(more); }
     row.appendChild(child); projectList.appendChild(row);
   }
@@ -1693,7 +1825,7 @@ async function openConversation(conversationId, { replace = false } = {}) {
   conversationState.openToken = openToken;
   const isCurrent = () => conversationState.openToken === openToken && conversationState.streamGeneration === openGeneration && conversationState.conversationId === conversationId;
   conversationState.conversationId = conversationId; conversationState.messageCursor = null; updateConversationUrl(conversationId, replace);
-  setConversationStatus('正在加载会话…');
+  setConversationStatus('正在加载会话…', 'loading');
   try {
     const scopes = [null, ...projectState.items.map((item) => item.project_id).filter(Boolean)];
     let found = null;
@@ -1715,6 +1847,9 @@ async function openConversation(conversationId, { replace = false } = {}) {
     if (conversationState.projectId) await loadProjectConversations(conversationState.projectId);
     await loadConversationMessages(conversationId);
     if (!isCurrent()) return;
+    stopContextFollow();
+    await loadContextUsage();
+    if (!isCurrent()) return;
     await loadConversationList({ append: false, guard: isCurrent });
     if (!isCurrent()) return;
     const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = conversationState.conversation?.title || '会话';
@@ -1728,11 +1863,11 @@ async function openConversation(conversationId, { replace = false } = {}) {
 }
 
 function beginDraft() {
-  abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
+  showView('chat'); abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
   setReasoningEffort(reasoningOptionsState.defaultEffort || reasoningOptionsState.lastEffort || 'off', { remember: false });
   if (window.location.pathname.startsWith('/c/')) window.history.replaceState({}, '', '/');
-  const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = '新会话';
-  const state = document.querySelector('.chat-state'); if (state) state.textContent = '新会话';
+  const title = document.querySelector('.breadcrumb strong'); if (title) title.textContent = '新对话';
+  const state = document.querySelector('.chat-state'); if (state) state.textContent = '新对话';
   if (conversationMemoryStatus) conversationMemoryStatus.textContent = '';
   resetConversationMessages(); loadConversationList(); input.focus();
   updateGovernanceControls();
@@ -1744,7 +1879,7 @@ async function createProject(event) {
   try {
     const project = await conversationFetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
     if (projectDialogName) projectDialogName.value = ''; if (projectDialog?.open) projectDialog.close();
-    conversationState.draftProjectId = project.project_id; projectState.expandedProjectId = project.project_id; await loadProjects(); beginDraft(); setConversationStatus(`已创建项目：${project.name || name}`);
+    conversationState.draftProjectId = project.project_id; projectState.expandedProjectId = project.project_id; await loadProjects(); beginDraft();
   } catch (error) { setConversationStatus(`项目创建失败：${error.message}`, 'error'); }
 }
 
@@ -2252,7 +2387,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
     if (assistantMessage) renderConversationFailure(assistantMessage, error, { question, userMessage });
     else if (!streamError) addConversationError(error, { question });
   } finally {
-    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); loadConversationList();
+    if (writer) writer.flush(); if (conversationState.streamController === controller) conversationState.streamController = null; sendButton.disabled = false; sendButton.innerHTML = sendLabel; input.focus(); autoGrowInput(); loadConversationList(); loadContextUsage();
   }
 }
 

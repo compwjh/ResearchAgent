@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=37">
+    <link rel="stylesheet" href="/assets/styles.css?v=43">
 </head>
 <body>
   <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">☰ <span>项目与会话</span></button>
@@ -18,7 +18,7 @@
       <section class="conversation-memory" aria-label="项目与会话">
         <div class="project-tree" aria-label="项目树">
           <div class="project-tree-head" id="project-tree-head">
-            <button class="project-tree-toggle" id="project-tree-toggle" type="button" aria-expanded="true" aria-controls="project-list"><span class="section-label">项目</span><span aria-hidden="true">▼</span></button>
+            <button class="project-tree-toggle" id="project-tree-toggle" type="button" aria-expanded="true" aria-controls="project-list"><span class="section-label">项目</span><span aria-hidden="true">⌄</span></button>
             <div class="project-tree-actions">
               <button class="icon-button project-tree-menu-trigger" id="project-tree-menu-button" type="button" aria-label="项目视图选项" aria-haspopup="menu" aria-expanded="false">⋯</button>
               <button class="icon-button" id="new-project-button" type="button" aria-label="新建项目" title="新建项目">＋</button>
@@ -49,7 +49,7 @@
 
     <section class="main-area" id="chat">
       <header class="topbar">
-        <div class="breadcrumb"><span>对话</span><span class="slash">/</span><strong>新会话</strong></div>
+        <div class="breadcrumb"><span>对话</span><span class="slash">/</span><strong>新对话</strong></div>
         <div class="header-tools">
           <label class="mode-picker" for="mode-select"><span>模式</span>
             <select id="mode-select"><option value="normal">Normal</option><option value="developer">Developer</option></select>
@@ -71,7 +71,7 @@
             <label class="model-picker" for="model-select"><span class="model-symbol">◈</span>
               <select id="model-select" disabled><option>加载中...</option></select>
             </label>
-            <span class="chat-state">新会话</span>
+            <span class="chat-state">新对话</span>
           </div>
           <div class="messages" id="messages">
             <div class="message assistant">
@@ -80,9 +80,19 @@
             </div>
           </div>
           <form class="composer" id="chat-form">
-            <textarea id="question" rows="1" placeholder="给 Ollama 发消息" aria-label="问题"></textarea>
+            <textarea id="question" rows="3" placeholder="给 Ollama 发消息" aria-label="问题"></textarea>
             <div class="composer-footer">
               <span class="composer-tip">Enter 发送 · Shift + Enter 换行</span>
+              <div class="composer-context is-idle" id="context-meter">
+                <div class="context-ring" id="context-ring" role="progressbar" aria-label="上下文占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <svg viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                    <circle class="context-ring-track" cx="18" cy="18" r="15"></circle>
+                    <circle class="context-ring-fill" id="context-ring-fill" cx="18" cy="18" r="15"></circle>
+                  </svg>
+                </div>
+                <span class="context-meter-text" id="context-meter-text"><span class="context-meter-label">上下文</span> <span class="context-meter-value" id="context-meter-value">0%</span></span>
+                <button type="button" class="context-compact-button" id="context-compact-button" tabindex="-1">压缩</button>
+              </div>
               <label class="reasoning-effort-picker" for="reasoning-effort-select">
                 <span class="reasoning-effort-label">思考</span>
                 <select id="reasoning-effort-select" aria-label="思考档位" title="选择下一条消息的思考档位">
@@ -98,6 +108,7 @@
               <button type="submit" id="send-button" aria-label="发送"><span>↑</span></button>
             </div>
           </form>
+          <p class="context-status" id="context-status" role="status" aria-live="polite" hidden></p>
           <p class="hint" id="mode-hint">Normal 模式 · 单次最多 2,000 字</p>
           <p class="skill-hint" id="skill-hint" hidden></p>
         </section>
@@ -504,6 +515,6 @@
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 -->
-  <script src="/assets/app.js?v=42"></script>
+  <script src="/assets/app.js?v=43"></script>
 </body>
 </html>

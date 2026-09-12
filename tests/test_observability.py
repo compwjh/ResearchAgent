@@ -15,10 +15,10 @@ from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings
 
 
 def _result(**overrides) -> OllamaChatResult:
-    payload = dict(
-        content="答案",
-        thinking="思考",
-        timings=OllamaTimings(
+    payload = {
+        "content": "答案",
+        "thinking": "思考",
+        "timings": OllamaTimings(
             load_ms=7000.0,
             prompt_eval_ms=300.0,
             eval_ms=1100.0,
@@ -26,11 +26,11 @@ def _result(**overrides) -> OllamaChatResult:
             prompt_tokens=15,
             completion_tokens=27,
         ),
-        timings_available=True,
-        first_token_ms=7300.0,
-        client_wall_ms=8500.0,
-        chunk_intervals_ms=(40.0, 41.0),
-    )
+        "timings_available": True,
+        "first_token_ms": 7300.0,
+        "client_wall_ms": 8500.0,
+        "chunk_intervals_ms": (40.0, 41.0),
+    }
     payload.update(overrides)
     return OllamaChatResult(**payload)
 
@@ -106,15 +106,16 @@ class NoOpSafetyTests(unittest.TestCase):
 
     def test_record_is_noop_when_disabled(self):
         """未启用时不得产生任何上报动作（也不得抛异常）。"""
-        with mock.patch.object(config, "LANGFUSE_ENABLED", False):
-            with mock.patch.object(obs_client, "get_client") as get_client_mock:
-                record_ollama_generation(
-                    model="m",
-                    prompt_messages=[{"role": "user", "content": "q"}],
-                    result=_result(),
-                    route="direct",
-                )
-                get_client_mock.assert_not_called()
+        with mock.patch.object(config, "LANGFUSE_ENABLED", False), mock.patch.object(
+            obs_client, "get_client"
+        ) as get_client_mock:
+            record_ollama_generation(
+                model="m",
+                prompt_messages=[{"role": "user", "content": "q"}],
+                result=_result(),
+                route="direct",
+            )
+            get_client_mock.assert_not_called()
 
     def test_client_returns_none_without_credentials(self):
         with mock.patch.object(config, "LANGFUSE_ENABLED", True), \

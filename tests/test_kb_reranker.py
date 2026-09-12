@@ -115,7 +115,8 @@ class RerankerClientTests(unittest.TestCase):
                 raise httpx.ConnectError("down", request=request)
             return httpx.Response(200, json={"results": [
                 {"index": i, "relevance_score": i} for i in range(3)]})
-        clock = lambda: now[0]
+        def clock():
+            return now[0]
         transport = httpx.MockTransport(handler)
         self.assert_fail(rerank_hits("q", self.hits, transport=transport, clock=clock, negative_ttl=1), "connection")
         now[0] += 29

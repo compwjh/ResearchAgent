@@ -81,7 +81,7 @@ def test_timeout_does_not_block_or_mutate_dblp_candidate_and_does_not_title_retr
 
 def test_rate_limit_server_error_and_invalid_json_are_structured():
     responses = [httpx.Response(429), httpx.Response(503), httpx.Response(200, content=b"not-json")]
-    for response, expected in zip(responses, ("OPENALEX_RATE_LIMITED", "OPENALEX_HTTP_ERROR", "OPENALEX_INVALID_RESPONSE")):
+    for response, expected in zip(responses, ("OPENALEX_RATE_LIMITED", "OPENALEX_HTTP_ERROR", "OPENALEX_INVALID_RESPONSE"), strict=False):
         result = OpenAlexEnricher(transport=httpx.MockTransport(lambda request, response=response: response)).enrich([candidate()])
         assert result.warning_codes == (expected,)
         assert result.candidates[0].title == "A Secure Paper"

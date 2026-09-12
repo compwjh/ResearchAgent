@@ -84,9 +84,10 @@ RULE_DOWNLOAD_PATTERNS = [
 
 def rule_classify(text: str) -> str:
     low = text.lower()
-    if any(re.search(p, low) for p in RULE_DOWNLOAD_PATTERNS):
-        if any(re.search(p, low) for p in [r"usenix-accepted-papers", r"下载", r"导入", r"prepublication", r"catalog_paper_id"]):
-            return SKILL_DOWNLOAD
+    if any(re.search(p, low) for p in RULE_DOWNLOAD_PATTERNS) and any(
+        re.search(p, low) for p in [r"usenix-accepted-papers", r"下载", r"导入", r"prepublication", r"catalog_paper_id"]
+    ):
+        return SKILL_DOWNLOAD
     if any(re.search(p, low) for p in RULE_SKILL_PATTERNS):
         return SKILL_CATALOG
     return NONE

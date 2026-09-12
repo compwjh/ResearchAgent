@@ -119,3 +119,21 @@ SKILL_TOOL_RETRY = int(os.getenv("SKILL_TOOL_RETRY", "1"))
 # 上报内容截断阈值（字符）：避免超长输入/输出/思考过程撑爆单事件大小限制
 OBS_MAX_INPUT_CHARS = int(os.getenv("OBS_MAX_INPUT_CHARS", "20000"))
 OBS_MAX_OUTPUT_CHARS = int(os.getenv("OBS_MAX_OUTPUT_CHARS", "20000"))
+
+# ---------- 会话上下文压缩与 token 预算（spec-025）----------
+# 估算系数统一为「1 token ≈ 1.6 字符」（中英混排保守口径，见 token_budget.CHARS_PER_TOKEN），
+# 替换 repository.py 旧有的 `token_budget * 4` 英文口径（与真实用量偏差可达 2 倍）。
+# 真 token 只从 platform/ollama_direct.py 回读做观测，本模块不引入 tokenizer。
+# 非法配置（≤0）：_env_positive_number 回退默认值并发 RuntimeWarning（spec-025 取安全默认值而非 fail-fast）。
+# CHAT_TOTAL_TOKEN_BUDGET：单次模型调用输入 token 硬上限（默认 8000，模型窗口 262144 的保守占比）。
+CHAT_TOTAL_TOKEN_BUDGET = _env_positive_number("CHAT_TOTAL_TOKEN_BUDGET", 8000, int)
+# CHAT_COMPACT_TRIGGER_RATIO：装配后 used/budget ≥ 该比例即触发后台异步压缩（默认 0.8）。
+CHAT_COMPACT_TRIGGER_RATIO = _env_positive_number("CHAT_COMPACT_TRIGGER_RATIO", 0.8, float)
+# CHAT_RECENT_RAW_MESSAGES：压缩后保留的最近原文条数（默认 10，沿用现状）。
+CHAT_RECENT_RAW_MESSAGES = _env_positive_number("CHAT_RECENT_RAW_MESSAGES", 10, int)
+# CHAT_RAG_BUDGET_CHARS：知识库证据注入独立字符预算（默认 6000，沿用现状）。
+CHAT_RAG_BUDGET_CHARS = _env_positive_number("CHAT_RAG_BUDGET_CHARS", 6000, int)
+# CHAT_SUMMARY_BUDGET_CHARS：记忆/摘要段注入字符预算（默认 1500，沿用现状）。
+CHAT_SUMMARY_BUDGET_CHARS = _env_positive_number("CHAT_SUMMARY_BUDGET_CHARS", 1500, int)
+# CHAT_PROJECT_INSTR_CHARS：项目指令截断字符上限（默认 5000，沿用现状）。
+CHAT_PROJECT_INSTR_CHARS = _env_positive_number("CHAT_PROJECT_INSTR_CHARS", 5000, int)

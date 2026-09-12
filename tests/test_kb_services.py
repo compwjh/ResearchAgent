@@ -111,7 +111,7 @@ class SparseEncodingTests(unittest.TestCase):
 
     def test_term_frequency_uses_sublinear_weight(self):
         vector = embed_module.encode_sparse("检索 检索 向量")
-        weights = dict(zip(vector.indices, vector.values))
+        weights = dict(zip(vector.indices, vector.values, strict=False))
         self.assertAlmostEqual(max(weights.values()), 1.0 + math.log(2), places=5)
         self.assertEqual(sorted(vector.indices), vector.indices)
 
@@ -139,9 +139,10 @@ class EmbedTextsTests(unittest.TestCase):
         def fake_post(url, json=None, **kwargs):
             return self._response(len(json["input"]))
 
-        with patch.object(embed_module, "KB_EMBED_BATCH_SIZE", 2):
-            with patch.object(embed_module.httpx, "post", side_effect=fake_post) as mock_post:
-                vectors = embed_module.embed_texts(["一", "二", "三", "四", "五"])
+        with patch.object(embed_module, "KB_EMBED_BATCH_SIZE", 2), patch.object(
+            embed_module.httpx, "post", side_effect=fake_post
+        ) as mock_post:
+            vectors = embed_module.embed_texts(["一", "二", "三", "四", "五"])
         self.assertEqual(len(vectors), 5)
         self.assertEqual(mock_post.call_count, 3)
 
@@ -158,29 +159,33 @@ class EmbedTextsTests(unittest.TestCase):
 
     def test_raises_after_repeated_transport_error(self):
         failure = httpx.HTTPError("connection reset")
-        with patch.object(embed_module.httpx, "post", side_effect=failure):
-            with self.assertRaises(embed_module.EmbeddingError):
-                embed_module.embed_texts(["一句话"])
+        with patch.object(embed_module.httpx, "post", side_effect=failure), self.assertRaises(
+            embed_module.EmbeddingError
+        ):
+            embed_module.embed_texts(["一句话"])
 
     def test_raises_on_http_error(self):
         response = Mock(status_code=500)
         response.json.return_value = {"error": "Compute error."}
-        with patch.object(embed_module.httpx, "post", return_value=response):
-            with self.assertRaises(embed_module.EmbeddingError) as context:
-                embed_module.embed_texts(["一句话"])
+        with patch.object(embed_module.httpx, "post", return_value=response), self.assertRaises(
+            embed_module.EmbeddingError
+        ) as context:
+            embed_module.embed_texts(["一句话"])
         self.assertIn("Compute error.", str(context.exception))
 
     def test_raises_on_count_mismatch(self):
-        with patch.object(embed_module.httpx, "post", return_value=self._response(1)):
-            with self.assertRaises(embed_module.EmbeddingError):
-                embed_module.embed_texts(["一", "二"])
+        with patch.object(embed_module.httpx, "post", return_value=self._response(1)), self.assertRaises(
+            embed_module.EmbeddingError
+        ):
+            embed_module.embed_texts(["一", "二"])
 
     def test_raises_on_null_vector(self):
         response = Mock(status_code=200)
         response.json.return_value = {"embeddings": [None]}
-        with patch.object(embed_module.httpx, "post", return_value=response):
-            with self.assertRaises(embed_module.EmbeddingError):
-                embed_module.embed_texts(["一句话"])
+        with patch.object(embed_module.httpx, "post", return_value=response), self.assertRaises(
+            embed_module.EmbeddingError
+        ):
+            embed_module.embed_texts(["一句话"])
 
 
 class StoreTests(unittest.TestCase):
@@ -286,18 +291,14 @@ class RetrievalTests(unittest.TestCase):
                 reason="disabled", scores_by_original_index=None,
             )
 
-        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1]]):
-            with patch.object(retrieve_module, "encode_sparse", return_value=Mock()):
-                with patch.object(retrieve_module, "rrf_fuse", return_value=hits):
-                    with patch.object(retrieve_module, "KB_RERANK_CANDIDATES", candidates):
-                        with patch.object(retrieve_module, "RERANKER_ENABLED", enabled):
-                            with patch.object(
-                                retrieve_module, "rerank_hits",
-                                side_effect=effect or passthrough,
-                            ) as mock_rerank:
-                                result = retrieve_module.hybrid_search(
-                                    "问题", top_k=top_k, client=client
-                                )
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1]]), patch.object(
+            retrieve_module, "encode_sparse", return_value=Mock()
+        ), patch.object(retrieve_module, "rrf_fuse", return_value=hits), patch.object(
+            retrieve_module, "KB_RERANK_CANDIDATES", candidates
+        ), patch.object(retrieve_module, "RERANKER_ENABLED", enabled), patch.object(
+            retrieve_module, "rerank_hits", side_effect=effect or passthrough
+        ) as mock_rerank:
+            result = retrieve_module.hybrid_search("问题", top_k=top_k, client=client)
         return result, mock_rerank
 
     def test_rrf_fuse_prefers_items_ranked_high_in_both_lists(self):
@@ -315,11 +316,12 @@ class RetrievalTests(unittest.TestCase):
             SimpleNamespace(points=[make_point("p1", 1, 0.8)]),
             SimpleNamespace(points=[make_point("p1", 2, 0.7)]),
         ]
-        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]):
-            with patch.object(retrieve_module, "rerank_hits", side_effect=lambda _, hits, **__: SimpleNamespace(
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]), patch.object(
+            retrieve_module, "rerank_hits", side_effect=lambda _, hits, **__: SimpleNamespace(
                 hits=list(hits), used=False, scores_by_original_index=None
-            )):
-                hits = retrieve_module.hybrid_search("问题", top_k=2, client=client)
+            )
+        ):
+            hits = retrieve_module.hybrid_search("问题", top_k=2, client=client)
         self.assertEqual(len(hits), 2)
         self.assertEqual(client.query_points.call_count, 2)
         usings = [call.kwargs["using"] for call in client.query_points.call_args_list]
@@ -353,7 +355,7 @@ class RetrievalTests(unittest.TestCase):
             with self.subTest(enabled=enabled):
                 hits = [Hit("p1", "a.pdf", 1, i, f"片段{i}", 1.0 - i / 100) for i in range(8)]
 
-                def degrade(_question, selected, **_kwargs):
+                def degrade(_question, selected, reason=reason, **_kwargs):
                     return SimpleNamespace(
                         hits=list(selected), used=False, degraded=True,
                         reason=reason, scores_by_original_index=None,
@@ -446,36 +448,38 @@ class IndexTests(unittest.TestCase):
 
     def test_index_paper_marks_low_text_as_partial(self):
         record = store_module.new_record("scan.pdf")
-        with patch.object(index_module, "extract_pages", return_value=[(1, " " * 5)]):
-            with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                result = index_module.index_paper(record, "scan.pdf", destination_collection=index_module.KB_COLLECTION)
+        with patch.object(index_module, "extract_pages", return_value=[(1, " " * 5)]), patch.object(
+            index_module, "upsert_paper", side_effect=lambda item: item
+        ):
+            result = index_module.index_paper(record, "scan.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_PARTIAL)
         self.assertEqual(result["chunk_count"], 0)
 
     def test_index_paper_marks_unreadable_pdf_as_failed(self):
         record = store_module.new_record("broken.pdf")
-        with patch.object(index_module, "extract_pages", side_effect=parse_module.PdfParseError("PDF 已加密")):
-            with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                result = index_module.index_paper(record, "broken.pdf", destination_collection=index_module.KB_COLLECTION)
+        with patch.object(index_module, "extract_pages", side_effect=parse_module.PdfParseError("PDF 已加密")), patch.object(
+            index_module, "upsert_paper", side_effect=lambda item: item
+        ):
+            result = index_module.index_paper(record, "broken.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_FAILED)
         self.assertIn("加密", result["error"])
 
     def test_index_paper_records_chunk_count(self):
         record = store_module.new_record("ok.pdf")
-        with patch.object(index_module, "extract_pages", return_value=[(1, "正文内容。" * 80)]):
-            with patch.object(index_module, "upsert_chunks", return_value=4):
-                with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                    result = index_module.index_paper(record, "ok.pdf", destination_collection=index_module.KB_COLLECTION)
+        with patch.object(index_module, "extract_pages", return_value=[(1, "正文内容。" * 80)]), patch.object(
+            index_module, "upsert_chunks", return_value=4
+        ), patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
+            result = index_module.index_paper(record, "ok.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_INDEXED)
         self.assertEqual(result["chunk_count"], 4)
         self.assertEqual(result["page_count"], 1)
 
     def test_index_paper_captures_embedding_failure(self):
         record = store_module.new_record("ok.pdf")
-        with patch.object(index_module, "extract_pages", return_value=[(1, "正文内容。" * 80)]):
-            with patch.object(index_module, "upsert_chunks", side_effect=embed_module.EmbeddingError("OOM")):
-                with patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
-                    result = index_module.index_paper(record, "ok.pdf", destination_collection=index_module.KB_COLLECTION)
+        with patch.object(index_module, "extract_pages", return_value=[(1, "正文内容。" * 80)]), patch.object(
+            index_module, "upsert_chunks", side_effect=embed_module.EmbeddingError("OOM")
+        ), patch.object(index_module, "upsert_paper", side_effect=lambda item: item):
+            result = index_module.index_paper(record, "ok.pdf", destination_collection=index_module.KB_COLLECTION)
         self.assertEqual(result["status"], store_module.STATUS_FAILED)
         self.assertIn("OOM", result["error"])
 
@@ -621,12 +625,12 @@ class RetrieveFilterTests(unittest.TestCase):
         client = Mock()
         client.collection_exists.return_value = True
         client.query_points.return_value = Mock(points=[])
-        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1]]):
-            with patch.object(retrieve_module, "encode_sparse", return_value=Mock()):
-                with patch.object(retrieve_module, "rerank_hits", side_effect=lambda _, hits, **__: SimpleNamespace(
-                    hits=list(hits), used=False, scores_by_original_index=None
-                )):
-                    retrieve_module.hybrid_search("问题", client=client, chunker="v2")
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1]]), patch.object(
+            retrieve_module, "encode_sparse", return_value=Mock()
+        ), patch.object(retrieve_module, "rerank_hits", side_effect=lambda _, hits, **__: SimpleNamespace(
+            hits=list(hits), used=False, scores_by_original_index=None
+        )):
+            retrieve_module.hybrid_search("问题", client=client, chunker="v2")
         calls = client.query_points.call_args_list
         self.assertEqual(len(calls), 2)
         for call in calls:

@@ -136,7 +136,7 @@ def test_acquire_fetch_unit_atomic_single_winner_across_10_rounds(tmp_path):
             )
         results = [False] * owners
         barrier = threading.Barrier(owners)
-        def worker(index, store):
+        def worker(index, store, barrier=barrier, results=results):
             barrier.wait()
             results[index] = store.acquire_fetch_unit("unit-1", f"owner-{index}", 30, now=now)
         threads = [

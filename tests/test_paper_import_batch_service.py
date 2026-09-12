@@ -1,7 +1,6 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
-from unittest.mock import patch
 
 import pytest
 
@@ -11,7 +10,6 @@ from backend.app.paper_discovery.application.entry import (
     BrowserManagerError,
 )
 from backend.app.paper_discovery.application.paper_import import (
-    KB_STORAGE_LOCKED,
     LOGIN_REQUIRED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,

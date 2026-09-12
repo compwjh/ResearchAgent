@@ -2,7 +2,6 @@ import json
 import re
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Iterable, Iterator, Optional
 from urllib.parse import urlparse
 

@@ -8,12 +8,13 @@ from fastapi.responses import StreamingResponse
 
 from backend.app.api import routes_skills as _skill_routes
 from backend.app.api import routes_tools as _tool_routes
+from backend.app.api.common import *  # noqa: F401,F403
 from backend.app.api.schemas import (
     ChatRequest,
 )
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
-from backend.app.platform.bootstrap import get_provider
 from backend.app.memory.repository import OWNER_ID
+from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import (
     MODEL_NAME,
     SKILL_TOOL_MAX_ROUNDS,
@@ -23,8 +24,8 @@ from backend.app.platform.config import (
 from backend.app.platform.observability import (
     flush,
     prompt_observation_metadata,
-    redact_prompt_messages,
     record_ollama_generation,
+    redact_prompt_messages,
     utc_now,
 )
 from backend.app.platform.ollama import get_available_models
@@ -47,9 +48,6 @@ paper_browser_manager = None
 # Sessions are keyed by import item, so a resume request can never borrow a
 # different item's authenticated browser context.
 paper_browser_sessions = {}
-
-
-from backend.app.api.common import *  # noqa: F401,F403
 
 
 @router.post("/chat")

@@ -237,10 +237,20 @@ def test_resolve_request_effort_unknown_allows_only_off(effort):
             assert error.value.detail["retryable"] is True
 
 
-def test_resolve_request_effort_unknown_default_request_is_503():
+def test_resolve_request_effort_unknown_implicit_request_falls_back_to_off():
+    # 请求未携带档位时，后端默认取的 xhigh 是**替用户造的默认值**；能力未知时不能因为
+    # 自己造的默认值就把请求拒掉（会复现「模型能力暂时不可用」）。改为回落 off 放行。
+    with patch.object(ollama, "probe_reasoning_capabilities", _probe_unknown):
+        resolution = routes_conversations._resolve_request_effort("model", None)
+    assert resolution.effort == "off"
+    assert resolution.capabilities.source == "unknown"
+
+
+def test_resolve_request_effort_unknown_explicit_non_off_is_503():
+    # 用户**显式**选择非 off 档位、且能力未知时，无法确认是否支持，仍返回 503。
     with patch.object(ollama, "probe_reasoning_capabilities", _probe_unknown):
         with pytest.raises(HTTPException) as error:
-            routes_conversations._resolve_request_effort("model", None)
+            routes_conversations._resolve_request_effort("model", "xhigh")
     assert error.value.status_code == 503
     assert error.value.detail["code"] == "MODEL_CAPABILITIES_UNAVAILABLE"
 

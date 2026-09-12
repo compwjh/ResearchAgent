@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes_conversations
 from backend.app.chat.application.conversation_service import MemoryAnalysisWorker, MemoryIntent, classify_memory_intent
 from backend.app.main import app
 from backend.app.memory.repository import LeaseLostError, MemoryRepository
@@ -139,7 +138,7 @@ def test_analysis_decision_api_supports_single_and_batch(tmp_path: Path):
         project = repo.create_project("local-user", "API project")
         conversation, user, job = _job(repo, project.project_id, "ambiguous", owner="local-user")
         first = repo.create_memory_analysis_item(job.analysis_id, "local-user", "待确认规则", "project", .5, "需要确认")
-        second = repo.create_memory_analysis_item(job.analysis_id, "local-user", "另一条规则", "project", .5, "需要确认")
+        repo.create_memory_analysis_item(job.analysis_id, "local-user", "另一条规则", "project", .5, "需要确认")
         response = client.post(f"/api/memory-analysis/items/{first.item_id}/decision", json={"decision": "save_project"})
         assert response.status_code == 200 and response.json()["item"]["decision_status"] == "auto_saved"
         response = client.post(f"/api/messages/{user.message_id}/memory-analysis/decisions", json={"decision": "ignore_all"})

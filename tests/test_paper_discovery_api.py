@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import common, routes_paper
 from backend.app.main import app
+from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     ConferenceSource,
@@ -16,7 +17,6 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SearchResult,
     SearchSession,
 )
-from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 from backend.app.paper_discovery.infrastructure.paper_download import PaperDownloadError
 
@@ -76,8 +76,8 @@ class PaperConferenceSearchEndpointTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         import tempfile
-        self.database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
-        self.store = PaperDiscoveryStore(self.database.name)
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as self.database:
+            self.store = PaperDiscoveryStore(self.database.name)
         self.custom = ConferenceSource(
             conference_id="ml-sec",
             name="Machine Learning Security Workshop",
@@ -139,8 +139,8 @@ class PaperImportEndpointTests(unittest.TestCase):
         # SQLite in-memory databases are connection-local, so use a temporary
         # file-backed store for the route's separate read connections.
         import tempfile
-        self.database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
-        self.store = PaperDiscoveryStore(self.database.name)
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as self.database:
+            self.store = PaperDiscoveryStore(self.database.name)
         self.store.save_search(
             SearchSession("search-1", "security", "2099-01-01T00:00:00Z"),
             [PaperCandidate(
@@ -313,8 +313,8 @@ class AcceptedCatalogCompatibilityTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         import tempfile
-        self.database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
-        self.store = PaperDiscoveryStore(self.database.name)
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as self.database:
+            self.store = PaperDiscoveryStore(self.database.name)
         self.accepted_search = Mock(side_effect=AssertionError("accepted source network must not run"))
         self.service = PaperDiscoverySearchService(
             accepted_source=SimpleNamespace(search=self.accepted_search),
@@ -362,8 +362,8 @@ class PaperSingleImportCatalogJobFallbackTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         import tempfile
-        self.database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
-        self.store = PaperDiscoveryStore(self.database.name)
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as self.database:
+            self.store = PaperDiscoveryStore(self.database.name)
         self.now = datetime.now(timezone.utc)
         self.future = (self.now + timedelta(hours=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -438,22 +438,22 @@ class PaperSingleImportCatalogJobFallbackTests(unittest.TestCase):
         for code, status, expires_at, status_code, message in cases:
             with self.subTest(code=code):
                 import tempfile
-                database = tempfile.NamedTemporaryFile(suffix=".sqlite3")
-                store = PaperDiscoveryStore(database.name)
-                if status is not None:
-                    store.upsert_catalog_paper(self._catalog_paper("cp-x"))
-                    store.create_search_job(self._job("job-x", status=status, expires_at=expires_at))
-                    store.save_search_result(self._result("job-x", "cp-x"))
-                try:
-                    with patch.object(routes_paper, "_paper_store", return_value=store), patch.object(
-                        routes_paper, "import_candidate", side_effect=AssertionError("must not import")
-                    ):
-                        response = self.client.post(
-                            "/api/papers/imports",
-                            json={"search_id": "job-x", "candidate_id": "cp-x"},
-                        )
-                finally:
-                    database.close()
+                with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as database:
+                    store = PaperDiscoveryStore(database.name)
+                    if status is not None:
+                        store.upsert_catalog_paper(self._catalog_paper("cp-x"))
+                        store.create_search_job(self._job("job-x", status=status, expires_at=expires_at))
+                        store.save_search_result(self._result("job-x", "cp-x"))
+                    try:
+                        with patch.object(routes_paper, "_paper_store", return_value=store), patch.object(
+                            routes_paper, "import_candidate", side_effect=AssertionError("must not import")
+                        ):
+                            response = self.client.post(
+                                "/api/papers/imports",
+                                json={"search_id": "job-x", "candidate_id": "cp-x"},
+                            )
+                    finally:
+                        os.unlink(database.name)
                 self.assertEqual(response.status_code, status_code)
                 body = response.json()
                 self.assertEqual(set(body), {"code", "message", "retryable", "request_id"})

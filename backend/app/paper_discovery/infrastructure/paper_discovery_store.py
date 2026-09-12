@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sqlite3
@@ -9,7 +10,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from backend.app.platform.config import BASE_DIR
 from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
     CatalogSourceRecord,
@@ -23,6 +23,7 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SourceFetchUnit,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.platform.config import BASE_DIR
 
 SCHEMA_VERSION = 2
 _SAFE_EVENT_KEYS = frozenset({"unit_id", "source_kind", "count", "error_code", "message_code"})
@@ -117,10 +118,8 @@ class PaperDiscoveryStore:
         # The check is best-effort here: a pre-existing multi-row schema_meta raises
         # IntegrityError which is intentionally surfaced by the subsequent row-count
         # check in _current_schema_version (rolled back by the caller's transaction).
-        try:
+        with contextlib.suppress(sqlite3.IntegrityError):
             connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS schema_meta_singleton ON schema_meta((1))")
-        except sqlite3.IntegrityError:
-            pass
         self._seed(connection)
 
     @staticmethod
@@ -663,9 +662,8 @@ class PaperDiscoveryStore:
                 "SELECT metadata_hash FROM catalog_papers WHERE catalog_paper_id=?",
                 (paper.catalog_paper_id,),
             ).fetchone()
-            if existing is not None:
-                if existing[0] == paper.metadata_hash:
-                    return False
+            if existing is not None and existing[0] == paper.metadata_hash:
+                return False
             changed = existing is None or existing[0] != paper.metadata_hash
             if existing is not None:
                 connection.execute(

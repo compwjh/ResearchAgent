@@ -6,12 +6,12 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.api.routes_kb import _kb_evidence_advisory
 from backend.app.chat.application.conversation_service import (
+    compose_chat_messages,
     has_explicit_global_intent,
     is_system_rule_intent,
 )
-from backend.app.api.routes_kb import _kb_evidence_advisory
-from backend.app.chat.application.conversation_service import compose_chat_messages
 from backend.app.main import app
 from backend.app.memory.repository import MemoryRepository, SystemRuleUnavailableError
 

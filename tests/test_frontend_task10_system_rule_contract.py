@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
 APP = (ROOT / "frontend/app.js").read_text(encoding="utf-8")
@@ -43,7 +42,10 @@ def test_project_rows_are_single_column_and_folder_svg_is_accessible() -> None:
     assert "setAttribute('aria-expanded'" in APP
     assert "project-item-toggle" not in APP
     assert "▰" not in APP
-    assert "项目</span><span aria-hidden=\"true\">▼" in INDEX
+    # 折叠指示符为两条线段组成的倒 V（⌄），非填充三角（▽ / ▼ 均已弃用）。
+    assert "项目</span><span aria-hidden=\"true\">⌄" in INDEX
+    assert "项目</span><span aria-hidden=\"true\">▼" not in INDEX
+    assert "项目</span><span aria-hidden=\"true\">▽" not in INDEX
 
 
 def test_unbound_pending_memory_requires_existing_project_choice() -> None:

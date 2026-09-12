@@ -14,6 +14,11 @@ from typing import List, Optional, Sequence
 import httpx
 from qdrant_client import models
 
+from backend.app.knowledge_base.infrastructure.embed import embed_texts, encode_sparse
+from backend.app.knowledge_base.infrastructure.index import DENSE_VECTOR, SPARSE_VECTOR, get_client
+from backend.app.knowledge_base.infrastructure.reranker import _url as _reranker_url
+from backend.app.knowledge_base.infrastructure.reranker import rerank_hits
+from backend.app.knowledge_base.infrastructure.store import CHUNKER_V1
 from backend.app.platform.config import (
     KB_CANDIDATE_POOL,
     KB_COLLECTION,
@@ -25,11 +30,6 @@ from backend.app.platform.config import (
     RERANKER_ENABLED,
     RERANKER_READ_TIMEOUT_SECONDS,
 )
-from backend.app.knowledge_base.infrastructure.embed import embed_texts, encode_sparse
-from backend.app.knowledge_base.infrastructure.index import DENSE_VECTOR, SPARSE_VECTOR, get_client
-from backend.app.knowledge_base.infrastructure.reranker import _url as _reranker_url
-from backend.app.knowledge_base.infrastructure.reranker import rerank_hits
-from backend.app.knowledge_base.infrastructure.store import CHUNKER_V1
 from backend.app.platform.observability import record_event
 from backend.app.platform.observability.safe import safe_call
 
@@ -218,7 +218,7 @@ def hybrid_search(
            read_timeout=RERANKER_READ_TIMEOUT_SECONDS,
        )
        if rerank_result.used and rerank_result.scores_by_original_index is not None:
-           for hit, score in zip(candidates, rerank_result.scores_by_original_index):
+           for hit, score in zip(candidates, rerank_result.scores_by_original_index, strict=False):
                hit.rerank_score = score
            for rank, hit in enumerate(rerank_result.hits, start=1):
                hit.rerank_rank = rank

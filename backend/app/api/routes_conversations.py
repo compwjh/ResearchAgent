@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import time
 
@@ -20,6 +21,7 @@ from backend.app.api.schemas import (
     SystemRulePutRequest,
 )
 from backend.app.chat.application.chat_runner import ChatStreamInterrupted, run_chat
+from backend.app.chat.application.context_compaction import get_compaction_worker
 from backend.app.chat.application.conversation_service import (
     compose_chat_messages,
     compose_chat_prompt,
@@ -35,16 +37,22 @@ from backend.app.chat.application.reasoning import (
     ReasoningStreamFilter,
     filter_reasoning,
 )
+from backend.app.chat.application.token_budget import estimate_tokens
 from backend.app.knowledge_base.application import (
     citation_payloads,
     clear_project_document_associations,
-    filter_hits_for_project,  # compatibility export; retrieval itself filters pre-RRF
     hybrid_search,
     list_documents_for_project,
 )
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
-from backend.app.platform.observability import record_ollama_generation, redact_prompt_messages, utc_now
+from backend.app.platform.config import CHAT_COMPACT_TRIGGER_RATIO, CHAT_TOTAL_TOKEN_BUDGET
+from backend.app.platform.observability import (
+    prompt_observation_metadata,
+    record_ollama_generation,
+    redact_prompt_messages,
+    utc_now,
+)
 from backend.app.platform.ollama import (
     EffortResolutionError,
     ReasoningCapabilities,
@@ -84,6 +92,48 @@ def _memory_payload(item):
 
 def _system_rule_payload(item):
     return {"content": item.content, "enabled": item.enabled, "updated_at": item.updated_at.isoformat()}
+
+
+def compute_context_usage(repo: MemoryRepository, conversation) -> dict:
+    """Dry-run 用量估算：与真实装配同源（同一 ``compose_chat_prompt`` + 同一预算配置），
+    但只覆盖历史段 + 记忆/摘要段，不触发 RAG 检索、不调用模型、无副作用。
+
+    返回 ``{used_tokens, budget_tokens, ratio, segment_count, compaction_status}``；
+    ``budget_tokens <= 0`` 时 ``ratio`` 按 1.0 处理并记录观测，禁止除零崩溃；
+    ``compaction_status`` 取该会话最新 job 的 status，无 job 为 ``idle``。
+    """
+    history = repo.list_context_messages(conversation.conversation_id, OWNER_ID)
+    recall_context = repo.list_recall_context(
+        OWNER_ID, conversation.project_id, query="",
+        memory_char_budget=4000, summary_char_budget=1500,
+    )
+    memories = recall_context["memories"]
+    summaries = recall_context["summaries"]
+    segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
+    project_instructions = None
+    if conversation.project_id:
+        project = repo.get_project(conversation.project_id, OWNER_ID)
+        project_instructions = project.instructions if project else None
+    prompt_text = compose_chat_prompt(
+        "", history, memories, project_instructions, summaries,
+        rag_hits=None, include_question=False, segments=segments,
+    )
+    used_tokens = estimate_tokens(prompt_text)
+    budget_tokens = CHAT_TOTAL_TOKEN_BUDGET
+    if budget_tokens <= 0:
+        logger.warning("CHAT_TOTAL_TOKEN_BUDGET <= 0; context-usage ratio clamped to 1.0")
+        ratio = 1.0
+    else:
+        ratio = used_tokens / budget_tokens
+    latest_job = repo.get_latest_compaction_job(conversation.conversation_id, OWNER_ID)
+    compaction_status = latest_job.status if latest_job else "idle"
+    return {
+        "used_tokens": used_tokens,
+        "budget_tokens": budget_tokens,
+        "ratio": ratio,
+        "segment_count": len(segments),
+        "compaction_status": compaction_status,
+    }
 
 
 @router.get("/system-rule")
@@ -154,9 +204,12 @@ def list_projects(cursor: str | None = None, limit: int = Query(20, ge=1, le=100
 
 @router.patch("/projects/{project_id}")
 def patch_project(project_id: str, payload: ProjectPatchRequest):
-    try: item = _repo().update_project(project_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
-    except ValueError as error: raise HTTPException(status_code=409, detail={"code": "PROJECT_EXISTS", "message": str(error), "retryable": False}) from error
-    if not item: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在", "retryable": False})
+    try:
+        item = _repo().update_project(project_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail={"code": "PROJECT_EXISTS", "message": str(error), "retryable": False}) from error
+    if not item:
+        raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在", "retryable": False})
     return _project_payload(item)
 
 
@@ -176,7 +229,7 @@ def remove_project(project_id: str):
     # project lifecycle.  Detach first; a failure fails closed and preserves
     # the project so an association cannot leak across a future project.
     try:
-        detached = clear_project_document_associations(project_id, owner_id=OWNER_ID)
+        clear_project_document_associations(project_id, owner_id=OWNER_ID)
     except Exception as error:
         raise HTTPException(status_code=503, detail={"code": "DOCUMENT_ASSOCIATION_FAILED", "message": "项目文档关联暂时无法解除", "retryable": True}) from error
     _repo().delete_project(project_id, OWNER_ID)
@@ -191,12 +244,19 @@ def _validate_model(model: str):
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"模型 {model} 不存在", "retryable": False})
 
 
-def _resolve_request_effort(model: str, requested: str | None):
+def _resolve_request_effort(model: str, requested: str | None, explicit: bool | None = None):
     # ``resolve_reasoning_effort`` 只抛 ``EffortResolutionError``（``ValueError``
     # 子类）：能力探测失败已被 ``get_reasoning_capabilities`` 吸收为 ``stale``/``unknown``
     # （spec-026 Task 02），因此这里不再需要 ``RuntimeError`` 分支（历史实现里的该分支
     # 已成死代码）。异常携带上一轮探测得到的 ``capabilities``，本规范 P2-1 要求**复用**
     # 它而非二次探测（最坏再跑一轮 5 档串行探测，最多 25s）。
+    #
+    # ``explicit`` 表示「本次请求是否由调用方显式给出档位」。默认按 ``requested is not None``
+    # 推断；但会话冻结值与 owner 偏好在库里无记录时都会被填成 ``"xhigh"``
+    # （``get_last_reasoning_effort``），此时值非空却**不是**用户本轮的选择，路由层必须
+    # 显式传 ``explicit=False`` 才能正确识别。
+    if explicit is None:
+        explicit = requested is not None
     requested_effort = str(requested if requested is not None else "xhigh").strip().lower()
     try:
         return resolve_reasoning_effort(model, requested)
@@ -211,10 +271,15 @@ def _resolve_request_effort(model: str, requested: str | None):
         capabilities = error.capabilities
         if capabilities.supported_efforts:
             raise HTTPException(status_code=409, detail={"code": "REASONING_EFFORT_UNSUPPORTED", "message": "当前模型不支持该推理档位", "retryable": False}) from error
-        if requested_effort == "off":
-            # ``off`` 即 ``think=false``，不需要模型具备 thinking 能力，任何模型都安全，
-            # 因此能力未知时仍然放行（provider 取值复用 ``_provider_value``，与
-            # ``resolve_reasoning_effort`` 一致，避免两处映射漂移，spec-026 P2-3）。
+        # ``off`` 即 ``think=false``，不需要模型具备 thinking 能力，任何模型都安全，
+        # 因此能力未知时仍然放行（provider 取值复用 ``_provider_value``，与
+        # ``resolve_reasoning_effort`` 一致，避免两处映射漂移，spec-026 P2-3）。
+        #
+        # 请求**未携带**档位时默认取的 ``xhigh`` 是后端替用户造的默认值：不能因为自己
+        # 造的默认值在能力未知时命中不支持，就把整个请求以 503 拒掉 —— 那会复现 spec-026
+        # 原本要修掉的「模型能力暂时不可用」烦人报错（探测在模型加载/冷启动时必然抖动）。
+        # 只有用户**显式**选择了非 off 档位、且能力未知无法确认时才返回 503。
+        if requested_effort == "off" or not explicit:
             provider_value = _provider_value("off")
             return ReasoningResolution(str(model), "off", provider_value, capabilities, {"think": provider_value})
         raise HTTPException(status_code=503, detail={"code": "MODEL_CAPABILITIES_UNAVAILABLE", "message": "模型能力暂时不可用", "retryable": True}) from error
@@ -338,16 +403,13 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         reasoning_duration_ms = None
         adapter_event_seq = 0
         finished = False
-        generation_started = False
         try:
             system_rule = repo.get_system_rule(OWNER_ID)
         except Exception:
             # A rule-enabled request cannot safely continue when its state is
             # unknown.  Persist failure before emitting any model event/token.
-            try:
+            with contextlib.suppress(Exception):
                 repo.update_message(assistant_message.message_id, OWNER_ID, status="failed")
-            except Exception:
-                pass
             yield frame("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode, reasoning_effort=selected_effort, capabilities_source=capabilities_source)
             yield frame("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
             yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed", duration_ms=0, reasoning_duration_ms=None, answer_duration_ms=0)
@@ -355,10 +417,8 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         try:
             # Raw events are an append-only audit/input stream for the local
             # evolution worker.  They are advisory and never block SSE.
-            try:
+            with contextlib.suppress(Exception):
                 repo.append_raw_event(OWNER_ID, conversation.conversation_id, "user_message", {"content": user_message.content}, message_id=user_message.message_id, idempotency_key=f"message:{user_message.message_id}")
-            except Exception:
-                pass
             yield frame("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode, reasoning_effort=selected_effort, capabilities_source=capabilities_source)
             recall_running = repo.create_processing_step(assistant_message.message_id, "memory_recall", "running", label="记忆召回")
             yield frame("progress", step_id=recall_running.step_id, kind=recall_running.kind, label=recall_running.label, status="running", summary=None)
@@ -418,19 +478,28 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                         )[:5]
                         rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索")
                         yield frame("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
-                    except Exception as error:
+                    except Exception:
                         rag_hits = []
                         rag_failed = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "failed", "知识库检索失败，已跳过", label="知识库检索")
                         yield frame("progress", step_id=rag_failed.step_id, kind=rag_failed.kind, label=rag_failed.label, status="failed", summary=rag_failed.summary)
             history = [message for message in repo.list_context_messages(conversation.conversation_id, OWNER_ID) if message.message_id != user_message.message_id]
             if sum(len(message.content or "") for message in history) > 12000:
-                try:
+                with contextlib.suppress(Exception):
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
-                except Exception:
-                    pass
-            messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None)
+            segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
+            messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None, segments=segments)
+            # Spec025 Task04：装配后按阈值自动触发后台异步压缩；绝不阻塞本次响应，
+            # 失败只记录观测（与既有 context_pressure 事件并存，不改其语义）。
+            try:
+                usage = compute_context_usage(repo, conversation)
+                if usage["ratio"] >= CHAT_COMPACT_TRIGGER_RATIO:
+                    get_compaction_worker(repo).enqueue(
+                        conversation.conversation_id, OWNER_ID, conversation.project_id,
+                        "auto", est_tokens_before=usage["used_tokens"],
+                    )
+            except Exception as error:
+                logger.warning("auto context compaction trigger failed: %s", error)
             repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
-            generation_started = True
             generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
             yield frame("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
             run = run_chat(user_message.content, model, messages=messages, reasoning_effort=selected_effort)
@@ -455,10 +524,8 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                         return
                     adapter_event_seq = incoming_seq
                 if event.get("type") in {"error", "tool_error"}:
-                    try:
+                    with contextlib.suppress(Exception):
                         repo.append_raw_event(OWNER_ID, conversation.conversation_id, "tool_failure", {"error": _redact_sensitive(event.get("message") or event.get("content") or "工具失败"), "verified": False}, message_id=user_message.message_id, idempotency_key=f"tool-failure:{user_message.message_id}")
-                    except Exception:
-                        pass
                 if event.get("type") in {"thinking", "reasoning_delta"} and selected_effort != "off" and not answer_started:
                     clean = reasoning_stream_filter.push(event.get("content") or "")
                     if clean:
@@ -658,19 +725,24 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
     repo = _repo()
     if conversation_id:
         conversation = repo.get_conversation(conversation_id, OWNER_ID)
-        if not conversation: raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+        if not conversation:
+            raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
         # An existing conversation's frozen effort wins over the owner
         # default.  This keeps a stale/unsupported owner preference from
         # rejecting an otherwise valid session turn.
         requested_effort = payload.reasoning_effort if payload.reasoning_effort is not None else conversation.reasoning_effort
-        resolution = _resolve_request_effort(payload.model, requested_effort)
+        resolution = _resolve_request_effort(payload.model, requested_effort, explicit=payload.reasoning_effort is not None)
     else:
         inherited_effort = payload.reasoning_effort or repo.get_last_reasoning_effort(OWNER_ID)
-        resolution = _resolve_request_effort(payload.model, inherited_effort)
-        try: conversation, user, assistant = repo.create_conversation_messages(OWNER_ID, content, payload.project_id, payload.model, payload.mode, resolution.effort, update_preference=payload.reasoning_effort is not None)
-        except LookupError as error: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
-        except ValueError as error: raise HTTPException(status_code=409, detail={"code": "PROJECT_NOT_ACTIVE", "message": str(error), "retryable": False}) from error
-        except Exception as error: raise HTTPException(status_code=503, detail={"code": "MESSAGE_TRANSACTION_FAILED", "message": "消息与会话偏好更新未完成", "retryable": True}) from error
+        resolution = _resolve_request_effort(payload.model, inherited_effort, explicit=payload.reasoning_effort is not None)
+        try:
+            conversation, user, assistant = repo.create_conversation_messages(OWNER_ID, content, payload.project_id, payload.model, payload.mode, resolution.effort, update_preference=payload.reasoning_effort is not None)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail={"code": "PROJECT_NOT_ACTIVE", "message": str(error), "retryable": False}) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail={"code": "MESSAGE_TRANSACTION_FAILED", "message": "消息与会话偏好更新未完成", "retryable": True}) from error
     if conversation_id:
         try:
             conversation, user, assistant = repo.create_message_pair(
@@ -717,6 +789,35 @@ def create_message(conversation_id: str, payload: ConversationMessageRequest):
     return _start_message(payload, conversation_id)
 
 
+@router.get("/conversations/{conversation_id}/context-usage")
+def get_context_usage(conversation_id: str):
+    repo = _repo()
+    conversation = repo.get_conversation(conversation_id, OWNER_ID)
+    if not conversation:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+    return compute_context_usage(repo, conversation)
+
+
+@router.post("/conversations/{conversation_id}/compactions")
+def create_compaction(conversation_id: str):
+    repo = _repo()
+    conversation = repo.get_conversation(conversation_id, OWNER_ID)
+    if not conversation:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+    # 已有非终态 job：直接 409，不重复入队（DB 部分唯一索引仍为唯一可靠去重）。
+    existing = repo.get_latest_compaction_job(conversation_id, OWNER_ID)
+    if existing is not None and existing.status not in {"done", "failed"}:
+        raise HTTPException(status_code=409, detail={"code": "COMPACTION_IN_PROGRESS", "message": "压缩进行中", "retryable": False})
+    worker = get_compaction_worker(repo)
+    try:
+        job = worker.enqueue(conversation_id, OWNER_ID, conversation.project_id, "manual")
+    except Exception as error:
+        raise HTTPException(status_code=500, detail={"code": "COMPACTION_ENQUEUE_FAILED", "message": str(error) or "压缩入队失败", "retryable": True}) from error
+    if job is None:
+        raise HTTPException(status_code=409, detail={"code": "COMPACTION_IN_PROGRESS", "message": "压缩进行中", "retryable": False})
+    return {"job_id": job.job_id, "status": job.status, "trigger": "manual"}
+
+
 @router.get("/conversations/{conversation_id}")
 def get_conversation(conversation_id: str):
     item = _repo().get_conversation(conversation_id, OWNER_ID)
@@ -727,8 +828,10 @@ def get_conversation(conversation_id: str):
 
 @router.get("/conversations")
 def list_conversations(project_id: str | None = None, cursor: str | None = None, limit: int = Query(20, ge=1, le=100), status: str | None = None, unbound_only: bool = False):
-    try: items, next_cursor = _repo().list_conversations(OWNER_ID, project_id, cursor, limit, status=status, unbound_only=unbound_only)
-    except LookupError as error: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    try:
+        items, next_cursor = _repo().list_conversations(OWNER_ID, project_id, cursor, limit, status=status, unbound_only=unbound_only)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
     except ValueError as error:
         code = "INVALID_CONVERSATION_FILTER" if str(error) in {"invalid conversation status", "unbound_only cannot be combined with project_id"} else "INVALID_CURSOR"
         raise HTTPException(status_code=400, detail={"code": code, "message": str(error), "retryable": False}) from error
@@ -737,18 +840,25 @@ def list_conversations(project_id: str | None = None, cursor: str | None = None,
 
 @router.get("/conversations/{conversation_id}/messages")
 def get_messages(conversation_id: str, before: str | None = None, target_chars: int = Query(4000, ge=1, le=100000)):
-    try: items, next_cursor = _repo().list_messages(conversation_id, OWNER_ID, before=before, target_chars=target_chars)
-    except LookupError as error: raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": str(error), "retryable": False}) from error
-    except ValueError as error: raise HTTPException(status_code=400, detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False}) from error
+    try:
+        items, next_cursor = _repo().list_messages(conversation_id, OWNER_ID, before=before, target_chars=target_chars)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False}) from error
     return {"messages": [_message_payload(item) for item in items], "next_cursor": next_cursor}
 
 
 @router.patch("/conversations/{conversation_id}")
 def patch_conversation(conversation_id: str, payload: ConversationPatchRequest):
-    try: item = _repo().update_conversation(conversation_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
-    except LookupError as error: raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
-    except ValueError as error: raise HTTPException(status_code=409, detail={"code": "CONVERSATION_CONFLICT", "message": str(error), "retryable": False}) from error
-    if not item: raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+    try:
+        item = _repo().update_conversation(conversation_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail={"code": "CONVERSATION_CONFLICT", "message": str(error), "retryable": False}) from error
+    if not item:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
     return _conversation_payload(item)
 
 
@@ -765,13 +875,15 @@ def restore_conversation(conversation_id: str):
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
 def remove_conversation(conversation_id: str):
-    if not _repo().delete_conversation(conversation_id, OWNER_ID): raise HTTPException(status_code=404, detail="会话不存在")
+    if not _repo().delete_conversation(conversation_id, OWNER_ID):
+        raise HTTPException(status_code=404, detail="会话不存在")
 
 
 @router.get("/messages/{message_id}/processing-steps")
 def get_processing_steps(message_id: str):
     steps = _repo().list_processing_steps(message_id, OWNER_ID)
-    if not steps and not _repo().get_message(message_id, OWNER_ID): raise HTTPException(status_code=404, detail="消息不存在")
+    if not steps and not _repo().get_message(message_id, OWNER_ID):
+        raise HTTPException(status_code=404, detail="消息不存在")
     return {"steps": [{"step_id": s.step_id, "message_id": s.message_id, "kind": s.kind, "label": s.label, "status": s.status, "summary": s.summary, "started_at": s.started_at.isoformat(), "completed_at": s.completed_at.isoformat() if s.completed_at else None} for s in steps]}
 
 

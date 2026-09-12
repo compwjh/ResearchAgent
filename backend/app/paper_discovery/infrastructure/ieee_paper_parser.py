@@ -299,8 +299,8 @@ class IEEEPaperParser:
 
     def parse_page(self, page: Any) -> IEEEPaper:
         try:
-            content = page.content() if callable(getattr(page, "content", None)) else getattr(page, "content")
-            page_url = page.url() if callable(getattr(page, "url", None)) else getattr(page, "url")
+            content = page.content() if callable(getattr(page, "content", None)) else page.content
+            page_url = page.url() if callable(getattr(page, "url", None)) else page.url
             requests = getattr(page, "pdf_requests", getattr(page, "requests", ()))
             if callable(requests):
                 requests = requests()
@@ -361,18 +361,6 @@ def parse_ieee_page(
 
 IEEEPaperParseResult = IEEEPaper
 IEEEPaper = IEEEPaper
-
-__all__ = [
-    "IEEE_ORIGIN",
-    "IEEE_PARSE_FAILED",
-    "IEEEP​​aperParseError",
-    "IEEEP​​aper",
-    "IEEEPaperParseResult",
-    "IEEEPaper",
-    "IEEEParseResult",
-    "IEEEP​​aperParser",
-    "parse_ieee_page",
-]
 
 # Keep public adapter names explicit for dependency-injection callers.
 __all__ = [

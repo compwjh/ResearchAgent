@@ -39,9 +39,10 @@ class EmbedEventTests(unittest.TestCase):
         def fake_post(url, json=None, **kwargs):
             return self._response(len(json["input"]))
 
-        with patch.object(embed_module.httpx, "post", side_effect=fake_post):
-            with patch.object(embed_module, "record_event") as record:
-                vectors = embed_module.embed_texts(["一句话", "第二句"])
+        with patch.object(embed_module.httpx, "post", side_effect=fake_post), patch.object(
+            embed_module, "record_event"
+        ) as record:
+            vectors = embed_module.embed_texts(["一句话", "第二句"])
         self.assertEqual(vectors, [[0.1, 0.2], [0.1, 0.2]])
         record.assert_called_once()
         kwargs = record.call_args.kwargs
@@ -55,10 +56,10 @@ class EmbedEventTests(unittest.TestCase):
 
     def test_records_error_event_and_reraises(self):
         failure = httpx.HTTPError("connection reset")
-        with patch.object(embed_module.httpx, "post", side_effect=failure):
-            with patch.object(embed_module, "record_event") as record:
-                with self.assertRaises(embed_module.EmbeddingError):
-                    embed_module.embed_texts(["一句话"])
+        with patch.object(embed_module.httpx, "post", side_effect=failure), patch.object(
+            embed_module, "record_event"
+        ) as record, self.assertRaises(embed_module.EmbeddingError):
+            embed_module.embed_texts(["一句话"])
         record.assert_called_once()
         kwargs = record.call_args.kwargs
         self.assertEqual(kwargs["name"], "kb.embedding")
@@ -80,9 +81,10 @@ class RetrievalEventTests(unittest.TestCase):
             SimpleNamespace(points=[make_point("p1", 1, 0.8)]),
             SimpleNamespace(points=[make_point("p1", 2, 0.7)]),
         ]
-        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]):
-            with patch.object(retrieve_module, "record_event") as record:
-                hits = retrieve_module.hybrid_search("问题", top_k=5, chunker="v1", client=client)
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]), patch.object(
+            retrieve_module, "record_event"
+        ) as record:
+            hits = retrieve_module.hybrid_search("问题", top_k=5, chunker="v1", client=client)
         self.assertEqual(len(hits), 2)
         kwargs = self._events(record, "kb.retrieval")[0]
         self.assertEqual(kwargs["name"], "kb.retrieval")
@@ -100,9 +102,10 @@ class RetrievalEventTests(unittest.TestCase):
     def test_records_event_on_empty_collection(self):
         client = Mock()
         client.collection_exists.return_value = False
-        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]):
-            with patch.object(retrieve_module, "record_event") as record:
-                result = retrieve_module.hybrid_search("问题", client=client)
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]), patch.object(
+            retrieve_module, "record_event"
+        ) as record:
+            result = retrieve_module.hybrid_search("问题", client=client)
         self.assertEqual(result, [])
         kwargs = self._events(record, "kb.retrieval")[0]
         self.assertEqual(kwargs["name"], "kb.retrieval")
@@ -113,10 +116,10 @@ class RetrievalEventTests(unittest.TestCase):
         client = Mock()
         client.collection_exists.return_value = True
         client.query_points.side_effect = RuntimeError("qdrant down")
-        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]):
-            with patch.object(retrieve_module, "record_event") as record:
-                with self.assertRaises(RuntimeError):
-                    retrieve_module.hybrid_search("问题", client=client)
+        with patch.object(retrieve_module, "embed_texts", return_value=[[0.1] * 4]), patch.object(
+            retrieve_module, "record_event"
+        ) as record, self.assertRaises(RuntimeError):
+            retrieve_module.hybrid_search("问题", client=client)
         kwargs = self._events(record, "kb.retrieval")[0]
         self.assertEqual(kwargs["name"], "kb.retrieval")
         self.assertIsInstance(kwargs["duration_ms"], float)
@@ -129,9 +132,10 @@ class RetrievalEventTests(unittest.TestCase):
         converted = [retrieve_module._to_hit(point) for point in hits]
         chat = Mock()
         chat.invoke.side_effect = [SimpleNamespace(content="9"), SimpleNamespace(content="2")]
-        with patch("backend.app.platform.ollama.create_chat_model", return_value=chat):
-            with patch.object(retrieve_module, "record_event") as record:
-                result = retrieve_module.rerank("问题", converted, model="reranker")
+        with patch("backend.app.platform.ollama.create_chat_model", return_value=chat), patch.object(
+            retrieve_module, "record_event"
+        ) as record:
+            result = retrieve_module.rerank("问题", converted, model="reranker")
         self.assertEqual([hit.chunk_index for hit in result], [1, 2])
         event = self._events(record, "kb.rerank")[0]
         self.assertEqual(event["metadata"], {
@@ -149,9 +153,10 @@ class RetrievalEventTests(unittest.TestCase):
 
     def test_rerank_records_degraded_and_observation_failure_is_ignored(self):
         hits = [retrieve_module._to_hit(make_point("p1", 1, 0.8)), retrieve_module._to_hit(make_point("p1", 2, 0.7))]
-        with patch("backend.app.platform.ollama.create_chat_model", side_effect=RuntimeError("offline")):
-            with patch.object(retrieve_module, "record_event", side_effect=RuntimeError("telemetry")):
-                result = retrieve_module.rerank("问题", hits, model="reranker")
+        with patch("backend.app.platform.ollama.create_chat_model", side_effect=RuntimeError("offline")), patch.object(
+            retrieve_module, "record_event", side_effect=RuntimeError("telemetry")
+        ):
+            result = retrieve_module.rerank("问题", hits, model="reranker")
         self.assertEqual(result, hits)
 
 

@@ -153,7 +153,8 @@ def identity_keys_for_candidate(candidate: Any) -> set[str]:
     if isinstance(candidate, Mapping):
         get = candidate.get
     else:
-        get = lambda name, default=None: getattr(candidate, name, default)
+        def get(name, default=None):
+            return getattr(candidate, name, default)
     return paper_identity_keys(
         doi=get("doi"),
         dblp_key=get("dblp_key") or get("dblp"),
@@ -167,7 +168,8 @@ def _candidate_identity(candidate: Any) -> PaperImportIdentity:
     if isinstance(candidate, Mapping):
         get = candidate.get
     else:
-        get = lambda name, default=None: getattr(candidate, name, default)
+        def get(name, default=None):
+            return getattr(candidate, name, default)
     return build_paper_identity(
         doi=get("doi"),
         dblp_key=get("dblp_key") or get("dblp"),
@@ -342,7 +344,8 @@ def filename_for_candidate(
     if isinstance(candidate, Mapping):
         get = candidate.get
     else:
-        get = lambda name, default=None: getattr(candidate, name, default)
+        def get(name, default=None):
+            return getattr(candidate, name, default)
     return unique_paper_filename(
         get("year"),
         conference_short_name,
