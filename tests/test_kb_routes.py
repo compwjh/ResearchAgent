@@ -78,6 +78,39 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(response.json()["document_id"], "paper-1")
         create.assert_called_once()
 
+    def test_upload_record_visible_immediately_in_papers_list(self):
+        """spec-035 Bug2：上传接口同步登记元数据，返回后列表立即可见（计数不延迟）。"""
+        record = {
+            "document_id": "paper-immediate",
+            "media_type": "application/pdf",
+            "file_name": "immediate.pdf",
+            "source_sha256": "b" * 64,
+            "status": "pending",
+            "chunkers": {"v1": {"status": "pending"}, "v2": {"status": "pending"}},
+        }
+        # 模拟 create_immutable_document 的同步落盘：side_effect 直接写入共享状态。
+        meta_store: list[dict] = []
+
+        def _sync_register(file_name, media_type, content, **_kwargs):
+            meta_store.append(dict(record))
+            return {"document": dict(record), "task_id": None, "deduplicated": False}
+
+        with (
+            patch("backend.app.api.routes_kb.create_uploaded_document", side_effect=_sync_register),
+            patch("backend.app.api.routes_kb.load_papers", side_effect=lambda: list(meta_store)),
+            patch("backend.app.api.routes_kb.submit_document_reindex", return_value={"submitted": {"v1": "t1", "v2": "t2"}, "task_id": "t1"}),
+        ):
+            upload = self.client.post(
+                "/api/kb/upload", files={"file": ("immediate.pdf", PDF_BYTES, "application/pdf")}
+            )
+            self.assertEqual(upload.status_code, 201)
+            # 上传返回后立刻查询，不做任何等待——记录必须已在列表中。
+            listed = self.client.get("/api/kb/papers")
+        self.assertEqual(listed.status_code, 200)
+        papers = listed.json()["papers"]
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0]["document_id"], "paper-immediate")
+
 
 class PaperListTests(unittest.TestCase):
     def setUp(self):
