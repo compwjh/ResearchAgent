@@ -73,6 +73,7 @@ IMPORT_FAILED = "IMPORT_FAILED"
 INVALID_SEARCH_SNAPSHOT = "INVALID_SEARCH_SNAPSHOT"
 SEARCH_NOT_FOUND = "SEARCH_NOT_FOUND"
 SEARCH_EXPIRED = "SEARCH_EXPIRED"
+SEARCH_NOT_READY = "SEARCH_NOT_READY"
 CANDIDATE_NOT_FOUND = "CANDIDATE_NOT_FOUND"
 COMPENSATION_PENDING = "COMPENSATION_PENDING"
 BATCH_NOT_FOUND_ERROR = BATCH_NOT_FOUND
@@ -200,6 +201,41 @@ class PaperImportBatchService:
                 time.sleep(0.01 * (attempt + 1))
         raise AssertionError("unreachable")
 
+    def _catalog_server_snapshot(
+        self, search_id: str
+    ) -> tuple[Any, dict[str, Any]]:
+        """Resolve a server-side import snapshot from catalog async-search state.
+
+        catalog async-search writes its retrieval context only to ``search_jobs``
+        and ``search_results``; ``search_sessions`` is empty for it.  Mirror the
+        route layer ``_paper_catalog_import_inputs`` / ``_paper_server_snapshot``
+        so a batch created from a catalog async-search can be executed without
+        re-resolving a session that was never written.  The returned
+        ``(job, snapshots)`` tuple matches the non-fallback contract: ``snapshots``
+        is keyed by ``candidate_id`` (== ``catalog_paper_id``), keeping the
+        ``_snapshots_for`` hash check and per-item lookups identical across both
+        paths (the snapshot dict is rebuilt exactly like the route layer: a copy
+        of ``result.snapshot`` with ``candidate_id`` / ``search_id`` defaulted in).
+        """
+        job = self.discovery_store.get_search_job(search_id)
+        if job is None:
+            raise PaperImportBatchServiceError(SEARCH_NOT_FOUND, "搜索会话不存在")
+        if _value(job, "status") not in {"completed", "partial", "failed"}:
+            raise PaperImportBatchServiceError(SEARCH_NOT_READY, "搜索结果尚未冻结")
+        expires_at = _parse_time(_value(job, "expires_at"))
+        if expires_at is None or expires_at <= _utcnow():
+            raise PaperImportBatchServiceError(SEARCH_EXPIRED, "搜索会话已过期")
+        snapshots: dict[str, Any] = {}
+        for result in self.discovery_store.get_search_results(search_id):
+            snapshot = dict(_value(result, "snapshot") or {})
+            candidate_id = snapshot.get("catalog_paper_id") or _value(result, "catalog_paper_id")
+            snapshot.setdefault("candidate_id", candidate_id)
+            snapshot.setdefault("search_id", search_id)
+            snapshots[str(candidate_id)] = snapshot
+        if not snapshots:
+            raise PaperImportBatchServiceError(CANDIDATE_NOT_FOUND, "未提供候选快照")
+        return job, snapshots
+
     def _server_snapshot(
         self,
         search_id: str,
@@ -209,6 +245,14 @@ class PaperImportBatchService:
         session = search_session
         if session is None and self.discovery_store is not None:
             session = self.discovery_store.get_search_session(search_id)
+        if session is None and self.discovery_store is not None:
+            # catalog async-search 的检索上下文只落在 search_jobs / search_results 表，
+            # search_sessions 对其恒为空；与路由层 _paper_catalog_import_inputs /
+            # _paper_server_snapshot 保持一致，回退到 job 解析，避免把"未就绪/已过期/
+            # 可解析"的合法 search_id 误报为 SEARCH_NOT_FOUND（本路径此前缺此回退，
+            # 导致 catalog 批量导入 100% 失败；复现链路：submit_batch →
+            # _run_batch_in_background → run_batch → _snapshots_for → _server_snapshot）。
+            return self._catalog_server_snapshot(search_id)
         if session is None:
             raise PaperImportBatchServiceError(SEARCH_NOT_FOUND, "搜索会话不存在")
         if str(_value(session, "search_id")) != str(search_id):
@@ -817,7 +861,7 @@ class PaperImportBatchService:
 
 __all__ = [
     "IMPORT_FAILED", "INVALID_SEARCH_SNAPSHOT", "SEARCH_NOT_FOUND", "SEARCH_EXPIRED",
-    "CANDIDATE_NOT_FOUND", "COMPENSATION_PENDING", "SNAPSHOT_REBUILD_REQUIRED",
+    "SEARCH_NOT_READY", "CANDIDATE_NOT_FOUND", "COMPENSATION_PENDING", "SNAPSHOT_REBUILD_REQUIRED",
     "BROWSER_SESSION_EXPIRED", "BROWSER_SESSION_REQUIRED",
     "PaperImportBatchService", "PaperImportBatchServiceError",
 ]
