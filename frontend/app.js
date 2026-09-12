@@ -4310,6 +4310,7 @@ function renderKbPapers(papers) {
 
   let hasRunning = false;
   for (const paper of papers) {
+    if (paper.status === 'processing' || paper.status === 'indexing') hasRunning = true;
     const item = document.createElement('li');
     item.className = `kb-item status-${paper.status || 'unknown'}`;
     if (paper.paper_id) item.dataset.paperId = paper.paper_id;
@@ -4449,11 +4450,11 @@ if (kbDrop && kbFileInput) {
       if (kbStatus) {
         kbStatus.textContent = `${data.file_name}：${KB_STATUS_TEXT[data.status] || data.status}${data.error ? `（${data.error}）` : ''}`;
       }
+      await loadKbPapers();
     } catch (error) {
       if (kbStatus) kbStatus.textContent = `上传失败：${error.message}`;
     } finally {
       kbFileInput.value = '';
-      loadKbPapers();
       loadKbHealth();
     }
   });
