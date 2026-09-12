@@ -10,7 +10,7 @@
 - 硬约束：五类错误文案中只有「真网络错误」一类允许出现「连接失败」字样。
 
 `frontend/app.js` 是浏览器脚本、无模块导出，因此本文件沿用仓库既有做法
-（``test_spec024_frontend_contract.py`` / ``test_frontend_conversation_contract.py``）
+（``test_frontend_reasoning_panel_contract.py`` / ``test_frontend_conversation_contract.py``）
 做静态源码契约断言，并按函数名抽取函数体以避免跨函数误匹配。
 """
 

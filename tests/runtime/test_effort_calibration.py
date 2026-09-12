@@ -13,7 +13,7 @@ Spec 026 / Task 06 — B9 校准提示缺失（静默降档）真实浏览器验
   回归 R2 真实 409 卡片文案正确且不含“连接失败”
   回归 R3 unknown 模型显示“能力未确认 | 重新检测”，除 off 外全禁用
 
-运行：.venv/bin/python tests/runtime/test_spec026_effort_calibration.py
+运行：.venv/bin/python tests/runtime/test_effort_calibration.py
 注意：模型切换触发真实能力探测，最坏 25s/次，已给足超时。
 """
 import json
