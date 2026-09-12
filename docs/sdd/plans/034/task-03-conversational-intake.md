@@ -1,7 +1,7 @@
 # Task03 — 会话意图、Deep Research Skill 与 Intake
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02；当前状态：`待执行`
+> 依赖：Task02；当前状态：`实施中`
 
 ## 一句话目标
 

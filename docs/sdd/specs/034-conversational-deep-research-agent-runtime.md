@@ -458,7 +458,7 @@ Smoke 必须证明：
 |---|---|---|---|---|
 | 01 | 编写 Spec034 | 本文件 | — | 完成 |
 | 02 | 冻结数据模型、状态机、迁移与兼容接缝 | [`task-02-session-state-and-migration-gate.md`](../plans/034/task-02-session-state-and-migration-gate.md) | Spec确认、双评审 | 已完成 |
-| 03 | 实现会话意图、Deep Research Skill 与 Intake | [`task-03-conversational-intake.md`](../plans/034/task-03-conversational-intake.md) | 02 | 待执行 |
+| 03 | 实现会话意图、Deep Research Skill 与 Intake | [`task-03-conversational-intake.md`](../plans/034/task-03-conversational-intake.md) | 02 | 实施中 |
 | 04 | 实现计划版本、统一审批命令与前端卡片 | [`task-04-plan-and-approvals.md`](../plans/034/task-04-plan-and-approvals.md) | 03 | 待执行 |
 | 05 | 实现 ResearchAgentRunner 与真实子 Agent 循环 | [`task-05-agent-runtime.md`](../plans/034/task-05-agent-runtime.md) | 02、04 | 待执行 |
 | 06 | 接通论文目录、评估、Critic 与覆盖补偿 | [`task-06-research-execution.md`](../plans/034/task-06-research-execution.md) | 05 | 待执行 |
