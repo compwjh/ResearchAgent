@@ -168,6 +168,71 @@ EVENT_TYPES = frozenset(
     {"task", "plan", "worker", "model", "coverage", "report", "terminal"}
 )
 
+# Spec034 session/runtime contracts.  Keep these values in one module so
+# stores, services and API adapters cannot silently grow independent enums.
+SESSION_STATUSES = frozenset(
+    {
+        "intake_pending", "plan_generating", "plan_pending_approval", "queued",
+        "running", "waiting_approval", "interrupted", "partial", "completed",
+        "failed", "cancelled",
+    }
+)
+SESSION_TERMINAL = frozenset({"interrupted", "partial", "completed", "failed", "cancelled"})
+SESSION_TRANSITIONS = {
+    "intake_pending": {"plan_generating"},
+    "plan_generating": {"plan_pending_approval"},
+    "plan_pending_approval": {"queued", "intake_pending"},
+    "queued": {"running"},
+    "running": {"waiting_approval", "partial", "completed", "failed", "cancelled", "interrupted"},
+    "waiting_approval": {"running"},
+    "interrupted": set(), "partial": set(), "completed": set(), "failed": set(), "cancelled": set(),
+}
+
+INTAKE_STATUSES = frozenset({"collecting", "complete", "superseded", "cancelled"})
+INTAKE_TRANSITIONS = {
+    "collecting": {"complete", "cancelled"},
+    "complete": {"superseded", "cancelled"},
+    "superseded": set(), "cancelled": set(),
+}
+INTAKE_FIELDS = frozenset({"topic", "objective", "time_range", "language", "sources", "depth", "output", "citations", "constraints"})
+INTAKE_SOURCES = frozenset({"user_explicit", "context_inferred", "system_default"})
+INTAKE_CONFIRMATION_STATUSES = frozenset({"unconfirmed", "confirmed", "not_required"})
+
+APPROVAL_KINDS = frozenset({"plan", "capability_override", "resource_extension"})
+APPROVAL_STATUSES = frozenset({"pending", "approved", "rejected", "cancelled", "superseded"})
+APPROVAL_TRANSITIONS = {
+    "pending": {"approved", "rejected", "cancelled", "superseded"},
+    "approved": set(), "rejected": set(), "cancelled": set(), "superseded": set(),
+}
+AGENT_ROLES = frozenset({"planner", "search_worker", "paper_evaluator", "research_critic", "synthesizer"})
+AGENT_RUN_STATUSES = frozenset({"queued", "running", "completed", "failed", "cancelled", "interrupted", "limit_reached"})
+AGENT_RUN_TRANSITIONS = {
+    "queued": {"running"},
+    "running": {"completed", "failed", "cancelled", "interrupted", "limit_reached"},
+    "completed": set(), "failed": set(), "cancelled": set(), "interrupted": set(), "limit_reached": set(),
+}
+ARTIFACT_TYPES = frozenset({"markdown", "html", "citation_manifest", "intermediate"})
+NOTIFICATION_KINDS = frozenset({"completed", "partial", "failed", "waiting_approval", "interrupted"})
+NOTIFICATION_STATUSES = frozenset({"unread", "read"})
+PROCESSING_NODE_TYPES = frozenset({"phase", "agent", "skill", "tool", "operation"})
+
+# Verbose aliases are part of the Task02 public contract.
+RESEARCH_SESSION_STATUSES = SESSION_STATUSES
+RESEARCH_SESSION_TERMINAL = SESSION_TERMINAL
+RESEARCH_INTAKE_STATUSES = INTAKE_STATUSES
+APPROVAL_REQUEST_STATUSES = APPROVAL_STATUSES
+AGENT_RUN_STATUSES_V2 = AGENT_RUN_STATUSES
+
+RESEARCH_SESSION_ERROR_CODES = frozenset(
+    {
+        "RESEARCH_SESSION_NOT_FOUND", "RESEARCH_SESSION_ACTIVE_CONFLICT", "INTAKE_INCOMPLETE",
+        "PLAN_VERSION_STALE", "APPROVAL_STALE", "APPROVAL_CONFLICT", "SKILL_DISABLED",
+        "CAPABILITY_NOT_AUTHORIZED", "AGENT_OUTPUT_INVALID", "MODEL_LOOP_LIMIT_REACHED",
+        "TOOL_CALL_LIMIT_REACHED", "TASK_MODEL_LIMIT_REACHED", "TASK_TIME_LIMIT_REACHED",
+        "TRACE_PROJECTION_FAILED", "ARTIFACT_NOT_READY", "MODEL_UNAVAILABLE",
+    }
+)
+
 # 证据等级（全集）。
 EVIDENCE_LEVELS = frozenset({"catalog", "abstract", "fulltext"})
 

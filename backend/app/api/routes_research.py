@@ -36,11 +36,11 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import get_provider
@@ -96,6 +96,59 @@ class ResearchTaskPatchProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     project_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class ResearchSessionCreateRequest(BaseModel):
+    """Task02 base schema for the conversational research session boundary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: Optional[str] = Field(default=None, max_length=100)
+    trigger_message_id: Optional[str] = Field(default=None, max_length=100)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    intake: dict = Field(default_factory=dict)
+
+
+class ResearchSessionCommandRequest(BaseModel):
+    """All button and natural-language approvals use this exact command shape."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: Literal[
+        "approve_plan", "revise_plan", "cancel_research",
+        "approve_capability", "approve_resource_extension", "decline_request",
+    ]
+    subject_version: int = Field(ge=0)
+    scope_json: dict[str, object] = Field(default_factory=dict, max_length=32)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+    @field_validator("scope_json")
+    @classmethod
+    def validate_scope(cls, value: dict[str, object]) -> dict[str, object]:
+        """Bound the transport shape; registry authorization remains service-side."""
+        forbidden = {"shell", "python", "__import__", "eval", "exec"}
+
+        def visit(item: object, depth: int = 0) -> None:
+            if depth > 4:
+                raise ValueError("scope_json nesting is too deep")
+            if isinstance(item, str):
+                if len(item) > 2000 or item.lower() in forbidden or item.startswith(("http://", "https://")):
+                    raise ValueError("scope_json contains an unsafe value")
+            elif isinstance(item, dict):
+                if len(item) > 32:
+                    raise ValueError("scope_json has too many keys")
+                for key, child in item.items():
+                    if "url" in str(key).lower() or str(key).lower() in forbidden:
+                        raise ValueError("scope_json contains an unsafe key")
+                    visit(child, depth + 1)
+            elif isinstance(item, list):
+                if len(item) > 32:
+                    raise ValueError("scope_json list is too large")
+                for child in item:
+                    visit(child, depth + 1)
+
+        visit(value)
+        return value
 
 
 def _service():

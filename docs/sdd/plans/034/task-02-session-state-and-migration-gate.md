@@ -1,7 +1,7 @@
 # Task02 — 数据模型、状态机、迁移与兼容门禁
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Spec确认、需求/技术评审通过；当前状态：`实施中`
+> 依赖：Spec确认、需求/技术评审通过；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -50,10 +50,11 @@
 - 状态机非法转移均返回稳定错误；Session 状态不可由前端直接写。
 - 每条命令按 `subject_version + idempotency_key` CAS；重复返回原响应，竞争返回 `APPROVAL_CONFLICT`/`APPROVAL_STALE`。
 - v2 迁移不重写旧行；同一 `source_event_id/node_key` 重放只更新一个节点，投影失败不回滚研究事件。
+- Replay seam 只接受 canonical `research-event:{research_task_id}:{event_seq}`，拒绝跨 Task/custom ID，并按 parent-first 后 event_seq 回放；成功清除 retry，失败递增 attempts。
 - 回滚只移除新增 migration/table/index，不覆盖用户数据；旧未绑定数据尚未删除。
 
 ## 产出物、执行结果与变更日志
 
 - 产出：合同测试、迁移实现、Schema/状态机说明、Task02 门禁报告。
-- 执行结果：待执行后填写真实命令、退出码、通过数量和阻塞。
-- 变更日志：待执行后填写。
+- 执行结果：后端实现、独立复审与验收均通过；合同测试 12 passed，受影响后端回归 146 passed、5 subtests，运行时探针 5/5，通过 `py_compile`、`git diff --check` 和新增代码聚焦 Ruff 检查。详见 [`backend-report.md`](./artifacts/task-02/backend-report.md)、[`backend-review.md`](./artifacts/task-02/backend-review.md)、[`backend-test-report.md`](./artifacts/task-02/backend-test-report.md)。
+- 变更日志：2026-09-13 完成研究库 v2、MemoryRepository ProcessingStep v2 加性迁移、状态/幂等/三级树合同；关闭 owner/跨库 ID、通知幂等、同 kind 节点和 replay seam P1。backend-reviewer 与 backend-tester 均 GO；遗留仅为基线已有的 14 条 Ruff 风格告警，不阻塞 Task02。

@@ -7,6 +7,15 @@ InvalidStateTransition，未知状态不得静默放行），再查转移表。
 from __future__ import annotations
 
 from .contracts import (
+    AGENT_RUN_STATUSES,
+    AGENT_RUN_TRANSITIONS,
+    APPROVAL_STATUSES,
+    APPROVAL_TRANSITIONS,
+    INTAKE_STATUSES,
+    INTAKE_TRANSITIONS,
+    NOTIFICATION_STATUSES,
+    SESSION_STATUSES,
+    SESSION_TRANSITIONS,
     TASK_STATUSES,
     TASK_TERMINAL,
     TASK_TRANSITIONS,
@@ -66,3 +75,37 @@ def can_transition_workitem(state: str, nxt: str) -> bool:
     if state not in WORKITEM_STATUSES or nxt not in WORKITEM_STATUSES:
         return False
     return nxt in WORKITEM_TRANSITIONS.get(state, set())
+
+
+def _transition(state: str, nxt: str, states: set | frozenset, transitions: dict) -> str:
+    if state not in states or nxt not in states or nxt not in transitions.get(state, set()):
+        raise InvalidStateTransition("INVALID_STATE_TRANSITION", state, nxt)
+    return nxt
+
+
+def transition_session(state: str, nxt: str) -> str:
+    return _transition(state, nxt, SESSION_STATUSES, SESSION_TRANSITIONS)
+
+
+def transition_intake(state: str, nxt: str) -> str:
+    return _transition(state, nxt, INTAKE_STATUSES, INTAKE_TRANSITIONS)
+
+
+def transition_approval(state: str, nxt: str) -> str:
+    return _transition(state, nxt, APPROVAL_STATUSES, APPROVAL_TRANSITIONS)
+
+
+def transition_agent_run(state: str, nxt: str) -> str:
+    return _transition(state, nxt, AGENT_RUN_STATUSES, AGENT_RUN_TRANSITIONS)
+
+
+def transition_notification(state: str, nxt: str) -> str:
+    return _transition(state, nxt, NOTIFICATION_STATUSES, {"unread": {"read"}, "read": set()})
+
+
+# Verbose aliases make the public contract self-documenting while preserving
+# the concise names used inside the store.
+transition_research_session = transition_session
+transition_research_intake = transition_intake
+transition_approval_request = transition_approval
+transition_research_agent_run = transition_agent_run

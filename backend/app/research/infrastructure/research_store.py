@@ -25,36 +25,85 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from backend.app.platform.config import BASE_DIR
 from backend.app.research.domain.contracts import (
+    AGENT_ROLES,
+    AGENT_RUN_STATUSES,
+    APPROVAL_KINDS,
+    APPROVAL_STATUSES,
     EVENT_TYPES,
     EVIDENCE_LEVELS,
+    INTAKE_CONFIRMATION_STATUSES,
+    INTAKE_FIELDS,
+    INTAKE_SOURCES,
+    INTAKE_STATUSES,
+    NOTIFICATION_KINDS,
+    NOTIFICATION_STATUSES,
     PLAN_STATUSES,
     ROLE_WHITELIST,
+    SESSION_STATUSES,
     TASK_TERMINAL,
     TASK_TYPE_WHITELIST,
     WORKITEM_TERMINAL,
 )
 from backend.app.research.domain.models import (
+    AgentRun,
+    ApprovalRequest,
+    IntakeField,
     PreliminaryReport,
+    ResearchArtifact,
     ResearchEvent,
+    ResearchIntakeDraft,
+    ResearchNotification,
     ResearchPaperSelection,
     ResearchPlan,
+    ResearchSession,
     ResearchTask,
     ResearchWorkItem,
 )
 from backend.app.research.domain.state_machine import (
+    transition_agent_run,
+    transition_approval,
+    transition_intake,
+    transition_session,
     transition_task,
     transition_workitem,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # 写操作全局串行锁：保证 event_seq 原子领号在进程内也无竞争；锁内只做必要写，
 # 计算（JSON 序列化等）已尽量外移。RLock 允许同一线程重入。
 _write_lock = threading.RLock()
+
+
+def canonical_research_event_id(research_task_id: str, event_seq: int) -> str:
+    """Stable cross-store event identity used by the ProcessingStep projector."""
+    if not research_task_id or int(event_seq) < 1:
+        raise ValueError("invalid research event identity")
+    return f"research-event:{research_task_id}:{int(event_seq)}"
+
+
+canonical_event_id = canonical_research_event_id
+
+
+def validate_session_external_references(session: ResearchSession, memory_repository) -> None:
+    """Validate cross-database conversation/message ownership at the seam.
+
+    SQLite cannot enforce a foreign key into the memory DB.  The caller may
+    supply the existing MemoryRepository here; no replacement store is ever
+    created by this module.
+    """
+    conversation = memory_repository.get_conversation(session.conversation_id, session.owner_id)
+    if conversation is None:
+        raise ResearchSessionNotFound(session.conversation_id)
+    if conversation.owner_id != session.owner_id:
+        raise ResearchSessionNotFound(session.conversation_id)
+    message = memory_repository.get_message(session.trigger_message_id, session.owner_id)
+    if message is None or message.conversation_id != session.conversation_id:
+        raise ResearchSessionNotFound(session.trigger_message_id)
 
 
 def default_database_path() -> Path:
@@ -146,6 +195,56 @@ class ResearchWorkItemNotFound(Exception):
         super().__init__(f"research work item not found: {work_item_id}")
 
 
+class ResearchSessionNotFound(Exception):
+    code = "RESEARCH_SESSION_NOT_FOUND"
+
+    def __init__(self, research_session_id: str):
+        self.research_session_id = research_session_id
+        super().__init__(f"research session not found: {research_session_id}")
+
+
+class ResearchSessionActiveConflict(Exception):
+    code = "RESEARCH_SESSION_ACTIVE_CONFLICT"
+
+
+class ApprovalConflict(Exception):
+    code = "APPROVAL_CONFLICT"
+
+
+class ApprovalStale(Exception):
+    code = "APPROVAL_STALE"
+
+
+class AgentRunBindingError(ValueError):
+    code = "AGENT_RUN_BINDING_INVALID"
+
+
+class ResearchArtifactConflict(Exception):
+    code = "ARTIFACT_IMMUTABLE_CONFLICT"
+
+
+class NotificationConflict(Exception):
+    code = "NOTIFICATION_IDEMPOTENCY_CONFLICT"
+
+
+def _notification_identity_matches(existing: sqlite3.Row | dict, candidate: ResearchNotification) -> bool:
+    """Compare the durable notification identity, excluding generated seq/id."""
+    try:
+        existing_payload = json.loads(existing["payload_json"])
+        candidate_payload = json.loads(candidate.payload_json)
+    except (TypeError, ValueError):
+        existing_payload = existing["payload_json"]
+        candidate_payload = candidate.payload_json
+    return (
+        existing["notification_kind"] == candidate.notification_kind
+        and existing["status"] == candidate.status
+        and int(existing["subject_version"]) == int(candidate.subject_version)
+        and existing["research_session_id"] == candidate.research_session_id
+        and existing["research_task_id"] == candidate.research_task_id
+        and existing_payload == candidate_payload
+    )
+
+
 # update_task 允许更新的白名单列（与 research_tasks 表列名一致）。
 _TASK_UPDATE_WHITELIST = frozenset(
     {
@@ -185,7 +284,7 @@ class ResearchStore:
             self._initialize_v1(connection)
             current = self._current_schema_version(connection)
             # v1 无更高版本迁移；保留结构与 paper_discovery 一致（current 低于 SCHEMA_VERSION 才迁移）。
-            if (current or SCHEMA_VERSION) < SCHEMA_VERSION:
+            if current is None or current < SCHEMA_VERSION:
                 self._migrate_to_current(connection)
             self._validate_schema_meta(connection)
             connection.commit()
@@ -296,7 +395,132 @@ class ResearchStore:
 
     @staticmethod
     def _migrate_to_current(connection: sqlite3.Connection) -> None:
-        """当前 SCHEMA_VERSION == 1，无更高版本迁移；保留占位以维持迁移范式稳定。"""
+        """Apply additive research-library migrations in the caller transaction."""
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_sessions(
+            research_session_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            trigger_message_id TEXT NOT NULL,
+            plan_message_id TEXT,
+            activity_message_id TEXT,
+            final_message_id TEXT,
+            intake_draft_id TEXT NOT NULL UNIQUE,
+            research_task_id TEXT,
+            current_plan_version INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            unread_state_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        # A partial unique index is the SQLite equivalent of the active-session
+        # CAS. Terminal sessions remain available for history and rebinding.
+        connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS uq_research_sessions_active
+            ON research_sessions(owner_id, conversation_id)
+            WHERE status NOT IN ('interrupted','partial','completed','failed','cancelled')""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_sessions_owner_created ON research_sessions(owner_id, created_at, research_session_id)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_intake_drafts(
+            intake_draft_id TEXT PRIMARY KEY,
+            research_session_id TEXT NOT NULL UNIQUE REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_intake_fields(
+            intake_draft_id TEXT NOT NULL REFERENCES research_intake_drafts(intake_draft_id) ON DELETE RESTRICT,
+            field_name TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            source TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            confirmation_status TEXT NOT NULL,
+            updated_by_message_id TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(intake_draft_id, field_name)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_approval_requests(
+            approval_request_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            kind TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            subject_version INTEGER NOT NULL,
+            requested_scope_json TEXT NOT NULL,
+            approved_scope_json TEXT,
+            status TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            decided_by_message_id TEXT,
+            created_at TEXT NOT NULL,
+            decided_at TEXT,
+            UNIQUE(owner_id, idempotency_key)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_approvals_session ON research_approval_requests(owner_id, research_session_id, subject_version)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_agent_runs(
+            agent_run_id TEXT PRIMARY KEY,
+            research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            research_task_id TEXT REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            work_item_id TEXT REFERENCES research_work_items(work_item_id) ON DELETE RESTRICT,
+            attempt INTEGER NOT NULL,
+            continued_from_agent_run_id TEXT REFERENCES research_agent_runs(agent_run_id) ON DELETE RESTRICT,
+            role TEXT NOT NULL,
+            skill_name TEXT NOT NULL,
+            skill_schema_version TEXT NOT NULL,
+            skill_content_hash TEXT NOT NULL,
+            resolved_model TEXT NOT NULL,
+            reasoning_effort TEXT NOT NULL,
+            allowed_tools_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            model_loop_count INTEGER NOT NULL DEFAULT 0,
+            tool_call_count INTEGER NOT NULL DEFAULT 0,
+            input_hash TEXT NOT NULL DEFAULT '',
+            output_hash TEXT NOT NULL DEFAULT '',
+            checkpoint_ref TEXT,
+            checkpoint_hash TEXT,
+            error_code TEXT,
+            started_at TEXT,
+            ended_at TEXT
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_agent_runs_task ON research_agent_runs(research_task_id, work_item_id, status)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_artifacts(
+            artifact_id TEXT PRIMARY KEY,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            report_version INTEGER NOT NULL,
+            artifact_type TEXT NOT NULL,
+            content TEXT,
+            storage_ref TEXT,
+            content_hash TEXT NOT NULL,
+            generated_by_agent_run_id TEXT NOT NULL REFERENCES research_agent_runs(agent_run_id) ON DELETE RESTRICT,
+            created_at TEXT NOT NULL,
+            CHECK ((content IS NOT NULL) != (storage_ref IS NOT NULL)),
+            UNIQUE(research_task_id, report_version, artifact_type)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_notifications(
+            notification_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            research_session_id TEXT REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            research_task_id TEXT REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            notification_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            subject_version INTEGER NOT NULL,
+            event_seq INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            read_at TEXT,
+            created_at TEXT NOT NULL,
+            CHECK (research_session_id IS NOT NULL OR research_task_id IS NOT NULL),
+            CHECK ((status='read' AND read_at IS NOT NULL) OR (status='unread' AND read_at IS NULL)),
+            UNIQUE(owner_id, idempotency_key),
+            UNIQUE(owner_id, event_seq)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_notifications_owner_seq ON research_notifications(owner_id, event_seq)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_projection_retries(
+            source_event_id TEXT PRIMARY KEY,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            attempts INTEGER NOT NULL DEFAULT 1,
+            error_code TEXT NOT NULL DEFAULT 'TRACE_PROJECTION_FAILED',
+            last_error TEXT,
+            pending INTEGER NOT NULL DEFAULT 1 CHECK(pending IN (0,1)),
+            updated_at TEXT NOT NULL
+        )""")
+        connection.execute("UPDATE schema_meta SET version=?", (SCHEMA_VERSION,))
 
     @staticmethod
     def _current_schema_version(connection: sqlite3.Connection) -> Optional[int]:
@@ -846,6 +1070,714 @@ class ResearchStore:
         return ResearchWorkItem.from_row(dict(row))
 
     # ------------------------------------------------------------------ #
+    # Spec034 session state / approvals / runtime records
+    # ------------------------------------------------------------------ #
+
+    def create_session(self, session: ResearchSession, draft: ResearchIntakeDraft | None = None, *, memory_repository=None) -> ResearchSession:
+        """Create an active session and its one-to-one draft atomically.
+
+        The partial unique index is deliberately the final arbiter for two
+        concurrent coordinators; callers receive a stable conflict code.
+        """
+        if session.status not in SESSION_STATUSES:
+            raise ValueError("invalid research session status")
+        if memory_repository is None:
+            raise ValueError("memory repository is required for session creation")
+        validate_session_external_references(session, memory_repository)
+        if draft is not None and (
+            draft.research_session_id != session.research_session_id
+            or draft.intake_draft_id != session.intake_draft_id
+        ):
+            raise ValueError("intake draft does not belong to session")
+        now = _utcnow()
+        draft = draft or ResearchIntakeDraft(session.intake_draft_id, session.research_session_id, "collecting", now, now)
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if session.research_task_id is not None:
+                    task = conn.execute(
+                        "SELECT owner_id, conversation_id FROM research_tasks WHERE research_task_id=?",
+                        (session.research_task_id,),
+                    ).fetchone()
+                    if (
+                        task is None
+                        or task["owner_id"] != session.owner_id
+                        or task["conversation_id"] != session.conversation_id
+                    ):
+                        raise ResearchTaskNotFound(session.research_task_id)
+                conn.execute("""INSERT INTO research_sessions(
+                    research_session_id, owner_id, conversation_id, trigger_message_id,
+                    plan_message_id, activity_message_id, final_message_id, intake_draft_id,
+                    research_task_id, current_plan_version, status, unread_state_json, created_at, updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                    session.research_session_id, session.owner_id, session.conversation_id,
+                    session.trigger_message_id, session.plan_message_id, session.activity_message_id,
+                    session.final_message_id, session.intake_draft_id, session.research_task_id,
+                    session.current_plan_version, session.status, session.unread_state_json or "{}",
+                    session.created_at or now, session.updated_at or now,
+                ))
+                conn.execute("""INSERT INTO research_intake_drafts(intake_draft_id, research_session_id, status, created_at, updated_at)
+                    VALUES(?,?,?,?,?)""", (draft.intake_draft_id, draft.research_session_id, draft.status, draft.created_at or now, draft.updated_at or now))
+                row = conn.execute("SELECT * FROM research_sessions WHERE research_session_id=?", (session.research_session_id,)).fetchone()
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                if "uq_research_sessions_active" in str(exc) or "research_sessions.owner_id" in str(exc):
+                    raise ResearchSessionActiveConflict() from exc
+                raise
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSession.from_row(dict(row))
+
+    def get_session(self, research_session_id: str, owner_id: str) -> ResearchSession | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                (research_session_id, owner_id),
+            ).fetchone()
+        return ResearchSession.from_row(dict(row)) if row else None
+
+    def list_sessions(self, owner_id: str, *, status: str | None = None, limit: int = 20) -> list[ResearchSession]:
+        limit = max(1, min(int(limit), 100))
+        params: list[object] = [owner_id]
+        sql = "SELECT * FROM research_sessions WHERE owner_id=?"
+        if status is not None:
+            if status not in SESSION_STATUSES:
+                raise ValueError("invalid research session status")
+            sql += " AND status=?"
+            params.append(status)
+        sql += " ORDER BY created_at, research_session_id LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [ResearchSession.from_row(dict(row)) for row in rows]
+
+    def update_session_status(self, research_session_id: str, owner_id: str, next_status: str) -> ResearchSession:
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(research_session_id)
+                transition_session(row["status"], next_status)
+                now = _utcnow()
+                conn.execute(
+                    "UPDATE research_sessions SET status=?, updated_at=? WHERE research_session_id=? AND owner_id=?",
+                    (next_status, now, research_session_id, owner_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=?", (research_session_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSession.from_row(dict(row))
+
+    def update_session_links(self, research_session_id: str, owner_id: str, **fields) -> ResearchSession:
+        allowed = {
+            "plan_message_id",
+            "activity_message_id",
+            "final_message_id",
+            "research_task_id",
+            "current_plan_version",
+            "unread_state_json",
+        }
+        if set(fields) - allowed:
+            raise ValueError("invalid session field")
+        if not fields:
+            result = self.get_session(research_session_id, owner_id)
+            if result is None:
+                raise ResearchSessionNotFound(research_session_id)
+            return result
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if not conn.execute(
+                    "SELECT 1 FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
+                ).fetchone():
+                    raise ResearchSessionNotFound(research_session_id)
+                if "research_task_id" in fields and fields["research_task_id"] is not None:
+                    task = conn.execute(
+                        "SELECT research_task_id, owner_id, conversation_id FROM research_tasks WHERE research_task_id=?",
+                        (fields["research_task_id"],),
+                    ).fetchone()
+                    session_row = conn.execute(
+                        "SELECT conversation_id, research_task_id FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                        (research_session_id, owner_id),
+                    ).fetchone()
+                    if (
+                        task is None
+                        or task["owner_id"] != owner_id
+                        or task["conversation_id"] != session_row["conversation_id"]
+                    ):
+                        raise ResearchTaskNotFound(fields["research_task_id"])
+                    if session_row["research_task_id"] not in (None, fields["research_task_id"]):
+                        raise ValueError("research task does not belong to session")
+                fields["updated_at"] = _utcnow()
+                sql = ", ".join(f"{name}=?" for name in fields)
+                conn.execute(
+                    f"UPDATE research_sessions SET {sql} WHERE research_session_id=? AND owner_id=?",
+                    (*fields.values(), research_session_id, owner_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=?", (research_session_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSession.from_row(dict(row))
+
+    def get_intake_draft(self, research_session_id: str, owner_id: str) -> ResearchIntakeDraft | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT d.* FROM research_intake_drafts d JOIN research_sessions s ON s.research_session_id=d.research_session_id
+                WHERE d.research_session_id=? AND s.owner_id=?""",
+                (research_session_id, owner_id),
+            ).fetchone()
+        return ResearchIntakeDraft.from_row(dict(row)) if row else None
+
+    def update_intake_status(self, intake_draft_id: str, owner_id: str, next_status: str) -> ResearchIntakeDraft:
+        if next_status not in INTAKE_STATUSES:
+            raise ValueError("invalid intake status")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    """SELECT d.* FROM research_intake_drafts d JOIN research_sessions s ON s.research_session_id=d.research_session_id
+                    WHERE d.intake_draft_id=? AND s.owner_id=?""",
+                    (intake_draft_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(intake_draft_id)
+                transition_intake(row["status"], next_status)
+                now = _utcnow()
+                conn.execute(
+                    "UPDATE research_intake_drafts SET status=?, updated_at=? WHERE intake_draft_id=?",
+                    (next_status, now, intake_draft_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_intake_drafts WHERE intake_draft_id=?", (intake_draft_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchIntakeDraft.from_row(dict(row))
+
+    def upsert_intake_field(self, field: IntakeField, owner_id: str) -> IntakeField:
+        if field.field_name not in INTAKE_FIELDS:
+            raise ValueError("invalid intake field")
+        if field.source not in INTAKE_SOURCES:
+            raise ValueError("invalid intake source")
+        if not 0 <= float(field.confidence) <= 1:
+            raise ValueError("invalid intake confidence")
+        if field.confirmation_status not in INTAKE_CONFIRMATION_STATUSES:
+            raise ValueError("invalid intake confirmation")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                valid = conn.execute(
+                    """SELECT 1 FROM research_intake_drafts d JOIN research_sessions s ON s.research_session_id=d.research_session_id
+                    WHERE d.intake_draft_id=? AND s.owner_id=?""",
+                    (field.intake_draft_id, owner_id),
+                ).fetchone()
+                if not valid:
+                    raise ResearchSessionNotFound(field.intake_draft_id)
+                now = field.updated_at or _utcnow()
+                conn.execute(
+                    """INSERT INTO research_intake_fields(intake_draft_id, field_name, value_json, source, confidence, confirmation_status, updated_by_message_id, updated_at)
+                    VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(intake_draft_id, field_name) DO UPDATE SET value_json=excluded.value_json, source=excluded.source, confidence=excluded.confidence, confirmation_status=excluded.confirmation_status, updated_by_message_id=excluded.updated_by_message_id, updated_at=excluded.updated_at""",
+                    (
+                        field.intake_draft_id,
+                        field.field_name,
+                        field.value_json,
+                        field.source,
+                        field.confidence,
+                        field.confirmation_status,
+                        field.updated_by_message_id,
+                        now,
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_intake_fields WHERE intake_draft_id=? AND field_name=?",
+                    (field.intake_draft_id, field.field_name),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return IntakeField.from_row(dict(row))
+
+    def list_intake_fields(self, intake_draft_id: str, owner_id: str) -> list[IntakeField]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT f.* FROM research_intake_fields f JOIN research_intake_drafts d ON d.intake_draft_id=f.intake_draft_id JOIN research_sessions s ON s.research_session_id=d.research_session_id
+                WHERE f.intake_draft_id=? AND s.owner_id=? ORDER BY f.field_name""",
+                (intake_draft_id, owner_id),
+            ).fetchall()
+        return [IntakeField.from_row(dict(row)) for row in rows]
+
+    def create_approval(self, approval: ApprovalRequest) -> ApprovalRequest:
+        if approval.kind not in APPROVAL_KINDS or approval.status not in APPROVAL_STATUSES:
+            raise ValueError("invalid approval")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if not conn.execute(
+                    "SELECT 1 FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (approval.research_session_id, approval.owner_id),
+                ).fetchone():
+                    raise ResearchSessionNotFound(approval.research_session_id)
+                conn.execute(
+                    """INSERT INTO research_approval_requests(approval_request_id, owner_id, research_session_id, kind, subject_id, subject_version, requested_scope_json, approved_scope_json, status, idempotency_key, decided_by_message_id, created_at, decided_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        approval.approval_request_id,
+                        approval.owner_id,
+                        approval.research_session_id,
+                        approval.kind,
+                        approval.subject_id,
+                        approval.subject_version,
+                        approval.requested_scope_json,
+                        approval.approved_scope_json,
+                        approval.status,
+                        approval.idempotency_key,
+                        approval.decided_by_message_id,
+                        approval.created_at or _utcnow(),
+                        approval.decided_at,
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_approval_requests WHERE approval_request_id=?",
+                    (approval.approval_request_id,),
+                ).fetchone()
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                with self._connect() as read_conn:
+                    existing = read_conn.execute(
+                        "SELECT * FROM research_approval_requests WHERE owner_id=? AND idempotency_key=?",
+                        (approval.owner_id, approval.idempotency_key),
+                    ).fetchone()
+                if existing is not None:
+                    return ApprovalRequest.from_row(dict(existing))
+                raise ApprovalConflict() from exc
+            except Exception:
+                conn.rollback()
+                raise
+        return ApprovalRequest.from_row(dict(row))
+
+    def get_approval(self, approval_request_id: str, owner_id: str) -> ApprovalRequest | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_approval_requests WHERE approval_request_id=? AND owner_id=?",
+                (approval_request_id, owner_id),
+            ).fetchone()
+        return ApprovalRequest.from_row(dict(row)) if row else None
+
+    def decide_approval(
+        self,
+        approval_request_id: str,
+        owner_id: str,
+        next_status: str,
+        *,
+        approved_scope_json: str | None = None,
+        decided_by_message_id: str | None = None,
+        subject_version: int | None = None,
+    ) -> ApprovalRequest:
+        if next_status not in APPROVAL_STATUSES:
+            raise ValueError("invalid approval status")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT * FROM research_approval_requests WHERE approval_request_id=? AND owner_id=?",
+                    (approval_request_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(approval_request_id)
+                if subject_version is not None and int(subject_version) != int(row["subject_version"]):
+                    raise ApprovalStale()
+                if row["status"] != "pending":
+                    if row["status"] == next_status:
+                        conn.commit()
+                        return ApprovalRequest.from_row(dict(row))
+                    raise ApprovalConflict()
+                transition_approval(row["status"], next_status)
+                now = _utcnow()
+                conn.execute(
+                    "UPDATE research_approval_requests SET status=?, approved_scope_json=?, decided_by_message_id=?, decided_at=? WHERE approval_request_id=? AND owner_id=? AND status='pending'",
+                    (next_status, approved_scope_json, decided_by_message_id, now, approval_request_id, owner_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_approval_requests WHERE approval_request_id=?", (approval_request_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ApprovalRequest.from_row(dict(row))
+
+    def create_agent_run(self, run: AgentRun, *, owner_id: str | None = None) -> AgentRun:
+        if run.role not in AGENT_ROLES or run.status not in AGENT_RUN_STATUSES or run.attempt < 1:
+            raise ValueError("invalid agent run")
+        if (run.research_task_id is None) != (run.work_item_id is None):
+            raise AgentRunBindingError("task and work_item must be bound together")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                session_row = conn.execute(
+                    "SELECT research_task_id FROM research_sessions WHERE research_session_id=?",
+                    (run.research_session_id,),
+                ).fetchone()
+                if session_row is None:
+                    raise AgentRunBindingError("session not found")
+                effective_owner = owner_id or run.owner_id
+                if not effective_owner:
+                    raise AgentRunBindingError("owner_id is required")
+                if run.owner_id is not None and run.owner_id != effective_owner:
+                    raise AgentRunBindingError("run owner mismatch")
+                session_owner = conn.execute(
+                    "SELECT owner_id, conversation_id, research_task_id FROM research_sessions WHERE research_session_id=?",
+                    (run.research_session_id,),
+                ).fetchone()
+                if session_owner["owner_id"] != effective_owner:
+                    raise AgentRunBindingError("session owner mismatch")
+                session_task_id = session_owner["research_task_id"]
+                if session_task_id is None:
+                    if run.research_task_id is not None or run.work_item_id is not None:
+                        raise AgentRunBindingError("unapproved session cannot bind task")
+                    if run.role != "planner":
+                        raise AgentRunBindingError("only planner may run before task approval")
+                elif run.research_task_id != session_task_id:
+                    raise AgentRunBindingError("task does not belong to session")
+                if run.role != "planner" and (
+                    run.research_task_id is None or run.work_item_id is None
+                ):
+                    raise AgentRunBindingError("execution run requires task and work item")
+                if (
+                    run.research_task_id
+                    and not conn.execute(
+                        "SELECT 1 FROM research_tasks WHERE research_task_id=? AND owner_id=? AND conversation_id=?",
+                        (run.research_task_id, effective_owner, session_owner["conversation_id"]),
+                    ).fetchone()
+                ):
+                    raise AgentRunBindingError("task owner/session mismatch")
+                if (
+                    run.work_item_id
+                    and not conn.execute(
+                        "SELECT 1 FROM research_work_items WHERE work_item_id=? AND research_task_id=?",
+                        (run.work_item_id, run.research_task_id),
+                    ).fetchone()
+                ):
+                    raise AgentRunBindingError("work item mismatch")
+                if run.continued_from_agent_run_id:
+                    previous = conn.execute(
+                        """SELECT agent_run_id, research_session_id, research_task_id,
+                           work_item_id, status
+                           FROM research_agent_runs
+                           WHERE agent_run_id=?""",
+                        (run.continued_from_agent_run_id,),
+                    ).fetchone()
+                    if (
+                        previous is None
+                        or previous["research_session_id"] != run.research_session_id
+                        or previous["research_task_id"] != run.research_task_id
+                        or previous["work_item_id"] != run.work_item_id
+                        or previous["status"] != "limit_reached"
+                    ):
+                        raise AgentRunBindingError("continued run binding is invalid")
+                conn.execute(
+                    """INSERT INTO research_agent_runs(agent_run_id, research_session_id, research_task_id, work_item_id, attempt, continued_from_agent_run_id, role, skill_name, skill_schema_version, skill_content_hash, resolved_model, reasoning_effort, allowed_tools_json, status, model_loop_count, tool_call_count, input_hash, output_hash, checkpoint_ref, checkpoint_hash, error_code, started_at, ended_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    tuple(
+                        run.to_dict().get(key)
+                        for key in (
+                            "agent_run_id",
+                            "research_session_id",
+                            "research_task_id",
+                            "work_item_id",
+                            "attempt",
+                            "continued_from_agent_run_id",
+                            "role",
+                            "skill_name",
+                            "skill_schema_version",
+                            "skill_content_hash",
+                            "resolved_model",
+                            "reasoning_effort",
+                            "allowed_tools_json",
+                            "status",
+                            "model_loop_count",
+                            "tool_call_count",
+                            "input_hash",
+                            "output_hash",
+                            "checkpoint_ref",
+                            "checkpoint_hash",
+                            "error_code",
+                            "started_at",
+                            "ended_at",
+                        )
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_agent_runs WHERE agent_run_id=?", (run.agent_run_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AgentRun.from_row(dict(row))
+
+    def get_agent_run(self, agent_run_id: str, owner_id: str) -> AgentRun | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT r.* FROM research_agent_runs r JOIN research_sessions s ON s.research_session_id=r.research_session_id
+                WHERE r.agent_run_id=? AND s.owner_id=?""",
+                (agent_run_id, owner_id),
+            ).fetchone()
+        return AgentRun.from_row(dict(row)) if row else None
+
+    def update_agent_run_status(
+        self, agent_run_id: str, owner_id: str, next_status: str, *, error_code: str | None = None
+    ) -> AgentRun:
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    """SELECT r.* FROM research_agent_runs r JOIN research_sessions s ON s.research_session_id=r.research_session_id
+                    WHERE r.agent_run_id=? AND s.owner_id=?""",
+                    (agent_run_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(agent_run_id)
+                transition_agent_run(row["status"], next_status)
+                now = _utcnow()
+                ended = now if next_status != "running" else None
+                conn.execute(
+                    "UPDATE research_agent_runs SET status=?, error_code=?, started_at=COALESCE(started_at, ?), ended_at=? WHERE agent_run_id=?",
+                    (next_status, error_code, now if next_status == "running" else None, ended, agent_run_id),
+                )
+                row = conn.execute("SELECT * FROM research_agent_runs WHERE agent_run_id=?", (agent_run_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AgentRun.from_row(dict(row))
+
+    def update_agent_run_counters(
+        self,
+        agent_run_id: str,
+        owner_id: str,
+        *,
+        model_loop_count: int | None = None,
+        tool_call_count: int | None = None,
+        checkpoint_ref: str | None = None,
+        checkpoint_hash: str | None = None,
+        output_hash: str | None = None,
+    ) -> AgentRun:
+        """Monotonic Run counters/checkpoint write barrier."""
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    """SELECT r.* FROM research_agent_runs r JOIN research_sessions s ON s.research_session_id=r.research_session_id
+                    WHERE r.agent_run_id=? AND s.owner_id=?""",
+                    (agent_run_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(agent_run_id)
+                loop = int(row["model_loop_count"]) if model_loop_count is None else int(model_loop_count)
+                calls = int(row["tool_call_count"]) if tool_call_count is None else int(tool_call_count)
+                if loop < int(row["model_loop_count"]) or calls < int(row["tool_call_count"]):
+                    raise ValueError("agent run counters must be monotonic")
+                conn.execute(
+                    "UPDATE research_agent_runs SET model_loop_count=?, tool_call_count=?, checkpoint_ref=COALESCE(?, checkpoint_ref), checkpoint_hash=COALESCE(?, checkpoint_hash), output_hash=COALESCE(?, output_hash) WHERE agent_run_id=?",
+                    (loop, calls, checkpoint_ref, checkpoint_hash, output_hash, agent_run_id),
+                )
+                row = conn.execute("SELECT * FROM research_agent_runs WHERE agent_run_id=?", (agent_run_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AgentRun.from_row(dict(row))
+
+    def create_artifact(self, artifact: ResearchArtifact) -> ResearchArtifact:
+        if artifact.artifact_type not in {"markdown", "html", "citation_manifest", "intermediate"}:
+            raise ValueError("invalid artifact type")
+        if (artifact.content is None) == (artifact.storage_ref is None):
+            raise ValueError("artifact content/storage_ref are mutually exclusive")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if not conn.execute(
+                    "SELECT 1 FROM research_agent_runs WHERE agent_run_id=? AND research_task_id=? AND role='synthesizer'",
+                    (artifact.generated_by_agent_run_id, artifact.research_task_id),
+                ).fetchone():
+                    raise ValueError("artifact generator is not synthesizer run")
+                conn.execute(
+                    """INSERT INTO research_artifacts(artifact_id, research_task_id, report_version, artifact_type, content, storage_ref, content_hash, generated_by_agent_run_id, created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (
+                        artifact.artifact_id,
+                        artifact.research_task_id,
+                        artifact.report_version,
+                        artifact.artifact_type,
+                        artifact.content,
+                        artifact.storage_ref,
+                        artifact.content_hash,
+                        artifact.generated_by_agent_run_id,
+                        artifact.created_at or _utcnow(),
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_artifacts WHERE artifact_id=?", (artifact.artifact_id,)
+                ).fetchone()
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                raise ResearchArtifactConflict() from exc
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchArtifact.from_row(dict(row))
+
+    def list_artifacts(self, research_task_id: str, *, report_version: int | None = None) -> list[ResearchArtifact]:
+        params: list[object] = [research_task_id]
+        sql = "SELECT * FROM research_artifacts WHERE research_task_id=?"
+        if report_version is not None:
+            sql += " AND report_version=?"
+            params.append(report_version)
+        sql += " ORDER BY report_version, artifact_type"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [ResearchArtifact.from_row(dict(row)) for row in rows]
+
+    def create_notification(self, notification: ResearchNotification) -> ResearchNotification:
+        if notification.notification_kind not in NOTIFICATION_KINDS or notification.status not in NOTIFICATION_STATUSES:
+            raise ValueError("invalid notification")
+        if (notification.status == "read") != bool(notification.read_at):
+            raise ValueError("read_at/status mismatch")
+        with self._connect() as read_conn:
+            existing = read_conn.execute(
+                "SELECT * FROM research_notifications WHERE owner_id=? AND idempotency_key=?",
+                (notification.owner_id, notification.idempotency_key),
+            ).fetchone()
+        if existing is not None:
+            if _notification_identity_matches(existing, notification):
+                return ResearchNotification.from_row(dict(existing))
+            raise NotificationConflict()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if (
+                    notification.research_session_id
+                    and not conn.execute(
+                        "SELECT 1 FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                        (notification.research_session_id, notification.owner_id),
+                    ).fetchone()
+                ):
+                    raise ResearchSessionNotFound(notification.research_session_id)
+                if (
+                    notification.research_task_id
+                    and not conn.execute(
+                        "SELECT 1 FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                        (notification.research_task_id, notification.owner_id),
+                    ).fetchone()
+                ):
+                    raise ResearchTaskNotFound(notification.research_task_id)
+                if notification.research_session_id and notification.research_task_id:
+                    task_binding = conn.execute(
+                        "SELECT 1 FROM research_sessions WHERE research_session_id=? AND research_task_id=? AND owner_id=?",
+                        (notification.research_session_id, notification.research_task_id, notification.owner_id),
+                    ).fetchone()
+                    if task_binding is None:
+                        raise ValueError("notification task/session mismatch")
+                # Allocate owner-scoped event_seq atomically when callers leave it at 0.
+                current_seq = int(
+                    conn.execute(
+                        "SELECT COALESCE(MAX(event_seq),0) FROM research_notifications WHERE owner_id=?",
+                        (notification.owner_id,),
+                    ).fetchone()[0]
+                )
+                if notification.event_seq and int(notification.event_seq) <= current_seq:
+                    raise ValueError("notification event_seq must increase")
+                seq = notification.event_seq or current_seq + 1
+                conn.execute(
+                    """INSERT INTO research_notifications(notification_id, owner_id, research_session_id, research_task_id, notification_kind, status, subject_version, event_seq, payload_json, idempotency_key, read_at, created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        notification.notification_id,
+                        notification.owner_id,
+                        notification.research_session_id,
+                        notification.research_task_id,
+                        notification.notification_kind,
+                        notification.status,
+                        notification.subject_version,
+                        seq,
+                        notification.payload_json,
+                        notification.idempotency_key,
+                        notification.read_at,
+                        notification.created_at or _utcnow(),
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_notifications WHERE notification_id=?", (notification.notification_id,)
+                ).fetchone()
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                with self._connect() as read_conn:
+                    existing = read_conn.execute(
+                        "SELECT * FROM research_notifications WHERE owner_id=? AND idempotency_key=?",
+                        (notification.owner_id, notification.idempotency_key),
+                    ).fetchone()
+                if existing is not None:
+                    if _notification_identity_matches(existing, notification):
+                        return ResearchNotification.from_row(dict(existing))
+                    raise NotificationConflict() from exc
+                raise NotificationConflict() from exc
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchNotification.from_row(dict(row))
+
+    def mark_notification_read(self, notification_id: str, owner_id: str) -> ResearchNotification | None:
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM research_notifications WHERE notification_id=? AND owner_id=?",
+                (notification_id, owner_id),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return None
+            if row["status"] == "unread":
+                conn.execute(
+                    "UPDATE research_notifications SET status='read', read_at=? WHERE notification_id=? AND owner_id=? AND status='unread'",
+                    (_utcnow(), notification_id, owner_id),
+                )
+            row = conn.execute(
+                "SELECT * FROM research_notifications WHERE notification_id=?", (notification_id,)
+            ).fetchone()
+            conn.commit()
+        return ResearchNotification.from_row(dict(row))
+
+    def list_notifications(self, owner_id: str, *, after_seq: int = 0, limit: int = 100) -> list[ResearchNotification]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_notifications WHERE owner_id=? AND event_seq>? ORDER BY event_seq LIMIT ?",
+                (owner_id, int(after_seq), max(1, min(int(limit), 500))),
+            ).fetchall()
+        return [ResearchNotification.from_row(dict(row)) for row in rows]
+
+    # ------------------------------------------------------------------ #
     # ResearchEvent（event_seq 原子领号）
     # ------------------------------------------------------------------ #
 
@@ -889,9 +1821,7 @@ class ResearchStore:
                 raise
         return ResearchEvent.from_row(dict(row))
 
-    def list_events(
-        self, research_task_id: str, *, after_seq: int = 0, limit: int = 200
-    ) -> list[ResearchEvent]:
+    def list_events(self, research_task_id: str, *, after_seq: int = 0, limit: int = 200) -> list[ResearchEvent]:
         """按 event_seq 升序列出事件；after_seq 之后、limit 夹到 1..1000。"""
         limit = max(1, min(int(limit), 1000))
         with self._connect() as conn:
@@ -909,6 +1839,109 @@ class ResearchStore:
                 (research_task_id,),
             ).fetchone()
         return int(row["last_event_seq"]) if row is not None else 0
+
+    def mark_projection_retry(self, research_task_id: str, event_seq: int, error: str) -> dict:
+        source_event_id = canonical_research_event_id(research_task_id, event_seq)
+        with self._connect() as conn, _write_lock:
+            conn.execute(
+                """INSERT INTO research_projection_retries(source_event_id, research_task_id, attempts, error_code, last_error, pending, updated_at)
+                VALUES(?,?,1,'TRACE_PROJECTION_FAILED',?,1,?)
+                ON CONFLICT(source_event_id) DO UPDATE SET attempts=attempts+1, last_error=excluded.last_error, pending=1, updated_at=excluded.updated_at""",
+                (source_event_id, research_task_id, str(error)[:500], _utcnow()),
+            )
+            row = conn.execute(
+                "SELECT * FROM research_projection_retries WHERE source_event_id=?", (source_event_id,)
+            ).fetchone()
+        return dict(row)
+
+    def clear_projection_retry(self, source_event_id: str) -> bool:
+        with self._connect() as conn, _write_lock:
+            result = conn.execute(
+                "UPDATE research_projection_retries SET pending=0, updated_at=? WHERE source_event_id=?",
+                (_utcnow(), source_event_id),
+            )
+        return bool(result.rowcount)
+
+    def list_projection_retries(self, research_task_id: str | None = None, *, pending_only: bool = True) -> list[dict]:
+        sql = "SELECT * FROM research_projection_retries WHERE 1=1"
+        params: list[object] = []
+        if research_task_id is not None:
+            sql += " AND research_task_id=?"
+            params.append(research_task_id)
+        if pending_only:
+            sql += " AND pending=1"
+        sql += " ORDER BY updated_at, source_event_id"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def replay_persisted_events(
+        self,
+        research_task_id: str,
+        events: list[ResearchEvent] | None = None,
+        *,
+        projector: Callable[[ResearchEvent], object] | None = None,
+    ) -> list[ResearchEvent]:
+        """Replay durable events parent-first, then by event sequence.
+
+        ``ResearchEvent`` remains the source of truth.  The optional callable
+        is deliberately a seam for the later ProcessingStep projector: each
+        successful callback clears its retry marker; a failure records (or
+        increments) one and is re-raised without changing the durable event.
+        """
+        persisted = events if events is not None else self.list_events(research_task_id, after_seq=0, limit=1000)
+        if any(event.research_task_id != research_task_id for event in persisted):
+            raise ValueError("replay event belongs to another task")
+        records: list[tuple[ResearchEvent, dict, str]] = []
+        for event in persisted:
+            try:
+                payload = json.loads(event.safe_payload_json or "{}")
+            except (TypeError, ValueError):
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            expected_source_event_id = canonical_research_event_id(research_task_id, event.event_seq)
+            supplied_source_event_id = payload.get("source_event_id")
+            if supplied_source_event_id is not None and str(supplied_source_event_id) != expected_source_event_id:
+                raise ValueError("replay source_event_id is not canonical")
+            source_event_id = expected_source_event_id
+            records.append((event, payload, source_event_id))
+        by_source = {source: (event, payload, source) for event, payload, source in records}
+        by_key = {
+            str(payload["node_key"]): (event, payload, source)
+            for event, payload, source in records
+            if payload.get("node_key")
+        }
+
+        def depth(record: tuple[ResearchEvent, dict, str], seen: set[str] | None = None) -> int:
+            _event, payload, _source = record
+            parent_source = payload.get("parent_source_event_id")
+            parent_key = payload.get("parent_node_key")
+            if not parent_source and not parent_key:
+                return 0
+            parent = by_source.get(str(parent_source)) if parent_source else by_key.get(str(parent_key))
+            if parent is None:
+                raise ValueError("replay parent event is missing")
+            marker = str(parent_source or parent_key)
+            seen = seen or set()
+            if marker in seen:
+                raise ValueError("replay parent cycle")
+            return 1 + depth(parent, seen | {marker})
+
+        records.sort(key=lambda record: (depth(record), int(record[0].event_seq)))
+        ordered = [record[0] for record in records]
+        if projector is not None:
+            for event in ordered:
+                source_event_id = canonical_research_event_id(research_task_id, event.event_seq)
+                try:
+                    projector(event)
+                except Exception as exc:
+                    self.mark_projection_retry(research_task_id, event.event_seq, str(exc))
+                    raise
+                self.clear_projection_retry(source_event_id)
+        return ordered
+
+    replay_events = replay_persisted_events
 
     # ------------------------------------------------------------------ #
     # ResearchPaperSelection
@@ -1071,3 +2104,15 @@ class ResearchStore:
                 conn.rollback()
                 raise
         return count
+
+
+# Stable descriptive aliases for callers introduced by Spec034.  Keeping the
+# original concise methods avoids a second repository implementation.
+ResearchStore.create_research_session = ResearchStore.create_session
+ResearchStore.get_research_session = ResearchStore.get_session
+ResearchStore.list_research_sessions = ResearchStore.list_sessions
+ResearchStore.update_research_session_status = ResearchStore.update_session_status
+ResearchStore.create_approval_request = ResearchStore.create_approval
+ResearchStore.get_approval_request = ResearchStore.get_approval
+ResearchStore.create_research_artifact = ResearchStore.create_artifact
+ResearchStore.create_research_notification = ResearchStore.create_notification

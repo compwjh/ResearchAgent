@@ -11,6 +11,7 @@ import base64
 import contextlib
 import json
 import os
+import re
 import sqlite3
 import threading
 import uuid
@@ -39,6 +40,9 @@ from .models import (
     SystemRule,
 )
 
+# Keep the public memory schema number at v7. ProcessingStep v2 is an
+# additive extension (like the existing Task07/Task025 extensions) and must
+# not force legacy migration-marker consumers to change their version gate.
 SCHEMA_VERSION = 7
 EVOLUTION_LEASE_SECONDS = 300
 OWNER_ID = os.getenv("MEMORY_OWNER_ID", "local-user")
@@ -253,6 +257,10 @@ class MemoryRepository:
                         self._repair_v7_conversation_reasoning_check(connection)
                     else:
                         raise RuntimeError("incomplete memory schema v7")
+                if not self._is_schema_v7(connection):
+                    raise RuntimeError("memory schema v7 validation failed")
+                if not self._is_schema_v8(connection):
+                    self._migrate_v7_to_v8(connection)
                 # Task07 is an additive repository extension. Keep the public
                 # v6 number for Task10 compatibility while applying the table
                 # atomically to fresh and existing v6 databases.
@@ -710,6 +718,50 @@ class MemoryRepository:
                 marker_payload_valid = False
         expected = {"reasoning_content", "reasoning_status", "reasoning_started_at", "reasoning_completed_at", "first_reasoning_at", "first_answer_token_at", "reasoning_truncated", "reasoning_chars", "last_event_seq"}
         return bool(marker_rows and marker and {row["name"] for row in marker_rows} == {"marker", "applied_at", "before_counts_json", "backup_id"} and marker_payload_valid and "reasoning_effort" in conv and conv["reasoning_effort"]["notnull"] == 1 and conv["reasoning_effort"]["dflt_value"] in {"'xhigh'", '"xhigh"'} and (not require_conversation_check or conv_check) and msg.keys() >= expected and pref_cols.keys() >= {"owner_id", "last_reasoning_effort", "updated_at"} and pref_check)
+
+    @staticmethod
+    def _migrate_v7_to_v8(connection: sqlite3.Connection) -> None:
+        """Add ProcessingStep v2 columns without rewriting legacy rows.
+
+        Nullable identity columns are intentional: old rows retain their exact
+        values and are read as schema v1 roots. New projector writes provide a
+        non-empty node_key/source_event_id and are protected by partial unique
+        indexes.
+        """
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(processing_steps)").fetchall()}
+        additions = (
+            ("parent_step_id", "TEXT"),
+            ("node_type", "TEXT NOT NULL DEFAULT 'operation'"),
+            ("node_key", "TEXT"),
+            ("display_order", "INTEGER NOT NULL DEFAULT 0"),
+            ("detail_json", "TEXT"),
+            ("source_event_id", "TEXT"),
+            ("research_session_id", "TEXT"),
+            ("schema_version", "INTEGER NOT NULL DEFAULT 1"),
+        )
+        for column, definition in additions:
+            if column not in columns:
+                connection.execute(f"ALTER TABLE processing_steps ADD COLUMN {column} {definition}")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_steps_message_node_key ON processing_steps(message_id, node_key) WHERE node_key IS NOT NULL AND node_key != ''")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_steps_source_event_id ON processing_steps(source_event_id) WHERE source_event_id IS NOT NULL AND source_event_id != ''")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_steps_message_tree ON processing_steps(message_id, display_order, step_id)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS processing_step_projection_retries(
+            source_event_id TEXT PRIMARY KEY,
+            message_id TEXT NOT NULL,
+            error_code TEXT NOT NULL DEFAULT 'TRACE_PROJECTION_FAILED',
+            attempts INTEGER NOT NULL DEFAULT 1,
+            last_error TEXT,
+            pending INTEGER NOT NULL DEFAULT 1 CHECK(pending IN (0,1)),
+            updated_at TEXT NOT NULL
+        )""")
+
+    @staticmethod
+    def _is_schema_v8(connection: sqlite3.Connection) -> bool:
+        required = {"parent_step_id", "node_type", "node_key", "display_order", "detail_json", "source_event_id", "research_session_id", "schema_version"}
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(processing_steps)").fetchall()}
+        indexes = {row["name"] for row in connection.execute("PRAGMA index_list(processing_steps)")}
+        table = connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='processing_step_projection_retries'").fetchone()
+        return required <= columns and {"uq_steps_message_node_key", "uq_steps_source_event_id"} <= indexes and table is not None
 
     @staticmethod
     def _repair_v7_conversation_reasoning_check(connection: sqlite3.Connection) -> None:
@@ -2621,7 +2673,35 @@ class MemoryRepository:
             row = db.execute("SELECT * FROM memory_analysis_items WHERE item_id=?", (item_id,)).fetchone()
         return self._analysis_item(row)
 
-    def create_processing_step(self, message_id: str, kind: str, status: str, summary: Optional[str] = None, *, label: Optional[str] = None, logical_sequence: int = 0) -> ProcessingStep:
+    @staticmethod
+    def _processing_step_from_row(row: sqlite3.Row) -> ProcessingStep:
+        """Map v1 rows to v2 defaults while preserving legacy values."""
+        return ProcessingStep(
+            row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"],
+            _dt(row["started_at"]), _dt(row["completed_at"]), row["parent_step_id"],
+            row["node_type"] or "operation", row["node_key"], int(row["display_order"] or 0),
+            row["detail_json"], row["source_event_id"], row["research_session_id"], int(row["schema_version"] or 1),
+        )
+
+    def _validate_processing_parent(self, db: sqlite3.Connection, message_id: str, parent_step_id: Optional[str], *, step_id: Optional[str] = None) -> None:
+        if parent_step_id is None:
+            return
+        current = parent_step_id
+        seen: set[str] = set()
+        depth = 1
+        while current:
+            if current in seen or current == step_id:
+                raise ValueError("processing step parent cycle")
+            seen.add(current)
+            row = db.execute("SELECT step_id, message_id, parent_step_id FROM processing_steps WHERE step_id=?", (current,)).fetchone()
+            if row is None or row["message_id"] != message_id:
+                raise ValueError("processing step parent must belong to message")
+            depth += 1
+            if depth > 3:
+                raise ValueError("processing step tree exceeds three levels")
+            current = row["parent_step_id"]
+
+    def create_processing_step(self, message_id: str, kind: str, status: str, summary: Optional[str] = None, *, label: Optional[str] = None, logical_sequence: int = 0, parent_step_id: Optional[str] = None, node_type: str = "operation", node_key: Optional[str] = None, display_order: int = 0, detail_json: Optional[str] = None, source_event_id: Optional[str] = None, research_session_id: Optional[str] = None) -> ProcessingStep:
         """Create or advance one logical step without ever duplicating it.
 
         The old implementation wrote a fresh row for the terminal event.  A
@@ -2632,22 +2712,44 @@ class MemoryRepository:
         status = aliases.get(status, status)
         if status not in {"running", "completed", "failed", "skipped", "interrupted"}:
             raise ValueError("invalid processing step status")
+        if node_type not in {"phase", "agent", "skill", "tool", "operation"}:
+            raise ValueError("invalid processing step node type")
+        if node_key is not None and not str(node_key).strip():
+            raise ValueError("processing node_key must not be empty")
         label = label or kind
         sequence = max(0, int(logical_sequence))
         now = _now()
         with self.transaction() as db:
-            row = db.execute("SELECT * FROM processing_steps WHERE message_id=? AND kind=? AND logical_sequence=?", (message_id, kind, sequence)).fetchone()
+            # New projector identity wins; logical_sequence remains the v1
+            # compatibility identity for existing chat callers.
+            row = None
+            if source_event_id:
+                row = db.execute("SELECT * FROM processing_steps WHERE source_event_id=?", (source_event_id,)).fetchone()
+                if row is not None and row["message_id"] != message_id:
+                    raise ValueError("source_event_id belongs to another message")
+            if row is None and node_key:
+                row = db.execute("SELECT * FROM processing_steps WHERE message_id=? AND node_key=?", (message_id, node_key)).fetchone()
+            if row is None and not node_key and not source_event_id:
+                row = db.execute("SELECT * FROM processing_steps WHERE message_id=? AND kind=? AND logical_sequence=?", (message_id, kind, sequence)).fetchone()
             if row is None:
+                self._validate_processing_parent(db, message_id, parent_step_id)
+                if node_key or source_event_id:
+                    # v3/v4 left a legacy unique identity index in place.  A
+                    # v2 node uses a deterministic per-(message,kind) slot
+                    # above every legacy sequence, so multiple sibling tools
+                    # do not collide while old callers keep their identity.
+                    sequence = int(db.execute("SELECT COALESCE(MAX(logical_sequence), -1) + 1 FROM processing_steps WHERE message_id=? AND kind=?", (message_id, kind)).fetchone()[0])
                 step_id = uuid.uuid4().hex
-                db.execute("INSERT INTO processing_steps(step_id, message_id, kind, logical_sequence, label, status, summary, started_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (step_id, message_id, kind, sequence, label, status, (summary or "")[:500] or None, now, now if status != "running" else None))
+                db.execute("""INSERT INTO processing_steps(step_id, message_id, kind, logical_sequence, label, status, summary, started_at, completed_at, parent_step_id, node_type, node_key, display_order, detail_json, source_event_id, research_session_id, schema_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2)""", (step_id, message_id, kind, sequence, label, status, (summary or "")[:500] or None, now, now if status != "running" else None, parent_step_id, node_type, node_key, int(display_order), detail_json, source_event_id, research_session_id))
                 row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (step_id,)).fetchone()
             elif row["status"] == "running" and status != "running":
-                db.execute("UPDATE processing_steps SET label=?, status=?, summary=?, completed_at=? WHERE step_id=?", (label, status, (summary or "")[:500] or None, now, row["step_id"]))
+                db.execute("UPDATE processing_steps SET label=?, status=?, summary=?, completed_at=?, schema_version=2 WHERE step_id=?", (label, status, (summary or "")[:500] or None, now, row["step_id"]))
                 row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
             elif row["status"] == "running" and summary:
-                db.execute("UPDATE processing_steps SET label=?, summary=? WHERE step_id=?", (label, summary[:500], row["step_id"]))
+                db.execute("UPDATE processing_steps SET label=?, summary=?, schema_version=2 WHERE step_id=?", (label, summary[:500], row["step_id"]))
                 row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
-        return ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"]))
+        return self._processing_step_from_row(row)
 
     def finalize_processing_steps(self, message_id: str, *, status: str = "failed", summary: Optional[str] = None) -> int:
         """Move all residual running steps to a real terminal state."""
@@ -2669,15 +2771,141 @@ class MemoryRepository:
             if not row:
                 return None
             if row["status"] != "running" and status == "running":
-                return ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"]))
+                return self._processing_step_from_row(row)
             db.execute("UPDATE processing_steps SET status=?, label=?, summary=?, completed_at=? WHERE step_id=?", (status, label or row["label"], (summary or row["summary"] or "")[:500] or None, _now() if status != "running" else None, step_id))
             row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (step_id,)).fetchone()
-        return ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"]))
+        return self._processing_step_from_row(row)
 
     def list_processing_steps(self, message_id: str, owner_id: str) -> list[ProcessingStep]:
         with self.connection() as db:
             rows = db.execute("SELECT s.* FROM processing_steps s JOIN messages m ON m.message_id=s.message_id WHERE s.message_id=? AND m.owner_id=? ORDER BY s.started_at, s.logical_sequence", (message_id, owner_id)).fetchall()
-        return [ProcessingStep(row["step_id"], row["message_id"], row["kind"], row["label"], row["status"], row["summary"], _dt(row["started_at"]), _dt(row["completed_at"])) for row in rows]
+        return [self._processing_step_from_row(row) for row in rows]
+
+    def project_research_event_step(self, message_id: str, owner_id: str, *, node_key: str, source_event_id: str, kind: str, status: str, label: Optional[str] = None, summary: Optional[str] = None, parent_step_id: Optional[str] = None, node_type: str = "operation", display_order: int = 0, detail_json: Optional[str] = None, research_session_id: Optional[str] = None) -> ProcessingStep:
+        """Idempotent ResearchEvent -> ProcessingStep v2 projector seam.
+
+        The event is owned by the research store and is intentionally not part
+        of this transaction.  A projection failure is recorded for replay, so
+        losing the session-db write can never roll back the audit fact.
+        """
+        if re.fullmatch(r"research-event:[^:]+:[1-9][0-9]*", source_event_id) is None:
+            raise ValueError("invalid source_event_id")
+        try:
+            with self.connection() as db:
+                message = db.execute("SELECT 1 FROM messages WHERE message_id=? AND owner_id=?", (message_id, owner_id)).fetchone()
+            if message is None:
+                raise LookupError("message not found")
+            step = self.create_processing_step(message_id, kind, status, summary, label=label, parent_step_id=parent_step_id, node_type=node_type, node_key=node_key, display_order=display_order, detail_json=detail_json, source_event_id=source_event_id, research_session_id=research_session_id)
+        except Exception as exc:
+            with self.transaction() as db:
+                now = _now()
+                db.execute(
+                    """INSERT INTO processing_step_projection_retries(source_event_id, message_id, error_code, attempts, last_error, pending, updated_at)
+                    VALUES(?,?, 'TRACE_PROJECTION_FAILED', 1, ?, 1, ?)
+                    ON CONFLICT(source_event_id) DO UPDATE SET attempts=attempts+1, last_error=excluded.last_error, pending=1, updated_at=excluded.updated_at""",
+                    (source_event_id, message_id, str(exc)[:500], now),
+                )
+            raise
+        with self.transaction() as db:
+            db.execute(
+                "UPDATE processing_step_projection_retries SET pending=0, updated_at=? WHERE source_event_id=?",
+                (_now(), source_event_id),
+            )
+        return step
+
+    def list_processing_projection_retries(self, *, pending_only: bool = True) -> list[dict]:
+        with self.connection() as db:
+            sql = "SELECT * FROM processing_step_projection_retries"
+            if pending_only:
+                sql += " WHERE pending=1"
+            rows = db.execute(sql + " ORDER BY updated_at, source_event_id").fetchall()
+        return [dict(row) for row in rows]
+
+    def replay_processing_steps(self, message_id: str, owner_id: str, events: list[dict]) -> list[ProcessingStep]:
+        """Replay persisted ResearchEvents parent-first and event-seq ordered.
+
+        Task07 owns the full projector orchestration; this small seam freezes
+        its ordering and retry semantics for Task02 and is safe to call after
+        an SSE reconnect.
+        """
+        normalized: list[dict] = []
+        for event in events:
+            item = dict(event)
+            if isinstance(item.get("safe_payload_json"), str):
+                try:
+                    payload = json.loads(item["safe_payload_json"])
+                    if isinstance(payload, dict):
+                        payload = {**payload, **item}
+                        item = payload
+                except (TypeError, ValueError):
+                    pass
+            research_task_id = item.get("research_task_id")
+            event_seq = int(item.get("event_seq", 0))
+            if not research_task_id or event_seq < 1:
+                raise ValueError("persisted event is missing research task identity")
+            expected_source_event_id = f"research-event:{research_task_id}:{event_seq}"
+            supplied_source_event_id = item.get("source_event_id")
+            if supplied_source_event_id is not None and str(supplied_source_event_id) != expected_source_event_id:
+                raise ValueError("persisted event source_event_id is not canonical")
+            item["source_event_id"] = expected_source_event_id
+            normalized.append(item)
+        task_ids = {item["research_task_id"] for item in normalized}
+        if len(task_ids) > 1:
+            raise ValueError("replay events belong to multiple research tasks")
+        by_source = {item.get("source_event_id"): item for item in normalized if item.get("source_event_id")}
+        by_key = {item.get("node_key"): item for item in normalized if item.get("node_key")}
+
+        def depth(item: dict, seen: set[str] | None = None) -> int:
+            seen = seen or set()
+            parent = item.get("parent_source_event_id")
+            parent_item = by_source.get(parent) if parent else by_key.get(item.get("parent_node_key"))
+            if parent_item is None:
+                if parent:
+                    raise ValueError("replay parent source_event_id is missing")
+                return 0
+            marker = parent or item.get("parent_node_key")
+            if marker in seen:
+                return 99
+            return 1 + depth(parent_item, seen | {marker})
+
+        normalized.sort(key=lambda item: (depth(item), int(item.get("event_seq", 0))))
+        results: list[ProcessingStep] = []
+        step_by_source: dict[str, ProcessingStep] = {}
+        step_by_key: dict[str, ProcessingStep] = {}
+        for item in normalized:
+            seq = int(item.get("event_seq", 0))
+            source_event_id = f"research-event:{item['research_task_id']}:{seq}"
+            if item.get("source_event_id") != source_event_id:
+                raise ValueError("persisted event source_event_id is not canonical")
+            parent_step_id = item.get("parent_step_id")
+            parent_source = item.get("parent_source_event_id")
+            parent_key = item.get("parent_node_key")
+            if parent_source:
+                parent_step = step_by_source.get(parent_source)
+                if parent_step is None:
+                    raise ValueError("parent event was not replayed")
+                parent_step_id = parent_step.step_id
+            elif parent_key:
+                parent_step = step_by_key.get(parent_key)
+                if parent_step is None:
+                    raise ValueError("parent node was not replayed")
+                parent_step_id = parent_step.step_id
+            node_key = str(item.get("node_key") or source_event_id)
+            step = self.project_research_event_step(
+                message_id, owner_id, node_key=node_key, source_event_id=source_event_id,
+                kind=str(item.get("kind") or item.get("event_type") or "operation"),
+                status=str(item.get("status") or "completed"), label=item.get("label"),
+                summary=item.get("summary"), parent_step_id=parent_step_id,
+                node_type=str(item.get("node_type") or "operation"),
+                display_order=int(item.get("display_order", seq)),
+                detail_json=item.get("detail_json"), research_session_id=item.get("research_session_id"),
+            )
+            results.append(step)
+            step_by_source[source_event_id] = step
+            step_by_key[node_key] = step
+        return results
+
+    replay_projected_events = replay_processing_steps
 
 
 SQLiteMemoryRepository = MemoryRepository

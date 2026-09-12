@@ -229,6 +229,11 @@ class ResearchEvent:
             created_at=row["created_at"],
         )
 
+    @property
+    def source_event_id(self) -> str:
+        """Canonical ProcessingStep projection identity for this event."""
+        return f"research-event:{self.research_task_id}:{self.event_seq}"
+
 
 @dataclass
 class ResearchPaperSelection:
@@ -297,3 +302,184 @@ class PreliminaryReport:
             limitations_json=row["limitations_json"],
             created_at=row["created_at"],
         )
+
+
+@dataclass
+class ResearchSession:
+    research_session_id: str
+    owner_id: str
+    conversation_id: str
+    trigger_message_id: str
+    intake_draft_id: str
+    status: str
+    current_plan_version: int = 0
+    plan_message_id: str | None = None
+    activity_message_id: str | None = None
+    final_message_id: str | None = None
+    research_task_id: str | None = None
+    unread_state_json: str = "{}"
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        values = {key: row[key] for key in cls.__dataclass_fields__ if key in row}
+        values["current_plan_version"] = int(values.get("current_plan_version", 0))
+        return cls(**values)
+
+
+@dataclass
+class ResearchIntakeDraft:
+    intake_draft_id: str
+    research_session_id: str
+    status: str = "collecting"
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(**{key: row[key] for key in cls.__dataclass_fields__ if key in row})
+
+
+@dataclass
+class IntakeField:
+    intake_draft_id: str
+    field_name: str
+    value_json: str
+    source: str
+    confidence: float
+    confirmation_status: str
+    updated_at: str
+    updated_by_message_id: str | None = None
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        values = {key: row[key] for key in cls.__dataclass_fields__ if key in row}
+        values["confidence"] = float(values["confidence"])
+        return cls(**values)
+
+
+@dataclass
+class ApprovalRequest:
+    approval_request_id: str
+    owner_id: str
+    research_session_id: str
+    kind: str
+    subject_id: str
+    subject_version: int
+    requested_scope_json: str
+    status: str = "pending"
+    approved_scope_json: str | None = None
+    idempotency_key: str = ""
+    decided_by_message_id: str | None = None
+    created_at: str = ""
+    decided_at: str | None = None
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        values = {key: row[key] for key in cls.__dataclass_fields__ if key in row}
+        values["subject_version"] = int(values["subject_version"])
+        return cls(**values)
+
+
+@dataclass
+class AgentRun:
+    agent_run_id: str
+    research_session_id: str
+    attempt: int
+    role: str
+    skill_name: str
+    skill_schema_version: str
+    skill_content_hash: str
+    resolved_model: str
+    reasoning_effort: str
+    allowed_tools_json: str
+    status: str = "queued"
+    research_task_id: str | None = None
+    work_item_id: str | None = None
+    continued_from_agent_run_id: str | None = None
+    model_loop_count: int = 0
+    tool_call_count: int = 0
+    input_hash: str = ""
+    output_hash: str = ""
+    checkpoint_ref: str | None = None
+    checkpoint_hash: str | None = None
+    error_code: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    owner_id: str | None = None
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        values = {key: row[key] for key in cls.__dataclass_fields__ if key in row}
+        for key in ("attempt", "model_loop_count", "tool_call_count"):
+            values[key] = int(values.get(key, 0))
+        return cls(**values)
+
+
+@dataclass
+class ResearchArtifact:
+    artifact_id: str
+    research_task_id: str
+    report_version: int
+    artifact_type: str
+    content_hash: str
+    generated_by_agent_run_id: str
+    content: str | None = None
+    storage_ref: str | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        values = {key: row[key] for key in cls.__dataclass_fields__ if key in row}
+        values["report_version"] = int(values["report_version"])
+        return cls(**values)
+
+
+@dataclass
+class ResearchNotification:
+    notification_id: str
+    owner_id: str
+    notification_kind: str
+    status: str
+    subject_version: int
+    event_seq: int
+    payload_json: str
+    idempotency_key: str
+    research_session_id: str | None = None
+    research_task_id: str | None = None
+    read_at: str | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        values = {key: row[key] for key in cls.__dataclass_fields__ if key in row}
+        values["subject_version"] = int(values["subject_version"])
+        values["event_seq"] = int(values["event_seq"])
+        return cls(**values)
+
+
+# Explicit names used by the Task02 contract and the shorter names retained by
+# the implementation are intentionally the same runtime types.
+ResearchIntakeField = IntakeField

@@ -1,7 +1,7 @@
 # Spec034 任务索引
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md)
-> 当前状态：实施中；Spec034 已确认，Task02 已启动。
+> 当前状态：实施中；Spec034 已确认，Task02 已完成，Task03 可开始。
 
 ## 依赖顺序
 
@@ -13,7 +13,7 @@
 
 ## 任务
 
-- [Task02：数据模型、状态机、迁移与兼容门禁](./task-02-session-state-and-migration-gate.md) — 实施中
+- [Task02：数据模型、状态机、迁移与兼容门禁](./task-02-session-state-and-migration-gate.md) — 已完成（backend-reviewer/backend-tester GO）
 - [Task03：会话意图、Deep Research Skill 与 Intake](./task-03-conversational-intake.md) — 待执行
 - [Task04：计划版本、统一审批命令与前端卡片](./task-04-plan-and-approvals.md) — 待执行
 - [Task05：ResearchAgentRunner 与真实子 Agent 循环](./task-05-agent-runtime.md) — 待执行

@@ -102,6 +102,14 @@ class ProcessingStep:
     summary: Optional[str]
     started_at: datetime
     completed_at: Optional[datetime]
+    parent_step_id: Optional[str] = None
+    node_type: str = "operation"
+    node_key: Optional[str] = None
+    display_order: int = 0
+    detail_json: Optional[str] = None
+    source_event_id: Optional[str] = None
+    research_session_id: Optional[str] = None
+    schema_version: int = 1
 
 
 @dataclass(frozen=True)
