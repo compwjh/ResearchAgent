@@ -27,11 +27,14 @@ from typing import Iterator, List, Optional
 import httpx
 from langchain_ollama import ChatOllama
 
+from backend.app.platform import capability_store
 from backend.app.platform.config import OLLAMA_BASE_URL
 from backend.app.platform.ollama_direct import OllamaChatResult
 
 REASONING_EFFORTS = ("off", "low", "medium", "high", "xhigh")
 _CAPABILITY_TTL_SECONDS = 300.0
+# spec-035 Bug3：SQLite 二级缓存的新鲜期（与后台每日探测周期对齐）。
+_CAPABILITY_DB_TTL_SECONDS = 24 * 60 * 60.0
 _capability_cache: dict[str, tuple[float, "ReasoningCapabilities"]] = {}
 _capability_lock = threading.RLock()
 
@@ -136,17 +139,47 @@ def get_reasoning_capabilities(model: str, *, refresh: bool = False) -> Reasonin
         cached = _capability_cache.get(key)
         if cached and not refresh and now - cached[0] < _CAPABILITY_TTL_SECONDS:
             return replace(cached[1], source="cache")
-        capabilities = probe_reasoning_capabilities(key)
-        if capabilities.source == "unknown":
-            # A failed probe must not evict or overwrite a previously valid
-            # entry (spec-026 B16).  Reuse the stale result — including its
-            # original ``cached_at`` — when anything is cached, otherwise
-            # report ``unknown``.
-            if cached is not None:
-                return replace(cached[1], source="stale")
-            return capabilities
-        _capability_cache[key] = (now, capabilities)
+    # spec-035 Bug3：内存未命中时回源 SQLite（24h 内视为新鲜），避免每次切模型
+    # 都实时探测 Ollama。探测结果由后台调度器每日刷新入库，这里只读。
+    if not refresh:
+        stored = capability_store.get_capabilities(key)
+        if stored is not None and capability_store.probed_at_is_fresh(
+            stored["probed_at"], max_age_seconds=_CAPABILITY_DB_TTL_SECONDS
+        ):
+            stored_caps = ReasoningCapabilities(
+                stored["model"],
+                stored["supported_efforts"],
+                stored["default_effort"],
+                "cache",
+                stored["probed_at"],
+                stored["evidence"],
+            )
+            with _capability_lock:
+                _capability_cache[key] = (now, stored_caps)
+            return replace(stored_caps, source="cache")
+    capabilities = probe_reasoning_capabilities(key)
+    if capabilities.source == "unknown":
+        # A failed probe must not evict or overwrite a previously valid
+        # entry (spec-026 B16).  Reuse the stale result — including its
+        # original ``cached_at`` — when anything is cached, otherwise
+        # report ``unknown``.  The SQLite tier is deliberately NOT consulted
+        # here: the four-state source semantics stay byte-for-byte identical
+        # to the pre-spec-035 contract.
+        if cached is not None:
+            return replace(cached[1], source="stale")
         return capabilities
+    with _capability_lock:
+        _capability_cache[key] = (now, capabilities)
+    # 实时探测成功的结果写回 SQLite，供下次启动 / 其它 worker 直接命中。
+    capability_store.upsert_capabilities(
+        capabilities.model,
+        supported_efforts=capabilities.supported_efforts,
+        default_effort=capabilities.default_effort,
+        source=capabilities.source,
+        evidence=dict(capabilities.evidence_ids or {}),
+        probed_at=capabilities.cached_at,
+    )
+    return capabilities
 
 
 def clear_reasoning_capability_cache() -> None:

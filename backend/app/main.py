@@ -15,6 +15,10 @@ from backend.app.api.routes import router
 from backend.app.knowledge_base.application import (
     FinalizeBundleStore,
 )
+from backend.app.platform.capability_scheduler import (
+    start_capability_scheduler,
+    stop_capability_scheduler,
+)
 from backend.app.platform.config import FRONTEND_DIR, KB_DIR
 
 
@@ -49,9 +53,17 @@ async def lifespan(_app: FastAPI):
         # collection as a side effect of boot.
         print(f"[kb] index generation gate not ready: {getattr(error, 'code', 'INDEX_REBUILD_REQUIRED')}")
 
+    # spec-035 Bug3：启动即全量探测一次模型能力入库，之后每 24h 一轮；
+    # 失败只记录，不阻塞服务启动。
+    try:
+        start_capability_scheduler()
+    except Exception as error:
+        print(f"[capabilities] 调度器启动失败（已忽略）：{error}")
+
     try:
         yield
     finally:
+        await stop_capability_scheduler()
         # Login pages hold both a site lock and the persistent profile lock.
         # Close the item-scoped handles before releasing the manager so a
         # graceful shutdown cannot leave a stale authenticated session behind.
