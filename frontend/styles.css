@@ -167,10 +167,10 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .project-tree-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; color: var(--muted); }
 .project-tree-toggle { display: inline-flex; align-items: center; gap: 5px; min-width: 0; min-height: 22px; padding: 3px 6px 3px 0; background: transparent; color: var(--muted-strong); font: 12px 'DM Mono', monospace; text-transform: uppercase; }
 /* 折叠指示符为两条线段组成的倒 V（⌄，down arrowhead），非填充三角。
-   top: -4px —— 指示符字号大于文字，居中对齐时偏低，上移使其上边缘与
-   「项目」文字上边缘齐平；margin-left: -3px —— 抵掉部分 gap，向文字靠拢。
+   top: -6px —— 指示符字号大于文字，居中对齐时偏低，上移使其上边缘与
+   「项目」文字上边缘齐平；margin-left: -4px —— 抵掉部分 gap，向文字靠拢。
    颜色沿用 --accent 不变。 */
-.project-tree-toggle [aria-hidden] { position: relative; top: -4px; margin-left: -3px; width: 10px; color: var(--accent); font-size: 14px; line-height: 1; }
+.project-tree-toggle [aria-hidden] { position: relative; top: -6px; margin-left: -4px; width: 10px; color: var(--accent); font-size: 14px; line-height: 1; }
 .project-tree-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .15s ease; }
 .project-tree-head:hover .project-tree-actions, .project-tree-head:focus-within .project-tree-actions { opacity: 1; }
 .project-tree-actions .icon-button { padding: 3px 5px; font-size: 16px; }
