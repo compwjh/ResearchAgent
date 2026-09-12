@@ -1,7 +1,7 @@
 # Spec034 任务索引
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md)
-> 当前状态：`待执行`（Spec 尚未确认，禁止实施）
+> 当前状态：实施中；Spec034 已确认，Task02 已启动。
 
 ## 依赖顺序
 
@@ -9,9 +9,11 @@
 
 `02 → 05 → 07 → 08`
 
+> Task02 的唯一门禁前置为 Spec 确认与需求/技术双评审通过；其余依赖只引用本索引中实际存在的 Task 文档。
+
 ## 任务
 
-- [Task02：数据模型、状态机、迁移与兼容门禁](./task-02-session-state-and-migration-gate.md) — 待执行
+- [Task02：数据模型、状态机、迁移与兼容门禁](./task-02-session-state-and-migration-gate.md) — 实施中
 - [Task03：会话意图、Deep Research Skill 与 Intake](./task-03-conversational-intake.md) — 待执行
 - [Task04：计划版本、统一审批命令与前端卡片](./task-04-plan-and-approvals.md) — 待执行
 - [Task05：ResearchAgentRunner 与真实子 Agent 循环](./task-05-agent-runtime.md) — 待执行

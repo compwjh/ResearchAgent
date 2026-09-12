@@ -22,7 +22,7 @@
 1. 后端/前端 reviewer 分端评审并批量关闭 P0/P1。
 2. 后端/前端 tester 定向复核，tester 汇总跨端验收。
 3. 运行一次最终候选全量回归、静态检查和冲突标记扫描。
-4. 启动真实服务和 Ollama，用浏览器完成完整会话式研究 Smoke，包括前端审批、真实目录 Tool、三级树刷新和报告下载。
+4. 启动真实服务和 Ollama，用固定主题“软件供应链攻击”、目标“总结 2020–2024 年 USENIX Security 论文中的攻击面与防御方法”、`time_range=2020–2024`、`source=usenix`、中文输出完成完整会话式研究 Smoke，包括前端审批、真实目录 Tool、三级树刷新和报告下载。
 5. 直接部署/启动服务，验证 health、实际端口和关键页面。
 6. 落盘复盘、三份评审、验证证据；最后更新 Spec 和 changelog 为已完成。
 
@@ -35,6 +35,7 @@
 ## 边界与明确不做
 
 - Fake Runtime 不能替代真实 Smoke；环境失败必须如实记录和给出复验命令。
+- 真实成功证据必须包含 `resolved_model/reasoning_effort`、实际 Tool 名、`research-event:{task}:{seq}`、三级 ProcessingStep 和 Markdown/HTML/manifest ID；Ollama/来源不可用时记录稳定错误与复验命令，不以 Fake 冒充成功。
 - 不因收口顺手实现 Spec028/030 或完整安全中心。
 - 不主动 push 或合并 main，除非用户再次明确授权。
 

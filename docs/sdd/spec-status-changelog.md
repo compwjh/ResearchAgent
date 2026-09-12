@@ -8,6 +8,9 @@
 ## 2026-09-13
 
 - **034 会话式深度研究与真实子 Agent Runtime** ｜ 新建 → 待确认 ｜ 2026-09-13T03:13:41+08:00：经多轮 Grilling 冻结普通会话意图识别、Deep Research Skill 多轮 Intake、计划版本与前端审批、真实 `ResearchAgentRunner` 子 Agent、Registry 授权与资源扩容、论文目录真实接线、`processing_steps` 一至三级树、报告 Artifact/通知/会话写回、Research Tab 复用及旧未绑定 Task 直接清理；Spec 与 Task02–10 已落盘。确认前不修改业务代码。本次研发会话的临时模型选择不写入长期规则、记忆或产品 Runtime。
+- **034 会话式深度研究与真实子 Agent Runtime** ｜ 待确认 → 待确认（评审打回/修订中） ｜ 2026-09-13T04:06:27+08:00：需求评审结论 REVISE、技术评审结论 NO-GO；发现产品使用步骤占位、Task/Q 断链、Session/Approval/AgentRun/Artifact/Notification 状态与唯一性、Spec023 Tool 映射、真实目录来源注入及 ProcessingStep v2 投影契约不足。已暂停实现，补齐文档后重新评审。
+- **034 会话式深度研究与真实子 Agent Runtime** ｜ 待确认（修订完成） → 已确认、实施中 ｜ 2026-09-13T04:29:00+08:00：第二轮需求评审 APPROVE、技术评审 GO，上一轮 P0/P1 已关闭。用户此前明确要求“然后再开发034”，据此确认 Spec034，启动 Task02；临时研发模型选择不写入规范、产品 Runtime 或长期规则。
+- **034 会话式深度研究与真实子 Agent Runtime — Task02** ｜ 待执行 → 实施中 ｜ 2026-09-13T04:30:00+08:00：Spec034 已确认且双评审通过，启动数据模型、状态机、迁移与兼容门禁；业务实现由 Luna high 子 Agent 执行，Task 阶段只跑定向测试。
 - **027 Research Task 动态编排 MVP — Task05** ｜ 实施中 → 已完成（固定样本通过；真实 Ollama/外部来源环境延期） ｜ 2026-09-13T03:40:43+08:00：固定真实 `ModelRouter` fast→fast 重试→strong 路由、`MODEL_ESCALATED` 安全事件和真实 Spec015 `CatalogSearchAdapter`/`CatalogSearchGraph` 装配与诚实降级样本通过；真实 Ollama `/api/tags`/`/api/chat` 因当前环境 `Operation not permitted` 阻断，未伪造成功。定向后端回归 95 passed、5 subtests；真实外部 smoke、全量回归、部署和最终 Spec027 验收交 Task06。
 - **027 Research Task 动态编排 MVP — Task06/Spec027** ｜ 已确认（Task05 完成） → 已完成（最终回归通过；真实 Ollama chat/USENIX/DBLP 环境延期） ｜ 2026-09-13T03:54:38+08:00：完成复用审计、双端静态/契约核对、固定样本、真实 source/Ollama 探测和部署 smoke；最终全量 pytest 1700 passed、1 skipped、52 subtests，退出码 0。首轮冻结清单 SHA 漂移已按既有惯例修复并定向复验 2 passed；服务在 `127.0.0.1:18081` 完成 health/home/Research Task 入口验证后正常停止。真实 Ollama tags 可达但 chat 超时，USENIX/DBLP 分别不可用/网络错误，均如实记录并保留复验步骤，未伪造成功。
 

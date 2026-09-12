@@ -15,6 +15,7 @@
 ## 数据、配置与接口
 
 - v2 字段：parent_step_id、node_type、node_key、display_order、detail_json、source_event_id、research_session_id、schema_version。
+- 迁移只增列/索引，不重写旧行；旧行按 `schema_version=1` 根节点读取。新增唯一索引 `(message_id,node_key)`，非空 `source_event_id` 全局唯一，事件 ID 规范为 `research-event:{task}:{seq}`。
 - REST 返回扁平邻接表，SSE 增量 upsert；前端按 parent_step_id 建树。
 - 层级固定 Phase → Agent/WorkItem → Skill或Tool，最多三级。
 
@@ -41,6 +42,7 @@
 
 - v1 扁平、v2 二级/三级同时可渲染；非法父链被后端拒绝。
 - SSE 断线、乱序、重复、投影失败和刷新均无重复/丢失。
+- Projector 按事件序重放；失败写待重放标记并返回 `TRACE_PROJECTION_FAILED`，重试成功后清除；迟到结果不能覆盖终态。
 - 用户阅读旧节点时不自动跳走；失败节点可见且强展开。
 
 ## 产出物、执行结果与变更日志

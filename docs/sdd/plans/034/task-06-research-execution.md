@@ -11,11 +11,13 @@
 
 - 必读 Spec034 的检索/阈值策略、角色 Skill 和零结果边界。
 - 复用 Spec015 `CatalogSearchGraph`/`CatalogRagAdapter`、Spec032.1 来源 Skill 和 Spec033 解析结果；禁止研究命名空间内复制采集、目录或 RAG。
+- 先冻结 `CatalogSourceFactory` 的真实注入点、PaperDiscoveryStore、USENIX/DBLP source 和本地目录路径；无注入来源不得走 `papers=[]` 恒空分支。
 
 ## 数据、配置与接口
 
 - 新增 `research-paper-evaluation`、`research-coverage-review` Skill 与对应结构化 Schema。
 - Search Worker 输出查询、来源、命中、刷新、候选和诊断；Evaluator 输出相关度、保留/淘汰及理由；Critic 输出 CoverageGap 与补搜建议。
+- Tool 映射固定为 `sources[0]→source`、`time_range.years→years`、`max_results→limit`、`publication_scope` 原样；详情 Tool 只接收候选 `article_url/official_page_url→url`；下载/导入只接收已选候选 `candidate`，不接受单独 URL。
 - “总体综述”不得作为自动 facet；相关度阈值是可解释软门槛，用户硬范围不可突破。
 
 ## 实施步骤与文件边界
@@ -40,6 +42,7 @@
 ## 验收、风险与回滚
 
 - 本地有相关论文时必须产生候选；本地不足时能证明调用远程目录刷新。
+- 没有来源时必须返回 `SOURCE_UNAVAILABLE` 或可诊断 partial/failed，不得把空结果伪装 completed。
 - 每个被淘汰批次有原因统计；阈值软化有边界和记录。
 - 恶意论文文本不能改变 Skill、Tool、预算或计划。
 

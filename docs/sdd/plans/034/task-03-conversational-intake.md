@@ -9,7 +9,7 @@
 
 ## 背景与前置条件
 
-- 必读 Spec034 的产品流程、Q90/Q91 边界和 Intake 数据模型。
+- 必读 Spec034 的[§“产品行为与完整流程”](../../specs/034-conversational-deep-research-agent-runtime.md#产品行为与完整流程)、[§“ResearchIntakeDraft / IntakeField”](../../specs/034-conversational-deep-research-agent-runtime.md#researchintakedraft--intakefield)及[§“边界”](../../specs/034-conversational-deep-research-agent-runtime.md#边界)，特别是普通聊天不触发、阻塞字段和活跃 Session 冲突三条合同。
 - 复用 Spec023 SkillRegistry、现有 function calling 与会话流，不把旧 `/api/chat` 当产品主入口。
 - 需要创建 `deep-research-orchestration` Skill；Skill 只承载领域编排，不写研发流程。
 
@@ -18,6 +18,7 @@
 - `activate_skill`、`begin_research_intake` 为注册能力，入参和输出必须有 JSON Schema。
 - 保存每个 IntakeField 的 value/source/confidence/confirmation_status/message_id。
 - topic、objective、time_range 为计划前阻塞字段；安全默认值必须可见。
+- Coordinator 属会话层控制器，只创建/恢复 Session 与 Draft，不创建 AgentRun。
 
 ## 实施步骤与文件边界
 

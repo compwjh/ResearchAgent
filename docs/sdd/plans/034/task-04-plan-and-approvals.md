@@ -16,6 +16,7 @@
 
 - 新增 `research-plan-authoring` Skill 和 ResearchPlanOutput Schema。
 - 实现 `/research-sessions/{id}/commands` 的六类命令与 ApprovalRequest 状态机。
+- 固定请求 `{command, subject_version, scope_json, idempotency_key}`，按 Spec034 命令表执行 CAS；重复请求返回原决策，旧版本返回 `APPROVAL_STALE`，竞争返回 `APPROVAL_CONFLICT`。
 - 计划卡包含目标、范围/排除、真实研究方向、来源策略、Agent、预算、结构和降级。
 
 ## 实施步骤与文件边界
@@ -40,6 +41,7 @@
 ## 验收、风险与回滚
 
 - 双击、多窗口、旧版本和自然语言/按钮竞争测试无重复副作用。
+- `approve_plan` 才能创建/激活 ResearchTask 与 activity message；`revise_plan` supersede 旧 Approval；三种 active Session 冲突选择均可重复验收。
 - 前端会话、Tab 和通知入口都能找到审批按钮；终端不参与审批。
 - 结构修改 supersede 旧批准，小型非结构指令不制造无意义版本。
 

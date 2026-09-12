@@ -16,6 +16,8 @@
 
 - 新增 `research-report-synthesis` Skill 和 ReportSynthesisOutput Schema。
 - Markdown 是规范源；HTML 固定渲染并净化；版本、哈希、生成 Run 和 manifest 必填。
+- ResearchArtifact 与 ResearchNotification 使用独立表；Artifact 版本/类型唯一且不可变，Notification 以 owner+幂等键去重并以 owner 级 event_seq 补发。
+- Notification 明确保存 `status=unread/read`，已读只允许由 owner 校验的 CAS 完成；通知事实与 Artifact 生命周期分离。
 - 实现 artifacts 列表/下载、owner 通知 SSE 与 read 接口。
 
 ## 实施步骤与文件边界
@@ -41,6 +43,7 @@
 
 - 同版本重试只产生一条最终消息；新版本产生新消息并标明版本。
 - synthesis 失败保留证据和旧报告，可单独重试并生成新版本。
+- 同一 `(task, report_version, artifact_type)` 不能覆盖；下载按 artifact_id 和 owner 校验，不接受任意路径或 storage_ref。
 - SSE 断开后补发未读，不重复；点击定位准确。
 
 ## 产出物、执行结果与变更日志

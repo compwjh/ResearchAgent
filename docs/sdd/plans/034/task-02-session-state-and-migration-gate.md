@@ -1,7 +1,7 @@
 # Task02 — 数据模型、状态机、迁移与兼容门禁
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task01、Spec确认、需求/技术评审通过；当前状态：`待执行`
+> 依赖：Spec确认、需求/技术评审通过；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -18,12 +18,17 @@
 - 冻结新增表、索引、状态枚举、稳定错误码、owner/外部 ID 校验和迁移顺序。
 - 冻结 v1→v2 processing step 兼容合同与 `/research-sessions`、统一 commands 的基础 Schema。
 - 冻结跨库 Saga 幂等键、补偿策略和启动 interrupted 审计。
+- 冻结 ResearchSession/Intake/Approval/AgentRun/Artifact/Notification 的状态转移矩阵、命令 CAS/幂等和 active Session 唯一性。
+- Artifact 与 Notification 为两张独立表，分别冻结 `(research_task_id, report_version, artifact_type)`、`(owner_id, idempotency_key)` 唯一索引及保留/删除规则。
+- Approval/Notification 均沿用 owner 隔离；Notification 额外冻结 `(owner_id,event_seq)` 唯一索引与 `unread/read`、`read_at` 一致性。
+- AgentRun 必须保存 `research_session_id`；计划批准前 Planner Run 允许暂不绑定 Task/WorkItem，批准后的执行 Run 必须绑定二者，Coordinator 不进入 AgentRun role 枚举。
+- ProcessingStep v2 只做 additive migration，冻结 `(message_id,node_key)`、`source_event_id`、v1 映射和 `research-event:{task}:{seq}` 规范 ID。
 
 ## 实施步骤与文件边界
 
-1. 先写合同测试和迁移设计文档，不实现业务编排。
+1. 先写合同测试和迁移设计文档，不实现业务编排；状态机逐项覆盖 Spec034 合法/非法转移。
 2. 后端开发只改 `backend/**` 与后端测试；ProcessingStep 数据迁移也归后端。
-3. 验证旧库重复启动迁移幂等、旧 processing_steps 可读、跨 owner 引用拒绝。
+3. 验证旧库重复启动迁移幂等、旧 processing_steps 可读、跨 owner 引用拒绝、父链/三级校验和 projector 重放标记。
 4. 旧未绑定 Task 的实际删除留给 Task09，本任务只冻结选择条件和不可波及断言。
 
 ## 子代理分派
@@ -43,6 +48,8 @@
 
 - 新库、旧库、重复迁移、失败回滚和并发幂等测试通过。
 - 状态机非法转移均返回稳定错误；Session 状态不可由前端直接写。
+- 每条命令按 `subject_version + idempotency_key` CAS；重复返回原响应，竞争返回 `APPROVAL_CONFLICT`/`APPROVAL_STALE`。
+- v2 迁移不重写旧行；同一 `source_event_id/node_key` 重放只更新一个节点，投影失败不回滚研究事件。
 - 回滚只移除新增 migration/table/index，不覆盖用户数据；旧未绑定数据尚未删除。
 
 ## 产出物、执行结果与变更日志
