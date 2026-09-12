@@ -39,8 +39,8 @@ def test_context_meter_classes_are_styled() -> None:
 
 
 def test_asset_version_bumped_for_spec025() -> None:
-    assert "/assets/app.js?v=36" in INDEX
-    assert "/assets/styles.css?v=36" in INDEX
+    assert "/assets/app.js?v=37" in INDEX
+    assert "/assets/styles.css?v=37" in INDEX
 
 
 def test_context_meter_lives_in_composer_footer_right_side() -> None:
