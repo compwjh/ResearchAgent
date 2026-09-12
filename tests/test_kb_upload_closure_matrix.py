@@ -55,7 +55,7 @@ def test_inventory_hashes_are_stable_and_write_entrypoints_are_registered():
         "head_document_source_route", "inspect_document", "reindex_document_route", "delete_document_route",
         "kb_component_status", "kb_health", "list_kb_papers", "kb_ask", "generate", "lifespan", "index",
         "handle_request_validation_error", "_fsync_directory", "_write_source_exclusive", "_snapshot_value",
-        "_identity_parts", "_same_identity", "_port_status", "_index_succeeded", "_call_supported",
+        "_identity_parts", "_same_identity", "_port_status", "_index_succeeded", "_index_error_detail", "_call_supported",
         "create_paper_import_port", "create_source_reader", "read_document_source", "create_manifest_store",
         "record_id", "default_chunkers", "default_chunker_state", "ensure_dirs", "load_papers", "load_papers_strict",
         "get_paper", "resolve_paper_path", "copy_source_exclusive", "new_record", "ensure_chunkers", "get_chunker_state",
