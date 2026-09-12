@@ -3779,7 +3779,7 @@ function renderSkillList() {
   stSkillList.replaceChildren();
   if (stSkillEmpty) {
     stSkillEmpty.hidden = stSkills.length > 0;
-    if (stSkills.length === 0) stSkillEmpty.textContent = '还没有可用的 Skill。';
+    if (stSkills.length === 0) stSkillEmpty.textContent = '还没有可用的 Skills。';
   }
   for (const skill of stSkills) {
     const li = document.createElement('li');
@@ -3905,7 +3905,7 @@ function renderToolList() {
   stToolList.replaceChildren();
   if (stToolEmpty) {
     stToolEmpty.hidden = stTools.length > 0;
-    if (stTools.length === 0) stToolEmpty.textContent = '还没有可用的 Tool。';
+    if (stTools.length === 0) stToolEmpty.textContent = '还没有可用的 Tools。';
   }
   for (const tool of stTools) {
     const li = document.createElement('li');
