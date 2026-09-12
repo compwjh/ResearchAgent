@@ -1,7 +1,7 @@
 # Task 04：实现研究任务页面、SSE 与会话入口
 
 > 关联：[Spec 027](../../specs/027-research-task-dynamic-orchestration-mvp.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；被依赖：Task05–06；当前状态：`待执行`
+> 依赖：Task03；被依赖：Task05–06；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -42,3 +42,5 @@
 ## 变更日志
 
 - 2026-09-12：创建研究任务工作台 Task。
+- 2026-09-12：Task03 已收口，按用户确认启动 Task04 前端工作台、SSE 恢复与会话入口实现。
+- 2026-09-12：Task04 完成。新增研究入口/工作台与独立 SSE 模块，补齐报告选集安全投影和 Worker 模型字段展示；前端验收 PASS（101 个 Python 合同、5 个 Node 合同、20/20 静态断言），前端复审 GO，390px 浏览器 smoke 延至 Task06。

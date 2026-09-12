@@ -231,6 +231,14 @@
 - **024 Task04 前端推理档位与思考面板** ｜ 进行中 → 已完成（定向通过）；Task05 进行中 ｜ frontend-reviewer GO、frontend-tester PASS，24 个前端合同用例通过；真实 SSE 浏览器 smoke 因服务/Ollama 不可用留给最终收口，不提前声称全功能验证。
 - **024 Task05 最终评审、全量回归与部署** ｜ 待执行 → 进行中 ｜ Task04 定向评审 GO、前端验收 PASS 后启动双端复审、唯一全量回归、真实 Ollama 三档 smoke、部署和 Spec024 收口；Task05 前不声称完成。
 - **024 可见推理过程与会话级推理档位** ｜ 实施中 → 已完成（环境延期） ｜ Task05 完成双端 GO、全量回归 1341 passed/1 skipped/47 subtests、部署 health/home、Chromium 资源与 fake adapter 终态验收；真实 Ollama chat 的 xhigh/low/off telemetry 因固定通道 20 秒超时延期，复验步骤已写入验收报告，不以超时阻塞代码收口。
+
+## 2026-09-12
+
+- **027 Research Task 动态编排 MVP** ｜ 已确认（Task03 完成） → 已确认（Task04 实施中） ｜ 2026-09-12：Task03 后端纵向切片已完成并复审通过，按用户继续开发指示启动 Task04；本轮只推进前端研究工作台、SSE 恢复与会话入口，临时使用主会话 Luna xhigh / 子代理 Luna high，不改写长期模型规则。
+- **027 Research Task 动态编排 MVP** ｜ 已确认（Task04 实施中） → 已确认（Task04 完成，Task05 待执行） ｜ 2026-09-12：Task04 研究入口、独立工作台、SSE event_seq 去重/重连、取消与安全报告展示完成；补齐 report selections 白名单投影及 Worker 模型/槽位事件字段。前端验收 PASS（101 个 Python 合同、5 个 Node 合同、20/20 静态断言），后端定向回归 90 passed + 5 subtests，复审 GO；本地备用端口桌面入口 smoke 通过，390px 运行时 smoke 延 Task06。临时模型选择仅用于本轮分派，不写入长期规则或模型注册。
+- **027 Research Task 动态编排 MVP** ｜ 已确认（Task04 完成，Task05 待执行） → 已确认（Task05 实施中） ｜ 2026-09-12：Task04 依赖已满足，启动 Task05 的 Re-plan、报告、模型升级与集成；按前后端分端并行分派，临时使用 Luna high，不修改长期模型规则或记忆。
+- **027 Research Task 动态编排 MVP** ｜ 已确认（Task05 实施中） → 已确认（Task05 实施中） ｜ 2026-09-12：完成第二阶段后端接线与 focused 验证：软预算阶段闸门、`budget_exhausted` partial 收敛、`MODEL_ESCALATED` 安全 model 事件（含 search-worker 路径）；后端 95 passed + 5 subtests，未修改 Spec 范围或长期模型配置。
+
 - **020 零碎 bug 解决** ｜ 已完成（第 3 批） → 实施中（第 4 批 BUG-06） ｜ 2026-09-12：追加第 4 批 **BUG-06**——从「模型库」等视图点「新建对话」不切回对话视图。根因：`beginDraft()`（`app.js:1102-1110`）只重置会话内容、**从不调用 `showView()`**，而视图切换依赖原生 `hidden` 属性（`app.js:2831-2836`），故 `#chat.hidden` 一直为 `true`；对照 `openConversation()`（`app.js:1063`）首行即有 `showView('chat')`。用户经 grill with docs 确认边界后批准实施。
 - **020 零碎 bug 解决** ｜ 实施中（第 4 批 BUG-06） → **已完成（第 4 批）** ｜ 2026-09-12：`frontend-dev` 实现——① `app.js:1103` 在 `beginDraft()` 首行前置 `showView('chat')`（覆盖 `1589`/`1651`/`1170` 三个调用点）；② 7 处「新会话」→「新对话」（`app.js:879/880/882/1105/1106`、`index.html:52/74`）；③ `index.html:492` `app.js?v=33`→`?v=34`、491 行兼容注释追加 `v33`。`frontend-tester` 验收通过：`node --check` OK、前端契约 pytest **35 passed / 0 failed**、`grep "新会话"` 0 命中、`git diff` 无夹带。架构师另用 Playwright+Chromium 在 127.0.0.1:8300 做真实点击验证：模型库 → 新建对话 后 `#chat.hidden=false`、`#models-view.hidden=true`、`activeNav=['chat']`、`page_errors=[]`、加载 `app.js?v=34`。**未跑全量回归**（单端改动，按规则只跑前端回归）。
 - **020 零碎 bug 解决** ｜ 已完成（第 4 批） → 实施中（第 5 批 BUG-07） ｜ 2026-09-12：追加第 5 批 **BUG-07**（创建项目后的多余灰色提示常驻不消失；「在此项目中新建对话」点击不跳转）。用户确认修复边界后实施。

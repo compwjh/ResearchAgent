@@ -200,6 +200,23 @@ def _current_plan(research_task_id: str) -> Optional[dict]:
     return _plan_payload(plan) if (plan := _store().get_current_plan(research_task_id)) is not None else None
 
 
+def _selection_payload(selection) -> dict:
+    """论文选集只读投影，不读取或复制 Spec015 论文元数据。"""
+    try:
+        facets = json.loads(selection.facets_json or "[]")
+    except (TypeError, ValueError):
+        facets = []
+    if not isinstance(facets, list):
+        facets = []
+    return {
+        "catalog_paper_id": selection.catalog_paper_id,
+        "relevance": selection.relevance,
+        "facets": facets,
+        "evidence_level": selection.evidence_level,
+        "created_at": selection.created_at,
+    }
+
+
 def _cancelled_item_count(research_task_id: str) -> int:
     """当前已收敛为 cancelled 的 WorkItem 数（只读，用于 cancel 响应计数）。"""
     return sum(1 for item in _store().list_work_items(research_task_id) if item.status == "cancelled")
@@ -407,7 +424,7 @@ def _sse_frame(research_task_id: str, event_seq: Optional[int], event_type: str,
 
 @router.get("/{research_task_id}/report")
 def get_research_report(research_task_id: str, plan_version: Optional[int] = Query(None, ge=1)):
-    """读取报告（plan_version 为 None 取最大版本）。失败：404；409 `REPORT_NOT_READY`。"""
+    """读取报告与论文选集（plan_version 为 None 取最大版本）。失败：404；409 `REPORT_NOT_READY`。"""
     try:
         report = _service().get_report(research_task_id, OWNER_ID, plan_version=plan_version)
     except ResearchServiceError as exc:
@@ -416,6 +433,11 @@ def get_research_report(research_task_id: str, plan_version: Optional[int] = Que
         limitations = json.loads(report.limitations_json or "{}")
     except (TypeError, ValueError):
         limitations = {}
+    try:
+        selections = [_selection_payload(item) for item in _store().list_selections(research_task_id)]
+    except Exception as exc:
+        logger.exception("research report selections lookup failed: %s", exc)
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
     return {
         "report_id": report.report_id,
         "research_task_id": report.research_task_id,
@@ -423,6 +445,7 @@ def get_research_report(research_task_id: str, plan_version: Optional[int] = Que
         "status": report.status,
         "markdown": report.markdown,
         "limitations": limitations,
+        "selections": selections,
         "created_at": report.created_at,
     }
 

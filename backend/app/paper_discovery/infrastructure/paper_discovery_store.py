@@ -467,6 +467,7 @@ class PaperDiscoveryStore:
                     )
                 )
             connection.executemany("INSERT INTO paper_candidates VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+            connection.commit()
 
     @staticmethod
     def _candidate_from_row(row: sqlite3.Row) -> PaperCandidate:

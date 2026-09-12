@@ -6,6 +6,67 @@
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 -->
     <link rel="stylesheet" href="/assets/styles.css?v=43">
+    <style id="research-tasks-inline-style">
+      /* Task04 research workspace stays self-contained so the module can ship before app.js. */
+      #research-view[hidden] { display: none; }
+      #research-view .research-workspace { width: min(1440px, 100%); min-height: calc(100vh - 68px); margin: 0 auto; padding: 28px 30px 36px; box-sizing: border-box; gap: 18px; }
+      #research-view .research-page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+      #research-view .research-page-header h1 { margin: 0; font-size: clamp(26px, 4vw, 42px); letter-spacing: -.06em; }
+      #research-view .research-page-header .subtitle { max-width: 720px; }
+      #research-view .research-page-actions, #research-view .research-form-actions, #research-view .research-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      #research-view .research-grid { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(360px, 1.5fr) minmax(240px, .9fr); align-items: start; gap: 14px; min-width: 0; }
+      #research-view .research-column { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.86); box-shadow: 0 12px 32px #272a350b; overflow: hidden; }
+      #research-view .research-column > details > summary { list-style: none; cursor: pointer; padding: 15px 16px; border-bottom: 1px solid var(--line); color: var(--ink); font-weight: 800; }
+      #research-view .research-column > details > summary::-webkit-details-marker { display: none; }
+      #research-view .research-column > details > summary::after { content: '⌄'; float: right; color: var(--muted); }
+      #research-view .research-column > details:not([open]) > summary::after { content: '›'; }
+      #research-view .research-column-body { padding: 14px 16px 16px; }
+      #research-view .research-column-body > :first-child { margin-top: 0; }
+      #research-view .research-column-body > :last-child { margin-bottom: 0; }
+      #research-view .research-status, #research-view .research-empty, #research-view .research-report-state { color: var(--muted); font-size: 12px; line-height: 1.6; }
+      #research-view .research-task-list, #research-view .research-timeline, #research-view .research-facet-list { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
+      #research-view .research-task-card { display: grid; gap: 5px; width: 100%; padding: 11px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); text-align: left; }
+      #research-view button.research-task-card { cursor: pointer; }
+      #research-view .research-task-card:hover, #research-view .research-task-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      #research-view .research-task-card-title { overflow-wrap: anywhere; font-weight: 700; }
+      #research-view .research-task-card-meta, #research-view .research-detail-meta, #research-view .research-event-meta, #research-view .research-summary-item, #research-view .research-plan-label { color: var(--muted); font: 10px/1.55 'DM Mono', monospace; }
+      #research-view .research-badge { display: inline-flex; width: fit-content; align-items: center; border-radius: 999px; padding: 3px 7px; background: var(--accent-soft); color: var(--accent); font: 10px 'DM Mono', monospace; }
+      #research-view .research-badge[data-status="failed"], #research-view .research-badge[data-status="cancelled"], #research-view .research-badge[data-status="interrupted"] { background: #fff0f0; color: #a33; }
+      #research-view .research-badge[data-status="completed"], #research-view .research-badge[data-status="partial"] { background: #ebf8ef; color: #287c43; }
+      #research-view .research-detail-head { display: grid; gap: 7px; margin-bottom: 16px; }
+      #research-view .research-detail-head h2 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
+      #research-view .research-detail-section { padding: 14px 0; border-top: 1px solid var(--line); }
+      #research-view .research-detail-section h3 { margin: 0 0 9px; font-size: 13px; }
+      #research-view .research-plan-rationale, #research-view .research-report-markdown, #research-view .research-summary-text { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+      #research-view .research-facet-list { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+      #research-view .research-facet-list li { padding: 8px; border-radius: 7px; background: var(--paper); color: var(--ink); font-size: 11px; overflow-wrap: anywhere; }
+      #research-view .research-timeline { max-height: 420px; overflow: auto; padding-right: 3px; }
+      #research-view .research-event { display: grid; gap: 4px; padding: 9px 10px; border-left: 3px solid var(--accent); border-radius: 0 7px 7px 0; background: #fafafd; }
+      #research-view .research-event-title { font-size: 11px; font-weight: 800; }
+      #research-view .research-event-summary { margin: 0; color: var(--ink); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
+      #research-view .research-summary-list { display: grid; gap: 8px; margin: 0; }
+      #research-view .research-summary-item { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 7px; }
+      #research-view .research-summary-item dt, #research-view .research-summary-item dd { margin: 0; }
+      #research-view .research-summary-item dd { color: var(--ink); text-align: right; overflow-wrap: anywhere; }
+      #research-view .research-report-markdown { max-height: 560px; overflow: auto; }
+      #research-view .research-report-markdown h1, #research-view .research-report-markdown h2, #research-view .research-report-markdown h3 { margin: 1em 0 .45em; font-size: 1.15em; }
+      #research-view .research-report-markdown p, #research-view .research-report-markdown ul, #research-view .research-report-markdown ol, #research-view .research-report-markdown pre { margin: .55em 0; }
+      #research-view .research-report-markdown pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+      #research-view .research-report-markdown a { color: var(--accent); }
+      #research-view .research-create-panel { border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.86); padding: 16px; }
+      #research-view .research-create-panel h2 { margin: 0 0 8px; font-size: 17px; }
+      #research-view .research-create-form { display: grid; gap: 12px; }
+      #research-view .research-create-form label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+      #research-view .research-create-form textarea, #research-view .research-create-form input, #research-view .research-create-form select { box-sizing: border-box; width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; background: #fff; color: var(--ink); font: inherit; }
+      #research-view .research-create-form textarea { min-height: 84px; resize: vertical; }
+      #research-view .research-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+      #research-view .research-checkbox { display: flex !important; align-items: center; gap: 7px !important; }
+      #research-view .research-checkbox input { width: auto; }
+      #research-view .research-conversation-action { min-height: 30px; margin-left: auto; padding: 5px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 700; }
+      #research-view .research-conversation-action:hover { background: #dedaff; }
+      @media (max-width: 1080px) { #research-view .research-grid { grid-template-columns: minmax(200px, .8fr) minmax(320px, 1.2fr); } #research-view .research-summary-column { grid-column: 1 / -1; } }
+      @media (max-width: 760px) { #research-view .research-workspace { min-height: calc(100vh - 60px); padding: 22px 16px 28px; } #research-view .research-page-header { align-items: flex-start; flex-direction: column; } #research-view .research-grid { grid-template-columns: 1fr; } #research-view .research-summary-column { grid-column: auto; } #research-view .research-column > details[open] > summary { position: sticky; top: 0; z-index: 1; background: #fff; } #research-view .research-form-grid { grid-template-columns: 1fr; } #research-view .research-timeline { max-height: none; } }
+    </style>
 </head>
 <body>
   <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">☰ <span>项目与会话</span></button>
@@ -35,6 +96,7 @@
       <nav class="side-nav" aria-label="主导航">
         <p class="nav-label">工作区</p>
         <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
+        <a class="nav-item" data-view="research" href="#research-view" aria-controls="research-view" aria-current="false"><span class="nav-icon">✦</span> 深度研究</a>
         <a class="nav-item" data-view="models" role="button" tabindex="0"><span class="nav-icon">◈</span> 模型库 <span class="nav-count" id="model-count">0</span></a>
         <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count">0</span></a>
         <a class="nav-item" data-view="memory" role="button" tabindex="0"><span class="nav-icon">✧</span> 记忆治理</a>
@@ -52,7 +114,7 @@
         <div class="breadcrumb"><span>对话</span><span class="slash">/</span><strong>新对话</strong></div>
         <div class="header-tools">
           <label class="mode-picker" for="mode-select"><span>模式</span>
-            <select id="mode-select"><option value="normal">Normal</option><option value="developer">Developer</option></select>
+            <select id="mode-select"><option value="normal">Normal</option><option value="developer">Developer</option><option value="research">深度研究</option></select>
           </label>
           <button class="icon-button" id="settings-button" type="button" aria-label="打开 Agent 设置" title="Agent 设置">⚙</button>
         </div>
@@ -114,6 +176,97 @@
         </section>
       </section>
       <footer class="footer-note">AI 可能会犯错，请核实重要信息。</footer>
+    </section>
+
+    <section class="main-area" id="research-view" hidden aria-labelledby="research-title">
+      <header class="topbar">
+        <div class="breadcrumb"><span>工作区</span><span class="slash">/</span><strong>深度研究</strong></div>
+      </header>
+      <section class="workspace research-workspace" aria-label="深度研究任务工作台">
+        <header class="research-page-header">
+          <div>
+            <p class="eyebrow">RESEARCH TASK WORKSPACE</p>
+            <h1 id="research-title">深度研究</h1>
+            <p class="subtitle" id="research-current-conversation">从当前会话创建并观察可恢复的研究任务。</p>
+          </div>
+          <div class="research-page-actions">
+            <button class="secondary-button" id="research-refresh-button" type="button">刷新任务</button>
+            <button class="send-button" id="research-approve-button" type="button" hidden disabled>批准计划并开始执行</button>
+            <button class="secondary-button danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
+          </div>
+        </header>
+
+        <div class="research-grid">
+          <aside class="research-column research-task-column" aria-label="研究任务列表">
+            <details open>
+              <summary>任务列表</summary>
+              <div class="research-column-body">
+                <p class="research-status" id="research-list-status" role="status" aria-live="polite">正在加载…</p>
+                <div class="research-task-list" id="research-task-list" role="list"></div>
+                <p class="research-empty" id="research-list-empty" hidden>当前没有研究任务。</p>
+              </div>
+            </details>
+          </aside>
+
+          <section class="research-column research-detail-column" aria-label="研究任务详情">
+            <div class="research-column-body">
+              <div class="research-detail-head" id="research-detail-head">
+                <span class="research-badge" id="research-detail-status" data-status="">未选择</span>
+                <h2 id="research-detail-title">选择一个任务</h2>
+                <p class="research-detail-meta" id="research-detail-meta">刷新后会先恢复任务详情，再连接实时事件。</p>
+              </div>
+              <p class="research-empty" id="research-detail-empty">从左侧选择任务，或从当前会话创建任务。</p>
+              <div class="research-detail-section" id="research-plan-section" hidden>
+                <h3>计划与研究范围</h3>
+                <p class="research-plan-label" id="research-plan-meta"></p>
+                <p class="research-plan-rationale" id="research-plan-rationale"></p>
+                <ul class="research-facet-list" id="research-plan-facets" aria-label="计划 facets"></ul>
+              </div>
+              <div class="research-detail-section" id="research-timeline-section" hidden>
+                <h3>事件时间线</h3>
+                <ol class="research-timeline" id="research-timeline" aria-live="polite"></ol>
+              </div>
+              <div class="research-detail-section" id="research-selection-section" hidden>
+                <h3>论文选集</h3>
+                <ul class="research-facet-list" id="research-selection-list" aria-label="已选论文"></ul>
+              </div>
+            </div>
+          </section>
+
+          <aside class="research-column research-summary-column" aria-label="研究摘要与报告">
+            <details open>
+              <summary>执行摘要</summary>
+              <div class="research-column-body">
+                <dl class="research-summary-list" id="research-summary-list"></dl>
+                <p class="research-summary-text" id="research-summary-text">等待任务事件。</p>
+              </div>
+            </details>
+            <details open>
+              <summary>只读报告</summary>
+              <div class="research-column-body">
+                <p class="research-report-state" id="research-report-state">任务完成后显示报告。</p>
+                <p class="research-report-state" id="research-report-limitations"></p>
+                <article class="research-report-markdown md-body" id="research-report-markdown" aria-label="研究报告" hidden></article>
+              </div>
+            </details>
+          </aside>
+        </div>
+
+        <section class="research-create-panel" aria-labelledby="research-create-title">
+          <h2 id="research-create-title">从当前会话创建研究任务</h2>
+          <p class="research-status" id="research-create-status" role="status" aria-live="polite">请从会话 URL（/c/{conversation_id}）进入，或先打开一个会话。</p>
+          <form class="research-create-form" id="research-create-form">
+            <label for="research-goal">研究目标<textarea id="research-goal" name="goal" maxlength="4000" required placeholder="描述需要系统研究的问题、范围和期望结论"></textarea></label>
+            <div class="research-form-grid">
+              <label for="research-quality">质量档位<select id="research-quality" name="quality_profile"><option value="speed">快速</option><option value="balanced" selected>均衡</option><option value="quality">高质量</option></select></label>
+              <label for="research-target-count">目标论文数<input id="research-target-count" name="target_paper_count" type="number" min="1" max="20" value="12" inputmode="numeric"></label>
+              <label for="research-language">报告语言<select id="research-language" name="language"><option value="zh" selected>中文</option><option value="en">English</option></select></label>
+            </div>
+            <label class="research-checkbox" for="research-review-plan"><input id="research-review-plan" name="review_plan_first" type="checkbox"> 先审核计划，再继续执行</label>
+            <div class="research-form-actions"><button class="send-button" id="research-create-button" type="submit">创建研究任务</button></div>
+          </form>
+        </section>
+      </section>
     </section>
 
     <section class="main-area" id="models-view" hidden>
@@ -514,6 +667,7 @@
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
+  <script src="/assets/research-tasks.js?v=1"></script>
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 -->
   <script src="/assets/app.js?v=43"></script>
 </body>

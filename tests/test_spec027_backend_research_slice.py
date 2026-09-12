@@ -42,6 +42,7 @@ from backend.app.main import app
 from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import override_provider
 from backend.app.platform.ollama import ResourceProbe, _GlobalWorkerScheduler
+from backend.app.research.application.model_router import ModelRouter
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.research_service import ResearchService, ResearchServiceError
@@ -137,7 +138,13 @@ def _temp_store():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _make_task(*, owner_id: str = TEST_OWNER, status: str = "draft", goal: str = "联邦学习 和 差分隐私") -> ResearchTask:
+def _make_task(
+    *,
+    owner_id: str = TEST_OWNER,
+    status: str = "draft",
+    goal: str = "联邦学习 和 差分隐私",
+    soft_budget_seconds: int = 1500,
+) -> ResearchTask:
     """手工构造 ResearchTask（不经服务层，便于直接铺数据做 store 级断言）。"""
     now = "2026-09-12T00:00:00Z"
     return ResearchTask(
@@ -150,7 +157,7 @@ def _make_task(*, owner_id: str = TEST_OWNER, status: str = "draft", goal: str =
         quality_profile="balanced",
         review_plan_first=False,
         target_paper_count=12,
-        soft_budget_seconds=1500,
+        soft_budget_seconds=soft_budget_seconds,
         status=status,
         current_plan_version=1,
         created_at=now,
@@ -182,6 +189,28 @@ def _fake_searcher():
     def _search(request):
         prefix = request.query[:4]
         return SearchOutcome((f"{prefix}-1", f"{prefix}-2"), 2, False, None)
+
+    return _search
+
+
+def _facet_replan_searcher(*, add_new_evidence: bool):
+    """固定 Re-plan 样本：首轮两个 facet 各返回一篇，补搜命中首轮缺口。"""
+    calls_by_facet: dict[str, int] = {}
+
+    def _search(request):
+        facet = request.facets[0]
+        calls_by_facet[facet] = calls_by_facet.get(facet, 0) + 1
+        if facet == "联邦学习":
+            paper_ids = ("paper-fed",)
+        elif calls_by_facet[facet] == 1:
+            paper_ids = ("paper-dp",)
+        elif add_new_evidence:
+            # 补搜把已有入选 ID 重新命中缺口 facet，覆盖结果不复制论文元数据。
+            paper_ids = ("paper-fed",)
+        else:
+            # 补搜只重复已有缺口候选，触发 no_new_evidence 停止语义。
+            paper_ids = ("paper-dp",)
+        return SearchOutcome(paper_ids, len(paper_ids), False, None)
 
     return _search
 
@@ -247,6 +276,54 @@ def _memory_provider(value):
     return lambda: value
 
 
+class _BudgetClock:
+    """可控 monotonic 时钟：测试预算边界，不依赖 wall clock。"""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class _AlwaysProbe:
+    """离线资源探针：按请求额度放行，并记录 release 配对。"""
+
+    def __init__(self) -> None:
+        self.releases = 0
+
+    def arbitrate(self, _research_task_id: str, requested: int) -> tuple[int, None]:
+        return requested, None
+
+    def release(self, _research_task_id: str) -> None:
+        self.releases += 1
+
+
+class _EscalatingRouter:
+    """只返回安全测试事件，不调用真实模型。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str | None]] = []
+
+    def execute(self, *, role, task_type=None, invoke):
+        self.calls.append((role, task_type))
+        invoke("test-model")
+        return (
+            SimpleNamespace(tier="strong", model="test-strong"),
+            None,
+            [
+                {
+                    "type": "model",
+                    "code": "MODEL_ESCALATED",
+                    "from_tier": "fast",
+                    "to_tier": "strong",
+                    "reason": "prompt-secret should never be forwarded",
+                    "prompt": "论文文本 should never be forwarded",
+                }
+            ],
+        )
+
+
 class _FakeMemoryRepository:
     """memory repository 的最小替身：只提供本 Task 需要的会话/项目归属查询。
 
@@ -301,7 +378,7 @@ class _FailingMemoryRepository:
         raise self.error
 
 
-def _build_service(store, *, searcher=None, memory_bytes=10 * GB):
+def _build_service(store, *, searcher=None, memory_bytes=10 * GB, model_router=None):
     """装配离线 ResearchService：假检索 + 假资源探针 + 真实 Planner / 编排器。
 
     资源探针注入**独立**的 `_GlobalWorkerScheduler`，避免与模块级全局单例相互污染
@@ -319,6 +396,7 @@ def _build_service(store, *, searcher=None, memory_bytes=10 * GB):
         store=store,
         search_adapter=CatalogSearchAdapter(searcher=searcher or _fake_searcher()),
         probe=probe,
+        model_router=model_router,
         planner=Planner(),
         executor=executor,
     )
@@ -555,6 +633,82 @@ class EndToEndTests(_ResearchSliceTestCase):
         # 论文元数据不复制：027 只持有 Spec015 目录 ID 引用。
         self.assertTrue(all(item.catalog_paper_id for item in selections))
 
+    def test_replan_adds_version_and_preserves_completed_work_items(self):
+        service = self.build_service(searcher=_facet_replan_searcher(add_new_evidence=True))
+        task = service.create_task(
+            owner_id=TEST_OWNER,
+            goal="联邦学习 和 差分隐私",
+            conversation_id="c-1",
+            target_paper_count=1,
+        )
+
+        final = _wait_terminal(service, task.research_task_id, TEST_OWNER)
+        self.assertEqual(final.status, "completed", f"Re-plan 后任务必须收敛：{final.status}")
+
+        plans = self.store.list_plans(task.research_task_id)
+        self.assertGreaterEqual(len(plans), 2)
+        self.assertEqual(plans[0].version, 1)
+        self.assertEqual(plans[0].status, "superseded")
+        current_plan = plans[-1]
+        self.assertGreaterEqual(current_plan.version, 2)
+        self.assertEqual(current_plan.status, "completed")
+
+        old_items = self.store.list_work_items(task.research_task_id, plan_version=1)
+        new_items = self.store.list_work_items(task.research_task_id, plan_version=current_plan.version)
+        old_ids = {item.work_item_id for item in old_items}
+        self.assertTrue(old_items)
+        old_completed_items = [item for item in old_items if item.status == "completed"]
+        self.assertTrue(old_completed_items, "旧计划至少应保留已完成的 search/evaluate/coverage WorkItem")
+        self.assertTrue(all(item.status == "completed" for item in old_completed_items))
+        self.assertTrue(all(item.work_item_id not in old_ids for item in new_items))
+        replan_items = [item for item in new_items if item.task_type == "replan"]
+        self.assertEqual(len(replan_items), 1)
+        self.assertEqual(replan_items[0].status, "completed")
+        self.assertTrue(
+            set(replan_items[0].depends_on) & {item.work_item_id for item in old_completed_items},
+            "Re-plan 应依赖旧计划中已完成的 coverage WorkItem，而不是覆盖它",
+        )
+
+        replan_count = sum(item.task_type == "replan" for item in self.store.list_work_items(task.research_task_id))
+        self.assertLessEqual(replan_count, contracts.BUDGET_CAPS["max_replan_rounds"])
+
+        relevant_events = [
+            event
+            for event in self.store.list_events(task.research_task_id)
+            if event.event_type in {"coverage", "plan", "report", "terminal"}
+        ]
+        self.assertTrue(relevant_events)
+        for event in relevant_events:
+            payload = json.loads(event.safe_payload_json)
+            self.assertIn("replan_round", payload, event.event_type)
+            self.assertIn("stop_reason", payload, event.event_type)
+            self.assertNotIn("title", event.safe_payload_json)
+            self.assertNotIn("abstract", event.safe_payload_json)
+
+        report = service.get_report(task.research_task_id, TEST_OWNER)
+        limitations = json.loads(report.limitations_json)
+        self.assertEqual(limitations["replan_round"], 1)
+        self.assertEqual(limitations["stop_reason"], "coverage_satisfied")
+
+    def test_replan_stops_on_no_new_evidence_within_budget(self):
+        service = self.build_service(searcher=_facet_replan_searcher(add_new_evidence=False))
+        task = service.create_task(
+            owner_id=TEST_OWNER,
+            goal="联邦学习 和 差分隐私",
+            conversation_id="c-1",
+            target_paper_count=1,
+        )
+
+        final = _wait_terminal(service, task.research_task_id, TEST_OWNER)
+        self.assertEqual(final.status, "partial")
+        self.assertLessEqual(
+            sum(item.task_type == "replan" for item in self.store.list_work_items(task.research_task_id)),
+            contracts.BUDGET_CAPS["max_replan_rounds"],
+        )
+        report = service.get_report(task.research_task_id, TEST_OWNER)
+        limitations = json.loads(report.limitations_json)
+        self.assertEqual(limitations["stop_reason"], "no_new_evidence")
+
     def test_all_searches_failed_converges_to_partial(self):
         service = self.build_service(searcher=_failing_searcher())
         task = service.create_task(owner_id=TEST_OWNER, goal="联邦学习 和 差分隐私", conversation_id="c-1")
@@ -575,6 +729,139 @@ class EndToEndTests(_ResearchSliceTestCase):
         limitations = json.loads(report.limitations_json)
         self.assertTrue(limitations["missing_facets"], "partial 必须给出未覆盖子方向")
         self.assertTrue(limitations["degraded_sources"], "partial 必须记录失败来源")
+
+
+class Task05RuntimeGateTests(_ResearchSliceTestCase):
+    def test_search_worker_router_args_and_escalation_event_are_safe_and_offline(self):
+        router = _EscalatingRouter()
+        task = self.store.create_task(_make_task(owner_id=TEST_OWNER, status="running"))
+        item = _make_work_item(
+            task.research_task_id,
+            work_item_id="wi-search-router",
+            task_type="search_catalog",
+            role="search-worker",
+            status="queued",
+        )
+        self.store.create_work_items(task.research_task_id, [item])
+        orchestrator = Orchestrator(
+            store=self.store,
+            search_adapter=CatalogSearchAdapter(searcher=_fake_searcher()),
+            planner=Planner(),
+            probe=_AlwaysProbe(),
+            model_router=router,
+        )
+
+        paper_ids, error_code = orchestrator._run_search(
+            task.research_task_id,
+            item,
+            "search-slot-1",
+        )
+
+        self.assertEqual(error_code, None)
+        self.assertEqual(paper_ids, ["q-1", "q-2"])
+        self.assertEqual(router.calls, [("search-worker", "search_catalog")])
+
+        model_events = [
+            json.loads(event.safe_payload_json)
+            for event in self.store.list_events(task.research_task_id)
+            if event.event_type == "model"
+        ]
+        self.assertEqual(model_events, [
+            {
+                "code": "MODEL_ESCALATED",
+                "from_tier": "fast",
+                "to_tier": "strong",
+                "reason": "fast output invalid after one retry",
+            }
+        ])
+
+    def test_soft_budget_stops_replan_and_finishes_safe_partial_report(self):
+        clock = _BudgetClock()
+
+        def _search(request):
+            # 首轮 search 已经开始后才越过软预算；该轮允许完成，后续补搜不得启动。
+            clock.now = 2.0
+            return _facet_replan_searcher(add_new_evidence=True)(request)
+
+        task = self.store.create_task(_make_task(owner_id=TEST_OWNER, status="running", soft_budget_seconds=1))
+        self.store.update_task(task.research_task_id, TEST_OWNER, target_paper_count=1)
+        orchestrator = Orchestrator(
+            store=self.store,
+            search_adapter=CatalogSearchAdapter(searcher=_search),
+            planner=Planner(),
+            probe=_AlwaysProbe(),
+            monotonic=clock,
+        )
+
+        result = orchestrator.run(task.research_task_id, TEST_OWNER)
+
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(len(self.store.list_plans(task.research_task_id)), 1)
+        self.assertEqual(
+            sum(item.task_type == "replan" for item in self.store.list_work_items(task.research_task_id)),
+            0,
+        )
+        self.assertEqual(
+            sum(item.task_type == "search_catalog" for item in self.store.list_work_items(task.research_task_id)),
+            2,
+        )
+
+        coverage_events = [
+            event
+            for event in self.store.list_events(task.research_task_id)
+            if event.event_type == "coverage"
+        ]
+        self.assertTrue(coverage_events)
+        self.assertEqual(json.loads(coverage_events[-1].safe_payload_json)["stop_reason"], "budget_exhausted")
+
+        report = self.store.get_report(task.research_task_id)
+        limitations = json.loads(report.limitations_json)
+        self.assertEqual(limitations["stop_reason"], "budget_exhausted")
+        self.assertTrue(limitations["missing_facets"])
+
+        report_events = [
+            event for event in self.store.list_events(task.research_task_id) if event.event_type == "report"
+        ]
+        terminal_events = [
+            event for event in self.store.list_events(task.research_task_id) if event.event_type == "terminal"
+        ]
+        self.assertEqual(json.loads(report_events[-1].safe_payload_json)["stop_reason"], "budget_exhausted")
+        self.assertEqual(json.loads(terminal_events[-1].safe_payload_json)["stop_reason"], "budget_exhausted")
+
+    def test_router_execute_escalation_is_projected_as_safe_model_event(self):
+        router = _EscalatingRouter()
+        task = self.store.create_task(_make_task(owner_id=TEST_OWNER, status="running"))
+        orchestrator = Orchestrator(
+            store=self.store,
+            search_adapter=CatalogSearchAdapter(searcher=_fake_searcher()),
+            planner=Planner(),
+            probe=_AlwaysProbe(),
+            model_router=router,
+        )
+
+        result = orchestrator.run(task.research_task_id, TEST_OWNER)
+
+        self.assertEqual(result.status, "completed")
+        self.assertTrue(router.calls)
+        self.assertIn(("paper-evaluator", "evaluate_papers"), router.calls)
+        self.assertIn(("research-critic", "check_coverage"), router.calls)
+        self.assertIn(("synthesizer", "synthesize_preliminary_report"), router.calls)
+
+        model_events = [
+            json.loads(event.safe_payload_json)
+            for event in self.store.list_events(task.research_task_id)
+            if event.event_type == "model"
+        ]
+        self.assertTrue(model_events)
+        for payload in model_events:
+            self.assertEqual(
+                set(payload),
+                {"code", "from_tier", "to_tier", "reason"},
+            )
+            self.assertEqual(payload["code"], "MODEL_ESCALATED")
+            self.assertEqual(payload["reason"], "fast output invalid after one retry")
+            self.assertNotIn("prompt-secret", json.dumps(payload, ensure_ascii=False))
+            self.assertNotIn("论文文本", json.dumps(payload, ensure_ascii=False))
 
 
 # =========================================================================== #
@@ -1155,6 +1442,27 @@ class ApiSmokeTests(_ResearchSliceTestCase):
         self.assertEqual(pending.status_code, 409)
         self.assertEqual(pending.json()["error"]["code"], "REPORT_NOT_READY")
 
+    def test_report_includes_safe_selection_projection_only(self):
+        task_id = self._create_completed_task()
+        response = self.client.get(f"/api/research-tasks/{task_id}/report")
+
+        self.assertEqual(response.status_code, 200)
+        selections = response.json()["selections"]
+        self.assertTrue(selections)
+        expected_fields = {
+            "catalog_paper_id",
+            "relevance",
+            "facets",
+            "evidence_level",
+            "created_at",
+        }
+        for selection in selections:
+            self.assertEqual(set(selection), expected_fields)
+            self.assertIsInstance(selection["facets"], list)
+            self.assertNotIn("title", selection)
+            self.assertNotIn("abstract", selection)
+
+
     def test_cancel_terminal_task_conflicts(self):
         task_id = self._create_completed_task()
         response = self.client.post(f"/api/research-tasks/{task_id}/cancel")
@@ -1251,6 +1559,71 @@ class ApiSmokeTests(_ResearchSliceTestCase):
         conflict = self.client.post(f"/api/research-tasks/{task_id}/feedback", json={"action": "approve"})
         self.assertEqual(conflict.status_code, 409)
         self.assertEqual(conflict.json()["error"]["code"], "INVALID_STATE_TRANSITION")
+
+
+# =========================================================================== #
+# I1. Task04 worker 事件与报告投影合同
+# =========================================================================== #
+
+
+class WorkerEventContractTests(_ResearchSliceTestCase):
+    """Task04 后端合同：worker 事件只能暴露状态更新后的调度摘要。"""
+
+    @staticmethod
+    def _model_router() -> ModelRouter:
+        return ModelRouter(
+            available_models_provider=lambda: ["qwen3.5:9b", "qwen3.8:27b-mlx"],
+        )
+
+    def test_worker_events_include_resolved_model_fields_for_success_and_failure(self):
+        service = self.build_service(model_router=self._model_router())
+        success = service.create_task(
+            owner_id=TEST_OWNER,
+            goal="联邦学习 和 差分隐私",
+            conversation_id="c-1",
+        )
+        self.assertEqual(_wait_terminal(service, success.research_task_id, TEST_OWNER).status, "completed")
+
+        events = [
+            json.loads(event.safe_payload_json)
+            for event in self.store.list_events(success.research_task_id)
+            if event.event_type == "worker"
+        ]
+        self.assertTrue(events)
+        for payload in events:
+            self.assertIn(payload["status"], {"running", "completed"})
+            self.assertTrue(payload.get("model_tier"))
+            self.assertTrue(payload.get("resolved_model"))
+            if payload["task_type"] == "search_catalog":
+                self.assertTrue(payload.get("worker_slot"))
+
+        for task_type in ("evaluate_papers", "check_coverage", "synthesize_preliminary_report"):
+            task_events = [payload for payload in events if payload["task_type"] == task_type]
+            self.assertTrue(task_events, f"缺少 {task_type} worker 事件")
+            self.assertEqual({payload["status"] for payload in task_events}, {"running", "completed"})
+
+        failed_service = self.build_service(searcher=_failing_searcher(), model_router=self._model_router())
+        failed = failed_service.create_task(
+            owner_id=TEST_OWNER,
+            goal="联邦学习 和 差分隐私",
+            conversation_id="c-1",
+        )
+        self.assertIn(_wait_terminal(failed_service, failed.research_task_id, TEST_OWNER).status, {"partial", "failed"})
+        failed_search_events = [
+            json.loads(event.safe_payload_json)
+            for event in self.store.list_events(failed.research_task_id)
+            if event.event_type == "worker"
+        ]
+        failed_payloads = [
+            payload
+            for payload in failed_search_events
+            if payload.get("task_type") == "search_catalog" and payload.get("status") == "failed"
+        ]
+        self.assertTrue(failed_payloads, "失败搜索必须产生 worker failed 事件")
+        for payload in failed_payloads:
+            self.assertTrue(payload.get("model_tier"))
+            self.assertTrue(payload.get("resolved_model"))
+            self.assertTrue(payload.get("worker_slot"))
 
 
 # =========================================================================== #

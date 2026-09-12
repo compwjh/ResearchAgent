@@ -1,8 +1,8 @@
-"""Spec027 稳定受控骨架编排器（Task03）。
+"""Spec027 稳定受控骨架编排器（Task05 增量）。
 
 编排流固定为 Spec027 §编排架构：
 `plan -> fan-out search_catalog(>=2 并行) -> fan-in evaluate_papers -> check_coverage
--> synthesize_preliminary_report`。
+-> bounded replan/search/evaluate/coverage -> synthesize_preliminary_report`。
 
 约束（spec-027 §编排架构 / §Planner、Critic 与停止合同 / §动态模型和 Worker）：
 - 状态变更**只能**走 ``store.update_task_status`` / ``store.update_work_item_status``
@@ -10,8 +10,8 @@
 - 每阶段前重新读 task：已处终态（如 cancelled）立即收尾返回，做到「取消后不再新增节点」。
 - 9B Worker 并发额度经 ``ResourceProbe.arbitrate`` 裁决，无论成功失败都在 finally 里 release。
 - 论文元数据不复制：选集只存 catalog_paper_id + relevance + facets_json + evidence_level。
-- Spec027 不做 Re-plan（属 Task05）：本编排器**不生成 replan 节点**，覆盖不足只记入
-  ``limitations_json``。
+- Re-plan 只在 coverage 有缺口时按 ``BUDGET_CAPS['max_replan_rounds']`` 有界生成新计划版本；
+  已完成版本的 WorkItem 不回写。
 - 禁止 paused 状态（Spec027 状态集无该态）；无 paused 相关分支。
 - 论文文本一律视为不可信证据：本模块不做任何 LLM 调用，评估与覆盖判定只用确定性规则
   （排序与打分见 ``_evaluate_papers`` docstring），因此注入文本无法改变计划或工具集。
@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass, replace
@@ -68,15 +69,18 @@ class OrchestratorResult:
 
 
 class Orchestrator:
-    """稳定受控骨架：plan -> fan-out search -> fan-in evaluate -> coverage -> synthesize。"""
+    """稳定受控骨架：plan -> search -> evaluate -> coverage -> bounded re-plan -> synthesize。"""
 
-    def __init__(self, *, store, search_adapter=None, model_router=None, planner=None, probe=None) -> None:
+    def __init__(
+        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None
+    ) -> None:
         self._store = store
         # 检索唯一出口：Spec015 CatalogSearchAdapter（未注入时走其内部惰性装配）。
         self._adapter = search_adapter or CatalogSearchAdapter()
         # Task03 确定性骨架不调用 LLM；router 仅作为「记录实际模型/档位」的接缝保留。
         self._router = model_router
         self._planner = planner or Planner()
+        self._monotonic = monotonic or time.monotonic
         # probe 默认 ResourceProbe()；惰性导入避免编排器模块在导入期就拉起 ollama 依赖。
         if probe is None:
             from backend.app.platform.ollama import ResourceProbe
@@ -97,7 +101,12 @@ class Orchestrator:
         if task.status in TASK_TERMINAL:
             return self._result(research_task_id, task.status, task.current_plan_version, 0, None, (), False, None)
         try:
-            return self._run_pipeline(research_task_id, owner_id, plan_version=1)
+            return self._run_pipeline(
+                research_task_id,
+                owner_id,
+                plan_version=1,
+                started_at=self._monotonic(),
+            )
         except InvalidStateTransition:
             # 任务被取消/并发改态导致转移失败：不吞错，读出当前态原样返回。
             current = self._store.get_task(research_task_id, owner_id)
@@ -118,8 +127,16 @@ class Orchestrator:
     # 主流程
     # ------------------------------------------------------------------ #
 
-    def _run_pipeline(self, research_task_id: str, owner_id: str, plan_version: int) -> OrchestratorResult:
+    def _run_pipeline(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        plan_version: int,
+        *,
+        started_at: float | None = None,
+    ) -> OrchestratorResult:
         store = self._store
+        started_at = self._monotonic() if started_at is None else started_at
 
         # 阶段 2：draft -> planning -> running（每阶段前重读 task，已终态即收尾）。
         task = self._refresh(research_task_id, owner_id)
@@ -199,6 +216,8 @@ class Orchestrator:
             "plan",
             {
                 "plan_version": plan_version,
+                "replan_round": 0,
+                "stop_reason": "replan_pending",
                 "facets": list(draft.facets),
                 "items": [
                     {"id": id_map[item["id"]], "task_type": item["task_type"], "role": item["role"]}
@@ -207,129 +226,94 @@ class Orchestrator:
             },
         )
 
-        # 阶段 4：fan-out search_catalog（>=2 并行；额度由 ResourceProbe 裁决）。
-        task = self._refresh(research_task_id, owner_id)
-        if isinstance(task, OrchestratorResult):
-            return task
-        search_items = [
-            item
-            for item in store.list_work_items(research_task_id, plan_version=plan_version)
-            if item.task_type == "search_catalog"
-        ]
-        requested = len(search_items)
-        # 额度变量先初始化在 try 外：`candidates` / `facets_by_paper` / `degraded_sources`
-        # 在 try 之后（阶段 5-7）仍被使用，作用域不能收进 try。
         candidates: list[str] = []  # 保序去重的候选 catalog_paper_id
         facets_by_paper: dict[str, list[str]] = {}
         degraded_sources: list[str] = []
-        granted = 0
-        probe_code: str | None = None
-        try:
-            # `arbitrate`（领额度）必须与 `release` 在**同一个** try/finally 保护下：
-            # 二者之间还有写库的 `_emit`（任务行被项目级联删除时抛 ResearchTaskNotFound），
-            # 若把 arbitrate 留在 try 之外，该窗口一旦抛异常就永不 release，
-            # 全局 `_GlobalWorkerScheduler` 额度将永久泄漏（后续任务 granted=0）。
-            granted, probe_code = self._probe.arbitrate(research_task_id, requested)
-            if probe_code is not None:
-                self._emit(research_task_id, "worker", {"code": probe_code, "granted": granted})
-            if probe_code:
-                degraded_sources.append(f"probe:{probe_code}")
-            slots = max(1, granted)
-            if requested and granted > 0:
-                with ThreadPoolExecutor(max_workers=slots) as pool:
-                    futures = [
-                        (item, pool.submit(self._run_search, research_task_id, item, f"w{index % slots}"))
-                        for index, item in enumerate(search_items)
-                    ]
-                    # 按提交顺序汇总，保证候选顺序与事件顺序可复现。
-                    for item, future in futures:
-                        ids, error_code = self._collect_search(future)
-                        if not ids:
-                            degraded_sources.append(f"{item.work_item_id}:{error_code}")
-                            continue
-                        facet = self._facet_of(item)
-                        for paper_id in ids:
-                            if paper_id not in facets_by_paper:
-                                facets_by_paper[paper_id] = []
-                                candidates.append(paper_id)
-                            if facet and facet not in facets_by_paper[paper_id]:
-                                facets_by_paper[paper_id].append(facet)
-            elif requested:
-                # 领不到 Worker：不伪造结果，直接把 search 置为 failed（可见 RESOURCE_PROBE_FAILED）。
-                for item in search_items:
-                    store.update_work_item_status(item.work_item_id, "failed", error_code="RESOURCE_PROBE_FAILED")
-                    self._emit(
-                        research_task_id,
-                        "worker",
-                        {
-                            "work_item_id": item.work_item_id,
-                            "status": "failed",
-                            "error_code": "RESOURCE_PROBE_FAILED",
-                        },
-                    )
-                    degraded_sources.append(f"{item.work_item_id}:RESOURCE_PROBE_FAILED")
-        finally:
-            self._probe.release(research_task_id)
+        current_plan_version = plan_version
+        replan_round = 0
+        selected: list[dict] = []
+        gaps: tuple[str, ...] = ()
+        stop_reason = "coverage_satisfied"
 
-        # 阶段 5：fan-in evaluate_papers（确定性评分，catalog_paper_ids 运行时已汇总）。
-        task = self._refresh(research_task_id, owner_id)
-        if isinstance(task, OrchestratorResult):
-            return task
-        selected = self._evaluate_papers(candidates, facets_by_paper, task.target_paper_count)
-        eval_item = self._find_item(research_task_id, plan_version, "evaluate_papers")
-        if eval_item is not None:
-            store.update_work_item_status(eval_item.work_item_id, "running", **self._model_kwargs(eval_item.role))
-            self._emit(research_task_id, "worker", {"work_item_id": eval_item.work_item_id, "status": "running"})
-            store.update_work_item_status(
-                eval_item.work_item_id,
-                "completed",
-                output_json=json.dumps(
+        while True:
+            if self._soft_budget_exhausted(started_at, task.soft_budget_seconds):
+                current_task = self._refresh(research_task_id, owner_id)
+                if isinstance(current_task, OrchestratorResult):
+                    return current_task
+                gaps = self._coverage_gaps(draft.facets, selected, facets_by_paper)
+                stop_reason = "budget_exhausted"
+                self._emit(
+                    research_task_id,
+                    "coverage",
                     {
-                        "selected": [item["catalog_paper_id"] for item in selected],
-                        "candidate_count": len(candidates),
+                        "gaps": list(gaps),
+                        "selected_count": len(selected),
+                        "round": replan_round + 1,
+                        "replan_round": replan_round,
+                        "stop_reason": stop_reason,
                     },
-                    ensure_ascii=False,
-                ),
-            )
-            self._emit(
-                research_task_id,
-                "worker",
-                {
-                    "work_item_id": eval_item.work_item_id,
-                    "status": "completed",
-                    "selected_count": len(selected),
-                },
-            )
-        store.replace_selections(
-            research_task_id,
-            [
-                ResearchPaperSelection(
-                    research_task_id=research_task_id,
-                    catalog_paper_id=item["catalog_paper_id"],
-                    relevance=item["relevance"],
-                    facets_json=json.dumps(item["facets"], ensure_ascii=False),
-                    evidence_level=item["evidence_level"],
-                    created_at=_utcnow(),
                 )
-                for item in selected
-            ],
-        )
+                break
+            round_result = self._run_search_evaluate_coverage(
+                research_task_id=research_task_id,
+                owner_id=owner_id,
+                plan_version=current_plan_version,
+                facets=draft.facets,
+                candidates=candidates,
+                facets_by_paper=facets_by_paper,
+                degraded_sources=degraded_sources,
+                round_number=replan_round + 1,
+            )
+            if isinstance(round_result, OrchestratorResult):
+                return round_result
+            selected, gaps, new_candidate_count = round_result
 
-        # 阶段 6：check_coverage（确定性：没有任何入选论文的 facet 记为 gap）。
-        task = self._refresh(research_task_id, owner_id)
-        if isinstance(task, OrchestratorResult):
-            return task
-        gaps = self._coverage_gaps(draft.facets, selected, facets_by_paper)
-        cov_item = self._find_item(research_task_id, plan_version, "check_coverage")
-        if cov_item is not None:
-            store.update_work_item_status(cov_item.work_item_id, "running", **self._model_kwargs(cov_item.role))
-            self._emit(research_task_id, "worker", {"work_item_id": cov_item.work_item_id, "status": "running"})
-            store.update_work_item_status(cov_item.work_item_id, "completed")
+            available_searches = BUDGET_CAPS["max_search_items"] - sum(
+                item.task_type == "search_catalog" for item in store.list_work_items(research_task_id)
+            )
+            if self._soft_budget_exhausted(started_at, task.soft_budget_seconds):
+                stop_reason = "budget_exhausted"
+            elif not gaps:
+                stop_reason = "coverage_satisfied"
+            elif replan_round > 0 and new_candidate_count == 0:
+                stop_reason = "no_new_evidence"
+            elif replan_round >= BUDGET_CAPS["max_replan_rounds"]:
+                stop_reason = "replan_limit"
+            elif available_searches <= 0:
+                stop_reason = "search_item_cap"
+            else:
+                stop_reason = "replan_pending"
             self._emit(
                 research_task_id,
                 "coverage",
-                {"gaps": list(gaps), "selected_count": len(selected), "round": 1},
+                {
+                    "gaps": list(gaps),
+                    "selected_count": len(selected),
+                    "round": replan_round + 1,
+                    "replan_round": replan_round,
+                    "stop_reason": stop_reason,
+                },
             )
+            # 首轮缺口也允许先尝试一次补搜；后续若没有新增 catalog 证据则收敛为 partial。
+            if stop_reason != "replan_pending":
+                break
+
+            current_task = self._refresh(research_task_id, owner_id)
+            if isinstance(current_task, OrchestratorResult):
+                return current_task
+            next_version = current_plan_version + 1
+            next_gaps = gaps[:available_searches]
+            self._create_replan(
+                research_task_id=research_task_id,
+                previous_plan_version=current_plan_version,
+                next_plan_version=next_version,
+                draft=draft,
+                task=current_task,
+                gaps=next_gaps,
+                round_number=replan_round + 1,
+            )
+            current_plan_version = next_version
+            replan_round += 1
 
         # 阶段 7：synthesize_preliminary_report（catalog 证据；局限写入 limitations_json）。
         task = self._refresh(research_task_id, owner_id)
@@ -346,49 +330,395 @@ class Orchestrator:
             "missing_facets": list(gaps),
             "degraded_sources": degraded_sources,
             "evidence_level": _EVIDENCE_LEVEL,
+            "replan_round": replan_round,
+            "stop_reason": stop_reason,
         }
         report = PreliminaryReport(
-            report_id=f"report-{research_task_id}-v{plan_version}",
+            report_id=f"report-{research_task_id}-v{current_plan_version}",
             research_task_id=research_task_id,
-            plan_version=plan_version,
+            plan_version=current_plan_version,
             status=_REPORT_STATUS,
             markdown=markdown,
             limitations_json=json.dumps(limitations, ensure_ascii=False),
             created_at=_utcnow(),
         )
         store.save_report(report)
-        syn_item = self._find_item(research_task_id, plan_version, "synthesize_preliminary_report")
+        completed_task = self._refresh(research_task_id, owner_id)
+        if isinstance(completed_task, OrchestratorResult):
+            return completed_task
+        current_plan = store.get_plan(research_task_id, current_plan_version)
+        if current_plan is not None and current_plan.status == "active":
+            store.update_plan_status(research_task_id, current_plan_version, "completed")
+        syn_item = self._find_item(research_task_id, current_plan_version, "synthesize_preliminary_report")
         if syn_item is not None:
-            store.update_work_item_status(syn_item.work_item_id, "running", **self._model_kwargs(syn_item.role))
-            self._emit(research_task_id, "worker", {"work_item_id": syn_item.work_item_id, "status": "running"})
-            store.update_work_item_status(syn_item.work_item_id, "completed")
+            running_item = store.update_work_item_status(
+                syn_item.work_item_id,
+                "running",
+                **self._model_kwargs(
+                    syn_item.role,
+                    research_task_id=research_task_id,
+                    task_type=syn_item.task_type,
+                ),
+            )
+            self._emit(
+                research_task_id,
+                "worker",
+                self._worker_event_payload(running_item, "running"),
+            )
+            completed_item = store.update_work_item_status(syn_item.work_item_id, "completed")
+            self._emit(
+                research_task_id,
+                "worker",
+                self._worker_event_payload(completed_item, "completed"),
+            )
         self._emit(
             research_task_id,
             "report",
-            {"report_id": report.report_id, "plan_version": plan_version},
+            {
+                "report_id": report.report_id,
+                "plan_version": current_plan_version,
+                "replan_round": replan_round,
+                "stop_reason": stop_reason,
+            },
         )
 
         # 阶段 8：收尾（无入选 / 有缺口 / 有降级来源 -> partial，否则 completed）。
         task = self._refresh(research_task_id, owner_id)
         if isinstance(task, OrchestratorResult):
             return task
-        degraded = bool(gaps) or bool(degraded_sources)
+        degraded = bool(gaps) or bool(degraded_sources) or stop_reason == "budget_exhausted"
         final_status = "partial" if (not selected or degraded) else "completed"
         store.update_task_status(research_task_id, owner_id, final_status)
         self._emit(
             research_task_id,
             "terminal",
-            {"status": final_status, "selected_count": len(selected), "gaps": list(gaps)},
+            {
+                "status": final_status,
+                "selected_count": len(selected),
+                "gaps": list(gaps),
+                "replan_round": replan_round,
+                "stop_reason": stop_reason,
+            },
         )
         return self._result(
             research_task_id,
             final_status,
-            plan_version,
+            current_plan_version,
             len(selected),
             report.report_id,
             gaps,
             degraded,
             None,
+        )
+
+    def _run_search_evaluate_coverage(
+        self,
+        *,
+        research_task_id: str,
+        owner_id: str,
+        plan_version: int,
+        facets: tuple[str, ...],
+        candidates: list[str],
+        facets_by_paper: dict[str, list[str]],
+        degraded_sources: list[str],
+        round_number: int,
+    ):
+        """执行一个计划版本的 search -> evaluate -> coverage 轮次。"""
+        store = self._store
+        task = self._refresh(research_task_id, owner_id)
+        if isinstance(task, OrchestratorResult):
+            return task
+        search_items = [
+            item
+            for item in store.list_work_items(research_task_id, plan_version=plan_version)
+            if item.task_type == "search_catalog"
+        ]
+        requested = len(search_items)
+        before_candidates = len(candidates)
+        try:
+            granted, probe_code = self._probe.arbitrate(research_task_id, requested)
+            if probe_code is not None:
+                self._emit(research_task_id, "worker", {"code": probe_code, "granted": granted})
+            if probe_code:
+                degraded_sources.append(f"probe:{probe_code}")
+            slots = max(1, granted)
+            if requested and granted > 0:
+                with ThreadPoolExecutor(max_workers=slots) as pool:
+                    futures = [
+                        (item, pool.submit(self._run_search, research_task_id, item, f"w{index % slots}"))
+                        for index, item in enumerate(search_items)
+                    ]
+                    for item, future in futures:
+                        ids, error_code = self._collect_search(future)
+                        if not ids:
+                            degraded_sources.append(f"{item.work_item_id}:{error_code}")
+                            continue
+                        facet = self._facet_of(item)
+                        for paper_id in ids:
+                            if paper_id not in facets_by_paper:
+                                facets_by_paper[paper_id] = []
+                                candidates.append(paper_id)
+                            if facet and facet not in facets_by_paper[paper_id]:
+                                facets_by_paper[paper_id].append(facet)
+            elif requested:
+                for item in search_items:
+                    updated_item = store.update_work_item_status(
+                        item.work_item_id, "failed", error_code="RESOURCE_PROBE_FAILED"
+                    )
+                    self._emit(
+                        research_task_id,
+                        "worker",
+                        self._worker_event_payload(
+                            updated_item,
+                            "failed",
+                            error_code="RESOURCE_PROBE_FAILED",
+                        ),
+                    )
+                    degraded_sources.append(f"{item.work_item_id}:RESOURCE_PROBE_FAILED")
+        finally:
+            self._probe.release(research_task_id)
+
+        task = self._refresh(research_task_id, owner_id)
+        if isinstance(task, OrchestratorResult):
+            return task
+        selected = self._evaluate_papers(candidates, facets_by_paper, task.target_paper_count)
+        eval_item = self._find_item(research_task_id, plan_version, "evaluate_papers")
+        if eval_item is not None:
+            running_item = store.update_work_item_status(
+                eval_item.work_item_id,
+                "running",
+                **self._model_kwargs(
+                    eval_item.role,
+                    research_task_id=research_task_id,
+                    task_type=eval_item.task_type,
+                ),
+            )
+            self._emit(research_task_id, "worker", self._worker_event_payload(running_item, "running"))
+            completed_item = store.update_work_item_status(
+                eval_item.work_item_id,
+                "completed",
+                output_json=json.dumps(
+                    {
+                        "selected": [item["catalog_paper_id"] for item in selected],
+                        "candidate_count": len(candidates),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            self._emit(
+                research_task_id,
+                "worker",
+                self._worker_event_payload(completed_item, "completed", selected_count=len(selected)),
+            )
+        store.replace_selections(
+            research_task_id,
+            [
+                ResearchPaperSelection(
+                    research_task_id=research_task_id,
+                    catalog_paper_id=item["catalog_paper_id"],
+                    relevance=item["relevance"],
+                    facets_json=json.dumps(item["facets"], ensure_ascii=False),
+                    evidence_level=item["evidence_level"],
+                    created_at=_utcnow(),
+                )
+                for item in selected
+            ],
+        )
+
+        task = self._refresh(research_task_id, owner_id)
+        if isinstance(task, OrchestratorResult):
+            return task
+        gaps = self._coverage_gaps(facets, selected, facets_by_paper)
+        cov_item = self._find_item(research_task_id, plan_version, "check_coverage")
+        if cov_item is not None:
+            running_item = store.update_work_item_status(
+                cov_item.work_item_id,
+                "running",
+                **self._model_kwargs(
+                    cov_item.role,
+                    research_task_id=research_task_id,
+                    task_type=cov_item.task_type,
+                ),
+            )
+            self._emit(research_task_id, "worker", self._worker_event_payload(running_item, "running"))
+            completed_item = store.update_work_item_status(cov_item.work_item_id, "completed")
+            self._emit(research_task_id, "worker", self._worker_event_payload(completed_item, "completed"))
+        return selected, gaps, len(candidates) - before_candidates
+
+    def _create_replan(
+        self,
+        *,
+        research_task_id: str,
+        previous_plan_version: int,
+        next_plan_version: int,
+        draft,
+        task,
+        gaps: tuple[str, ...],
+        round_number: int,
+    ) -> None:
+        """为 coverage 缺口创建不可覆盖的新计划版本及最小补搜链路。"""
+        store = self._store
+        now = _utcnow()
+        prefix = f"{research_task_id}-v{next_plan_version}-r{round_number}"
+        replan_id = f"{prefix}-replan"
+        search_ids = [f"{prefix}-s{index}" for index in range(1, len(gaps) + 1)]
+        evaluate_id = f"{prefix}-e1"
+        coverage_id = f"{prefix}-c1"
+        synthesize_id = f"{prefix}-syn"
+        previous_coverage = self._find_item(research_task_id, previous_plan_version, "check_coverage")
+        search_items = [
+            {
+                "id": search_id,
+                "task_type": "search_catalog",
+                "role": "search-worker",
+                "depends_on": [],
+                "params": {
+                    "query": f"{task.goal} {gap}",
+                    "facets": [gap],
+                    "max_results": max(1, task.target_paper_count // max(1, len(gaps))),
+                    "language": task.language,
+                },
+            }
+            for search_id, gap in zip(search_ids, gaps, strict=True)
+        ]
+        work_items = [
+            ResearchWorkItem(
+                work_item_id=replan_id,
+                research_task_id=research_task_id,
+                plan_version=next_plan_version,
+                task_type="replan",
+                role="planner",
+                depends_on_json=json.dumps(
+                    [previous_coverage.work_item_id] if previous_coverage is not None else [],
+                    ensure_ascii=False,
+                ),
+                input_json=json.dumps(
+                    {
+                        "rationale": "coverage gaps require bounded catalog search",
+                        "add_search_for_facets": list(gaps),
+                    },
+                    ensure_ascii=False,
+                ),
+                status="queued",
+                attempt=0,
+                created_at=now,
+                updated_at=now,
+            ),
+            *[
+                ResearchWorkItem(
+                    work_item_id=item["id"],
+                    research_task_id=research_task_id,
+                    plan_version=next_plan_version,
+                    task_type=item["task_type"],
+                    role=item["role"],
+                    depends_on_json=json.dumps(item["depends_on"], ensure_ascii=False),
+                    input_json=json.dumps(item["params"], ensure_ascii=False),
+                    status="queued",
+                    attempt=0,
+                    created_at=now,
+                    updated_at=now,
+                )
+                for item in search_items
+            ],
+            ResearchWorkItem(
+                work_item_id=evaluate_id,
+                research_task_id=research_task_id,
+                plan_version=next_plan_version,
+                task_type="evaluate_papers",
+                role="paper-evaluator",
+                depends_on_json=json.dumps(search_ids, ensure_ascii=False),
+                input_json=json.dumps(
+                    {"catalog_paper_ids": [], "relevance_threshold": 0.2, "facets": list(draft.facets)},
+                    ensure_ascii=False,
+                ),
+                status="queued",
+                attempt=0,
+                created_at=now,
+                updated_at=now,
+            ),
+            ResearchWorkItem(
+                work_item_id=coverage_id,
+                research_task_id=research_task_id,
+                plan_version=next_plan_version,
+                task_type="check_coverage",
+                role="research-critic",
+                depends_on_json=json.dumps([evaluate_id], ensure_ascii=False),
+                input_json=json.dumps({"goal": task.goal, "gap_threshold": 0.3}, ensure_ascii=False),
+                status="queued",
+                attempt=0,
+                created_at=now,
+                updated_at=now,
+            ),
+            ResearchWorkItem(
+                work_item_id=synthesize_id,
+                research_task_id=research_task_id,
+                plan_version=next_plan_version,
+                task_type="synthesize_preliminary_report",
+                role="synthesizer",
+                depends_on_json=json.dumps([coverage_id], ensure_ascii=False),
+                input_json=json.dumps(
+                    {
+                        "goal": task.goal,
+                        "selected_paper_ids": [],
+                        "language": task.language,
+                        "evidence_level": _EVIDENCE_LEVEL,
+                    },
+                    ensure_ascii=False,
+                ),
+                status="queued",
+                attempt=0,
+                created_at=now,
+                updated_at=now,
+            ),
+        ]
+        store.create_plan(
+            ResearchPlan(
+                research_task_id=research_task_id,
+                version=next_plan_version,
+                planner_model=draft.planner_model,
+                rationale_summary=f"bounded re-plan round {round_number}: coverage gaps",
+                facets_json=json.dumps(list(draft.facets), ensure_ascii=False),
+                status="active",
+                created_at=now,
+            )
+        )
+        store.update_plan_status(research_task_id, previous_plan_version, "superseded")
+        store.update_task(research_task_id, task.owner_id, current_plan_version=next_plan_version)
+        store.create_work_items(research_task_id, work_items)
+        self._emit(
+            research_task_id,
+            "plan",
+            {
+                "plan_version": next_plan_version,
+                "previous_plan_version": previous_plan_version,
+                "replan_round": round_number,
+                "stop_reason": "replan_pending",
+                "facets": list(gaps),
+                "items": [
+                    {"id": item.work_item_id, "task_type": item.task_type, "role": item.role}
+                    for item in work_items
+                ],
+            },
+        )
+        replan_item = store.update_work_item_status(
+            replan_id,
+            "running",
+            **self._model_kwargs(
+                "planner",
+                research_task_id=research_task_id,
+                task_type="replan",
+            ),
+        )
+        self._emit(research_task_id, "worker", self._worker_event_payload(replan_item, "running"))
+        completed_replan = store.update_work_item_status(
+            replan_id,
+            "completed",
+            output_json=json.dumps({"add_search_for_facets": list(gaps)}, ensure_ascii=False),
+        )
+        self._emit(
+            research_task_id,
+            "worker",
+            self._worker_event_payload(completed_replan, "completed"),
         )
 
     # ------------------------------------------------------------------ #
@@ -402,13 +732,20 @@ class Orchestrator:
         检索唯一出口是 ``CatalogSearchAdapter``（Spec015），本方法不自建第二套检索。
         """
         store = self._store
-        store.update_work_item_status(
-            item.work_item_id, "running", worker_slot=slot, **self._model_kwargs(item.role)
+        running_item = store.update_work_item_status(
+            item.work_item_id,
+            "running",
+            worker_slot=slot,
+            **self._model_kwargs(
+                item.role,
+                research_task_id=research_task_id,
+                task_type=item.task_type,
+            ),
         )
         self._emit(
             research_task_id,
             "worker",
-            {"work_item_id": item.work_item_id, "status": "running", "worker_slot": slot},
+            self._worker_event_payload(running_item, "running"),
         )
         params = item.input_params
         try:
@@ -424,14 +761,14 @@ class Orchestrator:
         if not ids:
             # 拿不到结果不伪造：写失败码（adapter 已给码优先，否则 SOURCE_UNAVAILABLE）。
             error_code = (outcome.error_code if outcome is not None else None) or _DEFAULT_SEARCH_ERROR
-            store.update_work_item_status(item.work_item_id, "failed", error_code=error_code)
+            failed_item = store.update_work_item_status(item.work_item_id, "failed", error_code=error_code)
             self._emit(
                 research_task_id,
                 "worker",
-                {"work_item_id": item.work_item_id, "status": "failed", "error_code": error_code},
+                self._worker_event_payload(failed_item, "failed", error_code=error_code),
             )
             return [], error_code
-        store.update_work_item_status(
+        completed_item = store.update_work_item_status(
             item.work_item_id,
             "completed",
             output_json=json.dumps({"catalog_paper_ids": ids}, ensure_ascii=False),
@@ -439,7 +776,7 @@ class Orchestrator:
         self._emit(
             research_task_id,
             "worker",
-            {"work_item_id": item.work_item_id, "status": "completed", "catalog_paper_ids": ids},
+            self._worker_event_payload(completed_item, "completed", catalog_paper_ids=ids),
         )
         return ids, None
 
@@ -492,7 +829,7 @@ class Orchestrator:
     def _coverage_gaps(
         facets: tuple[str, ...], selected: list[dict], facets_by_paper: dict[str, list[str]]
     ) -> tuple[str, ...]:
-        """覆盖缺口 = 没有任何入选论文命中的 facet（Spec027 不做 Re-plan，只记录）。"""
+        """覆盖缺口 = 没有任何入选论文命中的 facet。"""
         covered: set[str] = set()
         for item in selected:
             covered.update(facets_by_paper.get(item["catalog_paper_id"], ()))
@@ -543,7 +880,7 @@ class Orchestrator:
         else:
             lines.append("- 各子方向均有入选论文支撑。")
         lines.append("- 证据等级为 catalog：未下载或分析全文，结论不可据此推断方法与实验细节。")
-        lines.append("- Spec027 不做 Re-plan：覆盖缺口只记录于本报告与 limitations，不自动补搜。")
+        lines.append("- 仅执行有界 catalog 补搜；仍未覆盖的子方向保留在本报告与 limitations 中。")
         lines.append("")
         lines.append("> 所有结论均须带论文引用；此处仅以 catalog_paper_id 引用 Spec015 全局目录，不复制元数据。")
         return "\n".join(lines)
@@ -587,16 +924,63 @@ class Orchestrator:
         facets = item.input_params.get("facets") or []
         return facets[0] if facets else ""
 
-    def _model_kwargs(self, role: str) -> dict:
-        """注入了 ModelRouter 时解析实际模型/档位写回 WorkItem；未注入则不动模型字段。
+    def _soft_budget_exhausted(self, started_at: float, soft_budget_seconds: int) -> bool:
+        """返回软预算是否已到达；仅在阶段边界阻止尚未开始的新工作。"""
+        return self._monotonic() - started_at >= max(0, int(soft_budget_seconds))
 
-        Task03 为确定性骨架，不主动调用模型；这里只在显式注入 router 时记录解析结果，
-        避免默认构造就去打 Ollama（离线测试也必须可跑）。
+    def _model_kwargs(self, role: str, *, research_task_id: str | None = None, task_type: str | None = None) -> dict:
+        """解析实际模型并转发安全的 router 事件；未注入 router 时保持确定性骨架。
+
+        ``ModelRouter.execute`` 的 invoke 接缝只收到一个确定性成功探针，不执行 LLM 或网络调用；
+        注入的测试 router 可以返回升级事件，从而验证研究任务事件流而无需真实模型。
         """
         if self._router is None:
             return {}
-        choice = self._router.resolve(role=role)
+        execute = getattr(self._router, "execute", None)
+        if callable(execute):
+            choice, _value, events = execute(
+                role=role,
+                task_type=task_type,
+                invoke=lambda _model: (True, None),
+            )
+            if research_task_id is not None:
+                for event in events or ():
+                    safe_payload = self._safe_model_event_payload(event)
+                    if safe_payload is not None:
+                        self._emit(research_task_id, "model", safe_payload)
+        else:
+            choice = self._router.resolve(role=role, task_type=task_type)
         return {"model_tier": choice.tier, "resolved_model": choice.model}
+
+    @staticmethod
+    def _safe_model_event_payload(event: object) -> dict | None:
+        """只接受升级事件的稳定字段，拒绝 prompt/论文文本等任意 router 扩展字段。"""
+        if not isinstance(event, dict) or event.get("code") != "MODEL_ESCALATED":
+            return None
+        if event.get("from_tier") != "fast" or event.get("to_tier") != "strong":
+            return None
+        return {
+            "code": "MODEL_ESCALATED",
+            "from_tier": "fast",
+            "to_tier": "strong",
+            "reason": "fast output invalid after one retry",
+        }
+
+    @staticmethod
+    def _worker_event_payload(item: ResearchWorkItem, status: str, **extra) -> dict:
+        """从状态更新后的 WorkItem 构造安全 worker 事件，不包含 Prompt 或思维链。"""
+        payload = {
+            "work_item_id": item.work_item_id,
+            "task_type": item.task_type,
+            "role": item.role,
+            "status": status,
+        }
+        for field in ("model_tier", "resolved_model", "worker_slot"):
+            value = getattr(item, field, None)
+            if value is not None:
+                payload[field] = value
+        payload.update(extra)
+        return payload
 
     def _emit(self, research_task_id: str, event_type: str, payload: dict) -> None:
         """追加事件；event_type 必须来自 contracts.EVENT_TYPES（安全 payload 由 store 序列化）。"""

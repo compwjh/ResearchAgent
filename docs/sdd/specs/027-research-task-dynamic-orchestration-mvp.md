@@ -250,8 +250,8 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | 01 | 编写 Spec027 | 本文件 | — | 完成 |
 | 02 | 验证动态规划、模型路由和资源调度协议 | [`task-02-orchestration-runtime-gate.md`](../plans/027/task-02-orchestration-runtime-gate.md) | 01、Spec确认、双评审 | 已完成 |
 | 03 | 实现持久化 Research Task 后端纵向切片 | [`task-03-backend-research-task-slice.md`](../plans/027/task-03-backend-research-task-slice.md) | 02 | 已完成（评审：打回 → 修订 → 复审通过） |
-| 04 | 实现研究任务页面、SSE 与会话入口 | [`task-04-frontend-research-workspace.md`](../plans/027/task-04-frontend-research-workspace.md) | 03 | 待执行 |
-| 05 | 完成 Re-plan、报告、模型升级与集成 | [`task-05-replan-report-integration.md`](../plans/027/task-05-replan-report-integration.md) | 03、04 | 待执行 |
+| 04 | 实现研究任务页面、SSE 与会话入口 | [`task-04-frontend-research-workspace.md`](../plans/027/task-04-frontend-research-workspace.md) | 03 | 已完成（评审 GO；390px 运行时 smoke 延 Task06） |
+| 05 | 完成 Re-plan、报告、模型升级与集成 | [`task-05-replan-report-integration.md`](../plans/027/task-05-replan-report-integration.md) | 03、04 | 实施中 |
 | 06 | 最终评审、全量回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/027/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
 
 ## 评审记录
