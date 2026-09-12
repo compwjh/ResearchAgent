@@ -220,11 +220,21 @@ def _generation_root(meta_path: Path) -> Path:
     return parent
 
 
-def _active_generation_collection(meta_path: Path) -> str:
-    """Return the marker-bound collection; never fall back to fixed ``papers``."""
+def _active_generation_collection(meta_path: Path, *, allow_stale_metadata: bool = False) -> str:
+    """Return the marker-bound collection; never fall back to fixed ``papers``.
+
+    ``allow_stale_metadata`` 只放宽「摘要过期」这一种情况：并发的导入/索引正在写
+    ``papers.json`` 时，marker 里记的 ``metadata_sha256`` 会短暂对不上，这是瞬时竞态，
+    稍后写方会 ``_refresh_generation_digests`` 修正。此时仍然校验 marker 结构并读取
+    当前的 ``alias_target``，所以**真正的代次切换（集合换掉了）照样会被
+    ``INDEX_GENERATION_DRIFT`` 拦下**。读取路径（启动闸门、状态、检索）一律保持
+    fail-closed，不传这个参数。
+    """
     try:
         marker = FinalizeBundleStore(_generation_root(meta_path)).require_generation()
     except ManifestStoreError as error:
+        if allow_stale_metadata and getattr(error, "code", "") == "INDEX_FINALIZE_REQUIRED":
+            return _read_marker_collection_after_state_write(meta_path)
         raise KnowledgeDocumentMigrationError(getattr(error, "code", "INDEX_REBUILD_REQUIRED")) from error
     destination = marker.get("alias_target") if isinstance(marker, Mapping) else None
     if not isinstance(destination, str) or not destination:
@@ -299,12 +309,7 @@ def _assert_generation_binding(
     """
     if destination_collection is None:
         return
-    try:
-        current = _active_generation_collection(meta_path)
-    except KnowledgeDocumentMigrationError as error:
-        if not allow_stale_metadata or error.code != "INDEX_FINALIZE_REQUIRED":
-            raise
-        current = _read_marker_collection_after_state_write(meta_path)
+    current = _active_generation_collection(meta_path, allow_stale_metadata=allow_stale_metadata)
     if current != destination_collection:
         raise KnowledgeDocumentMigrationError("INDEX_GENERATION_DRIFT")
 
@@ -315,12 +320,16 @@ def _capture_import_generation(meta_path: Path, *, required: bool) -> str | None
     Custom injected indexers remain usable in marker-less temporary fixtures.
     The default composition path is fail-closed before it writes source or
     metadata, so an import can never be created without a generation binding.
+
+    放宽摘要过期：并发导入/索引写 ``papers.json`` 期间 marker 摘要会瞬时对不上，
+    这里仍然要从**当前** marker 取到 binding（结构校验 + alias_target），
+    真正的代次切换由后续 ``_assert_generation_binding`` 拦下。
     """
     generation_store = FinalizeBundleStore(_generation_root(meta_path))
     marker_path = generation_store.live_root / "index-generation.json"
     if not marker_path.exists() and not required:
         return None
-    return _active_generation_collection(meta_path)
+    return _active_generation_collection(meta_path, allow_stale_metadata=True)
 
 
 def _refresh_generation_digests(
@@ -508,7 +517,11 @@ def create_immutable_document(
             # Paper imports carry a captured generation.  Check immediately
             # before the canonical metadata write so an already-drifted marker
             # cannot make a resource look valid in the new generation.
-            _assert_generation_binding(meta, destination_collection)
+            #
+            # 这里必须容忍摘要过期：并发的索引任务正在写 papers.json 时摘要会瞬时
+            # 对不上（INDEX_FINALIZE_REQUIRED），而那是正常竞态、不是代次切换。
+            # 真正需要拦的是 alias_target 变化，由 INDEX_GENERATION_DRIFT 负责。
+            _assert_generation_binding(meta, destination_collection, allow_stale_metadata=True)
             write_import_knowledge_document(document, meta)
             # The marker can drift while metadata is being written.  Check
             # again before refreshing its digest; on failure the surrounding
