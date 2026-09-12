@@ -383,9 +383,37 @@ class PaperImportBatchService:
         batch = self.store.get_batch(batch_id)
         if batch is None:
             raise PaperImportBatchServiceError(BATCH_NOT_FOUND_ERROR, "导入批次不存在")
-        # Retry/resume must not revive an item from an expired search.  Keep
-        # this check in the service as well as the HTTP route so direct callers
-        # and background workers observe the same boundary.
+        items = self.store.get_items(batch_id)
+        # spec-035: a batch whose items already have durable, hash-verified
+        # snapshots is self-consistent.  Re-execution / retry must therefore
+        # succeed even if the original search session has expired or been
+        # TTL-cleaned, and even when the legacy ``search_expires_at`` is absent.
+        local = self._snapshots.get(batch_id, {})
+        durable: dict[str, Any] = {}
+        for item in items:
+            try:
+                snapshot = self.store.get_snapshot(item.item_id)
+            except PaperImportBatchStoreError as error:
+                if error.code == SNAPSHOT_REBUILD_REQUIRED:
+                    raise PaperImportBatchServiceError(SNAPSHOT_REBUILD_REQUIRED, str(error)) from error
+                raise
+            if snapshot is None:
+                continue
+            local_candidate = local.get(item.candidate_id)
+            if local_candidate is not None:
+                try:
+                    local_encoded = self._snapshot_json(local_candidate)
+                    local_digest = hashlib.sha256(local_encoded.encode("utf-8")).hexdigest()
+                except (TypeError, ValueError):
+                    local_digest = None
+                if local_digest == item.snapshot_hash:
+                    durable[item.candidate_id] = local_candidate
+                    continue
+            durable[item.candidate_id] = snapshot
+        if len(durable) == len(items):
+            return durable
+        # Snapshots are missing or corrupt: an active search session is still
+        # required to rebuild them.  Preserve the original gating semantics.
         if self.discovery_store is not None:
             session = self.discovery_store.get_search_session(batch.search_id)
             if session is not None:
@@ -397,7 +425,6 @@ class PaperImportBatchService:
             raise PaperImportBatchServiceError(SNAPSHOT_REBUILD_REQUIRED, "批次搜索快照过期时间缺失")
         if stored_expires <= _utcnow():
             raise PaperImportBatchServiceError(SEARCH_EXPIRED, "搜索会话已过期")
-        items = self.store.get_items(batch_id)
         if candidates is None:
             # The in-process copy is only an execution convenience.  Every
             # item is still required to have a valid durable snapshot below;

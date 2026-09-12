@@ -35,6 +35,7 @@ from backend.app.paper_discovery.infrastructure.paper_import_batch_store import 
     DATABASE_LOCKED,
     PaperImportBatchStore,
     PaperImportBatchStoreError,
+    SNAPSHOT_REBUILD_REQUIRED,
 )
 from backend.app.platform.settings.settings_repository import ArticleSettings
 
@@ -748,3 +749,89 @@ def test_reimport_of_existing_paper_reports_existing_and_does_not_duplicate(tmp_
     assert second.error_code == PAPER_ALREADY_EXISTS
     assert second.paper_id == first.paper_id
     assert len(papers) == 1, "重复导入不得产生第二条记录"
+
+
+class _ExpiredDiscoveryStore:
+    """Simulates a search session that has already expired / been TTL-cleaned."""
+
+    def __init__(self, expires_at: str = "2000-01-01T00:00:00Z") -> None:
+        self.expires_at = expires_at
+
+    def get_search_session(self, search_id: str):
+        return SearchSession(search_id, "legacy", self.expires_at)
+
+
+def _update_batch_expires(store: PaperImportBatchStore, batch_id: str, expires_at: str | None) -> None:
+    """Directly mutate the stored search_expires_at to simulate legacy/missing value."""
+    import sqlite3
+
+    connection = sqlite3.connect(str(store.database_path))
+    connection.execute("UPDATE paper_import_batches SET search_expires_at=? WHERE batch_id=?", (expires_at, batch_id))
+    connection.commit()
+    connection.close()
+
+
+def test_expired_session_with_durable_snapshots_skips_gate(tmp_path):
+    """spec-035 Bug1: durable snapshots make the batch self-consistent; session expiry is ignored."""
+    service = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        _ExpiredDiscoveryStore(),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("durable")
+    batch = service.create_batch(
+        "search-1", ["durable"],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+    )
+    # The discovery store reports the session as long expired.
+    result = service.run_batch(batch.batch_id)
+    assert result.status == "completed"
+    item = service.store.get_items(batch.batch_id)[0]
+    assert item.status == ITEM_COMPLETED
+
+
+def test_missing_search_expires_with_durable_snapshots_succeeds(tmp_path):
+    """spec-035 Bug1: legacy batches without search_expires_at are still retryable."""
+    service = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("legacy")
+    batch = service.create_batch(
+        "search-1", ["legacy"],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+    )
+    _update_batch_expires(service.store, batch.batch_id, None)
+
+    result = service.run_batch(batch.batch_id)
+    assert result.status == "completed"
+
+
+def test_corrupted_durable_snapshot_still_requires_rebuild(tmp_path):
+    """spec-035 Bug1: when durable snapshots are broken, the existing rebuild error is preserved."""
+    service = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("broken")
+    batch = service.create_batch(
+        "search-1", ["broken"],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+    )
+    item = service.store.get_items(batch.batch_id)[0]
+    import sqlite3
+
+    connection = sqlite3.connect(str(service.store.database_path))
+    connection.execute(
+        "UPDATE paper_import_items SET snapshot_json=? WHERE item_id=?",
+        ("not-valid-json", item.item_id),
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(PaperImportBatchServiceError) as error:
+        service.run_batch(batch.batch_id)
+    assert error.value.code == SNAPSHOT_REBUILD_REQUIRED
