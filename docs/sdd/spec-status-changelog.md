@@ -5,6 +5,21 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-12
+
+- **024 可见推理过程与会话级推理档位** ｜ 待确认 → 已确认 ｜ 用户明确要求 pull 后继续开发；需求最终复审与技术复审均通过，允许启动 Task02。
+- **024 可见推理过程与会话级推理档位** ｜ 已确认 → 实施中 ｜ 完成首条消息、SSE 耗时/终态和 PATCH `updated_at` 合同收紧；启动 Task02 真实 Ollama/临时数据库 Go/No-Go，业务代码暂不修改。
+- **024 Task02 运行时协议与迁移验证** ｜ 进行中 → 已完成（条件 GO） ｜ 三模型 provider 探针、临时 SQLite v7 清理与 8 个异常回滚点、event_seq/过滤合同测试通过；xhigh 保持 pending-evidence，应用接缝与生产迁移交由 Task03 实现并复测。
+- **024 Task03 后端推理流与持久化** ｜ 待执行 → 实施中 ｜ Task02 条件 GO；启动后端统一档位解析、推理事件、schema v7 迁移、过滤与隔离实现，暂不执行全量回归。
+- **024 Task03 xhigh 能力证据口径** ｜ 评审修订 ｜ 结合局域网 Ollama 实测：显式 `think=true` 且响应含非空 reasoning 与 evidence_id 即可判定 provider 支持；server 日志改为可选审计证据，缺响应证据仍保持 pending/unavailable，避免环境日志不可读阻塞功能实现。
+- **024 Task03 后端推理流与持久化** ｜ 实施中 → 已完成（条件通过） ｜ 后端实现、独立 backend-reviewer/tester 复核及 81 个定向用例通过；未执行全量回归，Task04 前端实现继续推进。
+- **026 推理档位反馈与首屏响应修复** ｜ 新建 → 待确认 ｜ 2026-09-12：用户报出「提问后无对话卡片」「不支持的档位仍能选并报 409」「所有错误都叫连接失败」三个缺陷；经两轮 Grilling 收敛 Q1–Q12 全部决策（Q5 由用户指定为「支持 xhigh 用 xhigh，否则取支持的最高档」）后落盘 spec 与 `plans/026/` 全部 task 文件；**确认前不修改业务代码**。同时声明修订 024「探针失败返回 503」一条为「返回 200 + source=stale/unknown」。
+- **024 可见推理过程与会话级推理档位** ｜ 已完成（环境延期） → 合同登记修订 ｜ 2026-09-12：三个用户可见缺陷移交 Spec 026 修复；024 合同本身不改，仅在其变更日志登记「探针失败返回 503」被 026 修订，避免两份 spec 口径冲突。
+- **026 推理档位反馈与首屏响应修复** ｜ 待确认 → 已确认 ｜ 2026-09-12：用户回复「你改吧」视为明确确认；子代理模型由用户临时指定为 `hy3`（一次性偏差，§执行配置 模型列保持 `Deepseek-V4.1-Flash` 不修改），按 Task 02 → 06 顺序实施。
+- **026 推理档位反馈与首屏响应修复** ｜ 已确认 → 实施中 ｜ 2026-09-12：Task 02/03 后端完成（探测不再抛异常、`default_effort` 改取最高档、接口新增 `source`/`refresh`、`unknown` 时 `off` 放行非 off 返 503），Task 04/05 前端完成（乐观建卡 31–68ms、错误文案按 `code` 分流、选择器四态与选中值校正）。后端评审 P0/P1=0（3 条 P2 已修，含重复探测 2 轮→1 轮）；前端评审首轮打回（P0=1、P1=2）后修复。
+- **026 推理档位反馈与首屏响应修复** ｜ 已完成 → 已完成（合并期修订，新增 B17） ｜ 2026-09-12：并入 `origin/main` 时 spec-025 的 4 个用例暴露真实回归 —— 请求未显式带档位时后端默认取 `xhigh`，能力 `unknown` 即返 503，使「任何没手动选档位的首发消息在探测抖动时被拒」，正是本 spec 原本要修掉的报错。经用户拍板「修产品：未指定则回落 off」，新增边界 B17：未显式指定 + 能力未知 → 回落 `off` 放行；仅显式非 `off` + 未知才 503。判定口径按「本轮是否显式给出档位」而非「值是否为空」（`get_last_reasoning_effort` 无记录时填 `xhigh`）。`_resolve_request_effort` 加 `explicit` 参数，两处调用点传入 `payload.reasoning_effort is not None`；原锁定旧行为的测试拆为「未指定→回落 off」与「显式非 off→503」两条。修复后 spec-025 4 个失败用例与 026 全部用例共 71 项通过。
+- **026 推理档位反馈与首屏响应修复** ｜ 实施中 → 已完成 ｜ 2026-09-12：Task 02–06 全部收口。需求/技术/验收三份评审均通过；边界 B1–B16 全 16 条通过；后端全量回归 1028 passed（1 既有失败、395 沙箱环境噪音）、前端 148 passed、真实 Chromium Playwright 22/22；真实浏览器验收发现并修复 B9 校准提示缺失（静默降档，违反 024 红线）。三个用户缺陷均以「真实浏览器 + 真实 HTTP」双证据验证修复：卡片 68/47/31ms 出现；409 卡片为「该模型不支持『极高』推理档位，可选：关闭」且不含「连接失败」；`deepseek-coder:33b`+xhigh → 503 `MODEL_CAPABILITIES_UNAVAILABLE`、`deepseek-coder-v2:16b`+xhigh → 409 `REASONING_EFFORT_UNSUPPORTED`（「没查清」与「确实不支持」已正确区分）。服务已部署于 `http://127.0.0.1:8000`，Ollama 走局域网 `http://192.168.31.180:11434`（11 个模型）。遗留：能力探测结果非确定性（同模型同参数随环境变化且被缓存 300s）已移交 spec 027；B13/B14/B15 仅静态断言；`app.js:2244` 时间线仍按 `retryable` 判断（非阻塞 P2）。
+
 ## 2026-09-11
 
 - **023 / 023.1 分支合并入 main** ｜ 合并完成（merge commit `60f5bae`） ｜ 2026-09-11：将 `fix/spec-023.1-p1-fixes` 合并入 `main`。因两侧并行改动产生 5 处冲突，手工整合如下——① `routes.py`：保留 main 的 `routes_conversations` 并并入 `routes_skills`/`routes_tools`；② `routes_chat.py`（真实集成冲突）：采用本分支 Skill 识别 + Tool 执行编排，叠加 main 的记忆库 system-rule 与可观测性（`build_role_aware_messages` 组装 messages、`observation_messages`/`observation_metadata` 埋点含 `extra_metadata`）；③ `index.html`：以 main 为基础补入 “Skill 与 Tool” 导航/视图/详情对话框，版本 `?v=32→33`；④ 冻结清单 `upload-closure-matrix.json` 按合并后工作树重算 sha256 与 `inventory_digest`；⑤ `test_frontend_paper_contract.py` 取 main 版。合并后定向回归 **219 passed / 1 failed**（`test_conversations_api` 的 durable worker 用例，经 worktree 复核为 **main 合并前即存在的存量失败**，非本次引入）；运行时冒烟 `/`、`/api/skills`、`/api/tools`、`/api/memories?scope=global` 均 200
@@ -210,9 +225,12 @@
 - **022 项目会话与长期记忆** ｜ 实施中（Task08） → 已完成 ｜ 2026-09-11：Task02–Task10 全部收口，验收报告与复盘已落盘；本机 Ollama `models=[]` 导致成功对话 SSE/RAG 仅保留为环境待复验，不伪造成功证据。
 - **024 可见推理过程与会话级推理档位** ｜ 新建 → 待确认 ｜ 2026-09-11：经 Grilling 确认默认 xhigh、会话级五档选择、过滤后推理流、自动折叠、一次性删除旧会话及预热模型 20 秒验收边界；Spec 与 Task02–05 已落盘，确认前不修改业务代码。
 - **025 会话上下文压缩与 Token 预算管理** ｜ 新建 → 待确认（占位待调研） ｜ 2026-09-11：登记当前缺少历史摘要替换、上下文压缩和 token 预算管理；按用户要求仅创建占位 Spec，不创建 Task、不实施，也不作为 Spec024 依赖。
-
-## 2026-09-12
-
+- **024 可见推理过程与会话级推理档位** ｜ 待确认 → 待确认（评审打回） ｜ 2026-09-11：临时 Luna high 需求评审发现 8 项 P1，技术评审发现 4 项 P0、5 项 P1；暂停代码开发，补充能力映射、schema v7 清理矩阵、SSE event_seq/终态、历史字段、LangChain/direct 一致性和观测隔离后重新评审。
+- **024 可见推理过程与会话级推理档位** ｜ 待确认（修订后复审） → 待确认（再次打回） ｜ 2026-09-11：需求复审仍有 2 项 P1（能力接口失败体、SSE 完整字段/计时/中间失败序列），技术复审仍有 3 项 P0（五档双路径映射、schema v7 marker/Preference DDL/回滚、逐事件 event_seq 状态映射）；继续暂停业务开发，补齐最后合同后再复审。
+- **024 Task04 前端推理档位与思考面板** ｜ 待执行 → 进行中 ｜ Task03 后端定向测试、独立评审和验收通过（条件）；启动五档选择器、SSE 思考面板、终态折叠与历史恢复实现，Task05 前不运行全量回归。
+- **024 Task04 前端推理档位与思考面板** ｜ 进行中 → 已完成（定向通过）；Task05 进行中 ｜ frontend-reviewer GO、frontend-tester PASS，24 个前端合同用例通过；真实 SSE 浏览器 smoke 因服务/Ollama 不可用留给最终收口，不提前声称全功能验证。
+- **024 Task05 最终评审、全量回归与部署** ｜ 待执行 → 进行中 ｜ Task04 定向评审 GO、前端验收 PASS 后启动双端复审、唯一全量回归、真实 Ollama 三档 smoke、部署和 Spec024 收口；Task05 前不声称完成。
+- **024 可见推理过程与会话级推理档位** ｜ 实施中 → 已完成（环境延期） ｜ Task05 完成双端 GO、全量回归 1341 passed/1 skipped/47 subtests、部署 health/home、Chromium 资源与 fake adapter 终态验收；真实 Ollama chat 的 xhigh/low/off telemetry 因固定通道 20 秒超时延期，复验步骤已写入验收报告，不以超时阻塞代码收口。
 - **020 零碎 bug 解决** ｜ 已完成（第 3 批） → 实施中（第 4 批 BUG-06） ｜ 2026-09-12：追加第 4 批 **BUG-06**——从「模型库」等视图点「新建对话」不切回对话视图。根因：`beginDraft()`（`app.js:1102-1110`）只重置会话内容、**从不调用 `showView()`**，而视图切换依赖原生 `hidden` 属性（`app.js:2831-2836`），故 `#chat.hidden` 一直为 `true`；对照 `openConversation()`（`app.js:1063`）首行即有 `showView('chat')`。用户经 grill with docs 确认边界后批准实施。
 - **020 零碎 bug 解决** ｜ 实施中（第 4 批 BUG-06） → **已完成（第 4 批）** ｜ 2026-09-12：`frontend-dev` 实现——① `app.js:1103` 在 `beginDraft()` 首行前置 `showView('chat')`（覆盖 `1589`/`1651`/`1170` 三个调用点）；② 7 处「新会话」→「新对话」（`app.js:879/880/882/1105/1106`、`index.html:52/74`）；③ `index.html:492` `app.js?v=33`→`?v=34`、491 行兼容注释追加 `v33`。`frontend-tester` 验收通过：`node --check` OK、前端契约 pytest **35 passed / 0 failed**、`grep "新会话"` 0 命中、`git diff` 无夹带。架构师另用 Playwright+Chromium 在 127.0.0.1:8300 做真实点击验证：模型库 → 新建对话 后 `#chat.hidden=false`、`#models-view.hidden=true`、`activeNav=['chat']`、`page_errors=[]`、加载 `app.js?v=34`。**未跑全量回归**（单端改动，按规则只跑前端回归）。
 - **020 零碎 bug 解决** ｜ 已完成（第 4 批） → 实施中（第 5 批 BUG-07） ｜ 2026-09-12：追加第 5 批 **BUG-07**（创建项目后的多余灰色提示常驻不消失；「在此项目中新建对话」点击不跳转）。用户确认修复边界后实施。
@@ -223,6 +241,9 @@
 - **025 会话上下文压缩与 Token 预算管理** ｜ 待确认（正式设计已落盘） → 已确认（进入实施） ｜ 2026-09-12：技术评审复审通过（P0×3、P1×6 全部关闭，无新增 P0），用户明确指示开始实施；按 Task02（计量与预算配置）→ Task06（评审回归部署）顺序执行，实施前已完成 pull。
 - **025 会话上下文压缩与 Token 预算管理** ｜ 已确认 → 实施中（Task02–Task05） ｜ 2026-09-12：完成计量与预算配置、两张新表与迁移、装配消费改造与异步 worker、context-usage/compactions 端点与 80% 自动触发、前端占比条与一键压缩按钮（`?v=33→34`）；新增测试 52 项。
 - **025 会话上下文压缩与 Token 预算管理** ｜ 实施中 → 已完成 ｜ 2026-09-12：需求/技术/后端/前端/验收五份评审全部落盘并通过；唯一最终全量回归 1345 passed、1 skipped、47 subtests（唯一失败 `test_import_compensation` 已用 git stash 在干净树复现，属存量）；服务部署于 http://127.0.0.1:8000 并通过运行时 smoke；真实对话触发自动压缩因本机 Ollama 无可用模型未端到端验证，列为环境待复验，不伪造证据。
+
+## 2026-09-12
+
 - **027 Research Task 动态编排 MVP** ｜ 新建 → 待确认 ｜ 经 Grilling 共同确认深度研究入口、稳定 LangGraph 控制骨架、运行时 Task Graph、USENIX/DBLP 并行搜索、有界 Re-plan、动态模型路由、内存感知 9B Worker、初步报告和实时任务工作台；Spec 与 Task02–06 已落盘，确认前不实施。
 - **028 Research Task 可靠调度、计划版本与恢复** ｜ 新建 → 待确认 ｜ 登记全局公平调度、唯一租约、checkpoint、计划版本、暂停/取消/审批和单机多进程恢复；依赖 Spec027，Spec 与 Task02–06 已落盘。
 - **029 Research Task 全文获取与知识库联动** ｜ 新建 → 待确认 ｜ 登记用户确认后的安全下载、既有批量导入、全文 RAG 和可定位证据升级；硬性禁止复制下载、安全、导入、解析和索引实现，Spec 与 Task02–06 已落盘。

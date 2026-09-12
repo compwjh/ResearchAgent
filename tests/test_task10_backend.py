@@ -1,4 +1,4 @@
-"""Task10 backend contracts: v6 system rules, scope authorization and roles."""
+"""Task10 backend contracts: v7 system rules, scope authorization and roles."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -16,12 +16,12 @@ from backend.app.main import app
 from backend.app.memory.repository import MemoryRepository, SystemRuleUnavailableError
 
 
-def test_v6_system_rule_is_idempotent_owner_scoped_and_unicode_bounded(tmp_path: Path):
+def test_v7_system_rule_is_idempotent_owner_scoped_and_unicode_bounded(tmp_path: Path):
     path = tmp_path / "memory.sqlite3"
     repo = MemoryRepository(path)
     repo.initialize()
     with repo.connection() as db:
-        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 6
+        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 7
         assert {row["name"] for row in db.execute("PRAGMA table_info(system_rules)")} == {"owner_id", "content", "enabled", "updated_at"}
     assert repo.get_system_rule("owner-a").enabled is False
     saved = repo.upsert_system_rule("owner-a", "🙂" * 12000, False)
@@ -87,7 +87,7 @@ def test_kb_advisory_never_contains_current_question():
     assert "问题：" not in advisory
 
 
-def test_corrupt_v6_system_rule_table_fails_closed(tmp_path: Path):
+def test_corrupt_v7_system_rule_table_fails_closed(tmp_path: Path):
     path = tmp_path / "corrupt.sqlite3"
     repo = MemoryRepository(path)
     with repo.connection() as db:

@@ -1,16 +1,16 @@
 # Spec 024 执行计划：可见推理过程与会话级推理档位
 
 > 关联：[Spec 024](../../specs/024-visible-reasoning-controls.md)
-> 当前状态：待确认。用户确认 Spec 前，所有开发 Task 均不得启动。
+> 当前状态：已完成（环境延期项已记录）。需求/技术复审、Task02–04 定向门禁、Task05 全量回归、部署和 fake adapter 验收均通过；真实 Ollama chat telemetry 因通道超时延期补测。
 
 ## 任务索引
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
-| [02](./task-02-reasoning-protocol-and-migration.md) | 冻结模型能力、一次性旧会话清理、数据与 SSE 协议 | Spec 确认 | 待执行 |
-| [03](./task-03-backend-reasoning-stream.md) | 实现五档推理、推理流、过滤、持久化与隔离 | 02 | 待执行 |
-| [04](./task-04-frontend-reasoning-panel.md) | 实现档位选择器、实时思考面板和终态交互 | 03 | 待执行 |
-| [05](./task-05-review-regression-deploy.md) | 双端评审、全量回归、运行时验收、部署与复盘 | 03、04 | 待执行 |
+| [02](./task-02-reasoning-protocol-and-migration.md) | 冻结模型能力、一次性旧会话清理、数据与 SSE 协议 | Spec 确认、需求/技术复审通过 | 已完成（条件 GO） |
+| [03](./task-03-backend-reasoning-stream.md) | 实现五档推理、推理流、过滤、持久化与隔离 | 02 条件 GO、报告齐全 | 已完成（条件通过） |
+| [04](./task-04-frontend-reasoning-panel.md) | 实现档位选择器、实时思考面板和终态交互 | 03 实现/测试/评审报告 | 已完成（定向通过） |
+| [05](./task-05-review-regression-deploy.md) | 双端评审、全量回归、运行时验收、部署与复盘 | 02、03、04 固定报告 | 已完成（环境延期） |
 
 ## 统一执行规则
 

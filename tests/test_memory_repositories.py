@@ -135,7 +135,9 @@ def test_v1_database_is_migrated_atomically_and_message_evidence_is_nullable(tmp
     _make_v1_database(path)
     repo = MemoryRepository(path)
     with repo.connection() as db:
-        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 6
+        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 7
+        assert db.execute("SELECT count(*) FROM conversations").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM messages").fetchone()[0] == 0
         columns = {row["name"] for row in db.execute("PRAGMA table_info(conversations)")}
         assert {"memory_binding_at", "memory_binding_message_id"} <= columns
         foreign_keys = db.execute("PRAGMA foreign_key_list(memory_evidence)").fetchall()

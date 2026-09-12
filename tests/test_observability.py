@@ -204,6 +204,7 @@ class ReportingContentTests(unittest.TestCase):
                 route="direct",
                 session_id="s-1",
                 tags=["chat"],
+                extra_metadata={"reasoning_duration_ms": 12.5, "answer_duration_ms": 34.0},
             )
 
         start = captured.get("start", {})
@@ -213,11 +214,18 @@ class ReportingContentTests(unittest.TestCase):
         self.assertIsNotNone(start.get("completion_start_time"), "应传入首 token 时刻")
 
         metadata = start.get("metadata", {})
-        self.assertEqual(metadata.get("thinking"), "思考")
+        # Spec024 allowlist: raw reasoning is never persisted in metadata;
+        # only its presence and filtered character count are observable.
+        self.assertTrue(metadata.get("reasoning_present"))
+        self.assertEqual(metadata.get("reasoning_chars"), len("思考"))
+        self.assertNotIn("thinking", metadata)
+        self.assertNotIn("思考", repr(metadata))
         self.assertEqual(metadata.get("route"), "direct")
-        self.assertEqual(metadata.get("session_id"), "s-1")
-        self.assertTrue(metadata.get("timings_available"))
-        self.assertAlmostEqual(metadata.get("load_ms", 0), 7000.0, delta=0.01)
+        self.assertNotIn("session_id", metadata)
+        self.assertNotIn("timings_available", metadata)
+        self.assertNotIn("load_ms", metadata)
+        self.assertEqual(metadata.get("reasoning_duration_ms"), 12.5)
+        self.assertEqual(metadata.get("answer_duration_ms"), 34.0)
 
         score_names = {item["name"] for item in captured.get("scores", [])}
         for expected in ("ttft_ms", "load_ms", "eval_ms", "tokens_per_sec", "is_cold_start"):
@@ -322,7 +330,7 @@ class TraceContextTests(unittest.TestCase):
 
 
 class MetadataCharCountTests(unittest.TestCase):
-    """任务 06 统计看板所需指标字段：字符数（截断前）与成功/失败标记。"""
+    """Spec024 allowlist metadata remains bounded and reasoning-safe."""
 
     def setUp(self):
         obs_client.reset_for_tests()
@@ -385,10 +393,12 @@ class MetadataCharCountTests(unittest.TestCase):
             )
 
         metadata = captured.get("start", {}).get("metadata", {})
-        self.assertEqual(metadata.get("output_chars"), len(long_content))
-        self.assertEqual(metadata.get("thinking_chars"), len(long_thinking))
-        # input_chars 是格式化后（含角色标签头）的原始长度，仍大于截断上限。
-        self.assertGreater(metadata.get("input_chars", 0), 10)
+        self.assertTrue(metadata.get("reasoning_present"))
+        self.assertEqual(metadata.get("reasoning_chars"), len(long_thinking))
+        self.assertNotIn("output_chars", metadata)
+        self.assertNotIn("thinking_chars", metadata)
+        self.assertNotIn("input_chars", metadata)
+        self.assertNotIn("y" * 10, repr(metadata))
 
         # 实际上报的 output 确实被截断，与字符数字段解耦。
         outputs = captured.get("update", [])
@@ -435,11 +445,13 @@ class MetadataCharCountTests(unittest.TestCase):
             )
 
         metadata = captured.get("start", {}).get("metadata", {})
-        self.assertEqual(metadata.get("thinking_chars"), 0)
-        self.assertEqual(metadata.get("output_chars"), len("答案"))
+        self.assertFalse(metadata.get("reasoning_present"))
+        self.assertEqual(metadata.get("reasoning_chars"), 0)
+        self.assertNotIn("thinking_chars", metadata)
+        self.assertNotIn("output_chars", metadata)
 
     def test_failure_records_success_flag_and_error_type(self):
-        """失败时 success=False / error_type 要出现在 metadata。"""
+        """失败时只保留稳定错误码，不暴露旧 success/error-type 字段。"""
         captured = self._capture()
         patches = self._enabled() + (
             mock.patch.object(obs_client, "get_client", return_value=self._make_client(captured)),
@@ -455,15 +467,17 @@ class MetadataCharCountTests(unittest.TestCase):
                 route="direct",
                 success=False,
                 error_type="ValueError",
+                extra_metadata={"stable_error_code": "CHAT_FAILED"},
             )
 
         metadata = captured.get("start", {}).get("metadata", {})
-        self.assertFalse(metadata.get("success"))
-        self.assertEqual(metadata.get("success_flag"), 0)
-        self.assertEqual(metadata.get("error_type"), "ValueError")
+        self.assertEqual(metadata.get("stable_error_code"), "CHAT_FAILED")
+        self.assertNotIn("success", metadata)
+        self.assertNotIn("success_flag", metadata)
+        self.assertNotIn("error_type", metadata)
 
     def test_success_default_has_no_error_type(self):
-        """默认成功时 success_flag=1 且 error_type 为空串。"""
+        """默认成功观测不再写入旧 success/error-type 字段。"""
         captured = self._capture()
         patches = self._enabled() + (
             mock.patch.object(obs_client, "get_client", return_value=self._make_client(captured)),
@@ -480,13 +494,15 @@ class MetadataCharCountTests(unittest.TestCase):
             )
 
         metadata = captured.get("start", {}).get("metadata", {})
-        self.assertTrue(metadata.get("success"))
-        self.assertEqual(metadata.get("success_flag"), 1)
-        self.assertEqual(metadata.get("error_type"), "")
+        self.assertTrue(metadata.get("reasoning_present"))
+        self.assertEqual(metadata.get("reasoning_chars"), len("思考"))
+        self.assertNotIn("success", metadata)
+        self.assertNotIn("success_flag", metadata)
+        self.assertNotIn("error_type", metadata)
 
 
 class ChainTypeMetadataTests(unittest.TestCase):
-    """generation metadata 的 chain_type 数据契约。"""
+    """旧 chain_type 字段已移除；保留 Spec024 观测 allowlist 断言。"""
 
     def setUp(self):
         obs_client.reset_for_tests()
@@ -535,21 +551,29 @@ class ChainTypeMetadataTests(unittest.TestCase):
         return captured["start"]["metadata"]
 
     def test_default_name_gets_chat_chain_type(self):
-        self.assertEqual(self._record()["chain_type"], "chat")
+        metadata = self._record()
+        self.assertTrue(metadata["reasoning_present"])
+        self.assertEqual(metadata["reasoning_chars"], len("思考"))
+        self.assertNotIn("chain_type", metadata)
 
     def test_kb_generation_name_gets_kb_chain_type(self):
-        self.assertEqual(self._record(name="kb.generation")["chain_type"], "kb")
+        metadata = self._record(name="kb.generation")
+        self.assertTrue(metadata["reasoning_present"])
+        self.assertNotIn("chain_type", metadata)
 
     def test_non_empty_extra_metadata_chain_type_wins(self):
-        self.assertEqual(
-            self._record(name="kb.generation", extra_metadata={"chain_type": "custom"})["chain_type"],
-            "custom",
+        metadata = self._record(
+            name="kb.generation",
+            extra_metadata={"chain_type": "custom", "stable_error_code": "KB_FAILED"},
         )
+        self.assertEqual(metadata["stable_error_code"], "KB_FAILED")
+        self.assertNotIn("chain_type", metadata)
 
     def test_failure_path_also_gets_default_chain_type(self):
         metadata = self._record(name="kb.generation", success=False)
-        self.assertEqual(metadata["chain_type"], "kb")
-        self.assertEqual(metadata["success_flag"], 0)
+        self.assertTrue(metadata["reasoning_present"])
+        self.assertNotIn("chain_type", metadata)
+        self.assertNotIn("success_flag", metadata)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import time
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -9,6 +10,7 @@ from backend.app.api.common import stream_event
 from backend.app.api.schemas import (
     ConversationMessageRequest,
     ConversationPatchRequest,
+    ConversationReasoningRequest,
     MemoryAnalysisBatchDecisionRequest,
     MemoryAnalysisDecisionRequest,
     MemoryCreateRequest,
@@ -18,7 +20,7 @@ from backend.app.api.schemas import (
     SystemRulePatchRequest,
     SystemRulePutRequest,
 )
-from backend.app.chat.application.chat_runner import run_chat
+from backend.app.chat.application.chat_runner import ChatStreamInterrupted, run_chat
 from backend.app.chat.application.context_compaction import get_compaction_worker
 from backend.app.chat.application.conversation_service import (
     compose_chat_messages,
@@ -27,6 +29,13 @@ from backend.app.chat.application.conversation_service import (
     get_memory_evolution_worker,
     has_explicit_global_intent,
     is_system_rule_intent,
+)
+from backend.app.chat.application.reasoning import (
+    MAX_REASONING_CODEPOINTS,
+    REASONING_EFFORTS,
+    EventSequencer,
+    ReasoningStreamFilter,
+    filter_reasoning,
 )
 from backend.app.chat.application.token_budget import estimate_tokens
 from backend.app.knowledge_base.application import (
@@ -44,7 +53,15 @@ from backend.app.platform.observability import (
     redact_prompt_messages,
     utc_now,
 )
-from backend.app.platform.ollama import get_available_models
+from backend.app.platform.ollama import (
+    EffortResolutionError,
+    ReasoningCapabilities,
+    ReasoningResolution,
+    _provider_value,
+    get_available_models,
+    get_reasoning_capabilities,
+    resolve_reasoning_effort,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -62,11 +79,11 @@ def _project_payload(item):
 
 
 def _conversation_payload(item):
-    return {"conversation_id": item.conversation_id, "owner_id": item.owner_id, "project_id": item.project_id, "title": item.title, "status": item.status, "memory_history_policy": item.memory_history_policy, "memory_binding_at": item.memory_binding_at.isoformat() if item.memory_binding_at else None, "memory_binding_message_id": item.memory_binding_message_id, "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat()}
+    return {"conversation_id": item.conversation_id, "owner_id": item.owner_id, "project_id": item.project_id, "title": item.title, "status": item.status, "memory_history_policy": item.memory_history_policy, "reasoning_effort": item.reasoning_effort, "memory_binding_at": item.memory_binding_at.isoformat() if item.memory_binding_at else None, "memory_binding_message_id": item.memory_binding_message_id, "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat()}
 
 
 def _message_payload(item):
-    return {"message_id": item.message_id, "conversation_id": item.conversation_id, "parent_message_id": item.parent_message_id, "role": item.role, "content": item.content, "status": item.status, "model": item.model, "mode": item.mode, "created_at": item.created_at.isoformat(), "completed_at": item.completed_at.isoformat() if item.completed_at else None}
+    return {"message_id": item.message_id, "conversation_id": item.conversation_id, "parent_message_id": item.parent_message_id, "role": item.role, "content": item.content, "status": item.status, "model": item.model, "mode": item.mode, "reasoning_content": item.reasoning_content, "reasoning_status": item.reasoning_status, "reasoning_started_at": item.reasoning_started_at.isoformat() if item.reasoning_started_at else None, "reasoning_completed_at": item.reasoning_completed_at.isoformat() if item.reasoning_completed_at else None, "first_reasoning_at": item.first_reasoning_at.isoformat() if item.first_reasoning_at else None, "first_answer_token_at": item.first_answer_token_at.isoformat() if item.first_answer_token_at else None, "reasoning_truncated": item.reasoning_truncated, "reasoning_chars": item.reasoning_chars, "last_event_seq": item.last_event_seq, "created_at": item.created_at.isoformat(), "completed_at": item.completed_at.isoformat() if item.completed_at else None}
 
 
 def _memory_payload(item):
@@ -224,7 +241,98 @@ def _validate_model(model: str):
     except httpx.HTTPError as error:
         raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE", "message": "无法连接 Ollama 服务", "retryable": True}) from error
     if model not in available:
-        raise HTTPException(status_code=400, detail={"code": "MODEL_NOT_FOUND", "message": f"模型 {model} 不存在", "retryable": False})
+        raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"模型 {model} 不存在", "retryable": False})
+
+
+def _resolve_request_effort(model: str, requested: str | None, explicit: bool | None = None):
+    # ``resolve_reasoning_effort`` 只抛 ``EffortResolutionError``（``ValueError``
+    # 子类）：能力探测失败已被 ``get_reasoning_capabilities`` 吸收为 ``stale``/``unknown``
+    # （spec-026 Task 02），因此这里不再需要 ``RuntimeError`` 分支（历史实现里的该分支
+    # 已成死代码）。异常携带上一轮探测得到的 ``capabilities``，本规范 P2-1 要求**复用**
+    # 它而非二次探测（最坏再跑一轮 5 档串行探测，最多 25s）。
+    #
+    # ``explicit`` 表示「本次请求是否由调用方显式给出档位」。默认按 ``requested is not None``
+    # 推断；但会话冻结值与 owner 偏好在库里无记录时都会被填成 ``"xhigh"``
+    # （``get_last_reasoning_effort``），此时值非空却**不是**用户本轮的选择，路由层必须
+    # 显式传 ``explicit=False`` 才能正确识别。
+    if explicit is None:
+        explicit = requested is not None
+    requested_effort = str(requested if requested is not None else "xhigh").strip().lower()
+    try:
+        return resolve_reasoning_effort(model, requested)
+    except EffortResolutionError as error:
+        code = error.code
+        if code == "INVALID_REASONING_EFFORT":
+            raise HTTPException(status_code=400, detail={"code": code, "message": "推理档位无效", "retryable": False}) from error
+        # 走到这里只可能是 REASONING_EFFORT_UNSUPPORTED。``error.capabilities`` 已是
+        # 上一轮探测结果，必须区分「能力未知」与「确实不支持」：探测失败且无缓存时
+        # ``supported_efforts`` 为空，此时把未知说成「不支持」会误导用户（spec-026 裁决 B）。
+        # 有旧缓存（``stale``）时按旧能力集判断，仍不支持才 409。
+        capabilities = error.capabilities
+        if capabilities.supported_efforts:
+            raise HTTPException(status_code=409, detail={"code": "REASONING_EFFORT_UNSUPPORTED", "message": "当前模型不支持该推理档位", "retryable": False}) from error
+        # ``off`` 即 ``think=false``，不需要模型具备 thinking 能力，任何模型都安全，
+        # 因此能力未知时仍然放行（provider 取值复用 ``_provider_value``，与
+        # ``resolve_reasoning_effort`` 一致，避免两处映射漂移，spec-026 P2-3）。
+        #
+        # 请求**未携带**档位时默认取的 ``xhigh`` 是后端替用户造的默认值：不能因为自己
+        # 造的默认值在能力未知时命中不支持，就把整个请求以 503 拒掉 —— 那会复现 spec-026
+        # 原本要修掉的「模型能力暂时不可用」烦人报错（探测在模型加载/冷启动时必然抖动）。
+        # 只有用户**显式**选择了非 off 档位、且能力未知无法确认时才返回 503。
+        if requested_effort == "off" or not explicit:
+            provider_value = _provider_value("off")
+            return ReasoningResolution(str(model), "off", provider_value, capabilities, {"think": provider_value})
+        raise HTTPException(status_code=503, detail={"code": "MODEL_CAPABILITIES_UNAVAILABLE", "message": "模型能力暂时不可用", "retryable": True}) from error
+
+
+def _reasoning_options_payload(capabilities: "ReasoningCapabilities") -> dict:
+    """Serialize capabilities for ``GET /chat/reasoning-options``（spec-026 §端点/接口）。"""
+    cached_at = capabilities.cached_at
+    if capabilities.source == "unknown" and not cached_at:
+        # 探测失败且无任何缓存：该字段表示「本次尝试时间」，不是缓存写入时间。
+        cached_at = utc_now().isoformat()
+    return {"model": capabilities.model, "supported_efforts": list(capabilities.supported_efforts), "default_effort": capabilities.default_effort, "source": capabilities.source, "cached_at": cached_at}
+
+
+@router.get("/chat/reasoning-options")
+def reasoning_options(model: str | None = None, refresh: int = 0):
+    selected = (model or "").strip()
+    if not selected:
+        from backend.app.platform.config import MODEL_NAME
+        selected = MODEL_NAME
+    try:
+        available = get_available_models()
+    except httpx.HTTPError:
+        # Ollama 不可达时无法区分「服务不可用」与「模型不存在」，因此既不判 404，
+        # 也不返回 503：交给能力缓存层给出 ``stale``（有旧结果）或 ``unknown``。
+        return _reasoning_options_payload(get_reasoning_capabilities(selected, refresh=bool(refresh)))
+    if selected not in available:
+        raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"模型 {selected} 不存在", "retryable": False})
+    return _reasoning_options_payload(get_reasoning_capabilities(selected, refresh=bool(refresh)))
+
+
+@router.patch("/conversations/{conversation_id}/reasoning")
+def patch_conversation_reasoning(conversation_id: str, payload: ConversationReasoningRequest):
+    effort = payload.reasoning_effort
+    if effort not in REASONING_EFFORTS:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REASONING_EFFORT", "message": "推理档位无效", "retryable": False})
+    repo = _repo()
+    conversation = repo.get_conversation(conversation_id, OWNER_ID)
+    if not conversation:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+    try:
+        messages, _ = repo.list_messages(conversation_id, OWNER_ID, target_chars=1, limit=2)
+        selected_model = next((item.model for item in messages if item.model), None)
+    except Exception:
+        selected_model = None
+    if not selected_model:
+        from backend.app.platform.config import MODEL_NAME
+        selected_model = MODEL_NAME
+    resolution = _resolve_request_effort(selected_model, effort)
+    updated, last_effort, updated_at = repo.update_conversation_reasoning(conversation_id, OWNER_ID, resolution.effort)
+    payload = _conversation_payload(updated)
+    payload.update({"last_reasoning_effort": last_effort, "updated_at": updated_at.isoformat() if updated_at else payload.get("updated_at")})
+    return payload
 
 
 def _redact_sensitive(value: object) -> str:
@@ -236,9 +344,64 @@ def _redact_sensitive(value: object) -> str:
     return text[:500]
 
 
-def _message_stream(repo: MemoryRepository, conversation, user_message, assistant_message, model: str, mode: str):
+def _iter_run_events(run):
+    """Read provider events without confusing iterator failure with completion."""
+    iterator = iter(run.events)
+    saw_partial_output = False
+    saw_answer_token = False
+    reasoning_completed = False
+    while True:
+        try:
+            event = next(iterator)
+            event_type = event.get("type")
+            if event_type in {"thinking", "reasoning_delta", "token"} and event.get("content"):
+                saw_partial_output = True
+            if event_type == "token" and event.get("content"):
+                saw_answer_token = True
+            if event_type == "reasoning_completed":
+                reasoning_completed = True
+            yield event
+        except StopIteration:
+            return
+        except GeneratorExit:
+            raise
+        except Exception as error:
+            # Once the provider has explicitly completed reasoning but has
+            # not emitted an answer token, a later provider exception remains
+            # a normal chat failure.  The reasoning subphase is already
+            # durably completed and must not be rewritten as failed (or
+            # emitted twice).  A failure after an answer token is still a
+            # resumable stream interruption.
+            if saw_partial_output and (saw_answer_token or not reasoning_completed):
+                raise ChatStreamInterrupted(f"流式迭代中断：{_redact_sensitive(error)}") from error
+            # No provider output was observed. Preserve the normal model
+            # failure path (CHAT_FAILED/MODEL_UNAVAILABLE) for initial errors.
+            raise
+
+
+def _message_stream(repo: MemoryRepository, conversation, user_message, assistant_message, model: str, mode: str, reasoning_effort: str | None = None, capabilities_source: str = "cache"):
     def generate():
+        stream_started = time.monotonic()
+        sequencer = EventSequencer(assistant_message.message_id)
+        def frame(event_type: str, **payload):
+            output = sequencer.emit(event_type, **payload)
+            if output:
+                try:
+                    repo.record_event_seq(assistant_message.message_id, OWNER_ID, sequencer.event_seq, terminal_status=payload.get("status") if event_type == "done" else None)
+                except Exception as error:
+                    logger.warning("event sequence persistence unavailable for %s: %s", assistant_message.message_id, error)
+            return output
         parts: list[str] = []
+        reasoning_parts: list[str] = []
+        reasoning_stream_filter = ReasoningStreamFilter()
+        reasoning_stream_chars = 0
+        reasoning_content_seen = False
+        answer_started = False
+        reasoning_completed_emitted = False
+        selected_effort = reasoning_effort or getattr(conversation, "reasoning_effort", "medium")
+        reasoning_started_mono = None
+        reasoning_duration_ms = None
+        adapter_event_seq = 0
         finished = False
         try:
             system_rule = repo.get_system_rule(OWNER_ID)
@@ -247,18 +410,18 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             # unknown.  Persist failure before emitting any model event/token.
             with contextlib.suppress(Exception):
                 repo.update_message(assistant_message.message_id, OWNER_ID, status="failed")
-            yield stream_event("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode)
-            yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
-            yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed")
+            yield frame("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode, reasoning_effort=selected_effort, capabilities_source=capabilities_source)
+            yield frame("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
+            yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed", duration_ms=0, reasoning_duration_ms=None, answer_duration_ms=0)
             return
         try:
             # Raw events are an append-only audit/input stream for the local
             # evolution worker.  They are advisory and never block SSE.
             with contextlib.suppress(Exception):
                 repo.append_raw_event(OWNER_ID, conversation.conversation_id, "user_message", {"content": user_message.content}, message_id=user_message.message_id, idempotency_key=f"message:{user_message.message_id}")
-            yield stream_event("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode)
+            yield frame("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode, reasoning_effort=selected_effort, capabilities_source=capabilities_source)
             recall_running = repo.create_processing_step(assistant_message.message_id, "memory_recall", "running", label="记忆召回")
-            yield stream_event("progress", step_id=recall_running.step_id, kind=recall_running.kind, label=recall_running.label, status="running", summary=None)
+            yield frame("progress", step_id=recall_running.step_id, kind=recall_running.kind, label=recall_running.label, status="running", summary=None)
             try:
                 recall_context = repo.list_recall_context(OWNER_ID, conversation.project_id, query=user_message.content, memory_char_budget=4000, summary_char_budget=1500)
                 memories = recall_context["memories"]
@@ -276,18 +439,18 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             for memory in memories:
                 try:
                     repo.mark_memory_used(memory.memory_id, OWNER_ID)
-                    yield stream_event("memory", status="used", memory_id=memory.memory_id, scope=memory.scope, project_id=memory.project_id, statement=memory.statement)
+                    yield frame("memory", status="used", memory_id=memory.memory_id, scope=memory.scope, project_id=memory.project_id, statement=memory.statement)
                 except Exception:
                     usage_failures += 1
-                    yield stream_event("memory", status="skipped", memory_id=memory.memory_id, scope=memory.scope, project_id=memory.project_id, statement=memory.statement, message="记忆使用记录未保存")
+                    yield frame("memory", status="skipped", memory_id=memory.memory_id, scope=memory.scope, project_id=memory.project_id, statement=memory.statement, message="记忆使用记录未保存")
             if usage_failures:
                 recall_status = "failed"
                 recall_summary = f"召回 {len(memories)} 条长期记忆，其中 {usage_failures} 条使用记录未保存"
             recall_done = repo.create_processing_step(assistant_message.message_id, "memory_recall", recall_status, recall_summary, label="记忆召回")
-            yield stream_event("progress", step_id=recall_done.step_id, kind=recall_done.kind, label=recall_done.label, status=recall_status, summary=recall_done.summary)
+            yield frame("progress", step_id=recall_done.step_id, kind=recall_done.kind, label=recall_done.label, status=recall_status, summary=recall_done.summary)
             if system_rule.enabled and system_rule.content:
                 applied = repo.create_processing_step(assistant_message.message_id, "system_rule", "completed", "已应用系统规则", label="已应用系统规则")
-                yield stream_event("progress", step_id=applied.step_id, kind=applied.kind, label=applied.label, status="completed", summary=applied.summary)
+                yield frame("progress", step_id=applied.step_id, kind=applied.kind, label=applied.label, status="completed", summary=applied.summary)
             project_instructions = None
             if conversation.project_id:
                 project = repo.get_project(conversation.project_id, OWNER_ID)
@@ -302,7 +465,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     visible_documents = []
                 if visible_documents:
                     rag_running = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "running", label="知识库检索")
-                    yield stream_event("progress", step_id=rag_running.step_id, kind=rag_running.kind, label=rag_running.label, status="running", summary=None)
+                    yield frame("progress", step_id=rag_running.step_id, kind=rag_running.kind, label=rag_running.label, status="running", summary=None)
                     try:
                         # Reuse the canonical dense+sparse/RRF/reranker facade.
                         # The same canonical allowlist reaches both dense and
@@ -314,11 +477,11 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                             document_ids=document_ids,
                         )[:5]
                         rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索")
-                        yield stream_event("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
+                        yield frame("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
                     except Exception:
                         rag_hits = []
                         rag_failed = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "failed", "知识库检索失败，已跳过", label="知识库检索")
-                        yield stream_event("progress", step_id=rag_failed.step_id, kind=rag_failed.kind, label=rag_failed.label, status="failed", summary=rag_failed.summary)
+                        yield frame("progress", step_id=rag_failed.step_id, kind=rag_failed.kind, label=rag_failed.label, status="failed", summary=rag_failed.summary)
             history = [message for message in repo.list_context_messages(conversation.conversation_id, OWNER_ID) if message.message_id != user_message.message_id]
             if sum(len(message.content or "") for message in history) > 12000:
                 with contextlib.suppress(Exception):
@@ -338,20 +501,110 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 logger.warning("auto context compaction trigger failed: %s", error)
             repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
             generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
-            yield stream_event("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
-            run = run_chat(user_message.content, model, messages=messages)
-            for event in run.events:
+            yield frame("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
+            run = run_chat(user_message.content, model, messages=messages, reasoning_effort=selected_effort)
+            reasoning_started_at = None
+            reasoning_seen = False
+            if selected_effort != "off":
+                reasoning_started_at = time.monotonic()
+                reasoning_started_mono = reasoning_started_at
+                reasoning_seen = True
+                started_iso = utc_now().isoformat()
+                repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="running", started_at=started_iso, first_reasoning_at=None, last_event_seq=sequencer.event_seq)
+                yield frame("reasoning_started", effort=selected_effort, started_at=started_iso)
+            for event in _iter_run_events(run):
+                if event.get("event_seq") is not None:
+                    incoming_seq = int(event["event_seq"])
+                    if incoming_seq <= adapter_event_seq:
+                        continue
+                    if incoming_seq != adapter_event_seq + 1:
+                        repo.update_message(assistant_message.message_id, OWNER_ID, status="failed")
+                        yield frame("error", code="EVENT_SEQUENCE_GAP", message="事件序列中断", retryable=False)
+                        yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed", duration_ms=max(0.0, (time.monotonic() - stream_started) * 1000.0), reasoning_duration_ms=reasoning_duration_ms, answer_duration_ms=max(0.0, (time.monotonic() - stream_started) * 1000.0))
+                        return
+                    adapter_event_seq = incoming_seq
                 if event.get("type") in {"error", "tool_error"}:
                     with contextlib.suppress(Exception):
                         repo.append_raw_event(OWNER_ID, conversation.conversation_id, "tool_failure", {"error": _redact_sensitive(event.get("message") or event.get("content") or "工具失败"), "verified": False}, message_id=user_message.message_id, idempotency_key=f"tool-failure:{user_message.message_id}")
+                if event.get("type") in {"thinking", "reasoning_delta"} and selected_effort != "off" and not answer_started:
+                    clean = reasoning_stream_filter.push(event.get("content") or "")
+                    if clean:
+                        if not reasoning_content_seen:
+                            reasoning_content_seen = True
+                            repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, first_reasoning_at=utc_now().isoformat(), last_event_seq=sequencer.event_seq)
+                        if not reasoning_seen:
+                            reasoning_started_at = time.monotonic()
+                            reasoning_seen = True
+                            repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="running", started_at=utc_now().isoformat(), first_reasoning_at=utc_now().isoformat(), last_event_seq=sequencer.event_seq)
+                            yield frame("reasoning_started", effort=selected_effort, started_at=utc_now().isoformat())
+                        reasoning_parts.append(clean)
+                        filtered, truncated = filter_reasoning(reasoning_parts)
+                        reasoning_parts[:] = [filtered]
+                        repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, content=filtered, status="running", truncated=truncated, chars=len(filtered), last_event_seq=sequencer.event_seq)
+                        # Keep the live panel bounded as well as the durable
+                        # field; otherwise many deltas could exceed the
+                        # 20,000-code-point contract before persistence trims.
+                        remaining = max(0, MAX_REASONING_CODEPOINTS - reasoning_stream_chars)
+                        visible_clean = clean[:remaining]
+                        reasoning_stream_chars += len(visible_clean)
+                        if visible_clean:
+                            yield frame("reasoning_delta", content=visible_clean)
+                if event.get("type") == "reasoning_completed" and selected_effort != "off" and reasoning_seen:
+                    # Some adapters expose an explicit reasoning terminal
+                    # event before the first answer token.  Treat it as the
+                    # authoritative subphase transition so a later provider
+                    # failure cannot regress the durable reasoning state.
+                    completed_iso = utc_now().isoformat()
+                    provider_status = event.get("status") or "completed"
+                    if provider_status not in {"completed", "failed", "interrupted"}:
+                        provider_status = "completed"
+                    duration = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
+                    reasoning_duration_ms = duration
+                    repo.update_message_reasoning(
+                        assistant_message.message_id,
+                        OWNER_ID,
+                        status=provider_status,
+                        completed_at=completed_iso,
+                        last_event_seq=sequencer.event_seq,
+                    )
+                    yield frame("reasoning_completed", status=provider_status, duration_ms=duration, completed_at=completed_iso)
+                    reasoning_seen = False
+                    reasoning_completed_emitted = True
                 if event.get("type") == "token":
-                    token = event.get("content", "")
-                    parts.append(token)
-                    repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming")
-                    yield stream_event("token", content=token)
+                    token = event.get("content", ""); parts.append(token)
+                    answer_started = True
+                    if reasoning_seen:
+                        tail = reasoning_stream_filter.finish()
+                        if tail:
+                            reasoning_parts.append(tail)
+                            filtered, truncated = filter_reasoning(reasoning_parts)
+                            repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, content=filtered, truncated=truncated, chars=len(filtered), last_event_seq=sequencer.event_seq)
+                            # ``tail`` is flushed after the last chunk and must
+                            # consume the same live SSE budget as ordinary
+                            # reasoning deltas.  Durable persistence is
+                            # truncated separately, so cap the wire stream too.
+                            remaining = max(0, MAX_REASONING_CODEPOINTS - reasoning_stream_chars)
+                            visible_tail = tail[:remaining]
+                            reasoning_stream_chars += len(visible_tail)
+                            if visible_tail:
+                                yield frame("reasoning_delta", content=visible_tail)
+                        completed_iso = utc_now().isoformat()
+                        duration = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
+                        reasoning_duration_ms = duration
+                        repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="completed", completed_at=completed_iso, last_event_seq=sequencer.event_seq)
+                        yield frame("reasoning_completed", status="completed", duration_ms=duration, completed_at=completed_iso)
+                        reasoning_seen = False
+                        reasoning_completed_emitted = True
+                    repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming", first_answer_token_at=utc_now().isoformat() if not parts[:-1] else None, last_event_seq=sequencer.event_seq)
+                    yield frame("token", content=token)
+            # A direct provider can return already-generated chunks together
+            # with an abnormal end marker.  It is not a successful completion.
+            if getattr(run.result, "interrupted", False) or (
+                run.route == "direct" and run.result is not None and not getattr(run.result, "completed_normally", False)
+            ):
+                raise ChatStreamInterrupted("Ollama 流式连接中断，已保存部分内容")
             content = "".join(parts)
-            repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
-            with contextlib.suppress(Exception):
+            try:
                 record_ollama_generation(
                     model=model,
                     prompt_messages=redact_prompt_messages(messages),
@@ -359,30 +612,87 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     route=run.route,
                     started_at=utc_now(),
                     tags=["conversation"],
-                    extra_metadata=prompt_observation_metadata(messages, system_rule_enabled=bool(system_rule.enabled and system_rule.content)),
+                    extra_metadata={key: value for key, value in {"reasoning_status": "completed" if selected_effort != "off" else None, "reasoning_duration_ms": reasoning_duration_ms, "answer_duration_ms": max(0.0, (time.monotonic() - stream_started) * 1000.0)}.items() if value is not None},
                 )
+            except Exception:
+                pass
             generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成", label="回答生成")
-            yield stream_event("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
+            yield frame("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
             if rag_hits:
                 # Sources are deliberately emitted only after the final token
                 # and generation completion event.  The frontend may render
                 # either the canonical ``sources`` field or its citations alias.
                 sources = citation_payloads(rag_hits)[:5]
-                yield stream_event("sources", sources=sources, citations=sources)
-            finished = True
+                yield frame("sources", sources=sources, citations=sources)
             repo.finalize_processing_steps(assistant_message.message_id, status="completed")
-            yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed")
+            if reasoning_seen:
+                tail = reasoning_stream_filter.finish()
+                if tail:
+                    reasoning_parts.append(tail)
+                    filtered, truncated = filter_reasoning(reasoning_parts)
+                    repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, content=filtered, truncated=truncated, chars=len(filtered), last_event_seq=sequencer.event_seq)
+                    # The carry flushed by ``finish`` is part of the same
+                    # reasoning stream; do not let it exceed the 20,000-char
+                    # SSE contract after the prior deltas have been emitted.
+                    remaining = max(0, MAX_REASONING_CODEPOINTS - reasoning_stream_chars)
+                    visible_tail = tail[:remaining]
+                    reasoning_stream_chars += len(visible_tail)
+                    if visible_tail:
+                        yield frame("reasoning_delta", content=visible_tail)
+                reasoning_duration_ms = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
+                completed_iso = utc_now().isoformat()
+                repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="completed", completed_at=completed_iso, last_event_seq=sequencer.event_seq)
+                yield frame("reasoning_completed", status="completed", duration_ms=reasoning_duration_ms, completed_at=completed_iso)
+                reasoning_seen = False
+                reasoning_completed_emitted = True
+            answer_duration_ms = max(0.0, (time.monotonic() - stream_started) * 1000.0)
+            repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
+            # All durable completed state and the final reasoning transition
+            # are written before exposing the terminal SSE event.  A client
+            # disconnect during earlier progress/reasoning events therefore
+            # remains recoverable as interrupted.
+            finished = True
+            yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed", duration_ms=answer_duration_ms, reasoning_duration_ms=reasoning_duration_ms, answer_duration_ms=answer_duration_ms)
         except GeneratorExit:
             raise
+        except ChatStreamInterrupted as error:
+            content = "".join(parts)
+            try:
+                repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="interrupted")
+                if reasoning_seen and not reasoning_completed_emitted:
+                    interrupted_iso = utc_now().isoformat()
+                    reasoning_duration_ms = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
+                    repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="interrupted", completed_at=interrupted_iso, chars=len(reasoning_parts[0]) if reasoning_parts else 0)
+                    yield frame("reasoning_completed", status="interrupted", duration_ms=reasoning_duration_ms, completed_at=interrupted_iso)
+                    reasoning_seen = False
+                    reasoning_completed_emitted = True
+                interrupted_step = repo.create_processing_step(assistant_message.message_id, "generation", "interrupted", "流式连接中断，已保存已生成内容", label="回答生成")
+                yield frame("progress", step_id=interrupted_step.step_id, kind=interrupted_step.kind, label=interrupted_step.label, status="interrupted", summary=interrupted_step.summary)
+                yield frame("error", code="STREAM_INTERRUPTED", message="流式连接中断，已保存已生成内容", retryable=True)
+                repo.finalize_processing_steps(assistant_message.message_id, status="interrupted", summary="流式连接中断，未完成步骤已终止")
+                duration_ms = max(0.0, (time.monotonic() - stream_started) * 1000.0)
+                yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="interrupted", duration_ms=duration_ms, reasoning_duration_ms=reasoning_duration_ms, answer_duration_ms=duration_ms)
+            except Exception:
+                # The finally block below still performs the durable fallback
+                # when the response has already become unwritable.
+                pass
         except Exception as error:
             content = "".join(parts)
             try:
                 repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="failed")
                 generation_failed = repo.create_processing_step(assistant_message.message_id, "generation", "failed", "回答生成失败", label="回答生成")
-                yield stream_event("progress", step_id=generation_failed.step_id, kind=generation_failed.kind, label=generation_failed.label, status="failed", summary=generation_failed.summary)
-                yield stream_event("error", code="CHAT_FAILED", message=_redact_sensitive(error), retryable=True)
+                yield frame("progress", step_id=generation_failed.step_id, kind=generation_failed.kind, label=generation_failed.label, status="failed", summary=generation_failed.summary)
+                if reasoning_seen and not reasoning_completed_emitted:
+                    reasoning_duration_ms = max(0.0, (time.monotonic() - reasoning_started_at) * 1000.0) if reasoning_started_at else None
+                    completed_iso = utc_now().isoformat()
+                    repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="failed", completed_at=completed_iso, last_event_seq=sequencer.event_seq)
+                    yield frame("reasoning_completed", status="failed", duration_ms=reasoning_duration_ms, completed_at=completed_iso)
+                    reasoning_seen = False
+                    reasoning_completed_emitted = True
+                yield frame("error", code="CHAT_FAILED", message=_redact_sensitive(error), retryable=True)
                 repo.finalize_processing_steps(assistant_message.message_id, status="failed", summary="回答失败，未完成步骤已终止")
-                yield stream_event("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed")
+                answer_duration_ms = max(0.0, (time.monotonic() - stream_started) * 1000.0)
+                yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed", duration_ms=answer_duration_ms, reasoning_duration_ms=reasoning_duration_ms, answer_duration_ms=answer_duration_ms)
             except Exception:
                 # Preserve the original failure and let the finally block make
                 # a best-effort durable status update.
@@ -398,6 +708,8 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     current = repo.get_message(assistant_message.message_id, OWNER_ID)
                     if current and current.status in {"pending", "streaming"}:
                         repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="interrupted")
+                        if current.reasoning_status == "running":
+                            repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="interrupted", completed_at=utc_now().isoformat(), chars=len(current.reasoning_content or ""))
                         repo.create_processing_step(assistant_message.message_id, "generation", "interrupted", "流式连接中断，已保存已生成内容", label="回答生成")
                     repo.finalize_processing_steps(assistant_message.message_id, status="interrupted", summary="流式连接中断，未完成步骤已终止")
                 except Exception:
@@ -415,16 +727,37 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
         conversation = repo.get_conversation(conversation_id, OWNER_ID)
         if not conversation:
             raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
+        # An existing conversation's frozen effort wins over the owner
+        # default.  This keeps a stale/unsupported owner preference from
+        # rejecting an otherwise valid session turn.
+        requested_effort = payload.reasoning_effort if payload.reasoning_effort is not None else conversation.reasoning_effort
+        resolution = _resolve_request_effort(payload.model, requested_effort, explicit=payload.reasoning_effort is not None)
     else:
+        inherited_effort = payload.reasoning_effort or repo.get_last_reasoning_effort(OWNER_ID)
+        resolution = _resolve_request_effort(payload.model, inherited_effort, explicit=payload.reasoning_effort is not None)
         try:
-            conversation, user, assistant = repo.create_conversation_messages(OWNER_ID, content, payload.project_id, payload.model, payload.mode)
+            conversation, user, assistant = repo.create_conversation_messages(OWNER_ID, content, payload.project_id, payload.model, payload.mode, resolution.effort, update_preference=payload.reasoning_effort is not None)
         except LookupError as error:
             raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
         except ValueError as error:
             raise HTTPException(status_code=409, detail={"code": "PROJECT_NOT_ACTIVE", "message": str(error), "retryable": False}) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail={"code": "MESSAGE_TRANSACTION_FAILED", "message": "消息与会话偏好更新未完成", "retryable": True}) from error
     if conversation_id:
-        user = repo.create_message(conversation.conversation_id, OWNER_ID, "user", content, status="completed", model=payload.model, mode=payload.mode)
-        assistant = repo.create_message(conversation.conversation_id, OWNER_ID, "assistant", "", status="pending", model=payload.model, mode=payload.mode, parent_message_id=user.message_id)
+        try:
+            conversation, user, assistant = repo.create_message_pair(
+                conversation.conversation_id,
+                OWNER_ID,
+                content,
+                model=payload.model,
+                mode=payload.mode,
+                reasoning_effort=resolution.effort if payload.reasoning_effort is not None else None,
+                update_preference=payload.reasoning_effort is not None,
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": str(error), "retryable": False}) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail={"code": "MESSAGE_TRANSACTION_FAILED", "message": "消息与会话偏好更新未完成", "retryable": True}) from error
     # Persist the message-bound analysis job before opening SSE.  Only queueing
     # happens on the request path; classification and memory writes are fully
     # independent of answer generation.
@@ -443,7 +776,7 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
         # never turn worker initialization into a chat failure.
         logger.warning("memory evolution worker startup unavailable: %s", error)
         pass
-    return StreamingResponse(_message_stream(repo, conversation, user, assistant, payload.model, payload.mode), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(_message_stream(repo, conversation, user, assistant, payload.model, payload.mode, resolution.effort, resolution.capabilities.source), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/conversations/messages")

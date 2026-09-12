@@ -1,7 +1,7 @@
 # Task 04：实现前端推理档位与思考面板
 
 > 关联：[Spec 024](../../specs/024-visible-reasoning-controls.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；被依赖：Task05；当前状态：待执行
+> 依赖：Task03；被依赖：Task05；当前状态：已完成（定向通过）
 
 ## 一句话目标
 
@@ -21,6 +21,7 @@
 4. 推理中自动展开；正文首 token 到达时自动折叠；完成后允许用户重开。
 5. 失败、中止、断线和 off 均收敛到明确终态。
 6. 历史消息读取已保存推理内容，没有数据时不渲染空面板。
+7. 每个 assistant turn 维护 last_event_seq；重复、旧序号和终态后的 reasoning 事件丢弃，不依赖 content 去重。
 
 ## 子 Agent 分派
 
@@ -46,13 +47,14 @@
 - frontend/index.html
 - frontend/app.js
 - frontend/styles.css
-- tests 中 Spec024 前端合同/Node 测试
+- tests/test_spec024_frontend_contract.py 与 tests/test_spec024_frontend.js（仅本 Task 新增/修改）
 - docs/sdd/plans/024/artifacts/task-04/implementation-report.md
 禁止：
 - 修改 backend/**
 - 修改知识库 RAG UI、项目树、记忆管理或 Ollama 配置
 - 使用 innerHTML 写入模型内容
 - 把思考草稿混入正文、处理步骤或记忆结果
+- 猜测或重排后端 event_seq；未知事件只记录并保持当前终态
 - reset、stash、clean、push、合并 main
 完成后的可观察状态：
 - 输入框附近可选择五档
@@ -60,6 +62,7 @@
 - 推理中自动展开，正文开始后自动折叠
 - 完成、失败、中止、断线均停止动画
 - off 和无推理数据不会出现空面板
+- 重复/乱序 event_seq 不重复展示，终态不回到 running
 必须验证：
 - node --check frontend/app.js
 - Spec024 前端合同测试
@@ -87,6 +90,7 @@ docs/sdd/plans/024/artifacts/task-04/implementation-report.md
 - 完成后显示耗时；失败和断线无永久动画。
 - 当前轮档位冻结，生成途中切换只影响下一轮。
 - 无推理数据不显示空面板，推理草稿不会进入正文或记忆结果。
+- 历史 response 中的 reasoning_content、reasoning_status、reasoning_truncated 和 reasoning_chars 能恢复；null 不创建空 DOM。
 
 ## 风险、停止条件与回滚
 
@@ -102,7 +106,8 @@ docs/sdd/plans/024/artifacts/task-04/implementation-report.md
 
 ## 执行结果
 
-待执行后填写。
+2026-09-12：Task03 条件通过后启动前端实现；仅允许修改 frontend/** 与本 Task 前端合同测试和产出报告。
+2026-09-12：frontend-reviewer 判定 GO、frontend-tester 判定 PASS；24 个前端合同用例通过。真实 SSE 浏览器 smoke 因 Ollama/服务不可用留给 Task05。
 
 ## 变更日志
 

@@ -218,10 +218,13 @@ class ChatApiTests(unittest.TestCase):
         kwargs = mock_record.call_args.kwargs
         self.assertEqual(kwargs["model"], "qwen3.5:9b")
         self.assertEqual(kwargs["route"], "langchain")
-        self.assertEqual([message["role"] for message in kwargs["prompt_messages"]], ["system", "user"])
+        self.assertEqual(
+            [message["role"] for message in kwargs["prompt_messages"]],
+            ["system", "system", "user"],
+        )
         self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
-        self.assertEqual(kwargs["extra_metadata"]["role_count"], 2)
-        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "user"])
+        self.assertEqual(kwargs["extra_metadata"]["role_count"], 3)
+        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "system", "user"])
         self.assertEqual(kwargs["extra_metadata"]["char_counts"][-1], len("hi"))
         self.assertEqual(kwargs["tags"], ["chat"])
         self.assertIsNotNone(kwargs["result"])
@@ -233,10 +236,13 @@ class ChatApiTests(unittest.TestCase):
         ), patch("backend.app.api.routes_chat.record_ollama_generation") as mock_record:
             self.client.post("/api/chat", json={"question": "secret-token", "model": "qwen3.5:9b"})
         kwargs = mock_record.call_args.kwargs
-        self.assertEqual([message["role"] for message in kwargs["prompt_messages"]], ["system", "user"])
+        self.assertEqual(
+            [message["role"] for message in kwargs["prompt_messages"]],
+            ["system", "system", "user"],
+        )
         self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
         self.assertNotIn("secret-token", repr(kwargs["prompt_messages"]))
-        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "user"])
+        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "system", "user"])
         self.assertEqual(kwargs["extra_metadata"]["char_counts"][-1], len("secret-token"))
 
     def test_error_path_still_streams_error_and_does_not_crash(self):

@@ -86,10 +86,14 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(kwargs["model"], "m1")
         self.assertEqual(kwargs["name"], "kb.generation")
         self.assertEqual(kwargs["tags"], ["kb"])
-        # 观测只保留 role 与脱敏 content；原始问题不进入 system 观测文本。
-        self.assertEqual([message["role"] for message in kwargs["prompt_messages"]], ["system", "system", "user"])
+        # 观测只保留角色顺序与脱敏 content；平台约束、系统规则和
+        # evidence/advisory 的系统消息数量可随合同扩展，不再硬编码旧数量。
+        roles = [message["role"] for message in kwargs["prompt_messages"]]
+        self.assertGreaterEqual(len(roles), 2)
+        self.assertEqual(roles[-1], "user")
+        self.assertTrue(all(role == "system" for role in roles[:-1]))
         self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
-        self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "system", "user"])
+        self.assertEqual(kwargs["extra_metadata"]["role_names"], roles)
         self.assertEqual(kwargs["route"], "langchain")
         extra = kwargs["extra_metadata"]
         self.assertEqual(extra["top_k"], 3)
@@ -105,6 +109,8 @@ class KbAskTraceTests(unittest.TestCase):
         system_contents = [message["content"] for message in messages if message["role"] == "system"]
         self.assertEqual(messages[-1], {"role": "user", "content": "什么是RAG"})
         self.assertEqual(len([message for message in messages if message["role"] == "user"]), 1)
+        self.assertTrue(any("平台约束" in content for content in system_contents))
+        self.assertTrue(any("严谨的论文助手" in content for content in system_contents))
         self.assertTrue(any("片段内容" in content for content in system_contents))
         self.assertTrue(all("什么是RAG" not in content for content in system_contents))
 
