@@ -1,7 +1,7 @@
 # Task04 — 计划版本、统一审批命令与前端卡片
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；当前状态：`待执行`
+> 依赖：Task03；当前状态：`实施中`
 
 ## 一句话目标
 
