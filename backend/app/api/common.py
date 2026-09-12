@@ -165,6 +165,37 @@ def recover_paper_catalog_searches() -> int:
     return recovered
 
 
+def _build_research_service():
+    """构造 Spec027 ResearchService（延迟 import，避免顶层拉起 research 依赖）。"""
+    from backend.app.research.application.entry import build_research_service
+
+    return build_research_service()
+
+
+def _build_research_store():
+    """构造（并缓存）Spec027 ResearchStore：与 service 同源的 `entry` 工厂。
+
+    api 只用它做**只读投影**（当前计划 / WorkItem 计数），写操作一律经 service。
+    """
+    from backend.app.research.application.entry import build_research_store
+
+    return build_research_store()
+
+
+def recover_research_tasks() -> int:
+    """Spec027 自有启动审计：把遗留 `running` 的 Task/WorkItem 收敛为 interrupted。
+
+    **刻意区别于** `recover_paper_catalog_searches`（Spec015 的 running→queued 重试
+    语义）：027 崩溃后不重试（自动续跑/租约属 Spec028），直接收敛为终态 interrupted，
+    两者不得混用。
+    """
+    return get_provider("research_service").recover_interrupted()
+
+
+register_provider("research_service", _build_research_service)
+register_provider("research_store", _build_research_store)
+
+
 def _paper_candidate_value(candidate: object, name: str, default=None):
     if isinstance(candidate, dict):
         return candidate.get(name, default)
@@ -361,6 +392,7 @@ __all__ = [
     "_paper_catalog_search_graph",
     "submit_paper_catalog_search",
     "recover_paper_catalog_searches",
+    "recover_research_tasks",
     "_conference_payload",
     "_candidate_payload",
     "_accepted_validation_error_code",

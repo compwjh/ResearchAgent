@@ -35,6 +35,13 @@ async def lifespan(_app: FastAPI):
         print(f"[paper-search] 启动恢复失败（已忽略）：{error}")
 
     try:
+        recovered = common.recover_research_tasks()
+        if recovered:
+            print(f"[research] 已将 {recovered} 个运行中任务收敛为 interrupted")
+    except Exception as error:
+        print(f"[research] 启动收敛失败（已忽略）：{error}")
+
+    try:
         FinalizeBundleStore(KB_DIR.parents[1]).require_generation()
     except Exception as error:
         # The API generation gate returns the stable error; startup remains

@@ -32,6 +32,9 @@ data/kb/
 data/models/
 data/agent_tasks.sqlite3
 data/memory/
+# Spec027 Research Task 独立库（与 data/memory、data/paper_search 同范式）：
+# 属运行期数据，整体删除即完成回滚，不入版本库。
+data/research/
 deploy/reranker/.runtime/
 deploy/run.pid
 

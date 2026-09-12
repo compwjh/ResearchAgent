@@ -232,6 +232,13 @@ def remove_project(project_id: str):
         clear_project_document_associations(project_id, owner_id=OWNER_ID)
     except Exception as error:
         raise HTTPException(status_code=503, detail={"code": "DOCUMENT_ASSOCIATION_FAILED", "message": "项目文档关联暂时无法解除", "retryable": True}) from error
+    # Spec027：项目删除时其 Research Task / 计划 / 事件 / 选集 / 报告随项目删除。
+    # 级联走应用层（外键为 RESTRICT，无 DB CASCADE）；与上面同款 fail-closed：
+    # 失败则保留项目并返回 503，避免删掉项目后留下无法再被清理的孤儿 research 数据。
+    try:
+        get_provider("research_service").delete_tasks_for_project(project_id, OWNER_ID)
+    except Exception as error:
+        raise HTTPException(status_code=503, detail={"code": "RESEARCH_CASCADE_FAILED", "message": "研究任务级联删除暂时无法完成", "retryable": True}) from error
     _repo().delete_project(project_id, OWNER_ID)
 
 

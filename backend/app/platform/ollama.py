@@ -12,8 +12,12 @@ Task07 会用 AST 静态检查强制）。因此这里只保留与业务无关�
 留在 platform 会构成反向依赖。
 """
 
+import contextlib
 import hashlib
 import json
+import re
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -237,3 +241,239 @@ class ChatRun:
 
     def __next__(self) -> dict:
         return next(self.events)
+
+
+# --------------------------------------------------------------------------- #
+# 资源探针（Spec027 §动态模型和 Worker）：9B Worker 并发上限 + 全局公平轮转
+# --------------------------------------------------------------------------- #
+# 接口冻结在 platform 层，只从既有 `get_available_models()` 与 Ollama `/api/ps`
+# 读取，禁止新增第二套模型客户端（Spec027 复用接缝）。所有新增符号仅依赖
+# 标准库 + httpx + backend.app.platform.config，不 import 任何业务模块。
+
+RESOURCE_MARGIN_FRACTION = 0.20   # 至少保留 20% 系统余量
+PROBE_TIMEOUT_SECONDS = 3.0
+
+
+def read_loaded_models(base_url: str | None = None, *, timeout: float = PROBE_TIMEOUT_SECONDS) -> list[dict]:
+    """读取 Ollama `/api/ps` 当前已加载（驻留显存）的模型清单。
+
+    仅从既有 Ollama 服务读取，不引入第二套模型客户端（Spec027 复用接缝）。
+
+    设计为「薄读取」：任何网络/解析错误都**向上抛**（主要是 `httpx.HTTPError`），
+    由 `ResourceProbe` 统一捕获并降级为单 Worker。这里故意不做 try/except——
+    读取失败本身就是「探针能力不可用」的信号，吞掉异常反而会让上层误以为
+    「无模型驻留 = 可安全并发」。
+
+    `trust_env=False` 与 `get_available_models` 同理由：macOS 系统代理会把指向
+    localhost:11434 的请求也送进代理，导致 503 误判为「Ollama 不可达」。
+
+    `size_vram` 缺失时补 0（Ollama 某些版本字段名或省略该字段）。
+    """
+    url = f"{(base_url or OLLAMA_BASE_URL).rstrip('/')}/api/ps"
+    response = httpx.get(url, timeout=timeout, trust_env=False)
+    response.raise_for_status()
+    models = response.json().get("models") or []
+    return [{"name": m.get("name"), "size_vram": m.get("size_vram") or 0} for m in models]
+
+
+def _parse_vm_stat_pages(line: str) -> int | None:
+    """解析 `vm_stat` 单行数字，去掉尾随点号与空白；无法解析返回 None。
+
+    `vm_stat` 输出形如 `Pages free:                        123456.`，数字后带尾随点。
+    """
+    match = re.search(r":\s*([\d.]+)\s*$", line)
+    if not match:
+        return None
+    token = match.group(1).rstrip(".")
+    try:
+        return int(token)
+    except ValueError:
+        return None
+
+
+def system_available_memory_bytes() -> int | None:
+    """返回系统近似可用内存（字节）；不可用时返回 None（探针能力不可用）。
+
+    故意不引入 psutil：本机只是资源探针的「能力可用性」信号，近似值已足够裁决 9B
+    并发上限，精确显存占用交给 Ollama `/api/ps` 的 `size_vram`。任何读取失败都必须
+    返回 None 并由 `ResourceProbe` 统一降级为单 Worker，因此此处用窄 try/except 兜住
+    异常、**绝不冒泡**。
+
+    - Linux：解析 `/proc/meminfo` 的 `MemAvailable:`（单位为 kB，乘 1024 得字节）。
+    - macOS（darwin）：解析 `vm_stat` 的 free + speculative + inactive 页数 × 页大小。
+    - 其他平台：返回 None。
+    """
+    if sys.platform == "linux":
+        with contextlib.suppress(OSError, ValueError), open(
+            "/proc/meminfo", encoding="utf-8"
+        ) as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    value = line.split()[1]  # kB
+                    return int(value) * 1024
+        return None
+
+    if sys.platform == "darwin":
+        try:
+            proc = subprocess.run(
+                ["vm_stat"],
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT_SECONDS,
+                check=False,
+            )
+            if proc.returncode != 0:
+                return None
+            page_size: int | None = None
+            free_pages: int | None = None
+            speculative_pages: int | None = None
+            inactive_pages: int | None = None
+            for line in proc.stdout.splitlines():
+                if "page size of" in line:
+                    # 形如 "Mach Virtual Memory Statistics: (page size of 16384 bytes)"
+                    m = re.search(r"page size of\s+(\d+)\s+bytes", line)
+                    if m:
+                        page_size = int(m.group(1))
+                elif line.startswith("Pages free:"):
+                    free_pages = _parse_vm_stat_pages(line)
+                elif line.startswith("Pages speculative:"):
+                    speculative_pages = _parse_vm_stat_pages(line)
+                elif line.startswith("Pages inactive:"):
+                    inactive_pages = _parse_vm_stat_pages(line)
+            if (
+                page_size is None
+                or free_pages is None
+                or speculative_pages is None
+                or inactive_pages is None
+            ):
+                return None
+            return (free_pages + speculative_pages + inactive_pages) * page_size
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return None
+
+    return None
+
+
+@dataclass(frozen=True)
+class ResourceSnapshot:
+    """一次资源探针的只读快照（冻结，便于在并发调度中安全传递与比较）。"""
+
+    available_memory_bytes: int
+    model_footprint_bytes: int
+    loaded_model_count: int
+
+
+class ResourceProbeUnavailable(Exception):
+    """探针拿不到可用内存或已加载模型占用时抛出。
+
+    调用方据此统一降级为单 Worker 并发 `RESOURCE_PROBE_FAILED`，而非用猜测值裁决。
+    """
+
+
+class ResourceProbe:
+    """全局资源探针：裁决 9B 级 fast 模型的并行 Worker 并发上限。
+
+    只从既有 `get_available_models()` 与 Ollama `/api/ps` 读取，保留至少 20% 系统
+    余量。三个 provider 默认走模块级实现，允许注入以便离线测试。调度交给模块级
+    全局单例 `_GLOBAL_WORKER_SCHEDULER`，保证多 Task 共享同一额度、按任务公平轮转。
+    """
+
+    MARGIN_FRACTION = RESOURCE_MARGIN_FRACTION
+
+    def __init__(self, *, available_models_provider=None, loaded_models_provider=None,
+                 memory_provider=None, scheduler=None):
+        # provider 默认分别为模块级既有能力；允许注入以便离线测试。
+        self._available_models = available_models_provider or get_available_models
+        self._loaded_models = loaded_models_provider or read_loaded_models
+        self._memory = memory_provider or system_available_memory_bytes
+        self._scheduler = scheduler or _GLOBAL_WORKER_SCHEDULER
+
+    def snapshot(self) -> ResourceSnapshot:
+        """采集一次资源快照；任一探针环节不可用即抛 `ResourceProbeUnavailable`。
+
+        本机 `/api/ps` 当前无驻留模型时，`footprint` 为 0 会走到
+        `ResourceProbeUnavailable` → 单 Worker。这是**诚实降级**而非缺陷：
+        Task02 门禁已实测本机 `/api/ps == {"models": []}`，即无模型驻留时无法得知
+        占用，宁可保守地降为单 Worker，也不凭空假设可并发。
+        """
+        try:
+            self._available_models()  # 任一异常 → 探针不可用
+        except Exception as exc:  # 含 httpx.HTTPError / json 解析等
+            raise ResourceProbeUnavailable(f"available models probe failed: {exc}") from exc
+        try:
+            loaded = self._loaded_models()  # 任一异常 → 探针不可用
+        except Exception as exc:
+            raise ResourceProbeUnavailable(f"loaded models probe failed: {exc}") from exc
+
+        available = self._memory()
+        if available is None or available <= 0:
+            raise ResourceProbeUnavailable("system available memory unavailable or non-positive")
+
+        footprint = max([m.get("size_vram") or 0 for m in loaded], default=0)
+        if footprint <= 0:
+            # 当前无模型驻留、无法得知占用 → 诚实降级为单 Worker，不是缺陷。
+            raise ResourceProbeUnavailable("no loaded model footprint known")
+
+        return ResourceSnapshot(available, footprint, len(loaded))
+
+    def max_safe_workers(self) -> tuple[int, str | None]:
+        """返回 (安全并发上限, 错误码)。
+
+        正常：保留 MARGIN_FRACTION 余量后，按可用内存 ÷ 单模型显存占用取整，至少 1。
+        探针不可用：返回 (1, "RESOURCE_PROBE_FAILED")，由调用方发出可见事件。
+        """
+        try:
+            snap = self.snapshot()
+        except ResourceProbeUnavailable:
+            return 1, "RESOURCE_PROBE_FAILED"
+        usable = snap.available_memory_bytes * (1 - self.MARGIN_FRACTION)
+        raw = int(usable // snap.model_footprint_bytes)
+        return max(1, raw), None
+
+    def arbitrate(self, task_id: str, requested: int) -> tuple[int, str | None]:
+        """裁决某 Task 实际可领用的 Worker 数 (granted, code)。
+
+        cap 由 `max_safe_workers` 给出；具体额度交给全局调度器公平轮转，保证两个
+        Task 同时运行时不各自独立估算内存。
+        """
+        cap, code = self.max_safe_workers()
+        granted = self._scheduler.acquire(task_id, requested, cap)
+        return granted, code
+
+    def release(self, task_id: str) -> None:
+        """释放该 task 占用的 Worker 额度。"""
+        self._scheduler.release(task_id)
+
+
+class _GlobalWorkerScheduler:
+    """单进程内全局共享的 9B 并发额度调度器（Spec027：两个 Task 同时运行时不各自
+    独立估算内存，额度必须全局共享并按任务公平轮转）。
+
+    所有方法在 `threading.Lock` 内执行，避免并发领用时的「读-判断-写」竞态。
+    任一 Task 最多拿全局上限的一半（cap // 2），保证两个 Task 均分。同一 task 重复
+    acquire 会累加额度（调用方负责在任务结束时 release）。
+    """
+
+    def __init__(self) -> None:
+        self._grants: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def acquire(self, task_id: str, requested: int, cap: int) -> int:
+        with self._lock:
+            per_task = max(1, cap // 2)  # 全局上限，任一 Task 最多拿一半，保证均分
+            used = sum(self._grants.values())
+            grant = max(0, min(int(requested), per_task, cap - used))
+            self._grants[task_id] = self._grants.get(task_id, 0) + grant
+            return grant
+
+    def release(self, task_id: str) -> None:
+        with self._lock:
+            self._grants.pop(task_id, None)
+
+    def in_use(self) -> int:
+        with self._lock:
+            return sum(self._grants.values())
+
+
+# 模块级全局单例：单进程内所有 Research Task 共享同一并发额度。
+_GLOBAL_WORKER_SCHEDULER = _GlobalWorkerScheduler()

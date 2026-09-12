@@ -9,8 +9,11 @@
      INVALID_STATE_TRANSITION。
   5. event_seq 单调、不重用（Fake 原子领号）。
   6. 论文不可信：注入恶意文本后计划/工具集/任务类型白名单不变。
-  7. 复用接缝：CatalogSearchGraph / CatalogRagAdapter 必须由 search_catalog 引用，
-     backend 内不得新增 research 命名空间的采集/索引/RAG 实现（源码静态扫描）。
+  7. 复用接缝：CatalogSearchGraph / CatalogRagAdapter 必须由 search_catalog 引用；
+     research 命名空间可以有编排实现，但源码不得出现第二套采集/索引/缓存/目录/
+     RAG/下载/导入或模型客户端实现（源码静态扫描）。
+     注：Task02 原断言为「该目录不得有任何 .py」，与已确认 spec 的
+     backend/app/research/** 限界上下文互斥，Task03 已精化为内容扫描（更强）。
 
 真实 Ollama 探针（1-4 个 9B 并发资源/吞吐）属环境证据，不在本测试内；
 真实不可达时由报告标记为「环境延期」，逻辑分支由 FakeResourceProbe 证明。
@@ -672,11 +675,55 @@ def test_reuse_seam_catalog_symbols_present():
     assert "class CatalogRagAdapter" in text
 
 
-def test_reuse_seam_no_research_namespace_impl():
+_FORBIDDEN_SECOND_IMPL_TOKENS = (
+    "class CatalogSearchGraph",
+    "class CatalogRagAdapter",
+    "class PaperDiscoveryStore",
+    "PaperDownload",
+    "UsenixPublicationSource",
+    "UsenixAcceptedSource",
+    "DBLPPublicationSource",
+    "ArxivAdapter",
+    "OpenAlexEnricher",
+    "ChatOllama",
+    "httpx.get",
+    "httpx.Client",
+    "httpx.AsyncClient",
+    "requests.get",
+    "get_client",
+    "ensure_collection",
+    "embed_texts",
+)
+
+
+def test_reuse_seam_research_namespace_has_no_second_implementation():
+    """research 命名空间可以有编排实现，但不得有第二套论文能力实现。
+
+    Task02 原断言是「该目录不得有任何 .py 文件」，与已确认 spec 及 Task03 计划
+    （明确新增 backend/app/research/** 限界上下文）互斥，故在 Task03 精化为
+    **源码内容扫描**：逐文件禁止出现 Spec015 采集/索引/缓存/目录/RAG/下载/导入
+    符号与第二套模型客户端。该口径比「零文件」更严格，且不阻塞正当编排实现。
+    """
     if not RESEARCH_NS_DIR.exists():
-        return  # 目录不存在即未新增第二套实现
-    impl_files = list(RESEARCH_NS_DIR.rglob("*.py"))
-    assert impl_files == [], f"research 命名空间不得新增实现，发现: {impl_files}"
+        return
+    offenders = []
+    scanned = 0
+    for path in sorted(RESEARCH_NS_DIR.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        scanned += 1
+        text = _read(path)
+        for token in _FORBIDDEN_SECOND_IMPL_TOKENS:
+            if token in text:
+                offenders.append(f"{path.relative_to(RESEARCH_NS_DIR)} -> {token}")
+    # Task03 复审 P2-C 加强：防止目录被清空时断言静默失效。口径同同族切片测试
+    # `tests/test_spec027_backend_research_slice.py` 的 `assertGreater(scanned, 0)`：
+    # 一个实现文件都没扫到（全部被删除/改名）时，本门禁必须**失败**而不是空转通过。
+    assert scanned > 0, "research 命名空间未扫描到任何实现文件：实现被删除或改名，门禁失效"
+    assert offenders == [], (
+        "research 命名空间不得新增第二套论文采集/索引/缓存/目录/RAG/下载/导入或模型客户端实现，发现: "
+        + "; ".join(offenders)
+    )
 
 
 def test_reuse_seam_single_model_client_entry():
@@ -692,6 +739,28 @@ def test_search_catalog_schema_anchors_to_spec015_seam():
     assert "class CatalogSearchGraph" in seam
     assert "class CatalogRagAdapter" in seam
     assert len(TASK_TYPE_WHITELIST) == 5
+
+
+def test_reuse_seam_research_search_catalog_anchors_to_spec015():
+    """research 的 search_catalog 实现必须锚定 Spec015 既有接缝，不得自建。"""
+    candidates = sorted(RESEARCH_NS_DIR.rglob("*.py")) if RESEARCH_NS_DIR.exists() else []
+    # Task03 复审 P2-C 加强：防止目录被清空时断言静默失效。
+    # 原写法 `if not candidates: return`（Task02「实现尚未落地」时的状态）在
+    # `backend/app/research/**` 一个 .py 都没有（实现被整目录删除或改名）时**静默通过**，
+    # 门禁形同虚设。Task03 起实现已落地，故改为硬断言：扫描到的文件数必须 > 0，
+    # 口径与同族切片测试 `tests/test_spec027_backend_research_slice.py` 的
+    # `assertGreater(scanned, 0)` 一致（属**加强**，非放松）。
+    assert candidates, f"{RESEARCH_NS_DIR} 下未扫描到任何 .py：研究编排实现被删除或改名，门禁失效"
+    scanned = [path for path in candidates if "__pycache__" not in path.parts]
+    assert scanned, "research 命名空间只有 __pycache__，未扫描到实现源码"
+    anchoring = [
+        path for path in scanned
+        if "CatalogSearchGraph" in _read(path) or "CatalogRagAdapter" in _read(path)
+    ]
+    assert anchoring, (
+        "research 命名空间已存在实现，但没有任何文件引用 CatalogSearchGraph / CatalogRagAdapter，"
+        "违反 Spec027「复用接缝（强制）」"
+    )
 
 
 # =========================================================================== #

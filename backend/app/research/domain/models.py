@@ -1,0 +1,299 @@
+"""Research Task 领域实体（纯 Python，无 IO / 无网络 / 无 SQLite 依赖）。
+
+所有 JSON 字段（*_json）在实体里保持**字符串**语义，to_dict() 原样返回字符串；
+仅便捷属性在需要时才做 json.loads，解析失败返回空值、不抛异常。
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Mapping, Self
+
+
+@dataclass
+class ResearchTask:
+    """研究任务聚合根：用户发起的一个可持久化深度研究任务。"""
+
+    research_task_id: str
+    owner_id: str
+    conversation_id: str
+    goal: str
+    language: str
+    quality_profile: str
+    review_plan_first: bool
+    target_paper_count: int
+    soft_budget_seconds: int
+    status: str
+    current_plan_version: int
+    created_at: str
+    updated_at: str
+    project_id: str | None = None
+    completed_at: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "research_task_id": self.research_task_id,
+            "owner_id": self.owner_id,
+            "project_id": self.project_id,
+            "conversation_id": self.conversation_id,
+            "goal": self.goal,
+            "language": self.language,
+            "quality_profile": self.quality_profile,
+            "review_plan_first": self.review_plan_first,
+            "target_paper_count": self.target_paper_count,
+            "soft_budget_seconds": self.soft_budget_seconds,
+            "status": self.status,
+            "current_plan_version": self.current_plan_version,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "completed_at": self.completed_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            research_task_id=row["research_task_id"],
+            owner_id=row["owner_id"],
+            project_id=row.get("project_id"),
+            conversation_id=row["conversation_id"],
+            goal=row["goal"],
+            language=row["language"],
+            quality_profile=row["quality_profile"],
+            review_plan_first=bool(row["review_plan_first"]),
+            target_paper_count=int(row["target_paper_count"]),
+            soft_budget_seconds=int(row["soft_budget_seconds"]),
+            status=row["status"],
+            current_plan_version=int(row["current_plan_version"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            completed_at=row.get("completed_at"),
+        )
+
+
+@dataclass
+class ResearchPlan:
+    """研究计划：某一版本的受校验 WorkItem 集合与摘要。"""
+
+    research_task_id: str
+    version: int
+    rationale_summary: str
+    facets_json: str
+    status: str
+    created_at: str
+    planner_model: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "research_task_id": self.research_task_id,
+            "version": self.version,
+            "planner_model": self.planner_model,
+            "rationale_summary": self.rationale_summary,
+            "facets_json": self.facets_json,
+            "status": self.status,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            research_task_id=row["research_task_id"],
+            version=int(row["version"]),
+            planner_model=row.get("planner_model"),
+            rationale_summary=row["rationale_summary"],
+            facets_json=row["facets_json"],
+            status=row["status"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass
+class ResearchWorkItem:
+    """研究计划中的一个 WorkItem：单一角色执行的原子任务。"""
+
+    work_item_id: str
+    research_task_id: str
+    plan_version: int
+    task_type: str
+    role: str
+    depends_on_json: str
+    input_json: str
+    status: str
+    attempt: int
+    created_at: str
+    updated_at: str
+    output_json: str | None = None
+    model_tier: str | None = None
+    resolved_model: str | None = None
+    worker_slot: str | None = None
+    error_code: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "work_item_id": self.work_item_id,
+            "research_task_id": self.research_task_id,
+            "plan_version": self.plan_version,
+            "task_type": self.task_type,
+            "role": self.role,
+            "depends_on_json": self.depends_on_json,
+            "input_json": self.input_json,
+            "output_json": self.output_json,
+            "model_tier": self.model_tier,
+            "resolved_model": self.resolved_model,
+            "worker_slot": self.worker_slot,
+            "status": self.status,
+            "attempt": self.attempt,
+            "error_code": self.error_code,
+            "started_at": self.started_at,
+            "ended_at": self.ended_at,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            work_item_id=row["work_item_id"],
+            research_task_id=row["research_task_id"],
+            plan_version=int(row["plan_version"]),
+            task_type=row["task_type"],
+            role=row["role"],
+            depends_on_json=row["depends_on_json"],
+            input_json=row["input_json"],
+            status=row["status"],
+            attempt=int(row["attempt"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            output_json=row.get("output_json"),
+            model_tier=row.get("model_tier"),
+            resolved_model=row.get("resolved_model"),
+            worker_slot=row.get("worker_slot"),
+            error_code=row.get("error_code"),
+            started_at=row.get("started_at"),
+            ended_at=row.get("ended_at"),
+        )
+
+    @property
+    def depends_on(self) -> list[str]:
+        """解析 depends_on_json；空串/None/非 list/解析失败均返回空 list，不抛异常。"""
+        raw = self.depends_on_json
+        if not raw:
+            return []
+        try:
+            value = json.loads(raw)
+        except (ValueError, TypeError):
+            return []
+        return value if isinstance(value, list) else []
+
+    @property
+    def input_params(self) -> dict:
+        """解析 input_json 为参数字典；空串/None/非 dict/解析失败均返回空 dict，不抛异常。"""
+        raw = self.input_json
+        if not raw:
+            return {}
+        try:
+            value = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+
+@dataclass
+class ResearchEvent:
+    """研究任务事件：用于 SSE 持久化与断线恢复的安全事件流。"""
+
+    research_task_id: str
+    event_seq: int
+    event_type: str
+    safe_payload_json: str
+    created_at: str
+
+    def to_dict(self) -> dict:
+        return {
+            "research_task_id": self.research_task_id,
+            "event_seq": self.event_seq,
+            "event_type": self.event_type,
+            "safe_payload_json": self.safe_payload_json,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            research_task_id=row["research_task_id"],
+            event_seq=int(row["event_seq"]),
+            event_type=row["event_type"],
+            safe_payload_json=row["safe_payload_json"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass
+class ResearchPaperSelection:
+    """论文入选评估：引用 Spec015 全局目录，不复制论文元数据。"""
+
+    research_task_id: str
+    catalog_paper_id: str
+    relevance: float
+    facets_json: str
+    evidence_level: str
+    created_at: str
+
+    def to_dict(self) -> dict:
+        return {
+            "research_task_id": self.research_task_id,
+            "catalog_paper_id": self.catalog_paper_id,
+            "relevance": self.relevance,
+            "facets_json": self.facets_json,
+            "evidence_level": self.evidence_level,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            research_task_id=row["research_task_id"],
+            catalog_paper_id=row["catalog_paper_id"],
+            relevance=float(row["relevance"]),
+            facets_json=row["facets_json"],
+            evidence_level=row["evidence_level"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass
+class PreliminaryReport:
+    """初步/正式研究报告：只读正文，结论必须带论文引用。"""
+
+    report_id: str
+    research_task_id: str
+    plan_version: int
+    status: str
+    markdown: str
+    limitations_json: str
+    created_at: str
+
+    def to_dict(self) -> dict:
+        return {
+            "report_id": self.report_id,
+            "research_task_id": self.research_task_id,
+            "plan_version": self.plan_version,
+            "status": self.status,
+            "markdown": self.markdown,
+            "limitations_json": self.limitations_json,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            report_id=row["report_id"],
+            research_task_id=row["research_task_id"],
+            plan_version=int(row["plan_version"]),
+            status=row["status"],
+            markdown=row["markdown"],
+            limitations_json=row["limitations_json"],
+            created_at=row["created_at"],
+        )
