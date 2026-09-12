@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "spaceKey": "7a02963d10d240c799a3f78a47986fef",
+      "projectPath": "/Users/wjh/work/ResearchAgent-2/_deploy_root",
+      "desc": "ResearchAgent — USENIX 论文检索与对话系统（FastAPI 后端 + 静态前端）。本次部署含 spec-032.1（Skill/Tool 分层解耦 + 详情页摘要）与 spec-033（解析器真实页面对齐）及会话技能改动。",
+      "createdAt": 1789228017777
+    },
+    {
+      "spaceKey": "9f6baaf7268e4eae9ab4b89d7a895ad1",
+      "projectPath": "/Users/wjh/work/ResearchAgent-2/_deploy_root",
+      "desc": "ResearchAgent — USENIX 论文检索与对话系统（FastAPI 后端 + 静态前端）。本次部署含 spec-032.1（Skill/Tool 分层解耦 + 详情页摘要）与 spec-033（解析器真实页面对齐）及会话技能改动。已包含 vendor/langfuse。",
+      "createdAt": 1789228078903
+    }
+  ]
+}

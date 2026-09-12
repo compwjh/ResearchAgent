@@ -6,6 +6,9 @@
 - ``search_paper_catalog``   -> ``PaperDiscoverySearchService.search``（经 common._build_paper_search_service）
 - ``download_and_import_paper`` -> ``import_candidate``，allowed_hosts 复用既有
   ``_paper_candidate_hosts`` 白名单（usenix.org 同源 + 服务端配置），**不新建旁路下载器**。
+- ``fetch_paper_detail``     -> ``UsenixAcceptedSource.fetch_paper_detail``（复用既有
+  ``_detail_url_ok`` 白名单 + ``_fetch_detail`` 限速请求 + ``parse_usenix_detail``，
+  只取 HTML 详情页摘要元数据，**不下载 PDF**）
 - ``kb_search``              -> ``hybrid_search``（知识库混合检索）
 - ``kb_ask``                -> ``hybrid_search`` 取回片段（最终合成由编排器回灌模型完成）
 
@@ -19,13 +22,41 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Dict
+import threading
+from typing import Any, Callable, Dict, Optional
 
 from backend.app.skills.tool_executor import DispatchResult
 
 logger = logging.getLogger(__name__)
 
 DispatchFn = Callable[[dict], DispatchResult]
+
+# ``search_paper_catalog`` 回灌给模型的候选条数上限：要足够多以便对摘要为空的候选
+# 调 ``fetch_paper_detail`` 补齐，又不能一次塞进 20+ 篇把上下文撑爆（总数另行说明）。
+_SEARCH_LIST_LIMIT = 8
+
+# ``UsenixAcceptedSource`` owns the per-site rate-limit clock (``_next_request_at``)
+# and the response cache (``self._cache``).  Building one per Tool call threw both
+# away, so N calls meant N live requests with an empty sleep log - the limiter was
+# effectively off and every repeat of a URL hit usenix.org again.  One lazily
+# built, process-wide instance keeps that state alive across calls, while the
+# heavy import stays lazy (the module must remain safe to import).
+_usenix_source: Optional[Any] = None
+_usenix_source_lock = threading.Lock()
+
+
+def _usenix_detail_source() -> Any:
+    """Return the process-wide ``UsenixAcceptedSource`` (built on first use)."""
+    global _usenix_source
+    if _usenix_source is None:
+        with _usenix_source_lock:
+            if _usenix_source is None:
+                from backend.app.paper_discovery.infrastructure.usenix_publication_source import (
+                    UsenixAcceptedSource,
+                )
+
+                _usenix_source = UsenixAcceptedSource()
+    return _usenix_source
 
 
 def _summarize(obj, limit: int = 5) -> str:
@@ -111,10 +142,24 @@ def _search_catalog(args: dict) -> DispatchResult:
         publication_scope=publication_scope,
     )
     count = len(getattr(result, "candidates", []) or [])
-    titles = [getattr(c, "title", "") for c in getattr(result, "candidates", []) or []][:5]
-    body = f"检索完成：来源={getattr(chosen, 'short_name', '?')}，命中 {count} 篇候选论文。\n" + "\n".join(
-        f"- {t}" for t in titles if t
-    )
+    candidates = list(getattr(result, "candidates", []) or [])[:_SEARCH_LIST_LIMIT]
+    lines = []
+    for index, candidate in enumerate(candidates, start=1):
+        title = getattr(candidate, "title", "")
+        if not title:
+            continue
+        lines.append(f"{index}. {title}")
+        # 详情页 URL 只取自候选对象本身（优先 article_url，回退 source_page_url），
+        # 绝不拼接 / 猜测；两个都缺失时该行不输出，让模型知道该篇无法补摘要。
+        detail_url = getattr(candidate, "article_url", None) or getattr(candidate, "source_page_url", None)
+        if detail_url:
+            lines.append(f"   详情页: {detail_url}")
+        abstract = str(getattr(candidate, "abstract", "") or "").strip()
+        if abstract:
+            lines.append(f"   摘要: {abstract}")
+        else:
+            lines.append("   摘要: （缺失，可对该篇详情页调用 fetch_paper_detail 补齐）")
+    body = f"检索完成：来源={getattr(chosen, 'short_name', '?')}，命中 {count} 篇候选论文。\n" + "\n".join(lines)
     return DispatchResult(ok=True, name="search_paper_catalog", output=body)
 
 
@@ -171,9 +216,54 @@ def _kb_ask(args: dict) -> DispatchResult:
     return _kb_search(args)
 
 
+def _fetch_paper_detail(args: dict) -> DispatchResult:
+    """取单篇 USENIX 论文的详情页摘要元数据（只读 HTML，不下载 PDF）。
+
+    复用既有公开入口 ``UsenixAcceptedSource.fetch_paper_detail``：URL 白名单
+    （``_detail_url_ok``）、限速请求（``_fetch_detail``）与解析
+    （``parse_usenix_detail``）都只有那一套实现，这里只做「参数校验 + 结果组织成
+    模型可读文本 + 失败降级」。
+    """
+    url = args.get("url")
+    if not isinstance(url, str) or not url.strip():
+        return DispatchResult(
+            ok=False,
+            name="fetch_paper_detail",
+            error=(
+                "缺少必填参数 url：需为 USENIX 官方 presentation 详情页地址，形如 "
+                "https://www.usenix.org/conference/<conference>/presentation/<paper>"
+            ),
+        )
+
+    detail = _usenix_detail_source().fetch_paper_detail(url.strip())
+    if not detail.get("ok"):
+        # 保留可诊断信息（错误码 + 具体说明），与 _download_import 风格一致。
+        code = detail.get("error_code") or "USENIX_DETAIL_FAILED"
+        return DispatchResult(
+            ok=False, name="fetch_paper_detail", error=f"{code}：{detail.get('error') or code}"
+        )
+
+    title = detail.get("title") or "（未解析到标题）"
+    authors = "、".join(str(a) for a in (detail.get("authors") or [])) or "（未解析到作者）"
+    year = detail.get("year") or "（未解析到年份）"
+    abstract = (detail.get("abstract") or "").strip() or "（该详情页未提供摘要）"
+    keywords = "、".join(str(k) for k in (detail.get("keywords") or []))
+    lines = [
+        f"论文详情（来源：USENIX 官方详情页 {detail.get('url') or url}）",
+        f"标题：{title}",
+        f"作者：{authors}",
+        f"年份：{year}",
+        f"摘要：{abstract}",
+    ]
+    if keywords:
+        lines.append(f"关键词：{keywords}")
+    return DispatchResult(ok=True, name="fetch_paper_detail", output="\n".join(lines))
+
+
 _ADAPTERS: Dict[str, DispatchFn] = {
     "search_paper_catalog": _search_catalog,
     "download_and_import_paper": _download_import,
+    "fetch_paper_detail": _fetch_paper_detail,
     "kb_search": _kb_search,
     "kb_ask": _kb_ask,
 }

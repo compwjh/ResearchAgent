@@ -21,6 +21,7 @@ import contextlib
 import hashlib
 import inspect
 import json
+import logging
 import os
 import re
 import tempfile
@@ -134,6 +135,11 @@ from backend.app.platform.ports import (
     PaperImportResult as PortImportResult,
 )
 
+# 导入失败在 port 边界会被压成稳定错误码，异常文本不会进入 API 或批次记录。
+# 没有日志就只剩一个"论文导入失败"，无法区分下载产物、generation 漂移、
+# Ollama embedding 超时等完全不同的故障；这里把真实原因留在服务端日志里。
+logger = logging.getLogger(__name__)
+
 _UPLOAD_LOCK = threading.RLock()
 _SAFE_SERVER_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 
@@ -214,11 +220,21 @@ def _generation_root(meta_path: Path) -> Path:
     return parent
 
 
-def _active_generation_collection(meta_path: Path) -> str:
-    """Return the marker-bound collection; never fall back to fixed ``papers``."""
+def _active_generation_collection(meta_path: Path, *, allow_stale_metadata: bool = False) -> str:
+    """Return the marker-bound collection; never fall back to fixed ``papers``.
+
+    ``allow_stale_metadata`` 只放宽「摘要过期」这一种情况：并发的导入/索引正在写
+    ``papers.json`` 时，marker 里记的 ``metadata_sha256`` 会短暂对不上，这是瞬时竞态，
+    稍后写方会 ``_refresh_generation_digests`` 修正。此时仍然校验 marker 结构并读取
+    当前的 ``alias_target``，所以**真正的代次切换（集合换掉了）照样会被
+    ``INDEX_GENERATION_DRIFT`` 拦下**。读取路径（启动闸门、状态、检索）一律保持
+    fail-closed，不传这个参数。
+    """
     try:
         marker = FinalizeBundleStore(_generation_root(meta_path)).require_generation()
     except ManifestStoreError as error:
+        if allow_stale_metadata and getattr(error, "code", "") == "INDEX_FINALIZE_REQUIRED":
+            return _read_marker_collection_after_state_write(meta_path)
         raise KnowledgeDocumentMigrationError(getattr(error, "code", "INDEX_REBUILD_REQUIRED")) from error
     destination = marker.get("alias_target") if isinstance(marker, Mapping) else None
     if not isinstance(destination, str) or not destination:
@@ -293,12 +309,7 @@ def _assert_generation_binding(
     """
     if destination_collection is None:
         return
-    try:
-        current = _active_generation_collection(meta_path)
-    except KnowledgeDocumentMigrationError as error:
-        if not allow_stale_metadata or error.code != "INDEX_FINALIZE_REQUIRED":
-            raise
-        current = _read_marker_collection_after_state_write(meta_path)
+    current = _active_generation_collection(meta_path, allow_stale_metadata=allow_stale_metadata)
     if current != destination_collection:
         raise KnowledgeDocumentMigrationError("INDEX_GENERATION_DRIFT")
 
@@ -309,12 +320,16 @@ def _capture_import_generation(meta_path: Path, *, required: bool) -> str | None
     Custom injected indexers remain usable in marker-less temporary fixtures.
     The default composition path is fail-closed before it writes source or
     metadata, so an import can never be created without a generation binding.
+
+    放宽摘要过期：并发导入/索引写 ``papers.json`` 期间 marker 摘要会瞬时对不上，
+    这里仍然要从**当前** marker 取到 binding（结构校验 + alias_target），
+    真正的代次切换由后续 ``_assert_generation_binding`` 拦下。
     """
     generation_store = FinalizeBundleStore(_generation_root(meta_path))
     marker_path = generation_store.live_root / "index-generation.json"
     if not marker_path.exists() and not required:
         return None
-    return _active_generation_collection(meta_path)
+    return _active_generation_collection(meta_path, allow_stale_metadata=True)
 
 
 def _refresh_generation_digests(
@@ -502,7 +517,11 @@ def create_immutable_document(
             # Paper imports carry a captured generation.  Check immediately
             # before the canonical metadata write so an already-drifted marker
             # cannot make a resource look valid in the new generation.
-            _assert_generation_binding(meta, destination_collection)
+            #
+            # 这里必须容忍摘要过期：并发的索引任务正在写 papers.json 时摘要会瞬时
+            # 对不上（INDEX_FINALIZE_REQUIRED），而那是正常竞态、不是代次切换。
+            # 真正需要拦的是 alias_target 变化，由 INDEX_GENERATION_DRIFT 负责。
+            _assert_generation_binding(meta, destination_collection, allow_stale_metadata=True)
             write_import_knowledge_document(document, meta)
             # The marker can drift while metadata is being written.  Check
             # again before refreshing its digest; on failure the surrounding
@@ -956,6 +975,31 @@ def _index_succeeded(value: Any) -> bool:
     return status == STATUS_INDEXED
 
 
+def _index_error_detail(value: Any) -> str:
+    """Extract the indexer's own failure text for server-side diagnostics.
+
+    ``_index_succeeded`` only reports a boolean; the real cause (for example
+    ``索引失败：无法连接 Ollama：timed out``) lives inside the result mapping.
+    This never reaches the API or durable state — it is log-only.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, Mapping):
+        return str(getattr(value, "error", "") or "")
+    parts: list[str] = []
+    top = value.get("error")
+    if top:
+        parts.append(str(top))
+    chunkers = value.get("chunkers")
+    if isinstance(chunkers, Mapping):
+        for name, state in chunkers.items():
+            if isinstance(state, Mapping):
+                message = state.get("error") or state.get("status")
+                if message:
+                    parts.append(f"{name}={message}")
+    return "; ".join(parts)
+
+
 def _deletion_succeeded(value: Any) -> bool:
     """Interpret an injected vector-delete result without guessing unknowns."""
     if value is None:
@@ -1180,7 +1224,11 @@ class KnowledgeBasePaperImportAdapter:
                     self.meta_path,
                     required=self.indexer is None,
                 )
-            except KnowledgeDocumentMigrationError:
+            except KnowledgeDocumentMigrationError as error:
+                logger.error(
+                    "论文导入失败：索引代次不可用 meta_path=%s code=%s（需重建索引）",
+                    self.meta_path, getattr(error, "code", "INDEX_REBUILD_REQUIRED"),
+                )
                 return PortImportResult(
                     paper_id=None,
                     index_status=ImportIndexStatus.FAILED,
@@ -1217,6 +1265,10 @@ class KnowledgeBasePaperImportAdapter:
                     # Preserve the stable storage-contention mapping at the
                     # paper-discovery boundary; do not flatten it to import failure.
                     raise
+                logger.exception(
+                    "论文导入失败：创建不可变文档出错 name=%s collection=%s",
+                    requested_name, generation_collection,
+                )
                 return PortImportResult(
                     paper_id=None,
                     index_status=ImportIndexStatus.FAILED,
@@ -1254,6 +1306,9 @@ class KnowledgeBasePaperImportAdapter:
                 stored_name=safe_name,
             )
 
+        # 区分两段失败：索引本身失败（KB_INDEX_FAILED，文件已落盘、可重建索引）
+        # 与索引成功后的收尾失败（generation 漂移 / 元数据写回失败，KB_IMPORT_FAILED）。
+        index_ok = False
         try:
             index_result = _call_supported(
                 self.indexer or self._default_indexer,
@@ -1266,6 +1321,7 @@ class KnowledgeBasePaperImportAdapter:
             )
             if not _index_succeeded(index_result):
                 raise RuntimeError("index failed")
+            index_ok = True
             updates: dict[str, Any] = {"status": STATUS_INDEXED, "error": None}
             if isinstance(index_result, Mapping):
                 if isinstance(index_result.get("chunkers"), dict):
@@ -1292,6 +1348,14 @@ class KnowledgeBasePaperImportAdapter:
         except Exception as error:
             storage_locked = _is_storage_locked_error(error)
             capability = created.get("resource_capability")
+            logger.error(
+                "论文导入失败：%s paper_id=%s stored_name=%s collection=%s"
+                " 索引返回=%s 异常=%s: %s",
+                "向量索引未成功" if not index_ok else "索引成功但收尾失败（代次漂移/元数据写回）",
+                getattr(record, "paper_id", None), safe_name, generation_collection,
+                _index_error_detail(locals().get("index_result")) or "<索引器抛异常>",
+                type(error).__name__, error,
+            )
             vector_unknown = False
             try:
                 # A caller-supplied deleter is an explicit, testable seam.  In
@@ -1325,7 +1389,13 @@ class KnowledgeBasePaperImportAdapter:
             return PortImportResult(
                 paper_id=record.paper_id if cleanup_status != "completed" else None,
                 index_status=ImportIndexStatus.FAILED,
-                error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
+                # index_ok 为假说明索引本身没建起来：源文件与元数据已落盘，
+                # 用专门错误码让调用方区分"根本没入库"和"已入库待重建索引"。
+                # 索引成功但收尾失败（代次漂移等）仍归 KB_IMPORT_FAILED。
+                error_code=(
+                    PaperImportErrorCode.KB_INDEX_FAILED if not index_ok
+                    else PaperImportErrorCode.KB_IMPORT_FAILED
+                ),
                 source_sha256=document.get("source_sha256"),
                 cleanup_status=cleanup_status if cleanup_status != "completed" else None,
                 resource_capability=capability if cleanup_status != "completed" else None,

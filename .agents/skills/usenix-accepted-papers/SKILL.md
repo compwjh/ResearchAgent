@@ -2,9 +2,14 @@
 name: usenix-accepted-papers
 description: ResearchAgent 项目级 USENIX Security accepted/prepublication 论文下载、PDF 安全验证、导入与失败恢复协议；不负责目录检索。
 tools: [download_and_import_paper]
+status: legacy
 ---
 
 # USENIX accepted papers — 下载与导入版
+
+> ⚠️ **遗留版本（待迁移）**：本文件保留以确保既有引用不失效。
+> 新的编排协议请使用 `usenix-download-orchestration`（只含编排决策，不含研发流程与调度规则）。
+> 论文检索模块迁移到新技能后，本文件将被废弃。
 
 ## 适用范围
 

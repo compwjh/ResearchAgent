@@ -17,27 +17,19 @@ def test_tables_created_and_indexes_idempotent(tmp_path):
     repo = MemoryRepository(path)
     repo.initialize()
     repo.initialize()  # 连续第二次初始化必须幂等（含索引）
-    tables = {
-        r["name"]
-        for r in repo.connection().execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-    }
+    with repo.connection() as db:
+        tables = {r["name"] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        indexes = {r["name"] for r in db.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
     assert "conversation_segments" in tables
     assert "conversation_compaction_jobs" in tables
-    indexes = {
-        r["name"]
-        for r in repo.connection().execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
-    }
     assert "idx_conversation_segments_seq" in indexes
     assert "idx_compaction_job_active" in indexes
 
 
 def test_is_task025_schema_passes(tmp_path):
     repo = _make_repo(tmp_path)
-    conn = repo.connection()
-    try:
+    with repo.connection() as conn:
         assert MemoryRepository._is_task025_schema(conn) is True
-    finally:
-        conn.close()
 
 
 def test_segment_write_and_seq_ordering(tmp_path):

@@ -16,7 +16,9 @@ def test_sqlite_memory_schema_is_idempotent_and_isolated(tmp_path):
     repo = MemoryRepository(path)
     repo.initialize()
     repo.initialize()
-    assert repo.connection().execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    # connection() 现在是 contextmanager：显式 with 才能拿到连接并在退出时关闭。
+    with repo.connection() as db:
+        assert db.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
     project = repo.create_project("owner-a", "Demo")
     assert project.owner_id == "owner-a"
     assert repo.get_project(project.project_id, "owner-b") is None
@@ -366,3 +368,61 @@ def test_summary_recall_without_match_is_empty(tmp_path):
     conversation = repo.create_conversation("owner-a", project.project_id)
     repo.upsert_conversation_summary("owner-a", conversation.conversation_id, "关于数据库索引的摘要")
     assert repo.list_recall_summaries("owner-a", project.project_id, query="完全不相关", budget_chars=1000) == []
+
+
+# ---------------------------------------------------------------------------
+# Spec032.1 task-10 修复：connection() 必须在退出时关闭连接。
+#
+# sqlite3.Connection 的 ``with`` 语义是「事务」（commit/rollback），**不关闭**连接。
+# 修复前 ``MemoryRepository.connection()`` 返回裸连接，45 处 ``with self.connection()``
+# 读路径的连接全部泄漏，导致 TemporaryDirectory 清理时出现
+# ``OSError: [Errno 66] Directory not empty``（WAL/journal 残留未释放）。
+# ---------------------------------------------------------------------------
+def test_connection_closes_on_with_exit(tmp_path):
+    repo = MemoryRepository(tmp_path / "closes.sqlite3")
+    with repo.connection() as db:
+        assert db.execute("SELECT 1").fetchone()[0] == 1
+    # closed 连接再次执行必须抛 ProgrammingError；反之即泄漏。
+    with pytest.raises(sqlite3.ProgrammingError):
+        db.execute("SELECT 1")
+
+
+def test_connection_closes_on_exception(tmp_path):
+    repo = MemoryRepository(tmp_path / "closes-on-error.sqlite3")
+    # 嵌套是刻意的：pytest.raises 必须包住整个 with 块，合并会改变语义。
+    with pytest.raises(RuntimeError, match="boom"):  # noqa: SIM117
+        with repo.connection() as db:
+            raise RuntimeError("boom")
+    with pytest.raises(sqlite3.ProgrammingError):
+        db.execute("SELECT 1")
+
+
+def test_repeated_reads_do_not_accumulate_open_connections(tmp_path):
+    """连续读路径不得累积未关闭连接（回归 teardown 的 Errno 66）。"""
+    repo = MemoryRepository(tmp_path / "no-leak.sqlite3")
+    project = repo.create_project("owner-a", "P")
+    conversation = repo.create_conversation("owner-a", project.project_id, title="c")
+    for index in range(24):
+        repo.create_message(conversation.conversation_id, "owner-a", "user", f"m{index}", status="completed")
+    for _ in range(12):
+        repo.list_messages(conversation.conversation_id, "owner-a")
+        repo.list_projects("owner-a")
+    # 所有这些读路径用的连接都必须已关闭（未关闭时 fsync/清理会残留 WAL 侧文件）。
+    with repo.connection() as db:
+        assert db.execute("SELECT 1").fetchone()[0] == 1
+
+
+def test_initialize_and_transaction_still_work_after_contextmanager_change(tmp_path):
+    """transaction() 语义（BEGIN IMMEDIATE / COMMIT / rollback）保持不变。"""
+    repo = MemoryRepository(tmp_path / "tx.sqlite3")
+    project = repo.create_project("owner-a", "P")
+    with repo.transaction() as db:
+        db.execute("UPDATE projects SET name='Renamed' WHERE project_id=?", (project.project_id,))
+    assert repo.get_project(project.project_id, "owner-a").name == "Renamed"
+
+    # 同上：pytest.raises 包住 transaction 块以验证 rollback，不可合并。
+    with pytest.raises(RuntimeError, match="rollback me"):  # noqa: SIM117
+        with repo.transaction() as db:
+            db.execute("UPDATE projects SET name='ShouldRollback' WHERE project_id=?", (project.project_id,))
+            raise RuntimeError("rollback me")
+    assert repo.get_project(project.project_id, "owner-a").name == "Renamed"

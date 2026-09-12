@@ -372,7 +372,11 @@ def test_default_deleter_uses_creation_generation_after_marker_drift(tmp_path, m
         seen.append(self.destination_collection)
 
     monkeypatch.setattr(application_module.GenerationBoundIndexPort, "delete_document", delete)
-    monkeypatch.setattr(application_module, "_active_generation_collection", lambda _meta: "papers_rebuild_two")
+    monkeypatch.setattr(
+        application_module,
+        "_active_generation_collection",
+        lambda _meta, *, allow_stale_metadata=False: "papers_rebuild_two",
+    )
     port._default_deleter(result.paper_id, capability=capability)
 
     assert seen == ["papers_rebuild_one"]
@@ -402,7 +406,11 @@ def test_default_indexer_uses_creation_generation_after_marker_drift(tmp_path, m
         "submit_index_task",
         lambda _paper_id, _chunker, runner: runner(lambda _progress: None) or True,
     )
-    monkeypatch.setattr(application_module, "_active_generation_collection", lambda _meta: "papers_rebuild_two")
+    monkeypatch.setattr(
+        application_module,
+        "_active_generation_collection",
+        lambda _meta, *, allow_stale_metadata=False: "papers_rebuild_two",
+    )
 
     port._default_indexer(
         record,
@@ -449,7 +457,7 @@ def test_import_generation_drift_never_marks_document_indexed(tmp_path, monkeypa
     source.write_bytes(PDF)
     current = {"collection": "papers_rebuild_one"}
 
-    def active_generation(_meta):
+    def active_generation(_meta, *, allow_stale_metadata=False):
         return current["collection"]
 
     def indexer(_record, _path):

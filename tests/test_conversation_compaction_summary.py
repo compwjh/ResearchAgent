@@ -245,9 +245,10 @@ def test_concurrent_enqueue_only_one_job(tmp_path):
     job2 = worker.enqueue(conversation.conversation_id, "owner-y", None, "manual")
     assert job2 is not None
     assert job2.job_id == job1.job_id
-    count = repo.connection().execute(
-        "SELECT COUNT(*) AS c FROM conversation_compaction_jobs WHERE conversation_id=?", (conversation.conversation_id,)
-    ).fetchone()["c"]
+    with repo.connection() as db:
+        count = db.execute(
+            "SELECT COUNT(*) AS c FROM conversation_compaction_jobs WHERE conversation_id=?", (conversation.conversation_id,)
+        ).fetchone()["c"]
     assert count == 1
 
 

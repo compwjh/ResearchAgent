@@ -60,6 +60,16 @@ def _normalize_tools(value: Any) -> list[str]:
     return []
 
 
+def _is_legacy(value: Any) -> bool:
+    """frontmatter 的 ``status`` 容错判定：仅字符串且等于 ``legacy``（忽略大小写/空白）为 True。
+
+    字段缺失、``None``、非字符串（数字/列表/字典）一律 False，不得抛异常。
+    """
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower() == "legacy"
+
+
 class SkillScanner:
     """扫描技能目录，逐个解析 SKILL.md。"""
 
@@ -93,6 +103,7 @@ class SkillScanner:
                     tools=_normalize_tools(meta.get("tools")),
                     body=body,
                     dir_name=entry.name,
+                    legacy=_is_legacy(meta.get("status")),
                 )
             )
         return records

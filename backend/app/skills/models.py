@@ -13,6 +13,9 @@ class SkillSummary:
     description: str
     tools: list[str]
     enabled: bool = True
+    # 遗留标记：frontmatter `status: legacy` 透传，供前端提示「遗留（待迁移）」。
+    # 不影响 enabled 语义（遗留 Skill 仍可启用/禁用，也不被过滤掉）。
+    legacy: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -34,6 +37,8 @@ class SkillRecord:
     tools: list[str]
     body: str
     dir_name: str
+    # 同 SkillSummary.legacy：来源为 SKILL.md frontmatter 的 `status` 字段。
+    legacy: bool = False
 
 
 @dataclass

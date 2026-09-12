@@ -3761,6 +3761,19 @@ async function loadSkills() {
   }
 }
 
+// spec-032.1 Task05：Skill 遗留（待迁移）标记。
+// 仅当后端返回 legacy === true 时构造标记；false / 缺失（undefined/null）一律不渲染。
+// 标记纯展示，用 DOM API + textContent 构造，绝不拼 innerHTML。
+function buildLegacyBadge(legacy) {
+  if (legacy === true) {
+    const badge = document.createElement('span');
+    badge.classList.add('st-legacy-badge');
+    badge.textContent = '遗留（待迁移）';
+    return badge;
+  }
+  return null;
+}
+
 function renderSkillList() {
   if (!stSkillList) return;
   stSkillList.replaceChildren();
@@ -3777,6 +3790,8 @@ function renderSkillList() {
     const name = document.createElement('span');
     name.className = 'st-name';
     name.textContent = skill.name || '未命名 Skill';
+    const legacyBadge = buildLegacyBadge(skill.legacy);
+    if (legacyBadge) name.appendChild(legacyBadge);
     const desc = document.createElement('p');
     desc.className = 'st-desc';
     desc.textContent = skill.description || '';
@@ -3839,7 +3854,11 @@ async function openSkillDetail(name, button) {
   if (stState.detailController) stState.detailController.abort();
   const controller = new AbortController();
   stState.detailController = controller;
-  if (stDetailName) stDetailName.textContent = name || '';
+  if (stDetailName) {
+    stDetailName.textContent = name || '';
+    // 每次打开先清掉上一次的遗留标记，等响应返回后按 legacy 决定是否重建。
+    stDetailName.querySelectorAll('.st-legacy-badge').forEach((node) => node.remove());
+  }
   if (stDetailDesc) stDetailDesc.textContent = '';
   if (stDetailTools) stDetailTools.textContent = '';
   if (stDetailBody) stDetailBody.textContent = '加载中…';
@@ -3847,6 +3866,9 @@ async function openSkillDetail(name, button) {
   try {
     const data = await stFetchJson(`/api/skills/${encodeURIComponent(name)}`, { signal: controller.signal });
     if (stState.detailSeq !== seq || controller.signal.aborted) return;
+    // spec-032.1 Task05：详情同样按 legacy === true 展示遗留标记（纯展示，不影响开关）。
+    const legacyBadge = buildLegacyBadge(data.legacy);
+    if (legacyBadge && stDetailName) stDetailName.appendChild(legacyBadge);
     if (stDetailDesc) stDetailDesc.textContent = data.description || '（无描述）';
     const toolNames = Array.isArray(data.tools) ? data.tools : [];
     if (stDetailTools) stDetailTools.textContent = toolNames.length ? `工具：${toolNames.join('、')}` : '未声明工具';
