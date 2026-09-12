@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 from typing import Any, Callable, Iterable, Mapping, Optional
 from urllib.parse import urlsplit
 
@@ -979,6 +980,69 @@ class UsenixAcceptedSource:
             self.store.upsert_catalog_paper(updated, now)
         except Exception:  # noqa: BLE001 - a failed write must not abort the batch
             return
+
+    def backfill_abstracts(self, conference_id: str = "usenix-security", *,
+                           years: Optional[Iterable[int]] = None,
+                           limit: int = 50, interval: float = 1.0) -> dict[str, Any]:
+        """回填缺失摘要：只抓官方 presentation 详情页，严格 fill-if-missing。
+
+        列表页本身不带摘要（894/894 目录行皆空），摘要只能来自详情页。本方法
+        把这项能力暴露为可重复调用的入口：每次调用只处理仍然缺摘要的行，
+        已填过的会被跳过；``limit`` 限制单次抓取页数，便于分批跑，避免长任务。
+
+        返回 ``{filled, attempted, skipped, failed, failures}``；单页失败只记入
+        ``failed``，不影响其它论文。
+        """
+        store = self.store
+        if store is None:
+            return {"ok": False, "error_code": "USENIX_STORE_UNAVAILABLE",
+                    "filled": 0, "attempted": 0, "skipped": 0, "failed": 0, "failures": []}
+        now = _default_utcnow()
+        wanted_years = {int(year) for year in (years or ())}
+        filled = attempted = skipped = failed = 0
+        failures: list[dict[str, str]] = []
+        processed = 0
+        for paper in store.list_catalog_papers([conference_id]):
+            if processed >= max(1, int(limit)):
+                break
+            processed += 1
+            if wanted_years and int(getattr(paper, "year", 0) or 0) not in wanted_years:
+                continue
+            if (getattr(paper, "abstract", "") or "").strip():
+                skipped += 1
+                continue
+            url = getattr(paper, "official_page_url", "") or ""
+            if self._detail_url_ok(url) is None:
+                skipped += 1
+                continue
+            attempted += 1
+            try:
+                detail = self.fetch_paper_detail(url)
+            except Exception as error:  # noqa: BLE001 - 单页失败不中断回填
+                failed += 1
+                failures.append({"catalog_paper_id": paper.catalog_paper_id, "error": str(error)[:120]})
+                continue
+            if not detail.get("ok"):
+                failed += 1
+                failures.append({"catalog_paper_id": paper.catalog_paper_id,
+                                 "error": str(detail.get("error_code"))})
+                continue
+            abstract = (detail.get("abstract") or "").strip()
+            if not abstract:
+                skipped += 1
+                continue
+            before = (getattr(paper, "abstract", "") or "").strip()
+            self._fill_abstract(conference_id, paper.catalog_paper_id,
+                                SimpleNamespace(abstract=abstract), now)
+            refreshed = self._existing_catalog_paper(paper.catalog_paper_id)
+            if (getattr(refreshed, "abstract", "") or "").strip() and not before:
+                filled += 1
+            else:
+                skipped += 1
+            if interval:
+                self._sleep(interval)
+        return {"ok": True, "error_code": None, "filled": filled, "attempted": attempted,
+                "skipped": skipped, "failed": failed, "failures": failures[:20]}
 
     # --- Public detail entry point (Spec032.1 Task04) ------------------------
     #
