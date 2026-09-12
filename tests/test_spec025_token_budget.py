@@ -13,13 +13,13 @@ import warnings
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import backend.app.platform.config as config
+from backend.app.chat.application.conversation_service import compose_chat_prompt
 from backend.app.chat.application.token_budget import (
     CHARS_PER_TOKEN,
     chars_for_tokens,
     estimate_tokens,
 )
-from backend.app.chat.application.conversation_service import compose_chat_prompt
-import backend.app.platform.config as config
 
 
 def test_chat_per_token_constant_is_1_6():
@@ -69,8 +69,7 @@ def test_chars_for_tokens_inverse_consistency():
 
 def test_positive_number_fallback_on_zero_and_negative():
     for bad in ("0", "-1", "-100"):
-        with patch.dict(os.environ, {"CHAT_TOTAL_TOKEN_BUDGET": bad}, clear=False):
-            with warnings.catch_warnings(record=True) as caught:
+        with patch.dict(os.environ, {"CHAT_TOTAL_TOKEN_BUDGET": bad}, clear=False), warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 reloaded = importlib.reload(config)
                 assert reloaded.CHAT_TOTAL_TOKEN_BUDGET == 8000
