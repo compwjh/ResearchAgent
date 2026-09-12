@@ -1,7 +1,7 @@
 # Task03 — 会话意图、Deep Research Skill 与 Intake
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02；当前状态：`实施中`
+> 依赖：Task02；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -42,11 +42,11 @@
 ## 验收、风险与回滚
 
 - 明确请求进入 Intake，含糊请求先问，普通聊天无 Session。
-- 刷新后 Intake 字段和来源恢复；重复消息不重复创建。
+- 刷新后消息查询从既有 MemoryRepository processing 投影恢复 Intake 字段、来源、阻塞项、追问、冲突选项和 Skill 快照；普通消息不带 Intake 字段；重复消息不重复创建。
 - 模型不可用时保存用户消息并给出真实错误，不伪装 Skill 成功。
 
 ## 产出物、执行结果与变更日志
 
 - 产出：Deep Research Skill、会话/Intake 实现、双端定向测试与交接报告。
-- 执行结果：待执行后填写。
-- 变更日志：待执行后填写。
+- 执行结果：后端实现、前端 Intake 展示、双端复审与验收均通过。后端定向测试 106 passed、6 subtests，前端全套契约/静态测试 178 passed；运行时探针覆盖明确/含糊/普通请求、消息先落库、模型失败、Skill/Tool 授权、冲突三选一、历史恢复与终态折叠。未创建 ResearchTask、AgentRun 或计划。详见 `artifacts/task-03/{backend-report,backend-review,backend-test-report,frontend-report,frontend-review,frontend-test-report}.md`。
+- 变更日志：2026-09-13 完成 `deep-research-orchestration` Skill、两阶段 Skill 激活门禁、会话主路径 Intake 分流、阻塞字段/默认值 provenance、重复消息幂等与活跃 Session 三选一冲突；补齐冲突 SSE、普通聊天依赖故障回退、消息先落库、Skill/Tool 目标锁定、项目删除稳定异常路径，以及基于既有 `processing_steps.detail_json` 的脱敏 Intake 历史投影和刷新恢复。前端复用既有 assistant 消息流新增安全 Intake 摘要、字段 provenance/阻塞提示、冲突选择和终态折叠，资源版本升至 `v44`；待澄清/冲突/缺失字段或待处理 choice 保持可达，完整历史 Intake 复用同一终态收口规则。backend-reviewer/backend-tester/frontend-reviewer/frontend-tester 均 GO；Task04 可开始。

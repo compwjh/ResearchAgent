@@ -3,7 +3,6 @@ import time
 from unittest.mock import patch
 
 import pytest
-
 from fastapi.testclient import TestClient
 
 from backend.app.api.routes_conversations import _message_stream
@@ -121,9 +120,9 @@ def test_management_and_global_memory_api(tmp_path):
         assert client.post(f"/api/memories/{edited.json()['memory_id']}/undo").json()["status"] == "active"
 
         conversation = client.post("/api/conversations/messages", json={"content": "hello", "project_id": p1, "model": "missing"})
-        # Model validation runs before creating a conversation; use repository
-        # through the management endpoint for the lifecycle assertions below.
-        assert conversation.status_code in {404, 503}
+        # Model validation happens after message persistence; the failed SSE
+        # remains recoverable through the conversation history.
+        assert conversation.status_code == 200
         repo = __import__("backend.app.memory.repository", fromlist=["MemoryRepository"]).MemoryRepository(tmp_path / "memory.sqlite3")
         conversation_record = repo.create_conversation("local-user", p1, title="Draft")
         repo.create_message(conversation_record.conversation_id, "local-user", "user", "old context", status="completed")

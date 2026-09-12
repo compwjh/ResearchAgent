@@ -1,4 +1,5 @@
 import contextlib
+import json
 import logging
 import time
 
@@ -46,7 +47,7 @@ from backend.app.knowledge_base.application import (
 )
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
-from backend.app.platform.config import CHAT_COMPACT_TRIGGER_RATIO, CHAT_TOTAL_TOKEN_BUDGET
+from backend.app.platform.config import BASE_DIR, CHAT_COMPACT_TRIGGER_RATIO, CHAT_TOTAL_TOKEN_BUDGET, KB_DIR
 from backend.app.platform.observability import (
     prompt_observation_metadata,
     record_ollama_generation,
@@ -62,9 +63,27 @@ from backend.app.platform.ollama import (
     get_reasoning_capabilities,
     resolve_reasoning_effort,
 )
+from backend.app.research.application.intake import DEFAULT_FIELDS, ResearchIntakeCoordinator
+from backend.app.skills.registry import build_default_tool_registry
+from backend.app.skills.service import SkillRegistryService
+from backend.app.skills.tool_service import ToolRegistryService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _build_research_intake_coordinator():
+    """Compose the conversation-layer coordinator from existing registries/stores."""
+    state_path = KB_DIR / "skill-state.json"
+    return ResearchIntakeCoordinator(
+        get_provider("research_store"),
+        _repo(),
+        SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
+        ToolRegistryService(build_default_tool_registry(), state_path),
+    )
+
+
+register_provider("research_intake_coordinator", _build_research_intake_coordinator)
 
 
 def _repo() -> MemoryRepository:
@@ -82,8 +101,164 @@ def _conversation_payload(item):
     return {"conversation_id": item.conversation_id, "owner_id": item.owner_id, "project_id": item.project_id, "title": item.title, "status": item.status, "memory_history_policy": item.memory_history_policy, "reasoning_effort": item.reasoning_effort, "memory_binding_at": item.memory_binding_at.isoformat() if item.memory_binding_at else None, "memory_binding_message_id": item.memory_binding_message_id, "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat()}
 
 
-def _message_payload(item):
-    return {"message_id": item.message_id, "conversation_id": item.conversation_id, "parent_message_id": item.parent_message_id, "role": item.role, "content": item.content, "status": item.status, "model": item.model, "mode": item.mode, "reasoning_content": item.reasoning_content, "reasoning_status": item.reasoning_status, "reasoning_started_at": item.reasoning_started_at.isoformat() if item.reasoning_started_at else None, "reasoning_completed_at": item.reasoning_completed_at.isoformat() if item.reasoning_completed_at else None, "first_reasoning_at": item.first_reasoning_at.isoformat() if item.first_reasoning_at else None, "first_answer_token_at": item.first_answer_token_at.isoformat() if item.first_answer_token_at else None, "reasoning_truncated": item.reasoning_truncated, "reasoning_chars": item.reasoning_chars, "last_event_seq": item.last_event_seq, "created_at": item.created_at.isoformat(), "completed_at": item.completed_at.isoformat() if item.completed_at else None}
+_INTAKE_STATUSES = frozenset({"intake", "clarification", "active_conflict", "error"})
+_INTAKE_CHOICE_IDS = frozenset({"modify_current", "cancel_then_new", "new_conversation"})
+_INTAKE_FIELD_NAMES = frozenset({"topic", "objective", "time_range", *DEFAULT_FIELDS})
+
+
+def _safe_intake_projection(payload):
+    """Return only the historical Intake fields supported by the UI contract."""
+    if not isinstance(payload, dict) or payload.get("schema_version") != "task03-intake-v1":
+        return None
+    status = payload.get("status")
+    if status not in _INTAKE_STATUSES:
+        return None
+    fields = []
+    raw_fields = payload.get("fields")
+    for item in raw_fields if isinstance(raw_fields, list) else []:
+        if not isinstance(item, dict) or item.get("field_name") not in _INTAKE_FIELD_NAMES:
+            continue
+        confidence = item.get("confidence")
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            confidence = max(0.0, min(1.0, float(confidence)))
+        else:
+            confidence = None
+        field = {
+            "field_name": item["field_name"],
+            "value_json": item.get("value_json", "")[:20000] if isinstance(item.get("value_json"), str) else "",
+            "source": str(item.get("source") or "")[:80],
+            "confidence": confidence,
+            "confirmation_status": str(item.get("confirmation_status") or "")[:80],
+            "message_id": str(item.get("message_id") or "")[:128] or None,
+        }
+        fields.append(field)
+    choices = []
+    raw_choices = payload.get("choices")
+    for choice in raw_choices if isinstance(raw_choices, list) else []:
+        if not isinstance(choice, dict) or choice.get("id") not in _INTAKE_CHOICE_IDS:
+            continue
+        choices.append({"id": choice["id"], "label": str(choice.get("label") or "")[:120]})
+    skill = payload.get("skill")
+    skill_snapshot = None
+    if isinstance(skill, dict) and skill.get("skill_id") == "deep-research-orchestration":
+        skill_snapshot = {
+            "skill_id": "deep-research-orchestration",
+            "name": str(skill.get("name") or "deep-research-orchestration")[:120],
+            "description": str(skill.get("description") or "")[:500],
+            "version": str(skill.get("version") or "")[:80],
+            "content_hash": str(skill.get("content_hash") or "")[:128],
+            "tools": [str(name)[:120] for name in skill.get("tools", []) if isinstance(name, str)][:32]
+            if isinstance(skill.get("tools"), list)
+            else [],
+        }
+    session = payload.get("research_session")
+    session_snapshot = None
+    if isinstance(session, dict) and session.get("research_session_id"):
+        session_snapshot = {
+            "research_session_id": str(session["research_session_id"])[:128],
+            "intake_draft_id": str(session.get("intake_draft_id") or "")[:128],
+            "status": str(session.get("status") or "")[:80],
+        }
+    return {
+        "schema_version": "task03-intake-v1",
+        "status": status,
+        "fields": fields,
+        "missing": [name for name in payload.get("missing", []) if name in _INTAKE_FIELD_NAMES]
+        if isinstance(payload.get("missing"), list)
+        else [],
+        "choices": choices,
+        "question": str(payload.get("question") or "")[:2000] or None,
+        "skill": skill_snapshot,
+        "research_session": session_snapshot,
+    }
+
+
+def _intake_projection_for_message(repo, item, owner_id=OWNER_ID):
+    if item.role != "assistant":
+        return None
+    try:
+        steps = repo.list_processing_steps(item.message_id, owner_id)
+    except Exception:
+        logger.warning("unable to load historical intake projection", exc_info=True)
+        return None
+    for step in reversed(steps):
+        if step.kind != "research_intake" or not step.detail_json:
+            continue
+        try:
+            projection = _safe_intake_projection(json.loads(step.detail_json))
+        except (TypeError, ValueError):
+            continue
+        if projection is not None:
+            return projection
+    return None
+
+
+def _intake_projection_from_result(result):
+    """Build the durable, UI-safe projection without persisting Skill body."""
+    fields = []
+    for item in result.fields:
+        fields.append({
+            "field_name": item.field_name,
+            "value_json": item.value_json,
+            "source": item.source,
+            "confidence": item.confidence,
+            "confirmation_status": item.confirmation_status,
+            "message_id": item.updated_by_message_id,
+        })
+    activation_skill = (result.activation or {}).get("skill") or {}
+    skill = None
+    if activation_skill:
+        skill = {
+            "skill_id": activation_skill.get("skill_id"),
+            "name": activation_skill.get("name"),
+            "description": activation_skill.get("description"),
+            "version": activation_skill.get("version"),
+            "content_hash": activation_skill.get("content_hash"),
+            "tools": activation_skill.get("tools", []),
+        }
+    session = result.session.to_dict() if result.session else None
+    if session:
+        session = {
+            "research_session_id": session.get("research_session_id"),
+            "intake_draft_id": session.get("intake_draft_id"),
+            "status": session.get("status"),
+        }
+    return {
+        "schema_version": "task03-intake-v1",
+        "status": result.status,
+        "fields": fields,
+        "missing": list(result.missing),
+        "choices": list(result.choices),
+        "question": result.question,
+        "skill": skill,
+        "research_session": session,
+    }
+
+
+def _persist_intake_projection(repo, assistant_message, result):
+    projection = _intake_projection_from_result(result)
+    status = "failed" if result.status == "error" else "completed"
+    session = projection.get("research_session") or {}
+    repo.create_processing_step(
+        assistant_message.message_id,
+        "research_intake",
+        status,
+        "研究 Intake 已保存" if status == "completed" else "研究 Intake 失败",
+        label="研究 Intake",
+        node_key=f"research-intake:{assistant_message.message_id}",
+        detail_json=json.dumps(projection, ensure_ascii=False, sort_keys=True),
+        research_session_id=session.get("research_session_id"),
+    )
+
+
+def _message_payload(item, repo=None, owner_id=OWNER_ID):
+    payload = {"message_id": item.message_id, "conversation_id": item.conversation_id, "parent_message_id": item.parent_message_id, "role": item.role, "content": item.content, "status": item.status, "model": item.model, "mode": item.mode, "reasoning_content": item.reasoning_content, "reasoning_status": item.reasoning_status, "reasoning_started_at": item.reasoning_started_at.isoformat() if item.reasoning_started_at else None, "reasoning_completed_at": item.reasoning_completed_at.isoformat() if item.reasoning_completed_at else None, "first_reasoning_at": item.first_reasoning_at.isoformat() if item.first_reasoning_at else None, "first_answer_token_at": item.first_answer_token_at.isoformat() if item.first_answer_token_at else None, "reasoning_truncated": item.reasoning_truncated, "reasoning_chars": item.reasoning_chars, "last_event_seq": item.last_event_seq, "created_at": item.created_at.isoformat(), "completed_at": item.completed_at.isoformat() if item.completed_at else None}
+    if repo is not None:
+        intake = _intake_projection_for_message(repo, item, owner_id)
+        if intake is not None:
+            payload["intake"] = intake
+            payload["research_intake"] = intake
+    return payload
 
 
 def _memory_payload(item):
@@ -724,47 +899,182 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
     return generate()
 
 
+def _intake_stream(repo, conversation, user_message, assistant_message, result, model, mode, reasoning_effort):
+    """Serialize a durable Intake result using the existing conversation SSE shape."""
+    owner_id = getattr(user_message, "owner_id", OWNER_ID)
+    def generate():
+        started = time.monotonic()
+        try:
+            _persist_intake_projection(repo, assistant_message, result)
+        except Exception:
+            # The SSE response remains useful if a projection write is
+            # temporarily unavailable; the error is observable in logs and
+            # the next turn can retry its own durable projection.
+            logger.exception("unable to persist research intake projection")
+        yield stream_event(
+            "meta",
+            project_id=conversation.project_id,
+            conversation_id=conversation.conversation_id,
+            user_message_id=user_message.message_id,
+            assistant_message_id=assistant_message.message_id,
+            model=model,
+            mode=mode,
+            reasoning_effort=reasoning_effort,
+        )
+        if result.activation:
+            yield stream_event(
+                "skill_activation",
+                status="completed" if result.activation.get("ok") else "failed",
+                skill=(result.activation.get("skill") or {}).get("name"),
+                description=(result.activation.get("skill") or {}).get("description"),
+            )
+        if result.status == "active_conflict":
+            # This is an interactive, recoverable choice rather than a
+            # failed turn.  Keep the assistant completed so the user can
+            # choose how to proceed and preserve the active Session.
+            content = "当前会话已有进行中的研究，请选择修改当前研究、取消后新建或在新会话研究。"
+            repo.update_message(assistant_message.message_id, owner_id, content=content, status="completed")
+            yield stream_event(
+                "intake",
+                status=result.status,
+                research_session=(result.session.to_dict() if result.session else None),
+                fields=[],
+                missing=[],
+                choices=result.choices,
+                question=None,
+            )
+            yield stream_event(
+                "done",
+                conversation_id=conversation.conversation_id,
+                message_id=assistant_message.message_id,
+                status="completed",
+                duration_ms=(time.monotonic() - started) * 1000,
+            )
+            return
+        if result.error:
+            content = result.error.get("message", "研究请求暂时无法处理")
+            repo.update_message(assistant_message.message_id, owner_id, content=content, status="failed")
+            yield stream_event("error", **result.error)
+            yield stream_event(
+                "done",
+                conversation_id=conversation.conversation_id,
+                message_id=assistant_message.message_id,
+                status="failed",
+                duration_ms=(time.monotonic() - started) * 1000,
+            )
+            return
+        field_payload = [
+            {**item.to_dict(), "message_id": item.updated_by_message_id}
+            for item in result.fields
+        ]
+        if result.status == "clarification":
+            content = result.question or "请说明是否要进行深度研究。"
+        elif result.status == "active_conflict":
+            content = result.error.get("message", "当前会话已有进行中的研究") if result.error else "当前会话已有进行中的研究"
+        else:
+            content = result.question or "研究 Intake 已保存，参数齐全后将生成计划。"
+        repo.update_message(assistant_message.message_id, owner_id, content=content, status="completed")
+        yield stream_event(
+            "intake",
+            status=result.status,
+            research_session=(result.session.to_dict() if result.session else None),
+            fields=field_payload,
+            missing=result.missing,
+            choices=result.choices,
+            question=result.question,
+        )
+        yield stream_event(
+            "done",
+            conversation_id=conversation.conversation_id,
+            message_id=assistant_message.message_id,
+            status="completed",
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
+    return generate()
+
+
+def _failed_message_stream(repo, conversation, user_message, assistant_message, detail):
+    """Return a durable failed turn after the user/assistant rows exist."""
+    if isinstance(detail, dict):
+        code = str(detail.get("code", "MODEL_UNAVAILABLE"))
+        message = str(detail.get("message", "模型暂时不可用"))
+        retryable = bool(detail.get("retryable", True))
+    else:
+        code, message, retryable = "MODEL_UNAVAILABLE", "模型暂时不可用", True
+    owner_id = getattr(user_message, "owner_id", OWNER_ID)
+    repo.update_message(assistant_message.message_id, owner_id, content=message, status="failed")
+
+    def generate():
+        yield stream_event(
+            "meta",
+            project_id=conversation.project_id,
+            conversation_id=conversation.conversation_id,
+            user_message_id=user_message.message_id,
+            assistant_message_id=assistant_message.message_id,
+            model=user_message.model,
+            mode=user_message.mode,
+        )
+        yield stream_event("error", code=code, message=message, retryable=retryable)
+        yield stream_event(
+            "done",
+            conversation_id=conversation.conversation_id,
+            message_id=assistant_message.message_id,
+            status="failed",
+        )
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 def _start_message(payload: ConversationMessageRequest, conversation_id: str | None = None):
     content = (payload.content or payload.question or payload.message or "").strip()
     if not content or len(content) > 20000:
         raise HTTPException(status_code=400, detail={"code": "INVALID_MESSAGE", "message": "消息不能为空且最多支持 20000 个字符", "retryable": False})
-    _validate_model(payload.model)
     repo = _repo()
     if conversation_id:
         conversation = repo.get_conversation(conversation_id, OWNER_ID)
         if not conversation:
             raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
-        # An existing conversation's frozen effort wins over the owner
-        # default.  This keeps a stale/unsupported owner preference from
-        # rejecting an otherwise valid session turn.
-        requested_effort = payload.reasoning_effort if payload.reasoning_effort is not None else conversation.reasoning_effort
-        resolution = _resolve_request_effort(payload.model, requested_effort, explicit=payload.reasoning_effort is not None)
     else:
-        inherited_effort = payload.reasoning_effort or repo.get_last_reasoning_effort(OWNER_ID)
-        resolution = _resolve_request_effort(payload.model, inherited_effort, explicit=payload.reasoning_effort is not None)
-        try:
-            conversation, user, assistant = repo.create_conversation_messages(OWNER_ID, content, payload.project_id, payload.model, payload.mode, resolution.effort, update_preference=payload.reasoning_effort is not None)
-        except LookupError as error:
-            raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
-        except ValueError as error:
-            raise HTTPException(status_code=409, detail={"code": "PROJECT_NOT_ACTIVE", "message": str(error), "retryable": False}) from error
-        except Exception as error:
-            raise HTTPException(status_code=503, detail={"code": "MESSAGE_TRANSACTION_FAILED", "message": "消息与会话偏好更新未完成", "retryable": True}) from error
-    if conversation_id:
-        try:
+        conversation = None
+    # Freeze the turn in the existing conversation store before any model or
+    # Skill/Intake preflight.  A failed preflight must remain recoverable.
+    try:
+        if conversation_id:
             conversation, user, assistant = repo.create_message_pair(
                 conversation.conversation_id,
                 OWNER_ID,
                 content,
                 model=payload.model,
                 mode=payload.mode,
-                reasoning_effort=resolution.effort if payload.reasoning_effort is not None else None,
+                reasoning_effort=payload.reasoning_effort,
                 update_preference=payload.reasoning_effort is not None,
             )
-        except LookupError as error:
-            raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": str(error), "retryable": False}) from error
-        except Exception as error:
-            raise HTTPException(status_code=503, detail={"code": "MESSAGE_TRANSACTION_FAILED", "message": "消息与会话偏好更新未完成", "retryable": True}) from error
+        else:
+            conversation, user, assistant = repo.create_conversation_messages(
+                OWNER_ID,
+                content,
+                payload.project_id,
+                payload.model,
+                payload.mode,
+                payload.reasoning_effort,
+                update_preference=payload.reasoning_effort is not None,
+            )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND" if conversation_id else "PROJECT_NOT_FOUND", "message": str(error), "retryable": False}) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail={"code": "PROJECT_NOT_ACTIVE", "message": str(error), "retryable": False}) from error
+    except Exception as error:
+        raise HTTPException(status_code=503, detail={"code": "MESSAGE_TRANSACTION_FAILED", "message": "消息与会话偏好更新未完成", "retryable": True}) from error
+
+    try:
+        _validate_model(payload.model)
+    except HTTPException as error:
+        return _failed_message_stream(repo, conversation, user, assistant, error.detail)
+    try:
+        requested_effort = payload.reasoning_effort if payload.reasoning_effort is not None else conversation.reasoning_effort
+        resolution = _resolve_request_effort(payload.model, requested_effort, explicit=payload.reasoning_effort is not None)
+    except HTTPException as error:
+        return _failed_message_stream(repo, conversation, user, assistant, error.detail)
     # Persist the message-bound analysis job before opening SSE.  Only queueing
     # happens on the request path; classification and memory writes are fully
     # independent of answer generation.
@@ -783,6 +1093,41 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
         # never turn worker initialization into a chat failure.
         logger.warning("memory evolution worker startup unavailable: %s", error)
         pass
+    classification = ResearchIntakeCoordinator.classify(content)
+    try:
+        intake = get_provider("research_intake_coordinator").handle_message(
+            conversation.conversation_id, OWNER_ID, user.message_id, content
+        )
+    except Exception:
+        # Research persistence/Skill discovery is optional for ordinary chat.
+        # A research-shaped turn gets a diagnosable failed SSE; ordinary chat
+        # continues through the established model stream.
+        logger.exception("research intake unavailable")
+        intake = None
+        if classification in {"explicit", "ambiguous"}:
+            return _failed_message_stream(
+                repo,
+                conversation,
+                user,
+                assistant,
+                {"code": "INTAKE_UNAVAILABLE", "message": "研究 Intake 暂时不可用，请稍后重试。", "retryable": True},
+            )
+        try:
+            repo.create_processing_step(
+                assistant.message_id,
+                "research_intake",
+                "failed",
+                "研究 Intake 不可用，已回退普通聊天",
+                label="研究 Intake",
+            )
+        except Exception:
+            logger.warning("unable to persist research intake fallback marker", exc_info=True)
+    if intake is not None and intake.status != "ordinary":
+        return StreamingResponse(
+            _intake_stream(repo, conversation, user, assistant, intake, payload.model, payload.mode, resolution.effort),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     return StreamingResponse(_message_stream(repo, conversation, user, assistant, payload.model, payload.mode, resolution.effort, resolution.capabilities.source), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
@@ -847,13 +1192,14 @@ def list_conversations(project_id: str | None = None, cursor: str | None = None,
 
 @router.get("/conversations/{conversation_id}/messages")
 def get_messages(conversation_id: str, before: str | None = None, target_chars: int = Query(4000, ge=1, le=100000)):
+    repo = _repo()
     try:
-        items, next_cursor = _repo().list_messages(conversation_id, OWNER_ID, before=before, target_chars=target_chars)
+        items, next_cursor = repo.list_messages(conversation_id, OWNER_ID, before=before, target_chars=target_chars)
     except LookupError as error:
         raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": str(error), "retryable": False}) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False}) from error
-    return {"messages": [_message_payload(item) for item in items], "next_cursor": next_cursor}
+    return {"messages": [_message_payload(item, repo, OWNER_ID) for item in items], "next_cursor": next_cursor}
 
 
 @router.patch("/conversations/{conversation_id}")

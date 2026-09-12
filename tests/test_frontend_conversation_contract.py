@@ -163,3 +163,64 @@ def test_reconnect_closes_as_degraded_status() -> None:
     assert "连接中断，可重试" in APP
     assert "stopConversationProcessing" in APP
     assert "data-status=\"running\"" in STYLES or "data-status=\"skipped\"" in STYLES
+
+
+def test_spec034_intake_events_use_the_existing_assistant_message_stream() -> None:
+    assert "'skill_activation'" in APP
+    assert "'intake'" in APP
+    assert "eventData.type === 'skill_activation'" in APP
+    assert "eventData.type === 'intake'" in APP
+    assert "createConversationIntake" in APP
+    assert "updateConversationIntake" in APP
+    assert "conversation-intake" in STYLES
+    assert "historicalIntake" in APP
+    assert "content_hash" in APP
+    assert "skill.version" in APP
+
+
+def test_spec034_intake_summary_is_safe_and_contains_the_product_contract() -> None:
+    start = APP.index("function createConversationIntake")
+    end = APP.index("function updateConversationProcessing", start)
+    renderer = APP[start:end]
+    assert "createElement" in renderer
+    assert "textContent" in renderer
+    assert "value_json" in renderer
+    assert "source" in renderer
+    assert "confidence" in renderer
+    assert "confirmation_status" in renderer
+    assert "missing" in renderer
+    for choice in ("modify_current", "cancel_then_new", "new_conversation"):
+        assert choice in APP
+    assert "innerHTML" not in renderer
+    assert "prompt" not in renderer.lower()
+
+
+def test_spec034_intake_terminal_state_is_collapsible_and_assets_are_bumped() -> None:
+    assert "conversation-intake-toggle" in APP
+    assert "conversation-intake-body" in APP
+    assert "collapseConversationIntake" in APP
+    assert "data-status=\"failed\"" in STYLES
+    assert "/assets/app.js?v=44" in INDEX
+    assert "/assets/styles.css?v=44" in INDEX
+
+
+def test_spec034_pending_intake_stays_reachable_after_completed_sse_turn() -> None:
+    start = APP.index("function finalizeConversationIntake")
+    end = APP.index("function updateConversationProcessing", start)
+    finalize = APP[start:end]
+    assert "clarification" in finalize
+    assert "active_conflict" in finalize
+    assert "conversation-intake-missing" in finalize
+    assert "conversation-intake-choice" in finalize
+    assert "needsUserAction" in finalize
+    assert "!needsUserAction" in finalize
+
+
+def test_spec034_historical_intake_uses_the_same_terminal_collapse_rule() -> None:
+    start = APP.index("function renderConversationMessage")
+    end = APP.index("function createConversationProcessing", start)
+    renderer = APP[start:end]
+    assert "historicalIntake" in renderer
+    assert "updateConversationIntake" in renderer
+    assert "finalizeConversationIntake" in renderer
+    assert "item.status === 'failed'" in renderer
