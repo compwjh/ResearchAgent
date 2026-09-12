@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
+from backend.app.memory.models import MemoryRecord
+from backend.app.memory.repository import OWNER_ID, MemoryRepository
 from backend.app.platform.config import (
     CHAT_PROJECT_INSTR_CHARS,
     CHAT_RAG_BUDGET_CHARS,
@@ -18,9 +20,6 @@ from backend.app.platform.config import (
     CHAT_SUMMARY_BUDGET_CHARS,
     MEMORY_ANALYSIS_MODEL,
 )
-from backend.app.memory.models import MemoryRecord
-from backend.app.memory.repository import OWNER_ID, MemoryRepository
-from backend.app.platform.config import MEMORY_ANALYSIS_MODEL
 
 
 @dataclass(frozen=True)

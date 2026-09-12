@@ -5,8 +5,6 @@
 原子抢锁）与终态后可再建新 job。装配消费与 worker 属第二阶段，不在本文件范围。
 """
 
-import pytest
-
 from backend.app.memory.repository import MemoryRepository
 
 

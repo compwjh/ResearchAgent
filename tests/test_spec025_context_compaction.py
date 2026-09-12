@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 from backend.app.chat.application import context_compaction
 from backend.app.chat.application.context_compaction import (
-    build_rule_summary,
     CompactionWorker,
+    build_rule_summary,
     get_compaction_worker,
 )
 from backend.app.chat.application.conversation_service import (
@@ -24,8 +24,8 @@ from backend.app.chat.application.conversation_service import (
     compose_chat_prompt,
     memory_prompt,
 )
-from backend.app.platform.config import CHAT_PROJECT_INSTR_CHARS, CHAT_SUMMARY_BUDGET_CHARS
 from backend.app.memory.repository import MemoryRepository
+from backend.app.platform.config import CHAT_PROJECT_INSTR_CHARS, CHAT_SUMMARY_BUDGET_CHARS
 
 
 def _msg(role, content, when=None, mid=None):
@@ -165,7 +165,7 @@ def test_compose_with_segment_injects_summary_raw_capped_no_duplicate(tmp_path):
     conversation = repo.create_conversation("owner-s", None)
     # 12 条消息：m1..m5 将被段覆盖，m6..m12 为最近原文
     covered = [_msg_through_repo(repo, conversation, "user", f"COVERED_M{i}_NO_CONSTRAINT", f"cm{i}") for i in range(1, 6)]
-    recent = [_msg_through_repo(repo, conversation, "user", f"RECENT_M{i}", f"rm{i}") for i in range(6, 13)]
+    [_msg_through_repo(repo, conversation, "user", f"RECENT_M{i}", f"rm{i}") for i in range(6, 13)]
     repo.append_conversation_segment(
         conversation.conversation_id, "owner-s", None, 1,
         covered[0].message_id, covered[-1].message_id,
@@ -263,7 +263,7 @@ def test_worker_respects_frozen_window(tmp_path):
         job = worker.enqueue(conversation.conversation_id, "owner-x", None, "auto")
         assert job is not None, "首次入队必须领用到 job"
         # 入队之后追加的消息必须被冻结窗口排除
-        extra = repo.create_message(conversation.conversation_id, "owner-x", "user", "EXTRA_AFTER_FREEZE", status="completed")
+        repo.create_message(conversation.conversation_id, "owner-x", "user", "EXTRA_AFTER_FREEZE", status="completed")
         _wait_job_terminal(repo, job.job_id, "owner-x")
     finally:
         worker.stop()

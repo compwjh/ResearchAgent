@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
-from backend.app.memory.repository import MemoryRepository, OWNER_ID
+from backend.app.memory.repository import OWNER_ID, MemoryRepository
 
 
 def _events(text):
