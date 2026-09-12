@@ -21,6 +21,7 @@ import contextlib
 import hashlib
 import inspect
 import json
+import logging
 import os
 import re
 import tempfile
@@ -133,6 +134,11 @@ from backend.app.platform.ports import (
 from backend.app.platform.ports import (
     PaperImportResult as PortImportResult,
 )
+
+# 导入失败在 port 边界会被压成稳定错误码，异常文本不会进入 API 或批次记录。
+# 没有日志就只剩一个"论文导入失败"，无法区分下载产物、generation 漂移、
+# Ollama embedding 超时等完全不同的故障；这里把真实原因留在服务端日志里。
+logger = logging.getLogger(__name__)
 
 _UPLOAD_LOCK = threading.RLock()
 _SAFE_SERVER_BASENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
@@ -956,6 +962,31 @@ def _index_succeeded(value: Any) -> bool:
     return status == STATUS_INDEXED
 
 
+def _index_error_detail(value: Any) -> str:
+    """Extract the indexer's own failure text for server-side diagnostics.
+
+    ``_index_succeeded`` only reports a boolean; the real cause (for example
+    ``索引失败：无法连接 Ollama：timed out``) lives inside the result mapping.
+    This never reaches the API or durable state — it is log-only.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, Mapping):
+        return str(getattr(value, "error", "") or "")
+    parts: list[str] = []
+    top = value.get("error")
+    if top:
+        parts.append(str(top))
+    chunkers = value.get("chunkers")
+    if isinstance(chunkers, Mapping):
+        for name, state in chunkers.items():
+            if isinstance(state, Mapping):
+                message = state.get("error") or state.get("status")
+                if message:
+                    parts.append(f"{name}={message}")
+    return "; ".join(parts)
+
+
 def _deletion_succeeded(value: Any) -> bool:
     """Interpret an injected vector-delete result without guessing unknowns."""
     if value is None:
@@ -1180,7 +1211,11 @@ class KnowledgeBasePaperImportAdapter:
                     self.meta_path,
                     required=self.indexer is None,
                 )
-            except KnowledgeDocumentMigrationError:
+            except KnowledgeDocumentMigrationError as error:
+                logger.error(
+                    "论文导入失败：索引代次不可用 meta_path=%s code=%s（需重建索引）",
+                    self.meta_path, getattr(error, "code", "INDEX_REBUILD_REQUIRED"),
+                )
                 return PortImportResult(
                     paper_id=None,
                     index_status=ImportIndexStatus.FAILED,
@@ -1217,6 +1252,10 @@ class KnowledgeBasePaperImportAdapter:
                     # Preserve the stable storage-contention mapping at the
                     # paper-discovery boundary; do not flatten it to import failure.
                     raise
+                logger.exception(
+                    "论文导入失败：创建不可变文档出错 name=%s collection=%s",
+                    requested_name, generation_collection,
+                )
                 return PortImportResult(
                     paper_id=None,
                     index_status=ImportIndexStatus.FAILED,
@@ -1254,6 +1293,9 @@ class KnowledgeBasePaperImportAdapter:
                 stored_name=safe_name,
             )
 
+        # 区分两段失败：索引本身失败（KB_INDEX_FAILED，文件已落盘、可重建索引）
+        # 与索引成功后的收尾失败（generation 漂移 / 元数据写回失败，KB_IMPORT_FAILED）。
+        index_ok = False
         try:
             index_result = _call_supported(
                 self.indexer or self._default_indexer,
@@ -1266,6 +1308,7 @@ class KnowledgeBasePaperImportAdapter:
             )
             if not _index_succeeded(index_result):
                 raise RuntimeError("index failed")
+            index_ok = True
             updates: dict[str, Any] = {"status": STATUS_INDEXED, "error": None}
             if isinstance(index_result, Mapping):
                 if isinstance(index_result.get("chunkers"), dict):
@@ -1292,6 +1335,14 @@ class KnowledgeBasePaperImportAdapter:
         except Exception as error:
             storage_locked = _is_storage_locked_error(error)
             capability = created.get("resource_capability")
+            logger.error(
+                "论文导入失败：%s paper_id=%s stored_name=%s collection=%s"
+                " 索引返回=%s 异常=%s: %s",
+                "向量索引未成功" if not index_ok else "索引成功但收尾失败（代次漂移/元数据写回）",
+                getattr(record, "paper_id", None), safe_name, generation_collection,
+                _index_error_detail(locals().get("index_result")) or "<索引器抛异常>",
+                type(error).__name__, error,
+            )
             vector_unknown = False
             try:
                 # A caller-supplied deleter is an explicit, testable seam.  In
@@ -1325,7 +1376,13 @@ class KnowledgeBasePaperImportAdapter:
             return PortImportResult(
                 paper_id=record.paper_id if cleanup_status != "completed" else None,
                 index_status=ImportIndexStatus.FAILED,
-                error_code=PaperImportErrorCode.KB_IMPORT_FAILED,
+                # index_ok 为假说明索引本身没建起来：源文件与元数据已落盘，
+                # 用专门错误码让调用方区分"根本没入库"和"已入库待重建索引"。
+                # 索引成功但收尾失败（代次漂移等）仍归 KB_IMPORT_FAILED。
+                error_code=(
+                    PaperImportErrorCode.KB_INDEX_FAILED if not index_ok
+                    else PaperImportErrorCode.KB_IMPORT_FAILED
+                ),
                 source_sha256=document.get("source_sha256"),
                 cleanup_status=cleanup_status if cleanup_status != "completed" else None,
                 resource_capability=capability if cleanup_status != "completed" else None,

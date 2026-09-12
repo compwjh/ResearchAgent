@@ -38,6 +38,7 @@ from backend.app.paper_discovery.application.paper_discovery_search import Paper
 from backend.app.paper_discovery.application.paper_import import (
     DUPLICATE_IMPORT,
     KB_IMPORT_FAILED,
+    KB_INDEX_FAILED,
     PAPER_ALREADY_EXISTS,
     PaperImportError,
     import_candidate,
@@ -388,6 +389,7 @@ _PAPER_IMPORT_ERROR_STATUS = {
     PDF_TOO_LARGE: 502,
     PDF_NOT_FOUND: 502,
     KB_IMPORT_FAILED: 424,
+    KB_INDEX_FAILED: 424,
 }
 
 

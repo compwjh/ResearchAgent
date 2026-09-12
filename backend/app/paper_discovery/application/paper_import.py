@@ -50,6 +50,10 @@ from backend.app.platform.settings.settings_repository import ArticleSettings
 
 PAPER_ALREADY_EXISTS = "PAPER_ALREADY_EXISTS"
 KB_IMPORT_FAILED = "KB_IMPORT_FAILED"
+# 源文件已安全落盘、元数据已写入，但向量索引阶段失败。与 KB_IMPORT_FAILED 区分：
+# 前者可原地重建索引，后者意味着根本没入库。此前两者共用 KB_IMPORT_FAILED，
+# 导致"下载到垃圾""embedding 超时""generation 漂移"在 API 与批次记录里无法区分。
+KB_INDEX_FAILED = "KB_INDEX_FAILED"
 KB_STORAGE_LOCKED = "KB_STORAGE_LOCKED"
 DUPLICATE_IMPORT = "DUPLICATE_IMPORT"
 
@@ -68,6 +72,7 @@ _SAFE_IMPORT_ERROR_MESSAGES = {
     BROWSER_SESSION_EXPIRED: "受控登录会话已过期，请重新登录",
     BROWSER_SESSION_REQUIRED: "请先完成受控登录后再续传",
     KB_IMPORT_FAILED: "论文导入失败",
+    KB_INDEX_FAILED: "论文已保存，但向量索引失败，请稍后重建索引",
     # 存储被另一个实例独占：可重试、可行动（spec-021 Task03）。
     KB_STORAGE_LOCKED: "知识库存储被另一个实例占用，请关闭其他服务实例后重试",
     # 同论文再次新建导入批次撞 import_item_title 唯一索引：指引回原批次重试。
@@ -556,7 +561,8 @@ def import_candidate(
 __all__ = [
     "DOWNLOAD_BLOCKED", "DOWNLOAD_TIMEOUT", "INVALID_PDF", "LOGIN_REQUIRED", "PDF_NOT_FOUND",
     "PDF_TOO_LARGE", "BROWSER_SESSION_EXPIRED", "BROWSER_SESSION_REQUIRED",
-    "KB_IMPORT_FAILED", "PAPER_ALREADY_EXISTS", "KB_STORAGE_LOCKED", "DUPLICATE_IMPORT",
+    "KB_IMPORT_FAILED", "KB_INDEX_FAILED", "PAPER_ALREADY_EXISTS", "KB_STORAGE_LOCKED",
+    "DUPLICATE_IMPORT",
     "PaperImportError",
     "safe_import_error_message", "safe_import_error_code", "PaperImportResult", "import_candidate",
 ]
