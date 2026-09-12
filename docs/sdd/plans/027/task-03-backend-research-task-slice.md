@@ -1,7 +1,7 @@
 # Task 03：实现持久化 Research Task 后端纵向切片
 
 > 关联：[Spec 027](../../specs/027-research-task-dynamic-orchestration-mvp.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02 GO；被依赖：Task04–06；当前状态：`待执行`
+> 依赖：Task02 GO；被依赖：Task04–06；当前状态：`已完成`（评审：打回 → 修订 → 复审通过）
 
 ## 一句话目标
 
@@ -45,8 +45,20 @@
 
 - 若必须改写 Spec015 数据模型，停止并回到 Spec。
 - 新表和路由可独立移除，不触碰既有数据。
-- 产出：后端代码、定向测试、`artifacts/task-03/backend-report.md`；执行结果待填写。
+- 产出：后端代码、定向测试、`artifacts/task-03/backend-report.md`；执行结果见上文「结果」段（已完成，复审通过）。
+
+## 结果
+
+- **状态**：已完成（定向测试全绿；未跑全量回归，按 spec「Task 开发只跑定向测试」）。
+- **交付报告**：`artifacts/task-03/backend-report.md`
+- **评审**：`artifacts/task-03/backend-review.md`（首轮**打回**：P0×1 / P1×3 / P2×9）→ `artifacts/task-03/backend-review-r2.md`（**复审通过，附意见**；上轮 P0/P1 全部关闭，新增 P2-A/P2-B/P2-C 亦已关闭）
+- **验证**：`tests/test_spec027_backend_research_slice.py` 50 passed；`tests/test_spec027_runtime_contract.py` 38 passed（合计 88 passed）；`ruff check` 干净；`git diff --check` 无输出；未碰 `frontend/**`；测试无真实路径副作用。
+- **分派记录**：`.codebuddy/agent-logs/spec-027/task-03/backend-dev/`（16 批次）、`.../backend-reviewer/`（2 次评审）。
+- **延期项**（交 Task05/Task06）：P2-2 新增错误码登记（`TASK_DELETED`/`RESEARCH_CASCADE_FAILED`/`INTERNAL_ERROR`）；P2-4 `update_plan_status` 死代码（计划状态恒 `proposed`）；P2-9 + 环境延期（真实 1–4 个 9B 并发吞吐未实测）；`search_catalog_adapter` 真实数据源分支零测试覆盖。
 
 ## 变更日志
 
 - 2026-09-12：创建后端纵向切片 Task。
+- 2026-09-12：实现完成（domain/schema + repository + planner + 稳定编排骨架 + 9 端点 + 定向测试）；补齐 spec 明文的项目删除应用层级联。
+- 2026-09-12：Task 级评审首轮**打回**（P0-1 Worker 额度泄漏、P1-1 会话/项目 404 校验缺失、P1-2 `.gitignore`、P1-3 交付报告缺失、P2×9）。
+- 2026-09-12：P0/P1 批量修复 + P2 清理；复审**通过（附意见）**；复审新增 P2-A（依赖故障裸 500）与 P2-C（断言可静默失效）已修复。Task 收口。

@@ -249,7 +249,7 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 |---|---|---|---|---|
 | 01 | 编写 Spec027 | 本文件 | — | 完成 |
 | 02 | 验证动态规划、模型路由和资源调度协议 | [`task-02-orchestration-runtime-gate.md`](../plans/027/task-02-orchestration-runtime-gate.md) | 01、Spec确认、双评审 | 已完成 |
-| 03 | 实现持久化 Research Task 后端纵向切片 | [`task-03-backend-research-task-slice.md`](../plans/027/task-03-backend-research-task-slice.md) | 02 | 待执行 |
+| 03 | 实现持久化 Research Task 后端纵向切片 | [`task-03-backend-research-task-slice.md`](../plans/027/task-03-backend-research-task-slice.md) | 02 | 已完成（评审：打回 → 修订 → 复审通过） |
 | 04 | 实现研究任务页面、SSE 与会话入口 | [`task-04-frontend-research-workspace.md`](../plans/027/task-04-frontend-research-workspace.md) | 03 | 待执行 |
 | 05 | 完成 Re-plan、报告、模型升级与集成 | [`task-05-replan-report-integration.md`](../plans/027/task-05-replan-report-integration.md) | 03、04 | 待执行 |
 | 06 | 最终评审、全量回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/027/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
@@ -258,7 +258,10 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 
 - 需求评审：`docs/sdd/reviews/027-tech-review.md`（通过（复审，2026-09-12）；需求维度随技术评审一并核对，Grilling 确认的产品边界全部落地）
 - 技术评审：`docs/sdd/reviews/027-tech-review.md`（通过（复审，2026-09-12）；首轮 P0×2、P1×8 已全部修订并复审确认）
-- 验收评审：`docs/sdd/reviews/027-acceptance-review.md`（待评审（未执行））
+- 验收评审：`docs/sdd/reviews/027-acceptance-review.md`（Task06 收口时由 `tester` 汇总单端报告并签字；当前 Task03 只完成 Task 级评审，见下）
+- Task 级评审（非 spec 门禁，落盘于各 Task 产物目录）：
+  - Task02 运行时门禁：`docs/sdd/plans/027/artifacts/task-02/runtime-gate-report.md`（GO，1 项环境延期）
+  - Task03 后端评审：`docs/sdd/plans/027/artifacts/task-03/backend-review.md`（首轮打回）→ `backend-review-r2.md`（复审通过，附意见）；交付报告 `backend-report.md`
 
 ## 变更日志
 
@@ -268,3 +271,5 @@ LangGraph 使用稳定的受控骨架，运行时 Task Graph 存在状态中：
 | 2026-09-12 | 开发主管（architect 代行） | 技术评审「打回」：P0-1 暂停功能在状态机/端点/UI 三处不一致；P0-2 `search_catalog` 未钉死 Spec015 复用接缝；另 8 项 P1（状态机、错误码词表、event_seq 生成器、崩溃收敛审计、DB 放置与级联、ResourceProbe 冻结、论文不可信断言、owner 隔离）。 |
 | 2026-09-12 | 架构师（自身） | 按评审修订：移除 `paused` 并把暂停/恢复 defer 到 Spec028；新增「复用接缝（强制）」冻结 `CatalogSearchGraph`/`CatalogRagAdapter`；新增「状态机、错误码与持久化约定」（转移表、错误码词表、独立库+应用层级联、event_seq 原子领号、崩溃审计、OWNER_ID 隔离）；冻结 `ResourceProbe`；补论文不可信可测断言。待复审。 |
 | 2026-09-12 | 架构师（自身） | 复审残留修复：`plans/027/task-04-frontend-research-workspace.md:15` 的「暂停/取消」改为「取消（不实现暂停/恢复）」，与 spec 状态机/端点/UI 三处对齐，P0-1 闭环。 |
+| 2026-09-12 | 架构师（自身） | **Task02 门禁追认**：`tests/test_spec027_runtime_contract.py` 的 `test_reuse_seam_no_research_namespace_impl` 原断言「`backend/app/research/` 不得有任何 `.py`」与本 spec 明文新增 `backend/app/research/**` 限界上下文**互斥**；Task03 已把它精化为源码内容扫描（禁止第二套采集/索引/缓存/目录/RAG/下载/导入与模型客户端）并新增「research 必须有文件锚定 `CatalogSearchGraph`/`CatalogRagAdapter`」断言，口径更强，**追认有效**；Task03 复审（`artifacts/task-03/backend-review-r2.md`）确认该主张成立，另提「黑名单可被 `urllib`/`aiohttp`/`httpx.post` 绕过」的保留意见，登记为 Task06 收口时升级为导入白名单的约束。 |
+| 2026-09-12 | 后端开发（backend-dev，16 批次）+ 开发主管（backend-reviewer） | **Task03 完成**：新增 `backend/app/research/**` 限界上下文（domain/application/infrastructure，约 3530 行）+ `backend/app/api/routes_research.py` 9 端点 + 独立库 `data/research/research.sqlite3`（5 张业务表、幂等迁移、`event_seq` 同事务原子领号、应用层级联、崩溃收敛 `interrupted`）+ `platform/ollama.py` 的 `ResourceProbe`/`_GlobalWorkerScheduler` + `routes_conversations.remove_project` 级联接线。评审：首轮**打回**（P0×1 Worker 额度泄漏 / P1×3 404 校验缺失、`.gitignore`、交付报告缺失 / P2×9），批量修复后**复审通过（附意见）**，复审新增 P2-A/P2-C 亦已关闭。定向测试 `tests/test_spec027_backend_research_slice.py` 50 passed、Task02 门禁 38 passed（合计 88 passed），ruff 干净，未碰 `frontend/**`。延期：P2-2（新增码 `TASK_DELETED`/`RESEARCH_CASCADE_FAILED`/`INTERNAL_ERROR` 待登记）、P2-4（`update_plan_status` 死代码，计划状态恒 `proposed`）、P2-9/环境（真实 1–4 个 9B 并发吞吐未实测），均交 Task05/Task06。 |
