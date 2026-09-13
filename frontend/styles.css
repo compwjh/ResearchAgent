@@ -140,6 +140,24 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-intake-choices { display: flex; flex-wrap: wrap; gap: 6px; }
 .conversation-intake-choice { padding: 5px 8px; font: inherit; }
 .conversation-intake-choice[aria-pressed="true"], .conversation-intake-choice.is-selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.conversation-research-plan { display: grid; gap: 8px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.conversation-research-plan-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
+.conversation-research-plan-title, .conversation-research-plan-field-name, .conversation-research-approval-title { color: var(--ink); }
+.conversation-research-plan-meta, .conversation-research-approval-meta, .conversation-research-approval-status { color: var(--muted); }
+.conversation-research-plan-fields { display: grid; grid-template-columns: minmax(70px, .5fr) minmax(0, 1.5fr); gap: 4px 8px; margin: 0; }
+.conversation-research-plan-fields dt, .conversation-research-plan-fields dd { margin: 0; overflow-wrap: anywhere; }
+.conversation-research-plan-field-value { padding: 4px 6px; border-radius: 5px; background: #fff; color: var(--ink); }
+.conversation-research-approvals { display: grid; gap: 7px; }
+.conversation-research-approval { display: grid; gap: 3px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 7px; background: #f7f5ff; }
+.conversation-research-approval[data-status="approved"] { border-color: #acd5b7; background: #f1fbf3; }
+.conversation-research-approval[data-status="rejected"], .conversation-research-approval[data-status="superseded"] { opacity: .72; }
+.conversation-research-approval-actions, .conversation-research-plan-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-research-command, .research-session-command { min-height: 28px; padding: 5px 8px; font: inherit; }
+.conversation-research-command.is-loading, .research-session-command.is-loading { cursor: wait; opacity: .7; }
+.conversation-research-command.is-success, .research-session-command.is-success { border-color: #acd5b7; background: #f1fbf3; color: #287c43; }
+.conversation-research-command.is-error, .research-session-command.is-error { border-color: #efb3b3; color: #a33232; }
+.conversation-research-command.is-stale, .conversation-research-command.is-conflict, .research-session-command.is-stale, .research-session-command.is-conflict { border-color: #e5c48c; background: #fff7ed; color: #94621c; }
+.conversation-research-refresh, .research-session-refresh { border-color: #e5c48c; background: #fffaf0; color: #94621c; }
 .reasoning-effort-picker { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; background: #fafaff; color: var(--muted); font: 10px 'DM Mono', monospace; white-space: nowrap; }
 .reasoning-effort-picker:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .reasoning-effort-label { color: var(--accent); font-weight: 700; }
@@ -3423,6 +3441,23 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #research-view .research-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #research-view .research-checkbox { display: flex !important; align-items: center; gap: 7px !important; }
 #research-view .research-checkbox input { width: auto; }
+#research-view .research-session-plan { display: grid; gap: 9px; }
+#research-view .research-session-plan-fields { display: grid; grid-template-columns: minmax(76px, .5fr) minmax(0, 1.5fr); gap: 5px 9px; margin: 0; }
+#research-view .research-session-plan-fields dt, #research-view .research-session-plan-fields dd { margin: 0; overflow-wrap: anywhere; }
+#research-view .research-session-plan-field-name { color: var(--muted); font: 10px/1.55 'DM Mono', monospace; }
+#research-view .research-session-plan-field-value { padding: 6px 7px; border-radius: 6px; background: var(--paper); color: var(--ink); font-size: 11px; }
+#research-view .research-session-approvals { display: grid; gap: 8px; }
+#research-view .research-session-approval { display: grid; gap: 4px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fafafd; }
+#research-view .research-session-approval[data-status="approved"] { border-color: #acd5b7; background: #f1fbf3; }
+#research-view .research-session-approval[data-status="rejected"], #research-view .research-session-approval[data-status="superseded"] { opacity: .7; }
+#research-view .research-session-approval-title { color: var(--ink); font-size: 11px; }
+#research-view .research-session-approval-status, #research-view .research-session-approval-meta { color: var(--muted); font: 10px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
+#research-view .research-session-approval-actions, #research-view .research-session-plan-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+#research-view .research-session-command.is-loading { cursor: wait; opacity: .7; }
+#research-view .research-session-command.is-success { border-color: #acd5b7; background: #f1fbf3; color: #287c43; }
+#research-view .research-session-command.is-error { border-color: #efb3b3; color: #a33232; }
+#research-view .research-session-command.is-stale, #research-view .research-session-command.is-conflict { border-color: #e5c48c; background: #fff7ed; color: #94621c; }
+#research-view .research-session-refresh { border-color: #e5c48c; background: #fffaf0; color: #94621c; }
 
 @media (max-width: 1120px) {
   #research-view .research-grid { grid-template-columns: minmax(205px, .72fr) minmax(320px, 1.28fr); }

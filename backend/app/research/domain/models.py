@@ -108,6 +108,34 @@ class ResearchPlan:
 
 
 @dataclass
+class ResearchSessionPlan:
+    """可在 ResearchTask 创建前存在的会话计划版本（Spec034 Task04）。"""
+
+    research_session_id: str
+    version: int
+    schema_version: str
+    output_hash: str
+    objective: str
+    scope_json: str
+    work_items_json: str
+    capabilities_json: str
+    budget_json: str
+    report_structure_json: str
+    safety_summary_json: str
+    status: str
+    created_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        values = {key: row[key] for key in cls.__dataclass_fields__ if key in row}
+        values["version"] = int(values["version"])
+        return cls(**values)
+
+
+@dataclass
 class ResearchWorkItem:
     """研究计划中的一个 WorkItem：单一角色执行的原子任务。"""
 

@@ -117,7 +117,7 @@ TASK_STATUSES = frozenset(
 # ResearchTask 状态转移表（终态不得回到 running）。
 TASK_TRANSITIONS = {
     "draft": {"planning"},
-    "planning": {"running"},
+    "planning": {"running", "cancelled"},
     "running": {"waiting_approval", "partial", "completed", "failed", "cancelled", "interrupted"},
     "waiting_approval": {"running", "completed", "failed", "cancelled", "interrupted", "partial"},
     "partial": set(),
@@ -179,12 +179,12 @@ SESSION_STATUSES = frozenset(
 )
 SESSION_TERMINAL = frozenset({"interrupted", "partial", "completed", "failed", "cancelled"})
 SESSION_TRANSITIONS = {
-    "intake_pending": {"plan_generating"},
-    "plan_generating": {"plan_pending_approval"},
-    "plan_pending_approval": {"queued", "intake_pending"},
-    "queued": {"running"},
+    "intake_pending": {"plan_generating", "cancelled"},
+    "plan_generating": {"plan_pending_approval", "cancelled"},
+    "plan_pending_approval": {"queued", "intake_pending", "cancelled"},
+    "queued": {"running", "cancelled"},
     "running": {"waiting_approval", "partial", "completed", "failed", "cancelled", "interrupted"},
-    "waiting_approval": {"running"},
+    "waiting_approval": {"running", "cancelled"},
     "interrupted": set(), "partial": set(), "completed": set(), "failed": set(), "cancelled": set(),
 }
 

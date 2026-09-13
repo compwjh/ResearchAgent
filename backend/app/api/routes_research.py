@@ -44,9 +44,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import get_provider
+from backend.app.platform.config import BASE_DIR, KB_DIR
+from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
 from backend.app.research.application.entry import ResearchServiceError
+from backend.app.skills.registry import build_default_tool_registry
+from backend.app.skills.service import SkillRegistryService
+from backend.app.skills.tool_service import ToolRegistryService
 
 router = APIRouter(prefix="/research-tasks", tags=["research-tasks"])
+session_router = APIRouter(prefix="/research-sessions", tags=["research-sessions"])
 logger = logging.getLogger(__name__)
 
 # 终态集合：与 `research.domain.contracts.TASK_TERMINAL` 逐字一致。api 只经
@@ -161,6 +167,16 @@ def _store():
     return get_provider("research_store")
 
 
+def _approval_service() -> PlanApprovalService:
+    state_path = KB_DIR / "skill-state.json"
+    return PlanApprovalService(
+        store=_store(),
+        memory_repository=_memory(),
+        skill_registry=SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
+        tool_registry=ToolRegistryService(build_default_tool_registry(), state_path),
+    )
+
+
 def _memory():
     """解析 memory repository provider（会话/项目归属的**唯一**存储，Spec022 既有实现）。
 
@@ -248,6 +264,63 @@ def _plan_payload(plan) -> dict:
     }
 
 
+def _json_value(value, fallback):
+    try:
+        parsed = json.loads(value or "")
+    except (TypeError, ValueError):
+        return fallback
+    return parsed
+
+
+def _session_plan_payload(plan) -> dict:
+    """Safe whitelist projection for Task04 session-plan history."""
+    if plan is None:
+        return None
+    return {
+        "research_session_id": plan.research_session_id,
+        "plan_version": plan.version,
+        "schema_version": plan.schema_version,
+        "output_hash": plan.output_hash,
+        "objective": plan.objective,
+        "scope": _json_value(plan.scope_json, {}),
+        "work_items": _json_value(plan.work_items_json, []),
+        "capabilities": _json_value(plan.capabilities_json, []),
+        "budget": _json_value(plan.budget_json, {}),
+        "report_structure": _json_value(plan.report_structure_json, {}),
+        "safe_summary": _json_value(plan.safety_summary_json, {}),
+        "status": plan.status,
+        "created_at": plan.created_at,
+    }
+
+
+def _approval_payload(approval) -> dict:
+    """Approval projection intentionally excludes idempotency/internal fields."""
+    requested = _json_value(approval.requested_scope_json, {})
+    approved = _json_value(approval.approved_scope_json, None)
+    allowed = {
+        "plan": {"plan_version", "output_hash"},
+        "capability_override": {"skill", "skill_name", "tools", "approval_request_id"},
+        "resource_extension": {"model_loops", "tool_calls", "seconds", "approval_request_id"},
+    }.get(approval.kind, {"approval_request_id"})
+    if not isinstance(requested, dict):
+        requested = {}
+    if not isinstance(approved, dict):
+        approved = None
+    requested = {key: requested[key] for key in allowed if key in requested}
+    if approved is not None:
+        approved = {key: approved[key] for key in allowed if key in approved}
+    return {
+        "approval_request_id": approval.approval_request_id,
+        "kind": approval.kind,
+        "status": approval.status,
+        "subject_version": approval.subject_version,
+        "scope": requested,
+        "approved_scope": approved,
+        "created_at": approval.created_at,
+        "decided_at": approval.decided_at,
+    }
+
+
 def _current_plan(research_task_id: str) -> Optional[dict]:
     """当前计划（最大版本）只读投影；无计划返回 None。"""
     return _plan_payload(plan) if (plan := _store().get_current_plan(research_task_id)) is not None else None
@@ -273,6 +346,65 @@ def _selection_payload(selection) -> dict:
 def _cancelled_item_count(research_task_id: str) -> int:
     """当前已收敛为 cancelled 的 WorkItem 数（只读，用于 cancel 响应计数）。"""
     return sum(1 for item in _store().list_work_items(research_task_id) if item.status == "cancelled")
+
+
+def _command_error(exc: ResearchCommandError) -> JSONResponse:
+    retryable = exc.code in {"SOURCE_UNAVAILABLE", "TASK_MODEL_LIMIT_REACHED", "TASK_TIME_LIMIT_REACHED"}
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"error": {"code": exc.code, "message": exc.message, "retryable": retryable}},
+    )
+
+
+@session_router.get("/{research_session_id}")
+def get_research_session(research_session_id: str):
+    """Owner-scoped Session detail including immutable plan/approval history."""
+    try:
+        service = _approval_service()
+        session = service.get_session(research_session_id, OWNER_ID)
+        plan = _store().get_session_plan(research_session_id, OWNER_ID)
+        return {
+            **session.to_dict(),
+            "plan": plan.to_dict() if plan else None,
+            "plans": [item.to_dict() for item in _store().list_session_plans(research_session_id, OWNER_ID)],
+            "approvals": [item.to_dict() for item in _store().list_approvals(research_session_id, OWNER_ID)],
+        }
+    except ResearchCommandError as exc:
+        return _command_error(exc)
+    except Exception:
+        logger.exception("research session command failed")
+        return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "研究命令依赖暂时不可用"))
+
+
+@session_router.post("/{research_session_id}/commands")
+def execute_research_session_command(research_session_id: str, payload: ResearchSessionCommandRequest):
+    """Unified button/natural-language command boundary for Task04."""
+    try:
+        return _approval_service().command(
+            research_session_id,
+            OWNER_ID,
+            command=payload.command,
+            subject_version=payload.subject_version,
+            scope_json=payload.scope_json,
+            idempotency_key=payload.idempotency_key,
+        )
+    except ResearchCommandError as exc:
+        return _command_error(exc)
+    except Exception:
+        logger.exception("research session command failed")
+        return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "研究命令依赖暂时不可用"))
+
+
+@session_router.post("/{research_session_id}/plans", status_code=202)
+def author_research_session_plan(research_session_id: str, payload: dict):
+    """Persist a validated ResearchPlanOutput and create its pending Approval."""
+    try:
+        return _approval_service().author_plan(research_session_id, OWNER_ID, payload)
+    except ResearchCommandError as exc:
+        return _command_error(exc)
+    except Exception:
+        logger.exception("research session plan authoring failed")
+        return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "计划服务暂时不可用"))
 
 
 @router.post("", status_code=202)
@@ -364,16 +496,39 @@ def list_research_tasks(
 
 @router.get("/{research_task_id}")
 def get_research_task(research_task_id: str):
-    """任务详情：任务 + 当前计划（facets/rationale/status）+ 状态 + 摘要。失败：404。"""
+    """任务详情及 owner-scoped Session/plan/approval projection."""
     try:
         task = _service().get_task(research_task_id, OWNER_ID)
     except ResearchServiceError as exc:
         return _error(exc)
-    detail = _task_summary(task)
-    detail["updated_at"] = task.updated_at
-    detail["completed_at"] = task.completed_at
-    detail["plan"] = _current_plan(research_task_id)
-    return detail
+    try:
+        detail = _task_summary(task)
+        detail["updated_at"] = task.updated_at
+        detail["completed_at"] = task.completed_at
+        detail["plan"] = _current_plan(research_task_id)
+        session = _store().get_session_by_task(research_task_id, OWNER_ID)
+        detail["research_session_id"] = session.research_session_id if session else None
+        if session is None:
+            detail["plans"] = []
+            detail["approvals"] = []
+        else:
+            current_session_plan = _store().get_session_plan(
+                session.research_session_id, OWNER_ID, session.current_plan_version
+            )
+            if current_session_plan is not None:
+                detail["plan"] = _session_plan_payload(current_session_plan)
+            detail["plans"] = [
+                _session_plan_payload(item)
+                for item in _store().list_session_plans(session.research_session_id, OWNER_ID)
+            ]
+            detail["approvals"] = [
+                _approval_payload(item)
+                for item in _store().list_approvals(session.research_session_id, OWNER_ID)
+            ]
+        return detail
+    except Exception:
+        logger.exception("research task detail projection failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
 
 
 @router.get("/{research_task_id}/events")

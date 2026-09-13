@@ -1,7 +1,7 @@
 # Task04 — 计划版本、统一审批命令与前端卡片
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；当前状态：`实施中`
+> 依赖：Task03；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -48,5 +48,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：Planner Skill、审批 service/API、三类卡片、双端评审与测试报告。
-- 执行结果：待执行后填写。
-- 变更日志：待执行后填写。
+- 执行结果：后端实现、六项 P1 与 activation/outbox 幂等修复、前端会话/Research Tab 计划卡和统一审批按钮均已完成；backend-reviewer/frontend-reviewer 与 backend-tester/frontend-tester 全部 GO。后端定向回归 `116 passed、6 subtests`，4/4 故障探针通过；前端 Task03/04 合同 `28 passed`、全前端回归 `186 passed`，5/5 Fake-DOM/HTTP 探针通过；Node、py_compile、聚焦 Ruff、DOM/XSS/class/version、diff-check 均通过。详见 `artifacts/task-04/{backend-report,backend-review,backend-test-report,frontend-report,frontend-review,frontend-test-report}.md`。
+- 变更日志：2026-09-13 完成计划版本、六类统一审批命令、Registry 能力/资源快照、可恢复 activation/outbox、稳定 activity 消息幂等、Research Tab 投影与计划/审批卡；旧 `/feedback` 批准旁路已移除，未知审批类型 fail-closed，stale/conflict 提供刷新接缝。资源版本升至 v45；未实现 AgentRunner、搜索或报告，Task05 可开始。

@@ -261,6 +261,7 @@ class MemoryRepository:
                     raise RuntimeError("memory schema v7 validation failed")
                 if not self._is_schema_v8(connection):
                     self._migrate_v7_to_v8(connection)
+                self._ensure_activity_idempotency_schema(connection)
                 # Task07 is an additive repository extension. Keep the public
                 # v6 number for Task10 compatibility while applying the table
                 # atomically to fresh and existing v6 databases.
@@ -754,6 +755,18 @@ class MemoryRepository:
             pending INTEGER NOT NULL DEFAULT 1 CHECK(pending IN (0,1)),
             updated_at TEXT NOT NULL
         )""")
+
+    @staticmethod
+    def _ensure_activity_idempotency_schema(connection: sqlite3.Connection) -> None:
+        """Add the cross-store research activity key without changing v7/v8."""
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(messages)").fetchall()}
+        if "activity_idempotency_key" not in columns:
+            connection.execute("ALTER TABLE messages ADD COLUMN activity_idempotency_key TEXT")
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_messages_activity_key "
+            "ON messages(owner_id, conversation_id, activity_idempotency_key) "
+            "WHERE activity_idempotency_key IS NOT NULL"
+        )
 
     @staticmethod
     def _is_schema_v8(connection: sqlite3.Connection) -> bool:
@@ -1819,6 +1832,52 @@ class MemoryRepository:
             db.execute("INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, now, now if status in {"completed", "failed", "interrupted"} else None))
             db.execute("UPDATE conversations SET updated_at=? WHERE conversation_id=?", (now, conversation_id))
         return self.get_message(message_id, owner_id)
+
+    def create_activity_message(
+        self, conversation_id: str, owner_id: str, content: str, *,
+        activity_idempotency_key: str, status: str = "pending",
+        model: Optional[str] = None, mode: Optional[str] = None,
+        parent_message_id: Optional[str] = None,
+    ) -> Message:
+        """Create or return one assistant activity message for a stable key."""
+        if not isinstance(activity_idempotency_key, str) or not activity_idempotency_key.strip() or len(activity_idempotency_key) > 240:
+            raise ValueError("invalid activity idempotency key")
+        if not self.get_conversation(conversation_id, owner_id):
+            raise LookupError("conversation not found")
+        with self.transaction() as db:
+            existing = db.execute(
+                "SELECT * FROM messages WHERE owner_id=? AND conversation_id=? AND activity_idempotency_key=?",
+                (owner_id, conversation_id, activity_idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                return self._message(existing)
+            message_id = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"research-activity:{owner_id}:{conversation_id}:{activity_idempotency_key}",
+            ).hex
+            now = _now()
+            db.execute(
+                """INSERT INTO messages(
+                    message_id, conversation_id, owner_id, parent_message_id, role,
+                    content, status, model, mode, created_at, completed_at,
+                    activity_idempotency_key
+                ) VALUES (?, ?, ?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?)""",
+                (message_id, conversation_id, owner_id, parent_message_id, content,
+                 status, model, mode, now, now if status in {"completed", "failed", "interrupted"} else None,
+                 activity_idempotency_key),
+            )
+            row = db.execute("SELECT * FROM messages WHERE message_id=?", (message_id,)).fetchone()
+        return self._message(row)
+
+    def get_activity_message(self, conversation_id: str, owner_id: str, activity_idempotency_key: str) -> Optional[Message]:
+        if not isinstance(activity_idempotency_key, str) or not activity_idempotency_key.strip():
+            return None
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM messages WHERE owner_id=? AND conversation_id=? AND activity_idempotency_key=?",
+                (owner_id, conversation_id, activity_idempotency_key),
+            ).fetchone()
+        return self._message(row) if row else None
 
     def get_message(self, message_id: str, owner_id: str) -> Optional[Message]:
         with self.connection() as db:

@@ -23,6 +23,7 @@ import json
 import os
 import sqlite3
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -60,6 +61,7 @@ from backend.app.research.domain.models import (
     ResearchPaperSelection,
     ResearchPlan,
     ResearchSession,
+    ResearchSessionPlan,
     ResearchTask,
     ResearchWorkItem,
 )
@@ -72,7 +74,10 @@ from backend.app.research.domain.state_machine import (
     transition_workitem,
 )
 
-SCHEMA_VERSION = 2
+# Task04 adds Session plan/command tables as an explicit v3 migration.  Keep
+# this separate from the Task02 v2 marker so existing v2 databases are upgraded
+# on their next open rather than relying on a fresh database path.
+SCHEMA_VERSION = 3
 
 # 写操作全局串行锁：保证 event_seq 原子领号在进程内也无竞争；锁内只做必要写，
 # 计算（JSON 序列化等）已尽量外移。RLock 允许同一线程重入。
@@ -283,7 +288,8 @@ class ResearchStore:
             connection.execute("CREATE TABLE IF NOT EXISTS schema_meta(version INTEGER NOT NULL)")
             self._initialize_v1(connection)
             current = self._current_schema_version(connection)
-            # v1 无更高版本迁移；保留结构与 paper_discovery 一致（current 低于 SCHEMA_VERSION 才迁移）。
+            # v1/v2 均通过同一事务执行幂等加性迁移；v2 -> v3 是 Task04 的
+            # Session plan/command 表迁移，失败时整个事务回滚。
             if current is None or current < SCHEMA_VERSION:
                 self._migrate_to_current(connection)
             self._validate_schema_meta(connection)
@@ -453,6 +459,73 @@ class ResearchStore:
             UNIQUE(owner_id, idempotency_key)
         )""")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_approvals_session ON research_approval_requests(owner_id, research_session_id, subject_version)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_command_results(
+            owner_id TEXT NOT NULL,
+            research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            idempotency_key TEXT NOT NULL,
+            command TEXT NOT NULL,
+            subject_version INTEGER NOT NULL DEFAULT 0,
+            subject_id TEXT NOT NULL DEFAULT '',
+            response_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(owner_id, idempotency_key)
+        )""")
+        command_columns = {row[1] for row in connection.execute("PRAGMA table_info(research_command_results)").fetchall()}
+        if "subject_version" not in command_columns:
+            connection.execute("ALTER TABLE research_command_results ADD COLUMN subject_version INTEGER NOT NULL DEFAULT 0")
+        if "subject_id" not in command_columns:
+            connection.execute("ALTER TABLE research_command_results ADD COLUMN subject_id TEXT NOT NULL DEFAULT ''")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_activity_outbox(
+            outbox_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            subject_version INTEGER NOT NULL,
+            command_idempotency_key TEXT NOT NULL,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            activity_message_id TEXT,
+            status TEXT NOT NULL CHECK(status IN ('pending','failed','completed')),
+            error_code TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(owner_id, research_session_id, subject_version, command_idempotency_key)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_session_plans(
+            research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            version INTEGER NOT NULL,
+            schema_version TEXT NOT NULL,
+            output_hash TEXT NOT NULL,
+            objective TEXT NOT NULL,
+            scope_json TEXT NOT NULL,
+            work_items_json TEXT NOT NULL,
+            capabilities_json TEXT NOT NULL,
+            budget_json TEXT NOT NULL,
+            report_structure_json TEXT NOT NULL,
+            safety_summary_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(research_session_id, version)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_session_plans_current ON research_session_plans(research_session_id, version)")
+        # The activation row is the durable anchor for approve_plan.  Its
+        # deterministic task id lets a retry resume after any process crash
+        # between task/plan/work-item/outbox writes without creating a second
+        # task or leaving an unlinked orphan.
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_plan_activations(
+            activation_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            subject_version INTEGER NOT NULL,
+            command_idempotency_key TEXT NOT NULL,
+            research_task_id TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL CHECK(status IN ('pending','failed','completed')),
+            error_code TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(owner_id, research_session_id, subject_version, command_idempotency_key)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_plan_activations_session ON research_plan_activations(owner_id, research_session_id, subject_version)")
         connection.execute("""CREATE TABLE IF NOT EXISTS research_agent_runs(
             agent_run_id TEXT PRIMARY KEY,
             research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
@@ -1138,6 +1211,111 @@ class ResearchStore:
             ).fetchone()
         return ResearchSession.from_row(dict(row)) if row else None
 
+    def get_session_by_task(self, research_task_id: str, owner_id: str) -> ResearchSession | None:
+        """Resolve the owner-scoped Session link for a Task detail projection."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT s.* FROM research_sessions s
+                WHERE s.research_task_id=? AND s.owner_id=?
+                ORDER BY s.updated_at DESC, s.research_session_id DESC LIMIT 1""",
+                (research_task_id, owner_id),
+            ).fetchone()
+        return ResearchSession.from_row(dict(row)) if row else None
+
+    # ------------------------------------------------------------------ #
+    # Spec034 Session plan versions (Task04)
+    # ------------------------------------------------------------------ #
+
+    def create_session_plan(self, plan: ResearchSessionPlan, owner_id: str) -> ResearchSessionPlan:
+        """Insert an immutable, owner-scoped plan version before Task creation."""
+        if plan.version < 1 or plan.status not in {"proposed", "active", "superseded", "rejected"}:
+            raise ValueError("invalid session plan")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if not conn.execute(
+                    "SELECT 1 FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (plan.research_session_id, owner_id),
+                ).fetchone():
+                    raise ResearchSessionNotFound(plan.research_session_id)
+                if conn.execute(
+                    "SELECT 1 FROM research_session_plans WHERE research_session_id=? AND version=?",
+                    (plan.research_session_id, plan.version),
+                ).fetchone():
+                    conn.rollback()
+                    raise ResearchPlanConflict(plan.research_session_id, plan.version)
+                conn.execute(
+                    """INSERT INTO research_session_plans(
+                        research_session_id, version, schema_version, output_hash, objective,
+                        scope_json, work_items_json, capabilities_json, budget_json,
+                        report_structure_json, safety_summary_json, status, created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        plan.research_session_id, plan.version, plan.schema_version, plan.output_hash,
+                        plan.objective, plan.scope_json, plan.work_items_json, plan.capabilities_json,
+                        plan.budget_json, plan.report_structure_json, plan.safety_summary_json,
+                        plan.status, plan.created_at or _utcnow(),
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_session_plans WHERE research_session_id=? AND version=?",
+                    (plan.research_session_id, plan.version),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSessionPlan.from_row(dict(row))
+
+    def get_session_plan(self, research_session_id: str, owner_id: str, version: int | None = None) -> ResearchSessionPlan | None:
+        with self._connect() as conn:
+            if version is None:
+                row = conn.execute(
+                    """SELECT p.* FROM research_session_plans p JOIN research_sessions s
+                    ON s.research_session_id=p.research_session_id
+                    WHERE p.research_session_id=? AND s.owner_id=? ORDER BY p.version DESC LIMIT 1""",
+                    (research_session_id, owner_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """SELECT p.* FROM research_session_plans p JOIN research_sessions s
+                    ON s.research_session_id=p.research_session_id
+                    WHERE p.research_session_id=? AND p.version=? AND s.owner_id=?""",
+                    (research_session_id, version, owner_id),
+                ).fetchone()
+        return ResearchSessionPlan.from_row(dict(row)) if row else None
+
+    def list_session_plans(self, research_session_id: str, owner_id: str) -> list[ResearchSessionPlan]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT p.* FROM research_session_plans p JOIN research_sessions s
+                ON s.research_session_id=p.research_session_id
+                WHERE p.research_session_id=? AND s.owner_id=? ORDER BY p.version""",
+                (research_session_id, owner_id),
+            ).fetchall()
+        return [ResearchSessionPlan.from_row(dict(row)) for row in rows]
+
+    def supersede_session_plans(self, research_session_id: str, owner_id: str, keep_version: int) -> int:
+        """Mark all earlier proposed/active plans superseded in one owner-scoped CAS."""
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if not conn.execute(
+                    "SELECT 1 FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
+                ).fetchone():
+                    raise ResearchSessionNotFound(research_session_id)
+                cur = conn.execute(
+                    """UPDATE research_session_plans SET status='superseded'
+                    WHERE research_session_id=? AND version<? AND status IN ('proposed','active')""",
+                    (research_session_id, keep_version),
+                )
+                conn.commit()
+                return max(int(cur.rowcount), 0)
+            except Exception:
+                conn.rollback()
+                raise
+
     def list_sessions(self, owner_id: str, *, status: str | None = None, limit: int = 20) -> list[ResearchSession]:
         limit = max(1, min(int(limit), 100))
         params: list[object] = [owner_id]
@@ -1177,6 +1355,72 @@ class ResearchStore:
                 conn.rollback()
                 raise
         return ResearchSession.from_row(dict(row))
+
+    def cancel_session_research(self, research_session_id: str, owner_id: str) -> tuple[ResearchSession, ResearchTask | None, int]:
+        """CAS-cancel Session and its active Task/WorkItems in one transaction.
+
+        Only expected state-machine conflicts are surfaced; no broad exception
+        suppression is used, so callers can retry a failed cross-store Saga.
+        """
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                session_row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
+                ).fetchone()
+                if session_row is None:
+                    raise ResearchSessionNotFound(research_session_id)
+                transition_session(session_row["status"], "cancelled")
+                task = None
+                task_id = session_row["research_task_id"]
+                if task_id is not None:
+                    now = _utcnow()
+                    task_row = conn.execute(
+                        "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                        (task_id, owner_id),
+                    ).fetchone()
+                    if task_row is None:
+                        raise ResearchTaskNotFound(task_id)
+                    if task_row["status"] not in TASK_TERMINAL:
+                        transition_task(task_row["status"], "cancelled")
+                        conn.execute(
+                            "UPDATE research_tasks SET status='cancelled', updated_at=?, completed_at=? WHERE research_task_id=? AND owner_id=?",
+                            (now, now, task_id, owner_id),
+                        )
+                    for item_row in conn.execute(
+                        "SELECT work_item_id,status FROM research_work_items WHERE research_task_id=?",
+                        (task_id,),
+                    ).fetchall():
+                        if item_row["status"] in {"queued", "running"}:
+                            transition_workitem(item_row["status"], "cancelled")
+                            conn.execute(
+                                "UPDATE research_work_items SET status='cancelled', ended_at=?, updated_at=? WHERE work_item_id=? AND status IN ('queued','running')",
+                                (now, now, item_row["work_item_id"]),
+                            )
+                    task_row = conn.execute(
+                        "SELECT * FROM research_tasks WHERE research_task_id=?",
+                        (task_id,),
+                    ).fetchone()
+                    task = ResearchTask.from_row(dict(task_row))
+                now = _utcnow()
+                conn.execute(
+                    "UPDATE research_sessions SET status='cancelled', updated_at=? WHERE research_session_id=? AND owner_id=? AND status NOT IN ('interrupted','partial','completed','failed','cancelled')",
+                    (now, research_session_id, owner_id),
+                )
+                session_row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=?",
+                    (research_session_id,),
+                ).fetchone()
+                cancelled_count = int(conn.execute(
+                    "SELECT COUNT(*) FROM research_work_items WHERE research_task_id=? AND status='cancelled'",
+                    (task_id,),
+                ).fetchone()[0]) if task_id else 0
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSession.from_row(dict(session_row)), task, cancelled_count
 
     def update_session_links(self, research_session_id: str, owner_id: str, **fields) -> ResearchSession:
         allowed = {
@@ -1381,6 +1625,321 @@ class ResearchStore:
                 (approval_request_id, owner_id),
             ).fetchone()
         return ApprovalRequest.from_row(dict(row)) if row else None
+
+    def get_approval_by_idempotency(self, idempotency_key: str, owner_id: str) -> ApprovalRequest | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_approval_requests WHERE idempotency_key=? AND owner_id=?",
+                (idempotency_key, owner_id),
+            ).fetchone()
+        return ApprovalRequest.from_row(dict(row)) if row else None
+
+    def list_approvals(self, research_session_id: str, owner_id: str, *, subject_version: int | None = None) -> list[ApprovalRequest]:
+        params: list[object] = [research_session_id, owner_id]
+        sql = "SELECT * FROM research_approval_requests WHERE research_session_id=? AND owner_id=?"
+        if subject_version is not None:
+            sql += " AND subject_version=?"
+            params.append(subject_version)
+        sql += " ORDER BY created_at, approval_request_id"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [ApprovalRequest.from_row(dict(row)) for row in rows]
+
+    def supersede_approvals(self, research_session_id: str, owner_id: str, *, before_version: int) -> int:
+        """Supersede pending approvals for older plan versions (owner-scoped)."""
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                cur = conn.execute(
+                    """UPDATE research_approval_requests SET status='superseded', decided_at=?
+                    WHERE research_session_id=? AND owner_id=? AND subject_version<? AND status='pending'""",
+                    (_utcnow(), research_session_id, owner_id, before_version),
+                )
+                conn.commit()
+                return max(int(cur.rowcount), 0)
+            except Exception:
+                conn.rollback()
+                raise
+
+    def get_command_result_record(self, idempotency_key: str, owner_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_command_results WHERE owner_id=? AND idempotency_key=?",
+                (owner_id, idempotency_key),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_command_result(self, idempotency_key: str, owner_id: str) -> dict | None:
+        record = self.get_command_result_record(idempotency_key, owner_id)
+        return json.loads(record["response_json"]) if record else None
+
+    def save_command_result(self, *, owner_id: str, research_session_id: str, subject_version: int, idempotency_key: str, command: str, response: dict) -> dict:
+        """Persist an immutable command response; duplicate keys return first response."""
+        payload = json.dumps(response, ensure_ascii=False, sort_keys=True)
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute(
+                    "SELECT * FROM research_command_results WHERE owner_id=? AND idempotency_key=?",
+                    (owner_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    if (existing["research_session_id"], existing["command"], int(existing["subject_version"])) != (research_session_id, command, int(subject_version)):
+                        raise ValueError("command idempotency identity conflict")
+                    conn.commit()
+                    return json.loads(existing["response_json"])
+                conn.execute(
+                    "INSERT INTO research_command_results(owner_id,research_session_id,idempotency_key,command,subject_version,subject_id,response_json,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                    (owner_id, research_session_id, idempotency_key, command, int(subject_version), research_session_id, payload, _utcnow()),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return response
+
+    def create_activity_outbox(self, *, owner_id: str, research_session_id: str, subject_version: int, command_idempotency_key: str, research_task_id: str) -> dict:
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT * FROM research_activity_outbox WHERE owner_id=? AND research_session_id=? AND subject_version=? AND command_idempotency_key=?",
+                    (owner_id, research_session_id, subject_version, command_idempotency_key),
+                ).fetchone()
+                if row is None:
+                    now = _utcnow()
+                    outbox_id = uuid.uuid4().hex
+                    conn.execute(
+                        "INSERT INTO research_activity_outbox(outbox_id,owner_id,research_session_id,subject_version,command_idempotency_key,research_task_id,status,error_code,attempts,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                        (outbox_id, owner_id, research_session_id, subject_version, command_idempotency_key, research_task_id, "pending", None, 0, now, now),
+                    )
+                    row = conn.execute("SELECT * FROM research_activity_outbox WHERE outbox_id=?", (outbox_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return dict(row)
+
+    def create_plan_activation(self, *, owner_id: str, research_session_id: str,
+                               subject_version: int, command_idempotency_key: str) -> dict:
+        """Create/read the approve-plan activation anchor idempotently."""
+        activation_id = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"research-plan-activation:{owner_id}:{research_session_id}:{int(subject_version)}:{command_idempotency_key}",
+        ).hex
+        task_id = uuid.uuid5(uuid.NAMESPACE_URL, f"research-task:{activation_id}").hex
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                session = conn.execute(
+                    "SELECT 1 FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
+                ).fetchone()
+                if session is None:
+                    raise ResearchSessionNotFound(research_session_id)
+                row = conn.execute(
+                    "SELECT * FROM research_plan_activations WHERE owner_id=? AND research_session_id=? AND subject_version=? AND command_idempotency_key=?",
+                    (owner_id, research_session_id, int(subject_version), command_idempotency_key),
+                ).fetchone()
+                if row is None:
+                    now = _utcnow()
+                    conn.execute(
+                        """INSERT INTO research_plan_activations(
+                            activation_id,owner_id,research_session_id,subject_version,
+                            command_idempotency_key,research_task_id,status,error_code,
+                            attempts,created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (activation_id, owner_id, research_session_id, int(subject_version),
+                         command_idempotency_key, task_id, "pending", None, 0, now, now),
+                    )
+                    row = conn.execute(
+                        "SELECT * FROM research_plan_activations WHERE activation_id=?", (activation_id,)
+                    ).fetchone()
+                elif row["research_task_id"] != task_id:
+                    raise ValueError("activation identity conflict")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return dict(row)
+
+    def get_plan_activation(self, *, owner_id: str, research_session_id: str,
+                            subject_version: int, command_idempotency_key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_plan_activations WHERE owner_id=? AND research_session_id=? AND subject_version=? AND command_idempotency_key=?",
+                (owner_id, research_session_id, int(subject_version), command_idempotency_key),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_plan_activation(self, activation_id: str, *, status: str,
+                               error_code: str | None = None) -> dict:
+        if status not in {"pending", "failed", "completed"}:
+            raise ValueError("invalid plan activation status")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "UPDATE research_plan_activations SET status=?, error_code=?, attempts=attempts+1, updated_at=? WHERE activation_id=?",
+                    (status, error_code, _utcnow(), activation_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_plan_activations WHERE activation_id=?", (activation_id,)
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(activation_id)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return dict(row)
+
+    def activate_plan(self, *, activation: dict, task: ResearchTask,
+                      plan: ResearchPlan, items: list[ResearchWorkItem],
+                      outbox_key: str) -> tuple[ResearchTask, dict]:
+        """Atomically and idempotently materialize an approved plan.
+
+        The activation row is created before approval, while this transaction
+        commits the Task, ResearchPlan, missing WorkItems, outbox and final
+        activation status together.  A retry therefore observes either the
+        complete set or none of the materialization writes.
+        """
+        if activation["research_task_id"] != task.research_task_id:
+            raise ValueError("activation task identity conflict")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                anchor = conn.execute(
+                    "SELECT * FROM research_plan_activations WHERE activation_id=? AND owner_id=? AND research_session_id=? AND subject_version=? AND command_idempotency_key=?",
+                    (activation["activation_id"], task.owner_id, activation["research_session_id"], int(activation["subject_version"]), outbox_key),
+                ).fetchone()
+                if anchor is None:
+                    raise ResearchSessionNotFound(activation["research_session_id"])
+                existing_task = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=?",
+                    (task.research_task_id,),
+                ).fetchone()
+                if existing_task is not None and (
+                    existing_task["owner_id"] != task.owner_id
+                    or existing_task["conversation_id"] != task.conversation_id
+                ):
+                    raise ValueError("activation task owner/session mismatch")
+                if existing_task is None:
+                    now = task.created_at or _utcnow()
+                    conn.execute(
+                        """INSERT INTO research_tasks(
+                            research_task_id, owner_id, project_id, conversation_id, goal,
+                            language, quality_profile, review_plan_first, target_paper_count,
+                            soft_budget_seconds, status, current_plan_version, last_event_seq,
+                            created_at, updated_at, completed_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (task.research_task_id, task.owner_id, task.project_id, task.conversation_id,
+                         task.goal, task.language, task.quality_profile,
+                         1 if task.review_plan_first else 0, task.target_paper_count, task.soft_budget_seconds,
+                         "planning", task.current_plan_version, 0, now, task.updated_at or now,
+                         task.completed_at),
+                    )
+                elif existing_task["status"] == "draft":
+                    conn.execute(
+                        "UPDATE research_tasks SET status='planning', updated_at=? WHERE research_task_id=?",
+                        (_utcnow(), task.research_task_id),
+                    )
+                elif existing_task["status"] not in {"planning"}:
+                    raise ValueError("activation task is not resumable")
+                plan_row = conn.execute(
+                    "SELECT 1 FROM research_plans WHERE research_task_id=? AND version=?",
+                    (plan.research_task_id, plan.version),
+                ).fetchone()
+                if plan_row is None:
+                    conn.execute(
+                        """INSERT INTO research_plans(
+                            research_task_id,version,planner_model,rationale_summary,
+                            facets_json,status,created_at)
+                        VALUES(?,?,?,?,?,?,?)""",
+                        (plan.research_task_id, plan.version, plan.planner_model,
+                         plan.rationale_summary, plan.facets_json, plan.status,
+                         plan.created_at or _utcnow()),
+                    )
+                for item in items:
+                    if item.task_type not in TASK_TYPE_WHITELIST or item.role not in ROLE_WHITELIST:
+                        raise ValueError("invalid work item authorization")
+                    existing_item = conn.execute(
+                        "SELECT research_task_id, plan_version FROM research_work_items WHERE work_item_id=?",
+                        (item.work_item_id,),
+                    ).fetchone()
+                    if existing_item is not None:
+                        if (existing_item["research_task_id"], int(existing_item["plan_version"])) != (item.research_task_id, int(item.plan_version)):
+                            raise ValueError("work item identity conflict")
+                        continue
+                    now = item.created_at or _utcnow()
+                    conn.execute(
+                        """INSERT INTO research_work_items(
+                            work_item_id,research_task_id,plan_version,task_type,role,
+                            depends_on_json,input_json,output_json,model_tier,resolved_model,
+                            worker_slot,status,attempt,error_code,started_at,ended_at,
+                            created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (item.work_item_id, item.research_task_id, item.plan_version,
+                         item.task_type, item.role, item.depends_on_json, item.input_json,
+                         item.output_json, item.model_tier, item.resolved_model, item.worker_slot,
+                         item.status, item.attempt, item.error_code, item.started_at, item.ended_at,
+                         now, item.updated_at or now),
+                    )
+                outbox = conn.execute(
+                    "SELECT * FROM research_activity_outbox WHERE owner_id=? AND research_session_id=? AND subject_version=? AND command_idempotency_key=?",
+                    (task.owner_id, activation["research_session_id"], int(activation["subject_version"]), outbox_key),
+                ).fetchone()
+                if outbox is None:
+                    now = _utcnow()
+                    outbox_id = uuid.uuid4().hex
+                    conn.execute(
+                        """INSERT INTO research_activity_outbox(
+                            outbox_id,owner_id,research_session_id,subject_version,
+                            command_idempotency_key,research_task_id,status,error_code,
+                            attempts,created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (outbox_id, task.owner_id, activation["research_session_id"],
+                         int(activation["subject_version"]), outbox_key, task.research_task_id,
+                         "pending", None, 0, now, now),
+                    )
+                    outbox = conn.execute("SELECT * FROM research_activity_outbox WHERE outbox_id=?", (outbox_id,)).fetchone()
+                elif outbox["research_task_id"] != task.research_task_id:
+                    raise ValueError("outbox task identity conflict")
+                conn.execute(
+                    "UPDATE research_plan_activations SET status='completed', error_code=NULL, attempts=attempts+1, updated_at=? WHERE activation_id=?",
+                    (_utcnow(), activation["activation_id"]),
+                )
+                task_row = conn.execute("SELECT * FROM research_tasks WHERE research_task_id=?", (task.research_task_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchTask.from_row(dict(task_row)), dict(outbox)
+
+    def get_activity_outbox(self, *, owner_id: str, research_session_id: str, subject_version: int, command_idempotency_key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_activity_outbox WHERE owner_id=? AND research_session_id=? AND subject_version=? AND command_idempotency_key=?",
+                (owner_id, research_session_id, subject_version, command_idempotency_key),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_activity_outbox(self, outbox_id: str, *, status: str, activity_message_id: str | None = None, error_code: str | None = None) -> dict:
+        if status not in {"pending", "failed", "completed"}:
+            raise ValueError("invalid activity outbox status")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "UPDATE research_activity_outbox SET status=?, activity_message_id=COALESCE(?,activity_message_id), error_code=?, attempts=attempts+1, updated_at=? WHERE outbox_id=?",
+                    (status, activity_message_id, error_code, _utcnow(), outbox_id),
+                )
+                row = conn.execute("SELECT * FROM research_activity_outbox WHERE outbox_id=?", (outbox_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return dict(row)
 
     def decide_approval(
         self,

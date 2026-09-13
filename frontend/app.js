@@ -719,6 +719,7 @@ function conversationError(data, fallback = '请求失败') {
   const detail = data?.detail;
   if (typeof detail === 'object' && detail?.message) return detail.message;
   if (typeof detail === 'string') return detail;
+  if (typeof data?.error === 'object' && data.error?.message) return data.error.message;
   return data?.message || fallback;
 }
 
@@ -728,9 +729,9 @@ async function conversationFetch(url, options = {}) {
   try { data = await response.json(); } catch (_) { data = null; }
   if (!response.ok) {
     const error = new Error(conversationError(data));
-    error.code = data?.detail?.code || data?.code;
+    error.code = data?.detail?.code || data?.error?.code || data?.code;
     error.status = response.status;
-    error.retryable = data?.detail?.retryable ?? data?.retryable;
+    error.retryable = data?.detail?.retryable ?? data?.error?.retryable ?? data?.retryable;
     throw error;
   }
   return data;
@@ -927,7 +928,7 @@ const REASONING_PROTOCOL_MARKERS = [
   '\nassistant:', '\nuser:', '\nsystem:', 'assistant:', 'user:', 'system:',
 ];
 const reasoningFilters = new WeakMap();
-const KNOWN_CONVERSATION_EVENT_TYPES = new Set(['meta', 'progress', 'memory', 'reconnect', 'skill_activation', 'intake', 'reasoning_started', 'reasoning_delta', 'reasoning_completed', 'token', 'sources', 'error', 'done']);
+const KNOWN_CONVERSATION_EVENT_TYPES = new Set(['meta', 'progress', 'memory', 'reconnect', 'skill_activation', 'intake', 'plan', 'research_plan', 'approval', 'approvals', 'reasoning_started', 'reasoning_delta', 'reasoning_completed', 'token', 'sources', 'error', 'done']);
 
 function createReasoningFilter() {
   let carry = '';
@@ -1182,6 +1183,16 @@ function renderConversationMessage(item) {
     const historicalStatus = item.status === 'failed' || historicalIntake.status === 'failed' ? 'failed' : 'completed';
     finalizeConversationIntake(historicalPanel, historicalStatus);
   }
+  const historicalPlan = item.plan || item.research_plan || item.research_plan_output || (Array.isArray(item.plans) ? item.plans.at(-1) : null);
+  const historicalApprovals = item.approvals || item.research_approvals || item.approval;
+  if (historicalPlan || historicalApprovals || item.research_session_id || item.research_session) {
+    updateConversationResearchPlan(message, {
+      plan: historicalPlan,
+      approvals: Array.isArray(historicalApprovals) ? historicalApprovals : historicalApprovals ? [historicalApprovals] : [],
+      research_session_id: item.research_session_id || item.research_session?.research_session_id,
+      research_session: item.research_session,
+    });
+  }
   if (historicalReasoning) {
     createConversationReasoning(message, {
       effort: item.reasoning_effort || 'xhigh',
@@ -1421,6 +1432,262 @@ function finalizeConversationIntake(panel, status = 'completed') {
   const summary = panel.querySelector('.conversation-intake-summary');
   if (summary && finalStatus === 'failed') summary.textContent = '研究 Intake 失败';
   if (finalStatus !== 'running' && (finalStatus !== 'completed' || !needsUserAction)) collapseConversationIntake(panel);
+}
+
+// Spec034 Task04: plans and approvals are a projection of the assistant
+// message.  Keep the projection deliberately small and field-based: no raw
+// model envelope, arbitrary object keys, links, or hidden reasoning reach the
+// DOM.
+const RESEARCH_PLAN_FIELDS = [
+  ['objective', '目标'],
+  ['scope', '范围'],
+  ['work_items', '研究方向'],
+  ['capabilities', '来源与能力'],
+  ['budget', '预算'],
+  ['report_structure', '报告结构'],
+  ['safety_summary', '降级策略'],
+];
+const RESEARCH_APPROVAL_LABELS = {
+  plan: '计划审批', capability_override: '能力审批', resource_extension: '资源扩容审批',
+};
+const RESEARCH_COMMAND_LABELS = {
+  approve_plan: '批准计划', approve_capability: '批准能力', approve_resource_extension: '批准资源扩容',
+  revise_plan: '修改计划', cancel_research: '取消研究', decline_request: '拒绝请求',
+};
+const RESEARCH_APPROVAL_STATES = new Set(['pending', 'approved', 'rejected', 'cancelled', 'superseded']);
+
+function parseResearchProjection(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string' || value.length > 20000) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) { return {}; }
+}
+
+function safeResearchScalar(value, fallback = '未提供') {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string') {
+    if (/(?:https?|ftp):\/\//i.test(value.trim())) return fallback;
+    return value.length > 2400 ? `${value.slice(0, 2400)}…` : value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+}
+
+function safeResearchList(value, limit = 12) {
+  const values = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+  return values.map((item) => {
+    if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') return safeResearchScalar(item, '');
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+    const keys = ['id', 'name', 'role', 'capability', 'source', 'research_question', 'task_type', 'depends_on', 'query', 'limit'];
+    return keys.filter((key) => Object.prototype.hasOwnProperty.call(item, key))
+      .map((key) => `${key}: ${safeResearchScalar(item[key], '')}`).filter((part) => !part.endsWith(': ')).join(' · ');
+  }).filter((item) => item && !/^https?:\/\//i.test(item)).slice(0, limit);
+}
+
+function researchPlanField(plan, key) {
+  if (!plan || typeof plan !== 'object') return null;
+  if (key === 'safety_summary' && plan.safe_summary !== undefined) return plan.safe_summary;
+  const direct = plan[key];
+  if (direct !== undefined) return direct;
+  return parseResearchProjection(plan[`${key}_json`]);
+}
+
+function researchPlanFieldText(plan, key) {
+  const value = researchPlanField(plan, key);
+  if (key === 'objective') return safeResearchScalar(value);
+  if (key === 'scope') {
+    const scope = parseResearchProjection(value);
+    const parts = [];
+    safeResearchList(scope.in_scope || scope.include || scope.facets).forEach((item) => parts.push(`包含：${item}`));
+    safeResearchList(scope.exclusions || scope.exclude).forEach((item) => parts.push(`排除：${item}`));
+    safeResearchList(scope.research_directions || scope.questions).forEach((item) => parts.push(`方向：${item}`));
+    return parts.join(' · ') || safeResearchScalar(value);
+  }
+  if (key === 'work_items') {
+    return safeResearchList(value).join('；') || '未提供研究方向';
+  }
+  if (key === 'capabilities') {
+    const list = safeResearchList(value);
+    const source = parseResearchProjection(value);
+    if (!list.length && source.sources) return safeResearchList(source.sources).join('；');
+    return list.join('；') || '未提供来源策略';
+  }
+  if (key === 'budget') {
+    const budget = parseResearchProjection(value);
+    const parts = ['model_loops', 'tool_calls', 'seconds', 'worker_count', 'max_results']
+      .filter((name) => budget[name] !== undefined)
+      .map((name) => `${name}: ${safeResearchScalar(budget[name], '')}`);
+    return parts.join(' · ') || safeResearchScalar(value);
+  }
+  if (key === 'report_structure') return safeResearchList(value).join('；') || safeResearchScalar(value);
+  if (key === 'safety_summary') {
+    const safety = parseResearchProjection(value);
+    const parts = ['degraded_sources', 'fallback', 'fallback_strategy', 'stop_reason', 'limitations']
+      .filter((name) => safety[name] !== undefined)
+      .map((name) => `${name}: ${safeResearchScalar(safety[name], '')}`);
+    return parts.join(' · ') || safeResearchScalar(value);
+  }
+  return safeResearchScalar(value);
+}
+
+function createConversationResearchPlan(assistantMessage) {
+  if (!assistantMessage) return null;
+  const existing = assistantMessage.querySelector('.conversation-research-plan');
+  if (existing) return existing;
+  const panel = document.createElement('section');
+  panel.className = 'conversation-research-plan';
+  panel.setAttribute('aria-label', '研究计划与审批');
+  panel.dataset.status = 'proposed';
+  const header = document.createElement('div'); header.className = 'conversation-research-plan-header';
+  const title = document.createElement('strong'); title.className = 'conversation-research-plan-title'; title.textContent = '研究计划';
+  const meta = document.createElement('span'); meta.className = 'conversation-research-plan-meta';
+  header.append(title, meta);
+  const fields = document.createElement('dl'); fields.className = 'conversation-research-plan-fields';
+  const approvals = document.createElement('div'); approvals.className = 'conversation-research-approvals';
+  const actions = document.createElement('div'); actions.className = 'conversation-research-plan-actions';
+  panel.append(header, fields, approvals, actions);
+  const bubble = assistantMessage.querySelector('.bubble');
+  const answer = bubble?.querySelector('.answer');
+  if (answer) bubble.insertBefore(panel, answer); else bubble?.appendChild(panel);
+  return panel;
+}
+
+function researchCommandIdempotencyKey(button) {
+  if (button.dataset.idempotencyKey) return button.dataset.idempotencyKey;
+  const uuid = globalThis.crypto?.randomUUID?.();
+  button.dataset.idempotencyKey = uuid || `research-command-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return button.dataset.idempotencyKey;
+}
+
+function researchErrorCode(error) { return String(error?.code || '').toUpperCase(); }
+
+function researchCommandScope(command, approval, plan) {
+  const requested = parseResearchProjection(approval?.scope ?? approval?.requested_scope_json);
+  if (command === 'approve_plan') return { plan_version: Number(plan?.version || plan?.plan_version || 0), output_hash: safeResearchScalar(plan?.output_hash, '') };
+  if (command === 'approve_capability') {
+    return {
+      approval_request_id: safeResearchScalar(approval?.approval_request_id, ''),
+      skill: safeResearchScalar(requested.skill, ''), skill_name: safeResearchScalar(requested.skill_name, ''),
+      tools: safeResearchList(requested.tools),
+    };
+  }
+  if (command === 'approve_resource_extension') {
+    return {
+      approval_request_id: safeResearchScalar(approval?.approval_request_id, ''),
+      model_loops: Number(requested.model_loops) || 0, tool_calls: Number(requested.tool_calls) || 0, seconds: Number(requested.seconds) || 0,
+    };
+  }
+  if (command === 'revise_plan') {
+    return Object.fromEntries(['objective', 'scope', 'work_items', 'capabilities', 'budget', 'report_structure'].map((key) => [key, researchPlanField(plan, key)]));
+  }
+  if (command === 'decline_request') return { approval_request_id: safeResearchScalar(approval?.approval_request_id, '') };
+  return {};
+}
+
+function setResearchCommandState(button, state, label = '') {
+  if (!button) return;
+  ['loading', 'success', 'error', 'stale', 'conflict'].forEach((name) => button.classList.toggle(`is-${name}`, state === name));
+  button.dataset.state = state;
+  button.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+  if (label) button.textContent = label;
+}
+
+function addConversationResearchRefresh(button) {
+  const panel = button?.closest('.conversation-research-plan');
+  if (!panel || panel.querySelector('.conversation-research-refresh')) return;
+  const refresh = document.createElement('button'); refresh.type = 'button'; refresh.className = 'secondary-button conversation-research-refresh'; refresh.textContent = '刷新计划/重新加载会话';
+  refresh.addEventListener('click', async () => {
+    const sessionId = panel.dataset.researchSessionId;
+    if (!sessionId) return;
+    refresh.disabled = true; refresh.setAttribute('aria-busy', 'true'); refresh.textContent = '正在刷新…';
+    try {
+      const data = await conversationFetch(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
+      updateConversationResearchPlan(panel.closest('.message'), data);
+    } catch (_) {
+      refresh.disabled = false; refresh.setAttribute('aria-busy', 'false'); refresh.textContent = '刷新失败，重试';
+    }
+  });
+  panel.querySelector('.conversation-research-plan-actions')?.appendChild(refresh);
+}
+
+async function submitResearchSessionCommand(sessionId, command, subjectVersion, scopeJson, button, onSuccess = null) {
+  if (!sessionId || !command || !button || button.dataset.state === 'loading' || button.dataset.state === 'success') return null;
+  setResearchCommandState(button, 'loading', '提交中…'); button.disabled = true;
+  const body = { command, subject_version: Number(subjectVersion) || 0, scope_json: scopeJson && typeof scopeJson === 'object' ? scopeJson : {}, idempotency_key: researchCommandIdempotencyKey(button) };
+  try {
+    const data = await conversationFetch(`/api/research-sessions/${encodeURIComponent(sessionId)}/commands`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    setResearchCommandState(button, 'success', RESEARCH_COMMAND_LABELS[command] ? `${RESEARCH_COMMAND_LABELS[command]}已完成` : '已完成');
+    button.disabled = true;
+    if (typeof onSuccess === 'function') onSuccess(data);
+    return data;
+  } catch (error) {
+    const code = researchErrorCode(error);
+    const state = code === 'APPROVAL_STALE' || code === 'PLAN_VERSION_STALE' ? 'stale' : code === 'APPROVAL_CONFLICT' ? 'conflict' : 'error';
+    setResearchCommandState(button, state, state === 'stale' ? '版本已过期' : state === 'conflict' ? '已有窗口处理' : '提交失败，重试');
+    button.disabled = state === 'stale' || state === 'conflict';
+    if (state === 'stale' || state === 'conflict') addConversationResearchRefresh(button);
+    return null;
+  }
+}
+
+function renderConversationApprovals(panel, approvals, plan) {
+  const container = panel?.querySelector('.conversation-research-approvals');
+  if (!container) return;
+  container.replaceChildren();
+  const values = (Array.isArray(approvals) ? approvals : []).filter((approval) => approval && Object.prototype.hasOwnProperty.call(RESEARCH_APPROVAL_LABELS, approval.kind) && RESEARCH_APPROVAL_STATES.has(approval.status || 'pending'));
+  values.forEach((approval) => {
+    const kind = approval.kind;
+    const card = document.createElement('article'); card.className = 'conversation-research-approval'; card.dataset.kind = kind; card.dataset.status = approval.status || 'pending';
+    const heading = document.createElement('strong'); heading.className = 'conversation-research-approval-title'; heading.textContent = RESEARCH_APPROVAL_LABELS[kind];
+    const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = approval.status === 'pending' ? '待处理' : `已${approval.status}`;
+    const meta = document.createElement('span'); meta.className = 'conversation-research-approval-meta'; meta.textContent = `版本 v${safeResearchScalar(approval.subject_version, '—')} · ${safeResearchScalar(approval.approval_request_id, '无 ID')}`;
+    const controls = document.createElement('div'); controls.className = 'conversation-research-approval-actions';
+    const approveCommand = kind === 'plan' ? 'approve_plan' : kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
+    const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'send-button conversation-research-command'; approve.dataset.command = approveCommand; approve.textContent = RESEARCH_COMMAND_LABELS[approveCommand];
+    const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
+    const pending = approval.status === 'pending'; approve.disabled = !pending; decline.disabled = !pending;
+    if (pending) {
+      approve.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, approveCommand, approval.subject_version, researchCommandScope(approveCommand, approval, plan), approve, () => { status.textContent = '已完成'; card.dataset.status = 'approved'; }));
+      decline.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'decline_request', approval.subject_version, researchCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
+    }
+    controls.append(approve, decline); card.append(heading, status, meta, controls); container.appendChild(card);
+  });
+}
+
+function updateConversationResearchPlan(assistantMessage, payload = {}) {
+  const existingPanel = assistantMessage?.querySelector('.conversation-research-plan');
+  const existingPlan = parseResearchProjection(existingPanel?.dataset.planProjection);
+  const plan = payload.plan || payload.research_plan || payload.plan_output || (payload.version || payload.plan_version ? payload : null) || (Object.keys(existingPlan).length ? existingPlan : null);
+  const hasApprovalProjection = Array.isArray(payload.approvals) || Boolean(payload.approval);
+  const approvals = Array.isArray(payload.approvals) ? payload.approvals : payload.approval ? [payload.approval] : [];
+  if (!plan && !approvals.length && !payload.research_session_id && !payload.research_session) return null;
+  const panel = createConversationResearchPlan(assistantMessage); if (!panel) return null;
+  const session = payload.research_session || {};
+  panel.dataset.researchSessionId = String(payload.research_session_id || session.research_session_id || panel.dataset.researchSessionId || '');
+  if (plan) panel.dataset.planProjection = JSON.stringify(plan);
+  const version = Number(plan?.version || plan?.plan_version || payload.subject_version || session.current_plan_version || 0);
+  panel.dataset.subjectVersion = String(Number.isInteger(version) ? version : 0);
+  panel.dataset.status = String(plan?.status || payload.status || panel.dataset.status || 'proposed');
+  const meta = panel.querySelector('.conversation-research-plan-meta');
+  if (meta) meta.textContent = `计划 v${version || '—'} · ${panel.dataset.status === 'proposed' ? '待审批' : panel.dataset.status}`;
+  const fields = panel.querySelector('.conversation-research-plan-fields'); fields.replaceChildren();
+  RESEARCH_PLAN_FIELDS.forEach(([key, label]) => {
+    const dt = document.createElement('dt'); dt.className = 'conversation-research-plan-field-name'; dt.textContent = label;
+    const dd = document.createElement('dd'); dd.className = 'conversation-research-plan-field-value'; dd.textContent = researchPlanFieldText(plan || {}, key);
+    fields.append(dt, dd);
+  });
+  if (hasApprovalProjection) renderConversationApprovals(panel, approvals, plan || {});
+  const actions = panel.querySelector('.conversation-research-plan-actions'); actions.replaceChildren();
+  if (plan && panel.dataset.researchSessionId && version > 0) {
+    const revise = document.createElement('button'); revise.type = 'button'; revise.className = 'secondary-button conversation-research-command'; revise.dataset.command = 'revise_plan'; revise.textContent = RESEARCH_COMMAND_LABELS.revise_plan;
+    revise.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'revise_plan', version, researchCommandScope('revise_plan', null, plan), revise));
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button danger-button conversation-research-command'; cancel.dataset.command = 'cancel_research'; cancel.textContent = RESEARCH_COMMAND_LABELS.cancel_research;
+    cancel.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'cancel_research', version, {}, cancel));
+    actions.append(revise, cancel);
+  }
+  return panel;
 }
 
 function updateConversationProcessing(processing, step) {
@@ -2422,6 +2689,7 @@ function appendConversationEvent(assistantMessage, processing, eventData) {
     });
   }
   if (eventData.type === 'intake') updateConversationIntake(assistantMessage, eventData);
+  if (['plan', 'research_plan', 'approval', 'approvals'].includes(eventData.type)) updateConversationResearchPlan(assistantMessage, eventData.payload && typeof eventData.payload === 'object' ? eventData.payload : eventData);
   if (eventData.type === 'reconnect') {
     stopConversationProcessing(processing, 'skipped', '连接中断，可重试');
     updateConversationProcessing(processing, {
@@ -2513,6 +2781,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
       else if (eventData.type === 'reconnect') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'skill_activation') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'intake') appendConversationEvent(assistantMessage, processing, eventData);
+      else if (['plan', 'research_plan', 'approval', 'approvals'].includes(eventData.type)) appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'reasoning_started') {
         const effort = assistantMessage?.dataset.reasoningEffort || payload.reasoning_effort;
         if (effort !== 'off') {

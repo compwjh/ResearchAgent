@@ -20,6 +20,11 @@ from functools import lru_cache
 from backend.app.platform.ollama import ResourceProbe
 from backend.app.research.application.model_router import ModelRouter
 from backend.app.research.application.orchestrator import Orchestrator
+from backend.app.research.application.plan_authoring import (
+    RESEARCH_PLAN_OUTPUT_SCHEMA,
+    ResearchPlanOutput,
+    validate_research_plan_output,
+)
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.research_service import (
     ResearchService,
@@ -31,6 +36,7 @@ from backend.app.research.domain.models import (
     ResearchEvent,
     ResearchPaperSelection,
     ResearchPlan,
+    ResearchSessionPlan,
     ResearchTask,
     ResearchWorkItem,
 )
@@ -47,11 +53,15 @@ __all__ = [
     "ResearchServiceError",
     # 应用层协作对象
     "Planner",
+    "ResearchPlanOutput",
+    "RESEARCH_PLAN_OUTPUT_SCHEMA",
+    "validate_research_plan_output",
     "Orchestrator",
     "CatalogSearchAdapter",
     # 领域实体（api 只做序列化，不新增语义）
     "ResearchTask",
     "ResearchPlan",
+    "ResearchSessionPlan",
     "ResearchWorkItem",
     "ResearchEvent",
     "ResearchPaperSelection",

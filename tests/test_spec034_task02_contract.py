@@ -43,7 +43,8 @@ def test_research_schema_v2_is_idempotent_and_has_active_guard(tmp_path):
     ResearchStore(path)
     ResearchStore(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT version FROM schema_meta").fetchone()[0] == 2
+        # Task04 adds an explicit v3 migration while preserving Task02's v2 data.
+        assert db.execute("SELECT version FROM schema_meta").fetchone()[0] == 3
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"research_sessions", "research_intake_drafts", "research_approval_requests", "research_agent_runs", "research_artifacts", "research_notifications"} <= tables
         assert db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_research_sessions_active'").fetchone()
