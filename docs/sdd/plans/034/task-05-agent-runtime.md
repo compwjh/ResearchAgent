@@ -1,7 +1,7 @@
 # Task05 — ResearchAgentRunner 与真实子 Agent 循环
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02、Task04；当前状态：`待执行`
+> 依赖：Task02、Task04；当前状态：`实施中`
 
 ## 一句话目标
 
