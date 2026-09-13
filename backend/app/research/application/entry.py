@@ -17,7 +17,19 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.platform.ollama import ResourceProbe
+from backend.app.research.application.agent_runtime import (
+    AgentRunInput,
+    AgentRunOutput,
+    AgentRuntimeError,
+    BudgetSnapshot,
+    FakeModel,
+    FakeTool,
+    ResearchAgentRunner,
+    RoleCapability,
+    RoleCapabilityRegistry,
+)
 from backend.app.research.application.model_router import ModelRouter
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.plan_authoring import (
@@ -44,6 +56,9 @@ from backend.app.research.infrastructure.research_store import (
     ResearchStore,
     default_database_path,
 )
+from backend.app.skills.registry import build_default_tool_registry
+from backend.app.skills.service import SkillRegistryService
+from backend.app.skills.tool_service import ToolRegistryService
 
 __all__ = [
     # 持久化（唯一受控出口，api 不得直连 research.infrastructure）
@@ -58,6 +73,15 @@ __all__ = [
     "validate_research_plan_output",
     "Orchestrator",
     "CatalogSearchAdapter",
+    "AgentRunInput",
+    "AgentRunOutput",
+    "AgentRuntimeError",
+    "BudgetSnapshot",
+    "FakeModel",
+    "FakeTool",
+    "ResearchAgentRunner",
+    "RoleCapability",
+    "RoleCapabilityRegistry",
     # 领域实体（api 只做序列化，不新增语义）
     "ResearchTask",
     "ResearchPlan",
@@ -89,10 +113,24 @@ def build_research_service() -> ResearchService:
     检索未传 source：`CatalogSearchAdapter` 会在首次 `search()` 时惰性装配 Spec015
     数据源（见其 docstring），因此这里不会拉起 qdrant/langgraph 等重依赖。
     """
+    store = build_research_store()
+    probe = ResourceProbe()
+    router = ModelRouter()
+    state_path = KB_DIR / "skill-state.json"
+    skill_registry = SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path)
+    tool_registry = ToolRegistryService(build_default_tool_registry(), state_path)
     return ResearchService(
-        store=build_research_store(),
+        store=store,
         search_adapter=CatalogSearchAdapter(),
-        probe=ResourceProbe(),
-        model_router=ModelRouter(),
+        probe=probe,
+        model_router=router,
+        agent_runner=ResearchAgentRunner(
+            store=store,
+            model_router=router,
+            resource_probe=probe,
+            capability_registry=RoleCapabilityRegistry(
+                skill_registry=skill_registry, tool_registry=tool_registry
+            ),
+        ),
         planner=Planner(),
     )

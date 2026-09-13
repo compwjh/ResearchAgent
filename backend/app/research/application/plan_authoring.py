@@ -39,7 +39,10 @@ RESEARCH_PLAN_OUTPUT_SCHEMA: dict[str, Any] = {
     },
 }
 
-_FORBIDDEN_KEYS = frozenset({"cot", "chain_of_thought", "hidden_prompt", "system_prompt", "prompt", "url"})
+_FORBIDDEN_KEYS = frozenset({
+    "cot", "chain_of_thought", "hidden_prompt", "system_prompt", "prompt", "url",
+    "password", "api_key", "authorization", "token", "cookie", "credential", "credentials",
+})
 _URL_RE = re.compile(r"(?:https?://|ftp://|www\.|localhost(?::\d+)?(?:/|$)|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:/|$))", re.IGNORECASE)
 
 
@@ -101,7 +104,10 @@ def _walk_safe(value: Any, *, depth: int = 0) -> None:
         for child in value:
             _walk_safe(child, depth=depth + 1)
     elif isinstance(value, str):
-        if len(value) > 4000 or _URL_RE.search(value):
+        lowered = value.casefold()
+        if len(value) > 4000 or _URL_RE.search(value) or any(
+            marker in lowered for marker in ("authorization:", "bearer ", "api_key=", "password=", "cookie:", "token=")
+        ):
             raise PlanOutputInvalid("unsafe or oversized plan value")
 
 

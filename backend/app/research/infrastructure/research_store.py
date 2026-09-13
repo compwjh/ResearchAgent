@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import sqlite3
@@ -50,6 +51,7 @@ from backend.app.research.domain.contracts import (
     WORKITEM_TERMINAL,
 )
 from backend.app.research.domain.models import (
+    AgentCheckpoint,
     AgentRun,
     ApprovalRequest,
     IntakeField,
@@ -222,6 +224,12 @@ class ApprovalStale(Exception):
 
 class AgentRunBindingError(ValueError):
     code = "AGENT_RUN_BINDING_INVALID"
+
+
+class AgentRunWriteDiscarded(Exception):
+    """A late worker write lost the running-generation CAS race."""
+
+    code = "AGENT_RUN_WRITE_DISCARDED"
 
 
 class ResearchArtifactConflict(Exception):
@@ -539,6 +547,7 @@ class ResearchStore:
             skill_content_hash TEXT NOT NULL,
             resolved_model TEXT NOT NULL,
             reasoning_effort TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT '',
             allowed_tools_json TEXT NOT NULL,
             status TEXT NOT NULL,
             model_loop_count INTEGER NOT NULL DEFAULT 0,
@@ -549,9 +558,33 @@ class ResearchStore:
             checkpoint_hash TEXT,
             error_code TEXT,
             started_at TEXT,
-            ended_at TEXT
+            ended_at TEXT,
+            generation INTEGER NOT NULL DEFAULT 0
         )""")
+        agent_columns = {row[1] for row in connection.execute("PRAGMA table_info(research_agent_runs)").fetchall()}
+        if "generation" not in agent_columns:
+            connection.execute("ALTER TABLE research_agent_runs ADD COLUMN generation INTEGER NOT NULL DEFAULT 0")
+        if "provider" not in agent_columns:
+            connection.execute("ALTER TABLE research_agent_runs ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_agent_runs_task ON research_agent_runs(research_task_id, work_item_id, status)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_agent_checkpoints(
+            checkpoint_ref TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            research_session_id TEXT NOT NULL REFERENCES research_sessions(research_session_id) ON DELETE RESTRICT,
+            research_task_id TEXT REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            work_item_id TEXT REFERENCES research_work_items(work_item_id) ON DELETE RESTRICT,
+            agent_run_id TEXT NOT NULL REFERENCES research_agent_runs(agent_run_id) ON DELETE RESTRICT,
+            schema_version TEXT NOT NULL,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            continued_from_agent_run_id TEXT REFERENCES research_agent_runs(agent_run_id) ON DELETE RESTRICT,
+            UNIQUE(agent_run_id, content_hash)
+        )""")
+        checkpoint_columns = {row[1] for row in connection.execute("PRAGMA table_info(research_agent_checkpoints)").fetchall()}
+        if "continued_from_agent_run_id" not in checkpoint_columns:
+            connection.execute("ALTER TABLE research_agent_checkpoints ADD COLUMN continued_from_agent_run_id TEXT REFERENCES research_agent_runs(agent_run_id) ON DELETE RESTRICT")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_checkpoints_owner ON research_agent_checkpoints(owner_id, research_session_id, research_task_id, work_item_id)")
         connection.execute("""CREATE TABLE IF NOT EXISTS research_artifacts(
             artifact_id TEXT PRIMARY KEY,
             research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
@@ -2054,8 +2087,8 @@ class ResearchStore:
                     ):
                         raise AgentRunBindingError("continued run binding is invalid")
                 conn.execute(
-                    """INSERT INTO research_agent_runs(agent_run_id, research_session_id, research_task_id, work_item_id, attempt, continued_from_agent_run_id, role, skill_name, skill_schema_version, skill_content_hash, resolved_model, reasoning_effort, allowed_tools_json, status, model_loop_count, tool_call_count, input_hash, output_hash, checkpoint_ref, checkpoint_hash, error_code, started_at, ended_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    """INSERT INTO research_agent_runs(agent_run_id, research_session_id, research_task_id, work_item_id, attempt, continued_from_agent_run_id, role, skill_name, skill_schema_version, skill_content_hash, resolved_model, reasoning_effort, provider, allowed_tools_json, status, model_loop_count, tool_call_count, input_hash, output_hash, checkpoint_ref, checkpoint_hash, error_code, started_at, ended_at, generation)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     tuple(
                         run.to_dict().get(key)
                         for key in (
@@ -2071,6 +2104,7 @@ class ResearchStore:
                             "skill_content_hash",
                             "resolved_model",
                             "reasoning_effort",
+                            "provider",
                             "allowed_tools_json",
                             "status",
                             "model_loop_count",
@@ -2081,7 +2115,7 @@ class ResearchStore:
                             "checkpoint_hash",
                             "error_code",
                             "started_at",
-                            "ended_at",
+                            "ended_at", "generation",
                         )
                     ),
                 )
@@ -2103,6 +2137,47 @@ class ResearchStore:
             ).fetchone()
         return AgentRun.from_row(dict(row)) if row else None
 
+    def get_agent_run_usage(
+        self,
+        owner_id: str,
+        research_session_id: str,
+        research_task_id: str | None,
+        *,
+        chain_from_agent_run_id: str | None = None,
+    ) -> dict[str, int]:
+        """Return owner-bound cumulative usage for a Task or continuation chain."""
+        with self._connect() as conn:
+            if chain_from_agent_run_id:
+                row = conn.execute(
+                    """WITH RECURSIVE chain(agent_run_id) AS (
+                           SELECT agent_run_id FROM research_agent_runs
+                           WHERE agent_run_id=?
+                           UNION ALL
+                           SELECT r.continued_from_agent_run_id
+                           FROM research_agent_runs r JOIN chain c ON c.agent_run_id=r.agent_run_id
+                           WHERE r.continued_from_agent_run_id IS NOT NULL
+                       )
+                       SELECT COALESCE(SUM(r.model_loop_count), 0) AS model_loops,
+                              COALESCE(SUM(r.tool_call_count), 0) AS tool_calls
+                       FROM research_agent_runs r
+                       JOIN chain c ON c.agent_run_id=r.agent_run_id
+                       JOIN research_sessions s ON s.research_session_id=r.research_session_id
+                       WHERE s.owner_id=? AND r.research_session_id=?
+                         AND (r.research_task_id IS ? OR r.research_task_id=?)""",
+                    (chain_from_agent_run_id, owner_id, research_session_id, research_task_id, research_task_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """SELECT COALESCE(SUM(r.model_loop_count), 0) AS model_loops,
+                              COALESCE(SUM(r.tool_call_count), 0) AS tool_calls
+                       FROM research_agent_runs r
+                       JOIN research_sessions s ON s.research_session_id=r.research_session_id
+                       WHERE s.owner_id=? AND r.research_session_id=?
+                         AND (r.research_task_id IS ? OR r.research_task_id=?)""",
+                    (owner_id, research_session_id, research_task_id, research_task_id),
+                ).fetchone()
+        return {"model_loops": int(row["model_loops"]), "tool_calls": int(row["tool_calls"])}
+
     def update_agent_run_status(
         self, agent_run_id: str, owner_id: str, next_status: str, *, error_code: str | None = None
     ) -> AgentRun:
@@ -2119,11 +2194,56 @@ class ResearchStore:
                 transition_agent_run(row["status"], next_status)
                 now = _utcnow()
                 ended = now if next_status != "running" else None
-                conn.execute(
-                    "UPDATE research_agent_runs SET status=?, error_code=?, started_at=COALESCE(started_at, ?), ended_at=? WHERE agent_run_id=?",
-                    (next_status, error_code, now if next_status == "running" else None, ended, agent_run_id),
+                generation = int(row["generation"])
+                next_generation = generation + 1 if next_status != "running" else generation
+                updated = conn.execute(
+                    "UPDATE research_agent_runs SET status=?, error_code=?, started_at=COALESCE(started_at, ?), ended_at=?, generation=? WHERE agent_run_id=? AND status=? AND generation=?",
+                    (next_status, error_code, now if next_status == "running" else None, ended, next_generation, agent_run_id, row["status"], generation),
                 )
+                if updated.rowcount != 1:
+                    raise AgentRunWriteDiscarded()
                 row = conn.execute("SELECT * FROM research_agent_runs WHERE agent_run_id=?", (agent_run_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AgentRun.from_row(dict(row))
+
+    def update_agent_run_model_metadata(
+        self,
+        agent_run_id: str,
+        owner_id: str,
+        *,
+        resolved_model: str,
+        reasoning_effort: str,
+        provider: str,
+        expected_generation: int,
+    ) -> AgentRun:
+        """CAS-write the provider resolution for the currently running Run."""
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    """SELECT r.* FROM research_agent_runs r JOIN research_sessions s
+                       ON s.research_session_id=r.research_session_id
+                       WHERE r.agent_run_id=? AND s.owner_id=?""",
+                    (agent_run_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(agent_run_id)
+                if row["status"] != "running" or int(row["generation"]) != int(expected_generation):
+                    raise AgentRunWriteDiscarded()
+                updated = conn.execute(
+                    """UPDATE research_agent_runs
+                       SET resolved_model=?, reasoning_effort=?, provider=?
+                       WHERE agent_run_id=? AND status='running' AND generation=?""",
+                    (resolved_model, reasoning_effort, provider, agent_run_id, expected_generation),
+                )
+                if updated.rowcount != 1:
+                    raise AgentRunWriteDiscarded()
+                row = conn.execute(
+                    "SELECT * FROM research_agent_runs WHERE agent_run_id=?", (agent_run_id,)
+                ).fetchone()
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -2140,6 +2260,7 @@ class ResearchStore:
         checkpoint_ref: str | None = None,
         checkpoint_hash: str | None = None,
         output_hash: str | None = None,
+        expected_generation: int | None = None,
     ) -> AgentRun:
         """Monotonic Run counters/checkpoint write barrier."""
         with _write_lock, self._connect() as conn:
@@ -2156,16 +2277,83 @@ class ResearchStore:
                 calls = int(row["tool_call_count"]) if tool_call_count is None else int(tool_call_count)
                 if loop < int(row["model_loop_count"]) or calls < int(row["tool_call_count"]):
                     raise ValueError("agent run counters must be monotonic")
-                conn.execute(
-                    "UPDATE research_agent_runs SET model_loop_count=?, tool_call_count=?, checkpoint_ref=COALESCE(?, checkpoint_ref), checkpoint_hash=COALESCE(?, checkpoint_hash), output_hash=COALESCE(?, output_hash) WHERE agent_run_id=?",
-                    (loop, calls, checkpoint_ref, checkpoint_hash, output_hash, agent_run_id),
+                generation = int(row["generation"])
+                if expected_generation is not None and generation != int(expected_generation):
+                    raise AgentRunWriteDiscarded()
+                if row["status"] != "running":
+                    raise AgentRunWriteDiscarded()
+                updated = conn.execute(
+                    "UPDATE research_agent_runs SET model_loop_count=?, tool_call_count=?, checkpoint_ref=COALESCE(?, checkpoint_ref), checkpoint_hash=COALESCE(?, checkpoint_hash), output_hash=COALESCE(?, output_hash) WHERE agent_run_id=? AND status='running' AND generation=?",
+                    (loop, calls, checkpoint_ref, checkpoint_hash, output_hash, agent_run_id, generation),
                 )
+                if updated.rowcount != 1:
+                    raise AgentRunWriteDiscarded()
                 row = conn.execute("SELECT * FROM research_agent_runs WHERE agent_run_id=?", (agent_run_id,)).fetchone()
                 conn.commit()
             except Exception:
                 conn.rollback()
                 raise
         return AgentRun.from_row(dict(row))
+
+    def create_agent_checkpoint(
+        self, checkpoint: AgentCheckpoint, *, expected_generation: int | None = None
+    ) -> AgentCheckpoint:
+        """Insert an immutable checkpoint after validating complete run identity."""
+        if not checkpoint.checkpoint_ref or not checkpoint.content_hash or not checkpoint.schema_version or not isinstance(checkpoint.content, str):
+            raise ValueError("checkpoint identity is incomplete")
+        if hashlib.sha256(checkpoint.content.encode("utf-8")).hexdigest() != checkpoint.content_hash:
+            raise ValueError("checkpoint content hash mismatch")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                run = conn.execute(
+                    """SELECT r.*, s.owner_id AS session_owner FROM research_agent_runs r
+                    JOIN research_sessions s ON s.research_session_id=r.research_session_id
+                    WHERE r.agent_run_id=?""", (checkpoint.agent_run_id,)
+                ).fetchone()
+                if run is None or run["session_owner"] != checkpoint.owner_id:
+                    raise ValueError("checkpoint owner/run mismatch")
+                if run["status"] != "running" or (
+                    expected_generation is not None
+                    and int(run["generation"]) != int(expected_generation)
+                ):
+                    raise AgentRunWriteDiscarded()
+                if run["research_session_id"] != checkpoint.research_session_id or run["research_task_id"] != checkpoint.research_task_id or run["work_item_id"] != checkpoint.work_item_id:
+                    raise ValueError("checkpoint binding mismatch")
+                if checkpoint.continued_from_agent_run_id != run["continued_from_agent_run_id"]:
+                    raise ValueError("checkpoint continuation binding mismatch")
+                if checkpoint.continued_from_agent_run_id:
+                    previous = conn.execute(
+                        "SELECT research_session_id, research_task_id, work_item_id, status FROM research_agent_runs WHERE agent_run_id=?",
+                        (checkpoint.continued_from_agent_run_id,),
+                    ).fetchone()
+                    if previous is None or previous["status"] != "limit_reached" or previous["research_session_id"] != checkpoint.research_session_id or previous["research_task_id"] != checkpoint.research_task_id or previous["work_item_id"] != checkpoint.work_item_id:
+                        raise ValueError("checkpoint previous run binding mismatch")
+                existing = conn.execute("SELECT * FROM research_agent_checkpoints WHERE checkpoint_ref=?", (checkpoint.checkpoint_ref,)).fetchone()
+                if existing:
+                    if existing["content_hash"] != checkpoint.content_hash or existing["owner_id"] != checkpoint.owner_id:
+                        raise ValueError("checkpoint ref conflict")
+                    conn.commit()
+                    return AgentCheckpoint.from_row(dict(existing))
+                conn.execute(
+                    """INSERT INTO research_agent_checkpoints(checkpoint_ref, owner_id, research_session_id, research_task_id, work_item_id, agent_run_id, schema_version, content, content_hash, created_at, continued_from_agent_run_id)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                    (checkpoint.checkpoint_ref, checkpoint.owner_id, checkpoint.research_session_id, checkpoint.research_task_id, checkpoint.work_item_id, checkpoint.agent_run_id, checkpoint.schema_version, checkpoint.content, checkpoint.content_hash, checkpoint.created_at or _utcnow(), checkpoint.continued_from_agent_run_id),
+                )
+                row = conn.execute("SELECT * FROM research_agent_checkpoints WHERE checkpoint_ref=?", (checkpoint.checkpoint_ref,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AgentCheckpoint.from_row(dict(row))
+
+    def get_agent_checkpoint(self, checkpoint_ref: str, owner_id: str) -> AgentCheckpoint | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_agent_checkpoints WHERE checkpoint_ref=? AND owner_id=?",
+                (checkpoint_ref, owner_id),
+            ).fetchone()
+        return AgentCheckpoint.from_row(dict(row)) if row else None
 
     def create_artifact(self, artifact: ResearchArtifact) -> ResearchArtifact:
         if artifact.artifact_type not in {"markdown", "html", "citation_manifest", "intermediate"}:

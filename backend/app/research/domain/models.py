@@ -434,6 +434,7 @@ class AgentRun:
     resolved_model: str
     reasoning_effort: str
     allowed_tools_json: str
+    provider: str = ""
     status: str = "queued"
     research_task_id: str | None = None
     work_item_id: str | None = None
@@ -448,6 +449,7 @@ class AgentRun:
     started_at: str | None = None
     ended_at: str | None = None
     owner_id: str | None = None
+    generation: int = 0
 
     def to_dict(self) -> dict:
         return {key: getattr(self, key) for key in self.__dataclass_fields__}
@@ -458,6 +460,30 @@ class AgentRun:
         for key in ("attempt", "model_loop_count", "tool_call_count"):
             values[key] = int(values.get(key, 0))
         return cls(**values)
+
+
+@dataclass
+class AgentCheckpoint:
+    """Immutable, owner-scoped minimum handoff persisted for Runner resume."""
+
+    checkpoint_ref: str
+    owner_id: str
+    research_session_id: str
+    research_task_id: str | None
+    work_item_id: str | None
+    agent_run_id: str
+    schema_version: str
+    content: str
+    content_hash: str
+    created_at: str = ""
+    continued_from_agent_run_id: str | None = None
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(**{key: row[key] for key in cls.__dataclass_fields__ if key in row})
 
 
 @dataclass

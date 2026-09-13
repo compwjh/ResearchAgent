@@ -94,6 +94,7 @@ class ResearchService:
         probe=None,
         model_router=None,
         orchestrator=None,
+        agent_runner=None,
         executor=None,
     ) -> None:
         self._store = store
@@ -102,6 +103,7 @@ class ResearchService:
         self._planner = planner or Planner()
         self._probe = probe
         self._model_router = model_router
+        self._agent_runner = agent_runner
         # 编排器惰性构造：__init__ 不打网络（ResourceProbe 只在 arbitrate 时才读 Ollama）。
         self._orchestrator_instance = orchestrator
         self._executor = executor or ThreadPoolExecutor(
@@ -371,6 +373,7 @@ class ResearchService:
                 planner=self._planner,
                 probe=self._probe,
                 model_router=self._model_router,
+                agent_runner=self._agent_runner,
             )
         return self._orchestrator_instance
 

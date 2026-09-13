@@ -1,7 +1,7 @@
 # Task05 — ResearchAgentRunner 与真实子 Agent 循环
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02、Task04；当前状态：`实施中`
+> 依赖：Task02、Task04；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -50,5 +50,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：Runtime、Registry 映射、预算/检查点、后端测试和评审报告。
-- 执行结果：待执行后填写。
-- 变更日志：待执行后填写。
+- 执行结果：ResearchAgentRunner、Fake/真实适配接缝、能力快照、Tool 批量校验、预算/扩容、checkpoint、取消写屏障和唯一 Orchestrator 均已完成；backend-reviewer/backend-tester 均 GO。定向回归 211 passed、6 subtests，Fake/Store 探针 29 passed，py_compile、聚焦 Ruff、diff-check 通过。真实 Ollama HTTP 探针受当前沙箱 `Operation not permitted` 限制，未伪造真实推理成功。详见 `artifacts/task-05/{backend-report,backend-review,backend-test-report}.md`。
+- 变更日志：2026-09-13 完成 `AgentRunInput/AgentRunOutput`、Fake model/tool 合同、RoleCapabilityRegistry 快照校验、Tool 批量原子校验与只读并行/副作用顺序执行、安全摘要、首个 Run 与扩容累计预算、ResourceProbe lease、取消写屏障、持久 checkpoint、四次独立 attempt、Router metadata 和唯一 Orchestrator 接线；真实 Ollama 环境延期记录不阻塞 Fake/Store 收口，Task06 可开始。

@@ -342,7 +342,7 @@ class PlanApprovalService:
         return self._decide_pending(session, owner_id, "capability_override", scope, key, message_id)
 
     def _approve_resource(self, session, owner_id, scope, key, message_id):
-        for name, cap in (("model_loops", 160), ("tool_calls", 640), ("seconds", 21600)):
+        for name, cap in (("model_loops", 640), ("tool_calls", 2560), ("seconds", 21600)):
             if name in scope and (not isinstance(scope[name], int) or scope[name] < 0 or scope[name] > cap):
                 raise ResearchCommandError("TASK_MODEL_LIMIT_REACHED" if name != "seconds" else "TASK_TIME_LIMIT_REACHED", f"{name} 超出绝对上限")
         return self._decide_pending(session, owner_id, "resource_extension", scope, key, message_id)
@@ -415,7 +415,7 @@ class PlanApprovalService:
                 skill_snapshot = {
                     "name": skill.name, "version": "1", "schema_version": "1",
                     "content_hash": hashlib.sha256(skill.body.encode("utf-8")).hexdigest(),
-                    "enabled": True, "source_ref": skill.name,
+                    "enabled": True, "source_ref": skill.name, "tools": list(skill.tools),
                 }
                 tool_snapshots = []
                 for name in tools:
@@ -427,9 +427,12 @@ class PlanApprovalService:
                     if any(word in tool.entry.casefold() for word in ("shell", "python")):
                         raise ValueError("executable tool is forbidden")
                     params_hash = hashlib.sha256(_dump(tool.parameters).encode("utf-8")).hexdigest()
-                    side_effect = "write" if any(word in name.casefold() for word in ("import", "download")) else "read"
+                    # Canonical runtime enum shared with RoleCapabilityRegistry:
+                    # read_only tools may fan out; side_effect tools stay ordered.
+                    side_effect = "side_effect" if any(word in name.casefold() for word in ("import", "download")) else "read_only"
                     tool_snapshots.append({
                         "name": tool.name, "version": "1", "parameters_hash": params_hash,
+                        "content_hash": params_hash, "source_ref": tool.entry or tool.name,
                         "parameters": tool.parameters, "enabled": True, "side_effect_class": side_effect,
                         "entry": tool.entry,
                     })
@@ -453,6 +456,7 @@ class PlanApprovalService:
             raise ResearchCommandError("CAPABILITY_NOT_AUTHORIZED", "预算结构无效") from exc
         result["resource_limits"] = {
             "max_model_loops": 160, "max_tool_calls": 640,
+            "task_max_model_loops": 640, "task_max_tool_calls": 2560,
             "max_seconds": 21600, "max_extensions": 3,
         }
         return result

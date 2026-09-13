@@ -72,13 +72,17 @@ class Orchestrator:
     """稳定受控骨架：plan -> search -> evaluate -> coverage -> bounded re-plan -> synthesize。"""
 
     def __init__(
-        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None
+        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None, agent_runner=None
     ) -> None:
         self._store = store
         # 检索唯一出口：Spec015 CatalogSearchAdapter（未注入时走其内部惰性装配）。
         self._adapter = search_adapter or CatalogSearchAdapter()
         # Task03 确定性骨架不调用 LLM；router 仅作为「记录实际模型/档位」的接缝保留。
         self._router = model_router
+        # The Orchestrator is the sole owner of Runner dispatch.  Existing
+        # deterministic Spec027 pipeline remains unchanged until a WorkItem is
+        # explicitly handed to run_agent by the approved Task05+ integration.
+        self._agent_runner = agent_runner
         self._planner = planner or Planner()
         self._monotonic = monotonic or time.monotonic
         # probe 默认 ResourceProbe()；惰性导入避免编排器模块在导入期就拉起 ollama 依赖。
@@ -87,6 +91,12 @@ class Orchestrator:
 
             probe = ResourceProbe()
         self._probe = probe
+
+    def run_agent(self, run_input):
+        """Dispatch one approved WorkItem through the sole Runner seam."""
+        if self._agent_runner is None:
+            raise RuntimeError("agent runner is not configured")
+        return self._agent_runner.run(run_input)
 
     # ------------------------------------------------------------------ #
     # 对外入口
@@ -225,6 +235,16 @@ class Orchestrator:
                 ],
             },
         )
+
+        # Task05 production path: each WorkItem is executed exactly once by
+        # the sole AgentRun Runner. The deterministic Spec027 search/state
+        # pipeline remains available for callers that do not inject a Runner.
+        if self._agent_runner is not None and self._store.get_session_by_task(research_task_id, owner_id) is not None:
+            return self._run_agent_work_items(
+                task=task,
+                owner_id=owner_id,
+                plan_version=plan_version,
+            )
 
         candidates: list[str] = []  # 保序去重的候选 catalog_paper_id
         facets_by_paper: dict[str, list[str]] = {}
@@ -410,6 +430,90 @@ class Orchestrator:
             degraded,
             None,
         )
+
+    def _run_agent_work_items(self, *, task, owner_id: str, plan_version: int) -> OrchestratorResult:
+        """Create and dispatch one complete AgentRunInput per WorkItem."""
+        from backend.app.research.application.agent_runtime import ROLE_SKILL_DEFAULTS, AgentRunInput
+
+        session = self._store.get_session_by_task(task.research_task_id, owner_id)
+        if session is None:
+            with suppress(InvalidStateTransition):
+                self._store.update_task_status(task.research_task_id, owner_id, "failed")
+            return self._result(task.research_task_id, "failed", plan_version, 0, None, (), False, "SESSION_NOT_FOUND")
+        approved_capabilities: dict[str, dict] = {}
+        budget_snapshot: dict = {}
+        session_plan = self._store.get_session_plan(session.research_session_id, owner_id, plan_version)
+        if session_plan is not None:
+            try:
+                raw_capabilities = json.loads(session_plan.capabilities_json or "[]")
+            except (TypeError, ValueError):
+                raw_capabilities = []
+            for envelope in raw_capabilities if isinstance(raw_capabilities, list) else ():
+                skill = envelope.get("skill") if isinstance(envelope, dict) else None
+                if isinstance(skill, dict) and skill.get("name"):
+                    approved_capabilities[skill["name"]] = envelope
+            try:
+                decoded_budget = json.loads(session_plan.budget_json or "{}")
+                if isinstance(decoded_budget, dict):
+                    budget_snapshot = decoded_budget
+            except (TypeError, ValueError):
+                budget_snapshot = {}
+        role_map = {
+            "search-worker": "search_worker", "paper-evaluator": "paper_evaluator",
+            "research-critic": "research_critic", "synthesizer": "synthesizer",
+        }
+        failures = 0
+        items = self._store.list_work_items(task.research_task_id, plan_version=plan_version)
+        for item in items:
+            role = role_map.get(item.role, item.role)
+            skill_name = ROLE_SKILL_DEFAULTS.get(role)
+            capability = approved_capabilities.get(skill_name) if skill_name else None
+            try:
+                work_item_input = json.loads(item.input_json or "{}")
+            except (TypeError, ValueError):
+                work_item_input = {}
+            run_id = f"{item.work_item_id}:run-{max(1, item.attempt + 1)}"
+            try:
+                result = self.run_agent(AgentRunInput(
+                    agent_run_id=run_id,
+                    research_session_id=session.research_session_id,
+                    research_task_id=task.research_task_id,
+                    work_item_id=item.work_item_id,
+                    owner_id=owner_id,
+                    role=role,
+                    work_item_input=work_item_input if isinstance(work_item_input, dict) else {},
+                    skill_snapshot=capability,
+                    tool_snapshot=capability.get("tools", ()) if capability else None,
+                    budget_snapshot=budget_snapshot,
+                    attempt=max(1, item.attempt + 1),
+                    resolved_model=item.resolved_model or "",
+                    reasoning_effort="off",
+                ))
+            except Exception:
+                failures += 1
+                with suppress(Exception):
+                    failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code="AGENT_RUN_FAILED")
+                    self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code="AGENT_RUN_FAILED"))
+                continue
+            terminal = result.status if result.status in {"completed", "failed", "cancelled", "limit_reached"} else "failed"
+            if terminal != "completed":
+                failures += 1
+            error_code = result.error_code
+            output_json = json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)[:100000]
+            with suppress(Exception):
+                updated = self._store.update_work_item_status(
+                    item.work_item_id,
+                    "completed" if terminal == "completed" else ("cancelled" if terminal == "cancelled" else "failed"),
+                    output_json=output_json,
+                    error_code=error_code,
+                    resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
+                )
+                self._emit(task.research_task_id, "worker", self._worker_event_payload(updated, terminal, error_code=error_code) )
+        final_status = "completed" if items and failures == 0 else "partial"
+        with suppress(InvalidStateTransition):
+            self._store.update_task_status(task.research_task_id, owner_id, final_status)
+        self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": 0, "error_code": None if failures == 0 else "AGENT_RUN_FAILED"})
+        return self._result(task.research_task_id, final_status, plan_version, 0, None, (), failures > 0, None if failures == 0 else "AGENT_RUN_FAILED")
 
     def _run_search_evaluate_coverage(
         self,
@@ -931,25 +1035,11 @@ class Orchestrator:
     def _model_kwargs(self, role: str, *, research_task_id: str | None = None, task_type: str | None = None) -> dict:
         """解析实际模型并转发安全的 router 事件；未注入 router 时保持确定性骨架。
 
-        ``ModelRouter.execute`` 的 invoke 接缝只收到一个确定性成功探针，不执行 LLM 或网络调用；
-        注入的测试 router 可以返回升级事件，从而验证研究任务事件流而无需真实模型。
+        Runner 是唯一模型执行出口；此处只解析 WorkItem 的展示/审计字段，绝不执行模型。
         """
         if self._router is None:
             return {}
-        execute = getattr(self._router, "execute", None)
-        if callable(execute):
-            choice, _value, events = execute(
-                role=role,
-                task_type=task_type,
-                invoke=lambda _model: (True, None),
-            )
-            if research_task_id is not None:
-                for event in events or ():
-                    safe_payload = self._safe_model_event_payload(event)
-                    if safe_payload is not None:
-                        self._emit(research_task_id, "model", safe_payload)
-        else:
-            choice = self._router.resolve(role=role, task_type=task_type)
+        choice = self._router.resolve(role=role, task_type=task_type)
         return {"model_tier": choice.tier, "resolved_model": choice.model}
 
     @staticmethod
