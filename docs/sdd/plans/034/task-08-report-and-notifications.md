@@ -1,7 +1,7 @@
 # Task08 — 报告 Artifact、会话写回与通知
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task06、Task07；当前状态：`待执行`
+> 依赖：Task06、Task07；当前状态：`实施中（后端实现中）`
 
 ## 一句话目标
 
@@ -49,5 +49,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：Synthesizer Skill、Artifact/通知 API、报告与通知 UI、双端测试和评审。
-- 执行结果：待执行后填写。
-- 变更日志：待执行后填写。
+- 执行结果：后端阶段实施中，待双端实现与评审/验收后填写。
+- 变更日志：2026-09-13 启动报告 Synthesizer、不可变 Artifact、会话幂等写回与通知游标实现；复用 Task05/06/07 运行与投影接缝，不扩展 Claim/Evidence 矩阵。
