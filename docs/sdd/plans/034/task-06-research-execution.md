@@ -1,7 +1,7 @@
 # Task06 — 论文目录、评估、Critic 与覆盖补偿
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task05；当前状态：`待执行`
+> 依赖：Task05；当前状态：`实施中`
 
 ## 一句话目标
 
