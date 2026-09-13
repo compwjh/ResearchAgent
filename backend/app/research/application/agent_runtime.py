@@ -219,6 +219,7 @@ class AgentRunOutput:
     error_code: str | None = None
     approval_signal: Mapping[str, Any] | None = None
     tool_results: tuple[Mapping[str, Any], ...] = ()
+    agent_run_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -229,6 +230,7 @@ class AgentRunOutput:
             "usage": dict(self.usage), "error_code": self.error_code,
             "approval_signal": dict(self.approval_signal) if self.approval_signal else None,
             "tool_results": [dict(item) for item in self.tool_results],
+            "agent_run_id": self.agent_run_id,
         }
 
 
@@ -1166,12 +1168,12 @@ class ResearchAgentRunner:
                     return AgentRunOutput(current.status if current else "cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 lease_held = self._release_lease(input.research_task_id, lease_held)
                 self._runtime_event(input, node_type="skill", node_key=skill_key, status="completed", skill_name=skill_name)
-                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries), agent_run_id=run.agent_run_id)
         except AgentRuntimeError as exc:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code=exc.code)
             self._cancel(run, owner, status="failed", error_code=exc.code)
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
         except Exception:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code="MODEL_UNAVAILABLE")
             # A failing Store read must not bypass the lease release barrier.
@@ -1182,7 +1184,7 @@ class ResearchAgentRunner:
             if current is None or current.status == "running":
                 self._cancel(run, owner, status="failed", error_code="MODEL_UNAVAILABLE")
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
 
 
 __all__ = ["AgentRunInput", "AgentRunOutput", "AgentRuntimeError", "BudgetSnapshot", "FakeModel", "FakeTool", "RoleCapability", "RoleCapabilityRegistry", "ResearchAgentRunner"]

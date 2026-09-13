@@ -40,6 +40,17 @@ from backend.app.research.application.plan_authoring import (
 )
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.processing_projector import ProcessingStepProjector
+from backend.app.research.application.report_synthesis import (
+    REPORT_SYNTHESIS_OUTPUT_SCHEMA,
+    ReportDeliveryService,
+    ReportSynthesisError,
+    ReportSynthesisOutput,
+    ReportSynthesizer,
+    ResearchNotificationService,
+    SynthesisResult,
+    render_markdown_html,
+    validate_report_synthesis_output,
+)
 from backend.app.research.application.research_service import (
     ResearchService,
     ResearchServiceError,
@@ -101,6 +112,15 @@ __all__ = [
     "FakeTool",
     "ResearchAgentRunner",
     "ProcessingStepProjector",
+    "REPORT_SYNTHESIS_OUTPUT_SCHEMA",
+    "ReportSynthesisOutput",
+    "ReportSynthesisError",
+    "ReportSynthesizer",
+    "ReportDeliveryService",
+    "ResearchNotificationService",
+    "SynthesisResult",
+    "render_markdown_html",
+    "validate_report_synthesis_output",
     "RoleCapability",
     "RoleCapabilityRegistry",
     # 领域实体（api 只做序列化，不新增语义）

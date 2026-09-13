@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.app.memory.repository import OWNER_ID
@@ -54,6 +54,7 @@ from backend.app.skills.tool_service import ToolRegistryService
 
 router = APIRouter(prefix="/research-tasks", tags=["research-tasks"])
 session_router = APIRouter(prefix="/research-sessions", tags=["research-sessions"])
+notification_router = APIRouter(prefix="/research-notifications", tags=["research-notifications"])
 logger = logging.getLogger(__name__)
 
 # 终态集合：与 `research.domain.contracts.TASK_TERMINAL` 逐字一致。api 只经
@@ -64,7 +65,7 @@ _TASK_TERMINAL = frozenset({"partial", "completed", "failed", "cancelled", "inte
 _GOAL_EXCERPT_CHARS = 120
 
 # SSE：轮询间隔、心跳间隔（秒）与单批读取上限。
-_EVENT_POLL_SECONDS = 0.5
+_EVENT_POLL_SECONDS = 0.05
 _EVENT_HEARTBEAT_SECONDS = 15.0
 _EVENT_BATCH_LIMIT = 200
 
@@ -344,6 +345,42 @@ def _selection_payload(selection) -> dict:
     }
 
 
+def _artifact_payload(artifact, research_session_id: str | None = None) -> dict:
+    """Public artifact metadata; never expose storage paths or raw refs."""
+    return {
+        "artifact_id": artifact.artifact_id,
+        "research_task_id": artifact.research_task_id,
+        "report_version": artifact.report_version,
+        "artifact_type": artifact.artifact_type,
+        "content_hash": artifact.content_hash,
+        "generated_by_agent_run_id": artifact.generated_by_agent_run_id,
+        "created_at": artifact.created_at,
+        "download_url": (
+            f"/api/research-sessions/{research_session_id}/artifacts/{artifact.artifact_id}/download"
+            if research_session_id else None
+        ),
+    }
+
+
+def _notification_payload(notification) -> dict:
+    try:
+        payload = json.loads(notification.payload_json or "{}")
+    except (TypeError, ValueError):
+        payload = {}
+    return {
+        "notification_id": notification.notification_id,
+        "research_session_id": notification.research_session_id,
+        "research_task_id": notification.research_task_id,
+        "notification_kind": notification.notification_kind,
+        "status": notification.status,
+        "subject_version": notification.subject_version,
+        "event_seq": notification.event_seq,
+        "payload": payload if isinstance(payload, dict) else {},
+        "created_at": notification.created_at,
+        "read_at": notification.read_at,
+    }
+
+
 def _cancelled_item_count(research_task_id: str) -> int:
     """当前已收敛为 cancelled 的 WorkItem 数（只读，用于 cancel 响应计数）。"""
     return sum(1 for item in _store().list_work_items(research_task_id) if item.status == "cancelled")
@@ -355,6 +392,110 @@ def _command_error(exc: ResearchCommandError) -> JSONResponse:
         status_code=exc.http_status,
         content={"error": {"code": exc.code, "message": exc.message, "retryable": retryable}},
     )
+
+
+@session_router.get("/{research_session_id}/artifacts")
+def list_research_artifacts(research_session_id: str, report_version: Optional[int] = Query(None, ge=1)):
+    """List immutable report artifacts through the owner/session/task seam."""
+    try:
+        session = _store().get_session(research_session_id, OWNER_ID)
+        if session is None:
+            return _api_error("RESEARCH_SESSION_NOT_FOUND", 404, "研究会话不存在")
+        if not session.research_task_id:
+            return _api_error("ARTIFACT_NOT_READY", 409, "报告尚未生成")
+        artifacts = _store().list_artifacts_for_task(session.research_task_id, OWNER_ID, report_version=report_version)
+        return {"research_session_id": research_session_id, "artifacts": [_artifact_payload(item, research_session_id) for item in artifacts]}
+    except Exception:
+        logger.exception("research artifact list failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究报告依赖暂时不可用"))
+
+
+@session_router.get("/{research_session_id}/artifacts/{artifact_id}/download")
+def download_research_artifact(research_session_id: str, artifact_id: str):
+    """Download an owner-bound in-database artifact; arbitrary paths are rejected."""
+    try:
+        session = _store().get_session(research_session_id, OWNER_ID)
+        if session is None or not session.research_task_id:
+            return _api_error("RESEARCH_SESSION_NOT_FOUND", 404, "研究会话不存在")
+        artifact = _store().get_artifact(artifact_id, OWNER_ID)
+        if artifact is None or artifact.research_task_id != session.research_task_id:
+            return _api_error("ARTIFACT_NOT_FOUND", 404, "报告产物不存在")
+        if artifact.artifact_type not in {"markdown", "html", "citation_manifest"}:
+            return _api_error("ARTIFACT_NOT_FOUND", 404, "报告产物不存在")
+        # Storage refs are intentionally not dereferenced by this API.
+        if artifact.content is None:
+            return _api_error("ARTIFACT_NOT_READY", 409, "该报告产物不可直接下载")
+        media_type = {
+            "markdown": "text/markdown; charset=utf-8",
+            "html": "text/html; charset=utf-8",
+            "citation_manifest": "application/json; charset=utf-8",
+        }[artifact.artifact_type]
+        suffix = {"markdown": "md", "html": "html", "citation_manifest": "json"}[artifact.artifact_type]
+        response = Response(artifact.content, media_type=media_type)
+        response.headers["Content-Disposition"] = f'attachment; filename="research-report-v{artifact.report_version}.{suffix}"'
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Security-Policy"] = "default-src 'none'"
+        return response
+    except Exception:
+        logger.exception("research artifact download failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究报告依赖暂时不可用"))
+
+
+@notification_router.get("")
+def list_research_notifications(after_seq: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500)):
+    """Owner-scoped notification replay/list endpoint."""
+    items = _store().list_notifications(OWNER_ID, after_seq=after_seq, limit=limit)
+    return {"notifications": [_notification_payload(item) for item in items]}
+
+
+@notification_router.post("/{notification_id}/read")
+def mark_research_notification_read(notification_id: str):
+    """CAS unread→read; cross-owner IDs return the same not-found response."""
+    item = _store().mark_notification_read(notification_id, OWNER_ID)
+    if item is None:
+        return _api_error("NOTIFICATION_NOT_FOUND", 404, "通知不存在")
+    return _notification_payload(item)
+
+
+@notification_router.get("/events")
+def stream_research_notifications(
+    request: Request, after_seq: int = Query(0, ge=0), polls: int = Query(20, ge=1, le=120)
+):
+    """Replay and bounded-poll owner notifications after Last-Event-ID."""
+    header = request.headers.get("last-event-id")
+    if header and header.strip():
+        try:
+            after_seq = max(0, int(header.strip()))
+        except ValueError:
+            return _api_error("INVALID_CURSOR", 400, "after_seq 或 Last-Event-ID 非法")
+    return StreamingResponse(
+        _notification_event_stream(after_seq, max_polls=polls), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+def _notification_event_stream(
+    after_seq: int, *, max_polls: int = 20, poll_seconds: float = _EVENT_POLL_SECONDS
+):
+    """Yield replay plus bounded cursor polls and heartbeats.
+
+    The finite bound makes unit tests and proxies deterministic.  Clients
+    reconnect with the last emitted event id to continue the same durable
+    owner-scoped replay without a second message stream.
+    """
+    cursor = max(0, int(after_seq))
+    for poll in range(max(1, min(int(max_polls), 120))):
+        items = _store().list_notifications(OWNER_ID, after_seq=cursor, limit=_EVENT_BATCH_LIMIT)
+        if items:
+            for item in items:
+                payload = _notification_payload(item)
+                cursor = max(cursor, int(item.event_seq))
+                yield f"id: {item.event_seq}\nevent: {item.notification_kind}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        else:
+            yield ": heartbeat\n\n"
+        if poll + 1 < max_polls:
+            time.sleep(max(0.0, min(float(poll_seconds), 1.0)))
 
 
 @session_router.get("/{research_session_id}")
@@ -369,6 +510,15 @@ def get_research_session(research_session_id: str):
             "plan": plan.to_dict() if plan else None,
             "plans": [item.to_dict() for item in _store().list_session_plans(research_session_id, OWNER_ID)],
             "approvals": [item.to_dict() for item in _store().list_approvals(research_session_id, OWNER_ID)],
+            "artifacts": (
+                [_artifact_payload(item, research_session_id) for item in _store().list_artifacts_for_task(session.research_task_id, OWNER_ID)]
+                if session.research_task_id else []
+            ),
+            "notifications": [
+                _notification_payload(item)
+                for item in _store().list_notifications(OWNER_ID)
+                if item.research_session_id == research_session_id
+            ],
         }
     except ResearchCommandError as exc:
         return _command_error(exc)

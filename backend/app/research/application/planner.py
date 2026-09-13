@@ -200,7 +200,6 @@ class Planner:
                 "depends_on": ["c1"],
                 "params": {
                     "goal": goal,
-                    "selected_paper_ids": [],
                     "language": language,
                     "evidence_level": "catalog",
                 },

@@ -93,7 +93,9 @@ WORKITEM_SCHEMAS = {
         "role": "synthesizer",
         "parallel_allowed": False,
         "allowed_params": {"goal", "selected_paper_ids", "language", "evidence_level"},
-        "required_params": {"goal", "selected_paper_ids"},
+        # Candidate IDs are injected from completed evaluator evidence at
+        # dispatch time; a plan must not freeze an empty selection.
+        "required_params": {"goal"},
         "depends_on_task_types": ["check_coverage"],  # 跳过 replan 时直接合成
         "budget_field": "selected_count",  # 入选篇数计入 max_selected
     },

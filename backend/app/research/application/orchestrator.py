@@ -28,6 +28,13 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from backend.app.research.application.planner import Planner
+from backend.app.research.application.report_synthesis import (
+    ReportDeliveryService,
+    ReportSynthesisError,
+    ReportSynthesizer,
+    ResearchNotificationService,
+    validate_report_synthesis_output,
+)
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
 from backend.app.research.domain.contracts import BUDGET_CAPS, EVENT_TYPES, TASK_TERMINAL
 from backend.app.research.domain.models import (
@@ -54,6 +61,114 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _work_item_output(value) -> dict:
+    """Read only the safe structured output persisted by AgentRunner."""
+    raw = value
+    if isinstance(value, str):
+        try:
+            raw = json.loads(value)
+        except (TypeError, ValueError):
+            return {}
+    if isinstance(raw, dict) and isinstance(raw.get("output_json"), dict):
+        return dict(raw["output_json"])
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _validated_evaluator_candidates(outputs) -> list[dict]:
+    records: list[dict] = []
+    for output in outputs:
+        kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
+        for item in kept:
+            if not isinstance(item, dict) or (item.get("keep") is not True and item.get("verified") is not True):
+                continue
+            candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+            refs = item.get("evidence_refs")
+            if not candidate_id or not isinstance(refs, list) or not refs:
+                continue
+            records.append({"candidate_id": str(candidate_id), "verified": True, "evidence_refs": list(refs)})
+    return records
+
+
+def _evaluator_records(output) -> list[dict]:
+    """Normalize evaluator output without accepting truthy/non-boolean flags."""
+    kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
+    return [item for item in kept if isinstance(item, dict)]
+
+
+def _validate_evaluator_scope(
+    output: dict,
+    allowed_candidates: set[str],
+    allowed_refs: set[str],
+    allowed_sources: set[str] | None = None,
+    allowed_source_refs: set[str] | None = None,
+) -> bool:
+    if allowed_sources is None:
+        allowed_sources = {"usenix", "dblp", "all"}
+    if allowed_source_refs is None:
+        allowed_source_refs = set()
+    def source_ref_allowed(ref: object) -> bool:
+        if not isinstance(ref, str):
+            return False
+        if ref.startswith("search:"):
+            return ref in allowed_source_refs
+        if ref.startswith("catalog:"):
+            return ref.split(":", 1)[1] in allowed_candidates
+        return ref in allowed_source_refs or ref in allowed_refs
+
+    source = output.get("source")
+    if source is not None and source not in allowed_sources:
+        return False
+    source_refs = output.get("source_refs")
+    if source_refs is not None and (
+        not isinstance(source_refs, list)
+        or any(
+            not isinstance(ref, str)
+            or not source_ref_allowed(ref)
+            for ref in source_refs
+        )
+    ):
+        return False
+    records: list[dict] = []
+    for field in ("kept", "eliminated", "evaluations"):
+        value = output.get(field)
+        if isinstance(value, list):
+            records.extend(item for item in value if isinstance(item, dict))
+    if isinstance(output.get("candidate_id"), str):
+        records.append(output)
+    top_manifest = output.get("citation_manifest")
+    if isinstance(top_manifest, list) and any(
+        not isinstance(ref, dict)
+        or ref.get("candidate_id") not in allowed_candidates
+        or ref.get("citation_ref") not in allowed_refs
+        for ref in top_manifest
+    ):
+        return False
+    for item in records:
+        candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+        refs = item.get("evidence_refs")
+        if candidate_id is not None and (not isinstance(candidate_id, str) or candidate_id not in allowed_candidates):
+            return False
+        if refs is not None and (not isinstance(refs, list) or any(not isinstance(ref, str) or ref not in allowed_refs for ref in refs)):
+            return False
+        if item.get("source") is not None and item.get("source") not in allowed_sources:
+            return False
+        item_source_refs = item.get("source_refs")
+        if item_source_refs is not None and (
+            not isinstance(item_source_refs, list)
+            or any(not source_ref_allowed(ref) for ref in item_source_refs)
+        ):
+            return False
+        manifest = item.get("citation_manifest")
+        if isinstance(manifest, list) and any(
+            not isinstance(ref, dict)
+            or ref.get("candidate_id") not in allowed_candidates
+            or ref.get("citation_ref") not in allowed_refs
+            for ref in manifest
+        ):
+            return False
+    return True
+
+
 @dataclass(frozen=True)
 class OrchestratorResult:
     """一次编排运行的收尾结果（不暴露内部异常细节）。"""
@@ -72,7 +187,7 @@ class Orchestrator:
     """稳定受控骨架：plan -> search -> evaluate -> coverage -> bounded re-plan -> synthesize。"""
 
     def __init__(
-        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None, agent_runner=None, processing_projector=None
+        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None, agent_runner=None, processing_projector=None, memory_repository=None
     ) -> None:
         self._store = store
         # 检索唯一出口：Spec015 CatalogSearchAdapter（未注入时走其内部惰性装配）。
@@ -84,6 +199,7 @@ class Orchestrator:
         # explicitly handed to run_agent by the approved Task05+ integration.
         self._agent_runner = agent_runner
         self._processing_projector = processing_projector
+        self._memory_repository = memory_repository or getattr(processing_projector, "memory_repository", None)
         self._owner_by_task: dict[str, str] = {}
         if self._agent_runner is not None:
             # Install the callback on the already-constructed runner so skill
@@ -142,6 +258,15 @@ class Orchestrator:
         self._emit(research_task_id, "terminal", {"status": "failed", "error_code": code})
         with suppress(InvalidStateTransition):
             self._store.update_task_status(research_task_id, owner_id, "failed")
+        session = self._store.get_session_by_task(research_task_id, owner_id)
+        if session is not None:
+            with suppress(Exception):
+                ResearchNotificationService(store=self._store).emit(
+                    owner_id=owner_id, research_session_id=session.research_session_id,
+                    research_task_id=research_task_id, notification_kind="failed",
+                    subject_version=plan_version, payload={"report_version": plan_version, "error_code": code},
+                    idempotency_key=f"research-report:{research_task_id}:{plan_version}:failed",
+                )
         return self._result(research_task_id, "failed", plan_version, 0, None, (), False, code)
 
     # ------------------------------------------------------------------ #
@@ -381,6 +506,8 @@ class Orchestrator:
         if current_plan is not None and current_plan.status == "active":
             store.update_plan_status(research_task_id, current_plan_version, "completed")
         syn_item = self._find_item(research_task_id, current_plan_version, "synthesize_preliminary_report")
+        synthesis_artifact_id = None
+        synthesis_error = None
         if syn_item is not None:
             running_item = store.update_work_item_status(
                 syn_item.work_item_id,
@@ -402,6 +529,26 @@ class Orchestrator:
                 "worker",
                 self._worker_event_payload(completed_item, "completed"),
             )
+            session = store.get_session_by_task(research_task_id, owner_id)
+            if session is not None:
+                synthesis_run_id = self._synthesis_run_id(
+                    task=task, session=session, work_item=syn_item, owner_id=owner_id
+                )
+                synthesis_artifact_id, synthesis_error = self._deliver_synthesized_report(
+                    task=task,
+                    session=session,
+                    owner_id=owner_id,
+                    plan_version=current_plan_version,
+                    selected=selected,
+                    facets=draft.facets,
+                    gaps=gaps,
+                    generated_by_agent_run_id=synthesis_run_id,
+                )
+                if synthesis_error:
+                    self._emit_synthesis_failure_notification(
+                        task=task, session=session, owner_id=owner_id,
+                        version=current_plan_version, code=synthesis_error,
+                    )
         self._emit(
             research_task_id,
             "report",
@@ -417,7 +564,7 @@ class Orchestrator:
         task = self._refresh(research_task_id, owner_id)
         if isinstance(task, OrchestratorResult):
             return task
-        degraded = bool(gaps) or bool(degraded_sources) or stop_reason == "budget_exhausted"
+        degraded = bool(gaps) or bool(degraded_sources) or stop_reason == "budget_exhausted" or bool(synthesis_error)
         final_status = "partial" if (not selected or degraded) else "completed"
         store.update_task_status(research_task_id, owner_id, final_status)
         self._emit(
@@ -439,7 +586,7 @@ class Orchestrator:
             report.report_id,
             gaps,
             degraded,
-            None,
+            synthesis_error,
         )
 
     def _run_agent_work_items(self, *, task, owner_id: str, plan_version: int) -> OrchestratorResult:
@@ -474,7 +621,39 @@ class Orchestrator:
             "research-critic": "research_critic", "synthesizer": "synthesizer",
         }
         failures = 0
+        synthesis_run_id = None
+        synthesis_output: dict | None = None
+        synthesis_attempts = 1
+        synthesis_error: str | None = None
+        evaluator_outputs: list[dict] = []
+        evaluator_outputs_by_id: dict[str, dict] = {}
+        selected_count = 0
         items = self._store.list_work_items(task.research_task_id, plan_version=plan_version)
+        # Store order is not a scheduling contract.  Topologically order the
+        # existing WorkItems so a producer always runs before its consumer;
+        # the status checks below still fail closed on missing/failed deps.
+        pending = {item.work_item_id: item for item in items}
+        ordered_items = []
+        while pending:
+            ready = []
+            for item in pending.values():
+                try:
+                    deps = json.loads(item.depends_on_json or "[]")
+                except (TypeError, ValueError):
+                    deps = []
+                if isinstance(deps, list) and all(str(dep) not in pending for dep in deps):
+                    ready.append(item)
+            if not ready:
+                ordered_items.extend(pending.values())
+                break
+            for item in ready:
+                ordered_items.append(item)
+                pending.pop(item.work_item_id, None)
+        items = ordered_items
+        completed_ids: set[str] = set()
+        failed_ids: set[str] = set()
+        completed_outputs: dict[str, dict] = {}
+        item_by_id = {item.work_item_id: item for item in items}
         for item in items:
             role = role_map.get(item.role, item.role)
             skill_name = ROLE_SKILL_DEFAULTS.get(role)
@@ -483,6 +662,106 @@ class Orchestrator:
                 work_item_input = json.loads(item.input_json or "{}")
             except (TypeError, ValueError):
                 work_item_input = {}
+            try:
+                dependencies = json.loads(item.depends_on_json or "[]")
+            except (TypeError, ValueError):
+                dependencies = []
+            dependencies = [str(dep) for dep in dependencies] if isinstance(dependencies, list) else []
+            if any(dep not in completed_ids for dep in dependencies):
+                failures += 1
+                error_code = "UPSTREAM_WORK_ITEM_FAILED" if any(dep in failed_ids for dep in dependencies) else "UPSTREAM_WORK_ITEM_NOT_READY"
+                failed_ids.add(item.work_item_id)
+                with suppress(Exception):
+                    failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code=error_code)
+                    self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code=error_code))
+                if role == "synthesizer":
+                    synthesis_error = error_code
+                continue
+            upstream = [completed_outputs[dep] for dep in dependencies if dep in completed_outputs]
+            allowed_candidates: set[str] = set()
+            allowed_refs: set[str] = set()
+            allowed_sources: set[str] = set()
+            allowed_source_refs: set[str] = set()
+            if role == "paper_evaluator":
+                paper_ids = []
+                for output in upstream:
+                    for paper_id in output.get("candidates", ()) if isinstance(output.get("candidates"), list) else ():
+                        if isinstance(paper_id, str) and paper_id not in paper_ids:
+                            paper_ids.append(paper_id)
+                work_item_input["catalog_paper_ids"] = paper_ids
+                allowed_candidates = set(paper_ids)
+                allowed_refs = {f"catalog:{paper_id}" for paper_id in paper_ids}
+                binding_invalid = False
+                for dependency_id, output in zip(dependencies, upstream, strict=False):
+                    expected_source_item = item_by_id.get(dependency_id)
+                    if (
+                        expected_source_item is None
+                        or (output.get("work_item_id") is not None and output.get("work_item_id") != dependency_id)
+                        or (output.get("research_task_id") is not None and output.get("research_task_id") != task.research_task_id)
+                    ):
+                        binding_invalid = True
+                        allowed_candidates.clear()
+                        allowed_refs.clear()
+                        allowed_sources.clear()
+                        allowed_source_refs.clear()
+                    if not binding_invalid and output.get("source") in {"usenix", "dblp", "all"}:
+                        allowed_sources.add(output["source"])
+                    for source_ref in output.get("source_refs", ()) if not binding_invalid and isinstance(output.get("source_refs"), list) else ():
+                        if isinstance(source_ref, str):
+                            allowed_source_refs.add(source_ref)
+                    if output.get("source") not in {"usenix", "dblp", "all"}:
+                        allowed_candidates.clear()
+                        allowed_refs.clear()
+                    for ref in output.get("evidence_refs", ()) if isinstance(output.get("evidence_refs"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_refs.add(ref)
+                    for ref in output.get("citation_allowlist", ()) if isinstance(output.get("citation_allowlist"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_refs.add(ref.get("citation_ref", "") if isinstance(ref, dict) else ref)
+            elif role == "synthesizer":
+                def ancestors(work_item_id: str, seen: set[str] | None = None) -> set[str]:
+                    seen = seen or set()
+                    if work_item_id in seen:
+                        return seen
+                    seen.add(work_item_id)
+                    parent = item_by_id.get(work_item_id)
+                    if parent is None:
+                        return seen
+                    try:
+                        parent_deps = json.loads(parent.depends_on_json or "[]")
+                    except (TypeError, ValueError):
+                        parent_deps = []
+                    for parent_id in parent_deps if isinstance(parent_deps, list) else ():
+                        ancestors(str(parent_id), seen)
+                    return seen
+
+                evaluator_ids = {
+                    work_item_id for work_item_id in ancestors(item.work_item_id)
+                    if item_by_id.get(work_item_id) is not None
+                    and item_by_id[work_item_id].role == "paper-evaluator"
+                }
+                validated = _validated_evaluator_candidates(
+                    [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id]
+                )
+                if not validated:
+                    failures += 1
+                    synthesis_error = "NO_VALIDATED_EVIDENCE"
+                    failed_ids.add(item.work_item_id)
+                    with suppress(Exception):
+                        failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code=synthesis_error)
+                        self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code=synthesis_error))
+                    continue
+                work_item_input["validated_candidates"] = validated
+                work_item_input["citation_allowlist"] = [
+                    {"citation_ref": ref, "candidate_id": candidate["candidate_id"]}
+                    for candidate in validated for ref in candidate["evidence_refs"]
+                    if isinstance(ref, str)
+                ]
+            with suppress(Exception):
+                self._store.update_work_item_input(
+                    item.work_item_id,
+                    json.dumps(work_item_input, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                )
             run_id = f"{item.work_item_id}:run-{max(1, item.attempt + 1)}"
             try:
                 worker_event = self._emit(task.research_task_id, "worker", self._worker_event_payload(item, "running"))
@@ -512,9 +791,34 @@ class Orchestrator:
                     self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code="AGENT_RUN_FAILED"))
                 continue
             terminal = result.status if result.status in {"completed", "failed", "cancelled", "limit_reached"} else "failed"
+            semantic_error = None
+            if terminal == "completed" and role == "paper_evaluator" and isinstance(result.output_json, dict):
+                raw_output = dict(result.output_json)
+                # The evaluator may only retain candidates/ref IDs present in
+                # its Search Worker dependencies; a completed but out-of-scope
+                # model result is converted to a stable failed WorkItem.
+                if not _validate_evaluator_scope(
+                    raw_output, allowed_candidates, allowed_refs, allowed_sources, allowed_source_refs
+                ):
+                    semantic_error = "EVALUATOR_EVIDENCE_OUT_OF_SCOPE"
+                    terminal = "failed"
             if terminal != "completed":
                 failures += 1
-            error_code = result.error_code
+                failed_ids.add(item.work_item_id)
+            else:
+                completed_ids.add(item.work_item_id)
+                completed_outputs[item.work_item_id] = _work_item_output(result.output_json)
+            error_code = result.error_code or semantic_error
+            if terminal == "completed" and role == "paper_evaluator" and isinstance(result.output_json, dict):
+                evaluator_outputs.append(dict(result.output_json))
+                evaluator_outputs_by_id[item.work_item_id] = dict(result.output_json)
+            if terminal == "completed" and role == "synthesizer":
+                synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
+                synthesis_output = dict(result.output_json) if isinstance(result.output_json, dict) else None
+                synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
+            elif role == "synthesizer" and terminal != "completed":
+                synthesis_error = result.error_code or "AGENT_OUTPUT_INVALID"
+                synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
             output_json = json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)[:100000]
             with suppress(Exception):
                 updated = self._store.update_work_item_status(
@@ -525,11 +829,90 @@ class Orchestrator:
                     resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
                 )
                 self._emit(task.research_task_id, "worker", self._worker_event_payload(updated, terminal, error_code=error_code) )
+        synthesis_artifact_id = None
+        if self._memory_repository is not None:
+            session = self._store.get_session_by_task(task.research_task_id, owner_id)
+            if session is not None:
+                validated_candidates: list[dict] = []
+                for evaluation in evaluator_outputs:
+                    kept_items = evaluation.get("kept") if isinstance(evaluation.get("kept"), list) else [evaluation]
+                    for item in kept_items:
+                        if not isinstance(item, dict):
+                            continue
+                        # Task06 may return either an aggregate ``kept`` list
+                        # or one evaluation object per candidate.  Both forms
+                        # are normalized here, but only literal True is valid.
+                        if item.get("keep") is not True and item.get("verified") is not True:
+                            continue
+                        paper_id = item.get("candidate_id")
+                        if not paper_id:
+                            continue
+                        refs = item.get("evidence_refs") if isinstance(item.get("evidence_refs"), list) else ()
+                        validated_candidates.append({
+                            "candidate_id": str(paper_id),
+                            "verified": True,
+                            "evidence_refs": list(refs),
+                        })
+                selected_count = len(validated_candidates)
+                try:
+                    if synthesis_run_id is None or synthesis_output is None:
+                        raise ReportSynthesisError(
+                            "synthesizer run did not complete", code=synthesis_error or "AGENT_OUTPUT_INVALID"
+                        )
+                    # Validate and consume the actual model output.  The
+                    # delivery service is deliberately downstream of this
+                    # semantic boundary; it never re-composes a replacement
+                    # report from evaluator data.
+                    validate_report_synthesis_output(synthesis_output, expected_version=plan_version)
+                    synthesis = ReportSynthesizer().consume_validated_output(
+                        output=synthesis_output,
+                        validated_candidates=validated_candidates,
+                        title="深度研究报告",
+                    )
+                    delivered = ReportDeliveryService(
+                        store=self._store, memory_repository=self._memory_repository,
+                    ).deliver(
+                        session=session, owner_id=owner_id,
+                        generated_by_agent_run_id=synthesis_run_id,
+                        result=synthesis,
+                        notification_kind="partial" if failures else "completed",
+                    )
+                    synthesis_artifact_id = delivered["artifacts"][0]["artifact_id"]
+                except Exception as exc:
+                    synthesis_error = getattr(exc, "code", "AGENT_OUTPUT_INVALID")
+                    self._emit_synthesis_failure_notification(
+                        task=task, session=session, owner_id=owner_id,
+                        version=plan_version, code=synthesis_error,
+                        retry_attempt=synthesis_attempts if synthesis_attempts > 1 else None,
+                    )
+        # A runner-less legacy caller has no Task08 delivery seam.  Once the
+        # seam is present, an empty evaluator result is a degraded outcome,
+        # never a successful empty report.
+        if self._memory_repository is not None and not synthesis_error:
+            if not evaluator_outputs:
+                synthesis_error = "NO_VALIDATED_EVIDENCE"
+            else:
+                has_evidence = any(
+                    isinstance(item, dict)
+                    and isinstance(item.get("evidence_refs"), list)
+                    and bool(item.get("evidence_refs"))
+                    for evaluation in evaluator_outputs
+                    for item in (
+                        evaluation.get("kept", ())
+                        if isinstance(evaluation.get("kept"), list)
+                        else (evaluation,)
+                    )
+                    if isinstance(item, dict) and (item.get("keep") is True or item.get("verified") is True)
+                )
+                if not has_evidence:
+                    synthesis_error = "NO_VALIDATED_EVIDENCE"
+        if synthesis_error:
+            failures += 1
         final_status = "completed" if items and failures == 0 else "partial"
         with suppress(InvalidStateTransition):
             self._store.update_task_status(task.research_task_id, owner_id, final_status)
-        self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": 0, "error_code": None if failures == 0 else "AGENT_RUN_FAILED"})
-        return self._result(task.research_task_id, final_status, plan_version, 0, None, (), failures > 0, None if failures == 0 else "AGENT_RUN_FAILED")
+        self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": selected_count, "error_code": None if failures == 0 else (synthesis_error or "AGENT_RUN_FAILED")})
+        return self._result(task.research_task_id, final_status, plan_version, selected_count, synthesis_artifact_id, (), failures > 0, synthesis_error or (None if failures == 0 else "AGENT_RUN_FAILED"))
 
     def _run_search_evaluate_coverage(
         self,
@@ -844,7 +1227,6 @@ class Orchestrator:
                 input_json=json.dumps(
                     {
                         "goal": task.goal,
-                        "selected_paper_ids": [],
                         "language": task.language,
                         "evidence_level": _EVIDENCE_LEVEL,
                     },
@@ -1076,6 +1458,145 @@ class Orchestrator:
         lines.append("")
         lines.append("> 所有结论均须带论文引用；此处仅以 catalog_paper_id 引用 Spec015 全局目录，不复制元数据。")
         return "\n".join(lines)
+
+    def _synthesis_run_id(self, *, task, session, work_item, owner_id: str) -> str | None:
+        """Return/create the sole synthesizer run used to author artifacts.
+
+        The legacy deterministic pipeline has a synthesizer WorkItem but no
+        model Runner.  Recording one completed, owner-bound Run at this
+        boundary preserves the Artifact contract while keeping Orchestrator as
+        the only Run creator.  Real AgentRunner paths pass their actual Run ID.
+        """
+        if work_item is None or not self._memory_repository:
+            return None
+        run_id = f"{work_item.work_item_id}:report-run-v{task.current_plan_version}"
+        getter = getattr(self._store, "get_agent_run", None)
+        if callable(getter) and getter(run_id, owner_id) is not None:
+            return run_id
+        creator = getattr(self._store, "create_agent_run", None)
+        if not callable(creator):
+            return None
+        from backend.app.research.domain.models import AgentRun
+
+        try:
+            creator(AgentRun(
+                agent_run_id=run_id,
+                research_session_id=session.research_session_id,
+                attempt=1,
+                role="synthesizer",
+                skill_name="research-report-synthesis",
+                skill_schema_version="1",
+                skill_content_hash="deterministic-report-synthesis",
+                resolved_model="deterministic",
+                reasoning_effort="off",
+                allowed_tools_json="[]",
+                provider="internal",
+                status="completed",
+                research_task_id=task.research_task_id,
+                work_item_id=work_item.work_item_id,
+                owner_id=owner_id,
+            ), owner_id=owner_id)
+            return run_id
+        except Exception:
+            return None
+
+    def _deliver_synthesized_report(
+        self, *, task, session, owner_id: str, plan_version: int,
+        selected: list[dict], facets: tuple[str, ...], gaps: tuple[str, ...],
+        generated_by_agent_run_id: str | None,
+    ) -> tuple[str | None, str | None]:
+        """Synthesize and deliver one immutable report; return (report_id,error)."""
+        # Legacy Spec027 callers do not bind a conversation repository; retain
+        # their PreliminaryReport-only contract.  Task08 delivery is enabled
+        # only when the existing MemoryRepository seam is present.
+        if self._memory_repository is None:
+            return None, None
+        if not generated_by_agent_run_id:
+            return None, "ARTIFACT_NOT_READY"
+        if not selected:
+            return None, "NO_VALIDATED_EVIDENCE"
+        verified = []
+        citations = []
+        for item in selected:
+            paper_id = item.get("catalog_paper_id") if isinstance(item, dict) else None
+            if not paper_id:
+                continue
+            verified.append({"candidate_id": str(paper_id), "verified": True})
+            citations.append({"citation_ref": f"catalog:{paper_id}", "candidate_id": str(paper_id)})
+        sections = []
+        for facet in facets:
+            ids = [
+                str(item["catalog_paper_id"])
+                for item in selected
+                if isinstance(item, dict) and facet in item.get("facets", ())
+            ]
+            if ids:
+                sections.append({"heading": facet, "candidate_ids": ids})
+        if not sections and verified:
+            sections = [{"heading": "证据与引用", "candidate_ids": [item["candidate_id"] for item in verified]}]
+        try:
+            result = ReportSynthesizer().synthesize(
+                report_version=plan_version,
+                candidates=verified,
+                citation_whitelist=citations,
+                sections=sections,
+                title="深度研究报告",
+            )
+            delivered = ReportDeliveryService(
+                store=self._store, memory_repository=self._memory_repository,
+            ).deliver(
+                session=session, owner_id=owner_id,
+                generated_by_agent_run_id=generated_by_agent_run_id,
+                result=result,
+                notification_kind="partial" if gaps else "completed",
+            )
+            return delivered["artifacts"][0]["artifact_id"], None
+        except ReportSynthesisError as exc:
+            return None, getattr(exc, "code", "AGENT_OUTPUT_INVALID")
+        except Exception:
+            return None, "ARTIFACT_NOT_READY"
+
+    def _emit_synthesis_failure_notification(
+        self, *, task, session, owner_id: str, version: int, code: str,
+        retry_attempt: int | None = None,
+    ) -> None:
+        if not session or not self._store:
+            return
+        try:
+            service = ResearchNotificationService(store=self._store)
+            service.emit(
+                owner_id=owner_id,
+                research_session_id=session.research_session_id,
+                research_task_id=task.research_task_id,
+                notification_kind="failed",
+                subject_version=version,
+                payload={"report_version": version, "error_code": code},
+                idempotency_key=f"research-report:{task.research_task_id}:{version}:failed",
+            )
+            # Failure and degraded completion are separate durable facts.  A
+            # retry attempt gets its own failed fact so a client can show
+            # progress without overwriting the original failure.
+            service.emit(
+                owner_id=owner_id,
+                research_session_id=session.research_session_id,
+                research_task_id=task.research_task_id,
+                notification_kind="partial",
+                subject_version=version,
+                payload={"report_version": version, "error_code": code},
+                idempotency_key=f"research-report:{task.research_task_id}:{version}:partial",
+            )
+            if retry_attempt is not None and retry_attempt > 1:
+                service.emit(
+                    owner_id=owner_id,
+                    research_session_id=session.research_session_id,
+                    research_task_id=task.research_task_id,
+                    notification_kind="failed",
+                    subject_version=version,
+                    payload={"report_version": version, "error_code": code, "retry_attempt": retry_attempt},
+                    idempotency_key=f"research-report:{task.research_task_id}:{version}:retry:{retry_attempt}",
+                )
+        except Exception:
+            return
 
     # ------------------------------------------------------------------ #
     # 内部：读 task / 找 item / 事件与结果

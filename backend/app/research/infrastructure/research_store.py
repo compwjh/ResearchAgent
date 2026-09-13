@@ -311,6 +311,30 @@ def _notification_identity_matches(existing: sqlite3.Row | dict, candidate: Rese
     )
 
 
+def _validate_notification_payload(value: object, *, depth: int = 0) -> None:
+    """Reject unsafe notification facts without imposing a product key list."""
+    if depth > 4:
+        raise ValueError("notification payload is too deeply nested")
+    if isinstance(value, dict):
+        if len(value) > 64:
+            raise ValueError("notification payload is too large")
+        for key, child in value.items():
+            lowered = str(key).casefold()
+            if any(part in lowered for part in _EVENT_SENSITIVE_PARTS) or "url" in lowered:
+                raise ValueError("notification payload contains sensitive field")
+            _validate_notification_payload(child, depth=depth + 1)
+    elif isinstance(value, (list, tuple)):
+        if len(value) > 64:
+            raise ValueError("notification payload list is too large")
+        for child in value:
+            _validate_notification_payload(child, depth=depth + 1)
+    elif isinstance(value, str):
+        if len(value) > 2000 or re.search(r"(?:https?://|ftp://|www\.)", value, re.I):
+            raise ValueError("notification payload contains unsafe value")
+    elif value is not None and not isinstance(value, (int, float, bool)):
+        raise ValueError("notification payload contains unsupported value")
+
+
 # update_task 允许更新的白名单列（与 research_tasks 表列名一致）。
 _TASK_UPDATE_WHITELIST = frozenset(
     {
@@ -828,6 +852,15 @@ class ResearchStore:
             next_cursor = encode_cursor(last["created_at"], last["research_task_id"])
         return items, next_cursor
 
+    def list_tasks_for_status(self, status: str) -> list[ResearchTask]:
+        """Internal recovery snapshot used to attach owner-scoped status facts."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_tasks WHERE status=? ORDER BY created_at, research_task_id",
+                (status,),
+            ).fetchall()
+        return [ResearchTask.from_row(dict(row)) for row in rows]
+
     def update_task_status(self, research_task_id: str, owner_id: str, next_status: str) -> ResearchTask:
         """按 owner 读当前状态→状态机校验→更新 status/updated_at；终态写 completed_at。
 
@@ -1142,6 +1175,20 @@ class ResearchStore:
                 "SELECT * FROM research_work_items WHERE work_item_id=?", (work_item_id,)
             ).fetchone()
         return ResearchWorkItem.from_row(dict(row)) if row else None
+
+    def update_work_item_input(self, work_item_id: str, input_json: str) -> ResearchWorkItem:
+        """Persist the bounded upstream-result injection before dispatch."""
+        if not isinstance(input_json, str) or len(input_json) > 100_000:
+            raise ValueError("work item input is invalid")
+        with _write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE research_work_items SET input_json=?, updated_at=? WHERE work_item_id=?",
+                (input_json, _utcnow(), work_item_id),
+            )
+            row = conn.execute("SELECT * FROM research_work_items WHERE work_item_id=?", (work_item_id,)).fetchone()
+        if row is None:
+            raise ResearchWorkItemNotFound(work_item_id)
+        return ResearchWorkItem.from_row(dict(row))
 
     def list_work_items(
         self, research_task_id: str, *, plan_version: Optional[int] = None
@@ -2408,14 +2455,25 @@ class ResearchStore:
             ).fetchone()
         return AgentCheckpoint.from_row(dict(row)) if row else None
 
-    def create_artifact(self, artifact: ResearchArtifact) -> ResearchArtifact:
+    def create_artifact(self, artifact: ResearchArtifact, *, owner_id: str | None = None) -> ResearchArtifact:
         if artifact.artifact_type not in {"markdown", "html", "citation_manifest", "intermediate"}:
             raise ValueError("invalid artifact type")
+        if int(artifact.report_version) < 1:
+            raise ValueError("artifact report_version must be positive")
         if (artifact.content is None) == (artifact.storage_ref is None):
             raise ValueError("artifact content/storage_ref are mutually exclusive")
+        if artifact.content is not None:
+            content_hash = hashlib.sha256(artifact.content.encode("utf-8")).hexdigest()
+            if artifact.content_hash != content_hash:
+                raise ValueError("artifact content_hash does not match content")
         with _write_lock, self._connect() as conn:
             try:
                 conn.execute("BEGIN IMMEDIATE")
+                if owner_id is not None and not conn.execute(
+                    "SELECT 1 FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (artifact.research_task_id, owner_id),
+                ).fetchone():
+                    raise ResearchTaskNotFound(artifact.research_task_id)
                 if not conn.execute(
                     "SELECT 1 FROM research_agent_runs WHERE agent_run_id=? AND research_task_id=? AND role='synthesizer'",
                     (artifact.generated_by_agent_run_id, artifact.research_task_id),
@@ -2448,7 +2506,11 @@ class ResearchStore:
                 raise
         return ResearchArtifact.from_row(dict(row))
 
-    def list_artifacts(self, research_task_id: str, *, report_version: int | None = None) -> list[ResearchArtifact]:
+    def list_artifacts(
+        self, research_task_id: str, *, report_version: int | None = None, owner_id: str | None = None
+    ) -> list[ResearchArtifact]:
+        if owner_id is not None:
+            return self.list_artifacts_for_task(research_task_id, owner_id, report_version=report_version)
         params: list[object] = [research_task_id]
         sql = "SELECT * FROM research_artifacts WHERE research_task_id=?"
         if report_version is not None:
@@ -2459,11 +2521,50 @@ class ResearchStore:
             rows = conn.execute(sql, params).fetchall()
         return [ResearchArtifact.from_row(dict(row)) for row in rows]
 
+    def get_artifact(self, artifact_id: str, owner_id: str) -> ResearchArtifact | None:
+        """Read one artifact through its task owner binding.
+
+        Artifact rows intentionally do not duplicate ``owner_id``.  The join
+        is the authorization boundary and prevents a guessed artifact ID from
+        crossing task/owner scope.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT a.* FROM research_artifacts a
+                JOIN research_tasks t ON t.research_task_id=a.research_task_id
+                WHERE a.artifact_id=? AND t.owner_id=?""",
+                (artifact_id, owner_id),
+            ).fetchone()
+        return ResearchArtifact.from_row(dict(row)) if row else None
+
+    def list_artifacts_for_task(
+        self, research_task_id: str, owner_id: str, *, report_version: int | None = None
+    ) -> list[ResearchArtifact]:
+        """Owner-scoped artifact listing; unknown/cross-owner task is empty."""
+        with self._connect() as conn:
+            params: list[object] = [research_task_id, owner_id]
+            sql = """SELECT a.* FROM research_artifacts a
+                JOIN research_tasks t ON t.research_task_id=a.research_task_id
+                WHERE a.research_task_id=? AND t.owner_id=?"""
+            if report_version is not None:
+                sql += " AND a.report_version=?"
+                params.append(report_version)
+            sql += " ORDER BY a.report_version, a.artifact_type, a.artifact_id"
+            rows = conn.execute(sql, params).fetchall()
+        return [ResearchArtifact.from_row(dict(row)) for row in rows]
+
     def create_notification(self, notification: ResearchNotification) -> ResearchNotification:
         if notification.notification_kind not in NOTIFICATION_KINDS or notification.status not in NOTIFICATION_STATUSES:
             raise ValueError("invalid notification")
         if (notification.status == "read") != bool(notification.read_at):
             raise ValueError("read_at/status mismatch")
+        try:
+            payload = json.loads(notification.payload_json or "{}")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("notification payload must be JSON") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("notification payload must be an object")
+        _validate_notification_payload(payload)
         with self._connect() as read_conn:
             existing = read_conn.execute(
                 "SELECT * FROM research_notifications WHERE owner_id=? AND idempotency_key=?",
@@ -3000,3 +3101,7 @@ ResearchStore.create_approval_request = ResearchStore.create_approval
 ResearchStore.get_approval_request = ResearchStore.get_approval
 ResearchStore.create_research_artifact = ResearchStore.create_artifact
 ResearchStore.create_research_notification = ResearchStore.create_notification
+ResearchStore.get_research_artifact = ResearchStore.get_artifact
+ResearchStore.list_research_artifacts = ResearchStore.list_artifacts_for_task
+ResearchStore.mark_research_notification_read = ResearchStore.mark_notification_read
+ResearchStore.list_research_notifications = ResearchStore.list_notifications

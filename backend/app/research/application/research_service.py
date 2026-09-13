@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.processing_projector import ProcessingStepProjector
+from backend.app.research.application.report_synthesis import ResearchNotificationService
 from backend.app.research.domain.contracts import (
     ERROR_CODES,
     GOAL_MAX_CHARS,
@@ -404,7 +405,22 @@ class ResearchService:
         **刻意区别于 Spec015 ``reset_running_jobs`` 的 running→queued 重试语义**：027 崩溃后
         不重试（自动续跑/租约属 Spec028），直接收敛为终态 interrupted。
         """
-        return self._store.mark_running_interrupted()
+        pending = self._store.list_tasks_for_status("running")
+        count = self._store.mark_running_interrupted()
+        notification_service = ResearchNotificationService(store=self._store)
+        for task in pending:
+            session = self._store.get_session_by_task(task.research_task_id, task.owner_id)
+            if session is None:
+                continue
+            with suppress(Exception):
+                notification_service.emit(
+                    owner_id=task.owner_id, research_session_id=session.research_session_id,
+                    research_task_id=task.research_task_id, notification_kind="interrupted",
+                    subject_version=task.current_plan_version,
+                    payload={"report_version": task.current_plan_version, "error_code": "STARTUP_AUDIT_INTERRUPTED"},
+                    idempotency_key=f"research-report:{task.research_task_id}:{task.current_plan_version}:interrupted",
+                )
+        return count
 
     # ------------------------------------------------------------------ #
     # 内部
@@ -452,6 +468,17 @@ class ResearchService:
                 )
             with suppress(InvalidStateTransition):
                 self._store.update_task_status(research_task_id, owner_id, "interrupted")
+            session = self._store.get_session_by_task(research_task_id, owner_id)
+            task = self._store.get_task(research_task_id, owner_id)
+            if session is not None and task is not None:
+                with suppress(Exception):
+                    ResearchNotificationService(store=self._store).emit(
+                        owner_id=owner_id, research_session_id=session.research_session_id,
+                        research_task_id=research_task_id, notification_kind="interrupted",
+                        subject_version=task.current_plan_version,
+                        payload={"report_version": task.current_plan_version, "error_code": "INTERNAL_ERROR"},
+                        idempotency_key=f"research-report:{research_task_id}:{task.current_plan_version}:interrupted",
+                    )
         finally:
             with _INFLIGHT_LOCK:
                 _INFLIGHT.discard(research_task_id)
@@ -487,6 +514,15 @@ class ResearchService:
             {"plan_version": 1, "status": "proposed", "facets": list(draft.facets)},
         )
         self._store.append_event(task.research_task_id, "task", {"status": "waiting_approval"})
+        session = self._store.get_session_by_task(task.research_task_id, owner_id)
+        if session is not None:
+            with suppress(Exception):
+                ResearchNotificationService(store=self._store).emit(
+                    owner_id=owner_id, research_session_id=session.research_session_id,
+                    research_task_id=task.research_task_id, notification_kind="waiting_approval",
+                    subject_version=1, payload={"report_version": 1, "status": "waiting_approval"},
+                    idempotency_key=f"research-report:{task.research_task_id}:1:waiting_approval",
+                )
         return waiting
 
     def _build_plan_draft(self, task: ResearchTask):
