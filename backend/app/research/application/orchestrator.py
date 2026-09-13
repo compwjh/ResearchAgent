@@ -585,7 +585,54 @@ class Orchestrator:
         task = self._refresh(research_task_id, owner_id)
         if isinstance(task, OrchestratorResult):
             return task
-        selected = self._evaluate_papers(candidates, facets_by_paper, task.target_paper_count)
+        # Prefer real CatalogPaper snapshots for Task06 evaluation.  Offline
+        # Spec027 fakes intentionally have ID-only candidates, so retain the
+        # old stable-rank fallback when no snapshot exists.
+        # The research store intentionally keeps only catalog IDs.  A real
+        # Task06 adapter may expose the existing PaperDiscoveryStore after its
+        # first search; ID-only Spec027 fakes must retain the old fallback.
+        catalog_store = getattr(self._adapter, "_store", None)
+        get_catalog_paper = getattr(catalog_store, "get_catalog_paper", None)
+        catalog_rows = [get_catalog_paper(paper_id) for paper_id in candidates] if callable(get_catalog_paper) else []
+        catalog_rows = [row for row in catalog_rows if row is not None]
+        if catalog_rows:
+            from backend.app.research.application.search_catalog_adapter import PaperEvaluator
+
+            eval_output = PaperEvaluator(threshold=0.2, soft_floor=0.1).evaluate(
+                [
+                    {"catalog_paper_id": row.catalog_paper_id, "title": row.title,
+                     "abstract": row.abstract or "", "keywords": row.keywords}
+                    for row in catalog_rows
+                ],
+                query=task.goal,
+            )
+            kept_ids = {item["candidate_id"] for item in eval_output["kept"]}
+            selected = self._evaluate_papers(
+                [paper_id for paper_id in candidates if paper_id in kept_ids],
+                facets_by_paper,
+                task.target_paper_count,
+            )
+            evaluations = eval_output["evaluations"]
+            evaluation_statistics = eval_output["statistics"]
+        else:
+            selected = self._evaluate_papers(candidates, facets_by_paper, task.target_paper_count)
+            selected_by_id = {item["catalog_paper_id"]: item for item in selected}
+            evaluations = [
+                {
+                    "candidate_id": paper_id,
+                    "relevance_score": float(selected_by_id.get(paper_id, {}).get("relevance", 0.0)),
+                    "keep": paper_id in selected_by_id,
+                    "reason": "selected by facet coverage and stable rank" if paper_id in selected_by_id
+                    else "not selected: target paper capacity reached",
+                    "evidence_refs": [f"catalog:{paper_id}"],
+                }
+                for paper_id in candidates
+            ]
+            evaluation_statistics = {
+                "candidates": len(candidates), "kept": len(selected),
+                "eliminated": max(0, len(candidates) - len(selected)),
+                "threshold": 0.2, "effective_threshold": 0.2,
+            }
         eval_item = self._find_item(research_task_id, plan_version, "evaluate_papers")
         if eval_item is not None:
             running_item = store.update_work_item_status(
@@ -605,6 +652,8 @@ class Orchestrator:
                     {
                         "selected": [item["catalog_paper_id"] for item in selected],
                         "candidate_count": len(candidates),
+                        "evaluations": evaluations,
+                        "statistics": evaluation_statistics,
                     },
                     ensure_ascii=False,
                 ),
@@ -645,7 +694,23 @@ class Orchestrator:
                 ),
             )
             self._emit(research_task_id, "worker", self._worker_event_payload(running_item, "running"))
-            completed_item = store.update_work_item_status(cov_item.work_item_id, "completed")
+            completed_item = store.update_work_item_status(
+                cov_item.work_item_id,
+                "completed",
+                output_json=json.dumps(
+                    {
+                        "coverage": {
+                            "facets": list(facets),
+                            "covered": [facet for facet in facets if facet not in gaps],
+                        },
+                        "gaps": [{"facet": gap, "reason": "no selected evidence"} for gap in gaps],
+                        "recommendations": list(gaps[:2]),
+                        "bounded_replan": bool(gaps),
+                        "approval_required": False,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
             self._emit(research_task_id, "worker", self._worker_event_payload(completed_item, "completed"))
         return selected, gaps, len(candidates) - before_candidates
 
@@ -853,18 +918,22 @@ class Orchestrator:
         )
         params = item.input_params
         try:
-            outcome = self._adapter.search(
-                query=params.get("query", ""),
-                facets=params.get("facets") or (),
-                max_results=params.get("max_results", 20),
-                language=params.get("language"),
+            # Search Worker is the structured application seam; it delegates
+            # to the same CatalogSearchAdapter/Spec015 graph and does not add
+            # another source or model client.
+            from backend.app.research.application.search_catalog_adapter import SearchWorker
+
+            worker_output = SearchWorker(adapter=self._adapter).run(
+                {**params, "work_item_id": item.work_item_id}
             )
+            ids = list(worker_output.get("candidates") or ())
+            error_code = worker_output.get("refresh_diagnostics", {}).get("error_code")
         except Exception:
-            outcome = None
-        ids = list(outcome.catalog_paper_ids) if outcome is not None else []
+            worker_output = None
+            ids, error_code = [], None
         if not ids:
             # 拿不到结果不伪造：写失败码（adapter 已给码优先，否则 SOURCE_UNAVAILABLE）。
-            error_code = (outcome.error_code if outcome is not None else None) or _DEFAULT_SEARCH_ERROR
+            error_code = error_code or _DEFAULT_SEARCH_ERROR
             failed_item = store.update_work_item_status(item.work_item_id, "failed", error_code=error_code)
             self._emit(
                 research_task_id,
@@ -875,7 +944,10 @@ class Orchestrator:
         completed_item = store.update_work_item_status(
             item.work_item_id,
             "completed",
-            output_json=json.dumps({"catalog_paper_ids": ids}, ensure_ascii=False),
+            output_json=json.dumps(
+                {"catalog_paper_ids": ids, "search_worker": worker_output or {}},
+                ensure_ascii=False,
+            ),
         )
         self._emit(
             research_task_id,
@@ -1039,8 +1111,21 @@ class Orchestrator:
         """
         if self._router is None:
             return {}
-        choice = self._router.resolve(role=role, task_type=task_type)
-        return {"model_tier": choice.tier, "resolved_model": choice.model}
+        resolve = getattr(self._router, "resolve", None)
+        if callable(resolve):
+            choice = resolve(role=role, task_type=task_type)
+            return {"model_tier": choice.tier, "resolved_model": choice.model}
+        # Preserve the Spec027 router seam used by existing offline tests and
+        # older adapters while keeping model events safe and structured.
+        execute = getattr(self._router, "execute", None)
+        if callable(execute):
+            choice, _result, events = execute(role=role, task_type=task_type, invoke=lambda _model: None)
+            for event in events or ():
+                safe = self._safe_model_event_payload(event)
+                if safe is not None and research_task_id:
+                    self._emit(research_task_id, "model", safe)
+            return {"model_tier": choice.tier, "resolved_model": choice.model}
+        raise AttributeError("model router does not expose resolve or execute")
 
     @staticmethod
     def _safe_model_event_payload(event: object) -> dict | None:

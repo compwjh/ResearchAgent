@@ -9,8 +9,8 @@
 `__all__`，便于审计与逐步收窄。本模块**只做导入与工厂，不新增业务逻辑**：
 - 工厂一律模块级缓存（`functools.lru_cache`），且**不在模块顶层实例化**——
   import 本模块既不创建 SQLite 文件，也不发起任何网络请求；
-- `CatalogSearchAdapter()` 的 Spec015 真实数据源在**首次检索时**惰性装配
-  （见其 docstring），故此处不传 source。
+- `CatalogSearchAdapter()` 的 Spec015 真实数据源由 `CatalogSourceFactory` 在**首次检索时**惰性装配
+  （见其 docstring），故此处不会创建目录库或发起网络请求。
 """
 
 from __future__ import annotations
@@ -42,7 +42,17 @@ from backend.app.research.application.research_service import (
     ResearchService,
     ResearchServiceError,
 )
-from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
+from backend.app.research.application.search_catalog_adapter import (
+    CatalogSearchAdapter,
+    CatalogSourceBundle,
+    CatalogSourceFactory,
+    CoverageCritic,
+    PaperEvaluator,
+    SearchWorker,
+    map_catalog_tool_args,
+    map_detail_tool_args,
+    map_download_tool_args,
+)
 from backend.app.research.domain.models import (
     PreliminaryReport,
     ResearchEvent,
@@ -73,6 +83,14 @@ __all__ = [
     "validate_research_plan_output",
     "Orchestrator",
     "CatalogSearchAdapter",
+    "CatalogSourceBundle",
+    "CatalogSourceFactory",
+    "SearchWorker",
+    "PaperEvaluator",
+    "CoverageCritic",
+    "map_catalog_tool_args",
+    "map_detail_tool_args",
+    "map_download_tool_args",
     "AgentRunInput",
     "AgentRunOutput",
     "AgentRuntimeError",
@@ -110,8 +128,8 @@ def build_research_store() -> ResearchStore:
 def build_research_service() -> ResearchService:
     """构造（并缓存）ResearchService：装配 store、检索适配器、探针、路由与 Planner。
 
-    检索未传 source：`CatalogSearchAdapter` 会在首次 `search()` 时惰性装配 Spec015
-    数据源（见其 docstring），因此这里不会拉起 qdrant/langgraph 等重依赖。
+    检索未传 source：`CatalogSearchAdapter` 会在首次 `search()` 时由
+    `CatalogSourceFactory` 惰性装配 Spec015 数据源，因此这里不会创建目录库或发起网络请求。
     """
     store = build_research_store()
     probe = ResourceProbe()

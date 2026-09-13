@@ -39,7 +39,7 @@ from backend.app.research.domain.plan_validator import PlanRejected, validate_pl
 _FACET_SPLIT_RE = re.compile(r"[、，,；;]|以及|和|\band\b", re.IGNORECASE)
 
 # 通用兜底 facet：切分不足 2 个时补足，保证 fan-out >= 2（Spec027 硬要求）。
-_FALLBACK_FACETS = ("总体综述", "方法对比")
+_FALLBACK_FACETS = ("研究方法", "实证评估")
 
 # fan-out 下限：Spec027 要求至少 2 路 search_catalog 并行。
 _MIN_FACETS = 2

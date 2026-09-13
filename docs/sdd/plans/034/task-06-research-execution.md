@@ -1,7 +1,7 @@
 # Task06 — 论文目录、评估、Critic 与覆盖补偿
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task05；当前状态：`实施中`
+> 依赖：Task05；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -49,5 +49,30 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：两个 Skill、三类角色执行接线、诊断数据、后端测试与评审报告。
-- 执行结果：待执行后填写。
-- 变更日志：待执行后填写。
+- 执行结果：已完成；backend-reviewer 与 backend-tester 均 GO。
+- 变更日志：2026-09-13 完成唯一目录来源工厂、本地优先与增量刷新诊断、Search Worker/Evaluator/Critic 结构化输出、严格 Tool 映射和两份领域 Skill；未新增目录/采集/RAG/下载/模型客户端实现。
+
+## 执行结果（backend-dev）
+
+- 唯一 `CatalogSourceFactory` 从既有 paper-discovery 受控出口组装 Store、USENIX/DBLP source、`CatalogRagAdapter` 与 `CatalogSearchGraph`，默认复用 `paper_discovery_db_path`（默认 `data/paper_search/state.sqlite3`）。
+- `CatalogSearchAdapter` 先读已索引本地目录；不足 `max_results` 时调用既有九节点图刷新缺失/过期 source unit，并返回 cache hit/fetch/refresh/source status 诊断。异常返回稳定 `SOURCE_UNAVAILABLE`，不伪造空成功。
+- Search Worker、Paper Evaluator、Coverage Critic 均输出 schema/hash/safe_summary/source_refs；Tool 参数严格执行 `sources[0]→source`、`time_range.years→years`、`max_results→limit`、`publication_scope` 原样。详情和下载映射只接受候选 URL/已选 candidate；不碰 PDF。
+- `Orchestrator._run_search` 经唯一 SearchWorker→CatalogSearchAdapter 接线并保存结构化输出；Task05 Runner 在唯一 Tool 校验入口复用搜索映射。两个新增领域 Skill 只包含研究编排协议。
+
+## 验证结果（后端）
+
+- Task06 合同：12 passed（固定样本、失败、增量、缓存优先、阈值、安全、source scope/SearchJob/候选隔离、长生命周期 scope 切换与两轮边界）。
+- Task06 + Task05/Task02/Task03/Task04/Spec027/Spec015/Spec032.1/Spec033/Skill/Tool 定向回归：234 passed、6 subtests（退出码 0）；新增 `usenix`/`dblp`/`all` source scope、SearchJob/候选隔离与长生命周期 Graph cache 合同。
+- `py_compile`：退出码 0；聚焦 Ruff：退出码 0（All checks passed）；`git diff --check`：退出码 0。
+- 真实目录 smoke：默认 SQLite 路径可打开但 indexed=0，受限沙箱未访问外部 USENIX/DBLP；固定 SQLite/Graph 注入样本通过，真实来源网络探针留 Task10 复验。
+
+## 独立验收结果（backend-tester）
+
+- 结论：GO；报告：`artifacts/task-06/backend-test-report.md`。
+- 上轮 `source_scope` 兼容性回归已修复；失败测试单独复验 1 passed。
+- Task06 与 Spec015/027/032/033、Skill/Tool 定向回归：384 passed、11 subtests，退出码 0；py_compile、Ruff、diff-check 均通过。
+
+## 风险与后续动作
+
+- 真实 Ollama/USENIX/DBLP 网络与 Qdrant 可达性仍需 Task10 运行时 smoke；不可达时保留 `SOURCE_UNAVAILABLE`/partial 诊断。
+- 主 Agent 后续：进入 Task07，保持 processing_steps 三级树与实时投影复用 Task02 的 canonical event/replay 接缝；真实目录/Ollama/Qdrant smoke 留 Task10。

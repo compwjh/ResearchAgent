@@ -791,6 +791,8 @@ class ResearchAgentRunner:
         return safe
 
     def _validate_calls(self, capability: RoleCapability, calls: Sequence[Mapping[str, Any]]) -> list[tuple[Mapping[str, Any], dict[str, Any]]]:
+        from backend.app.research.application.search_catalog_adapter import map_catalog_tool_args
+
         validated = []
         for call in calls:
             name = call.get("name")
@@ -808,6 +810,15 @@ class ResearchAgentRunner:
             entry = self._tool_entry(capability, name)
             if entry is None:
                 raise AgentRuntimeError("CAPABILITY_NOT_AUTHORIZED", "tool is not allowed")
+            # WorkItem fields intentionally differ from the registered
+            # Spec023 Tool fields.  Normalize at this single execution seam so
+            # a model cannot smuggle facets/language or a second source into
+            # the Tool call.
+            if name == "search_paper_catalog" and isinstance(args, Mapping):
+                try:
+                    args = map_catalog_tool_args(args)
+                except (TypeError, ValueError) as exc:
+                    raise AgentRuntimeError("AGENT_OUTPUT_INVALID", "catalog tool arguments are invalid") from exc
             normalized, error = validate_arguments(dict(entry.get("parameters") or {}), args)
             if error:
                 raise AgentRuntimeError("AGENT_OUTPUT_INVALID", "tool arguments failed schema validation")

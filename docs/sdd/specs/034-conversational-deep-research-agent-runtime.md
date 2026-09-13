@@ -461,7 +461,7 @@ Smoke 必须证明：
 | 03 | 实现会话意图、Deep Research Skill 与 Intake | [`task-03-conversational-intake.md`](../plans/034/task-03-conversational-intake.md) | 02 | 已完成 |
 | 04 | 实现计划版本、统一审批命令与前端卡片 | [`task-04-plan-and-approvals.md`](../plans/034/task-04-plan-and-approvals.md) | 03 | 已完成 |
 | 05 | 实现 ResearchAgentRunner 与真实子 Agent 循环 | [`task-05-agent-runtime.md`](../plans/034/task-05-agent-runtime.md) | 02、04 | 已完成 |
-| 06 | 接通论文目录、评估、Critic 与覆盖补偿 | [`task-06-research-execution.md`](../plans/034/task-06-research-execution.md) | 05 | 实施中 |
+| 06 | 接通论文目录、评估、Critic 与覆盖补偿 | [`task-06-research-execution.md`](../plans/034/task-06-research-execution.md) | 05 | 已完成 |
 | 07 | 实现 processing_steps 三级树与实时投影 | [`task-07-processing-tree.md`](../plans/034/task-07-processing-tree.md) | 02、05 | 待执行 |
 | 08 | 实现报告 Artifact、会话写回与通知 | [`task-08-report-and-notifications.md`](../plans/034/task-08-report-and-notifications.md) | 06、07 | 待执行 |
 | 09 | 复用 Research Tab、清理旧入口与旧数据 | [`task-09-workspace-and-cleanup.md`](../plans/034/task-09-workspace-and-cleanup.md) | 04、07、08 | 待执行 |

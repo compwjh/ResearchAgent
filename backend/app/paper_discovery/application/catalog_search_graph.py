@@ -237,7 +237,9 @@ class CatalogSearchGraph:
 
     def __init__(self, *, store: Any, accepted_source: Any, dblp_source: Any,
                  rag: Optional[CatalogRagAdapter] = None, ttl_seconds: int = 86400,
-                 dblp_enabled: Optional[bool] = None):
+                 dblp_enabled: Optional[bool] = None, source_scope: str = "all"):
+        if source_scope not in {"usenix", "dblp", "all"}:
+            raise ValueError("INVALID_SOURCE_SCOPE")
         self.store = store
         self.accepted_source = accepted_source
         self.dblp_source = dblp_source
@@ -246,6 +248,7 @@ class CatalogSearchGraph:
         # Explicit override wins so tests can exercise the DBLP path even though
         # the source is disabled by default in production configuration.
         self.dblp_enabled_override = dblp_enabled
+        self.source_scope = source_scope
         self.compiled_graph = self._build_graph()
 
     def _build_graph(self):
@@ -334,7 +337,8 @@ class CatalogSearchGraph:
         return self.store.get_search_job(search_id) or job
 
     def validate_request(self, job: SearchJob) -> None:
-        if job.conference_ids != ["usenix-security"] or job.years != sorted(set(job.years)):
+        expected_scope = ["dblp"] if self.source_scope == "dblp" else ["usenix-security"]
+        if job.conference_ids != expected_scope or job.years != sorted(set(job.years)):
             raise ValueError("INVALID_SEARCH_SCOPE")
         if not job.query.strip() or not 1 <= len(job.query.strip()) <= 500:
             raise ValueError("INVALID_QUERY")
@@ -350,6 +354,11 @@ class CatalogSearchGraph:
         self._event(job.search_id, "plan_fetch_units", "NODE_COMPLETED", "running")
 
     def sync_usenix(self, job: SearchJob) -> dict[str, Any]:
+        if self.source_scope == "dblp":
+            self._progress(job.search_id, "usenix", "completed", message_code="SOURCE_SKIPPED")
+            self._event(job.search_id, "sync_usenix", "SOURCE_SKIPPED", "completed", "usenix")
+            return {"status": "skipped", "error_code": None, "paper_count": 0,
+                    "cached_units": [], "fetching_units": [], "waiting_units": []}
         self._progress(job.search_id, "usenix", "fetching")
         self._event(job.search_id, "sync_usenix", "SOURCE_STARTED", "fetching", "usenix")
         try:
@@ -387,6 +396,8 @@ class CatalogSearchGraph:
 
     def _dblp_enabled(self) -> bool:
         """DBLP now answers with a bot challenge instead of JSON; default off."""
+        if self.source_scope == "dblp":
+            return True
         if self.dblp_enabled_override is not None:
             return bool(self.dblp_enabled_override)
         cached = getattr(self, "_dblp_enabled_cache", None)
@@ -398,6 +409,11 @@ class CatalogSearchGraph:
         return cached
 
     def sync_dblp(self, job: SearchJob) -> dict[str, Any]:
+        if self.source_scope == "usenix":
+            self._progress(job.search_id, "dblp", "completed", message_code="SOURCE_SKIPPED")
+            self._event(job.search_id, "sync_dblp", "SOURCE_SKIPPED", "completed", "dblp")
+            return {"status": "skipped", "error_code": None, "paper_count": 0,
+                    "cached_units": [], "fetching_units": [], "waiting_units": []}
         if not self._dblp_enabled():
             # ``completed`` keeps the persisted status inside the store's CHECK
             # constraint; SOURCE_SKIPPED is what tells the UI the source is off
@@ -548,6 +564,28 @@ class CatalogSearchGraph:
             self._progress(job.search_id, "dblp", "failed", error_code="DBLP_UNAVAILABLE")
             return {"status": "failed", "error_code": "DBLP_UNAVAILABLE", "paper_count": 0}
 
+    def _catalog_conference_ids(self, job: SearchJob) -> list[str]:
+        """Translate the DBLP-only public scope to the catalog's venue key."""
+        # Older source tests construct a narrow graph with ``__new__`` to
+        # exercise freeze behavior. Treat those objects as the historical
+        # USENIX route until the full constructor adds an explicit scope.
+        source_scope = getattr(self, "source_scope", "usenix")
+        if source_scope == "dblp" or job.conference_ids == ["dblp"]:
+            return ["usenix-security"]
+        return list(job.conference_ids)
+
+    def _source_allowed(self, catalog_paper_id: str) -> bool:
+        source_scope = getattr(self, "source_scope", "usenix")
+        if source_scope == "all":
+            return True
+        source_kinds = getattr(self.store, "get_catalog_source_kinds", None)
+        if not callable(source_kinds):
+            return True
+        kinds = set(source_kinds(catalog_paper_id))
+        # Pre-source-record rows are legacy USENIX cache entries. They remain
+        # visible to the official source route but never satisfy DBLP-only.
+        return source_scope in kinds or (source_scope == "usenix" and not kinds)
+
     @staticmethod
     def _record_year(record: Mapping[str, Any]) -> Optional[int]:
         info = record.get("info", record) if isinstance(record, Mapping) else {}
@@ -668,7 +706,7 @@ class CatalogSearchGraph:
         source_kinds = getattr(self.store, "get_catalog_source_kinds", None)
         if not callable(merge) or not callable(source_kinds):
             return
-        papers = self.store.list_catalog_papers(job.conference_ids, job.years, index_status=None)
+        papers = self.store.list_catalog_papers(self._catalog_conference_ids(job), job.years, index_status=None)
         groups: dict[tuple[Any, ...], list[CatalogPaper]] = {}
         title_groups: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {}
         no_doi: list[CatalogPaper] = []
@@ -728,8 +766,9 @@ class CatalogSearchGraph:
 
     def index_changed_catalog_papers(self, job: SearchJob) -> None:
         papers = self.store.list_catalog_papers(
-            job.conference_ids, job.years, index_status="pending"
+            self._catalog_conference_ids(job), job.years, index_status="pending"
         )
+        papers = [paper for paper in papers if self._source_allowed(paper.catalog_paper_id)]
         failed = 0
         for paper in papers:
             try:
@@ -748,10 +787,11 @@ class CatalogSearchGraph:
         self._event(job.search_id, "index_changed_catalog_papers", "NODE_COMPLETED", "running")
 
     def retrieve_and_rerank(self, job: SearchJob) -> tuple[list[dict[str, Any]], bool]:
-        papers = [paper for paper in self.store.list_catalog_papers(job.conference_ids, job.years)
-                  if paper.index_status == "indexed"]
+        papers = [paper for paper in self.store.list_catalog_papers(self._catalog_conference_ids(job), job.years)
+                  if paper.index_status == "indexed" and self._source_allowed(paper.catalog_paper_id)]
         try:
-            ranked = self.rag.retrieve_and_rerank(job.query, papers, conference_ids=job.conference_ids, years=job.years)
+            ranked = self.rag.retrieve_and_rerank(job.query, papers,
+                                                  conference_ids=self._catalog_conference_ids(job), years=job.years)
             return ranked, any(item.get("rerank_score") is None for item in ranked)
         except Exception:
             fallback = CatalogRagAdapter().retrieve_and_rerank(job.query, papers)
@@ -766,8 +806,9 @@ class CatalogSearchGraph:
             ))
             self._event(job.search_id, "freeze_search_results", "NODE_DEFERRED", "queued")
             return
-        by_id = {item.catalog_paper_id: item for item in self.store.list_catalog_papers(job.conference_ids, job.years)
-                 if item.index_status == "indexed"}
+        by_id = {item.catalog_paper_id: item for item in self.store.list_catalog_papers(
+            self._catalog_conference_ids(job), job.years
+        ) if item.index_status == "indexed" and self._source_allowed(item.catalog_paper_id)}
         candidates = []
         seen = set()
         for item in ranked:
