@@ -258,7 +258,59 @@ def _message_payload(item, repo=None, owner_id=OWNER_ID):
         if intake is not None:
             payload["intake"] = intake
             payload["research_intake"] = intake
+        report = _research_report_projection(repo, item, owner_id)
+        if report is not None:
+            payload["report"] = report
+            payload["research_report"] = report
     return payload
+
+
+def _research_report_projection(repo, item, owner_id=OWNER_ID):
+    """Project only owner-bound report metadata onto historical messages."""
+    if item.role != "assistant":
+        return None
+    try:
+        store = get_provider("research_store")
+        tasks, _ = store.list_tasks(owner_id, limit=100)
+        task = None
+        session = None
+        for candidate in tasks:
+            if candidate.conversation_id != item.conversation_id:
+                continue
+            candidate_session = store.get_session_by_task(candidate.research_task_id, owner_id)
+            if candidate_session is not None and candidate_session.final_message_id == item.message_id:
+                task, session = candidate, candidate_session
+                break
+        if task is None or session is None:
+            return None
+        artifacts = store.list_artifacts_for_task(task.research_task_id, owner_id, report_version=task.current_plan_version)
+    except Exception:
+        logger.warning("unable to load historical research report projection", exc_info=True)
+        return None
+    if not artifacts:
+        return None
+    safe_artifacts = []
+    for artifact in artifacts:
+        if artifact.artifact_type not in {"markdown", "html", "citation_manifest"}:
+            continue
+        safe_artifacts.append({
+            "artifact_id": artifact.artifact_id,
+            "artifact_type": artifact.artifact_type,
+            "report_version": artifact.report_version,
+            "content_hash": artifact.content_hash,
+            "download_url": f"/api/research-sessions/{session.research_session_id}/artifacts/{artifact.artifact_id}/download",
+        })
+    if not safe_artifacts:
+        return None
+    citation = next((item for item in safe_artifacts if item["artifact_type"] == "citation_manifest"), None)
+    return {
+        "report_version": task.current_plan_version,
+        "status": task.status,
+        "safe_summary": {"artifact_count": len(safe_artifacts), "has_citation_manifest": citation is not None},
+        "artifacts": safe_artifacts,
+        "citation_manifest": citation,
+        "download_url": next((item["download_url"] for item in safe_artifacts if item["artifact_type"] == "html"), None),
+    }
 
 
 def _memory_payload(item):

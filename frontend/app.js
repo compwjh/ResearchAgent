@@ -928,7 +928,7 @@ const REASONING_PROTOCOL_MARKERS = [
   '\nassistant:', '\nuser:', '\nsystem:', 'assistant:', 'user:', 'system:',
 ];
 const reasoningFilters = new WeakMap();
-const KNOWN_CONVERSATION_EVENT_TYPES = new Set(['meta', 'progress', 'memory', 'reconnect', 'processing_step', 'skill_activation', 'intake', 'plan', 'research_plan', 'approval', 'approvals', 'reasoning_started', 'reasoning_delta', 'reasoning_completed', 'token', 'sources', 'error', 'done']);
+const KNOWN_CONVERSATION_EVENT_TYPES = new Set(['meta', 'progress', 'memory', 'reconnect', 'processing_step', 'skill_activation', 'intake', 'plan', 'research_plan', 'approval', 'approvals', 'report', 'reasoning_started', 'reasoning_delta', 'reasoning_completed', 'token', 'sources', 'error', 'done']);
 
 function createReasoningFilter() {
   let carry = '';
@@ -1137,6 +1137,106 @@ function markConversationEventTerminal(assistantMessage, status) {
   }
 }
 
+const CONVERSATION_REPORT_STATUS_TEXT = {
+  completed: '已完成', partial: '部分完成', failed: '失败', retry: '可重试',
+  waiting_approval: '等待审批', interrupted: '已中断',
+};
+
+function reportStatusLabel(status) { return CONVERSATION_REPORT_STATUS_TEXT[status] || '待生成'; }
+
+function reportScalar(value, fallback = '') {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value).slice(0, 2400);
+  return fallback;
+}
+
+function reportSummaryText(value) {
+  if (typeof value === 'string') return reportScalar(value);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  const labels = { overview: '摘要', summary: '摘要', conclusion: '结论', limitations: '限制', evidence_count: '证据数' };
+  return Object.entries(value).slice(0, 12).map(([key, item]) => {
+    const safe = reportScalar(item);
+    return safe ? `${labels[key] || key}：${safe}` : '';
+  }).filter(Boolean).join(' · ');
+}
+
+function reportCitationText(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value !== 'object') return reportScalar(value);
+  if (Array.isArray(value)) return value.slice(0, 256).map(reportCitationText).filter(Boolean).join(' · ');
+  return Object.entries(value).slice(0, 12).map(([key, item]) => {
+    const safe = reportScalar(item);
+    return safe ? `${key}: ${safe}` : '';
+  }).filter(Boolean).join(' · ');
+}
+
+function reportMetadataFrom(value) {
+  if (!value || typeof value !== 'object') return null;
+  const nested = value.report || value.report_metadata || value.research_report || value.report_output;
+  const report = nested && typeof nested === 'object' && !Array.isArray(nested) ? nested : value;
+  const rawArtifacts = Array.isArray(report.artifacts) ? report.artifacts : (Array.isArray(value.artifacts) ? value.artifacts : []);
+  const sessionId = report.research_session_id || value.research_session_id;
+  const artifacts = rawArtifacts.map((item) => {
+    const normalized = window.ResearchTasks?.normalizeArtifact?.(item) || item;
+    if (normalized?.download_url || !sessionId || !normalized?.artifact_id) return normalized;
+    if (!/^[A-Za-z0-9._~-]{1,240}$/.test(String(sessionId))) return normalized;
+    return { ...normalized, download_url: `/api/research-sessions/${sessionId}/artifacts/${normalized.artifact_id}/download` };
+  }).filter((item) => item && typeof item === 'object' && ['markdown', 'html', 'citation_manifest'].includes(item.artifact_type));
+  const reportVersion = Number(report.report_version || report.plan_version || value.report_version || value.plan_version);
+  const status = report.status || value.status || 'completed';
+  const hasReportShape = Boolean(nested || rawArtifacts.length || report.citation_manifest || report.safe_summary || report.report_version || report.report_status);
+  return hasReportShape ? { ...report, artifacts, report_version: Number.isInteger(reportVersion) && reportVersion > 0 ? reportVersion : null, status } : null;
+}
+
+function renderConversationReport(assistantMessage, value) {
+  if (!assistantMessage) return null;
+  const projection = reportMetadataFrom(value);
+  const bubble = assistantMessage.querySelector('.bubble');
+  if (!bubble || !projection) return null;
+  let panel = bubble.querySelector('.conversation-report');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.className = 'conversation-report';
+    panel.setAttribute('aria-label', '研究报告');
+    const answer = bubble.querySelector('.answer');
+    if (answer) bubble.insertBefore(panel, answer); else bubble.appendChild(panel);
+  }
+  panel.dataset.status = reportScalar(projection.status, 'completed');
+  panel.replaceChildren();
+  const head = document.createElement('div'); head.className = 'conversation-report-head';
+  const title = document.createElement('strong'); title.className = 'conversation-report-title'; title.textContent = '研究报告';
+  const status = document.createElement('span'); status.className = 'conversation-report-status'; status.textContent = `${reportStatusLabel(projection.status)}${projection.report_version ? ` · v${projection.report_version}` : ''}`;
+  head.append(title, status); panel.appendChild(head);
+  const summaryText = reportSummaryText(projection.safe_summary || projection.summary || projection.excerpt);
+  if (summaryText) { const summary = document.createElement('p'); summary.className = 'conversation-report-summary'; summary.textContent = summaryText; panel.appendChild(summary); }
+  const ready = ['completed', 'partial'].includes(projection.status);
+  const actions = document.createElement('div'); actions.className = 'conversation-report-actions';
+  const labels = { markdown: '下载 Markdown', html: '打开 HTML', citation_manifest: '下载引用 manifest' };
+  const artifactOrder = ['markdown', 'html', 'citation_manifest'];
+  artifactOrder.forEach((type) => {
+    const artifact = projection.artifacts.find((item) => item.artifact_type === type);
+    const url = artifact?.download_url || '';
+    const safeBaseUrl = window.ResearchTasks?.safeArtifactUrl?.(url) || (/^\/api\/research-sessions\/[A-Za-z0-9._~-]+\/artifacts\/[A-Za-z0-9._~-]+\/download$/.test(url) ? url : '');
+    const safeUrl = window.ResearchTasks?.artifactActionUrl?.(type, safeBaseUrl) || (type === 'html' && safeBaseUrl ? `${safeBaseUrl}?mode=inline` : safeBaseUrl);
+    if (!ready || !safeUrl) return;
+    const link = document.createElement('a'); link.className = 'conversation-report-action'; link.href = safeUrl; link.textContent = labels[type];
+    link.setAttribute('aria-label', labels[type]); link.setAttribute('rel', 'noopener noreferrer');
+    if (type === 'html') link.target = '_blank'; else link.download = '';
+    actions.appendChild(link);
+  });
+  if (actions.childNodes.length) panel.appendChild(actions);
+  const citations = projection.citation_manifest;
+  if (citations && (Array.isArray(citations) ? citations.length : typeof citations === 'object')) {
+    const details = document.createElement('details'); details.className = 'conversation-report-citations';
+    const summary = document.createElement('summary'); summary.textContent = `引用 manifest（${Array.isArray(citations) ? citations.length : '摘要'}）`; details.appendChild(summary);
+    const list = document.createElement('ul');
+    (Array.isArray(citations) ? citations.slice(0, 256) : [citations]).forEach((citation) => { const item = document.createElement('li'); item.textContent = reportCitationText(citation); list.appendChild(item); });
+    details.appendChild(list); panel.appendChild(details);
+  }
+  if (!ready && !summaryText) { const notice = document.createElement('p'); notice.className = 'conversation-report-summary'; notice.textContent = `报告${reportStatusLabel(projection.status)}，暂不显示报告内容或下载操作。`; panel.appendChild(notice); }
+  return panel;
+}
+
 function renderConversationMessage(item) {
   const message = document.createElement('div');
   const role = item.role === 'user' ? 'user' : item.role === 'tool' ? 'tool' : 'assistant';
@@ -1176,6 +1276,7 @@ function renderConversationMessage(item) {
   sources.hidden = true;
   sources.setAttribute('aria-label', '参考来源');
   bubble.appendChild(sources);
+  renderConversationReport(message, item);
   message.append(avatar, bubble);
   const historicalIntake = item.intake || item.research_intake;
   if (historicalIntake && typeof historicalIntake === 'object') {
@@ -2726,6 +2827,7 @@ function appendConversationEvent(assistantMessage, processing, eventData) {
   }
   if (eventData.type === 'intake') updateConversationIntake(assistantMessage, eventData);
   if (['plan', 'research_plan', 'approval', 'approvals'].includes(eventData.type)) updateConversationResearchPlan(assistantMessage, eventData.payload && typeof eventData.payload === 'object' ? eventData.payload : eventData);
+  if (eventData.type === 'report') renderConversationReport(assistantMessage, eventData.payload && typeof eventData.payload === 'object' ? eventData.payload : eventData);
   if (eventData.type === 'reconnect') {
     stopConversationProcessing(processing, 'skipped', '连接中断，可重试');
     updateConversationProcessing(processing, {
@@ -2819,6 +2921,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
       else if (eventData.type === 'skill_activation') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'intake') appendConversationEvent(assistantMessage, processing, eventData);
       else if (['plan', 'research_plan', 'approval', 'approvals'].includes(eventData.type)) appendConversationEvent(assistantMessage, processing, eventData);
+      else if (eventData.type === 'report') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'reasoning_started') {
         const effort = assistantMessage?.dataset.reasoningEffort || payload.reasoning_effort;
         if (effort !== 'off') {
@@ -2857,6 +2960,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
         finalizeConversationReasoning(assistantMessage?.querySelector('.conversation-reasoning'), doneStatus, eventData.reasoning_duration_ms);
         finalizeConversationIntake(assistantMessage?.querySelector('.conversation-intake'), doneStatus);
         markConversationEventTerminal(assistantMessage, doneStatus);
+        if (eventData.report || eventData.report_metadata || eventData.artifacts) renderConversationReport(assistantMessage, eventData);
         stopConversationProcessing(processing, doneStatus === 'completed' ? 'completed' : doneStatus, doneStatus === 'completed' ? '处理完成' : '处理过程已结束'); collapseConversationProcessing(processing);
         if (doneStatus !== 'completed' && sourcesRenderer) sourcesRenderer.clear(); if (assistantMessage && doneStatus !== 'completed') assistantMessage.classList.add(`is-${doneStatus}`); if (assistantMessage && userMessageId && doneStatus === 'completed') startMemoryAnalysisPolling(userMessageId, assistantMessage, conversationState.projectId); const state = document.querySelector('.chat-state'); if (state) state.textContent = doneStatus === 'completed' ? '已保存' : doneStatus;
       }

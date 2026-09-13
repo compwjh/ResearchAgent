@@ -254,6 +254,53 @@ def test_notification_sse_polls_cursor_and_replays_new_items(monkeypatch):
     assert "id: 1" in next(stream)
 
 
+def test_historical_conversation_message_includes_safe_report_projection(tmp_path, monkeypatch):
+    memory = MemoryRepository(tmp_path / "memory.sqlite3")
+    conversation, user, activity = memory.create_conversation_messages("owner-a", "goal", None, "m", "normal")
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    from backend.app.research.domain.models import AgentRun, ResearchSession, ResearchTask, ResearchWorkItem
+    task = ResearchTask(_id(), "owner-a", conversation.conversation_id, "goal", "zh", "balanced", False, 1, 60, "draft", 1, "now", "now")
+    store.create_task(task)
+    session = ResearchSession(_id(), "owner-a", conversation.conversation_id, user.message_id, _id(), "running", research_task_id=task.research_task_id, activity_message_id=activity.message_id)
+    store.create_session(session, memory_repository=memory)
+    item = ResearchWorkItem(_id(), task.research_task_id, 1, "synthesize_preliminary_report", "synthesizer", "[]", "{}", "queued", 0, "now", "now")
+    store.create_work_items(task.research_task_id, [item])
+    run = AgentRun(_id(), session.research_session_id, 1, "synthesizer", "research-report-synthesis", "1", "h", "m", "off", "[]", research_task_id=task.research_task_id, work_item_id=item.work_item_id, owner_id="owner-a")
+    store.create_agent_run(run, owner_id="owner-a")
+    result = ReportSynthesizer().synthesize(report_version=1, candidates=[{"candidate_id": "c1", "verified": True}], citation_whitelist=["catalog:c1"])
+    ReportDeliveryService(store=store, memory_repository=memory).deliver(
+        session=session, owner_id="owner-a", generated_by_agent_run_id=run.agent_run_id, result=result,
+    )
+    from backend.app.api import routes_conversations
+    monkeypatch.setattr(routes_conversations, "get_provider", lambda name: store if name == "research_store" else memory)
+    final = memory.get_activity_message(conversation.conversation_id, "owner-a", f"research-report:{task.research_task_id}:1")
+    payload = routes_conversations._message_payload(final, memory, "owner-a")
+    assert payload["report"]["report_version"] == 1
+    assert payload["report"]["download_url"].endswith("/download")
+    assert "storage_ref" not in json.dumps(payload) and "prompt" not in json.dumps(payload).casefold()
+
+
+def test_html_artifact_supports_inline_read_but_other_types_stay_attachment(monkeypatch):
+    from backend.app.api import routes_research
+    artifact = SimpleNamespace(
+        artifact_id="a1", research_task_id="t1", report_version=1, artifact_type="html",
+        content_hash="h", generated_by_agent_run_id="r1", content="<!doctype html><p>safe</p>", storage_ref=None,
+    )
+    session = SimpleNamespace(research_task_id="t1")
+    class Store:
+        def get_session(self, _sid, _owner): return session
+        def get_artifact(self, _aid, _owner): return artifact
+    monkeypatch.setattr(routes_research, "_store", lambda: Store())
+    inline = routes_research.download_research_artifact("s1", "a1", mode="inline")
+    assert inline.headers["content-disposition"].startswith("inline;")
+    assert inline.headers["content-type"].startswith("text/html")
+    attachment = routes_research.download_research_artifact("s1", "a1", mode="attachment")
+    assert attachment.headers["content-disposition"].startswith("attachment;")
+    artifact.artifact_type = "markdown"
+    rejected = routes_research.download_research_artifact("s1", "a1", mode="inline")
+    assert rejected.status_code == 400
+
+
 def test_orchestrator_completion_delivers_artifacts_message_and_notification(tmp_path):
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     conversation, user, assistant = memory.create_conversation_messages("owner-a", "联邦学习和隐私", None, "m", "normal")

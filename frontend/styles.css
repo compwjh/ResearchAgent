@@ -329,6 +329,38 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-source-detail-value a { color: var(--accent); text-decoration: none; }
 .conversation-source-detail-value a:hover { text-decoration: underline; }
 
+/* Spec034 Task08: owner-scoped research notifications and report actions. */
+.sidebar .research-notifications { display: grid; gap: 7px; margin-top: 16px; min-width: 0; }
+.sidebar .research-notifications-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.sidebar .research-notifications-head h2 { flex: 1; min-width: 0; margin: 0; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.sidebar .research-notifications-head .icon-button { min-width: 28px; min-height: 28px; padding: 3px; }
+.sidebar .research-notifications-unread { display: inline-grid; min-width: 18px; min-height: 18px; place-items: center; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font: 10px 'DM Mono', monospace; }
+.sidebar .research-notifications-status, .sidebar .research-notifications-empty { margin: 0; color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.sidebar .research-notifications-list { display: grid; gap: 5px; max-height: 220px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.sidebar .research-notification-item { min-width: 0; border: 1px solid transparent; border-radius: 7px; background: #f7f5ff; }
+.sidebar .research-notification-item[data-status="unread"] { border-color: var(--accent-soft); background: #f1efff; }
+.sidebar .research-notification-item[data-notification-kind="failed"], .sidebar .research-notification-item[data-notification-kind="interrupted"] { background: #fff0f0; }
+.sidebar .research-notification-item[data-notification-kind="waiting_approval"], .sidebar .research-notification-item[data-notification-kind="retry"] { background: #fff7ed; }
+.sidebar .research-notification-button { display: grid; width: 100%; gap: 2px; padding: 7px 8px; border-radius: 7px; background: transparent; color: var(--ink); text-align: left; }
+.sidebar .research-notification-button:hover, .sidebar .research-notification-button:focus-visible { background: #fff; }
+.sidebar .research-notification-title { font-size: 10px; }
+.sidebar .research-notification-summary, .sidebar .research-notification-meta { min-width: 0; overflow-wrap: anywhere; }
+.sidebar .research-notification-summary { color: var(--ink); font-size: 10px; line-height: 1.35; }
+.sidebar .research-notification-meta { color: var(--muted); font: 9px/1.35 'DM Mono', monospace; }
+.conversation-report { display: grid; gap: 7px; margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
+.conversation-report[data-status="failed"], .conversation-report[data-status="interrupted"] { color: #a33232; }
+.conversation-report[data-status="partial"] { color: #94621c; }
+.conversation-report-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; }
+.conversation-report-title { color: var(--ink); font-weight: 800; }
+.conversation-report-status { color: var(--muted); }
+.conversation-report-summary { margin: 0; color: var(--ink); overflow-wrap: anywhere; white-space: pre-wrap; }
+.conversation-report-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-report-action { display: inline-flex; align-items: center; min-height: 28px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--accent); font: 10px 'DM Mono', monospace; text-decoration: none; }
+.conversation-report-action:hover, .conversation-report-action:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.conversation-report-citations { margin: 0; padding-left: 18px; color: var(--ink); }
+.conversation-report-citations summary { cursor: pointer; color: var(--accent); }
+.conversation-report-citations li { margin-top: 3px; overflow-wrap: anywhere; }
+
 /* ===== Task03 记忆治理（桌面） ===== */
 #memory-view .memory-workspace { max-width: min(1080px, 100%); margin: 0 auto; padding: 38px 30px; }
 #memory-view .memory-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 18px; }
@@ -1936,6 +1968,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   .conversation-processing-node[data-status="running"] { animation: none; }
   .conversation-processing-node-toggle::before { transition: none; }
   #papers-view .paper-import-batch.is-progressing { animation: none; }
+  .sidebar .research-notification-button, .conversation-report-action { scroll-behavior: auto; }
 }
 
 /* ===== Task06 手机端项目/会话抽屉与输入安全区 ===== */
@@ -3417,6 +3450,13 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #research-view .research-report-markdown pre { margin: .55em 0; }
 #research-view .research-report-markdown pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 #research-view .research-report-markdown a { color: var(--accent); }
+#research-view .research-report-artifacts { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0; }
+#research-view .research-report-artifact { display: inline-flex; align-items: center; min-height: 28px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--accent); font: 10px 'DM Mono', monospace; text-decoration: none; }
+#research-view .research-report-artifact:hover, #research-view .research-report-artifact:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+#research-view .research-report-citations { margin-top: 9px; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
+#research-view .research-report-citations summary { cursor: pointer; color: var(--accent); }
+#research-view .research-report-citations ol { margin: 7px 0 0; padding-left: 20px; color: var(--ink); }
+#research-view .research-report-citations li { margin-top: 3px; overflow-wrap: anywhere; }
 
 #research-view #research-cancel-button {
   border: 1px solid #efb3b3;

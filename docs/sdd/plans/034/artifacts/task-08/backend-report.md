@@ -10,8 +10,9 @@
 - 新增 Artifact 列表/下载、owner 通知列表/read/SSE 路由；下载只接受库内 `content`，拒绝 `storage_ref` 路径解引用，并返回固定 Content-Type、Content-Disposition、CSP、nosniff 与 no-store。
 - P1 修复：验证标记必须是字面量 `True`；title/heading 与真实模型 synthesis 输入共用 URL/路径/Prompt/凭据边界；AgentWorkItem 消费并校验真实 Synthesizer Run 的 schema/hash/引用白名单，不再重拼替代报告；无 kept/evidence 只收敛为 partial/诊断；Artifact 竞态回读再次比较 hash；通知失败同时留下 failed+partial，重试使用独立幂等键，waiting_approval/interrupted（含 startup recovery）接线；SSE 按 cursor 有界轮询并发送 heartbeat，支持连接期间新通知和断线补发。
 - 最新 P1 修复：AgentWorkItem 按 `depends_on_json` 拓扑调度并 fail-closed；Evaluator 只能接受同一上游 Search Worker 的合法 source、candidate、evidence/citation ref 和 `source_refs`，伪造或跨源数据（如 `source=attacker`、`search:attacker`）统一返回 `EVALUATOR_EVIDENCE_OUT_OF_SCOPE`；Synthesizer 只读取自身祖先链上、已完成且语义校验通过的 Evaluator WorkItem，Critic/其他角色输出不会注入；空证据不调用 Synthesizer；Runner 暴露最终 continuation AgentRun ID，Artifact 归因使用最终成功 Run；`source_refs` 必须精确等于 evaluator citation manifest。
+- 跨端历史读取补强：`/api/conversations/{conversation_id}/messages` 对 owner/session/task 绑定的最终 activity assistant message 投影安全 `report`/`research_report` 元数据（版本、状态、safe summary、Artifact 元数据、下载 URL、citation manifest Artifact），不暴露 `storage_ref`/Prompt/CoT；HTML Artifact 支持 `mode=inline` 阅读，markdown/citation manifest 仍为 attachment，安全响应头和 owner/artifact 校验不变。保持通知五类，不新增 retry kind。
 - API 下载进一步只开放 markdown/html/citation_manifest 三种报告 Artifact；存储层增加 `report_version >= 1` 校验（保留旧调用兼容的可选 owner 写入参数）。
-- 新增 12 项行为断言，覆盖严格布尔、安全输入、真实 synthesis 消费/引用边界、Evaluator 上游 candidate/ref/source 隔离、Artifact 竞态 hash、SSE 游标轮询；原有合同覆盖不可变/owner/幂等/CAS/XSS。
+- 新增 14 项行为断言，覆盖严格布尔、安全输入、真实 synthesis 消费/引用边界、Evaluator 上游 candidate/ref/source 隔离、Artifact 竞态 hash、SSE 游标轮询、历史消息报告投影和 HTML inline/attachment；原有合同覆盖不可变/owner/幂等/CAS/XSS。
 
 ## 改动文件
 
@@ -23,6 +24,7 @@
 - `backend/app/research/application/entry.py`
 - `backend/app/research/infrastructure/research_store.py`
 - `backend/app/api/routes_research.py`
+- `backend/app/api/routes_conversations.py`
 - `backend/app/api/routes.py`
 - `tests/test_spec034_task08_backend.py`
 
@@ -30,10 +32,10 @@
 
 | 命令 | 退出码 | 结果 |
 |---|---:|---|
-| `.venv/bin/python -m pytest -q tests/test_spec034_task08_backend.py` | 0 | 18 passed |
+| `.venv/bin/python -m pytest -q tests/test_spec034_task08_backend.py` | 0 | 21 passed |
 | `.venv/bin/python -m pytest -q tests/test_spec034_task08_backend.py tests/test_spec034_task05_contract.py tests/test_spec027_runtime_contract.py tests/test_spec034_task06_contract.py tests/test_spec034_task07_backend.py` | 0 | 96 passed |
-| `.venv/bin/python -m pytest -q tests/test_spec034_task08_backend.py tests/test_spec034_task02_contract.py tests/test_spec034_task05_contract.py tests/test_spec034_task07_backend.py tests/test_conversations_api.py tests/test_spec027_backend_research_slice.py tests/test_spec034_task03_contract.py tests/test_spec034_task04_contract.py tests/test_spec034_task06_contract.py` | 0 | 181 passed，5 subtests passed |
-| `.venv/bin/python -m py_compile backend/app/research/application/report_synthesis.py backend/app/research/application/agent_runtime.py backend/app/research/application/orchestrator.py backend/app/research/application/entry.py backend/app/research/infrastructure/research_store.py backend/app/api/routes_research.py backend/app/api/routes.py tests/test_spec034_task08_backend.py` | 0 | 通过 |
+| `.venv/bin/python -m pytest -q tests/test_spec034_task08_backend.py tests/test_spec034_task02_contract.py tests/test_spec034_task05_contract.py tests/test_spec034_task07_backend.py tests/test_conversations_api.py tests/test_spec027_backend_research_slice.py tests/test_spec034_task03_contract.py tests/test_spec034_task04_contract.py tests/test_spec034_task06_contract.py` | 0 | 183 passed，5 subtests passed |
+| `.venv/bin/python -m py_compile backend/app/api/routes_conversations.py backend/app/research/application/report_synthesis.py backend/app/research/application/agent_runtime.py backend/app/research/application/orchestrator.py backend/app/research/application/entry.py backend/app/research/infrastructure/research_store.py backend/app/api/routes_research.py backend/app/api/routes.py tests/test_spec034_task08_backend.py` | 0 | 通过 |
 | `.venv/bin/ruff check [Task08 改动文件] --select E9,F63,F7,F82,I001 --output-format concise` | 0 | All checks passed |
 | `git diff --check` | 0 | 通过 |
 

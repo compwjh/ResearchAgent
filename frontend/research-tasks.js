@@ -2,10 +2,19 @@
 (function exposeResearchTasks(root, factory) {
   const api = factory(root);
   if (typeof module === 'object' && module.exports) module.exports = api;
+  else if (root) root.ResearchTasks = api;
   if (root && root.document) api.boot(root.document);
 }(typeof globalThis !== 'undefined' ? globalThis : this, function researchTasksFactory(root) {
   const TERMINAL_STATUSES = new Set(['partial', 'completed', 'failed', 'cancelled', 'interrupted']);
   const EVENT_TYPES = ['task', 'plan', 'worker', 'model', 'coverage', 'report', 'terminal', 'processing_step'];
+  const NOTIFICATION_EVENT_TYPES = ['completed', 'partial', 'failed', 'waiting_approval', 'interrupted'];
+  const ARTIFACT_TYPES = new Set(['markdown', 'html', 'citation_manifest']);
+  const ARTIFACT_ROUTE = /^\/api\/research-sessions\/[A-Za-z0-9._~-]+\/artifacts\/[A-Za-z0-9._~-]+\/download$/;
+  const NOTIFICATION_KINDS = new Set(NOTIFICATION_EVENT_TYPES);
+  const NOTIFICATION_TEXT = {
+    completed: '研究已完成', partial: '研究部分完成', failed: '研究失败',
+    waiting_approval: '等待审批', interrupted: '研究已中断',
+  };
   const STATUS_TEXT = {
     draft: '草稿', planning: '规划中', running: '执行中', waiting_approval: '等待计划审核',
     partial: '部分完成', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断',
@@ -80,7 +89,94 @@
     statusNotice: '',
     processingTree: null,
     processingTreeTaskId: null,
+    notifications: new Map(),
+    notificationLastSeq: 0,
+    notificationEventSource: null,
+    notificationReconnectTimer: null,
+    notificationLoading: false,
+    notificationSyncError: '',
   };
+
+  function safeArtifactUrl(value) {
+    const url = typeof value === 'string' ? value.trim() : '';
+    return ARTIFACT_ROUTE.test(url) ? url : '';
+  }
+
+  function artifactActionUrl(artifactType, value) {
+    const safeUrl = safeArtifactUrl(value);
+    if (!safeUrl) return '';
+    if (artifactType === 'html') return `${safeUrl}?mode=inline`;
+    if (artifactType === 'markdown' || artifactType === 'citation_manifest') return safeUrl;
+    return '';
+  }
+
+  function normalizeArtifact(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const artifactId = typeof value.artifact_id === 'string' && /^[A-Za-z0-9._~-]{1,240}$/.test(value.artifact_id)
+      ? value.artifact_id : '';
+    const artifactType = typeof value.artifact_type === 'string' && ARTIFACT_TYPES.has(value.artifact_type)
+      ? value.artifact_type : '';
+    if (!artifactId || !artifactType) return null;
+    const downloadUrl = value.download_url == null ? '' : safeArtifactUrl(value.download_url);
+    if (value.download_url != null && !downloadUrl) return null;
+    return {
+      artifact_id: artifactId,
+      artifact_type: artifactType,
+      report_version: safePositiveInteger(value.report_version),
+      content_hash: typeof value.content_hash === 'string' ? value.content_hash.slice(0, 128) : '',
+      download_url: downloadUrl,
+      created_at: typeof value.created_at === 'string' ? value.created_at.slice(0, 80) : '',
+    };
+  }
+
+  function normalizeNotification(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const notificationId = typeof value.notification_id === 'string' && /^[A-Za-z0-9._~-]{1,240}$/.test(value.notification_id)
+      ? value.notification_id : '';
+    const eventSeq = Number(value.event_seq);
+    const kind = typeof value.notification_kind === 'string' ? value.notification_kind : '';
+    if (kind === 'heartbeat') return null; // SSE heartbeat comments are keep-alive only, never a list item.
+    if (!notificationId || !Number.isInteger(eventSeq) || eventSeq <= 0 || !NOTIFICATION_KINDS.has(kind)) return null;
+    if (value.status !== 'read' && value.status !== 'unread') return null;
+    const status = value.status;
+    const payload = value.payload && typeof value.payload === 'object' && !Array.isArray(value.payload) ? value.payload : {};
+    return {
+      notification_id: notificationId,
+      research_session_id: typeof value.research_session_id === 'string' ? value.research_session_id.slice(0, 240) : '',
+      research_task_id: typeof value.research_task_id === 'string' ? value.research_task_id.slice(0, 240) : '',
+      notification_kind: kind,
+      status,
+      subject_version: safePositiveInteger(value.subject_version),
+      event_seq: eventSeq,
+      payload,
+      created_at: typeof value.created_at === 'string' ? value.created_at.slice(0, 80) : '',
+      read_at: typeof value.read_at === 'string' ? value.read_at.slice(0, 80) : '',
+    };
+  }
+
+  function mergeNotifications(values) {
+    const byId = new Map();
+    const bySeq = new Map();
+    (Array.isArray(values) ? values : []).forEach((value) => {
+      const item = normalizeNotification(value);
+      if (!item || bySeq.has(item.event_seq)) return;
+      if (byId.has(item.notification_id)) return;
+      byId.set(item.notification_id, item); bySeq.set(item.event_seq, item.notification_id);
+    });
+    return [...byId.values()].sort((a, b) => a.event_seq - b.event_seq);
+  }
+
+  function notificationKindLabel(kind) { return NOTIFICATION_TEXT[kind] || ''; }
+
+  function notificationValidationError(value, kindHint = '') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return '通知数据格式无效';
+    const kind = value.notification_kind || kindHint;
+    if (!NOTIFICATION_KINDS.has(kind)) return '通知类型未知，已丢弃';
+    if (value.status !== 'read' && value.status !== 'unread') return '通知已读状态无效，已丢弃';
+    if (!Number.isInteger(Number(value.event_seq)) || Number(value.event_seq) <= 0) return '通知游标无效，已丢弃';
+    if (typeof value.notification_id !== 'string' || !value.notification_id) return '通知 ID 无效，已丢弃';
+    return '';
+  }
 
   function parseConversationId(location = root.location) {
     const pathname = String(location?.pathname || '');
@@ -159,6 +255,184 @@
     try { data = await response.json(); } catch (_) { data = null; }
     if (!response.ok) throw errorFromResponse(response, data);
     return data;
+  }
+
+  function notificationPayloadText(item) {
+    const payload = item?.payload && typeof item.payload === 'object' ? item.payload : {};
+    const summary = [payload.title, payload.summary, payload.message].find((value) => typeof value === 'string' && value.trim());
+    const version = safePositiveInteger(payload.report_version || item?.subject_version);
+    const retryAttempt = safePositiveInteger(payload.retry_attempt);
+    const retryText = item?.notification_kind === 'failed' && (payload.retryable === true || retryAttempt)
+      ? `研究失败，可重试${retryAttempt ? `（第 ${retryAttempt} 次）` : ''}` : '';
+    return `${retryText || summary || notificationKindLabel(item?.notification_kind)}${version ? ` · 报告 v${version}` : ''}`;
+  }
+
+  function setNotificationSyncError(reason) {
+    state.notificationSyncError = reason || '通知同步失败';
+    setText('research-notifications-status', `通知同步失败：${state.notificationSyncError}`);
+  }
+
+  function renderNotifications() {
+    const list = byId('research-notifications-list');
+    const empty = byId('research-notifications-empty');
+    const status = byId('research-notifications-status');
+    const unread = [...state.notifications.values()].filter((item) => item.status === 'unread').length;
+    const count = byId('research-notifications-unread');
+    if (count) { count.textContent = String(unread); count.hidden = unread === 0; }
+    if (!list) return;
+    clearNode(list);
+    const items = [...state.notifications.values()].sort((a, b) => b.event_seq - a.event_seq);
+    items.forEach((notification) => {
+      const item = state.document.createElement('li');
+      item.className = 'research-notification-item';
+      item.dataset.status = notification.status;
+      item.dataset.notificationKind = notification.notification_kind;
+      const button = state.document.createElement('button');
+      button.type = 'button';
+      button.className = 'research-notification-button';
+      button.dataset.notificationId = notification.notification_id;
+      button.setAttribute('aria-label', `${notificationKindLabel(notification.notification_kind)}：${notificationPayloadText(notification)}`);
+      const title = state.document.createElement('strong');
+      title.className = 'research-notification-title';
+      title.textContent = notificationKindLabel(notification.notification_kind);
+      const summary = state.document.createElement('span');
+      summary.className = 'research-notification-summary';
+      summary.textContent = notificationPayloadText(notification);
+      const meta = state.document.createElement('span');
+      meta.className = 'research-notification-meta';
+      meta.textContent = `#${notification.event_seq}${notification.created_at ? ` · ${notification.created_at}` : ''}${notification.status === 'read' ? ' · 已读' : ' · 未读'}`;
+      button.append(title, summary, meta);
+      button.addEventListener('click', () => openNotification(notification));
+      item.appendChild(button); list.appendChild(item);
+    });
+    if (empty) empty.hidden = items.length > 0;
+    if (status && !state.notificationLoading && !state.notificationSyncError) status.textContent = items.length ? `共 ${items.length} 条通知` : '暂无研究通知。';
+  }
+
+  function closeNotificationStream({ keepTimer = false } = {}) {
+    if (state.notificationEventSource) { state.notificationEventSource.close(); state.notificationEventSource = null; }
+    if (!keepTimer && state.notificationReconnectTimer) {
+      root.clearTimeout(state.notificationReconnectTimer); state.notificationReconnectTimer = null;
+    }
+  }
+
+  function applyNotification(value, kindHint = '') {
+    const raw = { ...(value || {}), notification_kind: value?.notification_kind || kindHint };
+    const validationError = notificationValidationError(raw, kindHint);
+    if (validationError) { setNotificationSyncError(validationError); return false; }
+    const item = normalizeNotification(raw);
+    if (!item || item.event_seq <= state.notificationLastSeq) return false;
+    state.notificationLastSeq = item.event_seq;
+    const existing = state.notifications.get(item.notification_id);
+    if (!existing || item.event_seq >= existing.event_seq) state.notifications.set(item.notification_id, item);
+    renderNotifications();
+    return true;
+  }
+
+  async function markNotificationRead(notification) {
+    if (!notification || notification.status === 'read') return notification;
+    try {
+      const updated = await requestJson(`/api/research-notifications/${encodeURIComponent(notification.notification_id)}/read`, { method: 'POST' });
+      const validationError = notificationValidationError({ ...notification, ...updated, payload: updated?.payload || notification.payload });
+      if (validationError) { setNotificationSyncError(validationError); return notification; }
+      const normalized = normalizeNotification({ ...notification, ...updated, payload: updated?.payload || notification.payload });
+      if (normalized) state.notifications.set(normalized.notification_id, normalized);
+      renderNotifications();
+      return normalized || notification;
+    } catch (_) {
+      // A concurrent read is harmless; leave the durable unread state visible on an actual failure.
+      return notification;
+    }
+  }
+
+  async function openNotification(notification) {
+    const item = await markNotificationRead(notification);
+    const payload = item?.payload && typeof item.payload === 'object' ? item.payload : {};
+    let conversationId = typeof payload.conversation_id === 'string' ? payload.conversation_id : '';
+    const taskId = item?.research_task_id || (typeof payload.research_task_id === 'string' ? payload.research_task_id : '');
+    const sessionId = item?.research_session_id || (typeof payload.research_session_id === 'string' ? payload.research_session_id : '');
+    if (!conversationId && sessionId) {
+      try {
+        const session = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
+        conversationId = typeof session?.conversation_id === 'string' ? session.conversation_id : '';
+      } catch (_) { /* keep the notification visible if its target was removed */ }
+    }
+    if (conversationId && taskId) {
+      openForConversation(conversationId);
+      root.setTimeout(() => { if (state.selectedTaskId !== taskId) selectTask(taskId); }, 0);
+      return;
+    }
+    if (conversationId && typeof root.openConversation === 'function') {
+      root.openConversation(conversationId);
+      const messageId = typeof payload.message_id === 'string' ? payload.message_id : '';
+      if (messageId) root.setTimeout(() => focusConversationMessage(messageId), 500);
+      return;
+    }
+    if (taskId) {
+      showView();
+      if (state.tasks.some((task) => task.research_task_id === taskId)) selectTask(taskId);
+      else refreshWorkspace().then(() => selectTask(taskId));
+    }
+  }
+
+  function focusConversationMessage(messageId) {
+    if (!messageId || !state.document) return;
+    const message = state.document.querySelector?.(`.message[data-message-id="${String(messageId).replace(/[^A-Za-z0-9._~-]/g, '')}"]`);
+    if (!message) return;
+    message.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    message.setAttribute('tabindex', '-1'); message.focus?.({ preventScroll: true });
+  }
+
+  async function loadNotifications({ reset = false } = {}) {
+    if (state.notificationLoading) return;
+    state.notificationLoading = true;
+    if (reset) closeNotificationStream();
+    if (reset) state.notificationSyncError = '';
+    setText('research-notifications-status', '正在加载研究通知…');
+    try {
+      const after = reset ? 0 : state.notificationLastSeq;
+      const data = await requestJson(`/api/research-notifications?after_seq=${after}&limit=100`);
+      const values = Array.isArray(data?.notifications) ? data.notifications : [];
+      if (reset) { state.notifications = new Map(); state.notificationLastSeq = 0; }
+      values.forEach((value) => {
+        const validationError = notificationValidationError(value);
+        if (validationError) { setNotificationSyncError(validationError); return; }
+        const item = normalizeNotification(value);
+        if (!item) return;
+        const existing = state.notifications.get(item.notification_id);
+        if (!existing || item.event_seq >= existing.event_seq) state.notifications.set(item.notification_id, item);
+        state.notificationLastSeq = Math.max(state.notificationLastSeq, item.event_seq);
+      });
+      renderNotifications();
+    } catch (error) {
+      setText('research-notifications-status', userError(error, '研究通知加载失败。'));
+    } finally { state.notificationLoading = false; renderNotifications(); if (!state.notificationEventSource) connectNotificationStream(); }
+  }
+
+  function scheduleNotificationReconnect() {
+    if (state.notificationReconnectTimer) return;
+    state.notificationReconnectTimer = root.setTimeout(() => {
+      state.notificationReconnectTimer = null; connectNotificationStream();
+    }, 1500);
+  }
+
+  function connectNotificationStream() {
+    if (typeof root.EventSource !== 'function') return;
+    closeNotificationStream({ keepTimer: true });
+    // EventSource automatically sends Last-Event-ID; after_seq is also explicit for
+    // browsers/proxies that do not preserve the header across a fresh connection.
+    const url = `/api/research-notifications/events?after_seq=${state.notificationLastSeq}`;
+    const source = new root.EventSource(url);
+    state.notificationEventSource = source;
+    NOTIFICATION_EVENT_TYPES.forEach((kind) => source.addEventListener(kind, (message) => {
+      let value; try { value = JSON.parse(message.data || '{}'); } catch (_) { return; }
+      applyNotification(value, kind);
+    }));
+    source.onerror = () => {
+      source.close(); if (state.notificationEventSource === source) state.notificationEventSource = null;
+      setText('research-notifications-status', `通知连接中断，将从 event_seq ${state.notificationLastSeq} 之后重连。`);
+      scheduleNotificationReconnect();
+    };
   }
 
   function userError(error, fallback = '研究任务请求失败。') {
@@ -699,21 +973,68 @@
     return lines.join(' · ');
   }
 
+  function reportCitationValue(value) {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value !== 'object') return String(value).slice(0, 2400);
+    return Object.entries(value).slice(0, 12).map(([key, item]) => {
+      const scalar = typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean' ? String(item) : '';
+      return scalar ? `${key}: ${scalar.slice(0, 600)}` : '';
+    }).filter(Boolean).join(' · ');
+  }
+
+  function renderReportArtifacts(artifacts) {
+    const host = byId('research-report-artifacts');
+    if (!host) return;
+    clearNode(host); host.hidden = true;
+    const labels = { markdown: '下载 Markdown', html: '打开 HTML', citation_manifest: '下载引用 manifest' };
+    ['markdown', 'html', 'citation_manifest'].forEach((kind) => {
+      const artifact = (Array.isArray(artifacts) ? artifacts : []).map(normalizeArtifact).find((item) => item?.artifact_type === kind);
+      const url = artifact?.download_url || '';
+      const actionUrl = artifactActionUrl(kind, url);
+      if (!actionUrl) return;
+      const link = state.document.createElement('a'); link.className = 'research-report-artifact'; link.href = actionUrl; link.textContent = labels[kind];
+      link.setAttribute('aria-label', labels[kind]); link.setAttribute('rel', 'noopener noreferrer');
+      if (kind === 'html') link.target = '_blank'; else link.download = '';
+      host.appendChild(link);
+    });
+    host.hidden = host.childNodes.length === 0;
+  }
+
+  function renderReportCitations(citations) {
+    const details = byId('research-report-citations');
+    const list = byId('research-report-citation-list');
+    if (!details || !list) return;
+    clearNode(list); details.hidden = true;
+    const values = Array.isArray(citations) ? citations.slice(0, 256) : citations && typeof citations === 'object' ? [citations] : [];
+    values.forEach((citation) => { const item = state.document.createElement('li'); item.textContent = reportCitationValue(citation); if (item.textContent) list.appendChild(item); });
+    details.hidden = list.childNodes.length === 0;
+  }
+
   async function loadReport(taskId) {
     const stateNode = byId('research-report-state');
     const reportNode = byId('research-report-markdown');
     if (stateNode) stateNode.textContent = '正在读取报告…';
     if (reportNode) { reportNode.hidden = true; reportNode.replaceChildren(); }
+    renderReportArtifacts([]); renderReportCitations([]);
     state.reportSelections = [];
     state.report = null;
     renderSelection();
     try {
       const report = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/report`);
-      state.report = report;
+      let artifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
+      const sessionId = state.selectedTask?.research_session_id || state.selectedTask?.research_session?.research_session_id;
+      if (sessionId) {
+        try {
+          const artifactData = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}/artifacts?report_version=${encodeURIComponent(report.plan_version || report.report_version || 1)}`);
+          artifacts = Array.isArray(artifactData?.artifacts) ? artifactData.artifacts : artifacts;
+        } catch (_) { /* legacy report remains readable when artifact metadata is unavailable */ }
+      }
+      state.report = { ...report, artifacts, report_version: report.report_version || report.plan_version };
       state.reportSelections = Array.isArray(report.selections) ? report.selections : [];
       renderSelection();
       renderSummary();
       renderSafeMarkdown(reportNode, report.markdown);
+      renderReportArtifacts(artifacts); renderReportCitations(report.citation_manifest);
       if (stateNode) stateNode.textContent = `报告 v${text(report.plan_version)} · ${statusLabel(report.status)}`;
       const limitations = limitationText(report.limitations);
       setText('research-report-limitations', limitations ? `限制：${limitations}` : '');
@@ -725,6 +1046,7 @@
       renderSummary();
       if (stateNode) stateNode.textContent = error.code === 'REPORT_NOT_READY' ? ERROR_TEXT.REPORT_NOT_READY : userError(error, '报告暂时不可用。');
       setText('research-report-limitations', '');
+      renderReportArtifacts([]); renderReportCitations([]);
       return null;
     }
   }
@@ -877,6 +1199,7 @@
       const report = byId('research-report-markdown'); if (report) { report.hidden = true; report.replaceChildren(); }
       setText('research-report-state', '任务完成后显示报告。');
       setText('research-report-limitations', '');
+      renderReportArtifacts([]); renderReportCitations([]);
     }
   }
 
@@ -1011,15 +1334,24 @@
     decorateConversationCards();
   }
 
+  function bindNotifications() {
+    byId('research-notifications-refresh')?.addEventListener('click', () => loadNotifications({ reset: true }));
+    loadNotifications({ reset: true });
+  }
+
   function boot(documentRef) {
     if (state.booted) return;
     state.document = documentRef; state.booted = true; state.conversationId = parseConversationId();
     if (!byId('research-view')) return;
-    bindModeGuard(); bindNavigation(); bindConversationObserver();
+    bindModeGuard(); bindNavigation(); bindConversationObserver(); bindNotifications();
     conversationFromUrl();
     loadTasks();
     if (root.location.hash === '#research-view') root.setTimeout(() => { showView(); refreshWorkspace(); }, 0);
   }
 
-  return { boot, parseConversationId, statusLabel, userError, renderSafeMarkdown };
+  return {
+    boot, parseConversationId, statusLabel, userError, renderSafeMarkdown,
+    safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
+    notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
+  };
 }));

@@ -235,3 +235,70 @@ Evaluator 的 `catalog_paper_ids` 虽来自上游 Search Worker：`backend/app/r
 ### 最终评审决策
 
 **GO（附 P2）。** 来源 allowlist、Evaluator 证据根、Synthesizer 祖先 Evaluator 隔离及上一轮 P1 均已通过验证；允许 Task08 后端进入收口。P2 项保留为后续边界硬化，不阻断本 Task。
+
+## 跨端后端终审（2026-09-13，历史消息与 Artifact 阅读修复后）
+
+### 结论：NO-GO（P1-CT-01）
+
+历史消息的 owner/session/task 绑定和安全报告元数据投影已落地，下载路由也正确支持显式 `mode=inline`；但该 inline 模式没有接入最终 activity message 或 Research Tab 返回的 HTML `download_url`。两个前端“打开 HTML”链接均直接使用无 query 的默认 URL，而后端默认仍是 `attachment`，因此真实用户从最终消息打开 HTML 仍会下载文件而非进入阅读页面。这是 Task08 验收“在最终助手消息打开报告”的跨端阻断项。
+
+### 已通过的后端边界
+
+- `_message_payload()` 仅为 assistant 消息调用报告投影；投影通过 owner-scoped task 列表、同 conversation、`session.final_message_id == item.message_id` 和 owner-scoped artifact 列表逐层绑定，避免跨 owner/session/task 泄露：`backend/app/api/routes_conversations.py:254-286`。
+- 投影只返回三种 Artifact 的 `artifact_id`、类型、版本、hash 和 owner-bound download URL，并以 citation-manifest Artifact 作为安全 `citation_manifest` 元数据指针；不返回 `storage_ref`、Prompt 或 CoT：`backend/app/api/routes_conversations.py:290-313`。对应行为测试确认历史最终 activity message 有报告投影且不含敏感字段：`tests/test_spec034_task08_backend.py:257-280`。
+- 下载前校验 owner/session/task 归属、Artifact 类型和 inline 合法性；只读取库内 `content`，不解引用 `storage_ref`。`html?mode=inline` 返回 `text/html` + `Content-Disposition: inline`，默认/显式 attachment 保持附件；Markdown/manifest 传 inline 返回 400；响应保持 `no-store`、`nosniff`、`default-src 'none'`：`backend/app/api/routes_research.py:413-444`，测试：`tests/test_spec034_task08_backend.py:283-301`。直接响应头探针结果为 inline 200、attachment 200、markdown-inline 400。
+
+### P1-CT-01：inline 能力未接线到实际 HTML 打开 URL
+
+- 会话历史投影和 Research API 的 `_artifact_payload()` 都生成无 query 的 `/download`：`backend/app/api/routes_conversations.py:296-312`、`backend/app/api/routes_research.py:348-361`。
+- 前端会话报告和 Research Tab 的 HTML 链接都设置 `_blank`，但原样使用该 URL，没有追加 `?mode=inline`；前端安全 URL 正则也只接受无 query 的路径：`frontend/app.js:1216-1224`、`frontend/research-tasks.js:977-989`、`:100-103`。
+- 因而直接调用后端 `mode=inline` 的单测通过，不能证明跨端入口通过；真实 UI 点击得到默认 `attachment`。应让 HTML 专用 URL 明确携带 `?mode=inline`（并扩展安全 URL 契约），Markdown/manifest 保持无 query 的 attachment URL，或将 HTML 打开入口改为显式构造该模式。
+
+### 通知与既有 P1 回归
+
+- `ResearchNotificationService.KINDS` 仍严格是 `completed/partial/failed/waiting_approval/interrupted` 五类；SSE 仍 owner cursor + `Last-Event-ID`、heartbeat、持续/有界轮询，read 仍 owner CAS，未新建消息流：`backend/app/research/application/report_synthesis.py:516-538`、`backend/app/api/routes_research.py:457-503`。
+- 既有来源 allowlist、Synthesizer 祖先 Evaluator 隔离、空证据阻断、最终 retry Run 归因、严格 bool/安全文本、Artifact 竞态 hash 均未见回归（上一节 GO 证据仍适用）。
+
+### 本轮验证
+
+| 检查 | 结果 |
+|---|---|
+| Task08 + Task02–07 + Spec027 + conversations 定向 pytest | 0；`183 passed，5 subtests passed` |
+| Task08 后端与测试 `py_compile` | 0；通过 |
+| 聚焦 Ruff（`E9,F63,F7,F82,I001`） | 0；All checks passed |
+| `git diff --check` | 0；通过 |
+| HTML inline/attachment 响应头与 Markdown inline 边界探针 | `inline 200 / attachment 200 / markdown-inline 400`；安全头齐全 |
+
+### 最终评审决策
+
+**NO-GO。** 后端显式 inline/attachment 响应边界正确，历史报告投影和五类通知契约正确；但 HTML inline URL 未从 API 投影贯通至两个真实打开入口，P1-CT-01 必须修复并补充 URL/跨端行为断言后，才能恢复 GO。
+
+## 跨端终审（2026-09-13，HTML inline action URL 已补齐）
+
+### 结论：GO（附既有 P2）
+
+P1-CT-01 已修复。前端现在先对后端返回的无 query、owner-bound Artifact 路径做严格白名单校验，再由统一 `artifactActionUrl()` 为 HTML 追加固定 `?mode=inline`；Markdown 与 citation manifest 保持无 query 的 attachment URL。后端显式模式校验和安全响应头与该 action URL 完整对齐。
+
+### 对齐证据
+
+- 会话历史报告面板对三类 Artifact 先做 `safeArtifactUrl` 校验，再调用 `artifactActionUrl`；HTML action 为 `.../download?mode=inline`，其余两类保持原始 attachment 路径：`frontend/app.js:1216-1224`。
+- Research Tab 使用同一 `artifactActionUrl`，没有另建 URL 拼接逻辑；函数只接受固定 `/api/research-sessions/{session}/artifacts/{artifact}/download` 路径，拒绝外部 URL、既有 query 和未知 Artifact 类型：`frontend/research-tasks.js:100-111`、`:985-996`。Fake contract 明确断言 HTML inline、Markdown/manifest attachment：`tests/test_frontend_spec034_task08.js:14-21`。
+- 后端仅允许 `attachment` 或 HTML 专属 `inline`；HTML inline 返回 `text/html` 与 `Content-Disposition: inline`，默认/显式 attachment 返回附件，Markdown/manifest 的 inline 请求返回 400；owner/session/task、Artifact 类型、库内 content 和安全响应头校验保持不变：`backend/app/api/routes_research.py:413-444`。
+- 历史最终 activity message 仍通过 owner task、conversation、`final_message_id` 和 owner artifact 查询绑定，并只投影三类 metadata/citation-manifest Artifact 指针，不暴露 `storage_ref`/Prompt/CoT：`backend/app/api/routes_conversations.py:268-313`。
+
+### 通知与既有 P1
+
+五类通知 `completed/partial/failed/waiting_approval/interrupted` 未变；SSE 仍使用 owner cursor、`Last-Event-ID`、heartbeat 与有界轮询，read 继续 owner CAS：`backend/app/research/application/report_synthesis.py:516-538`、`backend/app/api/routes_research.py:457-503`。来源 allowlist、祖先 Evaluator 隔离、空证据阻断、retry 最终 Run 归因、严格 bool、安全标题、Artifact hash 竞态检查均未见回归。
+
+### 本轮验证
+
+| 检查 | 结果 |
+|---|---|
+| Task08 后端定向 pytest | 0；`21 passed` |
+| Task08 前端 action URL contract | 0；PASS（HTML inline、Markdown/manifest attachment、外部/query URL 拒绝） |
+| 后端 routes `py_compile` | 0；通过 |
+| `git diff --check` | 0；通过 |
+
+### 最终评审决策
+
+**GO（附既有 P2）。** HTML inline 已从两处真实 UI action 贯通至后端模式和响应头；Markdown/manifest 下载边界、历史报告安全投影、五类通知及既有 P1 均通过本轮核对。owner 可选写入、版本独立断言、下载大小上限/Content-Length、通知 replay 已读语义等既有 P2 继续记录，不阻断 Task08。

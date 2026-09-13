@@ -411,7 +411,9 @@ def list_research_artifacts(research_session_id: str, report_version: Optional[i
 
 
 @session_router.get("/{research_session_id}/artifacts/{artifact_id}/download")
-def download_research_artifact(research_session_id: str, artifact_id: str):
+def download_research_artifact(
+    research_session_id: str, artifact_id: str, mode: str = Query("attachment")
+):
     """Download an owner-bound in-database artifact; arbitrary paths are rejected."""
     try:
         session = _store().get_session(research_session_id, OWNER_ID)
@@ -422,6 +424,8 @@ def download_research_artifact(research_session_id: str, artifact_id: str):
             return _api_error("ARTIFACT_NOT_FOUND", 404, "报告产物不存在")
         if artifact.artifact_type not in {"markdown", "html", "citation_manifest"}:
             return _api_error("ARTIFACT_NOT_FOUND", 404, "报告产物不存在")
+        if mode not in {"attachment", "inline"} or (mode == "inline" and artifact.artifact_type != "html"):
+            return _api_error("INVALID_ARTIFACT_MODE", 400, "仅 HTML 支持 inline 阅读")
         # Storage refs are intentionally not dereferenced by this API.
         if artifact.content is None:
             return _api_error("ARTIFACT_NOT_READY", 409, "该报告产物不可直接下载")
@@ -432,7 +436,8 @@ def download_research_artifact(research_session_id: str, artifact_id: str):
         }[artifact.artifact_type]
         suffix = {"markdown": "md", "html": "html", "citation_manifest": "json"}[artifact.artifact_type]
         response = Response(artifact.content, media_type=media_type)
-        response.headers["Content-Disposition"] = f'attachment; filename="research-report-v{artifact.report_version}.{suffix}"'
+        disposition = "inline" if mode == "inline" else "attachment"
+        response.headers["Content-Disposition"] = f'{disposition}; filename="research-report-v{artifact.report_version}.{suffix}"'
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = "default-src 'none'"

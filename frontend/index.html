@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=46">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=47">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -103,6 +103,16 @@
         <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
         <a class="nav-item" data-view="skill-tool" role="button" tabindex="0"><span class="nav-icon">❖</span> Skill 与 Tool</a>
       </nav>
+      <section class="research-notifications" aria-labelledby="research-notifications-title">
+        <header class="research-notifications-head">
+          <h2 id="research-notifications-title">研究通知</h2>
+          <span class="research-notifications-unread" id="research-notifications-unread" aria-label="未读通知数" hidden>0</span>
+          <button class="icon-button" id="research-notifications-refresh" type="button" aria-label="刷新研究通知" title="刷新研究通知">↻</button>
+        </header>
+        <p class="research-notifications-status" id="research-notifications-status" role="status" aria-live="polite">正在加载…</p>
+        <ol class="research-notifications-list" id="research-notifications-list" aria-label="研究通知列表"></ol>
+        <p class="research-notifications-empty" id="research-notifications-empty" hidden>暂无研究通知。</p>
+      </section>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="status-dot"></span><div><strong>本地服务</strong><small id="model-label">连接中</small></div></div>
         <div class="profile"><span class="profile-mark">W</span><div><strong>本地工作区</strong><small>Ollama</small></div><span class="more">···</span></div>
@@ -253,6 +263,11 @@
               <div class="research-column-body">
                 <p class="research-report-state" id="research-report-state">任务完成后显示报告。</p>
                 <p class="research-report-state" id="research-report-limitations"></p>
+                <div class="research-report-artifacts" id="research-report-artifacts" hidden></div>
+                <details class="research-report-citations" id="research-report-citations" hidden>
+                  <summary>引用 manifest</summary>
+                  <ol id="research-report-citation-list"></ol>
+                </details>
                 <article class="research-report-markdown md-body" id="research-report-markdown" aria-label="研究报告" hidden></article>
               </div>
             </details>
@@ -676,7 +691,7 @@
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
   <script src="/assets/research-tasks.js?v=1"></script>
-  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 -->
-  <script src="/assets/app.js?v=46"></script>
+  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 -->
+  <script src="/assets/app.js?v=47"></script>
 </body>
 </html>
