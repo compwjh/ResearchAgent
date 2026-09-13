@@ -1,7 +1,7 @@
 # Task09 — Research Tab 复用、旧入口与旧数据清理
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task04、Task07、Task08；当前状态：`待执行`
+> 依赖：Task04、Task07、Task08；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -47,5 +47,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：Tab 改造、兼容适配、旧入口移除、清理测试与双端报告。
-- 执行结果：待执行后填写真实删除数量。
-- 变更日志：待执行后填写。
+- 执行结果：实施中，待双端实现与精确清理验收后填写真实删除数量。
+- 变更日志：2026-09-13 启动 Research Tab 统一 Session/树/报告组件、旧研究按钮移除与未绑定旧 Task dry-run 清理；不触碰会话、目录或 KB。

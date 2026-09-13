@@ -464,7 +464,7 @@ Smoke 必须证明：
 | 06 | 接通论文目录、评估、Critic 与覆盖补偿 | [`task-06-research-execution.md`](../plans/034/task-06-research-execution.md) | 05 | 已完成 |
 | 07 | 实现 processing_steps 三级树与实时投影 | [`task-07-processing-tree.md`](../plans/034/task-07-processing-tree.md) | 02、05 | 已完成 |
 | 08 | 实现报告 Artifact、会话写回与通知 | [`task-08-report-and-notifications.md`](../plans/034/task-08-report-and-notifications.md) | 06、07 | 已完成 |
-| 09 | 复用 Research Tab、清理旧入口与旧数据 | [`task-09-workspace-and-cleanup.md`](../plans/034/task-09-workspace-and-cleanup.md) | 04、07、08 | 待执行 |
+| 09 | 复用 Research Tab、清理旧入口与旧数据 | [`task-09-workspace-and-cleanup.md`](../plans/034/task-09-workspace-and-cleanup.md) | 04、07、08 | 实施中 |
 | 10 | 最终评审、全量回归、真实 Smoke、部署与复盘 | [`task-10-review-regression-deploy.md`](../plans/034/task-10-review-regression-deploy.md) | 02–09 | 待执行 |
 
 ## 评审记录
