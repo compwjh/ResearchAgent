@@ -47,6 +47,7 @@ from backend.app.knowledge_base.application import (
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.config import CHAT_COMPACT_TRIGGER_RATIO, CHAT_TOTAL_TOKEN_BUDGET
+from backend.app.platform.model_catalog import get_online_model, is_online_model
 from backend.app.platform.observability import (
     prompt_observation_metadata,
     record_ollama_generation,
@@ -239,8 +240,11 @@ def _validate_model(model: str):
     try:
         available = get_available_models()
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE", "message": "无法连接 Ollama 服务", "retryable": True}) from error
-    if model not in available:
+        # Ollama 不可达：线上模型仍可用，仅当模型既非线上也非本地时才报 503
+        if not is_online_model(model):
+            raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE", "message": "无法连接 Ollama 服务", "retryable": True}) from error
+        return
+    if model not in available and not is_online_model(model):
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"模型 {model} 不存在", "retryable": False})
 
 
@@ -300,6 +304,10 @@ def reasoning_options(model: str | None = None, refresh: int = 0):
     if not selected:
         from backend.app.platform.config import MODEL_NAME
         selected = MODEL_NAME
+    # spec-035 Task05：线上模型不支持 think 档位，直接返回「不支持」（200），
+    # 避免被下方 404 拦截，也避免前端因 MODEL_NOT_FOUND 报错。
+    if get_online_model(selected) is not None:
+        return {"supported": False, "efforts": []}
     try:
         available = get_available_models()
     except httpx.HTTPError:

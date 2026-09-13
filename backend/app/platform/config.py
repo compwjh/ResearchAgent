@@ -57,6 +57,14 @@ QDRANT_PATH = os.getenv("QDRANT_PATH", str(KB_DIR / "qdrant"))
 KB_COLLECTION = os.getenv("KB_COLLECTION", "papers")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "bge-m3")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "1024"))
+# ---------- 线上 embedding（OpenAI 兼容 /v1/embeddings，如阿里云 DataWorks）----------
+# 默认仍走 Ollama（EMBED_PROVIDER=ollama）。设为非 ollama 值（如 online）即改用
+# EMBED_BASE_URL 上的 OpenAI 兼容 embedding 服务，避免依赖本机 Ollama。
+# Authorization 头**原样**发送 EMBED_API_KEY，兼容阿里云 `DW-xxx` 这类非 Bearer 形式
+# （标准 OpenAI 则在 .env 写 `EMBED_API_KEY=Bearer sk-...`）。
+EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "ollama").strip().lower()
+EMBED_BASE_URL = os.getenv("EMBED_BASE_URL", "").strip().rstrip("/")
+EMBED_API_KEY = os.getenv("EMBED_API_KEY", "").strip()
 # bge-m3 的 num_batch 有上下两个实测边界（详见 011-tech-review R1）：
 #   下界——num_batch 小于「单条输入的 token 数」时（如 128 对 300 token 的片段），Ollama 日志报
 #          "input (N tokens) is too large to process"，但 HTTP 仍返回 200，
@@ -137,3 +145,8 @@ CHAT_RAG_BUDGET_CHARS = _env_positive_number("CHAT_RAG_BUDGET_CHARS", 6000, int)
 CHAT_SUMMARY_BUDGET_CHARS = _env_positive_number("CHAT_SUMMARY_BUDGET_CHARS", 1500, int)
 # CHAT_PROJECT_INSTR_CHARS：项目指令截断字符上限（默认 5000，沿用现状）。
 CHAT_PROJECT_INSTR_CHARS = _env_positive_number("CHAT_PROJECT_INSTR_CHARS", 5000, int)
+
+# ---------- 线上模型 provider（spec-035）----------
+# 线上模型清单：逗号分隔的 provider:model；解析与注册见 platform/model_catalog.py。
+# 非法项在解析时跳过 + warning，不 fail-fast（与上方「warn 后回退」风格一致）。
+ONLINE_MODELS = os.getenv("ONLINE_MODELS", "")

@@ -376,6 +376,60 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   animation: modelFadeIn .3s ease-out;
 }
 
+/* ===== 模型库分组（spec-035 Task06）：端侧 / 线上 ===== */
+#models-view .model-group {
+  margin-bottom: 22px;
+}
+#models-view .model-group:last-child { margin-bottom: 0; }
+
+#models-view .model-group-title {
+  font-family: Manrope, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 10px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#models-view .model-group-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* 空分组提示（端侧无模型 / 线上未配置） */
+#models-view .model-group-empty {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 线上模型状态徽标（ready 已连通 / unreachable 连接失败 / unknown 未探测） */
+#models-view .model-badge.online {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+#models-view .model-badge.failed {
+  background: #fdecea;
+  color: #d93025;
+}
+/* 当前模型高亮优先；线上/失败状态色保留，仅加粗并描边 */
+#models-view .model-badge.online.current,
+#models-view .model-badge.failed.current {
+  font-weight: 700;
+  box-shadow: 0 0 0 2px currentColor;
+}
+
 /* ===== 模型别名行内编辑（spec-008 v2） ===== */
 #models-view .model-text {
   flex: 1;

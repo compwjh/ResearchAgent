@@ -26,6 +26,7 @@ from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
 from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import get_provider
+from backend.app.platform.model_catalog import is_online_model
 from backend.app.platform.observability import (
     flush,
     prompt_observation_metadata,
@@ -114,8 +115,15 @@ def run_agent(request: ChatRequest):
         yield stream_event("intent", intent=task.intent, confidence=task.intent_confidence, skill=SKILL_NAME if task.intent == "download_paper" else None)
         if task.intent == "chat":
             try:
-                available_models = get_available_models()
-                if request.model not in available_models:
+                try:
+                    available_models = get_available_models()
+                except httpx.HTTPError:
+                    # Ollama 不可达：线上模型仍可用
+                    if not is_online_model(request.model):
+                        yield stream_event("error", message=f"模型 {request.model} 不存在")
+                        return
+                    available_models = []
+                if request.model not in available_models and not is_online_model(request.model):
                     yield stream_event("error", message=f"模型 {request.model} 不存在")
                     return
                 yield stream_event("meta", model=request.model, mode=request.mode)
@@ -147,7 +155,7 @@ def run_agent(request: ChatRequest):
                                 success=False,
                                 error_type=type(error).__name__,
                                 extra_metadata=observation_metadata,
-                             )
+                            )
                             flush()
                         except Exception:
                             pass
@@ -162,7 +170,7 @@ def run_agent(request: ChatRequest):
                             started_at=started,
                             tags=["chat", "agent"],
                             extra_metadata=observation_metadata,
-                          )
+                        )
                         flush()
                     except Exception:
                         pass

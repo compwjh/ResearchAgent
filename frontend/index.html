@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=43">
+    <link rel="stylesheet" href="/assets/styles.css?v=46">
 </head>
 <body>
   <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">☰ <span>项目与会话</span></button>
@@ -464,6 +464,19 @@
     </form>
   </dialog>
 
+  <!-- spec-034 Task03：Tool 入口源码只读弹窗（复用 Skill 详情弹窗的 class 与结构） -->
+  <dialog class="settings-dialog st-detail-dialog" id="st-tool-code-dialog" aria-labelledby="st-code-title">
+    <form method="dialog" class="settings-form" id="st-tool-code-form">
+      <div class="settings-title"><div><span class="conversation-kicker">TOOL SOURCE</span><h2 id="st-code-title">Tool 代码</h2></div><button class="icon-button" value="cancel" aria-label="关闭代码">×</button></div>
+      <p class="st-detail-name" id="st-code-name"></p>
+      <p class="st-detail-tools" id="st-code-entry"></p>
+      <p class="st-detail-desc" id="st-code-location"></p>
+      <p class="st-detail-label">源码</p>
+      <pre class="st-detail-body" id="st-code-body"></pre>
+      <div class="settings-actions"><button class="secondary-button" value="cancel">关闭</button></div>
+    </form>
+  </dialog>
+
   <dialog class="paper-conference-dialog" id="paper-conference-dialog" aria-labelledby="paper-conference-dialog-title">
     <form method="dialog" class="settings-form" id="paper-conference-form">
       <div class="settings-title">
@@ -515,6 +528,6 @@
   <script src="/assets/kb-inspection.js?v=23"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 -->
-  <script src="/assets/app.js?v=43"></script>
+  <script src="/assets/app.js?v=46"></script>
 </body>
 </html>

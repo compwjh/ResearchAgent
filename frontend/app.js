@@ -24,6 +24,10 @@ const downloadDir = document.querySelector('#download-dir');
 const settingsStatus = document.querySelector('#settings-status');
 let activeModel = 'Ollama';
 let currentModels = [];
+// spec-035 Task06：从 /api/models?probe=1 拉取的分组模型库（{current, groups}）
+let modelLibrary = null;
+let modelLibraryLoaded = false;
+let modelLibraryLoading = false;
 const REASONING_EFFORTS = ['off', 'low', 'medium', 'high', 'xhigh'];
 const reasoningOptionsState = { model: null, supported: null, defaultEffort: 'off', loadState: 'loading', staleCachedAt: null, correctedKeys: new Set(), loadToken: 0, lastEffort: 'off', patchSerial: 0 };
 
@@ -246,13 +250,16 @@ fetch('/api/health')
     modelLabel.textContent = displayName(activeModel);
     loadReasoningOptions(activeModel, { source: 'initial' });
     statusDot.classList.add('ready');
-    if (typeof renderModelList === 'function') renderModelList(models, activeModel);
+    if (typeof renderModelList === 'function') renderModelList();
     if (typeof refreshKbModelOptions === 'function') refreshKbModelOptions();
     if (typeof data.paper_discovery_enabled === 'boolean' && typeof setPaperEnabled === 'function') {
       setPaperEnabled(data.paper_discovery_enabled);
     }
   })
   .catch(() => { modelLabel.textContent = '服务未连接'; });
+
+// spec-035 Task06：页面加载时拉一次分组模型库（含线上探测状态）
+if (typeof loadModelLibrary === 'function') loadModelLibrary();
 
 function addMessage(text, type) {
   const message = document.createElement('div');
@@ -3650,6 +3657,12 @@ const stDetailName = document.querySelector('#st-detail-name');
 const stDetailDesc = document.querySelector('#st-detail-desc');
 const stDetailTools = document.querySelector('#st-detail-tools');
 const stDetailBody = document.querySelector('#st-detail-body');
+// spec-034 Task03：Tool 入口源码弹窗的 DOM 引用（只读展示，见 openToolCode）。
+const stToolCodeDialog = document.querySelector('#st-tool-code-dialog');
+const stCodeName = document.querySelector('#st-code-name');
+const stCodeEntry = document.querySelector('#st-code-entry');
+const stCodeLocation = document.querySelector('#st-code-location');
+const stCodeBody = document.querySelector('#st-code-body');
 
 // 后端错误体：{error_code, message, retryable, request_id}（见 routes_kb._document_error）。
 async function stJson(response) {
@@ -3706,6 +3719,10 @@ function showView(view) {
     loadKbPapers();
     loadKbHealth();
   }
+  // spec-035 Task06：切到模型库时若尚未拉取过分组模型库，则拉一次（已拉过则不再重复）
+  if (nextView === 'models' && !modelLibraryLoaded) {
+    loadModelLibrary();
+  }
   if (nextView === 'memory') {
     const isProject = memoryScopeSelect?.value === 'project';
     if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
@@ -3745,7 +3762,8 @@ showView('chat');
 let stSkills = [];
 let stTools = [];
 // spec-023.1 F1：详情请求序号，保证只有最后一次请求的结果被渲染（丢弃慢到的旧响应）。
-const stState = { detailSeq: 0, detailController: null };
+// spec-034 Task03：codeSeq/codeController 同理由 openToolCode 独占，与 Skill 详情互不干扰。
+const stState = { detailSeq: 0, detailController: null, codeSeq: 0, codeController: null };
 
 async function loadSkills() {
   if (stSkillStatus) stSkillStatus.textContent = '正在加载 Skill…';
@@ -3923,13 +3941,26 @@ function renderToolList() {
 
     const actions = document.createElement('div');
     actions.className = 'st-actions';
+    // spec-034 Task03：「代码」按钮放在启停按钮之前，点击后只读查看入口函数源码。
+    const codeBtn = document.createElement('button');
+    codeBtn.type = 'button';
+    codeBtn.className = 'secondary-button';
+    codeBtn.textContent = '代码';
+    codeBtn.disabled = !tool.name;
+    // 点击即禁用并显示 loading，避免连点并发；请求结束后由 openToolCode 的 finally 恢复。
+    codeBtn.addEventListener('click', () => {
+      if (codeBtn.disabled) return;
+      codeBtn.disabled = true;
+      codeBtn.textContent = '加载中…';
+      openToolCode(tool.name, codeBtn);
+    });
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'secondary-button';
     toggle.textContent = tool.enabled ? '停用' : '启用';
     toggle.disabled = !tool.name;
     toggle.addEventListener('click', () => toggleTool(tool, toggle));
-    actions.append(toggle);
+    actions.append(codeBtn, toggle);
 
     li.append(textWrap, actions);
     stToolList.appendChild(li);
@@ -3954,16 +3985,66 @@ async function toggleTool(tool, button) {
   }
 }
 
+// spec-034 Task03：Tool 入口源码只读弹窗，消费 GET /api/tools/{name}/code。
+// 防串台范式与 openSkillDetail 一致：自增序号 + AbortController，慢响应后到即丢弃。
+// 展示的 code / entry / file:lineno 均为不可信文本，一律用 textContent 写入（禁止 HTML 字符串拼接）。
+async function openToolCode(name, button) {
+  if (!stToolCodeDialog) return;
+  const seq = ++stState.codeSeq;
+  if (stState.codeController) stState.codeController.abort();
+  const controller = new AbortController();
+  stState.codeController = controller;
+  // 打开即重置四个字段并显示占位文案，避免残留上一次的内容。
+  if (stCodeName) stCodeName.textContent = name || '';
+  if (stCodeEntry) stCodeEntry.textContent = '';
+  if (stCodeLocation) stCodeLocation.textContent = '';
+  if (stCodeBody) stCodeBody.textContent = '加载中…';
+  stToolCodeDialog.showModal();
+  try {
+    const data = await stFetchJson(`/api/tools/${encodeURIComponent(name)}/code`, { signal: controller.signal });
+    if (stState.codeSeq !== seq || controller.signal.aborted) return;
+    const file = typeof data.file === 'string' ? data.file : '';
+    const lineno = typeof data.lineno === 'number' ? data.lineno : null;
+    if (stCodeName) stCodeName.textContent = data.name || name || '';
+    if (stCodeEntry) stCodeEntry.textContent = data.entry ? '入口：' + data.entry : '入口：未知';
+    if (stCodeLocation) {
+      stCodeLocation.textContent = file
+        ? '位置：' + file + (lineno === null ? '' : ':' + String(lineno))
+        : '位置：未知';
+    }
+    if (stCodeBody) stCodeBody.textContent = data.code || '（源码为空）';
+  } catch (error) {
+    if (stState.codeSeq !== seq || controller.signal.aborted) return;
+    // 失败时名称/entry/location/body 统一展示同一失败文案，避免「有名称 + 空白代码」的割裂展示。
+    const failure = `加载失败：${error.message}`;
+    if (stCodeName) stCodeName.textContent = failure;
+    if (stCodeEntry) stCodeEntry.textContent = failure;
+    if (stCodeLocation) stCodeLocation.textContent = failure;
+    if (stCodeBody) stCodeBody.textContent = failure;
+  } finally {
+    if (stState.codeSeq === seq && stState.codeController === controller) stState.codeController = null;
+    if (button) { button.disabled = false; button.textContent = '代码'; }
+  }
+}
+
 function refreshModelOptions() {
   if (!modelSelect) return;
-  const selected = modelSelect.value;
+  const selected = modelSelect.value || activeModel;
   while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
-  if (currentModels.length) {
-    for (const m of currentModels) {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = displayName(m);
-      modelSelect.appendChild(opt);
+  const groups = getModelGroups();
+  if (groups.length) {
+    for (const group of groups) {
+      const models = group.models || [];
+      if (!models.length) continue;
+      const og = document.createElement('optgroup');
+      og.label = group.label || (group.source === 'online' ? '线上模型' : '端侧模型');
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = displayName(m.id);
+        og.appendChild(opt);
+      }
+      modelSelect.appendChild(og);
     }
   } else {
     const opt = document.createElement('option');
@@ -3971,7 +4052,8 @@ function refreshModelOptions() {
     opt.textContent = '没有发现模型';
     modelSelect.appendChild(opt);
   }
-  modelSelect.value = selected;
+  if (currentModels.includes(selected)) modelSelect.value = selected;
+  else if (currentModels.length) modelSelect.value = currentModels[0];
   modelSelect.disabled = currentModels.length === 0;
 }
 
@@ -4061,59 +4143,180 @@ function enterAliasEdit(textWrap, model) {
   input.select();
 }
 
-function renderModelList(models, current) {
+// spec-035 Task06：从 modelLibrary（/api/models?probe=1）或降级到平铺 currentModels 取分组
+function getModelGroups() {
+  if (modelLibrary && Array.isArray(modelLibrary.groups) && modelLibrary.groups.length) {
+    return modelLibrary.groups;
+  }
+  if (currentModels.length) {
+    // 降级形态：与改动前一致，仅显示端侧（本地）一组
+    return [{
+      source: 'local',
+      label: '端侧模型',
+      models: currentModels.map((id) => ({
+        id,
+        name: id,
+        source: 'local',
+        provider: null,
+        display_name: id,
+        current: id === activeModel,
+        status: 'ready',
+        capabilities: null,
+      })),
+    }];
+  }
+  return [];
+}
+
+// 单张模型卡片（支持别名、线上状态徽标、当前高亮）
+function renderModelListItem(model, currentId) {
+  const id = model.id;
+  const isCurrent = id === currentId || model.current === true;
+  const li = document.createElement('li');
+  li.className = `model-item${isCurrent ? ' current' : ''}`;
+  li.dataset.model = id;
+
+  const textWrap = document.createElement('div');
+  textWrap.className = 'model-text';
+  renderModelText(textWrap, id);
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'model-edit';
+  editBtn.title = '编辑别名';
+  editBtn.setAttribute('aria-label', '编辑别名');
+  editBtn.textContent = '✎';
+  editBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    enterAliasEdit(textWrap, id);
+  });
+
+  const isOnline = model.source === 'online';
+  const status = isOnline ? (model.status || 'unknown') : null;
+  let kind = 'local';
+  let baseText;
+  if (status !== null) {
+    if (status === 'unreachable') { kind = 'failed'; baseText = '连接失败'; }
+    else if (status === 'ready') { kind = 'online'; baseText = '已连通'; }
+    else { kind = 'online'; baseText = '未探测'; }
+  } else {
+    baseText = isCurrent ? '当前' : '可用';
+  }
+  const badge = document.createElement('span');
+  badge.className = `model-badge${isCurrent ? ' current' : ''}${kind === 'online' ? ' online' : kind === 'failed' ? ' failed' : ''}`;
+  badge.dataset.kind = kind;
+  badge.dataset.baseText = baseText;
+  badge.textContent = baseText;
+
+  li.appendChild(textWrap);
+  li.appendChild(editBtn);
+  li.appendChild(badge);
+
+  li.addEventListener('click', () => {
+    activeModel = id;
+    if (modelSelect) {
+      modelSelect.value = id;
+      modelSelect.disabled = false;
+    }
+    if (modelLabel) modelLabel.textContent = displayName(id);
+    list.querySelectorAll('.model-item').forEach((node) => {
+      node.classList.remove('current');
+      const b = node.querySelector('.model-badge');
+      if (b) {
+        const k = b.dataset.kind;
+        b.classList.remove('current');
+        b.className = 'model-badge' + (k === 'online' ? ' online' : k === 'failed' ? ' failed' : '');
+        b.textContent = b.dataset.baseText || '可用';
+      }
+    });
+    li.classList.add('current');
+    badge.classList.add('current');
+    if (kind !== 'online' && kind !== 'failed') badge.textContent = '当前';
+  });
+  return li;
+}
+
+function renderModelList() {
   const list = document.querySelector('#model-list');
   const empty = document.querySelector('#model-empty');
   if (!list) return;
   list.replaceChildren();
-  currentModels = models;
-  if (models.length === 0 && empty) empty.textContent = '暂无可用模型';
-  empty.hidden = models.length > 0;
-  for (const name of models) {
-    const li = document.createElement('li');
-    li.className = `model-item${name === current ? ' current' : ''}`;
-    li.dataset.model = name;
 
-    const textWrap = document.createElement('div');
-    textWrap.className = 'model-text';
-    renderModelText(textWrap, name);
+  const groups = getModelGroups();
+  const allIds = [];
+  for (const g of groups) {
+    for (const m of (g.models || [])) allIds.push(m.id);
+  }
+  if (allIds.length) currentModels = allIds;
 
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'model-edit';
-    editBtn.title = '编辑别名';
-    editBtn.setAttribute('aria-label', '编辑别名');
-    editBtn.textContent = '✎';
-    editBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      enterAliasEdit(textWrap, name);
-    });
+  const countEl = document.querySelector('#model-count');
+  if (countEl) countEl.textContent = String(allIds.length);
 
-    const badge = document.createElement('span');
-    badge.className = `model-badge${name === current ? ' current' : ''}`;
-    badge.textContent = name === current ? '当前' : '可用';
+  // 始终展示「端侧模型 / 线上模型」两个分组；无模型时显示提示而非整组隐藏
+  if (empty) {
+    empty.hidden = allIds.length > 0;
+    if (!allIds.length) empty.textContent = '暂无可用模型';
+  }
 
-    li.appendChild(textWrap);
-    li.appendChild(editBtn);
-    li.appendChild(badge);
+  const currentId = (modelLibrary && modelLibrary.current) || activeModel;
 
-    li.addEventListener('click', () => {
-      activeModel = name;
-      if (modelSelect) {
-        modelSelect.value = name;
-        modelSelect.disabled = false;
+  for (const group of groups) {
+    const models = group.models || [];
+    const groupEl = document.createElement('li');
+    groupEl.className = 'model-group';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'model-group-title';
+    titleEl.textContent = group.label || (group.source === 'online' ? '线上模型' : '端侧模型');
+    groupEl.appendChild(titleEl);
+    const ul = document.createElement('ul');
+    ul.className = 'model-list';
+    if (models.length) {
+      for (const model of models) {
+        ul.appendChild(renderModelListItem(model, currentId));
       }
-      if (modelLabel) modelLabel.textContent = displayName(name);
-      list.querySelectorAll('.model-item').forEach((node) => {
-        node.classList.remove('current');
-        const b = node.querySelector('.model-badge');
-        if (b) { b.classList.remove('current'); b.textContent = '可用'; }
-      });
-      li.classList.add('current');
-      badge.classList.add('current');
-      badge.textContent = '当前';
-    });
-    list.appendChild(li);
+    } else {
+      const hint = document.createElement('li');
+      hint.className = 'model-group-empty';
+      hint.textContent = group.source === 'online'
+        ? '未配置线上模型（在 .env 设置 ONLINE_MODELS 与对应 API Key）'
+        : '没有可用的端侧模型（请确认 Ollama 已启动）';
+      ul.appendChild(hint);
+    }
+    groupEl.appendChild(ul);
+    list.appendChild(groupEl);
+  }
+}
+
+// spec-035 Task06：拉取分组模型库（含线上探测状态），页面加载一次；已加载则不再重复
+async function loadModelLibrary() {
+  if (modelLibraryLoading) return;
+  modelLibraryLoading = true;
+  try {
+    const response = await fetch('/api/models?probe=1');
+    if (response.ok) {
+      const data = await response.json();
+      if (data && Array.isArray(data.groups)) modelLibrary = data;
+    }
+  } catch (err) {
+    // 忽略：保留 health 提供的平铺清单作为降级
+  } finally {
+    modelLibraryLoading = false;
+    modelLibraryLoaded = true;
+    if (modelLibrary) {
+      const ids = [];
+      for (const g of modelLibrary.groups) {
+        for (const m of (g.models || [])) ids.push(m.id);
+      }
+      if (ids.length) currentModels = ids;
+      if (modelLibrary.current && ids.includes(modelLibrary.current)) {
+        activeModel = modelLibrary.current;
+      }
+    }
+    if (modelSelect && currentModels.includes(activeModel)) modelSelect.value = activeModel;
+    if (modelLabel) modelLabel.textContent = displayName(activeModel);
+    if (typeof renderModelList === 'function') renderModelList();
+    if (typeof refreshModelOptions === 'function') refreshModelOptions();
+    if (typeof refreshKbModelOptions === 'function') refreshKbModelOptions();
   }
 }
 
@@ -4218,12 +4421,20 @@ function refreshKbModelOptions() {
   if (!kbModelSelect) return;
   const selected = kbModelSelect.value || modelSelect?.value || activeModel;
   while (kbModelSelect.firstChild) kbModelSelect.removeChild(kbModelSelect.firstChild);
-  if (currentModels.length) {
-    for (const name of currentModels) {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = displayName(name);
-      kbModelSelect.appendChild(opt);
+  const groups = getModelGroups();
+  if (groups.length) {
+    for (const group of groups) {
+      const models = group.models || [];
+      if (!models.length) continue;
+      const og = document.createElement('optgroup');
+      og.label = group.label || (group.source === 'online' ? '线上模型' : '端侧模型');
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = displayName(m.id);
+        og.appendChild(opt);
+      }
+      kbModelSelect.appendChild(og);
     }
   } else {
     const opt = document.createElement('option');
@@ -4231,7 +4442,8 @@ function refreshKbModelOptions() {
     opt.textContent = '没有发现模型';
     kbModelSelect.appendChild(opt);
   }
-  kbModelSelect.value = selected;
+  if (currentModels.includes(selected)) kbModelSelect.value = selected;
+  else if (currentModels.length) kbModelSelect.value = currentModels[0];
   kbModelSelect.disabled = currentModels.length === 0;
 }
 

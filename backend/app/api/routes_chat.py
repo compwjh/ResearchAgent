@@ -21,6 +21,7 @@ from backend.app.platform.config import (
     SKILL_TOOL_RETRY,
     SKILL_TOOL_TIMEOUT_SECONDS,
 )
+from backend.app.platform.model_catalog import is_online_model
 from backend.app.platform.observability import (
     flush,
     prompt_observation_metadata,
@@ -62,8 +63,11 @@ def chat(request: ChatRequest):
     try:
         available_models: List[str] = get_available_models()
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
-    if request.model not in available_models:
+        # Ollama 不可达：线上模型仍可用，仅当模型既非线上也非本地时才报 502
+        if not is_online_model(request.model):
+            raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
+        available_models = []
+    if request.model not in available_models and not is_online_model(request.model):
         raise HTTPException(status_code=400, detail=f"模型 {request.model} 不存在，请从已安装模型中选择")
 
     selected_model = request.model

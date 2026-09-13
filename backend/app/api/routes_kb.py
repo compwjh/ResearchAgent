@@ -45,6 +45,7 @@ from backend.app.platform.config import (
     KB_MAX_UPLOAD_MB,
     KB_PAPERS_DIR,  # noqa: F401
 )
+from backend.app.platform.model_catalog import is_online_model
 
 # Kept as a module-level read-only configuration alias for offline/legacy
 # fixtures that patch the historical source directory.  Canonical document
@@ -965,8 +966,11 @@ def kb_ask(request: KBAskRequest):
     try:
         available_models: List[str] = get_available_models()
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
-    if request.model not in available_models:
+        # Ollama 不可达：线上模型仍可用，仅当模型既非线上也非本地时才报 502
+        if not is_online_model(request.model):
+            raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
+        available_models = []
+    if request.model not in available_models and not is_online_model(request.model):
         raise HTTPException(status_code=400, detail=f"模型 {request.model} 不存在，请从已安装模型中选择")
 
     top_k = max(1, min(int(request.top_k or 5), 20))

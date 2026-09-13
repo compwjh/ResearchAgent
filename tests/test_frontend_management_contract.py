@@ -65,8 +65,8 @@ def test_governance_renderers_use_safe_text_boundaries() -> None:
 
 
 def test_keeps_static_asset_versions_and_scoped_css() -> None:
-    assert "/assets/app.js?v=31" in INDEX
-    assert "/assets/styles.css?v=30" in INDEX
+    assert "/assets/app.js?v=46" in INDEX
+    assert "/assets/styles.css?v=46" in INDEX
     assert "#memory-view" in STYLES
     assert ".memory-item" in STYLES
 

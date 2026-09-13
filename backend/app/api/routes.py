@@ -6,6 +6,7 @@ from backend.app.api import (
     routes_chat,
     routes_conversations,
     routes_kb,
+    routes_models,
     routes_paper,
     routes_skills,
     routes_system,
@@ -20,5 +21,6 @@ router.include_router(routes_kb.router)
 router.include_router(routes_paper.router)
 router.include_router(routes_article.router)
 router.include_router(routes_conversations.router)
+router.include_router(routes_models.router)
 router.include_router(routes_skills.router)
 router.include_router(routes_tools.router)

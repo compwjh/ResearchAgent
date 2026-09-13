@@ -121,4 +121,4 @@ def test_skill_legacy_app_version_bumped() -> None:
     )
     assert match, "missing live app.js asset tag"
     assert int(match.group(1)) >= 40
-    assert "/assets/app.js?v=43" in INDEX
+    assert "/assets/app.js?v=46" in INDEX
