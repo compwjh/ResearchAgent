@@ -1237,7 +1237,10 @@ def get_processing_steps(message_id: str):
     steps = _repo().list_processing_steps(message_id, OWNER_ID)
     if not steps and not _repo().get_message(message_id, OWNER_ID):
         raise HTTPException(status_code=404, detail="消息不存在")
-    return {"steps": [{"step_id": s.step_id, "message_id": s.message_id, "kind": s.kind, "label": s.label, "status": s.status, "summary": s.summary, "started_at": s.started_at.isoformat(), "completed_at": s.completed_at.isoformat() if s.completed_at else None} for s in steps]}
+    # Keep the historical flat shape and append the v2 adjacency fields.  Old
+    # clients ignore unknown keys; tree-capable clients use parent_step_id and
+    # stable node_key/source_event_id for incremental upserts.
+    return {"steps": [s.to_dict() for s in steps]}
 
 
 def _analysis_job_payload(job):

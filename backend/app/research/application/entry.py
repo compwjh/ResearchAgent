@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.platform.ollama import ResourceProbe
 from backend.app.research.application.agent_runtime import (
@@ -38,6 +39,7 @@ from backend.app.research.application.plan_authoring import (
     validate_research_plan_output,
 )
 from backend.app.research.application.planner import Planner
+from backend.app.research.application.processing_projector import ProcessingStepProjector
 from backend.app.research.application.research_service import (
     ResearchService,
     ResearchServiceError,
@@ -98,6 +100,7 @@ __all__ = [
     "FakeModel",
     "FakeTool",
     "ResearchAgentRunner",
+    "ProcessingStepProjector",
     "RoleCapability",
     "RoleCapabilityRegistry",
     # 领域实体（api 只做序列化，不新增语义）
@@ -132,6 +135,13 @@ def build_research_service() -> ResearchService:
     `CatalogSourceFactory` 惰性装配 Spec015 数据源，因此这里不会创建目录库或发起网络请求。
     """
     store = build_research_store()
+    try:
+        memory_repository = get_provider("memory_repository")
+    except KeyError:
+        from backend.app.memory.repository import MemoryRepository
+
+        memory_repository = MemoryRepository()
+    processing_projector = ProcessingStepProjector(store, memory_repository)
     probe = ResourceProbe()
     router = ModelRouter()
     state_path = KB_DIR / "skill-state.json"
@@ -151,4 +161,6 @@ def build_research_service() -> ResearchService:
             ),
         ),
         planner=Planner(),
+        memory_repository=memory_repository,
+        processing_projector=processing_projector,
     )

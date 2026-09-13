@@ -22,6 +22,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import threading
 import uuid
@@ -84,6 +85,58 @@ SCHEMA_VERSION = 3
 # 写操作全局串行锁：保证 event_seq 原子领号在进程内也无竞争；锁内只做必要写，
 # 计算（JSON 序列化等）已尽量外移。RLock 允许同一线程重入。
 _write_lock = threading.RLock()
+
+_EVENT_SAFE_KEYS = {
+    "status", "goal_excerpt", "quality_profile", "target_paper_count", "review_plan_first",
+    "plan_version", "previous_plan_version", "replan_round", "stop_reason", "reason",
+    "facets", "items", "work_item_id", "task_type", "role", "model_tier", "resolved_model",
+    "worker_slot", "code", "error_code", "selected_count", "catalog_paper_ids", "search_worker",
+    "coverage", "gaps", "recommendations", "bounded_replan", "approval_required", "evaluations",
+    "statistics", "output_hash", "node_type", "node_key", "parent_node_key", "parent_source_event_id",
+    "parent_step_id", "kind", "label", "summary", "display_order", "research_session_id",
+    "skill_name", "tool_name", "result_id", "result_length", "length", "content_hash", "tool_call_id",
+    "attempt", "event_type", "from_tier", "to_tier", "granted", "source_ref", "facets_by_paper",
+}
+_EVENT_SENSITIVE_PARTS = ("prompt", "cot", "reasoning", "credential", "password", "secret", "token", "authorization", "cookie", "api_key", "access_key")
+
+
+def _safe_event_value(value: object, *, depth: int = 0) -> object:
+    if depth > 3:
+        return None
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            key_text = str(key)
+            lowered = key_text.casefold()
+            if key_text not in _EVENT_SAFE_KEYS or any(part in lowered for part in _EVENT_SENSITIVE_PARTS):
+                continue
+            cleaned = _safe_event_value(item, depth=depth + 1)
+            if cleaned is not None:
+                result[key_text[:80]] = cleaned
+        return result
+    if isinstance(value, (list, tuple)):
+        result = []
+        for item in value[:64]:
+            cleaned = _safe_event_value(item, depth=depth + 1)
+            if cleaned is not None:
+                result.append(cleaned)
+        return result
+    if isinstance(value, str):
+        # Scrub values inside otherwise-allowed summaries as well as filtering
+        # sensitive field names.  The replacement is intentionally stable so
+        # clients can render it without seeing provider credentials.
+        cleaned = re.sub(r"(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+", r"\1[REDACTED]", value)
+        cleaned = re.sub(r"(?i)((?:token|secret|password|cookie)\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]", cleaned)
+        cleaned = re.sub(r"(?i)https?://[^\s,;]+", "[REDACTED]", cleaned)
+        return cleaned[:1000]
+    if isinstance(value, (int, float, bool)):
+        return value
+    return None
+
+
+def _safe_event_payload(payload: object) -> dict:
+    value = _safe_event_value(payload)
+    return value if isinstance(value, dict) else {}
 
 
 def canonical_research_event_id(research_task_id: str, event_seq: int) -> str:
@@ -2536,6 +2589,7 @@ class ResearchStore:
         """
         if event_type not in EVENT_TYPES:
             raise ValueError(f"invalid event_type: {event_type}")
+        payload = _safe_event_payload(payload)
         with _write_lock, self._connect() as conn:
             try:
                 conn.execute("BEGIN IMMEDIATE")
@@ -2594,7 +2648,7 @@ class ResearchStore:
                 """INSERT INTO research_projection_retries(source_event_id, research_task_id, attempts, error_code, last_error, pending, updated_at)
                 VALUES(?,?,1,'TRACE_PROJECTION_FAILED',?,1,?)
                 ON CONFLICT(source_event_id) DO UPDATE SET attempts=attempts+1, last_error=excluded.last_error, pending=1, updated_at=excluded.updated_at""",
-                (source_event_id, research_task_id, str(error)[:500], _utcnow()),
+                (source_event_id, research_task_id, "TRACE_PROJECTION_FAILED", _utcnow()),
             )
             row = conn.execute(
                 "SELECT * FROM research_projection_retries WHERE source_event_id=?", (source_event_id,)
@@ -2628,6 +2682,7 @@ class ResearchStore:
         events: list[ResearchEvent] | None = None,
         *,
         projector: Callable[[ResearchEvent], object] | None = None,
+        strict_tree: bool = False,
     ) -> list[ResearchEvent]:
         """Replay durable events parent-first, then by event sequence.
 
@@ -2636,24 +2691,44 @@ class ResearchStore:
         successful callback clears its retry marker; a failure records (or
         increments) one and is re-raised without changing the durable event.
         """
-        persisted = events if events is not None else self.list_events(research_task_id, after_seq=0, limit=1000)
+        if events is not None:
+            persisted = events
+        else:
+            persisted = []
+            after_seq = 0
+            target_seq = self.last_event_seq(research_task_id)
+            while after_seq < target_seq:
+                page = self.list_events(research_task_id, after_seq=after_seq, limit=1000)
+                if not page:
+                    break
+                persisted.extend(page)
+                next_seq = page[-1].event_seq
+                if next_seq <= after_seq:
+                    raise RuntimeError("replay event pagination cursor did not advance")
+                after_seq = next_seq
         if any(event.research_task_id != research_task_id for event in persisted):
             raise ValueError("replay event belongs to another task")
         records: list[tuple[ResearchEvent, dict, str]] = []
         for event in persisted:
             try:
-                payload = json.loads(event.safe_payload_json or "{}")
-            except (TypeError, ValueError):
-                payload = {}
-            if not isinstance(payload, dict):
-                payload = {}
-            expected_source_event_id = canonical_research_event_id(research_task_id, event.event_seq)
-            supplied_source_event_id = payload.get("source_event_id")
-            if supplied_source_event_id is not None and str(supplied_source_event_id) != expected_source_event_id:
-                raise ValueError("replay source_event_id is not canonical")
-            source_event_id = expected_source_event_id
-            records.append((event, payload, source_event_id))
+                try:
+                    payload = json.loads(event.safe_payload_json or "{}")
+                except (TypeError, ValueError):
+                    payload = {}
+                if not isinstance(payload, dict):
+                    payload = {}
+                expected_source_event_id = canonical_research_event_id(research_task_id, event.event_seq)
+                supplied_source_event_id = payload.get("source_event_id")
+                if supplied_source_event_id is not None and str(supplied_source_event_id) != expected_source_event_id:
+                    raise ValueError("replay source_event_id is not canonical")
+                source_event_id = expected_source_event_id
+                records.append((event, payload, source_event_id))
+            except Exception as exc:
+                self.mark_projection_retry(research_task_id, event.event_seq, str(exc))
+                raise
         by_source = {source: (event, payload, source) for event, payload, source in records}
+        if len(by_source) != len(records):
+            raise ValueError("replay contains duplicate event identity")
         by_key = {
             str(payload["node_key"]): (event, payload, source)
             for event, payload, source in records
@@ -2675,7 +2750,69 @@ class ResearchStore:
                 raise ValueError("replay parent cycle")
             return 1 + depth(parent, seen | {marker})
 
-        records.sort(key=lambda record: (depth(record), int(record[0].event_seq)))
+        def tree_type(payload: dict, event: ResearchEvent) -> str:
+            value = str(payload.get("node_type") or "").casefold()
+            if value == "work_item":
+                value = "agent"
+            if value in {"phase", "agent", "skill", "tool", "operation"}:
+                return value
+            return {"task": "phase", "plan": "phase", "coverage": "phase", "report": "phase", "terminal": "phase", "worker": "agent"}.get(event.event_type, "operation")
+
+        def validate_tree(record: tuple[ResearchEvent, dict, str], seen: set[str] | None = None) -> int:
+            event, payload, _source = record
+            parent_source = payload.get("parent_source_event_id")
+            parent_key = payload.get("parent_node_key")
+            if parent_source and parent_key:
+                source_parent = by_source.get(str(parent_source))
+                key_parent = by_key.get(str(parent_key))
+                source_key = source_parent[1].get("node_key") if source_parent else None
+                if source_parent is None or key_parent is None or str(source_key) != str(parent_key):
+                    raise ValueError("replay parent source_event_id and node_key conflict")
+            parent = by_source.get(str(parent_source)) if parent_source else by_key.get(str(parent_key))
+            if parent is None:
+                if parent_source or parent_key:
+                    raise ValueError("replay parent event is missing")
+                depth_value = 0
+            else:
+                marker = str(parent_source or parent_key)
+                if marker in (seen or set()):
+                    raise ValueError("replay parent cycle")
+                depth_value = validate_tree(parent, (seen or set()) | {marker}) + 1
+            if depth_value >= 3:
+                raise ValueError("replay tree exceeds three levels")
+            if strict_tree:
+                actual = tree_type(payload, event)
+                expected = "phase" if depth_value == 0 else "agent" if depth_value == 1 else "skill_or_tool"
+                if (expected == "phase" and actual != "phase") or (expected == "agent" and actual != "agent") or (expected == "skill_or_tool" and actual not in {"skill", "tool"}):
+                    raise ValueError("invalid research processing tree node type")
+            return depth_value
+
+        marked_failure: int | None = None
+        try:
+            if strict_tree:
+                for record in records:
+                    try:
+                        validate_tree(record)
+                    except Exception as exc:
+                        self.mark_projection_retry(research_task_id, record[0].event_seq, str(exc))
+                        marked_failure = record[0].event_seq
+                        raise
+            records.sort(key=lambda record: (depth(record), int(record[0].event_seq)))
+        except Exception as exc:
+            # Parent ordering is part of projection, not event persistence.
+            # Keep the durable event untouched and leave an explicit retry
+            # marker so a later replay can recover after the missing parent or
+            # cycle is resolved.
+            failed = next(
+                (
+                    event for event, payload, _source in records
+                    if payload.get("parent_source_event_id") or payload.get("parent_node_key")
+                ),
+                records[0][0] if records else None,
+            )
+            if failed is not None and marked_failure is None:
+                self.mark_projection_retry(research_task_id, failed.event_seq, str(exc))
+            raise
         ordered = [record[0] for record in records]
         if projector is not None:
             for event in ordered:

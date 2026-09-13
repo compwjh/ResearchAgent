@@ -19,7 +19,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from backend.app.research.application.plan_authoring import PlanOutputInvalid, validate_safe_scope
 from backend.app.research.domain.contracts import AGENT_ROLES
-from backend.app.research.domain.models import AgentCheckpoint, AgentRun
+from backend.app.research.domain.models import AgentCheckpoint, AgentRun, ResearchEvent
 from backend.app.research.domain.state_machine import InvalidStateTransition
 from backend.app.research.infrastructure.research_store import AgentRunWriteDiscarded
 from backend.app.skills.registry import build_default_tool_registry
@@ -203,6 +203,7 @@ class AgentRunInput:
     reasoning_effort: str = "off"
     owner_id: str = ""
     continued_from_agent_run_id: str | None = None
+    parent_source_event_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -246,8 +247,8 @@ def _safe_text(value: Any, limit: int = 256) -> str:
     text = str(value or "")
     # Never retain provider URLs, credentials or hidden prompt-like fields.
     lowered = text.casefold()
-    if any(token in lowered for token in ("http://", "https://", "authorization", "bearer ", "api_key", "password", "prompt", "chain_of_thought", "<think>")):
-        return "[redacted]"
+    if any(token in lowered for token in ("http://", "https://", "authorization", "bearer ", "api_key", "password", "secret", "token", "cookie", "prompt", "chain_of_thought", "<think>")):
+        return "[REDACTED]"
     return text[:limit]
 
 
@@ -572,7 +573,7 @@ def _response_parts(response: Any) -> tuple[dict[str, Any] | None, list[dict[str
 class ResearchAgentRunner:
     """Run one isolated sub-agent under deterministic budget/cancel barriers."""
 
-    def __init__(self, *, store=None, model=None, model_factory=None, model_router=None, tool_executor=None, capability_registry=None, resource_probe=None, clock=None):
+    def __init__(self, *, store=None, model=None, model_factory=None, model_router=None, tool_executor=None, capability_registry=None, resource_probe=None, clock=None, event_sink: Callable[[ResearchEvent], None] | None = None):
         self.store = store
         self.model = model
         self.model_factory = model_factory or (_ollama_model_factory if model is None and model_router is not None else None)
@@ -581,7 +582,33 @@ class ResearchAgentRunner:
         self.capabilities = capability_registry or RoleCapabilityRegistry()
         self.resource_probe = resource_probe
         self.clock = clock or time.monotonic
+        # Orchestrator installs this callback after construction.  The runner
+        # remains the only skill/tool execution seam; the callback only fans
+        # durable events into the existing projection path.
+        self.event_sink = event_sink
         self._checkpoints: dict[str, dict[str, Any]] = {}
+
+    def _runtime_event(self, input: AgentRunInput, *, node_type: str, node_key: str, status: str, **payload: Any) -> None:
+        """Append a stable skill/tool event and notify the owning orchestrator."""
+        if self.store is None or not input.research_task_id:
+            return
+        safe = {
+            "node_type": node_type,
+            "node_key": node_key,
+            "parent_node_key": f"agent:{input.work_item_id}" if input.work_item_id else None,
+            "parent_source_event_id": input.parent_source_event_id,
+            "status": status,
+            **payload,
+        }
+        safe = {key: value for key, value in safe.items() if value is not None}
+        try:
+            event = self.store.append_event(input.research_task_id, "worker", safe)
+            if callable(self.event_sink):
+                self.event_sink(event)
+        except Exception:
+            # Event telemetry is best effort and must never alter the runner's
+            # state machine or expose provider failures to callers.
+            return
 
     def _persist(self, run: AgentRun, owner_id: str, *, create: bool = False) -> AgentRun:
         if self.store is None:
@@ -937,6 +964,12 @@ class ResearchAgentRunner:
         except Exception as exc:
             lease_held = self._release_lease(input.research_task_id, lease_held)
             raise AgentRuntimeError("CAPABILITY_NOT_AUTHORIZED", "run binding rejected") from exc
+        skill_name = str(capability.skill.get("name") or ROLE_SKILL_DEFAULTS.get(input.role, input.role))
+        skill_key = f"skill:{input.work_item_id}:{skill_name}"
+        self._runtime_event(
+            input, node_type="skill", node_key=skill_key, status="running",
+            skill_name=skill_name,
+        )
         start = self.clock()
         loops, calls = budget.model_loops, budget.tool_calls
         task_loops, task_calls = budget.task_model_loops, budget.task_tool_calls
@@ -1037,13 +1070,33 @@ class ResearchAgentRunner:
                     task_calls += len(validated)
                     run_calls += len(validated)
                     readonly = all(str(entry.get("side_effect_class", "side_effect")) in {"read_only", "none"} for entry, _ in validated)
+                    tool_keys = []
+                    for entry, args in validated:
+                        tool_key = f"tool:{input.work_item_id}:{entry.get('name')}:{_hash(args)[:12]}"
+                        tool_keys.append(tool_key)
+                        self._runtime_event(
+                            input, node_type="tool", node_key=tool_key, status="running",
+                            tool_name=_safe_text(entry.get("name"), 80),
+                            parent_node_key=f"agent:{input.work_item_id}",
+                        )
                     if readonly and len(validated) > 1:
                         with ThreadPoolExecutor(max_workers=min(len(validated), worker_grant)) as pool:
                             values = list(pool.map(lambda pair: self._dispatch(*pair), validated))
                     else:
                         values = [self._dispatch(entry, args) for entry, args in validated]
-                    for (entry, _), value in zip(validated, values, strict=True):
-                        summaries.append(self._safe_tool_result(entry, value))
+                    for index, ((entry, _), value) in enumerate(zip(validated, values, strict=True)):
+                        result = self._safe_tool_result(entry, value)
+                        summaries.append(result)
+                        self._runtime_event(
+                            input, node_type="tool", node_key=tool_keys[index],
+                            status="completed" if result.get("status") == "ok" else "failed",
+                            tool_name=_safe_text(entry.get("name"), 80),
+                            result_id=result.get("result_id"),
+                            result_length=result.get("length"),
+                            content_hash=result.get("content_hash"),
+                            summary=result.get("summary"),
+                            error_code=result.get("error_code"),
+                        )
                     if _is_cancelled(input.cancellation_token):
                         self._cancel(run, owner)
                         lease_held = self._release_lease(input.research_task_id, lease_held)
@@ -1112,12 +1165,15 @@ class ResearchAgentRunner:
                     current = self.store.get_agent_run(run.agent_run_id, owner) if self.store is not None else None
                     return AgentRunOutput(current.status if current else "cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 lease_held = self._release_lease(input.research_task_id, lease_held)
+                self._runtime_event(input, node_type="skill", node_key=skill_key, status="completed", skill_name=skill_name)
                 return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
         except AgentRuntimeError as exc:
+            self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code=exc.code)
             self._cancel(run, owner, status="failed", error_code=exc.code)
             lease_held = self._release_lease(input.research_task_id, lease_held)
             return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
         except Exception:
+            self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code="MODEL_UNAVAILABLE")
             # A failing Store read must not bypass the lease release barrier.
             try:
                 current = self.store.get_agent_run(run.agent_run_id, owner) if self.store is not None and owner else None

@@ -5,7 +5,7 @@
   if (root && root.document) api.boot(root.document);
 }(typeof globalThis !== 'undefined' ? globalThis : this, function researchTasksFactory(root) {
   const TERMINAL_STATUSES = new Set(['partial', 'completed', 'failed', 'cancelled', 'interrupted']);
-  const EVENT_TYPES = ['task', 'plan', 'worker', 'model', 'coverage', 'report', 'terminal'];
+  const EVENT_TYPES = ['task', 'plan', 'worker', 'model', 'coverage', 'report', 'terminal', 'processing_step'];
   const STATUS_TEXT = {
     draft: '草稿', planning: '规划中', running: '执行中', waiting_approval: '等待计划审核',
     partial: '部分完成', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断',
@@ -78,6 +78,8 @@
     loading: false,
     approvalInFlight: false,
     statusNotice: '',
+    processingTree: null,
+    processingTreeTaskId: null,
   };
 
   function parseConversationId(location = root.location) {
@@ -531,6 +533,18 @@
     clearNode(list);
     const events = [...state.events.values()].sort((a, b) => a.seq - b.seq);
     section.hidden = events.length === 0;
+    const treeHost = byId('research-processing-tree');
+    if (treeHost && root.ProcessingTree?.createProcessingTree) {
+      if (!state.processingTree || state.processingTreeTaskId !== state.selectedTaskId) {
+        treeHost.replaceChildren();
+        state.processingTree = root.ProcessingTree.createProcessingTree({ document: state.document, container: treeHost, storageKey: `research:${state.selectedTaskId || 'task'}` });
+        state.processingTreeTaskId = state.selectedTaskId;
+      }
+      const treeHasNodes = state.processingTree.snapshot().length > 0;
+      treeHost.hidden = !treeHasNodes;
+      if (treeHasNodes) section.hidden = false;
+      if (state.terminal && TERMINAL_STATUSES.has(state.terminal.payload?.status)) state.processingTree.finalize(state.terminal.payload.status, eventStopReason(state.terminal.payload));
+    }
     events.forEach((event) => {
       const item = state.document.createElement('li'); item.className = 'research-event';
       const title = state.document.createElement('div'); title.className = 'research-event-title'; title.textContent = `#${event.seq} · ${eventTitle(event.type)}`;
@@ -545,6 +559,21 @@
       const summary = state.document.createElement('p'); summary.className = 'research-event-summary'; summary.textContent = payloadText(state.terminal.payload);
       item.append(title, summary); list.appendChild(item);
     }
+  }
+
+  function applyProcessingStepFrame(payload) {
+    const section = byId('research-timeline-section');
+    const treeHost = byId('research-processing-tree');
+    if (!treeHost || !root.ProcessingTree?.createProcessingTree) return;
+    if (!state.processingTree || state.processingTreeTaskId !== state.selectedTaskId) {
+      treeHost.replaceChildren();
+      state.processingTree = root.ProcessingTree.createProcessingTree({ document: state.document, container: treeHost, storageKey: `research:${state.selectedTaskId || 'task'}` });
+      state.processingTreeTaskId = state.selectedTaskId;
+    }
+    if (payload?.operation === 'syncing' || payload?.status === 'trace_syncing' || payload?.code === 'TRACE_PROJECTION_FAILED') state.processingTree.setSyncing(true);
+    else state.processingTree.upsert(payload?.step || payload);
+    treeHost.hidden = state.processingTree.snapshot().length === 0 && !payload?.code;
+    if (section && !treeHost.hidden) section.hidden = false;
   }
 
   function renderSelection() {
@@ -738,6 +767,10 @@
     if (generation !== state.streamGeneration || !state.selectedTaskId) return;
     let data;
     try { data = JSON.parse(message.data || '{}'); } catch (_) { return; }
+    if (type === 'processing_step') {
+      applyProcessingStepFrame(data.payload && typeof data.payload === 'object' ? data.payload : data);
+      return;
+    }
     const seq = Number(data.event_seq);
     if (type !== 'terminal' && (!Number.isInteger(seq) || seq <= 0)) return;
     if (Number.isInteger(seq) && seq > 0) {
@@ -747,7 +780,9 @@
     }
     // Synthetic terminal frames deliberately have event_seq=null and no id; they never move lastSeq.
     applyEvent({ type, seq: Number.isInteger(seq) && seq > 0 ? seq : null, timestamp: data.timestamp, payload: data.payload || {} });
-    if (type === 'terminal') closeStream();
+    // The projector appends the terminal processing_step/upsert after the raw
+    // terminal ResearchEvent. Keep the source open until that envelope can be
+    // delivered; the generator then emits its synthetic terminal and closes.
   }
 
   function scheduleReconnect(generation) {
@@ -788,6 +823,8 @@
     state.reportSelections = [];
     state.report = null;
     state.terminal = null;
+    state.processingTree = null;
+    state.processingTreeTaskId = null;
     state.lastSeq = 0;
     state.streamEnded = false;
     state.approvalInFlight = false;

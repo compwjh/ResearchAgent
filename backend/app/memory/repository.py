@@ -56,6 +56,43 @@ MEMORY_HISTORY_POLICIES = {"from_binding", "include_prior_history"}
 ANALYSIS_STATUSES = {"pending", "running", "completed", "partial", "failed"}
 ANALYSIS_DECISIONS = {"auto_saved", "pending_confirmation", "duplicate", "superseded", "ignored", "failed"}
 SKILL_PROPOSAL_STATUSES = {"proposed", "accepted", "rejected", "applied"}
+_PROCESSING_DETAIL_MAX_CHARS = 4000
+_PROCESSING_DETAIL_BLOCKED = {"prompt", "cot", "reasoning", "credential", "password", "secret", "token", "authorization", "cookie", "api_key", "url"}
+
+
+def _sanitize_processing_detail_json(value: Optional[str]) -> Optional[str]:
+    """Normalize detail_json at the sole processing-step write boundary."""
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        return None
+
+    def clean(item, depth=0):
+        if depth > 3:
+            return None
+        if isinstance(item, dict):
+            result = {}
+            for key, child in item.items():
+                lowered = str(key).casefold()
+                if any(blocked in lowered for blocked in _PROCESSING_DETAIL_BLOCKED):
+                    continue
+                safe = clean(child, depth + 1)
+                if safe is not None:
+                    result[str(key)[:80]] = safe
+            return result
+        if isinstance(item, list):
+            return [clean(child, depth + 1) for child in item[:32]]
+        if isinstance(item, (str, int, float, bool)):
+            return item[:500] if isinstance(item, str) else item
+        return None
+
+    cleaned = clean(parsed)
+    if cleaned is None:
+        return None
+    encoded = json.dumps(cleaned, ensure_ascii=False, sort_keys=True)
+    return encoded if len(encoded) <= _PROCESSING_DETAIL_MAX_CHARS else '{"truncated":true}'
 
 
 class LeaseLostError(RuntimeError):
@@ -2742,25 +2779,39 @@ class MemoryRepository:
             row["detail_json"], row["source_event_id"], row["research_session_id"], int(row["schema_version"] or 1),
         )
 
-    def _validate_processing_parent(self, db: sqlite3.Connection, message_id: str, parent_step_id: Optional[str], *, step_id: Optional[str] = None) -> None:
+    def _validate_processing_parent(self, db: sqlite3.Connection, message_id: str, parent_step_id: Optional[str], *, step_id: Optional[str] = None, node_type: str = "operation", strict_tree: bool = False) -> None:
         if parent_step_id is None:
+            if strict_tree and node_type != "phase":
+                raise ValueError("research processing tree root must be phase")
             return
         current = parent_step_id
         seen: set[str] = set()
-        depth = 1
+        chain: list[sqlite3.Row] = []
         while current:
             if current in seen or current == step_id:
                 raise ValueError("processing step parent cycle")
             seen.add(current)
-            row = db.execute("SELECT step_id, message_id, parent_step_id FROM processing_steps WHERE step_id=?", (current,)).fetchone()
+            row = db.execute("SELECT step_id, message_id, parent_step_id, node_type FROM processing_steps WHERE step_id=?", (current,)).fetchone()
             if row is None or row["message_id"] != message_id:
                 raise ValueError("processing step parent must belong to message")
-            depth += 1
-            if depth > 3:
-                raise ValueError("processing step tree exceeds three levels")
+            chain.append(row)
             current = row["parent_step_id"]
+        if len(chain) >= 3:
+            raise ValueError("processing step tree exceeds three levels")
+        if strict_tree:
+            # The chain is immediate-parent first.  Validate both the new
+            # edge and every pre-existing ancestor, so a legacy operation root
+            # cannot become the parent of a strict research branch.
+            expected_chain = ["phase"] if len(chain) == 1 else ["agent", "phase"]
+            for row, expected in zip(chain, expected_chain, strict=True):
+                actual = str(row["node_type"] or "operation")
+                if (expected == "skill_or_tool" and actual not in {"skill", "tool"}) or (expected != "skill_or_tool" and actual != expected):
+                    raise ValueError("invalid research processing tree node type")
+            expected_child = "agent" if len(chain) == 1 else "skill_or_tool"
+            if (expected_child == "agent" and node_type != "agent") or (expected_child == "skill_or_tool" and node_type not in {"skill", "tool"}):
+                raise ValueError("invalid research processing tree node type")
 
-    def create_processing_step(self, message_id: str, kind: str, status: str, summary: Optional[str] = None, *, label: Optional[str] = None, logical_sequence: int = 0, parent_step_id: Optional[str] = None, node_type: str = "operation", node_key: Optional[str] = None, display_order: int = 0, detail_json: Optional[str] = None, source_event_id: Optional[str] = None, research_session_id: Optional[str] = None) -> ProcessingStep:
+    def create_processing_step(self, message_id: str, kind: str, status: str, summary: Optional[str] = None, *, label: Optional[str] = None, logical_sequence: int = 0, parent_step_id: Optional[str] = None, node_type: str = "operation", node_key: Optional[str] = None, display_order: int = 0, detail_json: Optional[str] = None, source_event_id: Optional[str] = None, research_session_id: Optional[str] = None, strict_tree: bool = False) -> ProcessingStep:
         """Create or advance one logical step without ever duplicating it.
 
         The old implementation wrote a fresh row for the terminal event.  A
@@ -2775,6 +2826,7 @@ class MemoryRepository:
             raise ValueError("invalid processing step node type")
         if node_key is not None and not str(node_key).strip():
             raise ValueError("processing node_key must not be empty")
+        detail_json = _sanitize_processing_detail_json(detail_json)
         label = label or kind
         sequence = max(0, int(logical_sequence))
         now = _now()
@@ -2791,7 +2843,7 @@ class MemoryRepository:
             if row is None and not node_key and not source_event_id:
                 row = db.execute("SELECT * FROM processing_steps WHERE message_id=? AND kind=? AND logical_sequence=?", (message_id, kind, sequence)).fetchone()
             if row is None:
-                self._validate_processing_parent(db, message_id, parent_step_id)
+                self._validate_processing_parent(db, message_id, parent_step_id, node_type=node_type, strict_tree=strict_tree)
                 if node_key or source_event_id:
                     # v3/v4 left a legacy unique identity index in place.  A
                     # v2 node uses a deterministic per-(message,kind) slot
@@ -2802,12 +2854,33 @@ class MemoryRepository:
                 db.execute("""INSERT INTO processing_steps(step_id, message_id, kind, logical_sequence, label, status, summary, started_at, completed_at, parent_step_id, node_type, node_key, display_order, detail_json, source_event_id, research_session_id, schema_version)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2)""", (step_id, message_id, kind, sequence, label, status, (summary or "")[:500] or None, now, now if status != "running" else None, parent_step_id, node_type, node_key, int(display_order), detail_json, source_event_id, research_session_id))
                 row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (step_id,)).fetchone()
-            elif row["status"] == "running" and status != "running":
-                db.execute("UPDATE processing_steps SET label=?, status=?, summary=?, completed_at=?, schema_version=2 WHERE step_id=?", (label, status, (summary or "")[:500] or None, now, row["step_id"]))
-                row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
-            elif row["status"] == "running" and summary:
-                db.execute("UPDATE processing_steps SET label=?, summary=?, schema_version=2 WHERE step_id=?", (label, summary[:500], row["step_id"]))
-                row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
+            else:
+                # A node's parent is immutable once it has been observed.  A
+                # retry may repeat the same parent, but must not silently
+                # re-parent a node (which could create a cross-message tree or
+                # make an already projected branch move under another phase).
+                if strict_tree and row["parent_step_id"] is None and row["node_type"] != "phase":
+                    raise ValueError("research processing tree root must be phase")
+                if parent_step_id is not None and row["parent_step_id"] != parent_step_id:
+                    raise ValueError("processing step parent conflicts with existing node")
+                if row["status"] == "running" and status != "running":
+                    db.execute("""UPDATE processing_steps
+                        SET label=?, status=?, summary=?, completed_at=?,
+                            source_event_id=COALESCE(?, source_event_id),
+                            detail_json=COALESCE(?, detail_json),
+                            research_session_id=COALESCE(?, research_session_id),
+                            display_order=?, schema_version=2
+                        WHERE step_id=?""", (label, status, (summary or "")[:500] or None, now, source_event_id, detail_json, research_session_id, int(display_order), row["step_id"]))
+                    row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
+                elif row["status"] == "running" and (summary or detail_json or source_event_id):
+                    db.execute("""UPDATE processing_steps
+                        SET label=COALESCE(?, label), summary=COALESCE(?, summary),
+                            source_event_id=COALESCE(?, source_event_id),
+                            detail_json=COALESCE(?, detail_json),
+                            research_session_id=COALESCE(?, research_session_id),
+                            display_order=?, schema_version=2
+                        WHERE step_id=?""", (label, (summary or "")[:500] or None, source_event_id, detail_json, research_session_id, int(display_order), row["step_id"]))
+                    row = db.execute("SELECT * FROM processing_steps WHERE step_id=?", (row["step_id"],)).fetchone()
         return self._processing_step_from_row(row)
 
     def finalize_processing_steps(self, message_id: str, *, status: str = "failed", summary: Optional[str] = None) -> int:
@@ -2837,24 +2910,24 @@ class MemoryRepository:
 
     def list_processing_steps(self, message_id: str, owner_id: str) -> list[ProcessingStep]:
         with self.connection() as db:
-            rows = db.execute("SELECT s.* FROM processing_steps s JOIN messages m ON m.message_id=s.message_id WHERE s.message_id=? AND m.owner_id=? ORDER BY s.started_at, s.logical_sequence", (message_id, owner_id)).fetchall()
+            rows = db.execute("SELECT s.* FROM processing_steps s JOIN messages m ON m.message_id=s.message_id WHERE s.message_id=? AND m.owner_id=? ORDER BY COALESCE(s.display_order, s.logical_sequence), s.started_at, s.logical_sequence, s.step_id", (message_id, owner_id)).fetchall()
         return [self._processing_step_from_row(row) for row in rows]
 
-    def project_research_event_step(self, message_id: str, owner_id: str, *, node_key: str, source_event_id: str, kind: str, status: str, label: Optional[str] = None, summary: Optional[str] = None, parent_step_id: Optional[str] = None, node_type: str = "operation", display_order: int = 0, detail_json: Optional[str] = None, research_session_id: Optional[str] = None) -> ProcessingStep:
+    def project_research_event_step(self, message_id: str, owner_id: str, *, node_key: str, source_event_id: str, kind: str, status: str, label: Optional[str] = None, summary: Optional[str] = None, parent_step_id: Optional[str] = None, node_type: str = "operation", display_order: int = 0, detail_json: Optional[str] = None, research_session_id: Optional[str] = None, strict_tree: bool = False) -> ProcessingStep:
         """Idempotent ResearchEvent -> ProcessingStep v2 projector seam.
 
         The event is owned by the research store and is intentionally not part
         of this transaction.  A projection failure is recorded for replay, so
         losing the session-db write can never roll back the audit fact.
         """
-        if re.fullmatch(r"research-event:[^:]+:[1-9][0-9]*", source_event_id) is None:
-            raise ValueError("invalid source_event_id")
         try:
+            if re.fullmatch(r"research-event:[^:]+:[1-9][0-9]*", source_event_id) is None:
+                raise ValueError("invalid source_event_id")
             with self.connection() as db:
                 message = db.execute("SELECT 1 FROM messages WHERE message_id=? AND owner_id=?", (message_id, owner_id)).fetchone()
             if message is None:
                 raise LookupError("message not found")
-            step = self.create_processing_step(message_id, kind, status, summary, label=label, parent_step_id=parent_step_id, node_type=node_type, node_key=node_key, display_order=display_order, detail_json=detail_json, source_event_id=source_event_id, research_session_id=research_session_id)
+            step = self.create_processing_step(message_id, kind, status, summary, label=label, parent_step_id=parent_step_id, node_type=node_type, node_key=node_key, display_order=display_order, detail_json=detail_json, source_event_id=source_event_id, research_session_id=research_session_id, strict_tree=bool(strict_tree or research_session_id))
         except Exception as exc:
             with self.transaction() as db:
                 now = _now()
@@ -2862,7 +2935,7 @@ class MemoryRepository:
                     """INSERT INTO processing_step_projection_retries(source_event_id, message_id, error_code, attempts, last_error, pending, updated_at)
                     VALUES(?,?, 'TRACE_PROJECTION_FAILED', 1, ?, 1, ?)
                     ON CONFLICT(source_event_id) DO UPDATE SET attempts=attempts+1, last_error=excluded.last_error, pending=1, updated_at=excluded.updated_at""",
-                    (source_event_id, message_id, str(exc)[:500], now),
+                    (source_event_id, message_id, "TRACE_PROJECTION_FAILED", now),
                 )
             raise
         with self.transaction() as db:
@@ -2872,6 +2945,17 @@ class MemoryRepository:
             )
         return step
 
+    def mark_processing_projection_retry(self, source_event_id: str, message_id: str, error: str) -> dict:
+        with self.transaction() as db:
+            now = _now()
+            db.execute(
+                """INSERT INTO processing_step_projection_retries(source_event_id, message_id, error_code, attempts, last_error, pending, updated_at)
+                VALUES(?,?, 'TRACE_PROJECTION_FAILED', 1, ?, 1, ?)
+                ON CONFLICT(source_event_id) DO UPDATE SET attempts=attempts+1, last_error=excluded.last_error, pending=1, updated_at=excluded.updated_at""",
+                (source_event_id, message_id, "TRACE_PROJECTION_FAILED", now),
+            )
+            return dict(db.execute("SELECT * FROM processing_step_projection_retries WHERE source_event_id=?", (source_event_id,)).fetchone())
+
     def list_processing_projection_retries(self, *, pending_only: bool = True) -> list[dict]:
         with self.connection() as db:
             sql = "SELECT * FROM processing_step_projection_retries"
@@ -2880,7 +2964,7 @@ class MemoryRepository:
             rows = db.execute(sql + " ORDER BY updated_at, source_event_id").fetchall()
         return [dict(row) for row in rows]
 
-    def replay_processing_steps(self, message_id: str, owner_id: str, events: list[dict]) -> list[ProcessingStep]:
+    def replay_processing_steps(self, message_id: str, owner_id: str, events: list[dict], *, strict_tree: bool = False) -> list[ProcessingStep]:
         """Replay persisted ResearchEvents parent-first and event-seq ordered.
 
         Task07 owns the full projector orchestration; this small seam freezes
@@ -2914,18 +2998,48 @@ class MemoryRepository:
         by_source = {item.get("source_event_id"): item for item in normalized if item.get("source_event_id")}
         by_key = {item.get("node_key"): item for item in normalized if item.get("node_key")}
 
+        strict = bool(strict_tree or any(item.get("research_session_id") for item in normalized))
+
+        def node_type(item: dict) -> str:
+            value = str(item.get("node_type") or "operation").casefold()
+            if value == "operation":
+                value = {"task": "phase", "plan": "phase", "coverage": "phase", "report": "phase", "terminal": "phase", "worker": "agent"}.get(str(item.get("event_type") or "").casefold(), value)
+            return "agent" if value == "work_item" else value
+
         def depth(item: dict, seen: set[str] | None = None) -> int:
             seen = seen or set()
             parent = item.get("parent_source_event_id")
             parent_item = by_source.get(parent) if parent else by_key.get(item.get("parent_node_key"))
             if parent_item is None:
-                if parent:
+                if parent or item.get("parent_node_key"):
                     raise ValueError("replay parent source_event_id is missing")
                 return 0
             marker = parent or item.get("parent_node_key")
             if marker in seen:
-                return 99
-            return 1 + depth(parent_item, seen | {marker})
+                raise ValueError("replay parent cycle")
+            result = 1 + depth(parent_item, seen | {marker})
+            if result >= 3:
+                raise ValueError("replay tree exceeds three levels")
+            return result
+
+        # Validate the complete batch before writing any step.  This is
+        # intentionally separate from the single-event seam: ordinary chat
+        # callers retain v1/two-level compatibility, while research replay is
+        # atomic with respect to malformed depth/type/parent identity.
+        if strict:
+            for item in normalized:
+                parent_source = item.get("parent_source_event_id")
+                parent_key = item.get("parent_node_key")
+                if parent_source and parent_key:
+                    source_parent = by_source.get(parent_source)
+                    key_parent = by_key.get(parent_key)
+                    if source_parent is None or key_parent is None or source_parent.get("node_key") != parent_key:
+                        raise ValueError("replay parent source_event_id and node_key conflict")
+                level = depth(item)
+                expected = "phase" if level == 0 else "agent" if level == 1 else "skill_or_tool"
+                actual = node_type(item)
+                if (expected == "phase" and actual != "phase") or (expected == "agent" and actual != "agent") or (expected == "skill_or_tool" and actual not in {"skill", "tool"}):
+                    raise ValueError("invalid research processing tree node type")
 
         normalized.sort(key=lambda item: (depth(item), int(item.get("event_seq", 0))))
         results: list[ProcessingStep] = []

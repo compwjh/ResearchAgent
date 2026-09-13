@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.planner import Planner
+from backend.app.research.application.processing_projector import ProcessingStepProjector
 from backend.app.research.domain.contracts import (
     ERROR_CODES,
     GOAL_MAX_CHARS,
@@ -95,6 +96,8 @@ class ResearchService:
         model_router=None,
         orchestrator=None,
         agent_runner=None,
+        memory_repository=None,
+        processing_projector: ProcessingStepProjector | None = None,
         executor=None,
     ) -> None:
         self._store = store
@@ -104,6 +107,10 @@ class ResearchService:
         self._probe = probe
         self._model_router = model_router
         self._agent_runner = agent_runner
+        self._processing_projector = processing_projector or (
+            ProcessingStepProjector(store, memory_repository)
+            if memory_repository is not None else None
+        )
         # 编排器惰性构造：__init__ 不打网络（ResourceProbe 只在 arbitrate 时才读 Ollama）。
         self._orchestrator_instance = orchestrator
         self._executor = executor or ThreadPoolExecutor(
@@ -193,6 +200,10 @@ class ResearchService:
                 return False
             _INFLIGHT.add(research_task_id)
         try:
+            # A restart or idle period can leave a cross-database projection
+            # marker without a new ResearchEvent.  One bounded pass here lets
+            # the normal background lifecycle recover it without polling.
+            self.drain_processing_projection_retries(research_task_id, owner_id)
             self._executor.submit(self._run_orchestration, research_task_id, owner_id)
         except Exception:
             with _INFLIGHT_LOCK:
@@ -229,6 +240,41 @@ class ResearchService:
         """列出事件（先校验归属）：不存在/不属于该 owner 抛 TASK_NOT_FOUND 404。"""
         self.get_task(research_task_id, owner_id)
         return self._store.list_events(research_task_id, after_seq=after_seq, limit=limit)
+
+    def project_event_for_sse(self, event: ResearchEvent, owner_id: str) -> dict | None:
+        """Project one durable event and return its incremental upsert envelope."""
+        if self._processing_projector is None:
+            return None
+        session = self._store.get_session_by_task(event.research_task_id, owner_id)
+        if session is None or not session.activity_message_id:
+            return None
+        try:
+            step = self._processing_projector.project_event(
+                session.activity_message_id,
+                owner_id,
+                event,
+                research_session_id=session.research_session_id,
+            )
+        except Exception as exc:
+            with suppress(Exception):
+                self._store.mark_projection_retry(event.research_task_id, event.event_seq, str(exc))
+            raise
+        return self._processing_projector.as_sse_upsert(step)
+
+    def drain_processing_projection_retries(self, research_task_id: str, owner_id: str) -> int:
+        """Perform one bounded retry pass for a task's pending projections."""
+        if self._processing_projector is None:
+            return 0
+        session = self._store.get_session_by_task(research_task_id, owner_id)
+        if session is None or not session.activity_message_id:
+            return 0
+        try:
+            return self._processing_projector.drain_pending(
+                research_task_id, session.activity_message_id, owner_id,
+                research_session_id=session.research_session_id,
+            )
+        except Exception:
+            return 0
 
     def get_report(
         self, research_task_id: str, owner_id: str, *, plan_version: int | None = None
@@ -374,6 +420,7 @@ class ResearchService:
                 probe=self._probe,
                 model_router=self._model_router,
                 agent_runner=self._agent_runner,
+                processing_projector=self._processing_projector,
             )
         return self._orchestrator_instance
 
@@ -385,6 +432,7 @@ class ResearchService:
         或内部标识符（Spec027 §端点与事件接口：安全 payload 是白名单）。
         """
         try:
+            self.drain_processing_projection_retries(research_task_id, owner_id)
             self._orchestrator().run(research_task_id, owner_id)
         except Exception:
             # 不伪造成功：先记日志再落事件（测试据「事件已落库」断言日志已发出）；状态机拒绝则忽略。

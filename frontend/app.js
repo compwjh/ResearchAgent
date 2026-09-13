@@ -928,7 +928,7 @@ const REASONING_PROTOCOL_MARKERS = [
   '\nassistant:', '\nuser:', '\nsystem:', 'assistant:', 'user:', 'system:',
 ];
 const reasoningFilters = new WeakMap();
-const KNOWN_CONVERSATION_EVENT_TYPES = new Set(['meta', 'progress', 'memory', 'reconnect', 'skill_activation', 'intake', 'plan', 'research_plan', 'approval', 'approvals', 'reasoning_started', 'reasoning_delta', 'reasoning_completed', 'token', 'sources', 'error', 'done']);
+const KNOWN_CONVERSATION_EVENT_TYPES = new Set(['meta', 'progress', 'memory', 'reconnect', 'processing_step', 'skill_activation', 'intake', 'plan', 'research_plan', 'approval', 'approvals', 'reasoning_started', 'reasoning_delta', 'reasoning_completed', 'token', 'sources', 'error', 'done']);
 
 function createReasoningFilter() {
   let carry = '';
@@ -1217,17 +1217,29 @@ function createConversationProcessing(assistantMessage) {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'conversation-processing-toggle';
-  toggle.setAttribute('aria-expanded', 'true');
+  const panelStorageKey = `processing-panel:${assistantMessage.dataset.messageId || assistantMessage.dataset.parentMessageId || 'conversation'}`;
+  let panelExpanded = true;
+  try { panelExpanded = localStorage.getItem(panelStorageKey) !== 'false'; } catch (_) { /* optional storage */ }
+  toggle.setAttribute('aria-expanded', panelExpanded ? 'true' : 'false');
   toggle.dataset.userToggled = 'false';
   toggle.textContent = '处理过程';
   const list = document.createElement('div');
   list.className = 'conversation-processing-list';
+  const treeFactory = window.ProcessingTree?.createProcessingTree;
+  const tree = treeFactory ? treeFactory({
+    document,
+    container: list,
+    storageKey: assistantMessage.dataset.messageId || assistantMessage.dataset.parentMessageId || 'conversation',
+  }) : null;
+  if (tree) processing._processingTree = tree;
   toggle.addEventListener('click', () => {
     const expanded = toggle.getAttribute('aria-expanded') === 'true';
     toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
     toggle.dataset.userToggled = 'true';
     list.hidden = expanded;
+    try { localStorage.setItem(panelStorageKey, expanded ? 'false' : 'true'); } catch (_) { /* optional storage */ }
   });
+  list.hidden = !panelExpanded;
   processing.append(toggle, list);
   const bubble = assistantMessage.querySelector('.bubble');
   const answer = bubble.querySelector('.answer');
@@ -1692,6 +1704,11 @@ function updateConversationResearchPlan(assistantMessage, payload = {}) {
 
 function updateConversationProcessing(processing, step) {
   if (!processing || !step) return;
+  if (processing._processingTree) {
+    processing._processingTree.upsert(step);
+    syncConversationProcessingState(processing);
+    return;
+  }
   const list = processing.querySelector('.conversation-processing-list') || processing;
   const isSystemRuleStep = step.kind === 'system_rule' || step.kind === 'system-rule' || /系统规则/.test(String(step.label || ''));
   const stepId = isSystemRuleStep ? 'system-rule-applied' : String(step.step_id || step.kind || `step-${list.children.length}`);
@@ -1717,6 +1734,12 @@ function updateConversationProcessing(processing, step) {
 
 function syncConversationProcessingState(processing) {
   if (!processing) return false;
+  if (processing._processingTree) {
+    const running = processing._processingTree.isRunning();
+    processing.setAttribute('aria-busy', running ? 'true' : 'false');
+    processing.dataset.running = running ? 'true' : 'false';
+    return running;
+  }
   const running = Boolean(processing.querySelector('.conversation-processing-item[data-status="running"]'));
   processing.setAttribute('aria-busy', running ? 'true' : 'false');
   processing.dataset.running = running ? 'true' : 'false';
@@ -1735,6 +1758,12 @@ function collapseConversationProcessing(processing) {
 
 function stopConversationProcessing(processing, status = 'failed', summary = '处理过程已结束') {
   if (!processing) return;
+  if (processing._processingTree) {
+    processing._processingTree.finalize(status, summary);
+    processing.setAttribute('aria-busy', 'false');
+    processing.dataset.running = 'false';
+    return;
+  }
   const list = processing.querySelector('.conversation-processing-list');
   if (list) {
     list.querySelectorAll('.conversation-processing-item').forEach((item) => {
@@ -2681,6 +2710,13 @@ async function handleMemoryAction(action, memoryId, card) {
 
 function appendConversationEvent(assistantMessage, processing, eventData) {
   if (eventData.type === 'progress') updateConversationProcessing(processing, eventData);
+  if (eventData.type === 'processing_step') {
+    const envelope = eventData.step && typeof eventData.step === 'object' ? eventData.step : eventData;
+    if (eventData.operation === 'syncing' || eventData.status === 'trace_syncing' || eventData.code === 'TRACE_PROJECTION_FAILED') {
+      processing?._processingTree?.setSyncing(true);
+      if (!processing?._processingTree) showConversationProcessingDegraded(processing, '轨迹同步中，研究结果已保留。');
+    } else updateConversationProcessing(processing, envelope);
+  }
   if (eventData.type === 'memory') showConversationMemoryNotice(assistantMessage?.querySelector('.bubble'), eventData);
   if (eventData.type === 'skill_activation') {
     updateConversationIntake(assistantMessage, {
@@ -2766,7 +2802,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
         assistantMessage.dataset.reasoningEffort = normalizeReasoningEffort(eventData.reasoning_effort || payload.reasoning_effort);
         assistantMessage.dataset.streamActive = 'true';
         setConversationStatus(assistantMessage.dataset.reasoningEffort === 'off' ? '正在生成回答…' : '模型正在准备思考…');
-      } else if (!acceptConversationEvent(assistantMessage, eventData)) {
+      } else if (eventData.type !== 'processing_step' && !acceptConversationEvent(assistantMessage, eventData)) {
         if (assistantMessage?.dataset.sequenceGap === 'true') {
           assistantMessage.dataset.streamActive = 'false';
           assistantMessage.classList.add('is-interrupted');
@@ -2777,6 +2813,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
         return;
       }
       if (eventData.type === 'progress') appendConversationEvent(assistantMessage, processing, eventData);
+      else if (eventData.type === 'processing_step') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'memory') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'reconnect') appendConversationEvent(assistantMessage, processing, eventData);
       else if (eventData.type === 'skill_activation') appendConversationEvent(assistantMessage, processing, eventData);

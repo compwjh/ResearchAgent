@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
@@ -572,6 +573,10 @@ def _resolve_after_seq(request: Request, after_seq: int) -> int | JSONResponse:
 
 def _event_stream(research_task_id: str, start_seq: int):
     """事件流生成器：按 event_seq 连续推送，终态收尾，定期心跳。"""
+    # Reconnect/idle recovery: consume pending cross-store projections once
+    # before polling, even when no fresh ResearchEvent exists.
+    with suppress(Exception):
+        _service().drain_processing_projection_retries(research_task_id, OWNER_ID)
     cursor = start_seq
     last_flush = time.monotonic()
     while True:
@@ -588,7 +593,27 @@ def _event_stream(research_task_id: str, start_seq: int):
         if events:
             for event in events:
                 cursor = event.event_seq
+                projection_error = False
+                upsert = None
+                try:
+                    upsert = _service().project_event_for_sse(event, OWNER_ID)
+                except Exception:
+                    # Do not expose exception text.  The durable raw event is
+                    # still emitted for legacy clients, followed by a stable
+                    # retry frame for tree-aware clients.
+                    projection_error = True
+                # Projection completes (or records its retry marker) before
+                # either raw or tree frames are yielded.
                 yield _sse_frame(research_task_id, event.event_seq, event.event_type, _safe_payload(event))
+                if upsert is not None:
+                    # The upsert envelope is incremental data, not a second
+                    # ResearchEvent.  It therefore has no duplicate SSE id.
+                    yield _sse_frame(research_task_id, None, "processing_step", upsert)
+                if projection_error:
+                    yield _sse_frame(
+                        research_task_id, None, "processing_step",
+                        {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": True},
+                    )
             last_flush = time.monotonic()
             continue
         if task.status in _TASK_TERMINAL:

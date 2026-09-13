@@ -72,7 +72,7 @@ class Orchestrator:
     """稳定受控骨架：plan -> search -> evaluate -> coverage -> bounded re-plan -> synthesize。"""
 
     def __init__(
-        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None, agent_runner=None
+        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None, agent_runner=None, processing_projector=None
     ) -> None:
         self._store = store
         # 检索唯一出口：Spec015 CatalogSearchAdapter（未注入时走其内部惰性装配）。
@@ -83,6 +83,13 @@ class Orchestrator:
         # deterministic Spec027 pipeline remains unchanged until a WorkItem is
         # explicitly handed to run_agent by the approved Task05+ integration.
         self._agent_runner = agent_runner
+        self._processing_projector = processing_projector
+        self._owner_by_task: dict[str, str] = {}
+        if self._agent_runner is not None:
+            # Install the callback on the already-constructed runner so skill
+            # activation and tool calls use this same event/projection seam.
+            with suppress(Exception):
+                self._agent_runner.event_sink = self._on_runtime_event
         self._planner = planner or Planner()
         self._monotonic = monotonic or time.monotonic
         # probe 默认 ResourceProbe()；惰性导入避免编排器模块在导入期就拉起 ollama 依赖。
@@ -110,21 +117,25 @@ class Orchestrator:
         # 终态不得回到 running：已终态任务原样返回（取消后不再新增节点）。
         if task.status in TASK_TERMINAL:
             return self._result(research_task_id, task.status, task.current_plan_version, 0, None, (), False, None)
+        self._owner_by_task[research_task_id] = owner_id
         try:
-            return self._run_pipeline(
-                research_task_id,
-                owner_id,
-                plan_version=1,
-                started_at=self._monotonic(),
-            )
-        except InvalidStateTransition:
-            # 任务被取消/并发改态导致转移失败：不吞错，读出当前态原样返回。
-            current = self._store.get_task(research_task_id, owner_id)
-            status = current.status if current is not None else "failed"
-            version = current.current_plan_version if current is not None else 0
-            return self._result(research_task_id, status, version, 0, None, (), False, "INVALID_STATE_TRANSITION")
-        except PlanRejected as exc:
-            return self._reject(research_task_id, owner_id, 1, exc.code)
+            try:
+                return self._run_pipeline(
+                    research_task_id,
+                    owner_id,
+                    plan_version=1,
+                    started_at=self._monotonic(),
+                )
+            except InvalidStateTransition:
+                # 任务被取消/并发改态导致转移失败：不吞错，读出当前态原样返回。
+                current = self._store.get_task(research_task_id, owner_id)
+                status = current.status if current is not None else "failed"
+                version = current.current_plan_version if current is not None else 0
+                return self._result(research_task_id, status, version, 0, None, (), False, "INVALID_STATE_TRANSITION")
+            except PlanRejected as exc:
+                return self._reject(research_task_id, owner_id, 1, exc.code)
+        finally:
+            self._owner_by_task.pop(research_task_id, None)
 
     def _reject(self, research_task_id: str, owner_id: str, plan_version: int, code: str) -> OrchestratorResult:
         """计划被拒：收敛为 failed 并发出 terminal 事件（不留 running 悬空）。"""
@@ -474,6 +485,7 @@ class Orchestrator:
                 work_item_input = {}
             run_id = f"{item.work_item_id}:run-{max(1, item.attempt + 1)}"
             try:
+                worker_event = self._emit(task.research_task_id, "worker", self._worker_event_payload(item, "running"))
                 result = self.run_agent(AgentRunInput(
                     agent_run_id=run_id,
                     research_session_id=session.research_session_id,
@@ -488,6 +500,10 @@ class Orchestrator:
                     attempt=max(1, item.attempt + 1),
                     resolved_model=item.resolved_model or "",
                     reasoning_effort="off",
+                    parent_source_event_id=(
+                        f"research-event:{task.research_task_id}:{worker_event.event_seq}"
+                        if worker_event else None
+                    ),
                 ))
             except Exception:
                 failures += 1
@@ -1149,6 +1165,9 @@ class Orchestrator:
             "task_type": item.task_type,
             "role": item.role,
             "status": status,
+            "node_type": "agent",
+            "node_key": f"agent:{item.work_item_id}",
+            "parent_node_key": "phase:research",
         }
         for field in ("model_tier", "resolved_model", "worker_slot"):
             value = getattr(item, field, None)
@@ -1157,11 +1176,66 @@ class Orchestrator:
         payload.update(extra)
         return payload
 
-    def _emit(self, research_task_id: str, event_type: str, payload: dict) -> None:
+    def _on_runtime_event(self, event) -> None:
+        """Project runner-emitted skill/tool events without a second event log."""
+        owner_id = self._owner_by_task.get(event.research_task_id)
+        if self._processing_projector is None or not owner_id:
+            return
+        session = self._store.get_session_by_task(event.research_task_id, owner_id)
+        if session is None or not session.activity_message_id:
+            return
+        try:
+            self._processing_projector.project_event(
+                session.activity_message_id, owner_id, event,
+                research_session_id=session.research_session_id,
+            )
+            with suppress(Exception):
+                self._processing_projector.drain_pending(
+                    event.research_task_id, session.activity_message_id, owner_id,
+                    research_session_id=session.research_session_id,
+                )
+        except Exception:
+            with suppress(Exception):
+                self._store.mark_projection_retry(event.research_task_id, event.event_seq, "TRACE_PROJECTION_FAILED")
+
+    def _emit(self, research_task_id: str, event_type: str, payload: dict):
         """追加事件；event_type 必须来自 contracts.EVENT_TYPES（安全 payload 由 store 序列化）。"""
         if event_type not in EVENT_TYPES:
             raise ValueError(f"invalid event_type: {event_type}")
-        self._store.append_event(research_task_id, event_type, payload)
+        owner_id = self._owner_by_task.get(research_task_id)
+        enriched = dict(payload)
+        if event_type in {"task", "plan", "coverage", "report", "terminal"}:
+            enriched.setdefault("node_type", "phase")
+            enriched.setdefault("node_key", f"phase:{'research' if event_type in {'task', 'terminal'} else event_type}")
+        if event_type == "worker":
+            work_item_id = enriched.get("work_item_id")
+            if work_item_id:
+                enriched.setdefault("node_type", "agent")
+                enriched.setdefault("node_key", f"agent:{work_item_id}")
+                enriched.setdefault("parent_node_key", "phase:research")
+        event = self._store.append_event(research_task_id, event_type, enriched)
+        if self._processing_projector is not None and owner_id:
+            session = self._store.get_session_by_task(research_task_id, owner_id)
+            if session is not None and session.activity_message_id:
+                try:
+                    self._processing_projector.project_event(
+                        session.activity_message_id,
+                        owner_id,
+                        event,
+                        research_session_id=session.research_session_id,
+                    )
+                    with suppress(Exception):
+                        self._processing_projector.drain_pending(
+                            research_task_id, session.activity_message_id, owner_id,
+                            research_session_id=session.research_session_id,
+                        )
+                except Exception as exc:
+                    # The durable ResearchEvent remains authoritative; retain
+                    # a ResearchStore retry marker while the activity message
+                    # projection is repaired asynchronously.
+                    with suppress(Exception):
+                        self._store.mark_projection_retry(research_task_id, event.event_seq, "TRACE_PROJECTION_FAILED")
+        return event
 
     @staticmethod
     def _result(task_id, status, version, selected_count, report_id, gaps, degraded, error_code) -> OrchestratorResult:

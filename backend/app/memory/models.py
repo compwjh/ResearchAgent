@@ -111,6 +111,27 @@ class ProcessingStep:
     research_session_id: Optional[str] = None
     schema_version: int = 1
 
+    def to_dict(self) -> dict:
+        """Stable REST/SSE projection; v1 callers may ignore the v2 fields."""
+        return {
+            "step_id": self.step_id,
+            "message_id": self.message_id,
+            "kind": self.kind,
+            "label": self.label,
+            "status": self.status,
+            "summary": self.summary,
+            "started_at": self.started_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "parent_step_id": self.parent_step_id,
+            "node_type": self.node_type,
+            "node_key": self.node_key,
+            "display_order": self.display_order,
+            "detail_json": self.detail_json,
+            "source_event_id": self.source_event_id,
+            "research_session_id": self.research_session_id,
+            "schema_version": self.schema_version,
+        }
+
 
 @dataclass(frozen=True)
 class MemoryAnalysisJob:

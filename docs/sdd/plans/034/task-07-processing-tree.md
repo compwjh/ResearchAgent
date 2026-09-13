@@ -1,7 +1,7 @@
 # Task07 — processing_steps 三级树与实时投影
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02、Task05；当前状态：`实施中（后端实现中）`
+> 依赖：Task02、Task05；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -48,5 +48,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：ProcessingStep v2、Projector、共享前端树组件、双端测试与评审报告。
-- 执行结果：后端阶段实施中，待双端实现与评审/验收后填写。
-- 变更日志：2026-09-13 启动后端迁移、树校验、Projector 幂等与重试实现；复用 Task02 canonical event/replay 接缝，不重写旧 processing step 数据。
+- 执行结果：双端实现、复审与独立验收均 GO；真实浏览器 smoke 留 Task10。
+- 变更日志：2026-09-13 启动后端迁移、树校验、Projector 幂等与重试实现；复用 Task02 canonical event/replay 接缝，不重写旧 processing step 数据。后端定向 227 passed、5 subtests，前端定向 193 passed，双端 reviewer/tester 均 GO；真实浏览器 smoke 留 Task10。
