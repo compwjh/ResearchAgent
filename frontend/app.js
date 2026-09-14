@@ -1601,6 +1601,8 @@ function safeResearchList(value, limit = 12) {
 
 function researchPlanField(plan, key) {
   if (!plan || typeof plan !== 'object') return null;
+  const shared = window.ResearchSessionUI?.planField?.(plan, key);
+  if (shared !== null && shared !== undefined) return shared;
   if (key === 'safety_summary' && plan.safe_summary !== undefined) return plan.safe_summary;
   const direct = plan[key];
   if (direct !== undefined) return direct;
@@ -1733,6 +1735,11 @@ async function submitResearchSessionCommand(sessionId, command, subjectVersion, 
     const data = await conversationFetch(`/api/research-sessions/${encodeURIComponent(sessionId)}/commands`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     setResearchCommandState(button, 'success', RESEARCH_COMMAND_LABELS[command] ? `${RESEARCH_COMMAND_LABELS[command]}已完成` : '已完成');
     button.disabled = true;
+    // Research Tab listens to the same command result so chat and tab keep one
+    // Session/Task projection and the existing SSE/report pipeline in sync.
+    window.dispatchEvent(new CustomEvent('research-session-command-success', {
+      detail: { sessionId, command, result: data },
+    }));
     if (typeof onSuccess === 'function') onSuccess(data);
     return data;
   } catch (error) {
@@ -1772,9 +1779,14 @@ function renderConversationApprovals(panel, approvals, plan) {
 function updateConversationResearchPlan(assistantMessage, payload = {}) {
   const existingPanel = assistantMessage?.querySelector('.conversation-research-plan');
   const existingPlan = parseResearchProjection(existingPanel?.dataset.planProjection);
-  const plan = payload.plan || payload.research_plan || payload.plan_output || (payload.version || payload.plan_version ? payload : null) || (Object.keys(existingPlan).length ? existingPlan : null);
+  let plan = payload.plan || payload.research_plan || payload.plan_output || (payload.version || payload.plan_version ? payload : null) || (Object.keys(existingPlan).length ? existingPlan : null);
   const hasApprovalProjection = Array.isArray(payload.approvals) || Boolean(payload.approval);
-  const approvals = Array.isArray(payload.approvals) ? payload.approvals : payload.approval ? [payload.approval] : [];
+  let approvals = Array.isArray(payload.approvals) ? payload.approvals : payload.approval ? [payload.approval] : [];
+  const canonical = window.ResearchSessionUI?.projectSession?.({ ...payload, plan, approvals, research_session_id: payload.research_session_id || payload.research_session?.research_session_id });
+  if (canonical) {
+    plan = canonical.plan || plan;
+    approvals = canonical.approvals?.length ? canonical.approvals : approvals;
+  }
   if (!plan && !approvals.length && !payload.research_session_id && !payload.research_session) return null;
   const panel = createConversationResearchPlan(assistantMessage); if (!panel) return null;
   const session = payload.research_session || {};

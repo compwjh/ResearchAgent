@@ -32,8 +32,10 @@ SSE：`GET /{id}/events` 只推送已持久化的 `safe_payload_json`，不泄�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import threading
 import time
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -48,6 +50,7 @@ from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
 from backend.app.research.application.entry import ResearchServiceError
+from backend.app.research.application.intake import ResearchIntakeCoordinator
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.service import SkillRegistryService
 from backend.app.skills.tool_service import ToolRegistryService
@@ -56,6 +59,7 @@ router = APIRouter(prefix="/research-tasks", tags=["research-tasks"])
 session_router = APIRouter(prefix="/research-sessions", tags=["research-sessions"])
 notification_router = APIRouter(prefix="/research-notifications", tags=["research-notifications"])
 logger = logging.getLogger(__name__)
+_SESSION_CREATE_LOCK = threading.RLock()
 
 # 终态集合：与 `research.domain.contracts.TASK_TERMINAL` 逐字一致。api 只经
 # application/entry 依赖 research（不 import domain），故在此显式列出。
@@ -115,6 +119,7 @@ class ResearchSessionCreateRequest(BaseModel):
     trigger_message_id: Optional[str] = Field(default=None, max_length=100)
     project_id: Optional[str] = Field(default=None, max_length=100)
     intake: dict = Field(default_factory=dict)
+    idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
 
 class ResearchSessionCommandRequest(BaseModel):
@@ -176,6 +181,30 @@ def _approval_service() -> PlanApprovalService:
         memory_repository=_memory(),
         skill_registry=SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
         tool_registry=ToolRegistryService(build_default_tool_registry(), state_path),
+    )
+
+
+def _intake_coordinator():
+    """Resolve the one conversation-layer Intake coordinator.
+
+    ``routes_conversations`` normally registers this provider during app
+    startup.  The fallback keeps this router independently testable while
+    still reusing the same coordinator/registries and ResearchStore.
+    """
+    store = _store()
+    memory = _memory()
+    try:
+        coordinator = get_provider("research_intake_coordinator")
+        if getattr(coordinator, "store", None) is store and getattr(coordinator, "memory_repository", None) is memory:
+            return coordinator
+    except KeyError:
+        pass
+    state_path = KB_DIR / "skill-state.json"
+    return ResearchIntakeCoordinator(
+        store,
+        memory,
+        SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
+        ToolRegistryService(build_default_tool_registry(), state_path),
     )
 
 
@@ -394,6 +423,187 @@ def _command_error(exc: ResearchCommandError) -> JSONResponse:
     )
 
 
+_SESSION_INTAKE_FIELDS = frozenset({
+    "topic", "objective", "time_range", "language", "sources", "depth",
+    "output", "citations", "constraints",
+})
+
+
+def _normalize_session_intake(values: dict, *, fallback_topic: str | None = None) -> dict:
+    """Validate the small form summary before passing it to Intake storage."""
+    if not isinstance(values, dict):
+        raise ValueError("intake must be an object")
+    unknown = set(values) - _SESSION_INTAKE_FIELDS
+    if unknown:
+        raise ValueError(f"unknown intake fields: {sorted(unknown)}")
+    normalized: dict = {}
+    for key, value in values.items():
+        if key == "time_range":
+            if not isinstance(value, dict) or set(value) - {"from", "to"}:
+                raise ValueError("time_range must contain only from/to")
+            if not all(isinstance(value.get(item), int) and not isinstance(value.get(item), bool) for item in ("from", "to")):
+                raise ValueError("time_range from/to must be integers")
+            if value["from"] > value["to"] or not (1900 <= value["from"] <= 2200 and 1900 <= value["to"] <= 2200):
+                raise ValueError("time_range is invalid")
+            normalized[key] = {"from": value["from"], "to": value["to"]}
+        elif isinstance(value, str):
+            if len(value.strip()) > 4000:
+                raise ValueError(f"{key} is too long")
+            normalized[key] = value.strip()
+        elif isinstance(value, list):
+            if len(value) > 32 or not all(isinstance(item, str) and len(item) <= 200 for item in value):
+                raise ValueError(f"{key} is invalid")
+            normalized[key] = [item.strip() for item in value]
+        elif isinstance(value, dict):
+            raise ValueError(f"{key} must be a string or list")
+        else:
+            raise ValueError(f"{key} is invalid")
+    if fallback_topic and "topic" not in normalized:
+        normalized["topic"] = fallback_topic[:4000]
+    return normalized
+
+
+def _intake_payload(result) -> dict:
+    """Safe Session/Intake response; Skill bodies never cross this boundary."""
+    session = result.session.to_dict() if result.session is not None else None
+    fields = [item.to_dict() for item in result.fields]
+    activation = result.activation
+    if isinstance(activation, dict):
+        activation = {key: value for key, value in activation.items() if key != "skill"}
+        skill = (result.activation or {}).get("skill")
+        if isinstance(skill, dict):
+            activation["skill"] = {
+                key: skill[key]
+                for key in ("name", "skill_id", "version", "schema_version", "content_hash", "description", "tools")
+                if key in skill
+            }
+    return {
+        "status": result.status,
+        "session": session,
+        "fields": fields,
+        "missing": list(result.missing),
+        "question": result.question,
+        "choices": list(result.choices),
+        "activation": activation,
+        "error": result.error,
+    }
+
+
+def _session_create_text(intake: dict) -> str:
+    topic = str(intake.get("topic") or "").strip()
+    objective = str(intake.get("objective") or "").strip()
+    time_range = intake.get("time_range")
+    text = "帮我做一个深度研究"
+    if topic:
+        text += f"，主题是{topic}"
+    if objective:
+        text += f"，目标是{objective}"
+    if isinstance(time_range, dict):
+        text += f"，时间范围是{time_range['from']}-{time_range['to']}"
+    return text + "。"
+
+
+def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, legacy_goal: str | None = None):
+    """Create/enter the shared conversation → Intake Session flow."""
+    intake = _normalize_session_intake(payload.intake, fallback_topic=legacy_goal)
+    conversation_hint = (payload.conversation_id or "").strip()
+    fingerprint = hashlib.sha256(json.dumps({
+        "conversation_id": conversation_hint,
+        "project_id": (payload.project_id or "").strip() or None,
+        "trigger_message_id": payload.trigger_message_id,
+        "intake": intake,
+        "legacy_goal": legacy_goal,
+    }, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    # A supplied trigger is itself the stable event identity.  This prevents
+    # retries that carry a slightly different form projection from writing a
+    # second Session; the stored fingerprint turns that difference into a
+    # visible conflict instead of silently accepting it.
+    request_key = payload.idempotency_key or (
+        f"trigger:{payload.trigger_message_id}" if payload.trigger_message_id else f"request:{fingerprint}"
+    )
+    existing_request = _store().get_session_create_request(OWNER_ID, request_key)
+    if existing_request is not None:
+        if existing_request["request_fingerprint"] != fingerprint:
+            return _api_error("SESSION_CREATE_IDEMPOTENCY_CONFLICT", 409, "幂等键对应了不同的研究请求")
+        if existing_request.get("response_json"):
+            return json.loads(existing_request["response_json"])
+    topic = str(intake.get("topic") or legacy_goal or "深度研究").strip()
+    conversation_id = (payload.conversation_id or "").strip()
+    project_id = (payload.project_id or "").strip() or None
+    memory = _memory()
+    if payload.trigger_message_id and not conversation_id:
+        return _api_error("MESSAGE_NOT_FOUND", 404, "触发消息必须属于指定会话")
+    conversation = memory.get_conversation(conversation_id, OWNER_ID) if conversation_id else None
+    if conversation_id and conversation is None:
+        return _api_error("CONVERSATION_NOT_FOUND", 404, "会话不存在")
+    if project_id and memory.get_project(project_id, OWNER_ID) is None:
+        return _api_error("PROJECT_NOT_FOUND", 404, "项目不存在")
+    if conversation is not None and project_id is not None and conversation.project_id != project_id:
+        return _api_error("PROJECT_MISMATCH", 409, "显式项目与会话归属不一致")
+    if conversation is not None and project_id is None:
+        project_id = conversation.project_id
+    if conversation is None:
+        conversation = memory.create_conversation(OWNER_ID, project_id, f"深度研究：{topic}")
+    else:
+        # An explicit form creation in an existing conversation inherits its
+        # current project and never rewrites a user's existing title.
+        if payload.trigger_message_id:
+            trigger = memory.get_message(payload.trigger_message_id, OWNER_ID)
+            if trigger is None or trigger.conversation_id != conversation.conversation_id or trigger.role != "user":
+                return _api_error("MESSAGE_NOT_FOUND", 404, "触发消息不存在")
+        active = _store().get_active_session(conversation.conversation_id, OWNER_ID)
+        if active is not None:
+            return _api_error("RESEARCH_SESSION_ACTIVE_CONFLICT", 409, "当前会话已有进行中的研究 Intake")
+    trigger_message_id = payload.trigger_message_id
+    if trigger_message_id:
+        trigger = memory.get_message(trigger_message_id, OWNER_ID)
+    else:
+        _conversation, trigger, _assistant = memory.create_idempotent_message_pair(
+            conversation.conversation_id, OWNER_ID, _session_create_text(intake),
+            idempotency_key=request_key, model=None, mode="research"
+        )
+    coordinator = _intake_coordinator()
+    prior = _store().get_session_by_trigger(conversation.conversation_id, trigger.message_id, OWNER_ID)
+    if prior is not None:
+        # A process may have committed the Session before losing the response
+        # idempotency record.  Replay the trigger projection rather than
+        # returning an active conflict or creating another Session.
+        result = coordinator.handle_message(conversation.conversation_id, OWNER_ID, trigger.message_id, trigger.content)
+    else:
+        result = coordinator.begin_research_intake(
+            conversation.conversation_id, OWNER_ID, trigger.message_id, intake
+        )
+    if result.status == "active_conflict":
+        return _api_error("RESEARCH_SESSION_ACTIVE_CONFLICT", 409, "当前会话已有进行中的研究 Intake")
+    if result.status == "error":
+        error = result.error or {"code": "SOURCE_UNAVAILABLE", "message": "研究 Intake 暂时不可用"}
+        return _api_error(str(error.get("code") or "SOURCE_UNAVAILABLE"), 503, str(error.get("message") or "研究 Intake 暂时不可用"))
+    response = {
+        "research_session_id": result.session.research_session_id if result.session else None,
+        "conversation": {
+            "conversation_id": conversation.conversation_id,
+            "project_id": conversation.project_id,
+            "title": conversation.title,
+        },
+        "trigger_message_id": trigger.message_id,
+        "intake": _intake_payload(result),
+    }
+    if result.session is not None:
+        _store().save_session_create_request(
+            owner_id=OWNER_ID, idempotency_key=request_key, request_fingerprint=fingerprint,
+            research_session_id=result.session.research_session_id,
+            conversation_id=conversation.conversation_id, trigger_message_id=trigger.message_id,
+            response=response,
+        )
+    return response
+
+
+def _create_unified_session(payload: ResearchSessionCreateRequest, *, legacy_goal: str | None = None):
+    """Serialize Session creation so key reservation and message pair are single-writer."""
+    with _SESSION_CREATE_LOCK:
+        return _create_unified_session_unlocked(payload, legacy_goal=legacy_goal)
+
+
 @session_router.get("/{research_session_id}/artifacts")
 def list_research_artifacts(research_session_id: str, report_version: Optional[int] = Query(None, ge=1)):
     """List immutable report artifacts through the owner/session/task seam."""
@@ -532,6 +742,65 @@ def get_research_session(research_session_id: str):
         return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "研究命令依赖暂时不可用"))
 
 
+@session_router.post("", status_code=202)
+def create_research_session(payload: ResearchSessionCreateRequest):
+    """Create a Session and first message through the shared Intake flow."""
+    try:
+        return _create_unified_session(payload)
+    except (ValueError, LookupError) as exc:
+        return _api_error("PLAN_VALIDATION_FAILED", 400, str(exc) or "研究表单参数非法")
+    except ResearchCommandError as exc:
+        return _command_error(exc)
+    except Exception:
+        logger.exception("research session create failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究会话依赖暂时不可用"))
+
+
+@session_router.get("")
+def list_research_sessions(
+    project_id: Optional[str] = None,
+    status: Optional[str] = None,
+    cursor: Optional[str] = None,
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Owner-scoped Session list used by the Research Tab."""
+    try:
+        if project_id and _memory().get_project(project_id, OWNER_ID) is None:
+            return _api_error("PROJECT_NOT_FOUND", 404, "项目不存在")
+        if project_id is None:
+            sessions, next_cursor = _store().list_sessions_page(OWNER_ID, status=status, limit=limit, cursor=cursor)
+        else:
+            # Project binding lives in the conversation DB.  Walk the same
+            # owner/status keyset pages and advance the raw cursor only after
+            # every examined Session, so filtered pages cannot duplicate or
+            # skip rows across requests.
+            memory = _memory()
+            sessions = []
+            scan_cursor = cursor
+            next_cursor = None
+            while len(sessions) < limit:
+                page, raw_next = _store().list_sessions_page(OWNER_ID, status=status, limit=100, cursor=scan_cursor)
+                sessions.extend(
+                    item for item in page
+                    if (conversation := memory.get_conversation(item.conversation_id, OWNER_ID)) is not None
+                    and conversation.project_id == project_id
+                )
+                scan_cursor = raw_next
+                if raw_next is None:
+                    break
+            if len(sessions) > limit:
+                sessions = sessions[:limit]
+                next_cursor = _store().encode_sessions_cursor(sessions[-1], status=status)
+            elif scan_cursor is not None:
+                next_cursor = scan_cursor
+        return {"research_sessions": [item.to_dict() for item in sessions], "next_cursor": next_cursor}
+    except ValueError as exc:
+        return _api_error("PLAN_VALIDATION_FAILED", 400, str(exc) or "状态非法")
+    except Exception:
+        logger.exception("research session list failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究会话依赖暂时不可用"))
+
+
 @session_router.post("/{research_session_id}/commands")
 def execute_research_session_command(research_session_id: str, payload: ResearchSessionCommandRequest):
     """Unified button/natural-language command boundary for Task04."""
@@ -565,51 +834,31 @@ def author_research_session_plan(research_session_id: str, payload: dict):
 
 @router.post("", status_code=202)
 def create_research_task(payload: ResearchTaskCreateRequest):
-    """创建研究任务：立即返回 202 + 任务摘要，编排在后台线程池推进。
+    """Legacy adapter: enter the unified Session/Intake flow only.
 
-    失败：400 输入（缺 goal / conversation_id、goal 长度、未知档位、篇数非法）；
-    404 会话/项目（会话不存在或不属于该 owner；显式 `project_id` 不存在或不属于该
-    owner）；503 依赖不可用（memory repository 归属校验或调度装配抛 `ResearchServiceError`
-    之外的意外异常，只记日志，返回稳定错误体 `SOURCE_UNAVAILABLE`）。
-
-    项目继承（Spec027 §产品边界）：未传 `project_id` 时从会话继承其项目；显式传入则
-    以传入值为准（须存在且属于该 owner）。
+    This endpoint intentionally does not call ``ResearchService.create_task``
+    or start an Orchestrator.  Task creation is reserved for the approved
+    Session plan command; the old payload remains available to older clients.
     """
     goal = (payload.goal or "").strip()
     conversation_id = (payload.conversation_id or "").strip()
     if not goal or not conversation_id:
         return _error(ResearchServiceError("PLAN_VALIDATION_FAILED", 400, "goal 与 conversation_id 为必填"))
     try:
-        # P2-A：会话/项目校验依赖既有 memory repository（api 组合装配层的**外部依赖**）。
-        # 依赖故障（memory 库损坏 / 不可读）必须与下方调度装配故障同款返回 503 稳定错误体，
-        # 而不是让异常冒泡成 FastAPI 默认裸 500 `{"detail": "Internal Server Error"}`（不含
-        # `error.code`，客户端无法按码映射文案），见模块 docstring「错误出口」。
-        resolved_project_id, context_error = _resolve_project_id(conversation_id, payload.project_id)
-    except Exception as exc:
-        logger.exception("research task context validation failed: %s", exc)
-        # 复用 027 冻结码 `SOURCE_UNAVAILABLE`（不新增码，无需变更日志登记）；文案点明是
-        # 依赖（memory 归属校验）而非调度，便于与下方调度故障的日志/文案区分。
-        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
-    if context_error is not None:
-        # 404（会话/项目不存在）原样透传：不被上方 except 吞掉。
-        return context_error
-    try:
-        task = _service().create_task(
-            owner_id=OWNER_ID,
-            goal=goal,
+        request = ResearchSessionCreateRequest(
             conversation_id=conversation_id,
-            project_id=resolved_project_id,
-            quality_profile=payload.quality_profile,
-            target_paper_count=payload.target_paper_count,
-            language=payload.language,
-            review_plan_first=payload.review_plan_first,
+            project_id=payload.project_id,
+            intake={"topic": goal},
         )
-    except ResearchServiceError as exc:
-        return _error(exc)
-    except Exception as exc:  # 调度/装配失败：不暴露内部细节
-        logger.exception("research task create failed: %s", exc)
-        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务调度暂时不可用"))
-    return _task_summary(task)
+        result = _create_unified_session(request, legacy_goal=goal)
+        return result
+    except ValueError as exc:
+        return _error(ResearchServiceError("PLAN_VALIDATION_FAILED", 400, str(exc) or "研究请求非法"))
+    except LookupError:
+        return _api_error("CONVERSATION_NOT_FOUND", 404, "会话不存在")
+    except Exception as exc:
+        logger.exception("legacy research task adapter failed: %s", exc)
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究会话依赖暂时不可用"))
 
 
 @router.get("")

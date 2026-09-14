@@ -1,10 +1,13 @@
-/* Spec027 Task04/05: independent research-task workspace. No app.js private bindings are used. */
+/* Spec034 Task09: Research Tab is a Session workspace; legacy task APIs remain
+ * a read/debug compatibility seam only.  Creation and listing never bypass the
+ * Session/Intake/Plan/Approval state machine. */
 (function exposeResearchTasks(root, factory) {
   const api = factory(root);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root) root.ResearchTasks = api;
   if (root && root.document) api.boot(root.document);
 }(typeof globalThis !== 'undefined' ? globalThis : this, function researchTasksFactory(root) {
+  const sessionUI = root.ResearchSessionUI || (typeof module === 'object' && typeof require === 'function' ? require('./research-session-ui.js') : null);
   const TERMINAL_STATUSES = new Set(['partial', 'completed', 'failed', 'cancelled', 'interrupted']);
   const EVENT_TYPES = ['task', 'plan', 'worker', 'model', 'coverage', 'report', 'terminal', 'processing_step'];
   const NOTIFICATION_EVENT_TYPES = ['completed', 'partial', 'failed', 'waiting_approval', 'interrupted'];
@@ -16,7 +19,8 @@
     waiting_approval: '等待审批', interrupted: '研究已中断',
   };
   const STATUS_TEXT = {
-    draft: '草稿', planning: '规划中', running: '执行中', waiting_approval: '等待计划审核',
+    draft: '草稿', intake_pending: '等待补充研究参数', plan_generating: '生成计划中', plan_pending_approval: '等待计划审核',
+    queued: '排队中', planning: '规划中', running: '执行中', waiting_approval: '等待审批',
     partial: '部分完成', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断',
   };
   const ERROR_TEXT = {
@@ -70,7 +74,9 @@
     conversationId: null,
     conversation: null,
     tasks: [],
+    sessions: [],
     selectedTaskId: null,
+    selectedSessionId: null,
     selectedTask: null,
     events: new Map(),
     selectedPapers: new Set(),
@@ -95,6 +101,8 @@
     notificationReconnectTimer: null,
     notificationLoading: false,
     notificationSyncError: '',
+    createIdempotencyKey: null,
+    triggerMessageId: null,
   };
 
   function safeArtifactUrl(value) {
@@ -475,8 +483,8 @@
     state.conversationId = parseConversationId();
     const id = state.conversationId;
     if (!id) {
-      setText('research-current-conversation', '尚未打开会话。请先打开一个会话，再创建研究任务。');
-      setText('research-create-status', '请从会话 URL（/c/{conversation_id}）进入，或先打开一个会话。');
+      setText('research-current-conversation', '将创建新的研究会话；若当前已打开会话则自动继承其项目。');
+      setText('research-create-status', '填写研究目标后，系统会通过统一 Session/Intake/Plan/Approval 流程创建并打开会话。');
       return Promise.resolve(null);
     }
     setText('research-current-conversation', `当前会话：${id}`);
@@ -496,15 +504,68 @@
 
   function clearNode(node) { if (node) node.replaceChildren(); }
 
+  function sessionTaskProjection(session) {
+    return sessionUI?.projectSession?.(session) || null;
+  }
+
+  function sessionDurationText(item) {
+    if (sessionUI?.durationText) return sessionUI.durationText(item);
+    const duration = Number(item?.duration_ms);
+    if (Number.isFinite(duration) && duration >= 0) return `${(duration / 1000).toFixed(duration >= 10000 ? 0 : 1)} 秒`;
+    const start = Date.parse(item?.started_at || item?.created_at || '');
+    const end = Date.parse(item?.completed_at || item?.updated_at || '');
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) return `${((end - start) / 1000).toFixed((end - start) >= 10000 ? 0 : 1)} 秒`;
+    return '—';
+  }
+
+  function sessionProgressText(item) {
+    if (sessionUI?.progressText) return sessionUI.progressText(item);
+    const raw = Number(item?.progress_percent ?? item?.progress);
+    if (!Number.isFinite(raw)) return '进度：—';
+    const percent = raw <= 1 ? raw * 100 : raw;
+    return `进度：${Math.max(0, Math.min(100, Math.round(percent)))}%`;
+  }
+
+  function sessionApprovalText(item) {
+    if (sessionUI?.approvalText) return sessionUI.approvalText(item);
+    const approval = item?.approval_status;
+    if (!approval) return '审批：—';
+    if (typeof approval === 'object') return `审批：${text(approval.kind || approval.status, '待处理')}`;
+    return `审批：${text(approval)}`;
+  }
+
+  function sessionAgentToolText(item) {
+    if (sessionUI?.agentToolText) return sessionUI.agentToolText(item);
+    const value = item?.agent_tool_summary;
+    if (typeof value === 'string' && value.trim()) return value.length > 180 ? `${value.slice(0, 180)}…` : value;
+    if (value && typeof value === 'object') {
+      const agents = Number(value.agents ?? value.agent_count);
+      const tools = Number(value.tools ?? value.tool_count);
+      const parts = [];
+      if (Number.isFinite(agents)) parts.push(`Agent ${agents}`);
+      if (Number.isFinite(tools)) parts.push(`Tool ${tools}`);
+      if (parts.length) return parts.join(' · ');
+    }
+    return 'Agent/Tool：—';
+  }
+
+  function currentProjectId() {
+    const selected = state.document?.querySelector?.('.project-item .project-item-main[aria-pressed="true"]');
+    // The sidebar selection reflects app.js's draftProjectId when a user has
+    // switched project context without changing the open conversation.
+    return selected?.closest?.('.project-item')?.dataset?.projectId || state.conversation?.project_id || null;
+  }
+
   function createTaskCard(task) {
     const doc = state.document;
     const item = doc.createElement('div');
-    item.setAttribute('role', 'listitem');
+    item.className = 'research-task-item'; item.setAttribute('role', 'listitem');
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'research-task-card';
     button.dataset.taskId = text(task.research_task_id, '');
-    button.classList.toggle('is-selected', task.research_task_id === state.selectedTaskId);
+    button.dataset.sessionId = text(task.research_session_id, '');
+    button.classList.toggle('is-selected', task.research_task_id === state.selectedTaskId || task.research_session_id === state.selectedSessionId);
     const title = doc.createElement('span');
     title.className = 'research-task-card-title';
     title.textContent = text(task.goal_excerpt, '未命名研究任务');
@@ -512,12 +573,23 @@
     badge.className = 'research-badge';
     badge.dataset.status = text(task.status, '');
     badge.textContent = statusLabel(task.status);
-    const meta = doc.createElement('span');
-    meta.className = 'research-task-card-meta';
-    meta.textContent = `${text(task.research_task_id, '无 ID')} · 计划 v${text(task.current_plan_version, '—')} · ${text(task.quality_profile, 'balanced')}`;
-    button.append(title, badge, meta);
-    button.addEventListener('click', () => { selectTask(task.research_task_id); });
+    const meta = doc.createElement('span'); meta.className = 'research-task-card-meta';
+    meta.textContent = `${task.research_session_id ? `会话 ${task.research_session_id}` : '未绑定会话'} · 计划 v${text(task.current_plan_version, '—')}`;
+    const details = doc.createElement('span'); details.className = 'research-task-card-details';
+    details.textContent = [
+      `阶段：${text(task.current_phase || task.phase || task.stage, '—')}`,
+      sessionProgressText(task), sessionApprovalText(task), `耗时：${sessionDurationText(task)}`,
+      sessionAgentToolText(task),
+    ].join(' · ');
+    button.append(title, badge, meta, details);
+    button.addEventListener('click', () => { selectTask(task.research_task_id, task.research_session_id); });
     item.appendChild(button);
+    if (task.conversation_id) {
+      const open = doc.createElement('button'); open.type = 'button'; open.className = 'research-open-session'; open.textContent = '打开对应会话';
+      open.dataset.conversationId = String(task.conversation_id); open.setAttribute('aria-label', '打开对应会话');
+      open.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); openConversationFromResearch(task.conversation_id); });
+      item.appendChild(open);
+    }
     return item;
   }
 
@@ -529,18 +601,45 @@
     const tasks = [...state.tasks].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     tasks.forEach((task) => list.appendChild(createTaskCard(task)));
     if (empty) empty.hidden = tasks.length > 0;
-    setText('research-list-status', tasks.length ? `共 ${tasks.length} 个任务` : '当前会话或工作区暂无任务。');
+    setText('research-list-status', tasks.length ? `共 ${tasks.length} 个研究会话` : '当前工作区暂无研究会话。');
+  }
+
+  async function hydrateSession(raw) {
+    const base = sessionTaskProjection(raw);
+    if (!base) return null;
+    let detail = null;
+    try { detail = await requestJson(`/api/research-sessions/${encodeURIComponent(base.research_session_id)}`); } catch (_) { /* list remains usable */ }
+    let task = detail?.task || detail?.research_task || null;
+    const taskId = detail?.research_task_id || base.research_task_id;
+    if (!task && taskId) {
+      try { task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`); } catch (_) { /* session-only card remains usable */ }
+    }
+    let conversation = detail?.conversation || raw?.conversation || null;
+    const conversationId = detail?.conversation_id || base.conversation_id;
+    if (!conversation && conversationId) {
+      try { conversation = await requestJson(`/api/conversations/${encodeURIComponent(conversationId)}`); } catch (_) { /* title is optional */ }
+    }
+    const approvals = detail?.approvals || task?.approvals || base.approvals || [];
+    const latestPlan = detail?.plan || task?.plan || base.plan || null;
+    return sessionTaskProjection({
+      ...raw, ...base, ...(detail || {}), task: task || base,
+      conversation: conversation || undefined, approvals, plan: latestPlan,
+      research_task_id: detail?.research_task_id || task?.research_task_id || base.research_task_id,
+    });
   }
 
   async function loadTasks() {
-    setText('research-list-status', '正在加载任务…');
+    setText('research-list-status', '正在加载研究会话…');
     try {
-      const data = await requestJson('/api/research-tasks?limit=100');
-      state.tasks = Array.isArray(data?.research_tasks) ? data.research_tasks : [];
+      const data = await requestJson('/api/research-sessions?limit=100');
+      const values = data?.research_sessions || data?.sessions || data?.items;
+      const listed = (Array.isArray(values) ? values : []).filter(Boolean);
+      state.sessions = (await Promise.all(listed.map(hydrateSession))).filter(Boolean);
+      state.tasks = state.sessions;
       renderTaskList();
       return state.tasks;
     } catch (error) {
-      state.tasks = [];
+      state.tasks = []; state.sessions = [];
       renderTaskList();
       setText('research-list-status', userError(error, '任务列表加载失败。'));
       return [];
@@ -556,10 +655,10 @@
   function renderTaskHeader(task) {
     const status = byId('research-detail-status');
     if (status) { status.dataset.status = text(task?.status, ''); status.textContent = statusLabel(task?.status); }
-    setText('research-detail-title', task?.goal_excerpt || '选择一个任务');
-    setText('research-detail-meta', task ? `${text(task.research_task_id)} · 会话 ${text(task.conversation_id)} · 更新于 ${text(task.updated_at || task.created_at)}` : '刷新后会先恢复任务详情，再连接实时事件。');
+    setText('research-detail-title', task?.goal_excerpt || task?.topic || '选择一个研究会话');
+    setText('research-detail-meta', task ? `${task.research_session_id ? `会话 ${task.research_session_id}` : `任务 ${text(task.research_task_id)}`} · ${task.conversation_id ? `对话 ${task.conversation_id} · ` : ''}阶段 ${text(task.current_phase || task.phase || task.stage, '—')} · ${sessionProgressText(task)} · ${sessionApprovalText(task)} · 耗时 ${sessionDurationText(task)}` : '刷新后会先恢复会话详情，再连接实时事件。');
     const cancel = byId('research-cancel-button');
-    if (cancel) cancel.disabled = !task || TERMINAL_STATUSES.has(task.status);
+    if (cancel) cancel.disabled = !task?.research_session_id || TERMINAL_STATUSES.has(task.status);
   }
 
   function renderPlan(plan) {
@@ -645,6 +744,8 @@
 
   function sessionPlanField(plan, key) {
     if (!plan || typeof plan !== 'object') return null;
+    const shared = sessionUI?.planField?.(plan, key);
+    if (shared !== null && shared !== undefined) return shared;
     if (key === 'safety_summary' && plan.safe_summary !== undefined) return plan.safe_summary;
     return plan[key] !== undefined ? plan[key] : parseSessionJson(plan[`${key}_json`]);
   }
@@ -728,6 +829,34 @@
     }
   }
 
+  async function mergeSessionCommandResult(result, sessionId) {
+    const returnedTask = result?.task || result?.research_task || null;
+    const returnedSession = result?.session || result?.research_session || {};
+    const taskId = result?.research_task_id || returnedTask?.research_task_id || state.selectedTask?.research_task_id || null;
+    const merged = sessionTaskProjection({
+      ...(state.selectedTask?.research_session || {}),
+      ...returnedSession,
+      research_session_id: sessionId,
+      research_task_id: taskId,
+      task: returnedTask || state.selectedTask || undefined,
+      status: returnedSession.status || result?.status || (taskId ? 'queued' : state.selectedTask?.status),
+      current_plan_version: result?.subject_version || returnedSession.current_plan_version || state.selectedTask?.current_plan_version,
+    });
+    if (merged) {
+      state.selectedSessionId = sessionId;
+      state.tasks = state.tasks.map((item) => item.research_session_id === sessionId ? { ...item, ...merged } : item);
+      state.sessions = state.tasks;
+      state.selectedTask = { ...state.selectedTask, ...merged, research_session_id: sessionId };
+      renderTaskHeader(state.selectedTask); renderTaskList(); renderSessionPlan(merged.session_plan || merged.plan, merged.session_approvals || merged.approvals, merged.research_session);
+    }
+    // approve_plan materializes the Task/Activity message in the backend Saga;
+    // reselecting through the same loader hydrates the canonical Task and starts
+    // the existing Task07 SSE/Task08 report pipeline exactly once.
+    if (taskId && state.selectedTaskId !== taskId) await selectTask(taskId, sessionId);
+    else if (taskId && !state.eventSource) { await loadReport(taskId); connectStream(); }
+    return merged;
+  }
+
   function renderSessionApprovals(approvals, sessionId, subjectVersion, plan) {
     const container = byId('research-session-approvals'); if (!container) return;
     container.replaceChildren();
@@ -742,7 +871,7 @@
       const decline = state.document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button research-session-command'; decline.textContent = '拒绝';
       const pending = approval.status === 'pending'; approve.disabled = !pending; decline.disabled = !pending;
       if (pending) {
-        approve.addEventListener('click', () => submitSessionCommand(sessionId, command, approval.subject_version || subjectVersion, sessionCommandScope(command, approval, plan), approve, () => { status.textContent = '已完成'; card.dataset.status = 'approved'; }));
+        approve.addEventListener('click', () => submitSessionCommand(sessionId, command, approval.subject_version || subjectVersion, sessionCommandScope(command, approval, plan), approve, async (result) => { status.textContent = '已完成'; card.dataset.status = 'approved'; await mergeSessionCommandResult(result, sessionId); }));
         decline.addEventListener('click', () => submitSessionCommand(sessionId, 'decline_request', approval.subject_version || subjectVersion, sessionCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
       }
       actions.append(approve, decline); card.append(title, status, meta, actions); container.appendChild(card);
@@ -1134,10 +1263,11 @@
     };
   }
 
-  async function selectTask(taskId) {
-    if (!taskId) return;
+  async function selectTask(taskId, sessionId = null) {
+    if (!taskId && !sessionId) return;
     closeStream();
-    state.selectedTaskId = taskId;
+    state.selectedTaskId = taskId || null;
+    state.selectedSessionId = sessionId || state.tasks.find((item) => item.research_task_id === taskId)?.research_session_id || null;
     state.selectedTask = null;
     state.events = new Map();
     state.selectedPapers = new Set();
@@ -1154,20 +1284,27 @@
     renderTaskList();
     setDetailVisibility(false);
     renderTaskHeader(null);
-    setText('research-summary-text', '正在恢复任务详情…');
+    setText('research-summary-text', '正在恢复研究会话详情…');
     try {
-      const task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`);
-      if (state.selectedTaskId !== taskId) return;
-      state.selectedTask = task;
+      let task;
+      if (taskId) task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`);
+      else task = sessionTaskProjection(await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`));
+      if (state.selectedTaskId !== taskId && state.selectedSessionId !== sessionId) return;
+      if (!task) throw new Error('研究会话不存在');
+      const listed = state.tasks.find((item) => item.research_task_id === taskId || item.research_session_id === sessionId) || {};
+      state.selectedTask = { ...listed, ...task };
       renderTaskHeader(task);
       renderPlan(task.plan);
       renderSessionPlan(task.session_plan || task.research_plan || task.plan || null, task.session_approvals || task.approvals || task.approval || [], task.research_session || (task.research_session_id ? { research_session_id: task.research_session_id, current_plan_version: task.current_plan_version } : null));
-      const sessionId = task.research_session_id || task.session_id || task.research_session?.research_session_id;
-      if (sessionId) {
+      const resolvedSessionId = task.research_session_id || task.session_id || task.research_session?.research_session_id || sessionId;
+      if (resolvedSessionId) {
         try {
-          const session = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
-          if (state.selectedTaskId !== taskId) return;
-          state.selectedTask = { ...state.selectedTask, research_session_id: sessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [] };
+          const session = task.research_session?.research_session_id === resolvedSessionId ? task.research_session : await requestJson(`/api/research-sessions/${encodeURIComponent(resolvedSessionId)}`);
+          if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) return;
+          state.selectedSessionId = resolvedSessionId;
+          const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
+          state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: session.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
+          renderTaskHeader(state.selectedTask);
           renderSessionPlan(session.plan, session.approvals || [], session);
         } catch (_) {
           // The legacy task detail remains usable when the optional session projection is unavailable.
@@ -1175,9 +1312,13 @@
         }
       }
       setDetailVisibility(true);
-      await loadReport(taskId);
-      if (state.selectedTaskId !== taskId) return;
-      connectStream();
+      if (taskId) {
+        await loadReport(taskId);
+        if (state.selectedTaskId !== taskId) return;
+        connectStream();
+      } else {
+        setText('research-report-state', '任务批准并完成后显示报告。');
+      }
     } catch (error) {
       setText('research-detail-empty', userError(error, '任务详情加载失败。'));
       setDetailVisibility(false);
@@ -1188,12 +1329,12 @@
   async function refreshWorkspace() {
     await conversationFromUrl();
     const tasks = await loadTasks();
-    const current = state.selectedTaskId && tasks.some((task) => task.research_task_id === state.selectedTaskId)
-      ? state.selectedTaskId
-      : tasks.find((task) => task.conversation_id === state.conversationId)?.research_task_id || null;
-    if (current) await selectTask(current);
+    const selected = state.selectedTaskId && tasks.find((task) => task.research_task_id === state.selectedTaskId)
+      || state.selectedSessionId && tasks.find((task) => task.research_session_id === state.selectedSessionId)
+      || tasks.find((task) => task.conversation_id === state.conversationId);
+    if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
-      closeStream(); state.selectedTaskId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
+      closeStream(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
       renderTaskHeader(null); setDetailVisibility(false); renderSummary();
       state.report = null; state.terminal = null;
       const report = byId('research-report-markdown'); if (report) { report.hidden = true; report.replaceChildren(); }
@@ -1206,39 +1347,66 @@
   async function createTask(event) {
     event.preventDefault();
     const goal = (byId('research-goal')?.value || '').trim();
-    if (!state.conversationId) { setText('research-create-status', '请先打开一个会话；研究任务必须绑定会话。'); return; }
     if (!goal) { setText('research-create-status', '请填写研究目标。'); byId('research-goal')?.focus(); return; }
     const button = byId('research-create-button'); if (button) button.disabled = true;
-    setText('research-create-status', '正在创建研究任务…');
+    setText('research-create-status', '正在创建研究会话…');
+    const quality = byId('research-quality')?.value || 'balanced';
+    const targetPaperCount = Number(byId('research-target-count')?.value || 12);
+    const language = byId('research-language')?.value || 'zh';
+    const reviewPlanFirst = Boolean(byId('research-review-plan')?.checked);
+    if (!state.createIdempotencyKey) state.createIdempotencyKey = root.crypto?.randomUUID?.() || `research-session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    state.triggerMessageId = state.triggerMessageId || state.conversation?.last_message_id || state.conversation?.trigger_message_id || null;
     const payload = {
-      goal,
-      conversation_id: state.conversationId,
-      quality_profile: byId('research-quality')?.value || 'balanced',
-      target_paper_count: Number(byId('research-target-count')?.value || 12),
-      language: byId('research-language')?.value || 'zh',
-      review_plan_first: Boolean(byId('research-review-plan')?.checked),
+      idempotency_key: state.createIdempotencyKey,
+      trigger_message_id: state.triggerMessageId,
+      ...(state.conversationId ? { conversation_id: state.conversationId } : {}),
+      ...(currentProjectId() ? { project_id: currentProjectId() } : {}),
+      intake: {
+        topic: goal, objective: goal, language, depth: quality,
+        sources: ['usenix'], citations: 'true', output: 'markdown',
+        constraints: `目标论文数：${Number.isInteger(targetPaperCount) ? Math.max(1, Math.min(20, targetPaperCount)) : 12}；先审核计划：${reviewPlanFirst ? '是' : '否'}`,
+      },
     };
     try {
-      const task = await requestJson('/api/research-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      state.tasks = [task, ...state.tasks.filter((item) => item.research_task_id !== task.research_task_id)];
+      const response = await requestJson('/api/research-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const returnedSession = response?.session || response?.research_session || response?.intake?.session || response;
+      const conversation = response?.conversation || {};
+      const session = {
+        ...(returnedSession && typeof returnedSession === 'object' ? returnedSession : {}),
+        conversation_id: returnedSession?.conversation_id || conversation.conversation_id || null,
+        project_id: returnedSession?.project_id ?? conversation.project_id ?? null,
+        title: returnedSession?.title || conversation.title || '',
+      };
+      const projected = sessionTaskProjection(session);
+      if (!projected) throw new Error('研究会话响应缺少会话 ID');
+      state.sessions = [projected, ...state.sessions.filter((item) => item.research_session_id !== projected.research_session_id)];
+      state.tasks = state.sessions;
       renderTaskList();
-      setText('research-create-status', '研究任务已创建，正在连接事件流。');
-      await selectTask(task.research_task_id);
+      setText('research-create-status', `研究会话已创建：深度研究：${goal}，正在打开对应会话。`);
+      const conversationId = session.conversation_id || response?.conversation_id;
+      if (conversationId) openConversationFromResearch(conversationId);
+      await selectTask(projected.research_task_id, projected.research_session_id);
+      state.createIdempotencyKey = null;
+      state.triggerMessageId = null;
     } catch (error) {
-      setText('research-create-status', userError(error, '研究任务创建失败。'));
+      setText('research-create-status', userError(error, '研究会话创建失败。'));
     } finally { if (button) button.disabled = false; }
   }
 
   async function cancelTask() {
-    if (!state.selectedTaskId || !state.selectedTask || TERMINAL_STATUSES.has(state.selectedTask.status)) return;
+    if (!state.selectedSessionId || !state.selectedTask || TERMINAL_STATUSES.has(state.selectedTask.status)) return;
     const button = byId('research-cancel-button'); if (button) button.disabled = true;
     setText('research-summary-text', '正在取消研究任务…');
     try {
-      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/cancel`, { method: 'POST' });
-      state.selectedTask = { ...state.selectedTask, ...result };
+      const result = await submitSessionCommand(
+        state.selectedSessionId, 'cancel_research', state.selectedTask.current_plan_version || state.selectedTask.research_session?.current_plan_version || 0,
+        {}, button,
+      );
+      if (!result) return;
+      state.selectedTask = { ...state.selectedTask, ...result, status: result.status || 'cancelled' };
       state.statusNotice = '';
       renderTaskHeader(state.selectedTask); renderTaskList();
-      setText('research-summary-text', `任务已取消，收敛 ${text(result.cancelled_work_items, '0')} 个 WorkItem。`);
+      setText('research-summary-text', '研究会话已取消，后续节点不会继续创建。');
     } catch (error) {
       setText('research-summary-text', userError(error, '取消任务失败。'));
       if (button) button.disabled = false;
@@ -1254,19 +1422,13 @@
     refreshWorkspace();
   }
 
-  function decorateConversationCards() {
-    const doc = state.document;
-    doc.querySelectorAll('.conversation-item[data-conversation-id]').forEach((row) => {
-      if (row.querySelector('.research-conversation-action')) return;
-      const conversationId = row.dataset.conversationId;
-      if (!conversationId) return;
-      const button = doc.createElement('button');
-      button.type = 'button'; button.className = 'research-conversation-action'; button.textContent = '研究';
-      button.title = '从此会话创建深度研究任务';
-      button.setAttribute('aria-label', '从此会话创建深度研究任务');
-      button.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); openForConversation(conversationId); });
-      row.appendChild(button);
-    });
+  function openConversationFromResearch(conversationId) {
+    if (!conversationId) return;
+    const path = `/c/${encodeURIComponent(conversationId)}`;
+    if (typeof root.openConversation === 'function') { root.openConversation(conversationId); return; }
+    root.history.pushState({}, '', path);
+    const event = typeof root.PopStateEvent === 'function' ? new root.PopStateEvent('popstate') : (typeof root.Event === 'function' ? new root.Event('popstate') : null);
+    if (event) root.dispatchEvent?.(event);
   }
 
   function bindModeGuard() {
@@ -1301,6 +1463,20 @@
     byId('research-create-form')?.addEventListener('submit', createTask);
     byId('research-cancel-button')?.addEventListener('click', cancelTask);
 
+    // Chat approval commands publish the same backend result.  Reconcile it
+    // through this Tab's canonical Session/Task state instead of maintaining a
+    // second task/report/SSE state machine in app.js.
+    if (!root.__researchSessionCommandBridge) {
+      root.__researchSessionCommandBridge = true;
+      root.addEventListener('research-session-command-success', (event) => {
+        const detail = event?.detail || {};
+        if (!detail.sessionId || !detail.result) return;
+        mergeSessionCommandResult(detail.result, detail.sessionId).catch(() => {
+          setText('research-summary-text', '会话状态已更新，请刷新研究工作台。');
+        });
+      });
+    }
+
     // app.js owns the other views and its private showView/openConversation functions.
     // Capture their DOM/history signals so its later handlers cannot leave this view visible.
     state.document.addEventListener('click', (event) => {
@@ -1328,12 +1504,6 @@
     root.addEventListener('hashchange', syncHistoryView);
   }
 
-  function bindConversationObserver() {
-    const observer = new root.MutationObserver(() => decorateConversationCards());
-    ['conversation-list', 'project-list'].forEach((id) => { const node = byId(id); if (node) observer.observe(node, { childList: true, subtree: true }); });
-    decorateConversationCards();
-  }
-
   function bindNotifications() {
     byId('research-notifications-refresh')?.addEventListener('click', () => loadNotifications({ reset: true }));
     loadNotifications({ reset: true });
@@ -1343,7 +1513,7 @@
     if (state.booted) return;
     state.document = documentRef; state.booted = true; state.conversationId = parseConversationId();
     if (!byId('research-view')) return;
-    bindModeGuard(); bindNavigation(); bindConversationObserver(); bindNotifications();
+    bindModeGuard(); bindNavigation(); bindNotifications();
     conversationFromUrl();
     loadTasks();
     if (root.location.hash === '#research-view') root.setTimeout(() => { showView(); refreshWorkspace(); }, 0);
@@ -1353,5 +1523,6 @@
     boot, parseConversationId, statusLabel, userError, renderSafeMarkdown,
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
+    sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,
   };
 }));

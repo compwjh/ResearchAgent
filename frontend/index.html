@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=47">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=48">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -62,8 +62,6 @@
       #research-view .research-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
       #research-view .research-checkbox { display: flex !important; align-items: center; gap: 7px !important; }
       #research-view .research-checkbox input { width: auto; }
-      #research-view .research-conversation-action { min-height: 30px; margin-left: auto; padding: 5px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 700; }
-      #research-view .research-conversation-action:hover { background: #dedaff; }
       @media (max-width: 1080px) { #research-view .research-grid { grid-template-columns: minmax(200px, .8fr) minmax(320px, 1.2fr); } #research-view .research-summary-column { grid-column: 1 / -1; } }
       @media (max-width: 760px) { #research-view .research-workspace { min-height: calc(100vh - 60px); padding: 22px 16px 28px; } #research-view .research-page-header { align-items: flex-start; flex-direction: column; } #research-view .research-grid { grid-template-columns: 1fr; } #research-view .research-summary-column { grid-column: auto; } #research-view .research-column > details[open] > summary { position: sticky; top: 0; z-index: 1; background: #fff; } #research-view .research-form-grid { grid-template-columns: 1fr; } #research-view .research-timeline { max-height: none; } }
     </style>
@@ -275,8 +273,8 @@
         </div>
 
         <section class="research-create-panel" aria-labelledby="research-create-title">
-          <h2 id="research-create-title">从当前会话创建研究任务</h2>
-          <p class="research-status" id="research-create-status" role="status" aria-live="polite">请从会话 URL（/c/{conversation_id}）进入，或先打开一个会话。</p>
+          <h2 id="research-create-title">创建深度研究会话</h2>
+          <p class="research-status" id="research-create-status" role="status" aria-live="polite">填写研究目标后，系统会通过统一 Session/Intake/Plan/Approval 流程创建并打开会话。</p>
           <form class="research-create-form" id="research-create-form">
             <label for="research-goal">研究目标<textarea id="research-goal" name="goal" maxlength="4000" required placeholder="描述需要系统研究的问题、范围和期望结论"></textarea></label>
             <div class="research-form-grid">
@@ -285,7 +283,7 @@
               <label for="research-language">报告语言<select id="research-language" name="language"><option value="zh" selected>中文</option><option value="en">English</option></select></label>
             </div>
             <label class="research-checkbox" for="research-review-plan"><input id="research-review-plan" name="review_plan_first" type="checkbox"> 先审核计划，再继续执行</label>
-            <div class="research-form-actions"><button class="send-button" id="research-create-button" type="submit">创建研究任务</button></div>
+            <div class="research-form-actions"><button class="send-button" id="research-create-button" type="submit">创建研究会话</button></div>
           </form>
         </section>
       </section>
@@ -688,10 +686,11 @@
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
+  <script src="/assets/research-session-ui.js?v=1"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
-  <script src="/assets/research-tasks.js?v=1"></script>
-  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 -->
-  <script src="/assets/app.js?v=47"></script>
+  <script src="/assets/research-tasks.js?v=2"></script>
+  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 -->
+  <script src="/assets/app.js?v=48"></script>
 </body>
 </html>

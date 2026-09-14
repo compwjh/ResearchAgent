@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -85,6 +86,15 @@ SCHEMA_VERSION = 3
 # 写操作全局串行锁：保证 event_seq 原子领号在进程内也无竞争；锁内只做必要写，
 # 计算（JSON 序列化等）已尽量外移。RLock 允许同一线程重入。
 _write_lock = threading.RLock()
+
+
+class LegacyCleanupError(RuntimeError):
+    """Stable maintenance failure; callers must treat the transaction as aborted."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
 
 _EVENT_SAFE_KEYS = {
     "status", "goal_excerpt", "quality_profile", "target_paper_count", "review_plan_first",
@@ -377,6 +387,9 @@ class ResearchStore:
             # Session plan/command 表迁移，失败时整个事务回滚。
             if current is None or current < SCHEMA_VERSION:
                 self._migrate_to_current(connection)
+            # Task09 is an additive maintenance table layered on the stable
+            # v3 marker; existing v3 databases must receive it too.
+            self._ensure_task09_schema(connection)
             self._validate_schema_meta(connection)
             connection.commit()
 
@@ -483,6 +496,34 @@ class ResearchStore:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_work_items_task ON research_work_items(research_task_id, plan_version)"
         )
+
+    @staticmethod
+    def _ensure_task09_schema(connection: sqlite3.Connection) -> None:
+        """Create Task09 audit storage for fresh and already-v3 databases."""
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_legacy_cleanup_audits(
+            cleanup_id TEXT PRIMARY KEY,
+            owner_id TEXT,
+            mode TEXT NOT NULL CHECK(mode IN ('dry_run','execute')),
+            status TEXT NOT NULL CHECK(status IN ('planned','completed','aborted')),
+            report_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_research_cleanup_audits_created "
+            "ON research_legacy_cleanup_audits(created_at, cleanup_id)"
+        )
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_session_create_requests(
+            owner_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_fingerprint TEXT NOT NULL,
+            research_session_id TEXT,
+            conversation_id TEXT,
+            trigger_message_id TEXT,
+            response_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(owner_id, idempotency_key)
+        )""")
 
     @staticmethod
     def _migrate_to_current(connection: sqlite3.Connection) -> None:
@@ -1017,6 +1058,414 @@ class ResearchStore:
         return [ResearchTask.from_row(dict(r)) for r in rows]
 
     # ------------------------------------------------------------------ #
+    # Task09 legacy cleanup (精确 dry-run / all-or-nothing execute)
+    # ------------------------------------------------------------------ #
+
+    def _legacy_cleanup_snapshot(self, connection: sqlite3.Connection, owner_id: str | None) -> dict:
+        """Build a deterministic, owner-scoped snapshot inside a transaction.
+
+        A task is legacy only when its old ``conversation_id`` is blank and it
+        has no Session binding.  A bound task is never silently classified as
+        removable, even when its Session is terminal.  Active unbound tasks
+        are treated as a hard validation error so execute can never remove a
+        live research run.
+        """
+        params: list[object] = []
+        owner_clause = ""
+        if owner_id is not None:
+            owner_clause = " AND t.owner_id=?"
+            params.append(owner_id)
+        tasks = connection.execute(
+            """SELECT t.* FROM research_tasks t
+               WHERE (t.conversation_id IS NULL OR TRIM(t.conversation_id)='')
+                 AND NOT EXISTS (
+                   SELECT 1 FROM research_sessions s
+                   WHERE s.research_task_id=t.research_task_id
+                 )""" + owner_clause + " ORDER BY t.created_at, t.research_task_id",
+            params,
+        ).fetchall()
+        active = [row["research_task_id"] for row in tasks if row["status"] not in TASK_TERMINAL]
+        removable = [row for row in tasks if row["status"] in TASK_TERMINAL]
+
+        table_specs = (
+            ("research_plans", "version", "version"),
+            ("research_work_items", "work_item_id", "work_item_id"),
+            ("research_events", "event_seq", "event_seq"),
+            ("research_paper_selections", "catalog_paper_id", "catalog_paper_id"),
+            ("preliminary_reports", "report_id", "report_id"),
+            ("research_activity_outbox", "outbox_id", "outbox_id"),
+            ("research_agent_runs", "agent_run_id", "agent_run_id"),
+            ("research_agent_checkpoints", "checkpoint_ref", "checkpoint_ref"),
+            ("research_artifacts", "artifact_id", "artifact_id"),
+            ("research_notifications", "notification_id", "notification_id"),
+            ("research_projection_retries", "source_event_id", "source_event_id"),
+            ("research_plan_activations", "activation_id", "activation_id"),
+        )
+        targets: list[dict] = []
+        for task in tasks:
+            task_id = str(task["research_task_id"])
+            children: dict[str, list[str]] = {}
+            child_counts: dict[str, int] = {}
+            for table, id_column, output_column in table_specs:
+                # All current stores have these tables.  The existence check
+                # keeps a pre-Task04 research DB dry-run readable and avoids
+                # turning an absent optional table into a partial delete.
+                exists = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                ).fetchone()
+                if exists is None:
+                    children[table] = []
+                    child_counts[table] = 0
+                    continue
+                rows = connection.execute(
+                    f"SELECT {id_column} FROM {table} WHERE research_task_id=? ORDER BY {id_column}",
+                    (task_id,),
+                ).fetchall()
+                values = [str(row[output_column]) for row in rows]
+                children[table] = values
+                child_counts[table] = len(values)
+            targets.append(
+                {
+                    "research_task_id": task_id,
+                    "owner_id": str(task["owner_id"]),
+                    "conversation_id": task["conversation_id"],
+                    "status": task["status"],
+                    "removable": task["status"] in TASK_TERMINAL,
+                    "created_at": task["created_at"],
+                    "children": children,
+                    "child_counts": child_counts,
+                    "child_count": sum(child_counts.values()),
+                }
+            )
+        task_ids = {item["research_task_id"] for item in targets if item["removable"]}
+        task_count_sql = "SELECT COUNT(*) FROM research_tasks"
+        task_count_params: list[object] = []
+        if owner_id is not None:
+            task_count_sql += " WHERE owner_id=?"
+            task_count_params.append(owner_id)
+        all_tasks = connection.execute(task_count_sql, task_count_params).fetchone()[0]
+        bound_tasks = connection.execute(
+            """SELECT COUNT(*) FROM research_tasks t
+               WHERE (t.conversation_id IS NOT NULL AND TRIM(t.conversation_id)!='')
+                  OR EXISTS (SELECT 1 FROM research_sessions s WHERE s.research_task_id=t.research_task_id)"""
+            + (" AND t.owner_id=?" if owner_id is not None else ""),
+            ([owner_id] if owner_id is not None else []),
+        ).fetchone()[0]
+        active_sessions = connection.execute(
+            "SELECT COUNT(*) FROM research_sessions WHERE status NOT IN ('interrupted','partial','completed','failed','cancelled')"
+            + (" AND owner_id=?" if owner_id is not None else ""),
+            ([owner_id] if owner_id is not None else []),
+        ).fetchone()[0]
+        return {
+            "owner_id": owner_id,
+            "target_task_ids": sorted(task_ids),
+            "targets": targets,
+            "counts": {
+                "tasks_total": int(all_tasks),
+                "candidate_tasks": len(targets),
+                "target_tasks": len(removable),
+                "target_children": sum(item["child_count"] for item in targets if item["removable"]),
+            },
+            "protected_counts": {
+                "bound_tasks": int(bound_tasks),
+                "active_sessions": int(active_sessions),
+                "blocked_active_legacy_tasks": len(active),
+            },
+            "validation_errors": ([
+                {"code": "LEGACY_CLEANUP_ACTIVE_RESEARCH", "task_ids": sorted(active)}
+            ] if active else []),
+        }
+
+    @staticmethod
+    def _cross_store_snapshot(external_snapshot: Callable[[], dict] | None) -> dict:
+        if external_snapshot is None:
+            return {
+                "status": "unverified", "reason": "external snapshot provider not supplied",
+                "sessions": None, "catalog": None, "kb": None,
+            }
+        value = external_snapshot()
+        if not isinstance(value, dict):
+            raise LegacyCleanupError("LEGACY_CLEANUP_AUDIT_INVALID", "external snapshot must be an object")
+        # Keep the audit shape explicit even when an operator only wires one
+        # external store.  Missing stores are *unverified*, never implicitly
+        # unchanged.
+        snapshot = {"sessions": value.get("sessions"), "catalog": value.get("catalog"), "kb": value.get("kb")}
+        if not all(name in value and value.get(name) is not None for name in ("sessions", "catalog", "kb")):
+            snapshot["status"] = "unverified"
+            snapshot["reason"] = "sessions/catalog/kb snapshot is incomplete"
+            return snapshot
+        status = value.get("status", "measured")
+        if status not in {"measured", "unverified"}:
+            raise LegacyCleanupError("LEGACY_CLEANUP_AUDIT_INVALID", "external snapshot status is invalid")
+        snapshot["status"] = status
+        if value.get("reason") is not None:
+            snapshot["reason"] = str(value["reason"])
+        return snapshot
+
+    def dry_run_legacy_cleanup(
+        self, owner_id: str | None = None, *, external_snapshot: Callable[[], dict] | None = None,
+    ) -> dict:
+        """Return and persist a non-mutating cleanup plan.
+
+        The only write is the audit row; no Task or child row is changed.
+        ``owner_id`` is optional for operator maintenance, but API callers
+        should always pass the authenticated owner to preserve isolation.
+        """
+        cleanup_id = uuid.uuid4().hex
+        with _write_lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                snapshot = self._legacy_cleanup_snapshot(connection, owner_id)
+                report = {
+                    "cleanup_id": cleanup_id, "mode": "dry_run", "status": "planned", **snapshot,
+                    "cross_store": {"before": self._cross_store_snapshot(external_snapshot), "after": None, "unchanged": None},
+                }
+                connection.execute(
+                    "INSERT INTO research_legacy_cleanup_audits(cleanup_id, owner_id, mode, status, report_json, created_at) VALUES(?,?,?,?,?,?)",
+                    (cleanup_id, owner_id, "dry_run", "planned", json.dumps(report, ensure_ascii=False, sort_keys=True), _utcnow()),
+                )
+                connection.commit()
+                return report
+            except Exception:
+                connection.rollback()
+                raise
+
+    def execute_legacy_cleanup(
+        self, owner_id: str | None = None, *, confirm: bool = False, dry_run_id: str | None = None,
+        external_snapshot: Callable[[], dict] | None = None,
+    ) -> dict:
+        """Delete only validated legacy Tasks and all private children atomically.
+
+        ``confirm`` is an explicit maintenance guard.  Selection, active
+        Session checks, per-table row counts, and final Task deletion all run
+        under one ``BEGIN IMMEDIATE``.  Any mismatch/exception rolls back the
+        complete delete, including its audit row.
+        """
+        if not confirm:
+            raise LegacyCleanupError("LEGACY_CLEANUP_CONFIRMATION_REQUIRED", "cleanup requires confirm=True")
+        if not dry_run_id:
+            raise LegacyCleanupError("LEGACY_CLEANUP_DRY_RUN_REQUIRED", "execute requires a matching dry-run audit id")
+        cleanup_id = uuid.uuid4().hex
+        delete_order = (
+            "research_artifacts", "research_agent_checkpoints", "research_notifications",
+            "research_projection_retries", "research_agent_runs", "research_activity_outbox",
+            "research_plan_activations", "research_events", "research_work_items",
+            "research_paper_selections", "preliminary_reports", "research_plans",
+        )
+        # Keep these outside the transaction so the rollback audit can retain
+        # the evidence that caused an abort, including the post-rollback
+        # research-store snapshot.
+        snapshot: dict | None = None
+        after: dict | None = None
+        cross_before: dict | None = None
+        cross_after: dict | None = None
+        cross_status = "not_evaluated"
+        deleted: dict[str, int] = dict.fromkeys(delete_order, 0)
+        with _write_lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                snapshot = self._legacy_cleanup_snapshot(connection, owner_id)
+                if snapshot["validation_errors"]:
+                    raise LegacyCleanupError("LEGACY_CLEANUP_ACTIVE_RESEARCH", "active legacy research tasks cannot be cleaned")
+                audit_row = connection.execute(
+                    "SELECT * FROM research_legacy_cleanup_audits WHERE cleanup_id=? AND owner_id IS ? AND mode='dry_run' AND status='planned'",
+                    (dry_run_id, owner_id),
+                ).fetchone()
+                if audit_row is None:
+                    raise LegacyCleanupError("LEGACY_CLEANUP_DRY_RUN_INVALID", "dry-run audit is missing, consumed, or owner-mismatched")
+                try:
+                    dry_report = json.loads(audit_row["report_json"])
+                    created_at = datetime.fromisoformat(str(audit_row["created_at"]).replace("Z", "+00:00"))
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise LegacyCleanupError("LEGACY_CLEANUP_DRY_RUN_INVALID", "dry-run audit is malformed") from exc
+                if (datetime.now(timezone.utc) - created_at).total_seconds() > 3600:
+                    raise LegacyCleanupError("LEGACY_CLEANUP_DRY_RUN_EXPIRED", "dry-run audit is older than one hour")
+                if dry_report.get("target_task_ids") != snapshot.get("target_task_ids") or dry_report.get("targets") != snapshot.get("targets"):
+                    raise LegacyCleanupError("LEGACY_CLEANUP_TARGET_CHANGED", "legacy cleanup targets changed after dry-run")
+                if not snapshot["target_task_ids"]:
+                    raise LegacyCleanupError("LEGACY_CLEANUP_NO_MATCH", "dry-run selected no removable legacy tasks")
+                cross_before = self._cross_store_snapshot(external_snapshot)
+                if cross_before["status"] == "unverified":
+                    cross_status = "unverified"
+                    # Capture the second side even though no business delete
+                    # is attempted, so the aborted audit always has a
+                    # before/after cross-store record.
+                    cross_after = self._cross_store_snapshot(external_snapshot)
+                    raise LegacyCleanupError(
+                        "LEGACY_CLEANUP_CROSS_STORE_UNVERIFIED",
+                        "sessions/catalog/kb cross-store snapshot is unverified",
+                    )
+                task_ids = snapshot["target_task_ids"]
+                placeholders = ",".join("?" for _ in task_ids)
+                if task_ids:
+                    for table in delete_order:
+                        exists = connection.execute(
+                            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                        ).fetchone()
+                        if exists is None:
+                            continue
+                        cursor = connection.execute(
+                            f"DELETE FROM {table} WHERE research_task_id IN ({placeholders})",
+                            task_ids,
+                        )
+                        deleted[table] = max(int(cursor.rowcount), 0)
+                    task_cursor = connection.execute(
+                        f"DELETE FROM research_tasks WHERE research_task_id IN ({placeholders})"
+                        + (" AND owner_id=?" if owner_id is not None else ""),
+                        (*task_ids, owner_id) if owner_id is not None else task_ids,
+                    )
+                    deleted["research_tasks"] = max(int(task_cursor.rowcount), 0)
+                    if deleted["research_tasks"] != len(task_ids):
+                        raise LegacyCleanupError("LEGACY_CLEANUP_VALIDATION_FAILED", "target Task count changed during cleanup")
+                expected: dict[str, int] = dict.fromkeys(delete_order, 0)
+                for item in snapshot["targets"]:
+                    for table, count in item["child_counts"].items():
+                        if table in expected:
+                            expected[table] += int(count)
+                for table, count in expected.items():
+                    if deleted[table] != count:
+                        raise LegacyCleanupError(
+                            "LEGACY_CLEANUP_VALIDATION_FAILED",
+                            f"child count mismatch for {table}: expected {count}, deleted {deleted[table]}",
+                        )
+                after = self._legacy_cleanup_snapshot(connection, owner_id)
+                cross_after = self._cross_store_snapshot(external_snapshot)
+                if cross_after["status"] == "unverified":
+                    cross_status = "unverified"
+                    raise LegacyCleanupError(
+                        "LEGACY_CLEANUP_CROSS_STORE_UNVERIFIED",
+                        "sessions/catalog/kb cross-store snapshot is unverified",
+                    )
+                cross_unchanged = all(
+                    cross_before[name] == cross_after[name]
+                    for name in ("sessions", "catalog", "kb")
+                )
+                if not cross_unchanged:
+                    cross_status = "changed"
+                    raise LegacyCleanupError(
+                        "LEGACY_CLEANUP_CROSS_STORE_CHANGED",
+                        "sessions/catalog/kb changed during legacy cleanup",
+                    )
+                cross_status = "unchanged"
+                report = {
+                    "cleanup_id": cleanup_id, "mode": "execute", "status": "completed",
+                    "before": snapshot, "deleted": {"research_tasks": deleted.get("research_tasks", 0), "children": deleted},
+                    "after": after, "cross_store": {
+                        "before": cross_before, "after": cross_after,
+                        "unchanged": True, "status": cross_status,
+                    },
+                }
+                connection.execute(
+                    "INSERT INTO research_legacy_cleanup_audits(cleanup_id, owner_id, mode, status, report_json, created_at) VALUES(?,?,?,?,?,?)",
+                    (cleanup_id, owner_id, "execute", "completed", json.dumps(report, ensure_ascii=False, sort_keys=True), _utcnow()),
+                )
+                connection.execute(
+                    "UPDATE research_legacy_cleanup_audits SET status='completed' WHERE cleanup_id=?",
+                    (dry_run_id,),
+                )
+                connection.commit()
+                return report
+            except Exception as error:
+                connection.rollback()
+                # Verify the rollback result from a fresh connection.  This
+                # is evidence only; the original cleanup error remains
+                # authoritative if the verification itself fails.
+                try:
+                    with self._connect() as verification_connection:
+                        after = self._legacy_cleanup_snapshot(verification_connection, owner_id)
+                except Exception:
+                    after = None
+                # Failure evidence is intentionally a small, payload-free
+                # audit row written after the deletion transaction rolls back;
+                # it cannot make any partial delete visible.
+                failure = {
+                    "cleanup_id": cleanup_id,
+                    "mode": "execute",
+                    "status": "aborted",
+                    "error_code": getattr(error, "code", "LEGACY_CLEANUP_FAILED"),
+                    "message": str(error)[:240],
+                    "before": snapshot,
+                    "after": after,
+                    "deleted": {
+                        "research_tasks": 0,
+                        "children": dict.fromkeys(delete_order, 0),
+                    },
+                    "attempted": {
+                        "research_tasks": deleted.get("research_tasks", 0),
+                        "children": deleted,
+                    },
+                    "cross_store": {
+                        "before": cross_before,
+                        "after": cross_after,
+                        "unchanged": False,
+                        "status": cross_status,
+                    },
+                }
+                try:
+                    with self._connect() as audit_connection:
+                        audit_connection.execute(
+                            "INSERT INTO research_legacy_cleanup_audits(cleanup_id, owner_id, mode, status, report_json, created_at) VALUES(?,?,?,?,?,?)",
+                            (cleanup_id, owner_id, "execute", "aborted", json.dumps(failure, ensure_ascii=False, sort_keys=True), _utcnow()),
+                        )
+                except Exception:
+                    # The original cleanup error is authoritative.
+                    pass
+                raise
+
+    def list_legacy_cleanup_audits(self, owner_id: str | None = None, *, limit: int = 20) -> list[dict]:
+        """Read persisted cleanup audit reports without exposing payload data."""
+        clause = " WHERE owner_id=?" if owner_id is not None else ""
+        params = [owner_id] if owner_id is not None else []
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT report_json FROM research_legacy_cleanup_audits" + clause + " ORDER BY created_at DESC, cleanup_id DESC LIMIT ?",
+                (*params, max(1, min(int(limit), 100))),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def get_session_create_request(self, owner_id: str, idempotency_key: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM research_session_create_requests WHERE owner_id=? AND idempotency_key=?",
+                (owner_id, idempotency_key),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_session_create_request(
+        self, *, owner_id: str, idempotency_key: str, request_fingerprint: str,
+        research_session_id: str, conversation_id: str, trigger_message_id: str,
+        response: dict,
+    ) -> dict:
+        """Persist a safe create response under an owner/key CAS."""
+        now = _utcnow()
+        response_json = json.dumps(response, ensure_ascii=False, sort_keys=True)
+        with _write_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                existing = connection.execute(
+                    "SELECT * FROM research_session_create_requests WHERE owner_id=? AND idempotency_key=?",
+                    (owner_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    if existing["request_fingerprint"] != request_fingerprint:
+                        raise LegacyCleanupError("SESSION_CREATE_IDEMPOTENCY_CONFLICT", "idempotency key reused with a different request")
+                    connection.commit()
+                    return dict(existing)
+                connection.execute(
+                    "INSERT INTO research_session_create_requests(owner_id,idempotency_key,request_fingerprint,research_session_id,conversation_id,trigger_message_id,response_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (owner_id, idempotency_key, request_fingerprint, research_session_id, conversation_id, trigger_message_id, response_json, now, now),
+                )
+                row = connection.execute(
+                    "SELECT * FROM research_session_create_requests WHERE owner_id=? AND idempotency_key=?",
+                    (owner_id, idempotency_key),
+                ).fetchone()
+                connection.commit()
+                return dict(row)
+            except Exception:
+                connection.rollback()
+                raise
+
+    # ------------------------------------------------------------------ #
     # ResearchPlan 写 / 读
     # ------------------------------------------------------------------ #
 
@@ -1344,6 +1793,29 @@ class ResearchStore:
             ).fetchone()
         return ResearchSession.from_row(dict(row)) if row else None
 
+    def get_session_by_trigger(self, conversation_id: str, trigger_message_id: str, owner_id: str) -> ResearchSession | None:
+        """Find a prior owner-scoped Session for trigger replay recovery."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM research_sessions
+                WHERE conversation_id=? AND trigger_message_id=? AND owner_id=?
+                ORDER BY created_at DESC, research_session_id DESC LIMIT 1""",
+                (conversation_id, trigger_message_id, owner_id),
+            ).fetchone()
+        return ResearchSession.from_row(dict(row)) if row else None
+
+    def get_active_session(self, conversation_id: str, owner_id: str) -> ResearchSession | None:
+        """Resolve the active Session without relying on a capped list page."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM research_sessions
+                WHERE conversation_id=? AND owner_id=?
+                  AND status NOT IN ('interrupted','partial','completed','failed','cancelled')
+                ORDER BY updated_at DESC, research_session_id DESC LIMIT 1""",
+                (conversation_id, owner_id),
+            ).fetchone()
+        return ResearchSession.from_row(dict(row)) if row else None
+
     def get_session_by_task(self, research_task_id: str, owner_id: str) -> ResearchSession | None:
         """Resolve the owner-scoped Session link for a Task detail projection."""
         with self._connect() as conn:
@@ -1449,7 +1921,10 @@ class ResearchStore:
                 conn.rollback()
                 raise
 
-    def list_sessions(self, owner_id: str, *, status: str | None = None, limit: int = 20) -> list[ResearchSession]:
+    def list_sessions_page(
+        self, owner_id: str, *, status: str | None = None, limit: int = 20, cursor: str | None = None,
+    ) -> tuple[list[ResearchSession], str | None]:
+        """Owner/status-scoped keyset page for the Research Tab."""
         limit = max(1, min(int(limit), 100))
         params: list[object] = [owner_id]
         sql = "SELECT * FROM research_sessions WHERE owner_id=?"
@@ -1458,11 +1933,48 @@ class ResearchStore:
                 raise ValueError("invalid research session status")
             sql += " AND status=?"
             params.append(status)
+        if cursor is not None:
+            try:
+                decoded = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode("utf-8"))
+                expected_kind = f"research_sessions:v1:status={status or '*'}"
+                if decoded.get("v") != 1 or decoded.get("kind") != expected_kind or not decoded.get("at") or not decoded.get("id"):
+                    raise ValueError
+                sql += " AND (created_at, research_session_id) > (?, ?)"
+                params.extend([str(decoded["at"]), str(decoded["id"])])
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeDecodeError, binascii.Error):
+                raise ValueError("invalid cursor") from None
         sql += " ORDER BY created_at, research_session_id LIMIT ?"
-        params.append(limit)
+        params.append(limit + 1)
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-        return [ResearchSession.from_row(dict(row)) for row in rows]
+        page = rows[:limit]
+        next_cursor = None
+        if len(rows) > limit:
+            last = page[-1]
+            kind = f"research_sessions:v1:status={status or '*'}"
+            raw = json.dumps({"v": 1, "kind": kind, "at": last["created_at"], "id": last["research_session_id"]}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            next_cursor = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+        return [ResearchSession.from_row(dict(row)) for row in page], next_cursor
+
+    @staticmethod
+    def encode_sessions_cursor(session: ResearchSession, *, status: str | None = None) -> str:
+        """Encode a cursor at an actually returned Session boundary.
+
+        Filtered callers may scan more raw rows than they return.  Exposing
+        this small encoder keeps their next page anchored to the last visible
+        row instead of skipping the remainder of an overfull raw page.
+        """
+        kind = f"research_sessions:v1:status={status or '*'}"
+        raw = json.dumps(
+            {"v": 1, "kind": kind, "at": session.created_at, "id": session.research_session_id},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    def list_sessions(self, owner_id: str, *, status: str | None = None, limit: int = 20) -> list[ResearchSession]:
+        """Backward-compatible first page list used by existing coordinators."""
+        return self.list_sessions_page(owner_id, status=status, limit=limit)[0]
 
     def update_session_status(self, research_session_id: str, owner_id: str, next_status: str) -> ResearchSession:
         with _write_lock, self._connect() as conn:
@@ -3105,3 +3617,7 @@ ResearchStore.get_research_artifact = ResearchStore.get_artifact
 ResearchStore.list_research_artifacts = ResearchStore.list_artifacts_for_task
 ResearchStore.mark_research_notification_read = ResearchStore.mark_notification_read
 ResearchStore.list_research_notifications = ResearchStore.list_notifications
+# Task09 descriptive aliases keep maintenance callers independent from the
+# original verb ordering used by the store implementation.
+ResearchStore.legacy_cleanup_dry_run = ResearchStore.dry_run_legacy_cleanup
+ResearchStore.cleanup_legacy_tasks = ResearchStore.execute_legacy_cleanup

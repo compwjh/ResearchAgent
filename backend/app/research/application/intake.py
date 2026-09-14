@@ -281,6 +281,9 @@ class ResearchIntakeCoordinator:
         )
 
     def _active_session(self, conversation_id: str, owner_id: str) -> ResearchSession | None:
+        finder = getattr(self.store, "get_active_session", None)
+        if finder is not None:
+            return finder(conversation_id, owner_id)
         sessions = self.store.list_sessions(owner_id)
         return next(
             (

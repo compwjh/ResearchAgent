@@ -1,7 +1,7 @@
 # Task09 — Research Tab 复用、旧入口与旧数据清理
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task04、Task07、Task08；当前状态：`实施中`
+> 依赖：Task04、Task07、Task08；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -47,5 +47,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：Tab 改造、兼容适配、旧入口移除、清理测试与双端报告。
-- 执行结果：实施中，待双端实现与精确清理验收后填写真实删除数量。
-- 变更日志：2026-09-13 启动 Research Tab 统一 Session/树/报告组件、旧研究按钮移除与未绑定旧 Task dry-run 清理；不触碰会话、目录或 KB。
+- 执行结果：已完成。后端/前端最终复审均 GO；Task09 后端定向测试 14 passed，相关后端回归 178 passed，前端 Task09 合同 8 passed、相关 Task04/07/08 合同 20 passed，Node 合同、py_compile、Ruff 与 diff-check 通过。跨库清理在快照变化或无法验证时 fail-closed、回滚并写入 aborted 审计；真实浏览器/Ollama smoke 留 Task10。
+- 变更日志：2026-09-13 启动 Research Tab 统一 Session/树/报告组件、旧研究按钮移除与未绑定旧 Task dry-run 清理；2026-09-15 修复项目物化、创建幂等、游标分页、dry-run token、跨库不变性、真实会话标题及 Agent/Tool 摘要，并经双端最终复审 GO；不触碰会话、目录或 KB。

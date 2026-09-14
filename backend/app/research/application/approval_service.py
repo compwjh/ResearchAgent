@@ -278,9 +278,14 @@ class PlanApprovalService:
         quality = data.get("quality_profile", "balanced")
         target = max(1, min(int(data.get("target_paper_count", 12)), 20))
         now = _utcnow()
+        # Materialization must preserve the conversation's project binding;
+        # never silently turn a project-scoped Session into an unbound Task.
+        conversation = self.memory_repository.get_conversation(session.conversation_id, owner_id) if self.memory_repository is not None else None
+        if conversation is None:
+            raise ResearchCommandError("SOURCE_UNAVAILABLE", "研究会话所属会话不可用")
         task = ResearchTask(
             research_task_id=activation["research_task_id"], owner_id=owner_id,
-            project_id=None, conversation_id=session.conversation_id, goal=plan.objective,
+            project_id=conversation.project_id, conversation_id=session.conversation_id, goal=plan.objective,
             language=str(data.get("language", "zh")), quality_profile=quality,
             review_plan_first=True, target_paper_count=target,
             soft_budget_seconds=int(data.get("soft_budget_seconds", 1500)),

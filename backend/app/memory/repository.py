@@ -1703,6 +1703,54 @@ class MemoryRepository:
             db.execute("INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at) VALUES (?, ?, ?, ?, 'assistant', '', 'pending', ?, ?, ?, NULL)", (assistant_id, conversation_id, owner_id, user_id, model, mode, now))
         return self.get_conversation(conversation_id, owner_id), self.get_message(user_id, owner_id), self.get_message(assistant_id, owner_id)
 
+    def create_idempotent_message_pair(
+        self, conversation_id: str, owner_id: str, content: str, *,
+        idempotency_key: str, model: Optional[str] = None, mode: Optional[str] = None,
+    ) -> tuple[Conversation, Message, Message]:
+        """Create or replay one user/assistant pair under a stable key.
+
+        User and assistant rows use distinct derived keys, so the existing
+        partial unique activity index protects both rows and a retry can repair
+        a process crash after either insert without creating duplicates.
+        """
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 240:
+            raise ValueError("invalid idempotency key")
+        with self.transaction() as db:
+            conversation_row = db.execute(
+                "SELECT * FROM conversations WHERE conversation_id=? AND owner_id=? AND status!='deleted'",
+                (conversation_id, owner_id),
+            ).fetchone()
+            if not conversation_row:
+                raise LookupError("conversation not found")
+            user_key = f"{idempotency_key}:user"
+            assistant_key = f"{idempotency_key}:assistant"
+            existing_user = db.execute(
+                "SELECT * FROM messages WHERE owner_id=? AND conversation_id=? AND activity_idempotency_key=?",
+                (owner_id, conversation_id, user_key),
+            ).fetchone()
+            if existing_user is None:
+                user_id = uuid.uuid5(uuid.NAMESPACE_URL, f"research-intake:{owner_id}:{conversation_id}:{user_key}").hex
+                now = _now()
+                db.execute(
+                    "INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at, activity_idempotency_key) VALUES (?, ?, ?, NULL, 'user', ?, 'completed', ?, ?, ?, ?, ?)",
+                    (user_id, conversation_id, owner_id, content, model, mode, now, now, user_key),
+                )
+                existing_user = db.execute("SELECT * FROM messages WHERE message_id=?", (user_id,)).fetchone()
+            existing_assistant = db.execute(
+                "SELECT * FROM messages WHERE owner_id=? AND conversation_id=? AND activity_idempotency_key=?",
+                (owner_id, conversation_id, assistant_key),
+            ).fetchone()
+            if existing_assistant is None:
+                assistant_id = uuid.uuid5(uuid.NAMESPACE_URL, f"research-intake:{owner_id}:{conversation_id}:{assistant_key}").hex
+                now = _now()
+                db.execute(
+                    "INSERT INTO messages(message_id, conversation_id, owner_id, parent_message_id, role, content, status, model, mode, created_at, completed_at, activity_idempotency_key) VALUES (?, ?, ?, ?, 'assistant', '', 'pending', ?, ?, ?, NULL, ?)",
+                    (assistant_id, conversation_id, owner_id, existing_user["message_id"], model, mode, now, assistant_key),
+                )
+                existing_assistant = db.execute("SELECT * FROM messages WHERE message_id=?", (assistant_id,)).fetchone()
+            db.execute("UPDATE conversations SET updated_at=? WHERE conversation_id=?", (_now(), conversation_id))
+        return self.get_conversation(conversation_id, owner_id), self.get_message(existing_user["message_id"], owner_id), self.get_message(existing_assistant["message_id"], owner_id)
+
     def update_conversation_reasoning(self, conversation_id: str, owner_id: str, effort: str) -> tuple[Optional[Conversation], str, Optional[datetime]]:
         if effort not in {"off", "low", "medium", "high", "xhigh"}:
             raise ValueError("invalid reasoning effort")
