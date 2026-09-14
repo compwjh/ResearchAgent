@@ -73,3 +73,19 @@ RERANKER_ENABLED=false ./deploy/start.sh
 ```
 
 探针结果：`GET /api/health` **HTTP 200 / 334 bytes**，`GET /` **HTTP 200 / 53904 bytes**。健康响应确认服务加载当前模型与论文发现能力；这只是部署可达性证据，不替代真实模型/USENIX 成功 Smoke。
+
+## 2026-09-15 受控真实 Smoke（iHunter 目录样本）
+
+为复核当前提交的真实运行闭环，在提升权限下用临时端口 `18080` 启动服务，未修改项目配置，随后停止服务。该次使用隔离会话和本地真实 Ollama 模型：
+
+- `research_session_id=a561682a29fb43c98f16db71e7e47550`
+- `research_task_id=a7012915b1465b60889414155efa3955`
+- 模型：`qwen3.8:27b-q4_K_M`，`reasoning_effort=off`
+- Intake：首条消息后正确要求缺失 `time_range`；补充 `2024–2024` 后 `missing=[]`。
+- 计划：第一次故意包含越权 `scope.topic` 被 `AGENT_OUTPUT_INVALID` 拒绝；修正为受限 scope 后 HTTP 202，计划版本/哈希与审批范围一致。
+- 批准：`approve_plan` HTTP 200，创建唯一 ResearchTask；事件流真实产生 `phase:research` → `phase:plan` → `agent` → `skill` → `tool` 三级树。
+- USENIX 目录 Tool：真实完成，命中 5 篇候选并返回稳定 `catalog_paper_id`；事件 `research-event:a7012915b1465b60889414155efa3955:6`。
+- 详情 Tool：真实来源详情请求失败（`TOOL_EXECUTION_FAILED`），随后相同参数被重复调用时由幂等护栏返回 `TOOL_ALREADY_EXECUTED`；事件 7–16 可复核。
+- 终态：用户取消卡住的详情调用后，Session=`cancelled`，ResearchTask=`partial`；未生成 Artifact，符合失败闭环的 fail-closed 语义。
+
+这次复验确认了真实 Intake、计划安全校验、审批、唯一 Runner、USENIX 目录访问、三级事件投影、重复只读 Tool 防护和取消收口；但仍未获得 `keep=true` 的有效评估证据及 Markdown/HTML/manifest Artifact，因此不能把 Spec034 标为已完成。失败原因是当前真实 USENIX 详情来源/本地模型组合无法在时限内产出可验证详情，不是用 Fake Runtime 代替真实成功。
