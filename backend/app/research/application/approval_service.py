@@ -62,11 +62,23 @@ class ResearchCommandError(Exception):
 class PlanApprovalService:
     """Author plans and apply all six commands with owner/version/idempotency checks."""
 
-    def __init__(self, *, store, memory_repository=None, skill_registry=None, tool_registry=None) -> None:
+    def __init__(
+        self,
+        *,
+        store,
+        memory_repository=None,
+        skill_registry=None,
+        tool_registry=None,
+        research_service=None,
+    ) -> None:
         self.store = store
         self.memory_repository = memory_repository
         self.skill_registry = skill_registry
         self.tool_registry = tool_registry
+        # The approval boundary only owns plan/session persistence.  Starting
+        # an approved task is delegated to the already-composed ResearchService
+        # so Orchestrator/Runner remain the single execution path.
+        self.research_service = research_service
 
     def get_session(self, session_id: str, owner_id: str):
         session = self.store.get_session(session_id, owner_id)
@@ -142,8 +154,6 @@ class PlanApprovalService:
             "approve_capability", "approve_resource_extension", "decline_request",
         }:
             raise ResearchCommandError("CAPABILITY_NOT_AUTHORIZED", "未知研究命令")
-        if int(subject_version) != int(session.current_plan_version):
-            raise ResearchCommandError("PLAN_VERSION_STALE", "计划版本已更新，请刷新计划卡")
         record = self.store.get_command_result_record(idempotency_key, owner_id)
         if record is not None:
             identity = (record.get("research_session_id"), record.get("command"), int(record.get("subject_version", 0)))
@@ -153,6 +163,11 @@ class PlanApprovalService:
             if identity[0] != session_id or identity[1] != command:
                 raise ResearchCommandError("APPROVAL_CONFLICT", "幂等键身份冲突")
             raise ResearchCommandError("APPROVAL_STALE", "幂等键绑定了旧计划版本")
+        # Idempotent replay is checked before the current plan version.  A
+        # durable response from an older plan is still the response for that
+        # exact command key; only a new key must satisfy the current version.
+        if int(subject_version) != int(session.current_plan_version):
+            raise ResearchCommandError("PLAN_VERSION_STALE", "计划版本已更新，请刷新计划卡")
         self._validate_scope(scope_json, command)
         if command == "approve_plan":
             response = self._approve_plan(session, owner_id, scope_json, idempotency_key, decided_by_message_id)
@@ -271,6 +286,18 @@ class PlanApprovalService:
                 updated = self.store.update_session_status(session.research_session_id, owner_id, "queued")
         except Exception as exc:
             raise ResearchCommandError("SOURCE_UNAVAILABLE", "研究会话链接暂时不可用") from exc
+        if self.research_service is not None:
+            try:
+                # ResearchService owns the executor and the unique
+                # Orchestrator instance.  Its in-flight guard makes this safe
+                # when a crash-recovery replay reaches the same outbox twice.
+                self.research_service.start(task.research_task_id, owner_id)
+            except Exception as exc:
+                with suppress(Exception):
+                    self.store.update_activity_outbox(
+                        outbox["outbox_id"], status="failed", error_code="SOURCE_UNAVAILABLE"
+                    )
+                raise ResearchCommandError("SOURCE_UNAVAILABLE", "研究运行时暂时不可用") from exc
         return self._response(updated, approval, task=task, plan=plan)
 
     def _activate_task(self, session, owner_id, plan, activation) -> ResearchTask:

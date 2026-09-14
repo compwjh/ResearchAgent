@@ -181,6 +181,10 @@ def _approval_service() -> PlanApprovalService:
         memory_repository=_memory(),
         skill_registry=SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
         tool_registry=ToolRegistryService(build_default_tool_registry(), state_path),
+        # Approval materialization and execution share the same composed
+        # ResearchService/Orchestrator runtime; no second dispatcher is
+        # created at the Session command boundary.
+        research_service=_service(),
     )
 
 
