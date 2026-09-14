@@ -89,3 +89,14 @@ RERANKER_ENABLED=false ./deploy/start.sh
 - 终态：用户取消卡住的详情调用后，Session=`cancelled`，ResearchTask=`partial`；未生成 Artifact，符合失败闭环的 fail-closed 语义。
 
 这次复验确认了真实 Intake、计划安全校验、审批、唯一 Runner、USENIX 目录访问、三级事件投影、重复只读 Tool 防护和取消收口；但仍未获得 `keep=true` 的有效评估证据及 Markdown/HTML/manifest Artifact，因此不能把 Spec034 标为已完成。失败原因是当前真实 USENIX 详情来源/本地模型组合无法在时限内产出可验证详情，不是用 Fake Runtime 代替真实成功。
+
+## 2026-09-15 最小目录元数据 Smoke（最终尝试）
+
+为排除详情页失败对主链的影响，使用同一临时服务再次运行只授权 `search_paper_catalog` 的最小计划：
+
+- `research_session_id=313e507567e4421396e4623e941e035c`
+- `research_task_id=e143751a35fc5f57bb1acbcfb96171ed`
+- 真实 USENIX 检索完成，命中 `f11a606c713386db`（`Back-Propagating System Dependency Impact for Attack Investigation`）等 3 个候选，事件 `...:6`。
+- `research-paper-evaluation` 真实执行完成（事件 `...:10`），但上游 WorkItem 终态为失败，`selected_count=0`，随后任务 `partial/UPSTREAM_WORK_ITEM_FAILED`（事件 `...:11`）。没有产生伪造 Artifact。
+
+该结果说明即使不调用详情 Tool，本机 `qwen3.8:27b-q4_K_M` 仍未返回可验证的评估选择；在当前环境没有可接受的真实成功证据。两次新 smoke 均已停止临时服务，未保留后台进程。
