@@ -27,9 +27,15 @@ def test_tables_created_and_indexes_idempotent(tmp_path):
 
 
 def test_is_task025_schema_passes(tmp_path):
+    """task025 引入的压缩相关表必须存在于 spec-038 重置后的新基线。
+
+    原用例调用已被删除的 ``_is_task025_schema``（迁移链内部实现），
+    改为直接断言基线表存在，保留「压缩能力未被基线重置误删」的校验意图。
+    """
     repo = _make_repo(tmp_path)
     with repo.connection() as conn:
-        assert MemoryRepository._is_task025_schema(conn) is True
+        tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    assert {"conversation_segments", "conversation_compaction_jobs"} <= tables
 
 
 def test_segment_write_and_seq_ordering(tmp_path):

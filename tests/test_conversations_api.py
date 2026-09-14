@@ -14,7 +14,12 @@ from backend.app.platform.ollama import ReasoningCapabilities
 
 
 @pytest.fixture(autouse=True)
-def _task03_reasoning_probe():
+def _task03_reasoning_probe(tmp_path, monkeypatch):
+    # spec-038：文件记忆层默认读仓库 data/memory（真实 USER.md 可能非空）。
+    # 本文件断言装配后的消息结构，必须把 MEMORY_DIR 隔离到 tmp，否则真实画像
+    # 会额外注入一条 system 消息（曾导致 test_chat_prompt_* 误报），且测试写入会
+    # 污染开发者本机的 data/memory。
+    monkeypatch.setattr("backend.app.memory.markdown_store.MEMORY_DIR", tmp_path / "memory")
     capabilities = ReasoningCapabilities("model", ("off", "low", "medium", "high", "xhigh"), "xhigh", "ollama_probe", "now", {effort: f"e-{effort}" for effort in ("off", "low", "medium", "high", "xhigh")})
     with patch("backend.app.platform.ollama.probe_reasoning_capabilities", return_value=capabilities):
         yield
@@ -65,6 +70,7 @@ def test_project_and_lazy_conversation_flow(tmp_path):
         assert all(event["step_id"] and event["status"] in {"running", "completed", "failed", "skipped"} for event in progress)
         conversation_id = events[0]["conversation_id"]
         analysis = _wait_analysis(client, events[0]["user_message_id"])
+        # spec-038 P3：高置信度 explicit（≥0.9）改为直写 MD，审计项记 auto_saved。
         assert analysis and analysis["items"][0]["decision_status"] == "auto_saved"
         messages = client.get(f"/api/conversations/{conversation_id}/messages?target_chars=100")
         assert messages.status_code == 200
@@ -100,25 +106,26 @@ def test_ambiguous_memory_is_not_saved(tmp_path):
             assert analysis and analysis["items"][0]["decision_status"] == "pending_confirmation"
 
 
-def test_management_and_global_memory_api(tmp_path):
+def test_management_and_lifecycle_api(tmp_path):
+    """原 `test_management_and_global_memory_api` 的后继。
+
+    ``/api/memories*`` 端点已随表停用移除；全局画像的管理改由 ``/api/system-rule``
+    承载（底层 USER.md），项目的会话生命周期部分原样保留。
+    """
     with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
         client = TestClient(app)
         first = client.post("/api/projects", json={"name": "P1"})
         second = client.post("/api/projects", json={"name": "P2"})
         p1, p2 = first.json()["project_id"], second.json()["project_id"]
-        created = client.post("/api/memories", json={"scope": "global", "statement": "Concise", "source_kind": "manual"})
-        assert created.status_code == 201
-        global_id = created.json()["memory_id"]
-        candidate = client.post("/api/memories", json={"scope": "project", "project_id": p1, "statement": "Candidate", "status": "candidate"})
-        assert candidate.status_code == 201
-        candidate_id = candidate.json()["memory_id"]
-        assert client.post(f"/api/memories/{candidate_id}/confirm").json()["status"] == "active"
-        edited = client.patch(f"/api/memories/{global_id}", json={"statement": "Concise answers"})
-        assert edited.status_code == 200 and edited.json()["memory_id"] != global_id
-        assert client.get("/api/memories?scope=global").json()["memories"][0]["statement"] == "Concise answers"
-        assert client.get(f"/api/memories/{edited.json()['memory_id']}/evidence").status_code == 200
-        assert client.delete(f"/api/memories/{edited.json()['memory_id']}").status_code == 204
-        assert client.post(f"/api/memories/{edited.json()['memory_id']}/undo").json()["status"] == "active"
+
+        # 长期记忆 CRUD 端点已移除。
+        assert client.get("/api/memories").status_code == 404
+
+        # 全局画像：写入 → 读回（内容非空即 enabled）→ 清空。
+        assert client.put("/api/system-rule", json={"content": "Concise answers", "enabled": True}).status_code == 200
+        assert client.get("/api/system-rule").json()["content"] == "Concise answers"
+        assert client.delete("/api/system-rule").status_code == 204
+        assert client.get("/api/system-rule").json()["content"] == ""
 
         conversation = client.post("/api/conversations/messages", json={"content": "hello", "project_id": p1, "model": "missing"})
         # Model validation runs before creating a conversation; use repository
@@ -140,7 +147,13 @@ def test_management_and_global_memory_api(tmp_path):
         assert client.post(f"/api/conversations/{conversation_record.conversation_id}/restore").json()["status"] == "active"
 
 
-def test_explicit_global_memory_is_saved_and_recalled_for_unbound_chat(tmp_path):
+def test_explicit_global_memory_becomes_auto_saved_analysis_item(tmp_path):
+    """原 `test_explicit_global_memory_is_saved_and_recalled_for_unbound_chat` 的后继。
+
+    ``memories`` 停用后，明确表达落审计分析项、也不再有 ``memory: used`` 事件
+    （DB 长期记忆段不再注入）。spec-038 P3 起：高置信度 explicit 直写 L1 MD，
+    审计项记 ``auto_saved``；scope 仍按显式全局意图记为 global。
+    """
     with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
         client = TestClient(app)
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
@@ -150,25 +163,30 @@ def test_explicit_global_memory_is_saved_and_recalled_for_unbound_chat(tmp_path)
             assert saved.status_code == 200
             saved_event = _events(saved.text)[0]
             analysis = _wait_analysis(client, saved_event["user_message_id"])
+            # P3：高置信度 explicit → 直写 MD（auto_saved），scope 仍记为 global。
             assert analysis and analysis["items"][0]["decision_status"] == "auto_saved"
+            assert analysis["items"][0]["suggested_scope"] == "global"
             recalled = client.post("/api/conversations/messages", json={"content": "普通问题", "model": "model"})
-            assert any(event.get("status") == "used" and event.get("scope") == "global" for event in _events(recalled.text))
+            # 不再有 DB 记忆注入事件（MD 快照由 compose 内部读盘，不发 memory 事件）。
+            assert not any(event.get("type") == "memory" for event in _events(recalled.text))
 
 
-def test_memory_usage_write_failure_is_advisory_and_chat_completes(tmp_path):
+def test_memory_recall_is_advisory_and_chat_completes(tmp_path):
+    """原 `test_memory_usage_write_failure_is_advisory_and_chat_completes` 的后继。
+
+    原用例注入 ``mark_memory_used`` 失败来验证「记忆写失败不影响回答」。该写路径已
+    随 ``memories`` 停用移除，改为验证仍然存在的等价契约：**摘要召回失败时降级为
+    空、记录 failed 步骤，但整轮对话照常完成**。
+    """
     with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
         client = TestClient(app)
         with patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), patch(
             "backend.app.api.routes_conversations.run_chat", return_value=FakeRun()
-        ), patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("explicit", "回答要简洁", "global", .95)):
-            saved = client.post("/api/conversations/messages", json={"content": "请记住我：简洁回答，全局", "model": "model"})
-            assert saved.status_code == 200
-            with patch.object(MemoryRepository, "mark_memory_used", side_effect=RuntimeError("injected lock")):
-                response = client.post("/api/conversations/messages", json={"content": "普通问题", "model": "model"})
+        ), patch.object(MemoryRepository, "list_recall_summaries", side_effect=RuntimeError("injected lock")):
+            response = client.post("/api/conversations/messages", json={"content": "普通问题", "model": "model"})
             events = _events(response.text)
-            assert any(event.get("type") == "memory" and event.get("status") == "skipped" for event in events)
-            assert any(event.get("type") == "progress" and event.get("kind") == "memory_recall" and event.get("status") == "failed" for event in events)
-            assert events[-1]["type"] == "done" and events[-1]["status"] == "completed"
+        assert any(event.get("type") == "progress" and event.get("kind") == "memory_recall" and event.get("status") == "failed" for event in events)
+        assert events[-1]["type"] == "done" and events[-1]["status"] == "completed"
 
 
 def test_stream_close_persists_interrupted_assistant(tmp_path):
@@ -328,13 +346,18 @@ def test_reasoning_sse_budget_includes_stream_filter_tail(tmp_path):
     assert repo.get_message(assistant.message_id, "local-user").status == "completed"
 
 
-def test_memory_scope_project_parameter_conflicts_are_stable_errors(tmp_path):
+def test_retired_memory_endpoints_return_404(tmp_path):
+    """原 `test_memory_scope_project_parameter_conflicts_are_stable_errors` 的后继。
+
+    ``/api/memories*`` 已随 ``memories`` 表停用移除，所有旧路径必须稳定 404
+    （而不是 500 或静默落到别的语义）。
+    """
     with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
         client = TestClient(app)
         project_id = client.post("/api/projects", json={"name": "P"}).json()["project_id"]
-        assert client.get(f"/api/memories?scope=global&project_id={project_id}").status_code == 400
-        assert client.get("/api/memories?scope=project").status_code == 400
-        assert client.get("/api/memories?scope=project&project_id=missing").status_code == 404
+        assert client.get(f"/api/memories?scope=global&project_id={project_id}").status_code == 404
+        assert client.get("/api/memories").status_code == 404
+        assert client.post("/api/memories", json={"scope": "global", "statement": "x", "source_kind": "manual"}).status_code == 404
 
 
 def test_chat_wires_durable_worker_and_worker_failure_does_not_block_sse(tmp_path):

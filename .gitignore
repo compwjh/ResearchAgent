@@ -31,7 +31,11 @@ data/article_settings.json
 data/kb/
 data/models/
 data/agent_tasks.sqlite3
+# spec-038 L1 文件记忆：真实记忆文件属用户隐私，绝不入库。
+# 仓库只提交仓库根目录的 USER.example.md / MEMORY.example.md 模板（同 .env 模式）。
 data/memory/
+data/memory/*.md
+data/memory/projects/
 deploy/reranker/.runtime/
 deploy/run.pid
 

@@ -107,36 +107,45 @@ def test_reasoning_probe_uses_ollama_chat_and_marks_xhigh_with_evidence(monkeypa
     assert "high" not in caps.supported_efforts
 
 
-def test_schema_v7_marker_and_restart_are_idempotent(tmp_path):
+def test_baseline_schema_marker_and_restart_are_idempotent(tmp_path):
+    """新基线：版本标记为 SCHEMA_VERSION、停用表不再存在、默认偏好行已播种、重启幂等。
+
+    原用例断言 v6→v7 的 ``migration_markers`` 迁移标记；spec-038 删除整条历史迁移链后
+    该标记不复存在，故改为对新基线做等价校验，并保留「默认偏好行已播种」这条回归护栏
+    （缺失会让 update_conversation_reasoning 把「effort 未变」误判为偏好变更）。
+    """
+    from backend.app.memory.migration import SCHEMA_VERSION
     from backend.app.memory.repository import MemoryRepository
 
     path = tmp_path / "memory.sqlite3"
     repo = MemoryRepository(path)
     with repo.connection() as db:
-        assert db.execute("SELECT max(version) FROM schema_version").fetchone()[0] == 7
-        marker = db.execute("SELECT before_counts_json, backup_id FROM migration_markers WHERE marker='conversation_history_reset_v1'").fetchone()
-        matrix = json.loads(marker[0])
-        assert set(matrix) >= {"conversations", "messages", "memory_evidence", "projects", "memories", "system_rules", "skill_improvement_proposals"}
-        assert all({"before", "after", "action", "foreign_key_result"} <= set(row) for row in matrix.values())
-        assert len(marker[1]) == 64
+        assert db.execute("SELECT max(version) FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+        tables = {row["name"] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        assert not {"memories", "memory_evidence", "system_rules"} & tables
+        assert db.execute("SELECT count(*) FROM user_chat_preferences WHERE owner_id='local-user'").fetchone()[0] == 1
     MemoryRepository(path)
     with repo.connection() as db:
-        assert db.execute("SELECT count(*) FROM migration_markers WHERE marker='conversation_history_reset_v1'").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM schema_version WHERE version=?", (SCHEMA_VERSION,)).fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM user_chat_preferences WHERE owner_id='local-user'").fetchone()[0] == 1
 
 
-def test_schema_v7_conversation_reasoning_check_survives_restart(tmp_path):
+def test_baseline_conversation_reasoning_check_survives_restart(tmp_path):
+    """新基线：conversations 的 reasoning_effort CHECK 约束在重启后依然生效。
+
+    原用例调用已被删除的 ``_is_schema_v7``（v1→v7 迁移链内部实现），
+    改为直接对**重启后的实例**校验约束本身，保留原校验意图。
+    """
     from backend.app.memory.repository import MemoryRepository
 
     path = tmp_path / "memory.sqlite3"
-    repo = MemoryRepository(path)
-    with repo.connection() as db:
+    MemoryRepository(path)
+    restarted = MemoryRepository(path)
+    with restarted.connection() as db:
         sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'").fetchone()[0].upper().replace(" ", "").replace("\n", "")
         assert "CHECK(REASONING_EFFORTIN('OFF','LOW','MEDIUM','HIGH','XHIGH'))" in sql
         with pytest.raises(sqlite3.IntegrityError):
             db.execute("INSERT INTO conversations(conversation_id, owner_id, title, created_at, updated_at, reasoning_effort) VALUES ('bad', 'owner', 'bad', 'now', 'now', 'invalid')")
-    restarted = MemoryRepository(path)
-    with restarted.connection() as db:
-        assert restarted._is_schema_v7(db)
 
 
 def test_legacy_v7_check_repair_preserves_current_conversation_data(tmp_path):

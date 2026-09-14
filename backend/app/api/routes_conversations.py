@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import time
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -13,15 +14,13 @@ from backend.app.api.schemas import (
     ConversationReasoningRequest,
     MemoryAnalysisBatchDecisionRequest,
     MemoryAnalysisDecisionRequest,
-    MemoryCreateRequest,
-    MemoryPatchRequest,
     ProjectCreateRequest,
     ProjectPatchRequest,
     SystemRulePatchRequest,
     SystemRulePutRequest,
 )
 from backend.app.chat.application.chat_runner import ChatStreamInterrupted, run_chat
-from backend.app.chat.application.context_compaction import get_compaction_worker
+from backend.app.chat.application.context_compaction import collapse_tool_outputs, get_compaction_worker
 from backend.app.chat.application.conversation_service import (
     compose_chat_messages,
     compose_chat_prompt,
@@ -44,9 +43,15 @@ from backend.app.knowledge_base.application import (
     hybrid_search,
     list_documents_for_project,
 )
+from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
+from backend.app.memory.session_search import search_sessions
 from backend.app.platform.bootstrap import get_provider, register_provider
-from backend.app.platform.config import CHAT_COMPACT_TRIGGER_RATIO, CHAT_TOTAL_TOKEN_BUDGET
+from backend.app.platform.config import (
+    CHAT_COMPACT_TRIGGER_RATIO,
+    CHAT_SUMMARY_BUDGET_CHARS,
+    CHAT_TOTAL_TOKEN_BUDGET,
+)
 from backend.app.platform.model_catalog import get_online_model, is_online_model
 from backend.app.platform.observability import (
     prompt_observation_metadata,
@@ -87,38 +92,95 @@ def _message_payload(item):
     return {"message_id": item.message_id, "conversation_id": item.conversation_id, "parent_message_id": item.parent_message_id, "role": item.role, "content": item.content, "status": item.status, "model": item.model, "mode": item.mode, "reasoning_content": item.reasoning_content, "reasoning_status": item.reasoning_status, "reasoning_started_at": item.reasoning_started_at.isoformat() if item.reasoning_started_at else None, "reasoning_completed_at": item.reasoning_completed_at.isoformat() if item.reasoning_completed_at else None, "first_reasoning_at": item.first_reasoning_at.isoformat() if item.first_reasoning_at else None, "first_answer_token_at": item.first_answer_token_at.isoformat() if item.first_answer_token_at else None, "reasoning_truncated": item.reasoning_truncated, "reasoning_chars": item.reasoning_chars, "last_event_seq": item.last_event_seq, "created_at": item.created_at.isoformat(), "completed_at": item.completed_at.isoformat() if item.completed_at else None}
 
 
-def _memory_payload(item):
-    return {"memory_id": item.memory_id, "owner_id": item.owner_id, "scope": item.scope, "project_id": item.project_id, "category": item.category, "statement": item.statement, "source_kind": item.source_kind, "status": item.status, "confidence": item.confidence, "supersedes_id": item.supersedes_id, "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat(), "last_used_at": item.last_used_at.isoformat() if item.last_used_at else None}
-
-
 def _system_rule_payload(item):
     return {"content": item.content, "enabled": item.enabled, "updated_at": item.updated_at.isoformat()}
+
+
+def _prior_tool_outputs(repo: MemoryRepository, conversation_id: str, *, exclude_message_id: Optional[str] = None) -> str:
+    """收集本会话**已完成历史轮次**的处理步骤并做结构化塌缩。
+
+    spec-038 P3：旧步骤塌缩为一行「工具名 + 状态 + 摘要首行」，最近
+    ``CHAT_TOOL_OUTPUT_KEEP_RECENT`` 步保留原文。只取**已有回答内容**的 assistant
+    消息（``exclude_message_id`` 为本次在途的 assistant 占位消息，必须排除，否则会把
+    本轮刚建的「记忆召回/回答生成」步骤当成历史工具输出注入）。
+
+    失败一律 fail-open 降级为空串，绝不阻断回答装配（塌缩属优化，不是必需路径）。
+    """
+    try:
+        history = repo.list_context_messages(conversation_id, OWNER_ID)
+        assistant_ids = [
+            m.message_id
+            for m in history
+            if getattr(m, "role", None) == "assistant"
+            and (m.content or "").strip()
+            and m.message_id != exclude_message_id
+        ]
+        steps = []
+        for message_id in assistant_ids:
+            steps.extend(repo.list_processing_steps(message_id, OWNER_ID))
+        if not steps:
+            return ""
+        return collapse_tool_outputs(steps)
+    except Exception:  # noqa: BLE001 — 裁剪失败不阻断回答
+        return ""
+
+
+_CONTEXT_BREAKDOWN_LABELS = {
+    "project_instructions": "项目指令",
+    "memory": "长期记忆 / 摘要",
+    "recall": "跨会话召回",
+    "file_memory": "文件记忆 (USER.md / MEMORY.md)",
+    "rag": "知识库检索",
+    "history": "会话历史",
+    "tool_outputs": "工具调用记录",
+    "question": "当前问题",
+}
+
+
+def _build_context_breakdown(sections, budget_tokens: int) -> list[dict]:
+    """把 ``compose_chat_prompt(return_sections=True)`` 的 (kind, text) 列表转成占比明细。
+
+    每项含中文 label、估算 token、UTF-8 字节数；按 token 降序，便于「哪个文件占最多」展示。
+    ``budget_tokens`` 仅透传备用（前端用它算百分比），本函数不依赖其值。
+    """
+    rows: list[dict] = []
+    for kind, text in sections:
+        rows.append({
+            "kind": kind,
+            "label": _CONTEXT_BREAKDOWN_LABELS.get(kind, kind),
+            "tokens": estimate_tokens(text),
+            "bytes": len(text.encode("utf-8")),
+        })
+    rows.sort(key=lambda r: r["tokens"], reverse=True)
+    return rows
 
 
 def compute_context_usage(repo: MemoryRepository, conversation) -> dict:
     """Dry-run 用量估算：与真实装配同源（同一 ``compose_chat_prompt`` + 同一预算配置），
     但只覆盖历史段 + 记忆/摘要段，不触发 RAG 检索、不调用模型、无副作用。
 
-    返回 ``{used_tokens, budget_tokens, ratio, segment_count, compaction_status}``；
+    返回 ``{used_tokens, budget_tokens, ratio, segment_count, compaction_status, breakdown}``；
+    ``breakdown`` 为各上下文段落（项目指令 / 记忆 / 文件记忆 / 会话历史 等）的占比明细列表，
+    每项含 ``kind / label / tokens / bytes``，供前端圆圈 hover 弹出明细。
     ``budget_tokens <= 0`` 时 ``ratio`` 按 1.0 处理并记录观测，禁止除零崩溃；
     ``compaction_status`` 取该会话最新 job 的 status，无 job 为 ``idle``。
     """
     history = repo.list_context_messages(conversation.conversation_id, OWNER_ID)
-    recall_context = repo.list_recall_context(
-        OWNER_ID, conversation.project_id, query="",
-        memory_char_budget=4000, summary_char_budget=1500,
-    )
-    memories = recall_context["memories"]
-    summaries = recall_context["summaries"]
+    # spec-038：``memories`` 表已停用，DB 长期记忆段不再参与装配；文件记忆快照
+    # （USER.md / MEMORY.md / 项目 MD）由 ``compose_chat_prompt`` 内部读盘叠加。
+    memories: list = []
+    summaries = repo.list_recall_summaries(OWNER_ID, conversation.project_id, budget_chars=CHAT_SUMMARY_BUDGET_CHARS)
     segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
     project_instructions = None
     if conversation.project_id:
         project = repo.get_project(conversation.project_id, OWNER_ID)
         project_instructions = project.instructions if project else None
-    prompt_text = compose_chat_prompt(
+    prompt_sections = compose_chat_prompt(
         "", history, memories, project_instructions, summaries,
         rag_hits=None, include_question=False, segments=segments,
+        return_sections=True,
     )
+    prompt_text = "\n\n".join(text for _, text in prompt_sections)
     used_tokens = estimate_tokens(prompt_text)
     budget_tokens = CHAT_TOTAL_TOKEN_BUDGET
     if budget_tokens <= 0:
@@ -134,6 +196,7 @@ def compute_context_usage(repo: MemoryRepository, conversation) -> dict:
         "ratio": ratio,
         "segment_count": len(segments),
         "compaction_status": compaction_status,
+        "breakdown": _build_context_breakdown(prompt_sections, budget_tokens),
     }
 
 
@@ -172,18 +235,6 @@ def delete_system_rule():
         _repo().clear_system_rule(OWNER_ID)
     except SystemRuleUnavailableError as error:
         raise HTTPException(status_code=503, detail={"code": "SYSTEM_RULE_UNAVAILABLE", "message": "系统规则暂时不可用", "retryable": True}) from error
-
-
-def _memory_error(error: Exception) -> HTTPException:
-    message = str(error)
-    if isinstance(error, LookupError):
-        code = "MEMORY_SCOPE_NOT_FOUND" if "project" in message else "MEMORY_NOT_FOUND"
-        status = 404
-    elif "already" in message:
-        code, status = "MEMORY_CONFLICT", 409
-    else:
-        code, status = "INVALID_MEMORY", 400
-    return HTTPException(status_code=status, detail={"code": code, "message": message, "retryable": False})
 
 
 @router.post("/projects", status_code=201)
@@ -411,17 +462,10 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         reasoning_duration_ms = None
         adapter_event_seq = 0
         finished = False
-        try:
-            system_rule = repo.get_system_rule(OWNER_ID)
-        except Exception:
-            # A rule-enabled request cannot safely continue when its state is
-            # unknown.  Persist failure before emitting any model event/token.
-            with contextlib.suppress(Exception):
-                repo.update_message(assistant_message.message_id, OWNER_ID, status="failed")
-            yield frame("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode, reasoning_effort=selected_effort, capabilities_source=capabilities_source)
-            yield frame("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
-            yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="failed", duration_ms=0, reasoning_duration_ms=None, answer_duration_ms=0)
-            return
+        # spec-038 P1：全局指令改读 L1 文件记忆 USER.md。fail-open——读取失败一律
+        # 降级为空串；不再因「系统规则不可用」中断整轮对话。用户全局画像的 CRUD
+        # 接口（/api/system-rule）保持原样，供 P2 迁移。
+        user_memory = read_user_memory_or_empty()
         try:
             # Raw events are an append-only audit/input stream for the local
             # evolution worker.  They are advisory and never block SSE.
@@ -430,33 +474,44 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             yield frame("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode, reasoning_effort=selected_effort, capabilities_source=capabilities_source)
             recall_running = repo.create_processing_step(assistant_message.message_id, "memory_recall", "running", label="记忆召回")
             yield frame("progress", step_id=recall_running.step_id, kind=recall_running.kind, label=recall_running.label, status="running", summary=None)
+            # spec-038：``memories`` 表已停用，长期记忆改由 MD 文件承载（快照由
+            # ``compose_chat_messages`` 内部读盘叠加）。此处保留仍存的
+            # ``conversation_summaries`` 召回，并新增 L2 FTS5 跨会话检索
+            # （``session_search``）——它索引历史消息与 MD 记忆笔记，是 spec-038 P2
+            # 真正的跨会话记忆入口；旧的 ``memories`` 表召回已废弃，必须用它才能翻旧账。
+            # 任何失败均 fail-open：绝不因检索异常中断整轮对话。
             try:
-                recall_context = repo.list_recall_context(OWNER_ID, conversation.project_id, query=user_message.content, memory_char_budget=4000, summary_char_budget=1500)
-                memories = recall_context["memories"]
-                summaries = recall_context["summaries"]
+                memories = []
+                summaries = repo.list_recall_summaries(OWNER_ID, conversation.project_id, query=user_message.content, budget_chars=CHAT_SUMMARY_BUDGET_CHARS)
+                # L2：FTS5 检索历史会话 + MD 记忆笔记；排除当前进行中的会话，
+                # 避免把本回合对话当“记忆”回灌。MD 笔记 conversation_id 为 NULL，保留。
+                recall_hits: list[dict] = []
+                try:
+                    l2 = search_sessions(user_message.content, owner_id=OWNER_ID, match_mode="or")
+                    # 排除当前会话后，按 bm25 相关度取前 5 条注入；截掉长尾噪声
+                    # （如本会话早期的“我答不上来”、DeFi/记忆层讨论等弱相关命中），
+                    # 既保住真正的跨会话答案，又不让弱模型被无关历史带偏。
+                    recall_hits = [
+                        hit for hit in l2.get("hits", [])
+                        if hit.get("conversation_id") != conversation.conversation_id
+                    ][:5]
+                except Exception:
+                    logger.warning("L2 session_search 召回失败，降级跳过", exc_info=True)
                 recall_status = "completed"
-                recall_summary = f"召回 {len(memories)} 条长期记忆和 {len(summaries)} 条相关摘要"
+                recall_summary = (
+                    f"召回 {len(summaries)} 条会话摘要、L2 FTS5 命中 {len(recall_hits)} 条"
+                )
             except Exception:
                 # Memory is advisory context. A corrupt/locked memory read must
                 # not prevent ordinary chat from continuing.
                 memories = []
                 summaries = []
+                recall_hits = []
                 recall_status = "failed"
                 recall_summary = "记忆召回失败，已跳过"
-            usage_failures = 0
-            for memory in memories:
-                try:
-                    repo.mark_memory_used(memory.memory_id, OWNER_ID)
-                    yield frame("memory", status="used", memory_id=memory.memory_id, scope=memory.scope, project_id=memory.project_id, statement=memory.statement)
-                except Exception:
-                    usage_failures += 1
-                    yield frame("memory", status="skipped", memory_id=memory.memory_id, scope=memory.scope, project_id=memory.project_id, statement=memory.statement, message="记忆使用记录未保存")
-            if usage_failures:
-                recall_status = "failed"
-                recall_summary = f"召回 {len(memories)} 条长期记忆，其中 {usage_failures} 条使用记录未保存"
             recall_done = repo.create_processing_step(assistant_message.message_id, "memory_recall", recall_status, recall_summary, label="记忆召回")
             yield frame("progress", step_id=recall_done.step_id, kind=recall_done.kind, label=recall_done.label, status=recall_status, summary=recall_done.summary)
-            if system_rule.enabled and system_rule.content:
+            if user_memory:
                 applied = repo.create_processing_step(assistant_message.message_id, "system_rule", "completed", "已应用系统规则", label="已应用系统规则")
                 yield frame("progress", step_id=applied.step_id, kind=applied.kind, label=applied.label, status="completed", summary=applied.summary)
             project_instructions = None
@@ -495,7 +550,12 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 with contextlib.suppress(Exception):
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
             segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
-            messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=system_rule.content if system_rule.enabled else None, segments=segments)
+            # spec-038 P3：工具输出预裁剪。旧步骤结构化塌缩成一行，最近 N 步保留原文，
+            # 降低上下文占用；塌缩逻辑单点在 context_compaction.collapse_tool_outputs。
+            tool_outputs = _prior_tool_outputs(
+                repo, conversation.conversation_id, exclude_message_id=assistant_message.message_id
+            )
+            messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=user_memory or None, segments=segments, project_id=conversation.project_id, tool_outputs=tool_outputs, recall_hits=recall_hits)
             # Spec025 Task04：装配后按阈值自动触发后台异步压缩；绝不阻塞本次响应，
             # 失败只记录观测（与既有 context_pressure 事件并存，不改其语义）。
             try:
@@ -975,35 +1035,9 @@ def _analysis_item_decision(item_id: str, payload: MemoryAnalysisDecisionRequest
         project = repo.get_project(project_id, OWNER_ID)
         if not project or project.status != "active":
             raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在或不可用", "retryable": False})
-    duplicate = None
-    for status in ("active", "candidate", "superseded", "disabled", "deleted"):
-        for memory in repo.list_memories(OWNER_ID, project_id, scope=scope, status=status):
-            if " ".join(memory.statement.split()).casefold() == " ".join(item.statement.split()).casefold():
-                duplicate = memory
-                break
-        if duplicate:
-            break
-    if duplicate:
-        return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="duplicate", memory_id=duplicate.memory_id)
-    category = "user_preference" if scope == "global" else "project_rule"
-    conflict = next((memory for memory in repo.list_memories(OWNER_ID, project_id, scope=scope, status="active") if memory.category == category and memory.statement.casefold() != item.statement.casefold()), None)
-    evidence = (None, job.user_message_id, "manual", item.statement[:500])
-    if scope == "project" and project_id != job.project_id_snapshot:
-        # A user may explicitly route an unbound result into a selected
-        # project; the original message is evidence, but cannot be attached
-        # across project scopes under the repository's isolation contract.
-        evidence = None
-    try:
-        record = repo.create_memory(
-            OWNER_ID, scope, project_id, category, item.statement, "manual", max(0.0, min(1.0, item.confidence)),
-            status="active", supersedes_id=conflict.memory_id if conflict else None,
-            evidence=evidence,
-        )
-        if conflict:
-            repo.update_memory(conflict.memory_id, OWNER_ID, status="superseded")
-    except (ValueError, LookupError) as error:
-        raise HTTPException(status_code=409, detail={"code": "MEMORY_DECISION_CONFLICT", "message": str(error), "retryable": False}) from error
-    return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="superseded" if conflict else "auto_saved", memory_id=record.memory_id)
+    # spec-038：``memories`` 表已停用，决策不再直接落库，只更新审计流水中的分析项
+    # 状态（``auto_saved``）。记忆内容本身改由 MD 承载，落盘在 P2/P3 接入。
+    return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="auto_saved")
 
 
 @router.post("/memory-analysis/items/{item_id}/decision")
@@ -1028,93 +1062,11 @@ def decide_memory_analysis_items(user_message_id: str, payload: MemoryAnalysisBa
         except HTTPException as error:
             failures.append({"item_id": item.item_id, "code": error.detail.get("code") if isinstance(error.detail, dict) else "DECISION_FAILED", "message": error.detail.get("message") if isinstance(error.detail, dict) else str(error.detail)})
     return {"analysis": _analysis_job_payload(repo.get_memory_analysis_job(user_message_id, OWNER_ID)), "items": [_analysis_item_payload(item) for item in results], "failed": failures, "selected_count": len(selected)}
-
-
-@router.get("/memories")
-def list_memories(project_id: str | None = None, scope: str | None = Query(None, pattern="^(global|project)$"), status: str = Query("active", pattern="^(candidate|active|superseded|disabled|deleted)$")):
-    try:
-        if project_id is not None and scope is None:
-            scope = "project"
-        items = _repo().list_memories(OWNER_ID, project_id, scope=scope, status=status)
-    except (ValueError, LookupError) as error:
-        raise _memory_error(error) from error
-    return {"memories": [_memory_payload(item) for item in items]}
-
-
-@router.post("/memories", status_code=201)
-def create_memory(payload: MemoryCreateRequest):
-    try:
-        item = _repo().create_memory(OWNER_ID, payload.scope, payload.project_id, payload.category, payload.statement, payload.source_kind, payload.confidence, status=payload.status)
-    except (ValueError, LookupError) as error:
-        raise _memory_error(error) from error
-    return _memory_payload(item)
-
-
-@router.get("/memories/{memory_id}")
-def get_memory(memory_id: str):
-    item = _repo().get_memory(memory_id, OWNER_ID)
-    if not item:
-        raise _memory_error(LookupError("memory not found"))
-    return _memory_payload(item)
-
-
-@router.get("/memories/{memory_id}/evidence")
-@router.get("/memories/{memory_id}/sources")
-@router.get("/memories/{memory_id}/source")
-def get_memory_evidence(memory_id: str):
-    item = _repo().get_memory(memory_id, OWNER_ID)
-    if not item:
-        raise _memory_error(LookupError("memory not found"))
-    evidence = _repo().list_memory_evidence(memory_id, OWNER_ID)
-    return {"memory_id": memory_id, "evidence": [{"memory_id": e.memory_id, "conversation_id": e.conversation_id, "message_id": e.message_id, "evidence_type": e.evidence_type, "excerpt": e.excerpt} for e in evidence]}
-
-
-@router.patch("/memories/{memory_id}")
-def patch_memory(memory_id: str, payload: MemoryPatchRequest):
-    try:
-        item = _repo().update_memory(memory_id, OWNER_ID, **payload.model_dump(exclude_unset=True))
-    except (ValueError, LookupError) as error:
-        raise _memory_error(error) from error
-    if not item:
-        raise _memory_error(LookupError("memory not found"))
-    return _memory_payload(item)
-
-
-@router.post("/memories/{memory_id}/confirm")
-def confirm_memory(memory_id: str):
-    try:
-        item = _repo().confirm_memory(memory_id, OWNER_ID)
-    except (ValueError, LookupError) as error:
-        raise _memory_error(error) from error
-    if not item:
-        raise _memory_error(LookupError("memory not found"))
-    return _memory_payload(item)
-
-
-@router.post("/memories/{memory_id}/disable")
-def disable_memory(memory_id: str):
-    try:
-        item = _repo().update_memory(memory_id, OWNER_ID, status="disabled")
-    except (ValueError, LookupError) as error:
-        raise _memory_error(error) from error
-    if not item:
-        raise _memory_error(LookupError("memory not found"))
-    return _memory_payload(item)
-
-
-@router.post("/memories/{memory_id}/undo")
-@router.post("/memories/{memory_id}/restore")
-def undo_memory(memory_id: str):
-    try:
-        item = _repo().undo_memory(memory_id, OWNER_ID)
-    except (ValueError, LookupError) as error:
-        raise _memory_error(error) from error
-    if not item:
-        raise _memory_error(LookupError("memory not found"))
-    return _memory_payload(item)
-
-
-@router.delete("/memories/{memory_id}", status_code=204)
-def remove_memory(memory_id: str):
-    if not _repo().delete_memory(memory_id, OWNER_ID):
-        raise _memory_error(LookupError("memory not found"))
+# ---------------------------------------------------------------------------
+# spec-038 P1/P2：长期记忆的 CRUD 端点已随 ``memories`` 表停用一并移除。
+#
+# 真相源改为 MD 文件：
+# - 全局用户画像（原 /system-rule）→ ``USER.md``，见上方同名端点；
+# - 长期记忆 / 项目记忆 → ``MEMORY.md`` / ``projects/<id>.md``，由 P2/P3 以 MD
+#   为真相源重建对应接口（届时复用 ``MarkdownMemoryStore``，不再新建第二套实现）。
+# ---------------------------------------------------------------------------

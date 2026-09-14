@@ -24,8 +24,7 @@ from backend.app.article_assistant.application.entry import (
 )
 from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
-from backend.app.memory.repository import OWNER_ID
-from backend.app.platform.bootstrap import get_provider
+from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.platform.model_catalog import is_online_model
 from backend.app.platform.observability import (
     flush,
@@ -128,15 +127,11 @@ def run_agent(request: ChatRequest):
                     return
                 yield stream_event("meta", model=request.model, mode=request.mode)
                 started = utc_now()
-                try:
-                    rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
-                except Exception:
-                    yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
-                    yield stream_event("done", status="failed")
-                    return
-                prompt_messages = build_role_aware_messages(task.normalized_query, system_rule=rule.content if rule.enabled else None)
+                # spec-038 P1：全局指令改读 L1 文件记忆 USER.md；fail-open 降级为空串。
+                user_memory = read_user_memory_or_empty()
+                prompt_messages = build_role_aware_messages(task.normalized_query, system_rule=user_memory or None)
                 observation_messages = redact_prompt_messages(prompt_messages)
-                observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content))
+                observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(user_memory))
                 run = run_chat(task.normalized_query, request.model, messages=prompt_messages)
                 try:
                     for event in run.events:

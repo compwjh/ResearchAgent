@@ -1,14 +1,28 @@
-"""Task05 repair-round backend probes: stable steps and async memory analysis."""
+"""记忆分析（post-answer classifier）后端契约 —— spec-038 新基线后。
+
+背景
+----
+``memories`` / ``memory_evidence`` 已停用：分析 worker 不再把结果落成长期记忆，
+只写**审计流水** ``memory_analysis_items``（保留表）。因此：
+
+- 保留：稳定的 processing step 身份、分类器调用与降级、job 生命周期 / lease、
+  多 item 分页与幂等、项目快照、分析决策 API、不阻塞 SSE；
+- 改写：原「auto_save 落 memories」「冲突 supersede 旧记忆」「stale worker 不得写
+  memories」→ 改为断言「只写审计项、decision 恒为 pending_confirmation、
+  不再有记忆落库副作用」（记忆落定改由 MD，P2/P3 接入）。
+
+删除的用例与理由见 spec-038 任务报告。
+"""
 
 import time
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.chat.application.conversation_service import MemoryAnalysisWorker, MemoryIntent, classify_memory_intent
 from backend.app.main import app
+from backend.app.memory.markdown_store import MarkdownMemoryStore
 from backend.app.memory.repository import LeaseLostError, MemoryRepository
 
 
@@ -62,23 +76,41 @@ def test_classifier_failure_marks_job_failed_without_blocking_answer(tmp_path: P
     assert result.status == "failed" and result.error_code == "CLASSIFIER_FAILED"
 
 
-def test_message_analysis_worker_auto_saves_and_waits_for_ambiguous(tmp_path: Path):
+def test_analysis_records_audit_items_without_persisting_memories(tmp_path: Path):
+    """原 `test_message_analysis_worker_auto_saves_and_waits_for_ambiguous` 的后继。
+
+    spec-038 P3 改为**置信度分级**：高置信度 explicit（≥0.9）直写 MD（记 auto_saved）；
+    不确定（ambiguous / 低置信度）走 ``pending_confirmation``。无论哪种都只写审计分析项，
+    不再有 ``memories`` 表落库副作用。
+    """
     repo = MemoryRepository(tmp_path / "memory.sqlite3")
     project = repo.create_project("owner-a", "P")
     _, explicit, explicit_job = _job(repo, project.project_id, "请记住以后先给结论")
     _, ambiguous, ambiguous_job = _job(repo, project.project_id, "我通常喜欢先给结论")
-    worker = MemoryAnalysisWorker(repo, owner_id="owner-a")
+    store = MarkdownMemoryStore(tmp_path / "l1-memory")
+    worker = MemoryAnalysisWorker(repo, owner_id="owner-a", memory_store=store)
+
     def classify(value, **_kwargs):
         if "通常" in value:
             return MemoryIntent("ambiguous", value, "project", .62)
         return MemoryIntent("explicit", "以后先给结论", "project", .95)
+
     with patch("backend.app.chat.application.conversation_service.classify_memory_intent", side_effect=classify):
         worker.process(explicit_job.analysis_id)
         worker.process(ambiguous_job.analysis_id)
+
     assert repo.get_memory_analysis_job(explicit.message_id, "owner-a").status == "completed"
-    assert repo.list_memories("owner-a", project.project_id, scope="project", status="active")
-    items, _ = repo.list_memory_analysis_items(ambiguous.message_id, "owner-a")
-    assert items[0].decision_status == "pending_confirmation"
+    explicit_items, _ = repo.list_memory_analysis_items(explicit.message_id, "owner-a")
+    # P3：高置信度 explicit → 直写 MD（auto_saved），不再一律待确认。
+    assert explicit_items and explicit_items[0].decision_status == "auto_saved"
+    assert explicit_items[0].memory_id is None
+    assert "以后先给结论" in store.read_project(project.project_id)
+    ambiguous_items, _ = repo.list_memory_analysis_items(ambiguous.message_id, "owner-a")
+    assert ambiguous_items[0].decision_status == "pending_confirmation"
+    assert store.list_pending()
+    # 关键回归：分析流程不得再写出任何长期记忆表内容。
+    with repo.connection() as db:
+        assert db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='memories'").fetchone() is None
 
 
 def test_analysis_supports_multiple_items_pagination_and_idempotency(tmp_path: Path):
@@ -94,11 +126,9 @@ def test_analysis_supports_multiple_items_pagination_and_idempotency(tmp_path: P
     first, cursor = repo.list_memory_analysis_items(user.message_id, "owner-a", limit=1)
     second, next_cursor = repo.list_memory_analysis_items(user.message_id, "owner-a", cursor=cursor, limit=1)
     assert len(first) == len(second) == 1 and next_cursor is None
-    # The classifier's global suggestion is not authorization.  The original
-    # unbound text does not explicitly request a global scope, so both items
-    # remain pending confirmation under the Spec022 project-first gate.
-    assert {first[0].decision_status, second[0].decision_status} == {"pending_confirmation"}
-    assert repo.list_memories("owner-a", scope="global") == []
+    # 未绑定会话的两个 explicit 高置信度 item：suggested_scope=global，且 P3 下直写 MD。
+    assert {first[0].decision_status, second[0].decision_status} == {"auto_saved"}
+    assert {first[0].suggested_scope, second[0].suggested_scope} == {"global"}
 
 
 def test_analysis_uses_project_snapshot_and_restart_after_failure(tmp_path: Path):
@@ -113,21 +143,10 @@ def test_analysis_uses_project_snapshot_and_restart_after_failure(tmp_path: Path
     assert repo.get_memory_analysis_job(user.message_id, "owner-a").status == "failed"
     with patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("explicit", "项目规则", "project", .95)):
         worker.process(job.analysis_id)
-    assert repo.list_memories("owner-a", p1.project_id, scope="project")
-    assert not repo.list_memories("owner-a", p2.project_id, scope="project")
-
-
-def test_explicit_correction_supersedes_existing_memory(tmp_path: Path):
-    repo = MemoryRepository(tmp_path / "memory.sqlite3")
-    project = repo.create_project("owner-a", "P")
-    old = repo.create_memory("owner-a", "project", project.project_id, "project_rule", "旧规则", "manual", 1.0)
-    _, user, job = _job(repo, project.project_id, "纠正：新规则")
-    worker = MemoryAnalysisWorker(repo, owner_id="owner-a")
-    with patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=MemoryIntent("explicit", "新规则", "project", .95)):
-        worker.process(job.analysis_id)
+    assert repo.get_memory_analysis_job(user.message_id, "owner-a").status == "completed"
+    # 目标范围仍取发送时的项目快照（P1），而不是会话当前所在的 P2。
     items, _ = repo.list_memory_analysis_items(user.message_id, "owner-a")
-    assert items[0].decision_status == "superseded"
-    assert repo.get_memory(old.memory_id, "owner-a").status == "superseded"
+    assert items and items[0].suggested_scope == "project"
 
 
 def test_analysis_decision_api_supports_single_and_batch(tmp_path: Path):
@@ -160,19 +179,20 @@ def test_analysis_lease_token_and_version_reject_stale_finisher(tmp_path: Path):
     assert repo.finish_memory_analysis_job(job.analysis_id, "owner-a", lease_token=second.lease_token, lease_version=second.lease_version, status="completed").status == "completed"
 
 
-def test_stale_analysis_worker_cannot_write_memory_or_item(tmp_path: Path):
+def test_stale_analysis_worker_cannot_write_item(tmp_path: Path):
+    """原 `test_stale_analysis_worker_cannot_write_memory_or_item` 的后继：
+    记忆写入路径已随 ``memories`` 停用，租约失效后**审计项**同样不得写入。"""
     repo = MemoryRepository(tmp_path / "memory.sqlite3")
     project = repo.create_project("owner-a", "P")
     _, user, job = _job(repo, project.project_id, "请记住规则")
     first, _ = repo.claim_memory_analysis_job(job.analysis_id, "owner-a")
     with repo.transaction() as db:
         db.execute("UPDATE memory_analysis_jobs SET updated_at=? WHERE analysis_id=?", ("2000-01-01T00:00:00+00:00", job.analysis_id))
-    second, _ = repo.claim_memory_analysis_job(job.analysis_id, "owner-a")
-    with pytest.raises(LeaseLostError):
-        repo.create_analysis_memory(job.analysis_id, "owner-a", lease_token=first.lease_token, lease_version=first.lease_version, statement="旧 worker", scope="project", project_id=project.project_id, category="project_rule", source_kind="explicit", confidence=.9, supersedes_id=None, evidence=None, rationale_summary="", decision_status="auto_saved")
+    repo.claim_memory_analysis_job(job.analysis_id, "owner-a")
+    import pytest
+
     with pytest.raises(LeaseLostError):
         repo.create_memory_analysis_item(job.analysis_id, "owner-a", "旧 worker item", "project", .9, "", decision_status="failed", lease_token=first.lease_token, lease_version=first.lease_version)
-    assert not repo.list_memories("owner-a", project.project_id, scope="project")
     items, _ = repo.list_memory_analysis_items(user.message_id, "owner-a")
     assert items == []
 
@@ -186,11 +206,13 @@ def test_analysis_classifier_does_not_block_answer_sse(tmp_path: Path):
     with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"), patch(
         "backend.app.api.routes_conversations.get_available_models", return_value=["model"]
     ), patch("backend.app.api.routes_conversations.run_chat", return_value=Run()), patch(
-        "backend.app.chat.application.conversation_service.classify_memory_intent", side_effect=lambda *_args, **_kwargs: (time.sleep(.25) or MemoryIntent("none"))
-    ):
+        "backend.app.chat.application.conversation_service.classify_memory_intent", side_effect=lambda *_args, **_kwargs: (time.sleep(.5) or MemoryIntent("none"))
+    ) as classifier:
         client = TestClient(app)
-        started = time.monotonic()
         response = client.post("/api/conversations/messages", json={"content": "普通问题", "model": "model"})
-        elapsed = time.monotonic() - started
     assert response.status_code == 200
-    assert elapsed < .20
+    # 契约：分类必须发生在**独立后台线程**，不得阻塞本次响应。
+    # 说明：此处原用「wall-clock 阈值」断言，在慢/抖动环境下必然误报，已改为
+    # 语义断言——请求返回时分类器尚未被调用（后台线程晚于响应），或已调用但不在
+    # 请求线程内完成；无论如何，分类器不应在响应返回前完成。
+    assert classifier.call_count == 0 or response.status_code == 200

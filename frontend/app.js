@@ -758,6 +758,7 @@ const contextMeterText = document.getElementById('context-meter-text');
 const contextMeterValue = document.getElementById('context-meter-value');
 const contextCompactButton = document.getElementById('context-compact-button');
 const contextStatus = document.getElementById('context-status');
+const contextBreakdown = document.getElementById('context-breakdown');
 const contextState = { inflight: false, followTimer: null, followTries: 0 };
 
 function setContextStatus(text) {
@@ -775,6 +776,7 @@ function renderContextUsage(usage) {
   // 无会话时保留占位（visibility 隐藏），避免底部行抖动，同时移出 Tab 焦点。
   const idle = !usage;
   contextMeter.classList.toggle('is-idle', idle);
+  renderContextBreakdown(usage);
   if (contextCompactButton && !contextState.inflight) contextCompactButton.tabIndex = idle ? -1 : 0;
   if (idle) {
     if (contextMeterValue) contextMeterValue.textContent = '0%';
@@ -805,6 +807,82 @@ async function loadContextUsage() {
     renderContextUsage(null);
     return null;
   }
+}
+
+function formatBytes(n) {
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return String(n) + ' B';
+}
+
+function formatTokens(n) {
+  return (n / 1000).toFixed(1) + 'k';
+}
+
+function renderContextBreakdown(usage) {
+  if (!contextBreakdown) return;
+  contextBreakdown.replaceChildren();
+  contextBreakdown.classList.remove('is-open');
+  if (!usage || !usage.breakdown || !usage.breakdown.length) return;
+  const budget = usage.budget_tokens > 0 ? usage.budget_tokens : 0;
+  const header = document.createElement('div');
+  header.className = 'cb-title';
+  header.textContent = '上下文占用明细';
+  contextBreakdown.appendChild(header);
+  for (const item of usage.breakdown) {
+    const pct = budget > 0 ? Math.min(100, (item.tokens / budget) * 100) : 0;
+    const row = document.createElement('div');
+    row.className = 'cb-row';
+    const name = document.createElement('span');
+    name.className = 'cb-name';
+    name.textContent = item.label;
+    const bar = document.createElement('div');
+    bar.className = 'cb-bar';
+    const fill = document.createElement('div');
+    fill.className = 'cb-bar-fill';
+    fill.style.width = pct.toFixed(1) + '%';
+    bar.appendChild(fill);
+    const meta = document.createElement('span');
+    meta.className = 'cb-meta';
+    meta.textContent = pct.toFixed(0) + '% · ' + formatBytes(item.bytes);
+    row.appendChild(name);
+    row.appendChild(bar);
+    row.appendChild(meta);
+    contextBreakdown.appendChild(row);
+  }
+  const total = document.createElement('div');
+  total.className = 'cb-total';
+  total.textContent = '已用 ' + formatTokens(usage.used_tokens) + ' / 预算 ' + formatTokens(budget);
+  contextBreakdown.appendChild(total);
+}
+
+function openContextBreakdown() {
+  if (contextBreakdown && contextBreakdown.children.length > 1) contextBreakdown.classList.add('is-open');
+}
+
+function closeContextBreakdown() {
+  if (contextBreakdown) contextBreakdown.classList.remove('is-open');
+}
+
+if (contextMeter && contextBreakdown) {
+  // 移入圆圈即展开明细；圆圈本身是 popover 的 offsetParent，悬停其子元素不触发 mouseleave。
+  contextMeter.addEventListener('mouseenter', openContextBreakdown);
+  contextMeter.addEventListener('mouseleave', closeContextBreakdown);
+  contextMeter.addEventListener('focusin', openContextBreakdown);
+  contextMeter.addEventListener('focusout', closeContextBreakdown);
+  contextMeter.addEventListener('click', (event) => {
+    if (event.target.closest('.context-breakdown')) return;
+    if (contextBreakdown.children.length <= 1) return;
+    event.stopPropagation();
+    contextBreakdown.classList.toggle('is-open');
+  });
+}
+
+if (contextBreakdown) {
+  document.addEventListener('click', closeContextBreakdown);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeContextBreakdown();
+  });
 }
 
 function stopContextFollow() {

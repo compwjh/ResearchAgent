@@ -32,7 +32,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .composer { flex-wrap: nowrap; }
 .composer textarea { min-height: 66px; max-height: 176px; overflow-y: auto; padding: 4px 0; }
 .composer-footer { flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
-.composer-context { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.composer-context { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; position: relative; }
 /* 无会话时保留占位，避免底部行抖动。 */
 .composer-context.is-idle { visibility: hidden; }
 .context-meter-label { color: #b0b1b8; }
@@ -46,6 +46,16 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .context-compact-button:disabled { opacity: .6; cursor: default; }
 .context-status { margin: 6px 20px 0; color: #aaacb2; font: 10px 'DM Mono', monospace; text-align: right; }
 .context-status[hidden] { display: none; }
+/* Spec025 扩展：上下文圆圈 hover/点击弹出的占比明细。 */
+.context-breakdown { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20; display: none; flex-direction: column; gap: 6px; min-width: 248px; max-width: 320px; padding: 10px 12px; background: #fff; border: 1px solid #e3e3ec; border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 20, 40, .12); font: 11px 'DM Mono', monospace; color: #2b2c33; }
+.context-breakdown.is-open { display: flex; }
+.cb-title { font-weight: 700; color: #15161c; margin-bottom: 2px; }
+.cb-row { display: grid; grid-template-columns: 1fr 60px 84px; align-items: center; gap: 8px; }
+.cb-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #3a3b44; }
+.cb-bar { height: 6px; background: #ececf3; border-radius: 3px; overflow: hidden; }
+.cb-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.cb-meta { text-align: right; color: #6b6c75; }
+.cb-total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #eee; color: #15161c; font-weight: 700; text-align: right; }
 /* 窄屏：底部行空间不足时占比区整体换行并右对齐，同时隐去"上下文"二字只留百分比。 */
 @media (max-width: 760px) {
   .composer-footer { gap: 8px; }

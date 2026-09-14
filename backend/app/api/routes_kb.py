@@ -37,6 +37,7 @@ from backend.app.knowledge_base.application import (
     set_document_project,
     submit_document_reindex,
 )
+from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import (
@@ -1017,15 +1018,11 @@ def kb_ask(request: KBAskRequest):
                 yield stream_event("done")
                 return
             prompt = _kb_evidence_advisory(hits)
-            try:
-                rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
-            except Exception:
-                yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
-                yield stream_event("done", status="failed")
-                return
-            prompt_messages = build_role_aware_messages(question, system_rule=rule.content if rule.enabled else None, advisory=prompt)
+            # spec-038 P1：全局指令改读 L1 文件记忆 USER.md；fail-open 降级为空串。
+            user_memory = read_user_memory_or_empty()
+            prompt_messages = build_role_aware_messages(question, system_rule=user_memory or None, advisory=prompt)
             observation_messages = redact_prompt_messages(prompt_messages)
-            observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content))
+            observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(user_memory))
             run = run_chat(question, request.model, messages=prompt_messages, think=False)
             kb_metadata = {
                 "top_k": top_k,

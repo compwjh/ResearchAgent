@@ -226,16 +226,6 @@ def test_models_current_is_online_model(client, monkeypatch):
 # ---------- 6) POST /api/chat：线上 id 不再被 400 拒绝 ----------
 
 
-class _FakeRule:
-    enabled = False
-    content = ""
-
-
-class _FakeMemoryRepo:
-    def get_system_rule(self, owner_id):
-        return _FakeRule()
-
-
 class FakeRun:
     route = "langchain"
     result = None
@@ -249,10 +239,9 @@ def test_api_chat_accepts_online_model(client, monkeypatch):
     _enable_online(monkeypatch)
     # 本地列表不含线上模型：若无并集校验会判 400。靠 is_model_available 放行。
     monkeypatch.setattr(routes_chat, "get_available_models", lambda: ["local-model"])
-    monkeypatch.setattr(
-        "backend.app.api.routes_chat.get_provider",
-        lambda name: _FakeMemoryRepo() if name == "memory_repository" else None,
-    )
+    # spec-038 P1：/chat 的全局指令改读 USER.md（不再经 get_provider 读 system_rule），
+    # 故这里显式置空用户画像，保证用例只验证「线上模型不被拒绝」这一契约。
+    monkeypatch.setattr(routes_chat, "read_user_memory_or_empty", lambda: "")
     with patch("backend.app.api.routes_chat.run_chat", return_value=FakeRun()):
         resp = client.post("/api/chat", json={"question": "hi", "model": ONLINE_ID})
     assert resp.status_code == 200
@@ -262,10 +251,8 @@ def test_api_chat_online_model_when_ollama_unreachable(client, monkeypatch):
     _enable_online(monkeypatch)
     # Ollama 不可达（直接调用抛 ConnectError），但线上模型仍应放行（不 502 / 不 400）。
     monkeypatch.setattr(routes_chat, "get_available_models", _raise_connect)
-    monkeypatch.setattr(
-        "backend.app.api.routes_chat.get_provider",
-        lambda name: _FakeMemoryRepo() if name == "memory_repository" else None,
-    )
+    # 同上：显式置空 USER.md 内容，避免读盘影响本用例。
+    monkeypatch.setattr(routes_chat, "read_user_memory_or_empty", lambda: "")
     with patch("backend.app.api.routes_chat.run_chat", return_value=FakeRun()):
         resp = client.post("/api/chat", json={"question": "hi", "model": ONLINE_ID})
     assert resp.status_code == 200
