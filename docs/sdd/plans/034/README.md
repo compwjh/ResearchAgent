@@ -21,7 +21,7 @@
 - [Task07：processing_steps 三级树与实时投影](./task-07-processing-tree.md) — 已完成（双端 reviewer/tester GO）
 - [Task08：报告 Artifact、会话写回与通知](./task-08-report-and-notifications.md) — 已完成（双端 reviewer/tester 自动化 GO）
 - [Task09：Research Tab 复用、旧入口与旧数据清理](./task-09-workspace-and-cleanup.md) — 已完成（双端最终复审 GO）
-- [Task10：最终评审、回归、真实 Smoke、部署与复盘](./task-10-review-regression-deploy.md) — 实施中
+- [Task10：最终评审、回归、真实 Smoke、部署与复盘](./task-10-review-regression-deploy.md) — 实施中（自动化通过，真实模型 Smoke 阻塞）
 
 ## 状态规则
 

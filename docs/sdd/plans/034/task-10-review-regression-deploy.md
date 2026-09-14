@@ -48,5 +48,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：需求/技术/验收评审、测试报告、Smoke 证据、部署记录和 retro。
-- 执行结果：实施中，待最终评审、唯一全量回归、真实 Smoke、部署和收口复盘后填写。
-- 变更日志：2026-09-15 启动 Task10；Task09 双端最终复审 GO，进入 Spec034 最终验收阶段。本阶段只允许收口缺陷，不新增 Spec028/030 范围。
+- 执行结果：实施中（代码与自动化门禁通过，真实 Smoke 阻塞）。最终全量 pytest 通过 `1863 passed, 5 warnings, 52 subtests`；服务/页面 health 与浏览器可达，Intake→Plan→Approval→Runner→三级事件流真实通过，但本机模型输出不满足 Tool/JSON 契约，最终真实任务为 `partial`，未生成 Artifact。详见 `artifacts/task-10/smoke-report.md` 与 `acceptance-review-final.md`。
+- 变更日志：2026-09-15 启动 Task10；Task09 双端最终复审 GO，进入 Spec034 最终验收阶段。修复 reasoning capability 与 Spec027 兼容回归后全量回归归零；真实模型 Smoke 留有真实失败证据，不新增 Spec028/030 范围。
