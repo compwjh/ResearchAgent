@@ -1,6 +1,6 @@
 # Spec034 Task10 真实 Smoke 与部署记录
 
-日期：2026-09-15（Asia/Shanghai）  
+日期：2026-09-15（Asia/Shanghai）
 分支：`feature/spec-034-conversational-research-runtime`
 
 ## 服务与页面
@@ -45,3 +45,18 @@ RERANKER_ENABLED=false ./deploy/start.sh
 ```
 
 服务可达且模型能返回符合各角色 `ROLE_OUTPUT_FIELDS` 的结构化结果后，再用同一固定输入复验并补齐报告 Artifact、浏览器审批、刷新恢复和下载证据。
+
+## 2026-09-15 后续复验与契约修复
+
+在上述记录之后，继续使用临时本地 Ollama 模型复验三阶段最小计划，并保留每次真实运行的任务 ID：
+
+| Task | Search Worker | Evaluator | Synthesizer | 结果 |
+|---|---|---|---|---|
+| `65a8400207955c1d8b5792a2272e8ff1` | 重复目录 Tool 调用，运行超过预算后取消 | 未进入 | 未进入 | 取消；未伪造成功 |
+| `f527e27924a65e7696c6e32c3f954bf2` | 完成，1 次目录 Tool，保留候选 ID | 计划仅含 Search Worker，未配置下游 | 未配置 | 作为单阶段链路验证通过 |
+| `dd730552c8ae51ceb6322df5a3c686ee` | 完成 | 首轮无效后完成，但 ID 不透明、`keep=false`、无证据 | 未进入 | `NO_VALIDATED_EVIDENCE` |
+| `773eb1f92d1153d99c2e45bb08e3691f` | 完成，候选 `462dbdc453dbb373` | 完成，`candidate_id` 合法但 `keep=false`、`evidence_refs=[]` | 未进入 | `NO_VALIDATED_EVIDENCE` |
+
+针对最后一个失败形态已补充最小 Search→Evaluator 证据交接：Orchestrator 现在把 Search Worker 已安全化的目录 Tool 摘要、候选 ID 交集和 `catalog:<id>` 引用作为 bounded `catalog_evidence` 传给 Evaluator；URL、详情 Tool 结果和非候选 ID 不会进入该视图。Evaluator 仍必须基于真实事实返回 `keep=true` 与非空证据引用，Synthesizer 仍不会因空证据而启动。详见 [`smoke-evidence-path.md`](./smoke-evidence-path.md)。
+
+本轮定向集合为 **80 passed，退出码 0**；py_compile、`git diff --check` 通过。由于当前外部 USENIX 来源不可达且本地模型尚未稳定返回满足角色合同的有效证据选择，真实成功 Artifact 仍为 **NO-GO**，Task10 保持 `实施中`，不更新 Spec 状态。

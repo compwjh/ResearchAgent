@@ -30,3 +30,14 @@
 - 旧 Spec027 入口增加最小 `create_idempotent_message_pair` adapter，并保留旧入口显式项目覆盖语义；新 Session endpoint 继续对项目 mismatch fail-closed。
 
 报告对应真实证据：[smoke-report.md](./smoke-report.md)。
+
+## 后续修复复核
+
+在该结论之后，Task10 又完成了四项最小运行时修复：
+
+- 相同参数的只读目录 Tool 调用在单次 AgentRun 内去重，并切换 output-only；
+- 计划激活时将公开短依赖 ID 物化为任务作用域完整 ID；
+- 角色适配器增加稳定 JSON/system contract，并保留 Search Worker 候选 ID；
+- Search Worker 到 Evaluator 增加受限 `catalog_evidence` 交接，过滤 URL、详情 Tool 和非候选 ID。
+
+这些修复的 Task10 定向验证为 **80 passed，退出码 0**。它们修复了运行契约缺口，但没有放宽证据门禁；最近一次真实任务 `773eb1f92d1153d99c2e45bb08e3691f` 仍因 Evaluator 返回 `keep=false`、空 `evidence_refs` 而保持 `NO_VALIDATED_EVIDENCE`，因此本复核结论仍为 **NO-GO**，Spec034 不得收口。

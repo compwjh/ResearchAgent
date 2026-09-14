@@ -319,11 +319,25 @@ class PlanApprovalService:
             status="draft", current_plan_version=plan.version, created_at=now, updated_at=now,
         )
         items = []
-        for raw in json.loads(plan.work_items_json or "[]"):
+        # The public plan deliberately uses short, human-readable WorkItem
+        # IDs (for example ``s1`` and ``e1``), while the research store uses
+        # task-scoped IDs as the primary key.  Materialize dependencies in
+        # that same namespace or the Orchestrator will never find a completed
+        # upstream item after activation.
+        raw_work_items = json.loads(plan.work_items_json or "[]")
+        work_item_ids = {
+            raw["id"]: f"{task.research_task_id}:{raw['id']}"
+            for raw in raw_work_items
+        }
+        for raw in raw_work_items:
+            dependencies = [
+                work_item_ids.get(dependency, f"{task.research_task_id}:{dependency}")
+                for dependency in raw.get("depends_on", [])
+            ]
             items.append(ResearchWorkItem(
                 work_item_id=f"{task.research_task_id}:{raw['id']}", research_task_id=task.research_task_id,
                 plan_version=plan.version, task_type=raw["task_type"], role=raw["role"],
-                depends_on_json=_dump(raw.get("depends_on", [])), input_json=_dump(raw.get("params", {})),
+                depends_on_json=_dump(dependencies), input_json=_dump(raw.get("params", {})),
                 status="queued", attempt=0, created_at=now, updated_at=now,
             ))
         try:

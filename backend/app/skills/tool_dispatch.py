@@ -149,6 +149,17 @@ def _search_catalog(args: dict) -> DispatchResult:
         if not title:
             continue
         lines.append(f"{index}. {title}")
+        # ``PaperCandidate.candidate_id`` is the existing stable catalog
+        # identity (derived by PaperDiscoverySearchService and persisted as
+        # the candidate key).  Expose it under the Spec034 contract name so
+        # Search Worker can carry real candidates forward without serializing
+        # the whole candidate object or introducing a second ID generator.
+        catalog_paper_id = (
+            getattr(candidate, "catalog_paper_id", None)
+            or getattr(candidate, "candidate_id", None)
+        )
+        if catalog_paper_id:
+            lines.append(f"   catalog_paper_id: {catalog_paper_id}")
         # 详情页 URL 只取自候选对象本身（优先 article_url，回退 source_page_url），
         # 绝不拼接 / 猜测；两个都缺失时该行不输出，让模型知道该篇无法补摘要。
         detail_url = getattr(candidate, "article_url", None) or getattr(candidate, "source_page_url", None)

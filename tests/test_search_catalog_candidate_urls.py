@@ -210,4 +210,32 @@ def test_output_urls_come_from_candidates_only(fake_service):
     assert urls[1] in result.output
     # 候选未提供的地址不得出现（不得拼接/构造）
     assert "candidate_id" not in result.output
-    assert "c1" not in result.output
+    assert "catalog_paper_id: c1" in result.output
+
+
+# --- 7. Search Worker candidate contract: stable catalog ID only ----------------
+
+def test_each_candidate_exposes_stable_catalog_paper_id_without_extra_fields(fake_service):
+    candidates = [
+        _candidate(
+            1,
+            article_url="https://www.usenix.org/conference/usenixsecurity24/presentation/one",
+            pdf_url="https://www.usenix.org/system/files/conference/one.pdf",
+            source_links=[{"kind": "attacker-controlled", "url": "https://evil.example/raw"}],
+        ),
+        _candidate(2, article_url=None, source_page_url=None),
+    ]
+
+    first = fake_service.run(candidates)
+    second = fake_service.run(candidates)
+
+    assert first.ok is True, first.error
+    assert second.ok is True, second.error
+    assert "catalog_paper_id: c1" in first.output
+    assert "catalog_paper_id: c2" in first.output
+    assert first.output == second.output, "现有 candidate_id 映射为 catalog_paper_id 后必须保持稳定"
+    # The adapter exposes only the stable ID plus its existing title/abstract/
+    # detail fallback; it must not serialize arbitrary candidate fields.
+    assert "candidate_id:" not in first.output
+    assert "attacker-controlled" not in first.output
+    assert "system/files/conference/one.pdf" not in first.output

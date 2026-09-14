@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from typing import Any, Iterable, Mapping
 
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.report_synthesis import (
@@ -72,6 +73,45 @@ def _work_item_output(value) -> dict:
     if isinstance(raw, dict) and isinstance(raw.get("output_json"), dict):
         return dict(raw["output_json"])
     return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Mapping[str, Any]]) -> list[dict]:
+    """Build the bounded Search→Evaluator evidence handoff.
+
+    Search Worker output intentionally carries stable catalog IDs rather than
+    copying paper metadata.  The Runner's already-sanitized catalog ToolResult
+    is the only permitted source for the small amount of title/abstract context
+    the Evaluator needs to make a relevance decision.  Keep this view local to
+    the next WorkItem; it is not a new retrieval path or a persisted raw
+    response, and candidate/ref IDs remain bound to the Search output.
+    """
+    candidate_ids = {
+        str(value).strip()
+        for value in output.get("candidates", ())
+        if isinstance(value, str) and value.strip()
+    }
+    if not candidate_ids:
+        return []
+    evidence: list[dict] = []
+    for result in tool_results or ():
+        if not isinstance(result, Mapping):
+            continue
+        if result.get("name") != "search_paper_catalog" or result.get("status") != "ok":
+            continue
+        ids = [
+            str(value).strip()
+            for value in result.get("catalog_paper_ids", ())
+            if isinstance(value, str) and value.strip() in candidate_ids
+        ]
+        summary = result.get("summary")
+        if not ids and not isinstance(summary, str):
+            continue
+        evidence.append({
+            "candidate_ids": list(dict.fromkeys(ids)),
+            "evidence_refs": [f"catalog:{value}" for value in dict.fromkeys(ids)],
+            "summary": summary[:4096] if isinstance(summary, str) else "",
+        })
+    return evidence
 
 
 def _validated_evaluator_candidates(outputs) -> list[dict]:
@@ -653,6 +693,7 @@ class Orchestrator:
         completed_ids: set[str] = set()
         failed_ids: set[str] = set()
         completed_outputs: dict[str, dict] = {}
+        completed_search_evidence: dict[str, list[dict]] = {}
         item_by_id = {item.work_item_id: item for item in items}
         for item in items:
             role = role_map.get(item.role, item.role)
@@ -689,6 +730,19 @@ class Orchestrator:
                         if isinstance(paper_id, str) and paper_id not in paper_ids:
                             paper_ids.append(paper_id)
                 work_item_input["catalog_paper_ids"] = paper_ids
+                catalog_evidence = []
+                for dependency_id, output in zip(dependencies, upstream, strict=False):
+                    catalog_evidence.extend(
+                        {
+                            "work_item_id": dependency_id,
+                            "source": output.get("source"),
+                            "queries": output.get("queries", []),
+                            **entry,
+                        }
+                        for entry in completed_search_evidence.get(dependency_id, ())
+                    )
+                if catalog_evidence:
+                    work_item_input["catalog_evidence"] = catalog_evidence
                 allowed_candidates = set(paper_ids)
                 allowed_refs = {f"catalog:{paper_id}" for paper_id in paper_ids}
                 binding_invalid = False
@@ -808,6 +862,10 @@ class Orchestrator:
             else:
                 completed_ids.add(item.work_item_id)
                 completed_outputs[item.work_item_id] = _work_item_output(result.output_json)
+                if role == "search_worker":
+                    completed_search_evidence[item.work_item_id] = _catalog_evidence_view(
+                        completed_outputs[item.work_item_id], result.tool_results
+                    )
             error_code = result.error_code or semantic_error
             if terminal == "completed" and role == "paper_evaluator" and isinstance(result.output_json, dict):
                 evaluator_outputs.append(dict(result.output_json))
