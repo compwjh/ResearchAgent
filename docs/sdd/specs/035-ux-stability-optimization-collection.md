@@ -171,7 +171,16 @@
 - 前端语法：8 个 JS 文件 `node --check` 全部通过。
 - 前端落地核对：Bug4 `index.html:579` 已是 `<h1 id="skill-tool-title">Skills</h1>`、eyebrow 已移除、空态文案为复数；Bug5 `#model-select` 位于 `index.html:141-142` 的 `.composer-footer` 内，`.chat-header` 已移除。
 
-### 未完成项 / 阻塞
+### 部署与运行时验证（2026-09-15 完成）
 
-- **部署运行时验证未完成**：重启 8400 服务时，旧进程（PID 31766）收到 SIGTERM 后仅释放端口、进程未退出，仍持有 Qdrant 本地锁 `data/kb/qdrant/.lock`，导致新进程无法写入向量库（论文检索 245 篇标 failed、`total_results=0`）。需 `kill -9 31766` 后干净重启，再对 Bug2（上传计数立即可见）与 Bug3（切模型不实时探测）做运行时验收。该阻塞与本 spec 5 项改动无因果关系，属运维残留进程问题。
-- Bug5 的"长对话滚动到底部即可切换模型"与 Bug4 的视觉验收，待服务恢复后手工确认。
+重新部署 8400 服务并实测验收：
+
+- **向量库恢复**：先 `kill -9` 掉残留旧进程（PID 31766，此前仅释放端口未退出、仍持有 `data/kb/qdrant/.lock`），新进程（PID 99823）正常持有锁，`/api/health` 与 `/api/kb/health` 均 200。
+- **目录重嵌入**：894 篇全部重建索引 —— pending 0 / **indexed 894** / failed 0（2022:176、2023:246、2024:227、2025:245）。检索 `total_results` 由 0 恢复为 649/245，结果条目带完整作者与摘要，作者回填已可被检索命中。
+- **Bug3 运行时验收通过**：`GET /api/chat/reasoning-options?model=qwen3.8:27b` 返回 `"source":"cache"`、`cached_at=2026-09-14T18:48:29`（来自 `data/model_capabilities.sqlite3`），即切模型直接读库、**不再触发实时探测**；能力库现有 6 条记录。
+- **Bug2 运行时验收通过**：上传 1 篇 PDF 后不做任何等待，`GET /api/kb/papers` 计数由 1 立即变 2，新记录 `status='indexing'`——**无需等索引完成即可见**；验收后已删除该测试文档（HTTP 200），`grep` 确认 0 残留。
+
+### 遗留（不影响本 spec 收口）
+
+- Bug4（标题复数/去重）与 Bug5（选择器位置）为纯前端展示改动，`node --check` 与代码核对已通过，**视觉层面仍建议人工过一眼**（打开 `http://127.0.0.1:8400` 看 Skills/Tools 视图与对话底部模型选择器）。
+- Reranker 模型 `data/models/qwen3-reranker-0.6b-q8_0.gguf` 不存在，服务以 RRF 降级模式运行（检索状态显示 `degraded=true`）。属独立环境缺口，非本 spec 范围。
