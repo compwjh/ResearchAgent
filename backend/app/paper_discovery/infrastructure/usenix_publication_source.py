@@ -1044,6 +1044,79 @@ class UsenixAcceptedSource:
         return {"ok": True, "error_code": None, "filled": filled, "attempted": attempted,
                 "skipped": skipped, "failed": failed, "failures": failures[:20]}
 
+    def backfill_authors(self, conference_id: str = "usenix-security", *,
+                          years: Optional[Iterable[int]] = None,
+                          interval: float = 1.0) -> dict[str, Any]:
+        """回填缺失作者：直接解析官方 accepted-paper 列表页，按 catalog_paper_id 批量写入 authors_json。
+
+        与摘要不同，作者已包含在列表页（每个 ``<article>`` 块的 people 字段），
+        因此无需逐篇抓详情页——只抓 8 个列表页即可覆盖全部年份。列表页解析出的
+        标题与目录行同源，``catalog_paper_id``（由 conference_id + 归一化标题派生）
+        完全一致，据此精准匹配。
+
+        严格 fill-if-missing：仅当当前 ``authors_json`` 为空时才写入，已有作者的
+        行绝不覆盖；``metadata_hash`` 因作者变化而改变，store 会把 ``index_status``
+        重置为 ``pending``，使新作者随下次嵌入生效。
+
+        返回 ``{filled, attempted, skipped, failed, failures}``；单页/单行失败只记入
+        ``failed``，不影响其它论文。
+        """
+        store = self.store
+        if store is None:
+            return {"ok": False, "error_code": "USENIX_STORE_UNAVAILABLE",
+                    "filled": 0, "attempted": 0, "skipped": 0, "failed": 0, "failures": []}
+        now = _default_utcnow()
+        wanted_years = {int(year) for year in (years or ())}
+        route = self._discovery_route(conference_id) or {"rate_limit_seconds": interval}
+        filled = attempted = skipped = failed = 0
+        failures: list[dict[str, str]] = []
+        # 1) 抓取并解析每个列表页，得到 catalog_paper_id -> authors。
+        cid_to_authors: dict[str, list[str]] = {}
+        for year in dict.fromkeys(int(y) for y in (years or (2022, 2023, 2024, 2025))):
+            for cycle in self._cycles_for_year(year):
+                listing = self._listing_url(route, year, cycle)
+                try:
+                    text = self._get_text(listing, interval)
+                    papers = parse_accepted_papers(text, page_url=listing)
+                except Exception as error:  # noqa: BLE001 - 单页失败不中断回填
+                    failed += 1
+                    failures.append({"listing": listing, "error": str(error)[:120]})
+                    continue
+                for paper in papers:
+                    cid = self._catalog_paper_id(conference_id, paper.title)
+                    if paper.authors:
+                        cid_to_authors[cid] = list(paper.authors)
+        # 2) 逐行匹配并 fill-if-missing 写入 authors_json。
+        #    ``index_status=None`` 取全部行：摘要回填后这些行被重置为 ``pending``，
+        #    默认 ``indexed`` 过滤会把它们漏掉，导致匹配不到。
+        for paper in store.list_catalog_papers([conference_id], index_status=None):
+            if wanted_years and int(getattr(paper, "year", 0) or 0) not in wanted_years:
+                continue
+            authors = cid_to_authors.get(paper.catalog_paper_id)
+            if not authors or getattr(paper, "authors", None):
+                skipped += 1
+                continue
+            attempted += 1
+            new_paper = replace(paper, authors=list(authors))
+            updated = replace(
+                new_paper,
+                metadata_hash=_catalog_metadata_hash(new_paper, paper.abstract),
+                updated_at=now,
+            )
+            try:
+                self.store.upsert_catalog_paper(updated, now)
+            except Exception as error:  # noqa: BLE001 - 单行失败不中断回填
+                failed += 1
+                failures.append({"catalog_paper_id": paper.catalog_paper_id, "error": str(error)[:120]})
+                continue
+            refreshed = self._existing_catalog_paper(paper.catalog_paper_id)
+            if refreshed is not None and getattr(refreshed, "authors", None):
+                filled += 1
+            else:
+                skipped += 1
+        return {"ok": True, "error_code": None, "filled": filled, "attempted": attempted,
+                "skipped": skipped, "failed": failed, "failures": failures[:20]}
+
     # --- Public detail entry point (Spec032.1 Task04) ------------------------
     #
     # ``fetch_paper_detail`` is the stable, Tool-callable face of the detail
