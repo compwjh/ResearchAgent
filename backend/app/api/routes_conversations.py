@@ -1088,6 +1088,37 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
             raise HTTPException(status_code=404, detail={"code": "CONVERSATION_NOT_FOUND", "message": "会话不存在", "retryable": False})
     else:
         conversation = None
+    # An explicitly selected non-off effort must be rejected as a real HTTP
+    # 503 when capability probing is unavailable.  The normal message path
+    # intentionally persists a failed turn for model/unsupported-effort
+    # failures, so only this capability-unknown branch is preflighted before
+    # the first conversation/message write.  Reuse a successful resolution
+    # below to avoid probing the same model twice.
+    preflight_resolution = None
+    requested_effort = str(payload.reasoning_effort or "").strip().lower()
+    if payload.reasoning_effort is not None and requested_effort not in {"", "off"}:
+        try:
+            _validate_model(payload.model)
+        except HTTPException:
+            # Preserve the historical durable failed-turn contract for model
+            # availability/not-found errors; the post-persistence path emits
+            # its SSE error frame as before.
+            pass
+        else:
+            try:
+                preflight_resolution = _resolve_request_effort(
+                    payload.model, payload.reasoning_effort, explicit=True
+                )
+            except HTTPException as error:
+                detail = error.detail if isinstance(error.detail, dict) else {}
+                if (
+                    error.status_code == 503
+                    and detail.get("code") == "MODEL_CAPABILITIES_UNAVAILABLE"
+                ):
+                    raise
+                # Known unsupported/invalid effort keeps the established
+                # post-persistence SSE mapping; only unknown capability is a
+                # transport-level availability failure.
     # Freeze the turn in the existing conversation store before any model or
     # Skill/Intake preflight.  A failed preflight must remain recoverable.
     try:
@@ -1122,11 +1153,14 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
         _validate_model(payload.model)
     except HTTPException as error:
         return _failed_message_stream(repo, conversation, user, assistant, error.detail)
-    try:
-        requested_effort = payload.reasoning_effort if payload.reasoning_effort is not None else conversation.reasoning_effort
-        resolution = _resolve_request_effort(payload.model, requested_effort, explicit=payload.reasoning_effort is not None)
-    except HTTPException as error:
-        return _failed_message_stream(repo, conversation, user, assistant, error.detail)
+    if preflight_resolution is not None:
+        resolution = preflight_resolution
+    else:
+        try:
+            requested_effort = payload.reasoning_effort if payload.reasoning_effort is not None else conversation.reasoning_effort
+            resolution = _resolve_request_effort(payload.model, requested_effort, explicit=payload.reasoning_effort is not None)
+        except HTTPException as error:
+            return _failed_message_stream(repo, conversation, user, assistant, error.detail)
     # Persist the message-bound analysis job before opening SSE.  Only queueing
     # happens on the request path; classification and memory writes are fully
     # independent of answer generation.

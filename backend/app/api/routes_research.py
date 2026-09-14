@@ -608,6 +608,52 @@ def _create_unified_session(payload: ResearchSessionCreateRequest, *, legacy_goa
         return _create_unified_session_unlocked(payload, legacy_goal=legacy_goal)
 
 
+def _legacy_memory_compatibility_required(memory) -> bool:
+    """Detect the pre-Session memory seam used by legacy task clients.
+
+    Spec034's Session flow requires the durable idempotent message-pair
+    operation.  Older integrations expose only the read-side conversation /
+    project contract, however, and their ``POST /research-tasks`` requests
+    still target the original task API.  Keep that compatibility boundary
+    explicit in the production adapter rather than teaching tests a second
+    repository implementation.  Real ``MemoryRepository`` instances always
+    provide this method, so the Session endpoint remains unchanged.
+    """
+    return not callable(getattr(memory, "create_idempotent_message_pair", None))
+
+
+def _create_legacy_task_compat(payload: ResearchTaskCreateRequest, goal: str, conversation_id: str):
+    """Serve the old task API when only the pre-Session memory seam exists."""
+    try:
+        # Legacy semantics intentionally allow an explicit project to override
+        # the conversation's project.  The new Session endpoint uses
+        # ``_create_unified_session_unlocked`` and remains fail-closed on a
+        # project mismatch.
+        resolved_project_id, context_error = _resolve_project_id(conversation_id, payload.project_id)
+    except Exception:
+        logger.exception("legacy research task context validation failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
+    if context_error is not None:
+        return context_error
+    try:
+        task = _service().create_task(
+            owner_id=OWNER_ID,
+            goal=goal,
+            conversation_id=conversation_id,
+            project_id=resolved_project_id,
+            quality_profile=payload.quality_profile,
+            target_paper_count=payload.target_paper_count,
+            language=payload.language,
+            review_plan_first=payload.review_plan_first,
+        )
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("legacy research task compatibility adapter failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务调度暂时不可用"))
+    return _task_summary(task)
+
+
 @session_router.get("/{research_session_id}/artifacts")
 def list_research_artifacts(research_session_id: str, report_version: Optional[int] = Query(None, ge=1)):
     """List immutable report artifacts through the owner/session/task seam."""
@@ -848,6 +894,17 @@ def create_research_task(payload: ResearchTaskCreateRequest):
     conversation_id = (payload.conversation_id or "").strip()
     if not goal or not conversation_id:
         return _error(ResearchServiceError("PLAN_VALIDATION_FAILED", 400, "goal 与 conversation_id 为必填"))
+    # Older Spec027 clients (and their minimal repository seam) predate the
+    # conversational Session contract.  Route only that capability-limited
+    # seam through the original task service; a real MemoryRepository enters
+    # the unified Session flow below.  This does not weaken Session's
+    # project-mismatch fail-closed rule.
+    try:
+        if _legacy_memory_compatibility_required(_memory()):
+            return _create_legacy_task_compat(payload, goal, conversation_id)
+    except Exception:
+        logger.exception("legacy research task compatibility detection failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
     try:
         request = ResearchSessionCreateRequest(
             conversation_id=conversation_id,
