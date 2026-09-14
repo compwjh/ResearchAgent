@@ -1,0 +1,378 @@
+{
+ "id": "https://openalex.org/W4411337423",
+ "doi": "https://doi.org/10.1109/sp61157.2025.00033",
+ "title": "SoK: A Framework and Guide for Human-Centered Threat Modeling in Security and Privacy Research",
+ "display_name": "SoK: A Framework and Guide for Human-Centered Threat Modeling in Security and Privacy Research",
+ "publication_year": 2025,
+ "publication_date": "2025-05-12",
+ "ids": {
+  "openalex": "https://openalex.org/W4411337423",
+  "doi": "https://doi.org/10.1109/sp61157.2025.00033"
+ },
+ "language": "en",
+ "primary_location": {
+  "id": "doi:10.1109/sp61157.2025.00033",
+  "is_oa": false,
+  "landing_page_url": "https://doi.org/10.1109/sp61157.2025.00033",
+  "pdf_url": null,
+  "source": null,
+  "license": null,
+  "license_id": null,
+  "version": "publishedVersion",
+  "is_accepted": true,
+  "is_published": true,
+  "raw_source_name": "2025 IEEE Symposium on Security and Privacy (SP)",
+  "raw_type": "proceedings-article"
+ },
+ "type": "conference-paper",
+ "indexed_in": [
+  "crossref"
+ ],
+ "open_access": {
+  "is_oa": false,
+  "oa_status": "closed",
+  "oa_url": null,
+  "any_repository_has_fulltext": false
+ },
+ "authorships": [
+  {
+   "author_position": "first",
+   "author": {
+    "id": "https://openalex.org/A5118556578",
+    "display_name": "Warda Usman",
+    "orcid": null
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I100005738",
+     "display_name": "Brigham Young University",
+     "ror": "https://ror.org/047rhhm47",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I100005738"
+     ]
+    }
+   ],
+   "countries": [
+    "US"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Warda Usman",
+   "raw_affiliation_strings": [
+    "Brigham Young University,Department of Computer Science"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "Brigham Young University,Department of Computer Science",
+     "institution_ids": [
+      "https://openalex.org/I100005738"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "last",
+   "author": {
+    "id": "https://openalex.org/A5075763274",
+    "display_name": "Daniel Zappala",
+    "orcid": null
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I100005738",
+     "display_name": "Brigham Young University",
+     "ror": "https://ror.org/047rhhm47",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I100005738"
+     ]
+    }
+   ],
+   "countries": [
+    "US"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Daniel Zappala",
+   "raw_affiliation_strings": [
+    "Brigham Young University,Department of Computer Science"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "Brigham Young University,Department of Computer Science",
+     "institution_ids": [
+      "https://openalex.org/I100005738"
+     ]
+    }
+   ]
+  }
+ ],
+ "institutions": [],
+ "countries_distinct_count": 1,
+ "institutions_distinct_count": 1,
+ "corresponding_author_ids": [],
+ "corresponding_institution_ids": [
+  "https://openalex.org/I100005738"
+ ],
+ "apc_list": null,
+ "apc_paid": null,
+ "fwci": 10.6726,
+ "has_fulltext": false,
+ "cited_by_count": 7,
+ "citation_normalized_percentile": {
+  "value": 0.98424756,
+  "is_in_top_1_percent": false,
+  "is_in_top_10_percent": true
+ },
+ "cited_by_percentile_year": {
+  "min": 91,
+  "max": 99
+ },
+ "biblio": {
+  "volume": null,
+  "issue": null,
+  "first_page": "2697",
+  "last_page": "2715"
+ },
+ "is_retracted": false,
+ "is_paratext": false,
+ "is_xpac": false,
+ "primary_topic": {
+  "id": "https://openalex.org/T10734",
+  "display_name": "Information and Cyber Security",
+  "score": 0.9854999780654907,
+  "subfield": {
+   "id": "https://openalex.org/subfields/1710",
+   "display_name": "Information Systems"
+  },
+  "field": {
+   "id": "https://openalex.org/fields/17",
+   "display_name": "Computer Science"
+  },
+  "domain": {
+   "id": "https://openalex.org/domains/3",
+   "display_name": "Physical Sciences"
+  }
+ },
+ "topics": [
+  {
+   "id": "https://openalex.org/T10734",
+   "display_name": "Information and Cyber Security",
+   "score": 0.9854999780654907,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1710",
+    "display_name": "Information Systems"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T12519",
+   "display_name": "Cybercrime and Law Enforcement Studies",
+   "score": 0.9229999780654907,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1710",
+    "display_name": "Information Systems"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  }
+ ],
+ "keywords": [
+  {
+   "id": "https://openalex.org/keywords/computer-science",
+   "display_name": "Computer science",
+   "score": 0.6712319254875183
+  },
+  {
+   "id": "https://openalex.org/keywords/internet-privacy",
+   "display_name": "Internet privacy",
+   "score": 0.5751903057098389
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-security",
+   "display_name": "Computer security",
+   "score": 0.5730263590812683
+  },
+  {
+   "id": "https://openalex.org/keywords/threat-model",
+   "display_name": "Threat model",
+   "score": 0.46752241253852844
+  },
+  {
+   "id": "https://openalex.org/keywords/information-privacy",
+   "display_name": "Information privacy",
+   "score": 0.4392387270927429
+  }
+ ],
+ "concepts": [
+  {
+   "id": "https://openalex.org/C41008148",
+   "wikidata": "https://www.wikidata.org/wiki/Q21198",
+   "display_name": "Computer science",
+   "level": 0,
+   "score": 0.6712319254875183
+  },
+  {
+   "id": "https://openalex.org/C108827166",
+   "wikidata": "https://www.wikidata.org/wiki/Q175975",
+   "display_name": "Internet privacy",
+   "level": 1,
+   "score": 0.5751903057098389
+  },
+  {
+   "id": "https://openalex.org/C38652104",
+   "wikidata": "https://www.wikidata.org/wiki/Q3510521",
+   "display_name": "Computer security",
+   "level": 1,
+   "score": 0.5730263590812683
+  },
+  {
+   "id": "https://openalex.org/C140547941",
+   "wikidata": "https://www.wikidata.org/wiki/Q7797194",
+   "display_name": "Threat model",
+   "level": 2,
+   "score": 0.46752241253852844
+  },
+  {
+   "id": "https://openalex.org/C123201435",
+   "wikidata": "https://www.wikidata.org/wiki/Q456632",
+   "display_name": "Information privacy",
+   "level": 2,
+   "score": 0.4392387270927429
+  }
+ ],
+ "mesh": [],
+ "locations_count": 1,
+ "locations": [
+  {
+   "id": "doi:10.1109/sp61157.2025.00033",
+   "is_oa": false,
+   "landing_page_url": "https://doi.org/10.1109/sp61157.2025.00033",
+   "pdf_url": null,
+   "source": null,
+   "license": null,
+   "license_id": null,
+   "version": "publishedVersion",
+   "is_accepted": true,
+   "is_published": true,
+   "raw_source_name": "2025 IEEE Symposium on Security and Privacy (SP)",
+   "raw_type": "proceedings-article"
+  }
+ ],
+ "best_oa_location": null,
+ "sustainable_development_goals": [
+  {
+   "score": 0.4099999964237213,
+   "display_name": "Peace, Justice and strong institutions",
+   "id": "https://metadata.un.org/sdg/16"
+  }
+ ],
+ "awards": [],
+ "funders": [],
+ "has_content": {
+  "grobid_xml": false,
+  "pdf": false
+ },
+ "content_urls": null,
+ "referenced_works_count": 57,
+ "referenced_works": [
+  "https://openalex.org/W563428156",
+  "https://openalex.org/W1119960297",
+  "https://openalex.org/W2064241518",
+  "https://openalex.org/W2081430061",
+  "https://openalex.org/W2771736953",
+  "https://openalex.org/W2773560169",
+  "https://openalex.org/W2775715748",
+  "https://openalex.org/W2794966952",
+  "https://openalex.org/W2896396724",
+  "https://openalex.org/W2899225656",
+  "https://openalex.org/W2899425339",
+  "https://openalex.org/W2911428659",
+  "https://openalex.org/W2940748130",
+  "https://openalex.org/W2940765346",
+  "https://openalex.org/W2963549118",
+  "https://openalex.org/W2985186227",
+  "https://openalex.org/W3017863658",
+  "https://openalex.org/W3029119254",
+  "https://openalex.org/W3029797383",
+  "https://openalex.org/W3031128793",
+  "https://openalex.org/W3031264381",
+  "https://openalex.org/W3125759795",
+  "https://openalex.org/W3147687211",
+  "https://openalex.org/W3156633710",
+  "https://openalex.org/W3159399666",
+  "https://openalex.org/W3162570939",
+  "https://openalex.org/W3162850400",
+  "https://openalex.org/W3163187198",
+  "https://openalex.org/W3163570674",
+  "https://openalex.org/W3183740021",
+  "https://openalex.org/W3186528450",
+  "https://openalex.org/W3191136298",
+  "https://openalex.org/W3205858893",
+  "https://openalex.org/W3206277248",
+  "https://openalex.org/W3216540414",
+  "https://openalex.org/W4210909585",
+  "https://openalex.org/W4220897370",
+  "https://openalex.org/W4224988699",
+  "https://openalex.org/W4224998651",
+  "https://openalex.org/W4225094305",
+  "https://openalex.org/W4225108620",
+  "https://openalex.org/W4225161494",
+  "https://openalex.org/W4285413327",
+  "https://openalex.org/W4286255301",
+  "https://openalex.org/W4288057695",
+  "https://openalex.org/W4288057711",
+  "https://openalex.org/W4288359811",
+  "https://openalex.org/W4309617315",
+  "https://openalex.org/W4309617546",
+  "https://openalex.org/W4309619914",
+  "https://openalex.org/W4312679051",
+  "https://openalex.org/W4321276732",
+  "https://openalex.org/W4366547782",
+  "https://openalex.org/W4366549511",
+  "https://openalex.org/W4366587741",
+  "https://openalex.org/W4385522451",
+  "https://openalex.org/W4402288686"
+ ],
+ "related_works": [
+  "https://openalex.org/W2584827882",
+  "https://openalex.org/W3195097297",
+  "https://openalex.org/W4225340788",
+  "https://openalex.org/W3038106605",
+  "https://openalex.org/W2513267613",
+  "https://openalex.org/W3049084372",
+  "https://openalex.org/W2528109871",
+  "https://openalex.org/W2940702331",
+  "https://openalex.org/W2905822832",
+  "https://openalex.org/W2240244939"
+ ],
+ "abstract_inverted_index": null,
+ "counts_by_year": [
+  {
+   "year": 2026,
+   "cited_by_count": 6
+  },
+  {
+   "year": 2025,
+   "cited_by_count": 1
+  }
+ ],
+ "updated_date": "2026-09-10T07:47:47.112893",
+ "created_date": "2025-10-10T00:00:00"
+}

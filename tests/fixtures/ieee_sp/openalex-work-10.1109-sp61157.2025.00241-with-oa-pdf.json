@@ -1,0 +1,959 @@
+{
+ "id": "https://openalex.org/W4411337316",
+ "doi": "https://doi.org/10.1109/sp61157.2025.00241",
+ "title": "Understanding Users' Security and Privacy Concerns and Attitudes Towards Conversational AI Platforms",
+ "display_name": "Understanding Users' Security and Privacy Concerns and Attitudes Towards Conversational AI Platforms",
+ "publication_year": 2025,
+ "publication_date": "2025-05-12",
+ "ids": {
+  "openalex": "https://openalex.org/W4411337316",
+  "doi": "https://doi.org/10.1109/sp61157.2025.00241"
+ },
+ "language": "en",
+ "primary_location": {
+  "id": "doi:10.1109/sp61157.2025.00241",
+  "is_oa": false,
+  "landing_page_url": "https://doi.org/10.1109/sp61157.2025.00241",
+  "pdf_url": null,
+  "source": null,
+  "license": null,
+  "license_id": null,
+  "version": "publishedVersion",
+  "is_accepted": true,
+  "is_published": true,
+  "raw_source_name": "2025 IEEE Symposium on Security and Privacy (SP)",
+  "raw_type": "proceedings-article"
+ },
+ "type": "conference-paper",
+ "indexed_in": [
+  "arxiv",
+  "crossref"
+ ],
+ "open_access": {
+  "is_oa": true,
+  "oa_status": "green",
+  "oa_url": "https://arxiv.org/pdf/2504.06552",
+  "any_repository_has_fulltext": true
+ },
+ "authorships": [
+  {
+   "author_position": "first",
+   "author": {
+    "id": "https://openalex.org/A5029313739",
+    "display_name": "M. Tanseer Ali",
+    "orcid": "https://orcid.org/0000-0001-8142-1736"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I204250578",
+     "display_name": "University of California, Irvine",
+     "ror": "https://ror.org/04gyf1771",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I204250578"
+     ]
+    }
+   ],
+   "countries": [
+    "US"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Mutahar Ali",
+   "raw_affiliation_strings": [
+    "University of California,Irvine"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "University of California,Irvine",
+     "institution_ids": [
+      "https://openalex.org/I204250578"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "middle",
+   "author": {
+    "id": "https://openalex.org/A5093013828",
+    "display_name": "Arjun Arunasalam",
+    "orcid": "https://orcid.org/0009-0001-1631-6064"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I219193219",
+     "display_name": "Purdue University West Lafayette",
+     "ror": "https://ror.org/02dqehb95",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I219193219"
+     ]
+    }
+   ],
+   "countries": [
+    "US"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Arjun Arunasalam",
+   "raw_affiliation_strings": [
+    "Purdue University"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "Purdue University",
+     "institution_ids": [
+      "https://openalex.org/I219193219"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "last",
+   "author": {
+    "id": "https://openalex.org/A5090347232",
+    "display_name": "Habiba Farrukh",
+    "orcid": "https://orcid.org/0000-0002-3582-5999"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I204250578",
+     "display_name": "University of California, Irvine",
+     "ror": "https://ror.org/04gyf1771",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I204250578"
+     ]
+    }
+   ],
+   "countries": [
+    "US"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Habiba Farrukh",
+   "raw_affiliation_strings": [
+    "University of California,Irvine"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "University of California,Irvine",
+     "institution_ids": [
+      "https://openalex.org/I204250578"
+     ]
+    }
+   ]
+  }
+ ],
+ "institutions": [],
+ "countries_distinct_count": 1,
+ "institutions_distinct_count": 2,
+ "corresponding_author_ids": [],
+ "corresponding_institution_ids": [],
+ "apc_list": null,
+ "apc_paid": null,
+ "fwci": 57.6253,
+ "has_fulltext": false,
+ "cited_by_count": 13,
+ "citation_normalized_percentile": {
+  "value": 0.99845705,
+  "is_in_top_1_percent": true,
+  "is_in_top_10_percent": true
+ },
+ "cited_by_percentile_year": {
+  "min": 96,
+  "max": 100
+ },
+ "biblio": {
+  "volume": null,
+  "issue": null,
+  "first_page": "298",
+  "last_page": "316"
+ },
+ "is_retracted": false,
+ "is_paratext": false,
+ "is_xpac": false,
+ "primary_topic": {
+  "id": "https://openalex.org/T11045",
+  "display_name": "Privacy, Security, and Data Protection",
+  "score": 0.9821000099182129,
+  "subfield": {
+   "id": "https://openalex.org/subfields/3312",
+   "display_name": "Sociology and Political Science"
+  },
+  "field": {
+   "id": "https://openalex.org/fields/33",
+   "display_name": "Social Sciences"
+  },
+  "domain": {
+   "id": "https://openalex.org/domains/2",
+   "display_name": "Social Sciences"
+  }
+ },
+ "topics": [
+  {
+   "id": "https://openalex.org/T11045",
+   "display_name": "Privacy, Security, and Data Protection",
+   "score": 0.9821000099182129,
+   "subfield": {
+    "id": "https://openalex.org/subfields/3312",
+    "display_name": "Sociology and Political Science"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/33",
+    "display_name": "Social Sciences"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/2",
+    "display_name": "Social Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T10883",
+   "display_name": "Ethics and Social Impacts of AI",
+   "score": 0.9510999917984009,
+   "subfield": {
+    "id": "https://openalex.org/subfields/3311",
+    "display_name": "Safety Research"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/33",
+    "display_name": "Social Sciences"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/2",
+    "display_name": "Social Sciences"
+   }
+  }
+ ],
+ "keywords": [
+  {
+   "id": "https://openalex.org/keywords/internet-privacy",
+   "display_name": "Internet privacy",
+   "score": 0.6906601190567017
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-science",
+   "display_name": "Computer science",
+   "score": 0.6682963967323303
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-security",
+   "display_name": "Computer security",
+   "score": 0.5941187739372253
+  },
+  {
+   "id": "https://openalex.org/keywords/information-privacy",
+   "display_name": "Information privacy",
+   "score": 0.47741472721099854
+  }
+ ],
+ "concepts": [
+  {
+   "id": "https://openalex.org/C108827166",
+   "wikidata": "https://www.wikidata.org/wiki/Q175975",
+   "display_name": "Internet privacy",
+   "level": 1,
+   "score": 0.6906601190567017
+  },
+  {
+   "id": "https://openalex.org/C41008148",
+   "wikidata": "https://www.wikidata.org/wiki/Q21198",
+   "display_name": "Computer science",
+   "level": 0,
+   "score": 0.6682963967323303
+  },
+  {
+   "id": "https://openalex.org/C38652104",
+   "wikidata": "https://www.wikidata.org/wiki/Q3510521",
+   "display_name": "Computer security",
+   "level": 1,
+   "score": 0.5941187739372253
+  },
+  {
+   "id": "https://openalex.org/C123201435",
+   "wikidata": "https://www.wikidata.org/wiki/Q456632",
+   "display_name": "Information privacy",
+   "level": 2,
+   "score": 0.47741472721099854
+  }
+ ],
+ "mesh": [],
+ "locations_count": 2,
+ "locations": [
+  {
+   "id": "doi:10.1109/sp61157.2025.00241",
+   "is_oa": false,
+   "landing_page_url": "https://doi.org/10.1109/sp61157.2025.00241",
+   "pdf_url": null,
+   "source": null,
+   "license": null,
+   "license_id": null,
+   "version": "publishedVersion",
+   "is_accepted": true,
+   "is_published": true,
+   "raw_source_name": "2025 IEEE Symposium on Security and Privacy (SP)",
+   "raw_type": "proceedings-article"
+  },
+  {
+   "id": "pmh:oai:arXiv.org:2504.06552",
+   "is_oa": true,
+   "landing_page_url": "http://arxiv.org/abs/2504.06552",
+   "pdf_url": "https://arxiv.org/pdf/2504.06552",
+   "source": {
+    "id": "https://openalex.org/S4306400194",
+    "display_name": "arXiv (Cornell University)",
+    "issn_l": "2331-8422",
+    "issn": [
+     "2331-8422"
+    ],
+    "is_oa": true,
+    "is_in_doaj": false,
+    "is_core": false,
+    "host_organization": "https://openalex.org/I205783295",
+    "host_organization_name": "Cornell University",
+    "host_organization_lineage": [
+     "https://openalex.org/I205783295"
+    ],
+    "host_organization_lineage_names": [],
+    "type": "repository"
+   },
+   "license": null,
+   "license_id": null,
+   "version": "submittedVersion",
+   "is_accepted": false,
+   "is_published": false,
+   "raw_source_name": null,
+   "raw_type": "text"
+  }
+ ],
+ "best_oa_location": {
+  "id": "pmh:oai:arXiv.org:2504.06552",
+  "is_oa": true,
+  "landing_page_url": "http://arxiv.org/abs/2504.06552",
+  "pdf_url": "https://arxiv.org/pdf/2504.06552",
+  "source": {
+   "id": "https://openalex.org/S4306400194",
+   "display_name": "arXiv (Cornell University)",
+   "issn_l": "2331-8422",
+   "issn": [
+    "2331-8422"
+   ],
+   "is_oa": true,
+   "is_in_doaj": false,
+   "is_core": false,
+   "host_organization": "https://openalex.org/I205783295",
+   "host_organization_name": "Cornell University",
+   "host_organization_lineage": [
+    "https://openalex.org/I205783295"
+   ],
+   "host_organization_lineage_names": [],
+   "type": "repository"
+  },
+  "license": null,
+  "license_id": null,
+  "version": "submittedVersion",
+  "is_accepted": false,
+  "is_published": false,
+  "raw_source_name": null,
+  "raw_type": "text"
+ },
+ "sustainable_development_goals": [],
+ "awards": [],
+ "funders": [],
+ "has_content": {
+  "grobid_xml": false,
+  "pdf": false
+ },
+ "content_urls": null,
+ "referenced_works_count": 64,
+ "referenced_works": [
+  "https://openalex.org/W145299914",
+  "https://openalex.org/W1503855251",
+  "https://openalex.org/W2071207814",
+  "https://openalex.org/W2207884471",
+  "https://openalex.org/W2403232321",
+  "https://openalex.org/W2741344377",
+  "https://openalex.org/W2754799758",
+  "https://openalex.org/W2896396724",
+  "https://openalex.org/W2933817227",
+  "https://openalex.org/W2936935342",
+  "https://openalex.org/W2940588539",
+  "https://openalex.org/W2965373594",
+  "https://openalex.org/W2981018312",
+  "https://openalex.org/W2999685709",
+  "https://openalex.org/W3017863658",
+  "https://openalex.org/W3032791547",
+  "https://openalex.org/W3120130861",
+  "https://openalex.org/W3156177727",
+  "https://openalex.org/W3160944883",
+  "https://openalex.org/W3175115403",
+  "https://openalex.org/W4213251304",
+  "https://openalex.org/W4224997456",
+  "https://openalex.org/W4284692010",
+  "https://openalex.org/W4285781714",
+  "https://openalex.org/W4288057764",
+  "https://openalex.org/W4288057765",
+  "https://openalex.org/W4384948686",
+  "https://openalex.org/W4385572399",
+  "https://openalex.org/W4386072145",
+  "https://openalex.org/W4386076590",
+  "https://openalex.org/W4387500346",
+  "https://openalex.org/W4388994228",
+  "https://openalex.org/W4389518968",
+  "https://openalex.org/W4392353733",
+  "https://openalex.org/W4396832466",
+  "https://openalex.org/W4399971973",
+  "https://openalex.org/W4404213212",
+  "https://openalex.org/W4408326109",
+  "https://openalex.org/W4409657243",
+  "https://openalex.org/W6622646876",
+  "https://openalex.org/W6712159353",
+  "https://openalex.org/W6712185175",
+  "https://openalex.org/W6741546758",
+  "https://openalex.org/W6766492497",
+  "https://openalex.org/W6767676013",
+  "https://openalex.org/W6778883912",
+  "https://openalex.org/W6779068807",
+  "https://openalex.org/W6782167412",
+  "https://openalex.org/W6784721067",
+  "https://openalex.org/W6787335730",
+  "https://openalex.org/W6810081322",
+  "https://openalex.org/W6810332117",
+  "https://openalex.org/W6810463509",
+  "https://openalex.org/W6846870107",
+  "https://openalex.org/W6850820320",
+  "https://openalex.org/W6857144347",
+  "https://openalex.org/W6857318322",
+  "https://openalex.org/W6858040456",
+  "https://openalex.org/W6860587395",
+  "https://openalex.org/W6862035279",
+  "https://openalex.org/W6862340313",
+  "https://openalex.org/W6862699979",
+  "https://openalex.org/W6869701775",
+  "https://openalex.org/W6873746955"
+ ],
+ "related_works": [
+  "https://openalex.org/W2584827882",
+  "https://openalex.org/W3195097297",
+  "https://openalex.org/W4225340788",
+  "https://openalex.org/W3038106605",
+  "https://openalex.org/W2513267613",
+  "https://openalex.org/W3049084372",
+  "https://openalex.org/W2528109871",
+  "https://openalex.org/W2940702331",
+  "https://openalex.org/W2905822832",
+  "https://openalex.org/W2240244939"
+ ],
+ "abstract_inverted_index": {
+  "The": [
+   0
+  ],
+  "widespread": [
+   1
+  ],
+  "adoption": [
+   2
+  ],
+  "of": [
+   3,
+   31,
+   48,
+   82,
+   146
+  ],
+  "conversational": [
+   4,
+   68
+  ],
+  "AI": [
+   5,
+   69,
+   172
+  ],
+  "platforms": [
+   6
+  ],
+  "has": [
+   7
+  ],
+  "introduced": [
+   8
+  ],
+  "new": [
+   9
+  ],
+  "security": [
+   10,
+   34,
+   61,
+   95
+  ],
+  "and": [
+   11,
+   17,
+   35,
+   62,
+   65,
+   89,
+   101,
+   104,
+   117,
+   130,
+   158,
+   174,
+   180,
+   194,
+   202,
+   206
+  ],
+  "privacy": [
+   12,
+   36,
+   63,
+   99,
+   132,
+   139,
+   142
+  ],
+  "risks.": [
+   13
+  ],
+  "While": [
+   14
+  ],
+  "these": [
+   15,
+   32,
+   122
+  ],
+  "risks": [
+   16
+  ],
+  "their": [
+   18,
+   128
+  ],
+  "mitigation": [
+   19
+  ],
+  "strategies": [
+   20
+  ],
+  "have": [
+   21
+  ],
+  "been": [
+   22
+  ],
+  "extensively": [
+   23
+  ],
+  "researched": [
+   24
+  ],
+  "from": [
+   25,
+   53
+  ],
+  "a": [
+   26,
+   45
+  ],
+  "technical": [
+   27
+  ],
+  "perspective,": [
+   28
+  ],
+  "users'": [
+   29,
+   60,
+   164
+  ],
+  "perceptions": [
+   30
+  ],
+  "platforms'": [
+   33
+  ],
+  "remain": [
+   37
+  ],
+  "largely": [
+   38
+  ],
+  "unexplored.": [
+   39
+  ],
+  "In": [
+   40
+  ],
+  "this": [
+   41
+  ],
+  "paper,": [
+   42
+  ],
+  "we": [
+   43,
+   161,
+   187
+  ],
+  "conduct": [
+   44
+  ],
+  "large-scale": [
+   46
+  ],
+  "analysis": [
+   47,
+   73
+  ],
+  "over": [
+   49,
+   138,
+   167
+  ],
+  "2.5M": [
+   50
+  ],
+  "user": [
+   51,
+   204
+  ],
+  "posts": [
+   52
+  ],
+  "the": [
+   54,
+   83,
+   170
+  ],
+  "r/ChatGPT": [
+   55
+  ],
+  "Reddit": [
+   56
+  ],
+  "community": [
+   57
+  ],
+  "to": [
+   58,
+   151,
+   196
+  ],
+  "understand": [
+   59
+  ],
+  "concerns": [
+   64,
+   143,
+   165
+  ],
+  "attitudes": [
+   66
+  ],
+  "toward": [
+   67
+  ],
+  "platforms.": [
+   70,
+   123
+  ],
+  "Our": [
+   71
+  ],
+  "qualitative": [
+   72,
+   156
+  ],
+  "reveals": [
+   74
+  ],
+  "that": [
+   75,
+   112,
+   163
+  ],
+  "users": [
+   76,
+   113,
+   125
+  ],
+  "are": [
+   77,
+   175
+  ],
+  "concerned": [
+   78
+  ],
+  "about": [
+   79
+  ],
+  "each": [
+   80
+  ],
+  "stage": [
+   81
+  ],
+  "data": [
+   84,
+   107,
+   129,
+   153,
+   200
+  ],
+  "lifecycle": [
+   85
+  ],
+  "(i.e.,": [
+   86
+  ],
+  "collection,": [
+   87
+  ],
+  "usage,": [
+   88
+  ],
+  "retention).": [
+   90
+  ],
+  "They": [
+   91
+  ],
+  "seek": [
+   92
+  ],
+  "mitigations": [
+   93
+  ],
+  "for": [
+   94,
+   190
+  ],
+  "vulnerabilities,": [
+   96
+  ],
+  "compliance": [
+   97
+  ],
+  "with": [
+   98,
+   121,
+   169
+  ],
+  "regulations,": [
+   100
+  ],
+  "greater": [
+   102
+  ],
+  "transparency": [
+   103
+  ],
+  "control": [
+   105
+  ],
+  "in": [
+   106,
+   144
+  ],
+  "handling.": [
+   108
+  ],
+  "We": [
+   109
+  ],
+  "also": [
+   110
+  ],
+  "find": [
+   111
+  ],
+  "exhibit": [
+   114
+  ],
+  "varied": [
+   115
+  ],
+  "behaviors": [
+   116
+  ],
+  "preferences": [
+   118
+  ],
+  "when": [
+   119
+  ],
+  "interacting": [
+   120
+  ],
+  "Some": [
+   124
+  ],
+  "proactively": [
+   126
+  ],
+  "safeguard": [
+   127
+  ],
+  "adjust": [
+   131
+  ],
+  "settings,": [
+   133
+  ],
+  "while": [
+   134
+  ],
+  "others": [
+   135
+  ],
+  "prioritize": [
+   136
+  ],
+  "convenience": [
+   137
+  ],
+  "risks,": [
+   140
+  ],
+  "dismissing": [
+   141
+  ],
+  "favor": [
+   145
+  ],
+  "benefits,": [
+   147
+  ],
+  "or": [
+   148
+  ],
+  "feel": [
+   149
+  ],
+  "resigned": [
+   150
+  ],
+  "inevitable": [
+   152
+  ],
+  "sharing.": [
+   154
+  ],
+  "Through": [
+   155
+  ],
+  "content": [
+   157
+  ],
+  "regression": [
+   159
+  ],
+  "analysis,": [
+   160
+  ],
+  "discover": [
+   162
+  ],
+  "evolve": [
+   166
+  ],
+  "time": [
+   168
+  ],
+  "evolving": [
+   171
+  ],
+  "landscape": [
+   173
+  ],
+  "influenced": [
+   176
+  ],
+  "by": [
+   177
+  ],
+  "technological": [
+   178
+  ],
+  "developments": [
+   179
+  ],
+  "major": [
+   181
+  ],
+  "events.": [
+   182
+  ],
+  "Based": [
+   183
+  ],
+  "on": [
+   184
+  ],
+  "our": [
+   185
+  ],
+  "findings,": [
+   186
+  ],
+  "provide": [
+   188
+  ],
+  "recommendations": [
+   189
+  ],
+  "users,": [
+   191
+  ],
+  "platforms,": [
+   192
+  ],
+  "enterprises,": [
+   193
+  ],
+  "policymakers": [
+   195
+  ],
+  "enhance": [
+   197
+  ],
+  "transparency,": [
+   198
+  ],
+  "improve": [
+   199
+  ],
+  "controls,": [
+   201
+  ],
+  "increase": [
+   203
+  ],
+  "trust": [
+   205
+  ],
+  "adoption.": [
+   207
+  ]
+ },
+ "counts_by_year": [
+  {
+   "year": 2026,
+   "cited_by_count": 10
+  },
+  {
+   "year": 2025,
+   "cited_by_count": 3
+  }
+ ],
+ "updated_date": "2026-08-26T07:47:46.906454",
+ "created_date": "2025-10-10T00:00:00"
+}

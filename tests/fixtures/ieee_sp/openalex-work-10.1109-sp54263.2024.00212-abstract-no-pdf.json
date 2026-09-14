@@ -1,0 +1,865 @@
+{
+ "id": "https://openalex.org/W4402288712",
+ "doi": "https://doi.org/10.1109/sp54263.2024.00212",
+ "title": "Budget Recycling Differential Privacy",
+ "display_name": "Budget Recycling Differential Privacy",
+ "publication_year": 2024,
+ "publication_date": "2024-05-19",
+ "ids": {
+  "openalex": "https://openalex.org/W4402288712",
+  "doi": "https://doi.org/10.1109/sp54263.2024.00212"
+ },
+ "language": "en",
+ "primary_location": {
+  "id": "doi:10.1109/sp54263.2024.00212",
+  "is_oa": false,
+  "landing_page_url": "https://doi.org/10.1109/sp54263.2024.00212",
+  "pdf_url": null,
+  "source": null,
+  "license": null,
+  "license_id": null,
+  "version": "publishedVersion",
+  "is_accepted": true,
+  "is_published": true,
+  "raw_source_name": "2024 IEEE Symposium on Security and Privacy (SP)",
+  "raw_type": "proceedings-article"
+ },
+ "type": "conference-paper",
+ "indexed_in": [
+  "crossref"
+ ],
+ "open_access": {
+  "is_oa": false,
+  "oa_status": "closed",
+  "oa_url": null,
+  "any_repository_has_fulltext": false
+ },
+ "authorships": [
+  {
+   "author_position": "first",
+   "author": {
+    "id": "https://openalex.org/A5100554146",
+    "display_name": "Bo Jiang",
+    "orcid": "https://orcid.org/0009-0002-5382-863X"
+   },
+   "institutions": [],
+   "countries": [],
+   "is_corresponding": false,
+   "raw_author_name": "Bo Jiang",
+   "raw_affiliation_strings": [
+    "TikTok Inc"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "TikTok Inc",
+     "institution_ids": []
+    }
+   ]
+  },
+  {
+   "author_position": "middle",
+   "author": {
+    "id": "https://openalex.org/A5100761225",
+    "display_name": "Jian Du",
+    "orcid": "https://orcid.org/0000-0002-9635-2953"
+   },
+   "institutions": [],
+   "countries": [],
+   "is_corresponding": false,
+   "raw_author_name": "Jian Du",
+   "raw_affiliation_strings": [
+    "TikTok Inc"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "TikTok Inc",
+     "institution_ids": []
+    }
+   ]
+  },
+  {
+   "author_position": "middle",
+   "author": {
+    "id": "https://openalex.org/A5052897959",
+    "display_name": "Sagar Sharma",
+    "orcid": "https://orcid.org/0000-0002-6667-4724"
+   },
+   "institutions": [],
+   "countries": [],
+   "is_corresponding": false,
+   "raw_author_name": "Sagar Sharma",
+   "raw_affiliation_strings": [
+    "TikTok Inc"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "TikTok Inc",
+     "institution_ids": []
+    }
+   ]
+  },
+  {
+   "author_position": "last",
+   "author": {
+    "id": "https://openalex.org/A5112028151",
+    "display_name": "Qiang Yan",
+    "orcid": null
+   },
+   "institutions": [],
+   "countries": [],
+   "is_corresponding": false,
+   "raw_author_name": "Qiang Yan",
+   "raw_affiliation_strings": [
+    "TikTok Inc"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "TikTok Inc",
+     "institution_ids": []
+    }
+   ]
+  }
+ ],
+ "institutions": [],
+ "countries_distinct_count": 0,
+ "institutions_distinct_count": 0,
+ "corresponding_author_ids": [],
+ "corresponding_institution_ids": [],
+ "apc_list": null,
+ "apc_paid": null,
+ "fwci": 1.0668,
+ "has_fulltext": false,
+ "cited_by_count": 3,
+ "citation_normalized_percentile": {
+  "value": 0.78640804,
+  "is_in_top_1_percent": false,
+  "is_in_top_10_percent": false
+ },
+ "cited_by_percentile_year": {
+  "min": 96,
+  "max": 97
+ },
+ "biblio": {
+  "volume": null,
+  "issue": null,
+  "first_page": "1028",
+  "last_page": "1046"
+ },
+ "is_retracted": false,
+ "is_paratext": false,
+ "is_xpac": false,
+ "primary_topic": {
+  "id": "https://openalex.org/T10764",
+  "display_name": "Privacy-Preserving Technologies in Data",
+  "score": 0.9995999932289124,
+  "subfield": {
+   "id": "https://openalex.org/subfields/1702",
+   "display_name": "Artificial Intelligence"
+  },
+  "field": {
+   "id": "https://openalex.org/fields/17",
+   "display_name": "Computer Science"
+  },
+  "domain": {
+   "id": "https://openalex.org/domains/3",
+   "display_name": "Physical Sciences"
+  }
+ },
+ "topics": [
+  {
+   "id": "https://openalex.org/T10764",
+   "display_name": "Privacy-Preserving Technologies in Data",
+   "score": 0.9995999932289124,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1702",
+    "display_name": "Artificial Intelligence"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T11045",
+   "display_name": "Privacy, Security, and Data Protection",
+   "score": 0.9945999979972839,
+   "subfield": {
+    "id": "https://openalex.org/subfields/3312",
+    "display_name": "Sociology and Political Science"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/33",
+    "display_name": "Social Sciences"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/2",
+    "display_name": "Social Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T11598",
+   "display_name": "Internet Traffic Analysis and Secure E-voting",
+   "score": 0.9401000142097473,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1702",
+    "display_name": "Artificial Intelligence"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  }
+ ],
+ "keywords": [
+  {
+   "id": "https://openalex.org/keywords/differential-privacy",
+   "display_name": "Differential privacy",
+   "score": 0.8409363627433777
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-science",
+   "display_name": "Computer science",
+   "score": 0.6031767129898071
+  },
+  {
+   "id": "https://openalex.org/keywords/internet-privacy",
+   "display_name": "Internet privacy",
+   "score": 0.4940381646156311
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-security",
+   "display_name": "Computer security",
+   "score": 0.4636550843715668
+  },
+  {
+   "id": "https://openalex.org/keywords/differential",
+   "display_name": "Differential (mechanical device)",
+   "score": 0.4126323163509369
+  },
+  {
+   "id": "https://openalex.org/keywords/engineering",
+   "display_name": "Engineering",
+   "score": 0.10088282823562622
+  },
+  {
+   "id": "https://openalex.org/keywords/data-mining",
+   "display_name": "Data mining",
+   "score": 0.08683103322982788
+  }
+ ],
+ "concepts": [
+  {
+   "id": "https://openalex.org/C23130292",
+   "wikidata": "https://www.wikidata.org/wiki/Q5275358",
+   "display_name": "Differential privacy",
+   "level": 2,
+   "score": 0.8409363627433777
+  },
+  {
+   "id": "https://openalex.org/C41008148",
+   "wikidata": "https://www.wikidata.org/wiki/Q21198",
+   "display_name": "Computer science",
+   "level": 0,
+   "score": 0.6031767129898071
+  },
+  {
+   "id": "https://openalex.org/C108827166",
+   "wikidata": "https://www.wikidata.org/wiki/Q175975",
+   "display_name": "Internet privacy",
+   "level": 1,
+   "score": 0.4940381646156311
+  },
+  {
+   "id": "https://openalex.org/C38652104",
+   "wikidata": "https://www.wikidata.org/wiki/Q3510521",
+   "display_name": "Computer security",
+   "level": 1,
+   "score": 0.4636550843715668
+  },
+  {
+   "id": "https://openalex.org/C93226319",
+   "wikidata": "https://www.wikidata.org/wiki/Q193137",
+   "display_name": "Differential (mechanical device)",
+   "level": 2,
+   "score": 0.4126323163509369
+  },
+  {
+   "id": "https://openalex.org/C127413603",
+   "wikidata": "https://www.wikidata.org/wiki/Q11023",
+   "display_name": "Engineering",
+   "level": 0,
+   "score": 0.10088282823562622
+  },
+  {
+   "id": "https://openalex.org/C124101348",
+   "wikidata": "https://www.wikidata.org/wiki/Q172491",
+   "display_name": "Data mining",
+   "level": 1,
+   "score": 0.08683103322982788
+  },
+  {
+   "id": "https://openalex.org/C146978453",
+   "wikidata": "https://www.wikidata.org/wiki/Q3798668",
+   "display_name": "Aerospace engineering",
+   "level": 1,
+   "score": 0.0
+  }
+ ],
+ "mesh": [],
+ "locations_count": 1,
+ "locations": [
+  {
+   "id": "doi:10.1109/sp54263.2024.00212",
+   "is_oa": false,
+   "landing_page_url": "https://doi.org/10.1109/sp54263.2024.00212",
+   "pdf_url": null,
+   "source": null,
+   "license": null,
+   "license_id": null,
+   "version": "publishedVersion",
+   "is_accepted": true,
+   "is_published": true,
+   "raw_source_name": "2024 IEEE Symposium on Security and Privacy (SP)",
+   "raw_type": "proceedings-article"
+  }
+ ],
+ "best_oa_location": null,
+ "sustainable_development_goals": [],
+ "awards": [],
+ "funders": [],
+ "has_content": {
+  "grobid_xml": false,
+  "pdf": false
+ },
+ "content_urls": null,
+ "referenced_works_count": 46,
+ "referenced_works": [
+  "https://openalex.org/W1873763122",
+  "https://openalex.org/W1981029888",
+  "https://openalex.org/W2001347093",
+  "https://openalex.org/W2019735187",
+  "https://openalex.org/W2033092546",
+  "https://openalex.org/W2057576485",
+  "https://openalex.org/W2082894754",
+  "https://openalex.org/W2099259603",
+  "https://openalex.org/W2109426455",
+  "https://openalex.org/W2110953678",
+  "https://openalex.org/W2129681831",
+  "https://openalex.org/W2132768130",
+  "https://openalex.org/W2141902405",
+  "https://openalex.org/W2473418344",
+  "https://openalex.org/W2594311007",
+  "https://openalex.org/W2595058628",
+  "https://openalex.org/W2884738118",
+  "https://openalex.org/W2895178859",
+  "https://openalex.org/W2911495555",
+  "https://openalex.org/W2911978475",
+  "https://openalex.org/W2963699739",
+  "https://openalex.org/W2970055833",
+  "https://openalex.org/W2989546622",
+  "https://openalex.org/W3000461606",
+  "https://openalex.org/W3034508846",
+  "https://openalex.org/W3037491300",
+  "https://openalex.org/W3103312471",
+  "https://openalex.org/W3106047101",
+  "https://openalex.org/W3107761660",
+  "https://openalex.org/W3120740533",
+  "https://openalex.org/W3169870919",
+  "https://openalex.org/W4205228770",
+  "https://openalex.org/W4302401037",
+  "https://openalex.org/W6639056083",
+  "https://openalex.org/W6712394148",
+  "https://openalex.org/W6742396582",
+  "https://openalex.org/W6751754709",
+  "https://openalex.org/W6751920018",
+  "https://openalex.org/W6752985224",
+  "https://openalex.org/W6754879993",
+  "https://openalex.org/W6756057820",
+  "https://openalex.org/W6764764216",
+  "https://openalex.org/W6766757622",
+  "https://openalex.org/W6770123878",
+  "https://openalex.org/W6779729650",
+  "https://openalex.org/W6796579654"
+ ],
+ "related_works": [
+  "https://openalex.org/W4391375266",
+  "https://openalex.org/W2748952813",
+  "https://openalex.org/W3038283795",
+  "https://openalex.org/W2604501336",
+  "https://openalex.org/W2734500670",
+  "https://openalex.org/W2558166297",
+  "https://openalex.org/W2315671126",
+  "https://openalex.org/W798507144",
+  "https://openalex.org/W2964481303",
+  "https://openalex.org/W1751413323"
+ ],
+ "abstract_inverted_index": {
+  "Differential": [
+   0,
+   25
+  ],
+  "Privacy": [
+   1,
+   26
+  ],
+  "(DP)": [
+   2
+  ],
+  "mechanisms": [
+   3
+  ],
+  "usually": [
+   4
+  ],
+  "force": [
+   5
+  ],
+  "reduction": [
+   6
+  ],
+  "in": [
+   7,
+   106,
+   134,
+   186
+  ],
+  "data": [
+   8
+  ],
+  "utility": [
+   9,
+   62
+  ],
+  "by": [
+   10,
+   192
+  ],
+  "producing": [
+   11
+  ],
+  "\"out-of-bound\"": [
+   12
+  ],
+  "noisy": [
+   13,
+   33,
+   82,
+   95
+  ],
+  "results": [
+   14,
+   182
+  ],
+  "for": [
+   15,
+   35,
+   79,
+   130,
+   170
+  ],
+  "a": [
+   16,
+   36,
+   56,
+   75,
+   81,
+   87,
+   110
+  ],
+  "tight": [
+   17,
+   131
+  ],
+  "privacy": [
+   18,
+   65,
+   101,
+   145,
+   157
+  ],
+  "budget.": [
+   19
+  ],
+  "We": [
+   20,
+   97,
+   175
+  ],
+  "introduce": [
+   21,
+   128
+  ],
+  "the": [
+   22,
+   48,
+   94,
+   100,
+   107,
+   116,
+   120,
+   124,
+   154,
+   162,
+   181,
+   188
+  ],
+  "Budget": [
+   23
+  ],
+  "Recycling": [
+   24
+  ],
+  "(BR-DP)": [
+   27
+  ],
+  "framework,": [
+   28
+  ],
+  "designed": [
+   29
+  ],
+  "to": [
+   30,
+   47,
+   51,
+   149
+  ],
+  "provide": [
+   31
+  ],
+  "soft-bounded": [
+   32
+  ],
+  "outputs": [
+   34,
+   54
+  ],
+  "broad": [
+   37
+  ],
+  "range": [
+   38
+  ],
+  "of": [
+   39,
+   69,
+   72,
+   103,
+   109,
+   156
+  ],
+  "existing": [
+   40
+  ],
+  "DP": [
+   41,
+   76,
+   121,
+   193
+  ],
+  "mechanisms.": [
+   42,
+   194
+  ],
+  "By": [
+   43
+  ],
+  "\"soft-bounded,\"": [
+   44
+  ],
+  "we": [
+   45,
+   127,
+   152
+  ],
+  "refer": [
+   46
+  ],
+  "mechanism’s": [
+   49
+  ],
+  "ability": [
+   50
+  ],
+  "release": [
+   52
+  ],
+  "most": [
+   53
+  ],
+  "within": [
+   55,
+   161
+  ],
+  "predefined": [
+   57
+  ],
+  "error": [
+   58
+  ],
+  "boundary,": [
+   59
+  ],
+  "thereby": [
+   60
+  ],
+  "improving": [
+   61
+  ],
+  "and": [
+   63,
+   86,
+   123,
+   137,
+   165,
+   180
+  ],
+  "maintaining": [
+   64
+  ],
+  "simultaneously.": [
+   66
+  ],
+  "The": [
+   67
+  ],
+  "core": [
+   68
+  ],
+  "BR-DP": [
+   70,
+   132,
+   142,
+   163,
+   171
+  ],
+  "consists": [
+   71
+  ],
+  "two": [
+   73
+  ],
+  "components:": [
+   74
+  ],
+  "kernel": [
+   77,
+   122
+  ],
+  "responsible": [
+   78
+  ],
+  "generating": [
+   80
+  ],
+  "answer": [
+   83
+  ],
+  "per": [
+   84
+  ],
+  "iteration,": [
+   85
+  ],
+  "recycler": [
+   88
+  ],
+  "that": [
+   89,
+   113,
+   141
+  ],
+  "probabilistically": [
+   90
+  ],
+  "recycles/regenerates": [
+   91
+  ],
+  "or": [
+   92
+  ],
+  "releases": [
+   93
+  ],
+  "answer.": [
+   96
+  ],
+  "delve": [
+   98
+  ],
+  "into": [
+   99
+  ],
+  "accounting": [
+   102,
+   133
+  ],
+  "BR-DP,": [
+   104
+  ],
+  "culminating": [
+   105
+  ],
+  "development": [
+   108
+  ],
+  "budgeting": [
+   111
+  ],
+  "principle": [
+   112
+  ],
+  "optimally": [
+   114
+  ],
+  "sub-allocates": [
+   115
+  ],
+  "available": [
+   117
+  ],
+  "budget": [
+   118
+  ],
+  "between": [
+   119
+  ],
+  "recycler.": [
+   125
+  ],
+  "Furthermore,": [
+   126
+  ],
+  "algorithms": [
+   129
+  ],
+  "composition": [
+   135
+  ],
+  "scenarios,": [
+   136
+  ],
+  "our": [
+   138
+  ],
+  "findings": [
+   139
+  ],
+  "indicate": [
+   140
+  ],
+  "achieves": [
+   143
+  ],
+  "reduced": [
+   144
+  ],
+  "leakage": [
+   146
+  ],
+  "post-composition": [
+   147
+  ],
+  "compared": [
+   148
+  ],
+  "DP.": [
+   150
+  ],
+  "Additionally,": [
+   151
+  ],
+  "explore": [
+   153
+  ],
+  "concept": [
+   155
+  ],
+  "amplification": [
+   158
+  ],
+  "via": [
+   159
+  ],
+  "subsampling": [
+   160
+  ],
+  "framework": [
+   164
+  ],
+  "propose": [
+   166
+  ],
+  "optimal": [
+   167
+  ],
+  "sampling": [
+   168
+  ],
+  "rates": [
+   169
+  ],
+  "across": [
+   172
+  ],
+  "various": [
+   173
+  ],
+  "queries.": [
+   174
+  ],
+  "experiment": [
+   176
+  ],
+  "with": [
+   177
+  ],
+  "real": [
+   178
+  ],
+  "data,": [
+   179
+  ],
+  "demonstrate": [
+   183
+  ],
+  "BR-DP’s": [
+   184
+  ],
+  "effectiveness": [
+   185
+  ],
+  "lifting": [
+   187
+  ],
+  "utility-privacy": [
+   189
+  ],
+  "tradeoff": [
+   190
+  ],
+  "provided": [
+   191
+  ]
+ },
+ "counts_by_year": [
+  {
+   "year": 2025,
+   "cited_by_count": 3
+  }
+ ],
+ "updated_date": "2026-07-29T14:22:42.915294",
+ "created_date": "2025-10-10T00:00:00"
+}

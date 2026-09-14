@@ -1,0 +1,1006 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 30875,
+  "items-per-page": 5,
+  "items": [
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       9,
+       3
+      ]
+     ],
+     "date-time": "2026-09-03T15:59:43Z",
+     "timestamp": 1788451183962,
+     "version": "build-2803163510"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 41,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         11,
+         15
+        ]
+       ],
+       "date-time": "2023-11-15T00:00:00Z",
+       "timestamp": 1700006400000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "funder": [
+     {
+      "name": "HKRGC",
+      "award": [
+       "16201819, 16205420, 16205422"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "16201819, 16205420, 16205422"
+        ]
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "DOI": "10.1145/3576915.3623068",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ],
+     "date-time": "2023-11-21T12:35:13Z",
+     "timestamp": 1700570113000
+    },
+    "page": "1934-1948",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 5,
+    "title": [
+     "Concentrated Geo-Privacy"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0001-5102-2304",
+      "authenticated-orcid": false,
+      "given": "Yuting",
+      "family": "Liang",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Hong Kong University of Science and Technology, Hong Kong, China"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-2178-3716",
+      "authenticated-orcid": false,
+      "given": "Ke",
+      "family": "Yi",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Hong Kong University of Science and Technology, Hong Kong, China"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '23: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Copenhagen Denmark",
+     "acronym": "CCS '23",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2023 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3623068",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3576915.3623068",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       21
+      ]
+     ],
+     "date-time": "2025-08-21T01:48:38Z",
+     "timestamp": 1755740918000
+    },
+    "score": 43.650326,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3623068"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "references-count": 41,
+    "alternative-id": [
+     "10.1145/3576915.3623068",
+     "10.1145/3576915"
+    ],
+    "URL": "https://doi.org/10.1145/3576915.3623068",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2023-11-21",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       5
+      ]
+     ],
+     "date-time": "2026-08-05T02:57:34Z",
+     "timestamp": 1785898654107,
+     "version": "3.56.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 48,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         11,
+         15
+        ]
+       ],
+       "date-time": "2023-11-15T00:00:00Z",
+       "timestamp": 1700006400000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "funder": [
+     {
+      "name": "German Research Foundation",
+      "award": [
+       "GU 1859/1-1"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "GU 1859/1-1"
+        ]
+       }
+      ]
+     },
+     {
+      "DOI": "10.13039/501100001659",
+      "name": "Deutsche Forschungsgemeinschaft",
+      "doi-asserted-by": "publisher",
+      "award": [
+       "SFB 1119 - 236615297"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "SFB 1119 - 236615297"
+        ]
+       }
+      ],
+      "id": [
+       {
+        "id": "10.13039/501100001659",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "DOI": "10.1145/3576915.3623151",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ],
+     "date-time": "2023-11-21T12:35:13Z",
+     "timestamp": 1700570113000
+    },
+    "page": "3239-3253",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 5,
+    "title": [
+     "Verifiable Verification in Cryptographic Protocols"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0003-0597-8297",
+      "authenticated-orcid": false,
+      "given": "Marc",
+      "family": "Fischlin",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Technische Universität Darmstadt, Darmstadt, Germany"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-8495-6610",
+      "authenticated-orcid": false,
+      "given": "Felix",
+      "family": "Günther",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "ETH Zürich &amp; IBM Research Europe - Zurich, Zürich &amp; Rüschlikon, Switzerland"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '23: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Copenhagen Denmark",
+     "acronym": "CCS '23",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2023 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3623151",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3576915.3623151",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       21
+      ]
+     ],
+     "date-time": "2025-08-21T01:43:17Z",
+     "timestamp": 1755740597000
+    },
+    "score": 42.713036,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3623151"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "references-count": 48,
+    "alternative-id": [
+     "10.1145/3576915.3623151",
+     "10.1145/3576915"
+    ],
+    "URL": "https://doi.org/10.1145/3576915.3623151",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2023-11-21",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T00:40:26Z",
+     "timestamp": 1755823226482,
+     "version": "3.44.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 4,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         11,
+         15
+        ]
+       ],
+       "date-time": "2023-11-15T00:00:00Z",
+       "timestamp": 1700006400000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "DOI": "10.1145/3576915.3624368",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ],
+     "date-time": "2023-11-21T12:35:13Z",
+     "timestamp": 1700570113000
+    },
+    "page": "3549-3551",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Poster: Attestor -- Simple Proof-of-Storage-Time"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-2281-6647",
+      "authenticated-orcid": false,
+      "given": "Arup",
+      "family": "Mondal",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Ashoka University, Sonipat, India"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ]
+    },
+    "event": {
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "acronym": "CCS '23",
+     "name": "CCS '23: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Copenhagen Denmark"
+    },
+    "container-title": [
+     "Proceedings of the 2023 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3624368",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3576915.3624368",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       21
+      ]
+     ],
+     "date-time": "2025-08-21T01:44:27Z",
+     "timestamp": 1755740667000
+    },
+    "score": 42.626328,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3624368"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "references-count": 4,
+    "alternative-id": [
+     "10.1145/3576915.3624368",
+     "10.1145/3576915"
+    ],
+    "URL": "https://doi.org/10.1145/3576915.3624368",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2023-11-21",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       1,
+       17
+      ]
+     ],
+     "date-time": "2026-01-17T23:28:10Z",
+     "timestamp": 1768692490937,
+     "version": "3.49.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 0,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         11,
+         15
+        ]
+       ],
+       "date-time": "2023-11-15T00:00:00Z",
+       "timestamp": 1700006400000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "DOI": "10.1145/3576915.3624024",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ],
+     "date-time": "2023-11-21T12:35:13Z",
+     "timestamp": 1700570113000
+    },
+    "page": "3657-3658",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "CCSW '23: Cloud Computing Security Workshop"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0001-6385-0780",
+      "authenticated-orcid": false,
+      "given": "Francesco",
+      "family": "Regazzoni",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "University of Amsterdam &amp; Università della Svizzera italiana, Lugano, Switzerland"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-4758-2349",
+      "authenticated-orcid": false,
+      "given": "Apostolos",
+      "family": "Fournaris",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Industrial Systems Institute/Research Center ATHENA, Patras, Greece"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       21
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '23: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Copenhagen Denmark",
+     "acronym": "CCS '23",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2023 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3624024",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3576915.3624024",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       21
+      ]
+     ],
+     "date-time": "2025-08-21T01:49:18Z",
+     "timestamp": 1755740958000
+    },
+    "score": 44.03194,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3576915.3624024"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "references-count": 0,
+    "alternative-id": [
+     "10.1145/3576915.3624024",
+     "10.1145/3576915"
+    ],
+    "URL": "https://doi.org/10.1145/3576915.3624024",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       15
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2023-11-21",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       6,
+       18
+      ]
+     ],
+     "date-time": "2025-06-18T04:14:12Z",
+     "timestamp": 1750220052126,
+     "version": "3.41.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 7,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         7,
+         10
+        ]
+       ],
+       "date-time": "2023-07-10T00:00:00Z",
+       "timestamp": 1688947200000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       10
+      ]
+     ]
+    },
+    "DOI": "10.1145/3579856.3596440",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       5
+      ]
+     ],
+     "date-time": "2023-07-05T14:52:13Z",
+     "timestamp": 1688568733000
+    },
+    "page": "326-326",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Formal Methods for Payment Protocols"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0003-2952-939X",
+      "authenticated-orcid": false,
+      "given": "David",
+      "family": "Basin",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "ETH Zurich, Switzerland"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       10
+      ]
+     ]
+    },
+    "event": {
+     "name": "ASIA CCS '23: ACM ASIA Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Melbourne VIC Australia",
+     "acronym": "ASIA CCS '23"
+    },
+    "container-title": [
+     "Proceedings of the ACM Asia Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3579856.3596440",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       6,
+       17
+      ]
+     ],
+     "date-time": "2025-06-17T18:08:17Z",
+     "timestamp": 1750183697000
+    },
+    "score": 31.52847,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3579856.3596440"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       10
+      ]
+     ]
+    },
+    "references-count": 7,
+    "alternative-id": [
+     "10.1145/3579856.3596440",
+     "10.1145/3579856"
+    ],
+    "URL": "https://doi.org/10.1145/3579856.3596440",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       10
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2023-07-10",
+      "order": 2,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

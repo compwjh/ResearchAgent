@@ -1,0 +1,2351 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 37874,
+  "items-per-page": 11,
+  "items": [
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       3,
+       2
+      ]
+     ],
+     "date-time": "2026-03-02T14:53:01Z",
+     "timestamp": 1772463181511,
+     "version": "3.50.1"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 69,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://creativecommons.org/licenses/by/4.0/"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3670328",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "3257-3271",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Asynchronous Authentication"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0009-0008-6334-1183",
+      "authenticated-orcid": false,
+      "given": "Marwa",
+      "family": "Mouallem",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Technion, Haifa, Israel"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0001-7595-2258",
+      "authenticated-orcid": false,
+      "given": "Ittay",
+      "family": "Eyal",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Technion, Haifa, Israel"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3670328",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3670328",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T05:57:03Z",
+     "timestamp": 1755842223000
+    },
+    "score": 43.92318,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3670328"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 69,
+    "alternative-id": [
+     "10.1145/3658644.3670328",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3670328",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       28
+      ]
+     ],
+     "date-time": "2026-04-28T03:40:01Z",
+     "timestamp": 1777347601772,
+     "version": "3.51.4"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 56,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://creativecommons.org/licenses/by/4.0/"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3690303",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "4-18",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Verifiable Security Policies for Distributed Systems"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-8573-2387",
+      "authenticated-orcid": false,
+      "given": "Felix A.",
+      "family": "Wolf",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Department of Computer Science, ETH Zurich, Zurich, Switzerland"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0001-7001-2566",
+      "authenticated-orcid": false,
+      "given": "Peter",
+      "family": "Müller",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Department of Computer Science, ETH Zurich, Zurich, Switzerland"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3690303",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3690303",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:13:34Z",
+     "timestamp": 1755843214000
+    },
+    "score": 42.953373,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3690303"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 56,
+    "alternative-id": [
+     "10.1145/3658644.3690303",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3690303",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       4
+      ]
+     ],
+     "date-time": "2026-08-04T08:10:10Z",
+     "timestamp": 1785831010377,
+     "version": "3.56.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 53,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "funder": [
+     {
+      "DOI": "10.13039/501100006374",
+      "name": "Natural Sciences and Engineering Research Council of Canada",
+      "doi-asserted-by": "publisher",
+      "award": [
+       "RGPIN-2022-03187,ALLRP 578463-22"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "RGPIN-2022-03187,ALLRP 578463-22"
+        ]
+       }
+      ],
+      "id": [
+       {
+        "id": "10.13039/501100006374",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3690220",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "2385-2399",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 4,
+    "title": [
+     "Obfuscated Key Exchange"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-8495-6610",
+      "authenticated-orcid": false,
+      "given": "Felix",
+      "family": "Günther",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "IBM Research Europe - Zurich, Rüschlikon, Switzerland"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0001-9443-3170",
+      "authenticated-orcid": false,
+      "given": "Douglas",
+      "family": "Stebila",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Waterloo, Waterloo, Ontario, Canada"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-8981-5593",
+      "authenticated-orcid": false,
+      "given": "Shannon",
+      "family": "Veitch",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "ETH Zurich, Zürich, Switzerland"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3690220",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3690220",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:10:54Z",
+     "timestamp": 1755843054000
+    },
+    "score": 42.320206,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3690220"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 53,
+    "alternative-id": [
+     "10.1145/3658644.3690220",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3690220",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2026-07-18T10:06:08Z",
+     "timestamp": 1784369168137,
+     "version": "3.55.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 58,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "funder": [
+     {
+      "DOI": "10.13039/501100006374",
+      "name": "NSF (National Science Foundation)",
+      "doi-asserted-by": "publisher",
+      "award": [
+       "2149765,2149766"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "2149765,2149766"
+        ]
+       }
+      ],
+      "id": [
+       {
+        "id": "10.13039/501100006374",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3670374",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "1552-1566",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 3,
+    "title": [
+     "Provable Security for PKI Schemes"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-1250-2257",
+      "authenticated-orcid": false,
+      "given": "Sara",
+      "family": "Wrótniak",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "School of Computing, University of Connecticut, Storrs, CT, USA"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-7421-1850",
+      "authenticated-orcid": false,
+      "given": "Hemi",
+      "family": "Leibowitz",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Faculty of Computer Science, The College of Management Academic Studies, Rishon LeZion, Israel"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0003-0860-0927",
+      "authenticated-orcid": false,
+      "given": "Ewa",
+      "family": "Syta",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Department of Computer Science, Trinity College, Hartford, CT, USA"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0001-5586-5261",
+      "authenticated-orcid": false,
+      "given": "Amir",
+      "family": "Herzberg",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "School of Computing, University of Connecticut, Storrs, CT, USA"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3670374",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3670374",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:11:31Z",
+     "timestamp": 1755843091000
+    },
+    "score": 42.349274,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3670374"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 58,
+    "alternative-id": [
+     "10.1145/3658644.3670374",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3670374",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       3,
+       2
+      ]
+     ],
+     "date-time": "2026-03-02T14:53:02Z",
+     "timestamp": 1772463182464,
+     "version": "3.50.1"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 44,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://creativecommons.org/licenses/by/4.0/"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3670378",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "408-422",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Interactive Multi-Credential Authentication"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0001-5324-6889",
+      "authenticated-orcid": false,
+      "given": "Deepak",
+      "family": "Maram",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Mysten Labs, Cornell Tech, New York, USA"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0009-0007-4268-4681",
+      "authenticated-orcid": false,
+      "given": "Mahimna",
+      "family": "Kelkar",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Cornell Tech, New York, USA"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0001-7595-2258",
+      "authenticated-orcid": false,
+      "given": "Ittay",
+      "family": "Eyal",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Technion, Haifa, Israel"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3670378",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3670378",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:11:00Z",
+     "timestamp": 1755843060000
+    },
+    "score": 41.646362,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3670378"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 44,
+    "alternative-id": [
+     "10.1145/3658644.3670378",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3670378",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       23
+      ]
+     ],
+     "date-time": "2025-08-23T00:05:33Z",
+     "timestamp": 1755907533404,
+     "version": "3.44.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 0,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3698218",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "5087-5088",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "ACM CCS 2024 Doctoral Symposium"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-4405-0742",
+      "authenticated-orcid": false,
+      "given": "Gabriela",
+      "family": "Ciocarlie",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "UT San Antonio, San Antonio, TX, USA"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0009-0007-2501-7991",
+      "authenticated-orcid": false,
+      "given": "Xinming",
+      "family": "Ou",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of South Florida, Tampa, FL, USA"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24"
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3698218",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3698218",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:05:08Z",
+     "timestamp": 1755842708000
+    },
+    "score": 44.68699,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3698218"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 0,
+    "alternative-id": [
+     "10.1145/3658644.3698218",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3698218",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       9,
+       3
+      ]
+     ],
+     "date-time": "2025-09-03T09:55:01Z",
+     "timestamp": 1756893301289,
+     "version": "3.44.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 7,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "funder": [
+     {
+      "DOI": "10.13039/501100006374",
+      "name": "Intelligence Advanced Research Projects Activity",
+      "doi-asserted-by": "publisher",
+      "award": [
+       "N66001-24-C-4501"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "N66001-24-C-4501"
+        ]
+       }
+      ],
+      "id": [
+       {
+        "id": "10.13039/501100006374",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3691403",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "4991-4993",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Poster: Formalizing Cognitive Biases for Cybersecurity Defenses"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0009-0004-4668-3975",
+      "authenticated-orcid": false,
+      "given": "Jasmine",
+      "family": "Vang",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Montana State University, Bozeman, MT, USA"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-2952-9835",
+      "authenticated-orcid": false,
+      "given": "Matthew",
+      "family": "Revelle",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Montana State University, Bozeman, MT, USA"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24"
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3691403",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3691403",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:09:02Z",
+     "timestamp": 1755842942000
+    },
+    "score": 41.08846,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3691403"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 7,
+    "alternative-id": [
+     "10.1145/3658644.3691403",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3691403",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:10:02Z",
+     "timestamp": 1755843002440,
+     "version": "3.44.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 10,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "funder": [
+     {
+      "name": "Economic and Social Research Council",
+      "award": [
+       "ES/W005964/1; ES/W005964/2"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "ES/W005964/1; ES/W005964/2"
+        ]
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3691398",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "4946-4948",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Poster: Cyber Security Economics Model (CYSEM)"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-9016-9680",
+      "authenticated-orcid": false,
+      "given": "Tong",
+      "family": "Xin",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "School of Electronic Engineering and Computer Science, Queen Mary University of London, London, United Kingdom"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0003-2023-5547",
+      "authenticated-orcid": false,
+      "given": "Ying",
+      "family": "He",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "School of Electronic Engineering and Computer Science, Queen Mary University of London, London, United Kingdom"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0003-3110-7495",
+      "authenticated-orcid": false,
+      "given": "Efpraxia D.",
+      "family": "Zamani",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Business School, Durham University Business School, Durham, United Kingdom"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0003-3946-1093",
+      "authenticated-orcid": false,
+      "given": "Cunjin",
+      "family": "Luo",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "School of Computer Science and Electronic Engineering, University of Essex, Colchester, United Kingdom"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24"
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3691398",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3691398",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T05:56:23Z",
+     "timestamp": 1755842183000
+    },
+    "score": 41.248238,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3691398"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 10,
+    "alternative-id": [
+     "10.1145/3658644.3691398",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3691398",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       23
+      ]
+     ],
+     "date-time": "2025-08-23T00:05:29Z",
+     "timestamp": 1755907529416,
+     "version": "3.44.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 0,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "funder": [
+     {
+      "DOI": "10.13039/501100006374",
+      "name": "European Commission",
+      "doi-asserted-by": "publisher",
+      "award": [
+       "101120962"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "101120962"
+        ]
+       }
+      ],
+      "id": [
+       {
+        "id": "10.13039/501100006374",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3691548",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "4900-4900",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "CCSW 2024 -- Cloud Computing Security Workshop"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-4758-2349",
+      "authenticated-orcid": false,
+      "given": "Apostolos",
+      "family": "Fournaris",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Industrial Systems Institute/Research Center ATHENA, Patras, Greece"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-9819-4880",
+      "authenticated-orcid": false,
+      "given": "Paolo",
+      "family": "Palmieri",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Computer Science, University College Cork, Cork, Ireland"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24"
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3691548",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3691548",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:11:07Z",
+     "timestamp": 1755843067000
+    },
+    "score": 43.966396,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3691548"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 0,
+    "alternative-id": [
+     "10.1145/3658644.3691548",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3691548",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       23
+      ]
+     ],
+     "date-time": "2025-08-23T00:05:33Z",
+     "timestamp": 1755907533409,
+     "version": "3.44.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 9,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         12,
+         2
+        ]
+       ],
+       "date-time": "2024-12-02T00:00:00Z",
+       "timestamp": 1733097600000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1145/3658644.3690866",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ],
+     "date-time": "2024-12-09T12:19:20Z",
+     "timestamp": 1733746760000
+    },
+    "page": "5122-5124",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Language-based Sandboxing"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0009-0008-8254-5077",
+      "authenticated-orcid": false,
+      "given": "Jialun",
+      "family": "Zhang",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Pennsylvania State University, State College, PA, USA"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       9
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '24: ACM SIGSAC Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Salt Lake City UT USA",
+     "acronym": "CCS '24"
+    },
+    "container-title": [
+     "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3690866",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     },
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3658644.3690866",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       22
+      ]
+     ],
+     "date-time": "2025-08-22T06:03:33Z",
+     "timestamp": 1755842613000
+    },
+    "score": 44.606594,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3658644.3690866"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "references-count": 9,
+    "alternative-id": [
+     "10.1145/3658644.3690866",
+     "10.1145/3658644"
+    ],
+    "URL": "https://doi.org/10.1145/3658644.3690866",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       12,
+       2
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-12-09",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       5,
+       21
+      ]
+     ],
+     "date-time": "2026-05-21T11:07:47Z",
+     "timestamp": 1779361667601,
+     "version": "3.51.4"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 0,
+    "publisher": "ACM",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2024,
+         7,
+         1
+        ]
+       ],
+       "date-time": "2024-07-01T00:00:00Z",
+       "timestamp": 1719792000000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://www.acm.org/publications/policies/copyright_policy#Background"
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024,
+       7
+      ]
+     ]
+    },
+    "DOI": "10.1145/3634737.3665025",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       6,
+       28
+      ]
+     ],
+     "date-time": "2024-06-28T11:51:38Z",
+     "timestamp": 1719575498000
+    },
+    "page": "1114-1114",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Federated Learning Security: From Dusk to Dawn"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0001-5637-7016",
+      "authenticated-orcid": false,
+      "given": "Alexandra",
+      "family": "Dmitrienko",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "University of Wuerzburg, Wuerzburg, Germany"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2024,
+       7
+      ]
+     ]
+    },
+    "event": {
+     "name": "ASIA CCS '24: 19th ACM Asia Conference on Computer and Communications Security",
+     "location": "Singapore Singapore",
+     "acronym": "ASIA CCS '24",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 19th ACM Asia Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/10.1145/3634737.3665025",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       6,
+       18
+      ]
+     ],
+     "date-time": "2025-06-18T23:44:07Z",
+     "timestamp": 1750290247000
+    },
+    "score": 32.385242,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3634737.3665025"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       7
+      ]
+     ]
+    },
+    "references-count": 0,
+    "alternative-id": [
+     "10.1145/3634737.3665025",
+     "10.1145/3634737"
+    ],
+    "URL": "https://doi.org/10.1145/3634737.3665025",
+    "published": {
+     "date-parts": [
+      [
+       2024,
+       7
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2024-07-01",
+      "order": 2,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

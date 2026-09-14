@@ -1,0 +1,1218 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 258,
+  "items-per-page": 9,
+  "items": [
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       6,
+       10
+      ]
+     ],
+     "date-time": "2026-06-10T16:35:54Z",
+     "timestamp": 1781109354751,
+     "version": "3.54.1"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2024.23295",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:35:08Z",
+     "timestamp": 1707582908000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 3,
+    "title": [
+     "Bernoulli Honeywords"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Ke Coby",
+      "family": "Wang",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Michael K.",
+      "family": "Reiter",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2024",
+     "number": "31",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:46:28Z",
+     "timestamp": 1707583588000
+    },
+    "score": 36.118973,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2024-295-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2024.23295",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       1,
+       8
+      ]
+     ],
+     "date-time": "2026-01-08T04:05:24Z",
+     "timestamp": 1767845124477,
+     "version": "3.49.0"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2024.24125",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:35:08Z",
+     "timestamp": 1707582908000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Timing Channels in Adaptive Neural Networks"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Ayomide",
+      "family": "Akinsanya",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Tegan",
+      "family": "Brennan",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2024",
+     "number": "31",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:46:39Z",
+     "timestamp": 1707583599000
+    },
+    "score": 35.065346,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2024-125-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2024.24125",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       23
+      ]
+     ],
+     "date-time": "2026-08-23T18:40:08Z",
+     "timestamp": 1787510408157,
+     "version": "build-2736575974"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2024.24327",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T11:35:08Z",
+     "timestamp": 1707564908000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 8,
+    "title": [
+     "A Security and Usability Analysis of Local Attacks Against FIDO2"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Tarun Kumar",
+      "family": "Yadav",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Kent",
+      "family": "Seamons",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2024",
+     "number": "31",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T11:46:45Z",
+     "timestamp": 1707565605000
+    },
+    "score": 34.747948,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2024-327-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2024.24327",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       5
+      ]
+     ],
+     "date-time": "2026-08-05T12:09:11Z",
+     "timestamp": 1785931751746,
+     "version": "3.56.0"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2024.23197",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:35:08Z",
+     "timestamp": 1707582908000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 14,
+    "title": [
+     "Front-running Attack in Sharded Blockchains and Fair Cross-shard Consensus"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Jianting",
+      "family": "Zhang",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Wuhui",
+      "family": "Chen",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Sifu",
+      "family": "Luo",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Tiantian",
+      "family": "Gong",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Zicong",
+      "family": "Hong",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Aniket",
+      "family": "Kate",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2024",
+     "number": "31",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:46:24Z",
+     "timestamp": 1707583584000
+    },
+    "score": 29.614384,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2024-197-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2024.23197",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       11
+      ]
+     ],
+     "date-time": "2024-02-11T00:30:15Z",
+     "timestamp": 1707611415718
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2024.23492",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:35:08Z",
+     "timestamp": 1707582908000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "GNNIC: Finding Long-Lost Sibling Functions with Abstract Similarity"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Qiushi",
+      "family": "Wu",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Zhongshu",
+      "family": "Gu",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Hani",
+      "family": "Jamjoom",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Kangjie",
+      "family": "Lu",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2024",
+     "number": "31",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       2,
+       10
+      ]
+     ],
+     "date-time": "2024-02-10T16:46:31Z",
+     "timestamp": 1707583591000
+    },
+    "score": 31.94513,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2024-492-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2024.23492",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       2,
+       14
+      ]
+     ],
+     "date-time": "2026-02-14T10:07:15Z",
+     "timestamp": 1771063635818,
+     "version": "3.50.1"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/vehiclesec.2024.23012",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2025,
+       2,
+       8
+      ]
+     ],
+     "date-time": "2025-02-08T22:31:36Z",
+     "timestamp": 1739053896000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "The Advantages of Distributed TCAM Firewalls in Automotive Real-Time Switched Zonal Networks"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Evan",
+      "family": "Allen",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Zeb",
+      "family": "Bowden",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "J. Scot",
+      "family": "Ransbottom",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Symposium on Vehicle Security & Privacy",
+     "location": "San Diego, CA, USA",
+     "acronym": "VehicleSec 2024",
+     "number": "2",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings Symposium on Vehicle Security &amp; Privacy"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       2,
+       9
+      ]
+     ],
+     "date-time": "2025-02-09T21:30:27Z",
+     "timestamp": 1739136627000
+    },
+    "score": 20.637632,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/vehiclesec2024-12-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/vehiclesec.2024.23012",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       7,
+       15
+      ]
+     ],
+     "date-time": "2026-07-15T23:36:41Z",
+     "timestamp": 1784158601773,
+     "version": "3.55.0"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/usec.2024.23030",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2025,
+       2,
+       8
+      ]
+     ],
+     "date-time": "2025-02-08T22:06:21Z",
+     "timestamp": 1739052381000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 2,
+    "title": [
+     "A Comparison of Three Approaches to Assist Users in Memorizing System-Assigned Passwords"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Michael",
+      "family": "Clark",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Scott",
+      "family": "Ruoti",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Michael",
+      "family": "Mendoza",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Kent",
+      "family": "Seamons",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Symposium on Usable Security",
+     "location": "San Diego, CA, USA",
+     "acronym": "USEC 2024",
+     "number": "3",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Symposium on Usable Security"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       2,
+       8
+      ]
+     ],
+     "date-time": "2025-02-08T22:06:22Z",
+     "timestamp": 1739052382000
+    },
+    "score": 19.36404,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/usec2024-30-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/usec.2024.23030",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       6
+      ]
+     ],
+     "date-time": "2024-07-06T00:19:45Z",
+     "timestamp": 1720225185246
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/spacesec.2024.23008",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       5
+      ]
+     ],
+     "date-time": "2024-07-05T08:18:25Z",
+     "timestamp": 1720167505000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Space-Domain AI Applications need Rigorous Security Risk Analysis"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Alexandra",
+      "family": "Weber",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Peter",
+      "family": "Franke",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Workshop on Security of Space and Satellite Systems",
+     "location": "San Diego, CA, USA",
+     "acronym": "SpaceSec 2024",
+     "number": "2",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Workshop on Security of Space and Satellite Systems"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       5
+      ]
+     ],
+     "date-time": "2024-07-05T08:18:27Z",
+     "timestamp": 1720167507000
+    },
+    "score": 12.400648,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/spacesec2024-8-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/spacesec.2024.23008",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       7,
+       7
+      ]
+     ],
+     "date-time": "2026-07-07T04:29:52Z",
+     "timestamp": 1783398592712,
+     "version": "3.54.6"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "DOI": "10.14722/sdiotsec.2024.23048",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       18
+      ]
+     ],
+     "date-time": "2024-09-18T00:11:26Z",
+     "timestamp": 1726618286000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 2,
+    "title": [
+     "WIP: Security Vulnerabilities and Attack Scenarios in Smart Home with Matter"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Haoqiang",
+      "family": "Wang",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Yichen",
+      "family": "Liu",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Yiwei",
+      "family": "Fang",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Ze",
+      "family": "Jin",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Liu",
+      "family": "Qixu",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Luyi",
+      "family": "Xing",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Workshop on Security and Privacy in Standardized IoT",
+     "location": "San Diego, CA, USA",
+     "acronym": "SDIoTSec 2024",
+     "number": "1",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2024 Workshop on Security and Privacy in Standardized IoT"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       18
+      ]
+     ],
+     "date-time": "2024-09-18T00:11:29Z",
+     "timestamp": 1726618289000
+    },
+    "score": 11.384386,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2024/07/sdiotsec2024-48-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/sdiotsec.2024.23048",
+    "published": {
+     "date-parts": [
+      [
+       2024
+      ]
+     ]
+    }
+   }
+  ]
+ }
+}

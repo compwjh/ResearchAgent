@@ -28,6 +28,10 @@ from backend.app.paper_discovery.domain.paper_import_identity import (
     build_paper_identity,
     filename_for_candidate,
 )
+from backend.app.paper_discovery.infrastructure.doi_resolver import (
+    doi_resolver_host,
+    resolve_doi_url,
+)
 from backend.app.paper_discovery.infrastructure.paper_download import (
     DOWNLOAD_BLOCKED,
     DOWNLOAD_TIMEOUT,
@@ -207,6 +211,22 @@ def _download(
             "context": context,
         },
     )
+
+
+def _candidate_with_pdf_url(candidate: Any, pdf_url: str) -> Any:
+    """候选的浅拷贝：``pdf_url`` 换成 DOI 解析后的**最终落地**地址。
+
+    保形优先（Mapping → dict；dataclass → ``replace``），这样注入的 downloader 仍能按原
+    类型读取字段；其余形态（例如 pydantic 模型）退化为快照字典——``download_candidate``
+    与浏览器会话都接受 Mapping，语义不变。
+    """
+    if isinstance(candidate, Mapping):
+        return {**candidate, "pdf_url": pdf_url}
+    if is_dataclass(candidate) and not isinstance(candidate, type) and hasattr(candidate, "pdf_url"):
+        return replace(candidate, pdf_url=pdf_url)
+    snapshot = _candidate_snapshot(candidate)
+    snapshot["pdf_url"] = pdf_url
+    return snapshot
 
 
 def _import_lifecycle_boundary(downloader: Callable[..., Any], context: Any = None):
@@ -424,6 +444,9 @@ def import_candidate(
     injected port; paper discovery owns only secure download orchestration.
     """
     settings = settings or ArticleSettings()
+    # 下载/解析都可能被调用方以生成器等一次性可迭代对象传入；先物化一次，避免
+    # 「解析用掉了 allowlist，下载时却拿到空集合」这种静默放宽或静默拒绝。
+    allowed_hosts = tuple(allowed_hosts)
     port = _resolve_port(
         paper_import_port,
         papers_dir=papers_dir,
@@ -469,9 +492,32 @@ def import_candidate(
             cleanup_root.mkdir(parents=True, exist_ok=True)
             preexisting_paths = tuple(cleanup_root.rglob("*"))
 
+        # DOI 解析器地址（doi.org 一族）只是「指路牌」：``download_candidate`` 在跟随重定向
+        # **之前**就用 ``allowed_hosts`` 校验初始 URL，原样交给下载链必然被 allowlist 拒
+        # （实测 NDSS 记录 140/140 DOWNLOAD_BLOCKED）。因此先逐跳解析出**最终落地**地址，再用它
+        # 过下载 allowlist。实现唯一：与批量下载器共用 ``doi_resolver.resolve_doi_url``，不复制。
+        # 空 allowlist 时跳过解析（fail-closed 且不做无谓探针，与下载器公开层一致）。
+        resolver_url = _value(candidate, "pdf_url")
+        download_target = candidate
+        if allowed_hosts and doi_resolver_host(resolver_url) is not None:
+            resolved_url = resolve_doi_url(
+                resolver_url,
+                allowed_hosts=allowed_hosts,
+                settings=settings,
+                transport=transport,
+                client=client,
+                dns_resolver=dns_resolver,
+                peer_ip_resolver=peer_ip_resolver,
+            )
+            download_target = _candidate_with_pdf_url(candidate, resolved_url)
+            if resolved_url != resolver_url:
+                # 快照必须与实际下载地址一致：``pdf_url`` 记最终地址，原始解析器地址单独留痕，
+                # 避免知识库侧出现「快照是 doi.org、实际下的是别处」这种自相矛盾。
+                snapshot["pdf_url_original"] = resolver_url
+                snapshot["pdf_url"] = resolved_url
         download = _download(
             downloader,
-            candidate,
+            download_target,
             settings,
             allowed_hosts,
             transport=transport,

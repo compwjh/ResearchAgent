@@ -1,0 +1,527 @@
+{
+ "id": "https://openalex.org/W3138096795",
+ "doi": "https://doi.org/10.14722/ndss.2021.24378",
+ "title": "Mondrian: Comprehensive Inter-domain Network Zoning Architecture",
+ "display_name": "Mondrian: Comprehensive Inter-domain Network Zoning Architecture",
+ "publication_year": 2021,
+ "publication_date": "2021-01-01",
+ "ids": {
+  "openalex": "https://openalex.org/W3138096795",
+  "doi": "https://doi.org/10.14722/ndss.2021.24378",
+  "mag": "3138096795"
+ },
+ "language": "en",
+ "primary_location": {
+  "id": "doi:10.14722/ndss.2021.24378",
+  "is_oa": true,
+  "landing_page_url": "https://doi.org/10.14722/ndss.2021.24378",
+  "pdf_url": "https://doi.org/10.14722/ndss.2021.24378",
+  "source": null,
+  "license": null,
+  "license_id": null,
+  "version": "publishedVersion",
+  "is_accepted": true,
+  "is_published": true,
+  "raw_source_name": "Proceedings 2021 Network and Distributed System Security Symposium",
+  "raw_type": "proceedings-article"
+ },
+ "type": "conference-paper",
+ "indexed_in": [
+  "crossref"
+ ],
+ "open_access": {
+  "is_oa": true,
+  "oa_status": "gold",
+  "oa_url": "https://doi.org/10.14722/ndss.2021.24378",
+  "any_repository_has_fulltext": null
+ },
+ "authorships": [
+  {
+   "author_position": "first",
+   "author": {
+    "id": "https://openalex.org/A5055794339",
+    "display_name": "Jonghoon Kwon",
+    "orcid": "https://orcid.org/0000-0002-3853-242X"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I35440088",
+     "display_name": "ETH Zurich",
+     "ror": "https://ror.org/05a28rw58",
+     "country_code": "CH",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I2799323385",
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ],
+   "countries": [
+    "CH"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Jonghoon Kwon",
+   "raw_affiliation_strings": [
+    "ETH Zürich"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "ETH Zürich",
+     "institution_ids": [
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "middle",
+   "author": {
+    "id": "https://openalex.org/A5024377836",
+    "display_name": "Claude Hähni",
+    "orcid": null
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I35440088",
+     "display_name": "ETH Zurich",
+     "ror": "https://ror.org/05a28rw58",
+     "country_code": "CH",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I2799323385",
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ],
+   "countries": [
+    "CH"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Claude Hähni",
+   "raw_affiliation_strings": [
+    "ETH Zürich"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "ETH Zürich",
+     "institution_ids": [
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "middle",
+   "author": {
+    "id": "https://openalex.org/A5044151093",
+    "display_name": "Patrick Bamert",
+    "orcid": null
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I35440088",
+     "display_name": "ETH Zurich",
+     "ror": "https://ror.org/05a28rw58",
+     "country_code": "CH",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I2799323385",
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ],
+   "countries": [
+    "CH"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Patrick Bamert",
+   "raw_affiliation_strings": [
+    "ETH Zürich"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "ETH Zürich",
+     "institution_ids": [
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "last",
+   "author": {
+    "id": "https://openalex.org/A5056518136",
+    "display_name": "Adrian Perrig",
+    "orcid": "https://orcid.org/0000-0002-5280-5412"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I35440088",
+     "display_name": "ETH Zurich",
+     "ror": "https://ror.org/05a28rw58",
+     "country_code": "CH",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I2799323385",
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ],
+   "countries": [
+    "CH"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Adrian Perrig",
+   "raw_affiliation_strings": [
+    "ETH Zürich"
+   ],
+   "raw_orcid": null,
+   "affiliations": [
+    {
+     "raw_affiliation_string": "ETH Zürich",
+     "institution_ids": [
+      "https://openalex.org/I35440088"
+     ]
+    }
+   ]
+  }
+ ],
+ "institutions": [],
+ "countries_distinct_count": 1,
+ "institutions_distinct_count": 1,
+ "corresponding_author_ids": [],
+ "corresponding_institution_ids": [
+  "https://openalex.org/I35440088"
+ ],
+ "apc_list": null,
+ "apc_paid": null,
+ "fwci": 0.2712,
+ "has_fulltext": true,
+ "cited_by_count": 2,
+ "citation_normalized_percentile": {
+  "value": 0.34723486,
+  "is_in_top_1_percent": false,
+  "is_in_top_10_percent": false
+ },
+ "cited_by_percentile_year": {
+  "min": 88,
+  "max": 95
+ },
+ "biblio": {
+  "volume": null,
+  "issue": null,
+  "first_page": null,
+  "last_page": null
+ },
+ "is_retracted": false,
+ "is_paratext": false,
+ "is_xpac": false,
+ "primary_topic": {
+  "id": "https://openalex.org/T10714",
+  "display_name": "Software-Defined Networks and 5G",
+  "score": 1.0,
+  "subfield": {
+   "id": "https://openalex.org/subfields/1705",
+   "display_name": "Computer Networks and Communications"
+  },
+  "field": {
+   "id": "https://openalex.org/fields/17",
+   "display_name": "Computer Science"
+  },
+  "domain": {
+   "id": "https://openalex.org/domains/3",
+   "display_name": "Physical Sciences"
+  }
+ },
+ "topics": [
+  {
+   "id": "https://openalex.org/T10714",
+   "display_name": "Software-Defined Networks and 5G",
+   "score": 1.0,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1705",
+    "display_name": "Computer Networks and Communications"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T10400",
+   "display_name": "Network Security and Intrusion Detection",
+   "score": 0.9987999796867371,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1705",
+    "display_name": "Computer Networks and Communications"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T11478",
+   "display_name": "Caching and Content Delivery",
+   "score": 0.9968000054359436,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1705",
+    "display_name": "Computer Networks and Communications"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  }
+ ],
+ "keywords": [
+  {
+   "id": "https://openalex.org/keywords/mondrian",
+   "display_name": "Mondrian",
+   "score": 0.9140486717224121
+  },
+  {
+   "id": "https://openalex.org/keywords/zoning",
+   "display_name": "Zoning",
+   "score": 0.7179723978042603
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-science",
+   "display_name": "Computer science",
+   "score": 0.6979433298110962
+  },
+  {
+   "id": "https://openalex.org/keywords/architecture",
+   "display_name": "Architecture",
+   "score": 0.5986298322677612
+  },
+  {
+   "id": "https://openalex.org/keywords/domain",
+   "display_name": "Domain (mathematical analysis)",
+   "score": 0.5261618494987488
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-architecture",
+   "display_name": "Computer architecture",
+   "score": 0.3427702486515045
+  },
+  {
+   "id": "https://openalex.org/keywords/geography",
+   "display_name": "Geography",
+   "score": 0.10645121335983276
+  },
+  {
+   "id": "https://openalex.org/keywords/mathematics",
+   "display_name": "Mathematics",
+   "score": 0.1055871844291687
+  },
+  {
+   "id": "https://openalex.org/keywords/engineering",
+   "display_name": "Engineering",
+   "score": 0.09028461575508118
+  }
+ ],
+ "concepts": [
+  {
+   "id": "https://openalex.org/C2779075496",
+   "wikidata": "https://www.wikidata.org/wiki/Q6898824",
+   "display_name": "Mondrian",
+   "level": 3,
+   "score": 0.9140486717224121
+  },
+  {
+   "id": "https://openalex.org/C520944541",
+   "wikidata": "https://www.wikidata.org/wiki/Q702232",
+   "display_name": "Zoning",
+   "level": 2,
+   "score": 0.7179723978042603
+  },
+  {
+   "id": "https://openalex.org/C41008148",
+   "wikidata": "https://www.wikidata.org/wiki/Q21198",
+   "display_name": "Computer science",
+   "level": 0,
+   "score": 0.6979433298110962
+  },
+  {
+   "id": "https://openalex.org/C123657996",
+   "wikidata": "https://www.wikidata.org/wiki/Q12271",
+   "display_name": "Architecture",
+   "level": 2,
+   "score": 0.5986298322677612
+  },
+  {
+   "id": "https://openalex.org/C36503486",
+   "wikidata": "https://www.wikidata.org/wiki/Q11235244",
+   "display_name": "Domain (mathematical analysis)",
+   "level": 2,
+   "score": 0.5261618494987488
+  },
+  {
+   "id": "https://openalex.org/C118524514",
+   "wikidata": "https://www.wikidata.org/wiki/Q173212",
+   "display_name": "Computer architecture",
+   "level": 1,
+   "score": 0.3427702486515045
+  },
+  {
+   "id": "https://openalex.org/C205649164",
+   "wikidata": "https://www.wikidata.org/wiki/Q1071",
+   "display_name": "Geography",
+   "level": 0,
+   "score": 0.10645121335983276
+  },
+  {
+   "id": "https://openalex.org/C33923547",
+   "wikidata": "https://www.wikidata.org/wiki/Q395",
+   "display_name": "Mathematics",
+   "level": 0,
+   "score": 0.1055871844291687
+  },
+  {
+   "id": "https://openalex.org/C127413603",
+   "wikidata": "https://www.wikidata.org/wiki/Q11023",
+   "display_name": "Engineering",
+   "level": 0,
+   "score": 0.09028461575508118
+  },
+  {
+   "id": "https://openalex.org/C142362112",
+   "wikidata": "https://www.wikidata.org/wiki/Q735",
+   "display_name": "Art",
+   "level": 0,
+   "score": 0.0
+  },
+  {
+   "id": "https://openalex.org/C153349607",
+   "wikidata": "https://www.wikidata.org/wiki/Q36649",
+   "display_name": "Visual arts",
+   "level": 1,
+   "score": 0.0
+  },
+  {
+   "id": "https://openalex.org/C134306372",
+   "wikidata": "https://www.wikidata.org/wiki/Q7754",
+   "display_name": "Mathematical analysis",
+   "level": 1,
+   "score": 0.0
+  },
+  {
+   "id": "https://openalex.org/C147176958",
+   "wikidata": "https://www.wikidata.org/wiki/Q77590",
+   "display_name": "Civil engineering",
+   "level": 1,
+   "score": 0.0
+  },
+  {
+   "id": "https://openalex.org/C205783811",
+   "wikidata": "https://www.wikidata.org/wiki/Q11629",
+   "display_name": "Painting",
+   "level": 2,
+   "score": 0.0
+  },
+  {
+   "id": "https://openalex.org/C166957645",
+   "wikidata": "https://www.wikidata.org/wiki/Q23498",
+   "display_name": "Archaeology",
+   "level": 1,
+   "score": 0.0
+  }
+ ],
+ "mesh": [],
+ "locations_count": 1,
+ "locations": [
+  {
+   "id": "doi:10.14722/ndss.2021.24378",
+   "is_oa": true,
+   "landing_page_url": "https://doi.org/10.14722/ndss.2021.24378",
+   "pdf_url": "https://doi.org/10.14722/ndss.2021.24378",
+   "source": null,
+   "license": null,
+   "license_id": null,
+   "version": "publishedVersion",
+   "is_accepted": true,
+   "is_published": true,
+   "raw_source_name": "Proceedings 2021 Network and Distributed System Security Symposium",
+   "raw_type": "proceedings-article"
+  }
+ ],
+ "best_oa_location": {
+  "id": "doi:10.14722/ndss.2021.24378",
+  "is_oa": true,
+  "landing_page_url": "https://doi.org/10.14722/ndss.2021.24378",
+  "pdf_url": "https://doi.org/10.14722/ndss.2021.24378",
+  "source": null,
+  "license": null,
+  "license_id": null,
+  "version": "publishedVersion",
+  "is_accepted": true,
+  "is_published": true,
+  "raw_source_name": "Proceedings 2021 Network and Distributed System Security Symposium",
+  "raw_type": "proceedings-article"
+ },
+ "sustainable_development_goals": [
+  {
+   "id": "https://metadata.un.org/sdg/11",
+   "score": 0.6600000262260437,
+   "display_name": "Sustainable cities and communities"
+  }
+ ],
+ "awards": [
+  {
+   "id": "https://openalex.org/G3756510953",
+   "display_name": null,
+   "funder_award_id": "2019-0-01697",
+   "funder_id": "https://openalex.org/F4320328359",
+   "funder_display_name": "Ministry of Science and ICT, South Korea"
+  }
+ ],
+ "funders": [
+  {
+   "id": "https://openalex.org/F4320321652",
+   "display_name": "Eidgenössische Technische Hochschule Zürich",
+   "ror": "https://ror.org/05a28rw58"
+  },
+  {
+   "id": "https://openalex.org/F4320328359",
+   "display_name": "Ministry of Science and ICT, South Korea",
+   "ror": "https://ror.org/01wpjm123"
+  },
+  {
+   "id": "https://openalex.org/F4320335489",
+   "display_name": "Institute for Information and Communications Technology Promotion",
+   "ror": "https://ror.org/01g0hqq23"
+  },
+  {
+   "id": "https://openalex.org/F4320336702",
+   "display_name": "Zurich Information Security and Privacy Center",
+   "ror": "https://ror.org/01wrn9607"
+  }
+ ],
+ "has_content": {
+  "pdf": true,
+  "grobid_xml": true
+ },
+ "content_urls": {
+  "pdf": "https://content.openalex.org/works/W3138096795.pdf",
+  "grobid_xml": "https://content.openalex.org/works/W3138096795.grobid-xml"
+ },
+ "abstract_inverted_index": null,
+ "updated_date": "2026-09-07T09:17:50.787605",
+ "created_date": "2025-10-10T00:00:00"
+}
