@@ -60,3 +60,16 @@ RERANKER_ENABLED=false ./deploy/start.sh
 针对最后一个失败形态已补充最小 Search→Evaluator 证据交接：Orchestrator 现在把 Search Worker 已安全化的目录 Tool 摘要、候选 ID 交集和 `catalog:<id>` 引用作为 bounded `catalog_evidence` 传给 Evaluator；URL、详情 Tool 结果和非候选 ID 不会进入该视图。Evaluator 仍必须基于真实事实返回 `keep=true` 与非空证据引用，Synthesizer 仍不会因空证据而启动。详见 [`smoke-evidence-path.md`](./smoke-evidence-path.md)。
 
 本轮定向集合为 **80 passed，退出码 0**；py_compile、`git diff --check` 通过。由于当前外部 USENIX 来源不可达且本地模型尚未稳定返回满足角色合同的有效证据选择，真实成功 Artifact 仍为 **NO-GO**，Task10 保持 `实施中`，不更新 Spec 状态。
+
+## 受控部署探针（当前提交）
+
+8000、8300、8400 均被已有本机进程占用，未停止用户进程；使用临时端口 18080 启动当前提交，命令为：
+
+```bash
+PORT=18080 \
+OLLAMA_BASE_URL=http://127.0.0.1:11434 \
+OLLAMA_MODEL=qwen3.8:27b-q4_K_M \
+RERANKER_ENABLED=false ./deploy/start.sh
+```
+
+探针结果：`GET /api/health` **HTTP 200 / 334 bytes**，`GET /` **HTTP 200 / 53904 bytes**。健康响应确认服务加载当前模型与论文发现能力；这只是部署可达性证据，不替代真实模型/USENIX 成功 Smoke。
