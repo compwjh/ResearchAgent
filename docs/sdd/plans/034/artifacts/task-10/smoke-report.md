@@ -100,3 +100,14 @@ RERANKER_ENABLED=false ./deploy/start.sh
 - `research-paper-evaluation` 真实执行完成（事件 `...:10`），但上游 WorkItem 终态为失败，`selected_count=0`，随后任务 `partial/UPSTREAM_WORK_ITEM_FAILED`（事件 `...:11`）。没有产生伪造 Artifact。
 
 该结果说明即使不调用详情 Tool，本机 `qwen3.8:27b-q4_K_M` 仍未返回可验证的评估选择；在当前环境没有可接受的真实成功证据。两次新 smoke 均已停止临时服务，未保留后台进程。
+
+## 2026-09-15 模型交叉复验（`qwen3.8:27b-mlx`）
+
+使用 health 列表中的 `qwen3.8:27b-mlx` 重跑同一最小计划，排除 q4 模型差异：
+
+- `research_session_id=7fdc9655d8624d479febfc7cdec2ab35`
+- `research_task_id=3e876483937c5c1bb16b046afaa1272e`
+- Intake、计划审批和 USENIX 目录检索均成功，命中同一 `f11a606c713386db` 候选；事件 `...:6`。
+- Evaluator Skill 真实执行完成（事件 `...:10`），但仍以 `UPSTREAM_WORK_ITEM_FAILED`、`selected_count=0`、Session/Task=`partial` 终止（事件 `...:11`），无 Artifact。
+
+q4 与 MLX 两种本地模型产生相同的 fail-closed 终态，说明当前阻塞不是单一模型档位；在没有真实 `keep=true`/证据引用时，不能为了收口而放宽验证或伪造报告。
