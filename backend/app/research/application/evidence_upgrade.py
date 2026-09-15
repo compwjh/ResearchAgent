@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.app.knowledge_base.application import create_manifest_store, hybrid_search
 from backend.app.knowledge_base.infrastructure.index import point_id
+from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
 from backend.app.platform.config import KB_DIR
 from backend.app.research.domain.models import EvidenceUpgrade
 
@@ -72,7 +73,12 @@ class EvidenceUpgradeService:
         self._manifest_reader = manifest_reader or (
             lambda document_id, chunker: manifest_store.read(document_id, chunker).to_dict()
         )
-        self._generation_reader = generation_reader or manifest_store.require_generation
+        # InspectionManifestStore owns per-document manifests.  The published
+        # generation marker is owned by FinalizeBundleStore at the KB root;
+        # keep these readers separate so the production default cannot silently
+        # lose generation provenance.
+        generation_store = FinalizeBundleStore(KB_DIR.parents[1])
+        self._generation_reader = generation_reader or generation_store.require_generation
 
     @staticmethod
     def _document_ids(values: Sequence[str] | None) -> tuple[str, ...]:

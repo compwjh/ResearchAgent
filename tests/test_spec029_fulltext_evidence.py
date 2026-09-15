@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from backend.app.knowledge_base.infrastructure.retrieve import Hit
+import backend.app.research.application.evidence_upgrade as evidence_upgrade
 from backend.app.research.application.evidence_upgrade import EvidenceUpgradeError, EvidenceUpgradeService
 from backend.app.research.domain.models import ResearchDocumentLink, ResearchTask
 from backend.app.research.infrastructure.research_store import ResearchStore
@@ -30,6 +31,28 @@ def _manifest(document_id: str = "document-a", text: str = "indexed full text") 
         "index_fingerprint": "b" * 64,
         "chunks": [{"chunk_index": 2, "text": text, "page": 3, "page_end": 4}],
     }
+
+
+def test_default_generation_reader_uses_published_finalize_store(monkeypatch, tmp_path: Path):
+    calls = []
+
+    class FakeManifestStore:
+        def read(self, document_id, chunker):
+            return type("Manifest", (), {"to_dict": lambda self: _manifest(document_id)})()
+
+    class FakeFinalizeStore:
+        def __init__(self, root):
+            calls.append(root)
+
+        def require_generation(self):
+            return {"run_id": "generation-default"}
+
+    monkeypatch.setattr(evidence_upgrade, "create_manifest_store", lambda **_: FakeManifestStore())
+    monkeypatch.setattr(evidence_upgrade, "FinalizeBundleStore", FakeFinalizeStore)
+    service = EvidenceUpgradeService(ResearchStore(tmp_path / "research.sqlite3"), search=lambda *_args, **_kwargs: [])
+
+    assert calls == [evidence_upgrade.KB_DIR.parents[1]]
+    assert service._generation_reader() == {"run_id": "generation-default"}
 
 
 def test_fulltext_upgrade_is_allowlisted_and_persists_locator_provenance(tmp_path: Path):
