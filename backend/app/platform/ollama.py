@@ -24,7 +24,11 @@ from typing import Iterator, List, Optional
 import httpx
 from langchain_ollama import ChatOllama
 
-from backend.app.platform.config import OLLAMA_BASE_URL
+from backend.app.platform.config import (
+    OLLAMA_BASE_URL,
+    OLLAMA_TAGS_CACHE_TTL_SECONDS,
+    OLLAMA_TAGS_FAILURE_TTL_SECONDS,
+)
 from backend.app.platform.ollama_direct import OllamaChatResult
 
 logger = logging.getLogger(__name__)
@@ -189,7 +193,16 @@ def resolve_reasoning_effort(model: str, effort: Optional[str] = None) -> Reason
     return ReasoningResolution(str(model), requested, provider_value, capabilities, route_payload, capabilities.evidence_ids.get(requested) if capabilities.evidence_ids else None)
 
 
-def get_available_models() -> List[str]:
+# ---------- /api/tags 结果缓存（首屏就绪优化）----------
+# /api/tags 是同步 HTTP，被 health / chat / conversations / kb / models 多路由复用。
+# 实测无缓存时 Ollama 不可达会让每个请求都打满 timeout=5（/api/health 5050ms，
+# 连续两次调用均为 ~5050ms），见 docs/sdd/notes/startup-perf-baseline.md。
+_models_cache_lock = threading.RLock()
+_models_cache: dict[str, object] = {"expires_at": 0.0, "models": None}
+_models_failure: dict[str, object] = {"expires_at": 0.0, "error": None}
+
+
+def _fetch_available_models() -> List[str]:
     response = httpx.get(
         f"{OLLAMA_BASE_URL.rstrip('/')}/api/tags",
         timeout=5,
@@ -197,6 +210,53 @@ def get_available_models() -> List[str]:
     )
     response.raise_for_status()
     return [item["name"] for item in response.json().get("models", [])]
+
+
+def _load_models_locked(force: bool) -> List[str]:
+    """持锁取模型列表；``force`` 为真时跳过缓存强制回源。
+
+    回源全程持锁即为单飞（single-flight）：并发未命中的其它线程拿到锁后会命中
+    刚写好的缓存，不会各自再打一次 Ollama。
+    """
+    now = time.monotonic()
+    if not force:
+        cached = _models_cache["models"]
+        if cached is not None and now < float(_models_cache["expires_at"]):  # type: ignore[arg-type]
+            return list(cached)  # type: ignore[arg-type]
+        error = _models_failure["error"]
+        if error is not None and now < float(_models_failure["expires_at"]):  # type: ignore[arg-type]
+            raise error  # type: ignore[misc]
+    try:
+        models = _fetch_available_models()
+    except httpx.HTTPError as error:
+        # 负缓存：TTL 远小于成功 TTL，避免一次抖动把故障固化 30s；
+        # 只缓存网络类错误，异常仍原样上抛，各路由既有兜底不受影响。
+        _models_failure["expires_at"] = time.monotonic() + OLLAMA_TAGS_FAILURE_TTL_SECONDS
+        _models_failure["error"] = error
+        _models_cache["expires_at"] = 0.0
+        _models_cache["models"] = None
+        raise
+    _models_cache["expires_at"] = time.monotonic() + OLLAMA_TAGS_CACHE_TTL_SECONDS
+    _models_cache["models"] = models
+    _models_failure["expires_at"] = 0.0
+    _models_failure["error"] = None
+    return list(models)
+
+
+def refresh_available_models() -> List[str]:
+    """强制回源并刷新缓存（启动预热 / 用户手动刷新用）。"""
+    with _models_cache_lock:
+        return _load_models_locked(force=True)
+
+
+def get_available_models() -> List[str]:
+    """枚举 Ollama 可用模型，结果按 TTL 缓存（成功 30s / 网络失败 5s）。
+
+    异常语义与改动前一致：失败仍向上抛 ``httpx.HTTPError``，负缓存只是让同一故障
+    在 TTL 内只付一次超时代价，不会改变调用方看到的异常类型。
+    """
+    with _models_cache_lock:
+        return _load_models_locked(force=False)
 
 
 def create_chat_model(model_name: str, *, reasoning: Optional[bool | str] = None) -> ChatOllama:

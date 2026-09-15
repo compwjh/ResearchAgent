@@ -127,8 +127,10 @@ def _prior_tool_outputs(repo: MemoryRepository, conversation_id: str, *, exclude
 
 _CONTEXT_BREAKDOWN_LABELS = {
     "project_instructions": "项目指令",
-    "memory": "长期记忆 / 摘要",
-    "recall": "跨会话召回",
+    # spec-038 起 ``memories`` 表停用，``memory`` 段实际承载的是 spec-022 跨会话召回
+    # 注入的最近若干条会话摘要，故标注为「最近跨会话记忆」，而非笼统的「长期记忆 / 摘要」。
+    "memory": "最近跨会话记忆",
+    "recall": "按需跨会话检索",
     "file_memory": "文件记忆 (USER.md / MEMORY.md)",
     "rag": "知识库检索",
     "history": "会话历史",

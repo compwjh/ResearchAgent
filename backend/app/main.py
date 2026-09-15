@@ -16,6 +16,7 @@ from backend.app.knowledge_base.application import (
     FinalizeBundleStore,
 )
 from backend.app.platform.config import FRONTEND_DIR, KB_DIR
+from backend.app.platform.warmup import start_warmup
 
 
 @asynccontextmanager
@@ -41,6 +42,13 @@ async def lifespan(_app: FastAPI):
         # available for upload/list/health and never mutates the old
         # collection as a side effect of boot.
         print(f"[kb] index generation gate not ready: {getattr(error, 'code', 'INDEX_REBUILD_REQUIRED')}")
+
+    # 首屏就绪优化：在既有索引代次收尾之后，后台（非阻塞 daemon 线程）做预热编排。
+    # 任一预热项失败只记日志标 failed，绝不阻塞启动、绝不抛异常。
+    try:
+        start_warmup()
+    except Exception as error:  # 即使预热编排本身异常，也绝不影响服务启动
+        print(f"[warmup] 启动预热编排失败（已忽略）：{error}")
 
     try:
         yield
