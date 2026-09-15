@@ -969,7 +969,18 @@ class Orchestrator:
                     error_code=error_code,
                     resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
                 )
-                self._emit(task.research_task_id, "worker", self._worker_event_payload(updated, terminal, error_code=error_code) )
+                event_extra = {"error_code": error_code} if error_code else {}
+                if role == "search_worker" and terminal == "completed":
+                    search_id = completed_outputs.get(item.work_item_id, {}).get("search_id")
+                    if isinstance(search_id, str) and search_id.strip():
+                        with suppress(AttributeError, ValueError):
+                            self._store.set_task_search_id(task.research_task_id, search_id)
+                        event_extra["search_id"] = search_id.strip()
+                self._emit(
+                    task.research_task_id,
+                    "worker",
+                    self._worker_event_payload(updated, terminal, **event_extra),
+                )
         synthesis_artifact_id = None
         if self._memory_repository is not None:
             session = self._store.get_session_by_task(task.research_task_id, owner_id)
@@ -1527,6 +1538,12 @@ class Orchestrator:
                 self._worker_event_payload(failed_item, "failed", error_code=error_code),
             )
             return [], error_code
+        search_id = worker_output.get("search_id") if isinstance(worker_output, dict) else None
+        if isinstance(search_id, str) and search_id.strip():
+            # Persist only a server-owned opaque handle returned by the
+            # existing catalog adapter; never infer one from paper IDs.
+            with suppress(AttributeError, ValueError):
+                store.set_task_search_id(research_task_id, search_id)
         completed_item = store.update_work_item_status(
             item.work_item_id,
             "completed",
@@ -1538,7 +1555,12 @@ class Orchestrator:
         self._emit(
             research_task_id,
             "worker",
-            self._worker_event_payload(completed_item, "completed", catalog_paper_ids=ids),
+            self._worker_event_payload(
+                completed_item,
+                "completed",
+                catalog_paper_ids=ids,
+                **({"search_id": search_id} if isinstance(search_id, str) and search_id.strip() else {}),
+            ),
         )
         return ids, None
 

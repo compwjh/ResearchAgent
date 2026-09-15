@@ -30,6 +30,9 @@ class ResearchTask:
     updated_at: str
     project_id: str | None = None
     completed_at: str | None = None
+    # Server-owned catalog snapshot handle used by the Spec029 acquisition bridge.
+    # Keep it optional for pre-bridge tasks and legacy positional constructors.
+    search_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +51,7 @@ class ResearchTask:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
+            "search_id": self.search_id,
         }
 
     @classmethod
@@ -68,6 +72,7 @@ class ResearchTask:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             completed_at=row.get("completed_at"),
+            search_id=row.get("search_id"),
         )
 
 

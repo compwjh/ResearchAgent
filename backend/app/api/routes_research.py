@@ -372,6 +372,9 @@ def _task_summary(task) -> dict:
         "review_plan_first": bool(task.review_plan_first),
         "project_id": task.project_id,
         "conversation_id": task.conversation_id,
+        # Server-owned catalog snapshot handle; absent until a search worker
+        # returns a real handle.  Never infer or echo a client-supplied ID.
+        "search_id": getattr(task, "search_id", None),
         "created_at": task.created_at,
     }
 

@@ -50,6 +50,10 @@ class SearchOutcome:
     degraded: bool
     error_code: Optional[str]   # "SOURCE_DEGRADED" | "SOURCE_UNAVAILABLE" | None
     diagnostics: Mapping[str, Any] = field(default_factory=dict)
+    # Server-owned catalog search snapshot.  Optional keeps injected/offline
+    # searchers compatible while allowing the acquisition bridge to persist a
+    # real handle when the Spec015 graph created one.
+    search_id: Optional[str] = None
 
 
 class CatalogSearchUnavailable(RuntimeError):
@@ -252,7 +256,8 @@ class CatalogSearchAdapter:
             )
         if outcome.degraded and not outcome.error_code:
             return SearchOutcome(outcome.catalog_paper_ids, outcome.count, degraded=True,
-                                  error_code="SOURCE_DEGRADED", diagnostics=getattr(outcome, "diagnostics", {}))
+                                  error_code="SOURCE_DEGRADED", diagnostics=getattr(outcome, "diagnostics", {}),
+                                  search_id=getattr(outcome, "search_id", None))
         return outcome
 
     def _build_spec015_searcher(self) -> Callable[[SearchRequest], SearchOutcome]:
@@ -378,6 +383,7 @@ class CatalogSearchAdapter:
                 degraded=bool(getattr(current or job, "degraded", False) or not ids),
                 error_code=job_error,
                 diagnostics=diagnostics,
+                search_id=job.search_id,
             )
 
         return _searcher
@@ -441,13 +447,25 @@ class SearchWorker:
             "candidates": len(ids), "error_code": outcome.error_code,
             "degraded": bool(outcome.degraded),
         }
+        search_id = getattr(outcome, "search_id", None)
+        if (
+            isinstance(search_id, str)
+            and search_id.strip()
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", search_id.strip())
+        ):
+            search_id = search_id.strip()
+            diagnostics["search_id"] = search_id
+        else:
+            search_id = None
         output = {
             "schema_version": "search-worker-v1", "work_item_id": value.get("work_item_id", ""),
             "queries": [_safe_summary(mapped["query"])], "source": mapped["source"],
             "candidates": ids, "refresh_diagnostics": diagnostics,
-            "source_refs": [f"search:{value.get('work_item_id', 'unbound')}"],
+            "source_refs": [f"search:{search_id or value.get('work_item_id', 'unbound')}"],
             "safe_summary": diagnostics,
         }
+        if search_id is not None:
+            output["search_id"] = search_id
         output["output_hash"] = _safe_hash(output)
         return output
 

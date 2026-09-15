@@ -107,7 +107,7 @@ _EVENT_SAFE_KEYS = {
     "status", "goal_excerpt", "quality_profile", "target_paper_count", "review_plan_first",
     "plan_version", "previous_plan_version", "replan_round", "stop_reason", "reason",
     "facets", "items", "work_item_id", "task_type", "role", "model_tier", "resolved_model",
-    "worker_slot", "code", "error_code", "selected_count", "catalog_paper_ids", "search_worker",
+    "worker_slot", "code", "error_code", "selected_count", "catalog_paper_ids", "search_worker", "search_id",
     "coverage", "gaps", "recommendations", "bounded_replan", "approval_required", "evaluations",
     "statistics", "output_hash", "node_type", "node_key", "parent_node_key", "parent_source_event_id",
     "parent_step_id", "kind", "label", "summary", "display_order", "research_session_id",
@@ -436,6 +436,7 @@ class ResearchStore:
                 status TEXT NOT NULL,
                 current_plan_version INTEGER NOT NULL DEFAULT 1,
                 last_event_seq INTEGER NOT NULL DEFAULT 0,
+                search_id TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT
@@ -619,6 +620,15 @@ class ResearchStore:
         ):
             if name not in columns:
                 connection.execute(f"ALTER TABLE research_evidence_upgrades ADD COLUMN {name} {declaration}")
+        # Spec029 acquisition needs a durable server-owned catalog snapshot
+        # handle.  Keep this additive so pre-029 research databases remain
+        # readable without changing the schema version marker.
+        task_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(research_tasks)").fetchall()
+        }
+        if "search_id" not in task_columns:
+            connection.execute("ALTER TABLE research_tasks ADD COLUMN search_id TEXT")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_evidence_task ON research_evidence_upgrades(research_task_id)")
         # Existing Spec027 databases already contain a current selection but
         # no version row.  Seed it as version 1 without copying paper data.
@@ -982,8 +992,8 @@ class ResearchStore:
                     """INSERT INTO research_tasks(
                         research_task_id, owner_id, project_id, conversation_id, goal, language,
                         quality_profile, review_plan_first, target_paper_count, soft_budget_seconds,
-                        status, current_plan_version, last_event_seq, created_at, updated_at, completed_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        status, current_plan_version, last_event_seq, search_id, created_at, updated_at, completed_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         task.research_task_id,
                         task.owner_id,
@@ -998,6 +1008,7 @@ class ResearchStore:
                         task.status,
                         task.current_plan_version,
                         0,
+                        task.search_id,
                         created_at,
                         updated_at,
                         task.completed_at,
@@ -1005,6 +1016,43 @@ class ResearchStore:
                 )
                 row = conn.execute(
                     "SELECT * FROM research_tasks WHERE research_task_id=?", (task.research_task_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchTask.from_row(dict(row))
+
+    def set_task_search_id(self, research_task_id: str, search_id: str) -> ResearchTask:
+        """Persist the first valid server-owned catalog snapshot handle.
+
+        Search handles are opaque server values.  A task may fan out to more
+        than one search worker, so the first handle is retained as the stable
+        acquisition bridge and is never silently replaced by a later worker.
+        Callers must pass a non-empty bounded opaque identifier; no client URL
+        or snapshot contents are accepted here.
+        """
+        value = str(search_id or "").strip()
+        if not value or len(value) > 200 or re.search(r"[^A-Za-z0-9._:-]", value):
+            raise ValueError("invalid search_id")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=?",
+                    (research_task_id,),
+                ).fetchone()
+                if row is None:
+                    conn.rollback()
+                    raise ResearchTaskNotFound(research_task_id)
+                if row["search_id"] is None:
+                    conn.execute(
+                        "UPDATE research_tasks SET search_id=?, updated_at=? WHERE research_task_id=? AND search_id IS NULL",
+                        (value, _utcnow(), research_task_id),
+                    )
+                row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=?",
+                    (research_task_id,),
                 ).fetchone()
                 conn.commit()
             except Exception:
