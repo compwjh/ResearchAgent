@@ -209,6 +209,13 @@ def _validate_evaluator_scope(
     return True
 
 
+def _canonicalize_search_worker_binding(output: dict, *, work_item_id: str) -> dict:
+    """Replace the model-owned binding field with the runtime-owned item ID."""
+    normalized = dict(output)
+    normalized["work_item_id"] = work_item_id
+    return normalized
+
+
 @dataclass(frozen=True)
 class OrchestratorResult:
     """一次编排运行的收尾结果（不暴露内部异常细节）。"""
@@ -846,8 +853,16 @@ class Orchestrator:
                 continue
             terminal = result.status if result.status in {"completed", "failed", "cancelled", "limit_reached"} else "failed"
             semantic_error = None
-            if terminal == "completed" and role == "paper_evaluator" and isinstance(result.output_json, dict):
-                raw_output = dict(result.output_json)
+            normalized_output = result.output_json
+            if terminal == "completed" and role == "search_worker" and isinstance(normalized_output, dict):
+                # The runtime, rather than the model, owns the durable
+                # WorkItem binding; the model's presentation value is ignored.
+                normalized_output = _canonicalize_search_worker_binding(
+                    normalized_output,
+                    work_item_id=item.work_item_id,
+                )
+            if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
+                raw_output = dict(normalized_output)
                 # The evaluator may only retain candidates/ref IDs present in
                 # its Search Worker dependencies; a completed but out-of-scope
                 # model result is converted to a stable failed WorkItem.
@@ -861,18 +876,18 @@ class Orchestrator:
                 failed_ids.add(item.work_item_id)
             else:
                 completed_ids.add(item.work_item_id)
-                completed_outputs[item.work_item_id] = _work_item_output(result.output_json)
+                completed_outputs[item.work_item_id] = _work_item_output(normalized_output)
                 if role == "search_worker":
                     completed_search_evidence[item.work_item_id] = _catalog_evidence_view(
                         completed_outputs[item.work_item_id], result.tool_results
                     )
             error_code = result.error_code or semantic_error
-            if terminal == "completed" and role == "paper_evaluator" and isinstance(result.output_json, dict):
-                evaluator_outputs.append(dict(result.output_json))
-                evaluator_outputs_by_id[item.work_item_id] = dict(result.output_json)
+            if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
+                evaluator_outputs.append(dict(normalized_output))
+                evaluator_outputs_by_id[item.work_item_id] = dict(normalized_output)
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
-                synthesis_output = dict(result.output_json) if isinstance(result.output_json, dict) else None
+                synthesis_output = dict(normalized_output) if isinstance(normalized_output, dict) else None
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
             elif role == "synthesizer" and terminal != "completed":
                 synthesis_error = result.error_code or "AGENT_OUTPUT_INVALID"

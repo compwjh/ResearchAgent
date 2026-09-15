@@ -22,7 +22,7 @@ from backend.app.research.application.agent_runtime import (
     _ollama_model_factory,
     _OllamaRunnerAdapter,
 )
-from backend.app.research.application.orchestrator import _catalog_evidence_view
+from backend.app.research.application.orchestrator import _canonicalize_search_worker_binding, _catalog_evidence_view
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
 from backend.app.research.application.cleanup_snapshot import build_cross_store_snapshot_provider
 from backend.app.research.infrastructure.research_store import ResearchStore
@@ -85,6 +85,58 @@ def test_ollama_adapter_sends_role_contract_before_context():
     assert "download or import PDFs" in contract
     assert '"catalog_paper_ids"' in messages[1]["content"]
     assert response["output_json"]["schema_version"] == "runtime-v1"
+
+
+def test_ollama_adapter_evaluator_allows_title_only_catalog_evidence():
+    captured = {}
+
+    class Chat:
+        def invoke(self, messages):
+            captured["messages"] = messages
+            return SimpleNamespace(content='{}', tool_calls=[])
+
+    adapter = _OllamaRunnerAdapter(Chat(), model_name="test-model", effort="off")
+    adapter.invoke(
+        {
+            "role": "paper_evaluator",
+            "work_item_input": {
+                "catalog_paper_ids": ["paper-1"],
+                "catalog_evidence": [{
+                    "candidate_ids": ["paper-1"],
+                    "evidence_refs": ["catalog:paper-1"],
+                    "summary": "1. Exact title match\n   摘要: （缺失）",
+                }],
+            },
+        },
+    )
+
+    contract = captured["messages"][0]["content"]
+    assert "metadata-only" in contract
+    assert "Do not invent abstract/content claims" in contract
+
+
+def test_ollama_adapter_synthesizer_requires_bounded_delivery_shape():
+    captured = {}
+
+    class Chat:
+        def invoke(self, messages):
+            captured["messages"] = messages
+            return SimpleNamespace(content="{}", tool_calls=[])
+
+    adapter = _OllamaRunnerAdapter(Chat(), model_name="test-model", effort="off")
+    adapter.invoke(
+        {
+            "role": "synthesizer",
+            "work_item_input": {
+                "validated_candidates": [{"candidate_id": "paper-1", "evidence_refs": ["catalog:paper-1"]}],
+            },
+        },
+    )
+
+    contract = captured["messages"][0]["content"]
+    assert "sections must be a non-empty array" in contract
+    assert "artifact_ids must be an empty array" in contract
+    assert "Do not include section summaries" in contract
 
 
 def test_approve_plan_dispatches_materialized_task_to_existing_research_service(tmp_path):
@@ -386,6 +438,85 @@ def test_search_worker_deduplicates_repeated_readonly_tool_calls_before_output()
     assert result.output_json["candidates"] == ["paper-1"]
     assert len(search.calls) == 1
     assert any(item.get("result_id") == "TOOL_ALREADY_EXECUTED" for item in result.tool_results)
+
+
+def test_search_worker_recovers_catalog_ids_when_model_never_emits_final_json():
+    search = FakeTool(
+        "search_paper_catalog",
+        lambda _args: {
+            "ok": True,
+            "result_id": "search-1",
+            "output": "检索完成：来源=USENIX Security，命中 1 篇候选论文。\n"
+            "1. Paper\n   catalog_paper_id: paper-1",
+        },
+        parameters={
+            "type": "object",
+            "properties": {"source": {"type": "string"}, "query": {"type": "string"}},
+            "required": ["source", "query"],
+        },
+    )
+    model = FakeModel([
+        {"tool_calls": [{"name": "search_paper_catalog", "arguments": {"source": "usenix", "query": "supply chain"}}]},
+        {"output_json": {}},
+    ])
+    registry = RoleCapabilityRegistry(
+        skills=[_runtime_skill("search_worker", ["search_paper_catalog"])],
+        tools=[search],
+    )
+
+    result = ResearchAgentRunner(model=model, capability_registry=registry).run(
+        AgentRunInput(
+            "search-recover",
+            "session-1",
+            "search_worker",
+            research_task_id="task-1",
+            work_item_id="search-1",
+            work_item_input={"query": "supply chain", "sources": ["usenix"]},
+            skill_snapshot=_runtime_skill("search_worker", ["search_paper_catalog"]),
+            tool_snapshot=[search],
+        )
+    )
+
+    assert result.status == "completed", f"{result.error_code}: {result.to_dict()}"
+    assert result.output_json["candidates"] == ["paper-1"]
+    assert result.output_json["refresh_diagnostics"]["recovered_from_catalog_tool"] is True
+    assert result.output_json["refresh_diagnostics"]["metadata_only"] is True
+
+
+def test_search_worker_replaces_schema_valid_empty_candidates_with_catalog_facts():
+    search = FakeTool(
+        "search_paper_catalog",
+        lambda _args: {"ok": True, "result_id": "search-2", "output": "catalog_paper_id: paper-2"},
+        parameters={"type": "object", "properties": {"source": {"type": "string"}, "query": {"type": "string"}}, "required": ["source", "query"]},
+    )
+    valid_empty = _runtime_output("search_worker")
+    valid_empty.update({"candidates": [], "work_item_id": "usenix-catalog-orchestration"})
+    model = FakeModel([
+        {"tool_calls": [{"name": "search_paper_catalog", "arguments": {"source": "usenix", "query": "supply chain"}}]},
+        {"output_json": valid_empty},
+    ])
+    skill = _runtime_skill("search_worker", ["search_paper_catalog"])
+    result = ResearchAgentRunner(
+        model=model,
+        capability_registry=RoleCapabilityRegistry(skills=[skill], tools=[search]),
+    ).run(AgentRunInput(
+        "search-recover-valid-empty", "session-1", "search_worker", research_task_id="task-1", work_item_id="task:s1",
+        work_item_input={"query": "supply chain", "sources": ["usenix"]}, skill_snapshot=skill, tool_snapshot=[search],
+    ))
+    assert result.status == "completed"
+    assert result.output_json["candidates"] == ["paper-2"]
+
+
+def test_search_worker_binding_is_owned_by_runtime_not_model_output():
+    normalized = _canonicalize_search_worker_binding(
+        {"work_item_id": "usenix-catalog-orchestration", "candidates": ["paper-1"]},
+        work_item_id="task:s1",
+    )
+    assert normalized["work_item_id"] == "task:s1"
+    assert _canonicalize_search_worker_binding(
+        {"work_item_id": "other-task:s1"},
+        work_item_id="task:s1",
+    )["work_item_id"] == "task:s1"
 
 
 def test_search_worker_normalizes_rich_candidates_to_catalog_ids():

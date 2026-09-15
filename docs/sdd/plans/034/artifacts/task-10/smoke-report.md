@@ -111,3 +111,20 @@ RERANKER_ENABLED=false ./deploy/start.sh
 - Evaluator Skill 真实执行完成（事件 `...:10`），但仍以 `UPSTREAM_WORK_ITEM_FAILED`、`selected_count=0`、Session/Task=`partial` 终止（事件 `...:11`），无 Artifact。
 
 q4 与 MLX 两种本地模型产生相同的 fail-closed 终态，说明当前阻塞不是单一模型档位；在没有真实 `keep=true`/证据引用时，不能为了收口而放宽验证或伪造报告。
+
+## 2026-09-15 Search Worker 事实恢复与绑定修复复验
+
+本轮针对真实运行暴露的两个运行时缺口做了最小修复，并只运行 Task10 定向集合（`49 passed`）：
+
+- Search Worker 的模型输出即使 JSON 合法但 `candidates=[]`，或模型没有输出 JSON，只要只读目录 Tool 已返回稳定 `catalog_paper_ids`，Runner 就恢复为 metadata-only 结果；恢复结果只复制 Tool 已给出的 ID，并标记 `recovered_from_catalog_tool`/`metadata_only`。
+- Search Worker 的 `work_item_id` 不再由模型决定；Orchestrator 始终将它绑定到当前持久化 WorkItem，避免 Skill 名或模型自造 ID 清空下游证据白名单。
+- Evaluator Prompt 明确允许“标题直接匹配、摘要缺失”的元数据级保留，并禁止编造正文；Synthesizer Prompt 固定 `sections[{heading,candidate_ids}]`、allowlisted `citation_manifest` 和空 `artifact_ids`。
+
+受控真实复验任务：
+
+- `7258870c7f515345bea0ee1c1d65fee2`：搜索完成、评估完成；模型返回 `keep=true`，但旧绑定字段导致上游证据被清空（修复前基线）。
+- `d2851a97239c5909ae8318a0717586eb`：修复后搜索候选被正确恢复，模型未保留可验证候选，安全收口 `partial`。
+- `4506b221be8c5d2692722b32048b8f89`：修复后 Search→Evaluator 运行，模型未保留可验证候选，安全收口 `partial`。
+- `e60f3d243e5754bd98f334b51831218c`：更宽的 logging 目录样本，模型仅返回低相关 `keep=false`，安全收口 `partial`。
+
+这些结果证明候选事实已能稳定传递到评估边界，但当前本地模型/外部目录组合没有形成 `keep=true` 的最终证据，故不能宣称报告 Artifact 成功；服务临时端口 `18080–18082` 已全部停止。

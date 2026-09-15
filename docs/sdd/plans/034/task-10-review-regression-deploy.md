@@ -48,5 +48,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：需求/技术/验收评审、测试报告、Smoke 证据、部署记录和 retro。
-- 执行结果：实施中（代码与自动化门禁通过，真实 Smoke 阻塞）。最终全量 pytest 通过 `1863 passed, 5 warnings, 52 subtests`；后续 Task10 定向集合 `80 passed`。服务/页面 health 与浏览器可达，Intake→Plan→Approval→Runner→三级事件流真实通过；并已修复重复只读 Tool、WorkItem 依赖命名空间、Search→Evaluator bounded 证据交接和角色 JSON 合同。2026-09-15 受控 smoke 进一步确认：真实 USENIX 目录检索可命中稳定候选，详情来源失败和最小元数据评估均以 `partial`/`UPSTREAM_WORK_ITEM_FAILED` 收口，仍未产生 `keep=true` 证据和报告 Artifact；因此不标记完成。详见 `artifacts/task-10/smoke-report.md`、`smoke-evidence-path.md` 与 `acceptance-review-final.md`。
-- 变更日志：2026-09-15 启动 Task10；Task09 双端最终复审 GO，进入 Spec034 最终验收阶段。修复 reasoning capability 与 Spec027 兼容回归后全量回归归零；真实模型 Smoke 留有真实失败证据，不新增 Spec028/030 范围。
+- 执行结果：实施中（代码与自动化门禁通过，真实 Smoke 仍受本地模型证据选择阻塞）。最终全量 pytest 通过 `1863 passed, 5 warnings, 52 subtests`；本轮 Task10 定向集合 `49 passed`。服务/页面 health 与 Intake→Plan→Approval→Runner→三级事件流真实通过；本轮修复了 Search Worker 丢弃目录候选、模型伪造 WorkItem 绑定、评估仅标题元数据时的提示边界，以及 Synthesizer 交付形状约束。三次真实 USENIX smoke 均安全收口为 `partial`：搜索和评估可完成，但本地模型在随机目录候选中未保留 `keep=true` 的可验证证据，因此没有生成报告 Artifact；未放宽证据校验或伪造成功。详见 `artifacts/task-10/smoke-report.md`、`smoke-evidence-path.md` 与 `acceptance-review-final.md`。
+- 变更日志：2026-09-15 启动 Task10；Task09 双端最终复审 GO，进入 Spec034 最终验收阶段。补齐 Search→Evaluator 运行时事实恢复与 WorkItem 绑定归一化，定向回归 49 passed；真实模型 Smoke 保留真实失败证据，不新增 Spec028/030 范围。
