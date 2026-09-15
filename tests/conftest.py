@@ -38,3 +38,20 @@ def _isolate_capability_db(tmp_path):
     yield
     capability_store.set_db_path(None)
     clear_reasoning_capability_cache()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ollama_model_cache():
+    """Do not let a sandbox/network failure poison another test's mock call.
+
+    The production model catalogue intentionally keeps a short negative cache.
+    Tests must start from an empty cache so ordering cannot make a patched
+    ``httpx.get`` call observe an earlier transport failure.
+    """
+    from backend.app.platform import ollama
+
+    ollama._models_cache.update(expires_at=0.0, models=None)
+    ollama._models_failure.update(expires_at=0.0, error=None)
+    yield
+    ollama._models_cache.update(expires_at=0.0, models=None)
+    ollama._models_failure.update(expires_at=0.0, error=None)

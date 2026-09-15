@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（Task04，全文 RAG 与证据升级）**
+**当前状态：实施中（Task06，最终评审、回归与部署）**
 
 ## 一句话目标
 
@@ -79,8 +79,8 @@
 | 01 | 编写 Spec029 | 本文件 | — | 完成 |
 | 02 | 复用审计与全文证据协议门 | [`task-02-reuse-and-evidence-gate.md`](../plans/029/task-02-reuse-and-evidence-gate.md) | Spec027/028、确认、双评审 | 已完成（NO-GO，桥接缺口已冻结） |
 | 03 | 接通候选确认与既有批量导入 | [`task-03-acquisition-approval-import.md`](../plans/029/task-03-acquisition-approval-import.md) | 02 | 已完成 |
-| 04 | 接通全文 RAG 与证据升级 | [`task-04-fulltext-evidence-upgrade.md`](../plans/029/task-04-fulltext-evidence-upgrade.md) | 03 | 待执行 |
-| 05 | 实现导入进度与失败恢复界面 | [`task-05-acquisition-progress-ui.md`](../plans/029/task-05-acquisition-progress-ui.md) | 03、04 | 待执行 |
+| 04 | 接通全文 RAG 与证据升级 | [`task-04-fulltext-evidence-upgrade.md`](../plans/029/task-04-fulltext-evidence-upgrade.md) | 03 | 已完成 |
+| 05 | 实现导入进度与失败恢复界面 | [`task-05-acquisition-progress-ui.md`](../plans/029/task-05-acquisition-progress-ui.md) | 03、04 | 已完成 |
 | 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/029/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
 
 ## 评审记录

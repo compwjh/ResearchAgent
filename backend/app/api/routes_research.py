@@ -50,6 +50,8 @@ from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
 from backend.app.research.application.entry import (
+    EvidenceUpgradeError,
+    EvidenceUpgradeService,
     ResearchAcquisitionError,
     ResearchAcquisitionService,
     ResearchServiceError,
@@ -137,6 +139,19 @@ class ResearchAcquisitionRequest(BaseModel):
         return normalized
 
 
+class ResearchEvidenceUpgradeRequest(BaseModel):
+    """Full-text claim upgrade; document ids are checked against Research links."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    claim_id: str = Field(min_length=1, max_length=200)
+    question: str = Field(min_length=1, max_length=4000)
+    document_ids: list[str] = Field(min_length=1, max_length=20)
+    from_level: str = Field(default="abstract", min_length=1, max_length=32)
+    chunker: Literal["v1", "v2"] = "v1"
+    top_k: int = Field(default=5, ge=1, le=50)
+
+
 class ResearchTaskPatchProjectRequest(BaseModel):
     """移动/解绑项目归属；``project_id`` 为 null 表示解绑（可显式传 null）。"""
 
@@ -147,6 +162,14 @@ class ResearchTaskPatchProjectRequest(BaseModel):
 
 class ResearchTaskResumeRequest(BaseModel):
     """Optional durable SchedulerCheckpoint envelope for a paused task."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint: Optional[dict[str, object]] = None
+
+
+class ResearchTaskRecoverRequest(BaseModel):
+    """Optional checkpoint envelope for a safe interrupted-task inspection."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -229,6 +252,14 @@ def _paper_batch_service():
 
 def _acquisition_service() -> ResearchAcquisitionService:
     return ResearchAcquisitionService(_store(), _paper_batch_service())
+
+
+def _evidence_upgrade_service() -> EvidenceUpgradeService:
+    """Resolve the Task04 facade, allowing isolated tests to inject a service."""
+    try:
+        return get_provider("research_evidence_service")
+    except KeyError:
+        return EvidenceUpgradeService(_store())
 
 
 def _acquisition_error(exc: ResearchAcquisitionError) -> JSONResponse:
@@ -1146,6 +1177,33 @@ def get_research_acquisition(research_task_id: str):
         return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "论文导入依赖暂时不可用"))
 
 
+@router.post("/{research_task_id}/evidence-upgrade", status_code=202)
+def upgrade_research_evidence(research_task_id: str, payload: ResearchEvidenceUpgradeRequest):
+    """Upgrade one claim from abstract evidence to a verified full-text locator."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        result = _evidence_upgrade_service().upgrade(
+            research_task_id,
+            claim_id=payload.claim_id,
+            question=payload.question,
+            document_ids=payload.document_ids,
+            from_level=payload.from_level,
+            chunker=payload.chunker,
+            top_k=payload.top_k,
+        )
+        return result.to_dict()
+    except EvidenceUpgradeError as exc:
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"error": {"code": exc.code, "message": exc.message}},
+        )
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research evidence upgrade failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "全文证据依赖暂时不可用"))
+
+
 @router.get("/{research_task_id}/events")
 def stream_research_events(research_task_id: str, request: Request, after_seq: int = Query(0, ge=0)):
     """SSE 事件流：先持久化再推送，只带安全 payload；支持 `Last-Event-ID`（优先于 query）。
@@ -1365,6 +1423,30 @@ def resume_research_task(
         "status": task.status,
         "current_plan_version": task.current_plan_version,
     }
+
+
+@router.post("/{research_task_id}/recover")
+def recover_research_task(
+    research_task_id: str,
+    payload: ResearchTaskRecoverRequest | None = None,
+):
+    """Inspect and safely recover durable ownership/checkpoint state.
+
+    The endpoint never reopens an interrupted terminal task or replays an
+    external call with an unknown result; it returns a bounded recovery
+    summary for the UI/operator to review.
+    """
+    try:
+        return _service().recover(
+            research_task_id,
+            OWNER_ID,
+            checkpoint=payload.checkpoint if payload is not None else None,
+        )
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research task recovery inspection failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究恢复依赖暂时不可用"))
 
 
 @router.patch("/{research_task_id}/project")

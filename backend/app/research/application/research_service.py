@@ -403,6 +403,87 @@ class ResearchService:
         self.start(research_task_id, owner_id)
         return updated
 
+    def recover(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        *,
+        checkpoint: dict | None = None,
+    ) -> dict:
+        """Perform a safe, user-triggered recovery inspection.
+
+        Recovery deliberately does not reopen an ``interrupted`` terminal
+        task or replay an external call whose result is unknown.  It reuses
+        the durable scheduler's expiry recovery and the same checkpoint
+        validator used by ``resume``; the returned summary tells the client
+        which nodes are complete, queued, or still require an explicit
+        checkpoint review.
+        """
+        task = self.get_task(research_task_id, owner_id)
+        if task.status not in {"interrupted", "recovery_required"}:
+            if task.status in TASK_TERMINAL:
+                raise ResearchServiceError(
+                    "TASK_TERMINAL_CONFLICT", 409, f"task already terminal: {task.status}"
+                )
+            raise ResearchServiceError(
+                "INVALID_STATE_TRANSITION", 409, f"{task.status} 不支持恢复检查"
+            )
+
+        # The scheduler is the sole owner of lease/reservation expiry
+        # recovery.  Import lazily to keep the service import graph stable.
+        from backend.app.research.application.scheduler import ResearchScheduler
+
+        scheduler = ResearchScheduler(self._store, recover_on_start=False)
+        scheduler_summary = scheduler.recover()
+        items = self._store.list_work_items(research_task_id)
+        active_owners: list[str] = []
+        for item in items:
+            lease = self._store.get_scheduler_lease(item.work_item_id)
+            if lease is not None and lease.owner_token and lease.expires_at:
+                active_owners.append(item.work_item_id)
+        if active_owners:
+            raise ResearchServiceError(
+                "TASK_RUNNING_CONFLICT", 409, "任务仍由其它 Worker 持有有效租约"
+            )
+
+        if checkpoint is not None:
+            self._validate_resume_checkpoint(task, checkpoint)
+
+        counts = {status: sum(item.status == status for item in items) for status in (
+            "queued", "running", "completed", "failed", "cancelled", "interrupted"
+        )}
+        summary = {
+            "research_task_id": research_task_id,
+            # This is a projection, not a persisted state transition.  The
+            # task remains interrupted until an operator supplies a validated
+            # recovery plan/checkpoint; unknown external work is never replayed.
+            "status": "recovery_required",
+            "task_status": task.status,
+            "current_plan_version": task.current_plan_version,
+            "checkpoint": {
+                "provided": checkpoint is not None,
+                "validated": checkpoint is not None,
+            },
+            "scheduler": scheduler_summary,
+            "work_items": counts,
+            "requires_checkpoint": counts["interrupted"] > 0 or not items,
+        }
+        self._store.append_event(
+            research_task_id,
+            "task",
+            {
+                "status": task.status,
+                "reason": "manual_recovery_inspection",
+                "statistics": {
+                    "completed": counts["completed"],
+                    "queued": counts["queued"],
+                    "interrupted": counts["interrupted"],
+                    "checkpoint_validated": checkpoint is not None,
+                },
+            },
+        )
+        return summary
+
     def _validate_resume_checkpoint(self, task: ResearchTask, checkpoint: dict) -> None:
         """Validate an optional scheduler checkpoint without executing it."""
         if not isinstance(checkpoint, dict):

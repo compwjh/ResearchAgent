@@ -491,6 +491,10 @@ class EvidenceUpgrade:
     page: int | None = None
     page_end: int | None = None
     created_at: str = ""
+    source_sha256: str | None = None
+    manifest_generation: str | None = None
+    manifest_fingerprint: str | None = None
+    chunker: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -504,6 +508,10 @@ class EvidenceUpgrade:
             "page": self.page,
             "page_end": self.page_end,
             "created_at": self.created_at,
+            "source_sha256": self.source_sha256,
+            "manifest_generation": self.manifest_generation,
+            "manifest_fingerprint": self.manifest_fingerprint,
+            "chunker": self.chunker,
         }
 
     @classmethod
@@ -518,11 +526,15 @@ class EvidenceUpgrade:
             to_level=row["to_level"],
             chunk_ids=[str(value) for value in chunk_ids] if isinstance(chunk_ids, list) else [],
             status=row["status"],
-            task_id=row.get("task_id"),
+            task_id=row.get("task_id", row.get("research_task_id")),
             document_id=row.get("document_id"),
             page=row.get("page"),
             page_end=row.get("page_end"),
             created_at=row.get("created_at", ""),
+            source_sha256=row.get("source_sha256"),
+            manifest_generation=row.get("manifest_generation"),
+            manifest_fingerprint=row.get("manifest_fingerprint"),
+            chunker=row.get("chunker"),
         )
 
 

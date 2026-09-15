@@ -1,17 +1,17 @@
 # Spec 029 执行计划：全文获取与知识库联动
 
 > 关联：[Spec 029](../../specs/029-research-fulltext-acquisition.md)
-> 当前状态：实施中（Task04，全文 RAG 与证据升级）。
+> 当前状态：等待 Task06 收口。
 
 ## 任务索引
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
-| [02](./task-02-reuse-and-evidence-gate.md) | 证明既有下载、导入、KB 接缝可直接复用 | Spec027/028、确认、双评审 | 待执行 |
-| [03](./task-03-acquisition-approval-import.md) | 候选确认和批量导入接线 | 02 | 待执行 |
-| [04](./task-04-fulltext-evidence-upgrade.md) | 全文 RAG 与证据等级升级 | 03 | 待执行 |
-| [05](./task-05-acquisition-progress-ui.md) | 进度、登录等待与重试交互 | 03、04 | 待执行 |
-| [06](./task-06-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 02–05 | 待执行 |
+| [02](./task-02-reuse-and-evidence-gate.md) | 证明既有下载、导入、KB 接缝可直接复用 | Spec027/028、确认、双评审 | 已完成（NO-GO，桥接缺口已冻结） |
+| [03](./task-03-acquisition-approval-import.md) | 候选确认和批量导入接线 | 02 | 已完成 |
+| [04](./task-04-fulltext-evidence-upgrade.md) | 全文 RAG 与证据等级升级 | 03 | 已完成 |
+| [05](./task-05-acquisition-progress-ui.md) | 进度、登录等待与重试交互 | 03、04 | 已完成 |
+| [06](./task-06-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 02–05 | 实施中 |
 
 ## 统一规则
 

@@ -43,7 +43,16 @@
     proposed: '待执行', active: '执行中', superseded: '已被新版本替代',
     completed: '已完成', rejected: '已拒绝',
   };
-  const EVIDENCE_TEXT = { catalog: '目录证据', abstract: '摘要证据' };
+  const EVIDENCE_TEXT = { catalog: '目录证据', abstract: '摘要证据', fulltext: '全文证据' };
+  const ACQUISITION_STATUS_TEXT = {
+    existing: '已有知识库', pending: '待导入', queued: '排队中', downloading: '下载中', processing: '处理中',
+    indexing: '索引中', completed: '已完成', partial_success: '部分完成', waiting_login: '等待登录',
+    needs_login: '需要登录', failed: '失败', unavailable: '来源不可用', cancelled: '已取消', interrupted: '已中断',
+  };
+  const ACQUISITION_ERROR_TEXT = {
+    DOWNLOAD_TIMEOUT: '下载超时，可重试。', IMPORT_INTERRUPTED: '导入被中断，可重试。',
+    SEARCH_EXPIRED: '搜索快照已过期，请刷新候选。', INVALID_SEARCH_SNAPSHOT: '搜索候选快照无效。',
+  };
   const TASK_TYPE_TEXT = {
     search_catalog: '目录检索', evaluate_papers: '论文评估', check_coverage: '覆盖检查',
     replan: 'Re-plan', synthesize_preliminary_report: '报告合成',
@@ -104,18 +113,24 @@
     createIdempotencyKey: null,
     triggerMessageId: null,
     taskActionInFlight: false,
+    acquisition: {
+      preview: [], status: null, links: [], items: [], events: [], evidence: [], selectionVersion: null,
+      selectedIds: new Set(), searchId: null, loading: false, confirming: false,
+      retrying: new Set(), pollTimer: null, generation: 0,
+    },
   };
 
   const TASK_ACTION_PATHS = Object.freeze({
-    pause: 'pause', resume: 'resume', approve: 'feedback', cancel: 'cancel',
+    pause: 'pause', resume: 'resume', approve: 'feedback', cancel: 'cancel', recover: 'recover',
   });
-  const TASK_ACTION_LABELS = Object.freeze({ pause: '暂停研究', resume: '继续研究', approve: '批准计划', cancel: '取消当前任务' });
-  const TASK_ACTION_CONFIRM_LABELS = Object.freeze({ pause: '再次点击确认暂停', resume: '再次点击确认继续', approve: '再次点击确认批准', cancel: '再次点击确认取消' });
+  const TASK_ACTION_LABELS = Object.freeze({ pause: '暂停研究', resume: '继续研究', approve: '批准计划', cancel: '取消当前任务', recover: '检查并恢复' });
+  const TASK_ACTION_CONFIRM_LABELS = Object.freeze({ pause: '再次点击确认暂停', resume: '再次点击确认继续', approve: '再次点击确认批准', cancel: '再次点击确认取消', recover: '再次点击确认恢复' });
   const TASK_ACTION_STATUSES = Object.freeze({
     pause: new Set(['planning', 'running', 'waiting_approval']),
     resume: new Set(['paused']),
     approve: new Set(['waiting_approval']),
     cancel: new Set(['queued', 'planning', 'running', 'paused', 'waiting_approval']),
+    recover: new Set(['interrupted', 'recovery_required']),
   });
 
   function safeArtifactUrl(value) {
@@ -662,13 +677,13 @@
   function setDetailVisibility(visible) {
     const empty = byId('research-detail-empty');
     if (empty) empty.hidden = visible;
-    ['research-plan-section', 'research-session-plan-section', 'research-timeline-section', 'research-selection-section'].forEach((id) => { const node = byId(id); if (node && !visible) node.hidden = true; });
+    ['research-plan-section', 'research-session-plan-section', 'research-timeline-section', 'research-selection-section', 'research-acquisition-section'].forEach((id) => { const node = byId(id); if (node && !visible) node.hidden = true; });
   }
 
   function taskActionButton(action) {
     const ids = {
       pause: 'research-task-pause-button', resume: 'research-task-resume-button',
-      approve: 'research-task-approve-button', cancel: 'research-cancel-button',
+      approve: 'research-task-approve-button', cancel: 'research-cancel-button', recover: 'research-task-recover-button',
     };
     return byId(ids[action]);
   }
@@ -723,6 +738,7 @@
     if (action === 'pause') return `/api/research-tasks/${encodeURIComponent(taskId)}/pause`;
     if (action === 'resume') return `/api/research-tasks/${encodeURIComponent(taskId)}/resume`;
     if (action === 'cancel') return `/api/research-tasks/${encodeURIComponent(taskId)}/cancel`;
+    if (action === 'recover') return `/api/research-tasks/${encodeURIComponent(taskId)}/recover`;
     // Keep the legacy task approval route behind the action allowlist; the
     // Session/Approval card remains the canonical path for Session-first work.
     return `/api/research-tasks/${encodeURIComponent(taskId)}/${TASK_ACTION_PATHS[action]}`;
@@ -747,7 +763,9 @@
       state.sessions = state.tasks;
       state.statusNotice = action === 'pause' ? '研究任务已暂停，已完成证据与检查点会保留。'
         : action === 'resume' ? '研究任务已继续，系统从持久化进度接着执行。'
-          : action === 'approve' ? '计划已批准，研究任务正在继续。' : '研究会话已取消，后续节点不会继续创建。';
+          : action === 'approve' ? '计划已批准，研究任务正在继续。'
+            : action === 'recover' ? '恢复检查完成：已清理过期租约并返回检查点摘要，未知节点不会被自动重放。'
+              : '研究会话已取消，后续节点不会继续创建。';
       setTaskActionState(button, 'success', `${TASK_ACTION_LABELS[action]}已完成`);
       renderTaskHeader(state.selectedTask, { preserveActions: true });
       renderTaskList();
@@ -1113,6 +1131,249 @@
     if (section && !treeHost.hidden) section.hidden = false;
   }
 
+  function acquisitionStatusLabel(status) { return ACQUISITION_STATUS_TEXT[status] || '处理中'; }
+
+  function acquisitionErrorText(code) {
+    const value = typeof code === 'string' ? code : '';
+    return ACQUISITION_ERROR_TEXT[value] || (value ? `错误码：${value}` : '导入失败，可重试。');
+  }
+
+  function resolveAcquisitionSearchId(task = state.selectedTask, report = state.report) {
+    const candidates = [
+      task?.search_id, task?.catalog_search_id, task?.research_search_id,
+      task?.plan?.search_id, task?.research_session?.search_id,
+      report?.search_id, report?.catalog_search_id,
+    ];
+    return candidates.find((value) => typeof value === 'string' && /^[A-Za-z0-9._~-]{1,200}$/.test(value)) || null;
+  }
+
+  function acquisitionCandidates() {
+    const reportValues = Array.isArray(state.reportSelections) ? state.reportSelections : [];
+    return reportValues.filter((value) => value && typeof value === 'object' && typeof value.catalog_paper_id === 'string' && value.catalog_paper_id.trim()).map((value) => ({
+      ...value, catalog_paper_id: value.catalog_paper_id.trim(),
+    })).slice(0, 20);
+  }
+
+  function acquisitionPreviewMap() {
+    return new Map((Array.isArray(state.acquisition.preview) ? state.acquisition.preview : []).map((item) => [String(item?.catalog_paper_id || ''), item]));
+  }
+
+  function acquisitionProjectedItems() {
+    const links = Array.isArray(state.acquisition.links) ? state.acquisition.links : [];
+    const items = Array.isArray(state.acquisition.items) ? state.acquisition.items : [];
+    const byId = new Map();
+    [...links, ...items].forEach((item) => {
+      const id = String(item?.catalog_paper_id || item?.candidate_id || item?.paper_id || '');
+      if (!id) return;
+      byId.set(id, { ...(byId.get(id) || {}), ...item, catalog_paper_id: id });
+    });
+    return [...byId.values()];
+  }
+
+  function acquisitionIsTerminal(status) {
+    return ['completed', 'partial_success', 'failed', 'cancelled'].includes(String(status || ''));
+  }
+
+  function setAcquisitionStatus(message, status = '') {
+    const node = byId('research-acquisition-status');
+    if (!node) return;
+    node.textContent = message || (status ? acquisitionStatusLabel(status) : '');
+    node.dataset.status = status;
+  }
+
+  function renderAcquisitionEvidence(values) {
+    const section = byId('research-evidence-upgrades');
+    const list = byId('research-evidence-list');
+    if (!section || !list) return;
+    clearNode(list); section.hidden = true;
+    const upgrades = (Array.isArray(values) ? values : []).filter((item) => item && typeof item === 'object').slice(0, 128);
+    upgrades.forEach((upgrade) => {
+      const item = state.document.createElement('li'); item.className = 'research-evidence-item'; item.dataset.status = String(upgrade.status || '');
+      const head = state.document.createElement('div'); head.className = 'research-evidence-item-head';
+      const title = state.document.createElement('strong'); title.className = 'research-evidence-title'; title.textContent = `Claim ${text(upgrade.claim_id, '未知')} · ${EVIDENCE_TEXT[upgrade.to_level] || text(upgrade.to_level, '证据')}`;
+      const status = state.document.createElement('span'); status.className = 'research-acquisition-badge'; status.dataset.status = String(upgrade.status || ''); status.textContent = text(upgrade.status, '已记录');
+      head.append(title, status);
+      const meta = state.document.createElement('p'); meta.className = 'research-evidence-meta';
+      const page = Number(upgrade.page); const pageEnd = Number(upgrade.page_end);
+      const pageText = Number.isInteger(page) && page > 0 ? ` · 原文第 ${pageEnd > page ? `${page}–${pageEnd}` : page} 页` : '';
+      meta.textContent = `文档：${text(upgrade.document_id, '未知')}${pageText}${Array.isArray(upgrade.chunk_ids) && upgrade.chunk_ids.length ? ` · ${upgrade.chunk_ids.length} 个切片` : ''}`;
+      const actions = state.document.createElement('div'); actions.className = 'research-acquisition-item-actions';
+      if (upgrade.document_id && (upgrade.status === 'upgraded' || upgrade.status === 'revalidation_required')) {
+        const locator = state.document.createElement('button'); locator.type = 'button'; locator.className = 'secondary-button research-evidence-locator'; locator.textContent = '打开原文切片';
+        locator.dataset.documentId = String(upgrade.document_id); locator.dataset.chunkIds = Array.isArray(upgrade.chunk_ids) ? upgrade.chunk_ids.map(String).join(' ') : '';
+        locator.addEventListener('click', () => {
+          if (typeof root.jumpToKnowledgeBase === 'function') root.jumpToKnowledgeBase(String(upgrade.document_id));
+          else if (root.location) root.location.hash = '#kb-view';
+        });
+        actions.appendChild(locator);
+      }
+      item.append(head, meta, actions); list.appendChild(item);
+    });
+    section.hidden = list.childNodes.length === 0;
+  }
+
+  function renderAcquisition() {
+    const section = byId('research-acquisition-section');
+    const list = byId('research-acquisition-candidates');
+    if (!section || !list) return;
+    const candidates = acquisitionCandidates();
+    const projected = acquisitionProjectedItems();
+    const preview = acquisitionPreviewMap();
+    const hasAcquisition = candidates.length > 0 || projected.length > 0 || state.acquisition.status;
+    section.hidden = !hasAcquisition;
+    clearNode(list);
+    candidates.forEach((candidate) => {
+      const id = candidate.catalog_paper_id;
+      const classified = preview.get(id) || {};
+      const projectedItem = projected.find((item) => item.catalog_paper_id === id) || {};
+      const status = String(projectedItem.status || classified.status || 'pending');
+      const row = state.document.createElement('li'); row.className = 'research-acquisition-candidate'; row.dataset.paperId = id; row.dataset.status = status;
+      const head = state.document.createElement('div'); head.className = 'research-acquisition-candidate-head';
+      const label = state.document.createElement('label');
+      const checkbox = state.document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = state.acquisition.selectedIds.has(id); checkbox.dataset.paperId = id;
+      checkbox.setAttribute('aria-label', `选择全文候选 ${id}`);
+      checkbox.addEventListener('change', () => { if (checkbox.checked) state.acquisition.selectedIds.add(id); else state.acquisition.selectedIds.delete(id); renderAcquisition(); });
+      const title = state.document.createElement('span'); title.className = 'research-acquisition-candidate-title'; title.textContent = `目录论文：${id}`;
+      label.append(checkbox, title);
+      const badge = state.document.createElement('span'); badge.className = 'research-acquisition-badge'; badge.dataset.status = status; badge.textContent = acquisitionStatusLabel(status);
+      head.append(label, badge);
+      const meta = state.document.createElement('p'); meta.className = 'research-acquisition-item-meta'; meta.textContent = `相关性：${text(candidate.relevance)} · ${evidenceLabel(candidate.evidence_level)}`;
+      row.append(head, meta); list.appendChild(row);
+    });
+    const count = state.acquisition.selectedIds.size;
+    setText('research-acquisition-selection-count', `已选 ${count} 篇 · 选集 v${text(state.acquisition.selectionVersion, '—')}`);
+    const confirm = byId('research-acquisition-confirm');
+    if (confirm) {
+      confirm.disabled = count === 0 || state.acquisition.confirming || state.acquisition.loading || Boolean(state.acquisition.status && state.acquisition.status !== 'failed' && state.acquisition.status !== 'cancelled');
+      confirm.textContent = state.acquisition.confirming ? '正在确认…' : state.acquisition.status && state.acquisition.status !== 'failed' ? '已确认导入' : '确认并开始导入';
+      confirm.setAttribute('aria-busy', state.acquisition.confirming ? 'true' : 'false');
+    }
+    const refresh = byId('research-acquisition-refresh');
+    if (refresh) refresh.disabled = state.acquisition.loading || projected.length === 0;
+    const progress = byId('research-acquisition-progress');
+    const progressSummary = byId('research-acquisition-progress-summary');
+    const itemsHost = byId('research-acquisition-items');
+    if (progress && progressSummary && itemsHost) {
+      clearNode(itemsHost);
+      progress.hidden = projected.length === 0;
+      const completed = projected.filter((item) => ['completed', 'existing'].includes(String(item.status))).length;
+      const waiting = projected.filter((item) => String(item.status) === 'waiting_login').length;
+      const failed = projected.filter((item) => String(item.status) === 'failed').length;
+      progressSummary.textContent = `${completed}/${projected.length} 篇已完成${waiting ? ` · ${waiting} 篇等待登录` : ''}${failed ? ` · ${failed} 篇失败可重试` : ''}`;
+      projected.forEach((item) => {
+        const row = state.document.createElement('li'); row.className = 'research-acquisition-item'; row.dataset.status = String(item.status || '');
+        const head = state.document.createElement('div'); head.className = 'research-acquisition-item-head';
+        const title = state.document.createElement('strong'); title.className = 'research-acquisition-item-title'; title.textContent = `目录论文：${text(item.catalog_paper_id, '未知')}`;
+        const badge = state.document.createElement('span'); badge.className = 'research-acquisition-badge'; badge.dataset.status = String(item.status || ''); badge.textContent = acquisitionStatusLabel(item.status);
+        head.append(title, badge);
+        const meta = state.document.createElement('p'); meta.className = 'research-acquisition-item-meta'; meta.textContent = item.document_id ? `知识库文档：${item.document_id}` : `导入条目：${text(item.import_item_id || item.item_id, '等待创建')}`;
+        const actions = state.document.createElement('div'); actions.className = 'research-acquisition-item-actions';
+        if (item.status === 'waiting_login') {
+          const wait = state.document.createElement('span'); wait.className = 'research-acquisition-item-meta'; wait.textContent = '请在既有浏览器会话完成登录，页面不会自动登录。'; actions.appendChild(wait);
+        }
+        if (item.status === 'failed' && (item.import_item_id || item.item_id)) {
+          const retry = state.document.createElement('button'); retry.type = 'button'; retry.className = 'secondary-button'; retry.textContent = state.acquisition.retrying.has(String(item.import_item_id || item.item_id)) ? '重试中…' : '重试';
+          retry.disabled = state.acquisition.retrying.has(String(item.import_item_id || item.item_id));
+          retry.addEventListener('click', () => retryAcquisitionItem(item, retry)); actions.appendChild(retry);
+        }
+        if (item.error_code) { const error = state.document.createElement('p'); error.className = 'research-acquisition-item-error'; error.textContent = acquisitionErrorText(item.error_code); row.append(error); }
+        row.append(head, meta, actions); itemsHost.appendChild(row);
+      });
+    }
+    renderAcquisitionEvidence(state.acquisition.evidence);
+  }
+
+  async function loadAcquisitionStatus(taskId = state.selectedTaskId) {
+    if (!taskId || state.acquisition.loading) return null;
+    state.acquisition.loading = true; renderAcquisition();
+    try {
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisitions`);
+      if (state.selectedTaskId !== taskId) return null;
+      state.acquisition.status = result?.status || result?.approval_status || null;
+      state.acquisition.selectionVersion = result?.selection_version || state.acquisition.selectionVersion;
+      state.acquisition.links = Array.isArray(result?.links) ? result.links : [];
+      state.acquisition.items = Array.isArray(result?.items) ? result.items : [];
+      state.acquisition.events = Array.isArray(result?.events) ? result.events : [];
+      if (Array.isArray(result?.evidence_upgrades)) state.acquisition.evidence = result.evidence_upgrades;
+      if (result?.batch_id) state.acquisition.batchId = String(result.batch_id);
+      setAcquisitionStatus(state.acquisition.status ? `导入状态：${acquisitionStatusLabel(state.acquisition.status)}` : '已确认，等待导入状态。', state.acquisition.status || 'queued');
+      renderAcquisition();
+      scheduleAcquisitionPoll();
+      return result;
+    } catch (error) {
+      if (error.status !== 404 && error.code !== 'BATCH_NOT_FOUND') setAcquisitionStatus(userError(error, '导入状态暂时不可用。'), 'failed');
+      renderAcquisition();
+      return null;
+    } finally { state.acquisition.loading = false; renderAcquisition(); }
+  }
+
+  function scheduleAcquisitionPoll() {
+    if (state.acquisition.pollTimer || !state.selectedTaskId || !state.acquisition.status || acquisitionIsTerminal(state.acquisition.status)) return;
+    const generation = state.acquisition.generation;
+    state.acquisition.pollTimer = root.setTimeout(async () => {
+      state.acquisition.pollTimer = null;
+      if (generation !== state.acquisition.generation) return;
+      await loadAcquisitionStatus(state.selectedTaskId);
+    }, 2500);
+  }
+
+  function stopAcquisitionPoll() {
+    if (state.acquisition.pollTimer) root.clearTimeout(state.acquisition.pollTimer);
+    state.acquisition.pollTimer = null; state.acquisition.generation += 1;
+  }
+
+  async function loadAcquisitionPreview(taskId = state.selectedTaskId) {
+    const candidates = acquisitionCandidates();
+    if (!taskId || !candidates.length) { renderAcquisition(); return null; }
+    const planVersion = safePositiveInteger(state.selectedTask?.current_plan_version || state.report?.plan_version) || 1;
+    const searchId = resolveAcquisitionSearchId(); state.acquisition.searchId = searchId;
+    state.acquisition.loading = true; setAcquisitionStatus('正在读取候选分类（不会下载）…'); renderAcquisition();
+    try {
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisition-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan_version: planVersion, ...(searchId ? { search_id: searchId } : {}) }) });
+      if (state.selectedTaskId !== taskId) return null;
+      state.acquisition.selectionVersion = result?.selection_version || null;
+      state.acquisition.preview = Array.isArray(result?.items) ? result.items : [];
+      if (!state.acquisition.selectedIds.size) candidates.forEach((item) => state.acquisition.selectedIds.add(item.catalog_paper_id));
+      setAcquisitionStatus('候选已分类；确认前不会下载。'); renderAcquisition();
+      state.acquisition.loading = false;
+      await loadAcquisitionStatus(taskId);
+      return result;
+    } catch (error) {
+      setAcquisitionStatus(userError(error, '候选预览暂时不可用。'), 'failed'); renderAcquisition(); return null;
+    } finally { state.acquisition.loading = false; renderAcquisition(); }
+  }
+
+  async function confirmAcquisition() {
+    const taskId = state.selectedTaskId; const ids = [...state.acquisition.selectedIds];
+    if (!taskId || !ids.length || state.acquisition.confirming) return null;
+    if (!state.acquisition.selectionVersion) { setAcquisitionStatus('选集版本尚未就绪，请刷新任务详情。', 'failed'); return null; }
+    if (!state.acquisition.searchId) { setAcquisitionStatus('服务器搜索快照不可用，暂不能确认；请刷新任务详情后重试。', 'failed'); return null; }
+    state.acquisition.confirming = true; renderAcquisition(); setAcquisitionStatus('正在提交确认…');
+    if (!state.acquisition.idempotencyKey) state.acquisition.idempotencyKey = root.crypto?.randomUUID?.() || `research-acquisition-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisitions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection_version: state.acquisition.selectionVersion, paper_ids: ids, idempotency_key: state.acquisition.idempotencyKey, search_id: state.acquisition.searchId }) });
+      state.acquisition.status = result?.status || result?.approval_status || 'queued';
+      state.acquisition.batchId = result?.batch_id || null; state.acquisition.links = Array.isArray(result?.links) ? result.links : [];
+      state.acquisition.items = Array.isArray(result?.items) ? result.items : []; state.acquisition.events = Array.isArray(result?.events) ? result.events : [];
+      setAcquisitionStatus(`已确认，导入状态：${acquisitionStatusLabel(state.acquisition.status)}`, state.acquisition.status); renderAcquisition(); scheduleAcquisitionPoll();
+      return result;
+    } catch (error) { setAcquisitionStatus(userError(error, '确认失败；候选仍未被下载。'), 'failed'); renderAcquisition(); return null; }
+    finally { state.acquisition.confirming = false; renderAcquisition(); }
+  }
+
+  async function retryAcquisitionItem(item, button) {
+    const itemId = String(item?.import_item_id || item?.item_id || '');
+    if (!itemId || state.acquisition.retrying.has(itemId)) return null;
+    state.acquisition.retrying.add(itemId); if (button) { button.disabled = true; button.textContent = '重试中…'; }
+    renderAcquisition();
+    try {
+      const result = await requestJson(`/api/papers/import-items/${encodeURIComponent(itemId)}/retry`, { method: 'POST' });
+      setAcquisitionStatus('已提交失败条目重试，正在同步既有导入状态。', 'queued');
+      state.acquisition.status = result?.status || 'queued'; await loadAcquisitionStatus(state.selectedTaskId); return result;
+    } catch (error) { setAcquisitionStatus(userError(error, '重试失败，请稍后再试。'), 'failed'); return null; }
+    finally { state.acquisition.retrying.delete(itemId); renderAcquisition(); }
+  }
+
   function renderSelection() {
     const section = byId('research-selection-section');
     const list = byId('research-selection-list');
@@ -1294,7 +1555,9 @@
       }
       state.report = { ...report, artifacts, report_version: report.report_version || report.plan_version };
       state.reportSelections = Array.isArray(report.selections) ? report.selections : [];
+      state.acquisition.evidence = Array.isArray(report.evidence_upgrades) ? report.evidence_upgrades : (Array.isArray(report.evidence) ? report.evidence : []);
       renderSelection();
+      await loadAcquisitionPreview(taskId);
       renderSummary();
       renderSafeMarkdown(reportNode, report.markdown);
       renderReportArtifacts(artifacts); renderReportCitations(report.citation_manifest);
@@ -1305,7 +1568,12 @@
     } catch (error) {
       state.reportSelections = [];
       state.report = null;
+      stopAcquisitionPoll();
+      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
+      state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
+      state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderSelection();
+      renderAcquisition();
       renderSummary();
       if (stateNode) stateNode.textContent = error.code === 'REPORT_NOT_READY' ? ERROR_TEXT.REPORT_NOT_READY : userError(error, '报告暂时不可用。');
       setText('research-report-limitations', '');
@@ -1402,6 +1670,10 @@
     closeStream();
     state.selectedTaskId = taskId || null;
     state.selectedSessionId = sessionId || state.tasks.find((item) => item.research_task_id === taskId)?.research_session_id || null;
+    stopAcquisitionPoll();
+    state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
+    state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
+    state.acquisition.searchId = null; state.acquisition.idempotencyKey = null; state.acquisition.confirming = false; state.acquisition.retrying = new Set();
     state.selectedTask = null;
     state.events = new Map();
     state.selectedPapers = new Set();
@@ -1468,13 +1740,15 @@
       || tasks.find((task) => task.conversation_id === state.conversationId);
     if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
-      closeStream(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
+      closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
+      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderTaskHeader(null); setDetailVisibility(false); renderSummary();
       state.report = null; state.terminal = null;
       const report = byId('research-report-markdown'); if (report) { report.hidden = true; report.replaceChildren(); }
       setText('research-report-state', '任务完成后显示报告。');
       setText('research-report-limitations', '');
       renderReportArtifacts([]); renderReportCitations([]);
+      renderAcquisition();
     }
   }
 
@@ -1581,6 +1855,9 @@
     byId('research-task-pause-button')?.addEventListener('click', () => beginTaskAction('pause'));
     byId('research-task-resume-button')?.addEventListener('click', () => beginTaskAction('resume'));
     byId('research-task-approve-button')?.addEventListener('click', () => beginTaskAction('approve'));
+    byId('research-task-recover-button')?.addEventListener('click', () => beginTaskAction('recover'));
+    byId('research-acquisition-confirm')?.addEventListener('click', confirmAcquisition);
+    byId('research-acquisition-refresh')?.addEventListener('click', () => loadAcquisitionStatus(state.selectedTaskId));
 
     // Chat approval commands publish the same backend result.  Reconcile it
     // through this Tab's canonical Session/Task state instead of maintaining a
@@ -1643,5 +1920,6 @@
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
     sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,
+    acquisitionStatusLabel, acquisitionErrorText, acquisitionIsTerminal,
   };
 }));

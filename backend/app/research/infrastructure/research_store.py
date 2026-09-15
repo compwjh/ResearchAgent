@@ -605,6 +605,21 @@ class ResearchStore:
         )""")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_acq_events_task ON research_acquisition_events(research_task_id, created_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_doc_links_task ON research_document_links(research_task_id, catalog_paper_id)")
+        # Task04 adds provenance to the already shipped evidence projection.
+        # Keep this additive so Task03 databases remain readable.
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(research_evidence_upgrades)").fetchall()
+        }
+        for name, declaration in (
+            ("source_sha256", "TEXT"),
+            ("manifest_generation", "TEXT"),
+            ("manifest_fingerprint", "TEXT"),
+            ("chunker", "TEXT"),
+        ):
+            if name not in columns:
+                connection.execute(f"ALTER TABLE research_evidence_upgrades ADD COLUMN {name} {declaration}")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_evidence_task ON research_evidence_upgrades(research_task_id)")
         # Existing Spec027 databases already contain a current selection but
         # no version row.  Seed it as version 1 without copying paper data.
         connection.execute(
@@ -4572,14 +4587,18 @@ class ResearchStore:
             try:
                 conn.execute(
                     """INSERT INTO research_evidence_upgrades(
-                        claim_id,research_task_id,document_id,from_level,to_level,chunk_ids_json,page,page_end,status,created_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                        claim_id,research_task_id,document_id,from_level,to_level,chunk_ids_json,page,page_end,status,created_at,
+                        source_sha256,manifest_generation,manifest_fingerprint,chunker
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(claim_id) DO UPDATE SET research_task_id=excluded.research_task_id,
                         document_id=excluded.document_id,from_level=excluded.from_level,to_level=excluded.to_level,
                         chunk_ids_json=excluded.chunk_ids_json,page=excluded.page,page_end=excluded.page_end,
-                        status=excluded.status,created_at=excluded.created_at""",
+                        status=excluded.status,created_at=excluded.created_at,
+                        source_sha256=excluded.source_sha256,manifest_generation=excluded.manifest_generation,
+                        manifest_fingerprint=excluded.manifest_fingerprint,chunker=excluded.chunker""",
                     (upgrade.claim_id, upgrade.task_id, upgrade.document_id, upgrade.from_level, upgrade.to_level,
-                     json.dumps(upgrade.chunk_ids, ensure_ascii=False), upgrade.page, upgrade.page_end, upgrade.status, now),
+                     json.dumps(upgrade.chunk_ids, ensure_ascii=False), upgrade.page, upgrade.page_end, upgrade.status, now,
+                     upgrade.source_sha256, upgrade.manifest_generation, upgrade.manifest_fingerprint, upgrade.chunker),
                 )
                 row = conn.execute("SELECT * FROM research_evidence_upgrades WHERE claim_id=?", (upgrade.claim_id,)).fetchone()
                 conn.commit()
@@ -4587,6 +4606,22 @@ class ResearchStore:
                 conn.rollback()
                 raise
         return EvidenceUpgrade.from_row(dict(row))
+
+    def get_evidence_upgrade(self, claim_id: str) -> EvidenceUpgrade | None:
+        """Read one evidence projection without reading report text."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_evidence_upgrades WHERE claim_id=?", (claim_id,)
+            ).fetchone()
+        return EvidenceUpgrade.from_row(dict(row)) if row is not None else None
+
+    def list_evidence_upgrades(self, research_task_id: str) -> list[EvidenceUpgrade]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_evidence_upgrades WHERE research_task_id=? ORDER BY claim_id",
+                (research_task_id,),
+            ).fetchall()
+        return [EvidenceUpgrade.from_row(dict(row)) for row in rows]
 
     # ------------------------------------------------------------------ #
     # PreliminaryReport

@@ -35,6 +35,10 @@ from backend.app.research.application.acquisition import (
     ResearchAcquisitionError,
     ResearchAcquisitionService,
 )
+from backend.app.research.application.evidence_upgrade import (
+    EvidenceUpgradeError,
+    EvidenceUpgradeService,
+)
 from backend.app.research.application.model_router import ModelRouter
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.plan_authoring import (
@@ -96,6 +100,8 @@ __all__ = [
     "ResearchStore",
     "ResearchAcquisitionError",
     "ResearchAcquisitionService",
+    "EvidenceUpgradeError",
+    "EvidenceUpgradeService",
     # 服务层与稳定错误
     "ResearchService",
     "ResearchServiceError",

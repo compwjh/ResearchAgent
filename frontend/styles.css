@@ -3672,3 +3672,61 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   #research-view .research-form-grid { grid-template-columns: 1fr; }
   #research-view .research-page-actions > * { min-height: 42px; }
 }
+/* Spec029 Task05: acquisition approval/progress stays scoped to the Research tab. */
+#research-view .research-acquisition-section { display: grid; gap: 12px; }
+#research-view .research-acquisition-section[hidden] { display: none; }
+#research-view .research-acquisition-head,
+#research-view .research-acquisition-actions,
+#research-view .research-acquisition-candidate-head,
+#research-view .research-acquisition-item-head,
+#research-view .research-evidence-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+#research-view .research-acquisition-head h3,
+#research-view .research-evidence-upgrades h4 { margin: 0; }
+#research-view .research-acquisition-help,
+#research-view .research-acquisition-status,
+#research-view .research-acquisition-selection-count,
+#research-view .research-acquisition-progress-summary,
+#research-view .research-acquisition-item-meta,
+#research-view .research-acquisition-item-error,
+#research-view .research-evidence-meta { margin: 4px 0 0; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
+#research-view .research-acquisition-status { flex: 0 1 46%; text-align: right; }
+#research-view .research-acquisition-actions { align-items: center; flex-wrap: wrap; }
+#research-view .research-acquisition-actions button { min-height: 34px; }
+#research-view .research-acquisition-candidates,
+#research-view .research-acquisition-items,
+#research-view .research-evidence-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+#research-view .research-acquisition-candidate,
+#research-view .research-acquisition-item,
+#research-view .research-evidence-item { display: grid; gap: 5px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+#research-view .research-acquisition-candidate[data-status="needs_login"],
+#research-view .research-acquisition-item[data-status="waiting_login"] { border-color: #f2d19b; background: #fffaf0; }
+#research-view .research-acquisition-candidate[data-status="unavailable"],
+#research-view .research-acquisition-item[data-status="failed"] { border-color: #f0b4b4; background: #fff7f7; }
+#research-view .research-acquisition-candidate[data-status="existing"],
+#research-view .research-acquisition-item[data-status="completed"] { border-color: #b8dfc5; }
+#research-view .research-acquisition-candidate label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px; min-width: 0; cursor: pointer; }
+#research-view .research-acquisition-candidate input { margin-top: 2px; accent-color: var(--accent); }
+#research-view .research-acquisition-candidate-title,
+#research-view .research-acquisition-item-title,
+#research-view .research-evidence-title { min-width: 0; color: var(--ink); font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
+#research-view .research-acquisition-badge { flex: 0 0 auto; border-radius: 99px; padding: 3px 7px; background: var(--accent-soft); color: var(--accent); font: 10px 'DM Mono', monospace; }
+#research-view .research-acquisition-badge[data-status="failed"],
+#research-view .research-acquisition-badge[data-status="unavailable"] { background: #fdecea; color: #b42318; }
+#research-view .research-acquisition-badge[data-status="needs_login"],
+#research-view .research-acquisition-badge[data-status="waiting_login"] { background: #fff0d1; color: #8a4b08; }
+#research-view .research-acquisition-badge[data-status="completed"],
+#research-view .research-acquisition-badge[data-status="existing"] { background: #e6f7ed; color: #20834c; }
+#research-view .research-acquisition-item-error { color: #b42318; }
+#research-view .research-acquisition-item-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+#research-view .research-acquisition-item-actions button { min-height: 30px; padding: 6px 9px; }
+#research-view .research-acquisition-item-actions button[hidden] { display: none; }
+#research-view .research-evidence-upgrades { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
+#research-view .research-evidence-locator { color: var(--accent); font-size: 11px; font-weight: 700; }
+#research-view .research-evidence-locator:focus-visible,
+#research-view .research-acquisition-candidate input:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+@media (max-width: 760px) {
+  #research-view .research-acquisition-head { display: grid; }
+  #research-view .research-acquisition-status { max-width: none; text-align: left; }
+  #research-view .research-acquisition-actions { align-items: stretch; }
+  #research-view .research-acquisition-actions button { flex: 1 1 160px; }
+}

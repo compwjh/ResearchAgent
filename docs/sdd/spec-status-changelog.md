@@ -324,3 +324,8 @@
 - **034 会话式深度研究与真实子 Agent Runtime** ｜ 已完成 → **实施中（Task11）** ｜ 真实 Smoke 生成的 Markdown 只有一篇证据对象和引用清单；新增 Task11 补强 USENIX 至少五篇候选保留及实质性报告输出，完成后重新验收收口。
 - **028 Research Task 可靠调度、计划版本与恢复** ｜ 待确认 → **实施中（Task02）** ｜ 用户明确要求跳过等待并继续开发，先执行 SQLite WAL、租约、checkpoint 与公平调度 Go/No-Go 门禁。
 - **029 Research Task 全文获取与知识库联动** ｜ 待确认 → **实施中（等待 028 调度合同）** ｜ 用户明确要求连续推进；全文下载与导入仍依赖 028 的可靠调度合同，暂不越过前置门禁。
+- **029 Research Task 全文获取与知识库联动 — Task04** ｜ 实施中 → **已完成** ｜ 2026-09-16：接通既有 `hybrid_search` 与 inspection manifest，新增 EvidenceUpgradeService 和 evidence-upgrade API；证据保存文档、切片、页码、源哈希与 manifest 指纹，删除/重建/变更时 fail-closed。定向验证 12 passed，组合回归 69 passed、5 subtests。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task06** ｜ 实施中 → **收口中** ｜ 2026-09-16：收口审查发现恢复 API/UI、评审台账和部署 smoke 证据缺口；已补齐 `POST /recover`、前端“检查并恢复”按钮及定向测试，待最终评审、全量回归和部署验证。
+- **029 Research Task 全文获取与知识库联动 — Task05** ｜ 实施中 → **已完成** ｜ 2026-09-16：完成候选增删、只读预览、显式确认、逐篇导入状态、登录等待、失败重试和全文证据定位入口；确认前不下载。前端定向 15 passed、Node 语法/合同检查通过，待 Task06 收口。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task06** ｜ 收口中 → **实施中（运行时证据已部分补齐）** ｜ 2026-09-16：真实 FastAPI 与 Research 页面加载 smoke 已通过，最终全量回归 2450 passed；按钮旅程与强退恢复尚未执行，继续保留实施中。
+- **029 Research Task 全文获取与知识库联动 — Task06** ｜ 待执行 → **实施中** ｜ 2026-09-16：完成三份评审、全量回归和服务页面 smoke；真实公开 PDF/KB 导入与全文证据仍未执行，验收保持 NO-GO。

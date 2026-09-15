@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=50">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=51">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -199,6 +199,7 @@
             <button class="secondary-button" id="research-refresh-button" type="button">刷新任务</button>
             <button class="secondary-button research-task-action" id="research-task-pause-button" type="button" hidden aria-hidden="true">暂停研究</button>
             <button class="secondary-button research-task-action" id="research-task-resume-button" type="button" hidden aria-hidden="true">继续研究</button>
+            <button class="secondary-button research-task-action" id="research-task-recover-button" type="button" hidden aria-hidden="true">检查并恢复</button>
             <button class="send-button research-task-action" id="research-task-approve-button" type="button" hidden aria-hidden="true">批准计划</button>
             <button class="secondary-button danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
           </div>
@@ -246,6 +247,29 @@
               <div class="research-detail-section" id="research-selection-section" hidden>
                 <h3>论文选集</h3>
                 <ul class="research-facet-list" id="research-selection-list" aria-label="已选论文"></ul>
+              </div>
+              <div class="research-detail-section research-acquisition-section" id="research-acquisition-section" hidden>
+                <div class="research-acquisition-head">
+                  <div>
+                    <h3>全文获取与证据</h3>
+                    <p class="research-acquisition-help">先调整候选，再一次确认导入；确认前不会下载或写入知识库。</p>
+                  </div>
+                  <span class="research-acquisition-status" id="research-acquisition-status" role="status" aria-live="polite">等待候选预览。</span>
+                </div>
+                <div class="research-acquisition-actions">
+                  <span class="research-acquisition-selection-count" id="research-acquisition-selection-count">已选 0 篇</span>
+                  <button class="send-button" id="research-acquisition-confirm" type="button" disabled>确认并开始导入</button>
+                  <button class="secondary-button" id="research-acquisition-refresh" type="button" disabled>刷新进度</button>
+                </div>
+                <ul class="research-acquisition-candidates" id="research-acquisition-candidates" aria-label="全文获取候选"></ul>
+                <div class="research-acquisition-progress" id="research-acquisition-progress" hidden>
+                  <p class="research-acquisition-progress-summary" id="research-acquisition-progress-summary"></p>
+                  <ol class="research-acquisition-items" id="research-acquisition-items" aria-live="polite"></ol>
+                </div>
+                <div class="research-evidence-upgrades" id="research-evidence-upgrades" hidden>
+                  <h4>全文证据升级</h4>
+                  <ul class="research-evidence-list" id="research-evidence-list" aria-live="polite"></ul>
+                </div>
               </div>
             </div>
           </section>
@@ -702,9 +726,9 @@
   <script src="/assets/research-session-ui.js?v=1"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
-  <!-- Task05 compatibility marker retained for the prior frontend contract: /assets/research-tasks.js?v=2 -->
-  <script src="/assets/research-tasks.js?v=3"></script>
-  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
+  <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 -->
+  <script src="/assets/research-tasks.js?v=4"></script>
+  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 -->
   <script src="/assets/app.js?v=50"></script>
 </body>
 </html>
