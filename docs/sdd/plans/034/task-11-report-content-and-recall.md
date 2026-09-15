@@ -3,7 +3,7 @@
 > 关联 Spec：034 会话式深度研究与真实子 Agent Runtime  
 > 依赖：Task06、Task08、Task10  
 > 被依赖：Spec029 全文证据升级  
-> 当前状态：`实施中`
+> 当前状态：`已完成（实现与目录复验）`
 
 ## 一句话目标
 
@@ -50,6 +50,8 @@
 - Markdown/HTML 输出论文标题、摘要、关键词；模型遗漏已验证候选时自动追加“目录证据补充”章节。
 - 定向回归：`114 passed, 5 subtests passed`；`py_compile` 与 `git diff --check` 通过。
 - 实现报告：`artifacts/task-11/report-five-candidates.md`、`artifacts/task-11/rich-report.md`。
+- 2026-09-16 使用当前缓存目录候选池 `search_id=dd5c47aa0cb541188b884c27fa233e67` 做真实生成复验：固定 5 篇 USENIX 模糊测试论文，`ReportSynthesizer` 产出 5 条引用、约 8.9k 字符 Markdown；标题与摘要来自 `catalog_papers`，关键词字段为空时输出“目录未提供”，不由模型补写。样本：[usenix-fuzzing-sample.md](./artifacts/task-11/usenix-fuzzing-sample.md)。
+- 同日全量回归曾运行至 1002 个用例后因会话压缩 worker 的 4 个既有用例停滞而中断（`queued/running` 未转终态）；该失败不涉及 Task11 文件，但按门禁保留为 Spec034 收口阻塞，不能把 Spec034 标为已完成。
 
 ## 变更日志
 

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（Task11 报告内容与召回补强）**
+**当前状态：实施中（Task11 已完成，待 Spec034 收口回归）**
 
 > 本 Spec 来自 2026-09-13 多轮 Grilling 的共同裁决。确认前只允许完善规范、任务计划和评审材料，不修改业务代码。
 > 2026-09-13：需求评审第二轮 APPROVE、技术评审第二轮 GO；用户此前明确要求“然后再开发034”，视为确认本 Spec，按 Task02 → Task10 顺序实施。
@@ -467,7 +467,7 @@ Smoke 必须证明：
 | 08 | 实现报告 Artifact、会话写回与通知 | [`task-08-report-and-notifications.md`](../plans/034/task-08-report-and-notifications.md) | 06、07 | 已完成 |
 | 09 | 复用 Research Tab、清理旧入口与旧数据 | [`task-09-workspace-and-cleanup.md`](../plans/034/task-09-workspace-and-cleanup.md) | 04、07、08 | 已完成 |
 | 10 | 最终评审、全量回归、真实 Smoke、部署与复盘 | [`task-10-review-regression-deploy.md`](../plans/034/task-10-review-regression-deploy.md) | 02–09 | 已完成 |
-| 11 | 至少五篇候选与实质性综述输出 | [`task-11-report-content-and-recall.md`](../plans/034/task-11-report-content-and-recall.md) | 06、08、10 | 实施中 |
+| 11 | 至少五篇候选与实质性综述输出 | [`task-11-report-content-and-recall.md`](../plans/034/task-11-report-content-and-recall.md) | 06、08、10 | 已完成（实现与目录复验） |
 
 ## 评审记录
 
