@@ -33,12 +33,17 @@ data/models/
 data/agent_tasks.sqlite3
 # spec-038 L1 文件记忆：真实记忆文件属用户隐私，绝不入库。
 # 仓库只提交仓库根目录的 USER.example.md / MEMORY.example.md 模板（同 .env 模式）。
+# Spec035 Bug3：模型能力每日定时探测的结果库，运行期数据，不入版本库。
+data/model_capabilities.sqlite3
 data/memory/
 # Spec027 Research Task 独立库（与 data/memory、data/paper_search 同范式）：
 # 属运行期数据，整体删除即完成回滚，不入版本库。
 data/research/
 data/memory/*.md
 data/memory/projects/
+# 知识库重建会把旧库整体移入 data/.trash/kb-<时间戳>/（含 PDF 与 qdrant 快照），
+# 每次重建都会新增一个目录，属运行期残留，必须忽略。
+data/.trash/
 deploy/reranker/.runtime/
 deploy/run.pid
 

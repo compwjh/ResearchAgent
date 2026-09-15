@@ -420,17 +420,41 @@ class CatalogSearchGraph:
                 )
             )
             waiting_units = list(getattr(result, "waiting", ()) or ())
+            cached_units = list(getattr(result, "cached", ()) or ())
+            completed_units = list(getattr(result, "completed", ()) or ())
+            if not count and (cached_units or completed_units):
+                # 缓存命中路径不重解析列表页，paper_count 需要按单元既有论文数求和，
+                # 否则来源进度卡片会显示「论文 0」（spec-035 展示缺陷）。
+                count = self._units_paper_count(cached_units + completed_units)
             self._progress(
                 job.search_id, "usenix", progress_status, count=count, error_code=error,
+                cached=[{"unit_id": unit_id} for unit_id in cached_units],
                 fetching=[{"unit_id": unit_id} for unit_id in waiting_units],
+                completed=[{"unit_id": unit_id} for unit_id in completed_units],
             )
             return {
                 "status": status, "error_code": error, "paper_count": count,
+                "cached_units": cached_units, "completed_units": completed_units,
                 "waiting_units": waiting_units,
             }
+
         except Exception:
             self._progress(job.search_id, "usenix", "failed", error_code="USENIX_UNAVAILABLE")
             return {"status": "failed", "error_code": "USENIX_UNAVAILABLE", "paper_count": 0}
+
+    def _units_paper_count(self, unit_ids: list[str]) -> int:
+        """Sum the persisted ``paper_count`` of the given fetch units.
+
+        Read-only and best-effort: an unknown unit contributes 0, never raises.
+        """
+        total = 0
+        for unit_id in unit_ids:
+            try:
+                unit = self.store.get_fetch_unit(unit_id)
+            except Exception:
+                unit = None
+            total += int(getattr(unit, "paper_count", 0) or 0)
+        return total
 
     def _dblp_enabled(self) -> bool:
         """DBLP now answers with a bot challenge instead of JSON; default off."""

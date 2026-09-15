@@ -4676,7 +4676,7 @@ function renderSkillList() {
   stSkillList.replaceChildren();
   if (stSkillEmpty) {
     stSkillEmpty.hidden = stSkills.length > 0;
-    if (stSkills.length === 0) stSkillEmpty.textContent = '还没有可用的 Skill。';
+    if (stSkills.length === 0) stSkillEmpty.textContent = '还没有可用的 Skills。';
   }
   for (const skill of stSkills) {
     const li = document.createElement('li');
@@ -4802,7 +4802,7 @@ function renderToolList() {
   stToolList.replaceChildren();
   if (stToolEmpty) {
     stToolEmpty.hidden = stTools.length > 0;
-    if (stTools.length === 0) stToolEmpty.textContent = '还没有可用的 Tool。';
+    if (stTools.length === 0) stToolEmpty.textContent = '还没有可用的 Tools。';
   }
   for (const tool of stTools) {
     const li = document.createElement('li');
@@ -5454,6 +5454,7 @@ function renderKbPapers(papers) {
 
   let hasRunning = false;
   for (const paper of papers) {
+    if (paper.status === 'processing' || paper.status === 'indexing') hasRunning = true;
     const item = document.createElement('li');
     item.className = `kb-item status-${paper.status || 'unknown'}`;
     if (paper.paper_id) item.dataset.paperId = paper.paper_id;
@@ -5614,11 +5615,11 @@ if (kbDrop && kbFileInput) {
       if (kbStatus) {
         kbStatus.textContent = `${data.file_name}：${KB_STATUS_TEXT[data.status] || data.status}${data.error ? `（${data.error}）` : ''}`;
       }
+      await loadKbPapers();
     } catch (error) {
       if (kbStatus) kbStatus.textContent = `上传失败：${error.message}`;
     } finally {
       kbFileInput.value = '';
-      loadKbPapers();
       loadKbHealth();
     }
   });

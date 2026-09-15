@@ -139,6 +139,21 @@ def test_batch_import_falls_back_to_catalog_search_results(tmp_path):
     assert set(imported) == {"cp-1", "cp-2"}
 
 
+def _clear_item_snapshots(store, batch_id):
+    """清空批次 item 的持久化快照，强制 _snapshots_for 走会话重建路径。"""
+    import sqlite3
+
+    connection = sqlite3.connect(store.database_path)
+    try:
+        with connection:
+            connection.execute(
+                "UPDATE paper_import_items SET snapshot_json=NULL, snapshot_hash=NULL WHERE batch_id=?",
+                (batch_id,),
+            )
+    finally:
+        connection.close()
+
+
 def test_batch_import_fallback_raises_search_not_found_when_job_missing(tmp_path):
     """回退分支下若 search_jobs 也无该 search_id，仍应抛 SEARCH_NOT_FOUND（不静默吞掉）。"""
     search_id = "missing-job-id"
@@ -157,6 +172,9 @@ def test_batch_import_fallback_raises_search_not_found_when_job_missing(tmp_path
         search_session=_JobSession(search_id),
         candidates=candidates,
     )
+    # Force the rebuild path by removing durable snapshots; otherwise the batch
+    # is self-consistent and skips the session gate (spec-035 Bug1).
+    _clear_item_snapshots(service.store, batch.batch_id)
 
     with pytest.raises(PaperImportBatchServiceError) as exc:
         service.run_batch(batch.batch_id, candidates=candidates)
@@ -180,8 +198,20 @@ def test_batch_import_fallback_raises_search_not_ready_when_job_incomplete(tmp_p
         search_session=_JobSession(search_id),
         candidates=candidates,
     )
+    # spec-035：快照完整时批次自洽，job 未就绪也应成功（不再受会话门禁约束）。
+    result = service.run_batch(batch.batch_id, candidates=candidates)
+    assert result.status == "completed"
+
+    # 仅当快照缺失需要重建时，job 未就绪才报 SEARCH_NOT_READY（保留原门禁语义）。
+    batch2 = service.create_batch(
+        search_id,
+        [c["candidate_id"] for c in candidates],
+        search_session=_JobSession(search_id),
+        candidates=candidates,
+    )
+    _clear_item_snapshots(service.store, batch2.batch_id)
 
     with pytest.raises(PaperImportBatchServiceError) as exc:
-        service.run_batch(batch.batch_id, candidates=candidates)
+        service.run_batch(batch2.batch_id, candidates=candidates)
     # 错误码字符串照抄路由层 _PAPER_BATCH_ERROR_STATUS（"SEARCH_NOT_READY"）。
     assert exc.value.code == "SEARCH_NOT_READY"

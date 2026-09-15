@@ -26,3 +26,15 @@ def _isolate_default_memory_dir(tmp_path, monkeypatch):
         "backend.app.memory.markdown_store.MEMORY_DIR", tmp_path / "memory"
     )
     return tmp_path / "memory"
+
+@pytest.fixture(autouse=True)
+def _isolate_capability_db(tmp_path):
+    """Keep the model capability cache out of the repository data directory."""
+    from backend.app.platform import capability_store
+    from backend.app.platform.ollama import clear_reasoning_capability_cache
+
+    capability_store.set_db_path(tmp_path / "model_capabilities.sqlite3")
+    clear_reasoning_capability_cache()
+    yield
+    capability_store.set_db_path(None)
+    clear_reasoning_capability_cache()
