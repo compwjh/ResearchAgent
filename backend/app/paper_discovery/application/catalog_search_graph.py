@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Mapping, Optional, TypedDict
 from uuid import NAMESPACE_URL, uuid5
@@ -165,15 +166,40 @@ class CatalogRagAdapter:
         return qdrant_models.Filter(must=must) if must else None
 
     def _fallback(self, query: str, papers: Iterable[CatalogPaper]) -> list[dict[str, Any]]:
-        query_key = normalize_title(query)
         ranked = []
+        papers = list(papers)
         for paper in papers:
-            text = normalize_title(self._text(paper))
-            score = 1.0 if query_key and query_key in text else 0.0
+            score = self._lexical_score(query, paper)
             ranked.append({"catalog_paper_id": paper.catalog_paper_id,
                            "retrieval_score": score, "rerank_score": None, "final_score": score})
         ranked.sort(key=lambda item: (-item["final_score"], item["catalog_paper_id"]))
         return ranked
+
+    @staticmethod
+    def _lexical_score(query: str, paper: CatalogPaper) -> float:
+        """Score only persisted catalog metadata for deterministic degraded ranking.
+
+        The vector path can return a valid but weak ordering when Qdrant or the
+        reranker is unavailable.  A full-title match must therefore outrank an
+        arbitrary vector tie, while token overlap gives useful ordering for
+        shorter queries such as ``logging``.  This boundary never reads PDF
+        bytes or invents metadata.
+        """
+        query_key = normalize_title(query)
+        title_key = normalize_title(paper.title)
+        if not query_key or not title_key:
+            return 0.0
+        if query_key == title_key:
+            return 1.0
+        if query_key in title_key:
+            return 0.95
+        query_tokens = {token for token in re.findall(r"[\w]+", str(query).casefold()) if len(token) > 1}
+        if not query_tokens:
+            return 0.0
+        text = " ".join((paper.title, paper.abstract or "", " ".join(paper.keywords))).casefold()
+        text_tokens = set(re.findall(r"[\w]+", text))
+        overlap = len(query_tokens & text_tokens) / len(query_tokens)
+        return round(overlap * 0.9, 6)
 
     def retrieve_and_rerank(self, query: str, papers: Iterable[CatalogPaper], **kwargs: Any) -> list[dict[str, Any]]:
         papers = [paper for paper in papers if paper.index_status == "indexed"]
@@ -226,7 +252,19 @@ class CatalogRagAdapter:
                                "retrieval_score": float(hit.score),
                                "rerank_score": hit.rerank_score,
                                "final_score": float(final)})
-            return result
+            paper_by_id = {str(paper.catalog_paper_id): paper for paper in papers}
+            # Keep the vector/reranker result as the tie-breaker, but make an
+            # exact or strong metadata match deterministic.  This is
+            # especially important for the local degraded path used by the
+            # research runtime: the evaluator must see the requested paper
+            # before unrelated catalog rows.
+            result = [
+                (index, item, self._lexical_score(query, paper_by_id[str(item["catalog_paper_id"])]))
+                for index, item in enumerate(result)
+                if str(item.get("catalog_paper_id", "")) in paper_by_id
+            ]
+            result.sort(key=lambda entry: (-entry[2], -float(entry[1].get("final_score", 0.0)), entry[0]))
+            return [item for _, item, _ in result]
         except Exception:
             self.degraded = True
             return self._fallback(query, papers)

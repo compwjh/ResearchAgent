@@ -128,3 +128,19 @@ q4 与 MLX 两种本地模型产生相同的 fail-closed 终态，说明当前�
 - `e60f3d243e5754bd98f334b51831218c`：更宽的 logging 目录样本，模型仅返回低相关 `keep=false`，安全收口 `partial`。
 
 这些结果证明候选事实已能稳定传递到评估边界，但当前本地模型/外部目录组合没有形成 `keep=true` 的最终证据，故不能宣称报告 Artifact 成功；服务临时端口 `18080–18082` 已全部停止。
+
+## 2026-09-15 目录元数据排序修复后的完整成功 Smoke
+
+为解决 Qdrant/重排不可用时向量结果把标题精确匹配论文排到随机位置的问题，`CatalogRagAdapter` 新增了只读目录元数据的确定性词法排序：完整标题匹配优先，词项重叠作为次级排序，向量分数仍作为并列时的依据。新增针对性测试后，在临时端口 `18083` 使用本机真实 `qwen3.8:27b-q4_K_M`、`RERANKER_ENABLED=false` 重跑固定研究链路：
+
+- `research_session_id=6a7d51e002db4801b1c48ff6ee5da2fd`
+- `research_task_id=929d24e696935fd0b6188796814a7ab9`
+- Search Worker 查询：`Back-Propagating System Dependency Impact for Attack Investigation`
+- Intake → 计划 → 审批 → 两个 Search Worker → Evaluator → Synthesizer 全部完成。
+- 真实 USENIX 目录 Tool 返回候选，Evaluator 产生可验证 `keep=true` 证据，Synthesizer 生成三份 Artifact：
+  - Markdown：`e3dd030b4f1d4488ab1e697b0c00364a`
+  - HTML：`d16dd1d6fcca492b9eec7aa90a6ef497`
+  - citation manifest：`c1e87022b560420190cc462bb83f801b`
+- Session/Task 终态均为 `completed`；服务随后已停止，未保留后台进程。
+
+该次成功仅证明目录元数据级研究闭环；详情页、PDF 下载和个人知识库导入仍按既有边界留在用户显式选择后的后续流程。

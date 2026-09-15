@@ -234,6 +234,27 @@ def test_catalog_rag_payload_round_trips_catalog_ids_through_shared_rrf(tmp_path
     }
 
 
+def test_catalog_rag_metadata_match_breaks_vector_ties():
+    """A title hit stays first when degraded/vector results are arbitrary."""
+    papers = [
+        CatalogPaper("catalog-unrelated", "usenix-security", 2024, "Unrelated Paper", "unrelated",
+                     abstract="unrelated abstract", metadata_hash="u", index_status="indexed"),
+        CatalogPaper("catalog-target", "usenix-security", 2024,
+                     "Back-Propagating System Dependency Impact for Attack Investigation",
+                     "backpropagatingsystemdependencyimpactforattackinvestigation",
+                     abstract="target abstract", metadata_hash="t", index_status="indexed"),
+    ]
+    adapter = CatalogRagAdapter()
+
+    assert adapter._lexical_score(
+        "Back-Propagating System Dependency Impact for Attack Investigation", papers[1]
+    ) == 1.0
+    ranked = adapter._fallback(
+        "Back-Propagating System Dependency Impact for Attack Investigation", papers
+    )
+    assert [item["catalog_paper_id"] for item in ranked] == ["catalog-target", "catalog-unrelated"]
+
+
 def test_catalog_listing_and_freeze_exclude_non_indexed_and_use_stable_order(tmp_path):
     store = PaperDiscoveryStore(tmp_path / "state.sqlite3")
     job = _job("search-2", years=[2023, 2024, 2025, 2099])
