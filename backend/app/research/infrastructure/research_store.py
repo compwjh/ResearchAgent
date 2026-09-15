@@ -27,7 +27,7 @@ import re
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -68,6 +68,9 @@ from backend.app.research.domain.models import (
     ResearchSessionPlan,
     ResearchTask,
     ResearchWorkItem,
+    ResourceReservation,
+    SchedulerCheckpoint,
+    SchedulerLease,
 )
 from backend.app.research.domain.state_machine import (
     transition_agent_run,
@@ -190,6 +193,18 @@ def default_database_path() -> Path:
 def _utcnow() -> str:
     """当前 UTC 时间戳，格式 `YYYY-MM-DDTHH:MM:SSZ`。"""
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _utc_after(seconds: int, now: str | None = None) -> str:
+    """Return a comparable UTC timestamp without relying on the system clock twice."""
+    if now:
+        try:
+            base = datetime.fromisoformat(now.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("invalid scheduler timestamp") from exc
+    else:
+        base = datetime.now(timezone.utc)
+    return (base + timedelta(seconds=max(1, int(seconds)))).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def encode_cursor(created_at: str, task_id: str) -> str:
@@ -526,6 +541,61 @@ class ResearchStore:
             updated_at TEXT NOT NULL,
             PRIMARY KEY(owner_id, idempotency_key)
         )""")
+
+    @staticmethod
+    def _ensure_scheduler_schema(connection: sqlite3.Connection) -> None:
+        """Create Task03 scheduler tables lazily and idempotently.
+
+        Task02's runtime gate owns tiny probe tables with the same names.  A
+        lazy additive migration keeps that probe backwards compatible while
+        ensuring every production scheduler write sees the durable schema.
+        Scheduler ids deliberately have no foreign key: ``task_id`` is the
+        WorkItem identity at dispatch time and a ResearchTask identity during
+        task-level recovery.
+        """
+        connection.execute("""CREATE TABLE IF NOT EXISTS scheduler_leases(
+            task_id TEXT PRIMARY KEY,
+            owner_token TEXT,
+            expires_at TEXT,
+            heartbeat_at TEXT
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS scheduler_checkpoints(
+            task_id TEXT NOT NULL,
+            plan_version INTEGER NOT NULL,
+            node_id TEXT NOT NULL,
+            state_json TEXT NOT NULL,
+            input_digest TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(task_id, plan_version, node_id)
+        )""")
+        checkpoint_columns = {row[1] for row in connection.execute("PRAGMA table_info(scheduler_checkpoints)").fetchall()}
+        if "created_at" not in checkpoint_columns:
+            connection.execute("ALTER TABLE scheduler_checkpoints ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
+        if "updated_at" not in checkpoint_columns:
+            connection.execute("ALTER TABLE scheduler_checkpoints ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+        connection.execute("""CREATE TABLE IF NOT EXISTS resource_reservations(
+            reservation_id TEXT PRIMARY KEY,
+            task_id TEXT,
+            worker_id TEXT NOT NULL,
+            model_tier TEXT NOT NULL,
+            estimated_bytes INTEGER NOT NULL CHECK(estimated_bytes >= 0),
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            released_at TEXT
+        )""")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scheduler_leases_expiry "
+            "ON scheduler_leases(expires_at, task_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scheduler_checkpoints_task "
+            "ON scheduler_checkpoints(task_id, plan_version, node_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_resource_reservations_active "
+            "ON resource_reservations(expires_at, released_at, task_id)"
+        )
 
     @staticmethod
     def _migrate_to_current(connection: sqlite3.Connection) -> None:
@@ -1733,6 +1803,401 @@ class ResearchStore:
                 conn.rollback()
                 raise
         return ResearchWorkItem.from_row(dict(row))
+
+    # ------------------------------------------------------------------ #
+    # Spec028 durable scheduler: leases, checkpoints and reservations
+    # ------------------------------------------------------------------ #
+
+    def claim_scheduler_lease(
+        self,
+        task_id: str,
+        owner_token: str | None = None,
+        *,
+        lease_seconds: int = 60,
+        now: str | None = None,
+    ) -> SchedulerLease | None:
+        """Atomically claim an unowned/expired lease.
+
+        SQLite's ``BEGIN IMMEDIATE`` is the cross-process CAS boundary.  An
+        active owner is never overwritten, and the token is generated before
+        entering the transaction so callers can safely persist it alongside a
+        worker invocation.
+        """
+        if not task_id:
+            raise ValueError("task_id is required")
+        token = owner_token or uuid.uuid4().hex
+        current = now or _utcnow()
+        expiry = _utc_after(lease_seconds, current)
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                row = conn.execute(
+                    "SELECT * FROM scheduler_leases WHERE task_id=?", (task_id,)
+                ).fetchone()
+                if row is None:
+                    conn.execute(
+                        "INSERT INTO scheduler_leases(task_id,owner_token,expires_at,heartbeat_at) VALUES(?,?,?,?)",
+                        (task_id, token, expiry, current),
+                    )
+                elif row["owner_token"] and row["expires_at"] and row["expires_at"] > current:
+                    conn.commit()
+                    return None
+                else:
+                    changed = conn.execute(
+                        """UPDATE scheduler_leases SET owner_token=?, expires_at=?, heartbeat_at=?
+                           WHERE task_id=? AND (owner_token IS NULL OR expires_at IS NULL OR expires_at<=?)""",
+                        (token, expiry, current, task_id, current),
+                    ).rowcount
+                    if changed != 1:
+                        conn.commit()
+                        return None
+                row = conn.execute("SELECT * FROM scheduler_leases WHERE task_id=?", (task_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return SchedulerLease.from_row(dict(row))
+
+    def get_scheduler_lease(self, task_id: str) -> SchedulerLease | None:
+        with self._connect() as conn:
+            self._ensure_scheduler_schema(conn)
+            row = conn.execute("SELECT * FROM scheduler_leases WHERE task_id=?", (task_id,)).fetchone()
+        return SchedulerLease.from_row(dict(row)) if row else None
+
+    def claim_work_item(
+        self,
+        work_item_id: str,
+        owner_token: str,
+        *,
+        lease_seconds: int = 60,
+        now: str | None = None,
+    ) -> ResearchWorkItem | None:
+        """Claim a queued WorkItem and its lease in one SQLite transaction."""
+        if not work_item_id or not owner_token:
+            raise ValueError("work_item_id and owner_token are required")
+        current = now or _utcnow()
+        expiry = _utc_after(lease_seconds, current)
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                item = conn.execute(
+                    "SELECT * FROM research_work_items WHERE work_item_id=?", (work_item_id,)
+                ).fetchone()
+                if item is None:
+                    conn.rollback()
+                    raise ResearchWorkItemNotFound(work_item_id)
+                if item["status"] != "queued":
+                    conn.commit()
+                    return None
+                # Keep the existing domain state machine authoritative even
+                # though the lease and status CAS share one transaction.
+                transition_workitem(item["status"], "running")
+                lease = conn.execute("SELECT * FROM scheduler_leases WHERE task_id=?", (work_item_id,)).fetchone()
+                if lease is not None and lease["owner_token"] and lease["expires_at"] and lease["expires_at"] > current:
+                    conn.commit()
+                    return None
+                conn.execute(
+                    """INSERT INTO scheduler_leases(task_id,owner_token,expires_at,heartbeat_at) VALUES(?,?,?,?)
+                       ON CONFLICT(task_id) DO UPDATE SET owner_token=excluded.owner_token,expires_at=excluded.expires_at,heartbeat_at=excluded.heartbeat_at""",
+                    (work_item_id, owner_token, expiry, current),
+                )
+                changed = conn.execute(
+                    "UPDATE research_work_items SET status='running',started_at=COALESCE(started_at,?),attempt=attempt+1,updated_at=? WHERE work_item_id=? AND status='queued'",
+                    (current, current, work_item_id),
+                ).rowcount
+                if changed != 1:
+                    conn.rollback()
+                    return None
+                row = conn.execute("SELECT * FROM research_work_items WHERE work_item_id=?", (work_item_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchWorkItem.from_row(dict(row))
+
+    def heartbeat_scheduler_lease(
+        self,
+        task_id: str,
+        owner_token: str,
+        *,
+        lease_seconds: int = 60,
+        now: str | None = None,
+    ) -> SchedulerLease | None:
+        """Extend a lease only while its exact token is still current."""
+        if not owner_token:
+            return None
+        current = now or _utcnow()
+        expiry = _utc_after(lease_seconds, current)
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                changed = conn.execute(
+                    """UPDATE scheduler_leases SET expires_at=?, heartbeat_at=?
+                       WHERE task_id=? AND owner_token=? AND expires_at>?""",
+                    (expiry, current, task_id, owner_token, current),
+                ).rowcount
+                row = conn.execute("SELECT * FROM scheduler_leases WHERE task_id=?", (task_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return SchedulerLease.from_row(dict(row)) if changed == 1 and row else None
+
+    def release_scheduler_lease(self, task_id: str, owner_token: str) -> bool:
+        """Release only the owner-held lease; stale workers cannot clear it."""
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                changed = conn.execute(
+                    """UPDATE scheduler_leases SET owner_token=NULL, expires_at=NULL, heartbeat_at=NULL
+                       WHERE task_id=? AND owner_token=?""",
+                    (task_id, owner_token),
+                ).rowcount
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return changed == 1
+
+    def recover_expired_scheduler_leases(self, *, now: str | None = None) -> int:
+        """Clear expired lease owners, returning the number made available."""
+        current = now or _utcnow()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                changed = conn.execute(
+                    """UPDATE scheduler_leases SET owner_token=NULL, expires_at=NULL, heartbeat_at=NULL
+                       WHERE owner_token IS NOT NULL AND (expires_at IS NULL OR expires_at<=?)""",
+                    (current,),
+                ).rowcount
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return max(0, int(changed))
+
+    def save_scheduler_checkpoint(
+        self,
+        task_id: str | SchedulerCheckpoint,
+        plan_version: int | None = None,
+        node_id: str | None = None,
+        state_json: str | dict | list | None = None,
+        input_digest: str | None = None,
+        *,
+        now: str | None = None,
+    ) -> SchedulerCheckpoint:
+        """Persist a validated checkpoint before a node advances.
+
+        Dict/list state is encoded canonically.  A caller-supplied digest must
+        match the exact persisted bytes, preventing a corrupt checkpoint from
+        being treated as resumable after restart.
+        """
+        if isinstance(task_id, SchedulerCheckpoint):
+            checkpoint = task_id
+            task_id, plan_version, node_id, state_json = (
+                checkpoint.task_id, checkpoint.plan_version, checkpoint.node_id, checkpoint.state_json
+            )
+            input_digest = input_digest or checkpoint.input_digest
+        if not task_id or plan_version is None or not node_id or state_json is None:
+            raise ValueError("checkpoint identity is incomplete")
+        if isinstance(state_json, str):
+            try:
+                parsed = json.loads(state_json)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("checkpoint state must be valid JSON") from exc
+            if not isinstance(parsed, (dict, list)):
+                raise ValueError("checkpoint state must be an object or array")
+            content = state_json
+        elif isinstance(state_json, (dict, list)):
+            content = json.dumps(state_json, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        else:
+            raise ValueError("checkpoint state must be JSON")
+        if len(content.encode("utf-8")) > 200_000:
+            raise ValueError("checkpoint state is too large")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if input_digest is not None and input_digest != digest:
+            raise ValueError("checkpoint input digest mismatch")
+        current = now or _utcnow()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                conn.execute(
+                    """INSERT INTO scheduler_checkpoints(task_id,plan_version,node_id,state_json,input_digest,created_at,updated_at)
+                       VALUES(?,?,?,?,?,?,?)
+                       ON CONFLICT(task_id,plan_version,node_id) DO UPDATE SET
+                         state_json=excluded.state_json,input_digest=excluded.input_digest,updated_at=excluded.updated_at""",
+                    (task_id, int(plan_version), node_id, content, digest, current, current),
+                )
+                row = conn.execute(
+                    "SELECT * FROM scheduler_checkpoints WHERE task_id=? AND plan_version=? AND node_id=?",
+                    (task_id, int(plan_version), node_id),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return SchedulerCheckpoint.from_row(dict(row))
+
+    def get_scheduler_checkpoint(self, task_id: str, plan_version: int, node_id: str) -> SchedulerCheckpoint | None:
+        with self._connect() as conn:
+            self._ensure_scheduler_schema(conn)
+            row = conn.execute(
+                "SELECT * FROM scheduler_checkpoints WHERE task_id=? AND plan_version=? AND node_id=?",
+                (task_id, int(plan_version), node_id),
+            ).fetchone()
+        if row is None:
+            return None
+        checkpoint = SchedulerCheckpoint.from_row(dict(row))
+        if hashlib.sha256(checkpoint.state_json.encode("utf-8")).hexdigest() != checkpoint.input_digest:
+            raise ValueError("checkpoint input digest mismatch")
+        return checkpoint
+
+    def advance_work_item_from_checkpoint(
+        self, work_item_id: str, *, plan_version: int, input_digest: str, owner_token: str | None = None
+    ) -> bool:
+        """CAS a queued WorkItem to running after checkpoint validation."""
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                checkpoint = conn.execute(
+                    "SELECT * FROM scheduler_checkpoints WHERE task_id=? AND plan_version=? AND node_id=?",
+                    (work_item_id, int(plan_version), work_item_id),
+                ).fetchone()
+                if checkpoint is None or checkpoint["input_digest"] != input_digest:
+                    conn.commit()
+                    return False
+                if hashlib.sha256(checkpoint["state_json"].encode("utf-8")).hexdigest() != input_digest:
+                    conn.commit()
+                    return False
+                lease_clause = ""
+                params: list[object] = [work_item_id, int(plan_version)]
+                if owner_token is not None:
+                    lease_clause = " AND EXISTS (SELECT 1 FROM scheduler_leases l WHERE l.task_id=? AND l.owner_token=? AND l.expires_at>?)"
+                    params.extend([work_item_id, owner_token, _utcnow()])
+                changed = conn.execute(
+                    "UPDATE research_work_items SET status='running', started_at=COALESCE(started_at,?), updated_at=? "
+                    "WHERE work_item_id=? AND plan_version=? AND status='queued'" + lease_clause,
+                    (_utcnow(), _utcnow(), *params),
+                ).rowcount
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return changed == 1
+
+    def reserve_resources(
+        self,
+        worker_id: str,
+        model_tier: str,
+        estimated_bytes: int,
+        *,
+        task_id: str | None = None,
+        expires_at: str | None = None,
+        lease_seconds: int = 60,
+        capacity_bytes: int | None = None,
+        now: str | None = None,
+    ) -> ResourceReservation | None:
+        """Atomically reserve capacity without overselling active bytes."""
+        if not worker_id or not model_tier or int(estimated_bytes) < 0:
+            raise ValueError("invalid resource reservation")
+        current = now or _utcnow()
+        expiry = expires_at or _utc_after(lease_seconds, current)
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                conn.execute(
+                    "DELETE FROM resource_reservations WHERE released_at IS NULL AND expires_at<=?",
+                    (current,),
+                )
+                existing = conn.execute(
+                    "SELECT 1 FROM resource_reservations WHERE worker_id=? AND released_at IS NULL AND expires_at>?",
+                    (worker_id, current),
+                ).fetchone()
+                used = conn.execute(
+                    "SELECT COALESCE(SUM(estimated_bytes),0) FROM resource_reservations WHERE released_at IS NULL AND expires_at>?",
+                    (current,),
+                ).fetchone()[0]
+                if existing is not None or (capacity_bytes is not None and int(used) + int(estimated_bytes) > int(capacity_bytes)):
+                    conn.commit()
+                    return None
+                reservation_id = uuid.uuid4().hex
+                conn.execute(
+                    """INSERT INTO resource_reservations(reservation_id,task_id,worker_id,model_tier,estimated_bytes,expires_at,created_at,released_at)
+                       VALUES(?,?,?,?,?,?,?,NULL)""",
+                    (reservation_id, task_id, worker_id, model_tier, int(estimated_bytes), expiry, current),
+                )
+                row = conn.execute("SELECT * FROM resource_reservations WHERE reservation_id=?", (reservation_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResourceReservation.from_row(dict(row))
+
+    def release_resource_reservation(self, reservation_id: str, *, worker_id: str | None = None, now: str | None = None) -> bool:
+        current = now or _utcnow()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                sql = "UPDATE resource_reservations SET released_at=? WHERE reservation_id=? AND released_at IS NULL"
+                params: list[object] = [current, reservation_id]
+                if worker_id is not None:
+                    sql += " AND worker_id=?"
+                    params.append(worker_id)
+                changed = conn.execute(sql, params).rowcount
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return changed == 1
+
+    def get_resource_reservation(self, reservation_id: str) -> ResourceReservation | None:
+        with self._connect() as conn:
+            self._ensure_scheduler_schema(conn)
+            row = conn.execute(
+                "SELECT * FROM resource_reservations WHERE reservation_id=?", (reservation_id,)
+            ).fetchone()
+        return ResourceReservation.from_row(dict(row)) if row else None
+
+    def list_resource_reservations(self, *, task_id: str | None = None, now: str | None = None) -> list[ResourceReservation]:
+        current = now or _utcnow()
+        with self._connect() as conn:
+            self._ensure_scheduler_schema(conn)
+            if task_id is None:
+                rows = conn.execute(
+                    "SELECT * FROM resource_reservations WHERE released_at IS NULL AND expires_at>? ORDER BY created_at,reservation_id",
+                    (current,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM resource_reservations WHERE task_id=? AND released_at IS NULL AND expires_at>? ORDER BY created_at,reservation_id",
+                    (task_id, current),
+                ).fetchall()
+        return [ResourceReservation.from_row(dict(row)) for row in rows]
+
+    def recover_expired_resource_reservations(self, *, now: str | None = None) -> int:
+        current = now or _utcnow()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_scheduler_schema(conn)
+                changed = conn.execute(
+                    "UPDATE resource_reservations SET released_at=? WHERE released_at IS NULL AND expires_at<=?",
+                    (current, current),
+                ).rowcount
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return max(0, int(changed))
 
     # ------------------------------------------------------------------ #
     # Spec034 session state / approvals / runtime records
@@ -3631,3 +4096,25 @@ ResearchStore.list_research_notifications = ResearchStore.list_notifications
 # original verb ordering used by the store implementation.
 ResearchStore.legacy_cleanup_dry_run = ResearchStore.dry_run_legacy_cleanup
 ResearchStore.cleanup_legacy_tasks = ResearchStore.execute_legacy_cleanup
+
+# Spec028 keeps both concise and descriptive names available so existing
+# callers can migrate incrementally without introducing another repository.
+ResearchStore.claim_lease = ResearchStore.claim_scheduler_lease
+ResearchStore.acquire_scheduler_lease = ResearchStore.claim_scheduler_lease
+ResearchStore.try_claim_lease = ResearchStore.claim_scheduler_lease
+ResearchStore.get_lease = ResearchStore.get_scheduler_lease
+ResearchStore.heartbeat_lease = ResearchStore.heartbeat_scheduler_lease
+ResearchStore.renew_lease = ResearchStore.heartbeat_scheduler_lease
+ResearchStore.release_lease = ResearchStore.release_scheduler_lease
+ResearchStore.recover_expired_leases = ResearchStore.recover_expired_scheduler_leases
+ResearchStore.recover_expired = ResearchStore.recover_expired_scheduler_leases
+ResearchStore.save_checkpoint = ResearchStore.save_scheduler_checkpoint
+ResearchStore.get_checkpoint = ResearchStore.get_scheduler_checkpoint
+ResearchStore.advance_from_checkpoint = ResearchStore.advance_work_item_from_checkpoint
+ResearchStore.reserve_resource = ResearchStore.reserve_resources
+ResearchStore.reserve = ResearchStore.reserve_resources
+ResearchStore.release_reservation = ResearchStore.release_resource_reservation
+ResearchStore.release_resource = ResearchStore.release_resource_reservation
+ResearchStore.list_reservations = ResearchStore.list_resource_reservations
+ResearchStore.get_reservation = ResearchStore.get_resource_reservation
+ResearchStore.recover_expired_reservations = ResearchStore.recover_expired_resource_reservations

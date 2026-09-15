@@ -228,6 +228,89 @@ class ResearchWorkItem:
         return value if isinstance(value, dict) else {}
 
 
+@dataclass(frozen=True)
+class SchedulerLease:
+    """Durable ownership lease for one schedulable task/work item.
+
+    ``task_id`` is intentionally generic: the scheduler uses a WorkItem id
+    today, while recovery callers may use a task id.  The database is the
+    source of truth for ownership; this value is only a read model.
+    """
+
+    task_id: str
+    owner_token: str | None
+    expires_at: str | None
+    heartbeat_at: str | None
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            task_id=row["task_id"],
+            owner_token=row.get("owner_token"),
+            expires_at=row.get("expires_at"),
+            heartbeat_at=row.get("heartbeat_at"),
+        )
+
+
+@dataclass(frozen=True)
+class SchedulerCheckpoint:
+    """Durable scheduler hand-off written before a node is advanced."""
+
+    task_id: str
+    plan_version: int
+    node_id: str
+    state_json: str
+    input_digest: str
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            task_id=row["task_id"],
+            plan_version=int(row["plan_version"]),
+            node_id=row["node_id"],
+            state_json=row["state_json"],
+            input_digest=row["input_digest"],
+            created_at=row.get("created_at", ""),
+            updated_at=row.get("updated_at", ""),
+        )
+
+
+@dataclass(frozen=True)
+class ResourceReservation:
+    """A bounded, expiring reservation held by the global scheduler."""
+
+    worker_id: str
+    model_tier: str
+    estimated_bytes: int
+    expires_at: str
+    task_id: str | None = None
+    reservation_id: str | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            worker_id=row["worker_id"],
+            model_tier=row["model_tier"],
+            estimated_bytes=int(row["estimated_bytes"]),
+            expires_at=row["expires_at"],
+            task_id=row.get("task_id"),
+            reservation_id=row.get("reservation_id"),
+            created_at=row.get("created_at", ""),
+        )
+
+
 @dataclass
 class ResearchEvent:
     """研究任务事件：用于 SSE 持久化与断线恢复的安全事件流。"""
