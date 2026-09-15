@@ -21,12 +21,14 @@
 ## 主 Agent 校验、风险与产出
 
 - 任一重复实现、安全语义退化或虚假全文证据均阻塞。
-- 产出评审、验收、复盘和部署证据；自动化与服务页面 smoke 已完成，真实全文导入仍待补。
+- 产出评审、验收、复盘和部署证据；自动化与服务页面 smoke 已完成，真实全文导入仍待补。运行时修复必须先验证默认 generation reader 与持久化 `search_id`，再进入真实导入链。
 
 ## 执行结果
 
 - 需求/技术/验收评审文档已落盘；最终全量回归：2450 passed、1 skipped、5 warnings、67 subtests，退出码 0。
 - `runtime-smoke.md` 记录真实 FastAPI 启动与 Research 页面/静态资源加载。
+- `runtime-probe-report.md` 记录修复前探针事实；后续复验确认默认 `EvidenceUpgradeService` 读取 `FinalizeBundleStore` 的发布代次，且新搜索任务会持久化首个有效 `search_id` 并在任务详情返回。
+- 定向桥接回归：`63 passed`（含 Spec029 search-id、acquisition、evidence、frontend 与 Spec027 后端切片）。
 - 真实公开 PDF 下载、导入、索引、全文证据升级和浏览器候选确认尚未执行，因此 Spec029 保持实施中。
 
 ## 变更日志

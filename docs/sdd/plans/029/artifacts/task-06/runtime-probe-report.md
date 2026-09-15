@@ -96,3 +96,5 @@ user_kb_or_qdrant_write=false
   `38efa91a33154fd097c61d1c745d408f`。
 - 定向 Spec029 回归：`17 passed in 1.28s`。
 - 该修复只消除了 generation reader 的 P0；任务详情缺少稳定 `search_id`、真实确认/导入链和真实浏览器交互验收仍保持未完成，不能据此把 Spec029 标记为完成。
+
+随后又完成了 `search_id` 桥接修复：`ResearchTask` 增加可选服务端快照句柄，研究仓储做加性迁移并采用首个有效句柄优先写入；搜索 worker、编排器、任务摘要和 worker 事件均传递该句柄。既有历史任务没有对应搜索快照时仍安全返回 `null`，不会猜测或伪造句柄。相关定向回归为 `63 passed`；真实 acquisition 链、公开 PDF 和浏览器确认仍未执行。

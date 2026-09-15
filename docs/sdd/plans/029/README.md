@@ -1,7 +1,7 @@
 # Spec 029 执行计划：全文获取与知识库联动
 
 > 关联：[Spec 029](../../specs/029-research-fulltext-acquisition.md)
-> 当前状态：等待 Task06 收口。
+> 当前状态：Task06 收口中；运行时 generation reader 与 search_id 持久化桥接已修复，真实公开 PDF 导入验收仍待执行。
 
 ## 任务索引
 
@@ -22,3 +22,4 @@
 ## 变更日志
 
 - 2026-09-12：随 Spec029 创建。
+- 2026-09-16：Task06 修复并验证默认 generation reader；新增服务端 catalog `search_id` 的持久化、任务详情投影和事件桥接。真实 selection→approval→batch→link→KB 链仍保持未完成。
