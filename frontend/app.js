@@ -246,7 +246,7 @@ fetch('/api/health')
     activeModel = models.includes(data.model) ? data.model : models[0] || data.model;
     refreshModelOptions();
     modelSelect.value = activeModel;
-    document.querySelector('#model-count').textContent = models.length;
+    setModelCountBadge(models.length);
     modelLabel.textContent = displayName(activeModel);
     loadReasoningOptions(activeModel, { source: 'initial' });
     statusDot.classList.add('ready');
@@ -260,6 +260,8 @@ fetch('/api/health')
 
 // spec-035 Task06：页面加载时拉一次分组模型库（含线上探测状态）
 if (typeof loadModelLibrary === 'function') loadModelLibrary();
+// Spec025：模型数量徽标立即进入加载态（spinner），绝不以初始 0 占位。
+if (typeof showModelCountLoading === 'function') showModelCountLoading();
 
 function addMessage(text, type) {
   const message = document.createElement('div');
@@ -747,6 +749,52 @@ async function conversationFetch(url, options = {}) {
 const CONVERSATION_STATUS_AUTO_CLEAR_MS = 4000;
 const CONVERSATION_STATUS_PERSISTENT_STATES = new Set(['error', 'loading']);
 let conversationStatusTimer = null;
+
+/* ---------- 通用就地加载态 helper（Spec025 前置：占比/模型数/知识库共用） ----------
+ * 能力：进入加载（aria-busy + is-loading + 用 createElement 构造的 spinner）、
+ * 成功渲染真值、失败显示错误文案 + 重试按钮（重试期间禁用防重复点击）、
+ * 10s 兜底（setTimeout，严禁 setInterval）追加 is-slow 与「仍在加载…」提示。
+ * 全部动态文本只用 textContent / createElement。
+ */
+function withAsyncSlot(slot, opts) {
+  if (!slot) return Promise.resolve(null);
+  const {
+    run = () => Promise.resolve(),
+    onLoading = null,
+    onSuccess = null,
+    onError = null,
+    slowText = '仍在加载…',
+    slowMs = 10000,
+  } = opts || {};
+  const spinner = document.createElement('span');
+  spinner.className = 'async-slot-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  slot.setAttribute('aria-busy', 'true');
+  slot.classList.add('is-loading');
+  slot.classList.remove('is-error');
+  if (typeof onLoading === 'function') onLoading(slot, { spinner, slow: false });
+  let slowTimer = setTimeout(() => {
+    slowTimer = null;
+    slot.classList.add('is-slow');
+    if (typeof onLoading === 'function') onLoading(slot, { spinner, slow: true, slowText });
+  }, slowMs);
+  const finish = () => {
+    if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
+    slot.classList.remove('is-loading', 'is-slow');
+    slot.setAttribute('aria-busy', 'false');
+  };
+  return Promise.resolve().then(run).then(
+    (result) => { finish(); if (typeof onSuccess === 'function') onSuccess(slot, result, spinner); return result; },
+    (error) => {
+      finish();
+      slot.classList.add('is-error');
+      const retry = () => withAsyncSlot(slot, opts);
+      if (typeof onError === 'function') onError(slot, { error, spinner, retry });
+      throw error;
+    }
+  );
+}
+
 /* ---------- Spec025：上下文占比与手动压缩 ----------
  * 数据来自 GET /api/conversations/{id}/context-usage，只在「加载会话后」与
  * 「每轮消息完成后」刷新，不做常驻轮询；手动压缩后做一次有上限的跟随刷新
@@ -772,8 +820,65 @@ function setContextStatus(text) {
 // r=15 的圆周长 2πr ≈ 94.25，与 CSS 的 stroke-dasharray 保持一致。
 const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * 15;
 
+let contextUsageSlowTimer = null;
+
+// 占比「加载中」第三态：与无会话（is-idle / visibility 占位）严格区分，
+// 组件从一开始就可见，环旁文案为「加载中」+ 细环转圈，不再误显示 0%。
+function clearContextUsageLoading() {
+  if (!contextMeter) return;
+  if (contextUsageSlowTimer) { clearTimeout(contextUsageSlowTimer); contextUsageSlowTimer = null; }
+  contextMeter.classList.remove('is-loading', 'is-slow', 'is-error');
+  contextMeter.removeAttribute('aria-busy');
+  const sp = contextMeter.querySelector('.async-slot-spinner');
+  if (sp) sp.remove();
+  if (contextStatus) { contextStatus.textContent = ''; contextStatus.hidden = true; }
+}
+
+function showContextUsageLoading() {
+  if (!contextMeter) return;
+  clearContextUsageLoading();
+  contextMeter.classList.remove('is-idle');
+  contextMeter.classList.add('is-loading');
+  contextMeter.setAttribute('aria-busy', 'true');
+  if (contextMeterValue) contextMeterValue.textContent = '加载中';
+  if (contextCompactButton) contextCompactButton.tabIndex = -1;
+  const spinner = document.createElement('span');
+  spinner.className = 'async-slot-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  if (contextMeterText) contextMeter.insertBefore(spinner, contextMeterText);
+  else contextMeter.appendChild(spinner);
+  contextUsageSlowTimer = setTimeout(() => {
+    if (!contextMeter || !contextMeter.classList.contains('is-loading')) return;
+    contextMeter.classList.add('is-slow');
+    if (contextMeterValue) contextMeterValue.textContent = '仍在加载…';
+    if (contextStatus) { contextStatus.textContent = '正在获取上下文占比…'; contextStatus.hidden = false; }
+  }, 10000);
+}
+
+function renderContextUsageError() {
+  clearContextUsageLoading();
+  if (contextMeter) contextMeter.classList.add('is-error');
+  if (contextMeterValue) contextMeterValue.textContent = '—';
+  if (contextStatus) {
+    contextStatus.hidden = false;
+    contextStatus.textContent = '上下文占比加载失败';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'context-retry secondary-button';
+    retry.textContent = '重试';
+    retry.addEventListener('click', () => {
+      if (retry.disabled) return;
+      retry.disabled = true;
+      showContextUsageLoading();
+      loadContextUsage();
+    });
+    contextStatus.appendChild(retry);
+  }
+}
+
 function renderContextUsage(usage) {
   if (!contextMeter || !contextRing || !contextRingFill || !contextMeterText) return;
+  clearContextUsageLoading();
   // 无会话时保留占位（visibility 隐藏），避免底部行抖动，同时移出 Tab 焦点。
   const idle = !usage;
   contextMeter.classList.toggle('is-idle', idle);
@@ -800,12 +905,18 @@ function renderContextUsage(usage) {
 async function loadContextUsage() {
   const conversationId = conversationState.conversationId;
   if (!conversationId) { renderContextUsage(null); return null; }
+  // 进入时若已是「加载中」第三态，则失败时显示错误态而非退回 idle 占位。
+  const wasLoading = !!(contextMeter && contextMeter.classList.contains('is-loading'));
   try {
     const usage = await conversationFetch(`/api/conversations/${encodeURIComponent(conversationId)}/context-usage`);
+    // 切会话守卫：若加载期间已切换到其它会话，丢弃这次渲染，避免错乱。
+    if (conversationState.conversationId !== conversationId) return null;
     renderContextUsage(usage);
     return usage;
   } catch (error) {
-    renderContextUsage(null);
+    if (conversationState.conversationId !== conversationId) return null;
+    if (wasLoading) renderContextUsageError();
+    else renderContextUsage(null);
     return null;
   }
 }
@@ -820,41 +931,93 @@ function formatTokens(n) {
   return (n / 1000).toFixed(1) + 'k';
 }
 
+/* 分类配色：沿用产品自身的紫/灰主色 + 少量柔和强调色，分类粒度对齐参考设计，
+ * 但保持 ResearchAgent 自己的色感（不做彩虹色）。 */
+const CONTEXT_BREAKDOWN_COLORS = {
+  project_instructions: '#6d5dfc',
+  memory: '#8b7bf7',
+  recall: '#2fb6c4',
+  file_memory: '#45ba77',
+  rag: '#4a9de0',
+  history: '#f0a63c',
+  tool_outputs: '#e0729e',
+  question: '#8b8e96',
+};
+const CONTEXT_BREAKDOWN_COLOR_FALLBACK = '#b0b1b8';
+
+function contextBreakdownColor(kind) {
+  return CONTEXT_BREAKDOWN_COLORS[kind] || CONTEXT_BREAKDOWN_COLOR_FALLBACK;
+}
+
 function renderContextBreakdown(usage) {
   if (!contextBreakdown) return;
   contextBreakdown.replaceChildren();
   contextBreakdown.classList.remove('is-open');
   if (!usage || !usage.breakdown || !usage.breakdown.length) return;
   const budget = usage.budget_tokens > 0 ? usage.budget_tokens : 0;
-  const header = document.createElement('div');
-  header.className = 'cb-title';
-  header.textContent = '上下文占用明细';
-  contextBreakdown.appendChild(header);
+  const totalPct = budget > 0 ? Math.min(100, (usage.used_tokens / budget) * 100) : 0;
+
+  const title = document.createElement('div');
+  title.className = 'cb-title';
+  title.textContent = '上下文用量';
+  contextBreakdown.appendChild(title);
+
+  // 头部：大百分比 + 已用/预算。
+  const head = document.createElement('div');
+  head.className = 'cb-head';
+  const percent = document.createElement('span');
+  percent.className = 'cb-percent';
+  percent.textContent = totalPct.toFixed(0) + '%';
+  const used = document.createElement('span');
+  used.className = 'cb-used';
+  used.textContent = '已使用 ' + formatTokens(usage.used_tokens) + ' / ' + formatTokens(budget);
+  head.appendChild(percent);
+  head.appendChild(used);
+  contextBreakdown.appendChild(head);
+
+  // 堆叠条：各段按占预算比例着色，剩余为空白轨道。
+  const stack = document.createElement('div');
+  stack.className = 'cb-stack';
+  for (const item of usage.breakdown) {
+    const segPct = budget > 0 ? Math.min(100, (item.tokens / budget) * 100) : 0;
+    if (segPct <= 0) continue;
+    const seg = document.createElement('span');
+    seg.className = 'cb-seg';
+    seg.style.width = segPct.toFixed(2) + '%';
+    seg.style.background = contextBreakdownColor(item.kind);
+    stack.appendChild(seg);
+  }
+  contextBreakdown.appendChild(stack);
+
+  // 清单：彩点 + 名称 + 占比 + 大小。
+  const list = document.createElement('div');
+  list.className = 'cb-list';
   for (const item of usage.breakdown) {
     const pct = budget > 0 ? Math.min(100, (item.tokens / budget) * 100) : 0;
     const row = document.createElement('div');
-    row.className = 'cb-row';
+    row.className = 'cb-item';
+    const dot = document.createElement('span');
+    dot.className = 'cb-dot';
+    dot.style.background = contextBreakdownColor(item.kind);
     const name = document.createElement('span');
-    name.className = 'cb-name';
+    name.className = 'cb-item-name';
     name.textContent = item.label;
-    const bar = document.createElement('div');
-    bar.className = 'cb-bar';
-    const fill = document.createElement('div');
-    fill.className = 'cb-bar-fill';
-    fill.style.width = pct.toFixed(1) + '%';
-    bar.appendChild(fill);
-    const meta = document.createElement('span');
-    meta.className = 'cb-meta';
-    meta.textContent = pct.toFixed(0) + '% · ' + formatBytes(item.bytes);
+    const value = document.createElement('span');
+    value.className = 'cb-item-value';
+    const pctText = document.createElement('span');
+    pctText.className = 'cb-item-pct';
+    pctText.textContent = pct.toFixed(0) + '%';
+    const sizeText = document.createElement('span');
+    sizeText.className = 'cb-item-size';
+    sizeText.textContent = formatBytes(item.bytes);
+    value.appendChild(pctText);
+    value.appendChild(sizeText);
+    row.appendChild(dot);
     row.appendChild(name);
-    row.appendChild(bar);
-    row.appendChild(meta);
-    contextBreakdown.appendChild(row);
+    row.appendChild(value);
+    list.appendChild(row);
   }
-  const total = document.createElement('div');
-  total.className = 'cb-total';
-  total.textContent = '已用 ' + formatTokens(usage.used_tokens) + ' / 预算 ' + formatTokens(budget);
-  contextBreakdown.appendChild(total);
+  contextBreakdown.appendChild(list);
 }
 
 function openContextBreakdown() {
@@ -2538,11 +2701,15 @@ async function openConversation(conversationId, { replace = false } = {}) {
     loadReasoningOptions(activeModel, { selectedEffort: conversationState.conversation?.reasoning_effort || null, source: 'session' });
     projectState.expandedProjectId = conversationState.projectId || projectState.expandedProjectId;
     renderProjectList(projectState.items);
-    if (conversationState.projectId) await loadProjectConversations(conversationState.projectId);
-    await loadConversationMessages(conversationId);
-    if (!isCurrent()) return;
+    // Spec025：三路只依赖 conversationId/projectId，改为并行，占比不再排队到最后。
+    // 既有的 isCurrent() 守卫由「切会话丢弃渲染」+ 下方统一检查保证，不丢取消语义。
+    showContextUsageLoading();
+    const openTasks = [];
+    if (conversationState.projectId) openTasks.push(loadProjectConversations(conversationState.projectId));
+    openTasks.push(loadConversationMessages(conversationId));
+    openTasks.push(loadContextUsage());
     stopContextFollow();
-    await loadContextUsage();
+    await Promise.all(openTasks);
     if (!isCurrent()) return;
     await loadConversationList({ append: false, guard: isCurrent });
     if (!isCurrent()) return;
@@ -4427,6 +4594,7 @@ function showView(view) {
     if (item.dataset.view === 'papers') item.hidden = !paperState.enabled;
   });
   if (nextView === 'kb') {
+    renderKbSkeleton();
     loadKbPapers();
     loadKbHealth();
   }
@@ -4947,6 +5115,37 @@ function renderModelListItem(model, currentId) {
   return li;
 }
 
+// 模型数量徽标：未就绪（modelLibrary 尚未加载）时插 spinner，绝不以 0 占位；
+// 就绪后把数字淡入（0.2s）。全部动态文本只用 textContent。
+function showModelCountLoading() {
+  const el = document.querySelector('#model-count');
+  if (!el || modelLibraryLoaded || el.dataset.loading === '1') return;
+  el.dataset.loading = '1';
+  el.setAttribute('aria-busy', 'true');
+  el.classList.add('is-loading');
+  el.replaceChildren();
+  const sp = document.createElement('span');
+  sp.className = 'async-slot-spinner';
+  sp.setAttribute('aria-hidden', 'true');
+  el.appendChild(sp);
+}
+
+function setModelCountBadge(count) {
+  const el = document.querySelector('#model-count');
+  if (!el) return;
+  // 未就绪：保持 spinner，绝不以 0 占位（真实 0 也会在 library 加载后展示）。
+  if (!modelLibraryLoaded) return;
+  el.dataset.loading = '';
+  el.classList.remove('is-loading');
+  el.removeAttribute('aria-busy');
+  const value = String(count);
+  if (el.textContent === value) return;
+  el.textContent = value;
+  el.classList.remove('model-count-fade');
+  void el.offsetWidth;
+  el.classList.add('model-count-fade');
+}
+
 function renderModelList() {
   const list = document.querySelector('#model-list');
   const empty = document.querySelector('#model-empty');
@@ -4960,8 +5159,7 @@ function renderModelList() {
   }
   if (allIds.length) currentModels = allIds;
 
-  const countEl = document.querySelector('#model-count');
-  if (countEl) countEl.textContent = String(allIds.length);
+  setModelCountBadge(allIds.length);
 
   // 始终展示「端侧模型 / 线上模型」两个分组；无模型时显示提示而非整组隐藏
   if (empty) {
@@ -5225,7 +5423,30 @@ async function rebuildKbPaper(paper, button) {
   await loadKbPapers();
 }
 
+// 知识库列表未就绪时渲染 3 条骨架行，高度/圆角与真实行一致避免抖动。
+function renderKbSkeleton() {
+  if (!kbList) return;
+  kbList.setAttribute('aria-busy', 'true');
+  kbList.classList.add('is-loading');
+  kbList.replaceChildren();
+  for (let i = 0; i < 3; i++) {
+    const item = document.createElement('li');
+    item.className = 'kb-item kb-skeleton';
+    const head = document.createElement('div');
+    head.className = 'kb-item-head';
+    const nameBar = document.createElement('span');
+    nameBar.className = 'kb-skeleton-bar kb-skeleton-name';
+    const metaBar = document.createElement('span');
+    metaBar.className = 'kb-skeleton-bar kb-skeleton-meta';
+    head.appendChild(nameBar);
+    head.appendChild(metaBar);
+    item.appendChild(head);
+    kbList.appendChild(item);
+  }
+}
+
 function renderKbPapers(papers) {
+  if (kbList) { kbList.classList.remove('is-loading'); kbList.removeAttribute('aria-busy'); }
   kbList.replaceChildren();
   if (kbCount) kbCount.textContent = String(papers.length);
   if (kbNavCount) kbNavCount.textContent = String(papers.length);
@@ -5322,27 +5543,48 @@ function renderKbPapers(papers) {
 
 async function loadKbHealth() {
   if (!kbHealth) return;
-  try {
-    const response = await fetch('/api/kb/health');
-    const data = await response.json();
-    const v2llm = data.v2_llm || {};
-    const detail = data.reranker_detail;
-    let rerankerStatus = data.reranker ? '启用' : '未启用（RRF 直出）';
-    if (detail && typeof detail === 'object') {
-      if (detail.enabled === false) {
-        rerankerStatus = '未启用（RRF 直出）';
-      } else if (detail.enabled === true && detail.available === true) {
-        rerankerStatus = '启用';
-      } else if (detail.enabled === true && detail.available === false) {
-        const reason = typeof detail.reason === 'string' ? detail.reason.trim() : '';
-        const safeReason = /^[a-z][a-z0-9_]{0,39}$/.test(reason) ? reason : 'unavailable';
-        rerankerStatus = `不可用：${safeReason}`;
+  // 沿用既有「组件状态加载中…」文案并前缀转圈；失败显示错误文案 + 重试按钮。
+  return withAsyncSlot(kbHealth, {
+    run: async () => {
+      const response = await fetch('/api/kb/health');
+      const data = await response.json();
+      return data;
+    },
+    onLoading: (slot, { spinner, slow, slowText }) => {
+      slot.textContent = slow ? `组件状态加载中…（${slowText}）` : '组件状态加载中…';
+      slot.insertBefore(spinner, slot.firstChild);
+    },
+    onSuccess: (slot, data) => {
+      const v2llm = data.v2_llm || {};
+      const detail = data.reranker_detail;
+      let rerankerStatus = data.reranker ? '启用' : '未启用（RRF 直出）';
+      if (detail && typeof detail === 'object') {
+        if (detail.enabled === false) {
+          rerankerStatus = '未启用（RRF 直出）';
+        } else if (detail.enabled === true && detail.available === true) {
+          rerankerStatus = '启用';
+        } else if (detail.enabled === true && detail.available === false) {
+          const reason = typeof detail.reason === 'string' ? detail.reason.trim() : '';
+          const safeReason = /^[a-z][a-z0-9_]{0,39}$/.test(reason) ? reason : 'unavailable';
+          rerankerStatus = `不可用：${safeReason}`;
+        }
       }
-    }
-    kbHealth.textContent = `Qdrant ${data.qdrant ? '就绪' : '不可用'} · Embedding ${data.embedding ? '就绪' : '不可用'} · 重排 ${rerankerStatus} · ${data.chunks ?? 0} 个片段 · v2 结构分析 ${v2llm.available ? '就绪' : '不可用（将降级为规则切分）'}`;
-  } catch (error) {
-    kbHealth.textContent = `组件状态读取失败：${error.message}`;
-  }
+      slot.textContent = `Qdrant ${data.qdrant ? '就绪' : '不可用'} · Embedding ${data.embedding ? '就绪' : '不可用'} · 重排 ${rerankerStatus} · ${data.chunks ?? 0} 个片段 · v2 结构分析 ${v2llm.available ? '就绪' : '不可用（将降级为规则切分）'}`;
+    },
+    onError: (slot, { error, retry }) => {
+      slot.textContent = `组件状态读取失败：${error.message}`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'kb-health-retry secondary-button';
+      btn.textContent = '重试';
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        retry();
+      });
+      slot.appendChild(btn);
+    },
+  });
 }
 
 function kbUploadErrorMessage(data) {

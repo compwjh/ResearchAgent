@@ -133,6 +133,31 @@ OBS_MAX_OUTPUT_CHARS = int(os.getenv("OBS_MAX_OUTPUT_CHARS", "20000"))
 # 替换 repository.py 旧有的 `token_budget * 4` 英文口径（与真实用量偏差可达 2 倍）。
 # 真 token 只从 platform/ollama_direct.py 回读做观测，本模块不引入 tokenizer。
 # 非法配置（≤0）：_env_positive_number 回退默认值并发 RuntimeWarning（spec-025 取安全默认值而非 fail-fast）。
+# ---------- Ollama /api/tags 结果缓存（首屏就绪优化）----------
+# OLLAMA_TAGS_CACHE_TTL_SECONDS：成功枚举结果的缓存秒数（默认 30）。
+#   /api/tags 是同步 HTTP，且被 health/chat/conversations/kb/models 多路由复用；
+#   不缓存时 Ollama 不可达会让每个请求都打满 timeout=5
+#   （实测 /api/health 5050ms，见 docs/sdd/notes/startup-perf-baseline.md）。
+OLLAMA_TAGS_CACHE_TTL_SECONDS = _env_positive_number("OLLAMA_TAGS_CACHE_TTL_SECONDS", 30, int)
+# OLLAMA_TAGS_FAILURE_TTL_SECONDS：失败（负）缓存秒数（默认 5）。
+#   必须远小于成功 TTL —— 否则一次网络抖动会把「模型列表为空」固化 30s。
+#   负缓存只针对网络类 httpx.HTTPError，避免把偶发解析异常也固化。
+OLLAMA_TAGS_FAILURE_TTL_SECONDS = _env_positive_number("OLLAMA_TAGS_FAILURE_TTL_SECONDS", 5, int)
+
+# ---------- 启动预热（首屏就绪优化，spec 优化项 P1）----------
+# WARMUP_ENABLED：是否启用后台预热（默认开启）。
+#   关闭时 /api/kb/health 仍走短超时兜底探测，只是不再做启动预热。
+WARMUP_ENABLED = _env_bool("WARMUP_ENABLED", True)
+# KB_HEALTH_PROBE_TIMEOUT_SECONDS：/api/kb/health 的 embedding 探测短超时（秒）。
+#   不可达时绝不阻塞上百秒（基线 155s 来自 timeout=180 × 2 重试）；优先复用预热注册表，
+#   仅当注册表尚无结论时才做一次该时长上限的兜底探测。
+KB_HEALTH_PROBE_TIMEOUT_SECONDS = _env_positive_number("KB_HEALTH_PROBE_TIMEOUT_SECONDS", 3, float)
+# WARMUP_EMBEDDING_TIMEOUT_SECONDS：预热项「稠密向量化」整体挂起上限（秒）。
+#   embed_texts 内部 timeout=180 且网络错误重试一次，不可达时会挂起很久；后台预热用该值
+#   包裹，超时即记为 failed，让 /api/ready 尽快收敛到终态（后台线程仍跑完，不影响启动）。
+WARMUP_EMBEDDING_TIMEOUT_SECONDS = _env_positive_number("WARMUP_EMBEDDING_TIMEOUT_SECONDS", 30, float)
+# WARMUP_QDRANT_TIMEOUT_SECONDS：预热项「Qdrant 连通性」整体挂起上限（秒，默认 10）。
+WARMUP_QDRANT_TIMEOUT_SECONDS = _env_positive_number("WARMUP_QDRANT_TIMEOUT_SECONDS", 10, float)
 # CHAT_TOTAL_TOKEN_BUDGET：单次模型调用输入 token 硬上限（默认 20000，模型窗口 262144 的保守占比）。
 # spec-038 P3：由 8000 上调到 20000（配合 L1/L2/L3 记忆分层后上下文更长），仍为 env 可配。
 CHAT_TOTAL_TOKEN_BUDGET = _env_positive_number("CHAT_TOTAL_TOKEN_BUDGET", 20000, int)

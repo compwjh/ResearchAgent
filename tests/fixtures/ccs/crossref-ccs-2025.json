@@ -1,0 +1,882 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 38128,
+  "items-per-page": 5,
+  "items": [
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       6,
+       5
+      ]
+     ],
+     "date-time": "2026-06-05T15:08:24Z",
+     "timestamp": 1780672104961,
+     "version": "3.54.1"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 70,
+    "publisher": "ACM",
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "DOI": "10.1145/3719027.3765163",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ],
+     "date-time": "2025-11-22T23:37:25Z",
+     "timestamp": 1763854645000
+    },
+    "page": "1188-1199",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 1,
+    "title": [
+     "Revisiting Keyed-Verification Anonymous Credentials"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0001-6518-2712",
+      "authenticated-orcid": false,
+      "given": "Michele",
+      "family": "Orrù",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "CNRS, Paris, France"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '25: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Taipei Taiwan",
+     "acronym": "CCS '25",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2025 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3719027.3765163",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       12,
+       22
+      ]
+     ],
+     "date-time": "2025-12-22T22:26:22Z",
+     "timestamp": 1766442382000
+    },
+    "score": 43.519485,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3719027.3765163"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "references-count": 70,
+    "alternative-id": [
+     "10.1145/3719027.3765163",
+     "10.1145/3719027"
+    ],
+    "URL": "https://doi.org/10.1145/3719027.3765163",
+    "published": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2025-11-22",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       5,
+       19
+      ]
+     ],
+     "date-time": "2026-05-19T15:09:41Z",
+     "timestamp": 1779203381938,
+     "version": "3.51.4"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 45,
+    "publisher": "ACM",
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "DOI": "10.1145/3719027.3765155",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ],
+     "date-time": "2025-11-22T23:42:02Z",
+     "timestamp": 1763854922000
+    },
+    "page": "1158-1172",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 2,
+    "title": [
+     "Updatable aPAKE: Security Against Bulk Precomputation Attacks"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0009-0002-6632-3745",
+      "authenticated-orcid": false,
+      "given": "Dennis",
+      "family": "Dayanikli",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Hasso-Plattner-Institute, University of Potsdam, Potsdam, Germany"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-2872-7899",
+      "authenticated-orcid": false,
+      "given": "Anja",
+      "family": "Lehmann",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Hasso-Plattner-Institute, University of Potsdam, Potsdam, Germany"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '25: ACM SIGSAC Conference on Computer and Communications Security",
+     "location": "Taipei Taiwan",
+     "acronym": "CCS '25",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 2025 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3719027.3765155",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       12,
+       22
+      ]
+     ],
+     "date-time": "2025-12-22T22:29:19Z",
+     "timestamp": 1766442559000
+    },
+    "score": 43.386375,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3719027.3765155"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "references-count": 45,
+    "alternative-id": [
+     "10.1145/3719027.3765155",
+     "10.1145/3719027"
+    ],
+    "URL": "https://doi.org/10.1145/3719027.3765155",
+    "published": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2025-11-22",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       12,
+       22
+      ]
+     ],
+     "date-time": "2025-12-22T22:27:43Z",
+     "timestamp": 1766442463715,
+     "version": "3.48.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 10,
+    "publisher": "ACM",
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "DOI": "10.1145/3719027.3760728",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ],
+     "date-time": "2025-11-22T23:37:25Z",
+     "timestamp": 1763854645000
+    },
+    "page": "4794-4796",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Poster: PQ Noise Explorer"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0009-0000-5653-9935",
+      "authenticated-orcid": false,
+      "given": "Animesh",
+      "family": "Thakur",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Department of Computer and Information Science, Linköping University, Linköping, Sweden"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0003-1916-3398",
+      "authenticated-orcid": false,
+      "given": "Mikael",
+      "family": "Asplund",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Department of Computer and Information Science, Linköping University, Linköping, Sweden"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '25: ACM SIGSAC Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Taipei Taiwan",
+     "acronym": "CCS '25"
+    },
+    "container-title": [
+     "Proceedings of the 2025 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3719027.3760728",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       12,
+       22
+      ]
+     ],
+     "date-time": "2025-12-22T22:26:03Z",
+     "timestamp": 1766442363000
+    },
+    "score": 43.195602,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3719027.3760728"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "references-count": 10,
+    "alternative-id": [
+     "10.1145/3719027.3760728",
+     "10.1145/3719027"
+    ],
+    "URL": "https://doi.org/10.1145/3719027.3760728",
+    "published": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2025-11-22",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       12,
+       22
+      ]
+     ],
+     "date-time": "2025-12-22T22:22:30Z",
+     "timestamp": 1766442150083,
+     "version": "3.48.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 0,
+    "publisher": "ACM",
+    "funder": [
+     {
+      "DOI": "10.13039/501100001602",
+      "name": "Science Foundation Ireland",
+      "doi-asserted-by": "publisher",
+      "award": [
+       "EMPOWER - Data Governance (Spoke) Grant no. 20/SP/8955"
+      ],
+      "award-info": [
+       {
+        "award-number": [
+         "EMPOWER - Data Governance (Spoke) Grant no. 20/SP/8955"
+        ]
+       }
+      ],
+      "id": [
+       {
+        "id": "10.13039/501100001602",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "DOI": "10.1145/3719027.3767667",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ],
+     "date-time": "2025-11-22T23:33:16Z",
+     "timestamp": 1763854396000
+    },
+    "page": "4908-4909",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "CCSW '25: Cloud Computing Security Workshop"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0000-0002-9819-4880",
+      "authenticated-orcid": false,
+      "given": "Paolo",
+      "family": "Palmieri",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Computer Science &amp; IT, University College Cork, Cork, Ireland"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-6903-5127",
+      "authenticated-orcid": false,
+      "given": "Shivam",
+      "family": "Bhasin",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Nanyang Technological University, Singapore, Singapore"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       22
+      ]
+     ]
+    },
+    "event": {
+     "name": "CCS '25: ACM SIGSAC Conference on Computer and Communications Security",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ],
+     "location": "Taipei Taiwan",
+     "acronym": "CCS '25"
+    },
+    "container-title": [
+     "Proceedings of the 2025 ACM SIGSAC Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3719027.3767667",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       12,
+       22
+      ]
+     ],
+     "date-time": "2025-12-22T22:20:12Z",
+     "timestamp": 1766442012000
+    },
+    "score": 43.74275,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3719027.3767667"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "references-count": 0,
+    "alternative-id": [
+     "10.1145/3719027.3767667",
+     "10.1145/3719027"
+    ],
+    "URL": "https://doi.org/10.1145/3719027.3767667",
+    "published": {
+     "date-parts": [
+      [
+       2025,
+       11,
+       19
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2025-11-22",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       15
+      ]
+     ],
+     "date-time": "2025-08-15T02:33:37Z",
+     "timestamp": 1755225217677,
+     "version": "3.43.0"
+    },
+    "publisher-location": "New York, NY, USA",
+    "reference-count": 52,
+    "publisher": "ACM",
+    "content-domain": {
+     "domain": [
+      "dl.acm.org"
+     ],
+     "crossmark-restriction": true
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       25
+      ]
+     ]
+    },
+    "DOI": "10.1145/3708821.3736196",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       13
+      ]
+     ],
+     "date-time": "2025-08-13T06:30:56Z",
+     "timestamp": 1755066656000
+    },
+    "page": "1506-1519",
+    "update-policy": "https://doi.org/10.1145/crossmark-policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "NailKey: Mutable Biometric Using Fingernails"
+    ],
+    "prefix": "10.1145",
+    "author": [
+     {
+      "ORCID": "https://orcid.org/0009-0004-5342-4744",
+      "authenticated-orcid": false,
+      "given": "Yihong",
+      "family": "Hang",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "School of Information Science and Technology, ShanghaiTech University, Shanghai, China"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "ORCID": "https://orcid.org/0000-0002-7900-0745",
+      "authenticated-orcid": false,
+      "given": "Zhice",
+      "family": "Yang",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "School of Information Science and Technology, ShanghaiTech University, Shanghai, China"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "320",
+    "published-online": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       24
+      ]
+     ]
+    },
+    "event": {
+     "name": "ASIA CCS '25: 20th ACM Asia Conference on Computer and Communications Security",
+     "location": "Hanoi Vietnam",
+     "acronym": "ASIA CCS '25",
+     "sponsor": [
+      "SIGSAC ACM Special Interest Group on Security, Audit, and Control"
+     ]
+    },
+    "container-title": [
+     "Proceedings of the 20th ACM Asia Conference on Computer and Communications Security"
+    ],
+    "link": [
+     {
+      "URL": "https://dl.acm.org/doi/pdf/10.1145/3708821.3736196",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       13
+      ]
+     ],
+     "date-time": "2025-08-13T07:26:13Z",
+     "timestamp": 1755069973000
+    },
+    "score": 30.269938,
+    "resource": {
+     "primary": {
+      "URL": "https://dl.acm.org/doi/10.1145/3708821.3736196"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       24
+      ]
+     ]
+    },
+    "references-count": 52,
+    "alternative-id": [
+     "10.1145/3708821.3736196",
+     "10.1145/3708821"
+    ],
+    "URL": "https://doi.org/10.1145/3708821.3736196",
+    "published": {
+     "date-parts": [
+      [
+       2025,
+       8,
+       24
+      ]
+     ]
+    },
+    "assertion": [
+     {
+      "value": "2025-08-24",
+      "order": 3,
+      "name": "published",
+      "label": "Published",
+      "group": {
+       "name": "publication_history",
+       "label": "Publication History"
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

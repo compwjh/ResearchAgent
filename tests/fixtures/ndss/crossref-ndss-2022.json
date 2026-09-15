@@ -1,0 +1,986 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 142,
+  "items-per-page": 7,
+  "items": [
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       23
+      ]
+     ],
+     "date-time": "2026-04-23T22:18:59Z",
+     "timestamp": 1776982739854,
+     "version": "3.51.4"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2022.23037",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2022,
+       4,
+       16
+      ]
+     ],
+     "date-time": "2022-04-16T12:26:01Z",
+     "timestamp": 1650111961000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 8,
+    "title": [
+     "Subverting Stateful Firewalls with Protocol States"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Amit",
+      "family": "Klein",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2022",
+     "number": "29",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2022 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       3,
+       12
+      ]
+     ],
+     "date-time": "2023-03-12T12:52:23Z",
+     "timestamp": 1678625543000
+    },
+    "score": 36.26004,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2022-37-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2022.23037",
+    "published": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2026-08-26T06:52:24Z",
+     "timestamp": 1787727144037,
+     "version": "build-2784847793"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2022.24078",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2022,
+       4,
+       16
+      ]
+     ],
+     "date-time": "2022-04-16T12:26:01Z",
+     "timestamp": 1650111961000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 24,
+    "title": [
+     "Cross-Language Attacks"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Samuel",
+      "family": "Mergendahl",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Nathan",
+      "family": "Burow",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Hamed",
+      "family": "Okhravi",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2022",
+     "number": "29",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2022 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       3,
+       12
+      ]
+     ],
+     "date-time": "2023-03-12T12:52:38Z",
+     "timestamp": 1678625558000
+    },
+    "score": 35.734734,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2022-78-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2022.24078",
+    "published": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       6,
+       1
+      ]
+     ],
+     "date-time": "2026-06-01T22:24:53Z",
+     "timestamp": 1780352693245,
+     "version": "3.54.1"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "DOI": "10.14722/ndss.2022.23106",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2022,
+       4,
+       16
+      ]
+     ],
+     "date-time": "2022-04-16T12:26:01Z",
+     "timestamp": 1650111961000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 3,
+    "title": [
+     "Binary Search in Secure Computation"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Marina",
+      "family": "Blanton",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Chen",
+      "family": "Yuan",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Network and Distributed System Security Symposium",
+     "location": "San Diego, CA, USA",
+     "acronym": "NDSS 2022",
+     "number": "29",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2022 Network and Distributed System Security Symposium"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       3,
+       12
+      ]
+     ],
+     "date-time": "2023-03-12T12:52:27Z",
+     "timestamp": 1678625547000
+    },
+    "score": 35.682037,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/2022-106-paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/ndss.2022.23106",
+    "published": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       7,
+       14
+      ]
+     ],
+     "date-time": "2026-07-14T22:32:39Z",
+     "timestamp": 1784068359595,
+     "version": "3.55.0"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "DOI": "10.14722/usec.2022.23094",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       1,
+       24
+      ]
+     ],
+     "date-time": "2023-01-24T21:55:54Z",
+     "timestamp": 1674597354000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 6,
+    "title": [
+     "A Study on Security and Privacy Practices in Danish Companies"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Asmita",
+      "family": "Dalela",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Saverio",
+      "family": "Giallorenzo",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Oksana",
+      "family": "Kulyk",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Jacopo",
+      "family": "Mauro",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Elda",
+      "family": "Paja",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Symposium on Usable Security",
+     "location": "San Diego, CA",
+     "acronym": "USEC 2022",
+     "number": "??",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2022 Symposium on Usable Security"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       1,
+       24
+      ]
+     ],
+     "date-time": "2023-01-24T21:56:02Z",
+     "timestamp": 1674597362000
+    },
+    "score": 17.470173,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/usec2022_23094_paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/usec.2022.23094",
+    "published": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2026-08-26T15:25:34Z",
+     "timestamp": 1787757934966,
+     "version": "build-2784847793"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "DOI": "10.14722/autosec.2022.23018",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       2,
+       20
+      ]
+     ],
+     "date-time": "2023-02-20T20:37:03Z",
+     "timestamp": 1676925423000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 5,
+    "title": [
+     "PASS: A System-Driven Evaluation Platform for Autonomous Driving Safety and Security"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Zhisheng",
+      "family": "Hu",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Junjie",
+      "family": "Shen",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Shengjian",
+      "family": "Guo",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Xinyang",
+      "family": "Zhang",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Zhenyu",
+      "family": "Zhong",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Qi Alfred",
+      "family": "Chen",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Kang",
+      "family": "Li",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Third International Workshop on Automotive and Autonomous Vehicle Security",
+     "location": "San Diego, CA, USA",
+     "acronym": "AutoSec 2022",
+     "number": "4",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings Fourth International Workshop on Automotive and Autonomous Vehicle Security"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       2,
+       20
+      ]
+     ],
+     "date-time": "2023-02-20T20:37:11Z",
+     "timestamp": 1676925431000
+    },
+    "score": 13.691732,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/autosec2022_23018_paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/autosec.2022.23018",
+    "published": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       7,
+       3
+      ]
+     ],
+     "date-time": "2026-07-03T17:24:54Z",
+     "timestamp": 1783099494966,
+     "version": "3.54.6"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "DOI": "10.14722/bar.2022.23008",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       2,
+       20
+      ]
+     ],
+     "date-time": "2023-02-20T19:21:00Z",
+     "timestamp": 1676920860000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 13,
+    "title": [
+     "FitM: Binary-Only Coverage-Guided Fuzzing for Stateful Network Protocols"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Dominik",
+      "family": "Maier",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Otto",
+      "family": "Bittner",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Julian",
+      "family": "Beier",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Marc",
+      "family": "Munier",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "Workshop on Binary Analysis Research",
+     "location": "San Diego, CA, USA",
+     "acronym": "BAR 2022",
+     "number": "4",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings 2022 Workshop on Binary Analysis Research"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       2,
+       20
+      ]
+     ],
+     "date-time": "2023-02-20T19:21:03Z",
+     "timestamp": 1676920863000
+    },
+    "score": 9.681151,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/bar2022_23008_paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/bar.2022.23008",
+    "published": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       6,
+       30
+      ]
+     ],
+     "date-time": "2026-06-30T15:43:16Z",
+     "timestamp": 1782834196269,
+     "version": "3.54.5"
+    },
+    "publisher-location": "Reston, VA",
+    "publisher": "Internet Society",
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "DOI": "10.14722/fuzzing.2022.23006",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       2,
+       20
+      ]
+     ],
+     "date-time": "2023-02-20T20:18:14Z",
+     "timestamp": 1676924294000
+    },
+    "source": "Crossref",
+    "is-referenced-by-count": 4,
+    "title": [
+     "NSFuzz: Towards Efficient and State-Aware Network Service Fuzzing"
+    ],
+    "prefix": "10.14722",
+    "author": [
+     {
+      "given": "Shisong",
+      "family": "Qin",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Fan",
+      "family": "Hu",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Bodong",
+      "family": "Zhao",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Tingting",
+      "family": "Yin",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Chao",
+      "family": "Zhang",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "5725",
+    "event": {
+     "name": "1st International Fuzzing Workshop",
+     "location": "San Diego, CA, USA",
+     "acronym": "FUZZING 2022",
+     "number": "1",
+     "sponsor": [
+      "Internet Society"
+     ]
+    },
+    "container-title": [
+     "Proceedings FUZZING 2022 - 1st International Fuzzing Workshop"
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       2,
+       20
+      ]
+     ],
+     "date-time": "2023-02-20T20:18:19Z",
+     "timestamp": 1676924299000
+    },
+    "score": 9.590319,
+    "resource": {
+     "primary": {
+      "URL": "https://www.ndss-symposium.org/wp-content/uploads/fuzzing2022_23006_paper.pdf"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    },
+    "URL": "https://doi.org/10.14722/fuzzing.2022.23006",
+    "published": {
+     "date-parts": [
+      [
+       2022
+      ]
+     ]
+    }
+   }
+  ]
+ }
+}

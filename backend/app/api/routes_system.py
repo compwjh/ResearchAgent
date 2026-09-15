@@ -3,11 +3,12 @@ import httpx
 from fastapi import APIRouter
 
 from backend.app.api.common import *  # noqa: F401,F403
-from backend.app.platform.config import MODEL_NAME
+from backend.app.platform.config import MODEL_NAME, WARMUP_ENABLED
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
+from backend.app.platform.warmup import is_warmup_started, readiness_snapshot
 
 router = APIRouter()
 article_settings = load_article_settings()
@@ -34,6 +35,23 @@ def health() -> dict:
         "models": models,
         "paper_discovery_enabled": _paper_discovery_enabled(),
     }
+
+
+@router.get("/ready")
+def api_ready() -> dict:
+    """首屏就绪探针：恒 200，预热任何异常也绝不返回非 200（fail-open）。
+
+    返回各预热项 ``{status, elapsed_ms, error}`` 与整体 ``ready`` 布尔：
+    - ``ready`` 为 True 表示服务可对外提供（warmup 未启用/未启动，或所有预热项已达终态）；
+    - 预热项仍在进行（loading）时 ``ready`` 为 False，但接口依旧 200。
+    """
+    snapshot = readiness_snapshot()
+    if not WARMUP_ENABLED or not is_warmup_started():
+        # 尚未开始预热（如 lifespan 未触发）或已禁用——服务本身可用。
+        overall_ready = True
+    else:
+        overall_ready = all(item["status"] in ("ready", "failed") for item in snapshot.values())
+    return {"ready": overall_ready, "warmup": snapshot}
 
 
 # ==================== 论文检索（spec-015 / Task03）====================

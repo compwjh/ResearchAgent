@@ -1,0 +1,424 @@
+{
+ "id": "https://openalex.org/W4405183182",
+ "doi": "https://doi.org/10.1145/3658644.3670378",
+ "title": "Interactive Multi-Credential Authentication",
+ "display_name": "Interactive Multi-Credential Authentication",
+ "publication_year": 2024,
+ "publication_date": "2024-12-02",
+ "ids": {
+  "openalex": "https://openalex.org/W4405183182",
+  "doi": "https://doi.org/10.1145/3658644.3670378"
+ },
+ "language": "en",
+ "primary_location": {
+  "id": "doi:10.1145/3658644.3670378",
+  "is_oa": true,
+  "landing_page_url": "https://doi.org/10.1145/3658644.3670378",
+  "pdf_url": null,
+  "source": null,
+  "license": "cc-by",
+  "license_id": "https://openalex.org/licenses/cc-by",
+  "version": "publishedVersion",
+  "is_accepted": true,
+  "is_published": true,
+  "raw_source_name": "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security",
+  "raw_type": "proceedings-article"
+ },
+ "type": "conference-paper",
+ "indexed_in": [
+  "crossref"
+ ],
+ "open_access": {
+  "is_oa": true,
+  "oa_status": "gold",
+  "oa_url": "https://doi.org/10.1145/3658644.3670378",
+  "any_repository_has_fulltext": null
+ },
+ "authorships": [
+  {
+   "author_position": "first",
+   "author": {
+    "id": "https://openalex.org/A5057672045",
+    "display_name": "Deepak Maram",
+    "orcid": "https://orcid.org/0000-0001-5324-6889"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I205783295",
+     "display_name": "Cornell University",
+     "ror": "https://ror.org/05bnh6r87",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I205783295"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I4405261073",
+     "display_name": "Cornell Tech",
+     "ror": "https://ror.org/04qscbg47",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I205783295",
+      "https://openalex.org/I4405261073"
+     ]
+    }
+   ],
+   "countries": [
+    "US"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Deepak Maram",
+   "raw_affiliation_strings": [
+    "Mysten Labs, Cornell Tech, New York, USA"
+   ],
+   "raw_orcid": "https://orcid.org/0000-0001-5324-6889",
+   "affiliations": [
+    {
+     "raw_affiliation_string": "Mysten Labs, Cornell Tech, New York, USA",
+     "institution_ids": [
+      "https://openalex.org/I205783295",
+      "https://openalex.org/I4405261073"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "middle",
+   "author": {
+    "id": "https://openalex.org/A5030879683",
+    "display_name": "Mahimna Kelkar",
+    "orcid": "https://orcid.org/0009-0007-4268-4681"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I205783295",
+     "display_name": "Cornell University",
+     "ror": "https://ror.org/05bnh6r87",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I205783295"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I4405261073",
+     "display_name": "Cornell Tech",
+     "ror": "https://ror.org/04qscbg47",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I205783295",
+      "https://openalex.org/I4405261073"
+     ]
+    }
+   ],
+   "countries": [
+    "US"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Mahimna Kelkar",
+   "raw_affiliation_strings": [
+    "Cornell Tech, New York, USA"
+   ],
+   "raw_orcid": "https://orcid.org/0009-0007-4268-4681",
+   "affiliations": [
+    {
+     "raw_affiliation_string": "Cornell Tech, New York, USA",
+     "institution_ids": [
+      "https://openalex.org/I205783295",
+      "https://openalex.org/I4405261073"
+     ]
+    }
+   ]
+  },
+  {
+   "author_position": "last",
+   "author": {
+    "id": "https://openalex.org/A5087255124",
+    "display_name": "Ittay Eyal",
+    "orcid": "https://orcid.org/0000-0001-7595-2258"
+   },
+   "institutions": [
+    {
+     "id": "https://openalex.org/I174306211",
+     "display_name": "Technion – Israel Institute of Technology",
+     "ror": "https://ror.org/03qryx823",
+     "country_code": "IL",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I174306211"
+     ]
+    }
+   ],
+   "countries": [
+    "IL"
+   ],
+   "is_corresponding": false,
+   "raw_author_name": "Ittay Eyal",
+   "raw_affiliation_strings": [
+    "Technion, Haifa, Israel"
+   ],
+   "raw_orcid": "https://orcid.org/0000-0001-7595-2258",
+   "affiliations": [
+    {
+     "raw_affiliation_string": "Technion, Haifa, Israel",
+     "institution_ids": [
+      "https://openalex.org/I174306211"
+     ]
+    }
+   ]
+  }
+ ],
+ "institutions": [],
+ "countries_distinct_count": 2,
+ "institutions_distinct_count": 3,
+ "corresponding_author_ids": [],
+ "corresponding_institution_ids": [],
+ "apc_list": null,
+ "apc_paid": null,
+ "fwci": 0.4944,
+ "has_fulltext": false,
+ "cited_by_count": 1,
+ "citation_normalized_percentile": {
+  "value": 0.66808084,
+  "is_in_top_1_percent": false,
+  "is_in_top_10_percent": false
+ },
+ "cited_by_percentile_year": {
+  "min": 91,
+  "max": 95
+ },
+ "biblio": {
+  "volume": null,
+  "issue": null,
+  "first_page": "408",
+  "last_page": "422"
+ },
+ "is_retracted": false,
+ "is_paratext": false,
+ "is_xpac": false,
+ "primary_topic": {
+  "id": "https://openalex.org/T11800",
+  "display_name": "User Authentication and Security Systems",
+  "score": 0.9994999766349792,
+  "subfield": {
+   "id": "https://openalex.org/subfields/1710",
+   "display_name": "Information Systems"
+  },
+  "field": {
+   "id": "https://openalex.org/fields/17",
+   "display_name": "Computer Science"
+  },
+  "domain": {
+   "id": "https://openalex.org/domains/3",
+   "display_name": "Physical Sciences"
+  }
+ },
+ "topics": [
+  {
+   "id": "https://openalex.org/T11800",
+   "display_name": "User Authentication and Security Systems",
+   "score": 0.9994999766349792,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1710",
+    "display_name": "Information Systems"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T10237",
+   "display_name": "Cryptography and Data Security",
+   "score": 0.9973000288009644,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1702",
+    "display_name": "Artificial Intelligence"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  },
+  {
+   "id": "https://openalex.org/T11504",
+   "display_name": "Advanced Authentication Protocols Security",
+   "score": 0.9966999888420105,
+   "subfield": {
+    "id": "https://openalex.org/subfields/1705",
+    "display_name": "Computer Networks and Communications"
+   },
+   "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+   },
+   "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+   }
+  }
+ ],
+ "keywords": [
+  {
+   "id": "https://openalex.org/keywords/credential",
+   "display_name": "Credential",
+   "score": 0.8766040205955505
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-science",
+   "display_name": "Computer science",
+   "score": 0.716515064239502
+  },
+  {
+   "id": "https://openalex.org/keywords/authentication",
+   "display_name": "Authentication (law)",
+   "score": 0.657600462436676
+  },
+  {
+   "id": "https://openalex.org/keywords/computer-security",
+   "display_name": "Computer security",
+   "score": 0.5621459484100342
+  },
+  {
+   "id": "https://openalex.org/keywords/internet-privacy",
+   "display_name": "Internet privacy",
+   "score": 0.3892664909362793
+  }
+ ],
+ "concepts": [
+  {
+   "id": "https://openalex.org/C2777810591",
+   "wikidata": "https://www.wikidata.org/wiki/Q16861606",
+   "display_name": "Credential",
+   "level": 2,
+   "score": 0.8766040205955505
+  },
+  {
+   "id": "https://openalex.org/C41008148",
+   "wikidata": "https://www.wikidata.org/wiki/Q21198",
+   "display_name": "Computer science",
+   "level": 0,
+   "score": 0.716515064239502
+  },
+  {
+   "id": "https://openalex.org/C148417208",
+   "wikidata": "https://www.wikidata.org/wiki/Q4825882",
+   "display_name": "Authentication (law)",
+   "level": 2,
+   "score": 0.657600462436676
+  },
+  {
+   "id": "https://openalex.org/C38652104",
+   "wikidata": "https://www.wikidata.org/wiki/Q3510521",
+   "display_name": "Computer security",
+   "level": 1,
+   "score": 0.5621459484100342
+  },
+  {
+   "id": "https://openalex.org/C108827166",
+   "wikidata": "https://www.wikidata.org/wiki/Q175975",
+   "display_name": "Internet privacy",
+   "level": 1,
+   "score": 0.3892664909362793
+  }
+ ],
+ "mesh": [],
+ "locations_count": 1,
+ "locations": [
+  {
+   "id": "doi:10.1145/3658644.3670378",
+   "is_oa": true,
+   "landing_page_url": "https://doi.org/10.1145/3658644.3670378",
+   "pdf_url": null,
+   "source": null,
+   "license": "cc-by",
+   "license_id": "https://openalex.org/licenses/cc-by",
+   "version": "publishedVersion",
+   "is_accepted": true,
+   "is_published": true,
+   "raw_source_name": "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security",
+   "raw_type": "proceedings-article"
+  }
+ ],
+ "best_oa_location": {
+  "id": "doi:10.1145/3658644.3670378",
+  "is_oa": true,
+  "landing_page_url": "https://doi.org/10.1145/3658644.3670378",
+  "pdf_url": null,
+  "source": null,
+  "license": "cc-by",
+  "license_id": "https://openalex.org/licenses/cc-by",
+  "version": "publishedVersion",
+  "is_accepted": true,
+  "is_published": true,
+  "raw_source_name": "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security",
+  "raw_type": "proceedings-article"
+ },
+ "sustainable_development_goals": [
+  {
+   "display_name": "Peace, Justice and strong institutions",
+   "score": 0.699999988079071,
+   "id": "https://metadata.un.org/sdg/16"
+  }
+ ],
+ "awards": [],
+ "funders": [],
+ "has_content": {
+  "pdf": false,
+  "grobid_xml": false
+ },
+ "content_urls": null,
+ "referenced_works_count": 18,
+ "referenced_works": [
+  "https://openalex.org/W146244851",
+  "https://openalex.org/W1550189296",
+  "https://openalex.org/W1907293129",
+  "https://openalex.org/W1998410860",
+  "https://openalex.org/W2029693536",
+  "https://openalex.org/W2111303254",
+  "https://openalex.org/W2468121714",
+  "https://openalex.org/W2795673503",
+  "https://openalex.org/W2981490235",
+  "https://openalex.org/W2982155579",
+  "https://openalex.org/W2988314999",
+  "https://openalex.org/W3037285711",
+  "https://openalex.org/W3043572547",
+  "https://openalex.org/W3125712971",
+  "https://openalex.org/W3215032241",
+  "https://openalex.org/W4240347887",
+  "https://openalex.org/W4406257471",
+  "https://openalex.org/W6804065196"
+ ],
+ "related_works": [
+  "https://openalex.org/W4391375266",
+  "https://openalex.org/W2899084033",
+  "https://openalex.org/W2748952813",
+  "https://openalex.org/W2389256677",
+  "https://openalex.org/W3115858616",
+  "https://openalex.org/W4392576316",
+  "https://openalex.org/W812360551",
+  "https://openalex.org/W4378418693",
+  "https://openalex.org/W1607245420",
+  "https://openalex.org/W2912135041"
+ ],
+ "abstract_inverted_index": null,
+ "counts_by_year": [
+  {
+   "year": 2025,
+   "cited_by_count": 1
+  }
+ ],
+ "updated_date": "2026-08-18T07:49:30.821534",
+ "created_date": "2025-10-10T00:00:00"
+}

@@ -1,0 +1,2964 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 265691,
+  "items-per-page": 17,
+  "items": [
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       9,
+       3
+      ]
+     ],
+     "date-time": "2026-09-03T16:13:20Z",
+     "timestamp": 1788452000118,
+     "version": "build-2803163510"
+    },
+    "reference-count": 109,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179374",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "951-968",
+    "source": "Crossref",
+    "is-referenced-by-count": 16,
+    "title": [
+     "Breaking Security-Critical Voice Authentication"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Andre",
+      "family": "Kassis",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "University of Waterloo,Cheriton School of Computer Science,Waterloo,Canada"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Urs",
+      "family": "Hengartner",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Waterloo,Cheriton School of Computer Science,Waterloo,Canada"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179374.pdf?arnumber=10179374",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       20
+      ]
+     ],
+     "date-time": "2024-07-20T05:11:58Z",
+     "timestamp": 1721452318000
+    },
+    "score": 31.41762,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179374/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 109,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179374",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       3,
+       6
+      ]
+     ],
+     "date-time": "2026-03-06T04:08:40Z",
+     "timestamp": 1772770120620,
+     "version": "3.50.1"
+    },
+    "reference-count": 53,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179413",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "3347-3364",
+    "source": "Crossref",
+    "is-referenced-by-count": 6,
+    "title": [
+     "No Privacy in the Electronics Repair Industry"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Jason",
+      "family": "Ceci",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "University of Guelph"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Jonah",
+      "family": "Stegman",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Guelph"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Hassan",
+      "family": "Khan",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Guelph"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179413.pdf?arnumber=10179413",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       20
+      ]
+     ],
+     "date-time": "2024-07-20T04:47:39Z",
+     "timestamp": 1721450859000
+    },
+    "score": 30.542011,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179413/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 53,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179413",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       27
+      ]
+     ],
+     "date-time": "2026-08-27T00:03:29Z",
+     "timestamp": 1787789009892,
+     "version": "build-2784847793"
+    },
+    "reference-count": 40,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179466",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "2190-2207",
+    "source": "Crossref",
+    "is-referenced-by-count": 29,
+    "title": [
+     "Continual Observation under User-level Differential Privacy"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Wei",
+      "family": "Dong",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Hong Kong University of Science and Technology,Hong Kong SAR,China"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Qiyao",
+      "family": "Luo",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Hong Kong University of Science and Technology,Hong Kong SAR,China"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Ke",
+      "family": "Yi",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Hong Kong University of Science and Technology,Hong Kong SAR,China"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179466.pdf?arnumber=10179466",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       20
+      ]
+     ],
+     "date-time": "2024-07-20T05:16:57Z",
+     "timestamp": 1721452617000
+    },
+    "score": 30.515768,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179466/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 40,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179466",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       13
+      ]
+     ],
+     "date-time": "2026-04-13T20:14:34Z",
+     "timestamp": 1776111274981,
+     "version": "3.50.1"
+    },
+    "reference-count": 114,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "funder": [
+     {
+      "DOI": "10.13039/100000001",
+      "name": "National Science Foundation",
+      "doi-asserted-by": "publisher",
+      "id": [
+       {
+        "id": "10.13039/100000001",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179469",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "2050-2067",
+    "source": "Crossref",
+    "is-referenced-by-count": 7,
+    "title": [
+     "Skilled or Gullibleƒ Gender Stereotypes Related to Computer Security and Privacy"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Miranda",
+      "family": "Wei",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "University of Washington,Paul G. Allen School of Computer Science &#x0026; Engineering"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Pardis",
+      "family": "Emami-Naeini",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Duke University,Department of Computer Science"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Franziska",
+      "family": "Roesner",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Washington,Paul G. Allen School of Computer Science &#x0026; Engineering"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Tadayoshi",
+      "family": "Kohno",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Washington,Paul G. Allen School of Computer Science &#x0026; Engineering"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179469.pdf?arnumber=10179469",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2024-07-21T04:20:09Z",
+     "timestamp": 1721535609000
+    },
+    "score": 30.257488,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179469/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 114,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179469",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       8,
+       18
+      ]
+     ],
+     "date-time": "2026-08-18T14:58:56Z",
+     "timestamp": 1787065136382,
+     "version": "build-2736575974"
+    },
+    "reference-count": 35,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179373",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T13:18:15Z",
+     "timestamp": 1689945495000
+    },
+    "page": "1491-1508",
+    "source": "Crossref",
+    "is-referenced-by-count": 18,
+    "title": [
+     "Token meets Wallet: Formalizing Privacy and Revocation for FIDO2"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Lucjan",
+      "family": "Hanzlik",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "CISPA Helmholtz Center for Information Security"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Julian",
+      "family": "Loss",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "CISPA Helmholtz Center for Information Security"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Benedikt",
+      "family": "Wagner",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Saarland University,CISPA Helmholtz Center for Information Security"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179373.pdf?arnumber=10179373",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       20
+      ]
+     ],
+     "date-time": "2024-07-20T00:40:52Z",
+     "timestamp": 1721436052000
+    },
+    "score": 29.880707,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179373/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 35,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179373",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:23Z",
+     "timestamp": 1725793703561
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179443",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "36-37",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Organizing Committee"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179443.pdf?arnumber=10179443",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:47Z",
+     "timestamp": 1721323547000
+    },
+    "score": 32.745155,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179443/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179443",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:31Z",
+     "timestamp": 1725793711348
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179455",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "4-4",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Copyright Page"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179455.pdf?arnumber=10179455",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:26:00Z",
+     "timestamp": 1721323560000
+    },
+    "score": 32.73219,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179455/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179455",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:14Z",
+     "timestamp": 1725793694900
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179432",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "3467-3479",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Author Index"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179432.pdf?arnumber=10179432",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:51Z",
+     "timestamp": 1721323551000
+    },
+    "score": 32.71055,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179432/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179432",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:15Z",
+     "timestamp": 1725793695900
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179414",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "1-1",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Title Page i"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179414.pdf?arnumber=10179414",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:58Z",
+     "timestamp": 1721323558000
+    },
+    "score": 32.25903,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179414/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179414",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:32Z",
+     "timestamp": 1725793712014
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179299",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "5-30",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Table of Contents"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179299.pdf?arnumber=10179299",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:54Z",
+     "timestamp": 1721323554000
+    },
+    "score": 32.247696,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179299/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179299",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:16Z",
+     "timestamp": 1725793696927
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179428",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "3-3",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Title Page iii"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179428.pdf?arnumber=10179428",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:59Z",
+     "timestamp": 1721323559000
+    },
+    "score": 32.21963,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179428/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179428",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:17Z",
+     "timestamp": 1725793697829
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179462",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "34-35",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Message from the Program Chairs"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179462.pdf?arnumber=10179462",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:34Z",
+     "timestamp": 1721323534000
+    },
+    "score": 31.335266,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179462/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179462",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:15Z",
+     "timestamp": 1725793695716
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179312",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "31-33",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Message from the General Chair"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179312.pdf?arnumber=10179312",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:55Z",
+     "timestamp": 1721323555000
+    },
+    "score": 31.322931,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179312/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179312",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T11:08:40Z",
+     "timestamp": 1725793720640
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         7,
+         1
+        ]
+       ],
+       "date-time": "2023-07-01T00:00:00Z",
+       "timestamp": 1688169600000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         7,
+         1
+        ]
+       ],
+       "date-time": "2023-07-01T00:00:00Z",
+       "timestamp": 1688169600000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       7
+      ]
+     ]
+    },
+    "DOI": "10.1109/eurosp57164.2023.00073",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       31
+      ]
+     ],
+     "date-time": "2023-07-31T17:25:55Z",
+     "timestamp": 1690824355000
+    },
+    "page": "1199-1202",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Author Index"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE 8th European Symposium on Security and Privacy (EuroS&P)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        7,
+        3
+       ]
+      ]
+     },
+     "location": "Delft, Netherlands",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        7,
+        7
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE 8th European Symposium on Security and Privacy (EuroS&amp;P)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10190357/10190476/10190481.pdf?arnumber=10190481",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       18
+      ]
+     ],
+     "date-time": "2024-07-18T17:25:24Z",
+     "timestamp": 1721323524000
+    },
+    "score": 30.844967,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10190481/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       7
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/eurosp57164.2023.00073",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       7
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       6
+      ]
+     ],
+     "date-time": "2024-09-06T23:07:07Z",
+     "timestamp": 1725664027947
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         7,
+         1
+        ]
+       ],
+       "date-time": "2023-07-01T00:00:00Z",
+       "timestamp": 1688169600000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         7,
+         1
+        ]
+       ],
+       "date-time": "2023-07-01T00:00:00Z",
+       "timestamp": 1688169600000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       7
+      ]
+     ]
+    },
+    "DOI": "10.1109/eurospw59978.2023.00003",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       31
+      ]
+     ],
+     "date-time": "2023-07-31T17:25:55Z",
+     "timestamp": 1690824355000
+    },
+    "page": "4-4",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Copyright Page"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE European Symposium on Security and Privacy Workshops (EuroS&PW)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        7,
+        3
+       ]
+      ]
+     },
+     "location": "Delft, Netherlands",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        7,
+        7
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE European Symposium on Security and Privacy Workshops (EuroS&amp;PW)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10190553/10190632/10190707.pdf?arnumber=10190707",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       31
+      ]
+     ],
+     "date-time": "2023-07-31T17:27:46Z",
+     "timestamp": 1690824466000
+    },
+    "score": 30.86166,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10190707/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       7
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/eurospw59978.2023.00003",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       7
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       8
+      ]
+     ],
+     "date-time": "2024-09-08T02:47:09Z",
+     "timestamp": 1725763629999
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         11,
+         1
+        ]
+       ],
+       "date-time": "2023-11-01T00:00:00Z",
+       "timestamp": 1698796800000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         11,
+         1
+        ]
+       ],
+       "date-time": "2023-11-01T00:00:00Z",
+       "timestamp": 1698796800000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       1
+      ]
+     ]
+    },
+    "DOI": "10.1109/trustcom60117.2023.00003",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2024,
+       5,
+       29
+      ]
+     ],
+     "date-time": "2024-05-29T17:24:13Z",
+     "timestamp": 1717003453000
+    },
+    "page": "4-4",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Copyright"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE 22nd International Conference on Trust, Security and Privacy in Computing and Communications (TrustCom)",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        11,
+        1
+       ]
+      ]
+     },
+     "location": "Exeter, United Kingdom",
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        11,
+        3
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE 22nd International Conference on Trust, Security and Privacy in Computing and Communications (TrustCom)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10538469/10538471/10538741.pdf?arnumber=10538741",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       5,
+       29
+      ]
+     ],
+     "date-time": "2024-05-29T17:26:20Z",
+     "timestamp": 1717003580000
+    },
+    "score": 24.072535,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10538741/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       1
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/trustcom60117.2023.00003",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       1
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       3,
+       11
+      ]
+     ],
+     "date-time": "2026-03-11T17:14:03Z",
+     "timestamp": 1773249243780,
+     "version": "3.50.1"
+    },
+    "reference-count": 79,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2023,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2023-05-01T00:00:00Z",
+       "timestamp": 1682899200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp46215.2023.10179333",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2023,
+       7,
+       21
+      ]
+     ],
+     "date-time": "2023-07-21T17:18:15Z",
+     "timestamp": 1689959895000
+    },
+    "page": "2032-2032",
+    "source": "Crossref",
+    "is-referenced-by-count": 15,
+    "title": [
+     "“How technical do you get? I’m an English teacher”: Teaching and Learning Cybersecurity and AI Ethics in High School"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Zachary",
+      "family": "Kilhoffer",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "University of Illinois at Urbana-Champaign"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Zhixuan",
+      "family": "Zhou",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Illinois at Urbana-Champaign"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Firmiana",
+      "family": "Wang",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Illinois Laboratory High School"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Fahad",
+      "family": "Tamton",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Illinois at Urbana-Champaign"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Yun",
+      "family": "Huang",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Illinois at Urbana-Champaign"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Pilyoung",
+      "family": "Kim",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Denver"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Tom",
+      "family": "Yeh",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Colorado Boulder"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     },
+     {
+      "given": "Yang",
+      "family": "Wang",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Illinois at Urbana-Champaign"
+       }
+      ],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2023 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        21
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2023,
+        5,
+        25
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2023 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/10179215/10179280/10179333.pdf?arnumber=10179333",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       20
+      ]
+     ],
+     "date-time": "2024-07-20T05:15:58Z",
+     "timestamp": 1721452558000
+    },
+    "score": 21.73929,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/10179333/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    },
+    "references-count": 79,
+    "URL": "https://doi.org/10.1109/sp46215.2023.10179333",
+    "published": {
+     "date-parts": [
+      [
+       2023,
+       5
+      ]
+     ]
+    }
+   }
+  ]
+ }
+}

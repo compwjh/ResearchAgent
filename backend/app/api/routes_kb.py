@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -43,6 +44,7 @@ from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import (
     CHUNK_V2_LLM_MODEL,
     KB_DIR,
+    KB_HEALTH_PROBE_TIMEOUT_SECONDS,
     KB_MAX_UPLOAD_MB,
     KB_PAPERS_DIR,  # noqa: F401
 )
@@ -64,6 +66,7 @@ from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
 )
+from backend.app.platform.warmup import readiness_snapshot
 
 router = APIRouter()
 
@@ -151,12 +154,43 @@ def kb_component_status() -> dict:
         status["chunks"] = count_points(client, collection_name=destination)
     except Exception:
         status["qdrant"] = False
-    try:
-        embed_texts(["健康检查"])
-        status["embedding"] = True
-    except Exception:
-        status["embedding"] = False
+    status["embedding"] = _probe_embedding_ready()
     return status
+
+
+def _probe_embedding_ready() -> bool:
+    """embedding 可用性探测：优先复用预热注册表，避免每次健康检查都承担完整向量化往返。
+
+    - 注册表已登记 ready/failed → 直接采用（短路，最快，恒不触发真实向量化）；
+    - 注册表尚无结论（unknown/loading，如预热未跑或仍在进行）→ 做一次带短超时的
+      兜底探测，绝不因 Ollama 不可达而阻塞上百秒（基线 155s 来自 timeout=180 × 2）。
+    """
+    emb = readiness_snapshot().get("embedding", {}).get("status")
+    if emb == "ready":
+        return True
+    if emb == "failed":
+        return False
+    return _bounded_embed_probe()
+
+
+def _bounded_embed_probe() -> bool:
+    """在 daemon 线程里跑一次真实向量化，用 ``KB_HEALTH_PROBE_TIMEOUT_SECONDS`` 限时。
+
+    超时或异常都记 False；线程超时后仍在后台跑完，但本探测已即时返回，绝不挂起。
+    """
+    result: dict = {}
+
+    def _work() -> None:
+        try:
+            embed_texts(["健康检查"])
+            result["ok"] = True
+        except Exception:
+            pass
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    worker.join(timeout=KB_HEALTH_PROBE_TIMEOUT_SECONDS)
+    return result.get("ok", False)
 
 
 @router.get("/kb/health")

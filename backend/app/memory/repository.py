@@ -1187,7 +1187,9 @@ class MemoryRepository:
         else:
             clause += " AND c.project_id IS NULL"
         with self.connection() as db:
-            rows = db.execute(f"SELECT s.* FROM conversation_summaries s JOIN conversations c ON c.conversation_id=s.conversation_id WHERE {clause} ORDER BY s.updated_at DESC LIMIT 50", params).fetchall()
+            # 常驻「最近跨会话记忆」候选上限（spec-022 Task04 跨会话召回）。50 → 10：
+            # 相关性过滤发生在该 LIMIT 之后，候选集越小越不该把无关历史摘要灌进新会话。
+            rows = db.execute(f"SELECT s.* FROM conversation_summaries s JOIN conversations c ON c.conversation_id=s.conversation_id WHERE {clause} ORDER BY s.updated_at DESC LIMIT 10", params).fetchall()
         terms = {part.lower() for part in (query or "").split() if len(part) > 1}
         items = [self._summary(row) for row in rows]
         if terms:

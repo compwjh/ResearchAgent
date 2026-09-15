@@ -1,0 +1,2907 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 211621,
+  "items-per-page": 17,
+  "items": [
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       9,
+       1
+      ]
+     ],
+     "date-time": "2026-09-01T15:37:29Z",
+     "timestamp": 1788277049212,
+     "version": "build-2803163510"
+    },
+    "reference-count": 29,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00001",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T17:03:31Z",
+     "timestamp": 1629997411000
+    },
+    "page": "883-900",
+    "source": "Crossref",
+    "is-referenced-by-count": 73,
+    "title": [
+     "Manipulation Attacks in Local Differential Privacy"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Albert",
+      "family": "Cheu",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Northeastern University,Khoury College of Computer Sciences,Boston,Massachusetts"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Adam",
+      "family": "Smith",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Boston University,Department of Computer Science,Boston,Massachusetts"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Jonathan",
+      "family": "Ullman",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Northeastern University,Khoury College of Computer Sciences,Boston,Massachusetts"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519418.pdf?arnumber=9519418",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:07:44Z",
+     "timestamp": 1699466864000
+    },
+    "score": 31.288767,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519418/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 29,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00001",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       7,
+       31
+      ]
+     ],
+     "date-time": "2026-07-31T15:40:52Z",
+     "timestamp": 1785512452489,
+     "version": "3.56.0"
+    },
+    "reference-count": 131,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00005",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "1434-1451",
+    "source": "Crossref",
+    "is-referenced-by-count": 89,
+    "title": [
+     "SoK: Security and Privacy in the Age of Commercial Drones"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Ben",
+      "family": "Nassi",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Ben-Gurion University of the Negev,Software and Information Systems Engineering"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Ron",
+      "family": "Bitton",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Ben-Gurion University of the Negev,Software and Information Systems Engineering"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Ryusuke",
+      "family": "Masuoka",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Fujitsu System Integration Laboratories"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Asaf",
+      "family": "Shabtai",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Ben-Gurion University of the Negev,Software and Information Systems Engineering"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Yuval",
+      "family": "Elovici",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Ben-Gurion University of the Negev,Software and Information Systems Engineering"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519393.pdf?arnumber=9519393",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T23:04:32Z",
+     "timestamp": 1699484672000
+    },
+    "score": 30.63072,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519393/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 131,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00005",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       9,
+       12
+      ]
+     ],
+     "date-time": "2026-09-12T01:18:56Z",
+     "timestamp": 1789175936066,
+     "version": "build-2803163510"
+    },
+    "reference-count": 67,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "funder": [
+     {
+      "DOI": "10.13039/100014037",
+      "name": "National Defense Science and Engineering Graduate",
+      "doi-asserted-by": "publisher",
+      "id": [
+       {
+        "id": "10.13039/100014037",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00084",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T17:03:31Z",
+     "timestamp": 1629997411000
+    },
+    "page": "1249-1267",
+    "source": "Crossref",
+    "is-referenced-by-count": 37,
+    "title": [
+     "Compositional Security for Reentrant Applications"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Ethan",
+      "family": "Cecchetti",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Cornell University"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Siqiu",
+      "family": "Yao",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Cornell University"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Haobin",
+      "family": "Ni",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Cornell University"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Andrew C.",
+      "family": "Myers",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "Cornell University"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519436.pdf?arnumber=9519436",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:05:32Z",
+     "timestamp": 1699466732000
+    },
+    "score": 29.935932,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519436/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 67,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00084",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       7,
+       25
+      ]
+     ],
+     "date-time": "2026-07-25T13:23:53Z",
+     "timestamp": 1784985833176,
+     "version": "3.55.0"
+    },
+    "reference-count": 133,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "funder": [
+     {
+      "DOI": "10.13039/501100000780",
+      "name": "European Commission",
+      "doi-asserted-by": "publisher",
+      "id": [
+       {
+        "id": "10.13039/501100000780",
+        "id-type": "DOI",
+        "asserted-by": "publisher"
+       }
+      ]
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00053",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "211-228",
+    "source": "Crossref",
+    "is-referenced-by-count": 49,
+    "title": [
+     "SoK: Quantifying Cyber Risk"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Daniel W.",
+      "family": "Woods",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "University of Innsbruck,Innsbruck,Austria"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Rainer",
+      "family": "Böhme",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Innsbruck,Innsbruck,Austria"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519490.pdf?arnumber=9519490",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T23:20:38Z",
+     "timestamp": 1699485638000
+    },
+    "score": 29.929523,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519490/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 133,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00053",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2026,
+       6,
+       25
+      ]
+     ],
+     "date-time": "2026-06-25T03:41:04Z",
+     "timestamp": 1782358864652,
+     "version": "3.54.5"
+    },
+    "reference-count": 30,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00060",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T17:03:31Z",
+     "timestamp": 1629997411000
+    },
+    "page": "852-865",
+    "source": "Crossref",
+    "is-referenced-by-count": 21,
+    "title": [
+     "Learning Differentially Private Mechanisms"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Subhajit",
+      "family": "Roy",
+      "sequence": "first",
+      "affiliation": [
+       {
+        "name": "Indian Institute of Technology Kanpur,Computer Science and Engineering"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Justin",
+      "family": "Hsu",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Wisconsin&#x2013;Madison,Department of Computer Sciences"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Aws",
+      "family": "Albarghouthi",
+      "sequence": "additional",
+      "affiliation": [
+       {
+        "name": "University of Wisconsin&#x2013;Madison,Department of Computer Sciences"
+       }
+      ],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "location": "San Francisco, CA, USA",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519410.pdf?arnumber=9519410",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:25:35Z",
+     "timestamp": 1699467935000
+    },
+    "score": 29.538637,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519410/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 30,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00060",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:41Z",
+     "timestamp": 1725686921499
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00120",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "27-28",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Organizing Committee"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519426.pdf?arnumber=9519426",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:52:28Z",
+     "timestamp": 1699469548000
+    },
+    "score": 33.18499,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519426/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00120",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:39Z",
+     "timestamp": 1725686919683
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00116",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "4-4",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "[Copyright notice]"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519383.pdf?arnumber=9519383",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:52:28Z",
+     "timestamp": 1699469548000
+    },
+    "score": 33.167953,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519383/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00116",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:40Z",
+     "timestamp": 1725686920571
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00121",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "29-31",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Program Committee"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519504.pdf?arnumber=9519504",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:53:13Z",
+     "timestamp": 1699469593000
+    },
+    "score": 33.14319,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519504/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00121",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:50Z",
+     "timestamp": 1725686930922
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00123",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T17:03:31Z",
+     "timestamp": 1629997411000
+    },
+    "page": "1991-1998",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Author Index"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519430.pdf?arnumber=9519430",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T13:52:24Z",
+     "timestamp": 1699451544000
+    },
+    "score": 33.141964,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519430/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00123",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:52Z",
+     "timestamp": 1725686932418
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00115",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "3-3",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "[Title page iii]"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519396.pdf?arnumber=9519396",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:52:39Z",
+     "timestamp": 1699469559000
+    },
+    "score": 32.71026,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519396/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00115",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:45Z",
+     "timestamp": 1725686925631
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00073",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "1-1",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "[Title page i]"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519423.pdf?arnumber=9519423",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:52:18Z",
+     "timestamp": 1699469538000
+    },
+    "score": 32.692173,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519423/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00073",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:45Z",
+     "timestamp": 1725686925810
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00117",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "5-20",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Table of Contents"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519505.pdf?arnumber=9519505",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:52:50Z",
+     "timestamp": 1699469570000
+    },
+    "score": 32.662895,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519505/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00117",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:54Z",
+     "timestamp": 1725686934018
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00118",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "21-24",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Message from the General Chair"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519411.pdf?arnumber=9519411",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:53:09Z",
+     "timestamp": 1699469589000
+    },
+    "score": 31.719797,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519411/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00118",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:28:48Z",
+     "timestamp": 1725686928852
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         5,
+         1
+        ]
+       ],
+       "date-time": "2021-05-01T00:00:00Z",
+       "timestamp": 1619827200000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "DOI": "10.1109/sp40001.2021.00119",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       8,
+       26
+      ]
+     ],
+     "date-time": "2021-08-26T21:03:31Z",
+     "timestamp": 1630011811000
+    },
+    "page": "25-26",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "Message from the Program Chairs"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE Symposium on Security and Privacy (SP)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        24
+       ]
+      ]
+     },
+     "location": "San Francisco, CA, USA",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        5,
+        27
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE Symposium on Security and Privacy (SP)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9519381/9519382/09519488.pdf?arnumber=9519488",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:53:08Z",
+     "timestamp": 1699469588000
+    },
+    "score": 31.683578,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9519488/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/sp40001.2021.00119",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       5
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       7
+      ]
+     ],
+     "date-time": "2024-09-07T05:29:14Z",
+     "timestamp": 1725686954477
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         9,
+         1
+        ]
+       ],
+       "date-time": "2021-09-01T00:00:00Z",
+       "timestamp": 1630454400000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         9,
+         1
+        ]
+       ],
+       "date-time": "2021-09-01T00:00:00Z",
+       "timestamp": 1630454400000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       9
+      ]
+     ]
+    },
+    "DOI": "10.1109/eurosp51992.2021.00002",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       11,
+       4
+      ]
+     ],
+     "date-time": "2021-11-04T19:30:46Z",
+     "timestamp": 1636054246000
+    },
+    "page": "1-1",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "2021 IEEE European Symposium on Security and Privacy"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE European Symposium on Security and Privacy (EuroS&P)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        9,
+        6
+       ]
+      ]
+     },
+     "location": "Vienna, Austria",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        9,
+        10
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE European Symposium on Security and Privacy (EuroS&amp;P)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9581154/9581061/09581215.pdf?arnumber=9581215",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2023,
+       11,
+       8
+      ]
+     ],
+     "date-time": "2023-11-08T18:52:27Z",
+     "timestamp": 1699469547000
+    },
+    "score": 37.262188,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9581215/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       9
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/eurosp51992.2021.00002",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       9
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       10,
+       29
+      ]
+     ],
+     "date-time": "2024-10-29T16:58:00Z",
+     "timestamp": 1730221080479,
+     "version": "3.28.0"
+    },
+    "reference-count": 13,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         9,
+         1
+        ]
+       ],
+       "date-time": "2021-09-01T00:00:00Z",
+       "timestamp": 1630454400000
+      },
+      "content-version": "vor",
+      "delay-in-days": 0,
+      "URL": "https://ieeexplore.ieee.org/Xplorehelp/downloads/license-information/IEEE.html"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         9,
+         1
+        ]
+       ],
+       "date-time": "2021-09-01T00:00:00Z",
+       "timestamp": 1630454400000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-029"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         9,
+         1
+        ]
+       ],
+       "date-time": "2021-09-01T00:00:00Z",
+       "timestamp": 1630454400000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-037"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       9
+      ]
+     ]
+    },
+    "DOI": "10.1109/eurospw54576.2021.00035",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2021,
+       10,
+       29
+      ]
+     ],
+     "date-time": "2021-10-29T19:27:58Z",
+     "timestamp": 1635535678000
+    },
+    "page": "278-282",
+    "source": "Crossref",
+    "is-referenced-by-count": 3,
+    "title": [
+     "Pragmatic Online Privacy: the SftE Approach"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Vitor",
+      "family": "Jesus",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE European Symposium on Security and Privacy Workshops (EuroS&PW)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        9,
+        6
+       ]
+      ]
+     },
+     "location": "Vienna, Austria",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        9,
+        10
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE European Symposium on Security and Privacy Workshops (EuroS&amp;PW)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9583613/9583677/09583726.pdf?arnumber=9583726",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2022,
+       5,
+       10
+      ]
+     ],
+     "date-time": "2022-05-10T16:55:52Z",
+     "timestamp": 1652201752000
+    },
+    "score": 31.293795,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9583726/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       9
+      ]
+     ]
+    },
+    "references-count": 13,
+    "URL": "https://doi.org/10.1109/eurospw54576.2021.00035",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       9
+      ]
+     ]
+    }
+   },
+   {
+    "indexed": {
+     "date-parts": [
+      [
+       2024,
+       9,
+       6
+      ]
+     ],
+     "date-time": "2024-09-06T00:36:22Z",
+     "timestamp": 1725582982005
+    },
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "license": [
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         10,
+         1
+        ]
+       ],
+       "date-time": "2021-10-01T00:00:00Z",
+       "timestamp": 1633046400000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-009"
+     },
+     {
+      "start": {
+       "date-parts": [
+        [
+         2021,
+         10,
+         1
+        ]
+       ],
+       "date-time": "2021-10-01T00:00:00Z",
+       "timestamp": 1633046400000
+      },
+      "content-version": "stm-asf",
+      "delay-in-days": 0,
+      "URL": "https://doi.org/10.15223/policy-001"
+     }
+    ],
+    "content-domain": {
+     "domain": [],
+     "crossmark-restriction": false
+    },
+    "published-print": {
+     "date-parts": [
+      [
+       2021,
+       10
+      ]
+     ]
+    },
+    "DOI": "10.1109/trustcom53373.2021.00002",
+    "type": "proceedings-article",
+    "created": {
+     "date-parts": [
+      [
+       2022,
+       3,
+       9
+      ]
+     ],
+     "date-time": "2022-03-09T20:30:55Z",
+     "timestamp": 1646857855000
+    },
+    "page": "1-1",
+    "source": "Crossref",
+    "is-referenced-by-count": 0,
+    "title": [
+     "2021 IEEE 20th International Conference on Trust, Security and Privacy in Computing and Communications"
+    ],
+    "prefix": "10.1109",
+    "member": "263",
+    "event": {
+     "name": "2021 IEEE 20th International Conference on Trust, Security and Privacy in Computing and Communications (TrustCom)",
+     "start": {
+      "date-parts": [
+       [
+        2021,
+        10,
+        20
+       ]
+      ]
+     },
+     "location": "Shenyang, China",
+     "end": {
+      "date-parts": [
+       [
+        2021,
+        10,
+        22
+       ]
+      ]
+     }
+    },
+    "container-title": [
+     "2021 IEEE 20th International Conference on Trust, Security and Privacy in Computing and Communications (TrustCom)"
+    ],
+    "link": [
+     {
+      "URL": "http://xplorestaging.ieee.org/ielx7/9724288/9724267/09724515.pdf?arnumber=9724515",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+     }
+    ],
+    "deposited": {
+     "date-parts": [
+      [
+       2022,
+       6,
+       9
+      ]
+     ],
+     "date-time": "2022-06-09T21:15:55Z",
+     "timestamp": 1654809355000
+    },
+    "score": 27.340408,
+    "resource": {
+     "primary": {
+      "URL": "https://ieeexplore.ieee.org/document/9724515/"
+     }
+    },
+    "issued": {
+     "date-parts": [
+      [
+       2021,
+       10
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/trustcom53373.2021.00002",
+    "published": {
+     "date-parts": [
+      [
+       2021,
+       10
+      ]
+     ]
+    }
+   }
+  ]
+ }
+}

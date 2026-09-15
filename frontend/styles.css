@@ -46,16 +46,32 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .context-compact-button:disabled { opacity: .6; cursor: default; }
 .context-status { margin: 6px 20px 0; color: #aaacb2; font: 10px 'DM Mono', monospace; text-align: right; }
 .context-status[hidden] { display: none; }
-/* Spec025 扩展：上下文圆圈 hover/点击弹出的占比明细。 */
-.context-breakdown { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20; display: none; flex-direction: column; gap: 6px; min-width: 248px; max-width: 320px; padding: 10px 12px; background: #fff; border: 1px solid #e3e3ec; border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 20, 40, .12); font: 11px 'DM Mono', monospace; color: #2b2c33; }
+
+/* Spec025：就地加载态（占比/模型数/知识库共用）。复用产品紫灰主色，不引入新色系。 */
+.async-slot-spinner { display: inline-block; width: 10px; height: 10px; box-sizing: border-box; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: async-slot-spin 0.7s linear infinite; vertical-align: middle; margin-right: 5px; }
+@keyframes async-slot-spin { to { transform: rotate(360deg); } }
+/* 占比「加载中」第三态：与无会话（is-idle → visibility:hidden）严格区分，组件始终可见。 */
+.composer-context.is-loading { visibility: visible; }
+.composer-context.is-loading .context-meter-value { color: var(--muted); min-width: 5em; text-align: left; }
+/* 模型数量徽标：就绪后数字淡入（0.2s）。 */
+#model-count.model-count-fade { animation: model-count-fade-in 0.2s ease; }
+@keyframes model-count-fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* Spec025 扩展：上下文圆圈 hover/点击弹出的占比明细（大百分比 + 堆叠条 + 分类清单）。 */
+.context-breakdown { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20; display: none; flex-direction: column; gap: 10px; min-width: 260px; max-width: 348px; padding: 12px 14px; background: #fff; border: 1px solid #e3e3ec; border-radius: 12px; box-shadow: 0 12px 32px rgba(20, 20, 40, .14); font: 11px 'DM Mono', monospace; color: #2b2c33; }
 .context-breakdown.is-open { display: flex; }
-.cb-title { font-weight: 700; color: #15161c; margin-bottom: 2px; }
-.cb-row { display: grid; grid-template-columns: 1fr 60px 84px; align-items: center; gap: 8px; }
-.cb-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #3a3b44; }
-.cb-bar { height: 6px; background: #ececf3; border-radius: 3px; overflow: hidden; }
-.cb-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
-.cb-meta { text-align: right; color: #6b6c75; }
-.cb-total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #eee; color: #15161c; font-weight: 700; text-align: right; }
+.cb-title { font-weight: 700; color: #15161c; letter-spacing: .01em; }
+.cb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.cb-percent { color: var(--accent); font-size: 26px; font-weight: 800; letter-spacing: -.03em; }
+.cb-used { color: #6b6c75; font-size: 10px; white-space: nowrap; }
+.cb-stack { display: flex; height: 8px; overflow: hidden; border-radius: 4px; background: #ececf3; }
+.cb-seg { height: 100%; }
+.cb-list { display: flex; flex-direction: column; gap: 7px; }
+.cb-item { display: flex; align-items: center; gap: 8px; }
+.cb-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+.cb-item-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #3a3b44; }
+.cb-item-value { display: flex; flex: 0 0 auto; align-items: baseline; gap: 6px; }
+.cb-item-pct { color: #15161c; font-weight: 700; }
+.cb-item-size { color: #a6a8ae; font-size: 10px; }
 /* 窄屏：底部行空间不足时占比区整体换行并右对齐，同时隐去"上下文"二字只留百分比。 */
 @media (max-width: 760px) {
   .composer-footer { gap: 8px; }
@@ -839,6 +855,13 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   font-size: 10px;
   line-height: 1.6;
 }
+
+/* Spec025：知识库列表骨架行（圆角 8px、浅灰 #ececf3、呼吸动画，高度贴近真实行避免抖动）。 */
+#kb-view .kb-item.kb-skeleton { border-color: var(--line); background: #fff; }
+#kb-view .kb-skeleton-bar { display: block; border-radius: 8px; background: #ececf3; animation: kb-skeleton-breathe 1.4s ease-in-out infinite; }
+#kb-view .kb-skeleton-name { height: 12px; width: 62%; margin-bottom: 7px; }
+#kb-view .kb-skeleton-meta { height: 10px; width: 40%; }
+@keyframes kb-skeleton-breathe { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 
 #kb-view .kb-chat {
   display: flex;
@@ -2033,6 +2056,9 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   .conversation-processing-node-toggle::before { transition: none; }
   #papers-view .paper-import-batch.is-progressing { animation: none; }
   .sidebar .research-notification-button, .conversation-report-action { scroll-behavior: auto; }
+  .async-slot-spinner { animation: none; }
+  #model-count.model-count-fade { animation: none; }
+  .kb-skeleton-bar { animation: none; }
 }
 
 /* ===== Task06 手机端项目/会话抽屉与输入安全区 ===== */
