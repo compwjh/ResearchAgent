@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（等待 Spec028 调度合同）**
+**当前状态：实施中（Task03，补齐全文桥接合同）**
 
 ## 一句话目标
 
@@ -77,7 +77,7 @@
 | 编号 | 任务 | 文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 Spec029 | 本文件 | — | 完成 |
-| 02 | 复用审计与全文证据协议门 | [`task-02-reuse-and-evidence-gate.md`](../plans/029/task-02-reuse-and-evidence-gate.md) | Spec027/028、确认、双评审 | 待执行 |
+| 02 | 复用审计与全文证据协议门 | [`task-02-reuse-and-evidence-gate.md`](../plans/029/task-02-reuse-and-evidence-gate.md) | Spec027/028、确认、双评审 | 已完成（NO-GO，桥接缺口已冻结） |
 | 03 | 接通候选确认与既有批量导入 | [`task-03-acquisition-approval-import.md`](../plans/029/task-03-acquisition-approval-import.md) | 02 | 待执行 |
 | 04 | 接通全文 RAG 与证据升级 | [`task-04-fulltext-evidence-upgrade.md`](../plans/029/task-04-fulltext-evidence-upgrade.md) | 03 | 待执行 |
 | 05 | 实现导入进度与失败恢复界面 | [`task-05-acquisition-progress-ui.md`](../plans/029/task-05-acquisition-progress-ui.md) | 03、04 | 待执行 |

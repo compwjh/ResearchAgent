@@ -1,7 +1,7 @@
 # Spec 029 执行计划：全文获取与知识库联动
 
 > 关联：[Spec 029](../../specs/029-research-fulltext-acquisition.md)
-> 当前状态：实施中（等待 Spec028 调度合同）。
+> 当前状态：实施中（Task03，先补全文桥接合同）。
 
 ## 任务索引
 

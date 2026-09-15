@@ -137,6 +137,52 @@ class ResearchScheduler:
             "reservations": self.store.recover_expired_resource_reservations(now=now),
         }
 
+    # Checkpoint methods intentionally delegate to ResearchStore.  The
+    # scheduler owns dispatch policy, while the store remains the sole durable
+    # checkpoint/CAS implementation used by restart and resume paths.
+    def save_checkpoint(
+        self,
+        task_id: str,
+        plan_version: int,
+        node_id: str,
+        state_json,
+        input_digest: str | None = None,
+        *,
+        now: str | None = None,
+    ):
+        return self.store.save_scheduler_checkpoint(
+            task_id,
+            plan_version,
+            node_id,
+            state_json,
+            input_digest,
+            now=now,
+        )
+
+    def get_checkpoint(self, task_id: str, plan_version: int, node_id: str):
+        return self.store.get_scheduler_checkpoint(task_id, plan_version, node_id)
+
+    def advance_from_checkpoint(
+        self,
+        work_item_id: str,
+        *,
+        plan_version: int,
+        input_digest: str,
+        owner_token: str | None = None,
+    ) -> bool:
+        return self.store.advance_work_item_from_checkpoint(
+            work_item_id,
+            plan_version=plan_version,
+            input_digest=input_digest,
+            owner_token=owner_token,
+        )
+
+    checkpoint = save_checkpoint
+    checkpoint_for = get_checkpoint
+    save_scheduler_checkpoint = save_checkpoint
+    get_scheduler_checkpoint = get_checkpoint
+    advance_work_item_from_checkpoint = advance_from_checkpoint
+
     def acquire_resources(
         self,
         task_id: str,

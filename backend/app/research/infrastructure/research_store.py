@@ -982,11 +982,22 @@ class ResearchStore:
             ).fetchall()
         return [ResearchTask.from_row(dict(row)) for row in rows]
 
-    def update_task_status(self, research_task_id: str, owner_id: str, next_status: str) -> ResearchTask:
+    def update_task_status(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        next_status: str,
+        *,
+        expected_status: str | None = None,
+    ) -> ResearchTask | None:
         """按 owner 读当前状态→状态机校验→更新 status/updated_at；终态写 completed_at。
 
         转移非法时 ``transition_task`` 抛 ``InvalidStateTransition``，**原样向上抛，不吞**。
         """
+        if expected_status is not None:
+            return self.update_task_status_cas(
+                research_task_id, owner_id, expected_status, next_status
+            )
         with _write_lock, self._connect() as conn:
             try:
                 conn.execute("BEGIN IMMEDIATE")
@@ -1022,6 +1033,149 @@ class ResearchStore:
                 conn.rollback()
                 raise
         return ResearchTask.from_row(dict(row))
+
+    def update_task_status_cas(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        expected_status: str,
+        next_status: str,
+    ) -> ResearchTask | None:
+        """Conditionally transition a task while holding the SQLite write lock.
+
+        The read/validate/write sequence is deliberately kept in one
+        ``BEGIN IMMEDIATE`` transaction.  A caller that loses the race gets
+        ``None`` and must re-read the task; it must never overwrite the newer
+        state or infer success from a stale in-memory snapshot.
+        """
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (research_task_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    conn.rollback()
+                    raise ResearchTaskNotFound(research_task_id)
+                if row["status"] != expected_status:
+                    conn.commit()
+                    return None
+                transition_task(row["status"], next_status)
+                now = _utcnow()
+                if next_status in TASK_TERMINAL:
+                    conn.execute(
+                        "UPDATE research_tasks SET status=?, updated_at=?, completed_at=? "
+                        "WHERE research_task_id=? AND owner_id=? AND status=?",
+                        (next_status, now, now, research_task_id, owner_id, expected_status),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE research_tasks SET status=?, updated_at=? "
+                        "WHERE research_task_id=? AND owner_id=? AND status=?",
+                        (next_status, now, research_task_id, owner_id, expected_status),
+                    )
+                if conn.execute("SELECT changes()").fetchone()[0] != 1:
+                    conn.commit()
+                    return None
+                row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (research_task_id, owner_id),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchTask.from_row(dict(row))
+
+    # Descriptive aliases are intentionally kept on the store seam so callers
+    # do not create an application-level second CAS implementation.
+    cas_update_task_status = update_task_status_cas
+    transition_task_cas = update_task_status_cas
+
+    def pause_task_cas(
+        self, research_task_id: str, owner_id: str, *, expected_status: str | None = None
+    ) -> ResearchTask | None:
+        """CAS pause for an active task; queued WorkItems remain resumable."""
+        task = self.get_task(research_task_id, owner_id)
+        if task is None:
+            raise ResearchTaskNotFound(research_task_id)
+        expected = expected_status or task.status
+        if task.status == "paused" and expected_status in (None, "paused"):
+            return task
+        return self.update_task_status_cas(research_task_id, owner_id, expected, "paused")
+
+    def resume_task_cas(
+        self, research_task_id: str, owner_id: str, *, expected_status: str = "paused"
+    ) -> ResearchTask | None:
+        """CAS resume; a stale pause winner cannot resume a newer state."""
+        return self.update_task_status_cas(research_task_id, owner_id, expected_status, "running")
+
+    pause_task = pause_task_cas
+    resume_task = resume_task_cas
+
+    def cancel_task_cas(
+        self, research_task_id: str, owner_id: str, *, expected_status: str | None = None
+    ) -> tuple[ResearchTask, int] | None:
+        """Atomically cancel a task and all queued/running WorkItems.
+
+        The task status CAS and WorkItem cancellation share one transaction, so
+        a scheduler claim cannot interleave and leave a newly queued node after
+        cancellation.  Existing terminal WorkItems are retained as evidence.
+        """
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (research_task_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    conn.rollback()
+                    raise ResearchTaskNotFound(research_task_id)
+                if expected_status is not None and row["status"] != expected_status:
+                    conn.commit()
+                    return None
+                if row["status"] in TASK_TERMINAL:
+                    conn.commit()
+                    return ResearchTask.from_row(dict(row)), 0
+                transition_task(row["status"], "cancelled")
+                now = _utcnow()
+                conn.execute(
+                    "UPDATE research_tasks SET status='cancelled', updated_at=?, completed_at=? "
+                    "WHERE research_task_id=? AND owner_id=? AND status=?",
+                    (now, now, research_task_id, owner_id, row["status"]),
+                )
+                item_rows = conn.execute(
+                    "SELECT work_item_id,status FROM research_work_items WHERE research_task_id=? "
+                    "AND status IN ('queued','running')",
+                    (research_task_id,),
+                ).fetchall()
+                for item in item_rows:
+                    transition_workitem(item["status"], "cancelled")
+                    conn.execute(
+                        "UPDATE research_work_items SET status='cancelled', ended_at=?, updated_at=? "
+                        "WHERE work_item_id=? AND status IN ('queued','running')",
+                        (now, now, item["work_item_id"]),
+                    )
+                updated = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (research_task_id, owner_id),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchTask.from_row(dict(updated)), len(item_rows)
+
+    def cancel_task(
+        self, research_task_id: str, owner_id: str, *, expected_status: str | None = None
+    ) -> ResearchTask | None:
+        """Compatibility wrapper returning the task projection only."""
+        result = self.cancel_task_cas(
+            research_task_id, owner_id, expected_status=expected_status
+        )
+        return result[0] if result is not None else None
 
     def update_task(self, research_task_id: str, owner_id: str, **fields) -> ResearchTask:
         """部分更新任务白名单字段并刷新 updated_at；不存在抛 ResearchTaskNotFound。
@@ -1584,6 +1738,75 @@ class ResearchStore:
                 conn.rollback()
                 raise
         return ResearchPlan.from_row(dict(row))
+
+    def create_plan_version_cas(
+        self,
+        plan: ResearchPlan,
+        owner_id: str,
+        *,
+        expected_current_version: int,
+    ) -> tuple[ResearchPlan, ResearchTask] | None:
+        """Append an immutable task plan and advance its version pointer atomically.
+
+        A stale planner/review callback returns ``None``.  The existing plan
+        row is never updated or replaced, which makes an old callback
+        auditable while preventing it from silently becoming the current plan.
+        """
+        if int(plan.version) != int(expected_current_version) + 1:
+            raise ValueError("plan version must advance by exactly one")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                task_row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (plan.research_task_id, owner_id),
+                ).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    raise ResearchTaskNotFound(plan.research_task_id)
+                if int(task_row["current_plan_version"]) != int(expected_current_version):
+                    conn.commit()
+                    return None
+                if conn.execute(
+                    "SELECT 1 FROM research_plans WHERE research_task_id=? AND version=?",
+                    (plan.research_task_id, int(plan.version)),
+                ).fetchone() is not None:
+                    conn.commit()
+                    raise ResearchPlanConflict(plan.research_task_id, plan.version)
+                conn.execute(
+                    """INSERT INTO research_plans(
+                        research_task_id,version,planner_model,rationale_summary,facets_json,status,created_at
+                    ) VALUES(?,?,?,?,?,?,?)""",
+                    (
+                        plan.research_task_id, int(plan.version), plan.planner_model,
+                        plan.rationale_summary, plan.facets_json, plan.status,
+                        plan.created_at or _utcnow(),
+                    ),
+                )
+                now = _utcnow()
+                changed = conn.execute(
+                    "UPDATE research_tasks SET current_plan_version=?, updated_at=? "
+                    "WHERE research_task_id=? AND owner_id=? AND current_plan_version=?",
+                    (int(plan.version), now, plan.research_task_id, owner_id, int(expected_current_version)),
+                ).rowcount
+                if changed != 1:
+                    conn.rollback()
+                    return None
+                saved_plan = conn.execute(
+                    "SELECT * FROM research_plans WHERE research_task_id=? AND version=?",
+                    (plan.research_task_id, int(plan.version)),
+                ).fetchone()
+                saved_task = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (plan.research_task_id, owner_id),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchPlan.from_row(dict(saved_plan)), ResearchTask.from_row(dict(saved_task))
+
+    append_plan_version_cas = create_plan_version_cas
 
     def get_plan(self, research_task_id: str, version: int) -> Optional[ResearchPlan]:
         """读取指定版本计划；不存在返回 None。"""
@@ -2347,6 +2570,72 @@ class ResearchStore:
                 raise
         return ResearchSessionPlan.from_row(dict(row))
 
+    def create_session_plan_cas(
+        self,
+        plan: ResearchSessionPlan,
+        owner_id: str,
+        *,
+        expected_current_version: int,
+    ) -> tuple[ResearchSessionPlan, ResearchSession] | None:
+        """Append a Session plan and advance its pointer in one CAS transaction."""
+        if int(plan.version) != int(expected_current_version) + 1:
+            raise ValueError("plan version must advance by exactly one")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                session_row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (plan.research_session_id, owner_id),
+                ).fetchone()
+                if session_row is None:
+                    conn.rollback()
+                    raise ResearchSessionNotFound(plan.research_session_id)
+                if int(session_row["current_plan_version"]) != int(expected_current_version):
+                    conn.commit()
+                    return None
+                if conn.execute(
+                    "SELECT 1 FROM research_session_plans WHERE research_session_id=? AND version=?",
+                    (plan.research_session_id, int(plan.version)),
+                ).fetchone() is not None:
+                    conn.commit()
+                    raise ResearchPlanConflict(plan.research_session_id, plan.version)
+                conn.execute(
+                    """INSERT INTO research_session_plans(
+                        research_session_id,version,schema_version,output_hash,objective,
+                        scope_json,work_items_json,capabilities_json,budget_json,
+                        report_structure_json,safety_summary_json,status,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        plan.research_session_id, int(plan.version), plan.schema_version,
+                        plan.output_hash, plan.objective, plan.scope_json, plan.work_items_json,
+                        plan.capabilities_json, plan.budget_json, plan.report_structure_json,
+                        plan.safety_summary_json, plan.status, plan.created_at or _utcnow(),
+                    ),
+                )
+                changed = conn.execute(
+                    "UPDATE research_sessions SET current_plan_version=?, updated_at=? "
+                    "WHERE research_session_id=? AND owner_id=? AND current_plan_version=?",
+                    (int(plan.version), _utcnow(), plan.research_session_id, owner_id, int(expected_current_version)),
+                ).rowcount
+                if changed != 1:
+                    conn.rollback()
+                    return None
+                saved_plan = conn.execute(
+                    "SELECT * FROM research_session_plans WHERE research_session_id=? AND version=?",
+                    (plan.research_session_id, int(plan.version)),
+                ).fetchone()
+                saved_session = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (plan.research_session_id, owner_id),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSessionPlan.from_row(dict(saved_plan)), ResearchSession.from_row(dict(saved_session))
+
+    append_session_plan_cas = create_session_plan_cas
+
     def get_session_plan(self, research_session_id: str, owner_id: str, version: int | None = None) -> ResearchSessionPlan | None:
         with self._connect() as conn:
             if version is None:
@@ -2731,6 +3020,18 @@ class ResearchStore:
                         (approval.owner_id, approval.idempotency_key),
                     ).fetchone()
                 if existing is not None:
+                    # A key is idempotent only for the same approval
+                    # identity.  Reusing it for another scope/version must not
+                    # silently return the first request.
+                    same_identity = (
+                        existing["research_session_id"] == approval.research_session_id
+                        and existing["kind"] == approval.kind
+                        and existing["subject_id"] == approval.subject_id
+                        and int(existing["subject_version"]) == int(approval.subject_version)
+                        and existing["requested_scope_json"] == approval.requested_scope_json
+                    )
+                    if not same_identity:
+                        raise ApprovalConflict() from exc
                     return ApprovalRequest.from_row(dict(existing))
                 raise ApprovalConflict() from exc
             except Exception:

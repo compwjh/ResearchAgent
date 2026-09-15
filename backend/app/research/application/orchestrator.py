@@ -12,7 +12,7 @@
 - 论文元数据不复制：选集只存 catalog_paper_id + relevance + facets_json + evidence_level。
 - Re-plan 只在 coverage 有缺口时按 ``BUDGET_CAPS['max_replan_rounds']`` 有界生成新计划版本；
   已完成版本的 WorkItem 不回写。
-- 禁止 paused 状态（Spec027 状态集无该态）；无 paused 相关分支。
+- paused 是 Spec028 的持久化调度闸门；暂停时不派发新节点，恢复仍复用本编排器。
 - 论文文本一律视为不可信证据：本模块不做任何 LLM 调用，评估与覆盖判定只用确定性规则
   （排序与打分见 ``_evaluate_papers`` docstring），因此注入文本无法改变计划或工具集。
 - 事件类型全部取自 ``contracts.EVENT_TYPES``；event_seq 由 store 原子领号，保证连续无洞。
@@ -331,8 +331,9 @@ class Orchestrator:
         task = self._store.get_task(research_task_id, owner_id)
         if task is None:
             return self._result(research_task_id, "failed", 0, 0, None, (), False, "TASK_NOT_FOUND")
-        # 终态不得回到 running：已终态任务原样返回（取消后不再新增节点）。
-        if task.status in TASK_TERMINAL:
+        # 终态不得回到 running；paused 同样必须原样返回，避免后台线程在
+        # 用户暂停后继续派发新节点。
+        if task.status in TASK_TERMINAL or task.status == "paused":
             return self._result(research_task_id, task.status, task.current_plan_version, 0, None, (), False, None)
         self._owner_by_task[research_task_id] = owner_id
         try:
@@ -757,6 +758,13 @@ class Orchestrator:
         completed_search_evidence: dict[str, list[dict]] = {}
         item_by_id = {item.work_item_id: item for item in items}
         for item in items:
+            # Pause is checked at every dispatch boundary.  A node already in
+            # the external call may finish and persist evidence; no following
+            # node is started until the caller explicitly resumes the task.
+            current = self._store.get_task(task.research_task_id, owner_id)
+            if current is None or current.status == "paused" or current.status in TASK_TERMINAL:
+                status = current.status if current is not None else "interrupted"
+                return self._result(task.research_task_id, status, plan_version, 0, None, (), False, None)
             role = role_map.get(item.role, item.role)
             skill_name = ROLE_SKILL_DEFAULTS.get(role)
             capability = approved_capabilities.get(skill_name) if skill_name else None
@@ -1791,7 +1799,7 @@ class Orchestrator:
         task = self._store.get_task(research_task_id, owner_id)
         if task is None:
             return self._result(research_task_id, "failed", 0, 0, None, (), False, "TASK_NOT_FOUND")
-        if task.status in TASK_TERMINAL:
+        if task.status in TASK_TERMINAL or task.status == "paused":
             return self._result(research_task_id, task.status, task.current_plan_version, 0, None, (), False, None)
         return task
 

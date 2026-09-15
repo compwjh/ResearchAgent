@@ -110,6 +110,14 @@ class ResearchTaskPatchProjectRequest(BaseModel):
     project_id: Optional[str] = Field(default=None, max_length=100)
 
 
+class ResearchTaskResumeRequest(BaseModel):
+    """Optional durable SchedulerCheckpoint envelope for a paused task."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint: Optional[dict[str, object]] = None
+
+
 class ResearchSessionCreateRequest(BaseModel):
     """Task02 base schema for the conversational research session boundary."""
 
@@ -1180,6 +1188,41 @@ def cancel_research_task(research_task_id: str):
         "research_task_id": task.research_task_id,
         "status": task.status,
         "cancelled_work_items": max(0, _cancelled_item_count(research_task_id) - before),
+    }
+
+
+@router.post("/{research_task_id}/pause")
+def pause_research_task(research_task_id: str):
+    """Pause dispatch without discarding completed evidence or queued nodes."""
+    try:
+        task = _service().pause(research_task_id, OWNER_ID)
+    except ResearchServiceError as exc:
+        return _error(exc)
+    return {
+        "research_task_id": task.research_task_id,
+        "status": task.status,
+        "current_plan_version": task.current_plan_version,
+    }
+
+
+@router.post("/{research_task_id}/resume")
+def resume_research_task(
+    research_task_id: str,
+    payload: ResearchTaskResumeRequest | None = None,
+):
+    """Resume a paused task after validating an optional checkpoint envelope."""
+    try:
+        task = _service().resume(
+            research_task_id,
+            OWNER_ID,
+            checkpoint=payload.checkpoint if payload is not None else None,
+        )
+    except ResearchServiceError as exc:
+        return _error(exc)
+    return {
+        "research_task_id": task.research_task_id,
+        "status": task.status,
+        "current_plan_version": task.current_plan_version,
     }
 
 

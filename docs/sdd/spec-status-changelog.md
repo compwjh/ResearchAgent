@@ -315,6 +315,8 @@
 - **035 体验与稳定性优化合集** ｜ 已完成（部署验证前） → **已完成（部署验证通过）** ｜ 2026-09-15：重新部署 8400 服务并完成运行时验收。`kill -9` 残留旧进程 31766 后 Qdrant 本地锁释放，894 篇目录全部重建索引（pending 0 / indexed 894 / failed 0），检索 `total_results` 由 0 恢复为 649+245 且结果带作者。Bug3 验收通过：`reasoning-options` 返回 `source=cache`、读 `data/model_capabilities.sqlite3`，切模型不再实时探测。Bug2 验收通过：上传 PDF 后计数立即 1→2、`status=indexing` 即已可见，测试文档已删除、0 残留。遗留：Bug4/Bug5 视觉建议人工过目；Reranker 模型缺失导致 `degraded=true`，属独立环境缺口。
 ## 2026-09-16
 
+- **029 Research Task 全文获取与知识库联动 — Task02** ｜ 实施中 → **已完成（NO-GO）** ｜ 复用审计确认下载、导入、切片定位可复用，但 Research 侧审批、document link、AcquisitionEvent 和 EvidenceUpgrade 持久化缺失；`5 passed, 1 xfailed`，Task03 先补齐合同。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task04** ｜ 实施中 → **已完成** ｜ 接通 paused、pause/resume/cancel CAS、计划版本追加、审批幂等和 checkpoint 恢复接口；定向后端与 Spec027/034 受影响测试通过，未跑全量。
 - **028 Research Task 可靠调度、计划版本与恢复 — Task03** ｜ 实施中 → **已完成** ｜ 新增可恢复租约、checkpoint、资源预约与公平轮转调度器，复用既有状态机与 ResourceProbe；定向测试 `10 passed`，未跑全量。
 - **028 Research Task 可靠调度、计划版本与恢复 — Task02** ｜ 实施中 → **已完成（GO）** ｜ ResearchStore 启用 WAL 与 30 秒 busy timeout；跨进程租约、过期接管、旧 token 拒绝、checkpoint CAS、终态不可逆及公平调度合同通过，定向测试 `6 passed`。
 - **034 会话式深度研究与真实子 Agent Runtime** ｜ 已完成 → **实施中（Task11）** ｜ 真实 Smoke 生成的 Markdown 只有一篇证据对象和引用清单；新增 Task11 补强 USENIX 至少五篇候选保留及实质性报告输出，完成后重新验收收口。

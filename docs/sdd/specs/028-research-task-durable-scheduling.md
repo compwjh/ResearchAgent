@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（Task03）**
+**当前状态：实施中（Task05）**
 
 ## 一句话目标
 
@@ -79,8 +79,8 @@
 |---|---|---|---|---|
 | 01 | 编写 Spec028 | 本文件 | — | 完成 |
 | 02 | 验证租约、checkpoint 与公平调度 | [`task-02-durable-runtime-gate.md`](../plans/028/task-02-durable-runtime-gate.md) | Spec027、确认、双评审 | 已完成（GO） |
-| 03 | 实现全局调度、租约与恢复 | [`task-03-scheduler-lease-recovery.md`](../plans/028/task-03-scheduler-lease-recovery.md) | 02 | 待执行 |
-| 04 | 实现计划版本、暂停取消与审批 | [`task-04-plan-version-hitl.md`](../plans/028/task-04-plan-version-hitl.md) | 03 | 待执行 |
+| 03 | 实现全局调度、租约与恢复 | [`task-03-scheduler-lease-recovery.md`](../plans/028/task-03-scheduler-lease-recovery.md) | 02 | 已完成 |
+| 04 | 实现计划版本、暂停取消与审批 | [`task-04-plan-version-hitl.md`](../plans/028/task-04-plan-version-hitl.md) | 03 | 已完成 |
 | 05 | 实现恢复与审批界面 | [`task-05-recovery-approval-ui.md`](../plans/028/task-05-recovery-approval-ui.md) | 04 | 待执行 |
 | 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/028/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
 

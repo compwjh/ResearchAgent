@@ -119,8 +119,18 @@ class PlanApprovalService:
             status="proposed",
             created_at=now,
         )
-        self.store.create_session_plan(plan, owner_id)
-        self.store.update_session_links(session_id, owner_id, current_plan_version=version)
+        if hasattr(self.store, "create_session_plan_cas"):
+            result = self.store.create_session_plan_cas(
+                plan,
+                owner_id,
+                expected_current_version=session.current_plan_version,
+            )
+            if result is None:
+                raise ResearchCommandError("PLAN_VERSION_STALE", "计划版本已更新，请刷新计划卡")
+            plan, _saved_session = result
+        else:
+            self.store.create_session_plan(plan, owner_id)
+            self.store.update_session_links(session_id, owner_id, current_plan_version=version)
         self.store.supersede_session_plans(session_id, owner_id, version)
         self.store.supersede_approvals(session_id, owner_id, before_version=version)
         approval = self.store.create_approval(

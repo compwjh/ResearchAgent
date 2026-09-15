@@ -1,7 +1,7 @@
 # Spec 028 执行计划：可靠调度、计划版本与恢复
 
 > 关联：[Spec 028](../../specs/028-research-task-durable-scheduling.md)
-> 当前状态：实施中（Task04）。
+> 当前状态：实施中（Task05）。
 
 ## 任务索引
 

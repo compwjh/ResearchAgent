@@ -55,6 +55,11 @@ _RUNNING_LIKE = frozenset({"running", "planning"})
 # 已终态的跳过，终态不得回到 running/queued）。
 _CANCELLABLE_ITEM_STATUSES = frozenset({"queued", "running"})
 
+# Pause is a durable scheduler gate.  It never rewrites a WorkItem or creates
+# a second state machine; queued nodes remain queued and an in-flight node is
+# allowed to reach its next checkpoint before a later resume.
+_PAUSABLE_TASK_STATUSES = frozenset({"planning", "running", "waiting_approval"})
+
 # draft 事件的 goal 摘要截断长度（安全 payload 不放大段原文）。
 _GOAL_EXCERPT_CHARS = 120
 
@@ -302,18 +307,126 @@ class ResearchService:
         if task.status in TASK_TERMINAL:
             raise ResearchServiceError("TASK_TERMINAL_CONFLICT", 409, f"task already terminal: {task.status}")
         try:
-            updated = self._store.update_task_status(research_task_id, owner_id, "cancelled")
+            # Store-level CAS also converges queued/running WorkItems in the
+            # same SQLite transaction.  Keep the fallback for narrow legacy
+            # test doubles that predate the Task04 seam.
+            if hasattr(self._store, "cancel_task_cas"):
+                result = self._store.cancel_task_cas(
+                    research_task_id, owner_id, expected_status=task.status
+                )
+                if result is None:
+                    current = self._store.get_task(research_task_id, owner_id)
+                    if current is not None and current.status in TASK_TERMINAL:
+                        raise ResearchServiceError("TASK_TERMINAL_CONFLICT", 409, f"task already terminal: {current.status}")
+                    raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "任务状态已被其它操作更新")
+                updated, _cancelled_count = result
+            else:
+                updated = self._store.update_task_status(research_task_id, owner_id, "cancelled")
+                for item in self._store.list_work_items(research_task_id):
+                    if item.status not in _CANCELLABLE_ITEM_STATUSES:
+                        continue
+                    with suppress(InvalidStateTransition):
+                        self._store.update_work_item_status(item.work_item_id, "cancelled")
         except InvalidStateTransition as exc:
             raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, f"{task.status} -> cancelled 非法") from exc
-        for item in self._store.list_work_items(research_task_id):
-            if item.status not in _CANCELLABLE_ITEM_STATUSES:
-                continue
-            # 并发下编排器可能刚把它推进到终态：转移非法就跳过，不覆盖既有终态。
-            with suppress(InvalidStateTransition):
-                self._store.update_work_item_status(item.work_item_id, "cancelled")
         self._store.append_event(research_task_id, "task", {"status": "cancelled"})
         self._store.append_event(research_task_id, "terminal", {"status": "cancelled"})
         return updated
+
+    def pause(self, research_task_id: str, owner_id: str) -> ResearchTask:
+        """Pause dispatch with an owner-scoped task-status CAS.
+
+        Repeating pause is idempotent for the already-paused task.  Terminal
+        tasks are never reopened or relabeled, and a concurrent cancel/finish
+        wins the CAS race deterministically.
+        """
+        task = self.get_task(research_task_id, owner_id)
+        if task.status in TASK_TERMINAL:
+            raise ResearchServiceError("TASK_TERMINAL_CONFLICT", 409, f"task already terminal: {task.status}")
+        if task.status == "paused":
+            return task
+        if task.status not in _PAUSABLE_TASK_STATUSES:
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, f"{task.status} 不支持暂停")
+        try:
+            updated = self._store.pause_task_cas(
+                research_task_id, owner_id, expected_status=task.status
+            ) if hasattr(self._store, "pause_task_cas") else self._store.update_task_status(
+                research_task_id, owner_id, "paused"
+            )
+        except InvalidStateTransition as exc:
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "任务状态已被其它操作更新") from exc
+        if updated is None:
+            current = self._store.get_task(research_task_id, owner_id)
+            if current is not None and current.status == "paused":
+                return current
+            if current is not None and current.status in TASK_TERMINAL:
+                raise ResearchServiceError("TASK_TERMINAL_CONFLICT", 409, f"task already terminal: {current.status}")
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "任务状态已被其它操作更新")
+        self._store.append_event(research_task_id, "task", {"status": "paused", "reason": "user_pause"})
+        return updated
+
+    def resume(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        *,
+        checkpoint: dict | None = None,
+    ) -> ResearchTask:
+        """Resume a paused task after optional durable checkpoint validation."""
+        task = self.get_task(research_task_id, owner_id)
+        if task.status in TASK_TERMINAL:
+            raise ResearchServiceError("TASK_TERMINAL_CONFLICT", 409, f"task already terminal: {task.status}")
+        if task.status != "paused":
+            if task.status in {"planning", "running"}:
+                return task
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, f"{task.status} 不支持恢复")
+        if checkpoint is not None:
+            self._validate_resume_checkpoint(task, checkpoint)
+        elif hasattr(self._store, "list_work_items"):
+            # A plain resume is valid when queued/running durable nodes remain
+            # to dispatch.  If every node is terminal (or the task has no
+            # materialized plan), require an explicit valid checkpoint rather
+            # than pretending the task can make progress.
+            items = self._store.list_work_items(research_task_id)
+            if not items or not any(item.status in {"queued", "running"} for item in items):
+                raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "没有可恢复节点")
+        try:
+            updated = self._store.resume_task_cas(research_task_id, owner_id) if hasattr(self._store, "resume_task_cas") else self._store.update_task_status(research_task_id, owner_id, "running")
+        except InvalidStateTransition as exc:
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "任务状态已被其它操作更新") from exc
+        if updated is None:
+            current = self._store.get_task(research_task_id, owner_id)
+            if current is not None and current.status in TASK_TERMINAL:
+                raise ResearchServiceError("TASK_TERMINAL_CONFLICT", 409, f"task already terminal: {current.status}")
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "任务状态已被其它操作更新")
+        self._store.append_event(research_task_id, "task", {"status": "running", "reason": "user_resume"})
+        self.start(research_task_id, owner_id)
+        return updated
+
+    def _validate_resume_checkpoint(self, task: ResearchTask, checkpoint: dict) -> None:
+        """Validate an optional scheduler checkpoint without executing it."""
+        if not isinstance(checkpoint, dict):
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "checkpoint 必须是对象")
+        try:
+            version = int(checkpoint["plan_version"])
+            node_id = str(checkpoint["node_id"])
+            digest = str(checkpoint["input_digest"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "checkpoint 不完整") from exc
+        if version != int(task.current_plan_version) or not node_id or len(digest) != 64:
+            raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "checkpoint 计划版本已过期")
+        if hasattr(self._store, "get_scheduler_checkpoint"):
+            try:
+                checkpoint_task_id = str(
+                    checkpoint.get("task_id")
+                    or checkpoint.get("work_item_id")
+                    or task.research_task_id
+                )
+                saved = self._store.get_scheduler_checkpoint(checkpoint_task_id, version, node_id)
+            except ValueError as exc:
+                raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "checkpoint 摘要校验失败") from exc
+            if saved is None or saved.input_digest != digest:
+                raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "checkpoint 不存在或已变更")
 
     def feedback(
         self, research_task_id: str, owner_id: str, *, action: str | None = None, add_scope: str | None = None
@@ -357,8 +470,16 @@ class ResearchService:
             status="proposed",
             created_at=_utcnow(),
         )
-        self._store.create_plan(plan)
-        updated = self._store.update_task(research_task_id, owner_id, current_plan_version=version)
+        if hasattr(self._store, "create_plan_version_cas"):
+            result = self._store.create_plan_version_cas(
+                plan, owner_id, expected_current_version=task.current_plan_version
+            )
+            if result is None:
+                raise ResearchServiceError("PLAN_VERSION_STALE", 409, "计划版本已更新，请刷新计划卡")
+            _saved_plan, updated = result
+        else:
+            self._store.create_plan(plan)
+            updated = self._store.update_task(research_task_id, owner_id, current_plan_version=version)
         self._store.append_event(
             research_task_id,
             "plan",
