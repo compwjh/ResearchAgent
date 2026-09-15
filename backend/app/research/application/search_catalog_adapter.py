@@ -459,6 +459,12 @@ class PaperEvaluator:
     no model, network, PDF or import side effect is performed here.
     """
 
+    # A report with a sufficiently large candidate pool should retain a small
+    # evidence set even when a strict threshold would otherwise discard most
+    # rows.  This is a floor, not a source of new evidence: promoted rows must
+    # already be present in the supplied catalog snapshot.
+    MIN_REPORT_CANDIDATES = 5
+
     def __init__(self, *, threshold: float = 0.2, soft_floor: float = 0.1) -> None:
         self.threshold = max(0.0, min(float(threshold), 1.0))
         self.soft_floor = max(0.0, min(float(soft_floor), self.threshold))
@@ -475,24 +481,42 @@ class PaperEvaluator:
                  threshold: float | None = None) -> dict[str, Any]:
         rows = [dict(item) for item in candidates if isinstance(item, Mapping)]
         requested = self.threshold if threshold is None else max(0.0, min(float(threshold), 1.0))
-        scores = [(row, self._score(row, query)) for row in rows]
+        scored = [(index, row, self._score(row, query)) for index, row in enumerate(rows)]
         effective = requested
-        kept_pairs = [(row, score) for row, score in scores if score >= effective]
+        kept_indices = {index for index, _row, score in scored if score >= effective}
         softened = False
-        if rows and not kept_pairs and requested > self.soft_floor:
+        if rows and not kept_indices and requested > self.soft_floor:
             effective = self.soft_floor
-            kept_pairs = [(row, score) for row, score in scores if score >= effective]
+            kept_indices = {index for index, _row, score in scored if score >= effective}
             softened = True
+        minimum_floor_applied = False
+        if len(rows) >= self.MIN_REPORT_CANDIDATES and len(kept_indices) < self.MIN_REPORT_CANDIDATES:
+            # Stable score/order ranking keeps the fallback deterministic.  A
+            # below-threshold row is still catalog-backed, but is explicitly
+            # labelled so callers can distinguish floor retention from a
+            # threshold match.
+            ranked = sorted(scored, key=lambda item: (-item[2], item[0]))
+            kept_indices.update(index for index, _row, _score in ranked[: self.MIN_REPORT_CANDIDATES])
+            minimum_floor_applied = True
         kept, eliminated = [], []
-        for row, score in scores:
+        for index, row, score in scored:
             candidate_id = str(row.get("catalog_paper_id", row.get("candidate_id", "")))
+            retained_by_floor = minimum_floor_applied and index in kept_indices and score < effective
             record = {"candidate_id": candidate_id, "relevance_score": score,
-                      "keep": score >= effective, "reason": "meets relevance threshold" if score >= effective else "below relevance threshold",
+                      "keep": index in kept_indices,
+                      "reason": (
+                          "retained to satisfy minimum report candidate floor"
+                          if retained_by_floor else
+                          "meets relevance threshold" if index in kept_indices else
+                          "below relevance threshold"
+                      ),
                       "evidence_refs": [f"catalog:{candidate_id}"] if candidate_id else []}
             (kept if record["keep"] else eliminated).append(record)
         diagnostics = {"threshold": requested, "effective_threshold": effective,
                        "threshold_softened": softened, "candidates": len(rows),
                        "kept": len(kept), "eliminated": len(eliminated),
+                       "minimum_report_candidates": self.MIN_REPORT_CANDIDATES,
+                       "minimum_floor_applied": minimum_floor_applied,
                        "elimination_reasons": {"below_relevance_threshold": len(eliminated)}}
         result = {"schema_version": "paper-evaluation-v1", "evaluations": kept + eliminated,
                   "kept": kept, "eliminated": eliminated, "statistics": diagnostics,

@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
@@ -55,6 +56,11 @@ _DEFAULT_SEARCH_ERROR = "SOURCE_UNAVAILABLE"
 
 # 报告状态（阶段报告）。
 _REPORT_STATUS = "preliminary"
+
+# Keep a minimally useful evidence set when the catalog already returned at
+# least five candidates.  This does not create candidates or download papers;
+# it only raises the deterministic selection cap within the existing pool.
+_MIN_REPORT_CANDIDATES = 5
 
 
 def _utcnow() -> str:
@@ -106,15 +112,39 @@ def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Map
         summary = result.get("summary")
         if not ids and not isinstance(summary, str):
             continue
-        evidence.append({
+        entry = {
             "candidate_ids": list(dict.fromkeys(ids)),
             "evidence_refs": [f"catalog:{value}" for value in dict.fromkeys(ids)],
-            "summary": summary[:4096] if isinstance(summary, str) else "",
-        })
+            # Search summaries are untrusted presentation text.  Keep the
+            # bounded diagnostic, but redact URLs before passing it to the
+            # evaluator or report synthesizer.
+            "summary": re.sub(r"https?://[^\s<>\"']+", "[已隐藏链接]", summary[:4096]) if isinstance(summary, str) else "",
+        }
+        metadata = result.get("catalog_metadata")
+        if isinstance(metadata, (list, tuple)):
+            bounded: list[dict[str, Any]] = []
+            for item in metadata:
+                if not isinstance(item, Mapping):
+                    continue
+                candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+                if candidate_id not in ids:
+                    continue
+                clean = {"candidate_id": candidate_id}
+                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                    if field in item:
+                        value = item[field]
+                        if isinstance(value, str):
+                            clean[field] = value[:8000]
+                        elif field == "keywords" and isinstance(value, (list, tuple)):
+                            clean[field] = [str(keyword)[:160] for keyword in value[:24] if isinstance(keyword, str)]
+                bounded.append(clean)
+            if bounded:
+                entry["catalog_metadata"] = bounded
+        evidence.append(entry)
     return evidence
 
 
-def _validated_evaluator_candidates(outputs) -> list[dict]:
+def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None) -> list[dict]:
     records: list[dict] = []
     for output in outputs:
         kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
@@ -125,8 +155,32 @@ def _validated_evaluator_candidates(outputs) -> list[dict]:
             refs = item.get("evidence_refs")
             if not candidate_id or not isinstance(refs, list) or not refs:
                 continue
-            records.append({"candidate_id": str(candidate_id), "verified": True, "evidence_refs": list(refs)})
+            record = {"candidate_id": str(candidate_id), "verified": True, "evidence_refs": list(refs)}
+            # Metadata is copied only from the already-sanitized Search Worker
+            # catalog handoff, never from model evaluator output.
+            metadata = (metadata_by_id or {}).get(str(candidate_id))
+            if isinstance(metadata, Mapping):
+                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                    if field in metadata:
+                        record[field] = metadata[field]
+            records.append(record)
     return records
+
+
+def _catalog_metadata_index(evidence: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index safe directory metadata by candidate ID for report delivery."""
+    indexed: dict[str, dict[str, Any]] = {}
+    for entry in evidence:
+        if not isinstance(entry, Mapping):
+            continue
+        for item in entry.get("catalog_metadata", ()) if isinstance(entry.get("catalog_metadata"), (list, tuple)) else ():
+            if not isinstance(item, Mapping):
+                continue
+            candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+            if not isinstance(candidate_id, str) or candidate_id in indexed:
+                continue
+            indexed[candidate_id] = dict(item)
+    return indexed
 
 
 def _evaluator_records(output) -> list[dict]:
@@ -801,8 +855,14 @@ class Orchestrator:
                     if item_by_id.get(work_item_id) is not None
                     and item_by_id[work_item_id].role == "paper-evaluator"
                 }
+                catalog_metadata = _catalog_metadata_index(
+                    entry
+                    for evidence in completed_search_evidence.values()
+                    for entry in evidence
+                )
                 validated = _validated_evaluator_candidates(
-                    [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id]
+                    [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id],
+                    catalog_metadata,
                 )
                 if not validated:
                     failures += 1
@@ -906,6 +966,11 @@ class Orchestrator:
         if self._memory_repository is not None:
             session = self._store.get_session_by_task(task.research_task_id, owner_id)
             if session is not None:
+                catalog_metadata = _catalog_metadata_index(
+                    entry
+                    for evidence in completed_search_evidence.values()
+                    for entry in evidence
+                )
                 validated_candidates: list[dict] = []
                 for evaluation in evaluator_outputs:
                     kept_items = evaluation.get("kept") if isinstance(evaluation.get("kept"), list) else [evaluation]
@@ -921,11 +986,53 @@ class Orchestrator:
                         if not paper_id:
                             continue
                         refs = item.get("evidence_refs") if isinstance(item.get("evidence_refs"), list) else ()
-                        validated_candidates.append({
+                        record = {
                             "candidate_id": str(paper_id),
                             "verified": True,
                             "evidence_refs": list(refs),
-                        })
+                        }
+                        metadata = catalog_metadata.get(str(paper_id))
+                        if isinstance(metadata, Mapping):
+                            for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                                if field in metadata:
+                                    record[field] = metadata[field]
+                        validated_candidates.append(record)
+                # If the real evaluator retained fewer than the report floor,
+                # use only already-sanitized catalog metadata to fill the
+                # bounded evidence set.  This is deliberately fail-closed:
+                # without five metadata-backed catalog rows, no candidates are
+                # invented and the existing NO_VALIDATED_EVIDENCE path wins.
+                if len({item["candidate_id"] for item in validated_candidates}) < _MIN_REPORT_CANDIDATES:
+                    catalog_rows = [
+                        {**metadata, "catalog_paper_id": candidate_id}
+                        for candidate_id, metadata in catalog_metadata.items()
+                        if isinstance(candidate_id, str) and isinstance(metadata, Mapping)
+                    ]
+                    if len(catalog_rows) >= _MIN_REPORT_CANDIDATES:
+                        from backend.app.research.application.search_catalog_adapter import PaperEvaluator
+
+                        floor_output = PaperEvaluator(threshold=0.2, soft_floor=0.1).evaluate(
+                            catalog_rows, query=task.goal
+                        )
+                        existing_ids = {item["candidate_id"] for item in validated_candidates}
+                        for item in floor_output["kept"]:
+                            candidate_id = item.get("candidate_id")
+                            if not isinstance(candidate_id, str) or candidate_id in existing_ids:
+                                continue
+                            record = {
+                                "candidate_id": candidate_id,
+                                "verified": True,
+                                "evidence_refs": [f"catalog:{candidate_id}"],
+                            }
+                            metadata = catalog_metadata.get(candidate_id)
+                            if isinstance(metadata, Mapping):
+                                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                                    if field in metadata:
+                                        record[field] = metadata[field]
+                            validated_candidates.append(record)
+                            existing_ids.add(candidate_id)
+                            if len(existing_ids) >= _MIN_REPORT_CANDIDATES:
+                                break
                 selected_count = len(validated_candidates)
                 try:
                     if synthesis_run_id is None or synthesis_output is None:
@@ -1448,14 +1555,18 @@ class Orchestrator:
         - 先按命中数降序，命中数相同按候选出现顺序（保序去重后的下标）升序；
         - ``relevance = round(max(0.0, 1.0 - rank / max(1, total)), 4)``，rank 为排序后下标，
           total 为候选总数；
-        - 取前 ``min(target_paper_count, BUDGET_CAPS["max_selected"])`` 篇；
+        - 取前 ``min(max(target_paper_count, 5), BUDGET_CAPS["max_selected"])`` 篇，
+          但仅当候选池本身不少于 5 篇时启用 5 篇下限；
         - ``evidence_level`` 恒为 catalog（Spec027 不下载全文）。
 
         之所以不读取论文标题/摘要等元数据：Spec027 禁止把论文元数据复制到 027 的表，且论文
         文本是不可信证据——读入即等于引入注入面。
         """
         total = max(1, len(candidates))
-        cap = min(int(target_paper_count), BUDGET_CAPS["max_selected"])
+        requested_cap = max(0, int(target_paper_count))
+        if len(candidates) >= _MIN_REPORT_CANDIDATES:
+            requested_cap = max(requested_cap, _MIN_REPORT_CANDIDATES)
+        cap = min(requested_cap, BUDGET_CAPS["max_selected"])
         ordered = sorted(
             enumerate(candidates),
             key=lambda pair: (-len(facets_by_paper.get(pair[1], ())), pair[0]),

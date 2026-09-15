@@ -114,6 +114,26 @@ def test_synthesizer_consumes_model_output_only_with_evaluator_allowlist():
         )
 
 
+def test_consume_report_keeps_verified_candidates_omitted_by_model():
+    payload = {
+        "schema_version": "report-synthesis-v1", "report_version": 1,
+        "sections": [{"heading": "主题综述", "candidate_ids": ["c1"], "summary": "目录级摘要对照"}],
+        "citation_manifest": [{"citation_ref": "catalog:c1", "candidate_id": "c1"}],
+        "artifact_ids": [], "safe_summary": {"candidate_count": 5},
+        "source_refs": ["catalog:c1"],
+    }
+    payload["output_hash"] = report_output_hash(payload)
+    candidates = [
+        {"candidate_id": f"c{i}", "verified": True, "evidence_refs": [f"catalog:c{i}"],
+         "title": f"Paper {i}", "abstract": f"Abstract {i}"}
+        for i in range(1, 6)
+    ]
+    result = ReportSynthesizer().consume_validated_output(output=payload, validated_candidates=candidates)
+    assert "目录证据补充" in result.markdown
+    assert all(f"Paper {i}" in result.markdown for i in range(1, 6))
+    assert len(result.output.citation_manifest) == 5
+
+
 def test_synthesizer_output_is_hashed_and_html_escapes_xss():
     result = ReportSynthesizer().synthesize(
         report_version=1,
@@ -125,6 +145,30 @@ def test_synthesizer_output_is_hashed_and_html_escapes_xss():
     assert len(result.output.output_hash) == 64
     assert "<script>" not in result.html and "&lt;script&gt;" in result.html
     assert "catalog:c1" in result.markdown
+
+
+def test_synthesizer_renders_verified_catalog_metadata_and_rejects_unsafe_fields():
+    candidate = {
+        "candidate_id": "c1", "verified": True, "evidence_refs": ["catalog:c1"],
+        "title": "Supply-chain defenses",
+        "abstract": "A catalog abstract describing bounded defenses.",
+        "keywords": ["supply chain", "defense"],
+    }
+    result = ReportSynthesizer().synthesize(
+        report_version=1,
+        validated_candidates=[candidate],
+        citation_manifest=["catalog:c1"],
+        sections=[{"heading": "方法与主题：防御", "candidate_ids": ["c1"]}],
+    )
+    assert "#### Supply-chain defenses" in result.markdown
+    assert "- 摘要：A catalog abstract describing bounded defenses." in result.markdown
+    assert "- 关键词：supply chain、defense" in result.markdown
+    with pytest.raises(ReportSynthesisError):
+        ReportSynthesizer().synthesize(
+            report_version=1,
+            validated_candidates=[{**candidate, "abstract": "https://untrusted.invalid/paper"}],
+            citation_manifest=["catalog:c1"],
+        )
 
 
 def test_artifact_is_immutable_and_owner_scoped(tmp_path):

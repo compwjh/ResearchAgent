@@ -1,7 +1,7 @@
 # Spec034 任务索引
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md)
-> 当前状态：已完成；Spec034、Task02–10 均已收口。
+> 当前状态：实施中（Task11）；Task02–10 已收口，Task11 补强目录召回与报告内容。
 
 ## 依赖顺序
 
@@ -22,6 +22,7 @@
 - [Task08：报告 Artifact、会话写回与通知](./task-08-report-and-notifications.md) — 已完成（双端 reviewer/tester 自动化 GO）
 - [Task09：Research Tab 复用、旧入口与旧数据清理](./task-09-workspace-and-cleanup.md) — 已完成（双端最终复审 GO）
 - [Task10：最终评审、回归、真实 Smoke、部署与复盘](./task-10-review-regression-deploy.md) — 已完成（全量回归、真实 Smoke、Artifact 与部署验证通过）
+- [Task11：至少五篇候选与实质性综述输出](./task-11-report-content-and-recall.md) — 实施中
 
 ## 状态规则
 

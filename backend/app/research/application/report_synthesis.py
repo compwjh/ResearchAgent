@@ -202,6 +202,73 @@ def _safe_text_input(value: Any, field: str, *, default: str = "") -> str:
     return text or default
 
 
+def _safe_catalog_metadata(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Return only safe, bounded directory fields from a validated candidate.
+
+    The evaluator proves the candidate and citation IDs; these fields are
+    descriptive catalog facts carried alongside that proof.  They are never
+    accepted from the Synthesizer model output itself.  Rejecting unsafe text
+    here keeps URLs, prompt/CoT text and credentials out of both artifacts.
+    """
+    def safe_long_text(value: Any, field: str, limit: int) -> str:
+        if not isinstance(value, str):
+            raise ReportSynthesisError(f"invalid catalog {field}")
+        text = value.strip()
+        lowered = text.casefold()
+        if (
+            len(text) > 12000
+            or _PATH_RE.search(text)
+            or _FILE_NAME_RE.search(text)
+            or re.search(r"(?:https?://|ftp://|www\.)", text, re.I)
+            or any(part in lowered for part in _FORBIDDEN_PARTS)
+            or any(marker in lowered for marker in ("authorization:", "bearer ", "password=", "token=", "api_key="))
+        ):
+            raise ReportSynthesisError(f"unsafe catalog {field}")
+        return text[:limit]
+
+    metadata: dict[str, Any] = {}
+    for field, limit in (("title", 300), ("abstract", 6000), ("summary", 4000),
+                         ("method", 500), ("methods", 1000), ("topic", 500),
+                         ("topics", 1000), ("facets", 1000)):
+        value = candidate.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ReportSynthesisError(f"invalid catalog {field}")
+        metadata[field] = safe_long_text(value, field, limit)
+    keywords = candidate.get("keywords")
+    if keywords is not None:
+        if isinstance(keywords, str):
+            keywords = re.split(r"[,;，；|]", keywords)
+        if not isinstance(keywords, (list, tuple)):
+            raise ReportSynthesisError("invalid catalog keywords")
+        clean_keywords: list[str] = []
+        for value in keywords[:24]:
+            clean = safe_long_text(value, "keyword", 160)
+            if clean and clean not in clean_keywords:
+                clean_keywords.append(clean)
+        metadata["keywords"] = clean_keywords
+    return metadata
+
+
+def _candidate_markdown_lines(candidate_id: str, candidate: Mapping[str, Any], refs: Iterable[str]) -> list[str]:
+    """Render one verified catalog candidate with optional directory facts."""
+    metadata = _safe_catalog_metadata(candidate)
+    title = metadata.get("title") or f"证据对象 {candidate_id}"
+    lines = [f"#### {title}", "", f"- 证据对象 `{candidate_id}`（引用：{', '.join(f'[{ref}]' for ref in refs)}）"]
+    abstract = metadata.get("abstract") or metadata.get("summary")
+    if abstract:
+        lines.append(f"- 摘要：{abstract}")
+    keywords = metadata.get("keywords") or []
+    if keywords:
+        lines.append(f"- 关键词：{'、'.join(keywords)}")
+    # Method/topic grouping is represented by the Synthesizer's validated
+    # section heading; title + catalog abstract provide the bounded group
+    # content without inventing findings or full-text claims.
+    lines.append("")
+    return lines
+
+
 @dataclass(frozen=True)
 class SynthesisResult:
     output: ReportSynthesisOutput
@@ -289,7 +356,7 @@ class ReportSynthesizer:
                 refs = [item["citation_ref"] for item in manifest if item["candidate_id"] == candidate_id]
                 if not refs:
                     raise ReportSynthesisError("every reported candidate requires a citation")
-                lines.append(f"- 证据对象 `{candidate_id}`（引用：{', '.join(f'[{ref}]' for ref in refs)}）")
+                lines.extend(_candidate_markdown_lines(candidate_id, verified[candidate_id], refs))
             lines.append("")
         lines.extend(["## 引用清单", ""])
         for item in manifest:
@@ -323,6 +390,7 @@ class ReportSynthesizer:
         if validated["artifact_ids"]:
             raise ReportSynthesisError("synthesizer must not preselect artifact IDs")
         title = _safe_text_input(title, "title", default="深度研究报告")
+        validated_candidates = list(validated_candidates)
         allowed: dict[str, set[str]] = {}
         verified: set[str] = set()
         for candidate in validated_candidates:
@@ -353,6 +421,7 @@ class ReportSynthesizer:
             raise ReportSynthesisError("source_refs must equal the evaluator citation manifest")
         manifest_by_candidate = {item["candidate_id"] for item in manifest}
         report_sections: list[dict[str, Any]] = []
+        reported_ids: set[str] = set()
         for section in validated["sections"]:
             if not isinstance(section, Mapping):
                 raise ReportSynthesisError("invalid report section")
@@ -363,20 +432,50 @@ class ReportSynthesizer:
             clean_ids = [_safe_identifier(item, "candidate_id") for item in ids]
             if any(item not in verified or item not in manifest_by_candidate for item in clean_ids):
                 raise ReportSynthesisError("section references an unverified candidate")
-            report_sections.append({"heading": heading, "candidate_ids": clean_ids})
+            summary = section.get("summary", "")
+            if summary is not None and not isinstance(summary, str):
+                raise ReportSynthesisError("section summary must be text")
+            clean_summary = _safe_text_input(summary, "section summary", default="") if summary else ""
+            report_sections.append({"heading": heading, "candidate_ids": clean_ids, "summary": clean_summary})
+            reported_ids.update(clean_ids)
         if not report_sections:
             raise ReportSynthesisError("synthesizer returned no report sections")
+        # A model may return only a subset of the validated evidence set.  Keep
+        # every verified candidate in the immutable report by adding a
+        # deterministic metadata-only section; this never creates evidence or
+        # copies claims from the model output.
+        missing_ids = [candidate_id for candidate_id in sorted(verified) if candidate_id not in reported_ids]
+        if missing_ids:
+            for candidate_id in missing_ids:
+                for ref in allowed[candidate_id]:
+                    if not any(item["candidate_id"] == candidate_id and item["citation_ref"] == ref for item in manifest):
+                        manifest.append({"citation_ref": ref, "candidate_id": candidate_id})
+            manifest.sort(key=lambda item: (item["candidate_id"], item["citation_ref"]))
+            report_sections.append({
+                "heading": "目录证据补充",
+                "candidate_ids": missing_ids,
+                "summary": "以下论文已通过目录证据校验，但模型未单独分组；本节仅展示目录元数据，不代表全文结论。",
+            })
+            manifest_refs = {item["citation_ref"] for item in manifest}
         lines = [f"# {title}", "", "## 研究结果", ""]
         for section in report_sections:
             lines.extend([f"### {section['heading']}", ""])
+            if section.get("summary"):
+                lines.append(f"{section['summary']}\n")
             for candidate_id in section["candidate_ids"]:
                 refs = [item["citation_ref"] for item in manifest if item["candidate_id"] == candidate_id]
-                lines.append(f"- 证据对象 `{candidate_id}`（引用：{', '.join(f'[{ref}]' for ref in refs)}）")
+                candidate = next((item for item in validated_candidates if _safe_identifier(item.get("candidate_id", item.get("catalog_paper_id")), "candidate_id") == candidate_id), None)
+                if candidate is None:
+                    raise ReportSynthesisError("reported candidate is missing")
+                lines.extend(_candidate_markdown_lines(candidate_id, candidate, refs))
             lines.append("")
         lines.extend(["## 引用清单", ""])
         lines.extend(f"- `{item['citation_ref']}` → `{item['candidate_id']}`" for item in manifest)
         markdown = "\n".join(lines).strip() + "\n"
         clean = dict(validated)
+        clean["sections"] = report_sections
+        clean["citation_manifest"] = manifest
+        clean["source_refs"] = sorted(manifest_refs)
         clean["artifact_ids"] = []
         clean["output_hash"] = report_output_hash({key: value for key, value in clean.items() if key != "output_hash"})
         clean_output = ReportSynthesisOutput.model_validate(clean)

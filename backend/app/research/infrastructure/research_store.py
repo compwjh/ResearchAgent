@@ -364,7 +364,9 @@ class ResearchStore:
     """Spec027 Research Task 独立 SQLite 持久化仓储。
 
     连接参数照搬既有 store 范式：`timeout=30.0`、``row_factory = sqlite3.Row``、
-    ``PRAGMA foreign_keys = ON``（**不**设置 journal_mode，与 paper_discovery_store 一致）。
+    ``PRAGMA foreign_keys = ON``。Research Task 需要跨进程恢复，因此显式启用
+    SQLite WAL；并发领取/心跳由 `BEGIN IMMEDIATE` + 条件更新裁决，避免读写互相
+    阻塞而不改变既有状态机。
     写操作统一在 ``with _write_lock, self._connect() as conn:`` 内
     ``BEGIN IMMEDIATE`` → 操作 → ``commit``，异常时 ``rollback`` 并向上抛。
     """
@@ -795,10 +797,18 @@ class ResearchStore:
             raise RuntimeError(f"Unsupported or corrupt research schema version: {row[0]!r}")
 
     def _connect(self) -> sqlite3.Connection:
-        """新建连接：超时 30s、Row 工厂、外键开启。不设置 journal_mode（与既有 store 一致）。"""
+        """新建跨进程安全的 SQLite 连接。
+
+        `journal_mode=WAL` 是数据库级幂等设置；每个连接重复执行不会改变语义，
+        但会让多个 worker 在恢复/调度时可以并发读库，写入仍由 SQLite 串行化。
+        `busy_timeout` 与 Python 连接 timeout 同步，避免短暂写锁竞争直接暴露为
+        ``database is locked``。
+        """
         connection = sqlite3.connect(str(self.database_path), timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA busy_timeout = 30000")
         return connection
 
     # ------------------------------------------------------------------ #

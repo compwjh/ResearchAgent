@@ -21,6 +21,7 @@ from backend.app.research.application.agent_runtime import (
     RoleCapabilityRegistry,
     _ollama_model_factory,
     _OllamaRunnerAdapter,
+    _safe_catalog_metadata,
 )
 from backend.app.research.application.orchestrator import _canonicalize_search_worker_binding, _catalog_evidence_view
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
@@ -136,7 +137,7 @@ def test_ollama_adapter_synthesizer_requires_bounded_delivery_shape():
     contract = captured["messages"][0]["content"]
     assert "sections must be a non-empty array" in contract
     assert "artifact_ids must be an empty array" in contract
-    assert "Do not include section summaries" in contract
+    assert "section summary must only compare" in contract
 
 
 def test_approve_plan_dispatches_materialized_task_to_existing_research_service(tmp_path):
@@ -630,6 +631,34 @@ def test_search_worker_catalog_evidence_view_is_bounded_to_real_tool_facts():
         }
     ]
     assert "paper-3" not in json.dumps(view, ensure_ascii=False)
+    assert "https://" not in json.dumps(view, ensure_ascii=False)
+
+
+def test_catalog_metadata_is_carried_only_from_sanitized_search_facts():
+    summary = (
+        "检索完成：命中 1 篇候选论文。\n"
+        "1. Supply-chain defenses\n"
+        "   catalog_paper_id: paper-1\n"
+        "   摘要: A bounded defense abstract.\n"
+        "   关键词: supply chain, defense\n"
+        "   详情页: https://www.usenix.org/private/detail"
+    )
+    metadata = _safe_catalog_metadata(summary)
+    assert metadata == [{
+        "title": "Supply-chain defenses",
+        "candidate_id": "paper-1",
+        "abstract": "A bounded defense abstract.",
+        "keywords": ["supply chain", "defense"],
+    }]
+    view = _catalog_evidence_view(
+        {"candidates": ["paper-1"]},
+        [{
+            "name": "search_paper_catalog", "status": "ok",
+            "catalog_paper_ids": ["paper-1"], "summary": summary,
+            "catalog_metadata": metadata,
+        }],
+    )
+    assert view[0]["catalog_metadata"][0]["title"] == "Supply-chain defenses"
     assert "https://" not in json.dumps(view, ensure_ascii=False)
 
 

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：待确认**
+**当前状态：实施中（Task03）**
 
 ## 一句话目标
 
@@ -78,7 +78,7 @@
 | 编号 | 任务 | 文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 Spec028 | 本文件 | — | 完成 |
-| 02 | 验证租约、checkpoint 与公平调度 | [`task-02-durable-runtime-gate.md`](../plans/028/task-02-durable-runtime-gate.md) | Spec027、确认、双评审 | 待执行 |
+| 02 | 验证租约、checkpoint 与公平调度 | [`task-02-durable-runtime-gate.md`](../plans/028/task-02-durable-runtime-gate.md) | Spec027、确认、双评审 | 已完成（GO） |
 | 03 | 实现全局调度、租约与恢复 | [`task-03-scheduler-lease-recovery.md`](../plans/028/task-03-scheduler-lease-recovery.md) | 02 | 待执行 |
 | 04 | 实现计划版本、暂停取消与审批 | [`task-04-plan-version-hitl.md`](../plans/028/task-04-plan-version-hitl.md) | 03 | 待执行 |
 | 05 | 实现恢复与审批界面 | [`task-05-recovery-approval-ui.md`](../plans/028/task-05-recovery-approval-ui.md) | 04 | 待执行 |

@@ -13,6 +13,7 @@ from backend.app.research.application.search_catalog_adapter import (
     SearchWorker,
     map_catalog_tool_args,
 )
+from backend.app.research.application.orchestrator import Orchestrator
 
 
 def test_catalog_source_factory_injects_existing_store_and_sources(tmp_path):
@@ -61,6 +62,32 @@ def test_evaluator_keeps_soft_threshold_boundary_and_rejection_reasons():
     assert result["eliminated"][0]["reason"]
     assert result["statistics"]["eliminated"] == 1
     assert "threshold" in result["diagnostics"]
+
+
+def test_evaluator_keeps_five_catalog_backed_candidates_when_threshold_is_strict():
+    evaluator = PaperEvaluator(threshold=1.0, soft_floor=0.1)
+    rows = [
+        {"catalog_paper_id": f"paper-{index}", "title": "unrelated", "abstract": ""}
+        for index in range(5)
+    ]
+
+    result = evaluator.evaluate(rows, query="supply chain defense")
+
+    assert [item["candidate_id"] for item in result["kept"]] == [
+        "paper-0", "paper-1", "paper-2", "paper-3", "paper-4"
+    ]
+    assert all(item["evidence_refs"] == [f"catalog:paper-{index}"] for index, item in enumerate(result["kept"]))
+    assert all(item["reason"] == "retained to satisfy minimum report candidate floor" for item in result["kept"])
+    assert result["statistics"]["minimum_floor_applied"] is True
+
+
+def test_orchestrator_selection_floor_only_applies_to_large_candidate_pools():
+    orchestrator = Orchestrator.__new__(Orchestrator)
+    five = [f"paper-{index}" for index in range(5)]
+    fewer = five[:4]
+
+    assert len(orchestrator._evaluate_papers(five, {}, target_paper_count=1)) == 5
+    assert len(orchestrator._evaluate_papers(fewer, {}, target_paper_count=1)) == 1
 
 
 def test_critic_bounds_replan_and_rejects_scope_expansion():

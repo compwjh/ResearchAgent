@@ -80,10 +80,13 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
     )
     synthesis_boundary = (
         " For synthesizer, use validated_candidates from the user context and emit only the bounded report contract: "
-        "sections must be a non-empty array of objects shaped {heading, candidate_ids}, citation_manifest must contain "
+        "sections must be a non-empty array of objects shaped {heading, candidate_ids, summary}, citation_manifest must contain "
         "{citation_ref, candidate_id} entries using only the supplied catalog:<candidate_id> refs, source_refs must "
-        "equal those citation_ref values, and artifact_ids must be an empty array. Do not include section summaries, "
-        "paper findings, artifact IDs, or citations that are not present in validated_candidates."
+        "equal those citation_ref values, and artifact_ids must be an empty array. Validated candidates may include "
+        "safe catalog title/abstract/keywords/summary fields for the fixed renderer; do not rewrite or augment them. "
+        "section summary must only compare the supplied catalog metadata and must not claim full-text findings; do not include "
+        "paper findings, artifact IDs, or citations that are not present in "
+        "validated_candidates."
     )
     return (
         f"You are the {role} worker in a bounded research runtime. "
@@ -298,6 +301,12 @@ def _safe_text(value: Any, limit: int = 256) -> str:
 
 _CATALOG_URL_RE = re.compile(r"https?://[^\s<>\"']+")
 _CATALOG_ID_RE = re.compile(r"(?im)^\s*catalog_paper_id:\s*([A-Za-z0-9:_-]+)\s*$")
+_CATALOG_ID_VALUE_RE = re.compile(r"^[A-Za-z0-9:_-]{1,240}$")
+_CATALOG_ITEM_RE = re.compile(r"(?m)^\s*\d+[.)]\s+(.+?)\s*$")
+_CATALOG_FIELD_RE = re.compile(
+    r"^\s*(?:摘要|abstract|简介|summary|关键词|keywords|关键字|主题|topics?|方法|methods?)\s*[:：]\s*(.*?)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _safe_catalog_summary(value: Any) -> str:
@@ -309,8 +318,117 @@ def _safe_catalog_summary(value: Any) -> str:
     remove only URL tokens and retain titles/IDs/abstracts.  Other tool output
     continues to use the stricter all-or-nothing ``_safe_text`` path.
     """
-    text = _CATALOG_URL_RE.sub("[redacted-url]", str(value or ""))
+    text = _CATALOG_URL_RE.sub("[已隐藏链接]", str(value or ""))
     return _safe_text(text, limit=4096)
+
+
+def _safe_catalog_field(value: Any, *, limit: int = 4000) -> str:
+    """Normalize one directory field without retaining unsafe instructions.
+
+    Search tool results are untrusted catalog text.  URLs are replaced before
+    applying the existing strict safe-text guard; prompt/credential-like
+    values are dropped instead of being forwarded to the next AgentRun.
+    """
+    if not isinstance(value, str):
+        return ""
+    text = _CATALOG_URL_RE.sub("[已隐藏链接]", value)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return ""
+    try:
+        return _safe_text(text, limit=limit)
+    except Exception:
+        return ""
+
+
+def _safe_catalog_keywords(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = re.split(r"[,;，；|]", value)
+    elif isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        return []
+    result: list[str] = []
+    for item in values[:24]:
+        text = _safe_catalog_field(item, limit=160)
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _safe_catalog_metadata(value: Any) -> list[dict[str, Any]]:
+    """Extract bounded metadata records from a catalog tool result.
+
+    The production catalog Tool currently returns a human-readable summary,
+    while test/future adapters may return candidate mappings.  Both forms are
+    normalized here.  Only catalog IDs and descriptive fields are retained;
+    detail/download URLs never cross this boundary.
+    """
+    if isinstance(value, Mapping):
+        rows = value.get("candidates", value.get("catalog_candidates", ()))
+        if isinstance(rows, (list, tuple)):
+            records: list[dict[str, Any]] = []
+            for row in rows:
+                if not isinstance(row, Mapping):
+                    continue
+                candidate_id = row.get("catalog_paper_id", row.get("candidate_id"))
+                if not isinstance(candidate_id, str) or not _CATALOG_ID_VALUE_RE.fullmatch(candidate_id):
+                    continue
+                record: dict[str, Any] = {"candidate_id": candidate_id}
+                for field in ("title", "abstract", "summary", "method", "methods", "topic", "topics", "facets"):
+                    if field in row:
+                        clean = _safe_catalog_field(row[field])
+                        if clean:
+                            record[field] = clean
+                keywords = _safe_catalog_keywords(row.get("keywords", row.get("keyword")))
+                if keywords:
+                    record["keywords"] = keywords
+                records.append(record)
+            if records:
+                return records
+        value = value.get("summary", "")
+    text = _safe_catalog_summary(value)
+    if not text:
+        return []
+    records = []
+    current: dict[str, Any] | None = None
+    for line in text.splitlines():
+        item_match = _CATALOG_ITEM_RE.match(line)
+        if item_match:
+            if current and current.get("candidate_id"):
+                records.append(current)
+            current = {"title": _safe_catalog_field(item_match.group(1), limit=1000)}
+            continue
+        id_match = re.match(r"^\s*catalog_paper_id:\s*([A-Za-z0-9:_-]+)\s*$", line, re.IGNORECASE)
+        if id_match and current is not None:
+            current["candidate_id"] = id_match.group(1)
+            continue
+        field_match = _CATALOG_FIELD_RE.match(line)
+        if field_match and current is not None:
+            label = line.split(":", 1)[0].split("：", 1)[0].strip().casefold()
+            raw = field_match.group(1)
+            if label in {"关键词", "关键字", "keywords"}:
+                keywords = _safe_catalog_keywords(raw)
+                if keywords:
+                    current["keywords"] = keywords
+            else:
+                field = "abstract" if label in {"摘要", "abstract"} else "summary"
+                clean = _safe_catalog_field(raw)
+                if clean and clean not in {"（缺失，可对该篇详情页调用 fetch_paper_detail 补齐）", "(missing)"}:
+                    current[field] = clean
+    if current and current.get("candidate_id"):
+        records.append(current)
+    # A malformed/hostile summary must not create an unbound record or
+    # duplicate IDs.  Keep the first catalog fact for deterministic handoff.
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        candidate_id = record.get("candidate_id")
+        if candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        unique.append(record)
+    return unique[:32]
 
 
 def _catalog_ids(value: Any) -> list[str]:
@@ -926,6 +1044,11 @@ class ResearchAgentRunner:
                 ids = _catalog_ids(raw)
                 if ids:
                     safe["catalog_paper_ids"] = ids
+                metadata = _safe_catalog_metadata(value if isinstance(value, Mapping) else raw)
+                if not metadata and raw is not value:
+                    metadata = _safe_catalog_metadata(raw)
+                if metadata:
+                    safe["catalog_metadata"] = metadata
             else:
                 safe["summary"] = _safe_text(raw)
         return safe
