@@ -141,3 +141,15 @@ mv data/memory/legacy-backups/<timestamp>-v7/memory.sqlite3 data/memory/memory.s
 - 处置：停止服务，将旧库及 `-shm`/`-wal` sidecar 保存在 `data/memory/legacy-backups/20260916-v7/`，启动时创建全新 v8 库；旧库未删除。
 - 验证：schema version `8`；`/api/health`、`/api/conversations`、`/api/models`、首页和静态资源均 HTTP 200；临时会话的 `context-usage` 和手动 `compactions` 均 HTTP 200；Ollama `/api/tags` 和最小 9B 对话均成功。
 - 回归：受控环境全量 `2407 passed, 1 failed, 1 skipped, 67 subtests`；唯一失败 `test_available_models_bypasses_system_proxy` 在全套顺序运行中受 Ollama 负缓存与沙箱网络限制影响，单独运行通过，不能据此宣称所有外部环境均可用。内存基线、上下文使用/压缩定向测试另行 `5 passed`。
+
+### 9.1 历史上下文恢复记录
+
+如果 v8 数据库能够启动但界面没有历史会话或上下文占用，先区分“前端指标隐藏”与“数据库确实没有历史数据”：
+
+1. 保留当前 v8 快照，不覆盖现有库；本次快照为 `data/memory/legacy-backups/20260916-v8-before-restore/`。
+2. 从 `data/memory/legacy-backups/20260916-v7/memory.sqlite3` 读取旧库，只对共有业务表执行 `INSERT OR IGNORE`，不把旧 schema 直接替换回运行目录。
+3. 本次恢复结果为：`projects=1`、`conversations=57`、`messages=148`、`processing_steps=259`；旧库中的 56 条会话和 146 条消息被保留，临时测试会话未被覆盖。
+4. 将仍然有效的旧记忆迁移到 Markdown 记忆层，再重建 FTS 索引：消息索引 148 条、记忆文档 3 条。删除的旧记忆不恢复。
+5. 重启后必须同时验证：会话列表能返回历史记录、具体会话的 `context-usage` 返回 200、浏览器打开该会话后出现上下文百分比和“压缩”按钮。
+
+空白新会话仍按设计隐藏上下文占用条；这不表示历史数据丢失。只有打开已有会话，或新会话发送第一条消息后，才展示实际占用值。
