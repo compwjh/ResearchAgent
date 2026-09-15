@@ -2,10 +2,11 @@
 
 ## 状态
 
-**当前状态：已确认**
+**当前状态：已完成**
 
 > 本 Spec 来自 2026-09-13 多轮 Grilling 的共同裁决。确认前只允许完善规范、任务计划和评审材料，不修改业务代码。
 > 2026-09-13：需求评审第二轮 APPROVE、技术评审第二轮 GO；用户此前明确要求“然后再开发034”，视为确认本 Spec，按 Task02 → Task10 顺序实施。
+> 2026-09-15：Task10 完成最终全量回归、真实 Ollama/USENIX 目录 Smoke、Artifact 生成、部署探针和复盘；Spec 收口为已完成。
 
 ## 一句话目标
 
@@ -465,13 +466,13 @@ Smoke 必须证明：
 | 07 | 实现 processing_steps 三级树与实时投影 | [`task-07-processing-tree.md`](../plans/034/task-07-processing-tree.md) | 02、05 | 已完成 |
 | 08 | 实现报告 Artifact、会话写回与通知 | [`task-08-report-and-notifications.md`](../plans/034/task-08-report-and-notifications.md) | 06、07 | 已完成 |
 | 09 | 复用 Research Tab、清理旧入口与旧数据 | [`task-09-workspace-and-cleanup.md`](../plans/034/task-09-workspace-and-cleanup.md) | 04、07、08 | 已完成 |
-| 10 | 最终评审、全量回归、真实 Smoke、部署与复盘 | [`task-10-review-regression-deploy.md`](../plans/034/task-10-review-regression-deploy.md) | 02–09 | 实施中 |
+| 10 | 最终评审、全量回归、真实 Smoke、部署与复盘 | [`task-10-review-regression-deploy.md`](../plans/034/task-10-review-regression-deploy.md) | 02–09 | 已完成 |
 
 ## 评审记录
 
 - 需求评审：`docs/sdd/reviews/034-requirement-review.md`（第二轮复审：APPROVE）
 - 技术评审：`docs/sdd/reviews/034-tech-review.md`（第二轮复审：GO）
-- 验收评审：`docs/sdd/reviews/034-acceptance-review.md`（测试报告 + 开发主管签字；待评审（未执行））
+- 验收评审：`docs/sdd/reviews/034-acceptance-review.md`（测试报告、真实 Smoke 证据与开发主管签字；通过）
 
 ## 变更日志
 
@@ -480,3 +481,4 @@ Smoke 必须证明：
 | 2026-09-13 | 架构师（自身） | 根据多轮 Grilling 创建 Spec034，冻结会话式入口、Intake/计划审批、真实子 Agent Runtime、三级处理树、目录接线、资源申请与报告回写边界 |
 | 2026-09-13 | SDD Gate Reviewer（当前子 Agent） | 需求评审 REVISE、技术评审 NO-GO：发现产品步骤占位、Task/Q 断链、运行/状态/迁移/Registry/来源注入契约缺口，已落盘两份评审报告 |
 | 2026-09-13 | 架构师（自身） | 依据门禁评审进入修订中：补齐产品旅程、状态/命令/CAS、Artifact/Notification、真实 Runner/Registry/目录接缝与可重复 Smoke；Spec 保持待确认 |
+| 2026-09-15 | 架构师（自身） | Task10 修复目录 RAG 降级排序与 Search→Evaluator 事实交接；最终全量 pytest `1878 passed, 1 skipped, 5 warnings, 52 subtests`；真实端口 18083 完成 Intake→Plan→Approval→Search→Evaluator→Synthesizer 并生成 Markdown/HTML/citation manifest，完成部署、验收与复盘，Spec 标记已完成 |

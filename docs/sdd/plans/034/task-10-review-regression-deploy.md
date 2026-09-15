@@ -1,7 +1,7 @@
 # Task10 — 最终评审、回归、真实 Smoke、部署与复盘
 
 > 关联：[Spec034](../../specs/034-conversational-deep-research-agent-runtime.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02–Task09；当前状态：`实施中`
+> 依赖：Task02–Task09；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -48,5 +48,5 @@
 ## 产出物、执行结果与变更日志
 
 - 产出：需求/技术/验收评审、测试报告、Smoke 证据、部署记录和 retro。
-- 执行结果：实施中（代码与自动化门禁通过，Spec 状态收口仍需提交、评审文档和 changelog 最后一轮复核）。最终全量 pytest 通过 `1878 passed, 1 skipped, 5 warnings, 52 subtests`；Search Worker 事实恢复与绑定修复及目录排序定向集合通过。服务/页面 health 与 Intake→Plan→Approval→Runner→三级事件流真实通过；本轮补齐了目录 RAG 在 Qdrant/重排不可用时的确定性标题匹配排序，避免向量平局把目标论文排到随机位置。临时端口 `18083` 使用真实 `qwen3.8:27b-q4_K_M` 完成 Intake→Plan→Approval→Search→Evaluator→Synthesizer，Session/Task 均为 `completed`，并生成 Markdown/HTML/citation manifest 三份 Artifact。详见 `artifacts/task-10/smoke-report.md`、`smoke-evidence-path.md` 与 `acceptance-review-final.md`。
+- 执行结果：已完成。最终全量 pytest 通过 `1878 passed, 1 skipped, 5 warnings, 52 subtests`；Search Worker 事实恢复与绑定修复及目录排序定向集合通过。服务/页面 health 与 Intake→Plan→Approval→Runner→三级事件流真实通过；本轮补齐了目录 RAG 在 Qdrant/重排不可用时的确定性标题匹配排序，避免向量平局把目标论文排到随机位置。临时端口 `18083` 使用真实 `qwen3.8:27b-q4_K_M` 完成 Intake→Plan→Approval→Search→Evaluator→Synthesizer，Session/Task 均为 `completed`，并生成 Markdown/HTML/citation manifest 三份 Artifact。详见 `artifacts/task-10/smoke-report.md`、`smoke-evidence-path.md` 与 `acceptance-review-final.md`。
 - 变更日志：2026-09-15 启动 Task10；Task09 双端最终复审 GO，进入 Spec034 最终验收阶段。补齐 Search→Evaluator 运行时事实恢复与 WorkItem 绑定归一化，定向回归 49 passed；真实模型 Smoke 保留真实失败证据，不新增 Spec028/030 范围。

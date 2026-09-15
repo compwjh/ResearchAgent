@@ -41,3 +41,13 @@
 - Search Worker 到 Evaluator 增加受限 `catalog_evidence` 交接，过滤 URL、详情 Tool 和非候选 ID。
 
 这些修复的 Task10 定向验证为 **80 passed，退出码 0**。它们修复了运行契约缺口，但没有放宽证据门禁；最近一次真实任务 `773eb1f92d1153d99c2e45bb08e3691f` 仍因 Evaluator 返回 `keep=false`、空 `evidence_refs` 而保持 `NO_VALIDATED_EVIDENCE`，因此本复核结论仍为 **NO-GO**，Spec034 不得收口。
+
+## 最终补充复验（2026-09-15）
+
+上述 NO-GO 记录对应目录排序修复前的候选事实。之后主 Agent 完成了范围内的最小修复：`CatalogRagAdapter` 在向量/重排降级时按已持久化标题与词项重叠稳定排序，并补充 Search→Evaluator 事实恢复与 WorkItem 绑定校验。定向测试 `30 passed`，最终全量回归 `1878 passed, 1 skipped, 5 warnings, 52 subtests`。
+
+使用真实 `qwen3.8:27b-q4_K_M`、真实 USENIX 目录 Tool 和临时端口 `18083` 复验固定研究链路，得到 `research_task_id=929d24e696935fd0b6188796814a7ab9`，Session/Task 均为 `completed`，并生成 Markdown、HTML、citation manifest 三个不可变 Artifact。失败闭环仍按原门禁保留，未放宽证据校验或伪造结果。
+
+**最终结论：GO。** 该补充证据覆盖原 NO-GO 的唯一阻塞项；Spec034 可进入部署后收口。
+
+开发主管签字：架构师（主会话代行，已明确标注）
