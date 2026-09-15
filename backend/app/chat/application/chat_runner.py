@@ -40,7 +40,7 @@ class ChatStreamInterrupted(RuntimeError):
 
 def build_role_aware_messages(question: str, *, system_rule: Optional[str] = None, advisory: Optional[str] = None, history=None) -> List[Dict[str, str]]:
     messages: List[Dict[str, str]] = [{"role": "system", "content": PLATFORM_SYSTEM_MESSAGE}]
-    if system_rule and system_rule.strip():
+    if system_rule is not None:
         messages.append({"role": "system", "content": system_rule.strip()})
     if advisory and advisory.strip():
         messages.append({"role": "system", "content": advisory.strip()})

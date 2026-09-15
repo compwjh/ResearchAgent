@@ -97,8 +97,10 @@ def chat(request: ChatRequest):
                 prompt = _skill_intent.build_skill_prompt(question, detail.body)
 
         # 组合本次对话消息：USER.md 全局指令 + （命中 Skill 时）技能正文
+        # Keep a stable two-system-message observation shape even when USER.md
+        # is empty; the model driver merges system messages before Ollama.
         prompt_messages = build_role_aware_messages(
-            question, system_rule=user_memory or None
+            question, system_rule=user_memory if user_memory else ""
         )
         if prompt is not None:
             prompt_messages.append({"role": "system", "content": prompt})

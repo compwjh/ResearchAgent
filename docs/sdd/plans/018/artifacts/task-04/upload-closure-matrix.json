@@ -1,16 +1,16 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "06c3412",
-  "inventory_digest": "62c375077055b9f6e9bab01dc96f6396725f71404472282b6820a02551a0f654",
+  "inventory_digest": "6f80c47bc0443183d50161be3cf9712bf4f8ada41c9ce0c2659727d8c0607c6e",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {
       "path": "backend/app/main.py",
-      "sha256": "ff806b74a43bd818c1c75df7a4907644c5f534098ebe9f3a81844ee07fc4355c"
+      "sha256": "b88798f215a3d6dddcd46a03f840760de8dbfd2da19cbf3588cbd04cef500b2e"
     },
     {
       "path": "backend/app/api/routes_kb.py",
-      "sha256": "26635fd2a25a8b50034c1112198b5d224358500f46b470eb00804a89adbe1f77"
+      "sha256": "e595e901f12e2b8918e13a3e3204ff2a53ffcad2e1e3faf613c5ff8b9d4f7d0d"
     },
     {
       "path": "backend/app/api/routes_paper.py",
@@ -34,7 +34,7 @@
     },
     {
       "path": "backend/app/paper_discovery/application/paper_import.py",
-      "sha256": "289c07c2bae6861851fe905d1d01535b7a09c6e8e0b65af7a2cf165fdf994fdf"
+      "sha256": "83a601d48c59dc44f03f2be93bde848d1908a7803220ce9870fa4eb29e28dd51"
     }
   ],
   "closed_enums": {

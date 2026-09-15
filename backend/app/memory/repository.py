@@ -980,6 +980,33 @@ class MemoryRepository:
             row = db.execute("SELECT * FROM messages WHERE owner_id=? AND conversation_id=? AND activity_idempotency_key=?", (owner_id, conversation_id, activity_idempotency_key)).fetchone()
         return self._message(row) if row else None
 
+    def create_idempotent_message_pair(
+        self, conversation_id: str, owner_id: str, content: str, *,
+        idempotency_key: str, model: Optional[str] = None, mode: Optional[str] = None,
+    ) -> tuple[Conversation, Message, Message]:
+        """Create or replay the durable user/assistant pair used by research intake."""
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 240:
+            raise ValueError("invalid idempotency key")
+        with self.transaction() as db:
+            conversation_row = db.execute("SELECT * FROM conversations WHERE conversation_id=? AND owner_id=? AND status!='deleted'", (conversation_id, owner_id)).fetchone()
+            if conversation_row is None:
+                raise LookupError("conversation not found")
+            user_key, assistant_key = f"{idempotency_key}:user", f"{idempotency_key}:assistant"
+            user_row = db.execute("SELECT * FROM messages WHERE owner_id=? AND conversation_id=? AND activity_idempotency_key=?", (owner_id, conversation_id, user_key)).fetchone()
+            if user_row is None:
+                now = _now()
+                user_id = uuid.uuid5(uuid.NAMESPACE_URL, f"research-intake:{owner_id}:{conversation_id}:{user_key}").hex
+                db.execute("INSERT INTO messages(message_id,conversation_id,owner_id,parent_message_id,role,content,status,model,mode,created_at,completed_at,activity_idempotency_key) VALUES(?,?,?,NULL,'user',?,?,?,?,?,?,?)", (user_id, conversation_id, owner_id, content, "completed", model, mode, now, now, user_key))
+                user_row = db.execute("SELECT * FROM messages WHERE message_id=?", (user_id,)).fetchone()
+            assistant_row = db.execute("SELECT * FROM messages WHERE owner_id=? AND conversation_id=? AND activity_idempotency_key=?", (owner_id, conversation_id, assistant_key)).fetchone()
+            if assistant_row is None:
+                now = _now()
+                assistant_id = uuid.uuid5(uuid.NAMESPACE_URL, f"research-intake:{owner_id}:{conversation_id}:{assistant_key}").hex
+                db.execute("INSERT INTO messages(message_id,conversation_id,owner_id,parent_message_id,role,content,status,model,mode,created_at,completed_at,activity_idempotency_key) VALUES(?,?,?,?,'assistant','',?,?,?,?,NULL,?)", (assistant_id, conversation_id, owner_id, user_row["message_id"], "pending", model, mode, now, assistant_key))
+                assistant_row = db.execute("SELECT * FROM messages WHERE message_id=?", (assistant_id,)).fetchone()
+            db.execute("UPDATE conversations SET updated_at=? WHERE conversation_id=?", (_now(), conversation_id))
+        return self._conversation(conversation_row), self._message(user_row), self._message(assistant_row)
+
     def get_message(self, message_id: str, owner_id: str) -> Optional[Message]:
         with self.connection() as db:
             row = db.execute("SELECT * FROM messages WHERE message_id=? AND owner_id=?", (message_id, owner_id)).fetchone()
