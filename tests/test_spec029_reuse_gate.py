@@ -191,13 +191,6 @@ def test_document_delete_reuses_kb_boundary_and_removes_source_and_metadata(tmp_
     assert error.value.code == "DOCUMENT_NOT_FOUND"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Spec029 bridge is not implemented yet: ResearchDocumentLink/AcquisitionApproval/"
-        "EvidenceUpgrade/AcquisitionEvent and their ResearchStore contracts are absent."
-    ),
-)
 def test_research_task_acquisition_and_evidence_upgrade_contract_is_available():
     required_models = (
         "AcquisitionApproval",

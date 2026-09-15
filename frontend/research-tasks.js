@@ -20,7 +20,7 @@
   };
   const STATUS_TEXT = {
     draft: '草稿', intake_pending: '等待补充研究参数', plan_generating: '生成计划中', plan_pending_approval: '等待计划审核',
-    queued: '排队中', planning: '规划中', running: '执行中', waiting_approval: '等待审批',
+    queued: '排队中', planning: '规划中', running: '执行中', paused: '已暂停', waiting_approval: '等待审批', recovery_required: '需要恢复',
     partial: '部分完成', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断',
   };
   const ERROR_TEXT = {
@@ -103,7 +103,20 @@
     notificationSyncError: '',
     createIdempotencyKey: null,
     triggerMessageId: null,
+    taskActionInFlight: false,
   };
+
+  const TASK_ACTION_PATHS = Object.freeze({
+    pause: 'pause', resume: 'resume', approve: 'feedback', cancel: 'cancel',
+  });
+  const TASK_ACTION_LABELS = Object.freeze({ pause: '暂停研究', resume: '继续研究', approve: '批准计划', cancel: '取消当前任务' });
+  const TASK_ACTION_CONFIRM_LABELS = Object.freeze({ pause: '再次点击确认暂停', resume: '再次点击确认继续', approve: '再次点击确认批准', cancel: '再次点击确认取消' });
+  const TASK_ACTION_STATUSES = Object.freeze({
+    pause: new Set(['planning', 'running', 'waiting_approval']),
+    resume: new Set(['paused']),
+    approve: new Set(['waiting_approval']),
+    cancel: new Set(['queued', 'planning', 'running', 'paused', 'waiting_approval']),
+  });
 
   function safeArtifactUrl(value) {
     const url = typeof value === 'string' ? value.trim() : '';
@@ -652,13 +665,134 @@
     ['research-plan-section', 'research-session-plan-section', 'research-timeline-section', 'research-selection-section'].forEach((id) => { const node = byId(id); if (node && !visible) node.hidden = true; });
   }
 
-  function renderTaskHeader(task) {
+  function taskActionButton(action) {
+    const ids = {
+      pause: 'research-task-pause-button', resume: 'research-task-resume-button',
+      approve: 'research-task-approve-button', cancel: 'research-cancel-button',
+    };
+    return byId(ids[action]);
+  }
+
+  function resetTaskActionConfirmation(button) {
+    if (!button) return;
+    if (button.__researchConfirmTimer) root.clearTimeout(button.__researchConfirmTimer);
+    delete button.__researchConfirmTimer;
+    delete button.dataset.confirmed;
+    button.dataset.actionState = '';
+    button.setAttribute('aria-busy', 'false');
+  }
+
+  function setTaskActionState(button, stateName, label = '') {
+    if (!button) return;
+    ['loading', 'success', 'error', 'conflict', 'confirm'].forEach((name) => button.classList.toggle(`is-${name}`, stateName === name));
+    button.dataset.actionState = stateName;
+    button.setAttribute('aria-busy', stateName === 'loading' ? 'true' : 'false');
+    if (label) button.textContent = label;
+  }
+
+  function renderTaskActionControls(task, { preserveState = false } = {}) {
+    const taskId = task?.research_task_id || state.selectedTaskId;
+    const status = task?.status || '';
+    Object.keys(TASK_ACTION_PATHS).forEach((action) => {
+      const button = taskActionButton(action);
+      if (!button) return;
+      const available = Boolean(taskId) && TASK_ACTION_STATUSES[action].has(status);
+      button.hidden = !available;
+      button.setAttribute('aria-hidden', available ? 'false' : 'true');
+      if (!preserveState || !available) {
+        resetTaskActionConfirmation(button);
+        setTaskActionState(button, '', TASK_ACTION_LABELS[action]);
+      }
+      const blocked = preserveState && ['success', 'conflict'].includes(button.dataset.actionState);
+      button.disabled = !available || state.taskActionInFlight || blocked;
+    });
+    const recovery = byId('research-recovery-notice');
+    if (recovery) {
+      const visible = status === 'interrupted' || status === 'recovery_required';
+      recovery.hidden = !visible;
+      recovery.textContent = visible ? '任务已中断；刷新会话详情后可查看已持久化的检查点与事件。' : '';
+    }
+  }
+
+  function taskActionPayload(action) {
+    if (action === 'approve') return { action: 'approve' };
+    return {};
+  }
+
+  function taskActionUrl(taskId, action) {
+    if (action === 'pause') return `/api/research-tasks/${encodeURIComponent(taskId)}/pause`;
+    if (action === 'resume') return `/api/research-tasks/${encodeURIComponent(taskId)}/resume`;
+    if (action === 'cancel') return `/api/research-tasks/${encodeURIComponent(taskId)}/cancel`;
+    // Keep the legacy task approval route behind the action allowlist; the
+    // Session/Approval card remains the canonical path for Session-first work.
+    return `/api/research-tasks/${encodeURIComponent(taskId)}/${TASK_ACTION_PATHS[action]}`;
+  }
+
+  async function submitTaskAction(action, button) {
+    const taskId = state.selectedTaskId || state.selectedTask?.research_task_id;
+    if (!taskId || !button || state.taskActionInFlight || button.disabled) return null;
+    state.taskActionInFlight = true;
+    setTaskActionState(button, 'loading', '提交中…');
+    renderTaskActionControls(state.selectedTask, { preserveState: true });
+    const payload = taskActionPayload(action);
+    const options = { method: 'POST' };
+    if (action === 'resume' || action === 'approve') {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify(payload);
+    }
+    try {
+      const result = await requestJson(taskActionUrl(taskId, action), options);
+      state.selectedTask = { ...state.selectedTask, ...result, research_task_id: result?.research_task_id || taskId };
+      state.tasks = state.tasks.map((item) => item.research_task_id === taskId ? { ...item, ...result } : item);
+      state.sessions = state.tasks;
+      state.statusNotice = action === 'pause' ? '研究任务已暂停，已完成证据与检查点会保留。'
+        : action === 'resume' ? '研究任务已继续，系统从持久化进度接着执行。'
+          : action === 'approve' ? '计划已批准，研究任务正在继续。' : '研究会话已取消，后续节点不会继续创建。';
+      setTaskActionState(button, 'success', `${TASK_ACTION_LABELS[action]}已完成`);
+      renderTaskHeader(state.selectedTask, { preserveActions: true });
+      renderTaskList();
+      if (action === 'cancel') { closeStream(); state.streamEnded = true; }
+      else if (action === 'resume' || action === 'approve') { state.streamEnded = false; connectStream(); }
+      return result;
+    } catch (error) {
+      const code = String(error?.code || '').toUpperCase();
+      const conflict = ['TASK_TERMINAL_CONFLICT', 'TASK_RUNNING_CONFLICT', 'INVALID_STATE_TRANSITION', 'PLAN_VERSION_STALE'].includes(code);
+      setTaskActionState(button, conflict ? 'conflict' : 'error', conflict ? '状态已变化，请刷新' : '提交失败，重试');
+      button.disabled = conflict;
+      state.statusNotice = userError(error, conflict ? '任务状态已变化，请刷新任务详情。' : '操作失败，请稍后重试。');
+      setText('research-summary-text', state.statusNotice);
+      return null;
+    } finally {
+      state.taskActionInFlight = false;
+      renderTaskActionControls(state.selectedTask, { preserveState: true });
+    }
+  }
+
+  function beginTaskAction(action) {
+    const button = taskActionButton(action);
+    if (!button || button.hidden || state.taskActionInFlight) return;
+    if (button.dataset.confirmed !== 'true') {
+      button.dataset.confirmed = 'true';
+      setTaskActionState(button, 'confirm', TASK_ACTION_CONFIRM_LABELS[action]);
+      button.disabled = false;
+      button.setAttribute('aria-label', `${TASK_ACTION_CONFIRM_LABELS[action]}，${TASK_ACTION_LABELS[action]}`);
+      button.__researchConfirmTimer = root.setTimeout(() => {
+        resetTaskActionConfirmation(button);
+        setTaskActionState(button, '', TASK_ACTION_LABELS[action]);
+        button.disabled = false;
+      }, 4000);
+      return;
+    }
+    resetTaskActionConfirmation(button);
+    submitTaskAction(action, button);
+  }
+
+  function renderTaskHeader(task, { preserveActions = false } = {}) {
     const status = byId('research-detail-status');
     if (status) { status.dataset.status = text(task?.status, ''); status.textContent = statusLabel(task?.status); }
     setText('research-detail-title', task?.goal_excerpt || task?.topic || '选择一个研究会话');
     setText('research-detail-meta', task ? `${task.research_session_id ? `会话 ${task.research_session_id}` : `任务 ${text(task.research_task_id)}`} · ${task.conversation_id ? `对话 ${task.conversation_id} · ` : ''}阶段 ${text(task.current_phase || task.phase || task.stage, '—')} · ${sessionProgressText(task)} · ${sessionApprovalText(task)} · 耗时 ${sessionDurationText(task)}` : '刷新后会先恢复会话详情，再连接实时事件。');
-    const cancel = byId('research-cancel-button');
-    if (cancel) cancel.disabled = !task?.research_session_id || TERMINAL_STATUSES.has(task.status);
+    renderTaskActionControls(task, { preserveState: preserveActions });
   }
 
   function renderPlan(plan) {
@@ -1393,25 +1527,7 @@
     } finally { if (button) button.disabled = false; }
   }
 
-  async function cancelTask() {
-    if (!state.selectedSessionId || !state.selectedTask || TERMINAL_STATUSES.has(state.selectedTask.status)) return;
-    const button = byId('research-cancel-button'); if (button) button.disabled = true;
-    setText('research-summary-text', '正在取消研究任务…');
-    try {
-      const result = await submitSessionCommand(
-        state.selectedSessionId, 'cancel_research', state.selectedTask.current_plan_version || state.selectedTask.research_session?.current_plan_version || 0,
-        {}, button,
-      );
-      if (!result) return;
-      state.selectedTask = { ...state.selectedTask, ...result, status: result.status || 'cancelled' };
-      state.statusNotice = '';
-      renderTaskHeader(state.selectedTask); renderTaskList();
-      setText('research-summary-text', '研究会话已取消，后续节点不会继续创建。');
-    } catch (error) {
-      setText('research-summary-text', userError(error, '取消任务失败。'));
-      if (button) button.disabled = false;
-    }
-  }
+  function cancelTask() { beginTaskAction('cancel'); }
 
   function openForConversation(conversationId) {
     if (!conversationId) return;
@@ -1462,6 +1578,9 @@
     byId('research-refresh-button')?.addEventListener('click', refreshWorkspace);
     byId('research-create-form')?.addEventListener('submit', createTask);
     byId('research-cancel-button')?.addEventListener('click', cancelTask);
+    byId('research-task-pause-button')?.addEventListener('click', () => beginTaskAction('pause'));
+    byId('research-task-resume-button')?.addEventListener('click', () => beginTaskAction('resume'));
+    byId('research-task-approve-button')?.addEventListener('click', () => beginTaskAction('approve'));
 
     // Chat approval commands publish the same backend result.  Reconcile it
     // through this Tab's canonical Session/Task state instead of maintaining a

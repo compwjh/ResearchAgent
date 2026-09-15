@@ -3434,6 +3434,13 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   color: #20834c;
 }
 
+#research-view .research-badge[data-status="paused"],
+#research-view .research-badge[data-status="waiting_approval"],
+#research-view .research-badge[data-status="recovery_required"] {
+  background: #fff7ed;
+  color: #94621c;
+}
+
 #research-view .research-detail-head {
   display: grid;
   gap: 7px;
@@ -3584,6 +3591,19 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #research-view #research-cancel-button:hover { background: #fdecea; }
 #research-view #research-cancel-button:disabled { cursor: not-allowed; opacity: .55; }
+#research-view .research-task-action[hidden],
+#research-view #research-cancel-button[hidden] { display: none; }
+#research-view .research-task-action.is-loading,
+#research-view #research-cancel-button.is-loading { cursor: wait; opacity: .7; }
+#research-view .research-task-action.is-confirm,
+#research-view #research-cancel-button.is-confirm { border-color: #e5c48c; background: #fffaf0; color: #94621c; }
+#research-view .research-task-action.is-success,
+#research-view #research-cancel-button.is-success { border-color: #acd5b7; background: #f1fbf3; color: #287c43; }
+#research-view .research-task-action.is-error,
+#research-view #research-cancel-button.is-error { border-color: #efb3b3; color: #a33232; }
+#research-view .research-task-action.is-conflict,
+#research-view #research-cancel-button.is-conflict { border-color: #e5c48c; background: #fff7ed; color: #94621c; }
+#research-view .research-recovery-notice { margin: 0; padding: 8px 10px; border: 1px solid #e5c48c; border-radius: 7px; background: #fffaf0; color: #94621c; font-size: 11px; line-height: 1.55; }
 
 #research-view .research-create-panel {
   display: grid;

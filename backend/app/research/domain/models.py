@@ -380,6 +380,200 @@ class ResearchPaperSelection:
 
 
 @dataclass
+class AcquisitionApproval:
+    """Immutable user confirmation snapshot for one Research selection version.
+
+    ``paper_ids`` are catalog identifiers only.  The batch/document stores
+    remain the owners of candidate snapshots and canonical document ids.
+    """
+
+    task_id: str
+    selection_version: int
+    paper_ids: list[str]
+    status: str
+    idempotency_key: str | None = None
+    batch_id: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "research_task_id": self.task_id,
+            "selection_version": int(self.selection_version),
+            "paper_ids": list(self.paper_ids),
+            "status": self.status,
+            "batch_id": self.batch_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        raw = row.get("paper_ids_json") or "[]"
+        try:
+            paper_ids = json.loads(raw)
+        except (TypeError, ValueError):
+            paper_ids = []
+        if not isinstance(paper_ids, list):
+            paper_ids = []
+        return cls(
+            task_id=row.get("task_id", row.get("research_task_id")),
+            selection_version=int(row["selection_version"]),
+            paper_ids=[str(value) for value in paper_ids],
+            status=row["status"],
+            idempotency_key=row.get("idempotency_key"),
+            batch_id=row.get("batch_id"),
+            created_at=row.get("created_at", ""),
+            updated_at=row.get("updated_at", ""),
+        )
+
+
+@dataclass
+class ResearchDocumentLink:
+    """Reference from a catalog paper to an existing KB/import item."""
+
+    task_id: str
+    catalog_paper_id: str
+    document_id: str | None = None
+    import_item_id: str | None = None
+    status: str = "queued"
+    error_code: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "research_task_id": self.task_id,
+            "catalog_paper_id": self.catalog_paper_id,
+            "document_id": self.document_id,
+            "import_item_id": self.import_item_id,
+            "status": self.status,
+            "error_code": self.error_code,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            task_id=row.get("task_id", row.get("research_task_id")),
+            catalog_paper_id=row["catalog_paper_id"],
+            document_id=row.get("document_id"),
+            import_item_id=row.get("import_item_id"),
+            status=row.get("status", "queued"),
+            error_code=row.get("error_code"),
+            created_at=row.get("created_at", ""),
+            updated_at=row.get("updated_at", ""),
+        )
+
+
+@dataclass
+class EvidenceUpgrade:
+    """Durable status projection for a claim's full-text evidence upgrade."""
+
+    claim_id: str
+    from_level: str
+    to_level: str
+    chunk_ids: list[str]
+    status: str
+    task_id: str | None = None
+    document_id: str | None = None
+    page: int | None = None
+    page_end: int | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "claim_id": self.claim_id,
+            "from_level": self.from_level,
+            "to_level": self.to_level,
+            "chunk_ids": list(self.chunk_ids),
+            "status": self.status,
+            "task_id": self.task_id,
+            "document_id": self.document_id,
+            "page": self.page,
+            "page_end": self.page_end,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            chunk_ids = json.loads(row.get("chunk_ids_json") or "[]")
+        except (TypeError, ValueError):
+            chunk_ids = []
+        return cls(
+            claim_id=row["claim_id"],
+            from_level=row["from_level"],
+            to_level=row["to_level"],
+            chunk_ids=[str(value) for value in chunk_ids] if isinstance(chunk_ids, list) else [],
+            status=row["status"],
+            task_id=row.get("task_id"),
+            document_id=row.get("document_id"),
+            page=row.get("page"),
+            page_end=row.get("page_end"),
+            created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
+class AcquisitionEvent:
+    """A projection of an existing import item state, not a second state machine."""
+
+    paper_id: str
+    phase: str
+    status: str
+    error_code: str | None = None
+    task_id: str = ""
+    batch_id: str | None = None
+    import_item_id: str | None = None
+    created_at: str = ""
+    event_id: str | None = None
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "event_id": self.event_id,
+            "task_id": self.task_id,
+            "research_task_id": self.task_id,
+            "paper_id": self.paper_id,
+            "phase": self.phase,
+            "status": self.status,
+            "error_code": self.error_code,
+            "batch_id": self.batch_id,
+            "import_item_id": self.import_item_id,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            event_id=row.get("event_id"),
+            task_id=row.get("task_id", row.get("research_task_id")),
+            paper_id=row["paper_id"],
+            phase=row["phase"],
+            status=row["status"],
+            error_code=row.get("error_code"),
+            batch_id=row.get("batch_id"),
+            import_item_id=row.get("import_item_id"),
+            created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
 class PreliminaryReport:
     """初步/正式研究报告：只读正文，结论必须带论文引用。"""
 

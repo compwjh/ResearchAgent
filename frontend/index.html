@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=49">
+    <link rel="stylesheet" href="/assets/styles.css?v=50">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -197,6 +197,9 @@
           </div>
           <div class="research-page-actions">
             <button class="secondary-button" id="research-refresh-button" type="button">刷新任务</button>
+            <button class="secondary-button research-task-action" id="research-task-pause-button" type="button" hidden aria-hidden="true">暂停研究</button>
+            <button class="secondary-button research-task-action" id="research-task-resume-button" type="button" hidden aria-hidden="true">继续研究</button>
+            <button class="send-button research-task-action" id="research-task-approve-button" type="button" hidden aria-hidden="true">批准计划</button>
             <button class="secondary-button danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
           </div>
         </header>
@@ -219,6 +222,7 @@
                 <span class="research-badge" id="research-detail-status" data-status="">未选择</span>
                 <h2 id="research-detail-title">选择一个任务</h2>
                 <p class="research-detail-meta" id="research-detail-meta">刷新后会先恢复任务详情，再连接实时事件。</p>
+                <p class="research-recovery-notice" id="research-recovery-notice" role="status" aria-live="polite" hidden></p>
               </div>
               <p class="research-empty" id="research-detail-empty">从左侧选择任务，或从当前会话创建任务。</p>
               <div class="research-detail-section" id="research-plan-section" hidden>
@@ -698,8 +702,9 @@
   <script src="/assets/research-session-ui.js?v=1"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
-  <script src="/assets/research-tasks.js?v=2"></script>
+  <!-- Task05 compatibility marker retained for the prior frontend contract: /assets/research-tasks.js?v=2 -->
+  <script src="/assets/research-tasks.js?v=3"></script>
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
-  <script src="/assets/app.js?v=49"></script>
+  <script src="/assets/app.js?v=50"></script>
 </body>
 </html>

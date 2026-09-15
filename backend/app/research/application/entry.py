@@ -31,6 +31,10 @@ from backend.app.research.application.agent_runtime import (
     RoleCapability,
     RoleCapabilityRegistry,
 )
+from backend.app.research.application.acquisition import (
+    ResearchAcquisitionError,
+    ResearchAcquisitionService,
+)
 from backend.app.research.application.model_router import ModelRouter
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.plan_authoring import (
@@ -67,7 +71,11 @@ from backend.app.research.application.search_catalog_adapter import (
     map_download_tool_args,
 )
 from backend.app.research.domain.models import (
+    AcquisitionApproval,
+    AcquisitionEvent,
+    EvidenceUpgrade,
     PreliminaryReport,
+    ResearchDocumentLink,
     ResearchEvent,
     ResearchPaperSelection,
     ResearchPlan,
@@ -86,6 +94,8 @@ from backend.app.skills.tool_service import ToolRegistryService
 __all__ = [
     # 持久化（唯一受控出口，api 不得直连 research.infrastructure）
     "ResearchStore",
+    "ResearchAcquisitionError",
+    "ResearchAcquisitionService",
     # 服务层与稳定错误
     "ResearchService",
     "ResearchServiceError",
@@ -131,6 +141,10 @@ __all__ = [
     "ResearchEvent",
     "ResearchPaperSelection",
     "PreliminaryReport",
+    "AcquisitionApproval",
+    "ResearchDocumentLink",
+    "EvidenceUpgrade",
+    "AcquisitionEvent",
     # 工厂
     "build_research_store",
     "build_research_service",

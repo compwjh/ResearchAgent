@@ -59,7 +59,11 @@ from backend.app.research.domain.models import (
     IntakeField,
     PreliminaryReport,
     ResearchArtifact,
+    AcquisitionApproval,
+    AcquisitionEvent,
+    EvidenceUpgrade,
     ResearchEvent,
+    ResearchDocumentLink,
     ResearchIntakeDraft,
     ResearchNotification,
     ResearchPaperSelection,
@@ -407,6 +411,7 @@ class ResearchStore:
             # Task09 is an additive maintenance table layered on the stable
             # v3 marker; existing v3 databases must receive it too.
             self._ensure_task09_schema(connection)
+            self._ensure_spec029_schema(connection)
             self._validate_schema_meta(connection)
             connection.commit()
 
@@ -541,6 +546,72 @@ class ResearchStore:
             updated_at TEXT NOT NULL,
             PRIMARY KEY(owner_id, idempotency_key)
         )""")
+
+    @staticmethod
+    def _ensure_spec029_schema(connection: sqlite3.Connection) -> None:
+        """Create the Research↔paper-import bridge without changing KB state."""
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_selection_versions(
+            research_task_id TEXT PRIMARY KEY REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            selection_version INTEGER NOT NULL DEFAULT 0 CHECK(selection_version >= 0),
+            updated_at TEXT NOT NULL
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_acquisition_approvals(
+            approval_id TEXT PRIMARY KEY,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            selection_version INTEGER NOT NULL CHECK(selection_version >= 1),
+            paper_ids_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            idempotency_key TEXT,
+            batch_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(research_task_id, selection_version),
+            UNIQUE(research_task_id, idempotency_key)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_document_links(
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            catalog_paper_id TEXT NOT NULL,
+            document_id TEXT,
+            import_item_id TEXT,
+            status TEXT NOT NULL,
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(research_task_id, catalog_paper_id)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_acquisition_events(
+            event_id TEXT PRIMARY KEY,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            paper_id TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error_code TEXT,
+            batch_id TEXT,
+            import_item_id TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(research_task_id, paper_id, phase, status, import_item_id, error_code)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_evidence_upgrades(
+            claim_id TEXT PRIMARY KEY,
+            research_task_id TEXT,
+            document_id TEXT,
+            from_level TEXT NOT NULL,
+            to_level TEXT NOT NULL,
+            chunk_ids_json TEXT NOT NULL,
+            page INTEGER,
+            page_end INTEGER,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_acq_events_task ON research_acquisition_events(research_task_id, created_at)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_doc_links_task ON research_document_links(research_task_id, catalog_paper_id)")
+        # Existing Spec027 databases already contain a current selection but
+        # no version row.  Seed it as version 1 without copying paper data.
+        connection.execute(
+            """INSERT OR IGNORE INTO research_selection_versions(research_task_id, selection_version, updated_at)
+               SELECT research_task_id, 1, COALESCE(MAX(created_at), '')
+               FROM research_paper_selections GROUP BY research_task_id"""
+        )
 
     @staticmethod
     def _ensure_scheduler_schema(connection: sqlite3.Connection) -> None:
@@ -1231,6 +1302,11 @@ class ResearchStore:
                 # 子表无 owner 列，仅按 research_task_id 删除（research_task_id 必属于该 owner）。
                 conn.execute("DELETE FROM research_events WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM research_work_items WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_acquisition_events WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_document_links WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_acquisition_approvals WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_selection_versions WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_evidence_upgrades WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM research_paper_selections WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM preliminary_reports WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM research_plans WHERE research_task_id=?", (research_task_id,))
@@ -1268,6 +1344,11 @@ class ResearchStore:
                     # 子表无 owner 列，仅按 research_task_id 删除（该 id 已由上面的 owner 过滤保证归属）。
                     conn.execute("DELETE FROM research_events WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM research_work_items WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_acquisition_events WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_document_links WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_acquisition_approvals WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_selection_versions WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_evidence_upgrades WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM research_paper_selections WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM preliminary_reports WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM research_plans WHERE research_task_id=?", (research_task_id,))
@@ -1325,6 +1406,11 @@ class ResearchStore:
             ("research_plans", "version", "version"),
             ("research_work_items", "work_item_id", "work_item_id"),
             ("research_events", "event_seq", "event_seq"),
+            ("research_acquisition_events", "event_id", "event_id"),
+            ("research_document_links", "catalog_paper_id", "catalog_paper_id"),
+            ("research_acquisition_approvals", "approval_id", "approval_id"),
+            ("research_selection_versions", "research_task_id", "research_task_id"),
+            ("research_evidence_upgrades", "claim_id", "claim_id"),
             ("research_paper_selections", "catalog_paper_id", "catalog_paper_id"),
             ("preliminary_reports", "report_id", "report_id"),
             ("research_activity_outbox", "outbox_id", "outbox_id"),
@@ -1484,6 +1570,8 @@ class ResearchStore:
             "research_artifacts", "research_agent_checkpoints", "research_notifications",
             "research_projection_retries", "research_agent_runs", "research_activity_outbox",
             "research_plan_activations", "research_events", "research_work_items",
+            "research_acquisition_events", "research_document_links", "research_acquisition_approvals",
+            "research_selection_versions", "research_evidence_upgrades",
             "research_paper_selections", "preliminary_reports", "research_plans",
         )
         # Keep these outside the transaction so the rollback audit can retain
@@ -4234,6 +4322,14 @@ class ResearchStore:
                     "DELETE FROM research_paper_selections WHERE research_task_id=?", (research_task_id,)
                 )
                 now = _utcnow()
+                conn.execute(
+                    """INSERT INTO research_selection_versions(research_task_id, selection_version, updated_at)
+                    VALUES(?,?,?)
+                    ON CONFLICT(research_task_id) DO UPDATE SET
+                        selection_version=research_selection_versions.selection_version+1,
+                        updated_at=excluded.updated_at""",
+                    (research_task_id, 1, now),
+                )
                 for s in selections:
                     conn.execute(
                         """INSERT INTO research_paper_selections(
@@ -4254,6 +4350,15 @@ class ResearchStore:
                 raise
         return self.list_selections(research_task_id)
 
+    def get_selection_version(self, research_task_id: str) -> int:
+        """Return the durable candidate snapshot version (zero before first selection)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT selection_version FROM research_selection_versions WHERE research_task_id=?",
+                (research_task_id,),
+            ).fetchone()
+        return int(row["selection_version"]) if row else 0
+
     def list_selections(self, research_task_id: str) -> list[ResearchPaperSelection]:
         """列出某任务论文选集（按 relevance 降序）；只引用 Spec015 目录 catalog_paper_id，不复制元数据。"""
         with self._connect() as conn:
@@ -4262,6 +4367,226 @@ class ResearchStore:
                 (research_task_id,),
             ).fetchall()
         return [ResearchPaperSelection.from_row(dict(r)) for r in rows]
+
+    # ------------------------------------------------------------------ #
+    # Spec029 acquisition bridge (references only; no KB state is copied)
+    # ------------------------------------------------------------------ #
+
+    def create_acquisition_approval(self, approval: AcquisitionApproval) -> AcquisitionApproval:
+        """Persist one confirmation snapshot, returning the existing row on replay.
+
+        The task/version unique key is the primary idempotency guard.  A replay
+        with a different candidate set is rejected instead of silently
+        submitting a second import batch.
+        """
+        if not approval.task_id or int(approval.selection_version) < 1:
+            raise ValueError("invalid acquisition approval")
+        paper_ids = [str(value) for value in approval.paper_ids if str(value)]
+        if not paper_ids or len(set(paper_ids)) != len(paper_ids):
+            raise ValueError("paper_ids must be non-empty and unique")
+        encoded = json.dumps(paper_ids, ensure_ascii=False, separators=(",", ":"))
+        now = approval.created_at or _utcnow()
+        updated = approval.updated_at or now
+        approval_id = approval.to_dict().get("approval_id") or uuid.uuid4().hex
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if approval.idempotency_key:
+                    replay = conn.execute(
+                        "SELECT * FROM research_acquisition_approvals WHERE research_task_id=? AND idempotency_key=?",
+                        (approval.task_id, approval.idempotency_key),
+                    ).fetchone()
+                    if replay is not None:
+                        current = AcquisitionApproval.from_row(dict(replay))
+                        if (
+                            current.selection_version != int(approval.selection_version)
+                            or current.paper_ids != paper_ids
+                        ):
+                            raise ValueError("acquisition idempotency key conflicts with an existing confirmation")
+                        conn.commit()
+                        return current
+                existing = conn.execute(
+                    "SELECT * FROM research_acquisition_approvals WHERE research_task_id=? AND selection_version=?",
+                    (approval.task_id, int(approval.selection_version)),
+                ).fetchone()
+                if existing is not None:
+                    current = AcquisitionApproval.from_row(dict(existing))
+                    if current.paper_ids != paper_ids:
+                        raise ValueError("acquisition selection version is already confirmed")
+                    conn.commit()
+                    return current
+                conn.execute(
+                    """INSERT INTO research_acquisition_approvals(
+                        approval_id,research_task_id,selection_version,paper_ids_json,status,idempotency_key,batch_id,created_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (approval_id, approval.task_id, int(approval.selection_version), encoded,
+                     approval.status or "confirmed", approval.idempotency_key, approval.batch_id, now, updated),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_acquisition_approvals WHERE approval_id=?", (approval_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AcquisitionApproval.from_row(dict(row))
+
+    def get_acquisition_approval(
+        self, research_task_id: str, selection_version: int | None = None, *, idempotency_key: str | None = None
+    ) -> AcquisitionApproval | None:
+        if selection_version is None and idempotency_key is None:
+            sql, params = (
+                "SELECT * FROM research_acquisition_approvals WHERE research_task_id=? ORDER BY selection_version DESC LIMIT 1",
+                (research_task_id,),
+            )
+        elif idempotency_key is not None:
+            sql, params = (
+                "SELECT * FROM research_acquisition_approvals WHERE research_task_id=? AND idempotency_key=?",
+                (research_task_id, idempotency_key),
+            )
+        else:
+            sql, params = (
+                "SELECT * FROM research_acquisition_approvals WHERE research_task_id=? AND selection_version=?",
+                (research_task_id, int(selection_version)),
+            )
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return AcquisitionApproval.from_row(dict(row)) if row else None
+
+    def list_acquisition_approvals(self, research_task_id: str) -> list[AcquisitionApproval]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_acquisition_approvals WHERE research_task_id=? ORDER BY selection_version",
+                (research_task_id,),
+            ).fetchall()
+        return [AcquisitionApproval.from_row(dict(row)) for row in rows]
+
+    def update_acquisition_approval(self, research_task_id: str, selection_version: int, **fields) -> AcquisitionApproval:
+        allowed = {"status", "batch_id"}
+        if set(fields) - allowed:
+            raise ValueError("unknown acquisition approval fields")
+        assignments = [f"{key}=?" for key in fields]
+        values = list(fields.values())
+        assignments.append("updated_at=?")
+        values.append(_utcnow())
+        values.extend((research_task_id, int(selection_version)))
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                if assignments:
+                    conn.execute(
+                        "UPDATE research_acquisition_approvals SET " + ",".join(assignments) +
+                        " WHERE research_task_id=? AND selection_version=?", values,
+                    )
+                row = conn.execute(
+                    "SELECT * FROM research_acquisition_approvals WHERE research_task_id=? AND selection_version=?",
+                    (research_task_id, int(selection_version)),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("acquisition approval not found")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AcquisitionApproval.from_row(dict(row))
+
+    def upsert_document_link(self, link: ResearchDocumentLink) -> ResearchDocumentLink:
+        if not link.task_id or not link.catalog_paper_id:
+            raise ValueError("document link requires task and catalog paper")
+        now = link.created_at or _utcnow()
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(
+                    """INSERT INTO research_document_links(
+                        research_task_id,catalog_paper_id,document_id,import_item_id,status,error_code,created_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?)
+                    ON CONFLICT(research_task_id,catalog_paper_id) DO UPDATE SET
+                        document_id=excluded.document_id, import_item_id=excluded.import_item_id,
+                        status=excluded.status, error_code=excluded.error_code, updated_at=excluded.updated_at""",
+                    (link.task_id, link.catalog_paper_id, link.document_id, link.import_item_id,
+                     link.status, link.error_code, now, link.updated_at or now),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_document_links WHERE research_task_id=? AND catalog_paper_id=?",
+                    (link.task_id, link.catalog_paper_id),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchDocumentLink.from_row(dict(row))
+
+    def list_document_links(self, research_task_id: str) -> list[ResearchDocumentLink]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_document_links WHERE research_task_id=? ORDER BY catalog_paper_id",
+                (research_task_id,),
+            ).fetchall()
+        return [ResearchDocumentLink.from_row(dict(row)) for row in rows]
+
+    def append_acquisition_event(self, event: AcquisitionEvent) -> AcquisitionEvent:
+        if not event.task_id or not event.paper_id or not event.phase or not event.status:
+            raise ValueError("invalid acquisition event")
+        event_id = event.event_id or uuid.uuid4().hex
+        created_at = event.created_at or _utcnow()
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = conn.execute(
+                    """SELECT * FROM research_acquisition_events WHERE research_task_id=? AND paper_id=? AND phase=?
+                       AND status=? AND import_item_id IS ? AND error_code IS ?""",
+                    (event.task_id, event.paper_id, event.phase, event.status, event.import_item_id, event.error_code),
+                ).fetchone()
+                if existing is None:
+                    conn.execute(
+                        """INSERT INTO research_acquisition_events(
+                            event_id,research_task_id,paper_id,phase,status,error_code,batch_id,import_item_id,created_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                        (event_id, event.task_id, event.paper_id, event.phase, event.status, event.error_code,
+                         event.batch_id, event.import_item_id, created_at),
+                    )
+                    existing = conn.execute(
+                        "SELECT * FROM research_acquisition_events WHERE event_id=?", (event_id,)
+                    ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AcquisitionEvent.from_row(dict(existing))
+
+    def list_acquisition_events(self, research_task_id: str) -> list[AcquisitionEvent]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_acquisition_events WHERE research_task_id=? ORDER BY created_at,event_id",
+                (research_task_id,),
+            ).fetchall()
+        return [AcquisitionEvent.from_row(dict(row)) for row in rows]
+
+    def save_evidence_upgrade(self, upgrade: EvidenceUpgrade) -> EvidenceUpgrade:
+        if not upgrade.claim_id or not upgrade.from_level or not upgrade.to_level:
+            raise ValueError("invalid evidence upgrade")
+        now = upgrade.created_at or _utcnow()
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(
+                    """INSERT INTO research_evidence_upgrades(
+                        claim_id,research_task_id,document_id,from_level,to_level,chunk_ids_json,page,page_end,status,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(claim_id) DO UPDATE SET research_task_id=excluded.research_task_id,
+                        document_id=excluded.document_id,from_level=excluded.from_level,to_level=excluded.to_level,
+                        chunk_ids_json=excluded.chunk_ids_json,page=excluded.page,page_end=excluded.page_end,
+                        status=excluded.status,created_at=excluded.created_at""",
+                    (upgrade.claim_id, upgrade.task_id, upgrade.document_id, upgrade.from_level, upgrade.to_level,
+                     json.dumps(upgrade.chunk_ids, ensure_ascii=False), upgrade.page, upgrade.page_end, upgrade.status, now),
+                )
+                row = conn.execute("SELECT * FROM research_evidence_upgrades WHERE claim_id=?", (upgrade.claim_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return EvidenceUpgrade.from_row(dict(row))
 
     # ------------------------------------------------------------------ #
     # PreliminaryReport

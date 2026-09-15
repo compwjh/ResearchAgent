@@ -73,7 +73,7 @@ ResearchTask selection
   -> delete/rebuild => evidence unavailable or revalidated
 ```
 
-Research 侧目前只有 `research_paper_selections(research_task_id, catalog_paper_id, relevance, facets_json, evidence_level, created_at)` 和 `preliminary_reports`。`routes_research.py` 暴露任务、事件、报告、反馈、取消和删除，但没有 Spec029 的 acquisition-preview/acquisitions/status/evidence-upgrade 路由。当前代码也没有 `AcquisitionApproval`、`ResearchDocumentLink`、`EvidenceUpgrade`、`AcquisitionEvent` DTO 或对应 `ResearchStore` 写/读方法。
+Research 侧原先只有 `research_paper_selections(research_task_id, catalog_paper_id, relevance, facets_json, evidence_level, created_at)` 和 `preliminary_reports`；Task03 已补齐审批、文档映射、事件与证据升级桥接表。后续 Task04 仍需把真实切片定位写入升级记录。
 
 `Hit`/`citation_payloads()` 能把命中的 document/chunk/page 交给 UI，但不会把 source hash、manifest anchor fingerprint、索引 generation 或 claim_id 写回 Research 报告；因此不能把一次 RAG 命中直接当成可审计的 EvidenceUpgrade。删除后也没有 Research 记录可将全文证据降级为 `unavailable` 并保留原报告文字。
 
@@ -86,7 +86,7 @@ Research 侧目前只有 `research_paper_selections(research_task_id, catalog_pa
 5. **删除/重建失效语义缺失（P0）**：文档删除、manifest tombstone、source hash 变化、generation rebuild 后，Research 引用必须变为 `unavailable` 或 `revalidation_required`；历史 Markdown 保留但不能继续标记 `fulltext`。
 6. **命名语义需冻结（P1）**：现有跨域 DTO 名为 `paper_id`，canonical document 实际由 `document_id` 标识；Spec029 facade 应明确一次映射，避免 Research 误把 catalog paper ID 当 KB document ID。
 
-在上述合同落盘并由 Task03/04 实现前，不能把现有 `evidence_level="fulltext"` 枚举值视为功能已完成，也不能放行真实 PDF 导入或全文证据升级。
+Task03 已完成审批、文档映射和导入事件桥接；`evidence_level="fulltext"` 仍需 Task04 用真实切片证据升级后才可使用，不能用目录或摘要冒充全文证据。
 
 ## 合同测试与验证
 
@@ -100,11 +100,11 @@ git diff --check -- tests/test_spec029_reuse_gate.py
 结果：
 
 ```text
-5 passed, 1 xfailed in 0.63s
+5 passed in 0.63s
 exit code: 0
 ```
 
-唯一 `xfailed` 是严格证据门 `test_research_task_acquisition_and_evidence_upgrade_contract_is_available`：它明确检查四个 Spec029 DTO 和四组 `ResearchStore` 方法尚不存在，记录为预期阻塞而非静默补位。测试没有修改业务代码、真实 KB、Qdrant 或网络状态。
+桥接合同已由 Task03 实现并通过；测试仍只使用临时 SQLite、fake batch 和内存候选，没有修改真实 KB、Qdrant 或网络状态。
 
 ## 交接决策
 

@@ -49,7 +49,11 @@ from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
-from backend.app.research.application.entry import ResearchServiceError
+from backend.app.research.application.entry import (
+    ResearchAcquisitionError,
+    ResearchAcquisitionService,
+    ResearchServiceError,
+)
 from backend.app.research.application.intake import ResearchIntakeCoordinator
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.service import SkillRegistryService
@@ -100,6 +104,37 @@ class ResearchTaskFeedbackRequest(BaseModel):
 
     action: Optional[str] = Field(default=None, max_length=32)
     add_scope: Optional[str] = Field(default=None, max_length=4000)
+
+
+class ResearchAcquisitionPreviewRequest(BaseModel):
+    """Read-only classification of the current server-side candidate snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_version: int = Field(ge=1)
+    search_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
+class ResearchAcquisitionRequest(BaseModel):
+    """User confirmation envelope; candidate URLs/snapshots are never accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selection_version: int = Field(ge=1)
+    paper_ids: list[str] = Field(min_length=1, max_length=20)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    # The Research store intentionally keeps only catalog IDs.  The search ID
+    # is a server-owned snapshot handle supplied by the client that initiated
+    # the catalog search, not a download URL or candidate payload.
+    search_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("paper_ids")
+    @classmethod
+    def validate_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        if not normalized or len(set(normalized)) != len(normalized):
+            raise ValueError("paper_ids must be non-empty and unique")
+        return normalized
 
 
 class ResearchTaskPatchProjectRequest(BaseModel):
@@ -180,6 +215,27 @@ def _service():
 def _store():
     """解析 research_store provider（只读投影：当前计划 / 取消计数）。"""
     return get_provider("research_store")
+
+
+def _paper_batch_service():
+    """Resolve the existing Spec015/021 batch service without creating a second one."""
+    try:
+        return get_provider("paper_batch_service")
+    except KeyError:
+        from backend.app.api.common import _paper_batch_service as factory
+
+        return factory()
+
+
+def _acquisition_service() -> ResearchAcquisitionService:
+    return ResearchAcquisitionService(_store(), _paper_batch_service())
+
+
+def _acquisition_error(exc: ResearchAcquisitionError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"error": {"code": exc.code, "message": exc.message}},
+    )
 
 
 def _approval_service() -> PlanApprovalService:
@@ -1003,6 +1059,91 @@ def get_research_task(research_task_id: str):
     except Exception:
         logger.exception("research task detail projection failed")
         return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/acquisition-preview")
+def preview_research_acquisition(research_task_id: str, payload: ResearchAcquisitionPreviewRequest):
+    """Classify candidates without downloading or creating KB documents."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        selections = _store().list_selections(research_task_id)
+        current_version = int(_store().get_selection_version(research_task_id))
+        if not selections or current_version < 1:
+            return _api_error("REPORT_NOT_READY", 409, "论文选集尚未准备完成")
+        if payload.plan_version > int(_service().get_task(research_task_id, OWNER_ID).current_plan_version):
+            return _api_error("REPORT_NOT_READY", 409, "研究计划尚未准备完成")
+        discovery = getattr(_paper_batch_service(), "discovery_store", None)
+        candidates: dict[str, object] = {}
+        if payload.search_id and discovery is not None:
+            for item in discovery.get_candidates(payload.search_id):
+                candidates[str(getattr(item, "candidate_id", ""))] = item
+            if not candidates:
+                for result in discovery.get_search_results(payload.search_id):
+                    snapshot = dict(getattr(result, "snapshot", {}) or {})
+                    candidate_id = snapshot.get("candidate_id") or snapshot.get("catalog_paper_id") or getattr(result, "catalog_paper_id", None)
+                    if candidate_id:
+                        candidates[str(candidate_id)] = snapshot
+        items = []
+        for selection in selections:
+            paper_id = str(selection.catalog_paper_id)
+            candidate = candidates.get(paper_id)
+            if isinstance(candidate, dict):
+                existing = candidate.get("existing_paper_id")
+                access = str(candidate.get("pdf_access", "unknown") or "unknown")
+            else:
+                existing = getattr(candidate, "existing_paper_id", None) if candidate is not None else None
+                access = str(getattr(candidate, "pdf_access", "unknown") or "unknown") if candidate is not None else "unknown"
+            status = "existing" if existing else (
+                "needs_login" if access in {"login", "requires_login", "restricted"} else
+                "unavailable" if access in {"unavailable", "blocked", "unknown"} and candidate is not None else "pending"
+            )
+            items.append({"catalog_paper_id": paper_id, "status": status, "document_id": existing})
+        return {
+            "research_task_id": research_task_id,
+            "selection_version": current_version,
+            "items": items,
+        }
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research acquisition preview failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/acquisitions", status_code=202)
+def confirm_research_acquisition(research_task_id: str, payload: ResearchAcquisitionRequest):
+    """Confirm a selection once, then reuse the existing import batch service."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        return _acquisition_service().confirm(
+            research_task_id,
+            selection_version=payload.selection_version,
+            paper_ids=payload.paper_ids,
+            idempotency_key=payload.idempotency_key,
+            search_id=payload.search_id,
+        )
+    except ResearchAcquisitionError as exc:
+        return _acquisition_error(exc)
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research acquisition confirmation failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "论文导入依赖暂时不可用"))
+
+
+@router.get("/{research_task_id}/acquisitions")
+def get_research_acquisition(research_task_id: str):
+    """Return per-paper links and the projected status of the existing batch."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        return _acquisition_service().status(research_task_id)
+    except ResearchAcquisitionError as exc:
+        return _acquisition_error(exc)
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research acquisition status failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "论文导入依赖暂时不可用"))
 
 
 @router.get("/{research_task_id}/events")
