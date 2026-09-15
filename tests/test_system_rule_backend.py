@@ -1,4 +1,15 @@
-"""Task10 backend contracts: v7 system rules, scope authorization and roles."""
+"""spec-038 P1 后半段：全局用户画像（原系统规则）后端契约 + scope 授权 + 角色。
+
+背景
+----
+``system_rules`` 表已停用：全局用户画像的真相源改为 ``data/memory/USER.md``
+（``MarkdownMemoryStore``）。``/api/system-rule`` 四个端点的**对外契约保持不变**
+（同样的状态码与 payload 形状），仅底层实现从 SQLite 换成 MD 文件。
+
+因此原用例中「断言 system_rules 表结构 / v7 版本号 / 表损坏 fail-closed」的部分
+改写为「USER.md 读写 + 内容长度门控 + 路径隔离」；scope 授权与角色感知的用例
+与实现无关，原样保留。
+"""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -13,29 +24,44 @@ from backend.app.chat.application.conversation_service import (
     is_system_rule_intent,
 )
 from backend.app.main import app
+from backend.app.memory.markdown_store import MarkdownMemoryStore
 from backend.app.memory.repository import MemoryRepository, SystemRuleUnavailableError
 
 
-def test_v7_system_rule_is_idempotent_owner_scoped_and_unicode_bounded(tmp_path: Path):
-    path = tmp_path / "memory.sqlite3"
-    repo = MemoryRepository(path)
-    repo.initialize()
-    with repo.connection() as db:
-        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 7
-        assert {row["name"] for row in db.execute("PRAGMA table_info(system_rules)")} == {"owner_id", "content", "enabled", "updated_at"}
+@pytest.fixture
+def memory_dir(tmp_path, monkeypatch):
+    """把 USER.md 的落盘位置隔离到 tmp，避免污染仓库 data/。"""
+    target = tmp_path / "memory"
+    monkeypatch.setattr("backend.app.memory.markdown_store.MEMORY_DIR", target)
+    return target
+
+
+def test_user_memory_is_read_write_bounded_and_owner_scoped(tmp_path: Path, memory_dir: Path):
+    """原 `test_v7_system_rule_is_idempotent_owner_scoped_and_unicode_bounded` 的 MD 等价物。"""
+    repo = MemoryRepository(tmp_path / "memory.sqlite3")
+    repo.initialize()  # 必须仍幂等
     assert repo.get_system_rule("owner-a").enabled is False
+
     saved = repo.upsert_system_rule("owner-a", "🙂" * 12000, False)
     assert len(saved.content) == 12000
     with pytest.raises(ValueError):
         repo.upsert_system_rule("owner-a", "x" * 12001, False)
-    assert repo.get_system_rule("owner-b").content == ""
-    repo.set_system_rule_enabled("owner-a", True)
-    repo.clear_system_rule("owner-a")
+
+    # 内容非空即视为 enabled（MD 模型下 enabled 由内容决定）。
+    assert repo.get_system_rule("owner-a").enabled is True
+    repo.set_system_rule_enabled("owner-a", False)
+    assert repo.get_system_rule("owner-a").content == ""
     assert repo.get_system_rule("owner-a").enabled is False
 
+    # 落盘确实在 USER.md（唯一真相源），且 MD store 读得到同一内容。
+    repo.upsert_system_rule("owner-a", "只给结论", True)
+    assert "只给结论" in MarkdownMemoryStore(memory_dir).read_user()
 
-def test_system_rule_api_uses_stable_400_409_and_204(tmp_path: Path):
-    with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"):
+
+def test_system_rule_api_keeps_stable_400_409_and_204(tmp_path: Path, memory_dir: Path):
+    with patch("backend.app.memory.repository.default_database_path", return_value=tmp_path / "memory.sqlite3"), patch.object(
+        MemoryRepository, "_user_memory_store", staticmethod(lambda: MarkdownMemoryStore(memory_dir))
+    ):
         client = TestClient(app)
         assert client.get("/api/system-rule").json()["enabled"] is False
         assert client.put("/api/system-rule", json={"content": "", "enabled": True}).status_code == 409
@@ -43,6 +69,8 @@ def test_system_rule_api_uses_stable_400_409_and_204(tmp_path: Path):
         assert client.put("/api/system-rule", json={"content": "只给结论", "enabled": True}).status_code == 200
         assert client.patch("/api/system-rule", json={"enabled": False}).json()["enabled"] is False
         assert client.delete("/api/system-rule").status_code == 204
+        # 删除后 USER.md 为空，画像不再注入。
+        assert MarkdownMemoryStore(memory_dir).read_user().strip() == ""
 
 
 def test_global_scope_requires_explicit_original_wording():
@@ -87,27 +115,18 @@ def test_kb_advisory_never_contains_current_question():
     assert "问题：" not in advisory
 
 
-def test_corrupt_v7_system_rule_table_fails_closed(tmp_path: Path):
-    path = tmp_path / "corrupt.sqlite3"
-    repo = MemoryRepository(path)
-    with repo.connection() as db:
-        db.execute("DROP TABLE system_rules")
-        db.execute("CREATE TABLE system_rules(owner_id TEXT PRIMARY KEY, content TEXT, enabled TEXT, updated_at INTEGER)")
-    with pytest.raises(RuntimeError, match="fail-closed"):
-        MemoryRepository(path)
+def test_user_md_write_failure_is_stable_unavailable_error(tmp_path: Path):
+    """原 `test_malformed_system_rule_row_returns_stable_unavailable_error` 的 MD 等价物：
+    底层文件写入失败时，仓储与 API 都必须给出稳定的 SYSTEM_RULE_UNAVAILABLE（503）。"""
+    repo = MemoryRepository(tmp_path / "memory.sqlite3")
+    with patch("backend.app.memory.markdown_store.MEMORY_DIR", tmp_path / "memory"), patch.object(
+        MarkdownMemoryStore, "write_user", side_effect=OSError("disk full")
+    ):
+        with pytest.raises(SystemRuleUnavailableError, match="SYSTEM_RULE_UNAVAILABLE"):
+            repo.upsert_system_rule("local-user", "只给结论", True)
 
-
-def test_malformed_system_rule_row_returns_stable_unavailable_error(tmp_path: Path):
-    path = tmp_path / "malformed-rule.sqlite3"
-    repo = MemoryRepository(path)
-    repo.upsert_system_rule("local-user", "只给结论", True)
-    with repo.transaction() as db:
-        db.execute("UPDATE system_rules SET updated_at=? WHERE owner_id=?", ("not-a-timestamp", "local-user"))
-    with pytest.raises(SystemRuleUnavailableError, match="SYSTEM_RULE_UNAVAILABLE"):
-        repo.get_system_rule("local-user")
-
-    with patch("backend.app.api.routes_conversations._repo", return_value=repo):
-        response = TestClient(app).get("/api/system-rule")
+        with patch("backend.app.api.routes_conversations._repo", return_value=repo):
+            response = TestClient(app).put("/api/system-rule", json={"content": "只给结论", "enabled": True})
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "SYSTEM_RULE_UNAVAILABLE"
 

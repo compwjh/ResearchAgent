@@ -39,8 +39,8 @@ def test_context_meter_classes_are_styled() -> None:
 
 
 def test_asset_version_bumped_for_spec025() -> None:
-    assert "/assets/app.js?v=43" in INDEX
-    assert "/assets/styles.css?v=43" in INDEX
+    assert "/assets/app.js?v=47" in INDEX
+    assert "/assets/styles.css?v=47" in INDEX
 
 
 def test_context_meter_lives_in_composer_footer_right_side() -> None:
@@ -171,3 +171,20 @@ def test_refresh_only_on_load_and_after_message() -> None:
 def test_no_event_source_or_websocket_added() -> None:
     assert "EventSource" not in APP
     assert "WebSocket" not in APP
+
+
+def test_context_breakdown_popover_exists() -> None:
+    # Spec025 扩展：圆圈 hover/点击弹出的占比明细容器与样式。
+    assert 'id="context-breakdown"' in INDEX
+    assert ".context-breakdown" in STYLES
+    assert ".context-breakdown.is-open" in STYLES
+
+
+def test_context_breakdown_renders_with_dom_api() -> None:
+    # 明细必须纯 DOM 构建（textContent / createElement），禁止 innerHTML。
+    start = APP.index("function renderContextBreakdown")
+    end = APP.index("function openContextBreakdown", start)
+    block = APP[start:end]
+    assert "createElement" in block
+    assert "textContent" in block
+    assert "innerHTML" not in block

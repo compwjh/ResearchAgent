@@ -57,6 +57,14 @@ QDRANT_PATH = os.getenv("QDRANT_PATH", str(KB_DIR / "qdrant"))
 KB_COLLECTION = os.getenv("KB_COLLECTION", "papers")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "bge-m3")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "1024"))
+# ---------- 线上 embedding（OpenAI 兼容 /v1/embeddings，如阿里云 DataWorks）----------
+# 默认仍走 Ollama（EMBED_PROVIDER=ollama）。设为非 ollama 值（如 online）即改用
+# EMBED_BASE_URL 上的 OpenAI 兼容 embedding 服务，避免依赖本机 Ollama。
+# Authorization 头**原样**发送 EMBED_API_KEY，兼容阿里云 `DW-xxx` 这类非 Bearer 形式
+# （标准 OpenAI 则在 .env 写 `EMBED_API_KEY=Bearer sk-...`）。
+EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "ollama").strip().lower()
+EMBED_BASE_URL = os.getenv("EMBED_BASE_URL", "").strip().rstrip("/")
+EMBED_API_KEY = os.getenv("EMBED_API_KEY", "").strip()
 # bge-m3 的 num_batch 有上下两个实测边界（详见 011-tech-review R1）：
 #   下界——num_batch 小于「单条输入的 token 数」时（如 128 对 300 token 的片段），Ollama 日志报
 #          "input (N tokens) is too large to process"，但 HTTP 仍返回 200，
@@ -125,15 +133,52 @@ OBS_MAX_OUTPUT_CHARS = int(os.getenv("OBS_MAX_OUTPUT_CHARS", "20000"))
 # 替换 repository.py 旧有的 `token_budget * 4` 英文口径（与真实用量偏差可达 2 倍）。
 # 真 token 只从 platform/ollama_direct.py 回读做观测，本模块不引入 tokenizer。
 # 非法配置（≤0）：_env_positive_number 回退默认值并发 RuntimeWarning（spec-025 取安全默认值而非 fail-fast）。
-# CHAT_TOTAL_TOKEN_BUDGET：单次模型调用输入 token 硬上限（默认 8000，模型窗口 262144 的保守占比）。
-CHAT_TOTAL_TOKEN_BUDGET = _env_positive_number("CHAT_TOTAL_TOKEN_BUDGET", 8000, int)
+# CHAT_TOTAL_TOKEN_BUDGET：单次模型调用输入 token 硬上限（默认 20000，模型窗口 262144 的保守占比）。
+# spec-038 P3：由 8000 上调到 20000（配合 L1/L2/L3 记忆分层后上下文更长），仍为 env 可配。
+CHAT_TOTAL_TOKEN_BUDGET = _env_positive_number("CHAT_TOTAL_TOKEN_BUDGET", 20000, int)
 # CHAT_COMPACT_TRIGGER_RATIO：装配后 used/budget ≥ 该比例即触发后台异步压缩（默认 0.8）。
 CHAT_COMPACT_TRIGGER_RATIO = _env_positive_number("CHAT_COMPACT_TRIGGER_RATIO", 0.8, float)
 # CHAT_RECENT_RAW_MESSAGES：压缩后保留的最近原文条数（默认 10，沿用现状）。
 CHAT_RECENT_RAW_MESSAGES = _env_positive_number("CHAT_RECENT_RAW_MESSAGES", 10, int)
-# CHAT_RAG_BUDGET_CHARS：知识库证据注入独立字符预算（默认 6000，沿用现状）。
-CHAT_RAG_BUDGET_CHARS = _env_positive_number("CHAT_RAG_BUDGET_CHARS", 6000, int)
-# CHAT_SUMMARY_BUDGET_CHARS：记忆/摘要段注入字符预算（默认 1500，沿用现状）。
-CHAT_SUMMARY_BUDGET_CHARS = _env_positive_number("CHAT_SUMMARY_BUDGET_CHARS", 1500, int)
+# CHAT_RAG_BUDGET_CHARS：知识库证据注入独立字符预算（默认 12000；spec-038 P3 由 6000 上调）。
+CHAT_RAG_BUDGET_CHARS = _env_positive_number("CHAT_RAG_BUDGET_CHARS", 12000, int)
+# CHAT_SUMMARY_BUDGET_CHARS：记忆/摘要段注入字符预算（默认 3000；spec-038 P3 由 1500 上调）。
+CHAT_SUMMARY_BUDGET_CHARS = _env_positive_number("CHAT_SUMMARY_BUDGET_CHARS", 3000, int)
 # CHAT_PROJECT_INSTR_CHARS：项目指令截断字符上限（默认 5000，沿用现状）。
 CHAT_PROJECT_INSTR_CHARS = _env_positive_number("CHAT_PROJECT_INSTR_CHARS", 5000, int)
+
+# ---------- L1 文件记忆层（spec-038 P1）----------
+# 记忆真相源改为可编辑 Markdown 文件（USER.md / MEMORY.md / projects/<id>.md）。
+# 注意：本阶段只新增配置，**不改** CHAT_TOTAL_TOKEN_BUDGET / CHAT_RAG_BUDGET_CHARS /
+# CHAT_SUMMARY_BUDGET_CHARS 的默认值——调预算属 P3 范围。
+# MEMORY_DIR：记忆文件根目录（相对仓库根；data/memory/ 已在 .gitignore 中忽略）。
+MEMORY_DIR = Path(os.getenv("MEMORY_DIR", str(BASE_DIR / "data" / "memory")))
+# MEMORY_INJECT_MAX_CHARS：单次会话启动注入的文件记忆快照字符预算（默认 6000）。
+# USER.md 画像优先全量注入，不占该预算（见 markdown_store.load_snapshot）。
+MEMORY_INJECT_MAX_CHARS = _env_positive_number("MEMORY_INJECT_MAX_CHARS", 6000, int)
+# ---------- L2 会话检索（spec-038 P2 收尾接线）----------
+# MEMORY_FTS_ENABLED：消息/记忆写入时是否同步维护 FTS5 会话检索索引（默认开启）。
+# 关闭时写入路径完全不建索引也不报错，``session_search`` 仍可调用（返回空结果）。
+# 该开关只控制「写入侧自动索引」；显式调用 reindex_all 重建仍可用。
+MEMORY_FTS_ENABLED = _env_bool("MEMORY_FTS_ENABLED", True)
+
+# ---------- L3 上下文压缩联动（spec-038 P3）----------
+# 压缩前的 flush_memories：给 Agent 一次把重要信息写入 L1 的机会。
+# 默认开启；关闭时压缩流程完全不变（不做任何抽取）。
+FLUSH_MEMORIES_ENABLED = _env_bool("FLUSH_MEMORIES_ENABLED", True)
+# 压缩摘要生成模式：
+#   - "llm"  优先调用小模型做**重构式**摘要，超时/异常自动回落规则摘要（fail-open）；
+#   - "rule" 只走确定性规则摘要（不触网、可复现）。
+COMPACTION_SUMMARY_MODE = os.getenv("COMPACTION_SUMMARY_MODE", "llm").strip().lower() or "llm"
+# LLM 摘要调用超时（秒）：超时即放弃本次 LLM 摘要并回落规则摘要。
+COMPACTION_SUMMARY_TIMEOUT = _env_positive_number("COMPACTION_SUMMARY_TIMEOUT", 30.0, float)
+# flush_memories 的**整体**超时（秒）：压缩前抽取记忆必须有限时，超时即放弃本次 flush
+# （fail-open，绝不因模型不可达而拖住压缩 worker）。
+COMPACTION_FLUSH_TIMEOUT = _env_positive_number("COMPACTION_FLUSH_TIMEOUT", 20.0, float)
+# 装配时工具输出裁剪：最近 N 步保留原文，更早的步骤结构化塌缩为一行。
+CHAT_TOOL_OUTPUT_KEEP_RECENT = _env_positive_number("CHAT_TOOL_OUTPUT_KEEP_RECENT", 3, int)
+
+# ---------- 线上模型 provider（spec-035）----------
+# 线上模型清单：逗号分隔的 provider:model；解析与注册见 platform/model_catalog.py。
+# 非法项在解析时跳过 + warning，不 fail-fast（与上方「warn 后回退」风格一致）。
+ONLINE_MODELS = os.getenv("ONLINE_MODELS", "")

@@ -11,6 +11,8 @@
   只取 HTML 详情页摘要元数据，**不下载 PDF**）
 - ``kb_search``              -> ``hybrid_search``（知识库混合检索）
 - ``kb_ask``                -> ``hybrid_search`` 取回片段（最终合成由编排器回灌模型完成）
+- ``session_search``        -> ``session_search.search_sessions``（L2 会话检索：FTS5 检索
+  历史消息 + MD 记忆笔记；索引与查询都复用 ``SessionSearchIndex`` 唯一实现）
 
 设计原则：
 - 重活（DBLP 源、Qdrant、下载器）全部复用既有函数，这里只做「参数映射 + 结果摘要 + 失败降级」。
@@ -271,12 +273,39 @@ def _fetch_paper_detail(args: dict) -> DispatchResult:
     return DispatchResult(ok=True, name="fetch_paper_detail", output="\n".join(lines))
 
 
+def _session_search(args: dict) -> DispatchResult:
+    """L2 会话检索：全文检索历史消息与 MD 记忆笔记。
+
+    复用 ``memory.session_search.search_sessions``（唯一实现）；该入口自身已把
+    「空查询 / 无结果 / FTS5 语法字符 / 内部异常」全部收敛为可读文本，
+    因此这里不做二次包装，只透传结果。缺 ``query`` 时才判失败。
+    """
+    query = args.get("query")
+    if not isinstance(query, str) or not query.strip():
+        return DispatchResult(ok=False, name="session_search", error="缺少必填参数 query（检索关键词）")
+
+    from backend.app.memory.session_search import search_sessions
+
+    limit = args.get("limit")
+    conversation_id = args.get("conversation_id")
+    payload = search_sessions(
+        query,
+        # 非法/缺省 limit 交给 search_sessions 内部的 _clamp_limit 收敛，这里只做类型过滤。
+        limit=limit if isinstance(limit, int) and not isinstance(limit, bool) else _DEFAULT_SESSION_LIMIT,
+        conversation_id=str(conversation_id) if conversation_id else None,
+    )
+    return DispatchResult(ok=True, name="session_search", output=str(payload.get("output") or ""))
+
+
+_DEFAULT_SESSION_LIMIT = 10
+
 _ADAPTERS: Dict[str, DispatchFn] = {
     "search_paper_catalog": _search_catalog,
     "download_and_import_paper": _download_import,
     "fetch_paper_detail": _fetch_paper_detail,
     "kb_search": _kb_search,
     "kb_ask": _kb_ask,
+    "session_search": _session_search,
 }
 
 

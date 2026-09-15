@@ -3,8 +3,12 @@
 静态契约，避免浏览器依赖：保护 skill-tool 视图的 DOM 边界，并确保动态文本
 （尤其 Skill body）只走 textContent，杜绝 innerHTML 注入；同时约束启用/禁用
 开关走 PATCH，且 CSS 作用域限定在本视图。
+
+spec-034 Task03 追加：Tool 列表「代码」按钮与只读源码弹窗的静态契约
+（新弹窗 id 存在 + 源码只走 textContent + 无 innerHTML + 复用既有 class 不新增 CSS）。
 """
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +28,13 @@ def test_skill_tool_view_has_stable_render_targets() -> None:
         "st-detail-name",
         "st-detail-desc",
         "st-detail-body",
+        # spec-034 Task03：Tool 代码弹窗的渲染目标。
+        "st-tool-code-dialog",
+        "st-code-title",
+        "st-code-name",
+        "st-code-entry",
+        "st-code-location",
+        "st-code-body",
     }
     for element_id in required_ids:
         assert f'id="{element_id}"' in INDEX
@@ -79,8 +90,8 @@ def test_skill_tool_css_scoped_to_view() -> None:
 
 
 def test_skill_tool_app_version_bumped() -> None:
-    # 改动 app.js 后必须同步递增 ?v= 版本号（回归护栏）。
-    assert "/assets/app.js?v=43" in INDEX
+    # 改动 app.js 后必须同步递增 ?v= 版本号（回归护栏）。spec-034 Task03：44 → 45 → 46。
+    assert "/assets/app.js?v=46" in INDEX
 
 
 def test_skill_detail_request_aborts_previous_inflight() -> None:
@@ -150,3 +161,101 @@ def test_skill_detail_failure_marks_all_fields() -> None:
     catch_block = detail[catch_start:]
     for field in ("stDetailBody", "stDetailDesc", "stDetailTools"):
         assert f"{field}) {field}.textContent = failure;" in catch_block
+
+
+# ===== spec-034 Task03：Tool 列表「代码」按钮与只读源码弹窗 =====
+
+TOOL_CODE_DIALOG_MARKER = '<dialog class="settings-dialog st-detail-dialog" id="st-tool-code-dialog"'
+SKILL_DIALOG_MARKER = '<dialog class="settings-dialog st-detail-dialog" id="st-skill-dialog"'
+
+
+def _dialog_block(marker: str) -> str:
+    start = INDEX.index(marker)
+    end = INDEX.index("</dialog>", start)
+    return INDEX[start:end]
+
+
+def _class_tokens(block: str) -> set:
+    tokens = set()
+    for value in re.findall(r'class="([^"]+)"', block):
+        tokens.update(value.split())
+    return tokens
+
+
+def _open_tool_code_source() -> str:
+    start = APP.index("async function openToolCode")
+    end = APP.index("function refreshModelOptions", start)
+    return APP[start:end]
+
+
+def test_tool_code_dialog_is_declared_and_reuses_skill_dialog_structure() -> None:
+    # spec-034 Task03：新弹窗复用 Skill 详情弹窗的 class 与 <form method="dialog"> 结构。
+    block = _dialog_block(TOOL_CODE_DIALOG_MARKER)
+    assert 'aria-labelledby="st-code-title"' in block
+    assert '<form method="dialog" class="settings-form"' in block
+    assert 'value="cancel"' in block
+    assert '<pre class="st-detail-body" id="st-code-body"></pre>' in block
+    for element_id in ("st-code-title", "st-code-name", "st-code-entry", "st-code-location", "st-code-body"):
+        assert f'id="{element_id}"' in block
+
+
+def test_tool_code_dialog_introduces_no_new_class_needing_css() -> None:
+    # spec-034 M-02④：新弹窗的 class 必须全部是既有 Skill 弹窗已用过的 class，
+    # 因此 styles.css 无需新增规则（新增 class 未配 CSS 即回归清单第 1 条违规）。
+    new_classes = _class_tokens(_dialog_block(TOOL_CODE_DIALOG_MARKER))
+    existing_classes = _class_tokens(_dialog_block(SKILL_DIALOG_MARKER))
+    assert new_classes, "tool code dialog must declare classes"
+    assert new_classes <= existing_classes, f"unexpected new classes: {sorted(new_classes - existing_classes)}"
+    # 正文样式仍由 .st-detail-dialog 作用域提供（含滚动，长源码不溢出）。
+    assert ".st-detail-dialog .st-detail-body" in STYLES
+    assert "max-height: 50vh" in STYLES
+
+
+def test_tool_code_button_precedes_toggle_and_is_disabled_without_name() -> None:
+    # spec-034 Task03：「代码」按钮位于启停按钮之前；tool.name 为空时禁用。
+    start = APP.index("function renderToolList")
+    end = APP.index("async function toggleTool", start)
+    renderer = APP[start:end]
+    assert "openToolCode(tool.name, codeBtn)" in renderer
+    assert "codeBtn.disabled = !tool.name;" in renderer
+    assert "actions.append(codeBtn, toggle);" in renderer
+    assert renderer.index("codeBtn") < renderer.index("toggle")
+    # 点击后立即进入 loading 态（禁用 + 文案），避免并发重复请求。
+    assert "codeBtn.disabled = true;" in renderer
+    assert "codeBtn.textContent = '加载中…';" in renderer
+
+
+def test_tool_code_renderer_uses_safe_text_boundary_no_innerhtml() -> None:
+    # spec-034 M-02②：源码 / entry / file:lineno 只走 textContent，禁止 innerHTML 拼接。
+    source = _open_tool_code_source()
+    assert "innerHTML" not in source
+    assert "/api/tools/${encodeURIComponent(name)}/code" in source
+    for field in ("stCodeName", "stCodeEntry", "stCodeLocation", "stCodeBody"):
+        assert f"{field}.textContent" in source
+    # 加载中占位文案。
+    assert "stCodeBody.textContent = '加载中…';" in source
+
+
+def test_tool_code_failure_marks_all_fields_with_same_message() -> None:
+    # spec-034：失败时名称 / entry / location / body 统一展示同一失败文案，
+    # 禁止出现「有名称 + 空白代码」的割裂展示。
+    source = _open_tool_code_source()
+    assert "const failure = `加载失败：${error.message}`;" in source
+    catch_block = source[source.index("catch (error)"):]
+    for field in ("stCodeName", "stCodeEntry", "stCodeLocation", "stCodeBody"):
+        assert f"{field}.textContent = failure;" in catch_block
+
+
+def test_tool_code_request_aborts_previous_inflight_and_discards_stale() -> None:
+    # spec-034：连续切换不同 Tool 时，用自增序号 + AbortController 丢弃过期响应（防串台）。
+    source = _open_tool_code_source()
+    assert "const seq = ++stState.codeSeq;" in source
+    assert "stState.codeController.abort()" in source
+    assert "signal: controller.signal" in source
+    # 成功与失败两条路径都必须先做同一身份校验再写 DOM。
+    assert source.count("stState.codeSeq !== seq || controller.signal.aborted") >= 2
+    # 被中止的请求由 stFetchJson 归一化，不在本函数内暴露英文 AbortError。
+    assert "AbortError" not in source
+    # 请求结束后恢复按钮可用态并清掉 controller 引用。
+    assert "button.disabled = false; button.textContent = '代码';" in source
+    assert "stState.codeController = null;" in source

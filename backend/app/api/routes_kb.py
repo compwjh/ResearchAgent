@@ -37,6 +37,7 @@ from backend.app.knowledge_base.application import (
     set_document_project,
     submit_document_reindex,
 )
+from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import (
@@ -45,6 +46,7 @@ from backend.app.platform.config import (
     KB_MAX_UPLOAD_MB,
     KB_PAPERS_DIR,  # noqa: F401
 )
+from backend.app.platform.model_catalog import is_online_model
 
 # Kept as a module-level read-only configuration alias for offline/legacy
 # fixtures that patch the historical source directory.  Canonical document
@@ -965,8 +967,11 @@ def kb_ask(request: KBAskRequest):
     try:
         available_models: List[str] = get_available_models()
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
-    if request.model not in available_models:
+        # Ollama 不可达：线上模型仍可用，仅当模型既非线上也非本地时才报 502
+        if not is_online_model(request.model):
+            raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
+        available_models = []
+    if request.model not in available_models and not is_online_model(request.model):
         raise HTTPException(status_code=400, detail=f"模型 {request.model} 不存在，请从已安装模型中选择")
 
     top_k = max(1, min(int(request.top_k or 5), 20))
@@ -1013,15 +1018,11 @@ def kb_ask(request: KBAskRequest):
                 yield stream_event("done")
                 return
             prompt = _kb_evidence_advisory(hits)
-            try:
-                rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
-            except Exception:
-                yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
-                yield stream_event("done", status="failed")
-                return
-            prompt_messages = build_role_aware_messages(question, system_rule=rule.content if rule.enabled else None, advisory=prompt)
+            # spec-038 P1：全局指令改读 L1 文件记忆 USER.md；fail-open 降级为空串。
+            user_memory = read_user_memory_or_empty()
+            prompt_messages = build_role_aware_messages(question, system_rule=user_memory or None, advisory=prompt)
             observation_messages = redact_prompt_messages(prompt_messages)
-            observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content))
+            observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(user_memory))
             run = run_chat(question, request.model, messages=prompt_messages, think=False)
             kb_metadata = {
                 "top_k": top_k,

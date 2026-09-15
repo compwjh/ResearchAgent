@@ -72,8 +72,13 @@ def test_context_usage_returns_usage(tmp_path):
         usage = client.get(f"/api/conversations/{cid}/context-usage")
         assert usage.status_code == 200
         body = usage.json()
-        assert set(body.keys()) == {"used_tokens", "budget_tokens", "ratio", "segment_count", "compaction_status"}
-        assert body["budget_tokens"] == 8000
+        assert set(body.keys()) == {"used_tokens", "budget_tokens", "ratio", "segment_count", "compaction_status", "breakdown"}
+        assert isinstance(body["breakdown"], list)
+        for item in body["breakdown"]:
+            assert set(item.keys()) == {"kind", "label", "tokens", "bytes"}
+            assert isinstance(item["tokens"], int) and item["tokens"] >= 0
+            assert isinstance(item["bytes"], int) and item["bytes"] >= 0
+        assert body["budget_tokens"] == 20000  # spec-038 P3：预算默认值 8000 → 20000
         assert body["compaction_status"] == "idle"
         assert body["segment_count"] == 0
         assert body["used_tokens"] >= 0
@@ -134,7 +139,7 @@ def test_context_usage_ratio_and_budget_zero(tmp_path):
         repo.create_message(conv.conversation_id, OWNER_ID, "user", "这是一段历史内容用于估算 token", status="completed")
         usage = client.get(f"/api/conversations/{conv.conversation_id}/context-usage")
         assert usage.status_code == 200
-        assert usage.json()["budget_tokens"] == 8000
+        assert usage.json()["budget_tokens"] == 20000  # spec-038 P3：预算默认值 8000 → 20000
         with patch("backend.app.api.routes_conversations.CHAT_TOTAL_TOKEN_BUDGET", 0):
             usage0 = client.get(f"/api/conversations/{conv.conversation_id}/context-usage")
         assert usage0.status_code == 200

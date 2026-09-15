@@ -72,7 +72,8 @@ def test_positive_number_fallback_on_zero_and_negative():
         with patch.dict(os.environ, {"CHAT_TOTAL_TOKEN_BUDGET": bad}, clear=False), warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 reloaded = importlib.reload(config)
-                assert reloaded.CHAT_TOTAL_TOKEN_BUDGET == 8000
+                # spec-038 P3：默认值由 8000 上调到 20000；非法值仍回退到该默认。
+                assert reloaded.CHAT_TOTAL_TOKEN_BUDGET == 20000
                 assert any(
                     issubclass(w.category, RuntimeWarning)
                     and "CHAT_TOTAL_TOKEN_BUDGET" in str(w.message)
@@ -81,7 +82,8 @@ def test_positive_number_fallback_on_zero_and_negative():
 
 
 def test_compose_defaults_match_status_quo_budgets():
-    # 默认装配输出须与显式传入「现状数值」(summary=1500/rag=6000/history=6000) 逐字符一致。
+    # 默认装配输出须与显式传入「当前默认数值」(summary=3000/rag=12000/history=6000) 逐字符一致。
+    # spec-038 P3：summary 1500→3000、rag 6000→12000；history 仍为 6000。
     q = "当前问题"
     history = [
         SimpleNamespace(role="user", content="用户历史消息内容"),
@@ -97,7 +99,7 @@ def test_compose_defaults_match_status_quo_budgets():
     )
     out_explicit = compose_chat_prompt(
         q, history, memories, project_instructions, summaries, rag_hits=rag_hits,
-        summary_budget_chars=1500, rag_budget_chars=6000, history_budget_chars=6000,
+        summary_budget_chars=3000, rag_budget_chars=12000, history_budget_chars=6000,
     )
     assert out_default == out_explicit
 

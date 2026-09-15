@@ -15,13 +15,26 @@ import contextlib
 import hashlib
 import queue
 import re
+import socket
 import threading
 from dataclasses import dataclass
 from typing import Optional
 
+from backend.app.chat.application.chat_runner import run_chat
 from backend.app.chat.application.token_budget import estimate_tokens
+from backend.app.memory.markdown_store import MarkdownMemoryStore
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
-from backend.app.platform.config import CHAT_SUMMARY_BUDGET_CHARS
+from backend.app.platform.config import (
+    CHAT_SUMMARY_BUDGET_CHARS,
+    CHAT_TOOL_OUTPUT_KEEP_RECENT,
+    COMPACTION_FLUSH_TIMEOUT,
+    COMPACTION_SUMMARY_MODE,
+    COMPACTION_SUMMARY_TIMEOUT,
+    FLUSH_MEMORIES_ENABLED,
+    MEMORY_ANALYSIS_MODEL,
+)
+from backend.app.platform.observability import record_event
+from backend.app.platform.observability.safe import safe_call
 
 # ---- 规则化摘要生成器常量 ----
 
@@ -151,6 +164,278 @@ def build_rule_summary(messages, summary_char_budget) -> tuple[str, int, int, st
     return summary_text, char_count, est_tokens, content_hash
 
 
+# ---- LLM 重构式摘要（spec-038 P3）----
+
+# 传给压缩模型的重构指令：只做「信息守恒的重写」，不做新的推理/评论。
+_LLM_SUMMARY_PROMPT = (
+    "你是会话上下文压缩器。把下面这段对话历史**重构**成一份供后续对话复用的简明摘要。"
+    "要求：1) 保留用户指令与约束、已达成的决策与结论、关键实体（文件/URL/标识符/数值）；"
+    "2) 合并重复、丢弃寒暄与无关细节；3) 不要引入原文没有的信息，不要评论，不要输出思维过程；"
+    "4) 用中文分点输出，直接给摘要正文。\n\n对话历史：\n"
+)
+
+# 单条消息在提示里注入的上限，避免把提示本身撑爆。
+_LLM_SOURCE_PER_MESSAGE_CHARS = 4000
+
+
+def _summary_stats(messages) -> tuple[str, int, int, str]:
+    """计算源文本统计（char_count / est_tokens / content_hash）。
+
+    规则摘要与 LLM 摘要共用同一统计口径：被覆盖源文本的字符数与估算 token 数，
+    保证两条路径写入 ``conversation_segments`` 的字段语义一致、可复现校验一致。
+    """
+    ordered = sorted(messages, key=_message_key)
+    source_text = "\n".join((message.content or "") for message in ordered)
+    return source_text, len(source_text), estimate_tokens(source_text), hashlib.sha256(
+        source_text.encode("utf-8")
+    ).hexdigest()
+
+
+def llm_available(timeout: float = 1.0) -> bool:
+    """廉价探测 Ollama 是否可达（TCP 连接，不做 HTTP 请求）。
+
+    目的：模型不可达时，``run_chat``（langchain 链路）可能要重试数十秒才失败。
+    压缩/flush 都跑在后台线程上，必须**快速失败**：先做一次 <1s 的端口探测，
+    不可达就直接走规则摘要 / 跳过 flush，而不是傻等超时。
+
+    返回 True 表示「端口可连」（不代表模型存在）；任何异常都视为不可达。
+    """
+    try:
+        from urllib.parse import urlparse
+
+        from backend.app.platform.config import OLLAMA_BASE_URL
+
+        parsed = urlparse(OLLAMA_BASE_URL)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 11434
+        with socket.create_connection((host, port), timeout=max(0.1, float(timeout))):
+            return True
+    except Exception:  # noqa: BLE001 — 探测失败即视为不可达
+        return False
+
+
+def _run_bounded(func, *, timeout: float):
+    """在**独立线程**中执行并限时等待，超时即放弃（抛 ``TimeoutError``）。
+
+    用途：``context_compaction`` 全程运行在后台 daemon 线程/装配链上，「模型调用」
+    必须**有界**——否则 Ollama 不可达时可能长时间阻塞。超时后放弃结果（调用方 fail-open），
+    被放弃的线程仍会自然结束（daemon，不阻止进程退出）。
+    """
+    result: dict = {}
+
+    def _target():
+        try:
+            result["value"] = func()
+        except BaseException as error:  # noqa: BLE001 — 由调用线程统一处理
+            result["error"] = error
+
+    worker = threading.Thread(target=_target, name="compaction-bounded-call", daemon=True)
+    worker.start()
+    worker.join(timeout=max(0.01, float(timeout)))
+    if worker.is_alive():
+        raise TimeoutError(f"调用超过 {timeout}s 未返回")
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
+
+
+def build_llm_summary(messages, summary_char_budget) -> tuple[str, int, int, str]:
+    """调用小模型生成**重构式**摘要（不回落；失败即抛异常，由调用方决定降级）。
+
+    复用 ``run_chat``（同一条模型调用链路，不引入第二套 Ollama 客户端），
+    ``think=False``（分类/压缩类调用必须关闭思维链）。超时由
+    ``COMPACTION_SUMMARY_TIMEOUT`` 约束，通过 ``run_chat`` 的同步调用返回后取 token 事件。
+
+    :returns: 与 :func:`build_rule_summary` 同构的 ``(summary_text, char_count, est_tokens, content_hash)``。
+      其中 char_count / est_tokens / content_hash 仍描述**源文本**（统计口径不随生成器变化）。
+    """
+    source_text, char_count, est_tokens, content_hash = _summary_stats(messages)
+    if not source_text.strip():
+        return "", char_count, est_tokens, content_hash
+    ordered = sorted(messages, key=_message_key)
+    rendered = "\n".join(
+        f"{getattr(message, 'role', 'unknown')}: {(message.content or '')[:_LLM_SOURCE_PER_MESSAGE_CHARS]}"
+        for message in ordered
+    )
+    selected_model = (MEMORY_ANALYSIS_MODEL or "").strip() or MEMORY_ANALYSIS_MODEL
+    # 限时调用：超时抛 TimeoutError → 由 build_compaction_summary 回落规则摘要。
+    run = _run_bounded(
+        lambda: run_chat(
+            rendered,
+            selected_model,
+            prompt=_LLM_SUMMARY_PROMPT + rendered,
+            think=False,
+        ),
+        timeout=COMPACTION_SUMMARY_TIMEOUT,
+    )
+    output = "".join(
+        str(event.get("content") or "")
+        for event in (run.events or [])
+        if event.get("type") == "token"
+    ).strip()
+    if not output:
+        raise RuntimeError("LLM 摘要输出为空")
+    # 超预算时按字符截断，保持与规则摘要一致的「不超预算」契约。
+    budget = max(0, int(summary_char_budget))
+    if budget and len(output) > budget:
+        output = output[:budget] + "…"
+    return output, char_count, est_tokens, content_hash
+
+
+def build_compaction_summary(messages, summary_char_budget) -> tuple[str, int, int, str]:
+    """按 ``COMPACTION_SUMMARY_MODE`` 选择摘要生成器，LLM 失败时回落规则摘要。
+
+    - ``mode="llm"``：先试 :func:`build_llm_summary`；任何异常（含 Ollama 不可达、
+      超时、输出为空）都**回落** :func:`build_rule_summary`，并用既有
+      ``safe_call(record_event, ...)`` 记录 ``degraded_reason``（观测失败不影响业务）。
+    - 其它值（含 ``"rule"``）：直接走规则摘要，不触网。
+
+    fail-open 是本函数的硬契约：压缩是后台任务，绝不能因为模型不可用而失败或阻塞。
+    """
+    mode = str(COMPACTION_SUMMARY_MODE or "").strip().lower()
+    if mode != "llm":
+        return build_rule_summary(messages, summary_char_budget)
+    if not llm_available():
+        # 快速失败：模型端口不可达，不浪费一次可能重试数十秒的调用。
+        safe_call(
+            record_event,
+            name="compaction_summary_degraded",
+            metadata={"degraded_reason": "llm_unreachable", "mode": mode},
+        )
+        return build_rule_summary(messages, summary_char_budget)
+    try:
+        return build_llm_summary(messages, summary_char_budget)
+    except Exception as error:  # noqa: BLE001 — LLM 不可用必须降级，绝不冒泡
+        result = build_rule_summary(messages, summary_char_budget)
+        safe_call(
+            record_event,
+            name="compaction_summary_degraded",
+            metadata={
+                "degraded_reason": f"{type(error).__name__}: {error}"[:300],
+                "mode": mode,
+                "timeout_seconds": COMPACTION_SUMMARY_TIMEOUT,
+                "model": MEMORY_ANALYSIS_MODEL,
+            },
+        )
+        return result
+
+
+def collapse_tool_outputs(steps, *, keep_recent: Optional[int] = None) -> str:
+    """把处理步骤渲染为「最近 N 步原文 + 更早步骤结构化塌缩」的一段文本。
+
+    塌缩格式：``- <kind>/<label> [<status>]：<首行摘要（<=120 字符）>``。
+    最近 ``keep_recent`` 步保留原文摘要（不截断）。无步骤时返回空串。
+
+    这是 spec-038 P3 的「预裁剪」：压缩/装配前把冗余的工具输出压成可读的一行，
+    既保住可追溯性（保留工具名与状态），又大幅降低 token 占用。
+    """
+    if not steps:
+        return ""
+    keep = CHAT_TOOL_OUTPUT_KEEP_RECENT if keep_recent is None else max(0, int(keep_recent))
+    ordered = list(steps)
+    older = ordered[:-keep] if keep else ordered
+    recent = ordered[-keep:] if keep else []
+    lines: list[str] = []
+    for step in older:
+        lines.append(f"- {_collapsed_step_line(step)}")
+    for step in recent:
+        body = str(getattr(step, "summary", "") or "").strip()
+        label = getattr(step, "label", "") or getattr(step, "kind", "")
+        status = getattr(step, "status", "")
+        lines.append(f"- {label} [{status}]: {body}" if body else f"- {label} [{status}]")
+    return "\n".join(lines)
+
+
+def _collapsed_step_line(step) -> str:
+    """把单步塌缩为一行：工具名 + 参数/摘要首行（截断），不含状态之外的细节。"""
+    kind = str(getattr(step, "kind", "") or "")
+    label = str(getattr(step, "label", "") or "")
+    status = str(getattr(step, "status", "") or "")
+    summary = " ".join(str(getattr(step, "summary", "") or "").split())
+    head = summary[:120] + ("…" if len(summary) > 120 else "")
+    name = f"{kind}/{label}".strip("/") or "step"
+    return f"{name} [{status}]：{head}" if head else f"{name} [{status}]"
+
+
+# ---- flush_memories：压缩前把重要信息写入 L1（spec-038 P3）----
+
+
+def flush_memories(
+    messages,
+    *,
+    project_id: Optional[str],
+    owner_id: str = OWNER_ID,
+    store: Optional[MarkdownMemoryStore] = None,
+    extractor=None,
+    repository: Optional[MemoryRepository] = None,
+) -> int:
+    """压缩**之前**调用：把窗口内消息里的长期记忆写入 L1（MD 真相源）。
+
+    复用 ``MemoryAnalysisWorker`` 的同一条分类链路（``classify_memory_intent`` +
+    ``decide_memory_write``），**不新建第二套抽取实现**。按置信度分级：
+
+    - 高置信度（explicit 且 confidence ≥ 阈值且 scope 明确）→ 直写 ``MEMORY.md`` / ``projects/<id>.md``；
+    - 其余（ambiguous / 低置信度）→ 写 ``PENDING.md`` 待确认，**不默认塞进项目记忆**。
+
+    硬契约（fail-open）：``FLUSH_MEMORIES_ENABLED`` 为假时直接跳过；任何异常
+    （分类器不可达、MD 写入失败等）都被吞掉并返回已写入条数，**绝不阻断压缩**。
+
+    :returns: 成功写入（正式记忆 + 待确认）的条数。
+    """
+    if not FLUSH_MEMORIES_ENABLED:
+        return 0
+    # 延迟导入：conversation_service 顶层依赖本模块的常量，顶层互导会成环。
+    from backend.app.chat.application.conversation_service import (
+        extract_memory_candidates,
+        write_memory_candidate,
+    )
+
+    # 快速失败：分类链路依赖模型；端口不可达时直接跳过，不做数十秒重试。
+    # 显式传入 extractor（测试/复用缝）时不做该探测，交由调用方负责。
+    if extractor is None and not llm_available():
+        safe_call(
+            record_event,
+            name="flush_memories_skipped",
+            metadata={"degraded_reason": "llm_unreachable"},
+        )
+        return 0
+
+    target_store = store or MarkdownMemoryStore()
+    written = 0
+
+    def _extract_and_write() -> int:
+        count = 0
+        user_texts = [
+            message.content
+            for message in sorted(messages, key=_message_key)
+            if getattr(message, "role", None) == "user" and (message.content or "").strip()
+        ]
+        for candidate, source_text in extract_memory_candidates(
+            user_texts, project_id=project_id, classify=extractor
+        ):
+            # 唯一写入出口：置信度分级（高置信度直写 MD / 否则 pending），内部 fail-open。
+            # spec-038 S7：传入 repository + owner 供 project_id 存在性校验，避免写进已失效的项目。
+            write_memory_candidate(
+                target_store, candidate, source_text=source_text, project_id=project_id,
+                repository=repository, owner_id=owner_id,
+            )
+            count += 1
+        return count
+
+    try:
+        # 限时执行：抽取链路会调用模型（无界等待会拖死压缩 worker）。
+        # 超时/异常都 fail-open：放弃本次 flush，压缩照常进行。
+        written = _run_bounded(_extract_and_write, timeout=COMPACTION_FLUSH_TIMEOUT) or 0
+    except Exception as error:  # noqa: BLE001 — flush 绝不阻断压缩/装配
+        with contextlib.suppress(Exception):
+            safe_call(
+                record_event,
+                name="flush_memories_failed",
+                metadata={"degraded_reason": f"{type(error).__name__}: {error}"[:300]},
+            )
+    return written
+
+
 # ---- 异步压缩 worker ----
 
 @dataclass
@@ -174,10 +459,19 @@ class CompactionWorker:
     的部分唯一索引（``create_compaction_job`` 原子领用）。
     """
 
-    def __init__(self, repository: MemoryRepository, *, owner_id: str = OWNER_ID, poll_interval: float = 0.05) -> None:
+    def __init__(
+        self,
+        repository: MemoryRepository,
+        *,
+        owner_id: str = OWNER_ID,
+        poll_interval: float = 0.05,
+        memory_store: Optional[MarkdownMemoryStore] = None,
+    ) -> None:
         self.repository = repository
         self.owner_id = owner_id
         self.poll_interval = max(0.01, float(poll_interval))
+        # L1 真相源：flush_memories 写入目标；缺省用进程默认 MEMORY_DIR。
+        self.memory_store = memory_store or MarkdownMemoryStore()
         self._queue: "queue.Queue[_CompactionRequest]" = queue.Queue()
         self._queued: set[str] = set()
         self._guard = threading.Lock()
@@ -254,6 +548,32 @@ class CompactionWorker:
         messages.sort(key=_message_key)
         return messages
 
+    def _dispatch_flush(self, window, request: _CompactionRequest) -> None:
+        """把 flush_memories 甩到独立 daemon 线程执行，**绝不阻塞压缩**。
+
+        压缩是后台任务，而 flush 依赖模型（Ollama 不可达时 ``classify_memory_intent``
+        可能重试数十秒）。若同步等待，压缩段写入会被拖住。这里只做 dispatch：
+        - 线程 daemon，进程退出不阻塞；
+        - flush 内部自带 ``COMPACTION_FLUSH_TIMEOUT`` 限时 + 全量 fail-open；
+        - dispatch 本身异常也吞掉（压缩优先级更高）。
+        """
+        if not FLUSH_MEMORIES_ENABLED:
+            return
+        snapshot = list(window)
+
+        def _flush():
+            with contextlib.suppress(Exception):
+                flush_memories(
+                    snapshot,
+                    project_id=request.project_id,
+                    owner_id=request.owner_id,
+                    store=self.memory_store,
+                    repository=self.repository,
+                )
+
+        with contextlib.suppress(Exception):
+            threading.Thread(target=_flush, name="compaction-flush", daemon=True).start()
+
     def _process(self, request: _CompactionRequest) -> None:
         """处理单个冻结窗口请求：生成段 → 写表 → 置 done；异常收敛为 failed。"""
         try:
@@ -277,7 +597,13 @@ class CompactionWorker:
             if not window:
                 self.repository.finish_compaction_job(request.job_id, request.owner_id, status="done")
                 return
-            summary_text, char_count, est_tokens, content_hash = build_rule_summary(window, CHAT_SUMMARY_BUDGET_CHARS)
+            # spec-038 P3：压缩前挂载 flush_memories —— 给 Agent 一次把重要信息写入 L1 的机会。
+            # 硬约束「flush 失败不得阻断压缩」：抽取链路会调用模型（不可达时可能长时间重试），
+            # 因此这里**不阻塞等待** flush 完成，而是交给独立 daemon 线程执行；flush 内部另有
+            # COMPACTION_FLUSH_TIMEOUT 限时与全量 fail-open。压缩主流程只做 dispatch，立即继续。
+            self._dispatch_flush(window, request)
+            summary_text, char_count, est_tokens, content_hash = build_compaction_summary(window, CHAT_SUMMARY_BUDGET_CHARS)
+            generator = "llm" if str(COMPACTION_SUMMARY_MODE or "").strip().lower() == "llm" else "rule"
             segments = self.repository.list_conversation_segments(
                 request.conversation_id, request.owner_id, request.project_id
             )
@@ -286,6 +612,7 @@ class CompactionWorker:
                 request.conversation_id, request.owner_id, request.project_id, seq,
                 request.from_message_id, request.to_message_id,
                 char_count, est_tokens, content_hash, summary_text,
+                generator=generator,
             )
             self.repository.finish_compaction_job(
                 request.job_id, request.owner_id, status="done", est_tokens_after=est_tokens

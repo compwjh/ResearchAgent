@@ -24,8 +24,8 @@ from backend.app.article_assistant.application.entry import (
 )
 from backend.app.article_assistant.domain.article import ArticleCandidate
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
-from backend.app.memory.repository import OWNER_ID
-from backend.app.platform.bootstrap import get_provider
+from backend.app.memory.markdown_store import read_user_memory_or_empty
+from backend.app.platform.model_catalog import is_online_model
 from backend.app.platform.observability import (
     flush,
     prompt_observation_metadata,
@@ -114,21 +114,24 @@ def run_agent(request: ChatRequest):
         yield stream_event("intent", intent=task.intent, confidence=task.intent_confidence, skill=SKILL_NAME if task.intent == "download_paper" else None)
         if task.intent == "chat":
             try:
-                available_models = get_available_models()
-                if request.model not in available_models:
+                try:
+                    available_models = get_available_models()
+                except httpx.HTTPError:
+                    # Ollama 不可达：线上模型仍可用
+                    if not is_online_model(request.model):
+                        yield stream_event("error", message=f"模型 {request.model} 不存在")
+                        return
+                    available_models = []
+                if request.model not in available_models and not is_online_model(request.model):
                     yield stream_event("error", message=f"模型 {request.model} 不存在")
                     return
                 yield stream_event("meta", model=request.model, mode=request.mode)
                 started = utc_now()
-                try:
-                    rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
-                except Exception:
-                    yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
-                    yield stream_event("done", status="failed")
-                    return
-                prompt_messages = build_role_aware_messages(task.normalized_query, system_rule=rule.content if rule.enabled else None)
+                # spec-038 P1：全局指令改读 L1 文件记忆 USER.md；fail-open 降级为空串。
+                user_memory = read_user_memory_or_empty()
+                prompt_messages = build_role_aware_messages(task.normalized_query, system_rule=user_memory or None)
                 observation_messages = redact_prompt_messages(prompt_messages)
-                observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content))
+                observation_metadata = prompt_observation_metadata(prompt_messages, system_rule_enabled=bool(user_memory))
                 run = run_chat(task.normalized_query, request.model, messages=prompt_messages)
                 try:
                     for event in run.events:
@@ -147,7 +150,7 @@ def run_agent(request: ChatRequest):
                                 success=False,
                                 error_type=type(error).__name__,
                                 extra_metadata=observation_metadata,
-                             )
+                            )
                             flush()
                         except Exception:
                             pass
@@ -162,7 +165,7 @@ def run_agent(request: ChatRequest):
                             started_at=started,
                             tags=["chat", "agent"],
                             extra_metadata=observation_metadata,
-                          )
+                        )
                         flush()
                     except Exception:
                         pass

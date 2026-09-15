@@ -11,6 +11,8 @@
   （复用既有详情页抓取 + parse_usenix_detail，只取 HTML 摘要，不下载 PDF）
 - kb_search               → backend.app.knowledge_base.infrastructure.retrieve.hybrid_search
 - kb_ask                  → backend.app.api.routes_kb.kb_ask（hybrid_search + run_chat 编排）
+- session_search          → backend.app.memory.session_search.search_sessions
+  （spec-038 P2 L2 会话检索：FTS5 索引历史消息 + MD 记忆笔记，让 Agent 能主动翻旧账）
 """
 
 from __future__ import annotations
@@ -177,6 +179,35 @@ def build_default_tool_registry() -> list[ToolEntry]:
                     },
                 },
                 "required": ["question"],
+            },
+        ),
+        ToolEntry(
+            name="session_search",
+            description=(
+                "全文检索**过去的会话历史与长期记忆笔记**（历史消息 + USER.md/MEMORY.md/"
+                "projects 笔记，基于 SQLite FTS5）。用于翻旧账：回忆此前讨论过的结论、"
+                "约定、用户偏好、项目决定。参数：query（检索关键词，中文/英文均可）、"
+                "limit（返回条数，默认 10，最大 100）、conversation_id（可选，只在指定会话内检索）。"
+                "返回命中的片段及来源标签（历史对话含会话 id 与角色；记忆笔记含文件名）。"
+                "查无结果属正常情况，返回空列表而非报错。"
+            ),
+            entry="backend.app.memory.session_search.search_sessions",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "检索关键词（中文/英文均可）"},
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "返回条数上限，默认 10",
+                    },
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "可选：只在该会话的历史消息内检索（记忆笔记不受此约束）",
+                    },
+                },
+                "required": ["query"],
             },
         ),
     ]

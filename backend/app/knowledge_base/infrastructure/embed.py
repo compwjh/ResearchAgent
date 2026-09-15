@@ -15,7 +15,10 @@ import httpx
 from qdrant_client import models
 
 from backend.app.platform.config import (
+    EMBED_API_KEY,
+    EMBED_BASE_URL,
     EMBED_MODEL,
+    EMBED_PROVIDER,
     KB_EMBED_BATCH_SIZE,
     KB_EMBED_NUM_BATCH,
     OLLAMA_BASE_URL,
@@ -118,6 +121,8 @@ def _embed_batch(
 ) -> List[List[float]]:
     if not batch:
         return []
+    if EMBED_PROVIDER != "ollama" and EMBED_BASE_URL:
+        return _embed_batch_online(batch, model)
     url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/embed"
     payload = {
         "model": model or EMBED_MODEL,
@@ -145,3 +150,49 @@ def _embed_batch(
     if len(vectors) != len(batch) or any(not vector for vector in vectors):
         raise EmbeddingError("Ollama 返回的向量数量与输入不一致或存在空向量")
     return [list(map(float, vector)) for vector in vectors]
+
+
+def _embed_batch_online(
+    batch: Sequence[str],
+    model: Optional[str],
+) -> List[List[float]]:
+    """OpenAI 兼容 /v1/embeddings 稠密向量化（如阿里云 DataWorks）。
+
+    Authorization 头**原样**发送 `EMBED_API_KEY`，兼容阿里云 `DW-xxx` 这类非 Bearer 形式；
+    对接标准 OpenAI 时在 .env 写 `EMBED_API_KEY=Bearer sk-...` 即可。
+    """
+    url = f"{EMBED_BASE_URL.rstrip('/')}/embeddings"
+    payload = {"model": model or EMBED_MODEL, "input": list(batch)}
+    headers = {"Content-Type": "application/json"}
+    if EMBED_API_KEY:
+        headers["Authorization"] = EMBED_API_KEY
+    try:
+        response = httpx.post(url, json=payload, headers=headers, timeout=180, trust_env=False, follow_redirects=True)
+    except httpx.HTTPError as error:
+        try:
+            response = httpx.post(url, json=payload, headers=headers, timeout=180, trust_env=False, follow_redirects=True)
+        except httpx.HTTPError:
+            raise EmbeddingError(f"无法连接 embedding 服务：{error}") from error
+
+    if response.status_code != 200:
+        detail = ""
+        try:
+            detail = str(response.json().get("error", ""))
+        except ValueError:
+            detail = response.text[:200]
+        raise EmbeddingError(f"embedding 服务调用失败（HTTP {response.status_code}）{detail}")
+
+    data = response.json().get("data") or []
+    if len(data) != len(batch):
+        raise EmbeddingError("embedding 服务返回的向量数量与输入不一致")
+    # OpenAI 兼容服务可能乱序返回，按 index 还原与输入一致的顺序
+    ordered: List[Optional[List[float]]] = [None] * len(batch)
+    for item in data:
+        idx = int(item.get("index", 0))
+        vector = list(map(float, item.get("embedding") or []))
+        if idx < 0 or idx >= len(batch) or not vector:
+            raise EmbeddingError("embedding 服务返回了空向量或非法 index")
+        ordered[idx] = vector
+    if any(v is None for v in ordered):
+        raise EmbeddingError("embedding 服务返回的向量数量与输入不一致或存在空向量")
+    return [v for v in ordered if v is not None]  # type: ignore[return-value]

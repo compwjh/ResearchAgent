@@ -13,17 +13,21 @@ Ollama 能力（`create_chat_model` / `get_available_models` / 直连流式）�
 意外打到真实模型。
 """
 
+import logging
 import time
 from typing import Dict, List, Optional
 
 from backend.app.platform import ollama as _ollama
 from backend.app.platform.config import OLLAMA_ROUTE
+from backend.app.platform.model_catalog import get_online_model
 from backend.app.platform.ollama import ChatRun
 from backend.app.platform.ollama_direct import (
     OllamaChatResult,
     OllamaTimings,
     chat_direct_stream,
 )
+
+logger = logging.getLogger(__name__)
 
 # Stable, non-user-controlled platform policy.  It is deliberately short and
 # contains no hidden chain-of-thought or request-specific content.
@@ -145,6 +149,16 @@ def run_chat(
     """
     resolved = (route or OLLAMA_ROUTE).strip().lower()
     if resolved != "direct":
+        resolved = "langchain"
+
+    # spec-035 Task05：direct 是 Ollama 专有直连链路；线上模型不在 Ollama 上，
+    # 必须强制回退到 langchain 路由（其 create_chat_model 已支持线上分发）。
+    if resolved == "direct" and get_online_model(model) is not None:
+        logger.debug(
+            "model %r is an online model; falling back to langchain route "
+            "(direct route is Ollama-only)",
+            model,
+        )
         resolved = "langchain"
 
     text = prompt if prompt is not None else question

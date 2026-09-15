@@ -15,6 +15,7 @@ Task07 会用 AST 静态检查强制）。因此这里只保留与业务无关�
 import contextlib
 import hashlib
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -29,6 +30,8 @@ from langchain_ollama import ChatOllama
 
 from backend.app.platform.config import OLLAMA_BASE_URL
 from backend.app.platform.ollama_direct import OllamaChatResult
+
+logger = logging.getLogger(__name__)
 
 REASONING_EFFORTS = ("off", "low", "medium", "high", "xhigh")
 _CAPABILITY_TTL_SECONDS = 300.0
@@ -201,7 +204,10 @@ def get_available_models() -> List[str]:
 
 
 def create_chat_model(model_name: str, *, reasoning: Optional[bool | str] = None) -> ChatOllama:
-    """创建本地 Ollama 会话模型。
+    """创建会话模型，按名称自动分发 provider（spec-035 Task03）。
+
+    命中线上注册表（`provider:model` 形式的 id）→ 返回 ``ChatOpenAI``；
+    否则 → 原样 ``ChatOllama``（行为零变化，见下）。
 
     `trust_env=False` 是必须的：httpx 默认会读取 macOS 系统代理配置，
     把指向 localhost:11434 的请求也送去代理，代理返回 503，表现为「无法连接 Ollama」。
@@ -212,7 +218,32 @@ def create_chat_model(model_name: str, *, reasoning: Optional[bool | str] = None
     `think: true` 会让 Ollama 返回 HTTP 400 `does not support thinking`；对思考模型
     （如 `qwen3.5:9b`）则会强制开启思维链、拖长响应。因此只有显式传入 True/False 时
     才下发该开关——KB 问答经 `run_chat(..., think=False)` 显式关闭思维链。
+
+    线上模型（ChatOpenAI）不支持 Ollama 专有的 `think` 开关；命中线上分支时
+    `reasoning` 参数被**忽略**并打 debug 日志，不影响构造。
     """
+    # 线上注册表分发：命中即返回 ChatOpenAI。
+    # 函数内延迟 import，避免与 model_catalog 形成循环依赖
+    # （model_catalog.is_model_available 会延迟 import 本模块的 get_available_models，
+    #  本函数又会延迟 import 其 get_online_model）。
+    try:
+        from backend.app.platform.model_catalog import get_online_model
+        entry = get_online_model(model_name)
+    except Exception:
+        entry = None
+
+    if entry is not None:
+        from langchain_openai import ChatOpenAI
+        if reasoning is not None:
+            logger.debug("线上模型不支持 think 参数，已忽略：%s", model_name)
+        return ChatOpenAI(
+            model=entry.model,
+            api_key=entry.api_key,
+            base_url=entry.base_url,
+            timeout=60.0,
+            max_retries=2,
+        )
+
     return ChatOllama(
         model=model_name,
         base_url=OLLAMA_BASE_URL,

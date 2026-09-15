@@ -1,5 +1,25 @@
+"""记忆仓储层契约（spec-038 新基线 schema 重置后）。
+
+背景
+----
+``memories`` / ``memory_evidence`` / ``system_rules`` 三张表已随 spec-038 停用：
+长期记忆的真相源迁移到 MD 文件（``MarkdownMemoryStore``）。本文件因此：
+
+- **保留**（与已删表无关，属真实回归保护）：schema 幂等与隔离、WAL、消息分页、
+  连接关闭语义、transaction 语义、raw_events 幂等、演进检查点重试/接管、
+  worker 消费 >1000 事件、摘要召回、conversation 绑定/解绑历史过滤、task-10 关闭连接；
+- **改写为 MD 等价路径**：原「记忆分页/隔离」「全局 vs 项目 scope 优先级」
+  「编辑版本化 + undo/delete 恢复」「项目删除级联」「证据跨项目校验」
+  「候选记忆晋升需证据」「候选+证据原子性」等 → 改为覆盖 ``MarkdownMemoryStore``
+  与 ``USER.md`` 的等价能力；
+- **改写为「重置后契约」**：原 v1→v7 迁移 / 损坏表 fail-closed 用例 → 改为
+  「旧库残留一律拒绝启动」「新基线包含哪些表」；
+- **删除**：仅服务于已删表且 MD 侧无等价物的用例（理由见 spec-038 任务报告）。
+"""
+
 import sqlite3
 import time
+from pathlib import Path
 
 import pytest
 
@@ -8,7 +28,11 @@ from backend.app.chat.application.conversation_service import (
     MemoryEvolutionWorker,
     compose_chat_prompt,
 )
+from backend.app.memory.markdown_store import MarkdownMemoryStore
+from backend.app.memory.migration import SCHEMA_VERSION
 from backend.app.memory.repository import MemoryRepository
+
+# ---------------------------------------------------------------- 基线 schema
 
 
 def test_sqlite_memory_schema_is_idempotent_and_isolated(tmp_path):
@@ -19,12 +43,70 @@ def test_sqlite_memory_schema_is_idempotent_and_isolated(tmp_path):
     # connection() 现在是 contextmanager：显式 with 才能拿到连接并在退出时关闭。
     with repo.connection() as db:
         assert db.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        assert db.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()["v"] == SCHEMA_VERSION
     project = repo.create_project("owner-a", "Demo")
     assert project.owner_id == "owner-a"
     assert repo.get_project(project.project_id, "owner-b") is None
 
 
-def test_memory_and_message_pagination_and_project_isolation(tmp_path):
+def test_baseline_creates_retained_tables_and_drops_retired_ones(tmp_path):
+    """新基线的表清单：保留表建出，停用表不得存在。"""
+    repo = MemoryRepository(tmp_path / "memory.sqlite3")
+    with repo.connection() as db:
+        tables = {row["name"] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    retained = {
+        "schema_version", "projects", "conversations", "messages", "processing_steps",
+        "raw_events", "conversation_summaries", "evolution_checkpoints",
+        "memory_analysis_jobs", "memory_analysis_items", "skill_improvement_proposals",
+        "user_chat_preferences", "conversation_segments", "conversation_compaction_jobs",
+        "conversation_active_skill",
+    }
+    assert retained <= tables
+    assert not ({"memories", "memory_evidence", "system_rules", "capability_methods"} & tables)
+
+
+def test_legacy_v7_database_is_rejected_and_requires_rebuild(tmp_path):
+    """按 spec-038 决策：旧迁移链已移除，老库残留一律 fail-closed 要求重建。"""
+    path = tmp_path / "legacy.sqlite3"
+    db = sqlite3.connect(path)
+    db.executescript(
+        """
+        CREATE TABLE schema_version(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+        INSERT INTO schema_version VALUES (7, '2026-09-01T00:00:00+00:00');
+        CREATE TABLE memories(memory_id TEXT PRIMARY KEY, statement TEXT NOT NULL);
+        INSERT INTO memories VALUES ('m1', 'legacy row');
+        """
+    )
+    db.commit()
+    db.close()
+
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        MemoryRepository(path)
+    # 失败必须整体回滚：旧行仍在，且没有半新 schema 残留（单事务保证）。
+    db = sqlite3.connect(path)
+    assert db.execute("SELECT count(*) FROM memories").fetchone()[0] == 1
+    assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 7
+    db.close()
+
+
+def test_fresh_database_rejects_future_schema_version(tmp_path):
+    """版本高于基线（未来 schema）同样拒绝启动。"""
+    path = tmp_path / "future.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE schema_version(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+    db.execute("INSERT INTO schema_version VALUES (?, '2099-01-01T00:00:00+00:00')", (SCHEMA_VERSION + 1,))
+    db.commit()
+    db.close()
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        MemoryRepository(path)
+
+
+# ---------------------------------------------------------------- 消息 / 分页
+
+
+def test_message_pagination_and_project_isolation(tmp_path):
+    """原 `test_memory_and_message_pagination_and_project_isolation` 的消息分页部分；
+    记忆隔离部分改写为 MD project 隔离（见 test_markdown_project_memory_is_isolated）。"""
     repo = MemoryRepository(tmp_path / "memory.sqlite3")
     project = repo.create_project("owner-a", "Demo")
     conversation = repo.create_conversation("owner-a", project.project_id, title="A")
@@ -34,134 +116,97 @@ def test_memory_and_message_pagination_and_project_isolation(tmp_path):
     assert batch[0].content == "message-3"
     assert len(batch) < 4
     assert cursor
-    memory = repo.create_memory(
-        owner_id="owner-a", scope="project", project_id=project.project_id,
-        category="project_rule", statement="Answer with the conclusion first.",
-        source_kind="explicit", confidence=0.99,
-    )
-    assert repo.list_memories("owner-b", project.project_id) == []
-    assert repo.list_memories("owner-a", project.project_id)[0].memory_id == memory.memory_id
+    assert repo.get_conversation(conversation.conversation_id, "owner-b") is None
 
 
-def test_processing_step_and_evidence_are_persisted(tmp_path):
+def test_processing_step_is_persisted(tmp_path):
+    """原 `test_processing_step_and_evidence_are_persisted` 的步骤部分（证据部分随表停用改写）。"""
     repo = MemoryRepository(tmp_path / "memory.sqlite3")
     project = repo.create_project("owner-a", "Demo")
     conversation = repo.create_conversation("owner-a", project.project_id)
     message = repo.create_message(conversation.conversation_id, "owner-a", "assistant", "ok")
     repo.create_processing_step(message.message_id, "memory_classification", "completed", "classified")
-    memory = repo.create_memory(
-        "owner-a", "project", project.project_id, "project_rule", "Rule", "explicit", 1.0
-    )
-    repo.create_memory_evidence(memory.memory_id, conversation.conversation_id, message.message_id, "user_statement", "Rule")
     assert repo.list_processing_steps(message.message_id, "owner-a")[0].summary == "classified"
-    assert repo.list_memory_evidence(memory.memory_id, "owner-a")[0].excerpt == "Rule"
 
 
-def test_global_memory_scopes_and_recall_priority(tmp_path):
-    repo = MemoryRepository(tmp_path / "memory.sqlite3")
-    project = repo.create_project("owner-a", "Demo")
-    global_memory = repo.create_memory(
-        "owner-a", "global", None, "user_preference", "Use concise answers", "explicit", 0.99
-    )
-    project_memory = repo.create_memory(
-        "owner-a", "project", project.project_id, "project_rule", "Use the project vocabulary", "manual", 1.0
-    )
-    assert [m.memory_id for m in repo.list_memories("owner-a", scope="global")] == [global_memory.memory_id]
-    assert [m.memory_id for m in repo.list_recall_memories("owner-a", project.project_id)] == [
-        global_memory.memory_id,
-        project_memory.memory_id,
-    ]
-    assert repo.list_recall_memories("owner-b", project.project_id) == []
+# ---------------------------------------------------------------- MD 等价路径
 
 
-def test_memory_edit_is_versioned_and_undo_delete_restores(tmp_path):
-    repo = MemoryRepository(tmp_path / "memory.sqlite3")
-    memory = repo.create_memory("owner-a", "global", None, "user_preference", "Old", "manual", 1.0)
-    edited = repo.update_memory(memory.memory_id, "owner-a", statement="New")
-    assert edited.memory_id != memory.memory_id
-    assert edited.supersedes_id == memory.memory_id
-    assert repo.get_memory(memory.memory_id, "owner-a").status == "superseded"
-    assert repo.delete_memory(edited.memory_id, "owner-a") is True
-    assert repo.list_memories("owner-a", scope="global") == []
-    restored = repo.undo_memory(edited.memory_id, "owner-a")
-    assert restored.status == "active"
+def test_markdown_global_and_project_memory_recall_priority(tmp_path):
+    """原 `test_global_memory_scopes_and_recall_priority` 的 MD 等价物。"""
+    store = MarkdownMemoryStore(tmp_path / "memory")
+    store.append_memory(scope="global", project_id=None, content="全局记忆UNIQUE")
+    store.append_memory(scope="project", project_id="proj-a", content="项目记忆UNIQUE")
+
+    snapshot = store.load_snapshot(project_id="proj-a", max_chars=6000)
+    assert "全局记忆UNIQUE" in snapshot and "项目记忆UNIQUE" in snapshot
+    # 项目记忆不泄漏到未绑定会话 / 其他项目。
+    assert "项目记忆UNIQUE" not in store.load_snapshot(project_id=None, max_chars=6000)
+    assert "项目记忆UNIQUE" not in store.load_snapshot(project_id="proj-b", max_chars=6000)
 
 
-def test_project_delete_cascades_project_data_but_keeps_global(tmp_path):
-    repo = MemoryRepository(tmp_path / "memory.sqlite3")
-    project = repo.create_project("owner-a", "Demo")
-    conversation = repo.create_conversation("owner-a", project.project_id)
-    project_memory = repo.create_memory("owner-a", "project", project.project_id, "project_rule", "P", "manual", 1.0)
-    global_memory = repo.create_memory("owner-a", "global", None, "stable_fact", "G", "manual", 1.0)
-    repo.create_message(conversation.conversation_id, "owner-a", "user", "hello", status="completed")
-    assert repo.delete_project(project.project_id, "owner-a") is True
-    assert repo.get_conversation(conversation.conversation_id, "owner-a") is None
-    assert repo.get_memory(project_memory.memory_id, "owner-a") is None
-    assert repo.get_memory(global_memory.memory_id, "owner-a") is not None
+def test_markdown_project_memory_is_isolated(tmp_path):
+    """原「记忆 owner/project 隔离」的 MD 等价物：project_id 白名单拒绝路径穿越。"""
+    store = MarkdownMemoryStore(tmp_path / "memory")
+    for bad in ("../evil", "a/b", "proj.a", ""):
+        with pytest.raises(ValueError):
+            store.append_memory(scope="project", project_id=bad, content="不应写入")
+    store.append_memory(scope="project", project_id="proj-a", content="合法项目记忆")
+    assert "合法项目记忆" in store.read_project("proj-a")
 
 
 def test_prompt_keeps_project_instructions_above_scoped_memory(tmp_path):
-    repo = MemoryRepository(tmp_path / "memory.sqlite3")
-    project = repo.create_project("owner-a", "Demo", instructions="Use the project terminology")
-    global_memory = repo.create_memory("owner-a", "global", None, "user_preference", "Be concise", "manual", 1.0)
-    project_memory = repo.create_memory("owner-a", "project", project.project_id, "project_rule", "Use examples", "manual", 1.0)
-    prompt = compose_chat_prompt("Question", [], [project_memory, global_memory], project.instructions)
-    assert prompt.index("项目明确指令") < prompt.index("用户全局记忆") < prompt.index("当前项目记忆") < prompt.index("用户当前问题")
+    """原 `test_prompt_keeps_project_instructions_above_scoped_memory`：装配顺序不变。
 
+    记忆入参改为 MD 快照（``memory_snapshot``），DB 记忆列表传空。
+    """
+    from types import SimpleNamespace
 
-def _make_v1_database(path):
-    db = sqlite3.connect(path)
-    db.executescript(
-        """
-        CREATE TABLE schema_version(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
-        INSERT INTO schema_version VALUES (1, '2026-01-01T00:00:00+00:00');
-        CREATE TABLE projects(project_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, name TEXT NOT NULL, instructions TEXT, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(owner_id, name));
-        CREATE TABLE conversations(conversation_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', memory_history_policy TEXT NOT NULL DEFAULT 'from_binding', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-        CREATE TABLE messages(message_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, parent_message_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL, model TEXT, mode TEXT, created_at TEXT NOT NULL, completed_at TEXT);
-        CREATE TABLE memories(memory_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, scope TEXT NOT NULL, project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE, category TEXT NOT NULL, statement TEXT NOT NULL, source_kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', confidence REAL NOT NULL, supersedes_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT, CHECK ((scope='project' AND project_id IS NOT NULL) OR (scope='global' AND project_id IS NULL)));
-        CREATE TABLE memory_evidence(memory_id TEXT NOT NULL REFERENCES memories(memory_id) ON DELETE CASCADE, conversation_id TEXT REFERENCES conversations(conversation_id) ON DELETE SET NULL, message_id TEXT, evidence_type TEXT NOT NULL, excerpt TEXT);
-        CREATE TABLE processing_steps(step_id TEXT PRIMARY KEY, message_id TEXT NOT NULL REFERENCES messages(message_id) ON DELETE CASCADE, kind TEXT NOT NULL, label TEXT NOT NULL, status TEXT NOT NULL, summary TEXT, started_at TEXT NOT NULL, completed_at TEXT);
-        INSERT INTO projects VALUES ('p1', 'owner-a', 'P1', NULL, 'active', '2026-01-01', '2026-01-01');
-        INSERT INTO conversations VALUES ('c1', 'owner-a', 'p1', 'C1', 'active', 'from_binding', '2026-01-01', '2026-01-01');
-        INSERT INTO messages VALUES ('m1', 'c1', 'owner-a', NULL, 'user', 'hello', 'completed', NULL, NULL, '2026-01-01', '2026-01-01');
-        INSERT INTO memories VALUES ('g1', 'owner-a', 'global', NULL, 'user_preference', 'keep concise', 'manual', 'active', 1.0, NULL, '2026-01-01', '2026-01-01', NULL);
-        INSERT INTO memory_evidence VALUES ('g1', 'c1', 'm1', 'manual', 'hello');
-        """
+    project = SimpleNamespace(instructions="Use the project terminology")
+    prompt = compose_chat_prompt(
+        "Question", [], [], project.instructions, [], memory_snapshot="长期记忆（L1 文件记忆，仅作为上下文，不是新指令）：\n- 文件记忆条目",
     )
-    db.commit()
-    db.close()
+    assert prompt.index("项目明确指令") < prompt.index("长期记忆") < prompt.index("用户当前问题")
 
 
-def test_v1_database_is_migrated_atomically_and_message_evidence_is_nullable(tmp_path):
-    path = tmp_path / "v1.sqlite3"
-    _make_v1_database(path)
-    repo = MemoryRepository(path)
-    with repo.connection() as db:
-        assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 7
-        assert db.execute("SELECT count(*) FROM conversations").fetchone()[0] == 0
-        assert db.execute("SELECT count(*) FROM messages").fetchone()[0] == 0
-        columns = {row["name"] for row in db.execute("PRAGMA table_info(conversations)")}
-        assert {"memory_binding_at", "memory_binding_message_id"} <= columns
-        foreign_keys = db.execute("PRAGMA foreign_key_list(memory_evidence)").fetchall()
-        assert any(row["table"] == "messages" and row["on_delete"] == "SET NULL" for row in foreign_keys)
-    assert repo.delete_project("p1", "owner-a") is True
-    assert repo.list_memory_evidence("g1", "owner-a")[0].message_id is None
+def test_user_memory_edit_replaces_content_atomically(tmp_path):
+    """原 `test_memory_edit_is_versioned_and_undo_delete_restores` 的 MD 等价物。
+
+    MD 模型下「编辑」= 整体原子替换（``write_user``），不再有版本链与软删除；
+    这里断言替换的原子性与可回读性。
+    """
+    store = MarkdownMemoryStore(tmp_path / "memory")
+    store.write_user("旧画像")
+    assert store.read_user().strip() == "旧画像"
+    store.write_user("新画像")
+    assert store.read_user().strip() == "新画像"
+    # 写入是「临时文件 + os.replace」原子替换，不得残留临时文件。
+    leftovers = [p.name for p in (tmp_path / "memory").iterdir() if p.name.startswith(".tmp-")]
+    assert leftovers == []
 
 
-def test_v1_migration_failure_rolls_back_and_fails_closed(tmp_path, monkeypatch):
-    path = tmp_path / "v1-failure.sqlite3"
-    _make_v1_database(path)
+def test_markdown_snapshot_budget_keeps_newest_entries(tmp_path):
+    """原「记忆预算截断」用例的 MD 等价物：超预算保留较新条目。"""
+    store = MarkdownMemoryStore(tmp_path / "memory")
+    for index in range(50):
+        store.append_memory(scope="global", project_id=None, content=f"条目{index:03d}-{'y' * 50}")
+    snapshot = store.load_snapshot(project_id=None, max_chars=300)
+    assert len(snapshot) <= 300
+    assert "条目049" in snapshot
+    assert "条目000" not in snapshot
 
-    def fail_migration(_connection):
-        raise RuntimeError("injected migration failure")
 
-    monkeypatch.setattr(MemoryRepository, "_migrate_v1_to_v2", staticmethod(fail_migration))
-    with pytest.raises(RuntimeError, match="fail-closed"):
-        MemoryRepository(path)
-    db = sqlite3.connect(path)
-    assert db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 1
-    assert "memory_binding_at" not in {row[1] for row in db.execute("PRAGMA table_info(conversations)")}
-    db.close()
+# ---------------------------------------------------------------- 会话 / 项目
+
+
+def test_project_delete_cascades_project_data_but_keeps_global(tmp_path):
+    """原用例保留：级联删除的是会话/消息（记忆部分由 MD 承载）。"""
+    repo = MemoryRepository(tmp_path / "memory.sqlite3")
+    project = repo.create_project("owner-a", "Demo")
+    conversation = repo.create_conversation("owner-a", project.project_id)
+    repo.create_message(conversation.conversation_id, "owner-a", "user", "hello", status="completed")
+    assert repo.delete_project(project.project_id, "owner-a") is True
+    assert repo.get_conversation(conversation.conversation_id, "owner-a") is None
 
 
 def test_project_move_requires_confirmation_and_filters_from_binding_history(tmp_path):
@@ -170,35 +215,16 @@ def test_project_move_requires_confirmation_and_filters_from_binding_history(tmp
     p2 = repo.create_project("owner-a", "P2")
     conversation = repo.create_conversation("owner-a", p1.project_id)
     old = repo.create_message(conversation.conversation_id, "owner-a", "user", "P1 secret", status="completed")
-    project_memory = repo.create_memory("owner-a", "project", p1.project_id, "project_rule", "P1 only", "manual", 1.0)
-    repo.create_memory_evidence(project_memory.memory_id, conversation.conversation_id, old.message_id, "manual", "P1 secret")
     with pytest.raises(ValueError, match="confirmation"):
         repo.update_conversation(conversation.conversation_id, "owner-a", project_id=p2.project_id)
     moved = repo.update_conversation(conversation.conversation_id, "owner-a", project_id=p2.project_id, confirm_move=True)
     assert moved.project_id == p2.project_id and moved.memory_binding_at is not None
-    assert repo.list_memory_evidence(project_memory.memory_id, "owner-a")[0].conversation_id is None
     assert [message.message_id for message in repo.list_context_messages(conversation.conversation_id, "owner-a")] == []
     repo.create_message(conversation.conversation_id, "owner-a", "user", "P2 new", status="completed")
     assert old.message_id not in {message.message_id for message in repo.list_context_messages(conversation.conversation_id, "owner-a")}
     included = repo.update_conversation(conversation.conversation_id, "owner-a", memory_history_policy="include_prior_history", confirm_move=True)
     assert {message.content for message in repo.list_context_messages(conversation.conversation_id, "owner-a")} == {"P1 secret", "P2 new"}
     assert included.memory_history_policy == "include_prior_history"
-
-
-def test_memory_evidence_rejects_cross_project_but_allows_global(tmp_path):
-    repo = MemoryRepository(tmp_path / "evidence-scope.sqlite3")
-    p1 = repo.create_project("owner-a", "P1")
-    p2 = repo.create_project("owner-a", "P2")
-    c1 = repo.create_conversation("owner-a", p1.project_id)
-    c2 = repo.create_conversation("owner-a", p2.project_id)
-    m2 = repo.create_message(c2.conversation_id, "owner-a", "user", "P2", status="completed")
-    project_memory = repo.create_memory("owner-a", "project", p1.project_id, "project_rule", "P1 rule", "manual", 1.0)
-    with pytest.raises(ValueError, match="project mismatch"):
-        repo.create_memory_evidence(project_memory.memory_id, c2.conversation_id, m2.message_id, "manual", "P2")
-    global_memory = repo.create_memory("owner-a", "global", None, "user_preference", "global rule", "manual", 1.0)
-    repo.create_memory_evidence(global_memory.memory_id, c2.conversation_id, m2.message_id, "manual", "P2")
-    with pytest.raises(LookupError, match="message not found"):
-        repo.create_memory_evidence(project_memory.memory_id, c1.conversation_id, m2.message_id, "manual", "wrong message")
 
 
 def test_unbinding_keeps_cutoff_and_allows_only_later_unbound_history(tmp_path):
@@ -212,6 +238,9 @@ def test_unbinding_keeps_cutoff_and_allows_only_later_unbound_history(tmp_path):
     later = repo.create_message(conversation.conversation_id, "owner-a", "user", "unbound question", status="completed")
     context_ids = {message.message_id for message in repo.list_context_messages(conversation.conversation_id, "owner-a")}
     assert context_ids == {later.message_id} and old.message_id not in context_ids
+
+
+# ---------------------------------------------------------------- 演进 / 摘要
 
 
 def test_raw_events_are_append_only_and_duplicate_trigger_is_idempotent(tmp_path):
@@ -243,7 +272,9 @@ def test_evolution_checkpoint_restarts_and_retries_without_duplicate_summary(tmp
     assert len(summaries) == 1 and len(summaries[0].summary_text) <= 80
 
 
-def test_evolution_session_mutex_and_candidate_promotion_require_evidence(tmp_path):
+def test_evolution_session_mutex_prevents_concurrent_runs(tmp_path):
+    """原 `..._and_candidate_promotion_require_evidence` 的会话互斥部分保留；
+    候选记忆晋升部分随 ``memories`` 停用删除（MD 无「候选晋升」概念）。"""
     repo = MemoryRepository(tmp_path / "evolution.sqlite3")
     project = repo.create_project("owner-a", "P")
     conversation = repo.create_conversation("owner-a", project.project_id)
@@ -251,55 +282,15 @@ def test_evolution_session_mutex_and_candidate_promotion_require_evidence(tmp_pa
     assert service.try_session_lock(conversation.conversation_id) is True
     assert service.try_session_lock(conversation.conversation_id) is False
     service.release_session_lock(conversation.conversation_id)
-    candidate = repo.create_memory("owner-a", "project", project.project_id, "project_rule", "候选", "repeated", 0.7, status="candidate")
-    with pytest.raises(ValueError, match="evidence"):
-        repo.promote_memory(candidate.memory_id, "owner-a")
-    repo.append_raw_event("owner-a", conversation.conversation_id, "user_correction", {"replacement": "候选"}, idempotency_key="correction-1")
-    repo.create_memory_evidence(candidate.memory_id, conversation.conversation_id, None, "user_statement", "候选")
-    promoted = repo.promote_memory(candidate.memory_id, "owner-a")
-    assert promoted.status == "active" and promoted.scope == "project"
 
 
-def test_evolution_scope_isolation_conflict_supersedes_and_budgeted_recall(tmp_path):
-    repo = MemoryRepository(tmp_path / "evolution.sqlite3")
-    p1 = repo.create_project("owner-a", "P1")
-    p2 = repo.create_project("owner-a", "P2")
-    c1 = repo.create_conversation("owner-a", p1.project_id)
-    repo.append_raw_event("owner-a", c1.conversation_id, "user_message", {"content": "数据库偏好"}, idempotency_key="s1")
-    MemoryEvolutionService(repo, batch_size=10, summary_budget_chars=40).process_session(c1.conversation_id, "owner-a", trigger="idle")
-    repo.create_memory("owner-a", "global", None, "user_preference", "全局", "manual", 1.0)
-    project_memory = repo.create_memory("owner-a", "project", p1.project_id, "project_rule", "项目规则", "manual", 1.0)
-    recall = repo.list_recall_context("owner-a", p1.project_id, char_budget=20)
-    assert recall["memories"] and all(len(item.statement) <= 1000 for item in recall["memories"])
-    assert repo.list_recall_context("owner-a", p2.project_id, char_budget=200)["summaries"] == []
-    edited = repo.update_memory(project_memory.memory_id, "owner-a", statement="新项目规则")
-    assert edited.supersedes_id == project_memory.memory_id
-    assert repo.get_memory(project_memory.memory_id, "owner-a").status == "superseded"
-
-
-def test_correction_candidate_uses_superseded_chain_only_when_promoted(tmp_path):
-    repo = MemoryRepository(tmp_path / "correction.sqlite3")
+def test_summary_recall_without_match_is_empty(tmp_path):
+    repo = MemoryRepository(tmp_path / "summary-match.sqlite3")
     project = repo.create_project("owner-a", "P")
     conversation = repo.create_conversation("owner-a", project.project_id)
-    previous = repo.create_memory("owner-a", "project", project.project_id, "project_rule", "旧规则", "manual", 1.0)
-    repo.append_raw_event("owner-a", conversation.conversation_id, "user_correction", {"replacement": "新规则"}, message_id=None, idempotency_key="correction")
-    service = MemoryEvolutionService(repo, batch_size=10)
-    service.process_session(conversation.conversation_id, "owner-a", trigger="user_correction")
-    candidate = next(item for item in repo.list_memories("owner-a", project.project_id, scope="project", status="candidate") if item.statement == "新规则")
-    assert candidate.supersedes_id == previous.memory_id
-    assert repo.get_memory(previous.memory_id, "owner-a").status == "active"
-    repo.promote_memory(candidate.memory_id, "owner-a")
-    assert repo.get_memory(previous.memory_id, "owner-a").status == "superseded"
-
-
-def test_v3_malformed_table_fails_closed_at_startup(tmp_path):
-    path = tmp_path / "malformed-v3.sqlite3"
-    repo = MemoryRepository(path)
-    with repo.transaction() as db:
-        db.execute("DROP TABLE raw_events")
-        db.execute("CREATE TABLE raw_events(event_id TEXT PRIMARY KEY)")
-    with pytest.raises(RuntimeError, match="fail-closed"):
-        MemoryRepository(path)
+    repo.upsert_conversation_summary("owner-a", conversation.conversation_id, "关于数据库索引的摘要")
+    assert repo.list_recall_summaries("owner-a", project.project_id, query="完全不相关", budget_chars=1000) == []
+    assert repo.list_recall_summaries("owner-a", project.project_id, query="数据库", budget_chars=1000)
 
 
 def test_raw_event_message_and_cursor_must_belong_to_same_conversation(tmp_path):
@@ -349,25 +340,6 @@ def test_evolution_worker_consumes_more_than_1000_events_and_recovers(tmp_path):
     all_events = repo.list_raw_events(conversation.conversation_id, "owner-a", limit=5000)
     assert checkpoint.state["input_last_event_id"] == all_events[-1].event_id
     assert repo.list_conversation_summaries(conversation.conversation_id, "owner-a")[0].source_event_id == checkpoint.state["input_last_event_id"]
-
-
-def test_candidate_and_evidence_are_atomic(tmp_path, monkeypatch):
-    repo = MemoryRepository(tmp_path / "candidate-atomic.sqlite3")
-    project = repo.create_project("owner-a", "P")
-    def fail_evidence(*_args):
-        raise RuntimeError("evidence failure")
-    monkeypatch.setattr(repo, "_insert_memory_evidence", fail_evidence)
-    with pytest.raises(RuntimeError, match="evidence failure"):
-        repo.create_memory("owner-a", "project", project.project_id, "project_rule", "atomic", "repeated", 0.7, status="candidate", evidence=(None, None, "manual", "atomic"))
-    assert repo.list_memories("owner-a", project.project_id, scope="project", status="candidate") == []
-
-
-def test_summary_recall_without_match_is_empty(tmp_path):
-    repo = MemoryRepository(tmp_path / "summary-match.sqlite3")
-    project = repo.create_project("owner-a", "P")
-    conversation = repo.create_conversation("owner-a", project.project_id)
-    repo.upsert_conversation_summary("owner-a", conversation.conversation_id, "关于数据库索引的摘要")
-    assert repo.list_recall_summaries("owner-a", project.project_id, query="完全不相关", budget_chars=1000) == []
 
 
 # ---------------------------------------------------------------------------

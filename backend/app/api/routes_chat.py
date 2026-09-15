@@ -13,14 +13,14 @@ from backend.app.api.schemas import (
     ChatRequest,
 )
 from backend.app.chat.application.chat_runner import build_role_aware_messages, run_chat
-from backend.app.memory.repository import OWNER_ID
-from backend.app.platform.bootstrap import get_provider
+from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.platform.config import (
     MODEL_NAME,
     SKILL_TOOL_MAX_ROUNDS,
     SKILL_TOOL_RETRY,
     SKILL_TOOL_TIMEOUT_SECONDS,
 )
+from backend.app.platform.model_catalog import is_online_model
 from backend.app.platform.observability import (
     flush,
     prompt_observation_metadata,
@@ -62,8 +62,11 @@ def chat(request: ChatRequest):
     try:
         available_models: List[str] = get_available_models()
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
-    if request.model not in available_models:
+        # Ollama 不可达：线上模型仍可用，仅当模型既非线上也非本地时才报 502
+        if not is_online_model(request.model):
+            raise HTTPException(status_code=502, detail="无法连接 Ollama 服务") from error
+        available_models = []
+    if request.model not in available_models and not is_online_model(request.model):
         raise HTTPException(status_code=400, detail=f"模型 {request.model} 不存在，请从已安装模型中选择")
 
     selected_model = request.model
@@ -72,14 +75,9 @@ def chat(request: ChatRequest):
         started = utc_now()
         wall_start = time.perf_counter()
 
-        # —— 记忆库 system-rule（main / Task09 / Task10 能力）——
-        try:
-            rule = get_provider("memory_repository").get_system_rule(OWNER_ID)
-        except Exception:
-            yield stream_event("meta", model=selected_model, mode=request.mode)
-            yield stream_event("error", code="SYSTEM_RULE_UNAVAILABLE", message="系统规则暂时不可用", retryable=True)
-            yield stream_event("done", status="failed")
-            return
+        # —— 用户全局指令：spec-038 P1 起改读 L1 文件记忆 USER.md ——
+        # fail-open：文件缺失/读取失败一律降级为空串，绝不中断对话。
+        user_memory = read_user_memory_or_empty()
 
         # —— Skill 识别（双触发：规则 + LLM）；异常一律降级为无技能，绝不阻断对话 ——
         decision: SkillDecision = SkillDecision(status="none")
@@ -98,15 +96,15 @@ def chat(request: ChatRequest):
             if detail is not None:
                 prompt = _skill_intent.build_skill_prompt(question, detail.body)
 
-        # 组合本次对话消息：记忆库 system-rule + （命中 Skill 时）技能正文
+        # 组合本次对话消息：USER.md 全局指令 + （命中 Skill 时）技能正文
         prompt_messages = build_role_aware_messages(
-            question, system_rule=rule.content if rule.enabled else None
+            question, system_rule=user_memory or None
         )
         if prompt is not None:
             prompt_messages.append({"role": "system", "content": prompt})
         observation_messages = redact_prompt_messages(prompt_messages)
         observation_metadata = prompt_observation_metadata(
-            prompt_messages, system_rule_enabled=bool(rule.enabled and rule.content)
+            prompt_messages, system_rule_enabled=bool(user_memory)
         )
 
         yield stream_event("meta", model=selected_model, mode=request.mode)
