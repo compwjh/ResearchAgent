@@ -1829,11 +1829,19 @@ const RESEARCH_PLAN_FIELDS = [
 const RESEARCH_APPROVAL_LABELS = {
   plan: '计划审批', capability_override: '能力审批', resource_extension: '资源扩容审批',
 };
+const RESEARCH_APPROVAL_STATUS_LABELS = {
+  pending: '待处理', approved: '已批准', rejected: '已拒绝', cancelled: '已取消', superseded: '已被替代',
+};
 const RESEARCH_COMMAND_LABELS = {
   approve_plan: '批准计划', approve_capability: '批准能力', approve_resource_extension: '批准资源扩容',
   revise_plan: '修改计划', cancel_research: '取消研究', decline_request: '拒绝请求',
 };
 const RESEARCH_APPROVAL_STATES = new Set(['pending', 'approved', 'rejected', 'cancelled', 'superseded']);
+
+function researchApprovalStatusText(status) {
+  const normalized = String(status || 'pending').toLowerCase();
+  return RESEARCH_APPROVAL_STATUS_LABELS[normalized] || '已处理';
+}
 
 function parseResearchProjection(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -2055,7 +2063,7 @@ function renderConversationApprovals(panel, approvals, plan) {
     const kind = approval.kind;
     const card = document.createElement('article'); card.className = 'conversation-research-approval'; card.dataset.kind = kind; card.dataset.status = approval.status || 'pending';
     const heading = document.createElement('strong'); heading.className = 'conversation-research-approval-title'; heading.textContent = RESEARCH_APPROVAL_LABELS[kind];
-    const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = approval.status === 'pending' ? '待处理' : `已${approval.status}`;
+    const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = researchApprovalStatusText(approval.status);
     const meta = document.createElement('span'); meta.className = 'conversation-research-approval-meta'; meta.textContent = `版本 v${safeResearchScalar(approval.subject_version, '—')} · ${safeResearchScalar(approval.approval_request_id, '无 ID')}`;
     const controls = document.createElement('div'); controls.className = 'conversation-research-approval-actions';
     const approveCommand = kind === 'plan' ? 'approve_plan' : kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
@@ -2076,7 +2084,10 @@ function renderConversationApprovals(panel, approvals, plan) {
       }));
       decline.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'decline_request', approval.subject_version, researchCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
     }
-    controls.append(approve, decline); card.append(heading, status, meta, controls); container.appendChild(card);
+    if (pending) controls.append(approve, decline);
+    card.append(heading, status, meta);
+    if (pending) card.appendChild(controls);
+    container.appendChild(card);
   });
 }
 

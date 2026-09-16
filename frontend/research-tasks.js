@@ -67,6 +67,12 @@
     ['report_structure', '报告结构'], ['safety_summary', '降级策略'],
   ];
   const SESSION_APPROVAL_LABELS = { plan: '计划审批', capability_override: '能力审批', resource_extension: '资源扩容审批' };
+  const SESSION_APPROVAL_STATUS_LABELS = {
+    pending: '待处理', approved: '已批准', rejected: '已拒绝', cancelled: '已取消', superseded: '已被替代',
+  };
+  function sessionApprovalStatusText(status) {
+    return SESSION_APPROVAL_STATUS_LABELS[String(status || 'pending').toLowerCase()] || '已处理';
+  }
   const SESSION_COMMAND_LABELS = {
     approve_plan: '批准计划', revise_plan: '修改计划', cancel_research: '取消研究',
     approve_capability: '批准能力', approve_resource_extension: '批准资源扩容', decline_request: '拒绝请求',
@@ -1025,7 +1031,7 @@
     (Array.isArray(approvals) ? approvals : []).filter((approval) => approval && Object.prototype.hasOwnProperty.call(SESSION_APPROVAL_LABELS, approval.kind)).forEach((approval) => {
       const card = state.document.createElement('article'); card.className = 'research-session-approval'; card.dataset.kind = approval.kind; card.dataset.status = approval.status || 'pending';
       const title = state.document.createElement('strong'); title.className = 'research-session-approval-title'; title.textContent = SESSION_APPROVAL_LABELS[approval.kind];
-      const status = state.document.createElement('span'); status.className = 'research-session-approval-status'; status.textContent = approval.status === 'pending' ? '待处理' : `已${approval.status}`;
+      const status = state.document.createElement('span'); status.className = 'research-session-approval-status'; status.textContent = sessionApprovalStatusText(approval.status);
       const meta = state.document.createElement('span'); meta.className = 'research-session-approval-meta'; meta.textContent = `版本 v${text(approval.subject_version, '—')} · ${safeSessionValue(approval.approval_request_id, '无 ID')}`;
       const actions = state.document.createElement('div'); actions.className = 'research-session-approval-actions';
       const command = approval.kind === 'plan' ? 'approve_plan' : approval.kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
@@ -1036,7 +1042,10 @@
         approve.addEventListener('click', () => submitSessionCommand(sessionId, command, approval.subject_version || subjectVersion, sessionCommandScope(command, approval, plan), approve, async (result) => { status.textContent = '已完成'; card.dataset.status = 'approved'; await mergeSessionCommandResult(result, sessionId); }));
         decline.addEventListener('click', () => submitSessionCommand(sessionId, 'decline_request', approval.subject_version || subjectVersion, sessionCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
       }
-      actions.append(approve, decline); card.append(title, status, meta, actions); container.appendChild(card);
+      if (pending) actions.append(approve, decline);
+      card.append(title, status, meta);
+      if (pending) card.appendChild(actions);
+      container.appendChild(card);
     });
   }
 

@@ -51,3 +51,10 @@
 - 前端资源更新为 `app.js?v=52`、`styles.css?v=52`。
 
 定向验证：`node --check frontend/app.js` 与 `tests/test_frontend_spec034_approval_guidance.py` 通过。
+
+## 追加修复：已批准审批仍显示决策按钮
+
+审批卡此前对非 `pending` 状态只禁用按钮，没有移除按钮，导致已批准计划仍显示“批准计划/拒绝”，
+并把英文状态直接拼成“已approved”。现已改为：已决策审批只显示中文结果，只有 `pending` 才渲染决策按钮；
+聊天页与研究工作台统一使用“已批准/已拒绝/已取消/已被替代”等状态文案。研究工作台资源更新为
+`research-tasks.js?v=7`。

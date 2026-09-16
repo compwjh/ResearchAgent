@@ -20,6 +20,9 @@ def test_approve_plan_explains_queue_and_follow_up_stages() -> None:
 def test_approval_success_disables_the_other_decision() -> None:
     assert "controls.querySelectorAll('button').forEach" in APP
     assert "status.textContent = approveCommand === 'approve_plan' ? '已批准'" in APP
+    assert "if (pending) card.appendChild(controls)" in APP
+    assert "approved: '已批准'" in APP
+    assert "approved: '已批准'" in (ROOT / "frontend/research-tasks.js").read_text(encoding="utf-8")
 
 
 def test_approval_guidance_uses_accessible_scoped_dom_and_cache_bump() -> None:
