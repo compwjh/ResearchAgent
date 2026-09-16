@@ -10,9 +10,9 @@
 
 ## 结论
 
-**通过（附文档收口条件）**。Spec028 的目标、范围、数据对象、状态/失败边界和明确不做项能够映射到已完成的 Task02–05 实现；Task06 又补齐了 `recover` API/UI 的安全检查闭环。需求层没有发现新增 P0/P1 矛盾。
+**通过。** Spec028 的目标、范围、数据对象、状态/失败边界和明确不做项能够映射到 Task02–06 实现；Task06 已补齐 `recover` API/UI 与 `GET /api/research-scheduler/status` 调度状态摘要，需求验收条件满足。
 
-本结论不等同于 Spec028 已完成：Spec 的“产品使用步骤”仍需由主 Agent 按最终实现回写为可操作旅程，且真实服务 smoke、部署和最终状态台账仍待主 Agent 完成。本文不把尚未运行的浏览器验证记为通过。
+本结论与 Spec028 的产品使用步骤、自动化回归和本机部署 smoke 一致；In-app Browser 对本机地址的客户端阻断作为环境限制单独记录，不改变服务端需求验收结论。
 
 ## 需求—证据核对
 
@@ -24,6 +24,7 @@
 | pause/resume/cancel 与终态不可逆 | Task04 报告：状态 CAS、暂停/恢复、取消时收敛活动 WorkItem；Task05/06 前端合同覆盖状态权限、失败/冲突和防重复 | 通过 |
 | 计划版本与人工审批不覆盖历史 | Task04 报告：计划版本原子追加、旧版本回调返回 `PLAN_VERSION_STALE`、审批幂等键冲突稳定拒绝；Task05 报告覆盖 legacy approve 与 Session approval 入口 | 通过 |
 | `/recover` 安全检查、checkpoint 校验、未知外部调用不自动重放 | Task06 `recovery-api-ui-report.md`：服务层/路由/前端入口已补齐；4 条 recovery 定向测试通过；实现明确不重开 `interrupted` 终态、不伪造未知结果 | 通过 |
+| `GET /api/research-scheduler/status` 调度状态摘要 | 已接线并由 ResearchScheduler 聚合现有任务、租约和资源预约；8500 实测 HTTP 200 | 通过 |
 | 不新增来源、下载、报告编辑器、跨机器调度或自动批准 | Task03–06 报告与代码边界均保持在调度、计划、审批、恢复和 UI；未引入第二套任务状态机 | 通过 |
 
 ## 产品使用旅程（供 Spec 回写）
@@ -39,9 +40,9 @@
 ## 文档门禁与剩余条件
 
 - 本需求评审本身已落盘，路径为 `docs/sdd/reviews/028-requirement-review.md`。
-- `docs/sdd/specs/028-research-task-durable-scheduling.md` 的产品使用步骤仍是占位文本；主 Agent 应将上面旅程压缩回 Spec，并同步评审记录状态。
-- Spec 当前仍为“实施中（Task06 最终评审、回归与部署）”；本评审不擅自修改 Spec 状态。
-- 真实浏览器点击、窄屏可达性、服务启动后的 API/UI smoke 未在本轮运行，不能写成“浏览器验收通过”。
+- `docs/sdd/specs/028-research-task-durable-scheduling.md` 已回写暂停、审批、取消、恢复和重启后检查的产品步骤。
+- Spec 状态已由主 Agent同步为“已完成”；定向/全量回归与部署 smoke 证据已落盘。
+- In-app Browser 的本机地址阻断不等同于服务端接口失败；前端状态合同与错误/防重复行为由 Task05/06 测试覆盖。
 
 ## 评审依据
 
@@ -51,3 +52,11 @@
 - [`docs/sdd/plans/028/artifacts/task-05/frontend-report.md`](../plans/028/artifacts/task-05/frontend-report.md)
 - [`docs/sdd/plans/028/artifacts/task-06/recovery-api-ui-report.md`](../plans/028/artifacts/task-06/recovery-api-ui-report.md)
 
+## 2026-09-16 收口复核补充
+
+- 本轮完成 scheduler status 后端实现与文档收口，并执行重启后的定向验证。
+- 定向命令：`.venv/bin/python -m pytest --noconftest -q tests/test_spec028_scheduler_status.py tests/test_spec028_runtime_contract.py tests/test_spec028_scheduler_lease_recovery.py tests/test_spec028_hitl.py tests/test_spec028_recovery_api_ui.py tests/test_frontend_spec028_task05_contract.py`；退出码 `0`，`24 passed`。
+- `node --check frontend/research-tasks.js` 与 `git diff --check` 均退出码 `0`。
+- 重启后只读服务复核：`/api/health`、`/`、`/api/research-scheduler/status` 均 HTTP `200`、退出码 `0`；scheduler 返回 queue/quota/safety 聚合且不含租约 token。In-app Browser 对本机地址可能返回 `ERR_BLOCKED_BY_CLIENT`，属客户端环境限制。
+
+复核结论更新为通过：scheduler status 已补齐，产品步骤、测试结果、部署 smoke 和状态台账均已同步。

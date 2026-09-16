@@ -64,3 +64,30 @@ git diff --check
 - 模型：当前执行 Agent（Luna high，按父 Agent 分派信息）
 - token：工具侧未提供可核实的独立 token 统计
 - tool：读取/检索、补丁编辑、pytest、Node 语法检查、git diff 检查
+
+## 2026-09-16 收口复核追加
+
+### 结果状态和摘要
+
+**补缺自动化回归通过；scheduler status P1 已修复。** 本轮保留 `/recover` 的安全检查语义，并补齐状态聚合读取接口。
+
+### 改动文件
+
+- 更新 Spec028 评审与 Task06 收口文档；scheduler status 业务实现和定向测试见本次代码提交。
+
+### 测试命令 / 退出码 / 结果
+
+- 六个 Spec028 相关 pytest 文件定向集合 → 退出码 `0`，`24 passed`。
+- `node --check frontend/research-tasks.js` → 退出码 `0`。
+- `git diff --check` → 退出码 `0`。
+
+### 运行时复核与产物
+
+- 8500 服务重启后经沙箱外只读 curl，health、首页和 `/api/research-scheduler/status` 均退出码 `0` / HTTP `200`；scheduler 返回 queue/quota/safety 聚合且不泄露租约 token；In-app Browser 对本机地址可能被 `ERR_BLOCKED_BY_CLIENT` 阻断。
+- 本报告、`review-report.md`、`runtime-smoke.md` 及三份 `docs/sdd/reviews/028-*.md` 为本轮文档产物。
+
+### 决策依据、风险与主 Agent 后续动作
+
+自动化证据支持 `/recover` 与 scheduler status 实现，重启后的 health/API smoke 也通过；持久化 lease/checkpoint 恢复语义由 Task02/03/06 定向测试覆盖，Spec028 收口为 GO。真实 Ollama 长任务与客户端浏览器限制作为后续环境验证项，不引入第二套调度实现。
+
+复核时间：2026-09-16 22:53 CST；独立 token 统计不可用；模型为当前临时 Luna high。

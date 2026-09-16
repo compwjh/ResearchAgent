@@ -542,6 +542,14 @@ class ResearchService:
         )
         return summary
 
+    def scheduler_status(self) -> dict:
+        """Return the durable scheduler's safe aggregate status projection."""
+        # Keep status assembly on the existing scheduler service; this method
+        # is only the ResearchService application seam used by the API.
+        from backend.app.research.application.scheduler import ResearchScheduler
+
+        return ResearchScheduler(self._store, recover_on_start=False).status()
+
     def _validate_resume_checkpoint(self, task: ResearchTask, checkpoint: dict) -> None:
         """Validate an optional scheduler checkpoint without executing it."""
         if not isinstance(checkpoint, dict):

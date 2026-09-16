@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（Task06 最终评审、回归与部署）**
+**当前状态：已完成**
 
 ## 一句话目标
 
@@ -59,9 +59,13 @@
 - 强制终止服务后可以从 checkpoint 继续，完成节点不重复执行。
 - 多任务公平性与资源预约不超卖；开发 Task 定向测试，最终 Task 一次全量回归和部署。
 
-## 产品使用步骤（由产品经理在 Spec 确认后填写）
+## 产品使用步骤
 
-- 待确认后补充暂停、批准、继续、取消和恢复旅程。
+1. 用户在 Research Task 详情页查看队列、运行、等待审批、暂停和中断状态；调度状态摘要可通过 `GET /api/research-scheduler/status` 查看。
+2. 任务运行时可点击“暂停研究”，进入 `paused` 后点击“继续研究”；计划需要人工确认时批准或拒绝，补充范围会生成新版本。
+3. 用户可取消尚未完成的任务；系统停止派发新节点并保留已完成证据，终态不会重新变为运行中。
+4. 任务处于 `interrupted` 或 `recovery_required` 时点击“检查并恢复”；系统清理过期租约/预约并返回 checkpoint 与 WorkItem 摘要，不自动重放结果未知的外部调用。
+5. 服务重启后通过调度状态与任务详情确认租约、checkpoint、资源预约和任务终态仍与 SQLite 中的持久化记录一致。
 
 ## 执行配置
 
@@ -82,16 +86,17 @@
 | 03 | 实现全局调度、租约与恢复 | [`task-03-scheduler-lease-recovery.md`](../plans/028/task-03-scheduler-lease-recovery.md) | 02 | 已完成 |
 | 04 | 实现计划版本、暂停取消与审批 | [`task-04-plan-version-hitl.md`](../plans/028/task-04-plan-version-hitl.md) | 03 | 已完成 |
 | 05 | 实现恢复与审批界面 | [`task-05-recovery-approval-ui.md`](../plans/028/task-05-recovery-approval-ui.md) | 04 | 已完成 |
-| 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/028/task-06-review-regression-deploy.md) | 02–05 | 实施中 |
+| 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/028/task-06-review-regression-deploy.md) | 02–05 | 已完成 |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/028-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/028-tech-review.md`（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/028-acceptance-review.md`（待评审（未执行））
+- 需求评审：`docs/sdd/reviews/028-requirement-review.md`（通过）
+- 技术评审：`docs/sdd/reviews/028-tech-review.md`（通过）
+- 验收评审：`docs/sdd/reviews/028-acceptance-review.md`（通过）
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-12 | 架构师（自身） | 创建可靠调度、计划版本和恢复 Spec |
+| 2026-09-16 | 架构师（自身） | 补齐 scheduler status 聚合接口；完成定向回归、全量回归、部署 smoke 与收口评审，Spec 标记为已完成 |

@@ -331,3 +331,5 @@
 - **029 Research Task 全文获取与知识库联动 — Task06** ｜ 待执行 → **实施中** ｜ 2026-09-16：完成三份评审、全量回归和服务页面 smoke；真实公开 PDF/KB 导入与全文证据仍未执行，验收保持 NO-GO。
 - **034 会话式深度研究与真实子 Agent Runtime — Task11** ｜ 实施中 → **已完成（实现与目录复验）** ｜ 2026-09-16：使用现有 USENIX 缓存候选池 `search_id=dd5c47aa0cb541188b884c27fa233e67` 固定复验 5 篇模糊测试论文；`ReportSynthesizer` 产出 5 条引用、约 8.9k 字符 Markdown，标题/摘要来自目录，关键词缺失时明确不补写。全量回归另发现既有会话压缩 worker 用例阻塞，Spec034 总收口仍保持实施中。
 - **034 会话式深度研究与真实子 Agent Runtime** ｜ 实施中 → **已完成** ｜ 2026-09-16T22:28:29+08:00：人工验收通过后修复 Intake 流序号导致的假中断、活跃研究冲突按钮无响应、计划操作按钮字号和目录详情降级丢候选；合并 `origin/main` 后全量回归 `2478 passed, 1 skipped, 67 subtests`，验收材料和复盘同步完成。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task06** ｜ 收口中 → **已完成** ｜ 2026-09-16：补齐 `GET /api/research-scheduler/status`，聚合队列、额度和安全摘要且不泄露租约 token；Spec028 定向回归 `24 passed`，最终全量回归 `2481 passed, 1 skipped, 5 warnings, 67 subtests`，8500 本机重启 smoke 的 health、首页、scheduler status 均 HTTP 200，收口文档与部署记录已同步。
+- **028 Research Task 可靠调度、计划版本与恢复** ｜ 实施中（Task06） → **已完成** ｜ 2026-09-16：Task02–06 全部完成，租约/checkpoint/公平调度、暂停/审批/取消/恢复、scheduler status 与状态台账完成；本地 `main` 已包含本 Spec 代码和文档，未 push。

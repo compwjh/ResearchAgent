@@ -1,7 +1,7 @@
 # Spec 028 执行计划：可靠调度、计划版本与恢复
 
 > 关联：[Spec 028](../../specs/028-research-task-durable-scheduling.md)
-> 当前状态：Task06 收口中（恢复 API/UI 已补齐，待最终评审、全量回归与部署 smoke）。
+> 当前状态：已完成（Task06 评审、回归、部署与复盘已完成）。
 
 ## 任务索引
 
@@ -11,7 +11,7 @@
 | [03](./task-03-scheduler-lease-recovery.md) | 全局调度、租约、资源预约和自动恢复 | 02 | 已完成 |
 | [04](./task-04-plan-version-hitl.md) | 计划版本、暂停、取消、审批和反馈 | 03 | 已完成 |
 | [05](./task-05-recovery-approval-ui.md) | 恢复与等待确认交互 | 04 | 已完成 |
-| [06](./task-06-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 02–05 | 实施中 |
+| [06](./task-06-review-regression-deploy.md) | 最终验收、全量回归、部署和复盘 | 02–05 | 已完成 |
 
 ## 统一规则
 
@@ -22,3 +22,4 @@
 ## 变更日志
 
 - 2026-09-12：随 Spec028 创建。
+- 2026-09-16：补齐 `GET /api/research-scheduler/status`，完成 24 项定向测试、全量回归 `2481 passed, 1 skipped, 67 subtests`，并完成 8500 本机部署 smoke。

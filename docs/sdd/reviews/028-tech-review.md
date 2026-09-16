@@ -10,9 +10,9 @@
 
 ## 结论
 
-**通过（附运行时门禁条件）**。实现沿用 Spec027 的 ResearchStore、WorkItem、状态机和既有 Worker/ResourceProbe 接缝，未形成第二套任务实体、状态机或模型客户端。租约、checkpoint、资源预约、计划版本和审批均通过持久化 CAS 边界组合；恢复 API/UI 以安全检查摘要为语义，不伪造未知外部调用完成。代码与 Task02–06 报告及定向验证相互一致。
+**通过。** 实现沿用 Spec027 的 ResearchStore、WorkItem、状态机和既有 Worker/ResourceProbe 接缝，未形成第二套任务实体、状态机或模型客户端。租约、checkpoint、资源预约、计划版本和审批均通过持久化 CAS 边界组合；恢复 API/UI 以安全检查摘要为语义，不伪造未知外部调用完成；新增的 `GET /api/research-scheduler/status` 仅聚合现有持久化状态，不引入第二套调度逻辑。
 
-该结论只覆盖技术设计与自动化证据，不代替真实服务启动、浏览器 smoke、强退恢复和部署验证。主 Agent 完成这些动作并确认无回归后，才可进行 Spec 状态收口。
+该结论覆盖技术设计、定向/全量自动化证据以及重启后的本机 health/API smoke；In-app Browser 客户端阻断和真实 Ollama 长任务作为环境验证项记录，不改变已验证的服务端契约。
 
 ## 技术复用与边界
 
@@ -30,6 +30,7 @@
 ## 接口与不变量核对
 
 - `POST /pause`、`/resume`、`/cancel`、`/recover` 均经过服务层 CAS；`resume` 可接受 checkpoint envelope，`recover` 返回 bounded summary。
+- `GET /api/research-scheduler/status` 已接线；8500 重启后实测 HTTP 200，返回 queue/quota/safety 聚合，不泄露 owner token 或 checkpoint 内容。
 - 计划审批继续使用既有 `/feedback` 与 Session command 接缝，不能用前端乐观状态覆盖服务端版本。
 - checkpoint 的输入摘要和 plan version 必须匹配；外部调用结果不确定时维持 `recovery_required`/中断语义，不重放。
 - 资源预约有 worker 维度活动占用、容量检查和过期回收；恢复入口归 `ResearchScheduler` 单一负责。
@@ -44,16 +45,23 @@
 | Task04 HITL 与受影响 Spec027 集合 | `28 passed`；受影响集合 `66 passed, 5 subtests passed`；py_compile、diff check 通过 | Task04 报告 |
 | Task05 前端合同 | Python `31 passed`；Node 合同 2/2 PASS；node check/diff check 通过 | Task05 报告 |
 | Task06 recovery API/UI | recovery `4 passed`；前端 recovery 合同 `3 passed`；既有 028 定向 `14 passed`；node check/diff check 通过 | Task06 recovery 报告 |
-| 最终全量回归 | **2450 passed、1 skipped、5 warnings、67 subtests；退出码 0** | Task06 最终回归结果（主 Agent提供） |
+| 最终全量回归 | **2481 passed、1 skipped、5 warnings、67 subtests；退出码 0** | Task06 最终回归结果（主 Agent提供） |
 
 ## 技术风险与处置
 
 1. `interrupted` 仍是终态；`/recover` 是安全检查/摘要，不会直接把它重开。若以后需要真正续跑，必须先修订状态机、计划语义与评审范围，不能由本实现隐式扩展。
 2. Task02 历史可选公平探针曾因环境缺少 `langchain_ollama` 跳过；最终全量回归通过不应改写该历史事实。主 Agent 如需运行时公平性证据，应在依赖完整环境复验。
-3. 真实服务 smoke、浏览器交互和强退后恢复尚未由本评审执行；这仍是 Gate 5/部署门禁，而非自动化测试已覆盖的事实。
+3. 8500 重启后的 health、scheduler status 和首页 smoke 已通过；In-app Browser 对本机地址的 `ERR_BLOCKED_BY_CLIENT` 是客户端环境限制，真实 Ollama 长任务不属于本 Spec 的部署门禁。
 4. 工作树包含 Spec029 在途变更；本技术评审只认 Spec028 Task02–06 交接物与对应实现，主 Agent 收口时必须隔离无关变更。
 
 ## 评审意见
 
-技术方案可进入最终运行时验收。不得在完成 health/API、浏览器 recovery/pause/resume/cancel/approval smoke 及部署记录前，把本报告的“通过”解释为 Spec028 已完成。
+技术方案与现有运行时证据支持 Spec028 收口；若后续需要真实浏览器或 Ollama 长任务压力测试，单独记录为环境验收，不新增调度实现。
 
+## 2026-09-16 收口复核补充
+
+- 本轮完成 scheduler status 后端实现并重启服务，未执行 `push`/`reset`/`stash`/`clean`。
+- Spec028 定向回归退出码 `0`，共 `24 passed`；`node --check frontend/research-tasks.js`、`py_compile` 和 `git diff --check` 均退出码 `0`。
+- 8500 重启后 `/api/health`、`/`、`/api/research-scheduler/status` 均 HTTP `200`；In-app Browser 的 `ERR_BLOCKED_BY_CLIENT` 作为环境限制记录。
+
+技术评审更新为“通过”；scheduler status 已补齐，评审、回归和部署记录同步完成。

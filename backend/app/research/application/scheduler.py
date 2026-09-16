@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterable
 
 from backend.app.research.domain.contracts import TASK_TERMINAL, WORKITEM_TERMINAL
@@ -135,6 +136,41 @@ class ResearchScheduler:
         return {
             "leases": self.store.recover_expired_scheduler_leases(now=now),
             "reservations": self.store.recover_expired_resource_reservations(now=now),
+        }
+
+    def status(self, *, now: str | None = None) -> dict:
+        """Return a safe, read-only aggregate of durable scheduler state.
+
+        Status is intentionally derived from the existing task/work-item,
+        lease, and reservation stores.  It does not recover, claim, or expose
+        owner tokens, worker identifiers, or checkpoint contents.
+        """
+        current = now or datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        queued = 0
+        running = 0
+        for task_status in ("planning", "running", "waiting_approval", "paused"):
+            for task in self.store.list_tasks_for_status(task_status):
+                for item in self.store.list_work_items(task.research_task_id):
+                    queued += item.status == "queued"
+                    running += item.status == "running"
+        active_reservations = self.store.list_resource_reservations(now=current)
+        active_leases = self.store.list_scheduler_leases(now=current)
+        return {
+            "status": "ok",
+            "queue": {
+                "queued": queued,
+                "running": running,
+                "waiting_approval": len(self.store.list_tasks_for_status("waiting_approval")),
+                "paused": len(self.store.list_tasks_for_status("paused")),
+            },
+            "quota": {
+                "active_workers": len(active_reservations),
+                "reserved_bytes": sum(item.estimated_bytes for item in active_reservations),
+            },
+            "safety": {
+                "active_leases": len(active_leases),
+                "active_reservations": len(active_reservations),
+            },
         }
 
     # Checkpoint methods intentionally delegate to ResearchStore.  The

@@ -2255,6 +2255,24 @@ class ResearchStore:
             row = conn.execute("SELECT * FROM scheduler_leases WHERE task_id=?", (task_id,)).fetchone()
         return SchedulerLease.from_row(dict(row)) if row else None
 
+    def list_scheduler_leases(self, *, now: str | None = None) -> list[SchedulerLease]:
+        """Return currently active leases without exposing owner tokens.
+
+        The scheduler status projection only needs an aggregate count.  Keep
+        this read model scoped to non-expired ownership so callers cannot
+        accidentally report stale leases as active after a restart.
+        """
+        current = now or _utcnow()
+        with self._connect() as conn:
+            self._ensure_scheduler_schema(conn)
+            rows = conn.execute(
+                """SELECT * FROM scheduler_leases
+                   WHERE owner_token IS NOT NULL AND expires_at IS NOT NULL AND expires_at>?
+                   ORDER BY task_id""",
+                (current,),
+            ).fetchall()
+        return [SchedulerLease.from_row(dict(row)) for row in rows]
+
     def claim_work_item(
         self,
         work_item_id: str,

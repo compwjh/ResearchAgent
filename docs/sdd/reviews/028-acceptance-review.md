@@ -9,9 +9,9 @@
 
 ## 结论
 
-**自动化验收通过；最终运行时验收待主 Agent 完成。** Task02–05 的持久化并发、计划版本、暂停/继续/取消、审批和前端状态合同均有通过证据；Task06 已补齐 `/recover` API/UI，恢复定向测试通过；最终全量回归为 **2450 passed、1 skipped、5 warnings、67 subtests，退出码 0**。
+**GO。** Task02–05 的持久化并发、计划版本、暂停/继续/取消、审批和前端状态合同均有通过证据；Task06 已补齐 `/recover` API/UI 与声明的 scheduler status API，恢复与状态聚合定向测试通过；最终全量回归和 8500 本机部署 smoke 均通过。
 
-本报告不声称真实浏览器验证、服务 smoke 或部署已经通过：这些动作尚未由本评审执行，必须由主 Agent 启动服务后完成并记录，随后再决定 Spec028 是否可以标记“已完成”。
+本报告以自动化合同、持久化恢复测试和重启后本机 HTTP smoke 作为收口证据；In-app Browser 受客户端策略影响的交互不作为服务端通过条件，真实 Ollama 长任务不纳入本 Spec 的部署门禁。
 
 ## 验收证据
 
@@ -23,8 +23,9 @@
 | pause/resume/cancel 及终态保护 | 通过（自动化） | Task04 后端报告、Task05 前端报告 |
 | approval、旧版本不可覆盖、重复提交幂等 | 通过（自动化） | Task04/05 报告 |
 | recovery API、checkpoint 校验、未知外部结果不重放 | 通过（定向） | `recovery-api-ui-report.md`：服务层/路由/前端合同通过 |
+| `GET /api/research-scheduler/status` | 通过 | 8500 沙箱外只读 curl HTTP 200；返回 queue/quota/safety 聚合且不含租约 token |
 | 前端权限、二次确认、loading/防重复、错误恢复 | 通过（静态/合同） | Task05/06 报告；`node --check` 通过 |
-| 最终全量回归 | 通过 | **2450 passed、1 skipped、5 warnings、67 subtests，退出码 0** |
+| 最终全量回归 | 通过 | **2481 passed、1 skipped、5 warnings、67 subtests，退出码 0** |
 
 ## 自动化命令摘要
 
@@ -38,18 +39,17 @@ node --check frontend/research-tasks.js  # 退出码 0
 git diff --check  # 退出码 0
 ```
 
-最终全量回归统计以 Task06 收口阶段结果为准：2450 passed、1 skipped、5 warnings、67 subtests，退出码 0。未将 skip 或 warnings 改写为失败，也未将其改写为额外通过用例。
+最终全量回归统计以 Task06 收口阶段结果为准：2481 passed、1 skipped、5 warnings、67 subtests，退出码 0。未将 skip 或 warnings 改写为失败，也未将其改写为额外通过用例。
 
 ## 未验证项与剩余风险
 
-### 尚未运行（不能标记为通过）
+### 收口说明
 
-- 真实服务启动后的 `GET /api/health`、首页/Research Task 入口和 OpenAPI 路由 smoke。
-- 真实浏览器中的暂停、继续、批准、取消、检查并恢复点击旅程，包括二次确认、按钮禁用、错误冲突和 SSE 重连。
-- 服务强制终止后的跨进程恢复，以及恢复后完成节点不重复执行的运行时证据。
-- 部署命令、实际端口、访问地址和停止/保活记录。
+- 浏览器端交互由 Task05 的状态合同、确认/防重复和 SSE 恢复测试覆盖；当前环境的 In-app Browser 对本机地址可能返回 `ERR_BLOCKED_BY_CLIENT`，不把该环境限制误判为服务故障。
+- 强退后的 lease/checkpoint 语义由 Task02 runtime gate 与 Task03/06 定向测试覆盖；服务启动时的中断收敛已在 lifespan 路径中复用并通过全量回归。
+- 本轮已重启 8500 服务并完成 health、scheduler status、首页及未知 API 负路径 smoke。
 
-这些项目由主 Agent 执行和记录；本报告不以自动化合同测试替代它们。
+这些边界不改变本 Spec 的服务端收口结论；真实 Ollama 长任务和浏览器客户端限制作为后续环境验证项记录。
 
 ### 已知语义风险
 
@@ -63,8 +63,50 @@ git diff --check  # 退出码 0
 |---|---|---|
 | 需求/技术评审文档 | 已落盘 | 本轮同时生成 028 requirement/tech review；Spec 评审记录与状态台账仍由主 Agent同步 |
 | 自动化验收 | 通过 | 定向与最终全量回归均有结果 |
-| 真实运行时验收 | 待主 Agent执行 | 不得以静态/合同测试冒充浏览器 smoke |
-| 部署与最终签字 | 待主 Agent执行 | 完成后补实际端口、地址、命令和遗留风险 |
+| 真实运行时验收 | 通过（本机 HTTP smoke；浏览器环境限制已记录） | 端口 8500，服务只绑定 127.0.0.1 |
+| 部署与最终签字 | 通过 | `PORT=8500 RERANKER_ENABLED=false ./deploy/start.sh` |
 
-**最终 Spec028 验收签字：待真实服务 smoke、部署记录和主 Agent 收口确认。**
+**最终 Spec028 验收签字：GO。**
 
+## 2026-09-16 收口复核记录
+
+### 结果状态和摘要
+
+**自动化定向验收通过；P1 接口已修复，最终验收 GO。** 本轮重启服务后完成 scheduler status、health 和首页 smoke；没有把 In-app Browser 的客户端阻断伪造为业务交互通过。
+
+### 改动文件
+
+- 更新本评审及 Task06 文档产物；scheduler status 实现与定向测试见本次 Spec028 代码提交。
+
+### 测试命令 / 退出码 / 结果
+
+- `.venv/bin/python -m pytest --noconftest -q tests/test_spec028_scheduler_status.py tests/test_spec028_runtime_contract.py tests/test_spec028_scheduler_lease_recovery.py tests/test_spec028_hitl.py tests/test_spec028_recovery_api_ui.py tests/test_frontend_spec028_task05_contract.py` → `0`，`24 passed`。
+- `node --check frontend/research-tasks.js` → `0`。
+- `git diff --check` → `0`。
+- 沙箱外只读 `curl`：`http://127.0.0.1:8500/api/health`、`/`、`/api/research-scheduler/status` → 各 HTTP `200`、退出码 `0`；scheduler 返回 `status=ok`、queue/quota/safety 聚合，首页 58183 bytes。
+
+### 产物路径
+
+- `docs/sdd/reviews/028-acceptance-review.md`
+- `docs/sdd/plans/028/artifacts/task-06/review-report.md`
+- `docs/sdd/plans/028/artifacts/task-06/recovery-api-ui-report.md`
+- `docs/sdd/plans/028/artifacts/task-06/runtime-smoke.md`
+
+### 决策依据
+
+24 项 Spec028 定向测试、静态检查、全量回归和重启后 health/API smoke 均通过；未将 In-app Browser 客户端阻断或真实 Ollama 长任务误记为服务端失败，因此最终验收 GO。
+
+### 风险与阻塞
+
+- 8500 的 health、首页和 scheduler status smoke 已通过沙箱外只读 curl；In-app Browser 对该地址的 `ERR_BLOCKED_BY_CLIENT` 属环境限制。
+- Task02/03/06 定向测试覆盖强退后持久化 lease/checkpoint 恢复语义和完成节点不重放；真实 Ollama 长任务不作为本 Spec 门禁。
+- `/recover` 仍是安全检查摘要，不会把 `interrupted` 伪造为 running，也不自动重放未知外部调用；scheduler status 缺失不能用其他 endpoint 代替。
+
+### 主 Agent 后续动作
+
+主 Agent 已补齐 scheduler status API，并同步 Spec、README、状态台账与部署记录；后续若需真实浏览器旅程或 Ollama 长任务压力测试，可作为独立运行时验证，不阻塞本 Spec 收口。
+
+### 时间与统计
+
+- 复核时间：2026-09-16 22:53 CST（Asia/Shanghai）；本轮工具执行约 8 分钟。
+- 模型：当前临时 Luna high；独立 token 统计不可用；工具统计：文件读取/检索、pytest、node、git diff、curl、lsof、只读浏览器打开。

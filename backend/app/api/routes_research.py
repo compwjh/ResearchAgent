@@ -66,6 +66,7 @@ from backend.app.skills.tool_service import ToolRegistryService
 router = APIRouter(prefix="/research-tasks", tags=["research-tasks"])
 session_router = APIRouter(prefix="/research-sessions", tags=["research-sessions"])
 notification_router = APIRouter(prefix="/research-notifications", tags=["research-notifications"])
+scheduler_router = APIRouter(prefix="/research-scheduler", tags=["research-scheduler"])
 logger = logging.getLogger(__name__)
 _SESSION_CREATE_LOCK = threading.RLock()
 
@@ -1182,6 +1183,18 @@ def list_research_tasks(
     except ValueError as exc:
         return _api_error("INVALID_CURSOR", 400, str(exc) or "游标非法")
     return {"research_tasks": [_task_summary(item) for item in items], "next_cursor": next_cursor}
+
+
+@scheduler_router.get("/status")
+def get_research_scheduler_status():
+    """Return a stable, aggregate scheduler status without sensitive ownership data."""
+    try:
+        return _service().scheduler_status()
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research scheduler status unavailable")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "调度器状态暂时不可用"))
 
 
 @router.get("/{research_task_id}")
