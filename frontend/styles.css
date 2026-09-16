@@ -185,6 +185,8 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-intake-choices { display: flex; flex-wrap: wrap; gap: 6px; }
 .conversation-intake-choice { padding: 5px 8px; font: inherit; }
 .conversation-intake-choice[aria-pressed="true"], .conversation-intake-choice.is-selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.conversation-intake-choice-status { margin: 8px 0 0; color: var(--muted); }
+.conversation-intake-choice-status[data-state="error"] { color: #a33232; }
 .conversation-research-plan { display: grid; gap: 8px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
 .conversation-research-plan-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
 .conversation-research-plan-title, .conversation-research-plan-field-name, .conversation-research-approval-title { color: var(--ink); }
@@ -197,7 +199,8 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-research-approval[data-status="approved"] { border-color: #acd5b7; background: #f1fbf3; }
 .conversation-research-approval[data-status="rejected"], .conversation-research-approval[data-status="superseded"] { opacity: .72; }
 .conversation-research-approval-actions, .conversation-research-plan-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.conversation-research-command, .research-session-command { min-height: 28px; padding: 5px 8px; font: inherit; }
+/* Keep plan decisions compact and consistent in both the chat card and research workbench. */
+.conversation-research-command, .research-session-command { min-height: 28px; padding: 5px 8px; font: 10px/1.35 'DM Mono', monospace; }
 .conversation-research-command.is-loading, .research-session-command.is-loading { cursor: wait; opacity: .7; }
 .conversation-research-command.is-success, .research-session-command.is-success { border-color: #acd5b7; background: #f1fbf3; color: #287c43; }
 .conversation-research-command.is-error, .research-session-command.is-error { border-color: #efb3b3; color: #a33232; }

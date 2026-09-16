@@ -38,7 +38,7 @@ def test_tree_display_and_error_contract_is_safe_and_accessible() -> None:
 
 def test_conversation_sse_accepts_non_cursor_processing_frames_without_raw_duplication() -> None:
     assert "processing_step" in APP
-    assert "eventData.type !== 'processing_step' && !acceptConversationEvent" in APP
+    assert "} else if (!acceptConversationEvent(assistantMessage, eventData))" in APP
     assert "eventData.step && typeof eventData.step === 'object'" in APP
     assert "TRACE_PROJECTION_FAILED" in APP
 

@@ -28,5 +28,5 @@ def test_approval_success_disables_the_other_decision() -> None:
 def test_approval_guidance_uses_accessible_scoped_dom_and_cache_bump() -> None:
     assert "conversation-research-next-step" in STYLES
     assert "role', 'status" in APP
-    assert 'href="/assets/styles.css?v=52"' in INDEX
-    assert 'src="/assets/app.js?v=52"' in INDEX
+    assert 'href="/assets/styles.css?v=53"' in INDEX
+    assert 'src="/assets/app.js?v=53"' in INDEX

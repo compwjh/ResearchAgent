@@ -1639,6 +1639,83 @@ function intakeStatusLabel(status, missing = []) {
   return '收集中';
 }
 
+function prepareNewResearchDraft(assistantMessage, notice) {
+  const previous = assistantMessage?.previousElementSibling;
+  const previousUserText = previous?.classList?.contains('user')
+    ? previous.querySelector('.bubble')?.textContent?.trim()
+    : '';
+  beginDraft();
+  if (previousUserText && input) {
+    input.value = previousUserText;
+    autoGrowInput();
+  }
+  setConversationStatus(notice);
+  input?.focus();
+}
+
+function renderConversationIntakeChoiceStatus(panel, text, state = '') {
+  if (!panel) return null;
+  let status = panel.querySelector('.conversation-intake-choice-status');
+  if (!status) {
+    status = document.createElement('p');
+    status.className = 'conversation-intake-choice-status';
+    status.setAttribute('aria-live', 'polite');
+    panel.querySelector('.conversation-intake-body')?.appendChild(status);
+  }
+  status.dataset.state = state;
+  status.textContent = text || '';
+  return status;
+}
+
+async function handleConversationIntakeChoice(assistantMessage, button, choice) {
+  const panel = button?.closest('.conversation-intake');
+  if (!panel || !INTAKE_CHOICE_LABELS[choice] || panel.dataset.choiceBusy === 'true') return;
+  const choices = [...panel.querySelectorAll('.conversation-intake-choice')];
+  choices.forEach((item) => {
+    const selected = item === button;
+    item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    item.classList.toggle('is-selected', selected);
+  });
+  if (choice === 'new_conversation') {
+    prepareNewResearchDraft(assistantMessage, '已准备新会话，请检查并重新发送研究请求。');
+    return;
+  }
+  if (choice === 'modify_current') {
+    renderConversationIntakeChoiceStatus(panel, '已选择修改当前研究；当前研究会话保留，请在输入框补充要修改的主题、目标或时间范围。');
+    input?.focus();
+    return;
+  }
+
+  const sessionId = panel.dataset.researchSessionId;
+  if (!sessionId) {
+    renderConversationIntakeChoiceStatus(panel, '当前研究会话标识不可用，未执行取消；请刷新会话后重试。', 'error');
+    return;
+  }
+  panel.dataset.choiceBusy = 'true';
+  panel.setAttribute('aria-busy', 'true');
+  choices.forEach((item) => { item.disabled = true; });
+  renderConversationIntakeChoiceStatus(panel, '正在取消当前研究…');
+  try {
+    const subjectVersion = Number(panel.dataset.subjectVersion || 0);
+    await conversationFetch(`/api/research-sessions/${encodeURIComponent(sessionId)}/commands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        command: 'cancel_research',
+        subject_version: Number.isInteger(subjectVersion) && subjectVersion >= 0 ? subjectVersion : 0,
+        scope_json: {},
+        idempotency_key: researchCommandIdempotencyKey(button),
+      }),
+    });
+    prepareNewResearchDraft(assistantMessage, '当前研究已取消，已准备新会话；请检查并重新发送研究请求。');
+  } catch (error) {
+    panel.dataset.choiceBusy = 'false';
+    panel.setAttribute('aria-busy', 'false');
+    choices.forEach((item) => { item.disabled = false; });
+    renderConversationIntakeChoiceStatus(panel, `取消当前研究失败：${error.message || '请刷新后重试。'}`, 'error');
+  }
+}
+
 function createConversationIntake(assistantMessage) {
   if (!assistantMessage) return null;
   const existing = assistantMessage.querySelector('.conversation-intake');
@@ -1718,6 +1795,7 @@ function updateConversationIntake(assistantMessage, payload = {}) {
   const missingNames = Array.isArray(payload.missing) ? payload.missing.filter((name) => typeof name === 'string') : [];
   panel.dataset.status = status;
   panel.dataset.researchSessionId = payload.research_session?.research_session_id || panel.dataset.researchSessionId || '';
+  panel.dataset.subjectVersion = String(Number(payload.subject_version ?? payload.research_session?.current_plan_version) || 0);
   panel.setAttribute('aria-busy', ['running', 'intake'].includes(status) && missingNames.length > 0 ? 'true' : 'false');
   const summary = panel.querySelector('.conversation-intake-summary');
   summary.textContent = intakeStatusLabel(status, missingNames);
@@ -1760,11 +1838,7 @@ function updateConversationIntake(assistantMessage, payload = {}) {
     button.setAttribute('aria-pressed', 'false');
     button.textContent = INTAKE_CHOICE_LABELS[choice.id];
     button.addEventListener('click', () => {
-      choicesNode.querySelectorAll('.conversation-intake-choice').forEach((item) => {
-        const selected = item === button;
-        item.setAttribute('aria-pressed', selected ? 'true' : 'false');
-        item.classList.toggle('is-selected', selected);
-      });
+      handleConversationIntakeChoice(assistantMessage, button, choice.id);
     });
     choicesNode.appendChild(button);
   });
@@ -3244,7 +3318,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
         assistantMessage.dataset.reasoningEffort = normalizeReasoningEffort(eventData.reasoning_effort || payload.reasoning_effort);
         assistantMessage.dataset.streamActive = 'true';
         setConversationStatus(assistantMessage.dataset.reasoningEffort === 'off' ? '正在生成回答…' : '模型正在准备思考…');
-      } else if (eventData.type !== 'processing_step' && !acceptConversationEvent(assistantMessage, eventData)) {
+      } else if (!acceptConversationEvent(assistantMessage, eventData)) {
         if (assistantMessage?.dataset.sequenceGap === 'true') {
           assistantMessage.dataset.streamActive = 'false';
           assistantMessage.classList.add('is-interrupted');
