@@ -1768,6 +1768,24 @@ function updateConversationIntake(assistantMessage, payload = {}) {
     });
     choicesNode.appendChild(button);
   });
+  // A historical Intake projection may predate automatic plan generation. Ask
+  // the idempotent Session endpoint once so refresh/reopen can resume the same
+  // plan path instead of leaving the user with a completed-looking idle card.
+  if (status === 'intake' && !missingNames.length && panel.dataset.researchSessionId
+      && !assistantMessage.querySelector('.conversation-research-plan')
+      && panel.dataset.planRequested !== 'true') {
+    panel.dataset.planRequested = 'true';
+    summary.textContent = '参数已齐，正在生成研究计划…';
+    conversationFetch(`/api/research-sessions/${encodeURIComponent(panel.dataset.researchSessionId)}/plans/generate`, { method: 'POST' })
+      .then((result) => {
+        updateConversationResearchPlan(assistantMessage, result || {});
+        summary.textContent = '参数已齐，计划已生成，等待批准。';
+      })
+      .catch(() => {
+        panel.dataset.planRequested = 'false';
+        summary.textContent = '参数已齐，但计划生成失败；可重新打开会话重试。';
+      });
+  }
   return panel;
 }
 

@@ -57,7 +57,8 @@ from backend.app.research.application.entry import (
     ResearchServiceError,
 )
 from backend.app.research.application.intake import ResearchIntakeCoordinator
-from backend.app.research.application.intake_projection import finalize_intake_message
+from backend.app.research.application.intake_projection import finalize_intake_message, persist_plan_projection
+from backend.app.research.application.session_plan_generation import ensure_session_plan
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.service import SkillRegistryService
 from backend.app.skills.tool_service import ToolRegistryService
@@ -306,6 +307,60 @@ def _intake_coordinator():
         SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
         ToolRegistryService(build_default_tool_registry(), state_path),
     )
+
+
+def _ensure_session_plan(session):
+    """Author the first plan once Intake is complete; return a safe projection."""
+    if session is None:
+        return None
+    return ensure_session_plan(
+        _store(), session, OWNER_ID,
+        lambda session_id, owner_id, output: _approval_service().author_plan(session_id, owner_id, output),
+    )
+
+
+def _persist_recovered_plan_projection(session, plan_result):
+    """Attach a recovered plan to the original Intake assistant message."""
+    if session is None or not plan_result:
+        return
+    try:
+        messages, _ = _memory().list_messages(
+            session.conversation_id,
+            OWNER_ID,
+            target_chars=100000,
+            limit=200,
+        )
+        candidates = []
+        for item in messages:
+            if item.role != "assistant":
+                continue
+            if item.parent_message_id == session.trigger_message_id:
+                candidates.append(item)
+                continue
+            # Older Intake turns may have been created by a follow-up message
+            # and therefore do not share the Session trigger as parent.  Use
+            # their already-persisted, allowlisted Intake projection to match
+            # the same Session without guessing from message text.
+            try:
+                steps = _memory().list_processing_steps(item.message_id, OWNER_ID)
+                if any(
+                    step.kind == "research_intake"
+                    and session.research_session_id in (step.detail_json or "")
+                    for step in steps
+                ):
+                    candidates.append(item)
+            except Exception:
+                continue
+        for assistant in candidates:
+            persist_plan_projection(_memory(), assistant, plan_result)
+            _memory().update_message(
+                assistant.message_id,
+                OWNER_ID,
+                content="研究计划已生成，等待你批准后开始执行。",
+                status="completed",
+            )
+    except Exception:
+        logger.exception("unable to persist recovered research plan projection")
 
 
 def _memory():
@@ -682,6 +737,15 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
     if result.status == "error":
         error = result.error or {"code": "SOURCE_UNAVAILABLE", "message": "研究 Intake 暂时不可用"}
         return _api_error(str(error.get("code") or "SOURCE_UNAVAILABLE"), 503, str(error.get("message") or "研究 Intake 暂时不可用"))
+    plan_result = None
+    if result.session is not None and not result.missing:
+        try:
+            plan_result = _ensure_session_plan(result.session)
+        except Exception:
+            # Intake is already durable.  Keep it usable and expose the
+            # planning failure to the caller instead of leaving a silent
+            # pending card that looks like a model timeout.
+            logger.exception("unable to generate initial research session plan")
     # The form endpoint creates the message pair outside the SSE path. Close
     # that optimistic assistant placeholder and persist the same safe Intake
     # projection used by streamed chat turns, so a refreshed conversation does
@@ -689,10 +753,20 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
     if created_assistant is not None:
         try:
             finalize_intake_message(memory, created_assistant, result)
+            if plan_result:
+                persist_plan_projection(memory, created_assistant, plan_result)
+                memory.update_message(
+                    created_assistant.message_id,
+                    OWNER_ID,
+                    content="研究计划已生成，等待你批准后开始执行。",
+                    status="completed",
+                )
         except Exception:
             logger.exception("unable to finalize research intake message")
+    current_session = _store().get_session(result.session.research_session_id, OWNER_ID) if result.session else None
     response = {
         "research_session_id": result.session.research_session_id if result.session else None,
+        "session": current_session.to_dict() if current_session else (result.session.to_dict() if result.session else None),
         "conversation": {
             "conversation_id": conversation.conversation_id,
             "project_id": conversation.project_id,
@@ -701,6 +775,10 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
         "trigger_message_id": trigger.message_id,
         "intake": _intake_payload(result),
     }
+    if plan_result:
+        response.update({"status": plan_result.get("status"), "plan": plan_result.get("plan"), "approval": plan_result.get("approval")})
+    elif result.session is not None and not result.missing:
+        response["plan_generation"] = {"status": "failed", "message": "参数已齐，但计划生成失败，可重试。"}
     if result.session is not None:
         _store().save_session_create_request(
             owner_id=OWNER_ID, idempotency_key=request_key, request_fingerprint=fingerprint,
@@ -870,6 +948,10 @@ def _notification_event_stream(
             yield ": heartbeat\n\n"
         if poll + 1 < max_polls:
             time.sleep(max(0.0, min(float(poll_seconds), 1.0)))
+    # The endpoint intentionally uses bounded polling so tests and proxies do
+    # not hold a request forever.  Mark normal expiry explicitly; browsers
+    # otherwise surface EventSource's expected EOF as a connection failure.
+    yield f"event: stream_end\ndata: {json.dumps({'after_seq': cursor})}\n\n"
 
 
 @session_router.get("/{research_session_id}")
@@ -988,6 +1070,28 @@ def author_research_session_plan(research_session_id: str, payload: dict):
         return _command_error(exc)
     except Exception:
         logger.exception("research session plan authoring failed")
+        return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "计划服务暂时不可用"))
+
+
+@session_router.post("/{research_session_id}/plans/generate", status_code=202)
+def generate_research_session_plan(research_session_id: str):
+    """Resume the automatic first-plan step for a completed Intake.
+
+    This endpoint is deliberately idempotent: an existing plan is replayed,
+    while an Intake that is not complete remains unchanged and returns the
+    stable validation error.
+    """
+    try:
+        session = _approval_service().get_session(research_session_id, OWNER_ID)
+        result = _ensure_session_plan(session)
+        if result is None:
+            raise ResearchCommandError("INTAKE_INCOMPLETE", "研究主题、目标和时间范围仍未完整确认")
+        _persist_recovered_plan_projection(session, result)
+        return result
+    except ResearchCommandError as exc:
+        return _command_error(exc)
+    except Exception:
+        logger.exception("research session plan generation failed")
         return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "计划服务暂时不可用"))
 
 

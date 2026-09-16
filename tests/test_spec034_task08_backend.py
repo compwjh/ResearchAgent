@@ -296,6 +296,7 @@ def test_notification_sse_polls_cursor_and_replays_new_items(monkeypatch):
     stream = routes_research._notification_event_stream(0, max_polls=2, poll_seconds=0)
     assert next(stream) == ": heartbeat\n\n"
     assert "id: 1" in next(stream)
+    assert "event: stream_end" in list(stream)[-1]
 
 
 def test_historical_conversation_message_includes_safe_report_projection(tmp_path, monkeypatch):

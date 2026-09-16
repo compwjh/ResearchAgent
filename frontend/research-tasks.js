@@ -464,7 +464,17 @@
       let value; try { value = JSON.parse(message.data || '{}'); } catch (_) { return; }
       applyNotification(value, kind);
     }));
+    source.addEventListener('stream_end', () => {
+      // The server uses bounded polling and closes normally after a heartbeat
+      // window.  Reconnect without presenting that expected EOF as an outage.
+      source.__gracefulEnd = true;
+      source.close();
+      if (state.notificationEventSource === source) state.notificationEventSource = null;
+      setText('research-notifications-status', '通知已同步，继续监听…');
+      scheduleNotificationReconnect();
+    });
     source.onerror = () => {
+      if (source.__gracefulEnd) return;
       source.close(); if (state.notificationEventSource === source) state.notificationEventSource = null;
       setText('research-notifications-status', `通知连接中断，将从 event_seq ${state.notificationLastSeq} 之后重连。`);
       scheduleNotificationReconnect();
