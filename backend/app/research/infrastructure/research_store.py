@@ -1061,6 +1061,18 @@ class ResearchStore:
                 raise
         return ResearchTask.from_row(dict(row))
 
+    def get_task_search_id(self, research_task_id: str) -> str | None:
+        """Read the task's persisted catalog snapshot handle for acquisition."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT search_id FROM research_tasks WHERE research_task_id=?",
+                (research_task_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        value = str(row["search_id"] or "").strip()
+        return value or None
+
     def get_task(self, research_task_id: str, owner_id: str) -> Optional[ResearchTask]:
         """按 owner 隔离读取任务；查不到返回 None（owner 隔离是 Spec027 硬约束）。"""
         with self._connect() as conn:

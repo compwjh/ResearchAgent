@@ -333,3 +333,8 @@
 - **034 会话式深度研究与真实子 Agent Runtime** ｜ 实施中 → **已完成** ｜ 2026-09-16T22:28:29+08:00：人工验收通过后修复 Intake 流序号导致的假中断、活跃研究冲突按钮无响应、计划操作按钮字号和目录详情降级丢候选；合并 `origin/main` 后全量回归 `2478 passed, 1 skipped, 67 subtests`，验收材料和复盘同步完成。
 - **028 Research Task 可靠调度、计划版本与恢复 — Task06** ｜ 收口中 → **已完成** ｜ 2026-09-16：补齐 `GET /api/research-scheduler/status`，聚合队列、额度和安全摘要且不泄露租约 token；Spec028 定向回归 `24 passed`，最终全量回归 `2481 passed, 1 skipped, 5 warnings, 67 subtests`，8500 本机重启 smoke 的 health、首页、scheduler status 均 HTTP 200，收口文档与部署记录已同步。
 - **028 Research Task 可靠调度、计划版本与恢复** ｜ 实施中（Task06） → **已完成** ｜ 2026-09-16：Task02–06 全部完成，租约/checkpoint/公平调度、暂停/审批/取消/恢复、scheduler status 与状态台账完成；本地 `main` 已包含本 Spec 代码和文档，未 push。
+
+## 2026-09-17
+
+- **029 Research Task 全文获取与知识库联动 — Task06** ｜ 实施中 → **已完成** ｜ 修复本地优先检索缺少服务端快照句柄、Research Task 未持久化 `search_id` 和确认句柄未校验的问题；真实验证任务 `3eee288b8e5a512dad3dad524d787c63` 完成 preview→确认→既有批次→公开 USENIX PDF 导入→v1 索引→全文证据升级，最终全量回归 `2486 passed / 1 skipped / 5 warnings / 67 subtests` 退出码 0，用户人工验收通过。
+- **029 Research Task 全文获取与知识库联动** ｜ 实施中 → **已完成** ｜ Task02–06 收口，评审、运行时证据、部署记录和复盘均已落盘；本地 `main` 已包含 Spec029 修改，远程 `origin/main` 已是本地分支祖先，无需重复合并。

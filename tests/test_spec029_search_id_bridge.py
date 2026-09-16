@@ -13,6 +13,8 @@ from backend.app.research.application.search_catalog_adapter import (
 )
 from backend.app.research.domain.models import ResearchTask, ResearchWorkItem
 from backend.app.research.infrastructure.research_store import ResearchStore
+from backend.app.paper_discovery.domain.paper_discovery import CatalogPaper
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 
 
 def _task(task_id: str = "task-029-search") -> ResearchTask:
@@ -106,3 +108,37 @@ def test_orchestrator_persists_handle_and_emits_same_event_source(tmp_path):
         if event.event_type == "worker" and json.loads(event.safe_payload_json).get("status") == "completed"
     ]
     assert completed and completed[-1]["search_id"] == "snapshot-1"
+
+
+def test_local_catalog_hit_persists_importable_search_snapshot(tmp_path):
+    discovery = PaperDiscoveryStore(tmp_path / "paper-search.sqlite3")
+    discovery.upsert_catalog_paper(CatalogPaper(
+        catalog_paper_id="catalog-local-1",
+        conference_id="usenix-security",
+        year=2026,
+        title="Local catalog paper",
+        normalized_title="local catalog paper",
+        authors=["Author"],
+        abstract="An indexed local paper.",
+        official_page_url="https://www.usenix.org/paper/local",
+        official_pdf_url="https://www.usenix.org/system/files/local.pdf",
+        metadata_hash="metadata-hash",
+        index_status="indexed",
+    ))
+
+    class _Rag:
+        def retrieve_and_rerank(self, query, rows, **kwargs):
+            return [{"catalog_paper_id": row.catalog_paper_id, "final_score": 1.0} for row in rows]
+
+    outcome = CatalogSearchAdapter(store=discovery, rag=_Rag()).search(
+        query="local", sources=("usenix",), max_results=1, years=(2026,)
+    )
+
+    assert outcome.search_id
+    job = discovery.get_search_job(outcome.search_id)
+    results = discovery.get_search_results(outcome.search_id)
+    assert job is not None and job.status == "completed"
+    assert [item.catalog_paper_id for item in results] == ["catalog-local-1"]
+    assert results[0].snapshot["candidate_id"] == "catalog-local-1"
+    assert results[0].snapshot["search_id"] == outcome.search_id
+    assert results[0].snapshot["pdf_url"].endswith("local.pdf")

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（Task06，最终评审、回归与部署）**
+**当前状态：已完成**
 
 ## 一句话目标
 
@@ -58,9 +58,12 @@
 - 真实导入至少一篇公开 PDF，完成全文索引并把一条摘要级证据升级为可定位切片。
 - 下载安全、导入恢复和知识库相关回归必须通过；最终 Task 才跑全量回归。
 
-## 产品使用步骤（由产品经理在 Spec 确认后填写）
+## 产品使用步骤
 
-- 待确认后补充候选确认、登录等待、失败重试和证据升级旅程。
+1. 研究任务完成候选评估后，打开“全文获取”区域；先查看只读预览，确认清单不会下载文件。
+2. 勾选或取消候选并点击一次“确认导入”。服务端校验当前 `selection_version` 与持久化 `search_id`，随后复用既有批量导入。
+3. 在逐篇状态中查看 `downloading`、`indexing`、`completed`、`waiting_login` 或 `failed`；需要登录时在既有浏览器会话完成登录，失败项可单独重试。
+4. 索引完成后，使用证据升级操作选择已完成文档；系统返回真实 `document_id`、切片 ID、页码、来源哈希和索引代次，报告引用可打开既有知识库原文。
 
 ## 执行配置
 
@@ -81,16 +84,17 @@
 | 03 | 接通候选确认与既有批量导入 | [`task-03-acquisition-approval-import.md`](../plans/029/task-03-acquisition-approval-import.md) | 02 | 已完成 |
 | 04 | 接通全文 RAG 与证据升级 | [`task-04-fulltext-evidence-upgrade.md`](../plans/029/task-04-fulltext-evidence-upgrade.md) | 03 | 已完成 |
 | 05 | 实现导入进度与失败恢复界面 | [`task-05-acquisition-progress-ui.md`](../plans/029/task-05-acquisition-progress-ui.md) | 03、04 | 已完成 |
-| 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/029/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
+| 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/029/task-06-review-regression-deploy.md) | 02–05 | 已完成 |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/029-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/029-tech-review.md`（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/029-acceptance-review.md`（待评审（未执行））
+- 需求评审：`docs/sdd/reviews/029-requirement-review.md`（通过）
+- 技术评审：`docs/sdd/reviews/029-tech-review.md`（通过）
+- 验收评审：`docs/sdd/reviews/029-acceptance-review.md`（通过）
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-12 | 架构师（自身） | 创建全文获取、导入复用与证据升级 Spec |
+| 2026-09-17 | 架构师（自身） | 修复本地优先检索的服务端快照句柄、Research Task 持久化与批量导入一致性；完成真实 USENIX 公开 PDF 导入、v1 索引和全文证据升级；全量回归 2486 passed，Spec029 收口。 |

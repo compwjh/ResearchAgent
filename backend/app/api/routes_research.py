@@ -128,9 +128,9 @@ class ResearchAcquisitionRequest(BaseModel):
     selection_version: int = Field(ge=1)
     paper_ids: list[str] = Field(min_length=1, max_length=20)
     idempotency_key: str = Field(min_length=1, max_length=200)
-    # The Research store intentionally keeps only catalog IDs.  The search ID
-    # is a server-owned snapshot handle supplied by the client that initiated
-    # the catalog search, not a download URL or candidate payload.
+    # Compatibility echo for the server-owned snapshot handle.  The service
+    # validates it against the task's persisted handle and never trusts it as
+    # a download URL or candidate payload.
     search_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
     @field_validator("paper_ids")

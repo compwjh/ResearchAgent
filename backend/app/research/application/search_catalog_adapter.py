@@ -266,7 +266,7 @@ class CatalogSearchAdapter:
         函数体内**延迟 import** Spec015，避免模块顶层就拉起重依赖。返回的闭包是
         search_catalog 的唯一出口。
         """
-        from backend.app.paper_discovery.domain.paper_discovery import SearchJob
+        from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchResult
 
         ttl_seconds = 86400
         if self._source_factory is None:
@@ -301,6 +301,88 @@ class CatalogSearchAdapter:
                 bundles[source_scope] = bundle
             return bundle
 
+        def _freeze_local_snapshot(request: SearchRequest, catalog_store: Any,
+                                   years: tuple[int, ...], papers: list[Any],
+                                   ranked: list[Mapping[str, Any]]) -> str:
+            """Persist a local-first hit through the existing catalog job seam.
+
+            Local retrieval is authoritative when it already covers the requested
+            result budget, but it must still produce the same durable snapshot as
+            the graph path.  The import batch service reads ``search_jobs`` and
+            ``search_results``; returning bare catalog IDs here would leave the
+            Research task with no server-owned handle and make confirmation
+            impossible after a refresh.
+            """
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+            expires_iso = (now + timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds").replace("+00:00", "Z")
+            search_id = uuid4().hex
+            conference_ids = ["dblp"] if request.sources and request.sources[0] == "dblp" else ["usenix-security"]
+            job = SearchJob(
+                search_id=search_id,
+                query=request.query,
+                conference_ids=conference_ids,
+                years=list(years),
+                status="queued",
+                graph_version="catalog-search-v1",
+                degraded=False,
+                error_code=None,
+                total_results=0,
+                created_at=now_iso,
+                started_at=None,
+                completed_at=None,
+                expires_at=expires_iso,
+                updated_at=now_iso,
+            )
+            by_id = {str(getattr(paper, "catalog_paper_id", "")): paper for paper in papers}
+            rows: list[SearchResult] = []
+            for item in ranked[: request.max_results]:
+                catalog_paper_id = str(item.get("catalog_paper_id") or "")
+                paper = by_id.get(catalog_paper_id)
+                if paper is None:
+                    continue
+                rank = len(rows) + 1
+                pdf_url = getattr(paper, "official_pdf_url", None) or getattr(paper, "prepublication_pdf_url", None)
+                retrieval_score = float(item.get("retrieval_score", 0) or 0)
+                rerank_score = item.get("rerank_score")
+                final_score = float(item.get("final_score", 0) or 0)
+                snapshot = {
+                    "candidate_id": catalog_paper_id,
+                    "catalog_paper_id": catalog_paper_id,
+                    "search_id": search_id,
+                    "rank": rank,
+                    "title": getattr(paper, "title", ""),
+                    "authors": list(getattr(paper, "authors", []) or []),
+                    "year": getattr(paper, "year", None),
+                    "conference_id": getattr(paper, "conference_id", ""),
+                    "conference_name": "USENIX Security",
+                    "abstract": getattr(paper, "abstract", None),
+                    "keywords": list(getattr(paper, "keywords", []) or []),
+                    "doi": getattr(paper, "doi", None),
+                    "dblp_key": getattr(paper, "dblp_key", None),
+                    "publication_stage": getattr(paper, "publication_stage", "published"),
+                    "article_url": getattr(paper, "official_page_url", None),
+                    "source_page_url": getattr(paper, "official_page_url", None),
+                    "official_pdf_url": pdf_url,
+                    "pdf_url": pdf_url,
+                    "pdf_access": "public" if pdf_url else "unknown",
+                    "source_kinds": catalog_store.get_catalog_source_kinds(catalog_paper_id)
+                    if callable(getattr(catalog_store, "get_catalog_source_kinds", None)) else ["usenix"],
+                    "retrieval_score": retrieval_score,
+                    "rerank_score": rerank_score,
+                    "final_score": final_score,
+                    "existing_paper_id": None,
+                }
+                rows.append(SearchResult(
+                    search_id, catalog_paper_id, rank, retrieval_score, rerank_score,
+                    final_score, snapshot, now_iso,
+                ))
+            if not rows:
+                raise RuntimeError("local catalog hit produced no persistable candidates")
+            catalog_store.create_search_job(job)
+            catalog_store.freeze_search_results(search_id, rows, status="completed", degraded=False)
+            return search_id
+
         def _searcher(request: SearchRequest) -> SearchOutcome:
             source_scope = request.sources[0] if request.sources else "usenix"
             if self._store is None or self._rag is None:
@@ -330,8 +412,10 @@ class CatalogSearchAdapter:
             # A sufficiently populated local catalog is authoritative for this
             # request.  This is what makes the default path local-first.
             if len(local_ids) >= request.max_results:
+                search_id = _freeze_local_snapshot(request, store, years, local, ranked_local)
                 return SearchOutcome(local_ids, len(local_ids), degraded=False, error_code=None,
-                                     diagnostics=local_diag)
+                                     diagnostics={**local_diag, "search_id": search_id},
+                                     search_id=search_id)
 
             # Local coverage is insufficient: use the existing nine-node graph
             # to refresh only missing/expired source units, then merge IDs.

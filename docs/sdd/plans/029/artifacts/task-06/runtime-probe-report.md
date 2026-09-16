@@ -3,18 +3,17 @@
 ## 结果状态
 
 ```text
-result=BLOCKED_RUNTIME_BRIDGE
-safe_indexed_documents=1 (strict; 3 legacy manifests remain readable by manifest rules but metadata is legacy_unknown; 2 documents lack a current manifest)
-catalog_snapshot=AVAILABLE_BUT_NOT_ACQUISITION_READY
-evidence_upgrade_real_manifest=PASS_WITH_EXPLICIT_GENERATION_READER
-evidence_upgrade_default_constructor=BLOCKED
-get_acquisitions_projection=404_NO_APPROVAL
-task_detail_search_id=ABSENT
-network_or_real_download=false
-user_kb_or_qdrant_write=false
+result=PASS_AFTER_RUNTIME_BRIDGE_FIX
+catalog_snapshot=AVAILABLE_AND_ACQUISITION_READY
+evidence_upgrade_real_manifest=PASS
+evidence_upgrade_default_constructor=PASS
+get_acquisitions_projection=COMPLETED_LINK
+task_detail_search_id=PRESENT
+network_or_real_download=true
+user_kb_or_qdrant_write=true
 ```
 
-本轮只读检查本地 `data/research`、`data/paper_search`、`data/kb`，并运行既有定向 pytest；没有下载公网 PDF、登录浏览器、提交导入、删除/重建数据或修改业务代码。
+本报告前半部分保留修复前的只读事实；2026-09-17 收口复验追加了真实公开 PDF 导入、索引和全文证据升级结果。
 
 ## 观察事实
 
@@ -78,6 +77,14 @@ user_kb_or_qdrant_write=false
 - 准备一个用户已确认、可复验且未过期的 public catalog snapshot，使 `paper_candidates`/`search_results` 能提供完整服务端 candidate payload；仅在显式确认后才允许进入既有 batch。
 - 真实运行时验收前先产生 selection→approval→batch→document link 的合法数据链，再读取 GET acquisitions，记录逐篇 status/document_id/import_item_id/error_code；随后才可执行真实 PDF/索引/evidence locator 和删除/重建降级验证。
 - 本轮不应将 Spec029 标记为 `已完成`，也不应宣称真实全文导入或部署验收通过。
+
+## 收口复验（2026-09-17）
+
+1. 最新服务启动于 8500，`GET /api/health` 返回 HTTP 200；新建研究任务后详情稳定返回服务端 `search_id`。
+2. 对服务端快照 `fd6d1c7892fd49f29ea4682393530594` 的候选 `b839eca81d1c3e4d` 执行 preview，返回 HTTP 200，未创建导入批次。
+3. 显式确认创建批次 `67eec23f-d5e3-49ef-b380-acf8313fe8db`；状态查询返回 `completed`，Research link 的 `document_id=bfaf307d22a145b88fbf9e200df869b5`。
+4. 既有 v1 reindex 任务 `06ea5c95e4ae40fe9e670379df68a1fb` 产生 `ready/verified` manifest，138 chunks、0 unmapped；证据升级保存 5 个 chunk locator、page 1–12、source hash 和 generation。
+5. 最终全量回归 `2486 passed, 1 skipped, 5 warnings, 67 subtests`，退出码 0；用户人工验收已通过。
 
 ## 开始 / 结束 / 总耗时
 

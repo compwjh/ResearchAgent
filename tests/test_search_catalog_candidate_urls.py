@@ -102,6 +102,7 @@ def test_each_candidate_exposes_article_url(fake_service):
     result = fake_service.run(candidates)
 
     assert result.ok is True, result.error
+    assert result.search_id == "s1"
     for c in candidates:
         assert c.title in result.output
         assert c.article_url in result.output, "每篇候选都必须暴露详情页 URL 供 fetch_paper_detail 使用"

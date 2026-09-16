@@ -990,9 +990,22 @@ class Orchestrator:
                     item.work_item_id,
                     json.dumps(work_item_input, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
                 )
+            running_item = self._store.update_work_item_status(
+                item.work_item_id,
+                "running",
+                **self._model_kwargs(
+                    item.role,
+                    research_task_id=task.research_task_id,
+                    task_type=item.task_type,
+                ),
+            )
             run_id = f"{item.work_item_id}:run-{max(1, item.attempt + 1)}"
             try:
-                worker_event = self._emit(task.research_task_id, "worker", self._worker_event_payload(item, "running"))
+                worker_event = self._emit(
+                    task.research_task_id,
+                    "worker",
+                    self._worker_event_payload(running_item, "running"),
+                )
                 result = self.run_agent(AgentRunInput(
                     agent_run_id=run_id,
                     research_session_id=session.research_session_id,
@@ -1053,6 +1066,18 @@ class Orchestrator:
                     completed_search_evidence[item.work_item_id] = _catalog_evidence_view(
                         completed_outputs[item.work_item_id], result.tool_results
                     )
+            search_id = None
+            if role == "search_worker" and terminal == "completed":
+                candidate_search_id = completed_outputs.get(item.work_item_id, {}).get("search_id")
+                if isinstance(candidate_search_id, str) and candidate_search_id.strip():
+                    search_id = candidate_search_id.strip()
+                    # Persist before the WorkItem terminal write-back.  A
+                    # Runner may already have finalized that WorkItem, and a
+                    # stale/duplicate status transition must not discard the
+                    # durable acquisition bridge.  The store validates the
+                    # opaque server-owned handle and retains the first one.
+                    with suppress(AttributeError, ValueError):
+                        self._store.set_task_search_id(task.research_task_id, search_id)
             error_code = result.error_code or semantic_error
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 evaluator_outputs.append(dict(normalized_output))
@@ -1074,12 +1099,8 @@ class Orchestrator:
                     resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
                 )
                 event_extra = {"error_code": error_code} if error_code else {}
-                if role == "search_worker" and terminal == "completed":
-                    search_id = completed_outputs.get(item.work_item_id, {}).get("search_id")
-                    if isinstance(search_id, str) and search_id.strip():
-                        with suppress(AttributeError, ValueError):
-                            self._store.set_task_search_id(task.research_task_id, search_id)
-                        event_extra["search_id"] = search_id.strip()
+                if search_id is not None:
+                    event_extra["search_id"] = search_id
                 self._emit(
                     task.research_task_id,
                     "worker",

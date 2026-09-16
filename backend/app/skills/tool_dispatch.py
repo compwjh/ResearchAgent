@@ -173,7 +173,11 @@ def _search_catalog(args: dict) -> DispatchResult:
         else:
             lines.append("   摘要: （缺失，可对该篇详情页调用 fetch_paper_detail 补齐）")
     body = f"检索完成：来源={getattr(chosen, 'short_name', '?')}，命中 {count} 篇候选论文。\n" + "\n".join(lines)
-    return DispatchResult(ok=True, name="search_paper_catalog", output=body)
+    # ``PaperDiscoverySearchService`` persists this snapshot before returning;
+    # carry its opaque server handle as structured metadata.  It must not be
+    # embedded in the presentation text, where a model could imitate it.
+    search_id = getattr(getattr(result, "session", None), "search_id", None)
+    return DispatchResult(ok=True, name="search_paper_catalog", output=body, search_id=search_id)
 
 
 def _kb_search(args: dict) -> DispatchResult:

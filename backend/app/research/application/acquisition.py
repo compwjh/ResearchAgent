@@ -53,6 +53,26 @@ class ResearchAcquisitionService:
         self.store = store
         self.batch_service = batch_service
 
+    def _task_search_id(self, task_id: str) -> str | None:
+        """Read the durable server-owned handle for a Research task."""
+        getter = getattr(self.store, "get_task_search_id", None)
+        if callable(getter):
+            value = getter(task_id)
+            value = str(value or "").strip()
+            return value or None
+        # Keep small in-memory store doubles useful while requiring a task
+        # object (rather than trusting a candidate/client payload) as fallback.
+        task_getter = getattr(self.store, "get_task", None)
+        if callable(task_getter):
+            try:
+                task = task_getter(task_id)
+            except TypeError:
+                task = None
+            value = _value(task, "search_id")
+            value = str(value or "").strip()
+            return value or None
+        return None
+
     def _selection(self, task_id: str, selection_version: int, paper_ids: Iterable[str]) -> list[str]:
         current_version = int(self.store.get_selection_version(task_id))
         if current_version < 1:
@@ -84,6 +104,15 @@ class ResearchAcquisitionService:
         requested = self._selection(task_id, selection_version, paper_ids)
         if not idempotency_key or not str(idempotency_key).strip():
             raise ResearchAcquisitionError("ACQUISITION_CONFLICT", "idempotency_key 不能为空")
+        durable_search_id = self._task_search_id(task_id)
+        if not durable_search_id:
+            raise ResearchAcquisitionError("SEARCH_NOT_FOUND", "研究任务尚未绑定服务端搜索快照")
+        if search_id is not None and str(search_id).strip() != durable_search_id:
+            raise ResearchAcquisitionError("ACQUISITION_CONFLICT", "搜索快照与研究任务不匹配")
+        # The client envelope is only a compatibility echo.  The batch bridge
+        # always receives the task's persisted handle, never a client-selected
+        # snapshot or a candidate-derived fallback.
+        search_id = durable_search_id
         existing = self.store.get_acquisition_approval(task_id, selection_version)
         if existing is not None:
             if existing.paper_ids != requested:
@@ -108,11 +137,6 @@ class ResearchAcquisitionService:
                 return self.status(task_id, approval=approval)
 
         candidate_values = list(candidates or ())
-        if not search_id and candidate_values:
-            search_id = _value(candidate_values[0], "search_id")
-        if not search_id:
-            self.store.update_acquisition_approval(task_id, selection_version, status="failed")
-            raise ResearchAcquisitionError("SEARCH_NOT_FOUND", "确认导入需要服务端搜索快照")
         try:
             batch = self.batch_service.create_batch(
                 search_id,

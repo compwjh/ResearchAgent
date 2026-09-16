@@ -62,6 +62,7 @@ class _BatchStore:
 def test_confirmation_projects_partial_and_retryable_item_state(tmp_path: Path):
     store = ResearchStore(tmp_path / "research.sqlite3")
     _task(store)
+    store.set_task_search_id("task-029", "search-1")
     store.replace_selections("task-029", [
         ResearchPaperSelection("task-029", "paper-a", 1.0, "[]", "catalog", ""),
         ResearchPaperSelection("task-029", "paper-b", 0.9, "[]", "catalog", ""),
@@ -78,6 +79,30 @@ def test_confirmation_projects_partial_and_retryable_item_state(tmp_path: Path):
     assert links["paper-b"]["status"] == "failed"
     assert links["paper-b"]["error_code"] == "DOWNLOAD_TIMEOUT"
     assert {event["status"] for event in result["events"]} == {"completed", "failed"}
+
+
+def test_confirmation_rejects_client_search_handle_mismatch(tmp_path: Path):
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    _task(store)
+    store.set_task_search_id("task-029", "server-search-1")
+    store.replace_selections("task-029", [
+        ResearchPaperSelection("task-029", "paper-a", 1.0, "[]", "catalog", ""),
+    ])
+
+    class _NoCallBatch:
+        def create_batch(self, *_args, **_kwargs):
+            raise AssertionError("mismatched client search handle must not create a batch")
+
+    service = ResearchAcquisitionService(store, _NoCallBatch())
+    try:
+        service.confirm(
+            "task-029", selection_version=1, paper_ids=["paper-a"],
+            idempotency_key="request-1", search_id="client-forged-search",
+        )
+    except Exception as error:
+        assert getattr(error, "code", None) == "ACQUISITION_CONFLICT"
+    else:
+        raise AssertionError("client search handle mismatch should be rejected")
 
 
 def test_confirmation_rejects_stale_selection_version(tmp_path: Path):
