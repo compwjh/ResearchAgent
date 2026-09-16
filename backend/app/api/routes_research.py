@@ -57,6 +57,7 @@ from backend.app.research.application.entry import (
     ResearchServiceError,
 )
 from backend.app.research.application.intake import ResearchIntakeCoordinator
+from backend.app.research.application.intake_projection import finalize_intake_message
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.service import SkillRegistryService
 from backend.app.skills.tool_service import ToolRegistryService
@@ -657,10 +658,11 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
         if active is not None:
             return _api_error("RESEARCH_SESSION_ACTIVE_CONFLICT", 409, "当前会话已有进行中的研究 Intake")
     trigger_message_id = payload.trigger_message_id
+    created_assistant = None
     if trigger_message_id:
         trigger = memory.get_message(trigger_message_id, OWNER_ID)
     else:
-        _conversation, trigger, _assistant = memory.create_idempotent_message_pair(
+        _conversation, trigger, created_assistant = memory.create_idempotent_message_pair(
             conversation.conversation_id, OWNER_ID, _session_create_text(intake),
             idempotency_key=request_key, model=None, mode="research"
         )
@@ -680,6 +682,15 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
     if result.status == "error":
         error = result.error or {"code": "SOURCE_UNAVAILABLE", "message": "研究 Intake 暂时不可用"}
         return _api_error(str(error.get("code") or "SOURCE_UNAVAILABLE"), 503, str(error.get("message") or "研究 Intake 暂时不可用"))
+    # The form endpoint creates the message pair outside the SSE path. Close
+    # that optimistic assistant placeholder and persist the same safe Intake
+    # projection used by streamed chat turns, so a refreshed conversation does
+    # not remain stuck at an empty pending card.
+    if created_assistant is not None:
+        try:
+            finalize_intake_message(memory, created_assistant, result)
+        except Exception:
+            logger.exception("unable to finalize research intake message")
     response = {
         "research_session_id": result.session.research_session_id if result.session else None,
         "conversation": {

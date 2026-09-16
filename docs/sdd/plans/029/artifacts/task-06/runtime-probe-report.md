@@ -98,3 +98,28 @@ user_kb_or_qdrant_write=false
 - 该修复只消除了 generation reader 的 P0；任务详情缺少稳定 `search_id`、真实确认/导入链和真实浏览器交互验收仍保持未完成，不能据此把 Spec029 标记为完成。
 
 随后又完成了 `search_id` 桥接修复：`ResearchTask` 增加可选服务端快照句柄，研究仓储做加性迁移并采用首个有效句柄优先写入；搜索 worker、编排器、任务摘要和 worker 事件均传递该句柄。既有历史任务没有对应搜索快照时仍安全返回 `null`，不会猜测或伪造句柄。相关定向回归为 `63 passed`；真实 acquisition 链、公开 PDF 和浏览器确认仍未执行。
+
+## 运行时复核补充（2026-09-16 06:00）
+
+- 只读网络探针确认固定公开样本
+  `https://www.usenix.org/system/files/usenixsecurity26-peng-jiaqian.pdf` 返回 `200`、
+  `application/pdf`、`1094158` bytes。
+- 在临时复制的知识库目录中调用既有 `import_candidate`、安全下载器和
+  `KnowledgeBasePaperImportAdapter`，补齐完整 v1/v2 chunker 状态后成功返回
+  `status=indexed` 和临时 `document_id`；临时目录随后由进程清理。
+- Research 侧选集→确认→批次→document link 的持久化桥接仍以现有定向合同为准；本次没有把
+  真实 PDF 写入用户当前知识库，也没有把隔离探针冒充生产端到端成功。
+- 结论仍为 **NO-GO**：生产知识库/向量代次的真实写入需要用户明确允许一次可回滚的测试导入，
+  并在导入后验证补偿或由用户选择保留测试论文。该门禁未通过前，Spec029 不标记为已完成。
+
+## Intake 入口修复复验（2026-09-16）
+
+- 截图会话 `eedf7efb96a74932b619115672d134c0` 曾处于 `intake_pending`，助手消息为空且没有
+  `research_task_id`；健康接口仍返回 200，故阻塞不是 Ollama 不可用。
+- 根因是 Intake SSE 沿用了不带 `event_seq` 的 `stream_event`，而前端对首个 `meta` 和后续帧要求
+  连续序号，导致浏览器把已成功落库的 Intake 显示为 `STREAM_INTERRUPTED`。
+- 另外，研究表单没有提交必填 `time_range`，创建出的助手占位消息不会自动得到 Intake 投影。
+- 修复后：统一 Intake 投影构造/持久化；表单增加起止年份；表单创建的助手占位消息写入安全 Intake
+  投影并收口；Intake SSE 改用 `EventSequencer`。定向测试 `74 passed`，8500 服务重启后
+  `/api/health` 返回 200。
+- 该修复只打通入口与 SSE 协议，不代表真实公开 PDF 导入、全文索引或证据升级已经通过。

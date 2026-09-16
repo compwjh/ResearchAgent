@@ -1762,6 +1762,14 @@
     const targetPaperCount = Number(byId('research-target-count')?.value || 12);
     const language = byId('research-language')?.value || 'zh';
     const reviewPlanFirst = Boolean(byId('research-review-plan')?.checked);
+    const yearFrom = Number(byId('research-year-from')?.value);
+    const yearTo = Number(byId('research-year-to')?.value);
+    if (!Number.isInteger(yearFrom) || !Number.isInteger(yearTo) || yearFrom < 1900 || yearTo > 2200 || yearFrom > yearTo) {
+      setText('research-create-status', '请填写有效的时间范围（起始年份不晚于结束年份）。');
+      byId('research-year-from')?.focus();
+      if (button) button.disabled = false;
+      return;
+    }
     if (!state.createIdempotencyKey) state.createIdempotencyKey = root.crypto?.randomUUID?.() || `research-session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.triggerMessageId = state.triggerMessageId || state.conversation?.last_message_id || state.conversation?.trigger_message_id || null;
     const payload = {
@@ -1771,6 +1779,7 @@
       ...(currentProjectId() ? { project_id: currentProjectId() } : {}),
       intake: {
         topic: goal, objective: goal, language, depth: quality,
+        time_range: { from: yearFrom, to: yearTo },
         sources: ['usenix'], citations: 'true', output: 'markdown',
         constraints: `目标论文数：${Number.isInteger(targetPaperCount) ? Math.max(1, Math.min(20, targetPaperCount)) : 12}；先审核计划：${reviewPlanFirst ? '是' : '否'}`,
       },
