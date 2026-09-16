@@ -320,8 +320,32 @@ class ResearchService:
         self, research_task_id: str, owner_id: str, *, plan_version: int | None = None
     ) -> PreliminaryReport:
         """读取报告（先校验归属）；plan_version 为 None 取最大版本；未生成抛 REPORT_NOT_READY 409。"""
-        self.get_task(research_task_id, owner_id)
+        task = self.get_task(research_task_id, owner_id)
         report = self._store.get_report(research_task_id, plan_version)
+        if report is None and task.status in TASK_TERMINAL:
+            # Spec034 Task08 persists immutable Markdown/HTML artifacts as the
+            # canonical report.  Older callers still use this PreliminaryReport
+            # endpoint, so expose the Markdown artifact without creating a
+            # second mutable report record.  Pending tasks remain 409.
+            version = plan_version or task.current_plan_version
+            artifacts = self._store.list_artifacts_for_task(
+                research_task_id, owner_id, report_version=version
+            )
+            markdown = next(
+                (item for item in artifacts
+                 if item.artifact_type == "markdown" and isinstance(item.content, str) and item.content),
+                None,
+            )
+            if markdown is not None:
+                return PreliminaryReport(
+                    report_id=f"artifact:{markdown.artifact_id}",
+                    research_task_id=research_task_id,
+                    plan_version=markdown.report_version,
+                    status=task.status,
+                    markdown=markdown.content,
+                    limitations_json=json.dumps({"artifact_backed": True}, ensure_ascii=False),
+                    created_at=markdown.created_at,
+                )
         if report is None:
             raise ResearchServiceError("REPORT_NOT_READY", 409, f"report not ready: {research_task_id}")
         return report

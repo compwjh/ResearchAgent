@@ -24,8 +24,9 @@ from backend.app.research.application.report_synthesis import (
     render_markdown_html,
     report_output_hash,
 )
+from backend.app.research.application.research_service import ResearchService
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter, SearchOutcome
-from backend.app.research.domain.models import ResearchArtifact, ResearchNotification
+from backend.app.research.domain.models import ResearchArtifact, ResearchNotification, ResearchTask
 from backend.app.research.infrastructure.research_store import ResearchArtifactConflict, ResearchStore
 
 
@@ -132,6 +133,37 @@ def test_aggregate_evaluator_binding_promotes_safe_summary_catalog_refs():
     normalized = _sanitize_evaluator_binding(output, {"catalog:c1"})
     assert normalized["safe_summary"]["source_refs"] == ["catalog:c1"]
     assert normalized["evidence_refs"] == ["catalog:c1"]
+
+
+def test_report_endpoint_compatibility_reads_completed_markdown_artifact():
+    task = ResearchTask(
+        research_task_id="task-artifact", owner_id="owner-a", project_id=None,
+        conversation_id="conversation-a", goal="goal", language="zh",
+        quality_profile="speed", review_plan_first=True, target_paper_count=5,
+        soft_budget_seconds=1, status="completed", current_plan_version=1,
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+    )
+    artifact = ResearchArtifact(
+        artifact_id="artifact-md", research_task_id=task.research_task_id,
+        report_version=1, artifact_type="markdown", content_hash="hash",
+        generated_by_agent_run_id="syn-run", content="# report",
+        created_at="2026-01-01T00:00:01Z",
+    )
+
+    class Store:
+        def get_task(self, task_id, owner_id):
+            return task if (task_id, owner_id) == (task.research_task_id, task.owner_id) else None
+
+        def get_report(self, task_id, plan_version=None):
+            return None
+
+        def list_artifacts_for_task(self, task_id, owner_id, *, report_version=None):
+            return [artifact]
+
+    report = ResearchService(store=Store()).get_report(task.research_task_id, task.owner_id)
+    assert report.report_id == "artifact:artifact-md"
+    assert report.markdown == "# report"
+    assert json.loads(report.limitations_json)["artifact_backed"] is True
 
 
 @pytest.mark.parametrize("unsafe", ["https://example.invalid/report", "/tmp/report.md", "prompt: hidden", "C:\\secrets\\report"])
