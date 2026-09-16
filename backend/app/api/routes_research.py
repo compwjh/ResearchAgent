@@ -960,9 +960,20 @@ def get_research_session(research_session_id: str):
     try:
         service = _approval_service()
         session = service.get_session(research_session_id, OWNER_ID)
+        if session.research_task_id:
+            # Repair stale Session projections after a worker finished between
+            # the Task and Session commits (or after a process restart).
+            session = _service().reconcile_session_projection(
+                session.research_task_id, OWNER_ID
+            ) or session
         plan = _store().get_session_plan(research_session_id, OWNER_ID)
+        task = (
+            _store().get_task(session.research_task_id, OWNER_ID)
+            if session.research_task_id else None
+        )
         return {
             **session.to_dict(),
+            "task": _task_summary(task) if task else None,
             "plan": plan.to_dict() if plan else None,
             "plans": [item.to_dict() for item in _store().list_session_plans(research_session_id, OWNER_ID)],
             "approvals": [item.to_dict() for item in _store().list_approvals(research_session_id, OWNER_ID)],

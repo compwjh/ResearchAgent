@@ -8,7 +8,12 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.memory.repository import MemoryRepository
-from backend.app.research.application.orchestrator import Orchestrator, _validate_evaluator_scope
+from backend.app.research.application.orchestrator import (
+    Orchestrator,
+    _sanitize_evaluator_binding,
+    _validated_evaluator_candidates,
+    _validate_evaluator_scope,
+)
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.processing_projector import ProcessingStepProjector
 from backend.app.research.application.report_synthesis import (
@@ -68,6 +73,34 @@ def test_evaluator_output_is_bound_to_search_worker_candidates_and_refs():
         {"source": "usenix", "source_refs": ["search:s1"], "candidate_id": "c1", "keep": True, "evidence_refs": ["catalog:c1"]},
         allowed_candidates, allowed_refs, {"usenix"}, {"search:s1"},
     )
+
+
+def test_aggregate_evaluator_output_expands_catalog_refs_into_candidates():
+    metadata = {
+        "c1": {"candidate_id": "c1", "title": "Paper one"},
+        "c2": {"candidate_id": "c2", "title": "Paper two"},
+    }
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": ["catalog:c1", "catalog:c2"],
+    }
+    records = _validated_evaluator_candidates([output], metadata)
+    assert [item["candidate_id"] for item in records] == ["c1", "c2"]
+    assert [item["evidence_refs"] for item in records] == [["catalog:c1"], ["catalog:c2"]]
+    assert [item["title"] for item in records] == ["Paper one", "Paper two"]
+
+
+def test_evaluator_binding_uses_only_allowlisted_catalog_refs():
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": [],
+        "source_refs": ["research-paper-evaluation", "catalog:c1"],
+    }
+    normalized = _sanitize_evaluator_binding(output, {"catalog:c1"})
+    assert normalized["source_refs"] == ["catalog:c1"]
+    assert normalized["evidence_refs"] == ["catalog:c1"]
 
 
 @pytest.mark.parametrize("unsafe", ["https://example.invalid/report", "/tmp/report.md", "prompt: hidden", "C:\\secrets\\report"])

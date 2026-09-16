@@ -1728,7 +1728,7 @@
           if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) return;
           state.selectedSessionId = resolvedSessionId;
           const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
-          state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: session.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
+          state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: canonical?.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
           renderTaskHeader(state.selectedTask);
           renderSessionPlan(session.plan, session.approvals || [], session);
         } catch (_) {

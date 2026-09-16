@@ -32,7 +32,12 @@
     const id = scalar(value.research_session_id || value.session_id || task.research_session_id);
     const taskId = scalar(value.research_task_id || task.research_task_id);
     if (!id && !taskId) return null;
-    const status = scalar(value.status || task.status, 'intake_pending');
+    // The Task is the execution source of truth. A worker can finish between
+    // the Task and Session commits, so a terminal Task must win over a stale
+    // queued Session projection.
+    const sessionStatus = scalar(value.status, '');
+    const taskStatus = scalar(task.status, '');
+    const status = scalar(TERMINAL.has(taskStatus) ? taskStatus : (sessionStatus || taskStatus), 'intake_pending');
     const approvals = Array.isArray(value.approvals) ? value.approvals : Array.isArray(task.approvals) ? task.approvals : [];
     const pending = approvals.find((item) => item?.status === 'pending');
     const approval = value.approval_status || value.waiting_approval || value.pending_approval || pending || task.approval_status || '';

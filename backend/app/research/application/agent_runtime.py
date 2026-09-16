@@ -1154,7 +1154,11 @@ class ResearchAgentRunner:
             for value in item.get("catalog_paper_ids", ()):
                 if isinstance(value, str) and value.strip() and value.strip() not in candidate_ids:
                     candidate_ids.append(value.strip())
-        if not successful_search or not candidate_ids:
+        # An empty, successful catalog query is still a valid Search Worker
+        # result.  It is important to recover this shape when the model only
+        # returns malformed text: an empty facet must not poison the whole
+        # fan-out when another search worker supplied usable evidence.
+        if not successful_search:
             return None
 
         work_item_input = input.work_item_input if isinstance(input.work_item_input, Mapping) else {}

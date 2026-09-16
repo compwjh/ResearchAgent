@@ -294,6 +294,14 @@ class PlanApprovalService:
             updated = self.store.update_session_links(session.research_session_id, owner_id, **links)
             if updated.status != "queued":
                 updated = self.store.update_session_status(session.research_session_id, owner_id, "queued")
+            if plan is not None:
+                # Approval transitions the immutable plan version from the
+                # proposed view into the active execution view. Without this
+                # projection update the UI keeps rendering “待执行” forever.
+                with suppress(Exception):
+                    self.store.update_session_plan_status(
+                        session.research_session_id, owner_id, plan.version, "active"
+                    )
         except Exception as exc:
             raise ResearchCommandError("SOURCE_UNAVAILABLE", "研究会话链接暂时不可用") from exc
         if self.research_service is not None:
