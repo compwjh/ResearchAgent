@@ -172,6 +172,12 @@ def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mappin
                 # provenance labels are never promoted to citations.
                 refs = item.get("source_refs")
             if not isinstance(refs, list) or not refs:
+                # The runtime schema also permits the aggregate explanation
+                # under safe_summary.source_refs.  It is still model output,
+                # so it must pass the same catalog metadata allowlist below.
+                summary = item.get("safe_summary")
+                refs = summary.get("source_refs") if isinstance(summary, Mapping) else None
+            if not isinstance(refs, list) or not refs:
                 continue
             refs = [ref for ref in refs if isinstance(ref, str) and ref.startswith("catalog:")]
             if not refs:
@@ -223,6 +229,14 @@ def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str
     ] if isinstance(value, list) else []
     if "source_refs" in normalized:
         normalized["source_refs"] = valid_refs(normalized.get("source_refs"))
+    summary = normalized.get("safe_summary")
+    summary_refs: list[str] = []
+    if isinstance(summary, Mapping):
+        clean_summary = dict(summary)
+        summary_refs = valid_refs(clean_summary.get("source_refs"))
+        if "source_refs" in clean_summary:
+            clean_summary["source_refs"] = summary_refs
+        normalized["safe_summary"] = clean_summary
     for field in ("kept", "eliminated", "evaluations"):
         entries = normalized.get(field)
         if not isinstance(entries, list):
@@ -245,6 +259,8 @@ def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str
     refs = valid_refs(normalized.get("evidence_refs"))
     if not refs:
         refs = valid_refs(normalized.get("source_refs"))
+    if not refs:
+        refs = summary_refs
     if "evidence_refs" in normalized or refs:
         normalized["evidence_refs"] = refs
     return normalized

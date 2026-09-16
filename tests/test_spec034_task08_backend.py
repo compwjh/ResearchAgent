@@ -91,6 +91,23 @@ def test_aggregate_evaluator_output_expands_catalog_refs_into_candidates():
     assert [item["title"] for item in records] == ["Paper one", "Paper two"]
 
 
+def test_aggregate_evaluator_output_reads_safe_summary_catalog_refs():
+    metadata = {"c1": {"candidate_id": "c1", "title": "Paper one"}}
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": [],
+        "safe_summary": {"source_refs": ["catalog:c1"]},
+    }
+    records = _validated_evaluator_candidates([output], metadata)
+    assert records == [{
+        "candidate_id": "c1",
+        "verified": True,
+        "evidence_refs": ["catalog:c1"],
+        "title": "Paper one",
+    }]
+
+
 def test_evaluator_binding_uses_only_allowlisted_catalog_refs():
     output = {
         "candidate_id": None,
@@ -100,6 +117,20 @@ def test_evaluator_binding_uses_only_allowlisted_catalog_refs():
     }
     normalized = _sanitize_evaluator_binding(output, {"catalog:c1"})
     assert normalized["source_refs"] == ["catalog:c1"]
+    assert normalized["evidence_refs"] == ["catalog:c1"]
+
+
+def test_aggregate_evaluator_binding_promotes_safe_summary_catalog_refs():
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": [],
+        "safe_summary": {
+            "source_refs": ["research-paper-evaluation", "catalog:c1", "catalog:outside"],
+        },
+    }
+    normalized = _sanitize_evaluator_binding(output, {"catalog:c1"})
+    assert normalized["safe_summary"]["source_refs"] == ["catalog:c1"]
     assert normalized["evidence_refs"] == ["catalog:c1"]
 
 
