@@ -1993,6 +1993,34 @@ function addConversationResearchRefresh(button) {
   panel.querySelector('.conversation-research-plan-actions')?.appendChild(refresh);
 }
 
+function showConversationResearchNextStep(panel, command, result = {}) {
+  if (!panel || command !== 'approve_plan') return;
+  const status = String(result?.status || result?.research_session?.status || '').toLowerCase();
+  const taskId = result?.research_task_id || result?.task?.research_task_id || '';
+  const notice = panel.querySelector('.conversation-research-next-step') || document.createElement('div');
+  notice.className = 'conversation-research-next-step';
+  notice.setAttribute('role', 'status');
+  notice.setAttribute('aria-live', 'polite');
+  const queued = ['queued', 'planning', 'running'].includes(status) || Boolean(taskId);
+  notice.textContent = queued
+    ? '计划已批准，研究任务已创建并进入队列。接下来系统会自动检索论文、评估候选并生成报告；你可以打开“研究”工作台查看实时进度。'
+    : '计划已批准，研究任务正在启动。稍后会在本会话显示执行进度和最终报告。';
+  if (!notice.parentNode) panel.appendChild(notice);
+  const actions = panel.querySelector('.conversation-research-plan-actions');
+  if (actions && !actions.querySelector('.conversation-research-open-task')) {
+    const openTask = document.createElement('button');
+    openTask.type = 'button';
+    openTask.className = 'secondary-button conversation-research-open-task';
+    openTask.textContent = '查看研究进度';
+    openTask.addEventListener('click', () => {
+      const nav = document.querySelector('[data-view="research"]');
+      if (nav) nav.click();
+      else window.location.hash = '#research-view';
+    });
+    actions.appendChild(openTask);
+  }
+}
+
 async function submitResearchSessionCommand(sessionId, command, subjectVersion, scopeJson, button, onSuccess = null) {
   if (!sessionId || !command || !button || button.dataset.state === 'loading' || button.dataset.state === 'success') return null;
   setResearchCommandState(button, 'loading', '提交中…'); button.disabled = true;
@@ -2035,7 +2063,17 @@ function renderConversationApprovals(panel, approvals, plan) {
     const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
     const pending = approval.status === 'pending'; approve.disabled = !pending; decline.disabled = !pending;
     if (pending) {
-      approve.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, approveCommand, approval.subject_version, researchCommandScope(approveCommand, approval, plan), approve, () => { status.textContent = '已完成'; card.dataset.status = 'approved'; }));
+      approve.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, approveCommand, approval.subject_version, researchCommandScope(approveCommand, approval, plan), approve, (result) => {
+        status.textContent = approveCommand === 'approve_plan' ? '已批准' : '已完成';
+        card.dataset.status = 'approved';
+        controls.querySelectorAll('button').forEach((item) => { item.disabled = true; });
+        if (approveCommand === 'approve_plan') {
+          panel.dataset.status = result?.status || 'queued';
+          const meta = panel.querySelector('.conversation-research-plan-meta');
+          if (meta) meta.textContent = `计划 v${panel.dataset.subjectVersion || '—'} · 已批准，任务排队中`;
+          showConversationResearchNextStep(panel, approveCommand, result);
+        }
+      }));
       decline.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'decline_request', approval.subject_version, researchCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
     }
     controls.append(approve, decline); card.append(heading, status, meta, controls); container.appendChild(card);
@@ -2077,6 +2115,15 @@ function updateConversationResearchPlan(assistantMessage, payload = {}) {
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button danger-button conversation-research-command'; cancel.dataset.command = 'cancel_research'; cancel.textContent = RESEARCH_COMMAND_LABELS.cancel_research;
     cancel.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'cancel_research', version, {}, cancel));
     actions.append(revise, cancel);
+  }
+  const planApproval = approvals.find((approval) => approval?.kind === 'plan');
+  const sessionStatus = String(payload.status || session.status || '').toLowerCase();
+  if (planApproval?.status === 'approved' || ['queued', 'planning', 'running', 'completed', 'partial'].includes(sessionStatus)) {
+    if (panel.dataset.status === 'proposed' && planApproval?.status === 'approved') panel.dataset.status = 'approved';
+    if (meta && (planApproval?.status === 'approved' || ['queued', 'planning', 'running'].includes(sessionStatus))) {
+      meta.textContent = `计划 v${version || '—'} · 已批准，任务${['queued', 'planning'].includes(sessionStatus) ? '排队中' : '执行中'}`;
+    }
+    showConversationResearchNextStep(panel, 'approve_plan', payload);
   }
   return panel;
 }

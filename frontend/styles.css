@@ -203,6 +203,8 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-research-command.is-error, .research-session-command.is-error { border-color: #efb3b3; color: #a33232; }
 .conversation-research-command.is-stale, .conversation-research-command.is-conflict, .research-session-command.is-stale, .research-session-command.is-conflict { border-color: #e5c48c; background: #fff7ed; color: #94621c; }
 .conversation-research-refresh, .research-session-refresh { border-color: #e5c48c; background: #fffaf0; color: #94621c; }
+.conversation-research-next-step { display: grid; gap: 7px; margin-top: 2px; padding: 8px 9px; border: 1px solid #c9c0ff; border-radius: 7px; background: #f5f3ff; color: #5546c7; font: 10px/1.6 'DM Mono', monospace; }
+.conversation-research-open-task { justify-self: start; min-height: 27px; padding: 5px 8px; font: inherit; }
 .reasoning-effort-picker { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; background: #fafaff; color: var(--muted); font: 10px 'DM Mono', monospace; white-space: nowrap; }
 .reasoning-effort-picker:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .reasoning-effort-label { color: var(--accent); font-weight: 700; }
