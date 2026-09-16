@@ -1,7 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
@@ -101,4 +101,18 @@ async def handle_request_validation_error(request: Request, exc: RequestValidati
 
 @app.get("/")
 def index() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": NO_CACHE})
+
+
+@app.get("/{full_path:path}")
+def spa_fallback(full_path: str) -> FileResponse:
+    """SPA 兜底：`/c/{conversation_id}` 等前端路由在直接访问/刷新时必须回 index.html。
+
+    前端靠 `window.location.pathname` 做客户端路由（``app.js`` 中 `/c/<id>` 的匹配），
+    但服务端此前只注册了 ``/``，直接刷新深链会得到 JSON 404、页面打不开。
+    ``/assets`` 挂载与 ``/api`` 路由注册在先，会先于本兜底命中；未命中的
+    ``/api/*`` 仍须返回真正的 404，不能被伪装成 200 的 HTML。
+    """
+    if full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": NO_CACHE})
