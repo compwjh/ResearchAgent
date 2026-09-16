@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=53">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=54">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -248,6 +248,27 @@
                 <h3>论文选集</h3>
                 <ul class="research-facet-list" id="research-selection-list" aria-label="已选论文"></ul>
               </div>
+              <div class="research-detail-section research-matrix-section" id="research-matrix-section" hidden>
+                <div class="research-matrix-head">
+                  <div>
+                    <h3>证据矩阵</h3>
+                    <p class="research-plan-label" id="research-matrix-state" role="status" aria-live="polite">等待矩阵。</p>
+                  </div>
+                  <span class="research-matrix-count" id="research-matrix-count"></span>
+                </div>
+                <div class="research-matrix-gaps" id="research-matrix-gaps" hidden>
+                  <h4>显式覆盖缺口</h4>
+                  <ul id="research-matrix-gap-list" aria-label="证据矩阵覆盖缺口"></ul>
+                </div>
+                <div class="research-matrix-scroll" tabindex="0" aria-label="跨论文证据矩阵">
+                  <table class="research-matrix-table" id="research-evidence-matrix">
+                    <caption class="sr-only">每条结论、论文和比较维度的证据关系</caption>
+                    <thead><tr><th scope="col">结论</th><th scope="col">论文</th><th scope="col">维度</th><th scope="col">关系</th><th scope="col">证据</th></tr></thead>
+                    <tbody id="research-evidence-matrix-body"></tbody>
+                  </table>
+                  <p class="research-empty" id="research-matrix-empty">暂无可展示的矩阵单元格。</p>
+                </div>
+              </div>
               <div class="research-detail-section research-acquisition-section" id="research-acquisition-section" hidden>
                 <div class="research-acquisition-head">
                   <div>
@@ -287,12 +308,22 @@
               <div class="research-column-body">
                 <p class="research-report-state" id="research-report-state">任务完成后显示报告。</p>
                 <p class="research-report-state" id="research-report-limitations"></p>
+                <div class="research-report-view-controls" id="research-report-view-controls" hidden>
+                  <label for="research-report-version-select">版本<select id="research-report-version-select" aria-label="报告版本"></select></label>
+                  <div class="research-report-format-tabs" role="tablist" aria-label="报告格式">
+                    <button type="button" role="tab" class="research-report-format-tab is-active" data-report-format="markdown" aria-selected="true">Markdown</button>
+                    <button type="button" role="tab" class="research-report-format-tab" data-report-format="html" aria-selected="false">HTML</button>
+                    <button type="button" role="tab" class="research-report-format-tab" data-report-format="json" aria-selected="false">JSON</button>
+                  </div>
+                </div>
                 <div class="research-report-artifacts" id="research-report-artifacts" hidden></div>
                 <details class="research-report-citations" id="research-report-citations" hidden>
                   <summary>引用 manifest</summary>
                   <ol id="research-report-citation-list"></ol>
                 </details>
+                <div class="research-report-citation-detail" id="research-report-citation-detail" hidden aria-live="polite"></div>
                 <article class="research-report-markdown md-body" id="research-report-markdown" aria-label="研究报告" hidden></article>
+                <pre class="research-report-raw" id="research-report-raw" aria-label="报告原始视图" hidden></pre>
               </div>
             </details>
           </aside>
@@ -730,8 +761,8 @@
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 -->
-  <script src="/assets/research-tasks.js?v=8"></script>
-  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 -->
+  <script src="/assets/research-tasks.js?v=9"></script>
+  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 href="/assets/styles.css?v=53" -->
   <script src="/assets/app.js?v=53"></script>
 </body>
 </html>

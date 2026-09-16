@@ -1,7 +1,7 @@
 # Task 02：冻结 Claim/Evidence 与报告协议
 
 > 关联：[Spec 030](../../specs/030-research-evidence-reporting.md) ｜ 索引：[README](./README.md)
-> 依赖：Spec027 完成；全文验收依赖 Spec029；Spec030 确认及双评审；被依赖：Task03–06；当前状态：`待执行`
+> 依赖：Spec027 完成；全文验收依赖 Spec029；Spec030 确认及双评审；被依赖：Task03–06；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -26,3 +26,4 @@
 ## 变更日志
 
 - 2026-09-12：创建证据与报告协议 Task。
+- 2026-09-17：冻结 `evidence-report-v1`，合同测试 4 passed，判定 `GO_FOR_TASK03`。

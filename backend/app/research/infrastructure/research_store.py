@@ -62,12 +62,17 @@ from backend.app.research.domain.models import (
     ResearchArtifact,
     AcquisitionApproval,
     AcquisitionEvent,
+    ClaimEvidence,
+    ComparisonDimension,
     EvidenceUpgrade,
+    PaperComparisonCell,
     ResearchEvent,
     ResearchDocumentLink,
     ResearchIntakeDraft,
     ResearchNotification,
     ResearchPaperSelection,
+    ResearchClaim,
+    ResearchReport,
     ResearchPlan,
     ResearchSession,
     ResearchSessionPlan,
@@ -319,6 +324,10 @@ class ResearchArtifactConflict(Exception):
     code = "ARTIFACT_IMMUTABLE_CONFLICT"
 
 
+class ResearchReportConflict(Exception):
+    code = "REPORT_VERSION_CONFLICT"
+
+
 class NotificationConflict(Exception):
     code = "NOTIFICATION_IDEMPOTENCY_CONFLICT"
 
@@ -413,6 +422,7 @@ class ResearchStore:
             # v3 marker; existing v3 databases must receive it too.
             self._ensure_task09_schema(connection)
             self._ensure_spec029_schema(connection)
+            self._ensure_spec030_schema(connection)
             self._validate_schema_meta(connection)
             connection.commit()
 
@@ -638,6 +648,76 @@ class ResearchStore:
                SELECT research_task_id, 1, COALESCE(MAX(created_at), '')
                FROM research_paper_selections GROUP BY research_task_id"""
         )
+
+    @staticmethod
+    def _ensure_spec030_schema(connection: sqlite3.Connection) -> None:
+        """Add the versioned evidence-matrix tables without copying paper data."""
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_reports(
+            report_id TEXT PRIMARY KEY,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            plan_version INTEGER NOT NULL CHECK(plan_version >= 1),
+            report_version INTEGER NOT NULL CHECK(report_version >= 1),
+            status TEXT NOT NULL CHECK(status IN ('draft','generating','completed','partial','failed')),
+            markdown TEXT NOT NULL,
+            html TEXT NOT NULL,
+            report_json TEXT NOT NULL,
+            limitations_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            UNIQUE(research_task_id, report_version)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_reports_task ON research_reports(research_task_id, report_version)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_claims(
+            claim_id TEXT PRIMARY KEY,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            plan_version INTEGER NOT NULL CHECK(plan_version >= 1),
+            topic TEXT NOT NULL,
+            statement TEXT NOT NULL,
+            confidence TEXT NOT NULL CHECK(confidence IN ('low','medium','high')),
+            status TEXT NOT NULL CHECK(status IN ('supported','contested','unresolved')),
+            evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            UNIQUE(research_task_id, plan_version, claim_id)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_claim_evidence(
+            evidence_id TEXT PRIMARY KEY,
+            claim_id TEXT NOT NULL REFERENCES research_claims(claim_id) ON DELETE RESTRICT,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            plan_version INTEGER NOT NULL CHECK(plan_version >= 1),
+            paper_id TEXT NOT NULL,
+            evidence_level TEXT NOT NULL CHECK(evidence_level IN ('catalog','abstract','fulltext')),
+            stance TEXT NOT NULL CHECK(stance IN ('supports','contradicts','contextual')),
+            status TEXT NOT NULL CHECK(status IN ('available','unavailable','revalidation_required')),
+            quote_digest TEXT NOT NULL DEFAULT '',
+            locator_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_comparison_dimensions(
+            dimension_id TEXT NOT NULL,
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            plan_version INTEGER NOT NULL CHECK(plan_version >= 1),
+            label TEXT NOT NULL,
+            definition TEXT NOT NULL,
+            display_order INTEGER NOT NULL CHECK(display_order >= 0),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(research_task_id, plan_version, dimension_id),
+            UNIQUE(research_task_id, plan_version, display_order)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_comparison_cells(
+            research_task_id TEXT NOT NULL REFERENCES research_tasks(research_task_id) ON DELETE RESTRICT,
+            plan_version INTEGER NOT NULL CHECK(plan_version >= 1),
+            claim_id TEXT NOT NULL REFERENCES research_claims(claim_id) ON DELETE RESTRICT,
+            paper_id TEXT NOT NULL,
+            dimension_id TEXT NOT NULL,
+            relation TEXT NOT NULL CHECK(relation IN ('supports','contradicts','contextual','missing')),
+            summary TEXT NOT NULL DEFAULT '',
+            evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+            missing_reason TEXT,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(research_task_id, plan_version, claim_id, paper_id, dimension_id)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_claims_task ON research_claims(research_task_id, plan_version)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_evidence_task_v1 ON research_claim_evidence(research_task_id, plan_version, claim_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_cells_task ON research_comparison_cells(research_task_id, plan_version)")
 
     @staticmethod
     def _ensure_scheduler_schema(connection: sqlite3.Connection) -> None:
@@ -1383,6 +1463,11 @@ class ResearchStore:
                 conn.execute("DELETE FROM research_acquisition_approvals WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM research_selection_versions WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM research_evidence_upgrades WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_comparison_cells WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_claim_evidence WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_comparison_dimensions WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_claims WHERE research_task_id=?", (research_task_id,))
+                conn.execute("DELETE FROM research_reports WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM research_paper_selections WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM preliminary_reports WHERE research_task_id=?", (research_task_id,))
                 conn.execute("DELETE FROM research_plans WHERE research_task_id=?", (research_task_id,))
@@ -1425,6 +1510,11 @@ class ResearchStore:
                     conn.execute("DELETE FROM research_acquisition_approvals WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM research_selection_versions WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM research_evidence_upgrades WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_comparison_cells WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_claim_evidence WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_comparison_dimensions WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_claims WHERE research_task_id=?", (research_task_id,))
+                    conn.execute("DELETE FROM research_reports WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM research_paper_selections WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM preliminary_reports WHERE research_task_id=?", (research_task_id,))
                     conn.execute("DELETE FROM research_plans WHERE research_task_id=?", (research_task_id,))
@@ -1487,6 +1577,11 @@ class ResearchStore:
             ("research_acquisition_approvals", "approval_id", "approval_id"),
             ("research_selection_versions", "research_task_id", "research_task_id"),
             ("research_evidence_upgrades", "claim_id", "claim_id"),
+            ("research_comparison_cells", "claim_id", "claim_id"),
+            ("research_claim_evidence", "evidence_id", "evidence_id"),
+            ("research_comparison_dimensions", "dimension_id", "dimension_id"),
+            ("research_claims", "claim_id", "claim_id"),
+            ("research_reports", "report_id", "report_id"),
             ("research_paper_selections", "catalog_paper_id", "catalog_paper_id"),
             ("preliminary_reports", "report_id", "report_id"),
             ("research_activity_outbox", "outbox_id", "outbox_id"),
@@ -1648,6 +1743,7 @@ class ResearchStore:
             "research_plan_activations", "research_events", "research_work_items",
             "research_acquisition_events", "research_document_links", "research_acquisition_approvals",
             "research_selection_versions", "research_evidence_upgrades",
+            "research_comparison_cells", "research_claim_evidence", "research_comparison_dimensions", "research_claims",
             "research_paper_selections", "preliminary_reports", "research_plans",
         )
         # Keep these outside the transaction so the rollback audit can retain
@@ -4776,8 +4872,256 @@ class ResearchStore:
         return [EvidenceUpgrade.from_row(dict(row)) for row in rows]
 
     # ------------------------------------------------------------------ #
+    # Spec030 evidence matrix
+    # ------------------------------------------------------------------ #
+
+    def save_claim(self, claim: ResearchClaim) -> ResearchClaim:
+        """Insert an immutable claim projection; identical retries are idempotent."""
+        if not claim.claim_id or not claim.task_id or not claim.topic.strip() or not claim.statement.strip():
+            raise ValueError("invalid research claim")
+        encoded = json.dumps(list(claim.evidence_ids or []), ensure_ascii=False, separators=(",", ":"))
+        now = claim.created_at or _utcnow()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute("SELECT * FROM research_claims WHERE claim_id=?", (claim.claim_id,)).fetchone()
+                if existing is not None:
+                    current = ResearchClaim.from_row(dict(existing))
+                    if current.to_dict() | {"created_at": claim.created_at or current.created_at} != claim.to_dict() | {"created_at": current.created_at}:
+                        raise ValueError("claim_id already exists with different content")
+                    conn.commit()
+                    return current
+                conn.execute("""INSERT INTO research_claims(
+                    claim_id,research_task_id,plan_version,topic,statement,confidence,status,evidence_ids_json,created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?)""", (
+                    claim.claim_id, claim.task_id, int(claim.plan_version), claim.topic, claim.statement,
+                    claim.confidence, claim.status, encoded, now,
+                ))
+                row = conn.execute("SELECT * FROM research_claims WHERE claim_id=?", (claim.claim_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchClaim.from_row(dict(row))
+
+    def get_claim(self, claim_id: str) -> ResearchClaim | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM research_claims WHERE claim_id=?", (claim_id,)).fetchone()
+        return ResearchClaim.from_row(dict(row)) if row else None
+
+    def list_claims(self, research_task_id: str, *, plan_version: int | None = None) -> list[ResearchClaim]:
+        sql = "SELECT * FROM research_claims WHERE research_task_id=?"
+        params: list[object] = [research_task_id]
+        if plan_version is not None:
+            sql += " AND plan_version=?"
+            params.append(int(plan_version))
+        sql += " ORDER BY claim_id"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [ResearchClaim.from_row(dict(row)) for row in rows]
+
+    def save_claim_evidence(self, evidence: ClaimEvidence) -> ClaimEvidence:
+        if not evidence.evidence_id or not evidence.claim_id or not evidence.task_id or not evidence.paper_id:
+            raise ValueError("invalid claim evidence")
+        now = evidence.created_at or _utcnow()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute("SELECT * FROM research_claim_evidence WHERE evidence_id=?", (evidence.evidence_id,)).fetchone()
+                if existing is None:
+                    conn.execute("""INSERT INTO research_claim_evidence(
+                        evidence_id,claim_id,research_task_id,plan_version,paper_id,evidence_level,stance,status,
+                        quote_digest,locator_json,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (
+                        evidence.evidence_id, evidence.claim_id, evidence.task_id, int(evidence.plan_version), evidence.paper_id,
+                        evidence.evidence_level, evidence.stance, evidence.status, evidence.quote_digest,
+                        json.dumps(evidence.locator or {}, ensure_ascii=False, separators=(",", ":")), now,
+                    ))
+                else:
+                    current = ClaimEvidence.from_row(dict(existing))
+                    immutable = (current.claim_id, current.task_id, current.plan_version, current.paper_id, current.evidence_level, current.stance)
+                    requested = (evidence.claim_id, evidence.task_id, int(evidence.plan_version), evidence.paper_id, evidence.evidence_level, evidence.stance)
+                    if immutable != requested:
+                        raise ValueError("evidence_id already exists with different identity")
+                    conn.execute("""UPDATE research_claim_evidence SET status=?, quote_digest=?, locator_json=? WHERE evidence_id=?""", (
+                        evidence.status, evidence.quote_digest,
+                        json.dumps(evidence.locator or {}, ensure_ascii=False, separators=(",", ":")), evidence.evidence_id,
+                    ))
+                row = conn.execute("SELECT * FROM research_claim_evidence WHERE evidence_id=?", (evidence.evidence_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ClaimEvidence.from_row(dict(row))
+
+    def get_claim_evidence(self, evidence_id: str) -> ClaimEvidence | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM research_claim_evidence WHERE evidence_id=?", (evidence_id,)).fetchone()
+        return ClaimEvidence.from_row(dict(row)) if row else None
+
+    def list_claim_evidence(self, research_task_id: str, *, plan_version: int | None = None) -> list[ClaimEvidence]:
+        sql = "SELECT * FROM research_claim_evidence WHERE research_task_id=?"
+        params: list[object] = [research_task_id]
+        if plan_version is not None:
+            sql += " AND plan_version=?"
+            params.append(int(plan_version))
+        sql += " ORDER BY evidence_id"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [ClaimEvidence.from_row(dict(row)) for row in rows]
+
+    def replace_comparison_dimensions(self, research_task_id: str, plan_version: int, dimensions: list[ComparisonDimension]) -> list[ComparisonDimension]:
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("DELETE FROM research_comparison_dimensions WHERE research_task_id=? AND plan_version=?", (research_task_id, int(plan_version)))
+                for item in dimensions:
+                    conn.execute("""INSERT INTO research_comparison_dimensions(
+                        dimension_id,research_task_id,plan_version,label,definition,display_order,created_at
+                    ) VALUES(?,?,?,?,?,?,?)""", (
+                        item.dimension_id, research_task_id, int(plan_version), item.label, item.definition,
+                        int(item.display_order), item.created_at or _utcnow(),
+                    ))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return self.list_comparison_dimensions(research_task_id, plan_version=plan_version)
+
+    def list_comparison_dimensions(self, research_task_id: str, *, plan_version: int | None = None) -> list[ComparisonDimension]:
+        sql = "SELECT * FROM research_comparison_dimensions WHERE research_task_id=?"
+        params: list[object] = [research_task_id]
+        if plan_version is not None:
+            sql += " AND plan_version=?"
+            params.append(int(plan_version))
+        sql += " ORDER BY display_order, dimension_id"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [ComparisonDimension.from_row(dict(row)) for row in rows]
+
+    def replace_comparison_cells(self, research_task_id: str, plan_version: int, cells: list[PaperComparisonCell]) -> list[PaperComparisonCell]:
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("DELETE FROM research_comparison_cells WHERE research_task_id=? AND plan_version=?", (research_task_id, int(plan_version)))
+                for item in cells:
+                    conn.execute("""INSERT INTO research_comparison_cells(
+                        research_task_id,plan_version,claim_id,paper_id,dimension_id,relation,summary,evidence_ids_json,missing_reason,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)""", (
+                        research_task_id, int(plan_version), item.claim_id, item.paper_id, item.dimension_id, item.relation,
+                        item.summary, json.dumps(list(item.evidence_ids or []), ensure_ascii=False, separators=(",", ":")),
+                        item.missing_reason, item.created_at or _utcnow(),
+                    ))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return self.list_comparison_cells(research_task_id, plan_version=plan_version)
+
+    def list_comparison_cells(self, research_task_id: str, *, plan_version: int | None = None) -> list[PaperComparisonCell]:
+        sql = "SELECT * FROM research_comparison_cells WHERE research_task_id=?"
+        params: list[object] = [research_task_id]
+        if plan_version is not None:
+            sql += " AND plan_version=?"
+            params.append(int(plan_version))
+        sql += " ORDER BY claim_id, paper_id, dimension_id"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [PaperComparisonCell.from_row(dict(row)) for row in rows]
+
+    # Explicit names used by application adapters and isolated contract tests.
+    save_comparison_dimensions = replace_comparison_dimensions
+    save_comparison_cells = replace_comparison_cells
+    get_comparison_dimensions = list_comparison_dimensions
+    get_comparison_cells = list_comparison_cells
+
+    # ------------------------------------------------------------------ #
     # PreliminaryReport
     # ------------------------------------------------------------------ #
+
+    def next_report_version(self, research_task_id: str, owner_id: str) -> int:
+        """Return the next immutable Spec030 version for an owner-bound task."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT MAX(version) AS version FROM (
+                       SELECT r.report_version AS version FROM research_reports r
+                       JOIN research_tasks t ON t.research_task_id=r.research_task_id
+                       WHERE r.research_task_id=? AND t.owner_id=?
+                       UNION ALL
+                       SELECT a.report_version AS version FROM research_artifacts a
+                       JOIN research_tasks t ON t.research_task_id=a.research_task_id
+                       WHERE a.research_task_id=? AND t.owner_id=?)""",
+                (research_task_id, owner_id, research_task_id, owner_id),
+            ).fetchone()
+        return int(row["version"] or 0) + 1
+
+    def save_research_report(self, report: ResearchReport, *, owner_id: str | None = None) -> ResearchReport:
+        """Insert one immutable report version; never update an existing row."""
+        if report.status not in {"draft", "generating", "completed", "partial", "failed"}:
+            raise ValueError("invalid research report status")
+        if int(report.plan_version) < 1 or int(report.report_version) < 1:
+            raise ValueError("report versions must be positive")
+        try:
+            json.loads(report.report_json)
+            json.loads(report.limitations_json or "[]")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("research report JSON is invalid") from exc
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if owner_id is not None and not conn.execute(
+                    "SELECT 1 FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (report.research_task_id, owner_id),
+                ).fetchone():
+                    raise ResearchTaskNotFound(report.research_task_id)
+                conn.execute(
+                    """INSERT INTO research_reports(
+                       report_id,research_task_id,plan_version,report_version,status,markdown,html,
+                       report_json,limitations_json,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (report.report_id, report.research_task_id, int(report.plan_version),
+                     int(report.report_version), report.status, report.markdown, report.html,
+                     report.report_json, report.limitations_json, report.created_at or _utcnow()),
+                )
+                row = conn.execute("SELECT * FROM research_reports WHERE report_id=?", (report.report_id,)).fetchone()
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                raise ResearchReportConflict() from exc
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchReport.from_row(dict(row))
+
+    def get_research_report(
+        self, research_task_id: str, owner_id: str, *, report_version: int | None = None
+    ) -> ResearchReport | None:
+        sql = """SELECT r.* FROM research_reports r
+                 JOIN research_tasks t ON t.research_task_id=r.research_task_id
+                 WHERE r.research_task_id=? AND t.owner_id=?"""
+        params: list[object] = [research_task_id, owner_id]
+        if report_version is not None:
+            sql += " AND r.report_version=?"
+            params.append(int(report_version))
+        else:
+            sql += " ORDER BY r.report_version DESC LIMIT 1"
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return ResearchReport.from_row(dict(row)) if row else None
+
+    def list_research_reports(self, research_task_id: str, owner_id: str) -> list[ResearchReport]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT r.* FROM research_reports r
+                   JOIN research_tasks t ON t.research_task_id=r.research_task_id
+                   WHERE r.research_task_id=? AND t.owner_id=? ORDER BY r.report_version""",
+                (research_task_id, owner_id),
+            ).fetchall()
+        return [ResearchReport.from_row(dict(row)) for row in rows]
+
+    # Explicit aliases used by application adapters and contract tests.
+    create_research_report = save_research_report
+    get_report_version = get_research_report
 
     def save_report(self, report: PreliminaryReport) -> PreliminaryReport:
         """写入/更新某计划版本的报告（同一计划版本唯一）：ON CONFLICT 覆盖 markdown/limitations/status。"""

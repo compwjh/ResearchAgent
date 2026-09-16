@@ -322,6 +322,24 @@ class ResearchService:
         """读取报告（先校验归属）；plan_version 为 None 取最大版本；未生成抛 REPORT_NOT_READY 409。"""
         task = self.get_task(research_task_id, owner_id)
         report = self._store.get_report(research_task_id, plan_version)
+        if report is None and hasattr(self._store, "get_research_report"):
+            # Spec030's immutable report projection is the canonical source
+            # for the legacy singular endpoint when no mutable Spec027 row
+            # exists.  Preserve the old response entity without rewriting or
+            # copying report content into ``preliminary_reports``.
+            evidence_report = self._store.get_research_report(
+                research_task_id, owner_id, report_version=plan_version,
+            )
+            if evidence_report is not None:
+                return PreliminaryReport(
+                    report_id=evidence_report.report_id,
+                    research_task_id=research_task_id,
+                    plan_version=evidence_report.plan_version,
+                    status=evidence_report.status,
+                    markdown=evidence_report.markdown,
+                    limitations_json=evidence_report.limitations_json,
+                    created_at=evidence_report.created_at,
+                )
         if report is None and task.status in TASK_TERMINAL:
             # Spec034 Task08 persists immutable Markdown/HTML artifacts as the
             # canonical report.  Older callers still use this PreliminaryReport

@@ -39,6 +39,15 @@ from backend.app.research.application.evidence_upgrade import (
     EvidenceUpgradeError,
     EvidenceUpgradeService,
 )
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
+from backend.app.research.application.report_generation import (
+    EvidenceReportError,
+    EvidenceReportGenerator,
+    EvidenceReportService,
+    ReportGenerator,
+    ReportGenerationService,
+    render_evidence_report,
+)
 from backend.app.research.application.model_router import ModelRouter
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.plan_authoring import (
@@ -82,6 +91,7 @@ from backend.app.research.domain.models import (
     ResearchDocumentLink,
     ResearchEvent,
     ResearchPaperSelection,
+    ResearchReport,
     ResearchPlan,
     ResearchSessionPlan,
     ResearchTask,
@@ -102,6 +112,14 @@ __all__ = [
     "ResearchAcquisitionService",
     "EvidenceUpgradeError",
     "EvidenceUpgradeService",
+    "EvidenceMatrixError",
+    "EvidenceMatrixService",
+    "EvidenceReportError",
+    "ReportGenerationService",
+    "EvidenceReportGenerator",
+    "EvidenceReportService",
+    "ReportGenerator",
+    "render_evidence_report",
     # 服务层与稳定错误
     "ResearchService",
     "ResearchServiceError",
@@ -150,6 +168,7 @@ __all__ = [
     "AcquisitionApproval",
     "ResearchDocumentLink",
     "EvidenceUpgrade",
+    "ResearchReport",
     "AcquisitionEvent",
     # 工厂
     "build_research_store",
