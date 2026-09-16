@@ -130,7 +130,10 @@ def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": NO_CACHE})
 
 
-@app.get("/{full_path:path}")
+@app.api_route(
+    "/{full_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
 def spa_fallback(full_path: str) -> FileResponse:
     """SPA 兜底：`/c/{conversation_id}` 等前端路由在直接访问/刷新时必须回 index.html。
 
