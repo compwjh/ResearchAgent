@@ -42,6 +42,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -288,6 +289,75 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 )
 
 
+_DDL_TABLE_RE = re.compile(r"CREATE TABLE IF NOT EXISTS (\w+)\s*\((.*)\)", re.S)
+# ALTER TABLE ADD COLUMN 不接受这些约束，补列时必须剥掉。
+_DDL_TRUNCATE_RE = re.compile(r"\b(REFERENCES|CHECK|COLLATE|UNIQUE|PRIMARY|AUTOINCREMENT)\b", re.I)
+
+
+def _ddl_columns(body: str) -> list[tuple[str, str]]:
+    """把 CREATE TABLE 括号体解析为 ``[(列名, 可 ALTER 的列定义)]``。
+
+    只取列定义行，跳过 PRIMARY KEY / FOREIGN KEY / UNIQUE / CHECK 等表级约束。
+    列定义再剥掉 ALTER 不支持的约束：``NOT NULL`` 没有 DEFAULT 时一并去掉
+    （否则 ADD COLUMN 会因现存行无法填值而失败）。
+    """
+    parts: list[str] = []
+    depth = 0
+    current = ""
+    for char in body:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += char
+    parts.append(current)
+
+    columns: list[tuple[str, str]] = []
+    for part in parts:
+        text = part.strip()
+        if not text or re.match(r"(?i)^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)\b", text):
+            continue
+        name = text.split()[0]
+        definition = text[len(name):].strip()
+        cut = _DDL_TRUNCATE_RE.search(definition)
+        if cut:
+            definition = definition[: cut.start()].strip()
+        definition = re.sub(r"\s+", " ", definition).strip().rstrip(",")
+        if re.search(r"(?i)NOT\s+NULL", definition) and not re.search(r"(?i)DEFAULT", definition):
+            definition = re.sub(r"(?i)NOT\s+NULL", "", definition).strip()
+        columns.append((name, definition or "TEXT"))
+    return columns
+
+
+def _ensure_baseline_columns(connection: sqlite3.Connection) -> None:
+    """给既有库补齐基线新增的列（幂等、自愈）。
+
+    基线用 ``CREATE TABLE IF NOT EXISTS``，因此**既有库永远不会因它获得新列**；
+    而 ``SCHEMA_VERSION`` 又未随基线变动递增，版本校验发现不了差异。结果是旧库缺列，
+    后续建索引直接 ``no such column``，``MemoryRepository.initialize()`` 随fail-closed，
+    会话/项目等接口集体 500。这里用基线 DDL 与实际表结构做差集并逐个 ALTER：
+    表尚不存在则跳过（交给后面的 CREATE TABLE，它已含新列）。
+    """
+    for statement in _SCHEMA_STATEMENTS:
+        match = _DDL_TABLE_RE.search(statement)
+        if not match:
+            continue
+        table, body = match.group(1), match.group(2)
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        if not exists:
+            continue
+        present = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        for name, definition in _ddl_columns(body):
+            if name not in present:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
 def create_baseline_schema(connection: sqlite3.Connection, owner_id: str) -> None:
     """在新库（或已重建的库）上创建全部基线表与索引。
 
@@ -298,6 +368,8 @@ def create_baseline_schema(connection: sqlite3.Connection, owner_id: str) -> Non
     ``update_conversation_reasoning`` 查不到偏好行就会走 INSERT 分支，
     把「effort 与当前值相同」误判成偏好变更并刷新时间戳。
     """
+    # 基线新增列但版本号未变时，既有库必须先补列，否则下面的唯一索引会建失败。
+    _ensure_baseline_columns(connection)
     for statement in _SCHEMA_STATEMENTS:
         connection.execute(statement)
     connection.execute(
