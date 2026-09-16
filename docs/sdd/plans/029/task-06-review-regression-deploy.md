@@ -30,6 +30,7 @@
 - `runtime-probe-report.md` 记录修复前探针事实；后续复验确认默认 `EvidenceUpgradeService` 读取 `FinalizeBundleStore` 的发布代次，且新搜索任务会持久化首个有效 `search_id` 并在任务详情返回。
 - 定向桥接回归：`63 passed`（含 Spec029 search-id、acquisition、evidence、frontend 与 Spec027 后端切片）。
 - 真实公开 PDF 下载、导入、索引、全文证据升级和浏览器候选确认尚未执行，因此 Spec029 保持实施中。
+- 2026-09-16：临时验收发现 Intake 补充时间范围时前端提示 `STREAM_INTERRUPTED`。根因是 `_intake_stream` 使用了不带 `event_seq` 的旧 SSE 帧，而前端已强制校验连续序号；同时表单入口缺少时间范围字段，导致会话停在 `intake_pending`。已统一 Intake 投影、为表单增加起止年份、补齐 Intake SSE 序号，并为表单创建的助手占位消息落盘终态。定向回归 `74 passed`，服务已在 8500 重启验证健康；真实全文导入仍待用户继续验收。
 
 ## 变更日志
 

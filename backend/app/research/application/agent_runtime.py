@@ -1154,6 +1154,10 @@ class ResearchAgentRunner:
             for value in item.get("catalog_paper_ids", ()):
                 if isinstance(value, str) and value.strip() and value.strip() not in candidate_ids:
                     candidate_ids.append(value.strip())
+        # Recovery may only replace model output with facts extracted from the
+        # catalog tool.  A successful tool call without a parseable ID carries
+        # no candidate fact and must not turn a model-provided candidate list
+        # into an empty one.
         if not successful_search or not candidate_ids:
             return None
 

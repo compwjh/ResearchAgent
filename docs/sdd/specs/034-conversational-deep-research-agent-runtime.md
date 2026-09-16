@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（Task11 已完成，待 Spec034 收口回归）**
+**当前状态：已完成**
 
 > 本 Spec 来自 2026-09-13 多轮 Grilling 的共同裁决。确认前只允许完善规范、任务计划和评审材料，不修改业务代码。
 > 2026-09-13：需求评审第二轮 APPROVE、技术评审第二轮 GO；用户此前明确要求“然后再开发034”，视为确认本 Spec，按 Task02 → Task10 顺序实施。
@@ -484,3 +484,4 @@ Smoke 必须证明：
 | 2026-09-13 | 架构师（自身） | 依据门禁评审进入修订中：补齐产品旅程、状态/命令/CAS、Artifact/Notification、真实 Runner/Registry/目录接缝与可重复 Smoke；Spec 保持待确认 |
 | 2026-09-15 | 架构师（自身） | Task10 修复目录 RAG 降级排序与 Search→Evaluator 事实交接；最终全量 pytest `1878 passed, 1 skipped, 5 warnings, 52 subtests`；真实端口 18083 完成 Intake→Plan→Approval→Search→Evaluator→Synthesizer 并生成 Markdown/HTML/citation manifest，完成部署、验收与复盘，Spec 标记已完成 |
 | 2026-09-16 | 架构师（自身） | 真实 Artifact 仅含一篇证据对象且报告渲染只输出 ID；新增 Task11，补强至少五篇候选保留和标题/摘要/关键词/跨论文归纳，Spec 暂回实施中 |
+| 2026-09-16 | 架构师（自身） | 修复 Spec034 收口缺陷：统一接收 Intake `processing_step` 序号、使冲突处理按钮可操作、压缩计划审批按钮样式、保留目录详情降级时的候选；合并远程主干后完成 `COMPACTION_SUMMARY_MODE=rule .venv/bin/python -m pytest -q`（2478 passed、1 skipped、67 subtests），Spec 标记已完成 |

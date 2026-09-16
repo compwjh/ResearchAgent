@@ -258,10 +258,22 @@ def test_session_list_returns_status_aware_keyset_cursor(tmp_path):
         first = routes_research.list_research_sessions(limit=2)
         assert first["next_cursor"]
         second = routes_research.list_research_sessions(limit=2, cursor=first["next_cursor"])
-    ids = [item["research_session_id"] for item in first["research_sessions"] + second["research_sessions"]]
-    assert len(ids) == len(set(ids)) == 3
+        ids = [item["research_session_id"] for item in first["research_sessions"] + second["research_sessions"]]
+        assert len(ids) == len(set(ids)) == 3
 
 
+def test_terminal_task_reconciles_stale_queued_session_projection(tmp_path):
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    _legacy(store, "task-terminal", "owner-a", "partial")
+    with store._connect() as db:
+        db.execute(
+            "INSERT INTO research_sessions(research_session_id,owner_id,conversation_id,trigger_message_id,intake_draft_id,research_task_id,current_plan_version,status,unread_state_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            ("session-stale", "owner-a", "conversation-a", "message-a", "draft-a", "task-terminal", 1, "queued", "{}", "2020", "2020"),
+        )
+    repaired = store.reconcile_session_status("session-stale", "owner-a", "partial")
+    assert repaired.status == "partial"
+    # Repeated GET/recovery calls are idempotent and never rewrite a terminal state.
+    assert store.reconcile_session_status("session-stale", "owner-a", "completed").status == "partial"
 def test_session_list_project_filter_cursor_anchors_to_last_visible_row(tmp_path):
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     store = ResearchStore(tmp_path / "research.sqlite3")

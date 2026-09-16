@@ -221,6 +221,40 @@ class ResearchService:
     # 查询
     # ------------------------------------------------------------------ #
 
+    def reconcile_session_projection(
+        self, research_task_id: str, owner_id: str, *, result_status: str | None = None
+    ):
+        """Align a Session's read projection with its linked durable Task.
+
+        Session activity and Task execution are separate persistence seams, so
+        a process crash can leave the Session at ``queued`` after the Task is
+        already terminal. This method is safe for GET and completion paths and
+        never starts, rewinds, or mutates Task work.
+        """
+        task = self._store.get_task(research_task_id, owner_id)
+        session = self._store.get_session_by_task(research_task_id, owner_id)
+        if task is None or session is None:
+            return session
+        status = result_status if result_status in TASK_TERMINAL else task.status
+        if status in TASK_TERMINAL:
+            session = self._store.reconcile_session_status(
+                session.research_session_id, owner_id, status
+            )
+            plan = self._store.get_session_plan(
+                session.research_session_id, owner_id, session.current_plan_version
+            )
+            if plan is not None and plan.status in {"proposed", "active"}:
+                with suppress(Exception):
+                    self._store.update_session_plan_status(
+                        session.research_session_id, owner_id, plan.version, "completed"
+                    )
+        elif status in {"planning", "running"} and session.status == "queued":
+            with suppress(InvalidStateTransition):
+                session = self._store.update_session_status(
+                    session.research_session_id, owner_id, "running"
+                )
+        return session
+
     def get_task(self, research_task_id: str, owner_id: str) -> ResearchTask:
         """按 owner 读取任务；不存在（或不属于该 owner）抛 TASK_NOT_FOUND 404。"""
         task = self._store.get_task(research_task_id, owner_id)
@@ -286,8 +320,32 @@ class ResearchService:
         self, research_task_id: str, owner_id: str, *, plan_version: int | None = None
     ) -> PreliminaryReport:
         """读取报告（先校验归属）；plan_version 为 None 取最大版本；未生成抛 REPORT_NOT_READY 409。"""
-        self.get_task(research_task_id, owner_id)
+        task = self.get_task(research_task_id, owner_id)
         report = self._store.get_report(research_task_id, plan_version)
+        if report is None and task.status in TASK_TERMINAL:
+            # Spec034 Task08 persists immutable Markdown/HTML artifacts as the
+            # canonical report.  Older callers still use this PreliminaryReport
+            # endpoint, so expose the Markdown artifact without creating a
+            # second mutable report record.  Pending tasks remain 409.
+            version = plan_version or task.current_plan_version
+            artifacts = self._store.list_artifacts_for_task(
+                research_task_id, owner_id, report_version=version
+            )
+            markdown = next(
+                (item for item in artifacts
+                 if item.artifact_type == "markdown" and isinstance(item.content, str) and item.content),
+                None,
+            )
+            if markdown is not None:
+                return PreliminaryReport(
+                    report_id=f"artifact:{markdown.artifact_id}",
+                    research_task_id=research_task_id,
+                    plan_version=markdown.report_version,
+                    status=task.status,
+                    markdown=markdown.content,
+                    limitations_json=json.dumps({"artifact_backed": True}, ensure_ascii=False),
+                    created_at=markdown.created_at,
+                )
         if report is None:
             raise ResearchServiceError("REPORT_NOT_READY", 409, f"report not ready: {research_task_id}")
         return report
@@ -650,8 +708,20 @@ class ResearchService:
         或内部标识符（Spec027 §端点与事件接口：安全 payload 是白名单）。
         """
         try:
+            # Activity is queued before the worker thread starts. Reflect the
+            # actual execution state immediately; this is idempotent on retry.
+            with suppress(Exception):
+                session = self._store.get_session_by_task(research_task_id, owner_id)
+                if session is not None and session.status == "queued":
+                    self._store.update_session_status(
+                        session.research_session_id, owner_id, "running"
+                    )
             self.drain_processing_projection_retries(research_task_id, owner_id)
-            self._orchestrator().run(research_task_id, owner_id)
+            result = self._orchestrator().run(research_task_id, owner_id)
+            with suppress(Exception):
+                self.reconcile_session_projection(
+                    research_task_id, owner_id, result_status=result.status
+                )
         except Exception:
             # 不伪造成功：先记日志再落事件（测试据「事件已落库」断言日志已发出）；状态机拒绝则忽略。
             logger.exception("research orchestration crashed: task=%s", research_task_id)
@@ -670,6 +740,10 @@ class ResearchService:
                 )
             with suppress(InvalidStateTransition):
                 self._store.update_task_status(research_task_id, owner_id, "interrupted")
+            with suppress(Exception):
+                self.reconcile_session_projection(
+                    research_task_id, owner_id, result_status="interrupted"
+                )
             session = self._store.get_session_by_task(research_task_id, owner_id)
             task = self._store.get_task(research_task_id, owner_id)
             if session is not None and task is not None:

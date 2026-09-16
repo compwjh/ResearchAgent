@@ -189,6 +189,9 @@ def test_spec034_intake_summary_is_safe_and_contains_the_product_contract() -> N
     assert "confidence" in renderer
     assert "confirmation_status" in renderer
     assert "missing" in renderer
+    assert "handleConversationIntakeChoice" in APP
+    assert "conversation-intake-choice-status" in APP
+    assert "cancel_research" in renderer
     for choice in ("modify_current", "cancel_then_new", "new_conversation"):
         assert choice in APP
     assert "innerHTML" not in renderer
@@ -200,8 +203,8 @@ def test_spec034_intake_terminal_state_is_collapsible_and_assets_are_bumped() ->
     assert "conversation-intake-body" in APP
     assert "collapseConversationIntake" in APP
     assert "data-status=\"failed\"" in STYLES
-    assert "/assets/app.js?v=44" in INDEX
-    assert "/assets/styles.css?v=44" in INDEX
+    assert "/assets/app.js?v=53" in INDEX
+    assert "/assets/styles.css?v=53" in INDEX
 
 
 def test_spec034_pending_intake_stays_reachable_after_completed_sse_turn() -> None:

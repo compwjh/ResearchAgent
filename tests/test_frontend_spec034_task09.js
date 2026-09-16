@@ -59,4 +59,8 @@ assert.equal(sessionProgressText({ progress: 0.5 }), '进度：50%');
 assert.equal(sessionApprovalText({}), '审批：—');
 assert.equal(sessionAgentToolText({}), 'Agent/Tool：—');
 assert.equal(sessionTaskProjection({ title: 'invalid' }), null);
+assert.equal(sessionTaskProjection({
+  research_session_id: 'stale-session', status: 'queued',
+  task: { research_task_id: 'terminal-task', status: 'partial' },
+}).status, 'partial');
 console.log('Task09 frontend Session/Fake-DOM contract: PASS');

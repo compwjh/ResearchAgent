@@ -67,6 +67,12 @@
     ['report_structure', '报告结构'], ['safety_summary', '降级策略'],
   ];
   const SESSION_APPROVAL_LABELS = { plan: '计划审批', capability_override: '能力审批', resource_extension: '资源扩容审批' };
+  const SESSION_APPROVAL_STATUS_LABELS = {
+    pending: '待处理', approved: '已批准', rejected: '已拒绝', cancelled: '已取消', superseded: '已被替代',
+  };
+  function sessionApprovalStatusText(status) {
+    return SESSION_APPROVAL_STATUS_LABELS[String(status || 'pending').toLowerCase()] || '已处理';
+  }
   const SESSION_COMMAND_LABELS = {
     approve_plan: '批准计划', revise_plan: '修改计划', cancel_research: '取消研究',
     approve_capability: '批准能力', approve_resource_extension: '批准资源扩容', decline_request: '拒绝请求',
@@ -464,7 +470,17 @@
       let value; try { value = JSON.parse(message.data || '{}'); } catch (_) { return; }
       applyNotification(value, kind);
     }));
+    source.addEventListener('stream_end', () => {
+      // The server uses bounded polling and closes normally after a heartbeat
+      // window.  Reconnect without presenting that expected EOF as an outage.
+      source.__gracefulEnd = true;
+      source.close();
+      if (state.notificationEventSource === source) state.notificationEventSource = null;
+      setText('research-notifications-status', '通知已同步，继续监听…');
+      scheduleNotificationReconnect();
+    });
     source.onerror = () => {
+      if (source.__gracefulEnd) return;
       source.close(); if (state.notificationEventSource === source) state.notificationEventSource = null;
       setText('research-notifications-status', `通知连接中断，将从 event_seq ${state.notificationLastSeq} 之后重连。`);
       scheduleNotificationReconnect();
@@ -1015,7 +1031,7 @@
     (Array.isArray(approvals) ? approvals : []).filter((approval) => approval && Object.prototype.hasOwnProperty.call(SESSION_APPROVAL_LABELS, approval.kind)).forEach((approval) => {
       const card = state.document.createElement('article'); card.className = 'research-session-approval'; card.dataset.kind = approval.kind; card.dataset.status = approval.status || 'pending';
       const title = state.document.createElement('strong'); title.className = 'research-session-approval-title'; title.textContent = SESSION_APPROVAL_LABELS[approval.kind];
-      const status = state.document.createElement('span'); status.className = 'research-session-approval-status'; status.textContent = approval.status === 'pending' ? '待处理' : `已${approval.status}`;
+      const status = state.document.createElement('span'); status.className = 'research-session-approval-status'; status.textContent = sessionApprovalStatusText(approval.status);
       const meta = state.document.createElement('span'); meta.className = 'research-session-approval-meta'; meta.textContent = `版本 v${text(approval.subject_version, '—')} · ${safeSessionValue(approval.approval_request_id, '无 ID')}`;
       const actions = state.document.createElement('div'); actions.className = 'research-session-approval-actions';
       const command = approval.kind === 'plan' ? 'approve_plan' : approval.kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
@@ -1026,7 +1042,10 @@
         approve.addEventListener('click', () => submitSessionCommand(sessionId, command, approval.subject_version || subjectVersion, sessionCommandScope(command, approval, plan), approve, async (result) => { status.textContent = '已完成'; card.dataset.status = 'approved'; await mergeSessionCommandResult(result, sessionId); }));
         decline.addEventListener('click', () => submitSessionCommand(sessionId, 'decline_request', approval.subject_version || subjectVersion, sessionCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
       }
-      actions.append(approve, decline); card.append(title, status, meta, actions); container.appendChild(card);
+      if (pending) actions.append(approve, decline);
+      card.append(title, status, meta);
+      if (pending) card.appendChild(actions);
+      container.appendChild(card);
     });
   }
 
@@ -1709,7 +1728,7 @@
           if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) return;
           state.selectedSessionId = resolvedSessionId;
           const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
-          state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: session.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
+          state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: canonical?.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
           renderTaskHeader(state.selectedTask);
           renderSessionPlan(session.plan, session.approvals || [], session);
         } catch (_) {
@@ -1762,6 +1781,14 @@
     const targetPaperCount = Number(byId('research-target-count')?.value || 12);
     const language = byId('research-language')?.value || 'zh';
     const reviewPlanFirst = Boolean(byId('research-review-plan')?.checked);
+    const yearFrom = Number(byId('research-year-from')?.value);
+    const yearTo = Number(byId('research-year-to')?.value);
+    if (!Number.isInteger(yearFrom) || !Number.isInteger(yearTo) || yearFrom < 1900 || yearTo > 2200 || yearFrom > yearTo) {
+      setText('research-create-status', '请填写有效的时间范围（起始年份不晚于结束年份）。');
+      byId('research-year-from')?.focus();
+      if (button) button.disabled = false;
+      return;
+    }
     if (!state.createIdempotencyKey) state.createIdempotencyKey = root.crypto?.randomUUID?.() || `research-session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.triggerMessageId = state.triggerMessageId || state.conversation?.last_message_id || state.conversation?.trigger_message_id || null;
     const payload = {
@@ -1771,6 +1798,7 @@
       ...(currentProjectId() ? { project_id: currentProjectId() } : {}),
       intake: {
         topic: goal, objective: goal, language, depth: quality,
+        time_range: { from: yearFrom, to: yearTo },
         sources: ['usenix'], citations: 'true', output: 'markdown',
         constraints: `目标论文数：${Number.isInteger(targetPaperCount) ? Math.max(1, Math.min(20, targetPaperCount)) : 12}；先审核计划：${reviewPlanFirst ? '是' : '否'}`,
       },

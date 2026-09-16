@@ -48,6 +48,7 @@ from backend.app.research.domain.contracts import (
     PLAN_STATUSES,
     ROLE_WHITELIST,
     SESSION_STATUSES,
+    SESSION_TERMINAL,
     TASK_TERMINAL,
     TASK_TYPE_WHITELIST,
     WORKITEM_TERMINAL,
@@ -2134,7 +2135,22 @@ class ResearchStore:
                     conn.rollback()
                     raise ResearchWorkItemNotFound(work_item_id)
                 current_status = row["status"]
-                transition_workitem(current_status, next_status)
+                # AgentRunner owns the live WorkItem projection and may reach
+                # a terminal state before the orchestrator has serialized the
+                # returned AgentRunOutput.  Allow that same terminal state to
+                # receive its result payload exactly once; a different
+                # terminal state or any rewind still goes through the strict
+                # state machine and is rejected.
+                same_terminal_writeback = (
+                    current_status == next_status
+                    and current_status in WORKITEM_TERMINAL
+                    and any(value is not None for value in (
+                        error_code, output_json, resolved_model, model_tier,
+                        worker_slot, attempt,
+                    ))
+                )
+                if not same_terminal_writeback:
+                    transition_workitem(current_status, next_status)
                 now = _utcnow()
                 set_clauses: list[str] = ["status=?"]
                 params: list = [next_status]
@@ -2682,7 +2698,7 @@ class ResearchStore:
 
     def create_session_plan(self, plan: ResearchSessionPlan, owner_id: str) -> ResearchSessionPlan:
         """Insert an immutable, owner-scoped plan version before Task creation."""
-        if plan.version < 1 or plan.status not in {"proposed", "active", "superseded", "rejected"}:
+        if plan.version < 1 or plan.status not in PLAN_STATUSES:
             raise ValueError("invalid session plan")
         with _write_lock, self._connect() as conn:
             try:
@@ -2815,6 +2831,36 @@ class ResearchStore:
             ).fetchall()
         return [ResearchSessionPlan.from_row(dict(row)) for row in rows]
 
+    def update_session_plan_status(
+        self, research_session_id: str, owner_id: str, version: int, next_status: str
+    ) -> ResearchSessionPlan:
+        """Update the lifecycle status of an existing Session plan version."""
+        if next_status not in PLAN_STATUSES:
+            raise ValueError("invalid session plan status")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if not conn.execute(
+                    "SELECT 1 FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
+                ).fetchone():
+                    raise ResearchSessionNotFound(research_session_id)
+                changed = conn.execute(
+                    "UPDATE research_session_plans SET status=? WHERE research_session_id=? AND version=?",
+                    (next_status, research_session_id, int(version)),
+                ).rowcount
+                if changed != 1:
+                    raise ResearchPlanNotFound(research_session_id, int(version))
+                row = conn.execute(
+                    "SELECT * FROM research_session_plans WHERE research_session_id=? AND version=?",
+                    (research_session_id, int(version)),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSessionPlan.from_row(dict(row))
+
     def supersede_session_plans(self, research_session_id: str, owner_id: str, keep_version: int) -> int:
         """Mark all earlier proposed/active plans superseded in one owner-scoped CAS."""
         with _write_lock, self._connect() as conn:
@@ -2909,6 +2955,34 @@ class ResearchStore:
                 )
                 row = conn.execute(
                     "SELECT * FROM research_sessions WHERE research_session_id=?", (research_session_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchSession.from_row(dict(row))
+
+    def reconcile_session_status(self, research_session_id: str, owner_id: str, next_status: str) -> ResearchSession:
+        """Repair a stale Session projection from a durable terminal Task."""
+        if next_status not in SESSION_TERMINAL:
+            raise ValueError("reconciliation status must be terminal")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
+                ).fetchone()
+                if row is None:
+                    raise ResearchSessionNotFound(research_session_id)
+                if row["status"] not in SESSION_TERMINAL:
+                    conn.execute(
+                        "UPDATE research_sessions SET status=?, updated_at=? WHERE research_session_id=? AND owner_id=?",
+                        (next_status, _utcnow(), research_session_id, owner_id),
+                    )
+                row = conn.execute(
+                    "SELECT * FROM research_sessions WHERE research_session_id=? AND owner_id=?",
+                    (research_session_id, owner_id),
                 ).fetchone()
                 conn.commit()
             except Exception:

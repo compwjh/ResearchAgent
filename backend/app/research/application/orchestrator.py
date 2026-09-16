@@ -145,7 +145,19 @@ def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Map
 
 
 def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None) -> list[dict]:
+    """Normalize evaluator evidence into one record per catalog candidate.
+
+    The evaluator contract permits an aggregate decision (``candidate_id`` may
+    be null while ``evidence_refs`` lists all retained papers).  Earlier code
+    treated that shape as having no validated evidence, so the synthesizer was
+    skipped even though the Search Workers had supplied a complete catalog
+    allowlist.  Expand only literal ``catalog:<id>`` references that are
+    present in the already-sanitized metadata index; this keeps the evidence
+    binding fail-closed and gives the synthesizer a stable one-candidate-per-
+    record input.
+    """
     records: list[dict] = []
+    seen: set[str] = set()
     for output in outputs:
         kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
         for item in kept:
@@ -153,18 +165,105 @@ def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mappin
                 continue
             candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
             refs = item.get("evidence_refs")
-            if not candidate_id or not isinstance(refs, list) or not refs:
+            if not isinstance(refs, list) or not refs:
+                # Some evaluator responses put the catalog allowlist in the
+                # top-level/source_refs field and omit evidence_refs.  Treat
+                # only catalog refs as evidence; skill names and free-form
+                # provenance labels are never promoted to citations.
+                refs = item.get("source_refs")
+            if not isinstance(refs, list) or not refs:
+                # The runtime schema also permits the aggregate explanation
+                # under safe_summary.source_refs.  It is still model output,
+                # so it must pass the same catalog metadata allowlist below.
+                summary = item.get("safe_summary")
+                refs = summary.get("source_refs") if isinstance(summary, Mapping) else None
+            if not isinstance(refs, list) or not refs:
                 continue
-            record = {"candidate_id": str(candidate_id), "verified": True, "evidence_refs": list(refs)}
-            # Metadata is copied only from the already-sanitized Search Worker
-            # catalog handoff, never from model evaluator output.
-            metadata = (metadata_by_id or {}).get(str(candidate_id))
-            if isinstance(metadata, Mapping):
-                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
-                    if field in metadata:
-                        record[field] = metadata[field]
-            records.append(record)
+            refs = [ref for ref in refs if isinstance(ref, str) and ref.startswith("catalog:")]
+            if not refs:
+                continue
+            candidate_ids: list[str] = []
+            if candidate_id:
+                candidate_ids = [str(candidate_id)]
+            else:
+                # Aggregate evaluator output: derive IDs exclusively from
+                # catalog references and require metadata provenance before
+                # accepting the expansion.
+                metadata_index = metadata_by_id or {}
+                for ref in refs:
+                    if not isinstance(ref, str) or not ref.startswith("catalog:"):
+                        continue
+                    ref_id = ref.split(":", 1)[1].strip()
+                    if ref_id and ref_id in metadata_index:
+                        candidate_ids.append(ref_id)
+            for normalized_id in candidate_ids:
+                if not normalized_id or normalized_id in seen:
+                    continue
+                candidate_refs = list(refs) if candidate_id else [f"catalog:{normalized_id}"]
+                record = {"candidate_id": normalized_id, "verified": True, "evidence_refs": candidate_refs}
+                # Metadata is copied only from the already-sanitized Search Worker
+                # catalog handoff, never from model evaluator output.
+                metadata = (metadata_by_id or {}).get(normalized_id)
+                if isinstance(metadata, Mapping):
+                    for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                        if field in metadata:
+                            record[field] = metadata[field]
+                records.append(record)
+                seen.add(normalized_id)
     return records
+
+
+def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str]) -> dict:
+    """Drop evaluator provenance labels that are outside Search evidence.
+
+    The evaluator skill may identify itself in ``source_refs`` (for example
+    ``research-paper-evaluation``) or place catalog refs there instead of in
+    ``evidence_refs``.  The orchestrator owns the binding, so retain only the
+    allowlisted catalog refs and copy them into ``evidence_refs`` when a kept
+    aggregate record omitted that field.
+    """
+    normalized = dict(output)
+    valid_refs = lambda value: [
+        ref for ref in value
+        if isinstance(ref, str) and ref in allowed_refs and ref.startswith("catalog:")
+    ] if isinstance(value, list) else []
+    if "source_refs" in normalized:
+        normalized["source_refs"] = valid_refs(normalized.get("source_refs"))
+    summary = normalized.get("safe_summary")
+    summary_refs: list[str] = []
+    if isinstance(summary, Mapping):
+        clean_summary = dict(summary)
+        summary_refs = valid_refs(clean_summary.get("source_refs"))
+        if "source_refs" in clean_summary:
+            clean_summary["source_refs"] = summary_refs
+        normalized["safe_summary"] = clean_summary
+    for field in ("kept", "eliminated", "evaluations"):
+        entries = normalized.get(field)
+        if not isinstance(entries, list):
+            continue
+        clean_entries = []
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                clean_entries.append(entry)
+                continue
+            clean = dict(entry)
+            refs = valid_refs(clean.get("evidence_refs"))
+            if not refs:
+                refs = valid_refs(clean.get("source_refs"))
+            if refs:
+                clean["evidence_refs"] = refs
+            if "source_refs" in clean:
+                clean["source_refs"] = valid_refs(clean.get("source_refs"))
+            clean_entries.append(clean)
+        normalized[field] = clean_entries
+    refs = valid_refs(normalized.get("evidence_refs"))
+    if not refs:
+        refs = valid_refs(normalized.get("source_refs"))
+    if not refs:
+        refs = summary_refs
+    if "evidence_refs" in normalized or refs:
+        normalized["evidence_refs"] = refs
+    return normalized
 
 
 def _catalog_metadata_index(evidence: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -931,6 +1030,11 @@ class Orchestrator:
                 )
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 raw_output = dict(normalized_output)
+                # The evaluator model is not trusted to choose provenance
+                # labels.  Normalize its source/evidence fields against the
+                # Search Worker allowlist before applying the scope check.
+                raw_output = _sanitize_evaluator_binding(raw_output, allowed_refs)
+                normalized_output = raw_output
                 # The evaluator may only retain candidates/ref IDs present in
                 # its Search Worker dependencies; a completed but out-of-scope
                 # model result is converted to a stable failed WorkItem.
@@ -991,31 +1095,12 @@ class Orchestrator:
                     for entry in evidence
                 )
                 validated_candidates: list[dict] = []
-                for evaluation in evaluator_outputs:
-                    kept_items = evaluation.get("kept") if isinstance(evaluation.get("kept"), list) else [evaluation]
-                    for item in kept_items:
-                        if not isinstance(item, dict):
-                            continue
-                        # Task06 may return either an aggregate ``kept`` list
-                        # or one evaluation object per candidate.  Both forms
-                        # are normalized here, but only literal True is valid.
-                        if item.get("keep") is not True and item.get("verified") is not True:
-                            continue
-                        paper_id = item.get("candidate_id")
-                        if not paper_id:
-                            continue
-                        refs = item.get("evidence_refs") if isinstance(item.get("evidence_refs"), list) else ()
-                        record = {
-                            "candidate_id": str(paper_id),
-                            "verified": True,
-                            "evidence_refs": list(refs),
-                        }
-                        metadata = catalog_metadata.get(str(paper_id))
-                        if isinstance(metadata, Mapping):
-                            for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
-                                if field in metadata:
-                                    record[field] = metadata[field]
-                        validated_candidates.append(record)
+                # Keep this normalization identical to the synthesizer input
+                # path above.  In particular, aggregate evaluator output with
+                # a null candidate_id is expanded from catalog evidence refs.
+                validated_candidates.extend(
+                    _validated_evaluator_candidates(evaluator_outputs, catalog_metadata)
+                )
                 # If the real evaluator retained fewer than the report floor,
                 # use only already-sanitized catalog metadata to fill the
                 # bounded evidence set.  This is deliberately fail-closed:
