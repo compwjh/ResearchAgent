@@ -1,7 +1,7 @@
 # Task 03：实现路由观测与 Shadow Policy
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02；被依赖：Task04–06；当前状态：`待执行`
+> 依赖：Task02；被依赖：Task04–06；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -26,3 +26,4 @@
 ## 变更日志
 
 - 2026-09-12：创建路由观测 Task。
+- 2026-09-17：Task02 单实例条件放行，启动 Task03；只记录脱敏决策/结果与 shadow policy，不改变生产模型选择。

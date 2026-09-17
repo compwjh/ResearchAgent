@@ -82,7 +82,7 @@
 |---|---|---|---|---|
 | 01 | 编写 Spec031 | 本文件 | — | 完成 |
 | 02 | 单实例/多实例与 Worker 基准门 | [`task-02-ollama-topology-benchmark.md`](../plans/031/task-02-ollama-topology-benchmark.md) | Spec027/028、确认、双评审 | 已完成（单实例条件放行） |
-| 03 | 实现决策/结果数据与 shadow policy | [`task-03-routing-observation-shadow.md`](../plans/031/task-03-routing-observation-shadow.md) | 02 | 待执行 |
+| 03 | 实现决策/结果数据与 shadow policy | [`task-03-routing-observation-shadow.md`](../plans/031/task-03-routing-observation-shadow.md) | 02 | 实施中 |
 | 04 | 实现内存感知 Worker 扩缩与策略激活 | [`task-04-adaptive-worker-routing.md`](../plans/031/task-04-adaptive-worker-routing.md) | 03 | 待执行 |
 | 05 | 实现路由解释与基准界面 | [`task-05-routing-insights-ui.md`](../plans/031/task-05-routing-insights-ui.md) | 04 | 待执行 |
 | 06 | 最终评审、回归、基准、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/031/task-06-review-regression-deploy.md) | 02–05 | 待执行 |

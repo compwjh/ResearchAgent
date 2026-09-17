@@ -8,7 +8,7 @@
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
 | [02](./task-02-ollama-topology-benchmark.md) | 1–4 个 9B Worker 与多实例 Go/No-Go | Spec027/028、确认、双评审 | 已完成（单实例条件放行） |
-| [03](./task-03-routing-observation-shadow.md) | 路由决策、结果和 shadow policy | 02 | 待执行 |
+| [03](./task-03-routing-observation-shadow.md) | 路由决策、结果和 shadow policy | 02 | 实施中 |
 | [04](./task-04-adaptive-worker-routing.md) | 内存感知扩缩、升级和策略激活 | 03 | 待执行 |
 | [05](./task-05-routing-insights-ui.md) | 路由解释和基准视图 | 04 | 待执行 |
 | [06](./task-06-review-regression-deploy.md) | 最终验收、回归、基准、部署和复盘 | 02–05 | 待执行 |
