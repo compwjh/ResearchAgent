@@ -1,7 +1,7 @@
 # Task 03：实现路由观测与 Shadow Policy
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02；被依赖：Task04–06；当前状态：`待执行`
+> 依赖：Task02；被依赖：Task04–06；当前状态：`已完成（单实例条件放行）`
 
 ## 一句话目标
 
@@ -21,8 +21,12 @@
 ## 主 Agent 校验、风险与产出
 
 - 检查观测依赖方向和敏感字段；不跑全量。
-- 产出数据/观测代码、测试和报告；执行结果待填写。
+- 产出数据/观测代码、测试和报告；执行结果：**已完成（单实例条件放行）**。
+- 定向复审：GO；值级敏感内容、生产装配、owner 隔离、shadow 只读回放和 SQLite 加性迁移均通过。
+- 已知后续：生产 outcome 自动记录、Task02 benchmark JSON/provenance 质量补强留给 Task06；不改变本 Task 的单实例门禁。
 
 ## 变更日志
 
 - 2026-09-12：创建路由观测 Task。
+- 2026-09-17：Task02 单实例条件放行，启动 Task03；只记录脱敏决策/结果与 shadow policy，不改变生产模型选择。
+- 2026-09-17：Task03 实现、P1 修复和独立复审完成；定向回归 111 passed、5 subtests，GO。生产 outcome 与 Task02 证据增强列入 Task06。

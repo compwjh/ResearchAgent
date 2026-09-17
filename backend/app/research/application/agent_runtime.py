@@ -1472,7 +1472,16 @@ class ResearchAgentRunner:
                     router_role = {"search_worker": "search-worker", "paper_evaluator": "paper-evaluator", "research_critic": "research-critic"}.get(input.role, input.role)
                     tier = "strong" if attempts_used >= 4 else "fast"
                     try:
-                        choice = self.model_router.resolve(role=router_role, tier=tier)
+                        route_kwargs = {"role": router_role, "tier": tier}
+                        # Task03 observation is opt-in on the existing router;
+                        # preserve the frozen FakeModelRouter signature when
+                        # no observation sink is installed.
+                        if getattr(self.model_router, "_observation", None) is not None:
+                            route_kwargs.update(
+                                owner_id=owner,
+                                features={"attempt": attempts_used, "work_item": bool(input.work_item_id)},
+                            )
+                        choice = self.model_router.resolve(**route_kwargs)
                         resolved_model = choice.model or resolved_model
                         if self.model_factory:
                             model = self.model_factory(resolved_model, input.reasoning_effort)

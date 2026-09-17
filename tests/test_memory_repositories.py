@@ -32,6 +32,17 @@ from backend.app.memory.markdown_store import MarkdownMemoryStore
 from backend.app.memory.migration import SCHEMA_VERSION
 from backend.app.memory.repository import MemoryRepository
 
+
+@pytest.fixture(autouse=True)
+def _disable_post_checkpoint_extraction(monkeypatch):
+    """Keep repository checkpoint tests independent of model-backed side effects."""
+    monkeypatch.setattr(
+        MemoryEvolutionService,
+        "_dispatch_memory_extraction",
+        lambda *args, **kwargs: None,
+    )
+
+
 # ---------------------------------------------------------------- 基线 schema
 
 

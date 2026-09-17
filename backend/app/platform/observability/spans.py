@@ -31,6 +31,12 @@ from backend.app.platform.observability import config as obs_config
 from backend.app.platform.observability.safe import safe_call
 from backend.app.platform.observability.trace import get_current_trace_id
 from backend.app.platform.ollama_direct import OllamaChatResult
+from backend.app.research.application.routing_observation import (
+    _bounded_text,
+    _safe_features,
+    _safe_models,
+    _validate_outcome,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +274,55 @@ def record_event(
             span.update(output=output_data)
 
     safe_call(_report)
+
+
+def record_routing_observation(
+    *,
+    task_type: str,
+    features: Dict[str, Any],
+    candidate_models: List[str],
+    chosen_model: str,
+    reason: str,
+    policy_version: str,
+    outcome: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Best-effort Spec031 observation with an explicit redaction allowlist.
+
+    This seam never accepts prompt/answer/reasoning text.  Keeping the
+    allowlist here protects callers that route through Langfuse as well as
+    SQLite observation storage; ``record_event``/``safe_call`` ensure a
+    telemetry outage cannot affect the model call.
+    """
+    # Apply the same value-level contract as SQLite before touching sampling,
+    # client initialization, or Langfuse.  Rejection is intentionally quiet
+    # and diagnostic only by field name; values are never logged or emitted.
+    try:
+        allowed_keys = {"tier", "role", "attempt", "worker_grant", "quality_profile", "has_evidence"}
+        safe_features = _safe_features({
+            str(key): value for key, value in (features or {}).items()
+            if str(key) in allowed_keys
+        })
+        metadata: Dict[str, Any] = {
+            "task_type": _bounded_text(task_type, name="task_type", limit=80),
+            "features": safe_features,
+            "candidate_models": _safe_models(list(candidate_models or [])[:16]),
+            "chosen_model": _bounded_text(chosen_model, name="chosen_model", limit=128),
+            "reason": _bounded_text(reason, name="reason", limit=256),
+            "policy_version": _bounded_text(policy_version, name="policy_version", limit=80),
+        }
+        if outcome is not None:
+            metadata["outcome"] = {
+                key: _validate_outcome(outcome.get(key), field=key)
+                for key in ("schema_valid", "quality_score", "ttft", "duration", "tokens", "error_code")
+                if key in outcome
+            }
+    except Exception as exc:  # noqa: BLE001 - observation must never block routing
+        logger.warning("路由观测值被拒绝（已忽略）：%s", type(exc).__name__)
+        return
+
+    # should_sample()/get_client() are deliberately inside safe_call as well:
+    # a broken config or SDK client must be a no-op, not a routing failure.
+    safe_call(record_event, name="research-routing", metadata=metadata)
 
 
 def utc_now() -> datetime:

@@ -9,6 +9,7 @@ durable lease, and couples resource reservations to that lease.
 from __future__ import annotations
 
 import threading
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,6 +24,38 @@ from backend.app.research.infrastructure.research_store import ResearchStore
 class ScheduledWork:
     work_item: ResearchWorkItem
     lease: SchedulerLease
+
+
+@dataclass(frozen=True)
+class WorkerGrant:
+    """A bounded worker grant coupled to durable reservation ids.
+
+    The grant is a read-only hand-off object.  It deliberately contains no
+    prompt, model response, owner token, or machine-specific details.
+    """
+
+    task_id: str
+    model_tier: str
+    requested: int
+    granted: int
+    reason: str | None = None
+    policy_version: str = "spec027-static-v1"
+    reservation_ids: tuple[str, ...] = ()
+    lease_seconds: int = 60
+    ownership_token: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "model_tier": self.model_tier,
+            "requested": self.requested,
+            "granted": self.granted,
+            "reason": self.reason,
+            "policy_version": self.policy_version,
+            "reservation_ids": list(self.reservation_ids),
+            "lease_seconds": self.lease_seconds,
+            "ownership_token": self.ownership_token,
+        }
 
 
 class ResearchScheduler:
@@ -41,11 +74,29 @@ class ResearchScheduler:
         self.lease_seconds = max(1, int(lease_seconds))
         self.probe = probe
         self._reservations: dict[str, list[str]] = defaultdict(list)
+        self._grant_lock = threading.RLock()
         if recover_on_start:
+            if self.probe is None:
+                from backend.app.platform.ollama import ResourceProbe
+
+                # Constructing the existing probe is side-effect free; it lets
+                # same-process restart recovery reconcile the shared global
+                # quota before the first new grant.
+                self.probe = ResourceProbe()
             # Startup recovery is deliberately bounded to durable scheduler
             # ownership/capacity rows; WorkItem transitions remain owned by
             # the existing state machine and are not guessed here.
             self.recover()
+
+    def _release_probe_quota(self, task_id: str, *, count: int | None) -> None:
+        if self.probe is None:
+            return
+        try:
+            self.probe.release(task_id, count=count)
+        except TypeError:
+            # Legacy injected probes expose only release(task_id).  The real
+            # ResourceProbe supports granular count-based reconciliation.
+            self.probe.release(task_id)
 
     @staticmethod
     def _dependencies_completed(item: ResearchWorkItem, by_id: dict[str, ResearchWorkItem]) -> bool:
@@ -133,9 +184,26 @@ class ResearchScheduler:
 
     def recover(self, *, now: str | None = None) -> dict[str, int]:
         """Release expired ownership and capacity reservations after restart."""
+        expired_rows = self.store.recover_expired_resource_reservation_rows(now=now)
+        expired_by_task: dict[str, int] = defaultdict(int)
+        expired_ids = {row["reservation_id"] for row in expired_rows}
+        for row in expired_rows:
+            if row.get("task_id"):
+                expired_by_task[str(row["task_id"])] += 1
+        with self._grant_lock:
+            for task_id, reservation_ids in list(self._reservations.items()):
+                remaining = [reservation_id for reservation_id in reservation_ids if reservation_id not in expired_ids]
+                if remaining:
+                    self._reservations[task_id] = remaining
+                else:
+                    self._reservations.pop(task_id, None)
+        # Release only the number of durable slots that expired.  This is
+        # granular enough to preserve another live grant for the same task.
+        for task_id, count in expired_by_task.items():
+            self._release_probe_quota(task_id, count=count)
         return {
             "leases": self.store.recover_expired_scheduler_leases(now=now),
-            "reservations": self.store.recover_expired_resource_reservations(now=now),
+            "reservations": len(expired_rows),
         }
 
     def status(self, *, now: str | None = None) -> dict:
@@ -227,38 +295,134 @@ class ResearchScheduler:
         model_tier: str = "fast",
         estimated_bytes: int = 0,
         worker_prefix: str | None = None,
+        lease_seconds: int | None = None,
     ) -> tuple[int, str | None]:
-        """Use the existing ResourceProbe and persist each granted slot."""
+        """Use the existing ResourceProbe and persist each granted slot.
+
+        This compatibility method keeps the Spec028 tuple return.  New
+        callers should use :meth:`grant_workers` to retain reservation ids
+        and the bounded policy/reason metadata.
+        """
+        grant = self.grant_workers(
+            task_id,
+            requested,
+            model_tier=model_tier,
+            estimated_bytes=estimated_bytes,
+            worker_prefix=worker_prefix,
+            lease_seconds=lease_seconds,
+        )
+        return grant.granted, grant.reason
+
+    def grant_workers(
+        self,
+        task_id: str,
+        requested: int,
+        *,
+        model_tier: str = "fast",
+        estimated_bytes: int = 0,
+        worker_prefix: str | None = None,
+        lease_seconds: int | None = None,
+        policy_version: str = "spec027-static-v1",
+        now: str | None = None,
+    ) -> WorkerGrant:
+        """Grant bounded workers and atomically compensate partial failures.
+
+        Probe/model-provider calls happen before any reservation transaction and
+        never under the scheduler's lock.  Strong/27B workers are explicitly
+        single-concurrency; a second active strong reservation is queued until
+        its lease is released or expires.
+        """
         if self.probe is None:
             from backend.app.platform.ollama import ResourceProbe
 
             self.probe = ResourceProbe()
-        granted, code = self.probe.arbitrate(task_id, int(requested))
-        granted = max(0, int(granted))
+        tier = str(model_tier or "fast").strip().lower()
+        if tier in {"27b", "32b", "70b", "strong", "quality"}:
+            tier = "strong"
+        else:
+            tier = "fast"
+        requested = max(0, int(requested))
+        if tier == "strong":
+            requested = min(requested, 1)
+        try:
+            granted, code = self.probe.arbitrate(task_id, requested)
+        except TypeError:
+            # A small fake probe in offline tests may expose the older
+            # ``arbitrate(requested)`` shape; keep the production contract
+            # task-aware while preserving that test seam.
+            granted, code = self.probe.arbitrate(requested)
+        granted = max(0, min(int(granted), requested))
         prefix = worker_prefix or task_id
         reservations: list[str] = []
+        ownership_token = uuid.uuid4().hex
         per_slot = int(estimated_bytes)
-        for index in range(granted):
-            reservation = self.store.reserve_resources(
-                f"{prefix}:{index}", model_tier, per_slot, task_id=task_id, lease_seconds=self.lease_seconds
-            )
-            if reservation is None:
-                break
-            if reservation.reservation_id:
+        lease = self.lease_seconds if lease_seconds is None else max(1, int(lease_seconds))
+        reservation_unavailable = False
+        try:
+            for index in range(granted):
+                reservation = self.store.reserve_resources(
+                    f"{prefix}:{index}", tier, per_slot, task_id=task_id,
+                    lease_seconds=lease, grant_token=ownership_token, now=now,
+                )
+                if reservation is None or not reservation.reservation_id:
+                    reservation_unavailable = True
+                    break
                 reservations.append(reservation.reservation_id)
+        except Exception:
+            for reservation_id in reservations:
+                self.store.release_resource_reservation(reservation_id, now=now)
+            # Releasing the in-memory quota is required even when persistence
+            # failed halfway through the reservation loop.
+            self._release_probe_quota(task_id, count=granted)
+            raise
         if len(reservations) < granted:
             for reservation_id in reservations:
-                self.store.release_resource_reservation(reservation_id)
-            self.probe.release(task_id)
-            granted = 0
-        self._reservations[task_id].extend(reservations)
-        return granted, code
+                self.store.release_resource_reservation(reservation_id, now=now)
+            self._release_probe_quota(task_id, count=granted)
+            return WorkerGrant(
+                task_id, tier, requested, 0,
+                "STRONG_WORKER_BUSY" if tier == "strong" and reservation_unavailable else ("RESOURCE_RESERVATION_UNAVAILABLE" if reservation_unavailable else code),
+                policy_version, (), lease, "",
+            )
+        with self._grant_lock:
+            self._reservations[task_id].extend(reservations)
+        return WorkerGrant(task_id, tier, requested, granted, code, policy_version, tuple(reservations), lease, ownership_token)
 
-    def release_resources(self, task_id: str) -> None:
-        for reservation_id in self._reservations.pop(task_id, []):
+    def release_grant(self, grant: WorkerGrant | None) -> None:
+        if grant is None:
+            return
+        # A grant owns only its reservation ids.  The task id is an additional
+        # durable ownership condition, preventing a stale grant from releasing
+        # another grant belonging to the same task.
+        released = 0
+        for reservation_id in grant.reservation_ids:
+            if self.store.release_resource_reservation(
+                reservation_id, task_id=grant.task_id, grant_token=grant.ownership_token
+            ):
+                released += 1
+        if released:
+            with self._grant_lock:
+                current = self._reservations.get(grant.task_id, [])
+                remaining = [reservation_id for reservation_id in current if reservation_id not in grant.reservation_ids]
+                if remaining:
+                    self._reservations[grant.task_id] = remaining
+                else:
+                    self._reservations.pop(grant.task_id, None)
+            self._release_probe_quota(grant.task_id, count=released)
+
+    def release_resources(self, task_id: str, *, _release_probe: bool = True) -> None:
+        with self._grant_lock:
+            reservation_ids = self._reservations.pop(task_id, [])
+        for reservation_id in reservation_ids:
             self.store.release_resource_reservation(reservation_id)
-        if self.probe is not None:
-            self.probe.release(task_id)
+        if _release_probe:
+            self._release_probe_quota(task_id, count=None)
+
+    # Explicit Task04 names; all aliases still use this one scheduler and one
+    # reservation implementation.
+    acquire_worker = grant_workers
+    request_workers = grant_workers
+    release_worker_grant = release_grant
 
 
 # Descriptive/legacy aliases used by callers and hidden Task03 probes.

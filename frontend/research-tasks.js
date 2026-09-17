@@ -85,6 +85,27 @@
     source_degraded: '来源降级，保留已有证据并收敛。',
     source_unavailable: '来源不可用，保留已有证据并收敛。',
   };
+  const ROUTING_RESOURCE_TEXT = Object.freeze({
+    RESOURCE_PROBE_FAILED: '资源探针不可用，已按降级额度运行。',
+    STRONG_WORKER_BUSY: 'strong 额度繁忙，已排队或降级。',
+    RESOURCE_DEGRADED: '资源不足，已降级 Worker 额度。',
+    WORKER_LIMIT: '已达到 Worker 额度上限。',
+    MEMORY_LIMIT: '可用内存不足，已限制 Worker 额度。',
+    QUEUE_REQUIRED: '资源繁忙，任务进入排队。',
+  });
+  const BENCHMARK_PHASE_TEXT = Object.freeze({ warm: '热身', cold: '冷启动' });
+  const BENCHMARK_METRICS = Object.freeze({
+    median_ttft_ms: { label: '中位 TTFT', unit: 'ms', min: 0, max: 600000 },
+    throughput_completion_tokens_per_s: { label: '吞吐', unit: 'tokens/s', min: 0, max: 100000 },
+    peak_memory_bytes: { label: '峰值内存', unit: 'bytes', min: 0, max: 1e15 },
+    failure_rate: { label: '失败率', unit: '%', min: 0, max: 1 },
+  });
+  const BENCHMARK_METRIC_ALIASES = Object.freeze({
+    median_ttft_ms: ['median_ttft_ms', 'ttft_ms', 'median_ttft'],
+    throughput_completion_tokens_per_s: ['throughput_completion_tokens_per_s', 'throughput_tokens_per_s', 'throughput'],
+    peak_memory_bytes: ['peak_memory_bytes', 'peak_size_vram', 'size_vram'],
+    failure_rate: ['failure_rate'],
+  });
   const state = {
     document: null,
     conversationId: null,
@@ -97,6 +118,8 @@
     events: new Map(),
     selectedPapers: new Set(),
     selectedPaperCount: null,
+    selectionDetails: new Map(),
+    selectionSnapshotTaskId: null,
     reportSelections: [],
     report: null,
     matrix: null,
@@ -263,6 +286,40 @@
     return [...new Set(value.filter((item) => ['string', 'number'].includes(typeof item) && String(item).trim()).map(String))].slice(0, limit);
   }
 
+  function safeSelectionId(value) {
+    if (typeof value !== 'string' && typeof value !== 'number') return '';
+    const id = String(value).trim();
+    return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/.test(id) ? id : '';
+  }
+
+  function normalizeSelectionProjection(value) {
+    if (typeof value === 'string' || typeof value === 'number') {
+      const catalogPaperId = safeSelectionId(value);
+      return catalogPaperId ? { catalog_paper_id: catalogPaperId } : null;
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const catalogPaperId = safeSelectionId(value.catalog_paper_id || value.paper_id || value.candidate_id);
+    if (!catalogPaperId) return null;
+    const result = { catalog_paper_id: catalogPaperId };
+    const relevance = boundedNumber(value.relevance, 0, 1);
+    if (relevance !== null) result.relevance = relevance;
+    if (EVIDENCE_TEXT[value.evidence_level]) result.evidence_level = value.evidence_level;
+    if (Array.isArray(value.facets)) result.facets = value.facets.slice(0, 12);
+    return result;
+  }
+
+  function selectionProjectionValues(value, limit = 20) {
+    if (!Array.isArray(value)) return [];
+    const result = [];
+    const seen = new Set();
+    value.slice(0, limit).forEach((item) => {
+      const normalized = normalizeSelectionProjection(item);
+      if (!normalized || seen.has(normalized.catalog_paper_id)) return;
+      seen.add(normalized.catalog_paper_id); result.push(normalized);
+    });
+    return result;
+  }
+
   function safePositiveInteger(value) {
     const number = Number(value);
     return Number.isInteger(number) && number > 0 ? number : null;
@@ -272,6 +329,101 @@
     if (!payload || typeof payload !== 'object') return '';
     const value = payload.code || payload.error_code;
     return typeof value === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : '';
+  }
+
+  function safeRoutingText(value, limit = 180) {
+    if (typeof value !== 'string') return '';
+    const normalized = value.trim();
+    if (!normalized || normalized.length > limit) return '';
+    if (/(?:prompt|answer|thought|chain(?:[_ -]?of[_ -]?thought)?|owner|token|secret|password|credential|authorization|cookie|host[_ -]?path)/i.test(normalized)) return '';
+    if (/(?:https?|ftp|file):\/\//i.test(normalized)) return '';
+    // Routing explanations are labels, never path-bearing tokens. Reject any
+    // slash/backslash so absolute paths, relative paths, fragments, Windows
+    // drives and UNC shares all fail closed without directory allowlists.
+    if (/[\\/]/.test(normalized)) return '';
+    if (/(?:^|[\s"'(=,:])(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|::1)(?::\d+)?(?:\s|$)/i.test(normalized)) return '';
+    return normalized;
+  }
+
+  function safeModelName(value) {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/.test(value)) return '';
+    return safeRoutingText(value, 96);
+  }
+
+  function boundedNumber(value, min, max) {
+    let number;
+    if (typeof value === 'number') number = value;
+    else if (typeof value === 'string' && /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) number = Number(value);
+    else return null;
+    return Number.isFinite(number) && number >= min && number <= max ? number : null;
+  }
+
+  function routingResourceText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const candidates = [payload.resource_reason, payload.resource_degradation, payload.resource_code, payload.reason];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const code = candidate.trim().toUpperCase();
+      if (ROUTING_RESOURCE_TEXT[code]) return ROUTING_RESOURCE_TEXT[code];
+    }
+    if (payload.resource_degraded === true || payload.degraded === true) return '资源不足，已降级 Worker 额度。';
+    return '';
+  }
+
+  function routingInsightText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const parts = [];
+    const model = safeModelName(payload.resolved_model || payload.chosen_model);
+    if (model) parts.push(`模型：${model}`);
+    if (payload.model_tier === 'fast' || payload.model_tier === 'strong') parts.push(`档位：${payload.model_tier}`);
+    const grant = boundedNumber(payload.worker_grant ?? payload.granted, 0, 4);
+    if (grant !== null && Number.isInteger(grant)) parts.push(`Worker 额度：${grant}`);
+    const reason = safeRoutingText(payload.reason);
+    if (reason && !ROUTING_RESOURCE_TEXT[reason.toUpperCase()]) parts.push(`说明：${reason}`);
+    const resource = routingResourceText(payload);
+    if (resource) parts.push(`资源：${resource}`);
+    if (payload.from_tier === 'fast' && payload.to_tier === 'strong') parts.push('升级：fast → strong');
+    return parts.join(' · ');
+  }
+
+  function normalizeBenchmarkPhase(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const phase = {};
+    Object.entries(BENCHMARK_METRICS).forEach(([name, definition]) => {
+      const source = BENCHMARK_METRIC_ALIASES[name].find((key) => Object.prototype.hasOwnProperty.call(value, key));
+      if (!source) return;
+      const number = boundedNumber(value[source], definition.min, definition.max);
+      if (number !== null) phase[name] = number;
+    });
+    return phase;
+  }
+
+  function normalizeBenchmarkSummary(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const source = value.summary && typeof value.summary === 'object' ? value.summary : value;
+    const result = {};
+    ['warm', 'cold'].forEach((phase) => {
+      const normalized = normalizeBenchmarkPhase(source[phase]);
+      if (Object.keys(normalized).length) result[phase] = normalized;
+    });
+    const policyStatus = source.policy_status || source.policy?.status;
+    if (policyStatus === 'active' || policyStatus === 'shadow') result.policy_status = policyStatus;
+    if (source.probe_available === false || source.probe_status === 'unavailable' || source.probe_status === 'failed') result.probe_available = false;
+    if (source.probe_available === true || source.probe_status === 'available') result.probe_available = true;
+    return Object.keys(result).length ? result : {};
+  }
+
+  function benchmarkSummaryFromState() {
+    const candidates = [
+      state.selectedTask?.benchmark_summary, state.selectedTask?.benchmark,
+      state.selectedTask?.routing_benchmark, state.selectedTask?.routing?.benchmark,
+      ...[...state.events.values()].reverse().map((event) => event.payload?.benchmark_summary || event.payload?.benchmark),
+    ];
+    for (const candidate of candidates) {
+      const normalized = normalizeBenchmarkSummary(candidate);
+      if (normalized && Object.keys(normalized).length) return normalized;
+    }
+    return null;
   }
 
   function eventStopReason(payload) {
@@ -1106,10 +1258,9 @@
     if (round) parts.push(`第 ${round} 轮`);
     if (TASK_TYPE_TEXT[payload.task_type]) parts.push(`节点：${TASK_TYPE_TEXT[payload.task_type]}`);
     if (ROLE_TEXT[payload.role]) parts.push(`角色：${ROLE_TEXT[payload.role]}`);
-    if (typeof payload.worker_slot === 'string' && payload.worker_slot) parts.push(`Worker：${payload.worker_slot}`);
-    if (payload.model_tier === 'fast' || payload.model_tier === 'strong') parts.push(`档位：${payload.model_tier}`);
-    if (typeof payload.resolved_model === 'string' && payload.resolved_model) parts.push(`模型：${payload.resolved_model}`);
-    if (payload.from_tier === 'fast' && payload.to_tier === 'strong') parts.push('路由：fast → strong');
+    if (typeof payload.worker_slot === 'string' && /^[A-Za-z0-9._:-]{1,80}$/.test(payload.worker_slot)) parts.push(`Worker：${payload.worker_slot}`);
+    const routing = routingInsightText(payload);
+    if (routing) parts.push(routing);
     if (Number.isFinite(Number(payload.selected_count))) parts.push(`已选：${Number(payload.selected_count)}`);
     if (Number.isFinite(Number(payload.candidate_count))) parts.push(`候选：${Number(payload.candidate_count)}`);
     const gaps = safeList(payload.gaps);
@@ -1117,8 +1268,46 @@
     const failedSources = safeList(payload.failed_sources).length || safeList(payload.degraded_sources).length;
     if (failedSources) parts.push(`受影响来源：${failedSources} 个`);
     if (EVIDENCE_TEXT[payload.evidence_level]) parts.push(`证据：${evidenceLabel(payload.evidence_level)}`);
-    if (typeof payload.reason === 'string' && payload.reason.length <= 180) parts.push(`说明：${payload.reason}`);
     return parts.join(' · ') || '收到安全事件摘要';
+  }
+
+  function benchmarkMetricText(name, value) {
+    const definition = BENCHMARK_METRICS[name];
+    if (!definition) return '';
+    const normalized = boundedNumber(value, definition.min, definition.max);
+    if (normalized === null) return '';
+    const number = name === 'failure_rate' ? normalized * 100 : normalized;
+    const formatted = Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+    return `${definition.label}：${formatted} ${definition.unit}`;
+  }
+
+  function renderBenchmarkSummary() {
+    const section = byId('research-benchmark-section');
+    const metrics = byId('research-benchmark-metrics');
+    const stateNode = byId('research-benchmark-state');
+    const policyNode = byId('research-benchmark-policy');
+    if (!section || !metrics || !stateNode || !policyNode) return;
+    clearNode(metrics);
+    if (!state.selectedTask) { section.hidden = true; return; }
+    section.hidden = false;
+    const summary = benchmarkSummaryFromState();
+    const phases = summary ? ['warm', 'cold'].filter((phase) => summary[phase] && Object.keys(summary[phase]).length) : [];
+    policyNode.textContent = summary?.policy_status ? `策略：${summary.policy_status}（只读）` : '策略：暂无可用状态（只读）';
+    if (!summary || !phases.length) {
+      stateNode.textContent = summary?.probe_available === false ? '暂无指标／探针不可用。' : '暂无指标／探针不可用。';
+      const empty = state.document.createElement('li'); empty.className = 'research-benchmark-empty'; empty.textContent = '当前任务没有受控基准指标。'; metrics.appendChild(empty);
+      return;
+    }
+    stateNode.textContent = '仅展示已存在且通过数值边界校验的摘要。';
+    phases.forEach((phase) => {
+      const item = state.document.createElement('li'); item.className = 'research-benchmark-phase'; item.dataset.phase = phase;
+      const title = state.document.createElement('strong'); title.textContent = BENCHMARK_PHASE_TEXT[phase]; item.appendChild(title);
+      Object.entries(summary[phase]).forEach(([name, value]) => {
+        const metric = benchmarkMetricText(name, value); if (!metric) return;
+        const detail = state.document.createElement('span'); detail.className = 'research-benchmark-metric'; detail.textContent = metric; item.appendChild(detail);
+      });
+      metrics.appendChild(item);
+    });
   }
 
   function eventTitle(type) {
@@ -1327,6 +1516,39 @@
     renderAcquisitionEvidence(state.acquisition.evidence);
   }
 
+  async function loadSelectionSnapshot(taskId = state.selectedTaskId, attempt = 0) {
+    if (!taskId || (attempt === 0 && state.selectionSnapshotTaskId === taskId)) return null;
+    if (attempt === 0) state.selectionSnapshotTaskId = taskId;
+    const planVersion = safePositiveInteger(state.selectedTask?.current_plan_version || state.report?.plan_version) || 1;
+    try {
+      // This is the existing read-only classification seam. It never downloads
+      // files; it exposes the server-owned selection snapshot after evaluation.
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisition-preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_version: planVersion }),
+      });
+      if (state.selectedTaskId !== taskId) return null;
+      const projections = selectionProjectionValues(result?.items);
+      projections.forEach((selection) => {
+        state.selectionDetails.set(selection.catalog_paper_id, {
+          ...(state.selectionDetails.get(selection.catalog_paper_id) || {}), ...selection,
+        });
+        state.selectedPapers.add(selection.catalog_paper_id);
+      });
+      if (projections.length && state.selectedPaperCount === null) state.selectedPaperCount = projections.length;
+      renderSelection();
+      return result;
+    } catch (error) {
+      // The evaluator emits its completion event just before persisting the
+      // selection snapshot. A bounded retry covers that ordering without a
+      // polling loop or exposing an internal error to the user.
+      if (error.code === 'REPORT_NOT_READY' && attempt < 3 && state.selectedTaskId === taskId) {
+        root.setTimeout(() => { loadSelectionSnapshot(taskId, attempt + 1); }, 350 * (attempt + 1));
+      }
+      return null;
+    }
+  }
+
   async function loadAcquisitionStatus(taskId = state.selectedTaskId) {
     if (!taskId || state.acquisition.loading) return null;
     state.acquisition.loading = true; renderAcquisition();
@@ -1423,27 +1645,30 @@
     const list = byId('research-selection-list');
     if (!section || !list) return;
     clearNode(list);
-    const values = [...state.selectedPapers];
+    const values = [...state.selectedPapers].map((catalogPaperId) => ({ catalog_paper_id: catalogPaperId }));
     const reportValues = Array.isArray(state.reportSelections) ? state.reportSelections : [];
-    section.hidden = values.length === 0 && state.selectedPaperCount === null && reportValues.length === 0;
-    reportValues.forEach((selection) => {
+    const detailValues = [...(state.selectionDetails?.values?.() || [])];
+    const merged = new Map();
+    [...detailValues, ...reportValues, ...values].forEach((selection) => {
+      const normalized = normalizeSelectionProjection(selection);
+      if (normalized) merged.set(normalized.catalog_paper_id, { ...(merged.get(normalized.catalog_paper_id) || {}), ...normalized });
+    });
+    section.hidden = merged.size === 0 && state.selectedPaperCount === null;
+    [...merged.values()].forEach((selection) => {
       if (!selection || typeof selection !== 'object') return;
       const item = state.document.createElement('li');
       const paperId = state.document.createElement('strong');
       paperId.textContent = `目录论文：${text(selection.catalog_paper_id, '未知 ID')}`;
       const meta = state.document.createElement('span');
-      meta.textContent = `相关性：${text(selection.relevance)} · ${evidenceLabel(selection.evidence_level)}`;
+      meta.textContent = `相关性：${selection.relevance === undefined ? '待评估详情' : text(selection.relevance)} · ${selection.evidence_level ? evidenceLabel(selection.evidence_level) : '证据等级待报告确认'}`;
       const facets = state.document.createElement('span');
       facets.textContent = `facets：${selectionFacetText(selection.facets)}`;
       item.append(paperId, meta, facets);
       list.appendChild(item);
     });
     if (state.selectedPaperCount !== null) {
-      const count = state.document.createElement('li'); count.textContent = `已选 ${state.selectedPaperCount} 篇论文（目录 ID 仅在安全事件摘要中提供）`; list.appendChild(count);
+      const count = state.document.createElement('li'); count.textContent = `已选 ${state.selectedPaperCount} 篇论文`; list.appendChild(count);
     }
-    values.filter((paperId) => !reportValues.some((selection) => selection?.catalog_paper_id === paperId)).forEach((paperId) => {
-      const item = state.document.createElement('li'); item.textContent = `目录论文：${paperId} · 证据等级待报告确认`; list.appendChild(item);
-    });
   }
 
   function selectionFacetText(value) {
@@ -1461,6 +1686,7 @@
   function renderSummary() {
     const list = byId('research-summary-list');
     clearNode(list);
+    renderBenchmarkSummary();
     const events = [...state.events.values()];
     const workers = events.filter((event) => event.type === 'worker');
     const coverage = [...events].reverse().find((event) => event.type === 'coverage');
@@ -1803,6 +2029,12 @@
         } catch (_) { /* legacy report remains readable while the versioned seam is unavailable */ }
       }
       state.reportSelections = Array.isArray(report.selections) ? report.selections : [];
+      state.reportSelections.forEach((selection) => {
+        const normalized = normalizeSelectionProjection(selection);
+        if (normalized) state.selectionDetails.set(normalized.catalog_paper_id, {
+          ...(state.selectionDetails.get(normalized.catalog_paper_id) || {}), ...normalized,
+        });
+      });
       state.acquisition.evidence = Array.isArray(report.evidence_upgrades) ? report.evidence_upgrades : (Array.isArray(report.evidence) ? report.evidence : []);
       renderSelection();
       await loadAcquisitionPreview(taskId);
@@ -1834,9 +2066,20 @@
 
   function applyEvent(event) {
     const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
-    const paperIds = [...safeList(payload.selected_paper_ids), ...safeList(payload.catalog_paper_ids)];
-    paperIds.forEach((paperId) => { if (paperId) state.selectedPapers.add(String(paperId)); });
+    const selectionValues = [
+      ...selectionProjectionValues(payload.selected_paper_ids),
+      ...selectionProjectionValues(payload.catalog_paper_ids),
+      ...selectionProjectionValues(payload.selected),
+      ...selectionProjectionValues(payload.selections),
+    ];
+    selectionValues.forEach((selection) => {
+      state.selectedPapers.add(selection.catalog_paper_id);
+      state.selectionDetails.set(selection.catalog_paper_id, {
+        ...(state.selectionDetails.get(selection.catalog_paper_id) || {}), ...selection,
+      });
+    });
     if (payload.selected_count !== undefined && Number.isFinite(Number(payload.selected_count))) state.selectedPaperCount = Number(payload.selected_count);
+    if (state.selectedPaperCount > 0 && !state.selectionDetails.size && state.selectedTaskId) loadSelectionSnapshot(state.selectedTaskId);
     if (event.type === 'plan') {
       const version = safePositiveInteger(payload.plan_version);
       if (version && state.selectedTask) {
@@ -1928,6 +2171,8 @@
     state.events = new Map();
     state.selectedPapers = new Set();
     state.selectedPaperCount = null;
+    state.selectionDetails = new Map();
+    state.selectionSnapshotTaskId = null;
     state.reportSelections = [];
     state.report = null; state.matrix = null; state.reportViews = new Map(); state.reportVersions = []; state.activeCitationNo = null; state.reportFormat = 'markdown';
     state.terminal = null;
@@ -1968,6 +2213,7 @@
         }
       }
       setDetailVisibility(true);
+      renderBenchmarkSummary();
       if (taskId) {
         await Promise.all([loadMatrix(taskId), loadReport(taskId)]);
         if (state.selectedTaskId !== taskId) return;
@@ -1990,7 +2236,7 @@
       || tasks.find((task) => task.conversation_id === state.conversationId);
     if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
-      closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
+      closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
       state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderTaskHeader(null); setDetailVisibility(false); renderSummary();
       state.report = null; state.matrix = null; state.terminal = null; state.reportViews = new Map(); state.reportVersions = []; renderMatrix(null); renderReportFormatTabs();
@@ -2189,6 +2435,8 @@
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
     sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,
+    routingInsightText, boundedNumber, normalizeBenchmarkSummary, benchmarkMetricText,
+    safeSelectionId, normalizeSelectionProjection, selectionProjectionValues,
     acquisitionStatusLabel, acquisitionErrorText, acquisitionIsTerminal,
     normalizeMatrix, citationValues, citationIndex, locatorForEvidence, locatorText,
     versionedReportUrl, renderMatrix, renderReportFormatTabs, selectReportFormat, loadMatrix,

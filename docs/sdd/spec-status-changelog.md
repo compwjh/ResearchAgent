@@ -355,3 +355,14 @@
 - **Spec030 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 均已通过各自定向门禁，开始唯一全量回归、浏览器 smoke、部署和收口评审。
 - **Spec030 Task06：最终评审、回归、部署与复盘**：`实施中（P1）` → `已完成`。修复 `EvidenceReportError` 错误出口与矩阵未就绪状态映射，保留旧资源版本兼容标记；后端复核通过，全量回归 2504 passed、1 skipped、67 subtests，运行时 smoke 的 health/root=200、未知矩阵=404、未知报告=404、非法格式=406。
 - **Spec 030：跨论文证据矩阵与深度研究报告**：`实施中` → `已完成`。Task02–06 全部完成，证据矩阵、不可变三格式报告、引用定位 UI、验收评审、部署验证和复盘均已落盘；未 push/merge。
+- **Spec 031：动态模型路由与资源调度优化**：`待确认` → `实施中`。用户确认所有 Spec，开始 Task02 单/多实例与 9B Worker 基准门；子 Agent 临时使用 Luna high，Task 阶段只运行定向测试。
+- **Spec031 Task02：单实例/多实例与 Worker 基准门**：`实施中` → `已完成（单实例条件放行）`。真实 1–4 Worker 基准全部 HTTP 200、失败率 0%；热吞吐提升约 28.1% 但 TTFT 约 3.45×，ResourceProbe cap=1；多实例因无第二实例/资源证据保持 NO-GO。Task03 仅按单实例 shadow/观测路径继续，P1/P2 证据增强列入 Task06。
+- **Spec031 Task03：实现路由观测与 Shadow Policy**：`待执行` → `实施中`。Task02 仅放行单实例、ResourceProbe 约束的观测路径；开始记录脱敏决策/结果、策略回放和不可阻塞降级。
+- **Spec031 Task03：实现路由观测与 Shadow Policy**：`实施中` → `已完成（单实例条件放行）`。完成值级敏感内容拒绝、ResearchStore owner/幂等隔离、生产 opt-in 观测装配和不改变生产选择的 shadow replay；独立复审 GO，定向回归 111 passed、5 subtests。生产 outcome 自动记录与 Task02 benchmark 证据增强列入 Task06。
+- **Spec031 Task04：实现内存感知 Worker 扩缩与策略激活**：`待执行` → `实施中`。Task03 复审 GO，开始在单机/单实例门禁内接入现有 ResourceProbe、ResearchScheduler 与资源预约；多实例、自动下载/卸载和跨机器调度保持禁止。
+- **Spec031 Task04：实现内存感知 Worker 扩缩与策略激活**：`实施中` → `已完成（后端 GO）`。完成 strong 跨 scheduler 原子单并发、过期 quota 恢复、同任务 grant 隔离、服务端 evidence gate 与原子策略激活；reviewer/tester 均 GO，定向回归 154 passed、5 subtests。runtime smoke、权限边界与 Task02 provenance 留给 Task06。
+- **Spec031 Task05：实现路由解释与基准界面**：`待执行` → `实施中`。Task04 reviewer/tester GO，启动前端只读解释视图和受控基准状态；不开放策略编辑、不显示敏感文本、不修改后端。
+- **Spec031 Task05：实现路由解释与基准界面**：`实施中` → `已完成（前端 GO）`。完成脱敏模型/原因/Worker/升级解释和 warm/cold 基准卡；reviewer/tester 均 GO，43 passed，严格数值与路径 fail-closed 通过。`routing_benchmark` 投影留作 Task06 P2。
+- **Spec031 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 门禁均通过，开始唯一全量回归、前后端运行时 smoke、部署证据和最终复盘；多实例 NO-GO 与遗留 P2 只做诚实记录。
+- **Spec031 Task06：最终评审、回归、部署与复盘**：`实施中` → `已完成`。修复 benchmark 质量/provenance、压缩 worker 持久化顺序、测试 worker 隔离及论文评估安全选集投影；最终全量回归 `2539 passed, 5 warnings, 67 subtests`，8500 部署 smoke 通过。
+- **Spec031：动态模型路由与资源调度优化**：`实施中` → `已完成`。Task02–06、三份评审、复盘和运行时验证已收口；仅单实例范围 GO，多实例明确 NO-GO。
