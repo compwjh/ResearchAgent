@@ -1,7 +1,7 @@
 # Task 04：实现内存感知 Worker 扩缩与策略激活
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；被依赖：Task05–06；当前状态：`待执行`
+> 依赖：Task03；被依赖：Task05–06；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -26,3 +26,4 @@
 ## 变更日志
 
 - 2026-09-12：创建自适应 Worker Task。
+- 2026-09-17：Task03 单实例条件放行且复审 GO，启动 Task04；只允许在现有 ResourceProbe/ResearchScheduler 上增加有界的资源感知调度和策略门。

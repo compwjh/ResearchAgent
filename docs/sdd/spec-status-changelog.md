@@ -359,3 +359,4 @@
 - **Spec031 Task02：单实例/多实例与 Worker 基准门**：`实施中` → `已完成（单实例条件放行）`。真实 1–4 Worker 基准全部 HTTP 200、失败率 0%；热吞吐提升约 28.1% 但 TTFT 约 3.45×，ResourceProbe cap=1；多实例因无第二实例/资源证据保持 NO-GO。Task03 仅按单实例 shadow/观测路径继续，P1/P2 证据增强列入 Task06。
 - **Spec031 Task03：实现路由观测与 Shadow Policy**：`待执行` → `实施中`。Task02 仅放行单实例、ResourceProbe 约束的观测路径；开始记录脱敏决策/结果、策略回放和不可阻塞降级。
 - **Spec031 Task03：实现路由观测与 Shadow Policy**：`实施中` → `已完成（单实例条件放行）`。完成值级敏感内容拒绝、ResearchStore owner/幂等隔离、生产 opt-in 观测装配和不改变生产选择的 shadow replay；独立复审 GO，定向回归 111 passed、5 subtests。生产 outcome 自动记录与 Task02 benchmark 证据增强列入 Task06。
+- **Spec031 Task04：实现内存感知 Worker 扩缩与策略激活**：`待执行` → `实施中`。Task03 复审 GO，开始在单机/单实例门禁内接入现有 ResourceProbe、ResearchScheduler 与资源预约；多实例、自动下载/卸载和跨机器调度保持禁止。
