@@ -53,6 +53,16 @@ for (const value of [null, undefined, '', false, ' 1 ', '1e3']) {
   assert.equal(invalid.warm, undefined, String(value));
 }
 assert.equal(api.normalizeBenchmarkSummary(null), null);
+assert.equal(api.safeSelectionId('catalog:paper-1'), 'catalog:paper-1');
+assert.equal(api.safeSelectionId('../private'), '');
+assert.equal(api.safeSelectionId('https://example.invalid/paper'), '');
+const selections = api.selectionProjectionValues([
+  { catalog_paper_id: 'paper-1', relevance: 0.82, evidence_level: 'catalog', facets: ['agent safety'] },
+  { catalog_paper_id: 'paper-1', relevance: 0.1 },
+  { catalog_paper_id: 'paper-2', relevance: 4, evidence_level: 'invalid', title: 'must not render' },
+]);
+assert.deepEqual(selections[0], { catalog_paper_id: 'paper-1', relevance: 0.82, evidence_level: 'catalog', facets: ['agent safety'] });
+assert.deepEqual(selections[1], { catalog_paper_id: 'paper-2' });
 console.log('Spec031 frontend routing/benchmark contract: PASS');
 '''
     result = subprocess.run(["node", "-e", probe], cwd=ROOT, text=True, capture_output=True)
@@ -68,6 +78,8 @@ def test_spec031_frontend_dom_and_security_contracts():
     assert "/assets/research-tasks.js?v=10" in index
     assert "routingInsightText" in research
     assert "normalizeBenchmarkSummary" in research
+    assert "loadSelectionSnapshot" in research
+    assert "acquisition-preview" in research
     assert "research-benchmark" in styles
     assert "innerHTML" not in research
     for forbidden in ("payload.prompt", "payload.answer", "payload.thought", "payload.chain_of_thought", "payload.owner_token", "payload.host_path"):

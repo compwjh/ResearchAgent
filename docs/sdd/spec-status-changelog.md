@@ -364,3 +364,5 @@
 - **Spec031 Task05：实现路由解释与基准界面**：`待执行` → `实施中`。Task04 reviewer/tester GO，启动前端只读解释视图和受控基准状态；不开放策略编辑、不显示敏感文本、不修改后端。
 - **Spec031 Task05：实现路由解释与基准界面**：`实施中` → `已完成（前端 GO）`。完成脱敏模型/原因/Worker/升级解释和 warm/cold 基准卡；reviewer/tester 均 GO，43 passed，严格数值与路径 fail-closed 通过。`routing_benchmark` 投影留作 Task06 P2。
 - **Spec031 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 门禁均通过，开始唯一全量回归、前后端运行时 smoke、部署证据和最终复盘；多实例 NO-GO 与遗留 P2 只做诚实记录。
+- **Spec031 Task06：最终评审、回归、部署与复盘**：`实施中` → `已完成`。修复 benchmark 质量/provenance、压缩 worker 持久化顺序、测试 worker 隔离及论文评估安全选集投影；最终全量回归 `2539 passed, 5 warnings, 67 subtests`，8500 部署 smoke 通过。
+- **Spec031：动态模型路由与资源调度优化**：`实施中` → `已完成`。Task02–06、三份评审、复盘和运行时验证已收口；仅单实例范围 GO，多实例明确 NO-GO。

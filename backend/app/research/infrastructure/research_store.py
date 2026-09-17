@@ -113,7 +113,7 @@ _EVENT_SAFE_KEYS = {
     "status", "goal_excerpt", "quality_profile", "target_paper_count", "review_plan_first",
     "plan_version", "previous_plan_version", "replan_round", "stop_reason", "reason",
     "facets", "items", "work_item_id", "task_type", "role", "model_tier", "resolved_model",
-    "worker_slot", "code", "error_code", "selected_count", "catalog_paper_ids", "search_worker", "search_id",
+    "worker_slot", "code", "error_code", "selected_count", "selected_paper_ids", "catalog_paper_ids", "search_worker", "search_id",
     "coverage", "gaps", "recommendations", "bounded_replan", "approval_required", "evaluations",
     "statistics", "output_hash", "node_type", "node_key", "parent_node_key", "parent_source_event_id",
     "parent_step_id", "kind", "label", "summary", "display_order", "research_session_id",

@@ -1,7 +1,7 @@
 # Task 06：最终评审、基准、回归、部署与复盘
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02–05 完成；当前状态：`实施中`
+> 依赖：Task02–05 完成；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -21,9 +21,12 @@
 ## 主 Agent 校验、风险与产出
 
 - 质量退化、内存超卖、观测故障影响业务均阻塞。
-- 产出评审、基准、验收、复盘和部署证据；执行结果待填写。
+- 产出评审、基准、验收、复盘和部署证据；执行结果：已完成。
 
 ## 变更日志
 
 - 2026-09-12：创建最终收口 Task。
 - 2026-09-17：Task02–05 均完成并通过各自 reviewer/tester 门禁；启动唯一全量回归、运行时 smoke、部署与复盘。Task02 多实例 NO-GO、Task03 outcome/P2、Task05 routing_benchmark 投影作为已知边界核对。
+- 2026-09-17：修复压缩摘要持久化顺序、测试 worker 生命周期隔离及 Task02 benchmark 质量/provenance 证据缺口；另修复 evaluator 完成事件安全投影 `selected_paper_ids`，使论文选集在报告生成前可见。
+- 2026-09-17：最终全量 `.venv/bin/python -m pytest -q` 退出码 0，`2539 passed, 5 warnings, 67 subtests passed`；前端 `node --check` 与 Spec029/030/031 合同通过。
+- 2026-09-17：部署于 `http://127.0.0.1:8500`，health/root smoke 均 200；验收评审 GO。多实例保持 NO-GO，不扩大 Spec031 范围。

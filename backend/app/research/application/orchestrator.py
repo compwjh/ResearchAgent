@@ -1365,7 +1365,16 @@ class Orchestrator:
             self._emit(
                 research_task_id,
                 "worker",
-                self._worker_event_payload(completed_item, "completed", selected_count=len(selected)),
+                self._worker_event_payload(
+                    completed_item,
+                    "completed",
+                    selected_count=len(selected),
+                    # IDs are the stable, non-sensitive bridge to the
+                    # existing durable selection snapshot.  Do not put
+                    # catalog title/abstract text or evaluator reasoning in
+                    # the event payload.
+                    selected_paper_ids=[item["catalog_paper_id"] for item in selected],
+                ),
             )
         store.replace_selections(
             research_task_id,

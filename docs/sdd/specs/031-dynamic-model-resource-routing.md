@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中**
+**当前状态：已完成**
 
 ## 一句话目标
 
@@ -62,9 +62,12 @@
 - 多实例只有 Go/No-Go 报告为 GO 才实施；NO-GO 时 Spec 仍可凭单实例优化完成。
 - 最终 Task 一次全量回归、运行时基准、部署和复盘。
 
-## 产品使用步骤（由产品经理在 Spec 确认后填写）
+## 产品使用步骤
 
-- 待确认后补充质量档位、路由说明与基准管理的用户旅程。
+1. 用户在研究任务中选择 speed、balanced 或 quality；系统按既有质量门和资源额度选择模型，并在任务时间线显示脱敏的模型、Worker、升级或降级原因。
+2. 用户打开路由状态/基准视图时，只能看到模型健康、Worker 数量、warm/cold 指标和降级状态，不显示 Prompt、回答、思维链、主机路径或租约 token。
+3. 管理员只有在服务端提供完整 benchmark 证据、质量门和资源门均满足时，才能明确激活版本化策略；否则页面保持 shadow/回退状态。
+4. 资源探针或观测不可用时，任务继续使用单实例规则策略；用户不会因 Langfuse 或非关键观测故障而被阻塞。
 
 ## 执行配置
 
@@ -85,13 +88,13 @@
 | 03 | 实现决策/结果数据与 shadow policy | [`task-03-routing-observation-shadow.md`](../plans/031/task-03-routing-observation-shadow.md) | 02 | 已完成（单实例条件放行） |
 | 04 | 实现内存感知 Worker 扩缩与策略激活 | [`task-04-adaptive-worker-routing.md`](../plans/031/task-04-adaptive-worker-routing.md) | 03 | 已完成（后端 GO） |
 | 05 | 实现路由解释与基准界面 | [`task-05-routing-insights-ui.md`](../plans/031/task-05-routing-insights-ui.md) | 04 | 已完成（前端 GO） |
-| 06 | 最终评审、回归、基准、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/031/task-06-review-regression-deploy.md) | 02–05 | 实施中 |
+| 06 | 最终评审、回归、基准、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/031/task-06-review-regression-deploy.md) | 02–05 | 已完成 |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/031-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/031-tech-review.md`（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/031-acceptance-review.md`（待评审（未执行））
+- 需求评审：`docs/sdd/reviews/031-requirement-review.md`（通过；Task06 补充复核）
+- 技术评审：`docs/sdd/reviews/031-tech-review.md`（通过；Task06 补充复核）
+- 验收评审：`docs/sdd/reviews/031-acceptance-review.md`（通过）
 
 ## 变更日志
 
@@ -99,3 +102,4 @@
 |---|---|---|
 | 2026-09-12 | 架构师（自身） | 创建动态模型路由、资源优化和 Ollama 拓扑基准 Spec |
 | 2026-09-17 | 架构师（自身） | 用户确认 Spec031，进入 Task02；子 Agent 临时使用 Luna high，Task 阶段只运行定向测试。 |
+| 2026-09-17 | 架构师（自身） | Task06 修复回归与 benchmark 证据问题，补齐 evaluator 论文选集安全投影；最终全量回归和部署 smoke 通过，Spec031 完成。 |

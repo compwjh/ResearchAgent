@@ -65,3 +65,7 @@ Task02 没有新增业务模型客户端或调度实现，且真实历史数据�
 ## 评审边界
 
 本技术评审只修改本评审文档；未修改 `backend/**`、harness、raw、既有 ResourceProbe/调度实现或测试；未启动/配置第二实例，未运行全量 pytest，未执行部署或 push/merge。
+
+## Task06 补充复核（2026-09-17）
+
+初评列出的 P1 已关闭：benchmark harness 现在严格校验响应 JSON，并记录 ResourceProbe、可用内存、备用端口与 provenance；压缩 worker 持久化顺序和测试 worker 生命周期也已修复。最终全量回归 `2539 passed`，部署 smoke 通过。多实例没有独立证据，继续保持 NO-GO。补充结论：**通过（单实例范围）**。
