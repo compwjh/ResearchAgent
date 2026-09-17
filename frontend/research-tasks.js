@@ -85,6 +85,27 @@
     source_degraded: '来源降级，保留已有证据并收敛。',
     source_unavailable: '来源不可用，保留已有证据并收敛。',
   };
+  const ROUTING_RESOURCE_TEXT = Object.freeze({
+    RESOURCE_PROBE_FAILED: '资源探针不可用，已按降级额度运行。',
+    STRONG_WORKER_BUSY: 'strong 额度繁忙，已排队或降级。',
+    RESOURCE_DEGRADED: '资源不足，已降级 Worker 额度。',
+    WORKER_LIMIT: '已达到 Worker 额度上限。',
+    MEMORY_LIMIT: '可用内存不足，已限制 Worker 额度。',
+    QUEUE_REQUIRED: '资源繁忙，任务进入排队。',
+  });
+  const BENCHMARK_PHASE_TEXT = Object.freeze({ warm: '热身', cold: '冷启动' });
+  const BENCHMARK_METRICS = Object.freeze({
+    median_ttft_ms: { label: '中位 TTFT', unit: 'ms', min: 0, max: 600000 },
+    throughput_completion_tokens_per_s: { label: '吞吐', unit: 'tokens/s', min: 0, max: 100000 },
+    peak_memory_bytes: { label: '峰值内存', unit: 'bytes', min: 0, max: 1e15 },
+    failure_rate: { label: '失败率', unit: '%', min: 0, max: 1 },
+  });
+  const BENCHMARK_METRIC_ALIASES = Object.freeze({
+    median_ttft_ms: ['median_ttft_ms', 'ttft_ms', 'median_ttft'],
+    throughput_completion_tokens_per_s: ['throughput_completion_tokens_per_s', 'throughput_tokens_per_s', 'throughput'],
+    peak_memory_bytes: ['peak_memory_bytes', 'peak_size_vram', 'size_vram'],
+    failure_rate: ['failure_rate'],
+  });
   const state = {
     document: null,
     conversationId: null,
@@ -272,6 +293,101 @@
     if (!payload || typeof payload !== 'object') return '';
     const value = payload.code || payload.error_code;
     return typeof value === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : '';
+  }
+
+  function safeRoutingText(value, limit = 180) {
+    if (typeof value !== 'string') return '';
+    const normalized = value.trim();
+    if (!normalized || normalized.length > limit) return '';
+    if (/(?:prompt|answer|thought|chain(?:[_ -]?of[_ -]?thought)?|owner|token|secret|password|credential|authorization|cookie|host[_ -]?path)/i.test(normalized)) return '';
+    if (/(?:https?|ftp|file):\/\//i.test(normalized)) return '';
+    // Routing explanations are labels, never path-bearing tokens. Reject any
+    // slash/backslash so absolute paths, relative paths, fragments, Windows
+    // drives and UNC shares all fail closed without directory allowlists.
+    if (/[\\/]/.test(normalized)) return '';
+    if (/(?:^|[\s"'(=,:])(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|::1)(?::\d+)?(?:\s|$)/i.test(normalized)) return '';
+    return normalized;
+  }
+
+  function safeModelName(value) {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/.test(value)) return '';
+    return safeRoutingText(value, 96);
+  }
+
+  function boundedNumber(value, min, max) {
+    let number;
+    if (typeof value === 'number') number = value;
+    else if (typeof value === 'string' && /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) number = Number(value);
+    else return null;
+    return Number.isFinite(number) && number >= min && number <= max ? number : null;
+  }
+
+  function routingResourceText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const candidates = [payload.resource_reason, payload.resource_degradation, payload.resource_code, payload.reason];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const code = candidate.trim().toUpperCase();
+      if (ROUTING_RESOURCE_TEXT[code]) return ROUTING_RESOURCE_TEXT[code];
+    }
+    if (payload.resource_degraded === true || payload.degraded === true) return '资源不足，已降级 Worker 额度。';
+    return '';
+  }
+
+  function routingInsightText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const parts = [];
+    const model = safeModelName(payload.resolved_model || payload.chosen_model);
+    if (model) parts.push(`模型：${model}`);
+    if (payload.model_tier === 'fast' || payload.model_tier === 'strong') parts.push(`档位：${payload.model_tier}`);
+    const grant = boundedNumber(payload.worker_grant ?? payload.granted, 0, 4);
+    if (grant !== null && Number.isInteger(grant)) parts.push(`Worker 额度：${grant}`);
+    const reason = safeRoutingText(payload.reason);
+    if (reason && !ROUTING_RESOURCE_TEXT[reason.toUpperCase()]) parts.push(`说明：${reason}`);
+    const resource = routingResourceText(payload);
+    if (resource) parts.push(`资源：${resource}`);
+    if (payload.from_tier === 'fast' && payload.to_tier === 'strong') parts.push('升级：fast → strong');
+    return parts.join(' · ');
+  }
+
+  function normalizeBenchmarkPhase(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const phase = {};
+    Object.entries(BENCHMARK_METRICS).forEach(([name, definition]) => {
+      const source = BENCHMARK_METRIC_ALIASES[name].find((key) => Object.prototype.hasOwnProperty.call(value, key));
+      if (!source) return;
+      const number = boundedNumber(value[source], definition.min, definition.max);
+      if (number !== null) phase[name] = number;
+    });
+    return phase;
+  }
+
+  function normalizeBenchmarkSummary(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const source = value.summary && typeof value.summary === 'object' ? value.summary : value;
+    const result = {};
+    ['warm', 'cold'].forEach((phase) => {
+      const normalized = normalizeBenchmarkPhase(source[phase]);
+      if (Object.keys(normalized).length) result[phase] = normalized;
+    });
+    const policyStatus = source.policy_status || source.policy?.status;
+    if (policyStatus === 'active' || policyStatus === 'shadow') result.policy_status = policyStatus;
+    if (source.probe_available === false || source.probe_status === 'unavailable' || source.probe_status === 'failed') result.probe_available = false;
+    if (source.probe_available === true || source.probe_status === 'available') result.probe_available = true;
+    return Object.keys(result).length ? result : {};
+  }
+
+  function benchmarkSummaryFromState() {
+    const candidates = [
+      state.selectedTask?.benchmark_summary, state.selectedTask?.benchmark,
+      state.selectedTask?.routing_benchmark, state.selectedTask?.routing?.benchmark,
+      ...[...state.events.values()].reverse().map((event) => event.payload?.benchmark_summary || event.payload?.benchmark),
+    ];
+    for (const candidate of candidates) {
+      const normalized = normalizeBenchmarkSummary(candidate);
+      if (normalized && Object.keys(normalized).length) return normalized;
+    }
+    return null;
   }
 
   function eventStopReason(payload) {
@@ -1106,10 +1222,9 @@
     if (round) parts.push(`第 ${round} 轮`);
     if (TASK_TYPE_TEXT[payload.task_type]) parts.push(`节点：${TASK_TYPE_TEXT[payload.task_type]}`);
     if (ROLE_TEXT[payload.role]) parts.push(`角色：${ROLE_TEXT[payload.role]}`);
-    if (typeof payload.worker_slot === 'string' && payload.worker_slot) parts.push(`Worker：${payload.worker_slot}`);
-    if (payload.model_tier === 'fast' || payload.model_tier === 'strong') parts.push(`档位：${payload.model_tier}`);
-    if (typeof payload.resolved_model === 'string' && payload.resolved_model) parts.push(`模型：${payload.resolved_model}`);
-    if (payload.from_tier === 'fast' && payload.to_tier === 'strong') parts.push('路由：fast → strong');
+    if (typeof payload.worker_slot === 'string' && /^[A-Za-z0-9._:-]{1,80}$/.test(payload.worker_slot)) parts.push(`Worker：${payload.worker_slot}`);
+    const routing = routingInsightText(payload);
+    if (routing) parts.push(routing);
     if (Number.isFinite(Number(payload.selected_count))) parts.push(`已选：${Number(payload.selected_count)}`);
     if (Number.isFinite(Number(payload.candidate_count))) parts.push(`候选：${Number(payload.candidate_count)}`);
     const gaps = safeList(payload.gaps);
@@ -1117,8 +1232,46 @@
     const failedSources = safeList(payload.failed_sources).length || safeList(payload.degraded_sources).length;
     if (failedSources) parts.push(`受影响来源：${failedSources} 个`);
     if (EVIDENCE_TEXT[payload.evidence_level]) parts.push(`证据：${evidenceLabel(payload.evidence_level)}`);
-    if (typeof payload.reason === 'string' && payload.reason.length <= 180) parts.push(`说明：${payload.reason}`);
     return parts.join(' · ') || '收到安全事件摘要';
+  }
+
+  function benchmarkMetricText(name, value) {
+    const definition = BENCHMARK_METRICS[name];
+    if (!definition) return '';
+    const normalized = boundedNumber(value, definition.min, definition.max);
+    if (normalized === null) return '';
+    const number = name === 'failure_rate' ? normalized * 100 : normalized;
+    const formatted = Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+    return `${definition.label}：${formatted} ${definition.unit}`;
+  }
+
+  function renderBenchmarkSummary() {
+    const section = byId('research-benchmark-section');
+    const metrics = byId('research-benchmark-metrics');
+    const stateNode = byId('research-benchmark-state');
+    const policyNode = byId('research-benchmark-policy');
+    if (!section || !metrics || !stateNode || !policyNode) return;
+    clearNode(metrics);
+    if (!state.selectedTask) { section.hidden = true; return; }
+    section.hidden = false;
+    const summary = benchmarkSummaryFromState();
+    const phases = summary ? ['warm', 'cold'].filter((phase) => summary[phase] && Object.keys(summary[phase]).length) : [];
+    policyNode.textContent = summary?.policy_status ? `策略：${summary.policy_status}（只读）` : '策略：暂无可用状态（只读）';
+    if (!summary || !phases.length) {
+      stateNode.textContent = summary?.probe_available === false ? '暂无指标／探针不可用。' : '暂无指标／探针不可用。';
+      const empty = state.document.createElement('li'); empty.className = 'research-benchmark-empty'; empty.textContent = '当前任务没有受控基准指标。'; metrics.appendChild(empty);
+      return;
+    }
+    stateNode.textContent = '仅展示已存在且通过数值边界校验的摘要。';
+    phases.forEach((phase) => {
+      const item = state.document.createElement('li'); item.className = 'research-benchmark-phase'; item.dataset.phase = phase;
+      const title = state.document.createElement('strong'); title.textContent = BENCHMARK_PHASE_TEXT[phase]; item.appendChild(title);
+      Object.entries(summary[phase]).forEach(([name, value]) => {
+        const metric = benchmarkMetricText(name, value); if (!metric) return;
+        const detail = state.document.createElement('span'); detail.className = 'research-benchmark-metric'; detail.textContent = metric; item.appendChild(detail);
+      });
+      metrics.appendChild(item);
+    });
   }
 
   function eventTitle(type) {
@@ -1461,6 +1614,7 @@
   function renderSummary() {
     const list = byId('research-summary-list');
     clearNode(list);
+    renderBenchmarkSummary();
     const events = [...state.events.values()];
     const workers = events.filter((event) => event.type === 'worker');
     const coverage = [...events].reverse().find((event) => event.type === 'coverage');
@@ -1968,6 +2122,7 @@
         }
       }
       setDetailVisibility(true);
+      renderBenchmarkSummary();
       if (taskId) {
         await Promise.all([loadMatrix(taskId), loadReport(taskId)]);
         if (state.selectedTaskId !== taskId) return;
@@ -2189,6 +2344,7 @@
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
     sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,
+    routingInsightText, boundedNumber, normalizeBenchmarkSummary, benchmarkMetricText,
     acquisitionStatusLabel, acquisitionErrorText, acquisitionIsTerminal,
     normalizeMatrix, citationValues, citationIndex, locatorForEvidence, locatorText,
     versionedReportUrl, renderMatrix, renderReportFormatTabs, selectReportFormat, loadMatrix,

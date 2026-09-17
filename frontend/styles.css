@@ -3541,6 +3541,48 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   overflow-wrap: anywhere;
 }
 
+/* Spec031 Task05: routing/benchmark read-only projection. */
+#research-view .research-benchmark-card .research-column-body {
+  display: grid;
+  gap: 8px;
+}
+
+#research-view .research-benchmark-state,
+#research-view .research-benchmark-policy {
+  margin: 0;
+  color: var(--muted);
+  font: 10px/1.55 'DM Mono', monospace;
+  overflow-wrap: anywhere;
+}
+
+#research-view .research-benchmark-metrics {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#research-view .research-benchmark-phase {
+  display: grid;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafd;
+}
+
+#research-view .research-benchmark-phase strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+#research-view .research-benchmark-metric,
+#research-view .research-benchmark-empty {
+  color: var(--muted);
+  font: 10px/1.45 'DM Mono', monospace;
+}
+
 #research-view .research-summary-list {
   display: grid;
   gap: 8px;
