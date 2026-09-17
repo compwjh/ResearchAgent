@@ -1,7 +1,7 @@
 # Task 05：实现路由解释与基准界面
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Task04；被依赖：Task06；当前状态：`待执行`
+> 依赖：Task04；被依赖：Task06；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -26,3 +26,4 @@
 ## 变更日志
 
 - 2026-09-12：创建路由 Insights UI Task。
+- 2026-09-17：Task04 reviewer/tester GO，启动前端路由解释与基准视图；只显示脱敏摘要，不开放策略编辑或后端修改。
