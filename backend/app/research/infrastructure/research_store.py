@@ -423,6 +423,7 @@ class ResearchStore:
             self._ensure_task09_schema(connection)
             self._ensure_spec029_schema(connection)
             self._ensure_spec030_schema(connection)
+            self._ensure_spec031_schema(connection)
             self._validate_schema_meta(connection)
             connection.commit()
 
@@ -718,6 +719,62 @@ class ResearchStore:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_claims_task ON research_claims(research_task_id, plan_version)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_evidence_task_v1 ON research_claim_evidence(research_task_id, plan_version, claim_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_cells_task ON research_comparison_cells(research_task_id, plan_version)")
+
+    @staticmethod
+    def _ensure_spec031_schema(connection: sqlite3.Connection) -> None:
+        """Add bounded, owner-scoped routing observation tables.
+
+        This is intentionally additive and does not change the schema marker:
+        existing Spec027/028 databases must open without a destructive
+        migration.  No prompt, answer, chain-of-thought, or credential field
+        exists in these tables.
+        """
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_routing_decisions(
+            decision_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            idempotency_key TEXT,
+            task_type TEXT NOT NULL,
+            features_json TEXT NOT NULL,
+            candidate_models_json TEXT NOT NULL,
+            chosen_model TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(owner_id, idempotency_key)
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_model_outcomes(
+            decision_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            schema_valid INTEGER,
+            quality_score REAL,
+            ttft REAL,
+            duration REAL,
+            tokens INTEGER,
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(decision_id) REFERENCES research_routing_decisions(decision_id) ON DELETE RESTRICT
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_resource_snapshots(
+            snapshot_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            available_memory INTEGER,
+            loaded_models_json TEXT NOT NULL,
+            estimated_kv INTEGER,
+            active_workers INTEGER,
+            captured_at TEXT NOT NULL,
+            probe_error TEXT
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_routing_policies(
+            version TEXT PRIMARY KEY,
+            profile TEXT NOT NULL,
+            rules_json TEXT NOT NULL,
+            thresholds_json TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('draft','shadow','active','retired')),
+            created_at TEXT NOT NULL
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_routing_decisions_owner_created ON research_routing_decisions(owner_id, created_at, decision_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_routing_outcomes_owner ON research_model_outcomes(owner_id, created_at)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_resource_snapshots_owner ON research_resource_snapshots(owner_id, captured_at, snapshot_id)")
 
     @staticmethod
     def _ensure_scheduler_schema(connection: sqlite3.Connection) -> None:
@@ -4380,6 +4437,244 @@ class ResearchStore:
                 (research_task_id,),
             ).fetchone()
         return int(row["last_event_seq"]) if row is not None else 0
+
+    # ------------------------------------------------------------------ #
+    # Spec031 routing observation (bounded + owner scoped)
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _routing_decision_from_row(row):
+        from backend.app.research.application.routing_observation import RoutingDecision
+        return RoutingDecision(
+            decision_id=row["decision_id"], owner_id=row["owner_id"],
+            task_type=row["task_type"], features=json.loads(row["features_json"]),
+            candidate_models=json.loads(row["candidate_models_json"]),
+            chosen_model=row["chosen_model"], reason=row["reason"],
+            policy_version=row["policy_version"], created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _model_outcome_from_row(row):
+        from backend.app.research.application.routing_observation import ModelOutcome
+        return ModelOutcome(
+            decision_id=row["decision_id"], schema_valid=None if row["schema_valid"] is None else bool(row["schema_valid"]),
+            quality_score=row["quality_score"], ttft=row["ttft"], duration=row["duration"],
+            tokens=row["tokens"], error_code=row["error_code"], created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _resource_observation_from_row(row):
+        from backend.app.research.application.routing_observation import ResourceObservation
+        return ResourceObservation(
+            snapshot_id=row["snapshot_id"], owner_id=row["owner_id"],
+            available_memory=row["available_memory"], loaded_models=json.loads(row["loaded_models_json"]),
+            estimated_kv=row["estimated_kv"], active_workers=row["active_workers"],
+            captured_at=row["captured_at"], probe_error=row["probe_error"],
+        )
+
+    def save_routing_decision(self, decision, *, idempotency_key: str | None = None):
+        """Persist one redacted decision; same owner/key is idempotent."""
+        # Keep the persistence seam safe even when callers bypass the
+        # application service and hand-build a dataclass.
+        from backend.app.research.application.routing_observation import _validate_routing_decision
+        _validate_routing_decision(decision, idempotency_key=idempotency_key)
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                if idempotency_key:
+                    existing = conn.execute(
+                        "SELECT * FROM research_routing_decisions WHERE owner_id=? AND idempotency_key=?",
+                        (decision.owner_id, idempotency_key),
+                    ).fetchone()
+                    if existing:
+                        if existing["decision_id"] != decision.decision_id and (
+                            existing["task_type"] != decision.task_type
+                            or existing["chosen_model"] != decision.chosen_model
+                            or existing["policy_version"] != decision.policy_version
+                        ):
+                            raise ValueError("routing decision idempotency conflict")
+                        conn.commit()
+                        return self._routing_decision_from_row(existing)
+                existing = conn.execute(
+                    "SELECT * FROM research_routing_decisions WHERE decision_id=?", (decision.decision_id,)
+                ).fetchone()
+                if existing:
+                    candidate = self._routing_decision_from_row(existing)
+                    if candidate.owner_id != decision.owner_id or candidate.public() != decision.public():
+                        raise ValueError("routing decision identity conflict")
+                    conn.commit()
+                    return candidate
+                conn.execute(
+                    """INSERT INTO research_routing_decisions(
+                       decision_id, owner_id, idempotency_key, task_type, features_json,
+                       candidate_models_json, chosen_model, reason, policy_version, created_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (decision.decision_id, decision.owner_id, idempotency_key, decision.task_type,
+                     json.dumps(decision.features, ensure_ascii=False, sort_keys=True),
+                     json.dumps(decision.candidate_models, ensure_ascii=False), decision.chosen_model,
+                     decision.reason, decision.policy_version, decision.created_at or _utcnow()),
+                )
+                row = conn.execute("SELECT * FROM research_routing_decisions WHERE decision_id=?", (decision.decision_id,)).fetchone()
+                conn.commit()
+                return self._routing_decision_from_row(row)
+            except Exception:
+                conn.rollback()
+                raise
+
+    record_routing_decision = save_routing_decision
+
+    def get_routing_decision(self, decision_id: str, *, owner_id: str):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_routing_decisions WHERE decision_id=? AND owner_id=?",
+                (decision_id, owner_id),
+            ).fetchone()
+        return self._routing_decision_from_row(row) if row else None
+
+    def list_routing_decisions(self, *, owner_id: str, task_type: str | None = None, limit: int = 100):
+        limit = max(1, min(int(limit), 500))
+        query = "SELECT * FROM research_routing_decisions WHERE owner_id=?"
+        args: list[object] = [owner_id]
+        if task_type:
+            query += " AND task_type=?"
+            args.append(task_type)
+        query += " ORDER BY created_at ASC, decision_id ASC LIMIT ?"
+        args.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, tuple(args)).fetchall()
+        return [self._routing_decision_from_row(row) for row in rows]
+
+    def save_model_outcome(self, outcome, *, owner_id: str):
+        from backend.app.research.application.routing_observation import _bounded_text, _validate_outcome
+        _bounded_text(owner_id, name="owner_id", limit=160)
+        _bounded_text(outcome.decision_id, name="decision_id", limit=160)
+        _bounded_text(outcome.created_at or _utcnow(), name="created_at", limit=64)
+        for field in ("schema_valid", "quality_score", "ttft", "duration", "tokens", "error_code"):
+            _validate_outcome(getattr(outcome, field), field=field)
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                decision = conn.execute(
+                    "SELECT owner_id FROM research_routing_decisions WHERE decision_id=?", (outcome.decision_id,)
+                ).fetchone()
+                if decision is None or decision["owner_id"] != owner_id:
+                    raise ValueError("routing outcome decision is not owned by owner")
+                existing = conn.execute("SELECT * FROM research_model_outcomes WHERE decision_id=?", (outcome.decision_id,)).fetchone()
+                if existing:
+                    candidate = self._model_outcome_from_row(existing)
+                    if candidate.public() != outcome.public() or existing["owner_id"] != owner_id:
+                        raise ValueError("routing outcome idempotency conflict")
+                    conn.commit()
+                    return candidate
+                conn.execute(
+                    """INSERT INTO research_model_outcomes(
+                       decision_id, owner_id, schema_valid, quality_score, ttft,
+                       duration, tokens, error_code, created_at)
+                       VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (outcome.decision_id, owner_id,
+                     None if outcome.schema_valid is None else int(outcome.schema_valid), outcome.quality_score,
+                     outcome.ttft, outcome.duration, outcome.tokens, outcome.error_code,
+                     outcome.created_at or _utcnow()),
+                )
+                row = conn.execute("SELECT * FROM research_model_outcomes WHERE decision_id=?", (outcome.decision_id,)).fetchone()
+                conn.commit()
+                return self._model_outcome_from_row(row)
+            except Exception:
+                conn.rollback()
+                raise
+
+    record_model_outcome = save_model_outcome
+
+    def get_model_outcome(self, decision_id: str, *, owner_id: str):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_model_outcomes WHERE decision_id=? AND owner_id=?",
+                (decision_id, owner_id),
+            ).fetchone()
+        return self._model_outcome_from_row(row) if row else None
+
+    def save_resource_snapshot(self, observation):
+        from backend.app.research.application.routing_observation import _bounded_text, _safe_models
+        _bounded_text(observation.owner_id, name="owner_id", limit=160)
+        _bounded_text(observation.snapshot_id, name="snapshot_id", limit=160)
+        _bounded_text(observation.captured_at, name="captured_at", limit=64)
+        _safe_models(observation.loaded_models)
+        if observation.probe_error is not None:
+            _bounded_text(observation.probe_error, name="probe_error", limit=80)
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = conn.execute("SELECT * FROM research_resource_snapshots WHERE snapshot_id=?", (observation.snapshot_id,)).fetchone()
+                if existing:
+                    current = self._resource_observation_from_row(existing)
+                    if current.owner_id != observation.owner_id or current.public() != observation.public():
+                        raise ValueError("resource snapshot idempotency conflict")
+                    conn.commit()
+                    return current
+                conn.execute(
+                    """INSERT INTO research_resource_snapshots(
+                       snapshot_id, owner_id, available_memory, loaded_models_json,
+                       estimated_kv, active_workers, captured_at, probe_error)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (observation.snapshot_id, observation.owner_id, observation.available_memory,
+                     json.dumps(observation.loaded_models, ensure_ascii=False), observation.estimated_kv,
+                     observation.active_workers, observation.captured_at, observation.probe_error),
+                )
+                row = conn.execute("SELECT * FROM research_resource_snapshots WHERE snapshot_id=?", (observation.snapshot_id,)).fetchone()
+                conn.commit()
+                return self._resource_observation_from_row(row)
+            except Exception:
+                conn.rollback()
+                raise
+
+    record_resource_snapshot = save_resource_snapshot
+
+    def list_resource_snapshots(self, *, owner_id: str, limit: int = 100):
+        limit = max(1, min(int(limit), 500))
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_resource_snapshots WHERE owner_id=? ORDER BY captured_at ASC, snapshot_id ASC LIMIT ?",
+                (owner_id, limit),
+            ).fetchall()
+        return [self._resource_observation_from_row(row) for row in rows]
+
+    def save_routing_policy(self, payload: dict) -> dict:
+        from backend.app.research.application.routing_observation import _safe_policy_payload
+        payload = _safe_policy_payload(payload)
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = conn.execute("SELECT * FROM research_routing_policies WHERE version=?", (payload["version"],)).fetchone()
+                if existing:
+                    current = {
+                        "version": existing["version"], "profile": existing["profile"],
+                        "rules": json.loads(existing["rules_json"]), "thresholds": json.loads(existing["thresholds_json"]),
+                        "status": existing["status"], "created_at": existing["created_at"],
+                    }
+                    if current["profile"] != payload["profile"] or current["rules"] != payload["rules"] or current["thresholds"] != payload["thresholds"]:
+                        raise ValueError("routing policy version conflict")
+                    conn.commit()
+                    return current
+                conn.execute(
+                    """INSERT INTO research_routing_policies(version, profile, rules_json, thresholds_json, status, created_at)
+                       VALUES(?,?,?,?,?,?)""",
+                    (payload["version"], payload["profile"], json.dumps(payload["rules"], ensure_ascii=False, sort_keys=True), json.dumps(payload["thresholds"], ensure_ascii=False, sort_keys=True), payload["status"], payload["created_at"]),
+                )
+                conn.commit()
+                return payload
+            except Exception:
+                conn.rollback()
+                raise
+
+    def get_routing_policy(self, version: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM research_routing_policies WHERE version=?", (version,)).fetchone()
+        if row is None:
+            return None
+        return {
+            "version": row["version"], "profile": row["profile"], "rules": json.loads(row["rules_json"]),
+            "thresholds": json.loads(row["thresholds_json"]), "status": row["status"], "created_at": row["created_at"],
+        }
 
     def mark_projection_retry(self, research_task_id: str, event_seq: int, error: str) -> dict:
         source_event_id = canonical_research_event_id(research_task_id, event_seq)
