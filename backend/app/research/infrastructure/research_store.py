@@ -775,6 +775,18 @@ class ResearchStore:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_routing_decisions_owner_created ON research_routing_decisions(owner_id, created_at, decision_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_routing_outcomes_owner ON research_model_outcomes(owner_id, created_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_resource_snapshots_owner ON research_resource_snapshots(owner_id, captured_at, snapshot_id)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_routing_gate_evidence(
+            evidence_id TEXT PRIMARY KEY,
+            policy_version TEXT NOT NULL,
+            quality_samples INTEGER NOT NULL CHECK(quality_samples >= 0),
+            quality_score REAL NOT NULL,
+            schema_valid_rate REAL NOT NULL,
+            resource_snapshot_id TEXT NOT NULL,
+            resource_workers INTEGER NOT NULL CHECK(resource_workers >= 1),
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(resource_snapshot_id) REFERENCES research_resource_snapshots(snapshot_id) ON DELETE RESTRICT
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_routing_gate_evidence_policy ON research_routing_gate_evidence(policy_version, created_at)")
 
     @staticmethod
     def _ensure_scheduler_schema(connection: sqlite3.Connection) -> None:
@@ -816,8 +828,12 @@ class ResearchStore:
             estimated_bytes INTEGER NOT NULL CHECK(estimated_bytes >= 0),
             expires_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            released_at TEXT
+            released_at TEXT,
+            grant_token TEXT
         )""")
+        reservation_columns = {row[1] for row in connection.execute("PRAGMA table_info(resource_reservations)").fetchall()}
+        if "grant_token" not in reservation_columns:
+            connection.execute("ALTER TABLE resource_reservations ADD COLUMN grant_token TEXT")
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_scheduler_leases_expiry "
             "ON scheduler_leases(expires_at, task_id)"
@@ -2675,6 +2691,7 @@ class ResearchStore:
         expires_at: str | None = None,
         lease_seconds: int = 60,
         capacity_bytes: int | None = None,
+        grant_token: str | None = None,
         now: str | None = None,
     ) -> ResourceReservation | None:
         """Atomically reserve capacity without overselling active bytes."""
@@ -2694,18 +2711,30 @@ class ResearchStore:
                     "SELECT 1 FROM resource_reservations WHERE worker_id=? AND released_at IS NULL AND expires_at>?",
                     (worker_id, current),
                 ).fetchone()
+                # Strong/27B capacity is a database-level singleton.  This
+                # check is intentionally inside the same BEGIN IMMEDIATE
+                # transaction as cleanup and INSERT; callers must not perform
+                # a preceding SELECT that can race across scheduler objects.
+                strong_tier = str(model_tier).strip().lower() in {"strong", "27b", "32b", "70b", "quality"}
+                existing_strong = None
+                if strong_tier:
+                    existing_strong = conn.execute(
+                        "SELECT 1 FROM resource_reservations WHERE released_at IS NULL AND expires_at>? "
+                        "AND lower(model_tier) IN ('strong','27b','32b','70b','quality') LIMIT 1",
+                        (current,),
+                    ).fetchone()
                 used = conn.execute(
                     "SELECT COALESCE(SUM(estimated_bytes),0) FROM resource_reservations WHERE released_at IS NULL AND expires_at>?",
                     (current,),
                 ).fetchone()[0]
-                if existing is not None or (capacity_bytes is not None and int(used) + int(estimated_bytes) > int(capacity_bytes)):
+                if existing is not None or existing_strong is not None or (capacity_bytes is not None and int(used) + int(estimated_bytes) > int(capacity_bytes)):
                     conn.commit()
                     return None
                 reservation_id = uuid.uuid4().hex
                 conn.execute(
-                    """INSERT INTO resource_reservations(reservation_id,task_id,worker_id,model_tier,estimated_bytes,expires_at,created_at,released_at)
-                       VALUES(?,?,?,?,?,?,?,NULL)""",
-                    (reservation_id, task_id, worker_id, model_tier, int(estimated_bytes), expiry, current),
+                    """INSERT INTO resource_reservations(reservation_id,task_id,worker_id,model_tier,estimated_bytes,expires_at,created_at,released_at,grant_token)
+                       VALUES(?,?,?,?,?,?,?,NULL,?)""",
+                    (reservation_id, task_id, worker_id, model_tier, int(estimated_bytes), expiry, current, grant_token),
                 )
                 row = conn.execute("SELECT * FROM resource_reservations WHERE reservation_id=?", (reservation_id,)).fetchone()
                 conn.commit()
@@ -2714,7 +2743,15 @@ class ResearchStore:
                 raise
         return ResourceReservation.from_row(dict(row))
 
-    def release_resource_reservation(self, reservation_id: str, *, worker_id: str | None = None, now: str | None = None) -> bool:
+    def release_resource_reservation(
+        self,
+        reservation_id: str,
+        *,
+        worker_id: str | None = None,
+        task_id: str | None = None,
+        grant_token: str | None = None,
+        now: str | None = None,
+    ) -> bool:
         current = now or _utcnow()
         with _write_lock, self._connect() as conn:
             try:
@@ -2725,6 +2762,12 @@ class ResearchStore:
                 if worker_id is not None:
                     sql += " AND worker_id=?"
                     params.append(worker_id)
+                if task_id is not None:
+                    sql += " AND task_id=?"
+                    params.append(task_id)
+                if grant_token is not None:
+                    sql += " AND grant_token=?"
+                    params.append(grant_token)
                 changed = conn.execute(sql, params).rowcount
                 conn.commit()
             except Exception:
@@ -2757,20 +2800,93 @@ class ResearchStore:
         return [ResourceReservation.from_row(dict(row)) for row in rows]
 
     def recover_expired_resource_reservations(self, *, now: str | None = None) -> int:
+        return len(self.recover_expired_resource_reservation_rows(now=now))
+
+    def recover_expired_resource_reservation_rows(self, *, now: str | None = None) -> list[dict]:
+        """Atomically mark expired rows released and return safe ownership data.
+
+        Returning the task/count data lets a live process reconcile its
+        in-memory probe quota; a restarted process can safely no-op when the
+        old in-memory quota no longer exists.
+        """
         current = now or _utcnow()
         with _write_lock, self._connect() as conn:
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 self._ensure_scheduler_schema(conn)
-                changed = conn.execute(
-                    "UPDATE resource_reservations SET released_at=? WHERE released_at IS NULL AND expires_at<=?",
-                    (current, current),
-                ).rowcount
+                rows = conn.execute(
+                    "SELECT reservation_id, task_id FROM resource_reservations "
+                    "WHERE released_at IS NULL AND expires_at<=? ORDER BY reservation_id",
+                    (current,),
+                ).fetchall()
+                if rows:
+                    conn.execute(
+                        "UPDATE resource_reservations SET released_at=? WHERE released_at IS NULL AND expires_at<=?",
+                        (current, current),
+                    )
                 conn.commit()
             except Exception:
                 conn.rollback()
                 raise
-        return max(0, int(changed))
+        return [{"reservation_id": row["reservation_id"], "task_id": row["task_id"]} for row in rows]
+
+    def save_routing_gate_evidence(self, evidence: dict) -> dict:
+        """Persist server-generated activation evidence immutably."""
+        required = ("evidence_id", "policy_version", "quality_samples", "quality_score", "schema_valid_rate", "resource_snapshot_id", "resource_workers", "created_at")
+        if any(key not in evidence for key in required):
+            raise ValueError("routing gate evidence is incomplete")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_spec031_schema(conn)
+                snapshot = conn.execute(
+                    "SELECT snapshot_id FROM research_resource_snapshots WHERE snapshot_id=?",
+                    (evidence["resource_snapshot_id"],),
+                ).fetchone()
+                if snapshot is None:
+                    raise ValueError("resource snapshot evidence is missing")
+                conn.execute(
+                    """INSERT INTO research_routing_gate_evidence(
+                       evidence_id, policy_version, quality_samples, quality_score,
+                       schema_valid_rate, resource_snapshot_id, resource_workers, created_at)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (evidence["evidence_id"], evidence["policy_version"], int(evidence["quality_samples"]),
+                     float(evidence["quality_score"]), float(evidence["schema_valid_rate"]),
+                     evidence["resource_snapshot_id"], int(evidence["resource_workers"]), evidence["created_at"]),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return dict(evidence)
+
+    def get_routing_gate_evidence(self, evidence_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT e.*, s.available_memory, s.estimated_kv, s.probe_error
+                     FROM research_routing_gate_evidence e
+                     JOIN research_resource_snapshots s ON s.snapshot_id=e.resource_snapshot_id
+                    WHERE e.evidence_id=?""",
+                (evidence_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def routing_quality_summary(self, policy_version: str) -> dict:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT COUNT(*) AS samples,
+                          AVG(quality_score) AS quality_score,
+                          AVG(CASE WHEN schema_valid=1 THEN 1.0 ELSE 0.0 END) AS schema_valid_rate
+                     FROM research_model_outcomes o
+                     JOIN research_routing_decisions d ON d.decision_id=o.decision_id
+                    WHERE d.policy_version=? AND o.quality_score IS NOT NULL""",
+                (policy_version,),
+            ).fetchone()
+        return {
+            "samples": int(row["samples"] or 0),
+            "quality_score": float(row["quality_score"] or 0.0),
+            "schema_valid_rate": float(row["schema_valid_rate"] or 0.0),
+        }
 
     # ------------------------------------------------------------------ #
     # Spec034 session state / approvals / runtime records
@@ -4674,6 +4790,61 @@ class ResearchStore:
         return {
             "version": row["version"], "profile": row["profile"], "rules": json.loads(row["rules_json"]),
             "thresholds": json.loads(row["thresholds_json"]), "status": row["status"], "created_at": row["created_at"],
+        }
+
+    def activate_routing_policy(self, version: str, *, expected_status: str | None = None) -> dict:
+        """Atomically retire the current active policy and activate ``version``.
+
+        Task03 intentionally rejects ``active`` at the write seam.  Task04 is
+        the only explicit activation seam and keeps the transition in one
+        SQLite transaction so a failed update cannot leave two active
+        policies (or no active policy).
+        """
+        if not version:
+            raise ValueError("routing policy version is required")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._ensure_spec031_schema(conn)
+                target = conn.execute(
+                    "SELECT * FROM research_routing_policies WHERE version=?", (version,)
+                ).fetchone()
+                if target is None:
+                    raise ValueError("routing policy not found")
+                if target["status"] == "active":
+                    conn.commit()
+                    return {
+                        "version": target["version"], "profile": target["profile"],
+                        "rules": json.loads(target["rules_json"]),
+                        "thresholds": json.loads(target["thresholds_json"]),
+                        "status": target["status"], "created_at": target["created_at"],
+                    }
+                if target["status"] not in {"draft", "shadow"}:
+                    raise ValueError("only draft or shadow policy may be activated")
+                if expected_status is not None and target["status"] != expected_status:
+                    raise ValueError("routing policy status changed")
+                conn.execute(
+                    "UPDATE research_routing_policies SET status='retired' WHERE status='active' AND version<>?",
+                    (version,),
+                )
+                changed = conn.execute(
+                    "UPDATE research_routing_policies SET status='active' WHERE version=? AND status IN ('draft','shadow')",
+                    (version,),
+                ).rowcount
+                if changed != 1:
+                    raise ValueError("routing policy activation conflict")
+                row = conn.execute(
+                    "SELECT * FROM research_routing_policies WHERE version=?", (version,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {
+            "version": row["version"], "profile": row["profile"],
+            "rules": json.loads(row["rules_json"]),
+            "thresholds": json.loads(row["thresholds_json"]),
+            "status": row["status"], "created_at": row["created_at"],
         }
 
     def mark_projection_retry(self, research_task_id: str, event_seq: int, error: str) -> dict:

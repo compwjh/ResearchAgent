@@ -21,6 +21,9 @@ MAX_FEATURES = 32
 MAX_CANDIDATE_MODELS = 16
 MAX_TEXT = 256
 MAX_JSON = 8192
+SERVER_MIN_SAMPLES = 1
+SERVER_MIN_QUALITY_SCORE = 0.8
+SERVER_MIN_SCHEMA_VALID_RATE = 1.0
 _SENSITIVE_WORDS = (
     "prompt", "answer", "response", "completion", "thought", "reasoning",
     "chain", "credential", "password", "secret", "token", "authorization",
@@ -268,6 +271,14 @@ class ShadowReplay:
         }
 
 
+class PolicyActivationError(ValueError):
+    """A policy failed one of Task04's explicit activation gates."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
 def _validate_outcome(value: Any, *, field: str) -> Any:
     if value is None:
         return None
@@ -296,6 +307,33 @@ class RoutingObservationService:
     def __init__(self, store, *, observability=None):
         self.store = store
         self._observability = observability
+
+    @staticmethod
+    def _effective_gate_thresholds(
+        policy: Mapping[str, Any], *, min_samples: int = SERVER_MIN_SAMPLES,
+        min_quality_score: float = SERVER_MIN_QUALITY_SCORE,
+        min_schema_valid_rate: float = SERVER_MIN_SCHEMA_VALID_RATE,
+    ) -> tuple[int, float, float]:
+        """Return server/policy floors; caller values can only raise them."""
+        thresholds = policy.get("thresholds") if isinstance(policy, Mapping) else {}
+        thresholds = thresholds if isinstance(thresholds, Mapping) else {}
+        try:
+            policy_samples = int(thresholds.get("min_samples", SERVER_MIN_SAMPLES))
+        except (TypeError, ValueError):
+            policy_samples = SERVER_MIN_SAMPLES
+        try:
+            policy_quality = float(thresholds.get("min_quality_score", SERVER_MIN_QUALITY_SCORE))
+        except (TypeError, ValueError):
+            policy_quality = SERVER_MIN_QUALITY_SCORE
+        try:
+            policy_schema = float(thresholds.get("min_schema_valid_rate", SERVER_MIN_SCHEMA_VALID_RATE))
+        except (TypeError, ValueError):
+            policy_schema = SERVER_MIN_SCHEMA_VALID_RATE
+        return (
+            max(SERVER_MIN_SAMPLES, policy_samples, int(min_samples)),
+            max(SERVER_MIN_QUALITY_SCORE, policy_quality, float(min_quality_score)),
+            max(SERVER_MIN_SCHEMA_VALID_RATE, policy_schema, float(min_schema_valid_rate)),
+        )
 
     def record_decision(
         self,
@@ -423,6 +461,120 @@ class RoutingObservationService:
         except Exception:
             return None
 
+    def issue_activation_evidence(
+        self,
+        *,
+        version: str,
+        probe: Any,
+        min_samples: int = 1,
+        min_quality_score: float = 0.0,
+        min_schema_valid_rate: float = 1.0,
+    ) -> dict[str, Any]:
+        """Create server-owned evidence bound to outcomes and a probe snapshot.
+
+        Callers receive only an opaque evidence id.  The activation API never
+        trusts caller-supplied booleans or measurement mappings.
+        """
+        policy = self.store.get_routing_policy(version)
+        if not policy or policy.get("status") not in {"draft", "shadow"}:
+            raise PolicyActivationError("POLICY_STATUS_INVALID")
+        required_samples, required_quality, required_schema = self._effective_gate_thresholds(
+            policy,
+            min_samples=min_samples,
+            min_quality_score=min_quality_score,
+            min_schema_valid_rate=min_schema_valid_rate,
+        )
+        summary = self.store.routing_quality_summary(version)
+        if (
+            summary["samples"] < required_samples
+            or summary["quality_score"] < required_quality
+            or summary["schema_valid_rate"] < required_schema
+        ):
+            raise PolicyActivationError("QUALITY_GATE_FAILED")
+        snapshot = self.capture_resource_snapshot(owner_id="routing-gate", probe=probe)
+        if snapshot is None or snapshot.probe_error or snapshot.available_memory is None or snapshot.estimated_kv is None:
+            raise PolicyActivationError("RESOURCE_GATE_FAILED")
+        try:
+            available = int(snapshot.available_memory)
+            footprint = int(snapshot.estimated_kv)
+            workers = max(1, int((available * 0.8) // footprint))
+        except (TypeError, ValueError, ZeroDivisionError) as exc:
+            raise PolicyActivationError("RESOURCE_GATE_FAILED") from exc
+        evidence = {
+            "evidence_id": f"routing-gate:{uuid.uuid4().hex}",
+            "policy_version": version,
+            "quality_samples": summary["samples"],
+            "quality_score": summary["quality_score"],
+            "schema_valid_rate": summary["schema_valid_rate"],
+            "resource_snapshot_id": snapshot.snapshot_id,
+            "resource_workers": workers,
+            "created_at": _now(),
+        }
+        try:
+            return self.store.save_routing_gate_evidence(evidence)
+        except Exception as exc:
+            raise PolicyActivationError("GATE_EVIDENCE_UNAVAILABLE") from exc
+
+    def activate_policy(
+        self,
+        *,
+        version: str,
+        manual_confirmation: bool = False,
+        quality_gate: Any = None,
+        resource_gate: Any = None,
+        gate_evidence: str | Mapping[str, Any] | None = None,
+        evidence_id: str | None = None,
+        confirm: bool | None = None,
+        quality_ok: bool | None = None,
+        resource_ok: bool | None = None,
+        expected_status: str | None = None,
+    ) -> dict[str, Any]:
+        """Activate a draft/shadow policy only after all explicit gates pass.
+
+        The store owns the final atomic status transition.  This method never
+        changes a policy status on a failed gate and never turns a Task03
+        shadow replay into a production choice implicitly.
+        """
+        if confirm is not None:
+            manual_confirmation = bool(confirm)
+        if not manual_confirmation:
+            raise PolicyActivationError("MANUAL_CONFIRMATION_REQUIRED")
+        # Legacy boolean/mapping gate arguments are deliberately rejected;
+        # only an opaque server-issued evidence handle is authoritative.
+        if evidence_id is None and isinstance(gate_evidence, str):
+            evidence_id = gate_evidence
+        elif evidence_id is None and isinstance(gate_evidence, Mapping):
+            evidence_id = gate_evidence.get("evidence_id")
+        if not evidence_id or quality_ok is not None or resource_ok is not None:
+            raise PolicyActivationError("GATE_EVIDENCE_REQUIRED")
+        policy = self.store.get_routing_policy(version)
+        if not policy:
+            raise PolicyActivationError("POLICY_NOT_FOUND")
+        if policy.get("status") not in {"draft", "shadow"}:
+            raise PolicyActivationError("POLICY_STATUS_INVALID")
+        evidence = self.store.get_routing_gate_evidence(str(evidence_id))
+        if evidence is None or evidence.get("policy_version") != version:
+            raise PolicyActivationError("GATE_EVIDENCE_INVALID")
+        required_samples, required_quality, required_schema = self._effective_gate_thresholds(policy)
+        if (
+            int(evidence.get("quality_samples", 0)) < required_samples
+            or float(evidence.get("quality_score", 0.0)) < required_quality
+            or float(evidence.get("schema_valid_rate", 0.0)) < required_schema
+        ):
+            raise PolicyActivationError("QUALITY_GATE_FAILED")
+        if (
+            int(evidence.get("resource_workers", 0)) < 1
+            or not evidence.get("resource_snapshot_id")
+            or evidence.get("probe_error")
+            or int(evidence.get("available_memory", 0) or 0) <= 0
+            or int(evidence.get("estimated_kv", 0) or 0) <= 0
+        ):
+            raise PolicyActivationError("RESOURCE_GATE_FAILED")
+        try:
+            return self.store.activate_routing_policy(version, expected_status=expected_status)
+        except Exception as exc:
+            raise PolicyActivationError("POLICY_ACTIVATION_CONFLICT") from exc
+
     def replay_shadow(self, *, owner_id: str, policy_version: str, limit: int = 100) -> list[dict[str, Any]]:
         policy = self.store.get_routing_policy(policy_version)
         if not policy:
@@ -459,4 +611,4 @@ class RoutingObservationService:
 RoutingPolicy = dict
 ResourceSnapshot = ResourceObservation
 
-__all__ = ["RoutingDecision", "ModelOutcome", "ResourceObservation", "ResourceSnapshot", "RoutingPolicy", "ShadowReplay", "RoutingObservationService", "_bounded_text", "_safe_features", "_safe_models", "_safe_scalar", "_safe_policy_payload", "_validate_routing_decision"]
+__all__ = ["RoutingDecision", "ModelOutcome", "ResourceObservation", "ResourceSnapshot", "RoutingPolicy", "ShadowReplay", "PolicyActivationError", "RoutingObservationService", "_bounded_text", "_safe_features", "_safe_models", "_safe_scalar", "_safe_policy_payload", "_validate_routing_decision"]

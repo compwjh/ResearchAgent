@@ -150,6 +150,41 @@ class ModelRouter:
                 pass
         return choice
 
+    def resolve_adaptive(
+        self,
+        *,
+        scheduler,
+        task_id: str,
+        role: str,
+        task_type: Optional[str] = None,
+        tier: Optional[str] = None,
+        requested_workers: int = 1,
+        estimated_bytes: int = 0,
+        owner_id: Optional[str] = None,
+        features: Optional[dict] = None,
+        policy_version: str = "spec027-static-v1",
+    ):
+        """Return the legacy choice plus an explicit Task04 worker grant.
+
+        This opt-in method is intentionally separate from ``resolve`` so every
+        existing caller keeps its exact ModelRouter contract.  Model/provider
+        discovery occurs first; the scheduler is only touched afterwards.
+        """
+        from backend.app.research.application.adaptive_routing import AdaptiveRoutingService
+
+        return AdaptiveRoutingService(
+            self, scheduler, observation=self._observation, policy_version=policy_version
+        ).resolve(
+            owner_id=owner_id,
+            task_id=task_id,
+            role=role,
+            task_type=task_type,
+            tier=tier,
+            requested_workers=requested_workers,
+            estimated_bytes=estimated_bytes,
+            features=features,
+        )
+
     def execute(self, *, role: str, task_type: Optional[str] = None,
                 invoke: Callable[[Optional[str]], Tuple[bool, object]]
                 ) -> Tuple[ModelChoice, object, List[dict]]:
