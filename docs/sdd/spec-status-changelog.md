@@ -363,3 +363,4 @@
 - **Spec031 Task04：实现内存感知 Worker 扩缩与策略激活**：`实施中` → `已完成（后端 GO）`。完成 strong 跨 scheduler 原子单并发、过期 quota 恢复、同任务 grant 隔离、服务端 evidence gate 与原子策略激活；reviewer/tester 均 GO，定向回归 154 passed、5 subtests。runtime smoke、权限边界与 Task02 provenance 留给 Task06。
 - **Spec031 Task05：实现路由解释与基准界面**：`待执行` → `实施中`。Task04 reviewer/tester GO，启动前端只读解释视图和受控基准状态；不开放策略编辑、不显示敏感文本、不修改后端。
 - **Spec031 Task05：实现路由解释与基准界面**：`实施中` → `已完成（前端 GO）`。完成脱敏模型/原因/Worker/升级解释和 warm/cold 基准卡；reviewer/tester 均 GO，43 passed，严格数值与路径 fail-closed 通过。`routing_benchmark` 投影留作 Task06 P2。
+- **Spec031 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 门禁均通过，开始唯一全量回归、前后端运行时 smoke、部署证据和最终复盘；多实例 NO-GO 与遗留 P2 只做诚实记录。

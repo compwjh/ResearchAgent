@@ -1,7 +1,7 @@
 # Task 06：最终评审、基准、回归、部署与复盘
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02–05 完成；当前状态：`待执行`
+> 依赖：Task02–05 完成；当前状态：`实施中`
 
 ## 一句话目标
 
@@ -26,3 +26,4 @@
 ## 变更日志
 
 - 2026-09-12：创建最终收口 Task。
+- 2026-09-17：Task02–05 均完成并通过各自 reviewer/tester 门禁；启动唯一全量回归、运行时 smoke、部署与复盘。Task02 多实例 NO-GO、Task03 outcome/P2、Task05 routing_benchmark 投影作为已知边界核对。

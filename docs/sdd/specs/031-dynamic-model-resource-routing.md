@@ -85,7 +85,7 @@
 | 03 | 实现决策/结果数据与 shadow policy | [`task-03-routing-observation-shadow.md`](../plans/031/task-03-routing-observation-shadow.md) | 02 | 已完成（单实例条件放行） |
 | 04 | 实现内存感知 Worker 扩缩与策略激活 | [`task-04-adaptive-worker-routing.md`](../plans/031/task-04-adaptive-worker-routing.md) | 03 | 已完成（后端 GO） |
 | 05 | 实现路由解释与基准界面 | [`task-05-routing-insights-ui.md`](../plans/031/task-05-routing-insights-ui.md) | 04 | 已完成（前端 GO） |
-| 06 | 最终评审、回归、基准、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/031/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
+| 06 | 最终评审、回归、基准、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/031/task-06-review-regression-deploy.md) | 02–05 | 实施中 |
 
 ## 评审记录
 
