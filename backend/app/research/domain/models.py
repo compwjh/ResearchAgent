@@ -544,6 +544,183 @@ class EvidenceUpgrade:
 
 
 @dataclass
+class ResearchClaim:
+    """A versioned, independently auditable research conclusion."""
+
+    claim_id: str
+    task_id: str
+    topic: str
+    statement: str
+    confidence: str
+    status: str
+    plan_version: int = 1
+    evidence_ids: list[str] | None = None
+    created_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "claim_id": self.claim_id, "task_id": self.task_id,
+            "research_task_id": self.task_id, "topic": self.topic,
+            "statement": self.statement, "confidence": self.confidence,
+            "status": self.status, "plan_version": int(self.plan_version),
+            "evidence_ids": list(self.evidence_ids or []), "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            ids = json.loads(row.get("evidence_ids_json") or "[]")
+        except (TypeError, ValueError):
+            ids = []
+        return cls(
+            claim_id=row["claim_id"], task_id=row.get("task_id", row.get("research_task_id")),
+            topic=row["topic"], statement=row["statement"], confidence=row["confidence"],
+            status=row["status"], plan_version=int(row.get("plan_version", 1)),
+            evidence_ids=[str(item) for item in ids] if isinstance(ids, list) else [],
+            created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
+class ClaimEvidence:
+    """A claim-to-catalog-paper relation with a server-verifiable locator."""
+
+    evidence_id: str
+    claim_id: str
+    task_id: str
+    paper_id: str
+    evidence_level: str
+    stance: str
+    status: str
+    quote_digest: str = ""
+    locator: dict | None = None
+    plan_version: int = 1
+    created_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "evidence_id": self.evidence_id, "claim_id": self.claim_id,
+            "task_id": self.task_id, "research_task_id": self.task_id,
+            "paper_id": self.paper_id, "evidence_level": self.evidence_level,
+            "stance": self.stance, "status": self.status,
+            "quote_digest": self.quote_digest, "locator": dict(self.locator or {}),
+            "plan_version": int(self.plan_version), "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            locator = json.loads(row.get("locator_json") or "{}")
+        except (TypeError, ValueError):
+            locator = {}
+        return cls(
+            evidence_id=row["evidence_id"], claim_id=row["claim_id"],
+            task_id=row.get("task_id", row.get("research_task_id")), paper_id=row["paper_id"],
+            evidence_level=row["evidence_level"], stance=row["stance"], status=row["status"],
+            quote_digest=row.get("quote_digest", ""), locator=locator if isinstance(locator, dict) else {},
+            plan_version=int(row.get("plan_version", 1)), created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
+class ComparisonDimension:
+    """A stable comparison axis within one research plan version."""
+
+    dimension_id: str
+    task_id: str
+    label: str
+    definition: str
+    display_order: int
+    plan_version: int = 1
+    created_at: str = ""
+
+    @property
+    def id(self) -> str:
+        return self.dimension_id
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.dimension_id, "dimension_id": self.dimension_id,
+            "task_id": self.task_id, "research_task_id": self.task_id,
+            "label": self.label, "definition": self.definition,
+            "order": int(self.display_order), "display_order": int(self.display_order),
+            "plan_version": int(self.plan_version), "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            dimension_id=row.get("dimension_id", row.get("id")),
+            task_id=row.get("task_id", row.get("research_task_id")),
+            label=row["label"], definition=row["definition"],
+            display_order=int(row.get("display_order", row.get("order", 0))),
+            plan_version=int(row.get("plan_version", 1)), created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
+class PaperComparisonCell:
+    """One auditable claim/paper/dimension matrix cell."""
+
+    claim_id: str
+    paper_id: str
+    dimension_id: str
+    relation: str
+    summary: str
+    evidence_ids: list[str] | None = None
+    task_id: str = ""
+    plan_version: int = 1
+    missing_reason: str | None = None
+    created_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "claim_id": self.claim_id, "paper_id": self.paper_id,
+            "dimension_id": self.dimension_id, "relation": self.relation,
+            "summary": self.summary, "evidence_ids": list(self.evidence_ids or []),
+            "task_id": self.task_id, "research_task_id": self.task_id,
+            "plan_version": int(self.plan_version), "missing_reason": self.missing_reason,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            ids = json.loads(row.get("evidence_ids_json") or "[]")
+        except (TypeError, ValueError):
+            ids = []
+        return cls(
+            claim_id=row["claim_id"], paper_id=row["paper_id"], dimension_id=row["dimension_id"],
+            relation=row["relation"], summary=row["summary"],
+            evidence_ids=[str(item) for item in ids] if isinstance(ids, list) else [],
+            task_id=row.get("task_id", row.get("research_task_id", "")),
+            plan_version=int(row.get("plan_version", 1)), missing_reason=row.get("missing_reason"),
+            created_at=row.get("created_at", ""),
+        )
+
+
+# Descriptive compatibility alias: the contract calls this relation
+# ``ClaimEvidence`` while a few callers use the aggregate-prefixed name.
+ResearchClaimEvidence = ClaimEvidence
+
+
+@dataclass
 class AcquisitionEvent:
     """A projection of an existing import item state, not a second state machine."""
 
@@ -623,6 +800,61 @@ class PreliminaryReport:
             markdown=row["markdown"],
             limitations_json=row["limitations_json"],
             created_at=row["created_at"],
+        )
+
+
+@dataclass
+class ResearchReport:
+    """Immutable Spec030 evidence report projection.
+
+    The JSON projection is the canonical semantic model; Markdown and HTML
+    are deterministic delivery views of the same row.  It deliberately lives
+    beside ``PreliminaryReport`` so legacy Spec027 writers remain untouched.
+    """
+
+    report_id: str
+    research_task_id: str
+    plan_version: int
+    report_version: int
+    status: str
+    markdown: str
+    html: str
+    report_json: str
+    limitations_json: str = "[]"
+    created_at: str = ""
+
+    @property
+    def task_id(self) -> str:
+        return self.research_task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "report_id": self.report_id,
+            "research_task_id": self.research_task_id,
+            "task_id": self.research_task_id,
+            "plan_version": int(self.plan_version),
+            "report_version": int(self.report_version),
+            "status": self.status,
+            "markdown": self.markdown,
+            "html": self.html,
+            "report_json": self.report_json,
+            "limitations_json": self.limitations_json,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            report_id=row["report_id"],
+            research_task_id=row.get("research_task_id", row.get("task_id")),
+            plan_version=int(row["plan_version"]),
+            report_version=int(row["report_version"]),
+            status=row["status"],
+            markdown=row.get("markdown", ""),
+            html=row.get("html", ""),
+            report_json=row.get("report_json", "{}"),
+            limitations_json=row.get("limitations_json", "[]"),
+            created_at=row.get("created_at", ""),
         )
 
 

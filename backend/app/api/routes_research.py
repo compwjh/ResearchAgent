@@ -50,6 +50,10 @@ from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
 from backend.app.research.application.entry import (
+    EvidenceReportError,
+    ReportGenerationService,
+    EvidenceMatrixError,
+    EvidenceMatrixService,
     EvidenceUpgradeError,
     EvidenceUpgradeService,
     ResearchAcquisitionError,
@@ -153,6 +157,28 @@ class ResearchEvidenceUpgradeRequest(BaseModel):
     from_level: str = Field(default="abstract", min_length=1, max_length=32)
     chunker: Literal["v1", "v2"] = "v1"
     top_k: int = Field(default=5, ge=1, le=50)
+
+
+class ResearchEvidenceMatrixRequest(BaseModel):
+    """Bounded Claim/Evidence matrix proposal; facts remain server-validated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_version: Optional[int] = Field(default=None, ge=1)
+    dimensions: list[dict] = Field(default_factory=list, max_length=32)
+    claims: list[dict] = Field(default_factory=list, max_length=100)
+    evidence: list[dict] = Field(default_factory=list, max_length=500)
+    cells: list[dict] = Field(default_factory=list, max_length=2000)
+
+
+class ResearchReportRequest(BaseModel):
+    """Bounded request for deterministic generation from the stored matrix."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_version: Optional[int] = Field(default=None, ge=1)
+    report_version: Optional[int] = Field(default=None, ge=1)
+    title: str = Field(default="深度研究报告", min_length=1, max_length=200)
 
 
 class ResearchTaskPatchProjectRequest(BaseModel):
@@ -263,6 +289,20 @@ def _evidence_upgrade_service() -> EvidenceUpgradeService:
         return get_provider("research_evidence_service")
     except KeyError:
         return EvidenceUpgradeService(_store())
+
+
+def _evidence_matrix_service() -> EvidenceMatrixService:
+    try:
+        return get_provider("research_evidence_matrix_service")
+    except KeyError:
+        return EvidenceMatrixService(_store())
+
+
+def _report_generation_service() -> ReportGenerationService:
+    try:
+        return get_provider("research_report_generation_service")
+    except KeyError:
+        return ReportGenerationService(_store())
 
 
 def _acquisition_error(exc: ResearchAcquisitionError) -> JSONResponse:
@@ -403,6 +443,24 @@ def _resolve_project_id(conversation_id: str, project_id: Optional[str]) -> tupl
 def _error(exc: ResearchServiceError) -> JSONResponse:
     """服务层稳定错误统一出口：`{"error": {"code", "message"}}` + `http_status`。"""
     return JSONResponse(status_code=exc.http_status, content={"error": {"code": exc.code, "message": exc.message}})
+
+
+def _report_error(exc: EvidenceReportError, *, not_ready_status: int | None = None) -> JSONResponse:
+    """Return a stable, user-safe response for report-domain failures.
+
+    ``EvidenceReportError`` inherits ``ReportSynthesisError``/``ValueError`` and
+    intentionally exposes its text through ``str(exc)`` rather than a
+    ``message`` attribute. Keep the HTTP mapping at the route boundary so
+    report reads can use the API's 404-not-ready contract while generation
+    retains the service status (409).
+    """
+    status = 406 if exc.code == "FORMAT_SEMANTIC_MISMATCH" else exc.http_status
+    if not_ready_status is not None and exc.code == "REPORT_NOT_READY":
+        status = not_ready_status
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"code": exc.code, "message": str(exc)}},
+    )
 
 
 def _api_error(code: str, status_code: int, message: str) -> JSONResponse:
@@ -1344,6 +1402,106 @@ def upgrade_research_evidence(research_task_id: str, payload: ResearchEvidenceUp
     except Exception:
         logger.exception("research evidence upgrade failed")
         return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "全文证据依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/evidence-matrix", status_code=202)
+def build_research_evidence_matrix(research_task_id: str, payload: ResearchEvidenceMatrixRequest):
+    """Validate and persist one versioned cross-paper evidence matrix."""
+    try:
+        result = _evidence_matrix_service().build_matrix(
+            research_task_id, OWNER_ID, plan_version=payload.plan_version,
+            dimensions=payload.dimensions or None, claims=payload.claims or None,
+            evidence=payload.evidence or None, cells=payload.cells or None,
+        )
+        # The matrix is durable before the 202 response is emitted.  The
+        # response keeps the WorkItem-shaped status expected by the task API
+        # while exposing the canonical projection for deterministic clients.
+        result["status"] = "completed" if not result["limitations"] else "partial"
+        result["work_item"] = {"status": result["status"], "task_id": research_task_id, "plan_version": result["plan_version"]}
+        return result
+    except EvidenceMatrixError as exc:
+        return JSONResponse(status_code=exc.http_status, content={"error": {"code": exc.code, "message": exc.message}})
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research evidence matrix build failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "证据矩阵依赖暂时不可用"))
+
+
+@router.get("/{research_task_id}/evidence-matrix")
+def get_research_evidence_matrix(research_task_id: str, plan_version: Optional[int] = Query(None, ge=1)):
+    """Read the current owner-scoped matrix projection and explicit gaps."""
+    try:
+        return _evidence_matrix_service().read_matrix(research_task_id, OWNER_ID, plan_version=plan_version)
+    except EvidenceMatrixError as exc:
+        return JSONResponse(status_code=exc.http_status, content={"error": {"code": exc.code, "message": exc.message}})
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research evidence matrix read failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "证据矩阵依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/reports", status_code=202)
+def generate_research_report(research_task_id: str, payload: ResearchReportRequest):
+    """Generate one immutable report version from the validated matrix."""
+    try:
+        built = _report_generation_service().generate(
+            research_task_id, OWNER_ID, plan_version=payload.plan_version,
+            report_version=payload.report_version, title=payload.title,
+        )
+        report = built["report"]
+        return {
+            "report_id": report["report_id"], "research_task_id": research_task_id,
+            "plan_version": report["plan_version"], "report_version": report["report_version"],
+            "status": report["status"], "limitations": report["limitations"],
+        }
+    except EvidenceReportError as exc:
+        return _report_error(exc)
+    except EvidenceMatrixError as exc:
+        if exc.code == "MATRIX_NOT_READY":
+            return _report_error(EvidenceReportError("report is not ready", code="REPORT_NOT_READY"))
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"error": {"code": exc.code, "message": exc.message}},
+        )
+    except Exception:
+        logger.exception("research report generation failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究报告依赖暂时不可用"))
+
+
+@router.get("/{research_task_id}/reports/{report_version}")
+def get_versioned_research_report(
+    research_task_id: str, report_version: int, format: str = Query("json")
+):
+    """Read one immutable report version in JSON, Markdown, or safe HTML."""
+    if report_version < 1:
+        return JSONResponse(status_code=400, content={"error": {"code": "REPORT_SCHEMA_INVALID", "message": "report_version 无效"}})
+    if format not in {"json", "markdown", "html"}:
+        return JSONResponse(status_code=406, content={"error": {"code": "FORMAT_SEMANTIC_MISMATCH", "message": "不支持的报告格式"}})
+    try:
+        content = _report_generation_service().read(
+            research_task_id, OWNER_ID, report_version=report_version, format=format,
+        )
+        if format == "json":
+            response = Response(json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")), media_type="application/json; charset=utf-8")
+            suffix = "json"
+        elif format == "markdown":
+            response = Response(content, media_type="text/markdown; charset=utf-8")
+            suffix = "md"
+        else:
+            response = Response(content, media_type="text/html; charset=utf-8")
+            suffix = "html"
+        response.headers["Content-Disposition"] = f'attachment; filename="research-report-v{report_version}.{suffix}"'
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Security-Policy"] = "default-src 'none'"
+        return response
+    except EvidenceReportError as exc:
+        return _report_error(exc, not_ready_status=404)
+    except Exception:
+        logger.exception("versioned research report read failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究报告依赖暂时不可用"))
 
 
 @router.get("/{research_task_id}/events")

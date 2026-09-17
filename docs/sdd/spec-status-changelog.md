@@ -5,6 +5,10 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-17
+
+- **030 跨论文证据矩阵与深度研究报告 — Task06 收口** ｜ 实施中 → 实施中（P1 阻塞） ｜ 2026-09-17：唯一全量回归完成（2495 passed、5 failed、67 subtests、退出码 1），固定矩阵/manifest/三格式/前端安全与浏览器工作台 smoke 通过；真实未知报告请求因 `EvidenceReportError.message` 缺失返回 500（应 404），不得签字或标记 Spec030 已完成，等待业务修复后复验。
+
 ## 2026-09-13
 
 - **034 会话式深度研究与真实子 Agent Runtime** ｜ 新建 → 待确认 ｜ 2026-09-13T03:13:41+08:00：经多轮 Grilling 冻结普通会话意图识别、Deep Research Skill 多轮 Intake、计划版本与前端审批、真实 `ResearchAgentRunner` 子 Agent、Registry 授权与资源扩容、论文目录真实接线、`processing_steps` 一至三级树、报告 Artifact/通知/会话写回、Research Tab 复用及旧未绑定 Task 直接清理；Spec 与 Task02–10 已落盘。确认前不修改业务代码。本次研发会话的临时模型选择不写入长期规则、记忆或产品 Runtime。
@@ -338,3 +342,16 @@
 
 - **029 Research Task 全文获取与知识库联动 — Task06** ｜ 实施中 → **已完成** ｜ 修复本地优先检索缺少服务端快照句柄、Research Task 未持久化 `search_id` 和确认句柄未校验的问题；真实验证任务 `3eee288b8e5a512dad3dad524d787c63` 完成 preview→确认→既有批次→公开 USENIX PDF 导入→v1 索引→全文证据升级，最终全量回归 `2486 passed / 1 skipped / 5 warnings / 67 subtests` 退出码 0，用户人工验收通过。
 - **029 Research Task 全文获取与知识库联动** ｜ 实施中 → **已完成** ｜ Task02–06 收口，评审、运行时证据、部署记录和复盘均已落盘；本地 `main` 已包含 Spec029 修改，远程 `origin/main` 已是本地分支祖先，无需重复合并。
+## 2026-09-17
+
+- **Spec 030：跨论文证据矩阵与深度研究报告**：`待确认` → `实施中`。用户明确确认“确认 Spec030/按此执行”，开始按 Task02–06 顺序实施；Task 开发阶段执行定向测试，Spec 收口时再执行全量回归。
+- **Spec030 Task02：冻结 Claim/Evidence 与报告协议**：`实施中` → `已完成`。Luna high 子 Agent 完成 `evidence-report-v1` 合同、固定样本与 4 项定向测试，结果 `GO_FOR_TASK03`。
+- **Spec030 Task03：实现证据矩阵与校验**：`待执行` → `实施中`。依赖合同已冻结，开始接入既有 ResearchStore 和全文 provenance。
+- **Spec030 Task03：实现证据矩阵与校验**：`实施中` → `已完成`。完成 Claim/Evidence/ComparisonDimension/Cell 持久化、owner/version 隔离及矩阵 POST/GET；定向测试 3 passed，全文 provenance 复用 Spec029。
+- **Spec030 Task04：实现报告生成、版本和导出**：`待执行` → `实施中`。开始复用既有报告合成/Artifact 能力，接入 `evidence-report-v1` 矩阵和三格式只读导出。
+- **Spec030 Task04：实现报告生成、版本和导出**：`实施中` → `已完成`。完成不可覆盖 `ResearchReport` 版本、citation manifest 回查、Markdown/HTML/JSON 一致导出；定向测试 4 passed，受影响后端 89 passed。
+- **Spec030 Task05：实现报告工作台与引用交互**：`待执行` → `实施中`。开始接入矩阵、版本化报告、引用展开与只读下载 UI。
+- **Spec030 Task05：实现报告工作台与引用交互**：`实施中` → `已完成`。完成证据矩阵、覆盖缺口、版本/格式视图、citation 展开和现有切片定位；`node --check`、前端定向测试 35 passed。
+- **Spec030 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 均已通过各自定向门禁，开始唯一全量回归、浏览器 smoke、部署和收口评审。
+- **Spec030 Task06：最终评审、回归、部署与复盘**：`实施中（P1）` → `已完成`。修复 `EvidenceReportError` 错误出口与矩阵未就绪状态映射，保留旧资源版本兼容标记；后端复核通过，全量回归 2504 passed、1 skipped、67 subtests，运行时 smoke 的 health/root=200、未知矩阵=404、未知报告=404、非法格式=406。
+- **Spec 030：跨论文证据矩阵与深度研究报告**：`实施中` → `已完成`。Task02–06 全部完成，证据矩阵、不可变三格式报告、引用定位 UI、验收评审、部署验证和复盘均已落盘；未 push/merge。

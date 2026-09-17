@@ -157,6 +157,14 @@ def render_markdown_html(markdown: str) -> str:
         # raw HTML/Markdown links are otherwise rendered as inert text.
         line = re.sub(r"(?i)javascript\s*:", "[blocked-scheme]:", line)
         escaped = html.escape(line, quote=True)
+        # Numeric citation markers are the sole interactive-ish decoration in
+        # the fixed renderer.  The visible text remains escaped and the
+        # attribute is generated from the marker, never from raw HTML input.
+        escaped = re.sub(
+            r"\[(\d+)\]",
+            lambda match: f'<sup data-citation-no="{match.group(1)}">[{match.group(1)}]</sup>',
+            escaped,
+        )
         if in_code:
             out.append(escaped + "\n")
         elif not line.strip():
@@ -279,6 +287,22 @@ class SynthesisResult:
 
 class ReportSynthesizer:
     """Create report source only from verified candidates and citation IDs."""
+
+    def synthesize_evidence_report(
+        self, matrix: Mapping[str, Any], *, report_id: str, report_version: int,
+        title: str = "深度研究报告",
+    ) -> dict[str, Any]:
+        """Parameterised Spec030 entry point over the canonical matrix.
+
+        The implementation is kept in the evidence-report application module
+        to avoid duplicating this legacy synthesizer's candidate contract.
+        """
+        from backend.app.research.application.report_generation import render_evidence_report
+        return render_evidence_report(
+            matrix, report_id=report_id, report_version=report_version, title=title,
+        )
+
+    synthesize_matrix = synthesize_evidence_report
 
     def synthesize(
         self,
