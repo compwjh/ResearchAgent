@@ -1,13 +1,13 @@
 # Spec 031 执行计划：动态模型路由与资源调度优化
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md)
-> 当前状态：待确认。
+> 当前状态：实施中。
 
 ## 任务索引
 
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
-| [02](./task-02-ollama-topology-benchmark.md) | 1–4 个 9B Worker 与多实例 Go/No-Go | Spec027/028、确认、双评审 | 待执行 |
+| [02](./task-02-ollama-topology-benchmark.md) | 1–4 个 9B Worker 与多实例 Go/No-Go | Spec027/028、确认、双评审 | 实施中 |
 | [03](./task-03-routing-observation-shadow.md) | 路由决策、结果和 shadow policy | 02 | 待执行 |
 | [04](./task-04-adaptive-worker-routing.md) | 内存感知扩缩、升级和策略激活 | 03 | 待执行 |
 | [05](./task-05-routing-insights-ui.md) | 路由解释和基准视图 | 04 | 待执行 |
@@ -23,3 +23,4 @@
 ## 变更日志
 
 - 2026-09-12：随 Spec031 创建。
+- 2026-09-17：用户确认 Spec031，开始 Task02 基准门；本阶段不提前运行全量回归。

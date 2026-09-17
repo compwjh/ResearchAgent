@@ -1,7 +1,7 @@
 # Task 02：单实例/多实例与 Worker 基准门
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Spec027/028 完成、Spec031 确认及双评审；被依赖：Task03–06；当前状态：`待执行`
+> 依赖：Spec027/028 完成、Spec031 确认及双评审；被依赖：Task03–06；当前状态：`实施中`
 
 ## 一句话目标
 

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：待确认**
+**当前状态：实施中**
 
 ## 一句话目标
 
@@ -81,7 +81,7 @@
 | 编号 | 任务 | 文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 Spec031 | 本文件 | — | 完成 |
-| 02 | 单实例/多实例与 Worker 基准门 | [`task-02-ollama-topology-benchmark.md`](../plans/031/task-02-ollama-topology-benchmark.md) | Spec027/028、确认、双评审 | 待执行 |
+| 02 | 单实例/多实例与 Worker 基准门 | [`task-02-ollama-topology-benchmark.md`](../plans/031/task-02-ollama-topology-benchmark.md) | Spec027/028、确认、双评审 | 实施中 |
 | 03 | 实现决策/结果数据与 shadow policy | [`task-03-routing-observation-shadow.md`](../plans/031/task-03-routing-observation-shadow.md) | 02 | 待执行 |
 | 04 | 实现内存感知 Worker 扩缩与策略激活 | [`task-04-adaptive-worker-routing.md`](../plans/031/task-04-adaptive-worker-routing.md) | 03 | 待执行 |
 | 05 | 实现路由解释与基准界面 | [`task-05-routing-insights-ui.md`](../plans/031/task-05-routing-insights-ui.md) | 04 | 待执行 |
@@ -98,3 +98,4 @@
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-12 | 架构师（自身） | 创建动态模型路由、资源优化和 Ollama 拓扑基准 Spec |
+| 2026-09-17 | 架构师（自身） | 用户确认 Spec031，进入 Task02；子 Agent 临时使用 Luna high，Task 阶段只运行定向测试。 |
