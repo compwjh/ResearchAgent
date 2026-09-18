@@ -187,6 +187,32 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-intake-choice[aria-pressed="true"], .conversation-intake-choice.is-selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .conversation-intake-choice-status { margin: 8px 0 0; color: var(--muted); }
 .conversation-intake-choice-status[data-state="error"] { color: #a33232; }
+/* Spec029/030/031：intake 可编辑表单（复用既有紫灰配色，不引入新色系） */
+.conversation-intake-field-label { color: var(--ink); font-weight: 700; }
+.conversation-intake-field.is-required .conversation-intake-field-label { color: #b13a3a; }
+.conversation-intake-field-required { grid-column: 1 / -1; color: #b13a3a; font-weight: 700; }
+.conversation-intake-field-note { grid-column: 1 / -1; color: var(--muted); }
+.conversation-intake-edit-input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: #fff; color: var(--ink); font: 12px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; resize: vertical; }
+.conversation-intake-edit-input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.conversation-intake-edit-input[data-dirty="true"] { border-color: var(--accent); }
+.conversation-intake-field.is-required .conversation-intake-edit-input { border-color: #e0b4b4; }
+.conversation-intake-time-range { display: flex; align-items: center; gap: 6px; }
+.conversation-intake-time-input { width: 88px; }
+.conversation-intake-time-sep { color: var(--muted); }
+.conversation-intake-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.conversation-intake-edit-status { margin: 4px 0 0; color: var(--accent); overflow-wrap: anywhere; }
+.conversation-intake-edit-status[data-state="error"] { color: #a33232; }
+.conversation-intake-missing { font-weight: 700; }
+.conversation-intake-field.is-readonly .conversation-intake-field-value { color: var(--muted); }
+.conversation-intake-save, .conversation-intake-cancel { padding: 7px 12px; font-size: 11px; }
+@media (max-width: 760px) {
+  .conversation-intake-field, .conversation-intake-field.is-editable { grid-template-columns: 1fr; }
+  .conversation-intake-field-meta { grid-column: 1; }
+  .conversation-intake-field.is-editable .conversation-intake-edit-input { grid-column: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conversation-intake-toggle::before { transition: none; }
+}
 .conversation-research-plan { display: grid; gap: 8px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
 .conversation-research-plan-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
 .conversation-research-plan-title, .conversation-research-plan-field-name, .conversation-research-approval-title { color: var(--ink); }

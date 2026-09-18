@@ -1760,7 +1760,14 @@ function createConversationIntake(assistantMessage) {
   const choices = document.createElement('div');
   choices.className = 'conversation-intake-choices';
   choices.hidden = true;
-  body.append(skill, fields, missing, question, choices);
+  const actions = document.createElement('div');
+  actions.className = 'conversation-intake-actions';
+  actions.hidden = true;
+  const editStatus = document.createElement('p');
+  editStatus.className = 'conversation-intake-edit-status';
+  editStatus.setAttribute('aria-live', 'polite');
+  editStatus.hidden = true;
+  body.append(skill, fields, missing, question, choices, actions, editStatus);
   toggle.addEventListener('click', () => {
     const expanded = toggle.getAttribute('aria-expanded') === 'true';
     toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
@@ -1799,27 +1806,110 @@ function updateConversationIntake(assistantMessage, payload = {}) {
   panel.setAttribute('aria-busy', ['running', 'intake'].includes(status) && missingNames.length > 0 ? 'true' : 'false');
   const summary = panel.querySelector('.conversation-intake-summary');
   summary.textContent = intakeStatusLabel(status, missingNames);
+  const editable = status === 'intake';
+  const editableNames = ['topic', 'objective', 'time_range'];
   const fieldList = panel.querySelector('.conversation-intake-fields');
   fieldList.replaceChildren();
   fields.forEach((field) => {
     if (!field || typeof field.field_name !== 'string') return;
+    const fieldName = field.field_name;
+    const isEditable = editable && editableNames.includes(fieldName);
+    const required = missingNames.includes(fieldName);
     const row = document.createElement('div');
-    row.className = 'conversation-intake-field';
-    row.dataset.fieldName = field.field_name;
-    const name = document.createElement('span');
-    name.className = 'conversation-intake-field-name';
-    name.textContent = INTAKE_FIELD_LABELS[field.field_name] || field.field_name;
-    const value = document.createElement('span');
-    value.className = 'conversation-intake-field-value';
-    value.textContent = intakeDisplayValue(field.value_json ?? field.value);
+    row.className = `conversation-intake-field${isEditable ? ' is-editable' : ' is-readonly'}`;
+    row.dataset.fieldName = fieldName;
+    const label = document.createElement('label');
+    label.className = 'conversation-intake-field-label';
+    label.textContent = (required ? '* ' : '') + (INTAKE_FIELD_LABELS[fieldName] || fieldName);
+    if (isEditable) label.setAttribute('for', `intake-edit-${fieldName}`);
     const meta = document.createElement('span');
     meta.className = 'conversation-intake-field-meta';
     const confidence = Number(field.confidence);
     const confidenceText = Number.isFinite(confidence) ? `置信度 ${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%` : '置信度未知';
     meta.textContent = [INTAKE_SOURCE_LABELS[field.source] || field.source || '来源未知', confidenceText, INTAKE_CONFIRMATION_LABELS[field.confirmation_status] || field.confirmation_status || '确认状态未知'].join(' · ');
-    row.append(name, value, meta);
+    if (isEditable) {
+      let control;
+      if (fieldName === 'time_range') {
+        const raw = intakeFieldValue(field.value_json ?? field.value);
+        const fromVal = raw && typeof raw === 'object' && raw.from != null ? String(raw.from) : '';
+        const toVal = raw && typeof raw === 'object' && raw.to != null ? String(raw.to) : '';
+        control = document.createElement('div');
+        control.className = 'conversation-intake-time-range';
+        const fromInput = document.createElement('input');
+        fromInput.type = 'number'; fromInput.min = '1900'; fromInput.max = '2100'; fromInput.step = '1';
+        fromInput.className = 'conversation-intake-edit-input conversation-intake-time-input';
+        fromInput.id = 'intake-edit-time_range-from';
+        fromInput.placeholder = '起始年';
+        fromInput.value = fromVal;
+        const sep = document.createElement('span');
+        sep.className = 'conversation-intake-time-sep';
+        sep.textContent = '至';
+        const toInput = document.createElement('input');
+        toInput.type = 'number'; toInput.min = '1900'; toInput.max = '2100'; toInput.step = '1';
+        toInput.className = 'conversation-intake-edit-input conversation-intake-time-input';
+        toInput.id = 'intake-edit-time_range-to';
+        toInput.placeholder = '结束年';
+        toInput.value = toVal;
+        const exFrom = panel.querySelector('#intake-edit-time_range-from');
+        if (exFrom && exFrom.dataset.dirty === 'true') fromInput.value = exFrom.value;
+        const exTo = panel.querySelector('#intake-edit-time_range-to');
+        if (exTo && exTo.dataset.dirty === 'true') toInput.value = exTo.value;
+        [fromInput, toInput].forEach((inputEl) => inputEl.addEventListener('input', () => { inputEl.dataset.dirty = 'true'; syncIntakeSaveState(panel); }));
+        control.append(fromInput, sep, toInput);
+      } else {
+        const raw = intakeFieldValue(field.value_json ?? field.value);
+        control = document.createElement(fieldName === 'objective' ? 'textarea' : 'input');
+        if (control.tagName === 'INPUT') control.type = 'text';
+        control.className = 'conversation-intake-edit-input';
+        control.id = `intake-edit-${fieldName}`;
+        control.value = typeof raw === 'string' ? raw : intakeDisplayValue(field.value_json ?? field.value);
+        const existing = panel.querySelector(`#intake-edit-${fieldName}`);
+        if (existing && existing.dataset.dirty === 'true') control.value = existing.value;
+        control.addEventListener('input', () => { control.dataset.dirty = 'true'; syncIntakeSaveState(panel); });
+      }
+      row.append(label, control, meta);
+      if (required) {
+        row.classList.add('is-required');
+        const req = document.createElement('span');
+        req.className = 'conversation-intake-field-required';
+        req.textContent = '必填';
+        row.appendChild(req);
+      }
+    } else {
+      const value = document.createElement('span');
+      value.className = 'conversation-intake-field-value';
+      value.textContent = intakeDisplayValue(field.value_json ?? field.value);
+      const note = document.createElement('span');
+      note.className = 'conversation-intake-field-note';
+      note.textContent = '系统默认';
+      row.append(label, value, meta, note);
+    }
     fieldList.appendChild(row);
   });
+  const actions = panel.querySelector('.conversation-intake-actions');
+  if (actions) {
+    actions.hidden = !editable;
+    actions.replaceChildren();
+    if (editable) {
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'send-button conversation-intake-save';
+      saveBtn.textContent = '保存修改';
+      saveBtn.disabled = true;
+      saveBtn.addEventListener('click', () => saveIntakeEdits(panel, saveBtn));
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'secondary-button danger-button conversation-intake-cancel';
+      cancelBtn.textContent = '取消本次研究';
+      cancelBtn.addEventListener('click', () => {
+        const sid = panel.dataset.researchSessionId;
+        const ver = Number(panel.dataset.subjectVersion || 0);
+        if (sid) submitResearchSessionCommand(sid, 'cancel_research', ver, {}, cancelBtn);
+        else setIntakeEditStatus(panel, '当前研究会话标识不可用，无法取消；请刷新后重试。', 'error');
+      });
+      actions.append(saveBtn, cancelBtn);
+    }
+  }
   const missingNode = panel.querySelector('.conversation-intake-missing');
   missingNode.hidden = !missingNames.length;
   missingNode.textContent = missingNames.length ? `待补充：${missingNames.map((name) => INTAKE_FIELD_LABELS[name] || name).join('、')}` : '';
@@ -1885,6 +1975,67 @@ function finalizeConversationIntake(panel, status = 'completed') {
   const summary = panel.querySelector('.conversation-intake-summary');
   if (summary && finalStatus === 'failed') summary.textContent = '研究 Intake 失败';
   if (finalStatus !== 'running' && (finalStatus !== 'completed' || !needsUserAction)) collapseConversationIntake(panel);
+}
+
+// 可编辑 intake 表单的辅助函数：保存/取消/状态行（复用既有对话消息通道与取消命令）。
+function setIntakeEditStatus(panel, text, state = '') {
+  const el = panel?.querySelector('.conversation-intake-edit-status');
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.dataset.state = state;
+}
+
+function syncIntakeSaveState(panel) {
+  if (!panel) return;
+  const saveBtn = panel.querySelector('.conversation-intake-save');
+  if (!saveBtn) return;
+  const dirty = panel.querySelector('.conversation-intake-edit-input[data-dirty="true"]');
+  saveBtn.disabled = !dirty;
+}
+
+async function saveIntakeEdits(panel, button) {
+  if (!panel || panel.dataset.saveBusy === 'true' || (button && button.disabled)) return;
+  const topicEl = panel.querySelector('#intake-edit-topic');
+  const objEl = panel.querySelector('#intake-edit-objective');
+  const fromEl = panel.querySelector('#intake-edit-time_range-from');
+  const toEl = panel.querySelector('#intake-edit-time_range-to');
+  const topic = (topicEl?.value || '').trim();
+  const objective = (objEl?.value || '').trim();
+  const from = (fromEl?.value || '').trim();
+  const to = (toEl?.value || '').trim();
+  const errors = [];
+  if (!topic) errors.push('主题');
+  if (!objective) errors.push('研究目标');
+  if (Boolean(from) !== Boolean(to)) errors.push('时间范围需起止年齐全');
+  if (from && to && Number(from) > Number(to)) errors.push('时间范围起始年不能大于结束年');
+  if (errors.length) {
+    setIntakeEditStatus(panel, `无法保存：${errors.join('、')} 未完成`, 'error');
+    return;
+  }
+  const parts = [`主题：${topic}`, `目标：${objective}`];
+  if (from && to) parts.push(`时间范围：${from}至${to}`);
+  const message = parts.join('；');
+  panel.dataset.saveBusy = 'true';
+  panel.setAttribute('aria-busy', 'true');
+  const prevText = button ? button.textContent : '';
+  if (button) { button.disabled = true; button.textContent = '保存中…'; }
+  setIntakeEditStatus(panel, '正在保存并重新抽取…');
+  try {
+    // 复用既有对话消息通道：intake 阶段后端走 handle_message → _intake_stream，
+    // 只抽取并持久化字段，不调模型、不烧 token。
+    await sendConversationMessage(message, { appendUser: true });
+    setIntakeEditStatus(panel, '已保存，参数正在更新…');
+    panel.querySelectorAll('.conversation-intake-edit-input').forEach((el) => { el.dataset.dirty = 'false'; });
+    if (button) button.textContent = '已保存';
+  } catch (error) {
+    setIntakeEditStatus(panel, `保存失败：${error?.message || '请重试'}`, 'error');
+    if (button) { button.disabled = false; button.textContent = prevText; }
+  } finally {
+    panel.dataset.saveBusy = 'false';
+    const st = panel.dataset.status;
+    panel.setAttribute('aria-busy', (st === 'running' || st === 'intake') ? 'true' : 'false');
+  }
 }
 
 // Spec034 Task04: plans and approvals are a projection of the assistant
