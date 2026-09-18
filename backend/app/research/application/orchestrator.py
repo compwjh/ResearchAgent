@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.report_synthesis import (
@@ -147,7 +147,13 @@ def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Map
     return evidence
 
 
-def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None) -> list[dict]:
+def _validated_evaluator_candidates(
+    outputs,
+    metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None,
+    *,
+    recall_allowlist: set[str] | None = None,
+    metadata_resolver: Callable[[str], Mapping[str, Any] | None] | None = None,
+) -> list[dict]:
     """Normalize evaluator evidence into one record per catalog candidate.
 
     The evaluator contract permits an aggregate decision (``candidate_id`` may
@@ -155,12 +161,43 @@ def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mappin
     treated that shape as having no validated evidence, so the synthesizer was
     skipped even though the Search Workers had supplied a complete catalog
     allowlist.  Expand only literal ``catalog:<id>`` references that are
-    present in the already-sanitized metadata index; this keeps the evidence
-    binding fail-closed and gives the synthesizer a stable one-candidate-per-
-    record input.
+    present in the already-sanitized metadata index *or* have been proven
+    recalled by a Search Worker.
+
+    ``recall_allowlist`` is the set of catalog IDs the Search Workers actually
+    returned (the recall set).  It is the sole authority for whether a
+    ``catalog:<id>`` reference may expand into a candidate; a reference absent
+    from it is dropped even when ``metadata_resolver`` could return a row —
+    this keeps the binding fail-closed on the Search recall set and prevents
+    the local directory from enlarging the allowlist.
+
+    ``metadata_resolver`` is the *only* sanctioned backfill for missing
+    metadata.  It must resolve from the already-cleaned local catalog
+    directory (e.g. ``PaperDiscoveryStore.get_catalog_paper``) and is consulted
+    exclusively for recall-whitelisted IDs.  Evaluator model output is never
+    used as metadata.  When even the local directory lacks the row, the
+    candidate is still accepted (recall proves it was returned) with empty
+    metadata — metadata is supplementary presentation text, not a gating fact.
     """
+    METADATA_FIELDS = ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets")
     records: list[dict] = []
     seen: set[str] = set()
+    if recall_allowlist is not None:
+        recall_allowlist = set(recall_allowlist)
+    effective_metadata: dict[str, Mapping[str, Any]] = dict(metadata_by_id or {})
+
+    def resolve_metadata(ref_id: str) -> Mapping[str, Any] | None:
+        # Prefer already-indexed metadata.  Otherwise backfill from the local
+        # catalog directory — but only for IDs the Search Workers recalled.
+        if ref_id in effective_metadata:
+            return effective_metadata[ref_id]
+        if recall_allowlist is not None and ref_id not in recall_allowlist:
+            return None
+        backfilled = metadata_resolver(ref_id) if metadata_resolver is not None else None
+        if backfilled is not None:
+            effective_metadata[ref_id] = backfilled
+        return backfilled
+
     for output in outputs:
         kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
         for item in kept:
@@ -190,14 +227,19 @@ def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mappin
                 candidate_ids = [str(candidate_id)]
             else:
                 # Aggregate evaluator output: derive IDs exclusively from
-                # catalog references and require metadata provenance before
-                # accepting the expansion.
-                metadata_index = metadata_by_id or {}
+                # catalog references.  Accept a ref when its metadata is
+                # already known OR when the ID is in the Search recall
+                # allowlist (the local directory may backfill its metadata).
+                # Rejected otherwise — never trusting the resolver to enlarge
+                # the recall set.
                 for ref in refs:
                     if not isinstance(ref, str) or not ref.startswith("catalog:"):
                         continue
                     ref_id = ref.split(":", 1)[1].strip()
-                    if ref_id and ref_id in metadata_index:
+                    if not ref_id:
+                        continue
+                    resolve_metadata(ref_id)
+                    if ref_id in effective_metadata or (recall_allowlist is not None and ref_id in recall_allowlist):
                         candidate_ids.append(ref_id)
             for normalized_id in candidate_ids:
                 if not normalized_id or normalized_id in seen:
@@ -205,10 +247,11 @@ def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mappin
                 candidate_refs = list(refs) if candidate_id else [f"catalog:{normalized_id}"]
                 record = {"candidate_id": normalized_id, "verified": True, "evidence_refs": candidate_refs}
                 # Metadata is copied only from the already-sanitized Search Worker
-                # catalog handoff, never from model evaluator output.
-                metadata = (metadata_by_id or {}).get(normalized_id)
+                # catalog handoff or the local catalog directory backfill, never
+                # from model evaluator output.
+                metadata = effective_metadata.get(normalized_id)
                 if isinstance(metadata, Mapping):
-                    for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                    for field in METADATA_FIELDS:
                         if field in metadata:
                             record[field] = metadata[field]
                 records.append(record)
@@ -963,6 +1006,58 @@ class Orchestrator:
                     if item_by_id.get(work_item_id) is not None
                     and item_by_id[work_item_id].role == "paper-evaluator"
                 }
+                # Recall allowlist: catalog IDs the Search Workers actually
+                # returned.  This is the sole authority for expanding aggregate
+                # evaluator refs into candidates; the local catalog directory
+                # may only backfill *metadata* for these IDs (never enlarge the
+                # recall set).  Without this, a Search Worker whose tool_results
+                # omitted catalog_metadata would silently empty `validated` and
+                # the synthesizer would be skipped (P0, spec029/030/031).
+                recall_allowlist: set[str] = set()
+                for ancestor_id in ancestors(item.work_item_id):
+                    source_item = item_by_id.get(ancestor_id)
+                    if source_item is None or source_item.role != "search-worker":
+                        continue
+                    source_output = completed_outputs.get(ancestor_id)
+                    if not isinstance(source_output, dict):
+                        continue
+                    for paper_id in source_output.get("candidates", ()) if isinstance(source_output.get("candidates"), list) else ():
+                        if isinstance(paper_id, str) and paper_id:
+                            recall_allowlist.add(paper_id)
+                    for ref in source_output.get("evidence_refs", ()) if isinstance(source_output.get("evidence_refs"), list) else ():
+                        if isinstance(ref, str) and ref.startswith("catalog:"):
+                            recall_allowlist.add(ref.split(":", 1)[1])
+                    for ref in source_output.get("citation_allowlist", ()) if isinstance(source_output.get("citation_allowlist"), list) else ():
+                        ref_value = ref.get("citation_ref", "") if isinstance(ref, dict) else ref
+                        if isinstance(ref_value, str) and ref_value.startswith("catalog:"):
+                            recall_allowlist.add(ref_value.split(":", 1)[1])
+                # Local catalog directory backfill: the only sanctioned metadata
+                # source beyond the Search Worker catalog_metadata handoff.  It
+                # is consulted only for recall-whitelisted IDs and never trusted
+                # for the allowlist itself.  Reuses PaperDiscoveryStore.
+                # get_catalog_paper (same single local-directory exit as the
+                # spec029 search fallback fix) — no second retrieval impl.
+                catalog_store = getattr(self._adapter, "_store", None)
+                get_catalog_paper = getattr(catalog_store, "get_catalog_paper", None)
+
+                def metadata_resolver(catalog_paper_id: str, _get_catalog_paper=get_catalog_paper) -> dict[str, Any] | None:
+                    if not callable(_get_catalog_paper):
+                        return None
+                    row = _get_catalog_paper(catalog_paper_id)
+                    if row is None:
+                        return None
+                    data: dict[str, Any] = {}
+                    title = getattr(row, "title", None)
+                    if isinstance(title, str) and title:
+                        data["title"] = title
+                    abstract = getattr(row, "abstract", None)
+                    if isinstance(abstract, str) and abstract:
+                        data["abstract"] = abstract
+                    keywords = getattr(row, "keywords", None)
+                    if isinstance(keywords, (list, tuple)) and keywords:
+                        data["keywords"] = [str(k) for k in keywords[:24] if isinstance(k, str)]
+                    return data or None
+
                 catalog_metadata = _catalog_metadata_index(
                     entry
                     for evidence in completed_search_evidence.values()
@@ -971,6 +1066,8 @@ class Orchestrator:
                 validated = _validated_evaluator_candidates(
                     [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id],
                     catalog_metadata,
+                    recall_allowlist=recall_allowlist,
+                    metadata_resolver=metadata_resolver,
                 )
                 if not validated:
                     failures += 1
