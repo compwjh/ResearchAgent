@@ -103,14 +103,26 @@ def _find(items, suffix):
 
 
 def test_skipped_synthesizer_is_marked_failed_not_queued(tmp_path):
-    """evaluator 产出无法解析出有效候选时，synthesizer 必须落 failed + error_code。"""
-    # 聚合形产出且 evidence_refs 指向没有元数据来源的 ID -> 无 validated 候选。
+    """被跳过的 WorkItem 必须真的落 failed，而不是停在 queued（状态机可见性）。
+
+    本用例真正要验证的是「被跳过的 WorkItem 必须真正落到 failed，不能停在 queued」，
+    而不是验证「缺元数据就要跳过 synthesizer」。
+
+    新设计（P0 修复）下：被 Search Worker 召回过的 ID 即使缺本地元数据，也会在
+    Search Worker 召回白名单内被展开为有效候选，synthesizer 会正常运行。因此
+    「无法解析出有效候选」的正确构造是让 evaluator 引用一个**从未被召回**的 ID
+    （`catalog:paper-not-recalled` 不在 Search Worker 召回的 `["paper-1"]` 内）。
+    原写法 `catalog:paper-1` 依赖的其实是那个已被修掉的 bug（无元数据即丢弃候选）。
+    """
+    # 聚合形产出且 evidence_refs 指向「从未被 Search Worker 召回」的 ID（白名单外）。
+    # 既不在召回白名单内、又无本地元数据 -> 无法展开为有效候选 -> 无 validated 候选。
+    # 注意：若引用召回过的 paper-1，新设计会直接展开为候选，synthesizer 转为 completed。
     evaluator_output = {
         "schema_version": "paper-evaluation-v1",
         "candidate_id": None,
         "keep": True,
         "relevance_score": 0.5,
-        "evidence_refs": ["catalog:paper-1"],
+        "evidence_refs": ["catalog:paper-not-recalled"],
         "source_refs": [],
     }
     store, task, _ = _build(tmp_path, evaluator_output)

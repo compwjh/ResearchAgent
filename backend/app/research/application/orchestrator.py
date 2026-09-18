@@ -84,6 +84,37 @@ def _work_item_output(value) -> dict:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
+def _recall_allowlist_from_search_outputs(search_outputs: Iterable[Mapping[str, Any]]) -> set[str]:
+    """Collect the catalog IDs the Search Workers actually recalled.
+
+    ``search_outputs`` are the already-sanitized per-Worker outputs as held in
+    ``completed_outputs``.  This set is the sole authority for expanding
+    aggregate evaluator refs — it is read from ``candidates`` / ``evidence_refs``
+    / ``citation_allowlist`` exactly as the synthesizer branch did inline.  The
+    local catalog directory may only backfill *metadata* for these IDs (never
+    enlarge the recall set) in ``_validated_evaluator_candidates``.
+
+    Note: a Search Worker's stored ``output_json`` is the AgentRun wrapper; the
+    inner ``output_json.output_json`` (extracted by ``_work_item_output``) carries
+    ``candidates``.  The orchestrator always passes the extracted inner dict here.
+    """
+    allowlist: set[str] = set()
+    for output in search_outputs:
+        if not isinstance(output, Mapping):
+            continue
+        for paper_id in output.get("candidates", ()) if isinstance(output.get("candidates"), list) else ():
+            if isinstance(paper_id, str) and paper_id:
+                allowlist.add(paper_id)
+        for ref in output.get("evidence_refs", ()) if isinstance(output.get("evidence_refs"), list) else ():
+            if isinstance(ref, str) and ref.startswith("catalog:"):
+                allowlist.add(ref.split(":", 1)[1])
+        for ref in output.get("citation_allowlist", ()) if isinstance(output.get("citation_allowlist"), list) else ():
+            ref_value = ref.get("citation_ref", "") if isinstance(ref, dict) else ref
+            if isinstance(ref_value, str) and ref_value.startswith("catalog:"):
+                allowlist.add(ref_value.split(":", 1)[1])
+    return allowlist
+
+
 def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Mapping[str, Any]]) -> list[dict]:
     """Build the bounded Search→Evaluator evidence handoff.
 
@@ -201,9 +232,22 @@ def _validated_evaluator_candidates(
     for output in outputs:
         kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
         for item in kept:
-            if not isinstance(item, dict) or (item.get("keep") is not True and item.get("verified") is not True):
+            if not isinstance(item, dict):
                 continue
             candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+            # Aggregate evaluator output (candidate_id is null) is a single
+            # retained set, not a per-candidate keep/reject vote.  It is NOT
+            # gated on a ``keep``/``verified`` flag: the model emits one batch
+            # object whose top-level ``keep`` only marks "this is the
+            # consolidated decision", and its retained candidates live in
+            # ``evidence_refs``.  Requiring ``keep is True`` silently drops
+            # every batch evaluator that kept N of M candidates (P0
+            # spec029/030/031; real task 81241f3f01885e2c8f0490123f2215f3
+            # emitted ``keep: false`` while retaining 6/12).  A per-candidate
+            # record (candidate_id present) still requires an explicit
+            # keep/verified signal so an explicit reject is honored.
+            if candidate_id and item.get("keep") is not True and item.get("verified") is not True:
+                continue
             refs = item.get("evidence_refs")
             if not isinstance(refs, list) or not refs:
                 # Some evaluator responses put the catalog allowlist in the
@@ -1013,50 +1057,20 @@ class Orchestrator:
                 # recall set).  Without this, a Search Worker whose tool_results
                 # omitted catalog_metadata would silently empty `validated` and
                 # the synthesizer would be skipped (P0, spec029/030/031).
-                recall_allowlist: set[str] = set()
-                for ancestor_id in ancestors(item.work_item_id):
-                    source_item = item_by_id.get(ancestor_id)
-                    if source_item is None or source_item.role != "search-worker":
-                        continue
-                    source_output = completed_outputs.get(ancestor_id)
-                    if not isinstance(source_output, dict):
-                        continue
-                    for paper_id in source_output.get("candidates", ()) if isinstance(source_output.get("candidates"), list) else ():
-                        if isinstance(paper_id, str) and paper_id:
-                            recall_allowlist.add(paper_id)
-                    for ref in source_output.get("evidence_refs", ()) if isinstance(source_output.get("evidence_refs"), list) else ():
-                        if isinstance(ref, str) and ref.startswith("catalog:"):
-                            recall_allowlist.add(ref.split(":", 1)[1])
-                    for ref in source_output.get("citation_allowlist", ()) if isinstance(source_output.get("citation_allowlist"), list) else ():
-                        ref_value = ref.get("citation_ref", "") if isinstance(ref, dict) else ref
-                        if isinstance(ref_value, str) and ref_value.startswith("catalog:"):
-                            recall_allowlist.add(ref_value.split(":", 1)[1])
+                recall_allowlist = _recall_allowlist_from_search_outputs(
+                    completed_outputs[ancestor_id]
+                    for ancestor_id in ancestors(item.work_item_id)
+                    if item_by_id.get(ancestor_id) is not None
+                    and item_by_id[ancestor_id].role == "search-worker"
+                    and isinstance(completed_outputs.get(ancestor_id), Mapping)
+                )
                 # Local catalog directory backfill: the only sanctioned metadata
                 # source beyond the Search Worker catalog_metadata handoff.  It
                 # is consulted only for recall-whitelisted IDs and never trusted
                 # for the allowlist itself.  Reuses PaperDiscoveryStore.
                 # get_catalog_paper (same single local-directory exit as the
                 # spec029 search fallback fix) — no second retrieval impl.
-                catalog_store = getattr(self._adapter, "_store", None)
-                get_catalog_paper = getattr(catalog_store, "get_catalog_paper", None)
-
-                def metadata_resolver(catalog_paper_id: str, _get_catalog_paper=get_catalog_paper) -> dict[str, Any] | None:
-                    if not callable(_get_catalog_paper):
-                        return None
-                    row = _get_catalog_paper(catalog_paper_id)
-                    if row is None:
-                        return None
-                    data: dict[str, Any] = {}
-                    title = getattr(row, "title", None)
-                    if isinstance(title, str) and title:
-                        data["title"] = title
-                    abstract = getattr(row, "abstract", None)
-                    if isinstance(abstract, str) and abstract:
-                        data["abstract"] = abstract
-                    keywords = getattr(row, "keywords", None)
-                    if isinstance(keywords, (list, tuple)) and keywords:
-                        data["keywords"] = [str(k) for k in keywords[:24] if isinstance(k, str)]
-                    return data or None
+                metadata_resolver = self._catalog_metadata_resolver()
 
                 catalog_metadata = _catalog_metadata_index(
                     entry
@@ -1219,9 +1233,25 @@ class Orchestrator:
                 validated_candidates: list[dict] = []
                 # Keep this normalization identical to the synthesizer input
                 # path above.  In particular, aggregate evaluator output with
-                # a null candidate_id is expanded from catalog evidence refs.
+                # a null candidate_id is expanded from catalog evidence refs,
+                # bounded by the Search Workers' recall allowlist and backfilled
+                # from the local catalog directory.  Without the allowlist this
+                # path silently yielded zero candidates whenever the Search
+                # Worker tool_results omitted catalog_metadata, so selections
+                # were never persisted even though the evaluator had retained
+                # rows (P0, spec029/030/031).
                 validated_candidates.extend(
-                    _validated_evaluator_candidates(evaluator_outputs, catalog_metadata)
+                    _validated_evaluator_candidates(
+                        evaluator_outputs,
+                        catalog_metadata,
+                        recall_allowlist=_recall_allowlist_from_search_outputs(
+                            output
+                            for work_item_id, output in completed_outputs.items()
+                            if item_by_id.get(work_item_id) is not None
+                            and item_by_id[work_item_id].role == "search-worker"
+                        ),
+                        metadata_resolver=self._catalog_metadata_resolver(),
+                    )
                 )
                 # If the real evaluator retained fewer than the report floor,
                 # use only already-sanitized catalog metadata to fill the
@@ -1320,6 +1350,41 @@ class Orchestrator:
         self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": selected_count, "error_code": None if failures == 0 else (synthesis_error or "AGENT_RUN_FAILED")})
         return self._result(task.research_task_id, final_status, plan_version, selected_count, synthesis_artifact_id, (), failures > 0, synthesis_error or (None if failures == 0 else "AGENT_RUN_FAILED"))
 
+    def _catalog_metadata_resolver(self) -> Callable[[str], Mapping[str, Any] | None] | None:
+        """Return the sanctioned local-directory metadata backfill, or None.
+
+        Both the synthesizer input path and the artifact/selection path must use
+        the *same* binding context, otherwise one yields candidates while the
+        other persists none.  Reuses ``PaperDiscoveryStore.get_catalog_paper`` —
+        the single local-directory exit already used by the spec029 search
+        fallback fix — so this is never a second retrieval implementation.
+
+        It is consulted only for IDs already present in the Search Workers'
+        recall allowlist and never contributes to the allowlist itself.
+        """
+        catalog_store = getattr(self._adapter, "_store", None)
+        get_catalog_paper = getattr(catalog_store, "get_catalog_paper", None)
+        if not callable(get_catalog_paper):
+            return None
+
+        def resolver(catalog_paper_id: str, _get_catalog_paper=get_catalog_paper) -> dict[str, Any] | None:
+            row = _get_catalog_paper(catalog_paper_id)
+            if row is None:
+                return None
+            data: dict[str, Any] = {}
+            title = getattr(row, "title", None)
+            if isinstance(title, str) and title:
+                data["title"] = title
+            abstract = getattr(row, "abstract", None)
+            if isinstance(abstract, str) and abstract:
+                data["abstract"] = abstract
+            keywords = getattr(row, "keywords", None)
+            if isinstance(keywords, (list, tuple)) and keywords:
+                data["keywords"] = [str(key) for key in keywords[:24] if isinstance(key, str)]
+            return data or None
+
+        return resolver
+
     def _fail_work_item(self, research_task_id: str, item, error_code: str) -> None:
         """把未派发的 WorkItem 真正标记为 failed 并 emit worker 事件。
 
@@ -1367,11 +1432,16 @@ class Orchestrator:
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            if entry.get("keep") is False:
+            direct = entry.get("candidate_id", entry.get("catalog_paper_id"))
+            # 聚合批量 evaluator（candidate_id 为 null）本身就是保留集合；其顶层
+            # keep=False 只标记「这是批量容器」，并非「我拒绝了这些候选」。只有
+            # 显式的 per-candidate 拒绝（candidate_id 有值且 keep=False）才跳过。
+            # 否则会和 _validated_evaluator_candidates 一样把批量 evaluator 整条丢
+            # 掉，导致 research_paper_selections 0 条（P0 spec029/030/031）。
+            if direct and entry.get("keep") is False:
                 continue
             # 一条 entry 可能携带多个候选 ID：显式 id 字段 + evidence_refs 里的 catalog:<id>。
             raw_ids: list[str] = []
-            direct = entry.get("candidate_id", entry.get("catalog_paper_id"))
             if isinstance(direct, str) and direct.strip():
                 raw_ids.append(direct.strip())
             refs = entry.get("evidence_refs")

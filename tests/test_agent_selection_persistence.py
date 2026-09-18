@@ -180,6 +180,122 @@ def test_persist_agent_selections_skips_keep_false(tmp_path):
     assert store.list_selections(task.research_task_id) == []
 
 
+def test_persist_agent_selections_keeps_batch_aggregate_keep_false(tmp_path):
+    """真实批量聚合产出：candidate_id 为 null、顶层 keep=False（task
+    81241f3f01885e2c8f0490123f2215f3 实测形状）。这是批量容器而非显式拒绝，
+    必须展开 evidence_refs 落库，不能被 keep=False 整体跳过（否则选集 0 条）。
+    """
+    _memory, store, task = _make_repo_and_store(tmp_path)
+    orchestrator = Orchestrator(store=store, planner=Planner(), probe=_FakeProbe())
+    batch_aggregate = {
+        "schema_version": "paper-evaluation-v1",
+        "candidate_id": None,
+        "keep": False,
+        "relevance_score": 0.0,
+        "evidence_refs": [
+            "catalog:paper-1", "catalog:paper-2",
+            "catalog:paper-9",  # 白名单外（模型自造）必须被丢弃
+        ],
+        "source_refs": ["usenix_security"],
+    }
+    orchestrator._persist_agent_selections(
+        task.research_task_id, batch_aggregate, {"paper-1", "paper-2", "paper-3"}
+    )
+    ids = [s.catalog_paper_id for s in store.list_selections(task.research_task_id)]
+    assert set(ids) == {"paper-1", "paper-2"}, ids
+    assert "paper-9" not in ids
+    assert len(ids) == len(set(ids))
+
+
+def _runner_for_batch_aggregate():
+    class _Runner:
+        event_sink = None
+
+        def run(self, run_input):
+            if run_input.role == "search_worker":
+                output = {
+                    "schema_version": "runtime-v1",
+                    "work_item_id": run_input.work_item_id,
+                    "source": "usenix",
+                    "queries": ["goal"],
+                    "candidates": ["paper-1", "paper-2", "paper-3"],
+                    "evidence_refs": [],
+                    "source_refs": [],
+                }
+            # planner 里的 "paper-evaluator" 会经 orchestrator.py:910-913 的 role_map
+            # 规范化为下划线形式，传给 run() 的 run_input.role 是 paper_evaluator。
+            elif run_input.role == "paper_evaluator":
+                output = {
+                    "schema_version": "paper-evaluation-v1",
+                    "work_item_id": run_input.work_item_id,
+                    # 真实批量聚合形状：candidate_id=null, keep=False。
+                    "candidate_id": None,
+                    "keep": False,
+                    "relevance_score": 0.0,
+                    "evidence_refs": [
+                        "catalog:paper-1", "catalog:paper-2", "catalog:paper-3",
+                    ],
+                    "source_refs": ["usenix_security"],
+                }
+            else:  # synthesizer
+                output = {
+                    "schema_version": "synthesis-v1",
+                    "work_item_id": run_input.work_item_id,
+                    "report": "ok",
+                }
+            return AgentRunOutput(
+                "completed", output_json=output, output_hash="hash",
+                agent_run_id=run_input.agent_run_id,
+            )
+
+    return _Runner()
+
+
+def _planner_with_search_evaluator_synth():
+    return SimpleNamespace(build_plan=lambda **_: SimpleNamespace(
+        facets=("systems",), planner_model="fake", rationale_summary="fake",
+        work_items=(
+            {
+                "id": "s1", "task_type": "search_catalog", "role": "search-worker",
+                "depends_on": [], "params": {"query": "goal"},
+            },
+            {
+                "id": "e1", "task_type": "evaluate_papers", "role": "paper-evaluator",
+                "depends_on": ["s1"], "params": {},
+            },
+            {
+                "id": "syn", "task_type": "synthesize_preliminary_report", "role": "synthesizer",
+                "depends_on": ["e1"], "params": {},
+            },
+        ),
+    ))
+
+
+def test_batch_aggregate_evaluator_runs_synthesizer(tmp_path):
+    """端到端：真实批量聚合 evaluator（candidate_id=null, keep=False）完成且
+    recall 白名单 populated 时，synthesizer 不得因 NO_VALIDATED_EVIDENCE 被跳过，
+    且 research_paper_selections 应落库。直接复现 task 81241f3f01885e2c8f0490123f2215f3。
+    """
+    _memory, store, task = _make_repo_and_store(tmp_path)
+    runner = _runner_for_batch_aggregate()
+    planner = _planner_with_search_evaluator_synth()
+    orchestrator = Orchestrator(
+        store=store, planner=planner, agent_runner=runner, probe=_FakeProbe(),
+        memory_repository=None,
+    )
+    result = orchestrator.run(task.research_task_id, "owner")
+
+    syn_items = [i for i in store.list_work_items(task.research_task_id, plan_version=1)
+                 if i.role == "synthesizer"]
+    assert syn_items, "synthesizer WorkItem was created"
+    assert syn_items[0].status == "completed", syn_items[0].status
+    assert result.status != "failed", (result.status, result.error_code)
+
+    # 选集落库（candidate_id=null, keep=False 不再是跳过理由）。
+    ids = {s.catalog_paper_id for s in store.list_selections(task.research_task_id)}
+    assert ids == {"paper-1", "paper-2", "paper-3"}, ids
+
+
 def test_persist_agent_selections_drops_out_of_whitelist_ids(tmp_path):
     _memory, store, task = _make_repo_and_store(tmp_path)
     orchestrator = Orchestrator(store=store, planner=Planner(), probe=_FakeProbe())
