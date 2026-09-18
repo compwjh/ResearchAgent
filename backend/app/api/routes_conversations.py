@@ -8,7 +8,6 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from backend.app.api.common import stream_event
 from backend.app.api.schemas import (
     ConversationMessageRequest,
     ConversationPatchRequest,
@@ -1031,6 +1030,8 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
     def generate():
         started = time.monotonic()
         sequencer = EventSequencer(assistant_message.message_id)
+        finished = False
+        durable_completed = False
 
         def frame(event_type: str, **payload):
             output = sequencer.emit(event_type, **payload)
@@ -1047,72 +1048,123 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
             return output
 
         try:
-            _persist_intake_projection(repo, assistant_message, result)
-        except Exception:
-            # The SSE response remains useful if a projection write is
-            # temporarily unavailable; the error is observable in logs and
-            # the next turn can retry its own durable projection.
-            logger.exception("unable to persist research intake projection")
-        yield frame(
-            "meta",
-            project_id=conversation.project_id,
-            conversation_id=conversation.conversation_id,
-            user_message_id=user_message.message_id,
-            assistant_message_id=assistant_message.message_id,
-            model=model,
-            mode=mode,
-            reasoning_effort=reasoning_effort,
-        )
-        if result.activation:
-            yield frame(
-                "skill_activation",
-                status="completed" if result.activation.get("ok") else "failed",
-                skill=(result.activation.get("skill") or {}).get("name"),
-                description=(result.activation.get("skill") or {}).get("description"),
-            )
-        plan_result = None
-        plan_error = None
-        if result.status == "intake" and not result.missing and result.session is not None:
-            yield frame(
-                "processing_step",
-                step_id=f"research-plan:{assistant_message.message_id}",
-                kind="research_plan",
-                status="running",
-                label="研究计划",
-                summary="参数已齐，正在生成研究计划…",
-            )
             try:
-                plan_result = _ensure_research_session_plan(result.session)
-                if plan_result:
-                    persist_plan_projection(repo, assistant_message, plan_result)
-            except Exception as error:
-                logger.exception("unable to generate conversational research session plan")
-                plan_error = error
+                _persist_intake_projection(repo, assistant_message, result)
+            except Exception:
+                # The SSE response remains useful if a projection write is
+                # temporarily unavailable; the error is observable in logs and
+                # the next turn can retry its own durable projection.
+                logger.exception("unable to persist research intake projection")
             yield frame(
-                "processing_step",
-                step_id=f"research-plan:{assistant_message.message_id}",
-                kind="research_plan",
-                status="completed" if plan_result else "failed",
-                label="研究计划",
-                summary=("研究计划已生成，等待用户批准。" if plan_result else "计划生成失败，可重试。"),
+                "meta",
+                project_id=conversation.project_id,
+                conversation_id=conversation.conversation_id,
+                user_message_id=user_message.message_id,
+                assistant_message_id=assistant_message.message_id,
+                model=model,
+                mode=mode,
+                reasoning_effort=reasoning_effort,
             )
-            if plan_result:
-                yield frame("plan", **plan_result)
-        if result.status == "active_conflict":
-            # This is an interactive, recoverable choice rather than a
-            # failed turn.  Keep the assistant completed so the user can
-            # choose how to proceed and preserve the active Session.
-            content = "当前会话已有进行中的研究，请选择修改当前研究、取消后新建或在新会话研究。"
+            if result.activation:
+                yield frame(
+                    "skill_activation",
+                    status="completed" if result.activation.get("ok") else "failed",
+                    skill=(result.activation.get("skill") or {}).get("name"),
+                    description=(result.activation.get("skill") or {}).get("description"),
+                )
+            plan_result = None
+            plan_error = None
+            if result.status == "intake" and not result.missing and result.session is not None:
+                yield frame(
+                    "processing_step",
+                    step_id=f"research-plan:{assistant_message.message_id}",
+                    kind="research_plan",
+                    status="running",
+                    label="研究计划",
+                    summary="参数已齐，正在生成研究计划…",
+                )
+                try:
+                    plan_result = _ensure_research_session_plan(result.session)
+                    if plan_result:
+                        persist_plan_projection(repo, assistant_message, plan_result)
+                except Exception as error:
+                    logger.exception("unable to generate conversational research session plan")
+                    plan_error = error
+                yield frame(
+                    "processing_step",
+                    step_id=f"research-plan:{assistant_message.message_id}",
+                    kind="research_plan",
+                    status="completed" if plan_result else "failed",
+                    label="研究计划",
+                    summary=("研究计划已生成，等待用户批准。" if plan_result else "计划生成失败，可重试。"),
+                )
+                if plan_result:
+                    yield frame("plan", **plan_result)
+            if result.status == "active_conflict":
+                # This is an interactive, recoverable choice rather than a
+                # failed turn.  Keep the assistant completed so the user can
+                # choose how to proceed and preserve the active Session.
+                content = "当前会话已有进行中的研究，请选择修改当前研究、取消后新建或在新会话研究。"
+                repo.update_message(assistant_message.message_id, owner_id, content=content, status="completed")
+                yield frame(
+                    "intake",
+                    status=result.status,
+                    research_session=(result.session.to_dict() if result.session else None),
+                    fields=[],
+                    missing=[],
+                    choices=result.choices,
+                    question=None,
+                )
+                finished = True
+                yield frame(
+                    "done",
+                    conversation_id=conversation.conversation_id,
+                    message_id=assistant_message.message_id,
+                    status="completed",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
+                return
+            if result.error:
+                content = result.error.get("message", "研究请求暂时无法处理")
+                repo.update_message(assistant_message.message_id, owner_id, content=content, status="failed")
+                yield frame("error", **result.error)
+                finished = True
+                yield frame(
+                    "done",
+                    conversation_id=conversation.conversation_id,
+                    message_id=assistant_message.message_id,
+                    status="failed",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
+                return
+            field_payload = [
+                {**item.to_dict(), "message_id": item.updated_by_message_id}
+                for item in result.fields
+            ]
+            if result.status == "clarification":
+                content = result.question or "请说明是否要进行深度研究。"
+            elif result.status == "active_conflict":
+                content = result.error.get("message", "当前会话已有进行中的研究") if result.error else "当前会话已有进行中的研究"
+            else:
+                content = (
+                    "研究计划已生成，等待你批准后开始执行。"
+                    if plan_result
+                    else "研究 Intake 已保存，参数齐全后将生成计划。"
+                )
+                if plan_error:
+                    content = "研究参数已齐，但计划生成失败，可重新发送时间范围或刷新会话重试。"
             repo.update_message(assistant_message.message_id, owner_id, content=content, status="completed")
+            durable_completed = True
             yield frame(
                 "intake",
                 status=result.status,
                 research_session=(result.session.to_dict() if result.session else None),
-                fields=[],
-                missing=[],
+                fields=field_payload,
+                missing=result.missing,
                 choices=result.choices,
-                question=None,
+                question=result.question,
             )
+            finished = True
             yield frame(
                 "done",
                 conversation_id=conversation.conversation_id,
@@ -1120,52 +1172,58 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
                 status="completed",
                 duration_ms=(time.monotonic() - started) * 1000,
             )
-            return
-        if result.error:
-            content = result.error.get("message", "研究请求暂时无法处理")
-            repo.update_message(assistant_message.message_id, owner_id, content=content, status="failed")
-            yield frame("error", **result.error)
-            yield frame(
-                "done",
-                conversation_id=conversation.conversation_id,
-                message_id=assistant_message.message_id,
-                status="failed",
-                duration_ms=(time.monotonic() - started) * 1000,
-            )
-            return
-        field_payload = [
-            {**item.to_dict(), "message_id": item.updated_by_message_id}
-            for item in result.fields
-        ]
-        if result.status == "clarification":
-            content = result.question or "请说明是否要进行深度研究。"
-        elif result.status == "active_conflict":
-            content = result.error.get("message", "当前会话已有进行中的研究") if result.error else "当前会话已有进行中的研究"
-        else:
-            content = (
-                "研究计划已生成，等待你批准后开始执行。"
-                if plan_result
-                else "研究 Intake 已保存，参数齐全后将生成计划。"
-            )
-            if plan_error:
-                content = "研究参数已齐，但计划生成失败，可重新发送时间范围或刷新会话重试。"
-        repo.update_message(assistant_message.message_id, owner_id, content=content, status="completed")
-        yield frame(
-            "intake",
-            status=result.status,
-            research_session=(result.session.to_dict() if result.session else None),
-            fields=field_payload,
-            missing=result.missing,
-            choices=result.choices,
-            question=result.question,
-        )
-        yield frame(
-            "done",
-            conversation_id=conversation.conversation_id,
-            message_id=assistant_message.message_id,
-            status="completed",
-            duration_ms=(time.monotonic() - started) * 1000,
-        )
+        except GeneratorExit:
+            raise
+        except Exception:
+            logger.exception("research intake stream failed after durable writes")
+            # 1) Emit terminal SSE frames first so a downstream persistence
+            #    failure (e.g. a SQLite lock) cannot suppress them.  Each
+            #    yield is itself wrapped because a closed connection must not
+            #    kill the generator.
+            try:
+                yield frame("error", code="INTAKE_FAILED", message="研究 Intake 处理中断，请稍后重试。", retryable=True)
+                yield frame(
+                    "done",
+                    conversation_id=conversation.conversation_id,
+                    message_id=assistant_message.message_id,
+                    status="completed" if durable_completed else "failed",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
+            except Exception:
+                # A failed补发 of the terminal frames must not kill the
+                # generator (e.g. client disconnect).  The finally block still
+                # performs the durable fallback persistence below.
+                pass
+            # 2) Best-effort durable persistence; a lock/connection failure
+            #    here must not suppress the already-emitted terminal frames.
+            try:
+                if not durable_completed:
+                    repo.update_message(
+                        assistant_message.message_id,
+                        owner_id,
+                        content="研究 Intake 处理中断，请稍后重试。",
+                        status="failed",
+                    )
+                repo.finalize_processing_steps(
+                    assistant_message.message_id,
+                    status="failed",
+                    summary="研究 Intake 处理中断",
+                )
+            except Exception:
+                pass
+        finally:
+            if not finished:
+                try:
+                    current = repo.get_message(assistant_message.message_id, owner_id)
+                    if current and current.status in {"pending", "streaming"}:
+                        repo.update_message(assistant_message.message_id, owner_id, status="interrupted")
+                    repo.finalize_processing_steps(
+                        assistant_message.message_id,
+                        status="interrupted",
+                        summary="研究 Intake 未完成",
+                    )
+                except Exception:
+                    pass
     return generate()
 
 
@@ -1179,9 +1237,24 @@ def _failed_message_stream(repo, conversation, user_message, assistant_message, 
         code, message, retryable = "MODEL_UNAVAILABLE", "模型暂时不可用", True
     owner_id = getattr(user_message, "owner_id", OWNER_ID)
     repo.update_message(assistant_message.message_id, owner_id, content=message, status="failed")
+    sequencer = EventSequencer(assistant_message.message_id)
+
+    def frame(event_type: str, **payload):
+        output = sequencer.emit(event_type, **payload)
+        if output:
+            try:
+                repo.record_event_seq(
+                    assistant_message.message_id,
+                    owner_id,
+                    sequencer.event_seq,
+                    terminal_status=payload.get("status") if event_type == "done" else None,
+                )
+            except Exception as error:
+                logger.warning("event sequence persistence unavailable for %s: %s", assistant_message.message_id, error)
+        return output
 
     def generate():
-        yield stream_event(
+        yield frame(
             "meta",
             project_id=conversation.project_id,
             conversation_id=conversation.conversation_id,
@@ -1190,8 +1263,8 @@ def _failed_message_stream(repo, conversation, user_message, assistant_message, 
             model=user_message.model,
             mode=user_message.mode,
         )
-        yield stream_event("error", code=code, message=message, retryable=retryable)
-        yield stream_event(
+        yield frame("error", code=code, message=message, retryable=retryable)
+        yield frame(
             "done",
             conversation_id=conversation.conversation_id,
             message_id=assistant_message.message_id,
