@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Mapping, Optional, TypedDict
@@ -41,7 +42,7 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SourceFetchUnit,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
-from backend.app.platform.config import EMBED_DIM
+from backend.app.platform.config import CATALOG_CROSS_LINGUAL_TERM_MAP_PATH, EMBED_DIM
 
 GRAPH_VERSION = "catalog-search-v1"
 NODE_NAMES = (
@@ -77,6 +78,68 @@ def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+logger = logging.getLogger(__name__)
+
+# CJK Unified Ideographs (plus Extension A / Compatibility) — enough to detect a
+# Han-script query without pulling in a language-detection library.
+_CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
+
+
+def _contains_cjk(text: str) -> bool:
+    """True when *text* carries any CJK (Han) character.
+
+    Used to branch the final ranking: a cross-lingual query cannot rely on the
+    lexical (title/abstract/keyword overlap) channel, so the semantic score
+    must lead the ordering (decision Q6①).
+    """
+    return bool(_CJK_RE.search(text or ""))
+
+
+def load_term_mapping(path: Optional[str]) -> dict[str, list[str]]:
+    """Load the cross-lingual Chinese→English term map (fail-open).
+
+    The file is a JSON object ``{"中文术语": ["english", "synonym", ...], ...}``.
+    Any failure (missing file, unreadable, malformed, wrong shape) degrades to
+    an empty mapping and logs a warning — retrieval must never be blocked by a
+    bad or absent term map (decision Q7②).
+    """
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except FileNotFoundError:
+        logger.warning(
+            "catalog cross-lingual term map not found at %s; using empty mapping (fail-open)", path
+        )
+        return {}
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        logger.warning(
+            "catalog cross-lingual term map at %s unreadable (%s); using empty mapping (fail-open)",
+            path, exc,
+        )
+        return {}
+    if not isinstance(raw, dict):
+        logger.warning(
+            "catalog cross-lingual term map %s is not a JSON object; using empty mapping (fail-open)",
+            path,
+        )
+        return {}
+    mapping: dict[str, list[str]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key:
+            continue
+        if isinstance(value, str):
+            synonyms = [value]
+        elif isinstance(value, (list, tuple)):
+            synonyms = [str(item) for item in value if item]
+        else:
+            continue
+        if synonyms:
+            mapping[key] = synonyms
+    return mapping
+
+
 class CatalogRagAdapter:
     """Injectable directory RAG boundary using the existing KB primitives.
 
@@ -94,13 +157,21 @@ class CatalogRagAdapter:
     def __init__(self, *, client: Any = None, embedder: Callable = embed_texts,
                  sparse_encoder: Callable = encode_sparse,
                  reranker: Callable = rerank_hits,
-                 collection_name: Optional[str] = None):
+                 collection_name: Optional[str] = None,
+                 term_mapping: Optional[dict] = None,
+                 term_mapping_path: Optional[str] = None):
         self.client = client
         self.embedder = embedder
         self.sparse_encoder = sparse_encoder
         self.reranker = reranker
         self.collection_name = collection_name or self.collection_name
         self.degraded = False
+        # Cross-lingual term map (decision Q7②).  Inject ``term_mapping`` in
+        # tests; otherwise lazily load ``term_mapping_path`` (defaults to the
+        # configured JSON) with fail-open semantics.
+        self._term_mapping_override = term_mapping
+        self._term_mapping_path = term_mapping_path or CATALOG_CROSS_LINGUAL_TERM_MAP_PATH
+        self._term_mapping_cache: Optional[dict[str, list[str]]] = None
 
     @staticmethod
     def _text(paper: CatalogPaper) -> str:
@@ -108,6 +179,32 @@ class CatalogRagAdapter:
 
     def _client(self):
         return self.client or get_client()
+
+    def _get_term_mapping(self) -> dict[str, list[str]]:
+        """Return the active cross-lingual term map (injected or lazily loaded)."""
+        if self._term_mapping_override is not None:
+            return self._term_mapping_override
+        if self._term_mapping_cache is None:
+            self._term_mapping_cache = load_term_mapping(self._term_mapping_path)
+        return self._term_mapping_cache
+
+    def _map_query(self, query: str) -> str:
+        """Expand a query with English synonyms for any matched Chinese term.
+
+        The expansion is appended (not substituted) so an already-English query
+        is unchanged, while a Chinese query gains the tokens the degraded
+        lexical channel needs to overlap English catalog metadata (decision Q7②).
+        """
+        mapping = self._get_term_mapping()
+        if not mapping:
+            return query
+        synonyms: set[str] = set()
+        for zh, en_list in mapping.items():
+            if zh and zh in query:
+                synonyms.update(en_list)
+        if not synonyms:
+            return query
+        return f"{query} {' '.join(sorted(synonyms))}"
 
     def index(self, papers: Iterable[CatalogPaper]) -> bool:
         papers = list(papers)
@@ -166,12 +263,25 @@ class CatalogRagAdapter:
         return qdrant_models.Filter(must=must) if must else None
 
     def _fallback(self, query: str, papers: Iterable[CatalogPaper]) -> list[dict[str, Any]]:
+        # The degraded path is reached only when the vector path raised, so it
+        # is always degraded.
+        self.degraded = True
+        mapped_query = self._map_query(query)
         ranked = []
         papers = list(papers)
         for paper in papers:
-            score = self._lexical_score(query, paper)
+            score = self._lexical_score(mapped_query, paper)
             ranked.append({"catalog_paper_id": paper.catalog_paper_id,
                            "retrieval_score": score, "rerank_score": None, "final_score": score})
+        # Fail-closed (decision Q8①): if the lexical channel has no overlap
+        # signal at all — a Chinese query whose terms are unmapped and whose
+        # tokens never collide with English metadata — do NOT return a
+        # catalog_paper_id lexicographic pseudo-ordering that the caller would
+        # treat as a real ranked result (and surface three equally-relevant
+        # random papers).  Return empty so the downstream adapter's
+        # "empty ⇒ degraded" contract converges the WorkItem to failed.
+        if ranked and all(item["final_score"] == 0.0 for item in ranked):
+            return []
         ranked.sort(key=lambda item: (-item["final_score"], item["catalog_paper_id"]))
         return ranked
 
@@ -253,17 +363,31 @@ class CatalogRagAdapter:
                                "rerank_score": hit.rerank_score,
                                "final_score": float(final)})
             paper_by_id = {str(paper.catalog_paper_id): paper for paper in papers}
-            # Keep the vector/reranker result as the tie-breaker, but make an
-            # exact or strong metadata match deterministic.  This is
-            # especially important for the local degraded path used by the
-            # research runtime: the evaluator must see the requested paper
-            # before unrelated catalog rows.
+            # Lexical score is computed from the term-mapped query so a Chinese
+            # query that matches a configured synonym still gets a lexical signal
+            # (decision Q7②); an unmapped Chinese query yields ~0 here, which is
+            # exactly why the ordering below must branch on language.
             result = [
-                (index, item, self._lexical_score(query, paper_by_id[str(item["catalog_paper_id"])]))
+                (index, item, self._lexical_score(self._map_query(query), paper_by_id[str(item["catalog_paper_id"])]))
                 for index, item in enumerate(result)
                 if str(item.get("catalog_paper_id", "")) in paper_by_id
             ]
-            result.sort(key=lambda entry: (-entry[2], -float(entry[1].get("final_score", 0.0)), entry[0]))
+            # Language-branched final ordering (decision Q6①):
+            # - English query: keep the existing, intentional behavior — an
+            #   exact/strong metadata (lexical) match must outrank an arbitrary
+            #   vector tie, so the lexical score stays the primary key and the
+            #   semantic score is only the tie-breaker.
+            # - CJK query: the lexical channel is effectively zero (Chinese
+            #   tokens never overlap English metadata), so the semantic
+            #   ``final_score`` must lead the ordering and the lexical score
+            #   drops to a tie-breaker.  Otherwise a Chinese query collapses to
+            #   the RRF/insertion-order tie-breaker and looks random.
+            if _contains_cjk(query):
+                result.sort(key=lambda entry: (
+                    -float(entry[1].get("final_score", 0.0)), -entry[2], entry[0]))
+            else:
+                result.sort(key=lambda entry: (
+                    -entry[2], -float(entry[1].get("final_score", 0.0)), entry[0]))
             return [item for _, item, _ in result]
         except Exception:
             self.degraded = True

@@ -93,6 +93,18 @@ RERANKER_READ_TIMEOUT_SECONDS = _env_positive_number(
 RERANKER_SERVER_BIN = os.getenv("RERANKER_SERVER_BIN", "").strip()
 KB_MAX_UPLOAD_MB = int(os.getenv("KB_MAX_UPLOAD_MB", "50"))
 
+# ---------- 目录跨语言术语映射（spec-031 P1）----------
+# 中文 query 经目录 RAG 检索时，词法通道（标题/摘要/关键词重叠）天然失效：
+# 稀疏通道是 jieba+crc32，与英文文档 token 哈希对不上；稠密通道虽多语言，但
+# 降级（向量不可用）路径只能靠词法分。该 JSON 提供「中文术语 → 英文同义词」的
+# 静态映射表，作为降级路径的兜底信号（主排序仍靠 bge-m3 语义分，见决策一/二）。
+# 路径可经 env 覆盖；加载采用 fail-open（缺失/损坏/格式错 → 退化为空映射，记为 warning，
+# 绝不阻断检索）。不要把它写死成代码常量，也不要进 DB。
+CATALOG_CROSS_LINGUAL_TERM_MAP_PATH = os.getenv(
+    "CATALOG_CROSS_LINGUAL_TERM_MAP_PATH",
+    str(BASE_DIR / "backend" / "data" / "catalog" / "cross_lingual_term_map.json"),
+)
+
 # ---------- 知识库切分 v2（spec-012）----------
 # v2 结构边界分析模型（用户 2026-09-01 拍板：量化 27B 换取更准的边界判定）。
 # 它是 thinking 模型，调用必须 think:false，否则输出为空。
