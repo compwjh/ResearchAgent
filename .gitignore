@@ -14,6 +14,8 @@ htmlcov/
 # pytest --basetemp 残留目录（子代理跑定向测试时生成，含临时 sqlite，勿入库）
 .pytest-tmp-*
 **/.pytest-tmp-*
+# PYTEST_DEBUG_TEMPROOT 指向的仓库内临时根目录
+.pytest-tmp/
 # WorkBuddy 项目运行数据（进度日志、会话记忆等），非源码资产
 .workbuddy-ai/
 .ruff_cache/

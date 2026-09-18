@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -47,6 +48,8 @@ from backend.app.research.domain.models import (
 )
 from backend.app.research.domain.plan_validator import PlanRejected
 from backend.app.research.domain.state_machine import InvalidStateTransition
+
+logger = logging.getLogger(__name__)
 
 # Spec027 只产生 catalog 级证据（不下载/分析全文，见 §明确不做）。
 _EVIDENCE_LEVEL = "catalog"
@@ -880,9 +883,7 @@ class Orchestrator:
                 failures += 1
                 error_code = "UPSTREAM_WORK_ITEM_FAILED" if any(dep in failed_ids for dep in dependencies) else "UPSTREAM_WORK_ITEM_NOT_READY"
                 failed_ids.add(item.work_item_id)
-                with suppress(Exception):
-                    failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code=error_code)
-                    self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code=error_code))
+                self._fail_work_item(task.research_task_id, item, error_code)
                 if role == "synthesizer":
                     synthesis_error = error_code
                 continue
@@ -975,9 +976,7 @@ class Orchestrator:
                     failures += 1
                     synthesis_error = "NO_VALIDATED_EVIDENCE"
                     failed_ids.add(item.work_item_id)
-                    with suppress(Exception):
-                        failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code=synthesis_error)
-                        self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code=synthesis_error))
+                    self._fail_work_item(task.research_task_id, item, synthesis_error)
                     continue
                 work_item_input["validated_candidates"] = validated
                 work_item_input["citation_allowlist"] = [
@@ -1082,6 +1081,11 @@ class Orchestrator:
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 evaluator_outputs.append(dict(normalized_output))
                 evaluator_outputs_by_id[item.work_item_id] = dict(normalized_output)
+                # agent 路径此前从不落库选集，导致 research_paper_selections 永远为空
+                # （Spec029 acquisition-preview 报 REPORT_NOT_READY）。evaluator completed
+                # 后立即把真实候选持久化；只接受 allowed_candidates 白名单内的召回 ID，
+                # 落库失败不阻断后续 WorkItem（选集写不进去不该把任务打成 failed）。
+                self._persist_agent_selections(task.research_task_id, normalized_output, allowed_candidates)
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
                 synthesis_output = dict(normalized_output) if isinstance(normalized_output, dict) else None
@@ -1218,6 +1222,100 @@ class Orchestrator:
             self._store.update_task_status(task.research_task_id, owner_id, final_status)
         self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": selected_count, "error_code": None if failures == 0 else (synthesis_error or "AGENT_RUN_FAILED")})
         return self._result(task.research_task_id, final_status, plan_version, selected_count, synthesis_artifact_id, (), failures > 0, synthesis_error or (None if failures == 0 else "AGENT_RUN_FAILED"))
+
+    def _fail_work_item(self, research_task_id: str, item, error_code: str) -> None:
+        """把未派发的 WorkItem 真正标记为 failed 并 emit worker 事件。
+
+        状态机只允许 ``queued -> running -> failed``（``WORKITEM_TRANSITIONS``），
+        直接 ``queued -> failed`` 会抛 ``InvalidStateTransition``。此前这一步被
+        ``with suppress(Exception)`` 整体吞掉，结果是：永远不会被派发的 WorkItem
+        一直停留在 ``queued``，``error_code`` 也从不落库，API/UI 看起来像「还在排队」
+        而不是「已失败」。这里补上合法中间态再写终态。
+        """
+        current = getattr(item, "status", None)
+        if current == "queued":
+            with suppress(Exception):
+                item = self._store.update_work_item_status(item.work_item_id, "running") or item
+        with suppress(Exception):
+            failed_item = self._store.update_work_item_status(
+                item.work_item_id, "failed", error_code=error_code
+            )
+            self._emit(
+                research_task_id, "worker",
+                self._worker_event_payload(failed_item, "failed", error_code=error_code),
+            )
+
+    def _persist_agent_selections(
+        self, research_task_id: str, evaluator_output: dict, allowed_candidates: set[str]
+    ) -> None:
+        """把 agent 路径 evaluator 产出的真实候选落库为 research_paper_selections。
+
+        只接受 ``allowed_candidates``（本 WorkItem 的 Search Worker 召回白名单）里的
+        candidate_id；模型自造的 ID 一律丢弃，绝不伪造 relevance/facets/evidence。agent
+        路径只有目录/摘要级证据，evidence_level 固定为 ``"catalog"``（绝不标 fulltext）。
+        落库失败不能让整条流水线崩：记 logger.warning 后继续后续 WorkItem。
+
+        evaluator 产出有两种形状，都必须覆盖：
+        - 聚合形 ``{"kept": [...]}``；
+        - 单条聚合形（``candidate_id`` 可能为 null，候选 ID 全在 ``evidence_refs`` 的
+          ``catalog:<id>`` 里，``keep`` 为 true）——实测这是当前模型最常见的产出。
+        """
+        kept = evaluator_output.get("kept")
+        if isinstance(kept, list):
+            entries: list = list(kept)
+        else:
+            entries = [evaluator_output]
+        selections: list[ResearchPaperSelection] = []
+        seen: set[str] = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("keep") is False:
+                continue
+            # 一条 entry 可能携带多个候选 ID：显式 id 字段 + evidence_refs 里的 catalog:<id>。
+            raw_ids: list[str] = []
+            direct = entry.get("candidate_id", entry.get("catalog_paper_id"))
+            if isinstance(direct, str) and direct.strip():
+                raw_ids.append(direct.strip())
+            refs = entry.get("evidence_refs")
+            if isinstance(refs, list):
+                for ref in refs:
+                    if isinstance(ref, str) and ref.startswith("catalog:"):
+                        raw_ids.append(ref.split(":", 1)[1])
+            raw_relevance = entry.get("relevance_score", entry.get("relevance"))
+            try:
+                relevance = float(raw_relevance) if raw_relevance is not None else 0.0
+            except (TypeError, ValueError):
+                relevance = 0.0
+            facets = entry.get("facets")
+            if not isinstance(facets, list):
+                facets = []
+            for candidate_id in raw_ids:
+                if not candidate_id:
+                    continue
+                # 白名单外的 ID（含模型自造）一律丢弃，绝不落库。
+                if candidate_id not in allowed_candidates:
+                    continue
+                if candidate_id in seen:
+                    continue
+                seen.add(candidate_id)
+                selections.append(ResearchPaperSelection(
+                    research_task_id=research_task_id,
+                    catalog_paper_id=candidate_id,
+                    relevance=relevance,
+                    facets_json=json.dumps(facets, ensure_ascii=False),
+                    evidence_level="catalog",
+                    created_at=_utcnow(),
+                ))
+        if not selections:
+            return
+        try:
+            self._store.replace_selections(research_task_id, selections)
+        except Exception as exc:  # noqa: BLE001 - 选集写不进去不应把任务打成 failed
+            logger.warning(
+                "agent evaluator selections not persisted; continuing pipeline",
+                extra={"research_task_id": research_task_id, "error": str(exc)},
+            )
 
     def _run_search_evaluate_coverage(
         self,

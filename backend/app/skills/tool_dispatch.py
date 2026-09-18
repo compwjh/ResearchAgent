@@ -145,38 +145,118 @@ def _search_catalog(args: dict) -> DispatchResult:
     )
     count = len(getattr(result, "candidates", []) or [])
     candidates = list(getattr(result, "candidates", []) or [])[:_SEARCH_LIST_LIMIT]
-    lines = []
-    for index, candidate in enumerate(candidates, start=1):
-        title = getattr(candidate, "title", "")
-        if not title:
-            continue
-        lines.append(f"{index}. {title}")
-        # ``PaperCandidate.candidate_id`` is the existing stable catalog
-        # identity (derived by PaperDiscoverySearchService and persisted as
-        # the candidate key).  Expose it under the Spec034 contract name so
-        # Search Worker can carry real candidates forward without serializing
-        # the whole candidate object or introducing a second ID generator.
-        catalog_paper_id = (
-            getattr(candidate, "catalog_paper_id", None)
-            or getattr(candidate, "candidate_id", None)
+    # 实时检索 0 命中：本地已索引目录兜底（复用 CatalogSearchAdapter 唯一出口）。
+    # 兜底返回非空结果则直接采用；兜底自身失败 / 无命中则安全退化为原 0 条行为
+    # （不把异常抛给上层、也不伪造任何论文元数据）。
+    if count == 0:
+        fallback = _search_catalog_local_fallback(
+            query=query, years=years, limit=limit,
+            publication_scope=publication_scope, source_hint=source_hint,
         )
-        if catalog_paper_id:
-            lines.append(f"   catalog_paper_id: {catalog_paper_id}")
-        # 详情页 URL 只取自候选对象本身（优先 article_url，回退 source_page_url），
-        # 绝不拼接 / 猜测；两个都缺失时该行不输出，让模型知道该篇无法补摘要。
-        detail_url = getattr(candidate, "article_url", None) or getattr(candidate, "source_page_url", None)
-        if detail_url:
-            lines.append(f"   详情页: {detail_url}")
-        abstract = str(getattr(candidate, "abstract", "") or "").strip()
-        if abstract:
-            lines.append(f"   摘要: {abstract}")
-        else:
-            lines.append("   摘要: （缺失，可对该篇详情页调用 fetch_paper_detail 补齐）")
-    body = f"检索完成：来源={getattr(chosen, 'short_name', '?')}，命中 {count} 篇候选论文。\n" + "\n".join(lines)
+        if fallback is not None:
+            return fallback
+    body = _format_search_body(getattr(chosen, "short_name", "?"), candidates, count)
     # ``PaperDiscoverySearchService`` persists this snapshot before returning;
     # carry its opaque server handle as structured metadata.  It must not be
     # embedded in the presentation text, where a model could imitate it.
     search_id = getattr(getattr(result, "session", None), "search_id", None)
+    return DispatchResult(ok=True, name="search_paper_catalog", output=body, search_id=search_id)
+
+
+def _format_search_entries(items: list) -> list:
+    """将候选 / 目录对象归一化为展示条目；只读取既有属性，不新增任何元数据。
+
+    同时服务于实时路径（``PaperCandidate``）与本地兜底路径（``CatalogPaper``）：
+    取标题、稳定 ``catalog_paper_id``、详情页 URL（article_url→source_page_url→
+    official_page_url 回退）、摘要。标题为空的对象被跳过。
+    """
+    entries = []
+    for item in items:
+        title = getattr(item, "title", "")
+        if not title:
+            continue
+        # 稳定目录身份：优先既有 catalog_paper_id，回退 candidate_id。
+        catalog_paper_id = (
+            getattr(item, "catalog_paper_id", None)
+            or getattr(item, "candidate_id", None)
+        )
+        # 详情页 URL 只取自对象本身（绝不拼接 / 猜测）；三档回退覆盖两类来源。
+        detail_url = (
+            getattr(item, "article_url", None)
+            or getattr(item, "source_page_url", None)
+            or getattr(item, "official_page_url", None)
+        )
+        abstract = str(getattr(item, "abstract", "") or "").strip()
+        entries.append((title, catalog_paper_id, detail_url, abstract))
+    return entries
+
+
+def _format_search_body(source_name: str, items: list, count: int) -> str:
+    """按既有模型消费格式拼装检索结果文本（与历史实现逐字符一致）。"""
+    lines = []
+    for index, (title, catalog_paper_id, detail_url, abstract) in enumerate(
+        _format_search_entries(items), start=1
+    ):
+        lines.append(f"{index}. {title}")
+        if catalog_paper_id:
+            lines.append(f"   catalog_paper_id: {catalog_paper_id}")
+        if detail_url:
+            lines.append(f"   详情页: {detail_url}")
+        if abstract:
+            lines.append(f"   摘要: {abstract}")
+        else:
+            lines.append("   摘要: （缺失，可对该篇详情页调用 fetch_paper_detail 补齐）")
+    return f"检索完成：来源={source_name}，命中 {count} 篇候选论文。\n" + "\n".join(lines)
+
+
+def _search_catalog_local_fallback(*, query, years, limit, publication_scope, source_hint) -> Optional[DispatchResult]:
+    """实时检索 0 命中时的本地已索引目录兜底（Spec027 复用接缝的唯一出口）。
+
+    复用 ``CatalogSearchAdapter``（其内部只经既有 CatalogSearchGraph / CatalogRagAdapter）
+    检索本地 SQLite+Qdrant 目录，命中后再用既有 ``PaperDiscoveryStore.get_catalog_paper``
+    取**真实**元数据（title / 官方页 URL / 摘要）回填，绝不伪造。兜底自身抛异常或读不到
+    任何真实目录行时返回 ``None``，由调用方退化为原 0 条行为（不抛 500、不伪造）。
+    """
+    from backend.app.api.common import _paper_store
+    from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
+
+    max_results = _SEARCH_LIST_LIMIT
+    if isinstance(limit, int) and not isinstance(limit, bool):
+        max_results = max(1, min(int(limit), _SEARCH_LIST_LIMIT))
+
+    # 与实时路径 _pick_conference 的优先级一致：dblp 显式请求才走 dblp，其余（all/usenix）走 usenix。
+    source_scope = "dblp" if source_hint == "dblp" else "usenix"
+    try:
+        outcome = CatalogSearchAdapter().search(
+            query=query,
+            sources=(source_scope,),
+            max_results=max_results,
+            years=tuple(int(y) for y in (years or ())),
+            publication_scope=publication_scope,
+        )
+    except Exception as exc:  # noqa: BLE001 - 兜底检索失败：安全降级，不冒泡
+        logger.warning("search_paper_catalog 本地目录兜底检索失败，退化为 0 条：%s", exc)
+        return None
+
+    ids = [str(pid) for pid in (getattr(outcome, "catalog_paper_ids", ()) or ()) if pid][:max_results]
+    if not ids:
+        return None
+
+    store = _paper_store()
+    papers = []
+    for pid in ids:
+        try:
+            paper = store.get_catalog_paper(pid)
+        except Exception as exc:  # noqa: BLE001 - 单篇元数据读取失败不阻断其余候选
+            logger.warning("search_paper_catalog 读取本地目录论文 %s 失败：%s", pid, exc)
+            continue
+        if paper is not None:
+            papers.append(paper)
+    if not papers:
+        return None
+
+    body = _format_search_body("USENIX Security（本地目录）", papers, len(papers))
+    search_id = getattr(outcome, "search_id", None)
     return DispatchResult(ok=True, name="search_paper_catalog", output=body, search_id=search_id)
 
 
