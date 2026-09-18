@@ -198,3 +198,57 @@ print('validated:', len(_validated_evaluator_candidates(evals, {}, recall_allowl
 3. 裁定 4.2 用例的语义归属（改代码 vs 改用例），依据是"该 search 输出是否真的含 `paper-1`"。
 4. 两个用例都绿后，跑一次更大范围的回归（`tests/` 下与 research/orchestrator 相关的文件），确认没有连带破坏。
 5. 完成第 7 节收尾，再决定是否提交。
+
+---
+
+## 9. 接手收口记录（2026-09-19）
+
+### 9.1 第 4.1 节根因：不是 `_canonicalize_search_worker_binding`
+
+打桩 `_validated_evaluator_candidates` 后实测，synthesizer 路径收到的 evaluator 输出是
+`{"schema_version": "synthesis-v1", "work_item_id": "<id>-e1", "report": "ok"}`
+——e1 掉进了 runner 的 `else` 分支。真因是新夹具 `_runner_for_batch_aggregate()` 里写成
+`run_input.role == "paper-evaluator"`（连字符），而 `orchestrator.py:910-913` 的 `role_map`
+已把角色规范化为下划线 `paper_evaluator`。白名单本身正确（`{paper-1,paper-2,paper-3}`）。
+已改夹具（并在行上加注释说明规范化链路）。
+
+### 9.2 第 4.2 节裁定：用例构造过时
+
+该用例的 search worker 确实召回 `paper-1`，新设计下白名单内 ID 缺元数据也要展开为候选，
+故"跳过"不再发生（实测 completed）。按本文判据 → **改用例**：`evidence_refs` 改为
+`catalog:paper-not-recalled`（从未召回的 ID），三个断言一字未改，保留"被跳过的 item
+必须落 failed 而非 queued"的原始意图。
+
+### 9.3 验证（按用户要求未跑全量）
+
+- 三个相关文件：**18 passed**（修复前 2 failed / 16 passed）
+- 受影响领域：`-k "research|orchestrator|evidence|acquisition|selection|dispatch|skill|catalog|synthes"`
+  → **460 passed / 2132 deselected / 11 subtests**
+- `ruff check orchestrator.py`：仅 2 个既有历史错误（E731 @316、F841 @2347），无新增
+- 评审：**GO**，见 `docs/sdd/reviews/029-031-p0-recall-allowlist-backend-review.md`（附 2 条 LOW）
+- 提交：`e4ab0b6`（分支 `fix/spec029-030-031-pipeline`，**未 push**）
+
+### 9.4 真实端到端复验（新 query，证明不复发）
+
+- query：`模糊测试 fuzzing 内存安全漏洞挖掘`（USENIX Security 2022–2025）
+- 任务 `d21317d817b051768919dfd95b177522`：search×2 / paper-evaluator / research-critic /
+  **synthesizer 全部 completed，0 个 failed**，syn 产出 2864B 真实 output
+- `research_paper_selections` 落库 **9 条**（evidence_level=catalog），任务终态 `partial`
+  （catalog-only 报告，符合 api-sample 预期）
+- **结论 GO**：修复前的症状是「synthesizer 被 NO_VALIDATED_EVIDENCE 跳过 + 选集 0 条」，
+  本次在全新 query 上完全相反，证明 `e4ab0b6` 在真实数据上成立
+
+### 9.5 P2（kb/health）处理结论：真缺陷，已修
+
+- 判定：**不是设计如此**，是「引导-最终化未完成」——别名 `papers` 从未创建，
+  `retrieve.py:139` 的 `hybrid_search` 硬编码按 `KB_COLLECTION` 检索 → **RAG 实际返回空**
+- 处置：复用既有 `bind_candidate` → `create_alias("papers" → "papers_rebuild_empty_bootstrap")`
+  + `refresh_live_digests()`；备份在 `/tmp/kb-finalize-backup-20260919-021036/`
+- 结果：`/api/kb/health` → `qdrant: true`、`chunks: 4527`、`generation.ready: true`、`papers: 14`；
+  `hybrid_search` 由空变为 **5 条命中**。未改任何 `backend/**` 代码，未重建索引
+
+### 9.6 遗留（未处理）
+
+- **P1 存疑**：9.4 的真实任务里选集 `relevance` 全为 `0.0`，与 P1「中文 query 命中英文目录
+  排序退化」的描述一致。P1 虽已由 `3d0ce52` 标为修复，但在真实中文 query 上**未见改善，需复验**。
+- 未 push；`spec-status-changelog.md` 未追加（本次为已有 spec 的缺陷修复，未发生 spec 状态变更）。
