@@ -1199,6 +1199,7 @@
     // approve_plan materializes the Task/Activity message in the backend Saga;
     // reselecting through the same loader hydrates the canonical Task and starts
     // the existing Task07 SSE/Task08 report pipeline exactly once.
+    console.error('[T12 merge]', JSON.stringify({ taskId, selectedTaskId: state.selectedTaskId, eventSource: !!state.eventSource, branch: (taskId && state.selectedTaskId !== taskId) ? 'A' : (taskId && !state.eventSource ? 'B' : 'NONE') }));
     if (taskId && state.selectedTaskId !== taskId) await selectTask(taskId, sessionId);
     else if (taskId && !state.eventSource) { await loadReport(taskId); connectStream(); }
     return merged;
@@ -1665,18 +1666,23 @@
     [...merged.values()].forEach((selection) => {
       if (!selection || typeof selection !== 'object') return;
       const item = state.document.createElement('li');
-      const paperId = state.document.createElement('strong');
-      paperId.textContent = `目录论文：${text(selection.catalog_paper_id, '未知 ID')}`;
+      const paperTitle = state.document.createElement('strong');
+      paperTitle.textContent = paperLabel(selection.catalog_paper_id);
+      paperTitle.appendChild(paperIdHint(text(selection.catalog_paper_id, '未知 ID')));
       const meta = state.document.createElement('span');
       meta.textContent = `相关性：${selection.relevance === undefined ? '待评估详情' : text(selection.relevance)} · ${selection.evidence_level ? evidenceLabel(selection.evidence_level) : '证据等级待报告确认'}`;
       const facets = state.document.createElement('span');
       facets.textContent = `facets：${selectionFacetText(selection.facets)}`;
-      item.append(paperId, meta, facets);
+      item.append(paperTitle, meta, facets);
       list.appendChild(item);
     });
     if (state.selectedPaperCount !== null) {
       const count = state.document.createElement('li'); count.textContent = `已选 ${state.selectedPaperCount} 篇论文`; list.appendChild(count);
     }
+    refreshPaperDisplays(
+      [...merged.values()].map((selection) => selection?.catalog_paper_id),
+      renderSelection,
+    );
   }
 
   function selectionFacetText(value) {
@@ -2039,6 +2045,7 @@
   }
 
   async function loadMatrix(taskId) {
+    console.error('[T12 loadMatrix entry]', taskId);
     if (!taskId) return null;
     state.matrix = null; renderMatrix(null);
     try {
@@ -2052,6 +2059,7 @@
   }
 
   async function loadReport(taskId) {
+    console.error('[T12 loadReport entry]', taskId);
     const stateNode = byId('research-report-state');
     const reportNode = byId('research-report-markdown');
     if (stateNode) stateNode.textContent = '正在读取报告…';
@@ -2193,6 +2201,7 @@
   }
 
   function connectStream(generation = state.streamGeneration) {
+    console.error('[T12DEBUG connectStream]', JSON.stringify({ selectedTaskId: state.selectedTaskId, generation, streamGeneration: state.streamGeneration, streamEnded: state.streamEnded }));
     if (!state.selectedTaskId || generation !== state.streamGeneration || state.streamEnded) return;
     closeStream({ keepTimer: true });
     const currentGeneration = state.streamGeneration;
@@ -2213,8 +2222,10 @@
 
   async function selectTask(taskId, sessionId = null) {
     if (!taskId && !sessionId) return;
+    console.error('[T12 selectTask entry]', JSON.stringify({ taskId, sessionId, selectedTaskId: state.selectedTaskId, streamGeneration: state.streamGeneration }));
     closeStream();
     state.selectedTaskId = taskId || null;
+    console.error('[T12 selectTask after set]', JSON.stringify({ selectedTaskId: state.selectedTaskId, streamGeneration: state.streamGeneration }));
     state.selectedSessionId = sessionId || state.tasks.find((item) => item.research_task_id === taskId)?.research_session_id || null;
     stopAcquisitionPoll();
     state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
@@ -2243,6 +2254,7 @@
       let task;
       if (taskId) task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`);
       else task = sessionTaskProjection(await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`));
+      console.error('[T12DBG] after task fetch; taskId=', taskId, 'hasTask=', !!task, 'rsid=', task && task.research_session_id);
       if (state.selectedTaskId !== taskId && state.selectedSessionId !== sessionId) return;
       if (!task) throw new Error('研究会话不存在');
       const listed = state.tasks.find((item) => item.research_task_id === taskId || item.research_session_id === sessionId) || {};
@@ -2254,7 +2266,8 @@
       if (resolvedSessionId) {
         try {
           const session = task.research_session?.research_session_id === resolvedSessionId ? task.research_session : await requestJson(`/api/research-sessions/${encodeURIComponent(resolvedSessionId)}`);
-          if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) return;
+          console.error('[T12DBG] after session fetch; resolvedSessionId=', resolvedSessionId, 'hasSession=', !!session);
+          if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) { console.error('[T12DBG] guard2270 return; curTask=', state.selectedTaskId, 'wantTask=', taskId, 'curSess=', state.selectedSessionId, 'wantSess=', resolvedSessionId); return; }
           state.selectedSessionId = resolvedSessionId;
           const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
           state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: canonical?.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
@@ -2269,12 +2282,14 @@
       renderBenchmarkSummary();
       if (taskId) {
         await Promise.all([loadMatrix(taskId), loadReport(taskId)]);
+        console.error('[T12DEBUG selectTask-before-connect]', JSON.stringify({ selectedTaskId: state.selectedTaskId, taskId }));
         if (state.selectedTaskId !== taskId) return;
         connectStream();
       } else {
         setText('research-report-state', '任务批准并完成后显示报告。');
       }
     } catch (error) {
+      console.error('[T12DEBUG selectTask caught]', error && (error.stack || error.message || String(error)));
       setText('research-detail-empty', userError(error, '任务详情加载失败。'));
       setDetailVisibility(false);
       setText('research-summary-text', userError(error));
@@ -2289,6 +2304,7 @@
       || tasks.find((task) => task.conversation_id === state.conversationId);
     if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
+      console.error('[T12DBG] refreshWorkspace resetting to null; selectedTaskId was=', state.selectedTaskId, 'selectedSessionId was=', state.selectedSessionId, 'tasksLen=', tasks.length, 'conv=', state.conversationId);
       closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
       state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderTaskHeader(null); setDetailVisibility(false); renderSummary();
@@ -2485,6 +2501,7 @@
 
   return {
     boot, parseConversationId, statusLabel, userError, renderSafeMarkdown,
+    mergeSessionCommandResult,
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
     sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,
