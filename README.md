@@ -56,6 +56,13 @@ ResearchAgent 是一个面向科研工作的本地 AI 助手，提供论文检�
 
 对应的 Archify 规格文件是 [research-agent.architecture.json](docs/architecture/research-agent.architecture.json)。该图基于仓库 commit `5a8181fabdbf11b776d9435eae3cf17fd40167b4` 的代码路径生成，包含 Research Task Runtime、动态模型路由和 Langfuse 观测层。
 
+架构细化图：
+
+- [深度研究任务流程图](docs/architecture/research-task-workflow.html)：Intake、计划审批、LangGraph Worker、证据冻结和报告 Artifact。
+- [论文目录与候选评估流程图](docs/architecture/paper-discovery-workflow.html)：USENIX/DBLP 增量抓取、SQLite 目录、RAG 召回、候选评估和报告冻结。
+
+两张细化图的 Archify 规格文件分别是 [research-task-workflow.workflow.json](docs/architecture/research-task-workflow.workflow.json) 和 [paper-discovery-workflow.workflow.json](docs/architecture/paper-discovery-workflow.workflow.json)。
+
 ## 快速开始
 
 ### 1. 安装 Python 依赖

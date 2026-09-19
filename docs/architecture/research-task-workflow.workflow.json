@@ -1,0 +1,96 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ResearchAgent 深度研究任务流程",
+    "locale": "zh-CN",
+    "subtitle": "从研究 Intake 到可引用报告的受控执行路径",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "approved-happy-path",
+        "label": "批准后的主路径",
+        "focus": ["researcher", "chat", "intake", "planner", "approval", "runtime", "workers", "synthesis", "artifact"],
+        "note": "查看一次已批准研究从用户请求到最终报告的完整路径。"
+      },
+      {
+        "id": "approval-gate",
+        "label": "计划审批与取消",
+        "focus": ["planner", "approval", "revision", "cancelled", "runtime"],
+        "note": "查看计划等待审批、修改计划、拒绝和取消研究的分支。"
+      },
+      {
+        "id": "evidence-observability",
+        "label": "证据与观测",
+        "focus": ["workers", "evidence", "synthesis", "artifact", "observability"],
+        "note": "查看 Worker 事件、证据集合、不可变报告和 Langfuse 观测。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "ui", "label": "用户与界面" },
+    { "id": "control", "label": "研究控制面" },
+    { "id": "execution", "label": "Worker 执行" },
+    { "id": "evidence", "label": "证据与报告" },
+    { "id": "recovery", "label": "审批与恢复", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "intake-phase", "label": "Intake", "fromCol": 0, "toCol": 0 },
+    { "id": "plan-phase", "label": "Plan + Approval", "fromCol": 1, "toCol": 2, "variant": "emphasis" },
+    { "id": "run-phase", "label": "Execute", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
+    { "id": "report-phase", "label": "Synthesize + Persist", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "plan-control", "label": "版本化计划与人工门禁", "lane": "control", "fromCol": 1, "toCol": 2, "variant": "emphasis" },
+    { "id": "worker-pool", "label": "并行 Worker 与事件流", "lane": "execution", "fromCol": 3, "toCol": 4, "variant": "dashed" },
+    { "id": "report-evidence", "label": "可追溯证据链", "lane": "evidence", "fromCol": 4, "toCol": 5, "variant": "emphasis" },
+    { "id": "recovery-branch", "label": "修改、拒绝与取消", "lane": "recovery", "fromCol": 2, "toCol": 4, "variant": "security" }
+  ],
+  "mainPath": ["researcher", "chat", "intake", "planner", "approval", "runtime", "workers", "evidence", "synthesis", "artifact"],
+  "semanticChecks": {
+    "allowedRoots": ["researcher"],
+    "allowedTerminals": ["artifact", "cancelled", "revision", "observability"],
+    "requiredPaths": [
+      { "from": "intake", "to": "planner" },
+      { "from": "approval", "to": "runtime" },
+      { "from": "workers", "to": "synthesis" },
+      { "from": "synthesis", "to": "artifact" }
+    ]
+  },
+  "nodes": [
+    { "id": "researcher", "lane": "ui", "col": 0, "type": "external", "label": "研究者", "sublabel": "主题 · 目标", "width": 132 },
+    { "id": "chat", "lane": "ui", "col": 1, "type": "frontend", "label": "研究会话", "sublabel": "创建任务 · 事件", "width": 132 },
+    { "id": "intake", "lane": "control", "col": 1, "type": "backend", "label": "研究 Intake", "sublabel": "校验范围 · 预算", "tag": "required", "width": 132 },
+    { "id": "planner", "lane": "control", "col": 2, "type": "backend", "label": "Planner", "sublabel": "版本化计划", "tag": "v1 / v2...", "width": 132 },
+    { "id": "approval", "lane": "recovery", "col": 2, "type": "security", "label": "计划审批", "sublabel": "approve · revise", "tag": "human gate", "width": 132 },
+    { "id": "revision", "lane": "recovery", "col": 3, "type": "messagebus", "label": "修改计划", "sublabel": "生成新版本", "width": 132 },
+    { "id": "cancelled", "lane": "recovery", "col": 4, "type": "security", "label": "取消研究", "sublabel": "终止 Worker", "width": 132 },
+    { "id": "runtime", "lane": "control", "col": 3, "type": "backend", "label": "Research Runtime", "sublabel": "LangGraph 调度", "tag": "orchestrator", "width": 132 },
+    { "id": "workers", "lane": "execution", "col": 4, "type": "messagebus", "label": "并行 Workers", "sublabel": "search · evaluate", "tag": "events", "width": 132 },
+    { "id": "evidence", "lane": "evidence", "col": 4, "type": "database", "label": "证据集合", "sublabel": "引用 · 评估理由", "width": 132 },
+    { "id": "synthesis", "lane": "evidence", "col": 5, "type": "backend", "label": "报告合成", "sublabel": "引用校验 · Markdown", "width": 132 },
+    { "id": "artifact", "lane": "evidence", "col": 5, "type": "database", "label": "不可变 Artifact", "sublabel": "写回 · 下载", "tag": "final", "width": 132, "yOffset": 78 },
+    { "id": "observability", "lane": "execution", "col": 5, "type": "cloud", "label": "Langfuse", "sublabel": "trace · timing", "width": 132 }
+  ],
+  "edges": [
+    { "id": "request-chat", "from": "researcher", "to": "chat", "label": "提交研究请求", "variant": "emphasis" },
+    { "id": "chat-intake", "from": "chat", "to": "intake", "label": "创建会话", "variant": "default" },
+    { "id": "intake-planner", "from": "intake", "to": "planner", "label": "参数已校验", "variant": "emphasis" },
+    { "id": "planner-approval", "from": "planner", "to": "approval", "label": "提交 vN", "variant": "security" },
+    { "id": "approval-runtime", "from": "approval", "to": "runtime", "label": "approved", "variant": "emphasis" },
+    { "id": "approval-revision", "from": "approval", "to": "revision", "label": "修改计划", "variant": "dashed", "role": "branch" },
+    { "id": "approval-cancel", "from": "approval", "to": "cancelled", "label": "取消", "variant": "security", "role": "error" },
+    { "id": "runtime-workers", "from": "runtime", "to": "workers", "label": "派发 LangGraph 节点", "variant": "emphasis" },
+    { "id": "workers-evidence", "from": "workers", "to": "evidence", "label": "候选与评估事件", "variant": "dashed" },
+    { "id": "evidence-synthesis", "from": "evidence", "to": "synthesis", "label": "冻结证据上下文", "variant": "emphasis" },
+    { "id": "synthesis-artifact", "from": "synthesis", "to": "artifact", "label": "写入报告 Artifact", "variant": "emphasis" },
+    { "id": "workers-observability", "from": "workers", "to": "observability", "label": "运行指标", "variant": "dashed", "role": "async" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "控制面", "items": ["Intake 先校验主题、目标、时间范围和预算", "计划必须经过用户批准后才会进入执行"] },
+    { "dot": "emerald", "title": "执行面", "items": ["Research Runtime 通过 LangGraph 管理节点、并行 Worker 和事件", "搜索、评估、覆盖检查共享同一研究会话状态"] },
+    { "dot": "amber", "title": "结果面", "items": ["报告只使用已冻结的证据集合", "最终 Markdown 以不可变 Artifact 写回会话并可下载"] }
+  ]
+}
