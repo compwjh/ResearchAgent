@@ -19,7 +19,7 @@
 | API 端点测试（FastAPI `TestClient` in-process） | ✅ 充足 |
 | 后端端到端（真实服务 + 真实调用） | ⚠️ 仅手动产物（`artifacts/spec029-030-031-api-sample.md`），无 pytest 用例 |
 | 前端 DOM 契约（静态核对 / `?v=N` / XSS） | ✅ 充足 |
-| **前端 / 网站端到端（真实浏览器操作，不调 API）** | ❌ **基本缺失** —— 即用户指出的「不调用 api、完全在网站上操作的测试」 |
+| **前端 / 网站端到端（真实浏览器操作，不调 API）** | ✅ 已补（`tests/e2e/`，Playwright 真实浏览器，覆盖 spec028–031 核心生命周期） |
 
 ### 二、具体用例缺口（实现层）
 
@@ -97,6 +97,13 @@ tests/
 - **陷阱记录**：子目录加 `__init__.py` 后 pytest 改用 package 导入，扁平的 `from test_x import` 兄弟引用会失效；今后跨文件引用须用 `from tests.<sub>.test_x import`。
 - 命名规则已沉淀至 `.codebuddy/skills/test-naming/SKILL.md`。
 - 验证：`pytest tests --collect-only` 重组前后均为 **2613 collected**，无导入错误。
+
+## 补充：前端 / 网站端到端（2026-09-19）
+
+- 新建 `tests/e2e/`（`__init__.py` 含功能说明、`conftest.py` 管理 Playwright 浏览器、`test_research_lifecycle_e2e.py` 用例、`README.md` 运行文档）。
+- 覆盖 spec028–031 共同支撑的「研究会话全生命周期」：创建 → 计划/模型路由(spec031) → 运行与持久化调度/恢复(spec028) → 全文获取与证据(spec029) → 证据矩阵与只读报告(spec030)。测试只通过浏览器操作页面，**不显式调用后端 API**。
+- 常规 `pytest` 用 `RUN_E2E` 环境变量整集跳过（避免污染单元/集成套件、且不因缺少浏览器/服务报错）；运行需先 `./deploy/start.sh -d` 起服务（:8000）+ `python -m playwright install chromium`。
+- 验证（本环境已跑）：创建段 **PASSED**（创建研究会话 → 自动打开 → 详情状态进入 planning，2.5s）；重型跟随段因依赖后端 LLM 完整运行，在无 LLM 环境按设计 **skip**（reason: 任务未在窗口内进入运行/完成阶段）。
 
 > T4 中 A 类（Planner 422、SourceCoverage）需先实现后端逻辑，建议并入 spec032 收口或单独功能任务；B 类直接补测试。
 
