@@ -366,3 +366,4 @@
 - **Spec031 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 门禁均通过，开始唯一全量回归、前后端运行时 smoke、部署证据和最终复盘；多实例 NO-GO 与遗留 P2 只做诚实记录。
 - **Spec031 Task06：最终评审、回归、部署与复盘**：`实施中` → `已完成`。修复 benchmark 质量/provenance、压缩 worker 持久化顺序、测试 worker 隔离及论文评估安全选集投影；最终全量回归 `2539 passed, 5 warnings, 67 subtests`，8500 部署 smoke 通过。
 - **Spec031：动态模型路由与资源调度优化**：`实施中` → `已完成`。Task02–06、三份评审、复盘和运行时验证已收口；仅单实例范围 GO，多实例明确 NO-GO。
+- **Spec034：会话式深度研究 Agent Runtime**：`已完成` → `实施中`。真实浏览器端到端排查确认后端链路正常（approve_plan 返回 200、`research_service.start` 在进程内后台线程执行编排、SSE 可取到事件），缺口在前端：计划批准后未加载新建 Task 详情与事件流，时间线因无 Task 事件（`hidden = events.length === 0`）不渲染，致使 spec028 运行/调度恢复、spec029 全文获取、spec030 证据矩阵无法验证；新增 Task12 承接该前端修复。
