@@ -1017,6 +1017,19 @@ def _deletion_succeeded(value: Any) -> bool:
     return str(getattr(status, "value", status)).casefold() in {"completed", "deleted", "success"}
 
 
+_STORAGE_LOCKED_MARKER = "already accessed by another instance"
+
+
+def _is_storage_locked_text(value: Any) -> bool:
+    """判定一段诊断文本是否说明 qdrant 存储被另一个实例独占。
+
+    索引器常常**不抛异常**、而是把原因放进结果映射里（见 ``_index_error_detail``）；
+    上层只看到一句裸的 ``RuntimeError("index failed")``。所以除了异常本身，
+    也必须能从索引器返回的原文做同一窄匹配。
+    """
+    return _STORAGE_LOCKED_MARKER in str(value or "")
+
+
 def _is_storage_locked_error(error: BaseException) -> bool:
     """窄匹配 qdrant 存储被另一个实例独占的 RuntimeError（spec-021 Task03）。
 
@@ -1024,7 +1037,7 @@ def _is_storage_locked_error(error: BaseException) -> bool:
     （paper_discovery.application.paper_import）映射为固定文案的 KB_STORAGE_LOCKED。
     绝不把异常原文（可能含路径）作为返回内容。
     """
-    return isinstance(error, RuntimeError) and "already accessed by another instance" in str(error)
+    return isinstance(error, RuntimeError) and _is_storage_locked_text(error)
 
 
 def _call_supported(function: Callable[..., Any], positional: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
@@ -1320,7 +1333,16 @@ class KnowledgeBasePaperImportAdapter:
                 },
             )
             if not _index_succeeded(index_result):
-                raise RuntimeError("index failed")
+                # 索引器常常不抛异常、只把原因放进结果里。裸抛 "index failed" 会把原因
+                # 丢在日志里，上层（以及 paper_discovery 的窄匹配）再也认不出存储争用，
+                # 最终吞成不可行动的 KB_INDEX_FAILED。这里把**已分类**的原因带上：
+                # 只写判定出的类别标记，绝不把含路径的原文放进异常。
+                detail = _index_error_detail(index_result)
+                raise RuntimeError(
+                    f"index failed: {_STORAGE_LOCKED_MARKER}"
+                    if _is_storage_locked_text(detail)
+                    else "index failed"
+                )
             index_ok = True
             updates: dict[str, Any] = {"status": STATUS_INDEXED, "error": None}
             if isinstance(index_result, Mapping):
