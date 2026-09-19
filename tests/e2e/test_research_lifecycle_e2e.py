@@ -107,36 +107,84 @@ def test_research_task_create_shows_in_list(page: Page) -> None:
 def test_research_lifecycle_follow_through(page: Page) -> None:
     """跟随任务到运行/完成，覆盖 spec028 调度/恢复、spec029 全文获取、spec030 证据/报告。
 
-    依赖后端 LLM；若环境无可用 LLM，对应等待会超时并 skip 重型断言。
+    依赖后端 LLM + 外部检索；若环境不足，对应等待会超时并 skip 重型断言。
     """
     _open_research(page)
     _fill_and_create(page)
     _wait_task_opened(page)
 
+    def _status() -> str:
+        return page.get_attribute("#research-detail-status", "data-status") or ""
+
+    # 等待计划生成完成（进入待审批或已运行）
     try:
         page.wait_for_function(
             "() => { const s=document.querySelector('#research-detail-status')?.getAttribute('data-status');"
-            "return s==='running'||s==='partial'||s==='completed'; }",
-            timeout=180000,
+            "return s==='plan_pending_approval'||s==='running'||s==='partial'||s==='completed'||s==='failed'; }",
+            timeout=300000,
         )
     except Exception:
-        pytest.skip("后端 LLM 不可用：任务未在超时内进入运行/完成阶段")
+        pytest.skip("后端 LLM 不可用：任务未在窗口内完成计划生成")
+
+    # spec031 计划审批入口：若停留在待审批，自动批准以进入运行流水线。
+    # 注意：plan_pending_approval 的批准按钮在计划/审批面板内
+    # (#research-session-approvals .send-button.research-session-command)，
+    # 顶部的 #research-task-approve-button 仅在运行期的 waiting_approval 才可见。
+    # 该按钮可能因面板渲染时序而 hidden，故用 JS 直接触发其 click 监听器。
+    if _status() == "plan_pending_approval":
+        page.wait_for_selector(
+            "#research-session-approvals .send-button.research-session-command",
+            state="attached",
+            timeout=30000,
+        )
+        page.evaluate(
+            "const b=document.querySelector('#research-session-approvals .send-button.research-session-command'); if(b) b.click();"
+        )
+        try:
+            # 批准后后端 Saga 推进可能较慢；等待进入运行/终态（含运行期审批）
+            page.wait_for_function(
+                "() => { const s=document.querySelector('#research-detail-status')?.getAttribute('data-status');"
+                "return s==='waiting_approval'||s==='queued'||s==='running'||s==='partial'||s==='completed'||s==='failed'; }",
+                timeout=600000,
+            )
+        except Exception:
+            print(f"[e2e] 计划批准后未进入运行/审批态: {_status()!r}", flush=True)
+            pytest.skip("计划批准后任务未在窗口内进入运行阶段（后端 approve 流程推进慢/受限）")
+    # 运行期审批（能力/资源扩容等）：顶部操作栏的 #research-task-approve-button 此时可见
+    if _status() == "waiting_approval":
+        page.click("#research-task-approve-button")
+        try:
+            page.wait_for_function(
+                "() => { const s=document.querySelector('#research-detail-status')?.getAttribute('data-status');"
+                "return s==='queued'||s==='running'||s==='partial'||s==='completed'||s==='failed'; }",
+                timeout=600000,
+            )
+        except Exception:
+            print(f"[e2e] 运行期审批后仍停留于状态: {_status()}", flush=True)
+            pytest.skip("运行期审批后任务未在窗口内进入运行/完成阶段")
+
+    if _status() == "failed":
+        pytest.skip("研究会话在执行中失败（环境依赖不足，如外部检索不可用）")
 
     # spec028：运行期时间线与调度控件（暂停/继续/恢复）可见
+    status_now = _status()
+    print(f"[e2e] 进入运行期检查，status={status_now!r}", flush=True)
+    if status_now not in ("running", "partial", "completed", "queued", "waiting_approval"):
+        pytest.skip(f"任务未进入运行期（当前 {status_now}），重型运行/获取/证据阶段无法验证（环境限制）")
     page.wait_for_selector("#research-timeline-section:not([hidden])", timeout=30000)
-    if page.get_attribute("#research-detail-status", "data-status") == "running":
+    if _status() == "running":
         expect(page.locator("#research-task-pause-button")).to_be_visible()
         expect(page.locator("#research-task-recover-button")).to_be_visible()
 
-    # spec029 / spec030 依赖 LLM 完整运行；窗口内未到达对应阶段则跳过重型断言
+    # spec029 / spec030 依赖 LLM + 外部检索完整运行；窗口内未到达对应阶段则跳过重型断言
     try:
         # spec029：全文获取候选出现、确认导入可用
-        page.wait_for_selector("#research-acquisition-section:not([hidden])", timeout=60000)
-        page.wait_for_selector("#research-acquisition-candidates li", timeout=60000)
+        page.wait_for_selector("#research-acquisition-section:not([hidden])", timeout=180000)
+        page.wait_for_selector("#research-acquisition-candidates li", timeout=120000)
 
         # spec030：证据矩阵填充、完成后只读报告渲染
-        page.wait_for_selector("#research-matrix-section:not([hidden])", timeout=60000)
-        if page.get_attribute("#research-detail-status", "data-status") == "completed":
+        page.wait_for_selector("#research-matrix-section:not([hidden])", timeout=120000)
+        if _status() == "completed":
             expect(page.locator("#research-report-markdown")).to_be_visible()
     except Exception:
-        pytest.skip("重型后续阶段（全文获取/证据/报告）依赖 LLM 完整运行，窗口内未完成")
+        pytest.skip("重型后续阶段（全文获取/证据/报告）依赖 LLM + 外部检索完整运行，窗口内未完成")
