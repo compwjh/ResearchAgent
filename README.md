@@ -54,7 +54,7 @@ ResearchAgent 是一个面向科研工作的本地 AI 助手，提供论文检�
 
 打开 [ResearchAgent 项目架构图](docs/architecture/research-agent-architecture.html) 查看可交互的 Archify 架构图。
 
-对应的 Archify 规格文件是 [research-agent.architecture.json](docs/architecture/research-agent.architecture.json)。该图基于仓库 commit `f7ca5994316249232ccf70fa37edf45dc66bace4` 的代码路径生成。
+对应的 Archify 规格文件是 [research-agent.architecture.json](docs/architecture/research-agent.architecture.json)。该图基于仓库 commit `5a8181fabdbf11b776d9435eae3cf17fd40167b4` 的代码路径生成，包含 Research Task Runtime、动态模型路由和 Langfuse 观测层。
 
 ## 快速开始
 
