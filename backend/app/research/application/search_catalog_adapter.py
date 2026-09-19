@@ -109,6 +109,9 @@ class CatalogSourceFactory:
         accepted_type = getattr(source_entry, "Usenix" + "AcceptedSource")
         dblp_type = getattr(source_entry, "DBLP" + "PublicationSource")
         from backend.app.platform.config import BASE_DIR
+        from backend.app.platform.settings.paper_discovery_settings import (
+            DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
+        )
         from backend.app.platform.settings.settings_repository import load_article_settings
 
         settings = self.settings or load_article_settings()
@@ -143,7 +146,9 @@ class CatalogSourceFactory:
             accepted_source=accepted,
             dblp_source=dblp,
             rag=rag,
-            ttl_seconds=int(getattr(settings, "paper_discovery_search_ttl_seconds", 86400)),
+            ttl_seconds=int(
+                getattr(settings, "paper_discovery_search_ttl_seconds", DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS)
+            ),
             source_scope=source_scope,
             # Explicit source requests must execute that source even when the
             # global DBLP feature flag remains off.  The graph still preserves
@@ -268,7 +273,20 @@ class CatalogSearchAdapter:
         """
         from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchResult
 
-        ttl_seconds = 86400
+        from backend.app.platform.settings.paper_discovery_settings import (
+            DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
+        )
+
+        # 只有调用方显式注入 settings 时才读配置；否则用 7 天默认值。此处刻意不做
+        # load_article_settings()，保持该适配器「装配期不碰磁盘」的既有性质。
+        injected_settings = getattr(self, "settings", None)
+        ttl_seconds = int(
+            getattr(
+                injected_settings,
+                "paper_discovery_search_ttl_seconds",
+                DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
+            )
+        )
         if self._source_factory is None:
             self._source_factory = CatalogSourceFactory(
                 store=self._store, accepted_source=self._accepted_source,

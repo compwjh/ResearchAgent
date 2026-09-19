@@ -104,13 +104,16 @@ def _find(items, suffix):
 
 def test_skipped_synthesizer_is_marked_failed_not_queued(tmp_path):
     """evaluator 产出无法解析出有效候选时，synthesizer 必须落 failed + error_code。"""
-    # 聚合形产出且 evidence_refs 指向没有元数据来源的 ID -> 无 validated 候选。
+    # 聚合形产出（candidate_id 为 null）且没有任何 catalog 证据引用 -> 解析不出
+    # 任何 validated 候选。注意：候选合法性由「召回白名单」裁定，元数据只做字段
+    # 富化、不再是闸门；所以这里必须用「完全没有 catalog 引用」来构造空集，
+    # 而不是靠「元数据缺失」。
     evaluator_output = {
         "schema_version": "paper-evaluation-v1",
         "candidate_id": None,
         "keep": True,
         "relevance_score": 0.5,
-        "evidence_refs": ["catalog:paper-1"],
+        "evidence_refs": [],
         "source_refs": [],
     }
     store, task, _ = _build(tmp_path, evaluator_output)

@@ -641,6 +641,24 @@ class ResearchStore:
         }
         if "search_id" not in task_columns:
             connection.execute("ALTER TABLE research_tasks ADD COLUMN search_id TEXT")
+        # 一个研究任务可扇出多个 search worker，各自产出不同的 server 快照句柄。
+        # 选集必须记住自己来自哪一次检索，否则导入桥只能拿任务级（第一个）search_id
+        # 去解析候选，遇到「选集来自后出发的 worker」就必然 CANDIDATE_NOT_FOUND。
+        # 加性加列，不改 schema version，pre-029 库保持可读。
+        selection_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(research_paper_selections)").fetchall()
+        }
+        if "source_search_id" not in selection_columns:
+            connection.execute("ALTER TABLE research_paper_selections ADD COLUMN source_search_id TEXT")
+        # 选集可能横跨多个 search worker 的快照，导入桥会按来源快照建多个批次。
+        # batch_id 保留为主批次，batch_ids_json 记录全部批次 id（JSON 数组）。
+        approval_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(research_acquisition_approvals)").fetchall()
+        }
+        if "batch_ids_json" not in approval_columns:
+            connection.execute("ALTER TABLE research_acquisition_approvals ADD COLUMN batch_ids_json TEXT")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_evidence_task ON research_evidence_upgrades(research_task_id)")
         # Existing Spec027 databases already contain a current selection but
         # no version row.  Seed it as version 1 without copying paper data.
@@ -4660,6 +4678,44 @@ class ResearchStore:
             rows = conn.execute(query, tuple(args)).fetchall()
         return [self._routing_decision_from_row(row) for row in rows]
 
+    def list_routing_decisions_paged(
+        self, *, owner_id: str, task_type: str | None = None, filter_text: str | None = None,
+        cursor: str | None = None, limit: int = 20,
+    ) -> tuple[list[object], str | None]:
+        """Owner-scoped, redaction-agnostic keyset page of routing decisions.
+
+        ``cursor`` is the opaque ``encode_cursor(created_at, decision_id)`` token;
+        an undecodable cursor raises ``ValueError`` so the API layer can map it to
+        a 400.  Filtering is an owner-scoped substring match over task_type /
+        chosen_model / reason.  ``limit`` is clamped to [1, 100]; the returned
+        page never exceeds it and ``next_cursor`` is None on the last page.
+        """
+        limit = max(1, min(int(limit), 100))
+        args: list[object] = [owner_id]
+        sql = "SELECT * FROM research_routing_decisions WHERE owner_id=?"
+        if task_type:
+            sql += " AND task_type=?"
+            args.append(task_type)
+        if filter_text:
+            sql += " AND (task_type LIKE ? OR chosen_model LIKE ? OR reason LIKE ?)"
+            like = f"%{filter_text}%"
+            args.extend([like, like, like])
+        if cursor is not None:
+            at, tid = decode_cursor(cursor)  # raises ValueError -> 400 upstream
+            sql += " AND (created_at, decision_id) > (?, ?)"
+            args.extend([at, tid])
+        sql += " ORDER BY created_at ASC, decision_id ASC LIMIT ?"
+        args.append(limit + 1)
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(args)).fetchall()
+        page = rows[:limit]
+        items = [self._routing_decision_from_row(row) for row in page]
+        next_cursor = None
+        if len(rows) > limit:
+            last = items[-1]
+            next_cursor = encode_cursor(last.created_at, last.decision_id)
+        return items, next_cursor
+
     def save_model_outcome(self, outcome, *, owner_id: str):
         from backend.app.research.application.routing_observation import _bounded_text, _validate_outcome
         _bounded_text(owner_id, name="owner_id", limit=160)
@@ -4785,6 +4841,23 @@ class ResearchStore:
     def get_routing_policy(self, version: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM research_routing_policies WHERE version=?", (version,)).fetchone()
+        if row is None:
+            return None
+        return {
+            "version": row["version"], "profile": row["profile"], "rules": json.loads(row["rules_json"]),
+            "thresholds": json.loads(row["thresholds_json"]), "status": row["status"], "created_at": row["created_at"],
+        }
+
+    def get_active_routing_policy(self) -> dict | None:
+        """Return the single currently-active routing policy, or None.
+
+        Used by the read-only ``GET /status`` projection.  Never raises on a
+        missing row; a None result is the legitimate "no active policy" state.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_routing_policies WHERE status='active' ORDER BY created_at DESC, version DESC LIMIT 1"
+            ).fetchone()
         if row is None:
             return None
         return {
@@ -5062,8 +5135,9 @@ class ResearchStore:
                 for s in selections:
                     conn.execute(
                         """INSERT INTO research_paper_selections(
-                            research_task_id, catalog_paper_id, relevance, facets_json, evidence_level, created_at
-                        ) VALUES(?,?,?,?,?,?)""",
+                            research_task_id, catalog_paper_id, relevance, facets_json, evidence_level,
+                            created_at, source_search_id
+                        ) VALUES(?,?,?,?,?,?,?)""",
                         (
                             research_task_id,
                             s.catalog_paper_id,
@@ -5071,6 +5145,7 @@ class ResearchStore:
                             s.facets_json,
                             s.evidence_level,
                             s.created_at or now,
+                            getattr(s, "source_search_id", None),
                         ),
                     )
                 conn.commit()
@@ -5191,7 +5266,7 @@ class ResearchStore:
         return [AcquisitionApproval.from_row(dict(row)) for row in rows]
 
     def update_acquisition_approval(self, research_task_id: str, selection_version: int, **fields) -> AcquisitionApproval:
-        allowed = {"status", "batch_id"}
+        allowed = {"status", "batch_id", "batch_ids_json"}
         if set(fields) - allowed:
             raise ValueError("unknown acquisition approval fields")
         assignments = [f"{key}=?" for key in fields]
