@@ -29,7 +29,11 @@ def test_legacy_cleanup_dry_run_identifies_children_and_execute_is_exact(tmp_pat
     with store._connect() as db:
         db.execute("INSERT INTO research_plans VALUES('legacy-1',1,'rule','x','[]','proposed','2020')")
         db.execute("INSERT INTO research_events VALUES('legacy-1',1,'task','{}','2020')")
-        db.execute("INSERT INTO research_paper_selections VALUES('legacy-1','paper-1',0,'[]','catalog','2020')")
+        db.execute(
+            "INSERT INTO research_paper_selections("
+            "research_task_id, catalog_paper_id, relevance, facets_json, evidence_level, created_at"
+            ") VALUES('legacy-1','paper-1',0,'[]','catalog','2020')"
+        )
         db.execute("INSERT INTO preliminary_reports VALUES('report-1','legacy-1',1,'preliminary','# report','{}','2020')")
     plan = store.dry_run_legacy_cleanup("owner-a", external_snapshot=_verified_cross_snapshot)
     assert plan["target_task_ids"] == ["legacy-1"]

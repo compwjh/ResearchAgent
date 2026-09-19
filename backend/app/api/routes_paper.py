@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.api import common
 from backend.app.api.common import *  # noqa: F401,F403
@@ -50,6 +51,13 @@ from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchServiceError,
 )
 from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchSession, SearchSourceProgress
+from backend.app.platform.settings.paper_discovery_settings import (
+    DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
+)
+from backend.app.paper_discovery.infrastructure.source_registry import (
+    SourceRegistry,
+    SourceToggleForbiddenError,
+)
 
 router = APIRouter()
 
@@ -106,7 +114,9 @@ def create_async_paper_search(request: AsyncPaperSearchRequest):
             details={"min_year": 1900, "max_year": current_year},
         )
     now = datetime.now(timezone.utc)
-    ttl = getattr(common.article_settings, "paper_discovery_search_ttl_seconds", 86400)
+    ttl = getattr(
+        common.article_settings, "paper_discovery_search_ttl_seconds", DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS
+    )
     search_id = uuid.uuid4().hex
     job = SearchJob(search_id, request.query.strip(), request.conference_ids, years, "queued", "catalog-search-v1",
                     False, None, 0, now.isoformat(timespec="seconds").replace("+00:00", "Z"), None, None,
@@ -346,7 +356,11 @@ def list_accepted_papers(
 
     search_id = uuid.uuid4().hex
     now = datetime.now(timezone.utc)
-    ttl = getattr(service, "search_ttl_seconds", getattr(common.article_settings, "paper_discovery_search_ttl_seconds", 86400))
+    ttl = getattr(
+        service,
+        "search_ttl_seconds",
+        getattr(common.article_settings, "paper_discovery_search_ttl_seconds", DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS),
+    )
     session = SearchSession(
         search_id=search_id,
         query=query,
@@ -999,3 +1013,160 @@ _BROWSER_ERROR_STATUS = {
     BROWSER_SESSION_EXPIRED: 424,
     BROWSER_SESSION_REQUIRED: 424,
 }
+
+
+# --- Spec032: /api/papers/sources -------------------------------------------------
+#
+# 来源集合由服务端受控的 ``SourceRegistry`` 决定，调用方不能新增来源，也不能传
+# 任意根 URL / host（SSRF 规则沿用既有平台能力）。
+
+#: 各来源的自有同步入口（真实抓取由既有调度路径驱动，不在请求线程内发起网络请求）。
+_SOURCE_SYNC_ENTRYPOINTS = {
+    "usenix": "sync_usenix_units",
+    "ccs": "sync_units",
+    "ieee_sp": "sync_units",
+    "ndss": "sync_units",
+}
+
+_SYNC_YEAR_MIN = 1900
+_SYNC_YEAR_MAX = 2100
+_SYNC_YEARS_MAX = 32
+
+
+class PaperSourceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class PaperSourceSyncScope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    years: list[int] = Field(default_factory=list)
+
+
+class PaperSourceSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope: PaperSourceSyncScope | None = None
+
+
+_SOURCE_REGISTRY_SINGLETON: SourceRegistry | None = None
+
+
+def _source_registry() -> SourceRegistry:
+    """进程内共享的单一来源注册表。
+
+    PATCH 的启停必须对其后的请求可见，因此注册表按进程缓存而非每请求新建。
+    注意：启停是**运行时**状态，随进程重启回到服务端配置
+    （``SourceRegistry(disabled_by_config=...)``）决定的默认值；跨重启持久化的
+    入口是服务端配置，不是本接口。
+    """
+    global _SOURCE_REGISTRY_SINGLETON
+    if _SOURCE_REGISTRY_SINGLETON is None:
+        _SOURCE_REGISTRY_SINGLETON = SourceRegistry()
+    return _SOURCE_REGISTRY_SINGLETON
+
+
+def _source_payload(entry) -> dict:
+    """Safe, sanitized projection of one registered source.
+
+    ``health`` is configuration-level and side-effect free by design: this
+    endpoint must never trigger a network fetch or a PDF probe (Spec032).
+    """
+    return {
+        **entry.to_dict(),
+        "health": {
+            "configured": True,
+            "enabled": entry.enabled,
+            "network_probe": "not_performed",
+        },
+    }
+
+
+def _validate_sync_years(years) -> str | None:
+    """Return an error code when the requested scope is not a controlled unit."""
+    if len(years) > _SYNC_YEARS_MAX:
+        return "SCOPE_TOO_LARGE"
+    for year in years:
+        if not isinstance(year, int) or isinstance(year, bool):
+            return "INVALID_SCOPE"
+        if year < _SYNC_YEAR_MIN or year > _SYNC_YEAR_MAX:
+            return "INVALID_SCOPE"
+    return None
+
+
+@router.get("/papers/sources")
+def list_paper_sources(filter: str = ""):
+    """列出服务端已注册来源：能力、权威级别、启停状态与缓存范围。
+
+    ``filter`` 按 ``source_id`` / ``source_kind`` 做不区分大小写的子串过滤。
+    本端点不发起任何外部请求，``health`` 为配置级状态。
+    """
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    needle = (filter or "").strip().casefold()
+    if len(needle) > 64:
+        return _paper_api_error(400, "INVALID_SOURCE_FILTER", "来源过滤条件过长")
+    try:
+        entries = _source_registry().list_all()
+    except Exception:
+        return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "来源配置暂时不可用", True)
+    if needle:
+        entries = [
+            entry for entry in entries
+            if needle in entry.source_id.casefold() or needle in str(entry.source_kind).casefold()
+        ]
+    return {"sources": [_source_payload(entry) for entry in entries], "count": len(entries)}
+
+
+@router.patch("/papers/sources/{source_id}")
+def update_paper_source(source_id: str, request: PaperSourceUpdateRequest):
+    """只允许修改已注册来源的 enabled 状态；不提供新增来源入口。"""
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    registry = _source_registry()
+    entry = registry.get(source_id)
+    if entry is None:
+        return _paper_api_error(404, "SOURCE_NOT_FOUND", "来源不存在")
+    try:
+        updated = registry.set_enabled(source_id, request.enabled, via_external=True)
+    except SourceToggleForbiddenError:
+        return _paper_api_error(409, "SOURCE_TOGGLE_FORBIDDEN", "内置必需来源不允许通过接口启停")
+    except Exception:
+        return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "来源状态暂时无法更新", True)
+    return {"source": _source_payload(updated)}
+
+
+@router.post("/papers/sources/{source_id}/sync", status_code=202)
+def sync_paper_source(source_id: str, request: PaperSourceSyncRequest | None = None):
+    """接受一次受控范围（年度单元）的目录同步请求。
+
+    请求体只接受 ``scope.years``；不接受任意 URL / host，避免 SSRF。真实抓取由
+    各来源自有的同步入口（``sync_units`` / ``sync_usenix_units``）在既有调度路径
+    中执行，**不在本请求线程内发起网络请求**——与本文件其它端点保持同一约定。
+    """
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    registry = _source_registry()
+    entry = registry.get(source_id)
+    if entry is None:
+        return _paper_api_error(404, "SOURCE_NOT_FOUND", "来源不存在")
+    if not entry.enabled:
+        return _paper_api_error(409, "SOURCE_DISABLED", "来源已停用，无法同步")
+    entrypoint = _SOURCE_SYNC_ENTRYPOINTS.get(source_id)
+    if entrypoint is None:
+        # dblp / openalex / crossref 通过既有检索图刷新，没有独立的同步入口。
+        return _paper_api_error(409, "SYNC_ENTRYPOINT_UNAVAILABLE", "该来源没有独立的同步入口")
+    scope = request.scope if request is not None else None
+    years = list(getattr(scope, "years", None) or [])
+    error_code = _validate_sync_years(years)
+    if error_code is not None:
+        return _paper_api_error(400, error_code, "同步范围无效")
+    return {
+        "sync_id": f"sync-{source_id}-{uuid.uuid4().hex[:16]}",
+        "source_id": source_id,
+        "entrypoint": entrypoint,
+        "scope": {"years": sorted(set(years))},
+        "status": "queued",
+    }

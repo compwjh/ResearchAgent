@@ -372,6 +372,39 @@ def _catalog_metadata_index(evidence: Iterable[Mapping[str, Any]]) -> dict[str, 
     return indexed
 
 
+def _recalled_candidate_ids(
+    completed_outputs: Mapping[str, Any],
+    item_by_id: Mapping[str, Any] | None = None,
+) -> set[str]:
+    """Catalog IDs actually recalled by Search Workers in this task.
+
+    This is the canonical recall allowlist for evaluator/synthesizer binding.
+    It is derived from each Search Worker's ``candidates`` handoff (the
+    authoritative recall list), never from model evaluator output and never
+    from catalog metadata completeness.  A missing/empty ``catalog_metadata``
+    therefore can never invalidate an otherwise-legitimate candidate, while a
+    model-fabricated ID is still rejected because it is never in the recall set.
+
+    ``item_by_id`` is used to restrict the union to Search Worker WorkItems;
+    when it is ``None`` every completed output is consulted.
+    """
+    recalled: set[str] = set()
+    for dep_id, dep_output in completed_outputs.items():
+        if not isinstance(dep_output, Mapping):
+            continue
+        if item_by_id is not None:
+            dep_item = item_by_id.get(dep_id)
+            if dep_item is None or getattr(dep_item, "role", None) != "search-worker":
+                continue
+        candidates = dep_output.get("candidates")
+        if not isinstance(candidates, list):
+            continue
+        for pid in candidates:
+            if isinstance(pid, str) and pid.strip():
+                recalled.add(pid.strip())
+    return recalled
+
+
 def _evaluator_records(output) -> list[dict]:
     """Normalize evaluator output without accepting truthy/non-boolean flags."""
     kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
@@ -979,12 +1012,23 @@ class Orchestrator:
             allowed_refs: set[str] = set()
             allowed_sources: set[str] = set()
             allowed_source_refs: set[str] = set()
+            # 候选 ID -> 产出它的那次检索的 search_id。一个任务扇出多个 search worker
+            # 时各自快照不同，导入桥必须按来源快照分别解析候选（见 _persist_agent_selections）。
+            candidate_sources: dict[str, str] = {}
             if role == "paper_evaluator":
                 paper_ids = []
                 for output in upstream:
+                    raw_search_id = output.get("search_id")
+                    output_search_id = (
+                        str(raw_search_id).strip()
+                        if isinstance(raw_search_id, str) and raw_search_id.strip()
+                        else None
+                    )
                     for paper_id in output.get("candidates", ()) if isinstance(output.get("candidates"), list) else ():
                         if isinstance(paper_id, str) and paper_id not in paper_ids:
                             paper_ids.append(paper_id)
+                        if isinstance(paper_id, str) and output_search_id:
+                            candidate_sources.setdefault(paper_id, output_search_id)
                 work_item_input["catalog_paper_ids"] = paper_ids
                 catalog_evidence = []
                 for dependency_id, output in zip(dependencies, upstream, strict=False):
@@ -1014,6 +1058,7 @@ class Orchestrator:
                         allowed_refs.clear()
                         allowed_sources.clear()
                         allowed_source_refs.clear()
+                        candidate_sources.clear()
                     if not binding_invalid and output.get("source") in {"usenix", "dblp", "all"}:
                         allowed_sources.add(output["source"])
                     for source_ref in output.get("source_refs", ()) if not binding_invalid and isinstance(output.get("source_refs"), list) else ():
@@ -1022,6 +1067,7 @@ class Orchestrator:
                     if output.get("source") not in {"usenix", "dblp", "all"}:
                         allowed_candidates.clear()
                         allowed_refs.clear()
+                        candidate_sources.clear()
                     for ref in output.get("evidence_refs", ()) if isinstance(output.get("evidence_refs"), list) else ():
                         if isinstance(ref, str):
                             allowed_refs.add(ref)
@@ -1077,6 +1123,10 @@ class Orchestrator:
                     for evidence in completed_search_evidence.values()
                     for entry in evidence
                 )
+                # Candidate legitimacy is owned by the Search Worker recall
+                # allowlist, independent of catalog_metadata completeness, so a
+                # missing catalog_metadata can never drop the synthesizer.
+                allowed_candidate_ids = _recalled_candidate_ids(completed_outputs, item_by_id)
                 validated = _validated_evaluator_candidates(
                     [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id],
                     catalog_metadata,
@@ -1196,7 +1246,9 @@ class Orchestrator:
                 # （Spec029 acquisition-preview 报 REPORT_NOT_READY）。evaluator completed
                 # 后立即把真实候选持久化；只接受 allowed_candidates 白名单内的召回 ID，
                 # 落库失败不阻断后续 WorkItem（选集写不进去不该把任务打成 failed）。
-                self._persist_agent_selections(task.research_task_id, normalized_output, allowed_candidates)
+                self._persist_agent_selections(
+                    task.research_task_id, normalized_output, allowed_candidates, candidate_sources
+                )
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
                 synthesis_output = dict(normalized_output) if isinstance(normalized_output, dict) else None
@@ -1408,7 +1460,11 @@ class Orchestrator:
             )
 
     def _persist_agent_selections(
-        self, research_task_id: str, evaluator_output: dict, allowed_candidates: set[str]
+        self,
+        research_task_id: str,
+        evaluator_output: dict,
+        allowed_candidates: set[str],
+        candidate_sources: dict[str, str] | None = None,
     ) -> None:
         """把 agent 路径 evaluator 产出的真实候选落库为 research_paper_selections。
 
@@ -1416,6 +1472,10 @@ class Orchestrator:
         candidate_id；模型自造的 ID 一律丢弃，绝不伪造 relevance/facets/evidence。agent
         路径只有目录/摘要级证据，evidence_level 固定为 ``"catalog"``（绝不标 fulltext）。
         落库失败不能让整条流水线崩：记 logger.warning 后继续后续 WorkItem。
+
+        ``candidate_sources`` 是「候选 ID -> 产出它的 search_id」映射。任务可扇出多个
+        search worker，各自持有不同的 server 快照；选集必须记住自己的来源快照，导入桥
+        才能按快照分别解析候选。缺失时回落到任务级 search_id（旧数据/单 worker 场景）。
 
         evaluator 产出有两种形状，都必须覆盖：
         - 聚合形 ``{"kept": [...]}``；
@@ -1427,6 +1487,15 @@ class Orchestrator:
             entries: list = list(kept)
         else:
             entries = [evaluator_output]
+        source_map = dict(candidate_sources or {})
+        # 候选没有明确来源时回落到任务级（第一个）search_id：旧数据与单 worker
+        # 场景下这是唯一可用的快照句柄。
+        fallback_search_id: str | None = None
+        if not source_map:
+            getter = getattr(self._store, "get_task_search_id", None)
+            if callable(getter):
+                with suppress(Exception):
+                    fallback_search_id = getter(research_task_id)
         selections: list[ResearchPaperSelection] = []
         seen: set[str] = set()
         for entry in entries:
@@ -1466,6 +1535,7 @@ class Orchestrator:
                 if candidate_id in seen:
                     continue
                 seen.add(candidate_id)
+                source_search_id = source_map.get(candidate_id) or fallback_search_id
                 selections.append(ResearchPaperSelection(
                     research_task_id=research_task_id,
                     catalog_paper_id=candidate_id,
@@ -1473,6 +1543,7 @@ class Orchestrator:
                     facets_json=json.dumps(facets, ensure_ascii=False),
                     evidence_level="catalog",
                     created_at=_utcnow(),
+                    source_search_id=source_search_id or None,
                 ))
         if not selections:
             return

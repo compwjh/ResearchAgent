@@ -14,6 +14,9 @@ from backend.app.paper_discovery.domain.paper_discovery_normalization import nor
 from backend.app.paper_discovery.infrastructure.dblp_publication_source import DBLPPublicationSource
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 from backend.app.paper_discovery.infrastructure.usenix_publication_source import UsenixAcceptedSource
+from backend.app.platform.settings.paper_discovery_settings import (
+    DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
+)
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,
     load_article_settings,
@@ -87,7 +90,9 @@ class PaperDiscoverySearchService:
         self.max_limit = max_limit if max_limit is not None else configured_max_limit
         self.max_years = max_years
         self.default_years = default_years if default_years is not None else getattr(self.settings, "paper_discovery_default_years", 5)
-        configured_ttl = getattr(self.settings, "paper_discovery_search_ttl_seconds", 86400)
+        configured_ttl = getattr(
+            self.settings, "paper_discovery_search_ttl_seconds", DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS
+        )
         self.search_ttl_seconds = search_ttl_seconds if search_ttl_seconds is not None else configured_ttl
         self.candidate_pool = getattr(self.settings, "paper_discovery_candidate_pool", 200)
 
