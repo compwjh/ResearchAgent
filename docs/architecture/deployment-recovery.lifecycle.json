@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "ResearchAgent 部署与恢复生命周期",
+    "locale": "zh-CN",
+    "subtitle": "Git、SQLite、索引代次、Ollama 与运行时 smoke test",
+    "viewBox": [1120, 760],
+    "animation": "trace",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "startup-gates", "label": "启动门禁", "focus": ["stopped", "git", "sqlite", "generation", "service", "smoke"], "note": "查看部署从停止状态到可用服务的顺序门禁。" },
+      { "id": "repair-path", "label": "修复路径", "focus": ["sqlite", "rebuild", "generation", "rollback"], "note": "查看旧 schema 或索引代次不匹配时的恢复处理。" },
+      { "id": "provider-failure", "label": "模型不可用", "focus": ["service", "ollama", "rollback"], "note": "区分 Web 服务已启动和 Ollama 模型不可用。" }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "部署主路径" },
+    { "id": "gates", "label": "数据门禁" },
+    { "id": "recovery", "label": "修复动作" },
+    { "id": "terminal", "label": "终态" }
+  ],
+  "states": [
+    { "id": "stopped", "type": "start", "label": "Stopped", "lane": "main", "col": 0, "step": "01", "tag": "entry" },
+    { "id": "git", "type": "active", "label": "Git Checked", "lane": "main", "col": 1, "step": "02", "tag": "baseline" },
+    { "id": "sqlite", "type": "decision", "label": "SQLite v8", "lane": "gates", "col": 0, "yOffset": 86, "step": "03", "tag": "required" },
+    { "id": "generation", "type": "decision", "label": "Generation Bound", "lane": "gates", "col": 1, "yOffset": 86, "step": "04", "tag": "required" },
+    { "id": "service", "type": "active", "label": "Service Ready", "lane": "main", "col": 2, "step": "05", "tag": "HTTP 200" },
+    { "id": "smoke", "type": "success", "label": "Smoke Passed", "lane": "main", "col": 2, "yOffset": 86, "step": "06", "tag": "deployable" },
+    { "id": "rebuild", "type": "waiting", "label": "Rebuild Runtime", "lane": "recovery", "col": 0, "yOffset": 220, "tag": "no overwrite" },
+    { "id": "ollama", "type": "failure", "label": "Ollama Unavailable", "lane": "recovery", "col": 1, "yOffset": 220, "tag": "degraded" },
+    { "id": "rollback", "type": "failure", "label": "Rollback", "lane": "terminal", "col": 2, "yOffset": 60, "tag": "terminal" }
+  ],
+  "transitions": [
+    { "id": "stop-git", "from": "stopped", "to": "git", "variant": "emphasis", "route": "straight" },
+    { "id": "git-sqlite", "from": "git", "to": "sqlite", "variant": "emphasis", "route": "drop" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Ordered Gates", "items": ["先确认 Git 基线，再检查 SQLite schema 和索引代次", "服务 HTTP 200 不代表 Ollama 模型调用已可用"] },
+    { "dot": "emerald", "title": "Safe Rebuild", "items": ["旧库先进入 legacy-backups，再创建新 v8 库", "generation drift 必须 fail-closed，不能绕过 marker"] },
+    { "dot": "amber", "title": "Evidence", "items": ["部署记录需包含端口、版本、数据库、模型和降级项", "Smoke test 覆盖会话、知识库和研究任务入口"] }
+  ]
+}

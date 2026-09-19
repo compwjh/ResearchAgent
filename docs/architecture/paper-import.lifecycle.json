@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "ResearchAgent 论文下载与导入生命周期",
+    "locale": "zh-CN",
+    "subtitle": "从候选快照到个人知识库的安全下载、索引和恢复",
+    "viewBox": [1120, 760],
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "happy-import", "label": "成功导入", "focus": ["candidate", "queued", "downloading", "validating", "indexing", "completed"], "note": "查看一篇候选论文进入个人知识库的主路径。" },
+      { "id": "login-recovery", "label": "登录与重试", "focus": ["downloading", "login", "retry", "queued"], "note": "查看需要登录、恢复和重试的分支。" },
+      { "id": "failure-cleanup", "label": "失败与恢复", "focus": ["validating", "failed", "retry"], "note": "查看 PDF 校验失败、重试和补偿清理。" }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "导入主路径" },
+    { "id": "auth", "label": "登录等待" },
+    { "id": "recovery", "label": "恢复与重试" },
+    { "id": "terminal", "label": "终态" }
+  ],
+  "states": [
+    { "id": "candidate", "type": "start", "label": "候选快照", "lane": "main", "col": 0, "step": "01", "tag": "catalog" },
+    { "id": "queued", "type": "active", "label": "Queued", "lane": "main", "col": 1, "step": "02", "tag": "batch" },
+    { "id": "downloading", "type": "active", "label": "Downloading", "lane": "main", "col": 2, "step": "03", "tag": "secure" },
+    { "id": "validating", "type": "decision", "label": "Validating", "lane": "main", "col": 3, "step": "04", "tag": "gate" },
+    { "id": "indexing", "type": "active", "label": "Indexing", "lane": "main", "col": 4, "step": "05", "tag": "async" },
+    { "id": "completed", "type": "success", "label": "Completed", "lane": "main", "col": 4, "yOffset": 140, "step": "06", "tag": "done" },
+    { "id": "login", "type": "waiting", "label": "等待登录", "lane": "auth", "col": 0, "yOffset": 190, "tag": "pause" },
+    { "id": "failed", "type": "failure", "label": "Failed", "lane": "recovery", "col": 1, "yOffset": 190, "tag": "recover" },
+    { "id": "retry", "type": "active", "label": "Retry", "lane": "recovery", "col": 2, "yOffset": 190, "tag": "attempt" }
+  ],
+  "transitions": [
+    { "id": "candidate-queued", "from": "candidate", "to": "queued", "variant": "emphasis", "route": "straight" },
+    { "id": "queued-download", "from": "queued", "to": "downloading", "variant": "emphasis", "route": "straight" },
+    { "id": "download-validate", "from": "downloading", "to": "validating", "variant": "emphasis", "route": "straight" },
+    { "id": "validate-index", "from": "validating", "to": "indexing", "variant": "emphasis", "route": "straight" },
+    { "id": "index-complete", "from": "indexing", "to": "completed", "variant": "emphasis", "route": "bottom-channel" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Security Gate", "items": ["下载前检查 URL、DNS、重定向和 SSRF", "候选快照由服务端保存，客户端不能替换导入身份"] },
+    { "dot": "emerald", "title": "Batch State", "items": ["每次尝试都有 lease、attempt 和稳定错误码", "登录等待、retry、resume 和 cancel 都写入批次状态"] },
+    { "dot": "amber", "title": "Compensation", "items": ["下载成功但索引失败时保留可重建资源", "取消或失败不会删除非本次创建的文件"] }
+  ]
+}

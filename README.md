@@ -56,6 +56,14 @@ ResearchAgent 是一个面向科研工作的本地 AI 助手，提供论文检�
 
 对应的 Archify 规格文件是 [research-agent.architecture.json](docs/architecture/research-agent.architecture.json)。该图基于仓库 commit `f7ca5994316249232ccf70fa37edf45dc66bace4` 的代码路径生成。
 
+按运行链路拆分的细化图：
+
+- [对话、记忆与上下文时序图](docs/architecture/conversation-memory.html)
+- [知识库上传与索引数据流图](docs/architecture/knowledge-index.html)
+- [论文下载与导入生命周期图](docs/architecture/paper-import.html)
+- [模型路由与观测时序图](docs/architecture/model-routing.html)
+- [部署与恢复生命周期图](docs/architecture/deployment-recovery.html)
+
 ## 快速开始
 
 ### 1. 安装 Python 依赖
