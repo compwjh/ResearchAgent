@@ -148,6 +148,7 @@
     createIdempotencyKey: null,
     triggerMessageId: null,
     taskActionInFlight: false,
+    selectTaskInFlight: null,
     paperDisplays: new Map(),
     paperDisplaysPending: new Set(),
     acquisition: {
@@ -1983,8 +1984,9 @@
     if (!details || !list) return;
     clearNode(list); details.hidden = true;
     const values = Array.isArray(citations) ? citations.slice(0, 256) : citations && Array.isArray(citations.citations) ? citations.citations.slice(0, 256) : citations && typeof citations === 'object' ? [citations] : [];
-    values.forEach((citation) => { const no = safePositiveInteger(citation?.citation_no); if (!no) return; const item = state.document.createElement('li'); const button = createCitationButton(no); button.addEventListener('click', () => { state.activeCitationNo = no; renderCitationDetail(no); }); item.appendChild(button); const label = state.document.createElement('span'); label.textContent = ` ${text(citation.paper_id, '未知论文')} · ${Array.isArray(citation.evidence_ids) ? citation.evidence_ids.join('、') : ''}`; item.appendChild(label); list.appendChild(item); });
+    values.forEach((citation) => { const no = safePositiveInteger(citation?.citation_no); if (!no) return; const item = state.document.createElement('li'); const button = createCitationButton(no); button.addEventListener('click', () => { state.activeCitationNo = no; renderCitationDetail(no); }); item.appendChild(button); const label = state.document.createElement('span'); label.textContent = ` ${paperLabel(citation.paper_id)} · ${Array.isArray(citation.evidence_ids) ? citation.evidence_ids.join('、') : ''}`; item.appendChild(label); list.appendChild(item); });
     details.hidden = list.childNodes.length === 0;
+    refreshPaperDisplays(values.map((citation) => citation?.paper_id), () => renderReportCitations(citations));
   }
 
   function renderReportRaw(value) {
@@ -2221,7 +2223,9 @@
   }
 
   async function selectTask(taskId, sessionId = null) {
+    const target = taskId || sessionId;
     if (!taskId && !sessionId) return;
+    state.selectTaskInFlight = target;
     console.error('[T12 selectTask entry]', JSON.stringify({ taskId, sessionId, selectedTaskId: state.selectedTaskId, streamGeneration: state.streamGeneration }));
     closeStream();
     state.selectedTaskId = taskId || null;
@@ -2293,6 +2297,8 @@
       setText('research-detail-empty', userError(error, '任务详情加载失败。'));
       setDetailVisibility(false);
       setText('research-summary-text', userError(error));
+    } finally {
+      if (state.selectTaskInFlight === target) state.selectTaskInFlight = null;
     }
   }
 
@@ -2302,6 +2308,13 @@
     const selected = state.selectedTaskId && tasks.find((task) => task.research_task_id === state.selectedTaskId)
       || state.selectedSessionId && tasks.find((task) => task.research_session_id === state.selectedSessionId)
       || tasks.find((task) => task.conversation_id === state.conversationId);
+    // A selectTask is currently in flight loading a specific task/session. Do not
+    // start another selection or reset this one: the in-flight load owns the
+    // selection and will reconcile state once it resolves. Otherwise the in-flight
+    // selectTask would hit its stale-selection guard and silently abort (loadReport
+    // / connectStream never run), and a re-select here would open a duplicate SSE
+    // pipe after approval.
+    if (state.selectTaskInFlight) return;
     if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
       console.error('[T12DBG] refreshWorkspace resetting to null; selectedTaskId was=', state.selectedTaskId, 'selectedSessionId was=', state.selectedSessionId, 'tasksLen=', tasks.length, 'conv=', state.conversationId);
@@ -2501,7 +2514,7 @@
 
   return {
     boot, parseConversationId, statusLabel, userError, renderSafeMarkdown,
-    mergeSessionCommandResult,
+    mergeSessionCommandResult, selectTask, refreshWorkspace, state,
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
     sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,
