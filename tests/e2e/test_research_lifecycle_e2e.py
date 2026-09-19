@@ -113,8 +113,13 @@ def test_research_lifecycle_follow_through(page: Page) -> None:
     依赖后端 LLM + 外部检索；若环境不足，对应等待会超时并 skip 重型断言。
     """
     _open_research(page)
+    # 记录已有任务卡片 id（新建 Task 在批准后才进入列表，供批准后识别）
+    before = page.eval_on_selector_all(
+        "#research-task-list .research-task-card[data-task-id]:not([data-task-id=''])",
+        "els => els.map(e => e.getAttribute('data-task-id'))",
+    )
     _fill_and_create(page)
-    new_sid = _wait_task_opened(page)
+    _wait_task_opened(page)
 
     def _status() -> str:
         return page.get_attribute("#research-detail-status", "data-status") or ""
@@ -163,16 +168,35 @@ def test_research_lifecycle_follow_through(page: Page) -> None:
     if _status() == "failed":
         pytest.skip("研究会话在执行中失败（环境依赖不足，如外部检索不可用）")
 
-    # 显式点开该会话对应的任务卡片：时间线依赖 Task 事件流，停留在会话视图时
-    # 事件为空、面板不会渲染。这里模拟用户点开任务，强制加载 Task 视图与事件。
-    if new_sid:
-        try:
+    # 新建 Task 在批准后才进入列表：等它出现并点开，加载 Task 视图与事件流。
+    # 时间线（section.hidden = events.length === 0）依赖 Task 事件，停留在会话
+    # 视图时事件为空、面板不会渲染，因此模拟用户点开刚批准的任务。
+    try:
+        page.wait_for_function(
+            """(before) => {
+                const cur = Array.from(document.querySelectorAll(
+                    "#research-task-list .research-task-card[data-task-id]:not([data-task-id=''])"));
+                return cur.some(e => !before.includes(e.getAttribute('data-task-id')));
+            }""",
+            arg=before,
+            timeout=120000,
+        )
+        new_tid = page.evaluate(
+            """(before) => {
+                const cur = Array.from(document.querySelectorAll(
+                    "#research-task-list .research-task-card[data-task-id]:not([data-task-id=''])"));
+                const f = cur.find(e => !before.includes(e.getAttribute('data-task-id')));
+                return f ? f.getAttribute('data-task-id') : null;
+            }""",
+            before,
+        )
+        if new_tid:
             page.click(
-                f"#research-task-list .research-task-card[data-session-id='{new_sid}']",
-                timeout=10000,
+                f"#research-task-list .research-task-card[data-task-id='{new_tid}']",
+                timeout=30000,
             )
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     # spec028：运行期时间线与调度控件（暂停/继续/恢复）可见。
     # 批准后前端切到 Task 视图，#research-detail-status 承载的是 Task 状态
