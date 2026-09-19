@@ -216,12 +216,12 @@ def test_research_lifecycle_follow_through(page: Page) -> None:
 
     # spec029 / spec030 依赖 LLM + 外部检索完整运行；窗口内未到达对应阶段则跳过重型断言
     try:
-        # spec029：全文获取候选出现、确认导入可用
-        page.wait_for_selector("#research-acquisition-section:not([hidden])", timeout=180000)
-        page.wait_for_selector("#research-acquisition-candidates li", timeout=120000)
+        # spec029：全文获取候选出现、确认导入可用（依赖真实检索 + LLM，窗口放宽）
+        page.wait_for_selector("#research-acquisition-section:not([hidden])", timeout=600000)
+        page.wait_for_selector("#research-acquisition-candidates li", timeout=300000)
 
         # spec030：证据矩阵填充、完成后只读报告渲染
-        page.wait_for_selector("#research-matrix-section:not([hidden])", timeout=120000)
+        page.wait_for_selector("#research-matrix-section:not([hidden])", timeout=300000)
         if _status() == "completed":
             expect(page.locator("#research-report-markdown")).to_be_visible()
     except Exception:
