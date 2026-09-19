@@ -146,6 +146,22 @@ class ResearchAcquisitionRequest(BaseModel):
         return normalized
 
 
+class ResearchPaperDisplayRequest(BaseModel):
+    """Batch lookup of human-readable paper labels (read-only projection)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    paper_ids: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("paper_ids")
+    @classmethod
+    def validate_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        if not normalized:
+            raise ValueError("paper_ids must be non-empty")
+        return list(dict.fromkeys(normalized))
+
+
 class ResearchEvidenceUpgradeRequest(BaseModel):
     """Full-text claim upgrade; document ids are checked against Research links."""
 
@@ -279,8 +295,56 @@ def _paper_batch_service():
         return factory()
 
 
+def _search_snapshot_refresher():
+    """为过期/缺失的搜索快照重跑检索，返回新的 search_id；无法刷新时返回 None。
+
+    搜索快照带 TTL，研究任务从检索到用户确认常常跨天，隔天点「确认并开始导入」
+    会撞上 SEARCH_EXPIRED。这里按原 query 重跑一次检索拿到新句柄：candidate_id
+    是内容派生的，同一批论文会以同样的 ID 出现在新快照里，所以刷新不会改变用户
+    看到的选集内容。
+    """
+
+    def refresh(search_id: str, paper_ids=None) -> str | None:
+        """把原有候选原样重新冻结成一个新会话，只换句柄与 TTL。
+
+        刻意**不重跑检索**：外部源（DBLP 已被反爬拦截、USENIX accepted 部分年份不
+        可用）结果不稳定，同一 query 重跑常常换回一批不同的论文，反而丢掉用户已
+        确认的选集。而 ``candidate_id`` 是内容派生的，把已由 Search Worker 验证过
+        的候选行复制到新 search_id 下，选集内容逐条保持不变，导入桥也能重新解析。
+        """
+        from dataclasses import replace
+        from datetime import datetime, timedelta, timezone
+        from uuid import uuid4
+
+        from backend.app.api.common import _paper_store, article_settings
+        from backend.app.paper_discovery.domain.paper_discovery import SearchSession
+
+        store = _paper_store()
+        session = store.get_search_session(search_id)
+        if session is None:
+            return None
+        candidates = list(store.get_candidates(search_id) or ())
+        if not candidates:
+            return None
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+        ttl = int(getattr(article_settings, "paper_discovery_search_ttl_seconds", 7 * 24 * 3600))
+        expires_iso = (now + timedelta(seconds=ttl)).isoformat(timespec="seconds").replace("+00:00", "Z")
+        refreshed = uuid4().hex
+        new_session = SearchSession(
+            search_id=refreshed,
+            query=session.query,
+            expires_at=expires_iso,
+            created_at=now_iso,
+        )
+        store.save_search(new_session, [replace(item, search_id=refreshed) for item in candidates])
+        return refreshed
+
+    return refresh
+
+
 def _acquisition_service() -> ResearchAcquisitionService:
-    return ResearchAcquisitionService(_store(), _paper_batch_service())
+    return ResearchAcquisitionService(_store(), _paper_batch_service(), _search_snapshot_refresher())
 
 
 def _evidence_upgrade_service() -> EvidenceUpgradeService:
@@ -1375,6 +1439,28 @@ def get_research_acquisition(research_task_id: str):
     except Exception:
         logger.exception("research acquisition status failed")
         return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "论文导入依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/paper-displays")
+def resolve_research_paper_displays(research_task_id: str, payload: ResearchPaperDisplayRequest):
+    """把论文 ID 投影为人类可读的「年份_会议刊物名称_{简称}」。
+
+    只读投影：research 结构里只有 catalog_paper_id（Spec027 复用接缝），UI 直接显示
+    哈希对人毫无意义，所以按需查一次目录/候选表取年份、会议与标题。不下载全文，
+    也不把任何元数据写回 research 库。
+    """
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        from backend.app.api.common import _paper_store
+        from backend.app.research.application.paper_display import PaperDisplayResolver
+
+        resolver = PaperDisplayResolver(_paper_store())
+        return {"research_task_id": research_task_id, "papers": resolver.resolve_many(payload.paper_ids)}
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research paper display lookup failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "论文展示信息暂时不可用"))
 
 
 @router.post("/{research_task_id}/evidence-upgrade", status_code=202)

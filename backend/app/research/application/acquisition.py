@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
+from contextlib import suppress
 from typing import Any
 
 from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchServiceError,
+    SEARCH_EXPIRED,
+    SEARCH_NOT_FOUND,
 )
 from backend.app.research.domain.models import (
     AcquisitionApproval,
@@ -50,9 +53,66 @@ class ResearchAcquisitionError(ValueError):
 class ResearchAcquisitionService:
     """Confirm a frozen Research selection and project existing batch state."""
 
-    def __init__(self, store: Any, batch_service: Any) -> None:
+    def __init__(
+        self,
+        store: Any,
+        batch_service: Any,
+        search_refresher: Any = None,
+    ) -> None:
         self.store = store
         self.batch_service = batch_service
+        # 可选：按原 query 重跑检索、为过期/缺失的快照生成新句柄。由路由层注入，
+        # 便于测试隔离；未注入时保持「过期即失败」的历史行为。
+        self.search_refresher = search_refresher if callable(search_refresher) else None
+
+    def _create_batch(
+        self,
+        task_id: str,
+        search_id: str,
+        paper_ids: list[str],
+        idempotency_key: str,
+        candidate_values: list[Any],
+    ) -> tuple[Any, str]:
+        """建一次导入批次；快照过期/缺失时按需刷新句柄后重试一次。
+
+        搜索快照带 TTL（默认 7 天），研究任务从检索到用户确认常常跨天，隔天点
+        「确认并开始导入」会撞上 ``SEARCH_EXPIRED``。此时按原 query 重跑一次检索
+        即可拿到新句柄：``candidate_id`` 是内容派生的，同一批论文会以同样的 ID
+        出现在新快照里，因此刷新不会改变用户看到的选集。
+        """
+        try:
+            return (
+                self.batch_service.create_batch(
+                    search_id,
+                    paper_ids,
+                    idempotency_key=idempotency_key,
+                    candidates=candidate_values or None,
+                    auto_run=True,
+                ),
+                search_id,
+            )
+        except PaperImportBatchServiceError as error:
+            if getattr(error, "code", None) not in {SEARCH_EXPIRED, SEARCH_NOT_FOUND}:
+                raise
+            if self.search_refresher is None:
+                raise
+            refreshed = self.search_refresher(search_id, paper_ids)
+            if not refreshed or refreshed == search_id:
+                raise
+            # 把新句柄写回选集行，后续确认/重试直接用它，不必再刷新一次。
+            for paper_id in paper_ids:
+                with suppress(Exception):
+                    self.store.update_selection_source(task_id, paper_id, refreshed)
+            return (
+                self.batch_service.create_batch(
+                    refreshed,
+                    paper_ids,
+                    idempotency_key=idempotency_key,
+                    candidates=candidate_values or None,
+                    auto_run=True,
+                ),
+                refreshed,
+            )
 
     def _task_search_id(self, task_id: str) -> str | None:
         """Read the durable server-owned handle for a Research task."""
@@ -171,12 +231,12 @@ class ResearchAcquisitionService:
         batch_ids: list[str] = []
         for index, (group_search_id, group_paper_ids) in enumerate(sorted(grouped.items())):
             try:
-                batch = self.batch_service.create_batch(
+                batch, _ = self._create_batch(
+                    task_id,
                     group_search_id,
                     group_paper_ids,
                     idempotency_key=f"{idempotency_key}#{index}",
-                    candidates=candidate_values or None,
-                    auto_run=True,
+                    candidate_values=candidate_values,
                 )
             except PaperImportBatchServiceError as error:
                 self.store.update_acquisition_approval(task_id, selection_version, status="failed")

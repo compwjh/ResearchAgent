@@ -5172,6 +5172,26 @@ class ResearchStore:
             ).fetchall()
         return [ResearchPaperSelection.from_row(dict(r)) for r in rows]
 
+    def update_selection_source(self, research_task_id: str, catalog_paper_id: str, search_id: str) -> None:
+        """把某条选集的来源快照句柄改写为刷新后的 search_id。
+
+        搜索快照过期后按原 query 重跑检索会得到新句柄；写回后后续确认/重试可直接
+        复用，不必每次都刷新。只改句柄，不动 relevance/facets/evidence_level，
+        也不触碰 selection_version（选集内容没变）。
+        """
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "UPDATE research_paper_selections SET source_search_id=? "
+                    "WHERE research_task_id=? AND catalog_paper_id=?",
+                    (str(search_id), research_task_id, str(catalog_paper_id)),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
     # ------------------------------------------------------------------ #
     # Spec029 acquisition bridge (references only; no KB state is copied)
     # ------------------------------------------------------------------ #
