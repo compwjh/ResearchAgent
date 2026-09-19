@@ -3824,6 +3824,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #research-view .research-acquisition-item-title,
 #research-view .research-evidence-title { min-width: 0; color: var(--ink); font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
 #research-view .research-acquisition-badge { flex: 0 0 auto; border-radius: 99px; padding: 3px 7px; background: var(--accent-soft); color: var(--accent); font: 10px 'DM Mono', monospace; }
+#research-view .research-paper-id-hint { display: block; margin-top: 2px; color: var(--muted); font: 10px 'DM Mono', monospace; opacity: .75; overflow-wrap: anywhere; }
 #research-view .research-acquisition-badge[data-status="failed"],
 #research-view .research-acquisition-badge[data-status="unavailable"] { background: #fdecea; color: #b42318; }
 #research-view .research-acquisition-badge[data-status="needs_login"],

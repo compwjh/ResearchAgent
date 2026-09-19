@@ -321,11 +321,25 @@ def _search_snapshot_refresher():
 
         store = _paper_store()
         session = store.get_search_session(search_id)
-        if session is None:
-            return None
         candidates = list(store.get_candidates(search_id) or ())
+        known = {str(getattr(item, "candidate_id", "") or "") for item in candidates}
+        wanted = [str(value).strip() for value in (paper_ids or ()) if str(value).strip()]
+        missing = [value for value in wanted if value not in known]
+        if missing:
+            # 选集可能来自另一个 Search Worker 的快照（多 worker 扇出时任务只持久化
+            # 了第一个 search_id）。candidate_id 是内容派生的，同一篇论文在任意会话里
+            # 的元数据一致，因此可以从其它会话把缺失的行补进新快照。
+            for item in store.get_candidates_by_ids(missing):
+                candidate_id = str(getattr(item, "candidate_id", "") or "")
+                if candidate_id and candidate_id not in known:
+                    known.add(candidate_id)
+                    candidates.append(item)
         if not candidates:
             return None
+        if wanted and not known.intersection(wanted):
+            return None
+        if session is None:
+            session = SearchSession(search_id=search_id, query="", expires_at="", created_at="")
         now = datetime.now(timezone.utc).replace(microsecond=0)
         now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
         ttl = int(getattr(article_settings, "paper_discovery_search_ttl_seconds", 7 * 24 * 3600))

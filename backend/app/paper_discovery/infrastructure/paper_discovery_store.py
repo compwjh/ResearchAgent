@@ -23,9 +23,29 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SourceFetchUnit,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.source_authority import SOURCE_KINDS, may_overwrite
 from backend.app.platform.config import BASE_DIR
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
+
+# ``search_source_progress`` 的标准建表语句（与 ``SOURCE_KINDS`` 单一事实来源对齐）。
+# CHECK 约束随 Spec032 扩展：覆盖 ieee_sp / ccs / ndss / openalex / crossref 等新来源。
+_SEARCH_SOURCE_PROGRESS_DDL = """
+CREATE TABLE search_source_progress(
+    search_id TEXT NOT NULL REFERENCES search_jobs(search_id) ON DELETE RESTRICT,
+    source_kind TEXT NOT NULL CHECK(source_kind IN ({kinds})),
+    status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN
+        ('queued','checking_cache','fetching','merging','completed','cached','failed')),
+    cached_units_json TEXT NOT NULL DEFAULT '[]',
+    fetching_units_json TEXT NOT NULL DEFAULT '[]',
+    completed_units_json TEXT NOT NULL DEFAULT '[]',
+    paper_count INTEGER NOT NULL DEFAULT 0,
+    error_code TEXT,
+    message_code TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(search_id, source_kind))""".format(
+    kinds=",".join(f"'{k}'" for k in sorted(SOURCE_KINDS)),
+)
 _SAFE_EVENT_KEYS = frozenset({"unit_id", "source_kind", "count", "error_code", "message_code"})
 _SAFE_EVENT_ERROR_CODES = frozenset({
     "DBLP_UNAVAILABLE", "DBLP_TIMEOUT", "DBLP_NETWORK_ERROR", "DBLP_HTTP_ERROR",
@@ -79,8 +99,12 @@ class PaperDiscoveryStore:
             current = self._current_schema_version(connection)
             # C-1: v1 -> v2 migration runs in this single explicit transaction BEFORE the
             # version is bumped; it is idempotent and rolls back entirely on any failure.
-            if (current or 1) < SCHEMA_VERSION:
+            if (current or 1) < 2:
                 self._migrate_to_v2(connection)
+            if (current or 1) < 3:
+                self._migrate_to_v3(connection)
+            if (current or 1) < 4:
+                self._migrate_to_v4(connection)
             self._validate_schema_meta(connection)
             connection.commit()
 
@@ -287,9 +311,74 @@ class PaperDiscoveryStore:
         )
         row = connection.execute("SELECT version FROM schema_meta LIMIT 1").fetchone()
         if row is None:
-            connection.execute("INSERT INTO schema_meta(version) VALUES(?)", (SCHEMA_VERSION,))
+            connection.execute("INSERT INTO schema_meta(version) VALUES(?)", (2,))
         else:
-            connection.execute("UPDATE schema_meta SET version=?", (SCHEMA_VERSION,))
+            connection.execute("UPDATE schema_meta SET version=?", (2,))
+
+    @staticmethod
+    def _migrate_to_v3(connection: sqlite3.Connection) -> None:
+        """Expand ``search_source_progress.source_kind`` CHECK to cover Spec032 sources.
+
+        v2 only allowed ``('usenix','dblp')``; the new conference catalogs
+        (ieee_sp/ccs/ndss) and aggregators (openalex/crossref) now also record progress.
+        Rebuilds the table only when it still carries the v2 check (idempotent); runs inside
+        the caller's transaction so a failure rolls back entirely (C-1). Existing rows are
+        copied verbatim — no data loss, no semantic change to pre-existing rows.
+
+        The rebuild reuses ``_SEARCH_SOURCE_PROGRESS_DDL`` (the single source of truth for the
+        check, derived from ``SOURCE_KINDS``), so a future source only needs to be added there.
+        """
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='search_source_progress'"
+        ).fetchone()
+        current_sql = row[0] if row else ""
+        if all(
+            kind in current_sql
+            for kind in ("ieee_sp", "ccs", "ndss", "openalex", "crossref")
+        ):
+            # 已含新来源种类 → 视为已迁移（幂等）；同步版本号避免 _validate_schema_meta 失败。
+            connection.execute("UPDATE schema_meta SET version=?", (3,))
+            return
+        if not current_sql:
+            # 极端兜底：表不存在（v2 必已创建，正常情况下不会走到）则以新 CHECK 建表。
+            connection.execute(_SEARCH_SOURCE_PROGRESS_DDL)
+            connection.execute("UPDATE schema_meta SET version=?", (3,))
+            return
+        connection.execute("ALTER TABLE search_source_progress RENAME TO search_source_progress_v2_old")
+        connection.execute(_SEARCH_SOURCE_PROGRESS_DDL)
+        connection.execute(
+            """INSERT INTO search_source_progress(
+                   search_id, source_kind, status, cached_units_json, fetching_units_json,
+                   completed_units_json, paper_count, error_code, message_code, updated_at)
+               SELECT search_id, source_kind, status, cached_units_json, fetching_units_json,
+                   completed_units_json, paper_count, error_code, message_code, updated_at
+               FROM search_source_progress_v2_old"""
+        )
+        connection.execute("DROP TABLE search_source_progress_v2_old")
+        connection.execute("UPDATE schema_meta SET version=?", (3,))
+
+    @staticmethod
+    def _migrate_to_v4(connection: sqlite3.Connection) -> None:
+        """Create ``field_provenance`` for Spec032 field-level source attribution.
+
+        Each catalog paper field records which source supplied it; a higher-authority
+        source (smaller ``authority_rank``) may overwrite a lower one, while a lower
+        source only fills fields that have no provenance yet. Runs inside the caller's
+        transaction (idempotent ``CREATE TABLE IF NOT EXISTS``), no data loss.
+        """
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS field_provenance(
+                catalog_paper_id TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                source_record_id TEXT,
+                observed_at TEXT NOT NULL,
+                PRIMARY KEY(catalog_paper_id, field_name))"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS field_provenance_source ON field_provenance(source_id)"
+        )
+        connection.execute("UPDATE schema_meta SET version=?", (4,))
 
     @staticmethod
     def _validate_schema_meta(connection: sqlite3.Connection) -> None:
@@ -508,6 +597,31 @@ class PaperDiscoveryStore:
                 (search_id, candidate_id),
             ).fetchone()
         return self._candidate_from_row(row) if row is not None else None
+
+    def get_candidates_by_ids(self, candidate_ids) -> List[PaperCandidate]:
+        """Read candidate rows by content-derived id, across search sessions.
+
+        ``candidate_id`` is derived from the paper's content, so the same paper
+        reappears under many sessions with byte-identical metadata.  This lookup
+        is only used to *recover* rows the caller already holds an id for — it is
+        never a way to address candidates the server has not surfaced, because
+        the ids are still opaque to clients until a search returns them.
+        """
+        wanted = [str(value).strip() for value in (candidate_ids or ()) if str(value).strip()]
+        if not wanted:
+            return []
+        result: List[PaperCandidate] = []
+        with self._connect() as connection:
+            for index in range(0, len(wanted), 200):
+                chunk = wanted[index : index + 200]
+                placeholders = ",".join("?" * len(chunk))
+                rows = connection.execute(
+                    "SELECT * FROM paper_candidates WHERE candidate_id IN (%s) "
+                    "GROUP BY candidate_id ORDER BY rank, initial_rank, candidate_id" % placeholders,
+                    tuple(chunk),
+                ).fetchall()
+                result.extend(self._candidate_from_row(row) for row in rows)
+        return result
 
     def cleanup_expired_searches(self, now: Optional[str] = None) -> int:
         with self._connect() as connection:
@@ -728,6 +842,61 @@ class PaperDiscoveryStore:
                     record.observed_at or now,
                 ),
             )
+
+    def save_field_provenance(
+        self,
+        catalog_paper_id: str,
+        field_name: str,
+        source_id: str,
+        *,
+        source_record_id: Optional[str] = None,
+        now: Optional[str] = None,
+    ) -> bool:
+        """Record which source supplied one catalog field. Returns True when written.
+
+        Spec032 authority gate: a field with no provenance can always be
+        written; an already-owned field may only be overwritten by a strictly
+        higher-authority source (smaller ``authority_rank``). A lower-authority
+        source therefore only ever fills gaps and never overwrites.
+        """
+        now = now or _utcnow()
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            row = connection.execute(
+                "SELECT source_id FROM field_provenance WHERE catalog_paper_id=? AND field_name=?",
+                (catalog_paper_id, field_name),
+            ).fetchone()
+            existing_source_id = row["source_id"] if row is not None else None
+            if not may_overwrite(existing_source_id, source_id):
+                return False
+            connection.execute(
+                """INSERT INTO field_provenance
+                     (catalog_paper_id, field_name, source_id, source_record_id, observed_at)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(catalog_paper_id, field_name) DO UPDATE SET
+                     source_id=excluded.source_id,
+                     source_record_id=excluded.source_record_id,
+                     observed_at=excluded.observed_at""",
+                (catalog_paper_id, field_name, source_id, source_record_id, now),
+            )
+        return True
+
+    def get_field_provenance(self, catalog_paper_id: str) -> dict:
+        """Return ``{field_name: {source_id, source_record_id, observed_at}}`` for one paper."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT field_name, source_id, source_record_id, observed_at"
+                " FROM field_provenance WHERE catalog_paper_id=?",
+                (catalog_paper_id,),
+            ).fetchall()
+        return {
+            row["field_name"]: {
+                "source_id": row["source_id"],
+                "source_record_id": row["source_record_id"],
+                "observed_at": row["observed_at"],
+            }
+            for row in rows
+        }
 
     def create_search_job(self, job: SearchJob, now: Optional[str] = None) -> None:
         now = now or _utcnow()
