@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中**（新增 Task12：修复「批准后前端未加载 Task 视图与事件流、时间线不渲染」；Task01–11 保持已完成）
+**当前状态：已完成**（Task12 已完成：批准后加载 Task 视图与事件流，时间线渲染经真实浏览器验证通过；Task01–12 全部完成）
 
 > 本 Spec 来自 2026-09-13 多轮 Grilling 的共同裁决。确认前只允许完善规范、任务计划和评审材料，不修改业务代码。
 > 2026-09-13：需求评审第二轮 APPROVE、技术评审第二轮 GO；用户此前明确要求“然后再开发034”，视为确认本 Spec，按 Task02 → Task10 顺序实施。
@@ -468,7 +468,7 @@ Smoke 必须证明：
 | 09 | 复用 Research Tab、清理旧入口与旧数据 | [`task-09-workspace-and-cleanup.md`](../plans/034/task-09-workspace-and-cleanup.md) | 04、07、08 | 已完成 |
 | 10 | 最终评审、全量回归、真实 Smoke、部署与复盘 | [`task-10-review-regression-deploy.md`](../plans/034/task-10-review-regression-deploy.md) | 02–09 | 已完成 |
 | 11 | 至少五篇候选与实质性综述输出 | [`task-11-report-content-and-recall.md`](../plans/034/task-11-report-content-and-recall.md) | 06、08、10 | 已完成（实现与目录复验） |
-| 12 | 批准后加载 Task 视图与事件流（时间线渲染） | [`task-12-post-approval-task-view.md`](../plans/034/task-12-post-approval-task-view.md) | 04、07 | 实施中 |
+| 12 | 批准后加载 Task 视图与事件流（时间线渲染） | [`task-12-post-approval-task-view.md`](../plans/034/task-12-post-approval-task-view.md) | 04、07 | 已完成 |
 
 ## 评审记录
 
@@ -487,3 +487,4 @@ Smoke 必须证明：
 | 2026-09-16 | 架构师（自身） | 真实 Artifact 仅含一篇证据对象且报告渲染只输出 ID；新增 Task11，补强至少五篇候选保留和标题/摘要/关键词/跨论文归纳，Spec 暂回实施中 |
 | 2026-09-16 | 架构师（自身） | 修复 Spec034 收口缺陷：统一接收 Intake `processing_step` 序号、使冲突处理按钮可操作、压缩计划审批按钮样式、保留目录详情降级时的候选；合并远程主干后完成 `COMPACTION_SUMMARY_MODE=rule .venv/bin/python -m pytest -q`（2478 passed、1 skipped、67 subtests），Spec 标记已完成 |
 | 2026-09-20 | 架构师（自身） | 真实浏览器端到端排查发现：计划批准后前端停留在会话视图、未加载新建 Task 详情与事件流，导致时间线（`hidden = events.length === 0`）不渲染，spec028 运行面板/spec029/spec030 无法验证（后端 approve_plan 返回 200、`research_service.start` 后台线程执行均正常）。新增 Task12 修复该前端缺口，Spec 暂回实施中 |
+| 2026-09-20 | 架构师（自身） | Task12 完成：定位并修复竞态根因——并发 `refreshWorkspace` 因 `state.tasks` 尚未包含刚物化的新 Task（且 conversationId=null）而把 `selectedTaskId/selectedSessionId` 重置为 null，致使在途 `selectTask` 被 stale-selection 守卫提前 return，`loadReport`/`connectStream` 从不执行、新建 Task 的 `/report` `/events` 从未被请求。修复为 `selectTask` 在途保护（in-flight guard），并消除批准后重复建立 SSE 管道。真实浏览器验证：批准后 6s 内 `data-status` 转为 `running`、时间线面板渲染；端到端不再因「时间线未渲染」SKIP。清理调试日志后 `node --check` 通过，Spec 标记已完成 |
