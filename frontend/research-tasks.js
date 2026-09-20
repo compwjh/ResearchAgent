@@ -1217,7 +1217,7 @@
         const command = approval.kind === 'plan' ? 'approve_plan' : approval.kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
         const approve = state.document.createElement('button'); approve.type = 'button'; approve.className = 'send-button research-session-command'; approve.textContent = SESSION_COMMAND_LABELS[command];
         const decline = state.document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button research-session-command'; decline.textContent = '拒绝';
-        approve.addEventListener('click', () => submitSessionCommand(sessionId, command, approval.subject_version || subjectVersion, sessionCommandScope(command, approval, plan), approve, async (result) => { status.textContent = '已完成'; card.dataset.status = 'approved'; await mergeSessionCommandResult(result, sessionId); }));
+        approve.addEventListener('click', () => submitSessionCommand(sessionId, command, approval.subject_version || subjectVersion, sessionCommandScope(command, approval, plan), approve, async (result) => { status.textContent = command === 'approve_plan' ? '已批准' : '已完成'; card.dataset.status = 'approved'; await mergeSessionCommandResult(result, sessionId); }));
         decline.addEventListener('click', () => submitSessionCommand(sessionId, 'decline_request', approval.subject_version || subjectVersion, sessionCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
         actions.append(approve, decline); card.append(title, status, meta, actions);
       } else {

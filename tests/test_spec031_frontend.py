@@ -75,7 +75,7 @@ def test_spec031_frontend_dom_and_security_contracts():
     styles = STYLES.read_text(encoding="utf-8")
     assert "research-benchmark-section" in index
     assert "research-benchmark-metrics" in index
-    assert "/assets/research-tasks.js?v=10" in index
+    assert "/assets/research-tasks.js?v=11" in index
     assert "routingInsightText" in research
     assert "normalizeBenchmarkSummary" in research
     assert "loadSelectionSnapshot" in research
