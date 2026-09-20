@@ -31,14 +31,27 @@ import html
 import json
 import re
 from dataclasses import dataclass, field, replace
+from html.parser import HTMLParser
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
-from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.source_authority import (
+    AUTHORITY_AGGREGATOR,
+    AUTHORITY_OFFICIAL_DOI,
+    AUTHORITY_OFFICIAL_VENUE,
+    DEFAULT_SOURCE_AUTHORITY,
+    UNKNOWN_SOURCE_AUTHORITY,
+    may_overwrite,
+)
 from backend.app.paper_discovery.infrastructure.openalex_enricher import _abstract_from_inverted_index
 
-IEEE_SP_SOURCE_ID = "ieee-sp"
+# Canonical Spec032 source ID.  ``ieee-sp`` remains accepted by
+# ``domain.source_authority.canonical_source_id`` when reading old persisted rows.
+IEEE_SP_SOURCE_ID = "ieee_sp"
 IEEE_SP_SOURCE_KIND = "ieee_sp"
+IEEE_SP_OFFICIAL_SOURCE_ID = "ieee_sp"
+IEEE_SP_OFFICIAL_HOST = "sp2024.ieee-security.org"
 CROSSREF_SOURCE_ID = "crossref"
 OPENALEX_SOURCE_ID = "openalex"
 CROSSREF_HOST = "api.crossref.org"
@@ -52,18 +65,17 @@ IEEE_SP_PARSE_FAILED = "IEEE_SP_PARSE_FAILED"
 IEEE_SP_INVALID_RESPONSE = "IEEE_SP_INVALID_RESPONSE"
 #: 有条目但没有任何一条通过会议容器过滤——这是「匹配规则失效导致静默返回 0」的可观测信号。
 IEEE_SP_VENUE_FILTER_EMPTY = "IEEE_SP_VENUE_FILTER_EMPTY"
+IEEE_SP_OFFICIAL_ABSTRACT_MISSING = "IEEE_SP_OFFICIAL_ABSTRACT_MISSING"
+IEEE_SP_OFFICIAL_KEYWORDS_MISSING = "IEEE_SP_OFFICIAL_KEYWORDS_MISSING"
+IEEE_SP_OFFICIAL_INVALID_RESPONSE = "IEEE_SP_OFFICIAL_INVALID_RESPONSE"
 
-AUTHORITY_OFFICIAL_VENUE = 3
-AUTHORITY_OFFICIAL_DOI = 2
-AUTHORITY_AGGREGATOR = 1
+# 旧值 3/2/1（数值越大越权威）与聚合 adapter 的 10/20/30 方向相反，已在 Task05 统一为
+# domain/source_authority 的 10/20/30（数值越小越权威）；以下为兼容别名/映射。
 IEEE_SP_OFFICIAL_DOI_AUTHORITY = AUTHORITY_OFFICIAL_DOI
 IEEE_SP_AGGREGATOR_AUTHORITY = AUTHORITY_AGGREGATOR
 #: 字段来源 → 权威级别。未知来源按最高权威处理（宁可少写，不可覆盖）。
-SOURCE_AUTHORITY: Mapping[str, int] = {
-    CROSSREF_SOURCE_ID: AUTHORITY_OFFICIAL_DOI,
-    OPENALEX_SOURCE_ID: AUTHORITY_AGGREGATOR,
-}
-_UNKNOWN_SOURCE_AUTHORITY = AUTHORITY_OFFICIAL_VENUE
+SOURCE_AUTHORITY: Mapping[str, int] = dict(DEFAULT_SOURCE_AUTHORITY)
+_UNKNOWN_SOURCE_AUTHORITY = UNKNOWN_SOURCE_AUTHORITY
 
 DROP_FOREIGN_VENUE = "FOREIGN_VENUE"
 DROP_NON_PAPER_TITLE = "NON_PAPER_TITLE"
@@ -144,6 +156,117 @@ class IeeeSpCatalogResult:
     records: tuple[IeeeSpCatalogRecord, ...] = ()
     dropped: tuple[IeeeSpDropped, ...] = ()
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _OfficialBlock:
+    tag: str
+    text: str
+    href: str | None = None
+    class_name: str = ""
+
+
+class _OfficialCatalogHTMLParser(HTMLParser):
+    """Collect semantic blocks from the small, static IEEE programme pages.
+
+    The conference sites have changed their CSS over time, so this parser uses
+    heading/paragraph semantics instead of a brittle class selector.  It never
+    follows links and only records links after the source has allowlisted them.
+    """
+
+    _BLOCK_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "dt", "dd"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[_OfficialBlock] = []
+        self._active: list[dict[str, Any]] = []
+        self._href: str | None = None
+        # The live 2024 programme page uses ``div.list-group-item > b`` for
+        # each accepted paper, while the original fixture uses heading/
+        # paragraph pairs.  Keep both shapes in the same semantic block list.
+        self._list_group: dict[str, Any] | None = None
+        self._list_group_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.casefold()
+        attrs_map = dict(attrs)
+        class_name = str(attrs_map.get("class") or "")
+        if self._list_group is not None:
+            if tag == "div":
+                self._list_group_depth += 1
+                return
+            if tag in {"b", "strong"}:
+                self._list_group["in_title"] = True
+                return
+            return
+        if tag == "div" and "list-group-item" in class_name.split():
+            self._list_group = {"title": [], "authors": [], "in_title": False}
+            self._list_group_depth = 1
+            return
+        if tag in self._BLOCK_TAGS:
+            if self._active:
+                self._finish_block()
+            self._active.append({
+                "tag": tag,
+                "parts": [],
+                "href": None,
+                "class_name": str(attrs_map.get("class") or ""),
+            })
+        elif tag == "a" and self._active:
+            href = dict(attrs).get("href")
+            if href and self._active[-1]["href"] is None:
+                self._active[-1]["href"] = str(href)
+
+    def handle_data(self, data: str) -> None:
+        if self._list_group is not None and data:
+            key = "title" if self._list_group["in_title"] else "authors"
+            self._list_group[key].append(data)
+            return
+        if self._active and data:
+            self._active[-1]["parts"].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.casefold()
+        if self._list_group is not None:
+            if tag in {"b", "strong"}:
+                self._list_group["in_title"] = False
+                return
+            if tag == "div":
+                self._list_group_depth -= 1
+                if self._list_group_depth <= 0:
+                    self._finish_list_group()
+                return
+            return
+        if self._active and tag == self._active[-1]["tag"]:
+            self._finish_block()
+
+    def _finish_list_group(self) -> None:
+        item = self._list_group
+        self._list_group = None
+        self._list_group_depth = 0
+        if item is None:
+            return
+        title = " ".join("".join(item["title"]).split())
+        authors = " ".join("".join(item["authors"]).split())
+        if title:
+            self.blocks.append(_OfficialBlock(tag="b", text=title))
+        if authors:
+            self.blocks.append(_OfficialBlock(tag="p", text=authors))
+
+    def _finish_block(self) -> None:
+        item = self._active.pop()
+        text = " ".join("".join(item["parts"]).split())
+        if text:
+            self.blocks.append(_OfficialBlock(
+                tag=item["tag"], text=text, href=item["href"], class_name=item["class_name"],
+            ))
+
+    def close(self) -> None:
+        if self._list_group is not None:
+            self._finish_list_group()
+        while self._active:
+            self._finish_block()
+        super().close()
 
 
 @dataclass(frozen=True)
@@ -391,6 +514,121 @@ def parse_crossref_catalog(payload: Any, *, year: int | None = None) -> IeeeSpCa
     return IeeeSpCatalogResult(tuple(records), tuple(dropped), warnings)
 
 
+# --- 官网目录解析 -------------------------------------------------------------
+
+
+_OFFICIAL_HEADING_TAGS = frozenset({"h2", "h3", "h4", "h5", "h6"})
+_OFFICIAL_TITLE_TAGS = _OFFICIAL_HEADING_TAGS | frozenset({"b", "strong"})
+_OFFICIAL_SECTION_NAMES = frozenset({
+    "accepted papers", "first cycle", "second cycle", "third cycle", "program papers",
+    "programme papers", "papers", "45th ieee symposium on security and privacy",
+})
+
+
+def _official_author_names(raw: str) -> tuple[str, ...]:
+    """Extract author names while discarding parenthesized affiliations."""
+    names: list[str] = []
+    # Official pages consistently use Name (Affiliation), Name (Affiliation).
+    for part in re.split(r",\s*(?=[A-ZÀ-ÖØ-Ý][^,]*\s*\()", raw):
+        name = re.sub(r"\s*\([^)]*\)", "", part)
+        name = " ".join(name.split()).strip(" ,;:—–")
+        if name and name not in names:
+            names.append(name)
+    # A fixture or future page may omit affiliations; retain names rather than
+    # dropping the entire record, but do not split a normal sentence into words.
+    if not names and raw.strip():
+        names.append(" ".join(raw.split()))
+    return tuple(names)
+
+
+def _official_page_url(raw: Any, fallback: str) -> str:
+    candidate = _safe_record_url(raw, hosts=(IEEE_SP_OFFICIAL_HOST,))
+    if candidate:
+        return candidate
+    return _safe_record_url(fallback, hosts=(IEEE_SP_OFFICIAL_HOST,)) or ""
+
+
+def parse_official_catalog(
+    payload: Any, *, year: int, page_url: str = ""
+) -> IeeeSpCatalogResult:
+    """Parse an IEEE S&P programme page without inventing DOI/full-text fields.
+
+    Accepted-paper pages are official venue evidence for title/author/year only;
+    they commonly omit DOI, abstract, keywords and per-paper URLs. Those fields
+    remain empty so Crossref/OpenAlex can fill them later under field provenance.
+    """
+    if isinstance(payload, (bytes, bytearray)):
+        try:
+            payload = bytes(payload).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise IeeeSpPaperParseError(code=IEEE_SP_OFFICIAL_INVALID_RESPONSE) from error
+    if not isinstance(payload, str) or not payload.strip():
+        raise IeeeSpPaperParseError(code=IEEE_SP_OFFICIAL_INVALID_RESPONSE)
+    if payload.lstrip().startswith("%PDF-"):
+        raise IeeeSpPaperParseError(code=IEEE_SP_OFFICIAL_INVALID_RESPONSE)
+
+    parser = _OfficialCatalogHTMLParser()
+    try:
+        parser.feed(payload)
+        parser.close()
+    except (TypeError, ValueError) as error:
+        raise IeeeSpPaperParseError(code=IEEE_SP_OFFICIAL_INVALID_RESPONSE) from error
+
+    records: list[IeeeSpCatalogRecord] = []
+    seen_titles: set[str] = set()
+    blocks = parser.blocks
+    for index, block in enumerate(blocks[:-1]):
+        if block.tag not in _OFFICIAL_TITLE_TAGS:
+            continue
+        title = " ".join(html.unescape(block.text).split())
+        normalized = title.casefold().strip(" .:")
+        if not title or normalized in _OFFICIAL_SECTION_NAMES:
+            continue
+        if normalized.startswith("ieee symposium on security and privacy"):
+            continue
+        author_block = blocks[index + 1]
+        if author_block.tag not in {"p", "li", "dd"}:
+            continue
+        authors = _official_author_names(author_block.text)
+        if not authors:
+            continue
+        title_key = normalize_title(title)
+        if not title_key or title_key in seen_titles:
+            continue
+        seen_titles.add(title_key)
+        article_url = _official_page_url(block.href, page_url)
+        records.append(IeeeSpCatalogRecord(
+            doi="",
+            title=title,
+            authors=authors,
+            year=int(year),
+            container_title=f"{int(year)} IEEE Symposium on Security and Privacy (SP)",
+            article_url=article_url,
+            source_kind=IEEE_SP_SOURCE_KIND,
+            abstract=None,
+            keywords=(),
+            pdf_url=None,
+            pdf_access="unknown",
+            provenance={
+                "title": IEEE_SP_OFFICIAL_SOURCE_ID,
+                "authors": IEEE_SP_OFFICIAL_SOURCE_ID,
+                "year": IEEE_SP_OFFICIAL_SOURCE_ID,
+                "container_title": IEEE_SP_OFFICIAL_SOURCE_ID,
+                "article_url": IEEE_SP_OFFICIAL_SOURCE_ID,
+            },
+        ))
+
+    if not records:
+        raise IeeeSpPaperParseError(
+            "IEEE S&P 官网目录未解析出 accepted paper 条目",
+            code=IEEE_SP_OFFICIAL_INVALID_RESPONSE,
+        )
+    warnings: list[str] = []
+    if records:
+        warnings.extend((IEEE_SP_OFFICIAL_ABSTRACT_MISSING, IEEE_SP_OFFICIAL_KEYWORDS_MISSING))
+    return IeeeSpCatalogResult(tuple(records), (), tuple(warnings))
+
+
 # --- OpenAlex 富化与合并 -------------------------------------------------------
 
 
@@ -429,13 +667,11 @@ def parse_openalex_work(payload: Any) -> IeeeSpEnrichment:
 def _may_write(existing_source: str | None, incoming_source: str) -> bool:
     """低权威来源不得覆盖高权威字段（spec-032 字段级 provenance 合同）。
 
+    委托给 domain.source_authority.may_overwrite（唯一方向：数值越小越权威）。
     ``existing_source is None`` 表示该字段还没有归属来源 → 可写。来源 id 未知时按最高
     权威处理：宁可少写一次，也不能把未知（很可能是官方页面）的值覆盖掉。
     """
-    if existing_source is None:
-        return True
-    existing = SOURCE_AUTHORITY.get(existing_source, _UNKNOWN_SOURCE_AUTHORITY)
-    return existing < SOURCE_AUTHORITY.get(incoming_source, _UNKNOWN_SOURCE_AUTHORITY)
+    return may_overwrite(existing_source, incoming_source)
 
 
 def merge_enrichment(record: IeeeSpCatalogRecord, enrichment: IeeeSpEnrichment) -> IeeeSpCatalogRecord:
@@ -474,6 +710,11 @@ class IeeeSpCatalogParser:
     def parse_catalog(self, payload: Any, *, year: int | None = None) -> IeeeSpCatalogResult:
         return parse_crossref_catalog(payload, year=year)
 
+    def parse_official_catalog(
+        self, payload: Any, *, year: int, page_url: str = ""
+    ) -> IeeeSpCatalogResult:
+        return parse_official_catalog(payload, year=year, page_url=page_url)
+
     def parse_enrichment(self, payload: Any) -> IeeeSpEnrichment:
         return parse_openalex_work(payload)
 
@@ -495,6 +736,11 @@ __all__ = [
     "IEEE_SP_AGGREGATOR_AUTHORITY",
     "IEEE_SP_BIBLIOGRAPHIC_QUERY",
     "IEEE_SP_INVALID_RESPONSE",
+    "IEEE_SP_OFFICIAL_ABSTRACT_MISSING",
+    "IEEE_SP_OFFICIAL_HOST",
+    "IEEE_SP_OFFICIAL_INVALID_RESPONSE",
+    "IEEE_SP_OFFICIAL_KEYWORDS_MISSING",
+    "IEEE_SP_OFFICIAL_SOURCE_ID",
     "IEEE_SP_OFFICIAL_DOI_AUTHORITY",
     "IEEE_SP_PARSE_FAILED",
     "IEEE_SP_SOURCE_ID",
@@ -517,5 +763,6 @@ __all__ = [
     "is_ieee_sp_research_paper",
     "merge_enrichment",
     "parse_crossref_catalog",
+    "parse_official_catalog",
     "parse_openalex_work",
 ]

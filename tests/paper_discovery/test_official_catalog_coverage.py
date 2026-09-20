@@ -74,6 +74,26 @@ def test_official_fixture_parses_metadata_with_explicit_missing_fields():
     }
 
 
+def test_official_live_list_group_item_shape_parses_title_and_authors():
+    html = """
+    <html><body>
+      <h1>Accepted Papers</h1>
+      <div class="list-group-item">
+        <b>Live Programme Paper: A Defensible Example</b><br />
+        Alice Zhang (University A), Bob Li (University B)
+      </div>
+    </body></html>
+    """
+    result = parse_official_catalog(html, year=2024, page_url=OFFICIAL_URL)
+
+    assert len(result.records) == 1
+    record = result.records[0]
+    assert record.title == "Live Programme Paper: A Defensible Example"
+    assert record.authors == ("Alice Zhang", "Bob Li")
+    assert record.article_url == OFFICIAL_URL
+    assert record.provenance["title"] == IEEE_SP_OFFICIAL_SOURCE_ID
+
+
 def test_official_route_fetches_html_and_records_content_hash_without_pdf_probe():
     calls: list[str] = []
 
