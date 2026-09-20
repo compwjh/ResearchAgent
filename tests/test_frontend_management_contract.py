@@ -66,7 +66,7 @@ def test_governance_renderers_use_safe_text_boundaries() -> None:
 
 def test_keeps_static_asset_versions_and_scoped_css() -> None:
     # spec-036 已递增资源版本号，冻结断言同步为当前实际值（回归护栏）。
-    assert "/assets/app.js?v=53" in INDEX
+    assert "/assets/app.js?v=54" in INDEX
     assert "/assets/styles.css?v=53" in INDEX
     assert "#memory-view" in STYLES
     assert ".memory-item" in STYLES

@@ -203,7 +203,7 @@ def test_spec034_intake_terminal_state_is_collapsible_and_assets_are_bumped() ->
     assert "conversation-intake-body" in APP
     assert "collapseConversationIntake" in APP
     assert "data-status=\"failed\"" in STYLES
-    assert "/assets/app.js?v=53" in INDEX
+    assert "/assets/app.js?v=54" in INDEX
     assert "/assets/styles.css?v=53" in INDEX
 
 

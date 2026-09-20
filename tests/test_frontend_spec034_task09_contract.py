@@ -57,7 +57,7 @@ def test_old_button_removed_and_new_resources_versioned():
     # spec-036 已递增资源版本号，冻结断言同步为当前实际值（v3 / v51 / v53）。
     assert '/assets/research-tasks.js?v=3' in INDEX
     assert '/assets/styles.css?v=53' in INDEX
-    assert '/assets/app.js?v=53' in INDEX
+    assert '/assets/app.js?v=54' in INDEX
     assert '#research-view .research-open-session' in STYLES
     assert '#research-view .research-task-card-details' in STYLES
 

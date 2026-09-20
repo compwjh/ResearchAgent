@@ -2146,8 +2146,8 @@ function renderConversationApprovals(panel, approvals, plan) {
     const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = researchApprovalStatusText(approval.status);
     const meta = document.createElement('span'); meta.className = 'conversation-research-approval-meta'; meta.textContent = `版本 v${safeResearchScalar(approval.subject_version, '—')} · ${safeResearchScalar(approval.approval_request_id, '无 ID')}`;
     const pending = approval.status === 'pending';
+    const controls = document.createElement('div'); controls.className = 'conversation-research-approval-actions';
     if (pending) {
-      const controls = document.createElement('div'); controls.className = 'conversation-research-approval-actions';
       const approveCommand = kind === 'plan' ? 'approve_plan' : kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
       const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'send-button conversation-research-command'; approve.dataset.command = approveCommand; approve.textContent = RESEARCH_COMMAND_LABELS[approveCommand];
       const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
@@ -2163,10 +2163,10 @@ function renderConversationApprovals(panel, approvals, plan) {
         }
       }));
       decline.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'decline_request', approval.subject_version, researchCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
-      controls.append(approve, decline); card.append(heading, status, meta, controls);
-    } else {
-      card.append(heading, status, meta);
+      controls.append(approve, decline);
     }
+    card.append(heading, status, meta);
+    if (pending) card.appendChild(controls);
     container.appendChild(card);
   });
 }

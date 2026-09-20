@@ -40,7 +40,7 @@ def test_context_meter_classes_are_styled() -> None:
 
 def test_asset_version_bumped_for_spec025() -> None:
     # spec-036 已递增资源版本号，冻结断言同步为当前实际值（回归护栏）。
-    assert "/assets/app.js?v=53" in INDEX
+    assert "/assets/app.js?v=54" in INDEX
     assert "/assets/styles.css?v=53" in INDEX
 
 
