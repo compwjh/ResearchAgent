@@ -416,3 +416,23 @@ def test_download_dispatch_preserves_duplicate_candidate_failure(monkeypatch):
 
     assert result.ok is False
     assert result.error == "论文已在知识库中"
+
+
+def test_sticky_download_recovers_candidate_from_capped_processing_summary():
+    from backend.app.api.routes_conversations import _safe_catalog_candidate
+
+    summary = (
+        "检索完成：来源=USENIX Security。\n"
+        'candidate: {"title":"AttackGNN","catalog_paper_id":"attack-1",'
+        '"conference_id":"usenix-security","year":2024,'
+        '"source_page_url":"https://www.usenix.org/conference/usenixsecurity24/presentation/attackgnn",'
+        '"source_links":["https://www.u'
+    )[:500]
+
+    assert _safe_catalog_candidate(summary) == {
+        "title": "AttackGNN",
+        "catalog_paper_id": "attack-1",
+        "conference_id": "usenix-security",
+        "year": 2024,
+        "source_page_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/attackgnn",
+    }

@@ -2,14 +2,14 @@
 
 > 审计时间：2026-09-20（Asia/Shanghai）；本轮复核追加于同日
 > 范围：032.1 Task08（IDE 本地 USENIX 助手）与 Task10（会话 Skill 粘性）
-> 结论：**部分 PASS；USENIX 检索→导入真实 smoke 通过，Task10 真实连续会话仍待补证**
+> 结论：**部分 PASS；USENIX 检索→导入真实 smoke 通过，Task10 sticky 工具派发与失败闭环已补证，成功导入仍待受控样本**
 
 ## 1. 结论摘要
 
 | 子项 | 状态 | 结论 |
 | --- | --- | --- |
 | Task08 IDE Skill | **PASS（静态/契约/真实 smoke）** | Skill、搜索脚本、导入脚本均已存在；脚本只调用产品 HTTP API，且不可达时中文报错、非 0、无 traceback。新版异步结果 snapshot 的 `source_page_url` 作为官方详情页回退；本轮另修复不可达提示固定写 8000 的问题，改为显示实际 `--base-url`。18080 真实检索返回 3 篇候选，第三篇通过既有导入链成功 `indexed`。 |
-| Task10 会话 Skill 粘性 | **PASS（代码/定向链路）** | `conversation_active_skill` 独立表、仓储读写、会话路由 `_resolve_sticky_skill` 和连续两轮工具链路已真实接线；测试覆盖激活、沿用、切换、退出、禁用清理、会话/owner 隔离。 |
+| Task10 会话 Skill 粘性 | **PASS（代码/定向链路；真实派发失败闭环已证）** | `conversation_active_skill` 独立表、仓储读写、会话路由 `_resolve_sticky_skill` 和连续两轮工具链路已真实接线；本轮进一步证明 sticky 请求会派发 `download_and_import_paper`，失败时持久化 `failed`，不伪造成功。测试覆盖激活、沿用、切换、退出、禁用清理、会话/owner 隔离。 |
 
 ## 2. Task08 证据
 
@@ -73,3 +73,10 @@
 - SSE 返回 `skill_intent=completed`，并明确返回 `intent`：`skill=usenix-catalog-orchestration`、`source=sticky`、`confidence=1.0`。这证明会话路由在用户不再次点名 Skill 时仍沿用已激活 Skill。
 - 该轮生成阶段随后长时间保持 `streaming`（`last_event_seq=7`），属于当前 Ollama 生成收口慢的运行时问题；不影响 sticky intent 事件已被真实 API 观察到。
 - 精确文本“就下载第一篇吧”仍未执行，因此不把下载工具调用标记为真实 PASS。若需关闭最后证据缺口，需要无副作用测试 seam 或用户明确授权的受控环境。
+
+## 8. Task10 真实 sticky 下载派发补证（2026-09-21）
+
+- 服务 `18080` 健康探针 HTTP 200；模型为 `qwen3.5:9b`、关闭思考输出。
+- 首轮会话 `aed0a03b38514d1eb551fca8374c3f4f` / 助手 `d7a40bb71acc48ef9ac1fb06802417b6` 点名 `usenix-catalog-orchestration`，目录检索真实完成，返回 8 篇候选；服务端处理摘要按 500 字截断。
+- 第二轮同一会话 `46b27fb131e248d79bb29cb16b623353` 使用“就下载第一篇吧”，真实意图为 `source=sticky`，并产生 `download_and_import_paper` 记录但状态 `failed`、摘要“论文导入失败”。新增候选恢复逻辑只读取服务端候选 allowlist 字段，下载工具继续执行既有身份/URL/SSRF 校验。
+- 结果：sticky → 工具派发和可观察失败闭环 PASS；本次没有公开、未入库 PDF 的成功导入样本，不能声称 Task10 的成功导入 PASS。后续仅需补受控公开样本或保留人工修复路径。

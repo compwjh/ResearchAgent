@@ -771,6 +771,89 @@ def _catalog_search_fallback(message: str, tools) -> Optional[tuple[str, dict]]:
     return search_tool.name, args
 
 
+_CATALOG_CANDIDATE_FIELDS = frozenset(
+    {"title", "catalog_paper_id", "conference_id", "year", "source_page_url", "source_links"}
+)
+
+
+def _safe_catalog_candidate(summary: object) -> Optional[dict]:
+    """Extract one server-returned candidate without accepting free-form URLs."""
+    text = str(summary or "")
+    marker = re.search(r"(?:^|\n)\s*candidate\s*:\s*", text, flags=re.IGNORECASE)
+    if marker is None:
+        return None
+    fragment = text[marker.end() :].lstrip()
+    try:
+        candidate, _ = json.JSONDecoder().raw_decode(fragment)
+    except (TypeError, json.JSONDecodeError):
+        # Processing-step summaries are intentionally capped at 500 chars.
+        # A valid server candidate can therefore end halfway through its JSON
+        # (usually in source_links). Recover only the allowlisted scalar fields
+        # that precede that cap; the download tool still applies URL/SSRF and
+        # identity checks before any side effect.
+        def partial_string(field: str) -> Optional[str]:
+            match = re.search(rf'"{re.escape(field)}"\s*:\s*"((?:\\.|[^"\\])*)', fragment)
+            if match is None:
+                return None
+            try:
+                value = json.loads(f'"{match.group(1)}"')
+            except (TypeError, json.JSONDecodeError):
+                return None
+            return value if isinstance(value, str) and value.strip() else None
+
+        candidate = {
+            field: partial_string(field)
+            for field in ("title", "catalog_paper_id", "conference_id", "source_page_url")
+        }
+        year_match = re.search(r'"year"\s*:\s*(\d{4})', fragment)
+        if year_match:
+            candidate["year"] = int(year_match.group(1))
+    if not isinstance(candidate, dict):
+        return None
+
+    safe: dict = {}
+    for key in ("title", "catalog_paper_id", "conference_id", "source_page_url"):
+        value = candidate.get(key)
+        if isinstance(value, str) and value.strip():
+            safe[key] = value.strip()
+    year = candidate.get("year")
+    if isinstance(year, int) and not isinstance(year, bool):
+        safe["year"] = year
+    links = candidate.get("source_links")
+    if isinstance(links, list):
+        safe_links = [item.strip() for item in links if isinstance(item, str) and item.strip()][:8]
+        if safe_links:
+            safe["source_links"] = safe_links
+    if not safe.get("title") or not (safe.get("source_page_url") or safe.get("source_links")):
+        return None
+    return {key: value for key, value in safe.items() if key in _CATALOG_CANDIDATE_FIELDS}
+
+
+def _latest_catalog_candidate(repo: MemoryRepository, conversation_id: str, *, exclude_message_id: str) -> Optional[dict]:
+    """Read the newest completed search step from this conversation only."""
+    try:
+        history = repo.list_context_messages(conversation_id, OWNER_ID)
+        for message in history:
+            if (
+                getattr(message, "role", None) != "assistant"
+                or not (message.content or "").strip()
+                or message.message_id == exclude_message_id
+            ):
+                continue
+            steps = repo.list_processing_steps(message.message_id, OWNER_ID)
+            for step in reversed(steps):
+                if (
+                    (step.label == "search_paper_catalog" or step.kind == "search_paper_catalog")
+                    and step.status == "completed"
+                ):
+                    candidate = _safe_catalog_candidate(step.summary)
+                    if candidate is not None:
+                        return candidate
+    except Exception:  # noqa: BLE001 - fallback is advisory and fail-closed
+        logger.warning("读取历史目录候选失败，跳过下载 fallback", exc_info=True)
+    return None
+
+
 def _skill_body(registry, skill_name: str) -> Optional[str]:
     try:
         detail = registry.get_skill(skill_name)
@@ -1032,6 +1115,20 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             ]
             fallback_tool_call = None
             if (
+                decision.skill == "usenix-catalog-orchestration"
+                and decision.source == "sticky"
+                and _is_paper_download_request(user_message.content)
+            ):
+                candidate = _latest_catalog_candidate(
+                    repo,
+                    conversation.conversation_id,
+                    exclude_message_id=assistant_message.message_id,
+                )
+                if candidate is not None and any(
+                    tool.name == "download_and_import_paper" and tool.enabled for tool in enabled_tools
+                ):
+                    fallback_tool_call = ("download_and_import_paper", {"candidate": candidate})
+            elif (
                 decision.skill == "usenix-catalog-orchestration"
                 and not _is_paper_download_request(user_message.content)
             ):

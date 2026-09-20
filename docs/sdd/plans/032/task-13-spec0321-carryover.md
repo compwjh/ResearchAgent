@@ -1,7 +1,7 @@
 # Task 13：Spec032.1 余项移交——IDE 助手与会话 Skill 粘性
 
 > 关联：[Spec032](../../specs/032-research-source-expansion.md) ｜ 索引：[README](./README.md)
-> 依赖：Task09、Spec032.1 自身 Task07 评审；当前状态：`部分完成（Task08 真实检索→导入通过；Task10 真实连续会话待补证）`
+> 依赖：Task09、Spec032.1 自身 Task07 评审；当前状态：`部分完成（Task08 真实检索→导入通过；Task10 粘性工具派发已补证，成功导入仍受受控样本约束）`
 
 ## 一句话目标
 
@@ -19,7 +19,7 @@
 
 ## 交接与产出
 
-写 `artifacts/task-13/carryover.md`，逐项说明原任务、实际状态、改动文件、命令/退出码、真实运行证据与 032.1 状态台账链接。主 Agent 已验证产品 Skill 与 IDE Skill 目录分工。执行结果：4 passed 的 Task13 合同、73 passed 的会话/仓储/Skill 相关测试、脚本 Ruff/py_compile/不可达服务探针通过；Task08 真实检索→导入 smoke 已通过，Task10 真实连续会话仍留待补证。
+写 `artifacts/task-13/carryover.md`，逐项说明原任务、实际状态、改动文件、命令/退出码、真实运行证据与 032.1 状态台账链接。主 Agent 已验证产品 Skill 与 IDE Skill 目录分工。执行结果：Task13 合同、会话/仓储/Skill 定向测试、脚本 Ruff/py_compile/不可达服务探针通过；Task08 真实检索→导入 smoke 已通过，Task10 已补齐真实连续会话中的 sticky 工具派发和失败闭环证据，成功导入仍需受控公开 PDF 样本。
 
 ### 2026-09-20 复核执行结果
 
@@ -39,6 +39,14 @@
 
 - 第二轮改用“继续搜索第一篇吧”，SSE 返回 `intent`，其中 `skill=usenix-catalog-orchestration`、`source=sticky`、`confidence=1.0`；真实 API 已观察到 Skill 粘性沿用，且未执行下载。
 - 模型生成阶段随后保持 `streaming`，精确文本“就下载第一篇吧”对应的真实工具调用仍待无副作用 seam 或用户明确授权的受控环境；不将其伪造为完成。
+
+### Task10 真实 sticky 下载派发补证（2026-09-21）
+
+- 服务：`PORT=18080`，模型 `qwen3.5:9b`，`reasoning_effort=off`；健康探针 HTTP 200。
+- 首轮同一会话 `aed0a03b38514d1eb551fca8374c3f4f` 发送“使用 usenix-catalog-orchestration 搜索 agent security 2024 论文”：助手 `d7a40bb71acc48ef9ac1fb06802417b6` 以 `source=rule` 命中 Skill，真实目录检索完成并持久化 8 篇候选。
+- 目录处理摘要受服务端 500 字上限截断；新增 `_safe_catalog_candidate` 仅从该服务返回的候选 JSON 中恢复 allowlist 字段，不接受用户自由 URL，随后仍交给既有下载工具的身份、URL 和 SSRF 校验。定向测试 `tests/skills/test_skill_carryover.py` 为 9 passed。
+- 同一会话第二轮 `46b27fb131e248d79bb29cb16b623353` 发送“就下载第一篇吧”：路由实际写入 `source=sticky`，并持久化 `download_and_import_paper` 工具步骤；步骤状态为 `failed`、摘要为“论文导入失败”。这证明 sticky → 工具派发和失败可观察闭环生效，没有伪造成功或绕过安全链。
+- 本次失败来自受控环境中的现有下载/导入链（外部 PDF 或索引条件未满足），不是 Skill 粘性丢失；继续收口前应补一个明确公开且未入库的 PDF 样本，或保留失败队列供人工修复。不得把该次失败改写为成功导入证据。
 
 ## 变更日志
 
