@@ -187,6 +187,9 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：�
 - 示例：`test_spec025_token_budget.py` → `test_token_budget_estimation.py`；`test_task09_project_activity.py` → `test_project_activity.py`。
 - 前端契约测试同理：`test_frontend_task10_system_rule_contract.py` → `test_frontend_system_rule_contract.py`。
 - **测试函数名同样不带编号**；唯一例外是被测生产符号本身带编号时（如 `_is_task025_schema`），测试名与之保持一致。
+- 测试源码按被测领域放在 `tests/<domain>/` 子目录；`tests/` 根目录只保留目录，不直接放测试文件。
+- 全局 pytest fixture 放在仓库根目录 `conftest.py`；新增测试优先复用现有领域目录，跨领域场景放入 `tests/integration/`。
+- 整理后可运行 `.venv/bin/python scripts/check_test_layout.py` 校验根目录和编号命名约束。
 - `docs/sdd/plans/` 下历史报告里对旧文件名的引用属归档文本，不随重命名改写。
 
 ## Skill 编写边界（分层归属）

@@ -64,6 +64,14 @@ GET https://api.crossref.org/works
 
 ## 不含样本的模拟用例
 
-`tests/test_spec032_ndss_source.py::test_structure_change_front_matter_under_the_main_container_is_dropped`
+`tests/paper_discovery/test_ndss_source.py::test_structure_change_front_matter_under_the_main_container_is_dropped`
 在**真实 2024 响应**上把一条真实主会条目的标题替换为同一出版方（VehicleSec 2024）真实存在的
 poster 标题，用于模拟「NDSS 将来把 poster 登记进主会容器」的结构变化。fixture 文件本身 100% 真实。
+
+## 官网 accepted-papers 固定样本（Spec032 Task07）
+
+`official-accepted-papers-2024.html` 是基于 NDSS 官方 2024 accepted-papers 页中真实可核验的
+3 条主会论文条目制作的**受控 bounded subset**，不是完整原始页面快照，也不宣称代表该年度
+140 篇全量目录。标题、作者和官方入口取自官方页面；HTML 外壳只用于固定 parser/source 合同。
+该样本专门验证官网路由、字段 provenance、摘要/关键词显式缺失、内容 hash 和目录阶段拒绝 PDF；
+年度全量发现、详情摘要、下载和入库仍需后续受控验收。
