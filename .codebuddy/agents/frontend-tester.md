@@ -3,7 +3,7 @@ name: frontend-tester
 description: 前端回归/验收 agent（qwen3.5:9b）。只做前端契约核对与静态检查（node --check / Grep），不跑后端 pytest。Use PROACTIVELY when 改动只涉及 frontend/** 需要回归验证时。
 tools: Read, Grep, Glob, Bash
 skills: verification-loop, strategic-compact, progress-logging
-model: hy3
+model: Deepseek-V4.1-Flash
 permissionMode: default
 maxTurns: 20
 ---

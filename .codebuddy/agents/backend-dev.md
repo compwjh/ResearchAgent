@@ -3,7 +3,7 @@ name: backend-dev
 description: 后端开发 agent（Python/FastAPI/SQLite/Qdrant，含 Python/Django 测试与架构支持，qwen3.8:27b-mlx）。只改 backend/** 与后端测试，不承担前端改动。Use PROACTIVELY when 需要实现或修改后端逻辑、API、服务、数据层时。
 tools: Read, Grep, Glob, Edit, Bash
 skills: backend-patterns, regression-guard, progress-logging
-model: hy3
+model: Deepseek-V4.1-Flash
 permissionMode: default
 maxTurns: 30
 ---

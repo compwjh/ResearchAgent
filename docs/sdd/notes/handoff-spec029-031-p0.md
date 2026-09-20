@@ -189,6 +189,10 @@ print('validated:', len(_validated_evaluator_candidates(evals, {}, recall_allowl
    - `.codebuddy/agents/frontend-dev.md` 第 6 行：`model: hy3`
    - 若不再需要，还原为 `model: Deepseek-V4.1-Flash` 即可。
 
+   > **【2026-09-20 更新】已还原，本条作废。** 用户明确 `hy3` 属临时决策、不应固化为规范，现已把 `.codebuddy/agents/` 下全部 10 个 agent 的 `model` 恢复为 `Deepseek-V4.1-Flash`。
+   > 同时撤除了 `AGENTS.md` 中复述型号的「角色模型分配」表与「必须与 agent 文件逐字一致」要求——正是该要求让临时档位被固化成了"全部角色统一 `hy3`"。
+   > 新规则：模型档位唯一真源 = `.codebuddy/agents/<role>.md` 的 `model` 字段；429 限流临时改档只改该字段、任务后还原，**不得**写进 `AGENTS.md` 或任何文档。见 `docs/sdd/MODEL_REGISTRY.md`「事故记录」。
+
 ---
 
 ## 8. 建议的下一步

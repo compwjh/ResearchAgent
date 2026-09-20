@@ -46,3 +46,30 @@
 > ⚠️ **27B 一律选 MLX 版 `qwen3.8:27b-mlx`（注意是「冒号」），不要用 GGUF 版**：mlx 解码 24.3 tok/s、预填充 0.30s，GGUF 仅 13.8 tok/s、预填充 1.15s，mlx 解码快 76%、预填充快近 4 倍；GGUF 吞吐过低是子代理超时的主因。详见 `docs/sdd/retro/2026-09-02-subagent-timeout-mlx.md`。
 > ⚠️ 子代理 `model` 字段**不能用含 `/` 的命名空间 ID**（如 `oamazonasgabriel/...`），会被判为 `model not found`；改用不含 `/` 的 `qwen3.8:27b-mlx`。
 > ⚠️ 已弃用的 `qwen3.8-27b-q4` / `qwen3.8:27b`（GGUF）不再作为分派选项，仅保留记录以便回溯。
+
+## 角色 agent 当前档位（唯一真源）
+
+`.codebuddy/agents/<role>.md` 的 `model` 字段才是档位的唯一真源；**`AGENTS.md` 不复述型号**。
+此处仅作快照记录，改动档位时以 agent 文件为准并同步本节。
+
+| 角色 agent | 当前 `model` | 说明 |
+|---|---|---|
+| `architect` / `planner` / `doc-updater` | `Deepseek-V4.1-Flash` | 用户 2026-09-10 指定 |
+| `backend-dev` / `frontend-dev` | `Deepseek-V4.1-Flash` | 同上 |
+| `backend-reviewer` / `frontend-reviewer` | `Deepseek-V4.1-Flash` | 同上 |
+| `backend-tester` / `frontend-tester` / `tester` | `Deepseek-V4.1-Flash` | 同上 |
+
+> ⚠️ **`Deepseek-V4.1-Flash` 不在上方模型清单内**（上方为示例默认值，实际应按厂商公布为准）。该档位由用户指定，
+> 属线上平台档位。若分派报 `Subagent model config is invalid` / `model not found`，说明当前环境未注册该档位，
+> 按「选型速查」回退并在本次执行配置备注回退原因。
+
+### 事故记录：临时档位不得固化为规范（2026-09-12 → 2026-09-20 还原）
+
+- 2026-09-12 Spec027 Task03 期间，默认档撞账号级频率限制（429），临时改用更轻档位 `hy3`，16 次分派成功。
+- 该临时值随后被写入 `AGENTS.md` 的「角色模型分配」表，并被标注为「实测修订：全部角色统一 `hy3`」，
+  还附带「必须与 `.codebuddy/agents/*.md` 逐字一致」的同步要求 —— **把限流应急手段固化成了正式规范**。
+- 用户明确表示 `hy3` 是**临时决策**，项目记忆 `.workbuddy-ai/memory/2026-09-12.md` 亦记有「临时操作，不用改 md」。
+- 2026-09-20 已还原为 `Deepseek-V4.1-Flash`，并撤除 `AGENTS.md` 中复述型号的表格与「两处逐字一致」要求。
+
+**教训**：429 临时改档只改 `.codebuddy/agents/<role>.md` 的 `model` 字段，任务结束后还原；
+**不得**把临时档位写进流程纪律文档。详见 `SUBAGENT-ORCHESTRATION.md`「实测约束」。

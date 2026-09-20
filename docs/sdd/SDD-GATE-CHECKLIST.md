@@ -23,26 +23,27 @@
 
 ---
 
-## 1. 角色—模型—产出对照表（分派前先填进 spec 的「执行配置」）
+## 1. 角色—产出对照表（分派前先填进 spec 的「执行配置」）
 
-| 角色 | 默认模型（已注册） | 上下文 | 落盘产出 | 分派方式 | 可否主模型代行 |
-| :-- | :-- | :-- | :-- | :-- | :-- |
-| 架构师 | **自身**（当前执行任务的 Agent，**不写死模型代号**） | 200k | spec + 执行配置 + 落地校验 | 主会话 | —（本身就是） |
-| 产品经理 PM | `qwen3.5:9b` | 32k | spec「产品使用步骤」段 | `Task(pm)` | 可，须注明"不适用/跳过原因" |
-| 开发主管 Tech Lead | `qwen3.8:27b` | 32k | `reviews/NNN-requirement-review.md`、`NNN-tech-review.md`、验收签字 | `Task(tech-lead)` | **仅紧急且须显式标注** |
-| 初级开发 Junior Dev（兼容保留） | `qwen3.8:27b-mlx` | 32k | 代码 + 自测结果 | `Task(junior-dev)` | 可，须在变更日志写明"架构师落地校验" |
-| 测试 QA（兼容保留，跨端验收） | `qwen3.5:9b` | 32k | `reviews/NNN-acceptance-review.md` | `Task(tester)` | **仅紧急且须显式标注** |
-| **后端开发 Backend Dev** | `qwen3.8:27b-mlx` | 32k | 后端代码 + 自测结果（只改 `backend/**`） | `Task(backend-dev)` | 同上（纯文档可代行） |
-| **前端开发 Frontend Dev** | `qwen3.8:27b-mlx` | 32k | 前端代码 + 三项自查（只改 `frontend/**`） | `Task(frontend-dev)` | 同上 |
-| **后端评审 Backend Reviewer** | `qwen3.8:27b-mlx` | 32k | 后端评审报告（只评 `backend/**`） | `Task(backend-reviewer)` | **仅紧急且须显式标注** |
-| **前端评审 Frontend Reviewer** | `qwen3.8:27b-mlx` | 32k | 前端评审报告（只评 `frontend/**`） | `Task(frontend-reviewer)` | **仅紧急且须显式标注** |
-| **后端回归 Backend Tester** | `qwen3.5:9b` | 32k | 后端验收结论（只跑后端 pytest） | `Task(backend-tester)` | **仅紧急且须显式标注** |
-| **前端回归 Frontend Tester** | `qwen3.5:9b` | 32k | 前端验收结论（只做静态核对） | `Task(frontend-tester)` | **仅紧急且须显式标注** |
+> **本表不复述模型型号**。模型档位的唯一真源是 `.codebuddy/agents/<role>.md` 的 `model` 字段；填 spec「执行配置」的"选用模型"列时，**去读该字段，不要从任何文档里抄型号**。
+> 硬约束：只接受已注册名（自定义 ID 报 `Subagent model config is invalid`）、不能含 `/`；本地 Ollama 名须经 `ollama list` 核实。详见 `docs/sdd/MODEL_REGISTRY.md`。
+> **（2026-09-20 修正）**：本表此前直接写死 `qwen3.8:27b-mlx` 等型号，与 agent 文件实际值长期不符；`AGENTS.md` 亦曾把 429 限流的临时档位 `hy3` 固化为"全部角色统一"。此后一律以 agent 文件为准。
+
+| 角色（真实 agent 文件） | 上下文 | 落盘产出 | 分派方式 | 可否主模型代行 |
+| :-- | :-- | :-- | :-- | :-- |
+| 架构师 `architect` | 200k | spec + 执行配置 + 落地校验 | 主会话 | —（本身就是） |
+| 文档更新 `doc-updater`（历史称 PM） | 32k | spec「产品使用步骤」段 | `Task(doc-updater)` | 可，须注明"不适用/跳过原因" |
+| 架构师（评审/合并）`architect`（历史称 Tech Lead） | 32k | `reviews/NNN-requirement-review.md`、`NNN-tech-review.md`、验收签字 | `Task(architect)` | **仅紧急且须显式标注** |
+| 测试（跨端验收总控）`tester` | 32k | `reviews/NNN-acceptance-review.md` | `Task(tester)` | **仅紧急且须显式标注** |
+| **后端开发** `backend-dev` | 32k | 后端代码 + 自测结果（只改 `backend/**`） | `Task(backend-dev)` | 同上（纯文档可代行） |
+| **前端开发** `frontend-dev` | 32k | 前端代码 + 三项自查（只改 `frontend/**`） | `Task(frontend-dev)` | 同上 |
+| **后端评审** `backend-reviewer` | 32k | 后端评审报告（只评 `backend/**`） | `Task(backend-reviewer)` | **仅紧急且须显式标注** |
+| **前端评审** `frontend-reviewer` | 32k | 前端评审报告（只评 `frontend/**`） | `Task(frontend-reviewer)` | **仅紧急且须显式标注** |
+| **后端回归** `backend-tester` | 32k | 后端验收结论（只跑后端 pytest） | `Task(backend-tester)` | **仅紧急且须显式标注** |
+| **前端回归** `frontend-tester` | 32k | 前端验收结论（只做静态核对） | `Task(frontend-tester)` | **仅紧急且须显式标注** |
 
 > **前后端分派原则**：改动只涉及一端时，只分派该端 agent 与该端回归，**不要让通吃 agent 一次做两端**，也不要让单端改动触发全套回归（省资源）。
-> `junior-dev` / `tester` 保留为**跨端或归属不确定**时的兼容选项；纯后端优先 `backend-dev`，纯前端优先 `frontend-dev`。
-
-> 模型名以 `ollama list` 实测为准，且必须是不含 `/` 的已注册名（含 `/` 会报 `Subagent model config is invalid`，见 `AGENTS.md`）。
+> **`junior-dev` 不存在**：跨端或归属不确定的改动一律拆成两端分别分派，不得按 `junior-dev`（或 `pm` / `tech-lead`）分派——这些历史名在 `.codebuddy/agents/` 下没有对应文件。
 
 ---
 
@@ -52,19 +53,20 @@
 
 - [ ] spec 段落齐全：`状态` / 一句话目标 / 数据模型 / 端点接口 / 边界 / 明确不做 / 产品使用步骤 / **执行配置** / **任务计划** / **评审记录** / **变更日志**
 - [ ] `状态` 段初始值 = `待确认`
-- [ ] 执行配置**五行齐全**（架构师/PM/开发主管/初级开发/测试），每行含**选用模型 + 上下文上限 + 职责**；不适用角色写"不适用（原因）"，**不要整行删除**
+- [ ] 执行配置**五行齐全**（架构师/文档更新/评审·合并/后端开发·前端开发/测试），每行含**选用模型 + 上下文上限 + 职责**；不适用角色写"不适用（原因）"，**不要整行删除**
 - [ ] 架构师行的选用模型填「**自身（当前执行任务的 Agent）**」，**不写死模型代号**
+- [ ] 其余各行的"选用模型"**读 `.codebuddy/agents/<role>.md` 的 `model` 字段**当场填写，**禁止**从本清单、旧 spec 或任何文档里抄型号
 - [ ] spec「任务计划」只含任务标题、文档链接、依赖、状态；详细实施内容已下沉到 `plans/NNN/task-*.md`
 - [ ] `plans/NNN/README.md` 与任务 02 起的全部 task 文件已创建；spec、README、task 的双向链接均真实存在，无占位死链接
 - [ ] task 初始状态均为 `待执行`，每个文件至少包含目标、前置条件、实施与文件边界、分派、边界/明确不做、验收、风险/回滚、产出与执行结果
 - [ ] 评审记录三行均按标准路径预告，并明确写“待评审（未执行）”；不把未产出的文件描述为已完成交付物，不写虚假结论或「结论：/」
 - [ ] 自检六条：①边界可测试 ②spec/task 职责分离 ③task 链接真实且依赖无环 ④范围划死 ⑤执行配置完整 ⑥产品步骤映射验收点
 
-### Gate 2 — 需求评审 + 技术评审（**tech-lead 子代理**）
+### Gate 2 — 需求评审 + 技术评审（**架构师评审子代理 `architect`**；历史文档中的 `tech-lead` 无对应文件）
 
 准入：Gate 1 全勾。
 
-- [ ] 用 `Task(subagent_name="tech-lead")` 分派，prompt 中给出：spec 路径、项目硬约束、本次评审重点
+- [ ] 用 `Task(subagent_name="architect")` 分派，prompt 中给出：spec 路径、项目硬约束、本次评审重点
 - [ ] 产出 `reviews/NNN-requirement-review.md` 与 `reviews/NNN-tech-review.md`，两份**均带结论**（通过/打回）
 - [ ] 两份文档头部含 **评审者 / 角色 / 模型 / 分派方式** 四项（用于事后审计"是谁评的"）
 - [ ] 评审基于**代码事实**（Grep/Read 真实文件），无"应该没问题"式结论
@@ -73,8 +75,8 @@
 **失败处置（禁止静默补位）**：
 
 1. 子代理调用失败 → **重试 1 次**（本地模型偶发超时属正常，3–8 分钟/次不等，勿误判卡死）；
-2. 仍失败 → **换更快的模型**（`qwen3.5:9b`）再试；
-3. 仍失败 → 在 spec 变更日志记录「阻塞：tech-lead 评审未执行（原因）」，spec 状态保持 `待确认`，**停下来告知用户**，不自行代写；
+2. 仍失败 → **临时换档**再试（只改目标 agent 的 `model` 字段为其它已注册档位，**任务结束后必须还原**；不得把该档位写进 `AGENTS.md` 或任何文档）；
+3. 仍失败 → 在 spec 变更日志记录「阻塞：架构师评审子代理未执行（原因）」，spec 状态保持 `待确认`，**停下来告知用户**，不自行代写；
 4. **确需主模型代行**（用户明确要求/时间紧迫）时必须三处留痕：评审文档头部写「主模型代行（原因）」、spec 评审记录结论后标 `（代行，非独立评审）`、变更日志记一行。
 
 ### Gate 3 — 用户确认（状态转 `已确认`）
@@ -89,10 +91,10 @@
   - 只改 `backend/**` → `Task(subagent_name="backend-dev")`
   - 只改 `frontend/**` → `Task(subagent_name="frontend-dev")`
   - 跨端改动 → **拆成两次分派**（后端一次、前端一次），不要派一个 agent 通吃
-  - 归属不确定 / 暂时无法拆分 → 才用兼容的 `Task(subagent_name="junior-dev")`
+  - 归属不确定 / 暂时无法拆分 → **先拆清楚再分派**；`junior-dev` / `pm` / `tech-lead` 均无对应 agent 文件，不得分派
 - [ ] **任务已拆分**：涉及 ≥3 个文件的改动已拆成「每任务 ≤2 个文件」的子任务；未拆分就整体实现 = 违规。
 - [ ] **未代行自查**：含代码文件的改动，确认**没有**用「改动极小 / 上下文在手 / 自己写更快」等理由代行（代行仅允许纯文档改动）。
-- [ ] **分派 27B 前先保证显存独占**：`./deploy/stop.sh` 停后端 → 清空 `ollama ps` 里的常驻模型（`keep_alive:0`）→ 再分派（27B 与 bge-m3 并存会 OOM）
+- [ ] **本地 Ollama 大档位（27B）分派前先保证显存独占**：`./deploy/stop.sh` 停后端 → 清空 `ollama ps` 里的常驻模型（`keep_alive:0`）→ 再分派（27B 与 bge-m3 并存会 OOM）。当前角色 agent 用的是线上档位时不适用本条。
 - [ ] **防回传截断**：要求子代理「先给完整代码片段、再给说明」，并**把片段同时写进进展日志**（避免回传被截断后一无所有）
 - [ ] 用 `Task(subagent_name="backend-dev")` 或 `Task(subagent_name="frontend-dev")` 分派，给出最小上下文（spec 的数据模型/接口/边界/明确不做 + 目标文件路径）
 - [ ] 实现严格限制在已确认 spec 范围内；范围扩大 → **先停**，更新 spec 再确认
@@ -101,12 +103,12 @@
 - [ ] 当前任务验证通过后，真实命令、结果、产出文件与风险已回填 task，三处任务状态同步为 `已完成`
 - [ ] 子代理失败 → 同 Gate 2 的失败处置（重试 → 换模型 → 记录阻塞），**不静默改为自己写整份实现**
 
-### Gate 5 — 验收（**tester 子代理出报告 + tech-lead 签字**）
+### Gate 5 — 验收（**tester 子代理出报告 + architect 签字**；历史文档中的 `tech-lead` 无对应文件）
 
 - [ ] 用 `Task(subagent_name="tester")` 分派，产出 `reviews/NNN-acceptance-review.md`（含通过/不通过结论 + 逐项判定依据）
 - [ ] 报告按 spec 的「产品使用步骤 / 边界」逐项判定，附**文件:行**依据
 - [ ] **运行时验证**：服务真实启动，跑通主链路（不能只靠单测）
-- [ ] 开发主管签字栏填写（tech-lead 或主模型代行时注明）；留空则**不得**把 spec 转 `已完成`
+- [ ] 签字栏填写（由架构师评审子代理 `architect` 签字；主模型代行时须注明「代行」及原因）；留空则**不得**把 spec 转 `已完成`
 - [ ] 验收不通过 → 退回 Gate 4，不进入部署
 
 ---
