@@ -100,3 +100,17 @@ POST /api/papers/sources/ieee_sp/sync
 | ACM CCS | `ccs|ccs|2024` | 328 | `completed` | 未下载/探测 |
 
 这两项只证明目录同步与 SQLite 持久化成功；四会议搜索入口和具体候选导入仍需 Task14 后续闭环。
+
+## IEEE 候选导入探针（实际下载边界）
+
+为验证统一 Worker Tool 不会把 IEEE 候选误判为未授权来源，使用已冻结的 IEEE S&P 2024 候选执行导入：
+
+- 候选：`ieee_sp:doi:10.1109/sp54263.2024.00212`
+- 标题：`Budget Recycling Differential Privacy`
+- 官方详情页：`https://ieeexplore.ieee.org/document/10646786/`
+- 官方 PDF：`https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=10646786`
+- Worker 返回：`status=failed`、`error.code=DOWNLOAD_BLOCKED`、`candidate_id` 保留。
+
+该结果已经越过来源白名单校验并进入既有安全下载器；失败发生在运行环境 DNS 无法解析 `ieeexplore.ieee.org`，不是候选格式或任意 URL 绕过。Worker 已将 `DOWNLOAD_BLOCKED` 原样映射为稳定错误，便于人工修复/重试。要完成 IEEE 的真实导入闭环，需要一个可访问的替代 PDF 地址（或由用户提供已下载 PDF），再走同一导入端口；搜索阶段仍不下载 PDF。
+
+同时补齐来源回退边界：USENIX 候选若明确选择 `arxiv` 版本，固定 `arxiv.org` 主机由服务端来源注册表授权；这不是从候选 URL 动态扩展信任，也不放宽任意站点访问。API 边界检查、Worker/API 定向测试和 Ruff 均通过。

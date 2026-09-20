@@ -69,6 +69,36 @@ class SourceEntry:
 # 受信任的运维决策；只有逐请求的外部输入受本集合约束。
 REQUIRED_SOURCE_IDS = frozenset({"usenix", "dblp", "ieee_sp", "ccs", "ndss"})
 
+# Publication-stage fallbacks are not independent catalog sources, but their
+# hosts are still fixed server-side trust decisions when a source candidate
+# explicitly selects one (for example USENIX → arXiv).
+_FALLBACK_DOWNLOAD_HOSTS: dict[str, Tuple[str, ...]] = {
+    "arxiv": ("arxiv.org",),
+    "usenix_accepted": ("www.usenix.org",),
+}
+
+
+def builtin_allowed_hosts(source_id: str) -> Tuple[str, ...]:
+    """Return the fixed download hosts declared by a built-in source.
+
+    Download callers must not derive trust from a persisted candidate URL.  This
+    small accessor lets the import boundary reuse the registry's source
+    authority declaration instead of maintaining a second, drifting host map.
+    Unknown source ids deliberately return an empty tuple (fail closed).
+    """
+    raw = str(source_id or "").strip().casefold()
+    fallback = _FALLBACK_DOWNLOAD_HOSTS.get(raw)
+    if fallback is not None:
+        return fallback
+    try:
+        canonical = canonical_source_id(raw, strict=True)
+    except (TypeError, ValueError):
+        return ()
+    return next(
+        (entry.allowed_hosts for entry in _builtin_entries() if entry.source_id == canonical),
+        (),
+    )
+
 
 def _builtin_entries() -> List[SourceEntry]:
     return [
@@ -83,8 +113,9 @@ def _builtin_entries() -> List[SourceEntry]:
                     ("ieeexplore.ieee.org", "doi.org"), ("discover_units", "sync"), "year", True, (2024,)),
         SourceEntry("ccs", "ccs", AUTHORITY_OFFICIAL_DOI, True,
                     ("dl.acm.org", "doi.org"), ("discover_units", "sync"), "year", True),
+        # 2024 is a bounded official-page sample, not a claim of 2021–2025 full coverage.
         SourceEntry("ndss", "ndss", AUTHORITY_OFFICIAL_DOI, True,
-                    ("www.ndss-symposium.org", "doi.org"), ("discover_units", "sync"), "year", True),
+                    ("www.ndss-symposium.org", "doi.org"), ("discover_units", "sync"), "year", True, (2024,)),
         # 聚合来源：默认启用但可被服务端配置关闭（非必需源）。
         SourceEntry("openalex", "openalex", AUTHORITY_AGGREGATE, True,
                     ("api.openalex.org",), ("discover_units", "sync"), "global", False),

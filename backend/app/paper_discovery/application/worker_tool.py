@@ -19,6 +19,11 @@ from backend.app.paper_discovery.domain.source_contract import (
     ImportResult,
     SourceResult,
 )
+from backend.app.paper_discovery.infrastructure.paper_download import (
+    DOWNLOAD_TIMEOUT,
+    LOGIN_REQUIRED,
+    PaperDownloadError,
+)
 from backend.app.paper_discovery.infrastructure.source_registry import SourceRegistry
 
 _KNOWN_SOURCES = frozenset({"usenix", "dblp", "ieee_sp", "ccs", "ndss", "openalex", "crossref"})
@@ -336,6 +341,7 @@ class PaperDiscoveryToolFacade:
     def import_candidate(self, source_id: str, candidate: Mapping[str, Any]) -> WorkerToolResult:
         started = time.monotonic()
         canonical = str(source_id or "").strip().casefold()
+        candidate_id: str | None = None
         try:
             canonical = canonical_source_id(source_id, strict=True)
             entry = self.registry.get(canonical)
@@ -386,6 +392,19 @@ class PaperDiscoveryToolFacade:
                 provenance={"candidate": canonical, "document": canonical if document_id else None},
                 payload={"import_result": import_result.to_dict()}, error=import_result.error,
                 elapsed_ms=_elapsed(started),
+            )
+        except PaperDownloadError as exc:
+            # Keep the download boundary's stable, actionable code visible to
+            # the Worker.  A generic IMPORT_FAILED here made a real blocked or
+            # login-gated paper indistinguishable from an internal exception,
+            # and discarded the candidate id needed for retry/manual recovery.
+            code = str(getattr(exc, "code", "DOWNLOAD_FAILED") or "DOWNLOAD_FAILED")
+            return self._failed(
+                "import",
+                canonical if canonical in _KNOWN_SOURCES else "usenix",
+                _error(code, retryable=code in {DOWNLOAD_TIMEOUT, LOGIN_REQUIRED}),
+                started,
+                candidate_id=candidate_id,
             )
         except Exception as exc:
             if exc.__class__.__name__ == "PaperImportError":

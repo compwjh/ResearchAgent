@@ -179,10 +179,30 @@ class PaperImportEndpointTests(unittest.TestCase):
         try:
             self.assertEqual(
                 common._paper_candidate_hosts(self.store.get_candidate("search-1", "candidate-1")),
-                {"trusted.example", "usenix.org", "www.usenix.org"},
+                {"trusted.example", "usenix.org", "www.usenix.org", "dblp.org"},
             )
         finally:
             common.article_settings = self.original_settings
+
+    def test_source_registry_adds_only_fixed_ieee_download_hosts(self):
+        candidate = PaperCandidate(
+            "ieee-candidate", "search-1", "IEEE paper", "ieee-sp", "IEEE S&P",
+            source_kind="ieee_sp",
+            article_url="https://ieeexplore.ieee.org/document/1/",
+            pdf_url="https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?arnumber=1",
+        )
+        hosts = common._paper_candidate_hosts(candidate)
+        self.assertIn("ieeexplore.ieee.org", hosts)
+        self.assertIn("doi.org", hosts)
+        self.assertNotIn("evil.example", hosts)
+        self.assertIn(
+            "ieeexplore.ieee.org",
+            common._paper_candidate_hosts({"source_id": "ieee_sp"}),
+        )
+        self.assertIn(
+            "arxiv.org",
+            common._paper_candidate_hosts({"source_id": "usenix", "source_kind": "arxiv"}),
+        )
 
     def test_import_rejects_client_metadata_with_stable_validation_error(self):
         response = self.client.post(

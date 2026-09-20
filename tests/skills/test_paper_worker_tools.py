@@ -127,3 +127,31 @@ def test_registered_dispatch_returns_machine_readable_envelope_for_unknown_sourc
     assert result.ok is False
     assert '"schema_version": "worker-tool-v1"' in result.output
     assert '"error"' in result.output
+
+
+def test_worker_preserves_actionable_download_error_and_candidate_id(monkeypatch):
+    from backend.app.paper_discovery.application import paper_import
+    from backend.app.paper_discovery.infrastructure.paper_download import PaperDownloadError
+
+    def blocked_import(*_args, **_kwargs):
+        raise PaperDownloadError("LOGIN_REQUIRED", "login required")
+
+    monkeypatch.setattr(paper_import, "import_candidate", blocked_import)
+    monkeypatch.setattr(
+        "backend.app.api.common._paper_candidate_hosts",
+        lambda _candidate: {"ieeexplore.ieee.org"},
+    )
+    candidate = {
+        "candidate_id": "ieee_sp:doi:10.1109/example",
+        "source_id": "ieee_sp",
+        "source_kind": "ieee_sp",
+        "title": "IEEE paper",
+        "pdf_url": "https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?arnumber=1",
+    }
+    facade = PaperDiscoveryToolFacade(registry=_Registry(), store=_Store())
+    result = facade.import_candidate("ieee_sp", candidate)
+
+    assert result.status == "failed"
+    assert result.candidate_id == candidate["candidate_id"]
+    assert result.error_code == "LOGIN_REQUIRED"
+    assert result.error.retryable is True

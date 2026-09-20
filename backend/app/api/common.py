@@ -31,6 +31,7 @@ from backend.app.paper_discovery.application.paper_import import (
 from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchService,
 )
+from backend.app.paper_discovery.application.source_hosts import builtin_allowed_hosts
 from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.config import BASE_DIR
 from backend.app.platform.settings.settings_repository import (
@@ -222,6 +223,20 @@ def _paper_candidate_hosts(candidate: object) -> set[str]:
     # 可信。固定加入白名单，不依赖部署配置，也不从候选 pdf_url 推导主机名
     # （详见 `_paper_candidate_hosts` 注释中的 SSRF 设计约束）。
     hosts |= {"usenix.org", "www.usenix.org"}
+    # Reuse the source registry as the single authority for source-specific
+    # download hosts (IEEE/ACM/NDSS/DBLP).  Candidate URLs never expand this
+    # set; only their persisted source kind selects an already-registered
+    # allowlist.
+    source_values = (
+        _paper_candidate_value(candidate, "source_kind", ""),
+        _paper_candidate_value(candidate, "source_id", ""),
+    )
+    hosts |= {
+        str(host).casefold()
+        for source_value in source_values
+        for host in builtin_allowed_hosts(str(source_value or ""))
+        if str(host).strip()
+    }
     return hosts
 
 
