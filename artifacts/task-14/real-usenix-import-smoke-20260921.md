@@ -82,3 +82,12 @@ POST /api/papers/sources/ieee_sp/sync
 ```
 
 同步任务 `sync-ieee_sp-5685719bd4884ffb` 被正确入队并可查询，但终态为 `failed`、`error_code=SOURCE_FAILED`、`paper_count=0`。这不是论文 PDF 下载失败，而是来源目录同步尚未形成可供导入的候选，因此本轮没有向你索取替代下载路径。该结果保留为 Task14 的真实阻塞证据：IEEE S&P 不能被标记为已验证，后续需要先定位来源同步失败，再进行候选导入探针。
+
+修复官方目录解析器后重启服务，第二次同步 `sync-ieee_sp-b27e19949f8d4c00` 终态为 `completed`：
+
+- 抓取单元：`ieee_sp|sp|2024|official`
+- 目录论文数：43
+- `error_code=null`，`degraded=false`
+- 未下载或探测任何 PDF
+
+因此 IEEE S&P 2024 的“官方目录 → 结构化元数据”链路已恢复；候选导入仍需单独走统一安全下载链，不能把目录同步成功当作 PDF 导入成功。
