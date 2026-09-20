@@ -738,9 +738,16 @@ def _create_paper_import_batch(request: PaperImportBatchRequest):
             search_session=session,
             candidates=candidates,
             idempotency_key=request.idempotency_key,
-            auto_run=True,
+            # Build the HTTP response from the durable queued snapshot before
+            # handing the batch to the background runner.  A fast importer can
+            # otherwise win the race and make the create response report
+            # ``downloading``/``completed`` despite the create contract being
+            # an immediate queued acknowledgement.
+            auto_run=False,
         )
-        return _paper_batch_status_payload(service, batch.batch_id)
+        queued_payload = _paper_batch_status_payload(service, batch.batch_id)
+        service.submit_batch(batch.batch_id, candidates=candidates)
+        return queued_payload
     except PaperImportBatchServiceError as error:
         return _paper_batch_error_response(error)
     except Exception as error:
