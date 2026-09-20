@@ -17,6 +17,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
+from urllib.parse import urlsplit
 
 from backend.app.paper_discovery.application.entry import (
     BROWSER_SESSION_EXPIRED,
@@ -415,6 +416,34 @@ def _find_existing(port: PaperImportPort, snapshot: Mapping[str, Any]) -> Any:
         raise PaperImportError(KB_IMPORT_FAILED, "知识库导入状态不可用", retryable=True) from error
 
 
+def _semantic_scholar_fallback(candidate: Any, allowed_hosts: Iterable[str]) -> tuple[Any, tuple[str, ...]] | None:
+    """Resolve one trusted OA URL without creating a second download path.
+
+    Semantic Scholar is consulted only after the primary download boundary has
+    failed.  Its response is filtered against fixed hosts and the returned
+    candidate is sent back through this same importer by the caller.
+    """
+    from backend.app.paper_discovery.infrastructure.semantic_scholar_adapter import (
+        SemanticScholarFallbackAdapter,
+    )
+    from backend.app.paper_discovery.infrastructure.source_registry import builtin_allowed_hosts
+
+    fixed_hosts = {str(value).strip().casefold() for value in allowed_hosts if str(value).strip()}
+    fixed_hosts.update(builtin_allowed_hosts("arxiv"))
+    result = SemanticScholarFallbackAdapter().lookup(candidate, allowed_hosts=fixed_hosts)
+    if result.code or not result.match or not result.match.pdf_url:
+        return None
+    fallback = _candidate_snapshot(candidate)
+    fallback["pdf_url"] = result.match.pdf_url
+    fallback["semantic_scholar_paper_id"] = result.match.paper_id
+    fallback["semantic_scholar_oa_status"] = result.match.open_access_status
+    host = urlsplit(result.match.pdf_url).hostname
+    if not host:
+        return None
+    fixed_hosts.add(host.casefold())
+    return fallback, tuple(sorted(fixed_hosts))
+
+
 def import_candidate(
     candidate: Any,
     settings: Optional[ArticleSettings] = None,
@@ -436,6 +465,7 @@ def import_candidate(
     paper_import_port: Optional[PaperImportPort] = None,
     attempt_owner: Optional[str] = None,
     attempt_token: Optional[str] = None,
+    _semantic_fallback_attempted: bool = False,
 ) -> PaperImportResult:
     """Download a candidate and hand the trusted local file to the KB port.
 
@@ -576,6 +606,32 @@ def import_candidate(
             )
         return translated
     except PaperDownloadError:
+        if not _semantic_fallback_attempted:
+            fallback = _semantic_scholar_fallback(candidate, allowed_hosts)
+            if fallback is not None:
+                fallback_candidate, fallback_hosts = fallback
+                return import_candidate(
+                    fallback_candidate,
+                    settings=settings,
+                    allowed_hosts=fallback_hosts,
+                    conference_short_name=conference_short_name,
+                    downloader=downloader,
+                    indexer=indexer,
+                    deleter=deleter,
+                    papers_dir=papers_dir,
+                    meta_path=meta_path,
+                    temp_dir=temp_dir,
+                    transport=transport,
+                    client=client,
+                    dns_resolver=dns_resolver,
+                    peer_ip_resolver=peer_ip_resolver,
+                    context=context,
+                    max_filename_length=max_filename_length,
+                    paper_import_port=paper_import_port,
+                    attempt_owner=attempt_owner,
+                    attempt_token=attempt_token,
+                    _semantic_fallback_attempted=True,
+                )
         raise
     except PaperImportError:
         raise

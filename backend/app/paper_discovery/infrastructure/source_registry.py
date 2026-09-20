@@ -73,7 +73,7 @@ REQUIRED_SOURCE_IDS = frozenset({"usenix", "dblp", "ieee_sp", "ccs", "ndss"})
 # hosts are still fixed server-side trust decisions when a source candidate
 # explicitly selects one (for example USENIX → arXiv).
 _FALLBACK_DOWNLOAD_HOSTS: dict[str, Tuple[str, ...]] = {
-    "arxiv": ("arxiv.org",),
+    "arxiv": ("arxiv.org", "export.arxiv.org"),
     "usenix_accepted": ("www.usenix.org",),
 }
 

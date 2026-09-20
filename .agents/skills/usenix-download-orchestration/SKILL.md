@@ -1,6 +1,6 @@
 ---
 name: usenix-download-orchestration
-description: USENIX Security 论文 PDF 下载与个人知识库导入的编排协议。当用户已从检索结果中选定具体论文、需要下载并导入时使用本技能。本技能负责编排决策——决定下载优先级（官方正式 PDF → prepublication PDF → arXiv 兜底）、arXiv 匹配不确定时如何处理、以及导入失败后的重试与恢复；实际下载、安全校验与导入由 download_and_import_paper 工具执行，本技能不接触 PDF 字节。
+description: USENIX Security 论文 PDF 下载与个人知识库导入的编排协议。当用户已从检索结果中选定具体论文、需要下载并导入时使用本技能。本技能负责编排决策——决定下载优先级（官方正式 PDF → prepublication PDF → arXiv → Semantic Scholar OA 兜底）、匹配不确定时如何处理、以及导入失败后的重试与恢复；实际下载、安全校验与导入由 download_and_import_paper 工具执行，本技能不接触 PDF 字节。
 tools: [paper_discovery, download_and_import_paper]
 ---
 
@@ -38,6 +38,7 @@ tools: [paper_discovery, download_and_import_paper]
    1. USENIX 详情页显式给出的**正式 PDF**；
    2. 页面显式给出的 **prepublication PDF**；
    3. 两者均失败后，才考虑 **arXiv 严格匹配**。
+   4. arXiv 仍不可用时，才考虑 **Semantic Scholar Academic Graph API 的 OA PDF**。
 2. **arXiv 兜底判定**：仅当标题、作者集合与年份均达到匹配阈值时才接受；
    否则判定为 `ARXIV_MATCH_UNCERTAIN`，**不导入**，并向用户说明匹配不确定。
    arXiv 只使用 `arxiv.org` / `export.arxiv.org` 的 HTTPS API。
@@ -49,6 +50,8 @@ tools: [paper_discovery, download_and_import_paper]
    - 重复下载在下载前与写入前均需去重；
    - 批量任务逐项隔离，单项失败不影响其余项；
    - 登录等待、超时、中断与租约过期可恢复。
+   - Semantic Scholar 只读取 DOI/ArXiv ID；`openAccessPdf.url` 必须命中服务端固定
+     allowlist。未登记主机、无 OA PDF 或匹配不确定时，返回稳定错误并转人工下载/上传。
 5. **状态一致性**：`accepted` / `prepublication` 状态在文件、元数据与导入任务中保持一致。
 
 ## 硬边界
