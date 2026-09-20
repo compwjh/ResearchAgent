@@ -22,3 +22,10 @@
 ## 交接结论
 
 创建响应竞态已修复并提交为 `921bc74`（`fix(spec032): preserve queued import acknowledgement`）。Task14 仍需按既定门禁完成全量回归、真实来源覆盖、受控导入/恢复 smoke、独立评审签字和部署验证，不能因本修复单独标记 Spec032 完成。
+
+## 重启后运行时检查（2026-09-21）
+
+- `PORT=18080 RERANKER_ENABLED=false ./deploy/start.sh`：启动成功，Uvicorn PID `58295`。
+- `GET /api/health`：HTTP `200`，`paper_discovery_enabled=true`。
+- `GET /api/ready`：HTTP `200`，jieba、Ollama、embedding、Qdrant 均为 `ready`。
+- `GET /api/papers/sources`：HTTP `200`，7 个受控来源可读；USENIX 已验证 2022–2026，IEEE S&P/NDSS 当前仅验证 2024，CCS 仍未验证，未把参数范围冒充覆盖证明。
