@@ -27,7 +27,9 @@ import re
 import sqlite3
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import Iterator
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -794,12 +796,27 @@ class ResearchStore:
         if row[1] != "integer" or row[0] != SCHEMA_VERSION:
             raise RuntimeError(f"Unsupported or corrupt research schema version: {row[0]!r}")
 
-    def _connect(self) -> sqlite3.Connection:
-        """新建连接：超时 30s、Row 工厂、外键开启。不设置 journal_mode（与既有 store 一致）。"""
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """新建连接：超时 30s、Row 工厂、外键开启。不设置 journal_mode（与既有 store 一致）。
+
+        必须以 ``with`` 使用。``sqlite3.Connection`` 作上下文管理器**只管理事务
+        （成功提交 / 异常回滚），并不关闭连接**；此前 89 个调用点全部写成
+        ``with self._connect() as conn:`` 而全文件没有一处 ``close()``，连接只能等
+        GC 回收，实测泄漏了数万个文件句柄，最终 ``OSError: [Errno 24] Too many open
+        files`` 使所有新建 httpx Client 失败（表现为健康检查 500、模型库空白）。
+
+        spec-037 Bug 9：此处改为 ``@contextmanager``——内层 ``with connection:`` 保持
+        原有事务语义不变，``finally`` 保证连接在任何路径下都被关闭。调用点无需改动。
+        """
         connection = sqlite3.connect(str(self.database_path), timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     # ------------------------------------------------------------------ #
     # ResearchTask 写 / 读

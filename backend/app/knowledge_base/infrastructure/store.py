@@ -17,7 +17,7 @@ from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from backend.app.platform.config import KB_META_PATH, KB_PAPERS_DIR
 
@@ -26,6 +26,14 @@ STATUS_INDEXING = "indexing"
 STATUS_INDEXED = "indexed"
 STATUS_PARTIAL = "indexed_partial"
 STATUS_FAILED = "failed"
+
+# spec-036 Task06：启动自愈把陈旧 failed 任务重排队一次的幂等标记键。
+# 该标记持久化在**文档顶层** `auto_requeued_chunkers`（落盘 papers.json），
+# 跨进程重启保留，作为「每 (document, chunker) 仅重排队一次」的去重依据，
+# 避免重启风暴。刻意用顶层字典、而非 chunker 状态内部字段，是为了避开
+# `ensure_chunkers` 对 chunker 状态只保留固定 4 字段的归一化（否则标记会在
+# 读取/写入时被抹掉）。
+AUTO_REQUEUED_CHUNKERS = "auto_requeued_chunkers"
 
 # 切分版本（spec-012）：上传时 v1 同步、v2 异步，两版各自维护状态与进度。
 CHUNKER_V1 = "v1"
@@ -800,3 +808,55 @@ def mark_interrupted_tasks(meta_path: Optional[Path] = None, reason: str = "服�
         if changed:
             save_papers(papers, meta_path)
     return marked
+
+
+def iter_failed_chunkers(meta_path: Optional[Path] = None) -> List[Tuple[str, str]]:
+    """列出所有 `knowledge-document-v1` 文档中状态为 `failed` 的 (document_id, chunker)。
+
+    只读扫描，使用宽松的 `load_papers`（文件缺失/损坏返回空），不抛异常——
+    启动自愈即使遇到坏元数据也只是「无事可做」，不会让服务起不来。
+    """
+    result: List[Tuple[str, str]] = []
+    for item in load_papers(meta_path):
+        if not isinstance(item, dict) or item.get("schema_version") != "knowledge-document-v1":
+            continue
+        document_id = record_id(item)
+        states = ensure_chunkers(item)
+        for name in CHUNKERS:
+            state = states.get(name)
+            if isinstance(state, dict) and state.get("status") == STATUS_FAILED:
+                result.append((document_id, name))
+    return result
+
+
+def mark_chunker_auto_requeued(
+    paper_id: str, chunker: str, meta_path: Optional[Path] = None
+) -> None:
+    """spec-036 Task06：标记某 (document, chunker) 已被启动自愈重排队一次。
+
+    标记写进文档顶层 `auto_requeued_chunkers[chunker]`（UTC 时间戳），持久化于
+    papers.json，作为跨重启的幂等依据。重排队后无论成功或再次失败，标记都保留，
+    因此下次启动不会重复排队（防重启风暴 / 无限重试）。
+    """
+    with _lock:
+        papers = load_papers_strict(meta_path)
+        for item in papers:
+            if record_id(item) != paper_id:
+                continue
+            markers = dict(item.get(AUTO_REQUEUED_CHUNKERS) or {})
+            markers[chunker] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            item[AUTO_REQUEUED_CHUNKERS] = markers
+            save_papers(papers, meta_path)
+            return
+
+
+def is_chunker_auto_requeued(
+    paper_id: str, chunker: str, meta_path: Optional[Path] = None
+) -> bool:
+    """spec-036 Task06：判断某 (document, chunker) 是否已被启动自愈重排队过。"""
+    for item in load_papers(meta_path):
+        if record_id(item) != paper_id:
+            continue
+        markers = item.get(AUTO_REQUEUED_CHUNKERS)
+        return isinstance(markers, dict) and bool(markers.get(chunker))
+    return False

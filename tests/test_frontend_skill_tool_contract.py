@@ -90,8 +90,8 @@ def test_skill_tool_css_scoped_to_view() -> None:
 
 
 def test_skill_tool_app_version_bumped() -> None:
-    # 改动 app.js 后必须同步递增 ?v= 版本号（回归护栏）。spec-034 Task03：44 → 45 → 46 → 48。
-    assert "/assets/app.js?v=49" in INDEX
+    # 改动 app.js 后必须同步递增 ?v= 版本号（回归护栏）。spec-036 已递增至 v53。
+    assert "/assets/app.js?v=53" in INDEX
 
 
 def test_skill_detail_request_aborts_previous_inflight() -> None:

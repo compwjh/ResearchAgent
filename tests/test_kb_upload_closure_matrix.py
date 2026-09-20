@@ -64,7 +64,7 @@ def test_inventory_hashes_are_stable_and_write_entrypoints_are_registered():
         "_safe_import_error_message", "_paper_import_error_response", "_paper_import_result_payload", "_paper_batch_error_response",
         "_paper_batch_payload", "_paper_batch_status_payload", "_paper_search_expired", "_paper_server_snapshot", "_paper_snapshot_for_item",
             "safe_import_error_message", "safe_import_error_code", "_import_lifecycle_boundary", "create_uploaded_document", "_capture_import_generation",
-            "submit_document_reindex", "delete_document", "_default_deleter", "delete_paper_conference",
+            "submit_document_reindex", "recover_failed_reindexes", "delete_document", "_default_deleter", "delete_paper_conference",
         "create_paper_import_batch", "get_paper_import_batch", "_save_associations",
     }
     frozen_items = list(matrix["inventory_files"])

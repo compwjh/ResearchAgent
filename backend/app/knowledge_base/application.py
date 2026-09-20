@@ -105,8 +105,11 @@ from backend.app.knowledge_base.infrastructure.store import (
     get_paper,
     immutable_directory_lock,
     immutable_lock_domain,
+    is_chunker_auto_requeued,
+    iter_failed_chunkers,
     load_papers,
     load_papers_strict,
+    mark_chunker_auto_requeued,
     new_record,
     record_id,
     register_import_capability,
@@ -867,6 +870,55 @@ def submit_document_reindex(
 
         submitted[name] = submit_index_task(document_id, name, runner)
     return {"task_id": task_id, "document_id": document_id, "chunker": chunker, "submitted": submitted}
+
+
+def recover_failed_reindexes(
+    *,
+    meta_path: Path | None = None,
+    papers_dir: Path | None = None,
+    client: Any = None,
+    destination_collection: str | None = None,
+) -> int:
+    """spec-036 Task06 启动自愈：把陈旧的 `failed` 重建任务重排队一次。
+
+    根因说明：这些 failed 是**环境故障遗留状态**（Qdrant 本地锁冲突 /
+    索引代际门禁未 finalize 故障期），不是切分 / 索引逻辑 bug —— 实测手动重试
+    全部成功。因此这里只做一次性机会重试，不做无限重试。
+
+    幂等（防重启风暴）：每个 (document_id, chunker) 仅重排队一次，依据是持久化在
+    chunker 状态上的 `auto_requeued_at` 标记（落盘 papers.json，跨进程重启保留）。
+    重试后若仍失败，状态回到 failed 但标记已存在 → 下次启动不再重排队。
+
+    异常安全：单篇排队失败（如源文件丢失）只记日志、跳过，不影响其它文档；本函数
+    整体也不抛出，由 main.py 启动恢复按既有范式捕获记日志，绝不阻塞服务启动。
+    """
+    meta = Path(meta_path or KB_META_PATH)
+    root = Path(papers_dir or KB_PAPERS_DIR)
+    queued = 0
+    for document_id, chunker in iter_failed_chunkers(meta):
+        # 已自动重排队过（标记持久化）→ 跳过，绝不二次排队（防重启风暴 / 无限重试）
+        if is_chunker_auto_requeued(document_id, chunker, meta):
+            continue
+        try:
+            submit_document_reindex(
+                document_id,
+                chunker,
+                meta_path=meta,
+                papers_dir=root,
+                client=client,
+                destination_collection=destination_collection,
+            )
+        except Exception as error:  # 单篇失败不阻断其它文档，也不阻断启动
+            logger.warning(
+                "启动自愈跳过文档 %s 的 %s 重建（排队失败，保持 failed 态）：%s",
+                document_id, chunker, error,
+            )
+            continue
+        mark_chunker_auto_requeued(document_id, chunker, meta)
+        queued += 1
+    if queued:
+        logger.info("启动自愈已重排队 %d 个陈旧失败重建任务", queued)
+    return queued
 
 
 def delete_document(

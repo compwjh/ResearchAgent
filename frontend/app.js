@@ -90,6 +90,7 @@ const conversationConfirmTitle = document.querySelector('#conversation-confirm-t
 const conversationConfirmMessage = document.querySelector('#conversation-confirm-message');
 const conversationConfirmSubmit = document.querySelector('#conversation-confirm-submit');
 const conversationListMenuTrigger = document.querySelector('#conversation-archived-button');
+const profileMenuButton = document.querySelector('#profile-menu-button');
 const PROJECT_SORT_KEY = 'conversation_project_sort';
 const projectState = { items: [], showArchived: false, sort: 'recent', collapsed: false, expandedProjectId: null, conversations: new Map() };
 const conversationListState = { showArchived: false, cursor: null, loading: false };
@@ -262,6 +263,9 @@ fetch('/api/health')
 if (typeof loadModelLibrary === 'function') loadModelLibrary();
 // Spec025：模型数量徽标立即进入加载态（spinner），绝不以初始 0 占位。
 if (typeof showModelCountLoading === 'function') showModelCountLoading();
+// spec-036 task-03：KB 论文计数立即进入加载态（spinner），绝不以初始 0 占位；首屏即拉取真实条数填充侧栏徽标。
+// 延迟到顶层同步执行结束后再触发，避免引用到尚未初始化的 kbList 等 const（TDZ）。
+if (typeof loadKbPapers === 'function') queueMicrotask(loadKbPapers);
 
 function addMessage(text, type) {
   const message = document.createElement('div');
@@ -837,7 +841,7 @@ function clearContextUsageLoading() {
 function showContextUsageLoading() {
   if (!contextMeter) return;
   clearContextUsageLoading();
-  contextMeter.classList.remove('is-idle');
+  // 模块始终可见（不再依赖 is-idle）；加载中三态：is-loading + spinner + 「加载中」文案。
   contextMeter.classList.add('is-loading');
   contextMeter.setAttribute('aria-busy', 'true');
   if (contextMeterValue) contextMeterValue.textContent = '加载中';
@@ -879,14 +883,15 @@ function renderContextUsageError() {
 function renderContextUsage(usage) {
   if (!contextMeter || !contextRing || !contextRingFill || !contextMeterText) return;
   clearContextUsageLoading();
-  // 无会话时保留占位（visibility 隐藏），避免底部行抖动，同时移出 Tab 焦点。
-  const idle = !usage;
-  contextMeter.classList.toggle('is-idle', idle);
+  // 模块「始终可见」：不再用 is-idle → visibility:hidden 隐藏，也绝不显示 0% 占位。
+  // 无会话 / 无数据（usage 为 null）时以「—」表达「尚未取得占比」，环置空；聚焦态与有数据时一致。
   renderContextBreakdown(usage);
-  if (contextCompactButton && !contextState.inflight) contextCompactButton.tabIndex = idle ? -1 : 0;
-  if (idle) {
-    if (contextMeterValue) contextMeterValue.textContent = '0%';
+  if (contextCompactButton && !contextState.inflight) contextCompactButton.tabIndex = usage ? 0 : -1;
+  if (!usage) {
+    if (contextMeterValue) contextMeterValue.textContent = '—';
     contextRing.setAttribute('aria-valuenow', '0');
+    contextRingFill.style.strokeDasharray = `${CONTEXT_RING_CIRCUMFERENCE.toFixed(2)}`;
+    contextRingFill.style.strokeDashoffset = `${CONTEXT_RING_CIRCUMFERENCE.toFixed(2)}`;
     return;
   }
   const ratio = Number(usage.ratio);
@@ -1816,6 +1821,10 @@ const RESEARCH_COMMAND_LABELS = {
   revise_plan: '修改计划', cancel_research: '取消研究', decline_request: '拒绝请求',
 };
 const RESEARCH_APPROVAL_STATES = new Set(['pending', 'approved', 'rejected', 'cancelled', 'superseded']);
+const RESEARCH_APPROVAL_STATUS_LABELS = {
+  pending: '待处理', approved: '已批准', rejected: '已拒绝', declined: '已拒绝',
+  superseded: '已被新版本替代', cancelled: '已取消',
+};
 
 function parseResearchProjection(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -2009,18 +2018,21 @@ function renderConversationApprovals(panel, approvals, plan) {
     const kind = approval.kind;
     const card = document.createElement('article'); card.className = 'conversation-research-approval'; card.dataset.kind = kind; card.dataset.status = approval.status || 'pending';
     const heading = document.createElement('strong'); heading.className = 'conversation-research-approval-title'; heading.textContent = RESEARCH_APPROVAL_LABELS[kind];
-    const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = approval.status === 'pending' ? '待处理' : `已${approval.status}`;
+    const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = RESEARCH_APPROVAL_STATUS_LABELS[approval.status] || '待处理';
     const meta = document.createElement('span'); meta.className = 'conversation-research-approval-meta'; meta.textContent = `版本 v${safeResearchScalar(approval.subject_version, '—')} · ${safeResearchScalar(approval.approval_request_id, '无 ID')}`;
-    const controls = document.createElement('div'); controls.className = 'conversation-research-approval-actions';
-    const approveCommand = kind === 'plan' ? 'approve_plan' : kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
-    const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'send-button conversation-research-command'; approve.dataset.command = approveCommand; approve.textContent = RESEARCH_COMMAND_LABELS[approveCommand];
-    const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
-    const pending = approval.status === 'pending'; approve.disabled = !pending; decline.disabled = !pending;
+    const pending = approval.status === 'pending';
     if (pending) {
+      const controls = document.createElement('div'); controls.className = 'conversation-research-approval-actions';
+      const approveCommand = kind === 'plan' ? 'approve_plan' : kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
+      const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'send-button conversation-research-command'; approve.dataset.command = approveCommand; approve.textContent = RESEARCH_COMMAND_LABELS[approveCommand];
+      const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
       approve.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, approveCommand, approval.subject_version, researchCommandScope(approveCommand, approval, plan), approve, () => { status.textContent = '已完成'; card.dataset.status = 'approved'; }));
       decline.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'decline_request', approval.subject_version, researchCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
+      controls.append(approve, decline); card.append(heading, status, meta, controls);
+    } else {
+      card.append(heading, status, meta);
     }
-    controls.append(approve, decline); card.append(heading, status, meta, controls); container.appendChild(card);
+    container.appendChild(card);
   });
 }
 
@@ -2731,6 +2743,8 @@ function beginDraft() {
   const state = document.querySelector('.chat-state'); if (state) state.textContent = '新对话';
   if (conversationMemoryStatus) conversationMemoryStatus.textContent = '';
   resetConversationMessages(); loadConversationList(); input.focus();
+  // 无会话：上下文模块保持可见（「—」），绝不隐藏、绝不 0% 占位。
+  renderContextUsage(null);
   updateGovernanceControls();
 }
 
@@ -3344,6 +3358,8 @@ for (const dialogForm of [projectDialogForm, conversationActionForm, conversatio
 if (projectTreeToggle) projectTreeToggle.addEventListener('click', () => { projectState.collapsed = !projectState.collapsed; projectTreeToggle.setAttribute('aria-expanded', projectState.collapsed ? 'false' : 'true'); projectTreeToggle.querySelector('[aria-hidden]')?.replaceChildren(document.createTextNode(projectState.collapsed ? '▶' : '▼')); renderProjectList(projectState.items); });
 if (projectTreeMenuButton) projectTreeMenuButton.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton('最近更新', () => { projectState.showArchived = false; saveProjectSort('recent'); })); panel.append(menuButton('名称 A–Z', () => { projectState.showArchived = false; saveProjectSort('name'); })); panel.append(menuButton(projectState.showArchived ? '返回当前项目' : '查看归档项目', () => { projectState.showArchived = !projectState.showArchived; renderProjectList(projectState.items); })); openFloatingMenu(projectTreeMenuButton, panel); });
 if (conversationListMenuTrigger) conversationListMenuTrigger.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton(conversationListState.showArchived ? '返回最近会话' : '查看归档会话', () => { conversationListState.showArchived = !conversationListState.showArchived; loadConversationList(); })); openFloatingMenu(conversationListMenuTrigger, panel); });
+// spec-036 task-05：侧边栏「本地工作区」三点菜单（复用既有浮动菜单机制）
+if (profileMenuButton) profileMenuButton.addEventListener('click', (event) => { event.stopPropagation(); const panel = document.createElement('div'); panel.append(menuButton('刷新模型列表', () => { if (modelLabel) modelLabel.textContent = '刷新中…'; loadModelLibrary(); })); panel.append(menuButton('打开模型库视图', () => showView('models'))); openFloatingMenu(profileMenuButton, panel); });
 if (conversationActionForm) conversationActionForm.addEventListener('submit', submitActionDialog);
 if (conversationConfirmForm) conversationConfirmForm.addEventListener('submit', submitConfirmDialog);
 if (conversationActionProjectSearch) conversationActionProjectSearch.addEventListener('input', () => { if (dialogState.action === 'move-conversation') renderMoveProjectOptions(dialogState.target, conversationActionProjectSearch.value); });
@@ -5387,14 +5403,70 @@ function scheduleKbPoll() {
   }, 2500);
 }
 
+// KB 论文计数徽标（spec-036 task-03）：复用 model-count 的既有模式——
+// 未就绪插 spinner（.async-slot-spinner），绝不以 0 占位；就绪后淡入真实数字（.model-count-fade）；
+// 失败显示「!」+ 可点重试（.kb-count-retry）。同时驱动侧栏 #kb-count 与导航 #kb-nav-count。
+function showKbCountLoading() {
+  for (const el of [kbCount, kbNavCount]) {
+    if (!el || el.dataset.loading === '1') continue;
+    el.dataset.loading = '1';
+    el.setAttribute('aria-busy', 'true');
+    el.classList.remove('kb-count-error');
+    el.classList.add('is-loading');
+    el.replaceChildren();
+    const sp = document.createElement('span');
+    sp.className = 'async-slot-spinner';
+    sp.setAttribute('aria-hidden', 'true');
+    el.appendChild(sp);
+  }
+}
+
+function setKbCountBadge(count) {
+  for (const el of [kbCount, kbNavCount]) {
+    if (!el) continue;
+    el.dataset.loading = '';
+    el.classList.remove('is-loading', 'kb-count-error');
+    el.removeAttribute('aria-busy');
+    const value = String(count);
+    if (el.textContent === value) continue;
+    el.textContent = value;
+    el.classList.remove('model-count-fade');
+    void el.offsetWidth; // 强制回流，重启动画
+    el.classList.add('model-count-fade');
+  }
+}
+
+function showKbCountError(retry) {
+  for (const el of [kbCount, kbNavCount]) {
+    if (!el) continue;
+    el.dataset.loading = '';
+    el.classList.remove('is-loading');
+    el.classList.add('kb-count-error');
+    el.removeAttribute('aria-busy');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'kb-count-retry';
+    btn.textContent = '重试';
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      showKbCountLoading();
+      retry();
+    });
+    el.replaceChildren(document.createTextNode('!'), btn);
+  }
+}
+
 async function loadKbPapers() {
   if (!kbList) return false;
+  showKbCountLoading();
   try {
     const response = await fetch('/api/kb/papers');
     const data = await response.json();
     return renderKbPapers(data.papers || []);
   } catch (error) {
     if (kbStatus) kbStatus.textContent = `列表加载失败：${error.message}`;
+    showKbCountError(() => loadKbPapers());
     return false;
   }
 }
@@ -5448,17 +5520,22 @@ function renderKbSkeleton() {
 function renderKbPapers(papers) {
   if (kbList) { kbList.classList.remove('is-loading'); kbList.removeAttribute('aria-busy'); }
   kbList.replaceChildren();
-  if (kbCount) kbCount.textContent = String(papers.length);
-  if (kbNavCount) kbNavCount.textContent = String(papers.length);
+  // 计数经 setKbCountBadge 淡入真实条数（侧栏 + 导航同步），失败态由 loadKbPapers 收口。
+  setKbCountBadge(papers.length);
   kbEmpty.hidden = papers.length > 0;
 
   let hasRunning = false;
   for (const paper of papers) {
     if (paper.status === 'processing' || paper.status === 'indexing') hasRunning = true;
+    // 失败态判定：文档级 failed，或任一版本 chunker 处于 failed。
+    // 这些是环境故障期（Qdrant 本地锁冲突 / 代际门禁未 finalize）遗留的陈旧失败态，实测可重试成功，并非切分/索引逻辑 bug。
+    const isFailed = paper.status === 'failed'
+      || Object.values(paper.chunkers || {}).some((c) => c && c.status === 'failed');
     const item = document.createElement('li');
-    item.className = `kb-item status-${paper.status || 'unknown'}`;
+    item.className = `kb-item status-${paper.status || 'unknown'}${isFailed ? ' status-failed' : ''}`;
     if (paper.paper_id) item.dataset.paperId = paper.paper_id;
     item.tabIndex = -1;
+    // 原始后端错误码只保留在 title（悬停调试），绝不作为主文案呈现给用户。
     if (paper.error) item.title = paper.error;
 
     const head = document.createElement('div');
@@ -5506,8 +5583,9 @@ function renderKbPapers(papers) {
     const rebuild = document.createElement('button');
     rebuild.type = 'button';
     rebuild.className = 'kb-item-rebuild';
-    rebuild.textContent = '重建索引';
-    rebuild.setAttribute('aria-label', `重建索引 ${paper.file_name || '论文'}`);
+    // 失败态把「重建索引」显式标为「重试」，引导用户手动重建（陈旧失败态实测可重试成功）。
+    rebuild.textContent = isFailed ? '重试' : '重建索引';
+    rebuild.setAttribute('aria-label', `${isFailed ? '重试重建' : '重建索引'} ${paper.file_name || '论文'}`);
     rebuild.addEventListener('click', () => rebuildKbPaper(paper, rebuild));
 
     const remove = document.createElement('button');
@@ -5534,6 +5612,14 @@ function renderKbPapers(papers) {
     actions.append(rebuild, remove);
     versions.appendChild(actions);
     item.append(head, meta, versions, ...bars);
+    // 失败态主文案：中文可读、可行动，绝不直接暴露后端原始错误码（原始码保留在 item.title 供调试）。
+    if (isFailed) {
+      const failure = document.createElement('p');
+      failure.className = 'kb-item-error';
+      failure.textContent = '索引重建未完成，请点击「重试」重建';
+      if (paper.error) failure.title = paper.error;
+      item.appendChild(failure);
+    }
     kbList.appendChild(item);
   }
 

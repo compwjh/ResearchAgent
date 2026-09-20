@@ -1973,8 +1973,21 @@ class ProjectCascadeDeleteStoreTests(_ResearchSliceTestCase):
         second = self._seed_task(project_id=project_id)
 
         store = ResearchStore(self.store.database_path)  # 同一个临时库，独立实例以便只替换 _connect
-        failing = _FailOnSqlConnection(store._connect(), "DELETE FROM research_plans")
-        store._connect = lambda: failing
+        # spec-037 Bug 9：`_connect()` 已改为 @contextmanager（保证关闭连接），故注入
+        # 连接替身时同样要用上下文管理器包装。此处刻意不做 `with real:` 事务包装，
+        # 以维持原有语义——事务完全由被测方法用 BEGIN IMMEDIATE / rollback 自行控制。
+        real = sqlite3.connect(str(store.database_path), timeout=30.0)
+        real.row_factory = sqlite3.Row
+        failing = _FailOnSqlConnection(real, "DELETE FROM research_plans")
+
+        @contextlib.contextmanager
+        def _failing_connect():
+            try:
+                yield failing
+            finally:
+                real.close()
+
+        store._connect = _failing_connect
 
         with self.assertRaises(sqlite3.OperationalError):
             store.delete_tasks_by_project(project_id, TEST_OWNER)

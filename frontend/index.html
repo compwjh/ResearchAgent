@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=49">
+    <link rel="stylesheet" href="/assets/styles.css?v=53">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -96,7 +96,7 @@
         <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
         <a class="nav-item" data-view="research" href="#research-view" aria-controls="research-view" aria-current="false"><span class="nav-icon">✦</span> 深度研究</a>
         <a class="nav-item" data-view="models" role="button" tabindex="0"><span class="nav-icon">◈</span> 模型库 <span class="nav-count" id="model-count">0</span></a>
-        <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count">0</span></a>
+        <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count"></span></a>
         <a class="nav-item" data-view="memory" role="button" tabindex="0"><span class="nav-icon">✧</span> 记忆治理</a>
         <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
         <a class="nav-item" data-view="skill-tool" role="button" tabindex="0"><span class="nav-icon">❖</span> Skills 与 Tools</a>
@@ -113,7 +113,7 @@
       </section>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="status-dot"></span><div><strong>本地服务</strong><small id="model-label">连接中</small></div></div>
-        <div class="profile"><span class="profile-mark">W</span><div><strong>本地工作区</strong><small>Ollama</small></div><span class="more">···</span></div>
+        <div class="profile"><span class="profile-mark">W</span><div><strong>本地工作区</strong><small>Ollama</small></div><button type="button" class="icon-button more" id="profile-menu-button" aria-haspopup="menu" aria-expanded="false" aria-label="本地工作区选项">···</button></div>
       </div>
     </aside>
 
@@ -146,18 +146,15 @@
           <form class="composer" id="chat-form">
             <textarea id="question" rows="3" placeholder="给 Ollama 发消息" aria-label="问题"></textarea>
             <div class="composer-footer">
-              <label class="model-picker" for="model-select"><span class="model-symbol">◈</span>
-                <select id="model-select" disabled><option>加载中...</option></select>
-              </label>
               <span class="composer-tip">Enter 发送 · Shift + Enter 换行</span>
-              <div class="composer-context is-idle" id="context-meter">
+              <div class="composer-context" id="context-meter">
                 <div class="context-ring" id="context-ring" role="progressbar" aria-label="上下文占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                   <svg viewBox="0 0 36 36" aria-hidden="true" focusable="false">
                     <circle class="context-ring-track" cx="18" cy="18" r="15"></circle>
                     <circle class="context-ring-fill" id="context-ring-fill" cx="18" cy="18" r="15"></circle>
                   </svg>
                 </div>
-                <span class="context-meter-text" id="context-meter-text"><span class="context-meter-label">上下文</span> <span class="context-meter-value" id="context-meter-value">0%</span></span>
+                <span class="context-meter-text" id="context-meter-text"><span class="context-meter-label">上下文</span> <span class="context-meter-value" id="context-meter-value">—</span></span>
                 <button type="button" class="context-compact-button" id="context-compact-button" tabindex="-1">压缩</button>
                 <div class="context-breakdown" id="context-breakdown" role="dialog" aria-label="上下文占用明细"></div>
               </div>
@@ -173,6 +170,10 @@
               </label>
               <span class="reasoning-effort-state" id="reasoning-effort-state" role="status" aria-live="polite" hidden></span>
               <span class="reasoning-effort-notice" id="reasoning-effort-notice" role="status" aria-live="polite" hidden></span>
+              <!-- spec-037 Bug6：模型选择器靠右（置于发送按钮前），id/事件/联动逻辑不变 -->
+              <label class="model-picker" for="model-select"><span class="model-symbol">◈</span>
+                <select id="model-select" disabled><option>加载中...</option></select>
+              </label>
               <button type="submit" id="send-button" aria-label="发送"><span>↑</span></button>
             </div>
           </form>
@@ -395,7 +396,7 @@
                 <span class="kb-drop-sub">本地解析 · 本地向量化 · 不出本机</span>
               </button>
               <p class="kb-status" id="kb-status"></p>
-              <div class="kb-list-head">已上传论文 <span id="kb-count">0</span></div>
+              <div class="kb-list-head">已上传论文 <span id="kb-count"></span></div>
               <ul class="kb-list" id="kb-list"></ul>
               <p class="kb-empty" id="kb-empty">还没有论文，先上传一篇 PDF。</p>
               <p class="kb-health" id="kb-health">组件状态加载中…</p>
@@ -698,8 +699,8 @@
   <script src="/assets/research-session-ui.js?v=1"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
-  <script src="/assets/research-tasks.js?v=2"></script>
+  <script src="/assets/research-tasks.js?v=3"></script>
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
-  <script src="/assets/app.js?v=49"></script>
+  <script src="/assets/app.js?v=53"></script>
 </body>
 </html>

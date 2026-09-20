@@ -356,6 +356,10 @@ def _prior_tool_outputs(repo: MemoryRepository, conversation_id: str, *, exclude
 
 _CONTEXT_BREAKDOWN_LABELS = {
     "project_instructions": "项目指令",
+    # spec-036 Bug1：系统规则（USER.md 内容，经 read_user_memory_or_empty 读取）
+    # 在真实装配由 compose_chat_messages 经 build_role_aware_messages 以独立 system
+    # 消息注入，dry-run 以等价恒定段计入，须有可读中文 label。
+    "system_rule": "系统规则",
     # spec-038 起 ``memories`` 表停用，``memory`` 段实际承载的是 spec-022 跨会话召回
     # 注入的最近若干条会话摘要，故标注为「最近跨会话记忆」，而非笼统的「长期记忆 / 摘要」。
     "memory": "最近跨会话记忆",
@@ -406,11 +410,22 @@ def compute_context_usage(repo: MemoryRepository, conversation) -> dict:
     if conversation.project_id:
         project = repo.get_project(conversation.project_id, OWNER_ID)
         project_instructions = project.instructions if project else None
+    # spec-036 Bug1：dry-run 与真实装配同源计入恒定上下文。
+    # 1) 系统规则（USER.md 内容）在真实路径由 compose_chat_messages 经
+    #    build_role_aware_messages 以独立 system 消息注入（逐字 = system_rule.strip()、
+    #    无前缀）；此处以等价恒定段计入，fail-open 读取不到时为空串、不抛异常。
+    # 2) 文件记忆（USER.md / MEMORY.md / 项目 MD）由 compose_chat_prompt 内部读盘叠加，
+    #    必须传入 project_id 才能使项目 MD 被纳入（与真实路径传 conversation.project_id 一致）。
+    user_memory = read_user_memory_or_empty()
     prompt_sections = compose_chat_prompt(
         "", history, memories, project_instructions, summaries,
         rag_hits=None, include_question=False, segments=segments,
+        project_id=conversation.project_id,
         return_sections=True,
     )
+    if user_memory:
+        # 与 build_role_aware_messages 注入 system_rule 逐字一致（无前缀、strip）。
+        prompt_sections = [("system_rule", user_memory.strip()), *prompt_sections]
     prompt_text = "\n\n".join(text for _, text in prompt_sections)
     used_tokens = estimate_tokens(prompt_text)
     budget_tokens = CHAT_TOTAL_TOKEN_BUDGET

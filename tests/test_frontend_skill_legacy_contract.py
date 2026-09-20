@@ -121,4 +121,5 @@ def test_skill_legacy_app_version_bumped() -> None:
     )
     assert match, "missing live app.js asset tag"
     assert int(match.group(1)) >= 40
-    assert "/assets/app.js?v=49" in INDEX
+    # spec-036 已递增 app.js 版本号，冻结断言同步为当前实际值 v53（>=40 下限保留历史兼容护栏）。
+    assert "/assets/app.js?v=53" in INDEX

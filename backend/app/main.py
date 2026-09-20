@@ -14,6 +14,7 @@ from backend.app.api.common import paper_request_validation_error_response, reco
 from backend.app.api.routes import router
 from backend.app.knowledge_base.application import (
     FinalizeBundleStore,
+    recover_failed_reindexes,
 )
 from backend.app.platform.capability_scheduler import (
     start_capability_scheduler,
@@ -53,6 +54,15 @@ async def lifespan(_app: FastAPI):
         # available for upload/list/health and never mutates the old
         # collection as a side effect of boot.
         print(f"[kb] index generation gate not ready: {getattr(error, 'code', 'INDEX_REBUILD_REQUIRED')}")
+
+    # spec-036 Task06：把环境故障期遗留的陈旧 failed 重建任务重排队一次
+    # （幂等标记防重启风暴；单个文档或整体异常都只记日志，绝不阻塞启动）。
+    try:
+        recovered = recover_failed_reindexes()
+        if recovered:
+            print(f"[kb] 启动自愈：已将 {recovered} 个陈旧失败重建任务重排队")
+    except Exception as error:
+        print(f"[kb] 启动自愈失败（已忽略）：{error}")
 
     # 首屏就绪优化：在既有索引代次收尾之后，后台（非阻塞 daemon 线程）做预热编排。
     # 任一预热项失败只记日志标 failed，绝不阻塞启动、绝不抛异常。

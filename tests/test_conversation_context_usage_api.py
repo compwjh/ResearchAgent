@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
+from backend.app.memory.markdown_store import MarkdownMemoryStore
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 
 
@@ -234,3 +235,82 @@ def test_auto_compaction_enqueue_failure_does_not_block(tmp_path):
     # 自动入队失败不得影响本次回答
     assert resp.status_code == 200
     assert _events(resp.text)[-1]["type"] == "done"
+
+
+def _memory_store_dir(monkeypatch, tmp_path):
+    """把文件记忆根目录重定向到临时目录（与真实读盘同源），返回该目录。"""
+    memory_dir = tmp_path / "memory"
+    monkeypatch.setattr("backend.app.memory.markdown_store.MEMORY_DIR", memory_dir)
+    return memory_dir
+
+
+def test_context_usage_counts_system_rule_and_file_memory(tmp_path, monkeypatch):
+    """spec-036 Bug1：系统规则(USER.md) + 文件记忆(USER.md/MEMORY.md/项目 MD) 必须计入。
+
+    dry-run 须与真实装配同源：系统规则段经 read_user_memory_or_empty 注入、
+    文件记忆段经 compose_chat_prompt(project_id=...) 读盘叠加。
+    """
+    memory_dir = _memory_store_dir(monkeypatch, tmp_path)
+    store = MarkdownMemoryStore(memory_dir)
+    store.write_user("用户画像：回答要简洁")                 # USER.md
+    store.append_memory(scope="global", project_id=None, content="长期记忆：关注项目A")  # MEMORY.md
+    with client_for(tmp_path) as client:
+        project_id = _make_project(client)
+        store.append_memory(scope="project", project_id=project_id, content="项目记忆：里程碑M1")  # projects/<id>.md
+        repo = MemoryRepository(tmp_path / "memory.sqlite3")
+        conv = repo.create_conversation(OWNER_ID, project_id)
+        response = client.get(f"/api/conversations/{conv.conversation_id}/context-usage")
+    assert response.status_code == 200
+    body = response.json()
+    kinds = {item["kind"]: item for item in body["breakdown"]}
+    # 系统规则段（USER.md 内容）必须出现且带中文 label、token>0。
+    assert "system_rule" in kinds
+    assert kinds["system_rule"]["label"] == "系统规则"
+    assert kinds["system_rule"]["tokens"] > 0
+    # 文件记忆段（USER.md / MEMORY.md / 项目 MD）必须出现且 token>0（验证 project_id 已传入）。
+    assert "file_memory" in kinds
+    assert kinds["file_memory"]["label"] == "文件记忆 (USER.md / MEMORY.md)"
+    assert kinds["file_memory"]["tokens"] > 0
+    # used_tokens 至少涵盖恒定上下文（系统规则 + 文件记忆），明显大于 0。
+    assert body["used_tokens"] >= kinds["system_rule"]["tokens"] + kinds["file_memory"]["tokens"]
+    assert body["used_tokens"] > 0
+
+
+def test_context_usage_empty_memory_fail_open(tmp_path, monkeypatch):
+    """空记忆（USER.md / MEMORY.md / 项目 MD 均缺失）时 fail-open：200、不抛异常、不 500。"""
+    _memory_store_dir(monkeypatch, tmp_path)  # 空目录，无任何记忆文件
+    with client_for(tmp_path) as client:
+        repo = MemoryRepository(tmp_path / "memory.sqlite3")
+        conv = repo.create_conversation(OWNER_ID)  # 无项目、无历史、无记忆
+        response = client.get(f"/api/conversations/{conv.conversation_id}/context-usage")
+    assert response.status_code == 200
+    body = response.json()
+    kinds = {item["kind"] for item in body["breakdown"]}
+    # 空记忆时不得出现恒定段（read_user_memory_or_empty 返回空串，不注入系统规则段）。
+    assert "system_rule" not in kinds
+    assert "file_memory" not in kinds
+    # 空会话 + 空记忆：used_tokens 趋近 0、不为负、不 500。
+    assert body["used_tokens"] >= 0
+
+
+def test_context_usage_project_md_counted_via_project_id(tmp_path, monkeypatch):
+    """仅项目 MD 存在（无 USER.md / MEMORY.md）时，file_memory 段必须出现。
+
+    这是 project_id 漏传回归点：旧实现不传 project_id，项目 MD 不会被读盘计入，
+    此断言会失败；修复后 compose_chat_prompt 收到 project_id，项目 MD 计入 file_memory。
+    """
+    memory_dir = _memory_store_dir(monkeypatch, tmp_path)
+    store = MarkdownMemoryStore(memory_dir)
+    with client_for(tmp_path) as client:
+        project_id = _make_project(client)
+        store.append_memory(scope="project", project_id=project_id, content="项目记忆：仅此一项")
+        repo = MemoryRepository(tmp_path / "memory.sqlite3")
+        conv = repo.create_conversation(OWNER_ID, project_id)
+        response = client.get(f"/api/conversations/{conv.conversation_id}/context-usage")
+    assert response.status_code == 200
+    body = response.json()
+    kinds = {item["kind"]: item for item in body["breakdown"]}
+    # 无 USER.md → 无 system_rule 段；但项目 MD 必须在 file_memory 段出现。
+    assert "system_rule" not in kinds
+    assert "file_memory" in kinds
+    assert kinds["file_memory"]["tokens"] > 0
