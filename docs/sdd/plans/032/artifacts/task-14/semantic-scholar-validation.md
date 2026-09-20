@@ -1,7 +1,7 @@
 # Semantic Scholar 回退验证记录
 
-日期：2026-09-21  
-分支：`fix/spec029-030-031-pipeline`  
+日期：2026-09-21
+分支：`fix/spec029-030-031-pipeline`
 实现提交：`31ac3cd`
 
 ## 验证结果
