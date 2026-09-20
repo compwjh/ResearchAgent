@@ -7,6 +7,29 @@
 > Skill 编写 → `docs/sdd/SKILL-AUTHORING.md`；门禁清单 → `docs/sdd/SDD-GATE-CHECKLIST.md`；
 > 角色上手 → `docs/sdd/ROLE-ONBOARDING.md`；GitHub 协作 → `docs/github.md`；部署 → `deploy/README.md`。
 
+### 渐进式加载协议（怎么加载外链文档）
+
+**默认不读**：主会话启动时只读本文。外链文档**没有命中触发条件就不得预加载**——
+"先把 7 个都读一遍以防万一"是反模式，等于把精简省下的 token 又花回去。
+
+| 触发条件（出现任一情况才加载） | 加载 |
+|---|---|
+| 要分派子代理 / 改子代理配置 / 排查子代理报错 | `docs/sdd/SUBAGENT-ORCHESTRATION.md` |
+| 要改 `model` 字段、或填 spec 执行配置的模型列 | `docs/sdd/MODEL_REGISTRY.md` |
+| 要编写或修改 `.agents/skills/*/SKILL.md` | `docs/sdd/SKILL-AUTHORING.md` |
+| 走到任一评审门禁、需要逐条自检 | `docs/sdd/SDD-GATE-CHECKLIST.md` |
+| 子代理启动、或分派前要定最小上下文 | `docs/sdd/ROLE-ONBOARDING.md`（**只读该角色那一段**） |
+| 要开 PR / 远端协作 / 动受保护分支 | `docs/github.md` |
+| 要启动、停止或部署服务 | `deploy/README.md` |
+
+1. **只加载命中那一篇**，不要因为读了 A 就顺带读 A 引用的 B；最多再深一层，且必须重新命中触发条件。
+2. **同一会话内读过的不再整篇重读**；需要其中某处细节时用 Grep 定位到行，不要重读全文。
+3. **子代理由主会话喂上下文**：按 `ROLE-ONBOARDING.md` 该角色段挑最小上下文塞进 prompt，
+   **不要让子代理自己去读 `AGENTS.md` 全文**（它拿不到分派工具，且会重复消耗上下文）。
+4. **外链文档不是第二落点**：要改规则就改它对应的唯一落点文件，禁止在本文中再复述一遍
+   （模型型号即因此被固化过，见「模型档位」）。
+5. 新增外链文档时，同步更新上方清单**和**本触发表，只加一处会让加载协议失效。
+
 ## 强制流程
 
 1. 收到新的功能需求、改动需求或修复需求时，先进入计划模式，只分析需求、读取必要上下文，并创建或更新 `docs/sdd/specs/NNN-kebab-case.md`。
