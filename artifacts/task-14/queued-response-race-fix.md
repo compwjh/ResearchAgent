@@ -34,3 +34,4 @@
 
 - 来源、目录、导入、研究 Worker、Skill、问题队列和前端研究契约集合：`556 passed, 5 warnings`，退出码 `0`。
 - 该集合覆盖本轮竞态修复的批量导入 API；完整 Spec 收口仍按 Task14 单独执行，不把定向回归数字当作全量通过。
+- 受控缓存 smoke：`POST /api/papers/sources/usenix/sync`（2024）返回 `202/queued`，同步句柄 `sync-usenix-0395990926f8495b` 随后稳定进入 `completed`；两个 2024 官方页面单元均出现在 `cached_units` 与 `completed_units`，`paper_count=227`，未触发 PDF 下载。
