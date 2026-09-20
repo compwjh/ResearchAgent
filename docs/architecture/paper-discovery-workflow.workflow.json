@@ -1,0 +1,101 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ResearchAgent 论文目录与候选评估流程",
+    "locale": "zh-CN",
+    "subtitle": "USENIX 优先、DBLP 辅助的增量检索与报告证据链",
+    "animation": "trace",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "incremental-catalog",
+        "label": "增量目录采集",
+        "focus": ["request", "search-task", "cache-check", "usenix", "dblp", "catalog-store"],
+        "note": "查看缓存命中、缺失范围和来源并行抓取如何写入全局论文目录。"
+      },
+      {
+        "id": "candidate-evaluation",
+        "label": "候选评估与召回",
+        "focus": ["catalog-store", "embedding", "recall", "evaluation", "coverage"],
+        "note": "查看目录元数据如何经过规范化、向量化、RAG 召回和相关度评估。"
+      },
+      {
+        "id": "frozen-evidence",
+        "label": "结果冻结",
+        "focus": ["evaluation", "coverage", "freeze", "report", "observability"],
+        "note": "查看满足最低候选数量后的证据冻结、报告合成和观测事件。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "request", "label": "请求与编排" },
+    { "id": "sources", "label": "来源抓取" },
+    { "id": "catalog", "label": "目录与检索" },
+    { "id": "evaluation", "label": "评估与覆盖" },
+    { "id": "output", "label": "冻结与报告" }
+  ],
+  "phases": [
+    { "id": "scope", "label": "Scope + Cache", "fromCol": 0, "toCol": 1 },
+    { "id": "fetch", "label": "Parallel Fetch", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "retrieve", "label": "RAG + Evaluate", "fromCol": 4, "toCol": 4, "variant": "emphasis" },
+    { "id": "freeze", "label": "Freeze + Report", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "source-fanout", "label": "来源并行抓取", "lane": "sources", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "catalog-boundary", "label": "全局论文目录（元数据）", "lane": "catalog", "fromCol": 1, "toCol": 3, "variant": "dashed" },
+    { "id": "retrieval-loop", "label": "独立发现 Collection", "lane": "evaluation", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
+    { "id": "evidence-boundary", "label": "报告证据边界", "lane": "output", "fromCol": 4, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["request", "search-task", "cache-check", "usenix", "merge", "catalog-store", "embedding", "recall", "evaluation", "coverage", "freeze", "report"],
+  "semanticChecks": {
+    "allowedRoots": ["request"],
+    "allowedTerminals": ["report", "error", "observability"],
+    "requiredPaths": [
+      { "from": "cache-check", "to": "usenix" },
+      { "from": "cache-check", "to": "dblp" },
+      { "from": "merge", "to": "catalog-store" },
+      { "from": "evaluation", "to": "freeze" }
+    ]
+  },
+  "nodes": [
+    { "id": "request", "lane": "request", "col": 0, "type": "external", "label": "研究主题", "sublabel": "方向 · 年份 · 最少篇数", "width": 150 },
+    { "id": "search-task", "lane": "request", "col": 1, "type": "backend", "label": "异步搜索任务", "sublabel": "LangGraph orchestration", "tag": "progress events", "width": 160 },
+    { "id": "cache-check", "lane": "catalog", "col": 1, "type": "backend", "label": "增量范围计算", "sublabel": "命中缓存 / 计算缺口", "tag": "no duplicate fetch", "width": 165 },
+    { "id": "usenix", "lane": "sources", "col": 2, "type": "external", "label": "USENIX 官方目录", "sublabel": "accepted pages · abstract", "tag": "primary", "width": 170 },
+    { "id": "dblp", "lane": "sources", "col": 2, "type": "external", "label": "DBLP 辅助来源", "sublabel": "DOI · bibliography", "tag": "fallback", "width": 165, "yOffset": 84 },
+    { "id": "merge", "lane": "catalog", "col": 3, "type": "backend", "label": "字段合并", "sublabel": "USENIX 权威字段优先", "width": 165 },
+    { "id": "catalog-store", "lane": "catalog", "col": 3, "type": "database", "label": "全局论文目录", "sublabel": "SQLite metadata catalog", "tag": "rebuildable", "width": 170, "yOffset": 78 },
+    { "id": "embedding", "lane": "evaluation", "col": 4, "type": "backend", "label": "目录向量化", "sublabel": "独立发现 Collection", "width": 165, "yOffset": -84 },
+    { "id": "recall", "lane": "evaluation", "col": 4, "type": "backend", "label": "RAG 召回", "sublabel": "dense + sparse + RRF", "tag": "top-k", "width": 165 },
+    { "id": "evaluation", "lane": "evaluation", "col": 4, "type": "backend", "label": "候选评估", "sublabel": "相关度与保留理由", "tag": "≥ 5 candidates", "width": 165, "yOffset": 84 },
+    { "id": "coverage", "lane": "evaluation", "col": 5, "type": "security", "label": "覆盖检查", "sublabel": "缺口与降级事件", "width": 160 },
+    { "id": "freeze", "lane": "output", "col": 5, "type": "database", "label": "冻结结果集", "sublabel": "论文身份 + 证据引用", "tag": "immutable", "width": 165 },
+    { "id": "report", "lane": "output", "col": 5, "type": "backend", "label": "综述报告", "sublabel": "标题 · 摘要 · 关键词 · 比较", "tag": "Markdown artifact", "width": 180, "yOffset": 84 },
+    { "id": "error", "lane": "output", "col": 4, "type": "security", "label": "降级结果", "sublabel": "单源失败仍保留缓存", "width": 160 },
+    { "id": "observability", "lane": "request", "col": 5, "type": "cloud", "label": "Langfuse", "sublabel": "source · cache · latency", "width": 160 }
+  ],
+  "edges": [
+    { "id": "request-task", "from": "request", "to": "search-task", "label": "创建搜索任务", "variant": "emphasis" },
+    { "id": "task-cache", "from": "search-task", "to": "cache-check", "label": "计算增量范围", "variant": "default" },
+    { "id": "cache-usenix", "from": "cache-check", "to": "usenix", "label": "缺失 / 过期年份", "variant": "emphasis" },
+    { "id": "cache-dblp", "from": "cache-check", "to": "dblp", "label": "补充缺失书目", "variant": "dashed" },
+    { "id": "usenix-merge", "from": "usenix", "to": "merge", "label": "官方元数据", "variant": "emphasis" },
+    { "id": "dblp-merge", "from": "dblp", "to": "merge", "label": "辅助字段", "variant": "dashed" },
+    { "id": "merge-store", "from": "merge", "to": "catalog-store", "label": "upsert metadata", "variant": "emphasis" },
+    { "id": "store-embedding", "from": "catalog-store", "to": "embedding", "label": "canonical records", "variant": "default" },
+    { "id": "embedding-recall", "from": "embedding", "to": "recall", "label": "向量检索", "variant": "emphasis" },
+    { "id": "recall-evaluation", "from": "recall", "to": "evaluation", "label": "候选池", "variant": "emphasis" },
+    { "id": "evaluation-coverage", "from": "evaluation", "to": "coverage", "label": "评估结果", "variant": "default" },
+    { "id": "coverage-freeze", "from": "coverage", "to": "freeze", "label": "满足最低篇数", "variant": "emphasis" },
+    { "id": "coverage-error", "from": "coverage", "to": "error", "label": "证据不足 / 单源失败", "variant": "security", "role": "error" },
+    { "id": "freeze-report", "from": "freeze", "to": "report", "label": "冻结引用上下文", "variant": "emphasis" },
+    { "id": "task-observability", "from": "search-task", "to": "observability", "label": "progress + latency", "variant": "dashed", "role": "async" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "检索边界", "items": ["搜索阶段只保存标题、作者、摘要、关键词、年份和来源 URL", "PDF 下载与验证延迟到用户明确导入之后"] },
+    { "dot": "emerald", "title": "增量与权威性", "items": ["已完成抓取单元直接使用缓存，只抓取缺口、失败或过期单元", "USENIX 官方字段优先，DBLP 只补 DOI 和书目信息"] },
+    { "dot": "amber", "title": "候选到报告", "items": ["发现 Collection 与个人知识库 Collection 分离", "评估和覆盖检查完成后才冻结候选并生成可引用报告"] }
+  ]
+}

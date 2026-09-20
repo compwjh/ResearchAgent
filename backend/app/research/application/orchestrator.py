@@ -1126,7 +1126,6 @@ class Orchestrator:
                 # Candidate legitimacy is owned by the Search Worker recall
                 # allowlist, independent of catalog_metadata completeness, so a
                 # missing catalog_metadata can never drop the synthesizer.
-                allowed_candidate_ids = _recalled_candidate_ids(completed_outputs, item_by_id)
                 validated = _validated_evaluator_candidates(
                     [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id],
                     catalog_metadata,
