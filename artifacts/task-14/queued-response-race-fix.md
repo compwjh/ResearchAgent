@@ -29,3 +29,8 @@
 - `GET /api/health`：HTTP `200`，`paper_discovery_enabled=true`。
 - `GET /api/ready`：HTTP `200`，jieba、Ollama、embedding、Qdrant 均为 `ready`。
 - `GET /api/papers/sources`：HTTP `200`，7 个受控来源可读；USENIX 已验证 2022–2026，IEEE S&P/NDSS 当前仅验证 2024，CCS 仍未验证，未把参数范围冒充覆盖证明。
+
+## 定向 Spec032 回归（2026-09-21）
+
+- 来源、目录、导入、研究 Worker、Skill、问题队列和前端研究契约集合：`556 passed, 5 warnings`，退出码 `0`。
+- 该集合覆盖本轮竞态修复的批量导入 API；完整 Spec 收口仍按 Task14 单独执行，不把定向回归数字当作全量通过。
