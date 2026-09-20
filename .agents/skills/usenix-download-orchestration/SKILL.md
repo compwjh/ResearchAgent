@@ -1,7 +1,7 @@
 ---
 name: usenix-download-orchestration
 description: USENIX Security 论文 PDF 下载与个人知识库导入的编排协议。当用户已从检索结果中选定具体论文、需要下载并导入时使用本技能。本技能负责编排决策——决定下载优先级（官方正式 PDF → prepublication PDF → arXiv 兜底）、arXiv 匹配不确定时如何处理、以及导入失败后的重试与恢复；实际下载、安全校验与导入由 download_and_import_paper 工具执行，本技能不接触 PDF 字节。
-tools: [download_and_import_paper]
+tools: [paper_discovery, download_and_import_paper]
 ---
 
 # USENIX 论文下载与导入编排

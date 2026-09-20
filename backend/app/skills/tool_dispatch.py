@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from typing import Any, Callable, Dict, Optional
@@ -120,6 +121,13 @@ def _pick_conference(conferences: list, source_hint: str):
 
 def _search_catalog(args: dict) -> DispatchResult:
     from backend.app.api.common import _build_paper_search_service, _paper_store
+    from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
+    # Build the legacy service up front as the dependency-injection seam.  The
+    # production object is replaced by the canonical global-catalog adapter
+    # below; lightweight test/embedding fakes keep the historical adapter
+    # contract so callers that inject a fake do not need to implement the
+    # catalog repository surface merely to exercise formatting/error paths.
+    legacy_service = _build_paper_search_service()
 
     source_hint = str(args.get("source", "all")).lower()
     query = str(args.get("query", "")).strip()
@@ -127,7 +135,47 @@ def _search_catalog(args: dict) -> DispatchResult:
     limit = args.get("limit")
     publication_scope = str(args.get("publication_scope", "all"))
 
-    service = _build_paper_search_service()
+    # Research workers use the canonical Spec015 global catalog.  The legacy
+    # PaperDiscoverySearchService emits short-lived PaperCandidate IDs; using
+    # it here loses the catalog row needed for report metadata and provenance.
+    if source_hint in {"usenix", "all"} and isinstance(legacy_service, PaperDiscoverySearchService):
+        from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
+
+        max_results = _SEARCH_LIST_LIMIT
+        if isinstance(limit, int) and not isinstance(limit, bool):
+            max_results = max(1, min(int(limit), _SEARCH_LIST_LIMIT))
+        try:
+            outcome = CatalogSearchAdapter().search(
+                query=query,
+                sources=("usenix",),
+                years=tuple(int(year) for year in (years or ())),
+                max_results=max_results,
+                publication_scope=publication_scope,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep Tool failure diagnosable
+            logger.warning("canonical USENIX catalog search failed: %s", exc)
+            return DispatchResult(ok=False, name="search_paper_catalog", error="CATALOG_SEARCH_FAILED")
+        if not outcome.catalog_paper_ids:
+            return DispatchResult(
+                ok=False, name="search_paper_catalog",
+                error=outcome.error_code or "CATALOG_NO_RESULTS", search_id=outcome.search_id,
+            )
+        store = _paper_store()
+        papers = [
+            paper for paper_id in outcome.catalog_paper_ids
+            if (paper := store.get_catalog_paper(str(paper_id))) is not None
+        ]
+        if not papers:
+            return DispatchResult(
+                ok=False, name="search_paper_catalog", error="CATALOG_METADATA_UNAVAILABLE",
+                search_id=outcome.search_id,
+            )
+        body = _format_search_body("USENIX Security（全局目录）", papers, outcome.count)
+        return DispatchResult(ok=True, name="search_paper_catalog", output=body, search_id=outcome.search_id)
+
+    # DBLP retains its existing source-specific adapter until its dedicated
+    # catalog contract is enabled; it is not used by the USENIX acceptance path.
+    service = legacy_service
     conferences = [c for c in _paper_store().list_conferences() if getattr(c, "enabled", True)]
     if not conferences:
         return DispatchResult(ok=False, name="search_paper_catalog", error="服务端未配置任何论文来源")
@@ -187,19 +235,40 @@ def _format_search_entries(items: list) -> list:
             or getattr(item, "official_page_url", None)
         )
         abstract = str(getattr(item, "abstract", "") or "").strip()
-        entries.append((title, catalog_paper_id, detail_url, abstract))
+        entries.append((title, catalog_paper_id, detail_url, abstract, item))
     return entries
 
 
 def _format_search_body(source_name: str, items: list, count: int) -> str:
     """按既有模型消费格式拼装检索结果文本（与历史实现逐字符一致）。"""
     lines = []
-    for index, (title, catalog_paper_id, detail_url, abstract) in enumerate(
+    for index, (title, catalog_paper_id, detail_url, abstract, item) in enumerate(
         _format_search_entries(items), start=1
     ):
         lines.append(f"{index}. {title}")
         if catalog_paper_id:
             lines.append(f"   catalog_paper_id: {catalog_paper_id}")
+        # Keep the candidate handoff bounded to the already exposed official
+        # detail page.  Direct PDF/source_links fields are intentionally not
+        # copied into this model-facing text; the importer can resolve the
+        # server-owned PDF from the trusted page through its existing boundary.
+        source_links = [detail_url] if detail_url else []
+        candidate = {
+            "title": title,
+            "catalog_paper_id": catalog_paper_id,
+            "conference_id": getattr(item, "conference_id", None),
+            "year": getattr(item, "year", None),
+            "source_page_url": detail_url,
+            "source_links": source_links,
+        }
+        lines.append(
+            "   candidate: "
+            + json.dumps(
+                {key: value for key, value in candidate.items() if value not in (None, "")},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
         if detail_url:
             lines.append(f"   详情页: {detail_url}")
         if abstract:
@@ -381,9 +450,28 @@ def _session_search(args: dict) -> DispatchResult:
     return DispatchResult(ok=True, name="session_search", output=str(payload.get("output") or ""))
 
 
+def _paper_discovery(args: dict) -> DispatchResult:
+    """Execute the versioned multi-source Worker Tool facade.
+
+    The facade owns source/URL validation and delegates all actual discovery/import
+    work to the existing registry adapters and secure importer.  ``DispatchResult``
+    remains backward-compatible while its output is a JSON envelope for this Tool.
+    """
+    from backend.app.paper_discovery.application.worker_tool import PaperDiscoveryToolFacade
+
+    result = PaperDiscoveryToolFacade().dispatch(args)
+    payload = result.to_dict()
+    return DispatchResult(
+        ok=result.status in {"completed", "partial"},
+        name="paper_discovery",
+        output=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+    )
+
+
 _DEFAULT_SESSION_LIMIT = 10
 
 _ADAPTERS: Dict[str, DispatchFn] = {
+    "paper_discovery": _paper_discovery,
     "search_paper_catalog": _search_catalog,
     "download_and_import_paper": _download_import,
     "fetch_paper_detail": _fetch_paper_detail,

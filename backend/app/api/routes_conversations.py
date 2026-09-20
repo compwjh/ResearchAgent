@@ -1,6 +1,7 @@
 import contextlib
 import json
 import logging
+import re
 import time
 from typing import Optional
 
@@ -8,6 +9,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from backend.app.api import routes_skills as _skill_routes
+from backend.app.api import routes_tools as _tool_routes
 from backend.app.api.schemas import (
     ConversationMessageRequest,
     ConversationPatchRequest,
@@ -53,14 +56,12 @@ from backend.app.platform.config import (
     CHAT_SUMMARY_BUDGET_CHARS,
     CHAT_TOTAL_TOKEN_BUDGET,
     KB_DIR,
+    SKILL_TOOL_MAX_ROUNDS,
+    SKILL_TOOL_RETRY,
+    SKILL_TOOL_TIMEOUT_SECONDS,
 )
 from backend.app.platform.model_catalog import get_online_model, is_online_model
-from backend.app.platform.observability import (
-    prompt_observation_metadata,
-    record_ollama_generation,
-    redact_prompt_messages,
-    utc_now,
-)
+from backend.app.platform.observability import record_ollama_generation, redact_prompt_messages, utc_now
 from backend.app.platform.ollama import (
     EffortResolutionError,
     ReasoningCapabilities,
@@ -70,21 +71,37 @@ from backend.app.platform.ollama import (
     get_reasoning_capabilities,
     resolve_reasoning_effort,
 )
+from backend.app.research.application.approval_service import PlanApprovalService
 from backend.app.research.application.intake import DEFAULT_FIELDS, ResearchIntakeCoordinator
 from backend.app.research.application.intake_projection import (
     build_intake_projection,
-    build_plan_projection,
     persist_intake_projection,
     persist_plan_projection,
 )
-from backend.app.research.application.approval_service import PlanApprovalService
 from backend.app.research.application.session_plan_generation import ensure_session_plan
+from backend.app.skills import intent as _skill_intent
+from backend.app.skills.intent import SkillDecision
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.service import SkillRegistryService
 from backend.app.skills.tool_service import ToolRegistryService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def get_skill_registry():
+    """Conversation seam for the product Skill registry (not IDE skills)."""
+    return _skill_routes.get_skill_registry()
+
+
+def get_tool_registry():
+    """Conversation seam for the product Tool registry (not IDE tools)."""
+    return _tool_routes.get_tool_registry()
+
+
+def detect_skill(message, available_skills):
+    """Conversation seam for the shared product Skill intent recognizer."""
+    return _skill_intent.detect_skill(message, available_skills)
 
 
 def _build_research_intake_coordinator():
@@ -326,7 +343,13 @@ def _system_rule_payload(item):
     return {"content": item.content, "enabled": item.enabled, "updated_at": item.updated_at.isoformat()}
 
 
-def _prior_tool_outputs(repo: MemoryRepository, conversation_id: str, *, exclude_message_id: Optional[str] = None) -> str:
+def _prior_tool_outputs(
+    repo: MemoryRepository,
+    conversation_id: str,
+    *,
+    exclude_message_id: Optional[str] = None,
+    step_labels: Optional[set[str]] = None,
+) -> str:
     """收集本会话**已完成历史轮次**的处理步骤并做结构化塌缩。
 
     spec-038 P3：旧步骤塌缩为一行「工具名 + 状态 + 摘要首行」，最近
@@ -347,10 +370,21 @@ def _prior_tool_outputs(repo: MemoryRepository, conversation_id: str, *, exclude
         ]
         steps = []
         for message_id in assistant_ids:
-            steps.extend(repo.list_processing_steps(message_id, OWNER_ID))
+            message_steps = repo.list_processing_steps(message_id, OWNER_ID)
+            if step_labels:
+                message_steps = [
+                    step for step in message_steps
+                    if step.label in step_labels or step.kind in step_labels
+                ]
+            if message_steps:
+                steps.extend(message_steps)
+                # ``list_context_messages`` is newest-first.  For a download
+                # handoff, only the newest search result is relevant.
+                if step_labels:
+                    break
         if not steps:
             return ""
-        return collapse_tool_outputs(steps)
+        return collapse_tool_outputs(steps, keep_recent=len(steps) if step_labels else None)
     except Exception:  # noqa: BLE001 — 裁剪失败不阻断回答
         return ""
 
@@ -677,6 +711,123 @@ def _iter_run_events(run):
             raise
 
 
+_SKILL_EXIT_PHRASES = (
+    "结束技能", "退出技能", "关闭技能", "停止技能", "取消技能", "不用技能",
+    "不要技能", "不用这个技能", "不使用技能", "不调用技能", "结束这个技能",
+    "退出这个技能", "回到普通对话", "回到普通聊天", "恢复正常对话",
+)
+
+_PAPER_DOWNLOAD_MARKERS = (
+    "下载", "导入", "入库", "保存到知识库", "download", "import",
+)
+
+
+def _is_skill_exit(message: str) -> bool:
+    """Conservatively detect an explicit request to leave the active Skill."""
+    compact = "".join((message or "").split())
+    return any(phrase in compact for phrase in _SKILL_EXIT_PHRASES)
+
+
+def _is_paper_download_request(message: str) -> bool:
+    """Recognize an explicit paper download/import handoff for the sticky Skill."""
+    compact = "".join((message or "").split()).casefold()
+    return any(marker.casefold() in compact for marker in _PAPER_DOWNLOAD_MARKERS)
+
+
+_CATALOG_SEARCH_MARKER = re.compile(
+    r"(?:搜索|检索|查找|查询|搜一下|查一下|search(?:\s+for)?|find(?:\s+papers?)?)",
+    re.IGNORECASE,
+)
+
+
+def _catalog_search_fallback(message: str, tools) -> Optional[tuple[str, dict]]:
+    """Build one safe catalog call when a clear search request gets no call.
+
+    This is intentionally a route-level intent gate, not a second search
+    implementation.  The query must follow an explicit search verb; URLs are
+    rejected here so this fallback can never turn model/user prose into a
+    guessed download target.  The resulting arguments are still validated by
+    ``ToolLoop`` against the registered schema.
+    """
+    search_tool = next((item for item in tools if item.name == "search_paper_catalog"), None)
+    if search_tool is None or not getattr(search_tool, "enabled", True):
+        return None
+    match = _CATALOG_SEARCH_MARKER.search(message or "")
+    if match is None:
+        return None
+    query = (message or "")[match.end():].strip(" ：:，,。！？?!")
+    query = re.sub(r"^(?:一下|一篇|关于|有关)\s*", "", query, flags=re.IGNORECASE)
+    query = re.sub(r"(?:的)?(?:论文|paper(?:s)?)$", "", query, flags=re.IGNORECASE).strip(
+        " ：:，,。！？?!"
+    )
+    if not query or len(query) > 200 or re.match(r"https?://", query, flags=re.IGNORECASE):
+        return None
+    properties = getattr(search_tool, "parameters", {}).get("properties", {})
+    args = {"query": query}
+    # The production schema requires an explicit source.  Keep injected test
+    # registries and older compatible schemas working when it is absent.
+    if "source" in properties:
+        args["source"] = "usenix"
+    return search_tool.name, args
+
+
+def _skill_body(registry, skill_name: str) -> Optional[str]:
+    try:
+        detail = registry.get_skill(skill_name)
+    except Exception as error:  # noqa: BLE001 - Skill state is advisory
+        logger.warning("会话 Skill 正文读取异常：%s", error)
+        return None
+    return detail.body if detail is not None else None
+
+
+def _resolve_sticky_skill(
+    repo: MemoryRepository,
+    registry,
+    conversation_id: str,
+    message: str,
+    decision: SkillDecision,
+) -> tuple[SkillDecision, Optional[str]]:
+    """Resolve one conversation's Skill state without crossing conversations.
+
+    The repository row is only a pointer.  Every turn revalidates it against
+    the current product registry, so disabling/removing a Skill clears stale
+    state and falls back to ordinary chat.
+    """
+    none = SkillDecision(status="none")
+    if _is_skill_exit(message):
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return none, None
+    if decision.is_usable():
+        with contextlib.suppress(Exception):
+            repo.set_conversation_active_skill(conversation_id, OWNER_ID, decision.skill)
+        return decision, _skill_body(registry, decision.skill)
+    # Explicitly naming an unavailable/ambiguous Skill is not an implicit
+    # request to keep using the previous Skill.
+    if decision.status != "none":
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return decision, None
+    try:
+        active = repo.get_conversation_active_skill(conversation_id, OWNER_ID)
+    except Exception as error:  # noqa: BLE001 - sticky state is advisory
+        logger.warning("会话 Skill 粘性读取异常，按无技能继续：%s", error)
+        active = None
+    if active is None:
+        return none, None
+    current = next((item for item in registry.list_skills() if item.name == active.skill_name), None)
+    if current is None or not current.enabled:
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return none, None
+    body = _skill_body(registry, active.skill_name)
+    if body is None:
+        with contextlib.suppress(Exception):
+            repo.clear_conversation_active_skill(conversation_id, OWNER_ID)
+        return none, None
+    return SkillDecision(status="matched", skill=active.skill_name, source="sticky"), body
+
+
 def _message_stream(repo: MemoryRepository, conversation, user_message, assistant_message, model: str, mode: str, reasoning_effort: str | None = None, capabilities_source: str = "cache"):
     def generate():
         stream_started = time.monotonic()
@@ -697,7 +848,6 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
         answer_started = False
         reasoning_completed_emitted = False
         selected_effort = reasoning_effort or getattr(conversation, "reasoning_effort", "medium")
-        reasoning_started_mono = None
         reasoning_duration_ms = None
         adapter_event_seq = 0
         finished = False
@@ -795,6 +945,149 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 repo, conversation.conversation_id, exclude_message_id=assistant_message.message_id
             )
             messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=user_memory or None, segments=segments, project_id=conversation.project_id, tool_outputs=tool_outputs, recall_hits=recall_hits)
+            # Skill recognition is conversation-scoped only.  The product
+            # registry is the source of truth; `.codebuddy/skills/` remains an
+            # IDE-only directory and is never scanned here.
+            decision = SkillDecision(status="none")
+            available_names: list[str] = []
+            skills = []
+            skill_prompt = None
+            skill_body = None
+            try:
+                registry = get_skill_registry()
+                skills = registry.list_skills()
+                available_names = [skill.name for skill in skills]
+                decision = detect_skill(user_message.content, skills)
+                decision, skill_body = _resolve_sticky_skill(
+                    repo, registry, conversation.conversation_id, user_message.content, decision,
+                )
+                if skill_body is not None:
+                    skill_prompt = _skill_intent.build_skill_prompt(user_message.content, skill_body)
+            except Exception as error:  # noqa: BLE001 - Skill is advisory
+                logger.warning("会话链路 Skill 识别异常，降级为无技能：%s", error)
+                decision = SkillDecision(status="none")
+            intent_event = _skill_intent.to_intent_event(decision, available_names)
+            if intent_event:
+                event_type = intent_event.pop("type")
+                skill_step = repo.create_processing_step(
+                    assistant_message.message_id,
+                    "skill_intent",
+                    "completed",
+                    f"命中技能 {decision.skill}" if decision.is_usable() else "未使用技能",
+                    label="技能识别",
+                )
+                yield frame("progress", step_id=skill_step.step_id, kind=skill_step.kind, label=skill_step.label, status="completed", summary=skill_step.summary)
+                yield frame(event_type, **intent_event)
+            if decision.status in {"disabled", "not_found", "ambiguous"}:
+                hint = _skill_intent.format_skill_hint(decision, available_names)
+                if hint:
+                    repo.update_message(assistant_message.message_id, OWNER_ID, content=hint, status="completed")
+                    hint_step = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "技能提示已返回", label="回答生成")
+                    yield frame("token", content=hint)
+                    yield frame("progress", step_id=hint_step.step_id, kind=hint_step.kind, label=hint_step.label, status="completed", summary=hint_step.summary)
+                finished = True
+                repo.finalize_processing_steps(assistant_message.message_id, status="completed")
+                yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed")
+                return
+            if skill_prompt is not None:
+                messages.append({"role": "system", "content": skill_prompt})
+            # Expose only the tools declared by the active product Skill.  The
+            # old route passed every enabled tool to the model, so a sticky
+            # USENIX turn could drift into the unrelated session_search tool.
+            active_skill = next((item for item in skills if item.name == decision.skill), None)
+            allowed_tool_names = set(active_skill.tools if active_skill is not None else ())
+            if (
+                decision.skill == "usenix-catalog-orchestration"
+                and _is_paper_download_request(user_message.content)
+            ):
+                # A download handoff is still rooted in the catalog result;
+                # permit only the canonical search -> import pair.  The
+                # importer remains the existing secure execution boundary.
+                allowed_tool_names = {"search_paper_catalog", "download_and_import_paper"}
+                download_skill = next(
+                    (item for item in skills if item.name == "usenix-download-orchestration"),
+                    None,
+                )
+                if download_skill is not None:
+                    detail = _skill_body(registry, download_skill.name)
+                    if detail:
+                        skill_prompt = _skill_intent.build_skill_prompt(user_message.content, detail)
+                        skill_prompt += (
+                            "\n\n当前请求是从已有目录候选中下载第一篇。只允许沿用"
+                            " search_paper_catalog 结果调用 download_and_import_paper；"
+                            "不要调用 session_search，也不要接受或猜测任意 URL。"
+                        )
+                        messages[-1] = {"role": "system", "content": skill_prompt}
+                catalog_tool_outputs = _prior_tool_outputs(
+                    repo,
+                    conversation.conversation_id,
+                    exclude_message_id=assistant_message.message_id,
+                    step_labels={"search_paper_catalog"},
+                )
+            else:
+                catalog_tool_outputs = ""
+            enabled_tools = [
+                tool for tool in get_tool_registry().list_tools()
+                if tool.enabled and tool.name in allowed_tool_names
+            ]
+            fallback_tool_call = None
+            if (
+                decision.skill == "usenix-catalog-orchestration"
+                and not _is_paper_download_request(user_message.content)
+            ):
+                fallback_tool_call = _catalog_search_fallback(user_message.content, enabled_tools)
+            if skill_prompt is not None and enabled_tools:
+                from backend.app.skills import tool_dispatch as _tool_dispatch
+                from backend.app.skills import tool_executor as _tool_executor
+
+                loop = _tool_executor.ToolLoop(
+                    tools=enabled_tools,
+                    model_call=_tool_executor.make_model_call(
+                        model, timeout=SKILL_TOOL_TIMEOUT_SECONDS, retry=SKILL_TOOL_RETRY,
+                    ),
+                    dispatch=_tool_dispatch.build_default_dispatch(),
+                    max_rounds=SKILL_TOOL_MAX_ROUNDS,
+                )
+                repo.update_message(assistant_message.message_id, OWNER_ID, status="streaming")
+                generation_running = repo.create_processing_step(assistant_message.message_id, "generation", "running", label="回答生成")
+                yield frame("progress", step_id=generation_running.step_id, kind=generation_running.kind, label=generation_running.label, status="running", summary=None)
+                tool_step_sequence = 0
+                try:
+                    for event in loop.run(
+                        system_prompt=skill_prompt,
+                        user_question=user_message.content,
+                        context=catalog_tool_outputs,
+                        fallback_tool_call=fallback_tool_call,
+                    ):
+                        if event.get("type") == "tool":
+                            status = "completed" if event.get("status") == "ok" else "failed"
+                            repo.create_processing_step(
+                                assistant_message.message_id,
+                                "tool",
+                                status,
+                                str(event.get("content") or ""),
+                                label=str(event.get("name") or "tool"),
+                                logical_sequence=tool_step_sequence,
+                            )
+                            tool_step_sequence += 1
+                        if event.get("type") == "token":
+                            token = event.get("content", "")
+                            parts.append(token)
+                            repo.update_message(assistant_message.message_id, OWNER_ID, content="".join(parts), status="streaming")
+                            yield frame("token", content=token)
+                except Exception as error:  # noqa: BLE001 - preserve durable partial answer
+                    logger.warning("会话链路 Tool 执行异常，以已生成内容收尾：%s", error)
+                content = "".join(parts)
+                repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
+                generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成（技能 + 工具）", label="回答生成")
+                yield frame("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
+                if rag_hits:
+                    sources = citation_payloads(rag_hits)[:5]
+                    yield frame("sources", sources=sources, citations=sources)
+                finished = True
+                repo.finalize_processing_steps(assistant_message.message_id, status="completed")
+                yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed")
+                return
             # Spec025 Task04：装配后按阈值自动触发后台异步压缩；绝不阻塞本次响应，
             # 失败只记录观测（与既有 context_pressure 事件并存，不改其语义）。
             try:
@@ -814,7 +1107,6 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             reasoning_seen = False
             if selected_effort != "off":
                 reasoning_started_at = time.monotonic()
-                reasoning_started_mono = reasoning_started_at
                 reasoning_seen = True
                 started_iso = utc_now().isoformat()
                 repo.update_message_reasoning(assistant_message.message_id, OWNER_ID, status="running", started_at=started_iso, first_reasoning_at=None, last_event_seq=sequencer.event_seq)
@@ -878,7 +1170,8 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     reasoning_seen = False
                     reasoning_completed_emitted = True
                 if event.get("type") == "token":
-                    token = event.get("content", ""); parts.append(token)
+                    token = event.get("content", "")
+                    parts.append(token)
                     answer_started = True
                     if reasoning_seen:
                         tail = reasoning_stream_filter.finish()
@@ -911,7 +1204,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             ):
                 raise ChatStreamInterrupted("Ollama 流式连接中断，已保存部分内容")
             content = "".join(parts)
-            try:
+            with contextlib.suppress(Exception):
                 record_ollama_generation(
                     model=model,
                     prompt_messages=redact_prompt_messages(messages),
@@ -921,8 +1214,6 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     tags=["conversation"],
                     extra_metadata={key: value for key, value in {"reasoning_status": "completed" if selected_effort != "off" else None, "reasoning_duration_ms": reasoning_duration_ms, "answer_duration_ms": max(0.0, (time.monotonic() - stream_started) * 1000.0)}.items() if value is not None},
                 )
-            except Exception:
-                pass
             generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成", label="回答生成")
             yield frame("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
             if rag_hits:
@@ -962,7 +1253,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             yield frame("done", conversation_id=conversation.conversation_id, message_id=assistant_message.message_id, status="completed", duration_ms=answer_duration_ms, reasoning_duration_ms=reasoning_duration_ms, answer_duration_ms=answer_duration_ms)
         except GeneratorExit:
             raise
-        except ChatStreamInterrupted as error:
+        except ChatStreamInterrupted:
             content = "".join(parts)
             try:
                 repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="interrupted")

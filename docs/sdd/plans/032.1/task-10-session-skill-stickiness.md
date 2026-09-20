@@ -1,7 +1,9 @@
 # Task 10：会话级 Skill 粘性（sticky skill）
 
 > 关联：[spec-032.1](../../specs/032.1-usenix-skill-decoupling.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 09（会话链路已接入 Skill）；当前状态：`待执行`
+> 依赖：会话链路已接入 Skill（原 Task09 文档缺失，须核对实际代码）；当前状态：`待执行，移交 Spec032 Task13`
+
+> 2026-09-20：本任务保留为原始需求与验收记录，执行入口改为 [Spec032 Task13](../032/task-13-spec0321-carryover.md)。既有 `conversation_active_skill` 表/仓储方法是否已接入会话路由，须先以代码与测试为准，不得重复实现或虚标完成。
 
 ## 一句话目标
 
@@ -83,4 +85,7 @@
 
 ## 产出物、执行结果与变更日志
 
-> 待执行后填写：存储表名、粘性规则实现位置、测试与真实链路复现结果。
+### 移交至 Spec032 Task13 的执行结果（2026-09-20）
+
+- 代码/定向链路：PASS。`conversation_active_skill` 独立表、会话路由粘性解析及连续两轮工具链路已存在；`tests/test_skill_carryover.py` 本轮 `4 passed`（退出码 `0`），覆盖激活、沿用、切换、退出、禁用清理和 owner/会话隔离。
+- 真实产品 API 链路：未执行成功，原因是 Task13 要求的 `127.0.0.1:18080` 服务未监听；该阻塞属于 Task08 真实检索/导入 smoke，不把离线连续两轮测试冒充真实外部服务成功。

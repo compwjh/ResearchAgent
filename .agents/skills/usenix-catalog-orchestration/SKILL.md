@@ -1,7 +1,7 @@
 ---
 name: usenix-catalog-orchestration
 description: USENIX Security 论文目录检索的编排协议。当需要从 USENIX 官方目录按研究方向、关键词或年份检索论文元数据（标题、作者、摘要、关键词）时使用本技能。本技能负责编排决策——确定检索范围、判断何时补抓详情页摘要、决定 DBLP 补充字段的时机、以及单源失败时如何降级；实际抓取与解析由 search_paper_catalog 与 fetch_paper_detail 工具执行，本技能不接触 HTML。
-tools: [search_paper_catalog, fetch_paper_detail]
+tools: [paper_discovery, search_paper_catalog, fetch_paper_detail]
 ---
 
 # USENIX 目录检索编排
