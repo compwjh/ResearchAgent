@@ -6,7 +6,7 @@ const {
   sessionProgressText,
   sessionApprovalText,
   sessionAgentToolText,
-} = require('../frontend/research-tasks.js');
+} = require('../../frontend/research-tasks.js');
 
 const session = sessionTaskProjection({
   research_session_id: 'session-1', conversation_id: 'conversation-1', project_id: 'project-1',

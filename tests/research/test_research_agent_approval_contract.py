@@ -8,10 +8,10 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from tests.research.test_deep_research_task04_contract import OWNER, _output, _setup
-from tests.research.test_deep_research_task05_contract import _output as _runtime_output
-from tests.research.test_deep_research_task05_contract import _skill as _runtime_skill
-from tests.research.test_deep_research_task09_backend import _legacy
+from tests.research.test_research_plan_approval_contract import OWNER, _output, _setup
+from tests.research.test_agent_runtime_contract import _output as _runtime_output
+from tests.research.test_agent_runtime_contract import _skill as _runtime_skill
+from tests.research.test_research_legacy_cleanup_contract import _legacy
 
 from backend.app.research.application.agent_runtime import (
     AgentRunInput,

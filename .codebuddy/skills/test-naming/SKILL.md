@@ -42,4 +42,7 @@ agent_created: true
 
 ## 绑定
 
-此规则由 `backend-dev` / `frontend-dev`（任何写测试的角色）遵守；`coding-standards` 评审与 `regression-guard` 收口时一并核对文件名。
+此规则绑定到 `backend-dev` / `frontend-dev`（写测试）、`backend-reviewer` /
+`frontend-reviewer`（评审测试）以及 `backend-tester` / `frontend-tester` /
+`tester`（测试与验收）角色；`coding-standards` 评审与 `regression-guard`
+收口时一并核对文件名。

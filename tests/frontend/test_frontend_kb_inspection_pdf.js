@@ -8,7 +8,7 @@ const {
   PDF_GET_DOCUMENT_OPTIONS,
   isAllowedPdfWorkerSource,
   resolvePdfWorkerSource,
-} = require('../frontend/kb-inspection.js');
+} = require('../../frontend/kb-inspection.js');
 
 class FakeElement {
   constructor(tagName, documentRef) {

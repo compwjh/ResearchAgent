@@ -2,7 +2,7 @@
 name: backend-reviewer
 description: 后端评审 agent（Python/FastAPI/SQLite，qwen3.8:27b-mlx）。对应 ECC `code-reviewer`，只评审 backend/** 改动，做需求/技术评审与代码审查。Use PROACTIVELY when 后端实现完成需评审、或需对后端改动做代码审查时。
 tools: Read, Grep, Glob, Bash
-skills: coding-standards, backend-patterns, regression-guard, strategic-compact, progress-logging
+skills: coding-standards, backend-patterns, regression-guard, test-naming, strategic-compact, progress-logging
 model: hy3
 permissionMode: default
 maxTurns: 30

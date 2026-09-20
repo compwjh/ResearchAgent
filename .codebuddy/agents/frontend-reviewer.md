@@ -2,7 +2,7 @@
 name: frontend-reviewer
 description: 前端评审 agent（原生 JS/CSS/HTML，qwen3.8:27b-mlx）。对应 ECC `code-reviewer`，只评审 frontend/** 改动，核对 DOM 契约、版本号、XSS。Use PROACTIVELY when 前端实现完成需评审、或需对前端改动做代码审查时。
 tools: Read, Grep, Glob, Bash
-skills: coding-standards, frontend-patterns, regression-guard, strategic-compact, progress-logging
+skills: coding-standards, frontend-patterns, regression-guard, test-naming, strategic-compact, progress-logging
 model: hy3
 permissionMode: default
 maxTurns: 25

@@ -1,11 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const marked = require('../frontend/vendor/marked.min.js');
+const marked = require('../../frontend/vendor/marked.min.js');
 const {
   renderMarkdownBlock,
   validateSourceBlock,
-} = require('../frontend/kb-inspection.js');
+} = require('../../frontend/kb-inspection.js');
 
 class FakeNode {
   constructor(tagName, nodeType = 1, value = '') {

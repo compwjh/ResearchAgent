@@ -9,7 +9,7 @@ const {
   mergeNotifications,
   notificationKindLabel,
   notificationPayloadText,
-} = require('../frontend/research-tasks.js');
+} = require('../../frontend/research-tasks.js');
 
 assert.equal(safeArtifactUrl('/api/research-sessions/s1/artifacts/a1/download'), '/api/research-sessions/s1/artifacts/a1/download');
 assert.equal(safeArtifactUrl('https://evil.invalid/download'), '');

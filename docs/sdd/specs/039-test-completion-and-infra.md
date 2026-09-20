@@ -122,3 +122,16 @@ tests/
 | 测试 | `qwen3.5:9b` | 32k | 改名脚本、路径修正、收集验证、补用例 |
 
 > 本 spec 经用户授权直接执行，跳过「待确认 → 评审」门禁。
+
+## 补充执行记录（2026-09-20）
+
+- 修正上一轮分类提交遗漏的 18 个测试 basename：全部移除 `specNNN`/`taskNN`，并按
+  USENIX 作者回填、调度运行时、研究会话/计划/Agent Runtime、处理树、报告通知等
+  被测能力命名；Git 历史通过 `git mv` 保留。
+- 修正 `tests/frontend/` 下 8 个 JavaScript 合同测试移入子目录后的相对导入路径。
+- 新增 `.agents/skills/test-naming/SKILL.md`，并将命名 Skill 绑定到开发、评审和测试
+  角色；新增 `scripts/check_test_naming.py` 作为无依赖机械门禁。
+- 验证报告：`docs/sdd/plans/039-test-infra-validation.md`。命名检查、改名文件
+  定向收集（202 项）、Python 定向测试（202 passed）及 8 个 JS 合同均通过；全量
+  收集/回归在当前 `chore/update-archify` 基线因缺失 Spec032 的
+  `source_registry.py` 阻塞（37 个既有导入错误），未修改业务代码绕过。

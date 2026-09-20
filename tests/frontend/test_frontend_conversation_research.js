@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { createSourceRenderer, normalizeSources, safeSourceUrl } = require('../frontend/conversation-research.js');
+const { createSourceRenderer, normalizeSources, safeSourceUrl } = require('../../frontend/conversation-research.js');
 
 class FakeElement {
   constructor(tagName) {
