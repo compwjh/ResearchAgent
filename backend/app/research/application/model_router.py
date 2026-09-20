@@ -83,11 +83,16 @@ class ModelRouter:
     """按角色与档位从可用模型清单解析实际模型，并实现 fast->重试->升级 strong 分支。"""
 
     def __init__(self, *, available_models_provider: Optional[Callable[[], List[str]]] = None,
-                 fallback_model: Optional[str] = None) -> None:
+                 fallback_model: Optional[str] = None, observation_service=None,
+                 observation=None, policy_version: str = "spec027-static-v1") -> None:
         # available_models_provider 默认 backend.app.platform.ollama.get_available_models
         # （Spec027 复用接缝：禁止第二套模型客户端，模型清单只能来自这里）。
         self._provider = available_models_provider or get_available_models
         self._fallback_model = fallback_model
+        # Optional Task03 seam.  It is strictly write-only observation and is
+        # never consulted when choosing the production model.
+        self._observation = observation_service or observation
+        self._policy_version = policy_version
 
     def _available_models(self) -> List[str]:
         """取可用模型清单；任何异常都降级为空列表，不向上冒泡。"""
@@ -115,13 +120,70 @@ class ModelRouter:
         return None, f"{tier} tier: no available models to resolve from"
 
     def resolve(self, *, role: str, task_type: Optional[str] = None,
-                tier: Optional[str] = None) -> ModelChoice:
+                tier: Optional[str] = None, owner_id: Optional[str] = None,
+                features: Optional[dict] = None) -> ModelChoice:
         if role not in ROLE_WHITELIST:
             raise ValueError(f"role {role!r} not in ROLE_WHITELIST")
         effective_tier = tier or DEFAULT_TIER_BY_ROLE.get(role, FAST_TIER)
         models = self._available_models()
         model, reason = self._pick_model(effective_tier, models)
-        return ModelChoice(effective_tier, model, reason)
+        choice = ModelChoice(effective_tier, model, reason)
+        observer = self._observation
+        if observer is not None and owner_id and hasattr(observer, "record_decision"):
+            # Observation failure is intentionally isolated from the routing
+            # contract.  candidate_models is a bounded provider allowlist,
+            # not a new source of model selection.
+            try:
+                candidates = list(models[:16])
+                if model and model not in candidates:
+                    candidates = (candidates + [model])[:16]
+                observer.record_decision(
+                    owner_id=owner_id,
+                    task_type=task_type or role,
+                    features={"role": role, "tier": effective_tier, **(features or {})},
+                    candidate_models=candidates,
+                    chosen_model=model or "unresolved",
+                    reason=reason,
+                    policy_version=self._policy_version,
+                )
+            except Exception:
+                pass
+        return choice
+
+    def resolve_adaptive(
+        self,
+        *,
+        scheduler,
+        task_id: str,
+        role: str,
+        task_type: Optional[str] = None,
+        tier: Optional[str] = None,
+        requested_workers: int = 1,
+        estimated_bytes: int = 0,
+        owner_id: Optional[str] = None,
+        features: Optional[dict] = None,
+        policy_version: str = "spec027-static-v1",
+    ):
+        """Return the legacy choice plus an explicit Task04 worker grant.
+
+        This opt-in method is intentionally separate from ``resolve`` so every
+        existing caller keeps its exact ModelRouter contract.  Model/provider
+        discovery occurs first; the scheduler is only touched afterwards.
+        """
+        from backend.app.research.application.adaptive_routing import AdaptiveRoutingService
+
+        return AdaptiveRoutingService(
+            self, scheduler, observation=self._observation, policy_version=policy_version
+        ).resolve(
+            owner_id=owner_id,
+            task_id=task_id,
+            role=role,
+            task_type=task_type,
+            tier=tier,
+            requested_workers=requested_workers,
+            estimated_bytes=estimated_bytes,
+            features=features,
+        )
 
     def execute(self, *, role: str, task_type: Optional[str] = None,
                 invoke: Callable[[Optional[str]], Tuple[bool, object]]

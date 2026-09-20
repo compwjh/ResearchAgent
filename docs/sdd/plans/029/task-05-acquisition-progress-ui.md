@@ -1,7 +1,7 @@
 # Task 05：实现导入进度与失败恢复界面
 
 > 关联：[Spec 029](../../specs/029-research-fulltext-acquisition.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03、Task04；被依赖：Task06；当前状态：`待执行`
+> 依赖：Task03、Task04；被依赖：Task06；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -21,8 +21,15 @@
 ## 主 Agent 校验、风险与产出
 
 - 检查确认、重复提交、登录等待和失败恢复交互，不跑全量。
-- 产出 UI、合同测试和报告；执行结果待填写。
+- 产出 UI、合同测试和报告；已完成定向验证。
+
+## 执行结果
+
+- 已完成候选增删、只读预览、显式确认、逐篇状态、登录等待、失败重试和全文证据定位入口；确认前不下载。
+- 定向测试：15 passed；`node --check frontend/research-tasks.js` 通过；`git diff --check` 通过。
+- 报告：[frontend-report.md](./artifacts/task-05/frontend-report.md)。
 
 ## 变更日志
 
 - 2026-09-12：创建获取进度 UI Task。
+- 2026-09-16：完成进度与失败恢复界面；后端未返回服务端 `search_id` 时前端安全禁止确认。

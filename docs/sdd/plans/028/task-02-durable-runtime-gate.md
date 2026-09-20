@@ -1,7 +1,7 @@
 # Task 02：验证租约、Checkpoint 与公平调度
 
 > 关联：[Spec 028](../../specs/028-research-task-durable-scheduling.md) ｜ 索引：[README](./README.md)
-> 依赖：Spec027 完成、Spec028 确认及双评审通过；被依赖：Task03–06；当前状态：`待执行`
+> 依赖：Spec027 完成、Spec028 已进入实施；被依赖：Task03–06；当前状态：`已完成（GO）`
 
 ## 一句话目标
 
@@ -27,7 +27,7 @@
 ## 主 Agent 校验、风险与产出
 
 - 复跑最小多进程测试；无法证明单 owner 或完成节点幂等则 NO-GO。
-- 本 Task 无业务回滚；产出为合同测试和 gate 报告。执行结果待填写。
+- 本 Task 无业务回滚；产出为合同测试和 gate 报告。GO 已通过，公平调度与 WAL 合同均已验证。
 
 ## 变更日志
 

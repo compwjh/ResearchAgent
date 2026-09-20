@@ -1,7 +1,7 @@
 # Task 04：接通全文 RAG 与证据升级
 
 > 关联：[Spec 029](../../specs/029-research-fulltext-acquisition.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；被依赖：Task05–06；当前状态：`待执行`
+> 依赖：Task03；被依赖：Task05–06；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -21,8 +21,15 @@
 ## 主 Agent 校验、风险与产出
 
 - 每条 fulltext 证据必须能通过现有检查接口定位，不能只保存模型摘录。
-- 产出证据升级代码、测试和报告；执行结果待填写。
+- 产出证据升级代码、测试和报告；已完成定向验证。
+
+## 执行结果
+
+- 已完成 `EvidenceUpgradeService`、证据升级 API 和 manifest 校验。
+- 定向测试：12 passed；组合回归：69 passed、5 subtests；`py_compile` 与 `git diff --check` 通过。
+- 报告：[backend-report.md](./artifacts/task-04/backend-report.md)。
 
 ## 变更日志
 
 - 2026-09-12：创建全文证据升级 Task。
+- 2026-09-16：接通既有 `hybrid_search` 与 inspection manifest；删除、重建或指纹变化时 fail closed。

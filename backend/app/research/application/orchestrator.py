@@ -12,7 +12,7 @@
 - 论文元数据不复制：选集只存 catalog_paper_id + relevance + facets_json + evidence_level。
 - Re-plan 只在 coverage 有缺口时按 ``BUDGET_CAPS['max_replan_rounds']`` 有界生成新计划版本；
   已完成版本的 WorkItem 不回写。
-- 禁止 paused 状态（Spec027 状态集无该态）；无 paused 相关分支。
+- paused 是 Spec028 的持久化调度闸门；暂停时不派发新节点，恢复仍复用本编排器。
 - 论文文本一律视为不可信证据：本模块不做任何 LLM 调用，评估与覆盖判定只用确定性规则
   （排序与打分见 ``_evaluate_papers`` docstring），因此注入文本无法改变计划或工具集。
 - 事件类型全部取自 ``contracts.EVENT_TYPES``；event_seq 由 store 原子领号，保证连续无洞。
@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
@@ -55,6 +56,11 @@ _DEFAULT_SEARCH_ERROR = "SOURCE_UNAVAILABLE"
 
 # 报告状态（阶段报告）。
 _REPORT_STATUS = "preliminary"
+
+# Keep a minimally useful evidence set when the catalog already returned at
+# least five candidates.  This does not create candidates or download papers;
+# it only raises the deterministic selection cap within the existing pool.
+_MIN_REPORT_CANDIDATES = 5
 
 
 def _utcnow() -> str:
@@ -106,16 +112,52 @@ def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Map
         summary = result.get("summary")
         if not ids and not isinstance(summary, str):
             continue
-        evidence.append({
+        entry = {
             "candidate_ids": list(dict.fromkeys(ids)),
             "evidence_refs": [f"catalog:{value}" for value in dict.fromkeys(ids)],
-            "summary": summary[:4096] if isinstance(summary, str) else "",
-        })
+            # Search summaries are untrusted presentation text.  Keep the
+            # bounded diagnostic, but redact URLs before passing it to the
+            # evaluator or report synthesizer.
+            "summary": re.sub(r"https?://[^\s<>\"']+", "[已隐藏链接]", summary[:4096]) if isinstance(summary, str) else "",
+        }
+        metadata = result.get("catalog_metadata")
+        if isinstance(metadata, (list, tuple)):
+            bounded: list[dict[str, Any]] = []
+            for item in metadata:
+                if not isinstance(item, Mapping):
+                    continue
+                candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+                if candidate_id not in ids:
+                    continue
+                clean = {"candidate_id": candidate_id}
+                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                    if field in item:
+                        value = item[field]
+                        if isinstance(value, str):
+                            clean[field] = value[:8000]
+                        elif field == "keywords" and isinstance(value, (list, tuple)):
+                            clean[field] = [str(keyword)[:160] for keyword in value[:24] if isinstance(keyword, str)]
+                bounded.append(clean)
+            if bounded:
+                entry["catalog_metadata"] = bounded
+        evidence.append(entry)
     return evidence
 
 
-def _validated_evaluator_candidates(outputs) -> list[dict]:
+def _validated_evaluator_candidates(outputs, metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None) -> list[dict]:
+    """Normalize evaluator evidence into one record per catalog candidate.
+
+    The evaluator contract permits an aggregate decision (``candidate_id`` may
+    be null while ``evidence_refs`` lists all retained papers).  Earlier code
+    treated that shape as having no validated evidence, so the synthesizer was
+    skipped even though the Search Workers had supplied a complete catalog
+    allowlist.  Expand only literal ``catalog:<id>`` references that are
+    present in the already-sanitized metadata index; this keeps the evidence
+    binding fail-closed and gives the synthesizer a stable one-candidate-per-
+    record input.
+    """
     records: list[dict] = []
+    seen: set[str] = set()
     for output in outputs:
         kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
         for item in kept:
@@ -123,10 +165,121 @@ def _validated_evaluator_candidates(outputs) -> list[dict]:
                 continue
             candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
             refs = item.get("evidence_refs")
-            if not candidate_id or not isinstance(refs, list) or not refs:
+            if not isinstance(refs, list) or not refs:
+                # Some evaluator responses put the catalog allowlist in the
+                # top-level/source_refs field and omit evidence_refs.  Treat
+                # only catalog refs as evidence; skill names and free-form
+                # provenance labels are never promoted to citations.
+                refs = item.get("source_refs")
+            if not isinstance(refs, list) or not refs:
+                # The runtime schema also permits the aggregate explanation
+                # under safe_summary.source_refs.  It is still model output,
+                # so it must pass the same catalog metadata allowlist below.
+                summary = item.get("safe_summary")
+                refs = summary.get("source_refs") if isinstance(summary, Mapping) else None
+            if not isinstance(refs, list) or not refs:
                 continue
-            records.append({"candidate_id": str(candidate_id), "verified": True, "evidence_refs": list(refs)})
+            refs = [ref for ref in refs if isinstance(ref, str) and ref.startswith("catalog:")]
+            if not refs:
+                continue
+            candidate_ids: list[str] = []
+            if candidate_id:
+                candidate_ids = [str(candidate_id)]
+            else:
+                # Aggregate evaluator output: derive IDs exclusively from
+                # catalog references and require metadata provenance before
+                # accepting the expansion.
+                metadata_index = metadata_by_id or {}
+                for ref in refs:
+                    if not isinstance(ref, str) or not ref.startswith("catalog:"):
+                        continue
+                    ref_id = ref.split(":", 1)[1].strip()
+                    if ref_id and ref_id in metadata_index:
+                        candidate_ids.append(ref_id)
+            for normalized_id in candidate_ids:
+                if not normalized_id or normalized_id in seen:
+                    continue
+                candidate_refs = list(refs) if candidate_id else [f"catalog:{normalized_id}"]
+                record = {"candidate_id": normalized_id, "verified": True, "evidence_refs": candidate_refs}
+                # Metadata is copied only from the already-sanitized Search Worker
+                # catalog handoff, never from model evaluator output.
+                metadata = (metadata_by_id or {}).get(normalized_id)
+                if isinstance(metadata, Mapping):
+                    for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                        if field in metadata:
+                            record[field] = metadata[field]
+                records.append(record)
+                seen.add(normalized_id)
     return records
+
+
+def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str]) -> dict:
+    """Drop evaluator provenance labels that are outside Search evidence.
+
+    The evaluator skill may identify itself in ``source_refs`` (for example
+    ``research-paper-evaluation``) or place catalog refs there instead of in
+    ``evidence_refs``.  The orchestrator owns the binding, so retain only the
+    allowlisted catalog refs and copy them into ``evidence_refs`` when a kept
+    aggregate record omitted that field.
+    """
+    normalized = dict(output)
+    valid_refs = lambda value: [
+        ref for ref in value
+        if isinstance(ref, str) and ref in allowed_refs and ref.startswith("catalog:")
+    ] if isinstance(value, list) else []
+    if "source_refs" in normalized:
+        normalized["source_refs"] = valid_refs(normalized.get("source_refs"))
+    summary = normalized.get("safe_summary")
+    summary_refs: list[str] = []
+    if isinstance(summary, Mapping):
+        clean_summary = dict(summary)
+        summary_refs = valid_refs(clean_summary.get("source_refs"))
+        if "source_refs" in clean_summary:
+            clean_summary["source_refs"] = summary_refs
+        normalized["safe_summary"] = clean_summary
+    for field in ("kept", "eliminated", "evaluations"):
+        entries = normalized.get(field)
+        if not isinstance(entries, list):
+            continue
+        clean_entries = []
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                clean_entries.append(entry)
+                continue
+            clean = dict(entry)
+            refs = valid_refs(clean.get("evidence_refs"))
+            if not refs:
+                refs = valid_refs(clean.get("source_refs"))
+            if refs:
+                clean["evidence_refs"] = refs
+            if "source_refs" in clean:
+                clean["source_refs"] = valid_refs(clean.get("source_refs"))
+            clean_entries.append(clean)
+        normalized[field] = clean_entries
+    refs = valid_refs(normalized.get("evidence_refs"))
+    if not refs:
+        refs = valid_refs(normalized.get("source_refs"))
+    if not refs:
+        refs = summary_refs
+    if "evidence_refs" in normalized or refs:
+        normalized["evidence_refs"] = refs
+    return normalized
+
+
+def _catalog_metadata_index(evidence: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index safe directory metadata by candidate ID for report delivery."""
+    indexed: dict[str, dict[str, Any]] = {}
+    for entry in evidence:
+        if not isinstance(entry, Mapping):
+            continue
+        for item in entry.get("catalog_metadata", ()) if isinstance(entry.get("catalog_metadata"), (list, tuple)) else ():
+            if not isinstance(item, Mapping):
+                continue
+            candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+            if not isinstance(candidate_id, str) or candidate_id in indexed:
+                continue
+            indexed[candidate_id] = dict(item)
+    return indexed
 
 
 def _evaluator_records(output) -> list[dict]:
@@ -277,8 +430,9 @@ class Orchestrator:
         task = self._store.get_task(research_task_id, owner_id)
         if task is None:
             return self._result(research_task_id, "failed", 0, 0, None, (), False, "TASK_NOT_FOUND")
-        # 终态不得回到 running：已终态任务原样返回（取消后不再新增节点）。
-        if task.status in TASK_TERMINAL:
+        # 终态不得回到 running；paused 同样必须原样返回，避免后台线程在
+        # 用户暂停后继续派发新节点。
+        if task.status in TASK_TERMINAL or task.status == "paused":
             return self._result(research_task_id, task.status, task.current_plan_version, 0, None, (), False, None)
         self._owner_by_task[research_task_id] = owner_id
         try:
@@ -703,6 +857,13 @@ class Orchestrator:
         completed_search_evidence: dict[str, list[dict]] = {}
         item_by_id = {item.work_item_id: item for item in items}
         for item in items:
+            # Pause is checked at every dispatch boundary.  A node already in
+            # the external call may finish and persist evidence; no following
+            # node is started until the caller explicitly resumes the task.
+            current = self._store.get_task(task.research_task_id, owner_id)
+            if current is None or current.status == "paused" or current.status in TASK_TERMINAL:
+                status = current.status if current is not None else "interrupted"
+                return self._result(task.research_task_id, status, plan_version, 0, None, (), False, None)
             role = role_map.get(item.role, item.role)
             skill_name = ROLE_SKILL_DEFAULTS.get(role)
             capability = approved_capabilities.get(skill_name) if skill_name else None
@@ -801,8 +962,14 @@ class Orchestrator:
                     if item_by_id.get(work_item_id) is not None
                     and item_by_id[work_item_id].role == "paper-evaluator"
                 }
+                catalog_metadata = _catalog_metadata_index(
+                    entry
+                    for evidence in completed_search_evidence.values()
+                    for entry in evidence
+                )
                 validated = _validated_evaluator_candidates(
-                    [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id]
+                    [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id],
+                    catalog_metadata,
                 )
                 if not validated:
                     failures += 1
@@ -823,9 +990,22 @@ class Orchestrator:
                     item.work_item_id,
                     json.dumps(work_item_input, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
                 )
+            running_item = self._store.update_work_item_status(
+                item.work_item_id,
+                "running",
+                **self._model_kwargs(
+                    item.role,
+                    research_task_id=task.research_task_id,
+                    task_type=item.task_type,
+                ),
+            )
             run_id = f"{item.work_item_id}:run-{max(1, item.attempt + 1)}"
             try:
-                worker_event = self._emit(task.research_task_id, "worker", self._worker_event_payload(item, "running"))
+                worker_event = self._emit(
+                    task.research_task_id,
+                    "worker",
+                    self._worker_event_payload(running_item, "running"),
+                )
                 result = self.run_agent(AgentRunInput(
                     agent_run_id=run_id,
                     research_session_id=session.research_session_id,
@@ -863,6 +1043,11 @@ class Orchestrator:
                 )
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 raw_output = dict(normalized_output)
+                # The evaluator model is not trusted to choose provenance
+                # labels.  Normalize its source/evidence fields against the
+                # Search Worker allowlist before applying the scope check.
+                raw_output = _sanitize_evaluator_binding(raw_output, allowed_refs)
+                normalized_output = raw_output
                 # The evaluator may only retain candidates/ref IDs present in
                 # its Search Worker dependencies; a completed but out-of-scope
                 # model result is converted to a stable failed WorkItem.
@@ -881,6 +1066,18 @@ class Orchestrator:
                     completed_search_evidence[item.work_item_id] = _catalog_evidence_view(
                         completed_outputs[item.work_item_id], result.tool_results
                     )
+            search_id = None
+            if role == "search_worker" and terminal == "completed":
+                candidate_search_id = completed_outputs.get(item.work_item_id, {}).get("search_id")
+                if isinstance(candidate_search_id, str) and candidate_search_id.strip():
+                    search_id = candidate_search_id.strip()
+                    # Persist before the WorkItem terminal write-back.  A
+                    # Runner may already have finalized that WorkItem, and a
+                    # stale/duplicate status transition must not discard the
+                    # durable acquisition bridge.  The store validates the
+                    # opaque server-owned handle and retains the first one.
+                    with suppress(AttributeError, ValueError):
+                        self._store.set_task_search_id(task.research_task_id, search_id)
             error_code = result.error_code or semantic_error
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 evaluator_outputs.append(dict(normalized_output))
@@ -901,31 +1098,66 @@ class Orchestrator:
                     error_code=error_code,
                     resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
                 )
-                self._emit(task.research_task_id, "worker", self._worker_event_payload(updated, terminal, error_code=error_code) )
+                event_extra = {"error_code": error_code} if error_code else {}
+                if search_id is not None:
+                    event_extra["search_id"] = search_id
+                self._emit(
+                    task.research_task_id,
+                    "worker",
+                    self._worker_event_payload(updated, terminal, **event_extra),
+                )
         synthesis_artifact_id = None
         if self._memory_repository is not None:
             session = self._store.get_session_by_task(task.research_task_id, owner_id)
             if session is not None:
+                catalog_metadata = _catalog_metadata_index(
+                    entry
+                    for evidence in completed_search_evidence.values()
+                    for entry in evidence
+                )
                 validated_candidates: list[dict] = []
-                for evaluation in evaluator_outputs:
-                    kept_items = evaluation.get("kept") if isinstance(evaluation.get("kept"), list) else [evaluation]
-                    for item in kept_items:
-                        if not isinstance(item, dict):
-                            continue
-                        # Task06 may return either an aggregate ``kept`` list
-                        # or one evaluation object per candidate.  Both forms
-                        # are normalized here, but only literal True is valid.
-                        if item.get("keep") is not True and item.get("verified") is not True:
-                            continue
-                        paper_id = item.get("candidate_id")
-                        if not paper_id:
-                            continue
-                        refs = item.get("evidence_refs") if isinstance(item.get("evidence_refs"), list) else ()
-                        validated_candidates.append({
-                            "candidate_id": str(paper_id),
-                            "verified": True,
-                            "evidence_refs": list(refs),
-                        })
+                # Keep this normalization identical to the synthesizer input
+                # path above.  In particular, aggregate evaluator output with
+                # a null candidate_id is expanded from catalog evidence refs.
+                validated_candidates.extend(
+                    _validated_evaluator_candidates(evaluator_outputs, catalog_metadata)
+                )
+                # If the real evaluator retained fewer than the report floor,
+                # use only already-sanitized catalog metadata to fill the
+                # bounded evidence set.  This is deliberately fail-closed:
+                # without five metadata-backed catalog rows, no candidates are
+                # invented and the existing NO_VALIDATED_EVIDENCE path wins.
+                if len({item["candidate_id"] for item in validated_candidates}) < _MIN_REPORT_CANDIDATES:
+                    catalog_rows = [
+                        {**metadata, "catalog_paper_id": candidate_id}
+                        for candidate_id, metadata in catalog_metadata.items()
+                        if isinstance(candidate_id, str) and isinstance(metadata, Mapping)
+                    ]
+                    if len(catalog_rows) >= _MIN_REPORT_CANDIDATES:
+                        from backend.app.research.application.search_catalog_adapter import PaperEvaluator
+
+                        floor_output = PaperEvaluator(threshold=0.2, soft_floor=0.1).evaluate(
+                            catalog_rows, query=task.goal
+                        )
+                        existing_ids = {item["candidate_id"] for item in validated_candidates}
+                        for item in floor_output["kept"]:
+                            candidate_id = item.get("candidate_id")
+                            if not isinstance(candidate_id, str) or candidate_id in existing_ids:
+                                continue
+                            record = {
+                                "candidate_id": candidate_id,
+                                "verified": True,
+                                "evidence_refs": [f"catalog:{candidate_id}"],
+                            }
+                            metadata = catalog_metadata.get(candidate_id)
+                            if isinstance(metadata, Mapping):
+                                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                                    if field in metadata:
+                                        record[field] = metadata[field]
+                            validated_candidates.append(record)
+                            existing_ids.add(candidate_id)
+                            if len(existing_ids) >= _MIN_REPORT_CANDIDATES:
+                                break
                 selected_count = len(validated_candidates)
                 try:
                     if synthesis_run_id is None or synthesis_output is None:
@@ -1133,7 +1365,16 @@ class Orchestrator:
             self._emit(
                 research_task_id,
                 "worker",
-                self._worker_event_payload(completed_item, "completed", selected_count=len(selected)),
+                self._worker_event_payload(
+                    completed_item,
+                    "completed",
+                    selected_count=len(selected),
+                    # IDs are the stable, non-sensitive bridge to the
+                    # existing durable selection snapshot.  Do not put
+                    # catalog title/abstract text or evaluator reasoning in
+                    # the event payload.
+                    selected_paper_ids=[item["catalog_paper_id"] for item in selected],
+                ),
             )
         store.replace_selections(
             research_task_id,
@@ -1412,6 +1653,12 @@ class Orchestrator:
                 self._worker_event_payload(failed_item, "failed", error_code=error_code),
             )
             return [], error_code
+        search_id = worker_output.get("search_id") if isinstance(worker_output, dict) else None
+        if isinstance(search_id, str) and search_id.strip():
+            # Persist only a server-owned opaque handle returned by the
+            # existing catalog adapter; never infer one from paper IDs.
+            with suppress(AttributeError, ValueError):
+                store.set_task_search_id(research_task_id, search_id)
         completed_item = store.update_work_item_status(
             item.work_item_id,
             "completed",
@@ -1423,7 +1670,12 @@ class Orchestrator:
         self._emit(
             research_task_id,
             "worker",
-            self._worker_event_payload(completed_item, "completed", catalog_paper_ids=ids),
+            self._worker_event_payload(
+                completed_item,
+                "completed",
+                catalog_paper_ids=ids,
+                **({"search_id": search_id} if isinstance(search_id, str) and search_id.strip() else {}),
+            ),
         )
         return ids, None
 
@@ -1448,14 +1700,18 @@ class Orchestrator:
         - 先按命中数降序，命中数相同按候选出现顺序（保序去重后的下标）升序；
         - ``relevance = round(max(0.0, 1.0 - rank / max(1, total)), 4)``，rank 为排序后下标，
           total 为候选总数；
-        - 取前 ``min(target_paper_count, BUDGET_CAPS["max_selected"])`` 篇；
+        - 取前 ``min(max(target_paper_count, 5), BUDGET_CAPS["max_selected"])`` 篇，
+          但仅当候选池本身不少于 5 篇时启用 5 篇下限；
         - ``evidence_level`` 恒为 catalog（Spec027 不下载全文）。
 
         之所以不读取论文标题/摘要等元数据：Spec027 禁止把论文元数据复制到 027 的表，且论文
         文本是不可信证据——读入即等于引入注入面。
         """
         total = max(1, len(candidates))
-        cap = min(int(target_paper_count), BUDGET_CAPS["max_selected"])
+        requested_cap = max(0, int(target_paper_count))
+        if len(candidates) >= _MIN_REPORT_CANDIDATES:
+            requested_cap = max(requested_cap, _MIN_REPORT_CANDIDATES)
+        cap = min(requested_cap, BUDGET_CAPS["max_selected"])
         ordered = sorted(
             enumerate(candidates),
             key=lambda pair: (-len(facets_by_paper.get(pair[1], ())), pair[0]),
@@ -1680,7 +1936,7 @@ class Orchestrator:
         task = self._store.get_task(research_task_id, owner_id)
         if task is None:
             return self._result(research_task_id, "failed", 0, 0, None, (), False, "TASK_NOT_FOUND")
-        if task.status in TASK_TERMINAL:
+        if task.status in TASK_TERMINAL or task.status == "paused":
             return self._result(research_task_id, task.status, task.current_plan_version, 0, None, (), False, None)
         return task
 

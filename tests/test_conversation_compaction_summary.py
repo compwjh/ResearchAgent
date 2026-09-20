@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from backend.app.chat.application import context_compaction
 from backend.app.chat.application.context_compaction import (
     CompactionWorker,
@@ -26,6 +28,19 @@ from backend.app.chat.application.conversation_service import (
 )
 from backend.app.memory.repository import MemoryRepository
 from backend.app.platform.config import CHAT_PROJECT_INSTR_CHARS, CHAT_SUMMARY_BUDGET_CHARS
+
+
+@pytest.fixture(autouse=True)
+def _disable_async_memory_flush_for_compaction_worker_tests(monkeypatch):
+    """Keep worker tests isolated from the best-effort model-backed flush.
+
+    ``CompactionWorker`` intentionally dispatches ``flush_memories`` on a
+    daemon thread in production.  These tests exercise only frozen-window and
+    summary/job state; allowing that side effect to outlive a test can create
+    model calls while the next test is asserting its single generation call.
+    The flush path has dedicated coverage in ``test_spec038_memory_compaction``.
+    """
+    monkeypatch.setattr(context_compaction, "FLUSH_MEMORIES_ENABLED", False)
 
 
 def _msg(role, content, when=None, mid=None):
@@ -200,22 +215,23 @@ def test_worker_writes_segment_and_finishes_done(tmp_path):
         repo.create_message(conversation.conversation_id, "owner-a", "user", f"用户{i} 必须处理该任务", status="completed")
         for i in range(1, 6)
     ]
-    worker = CompactionWorker(repo).start()
-    try:
-        job = worker.enqueue(conversation.conversation_id, "owner-a", None, "manual")
-        _wait_job_terminal(repo, job.job_id, "owner-a")
-        finished = repo.get_compaction_job(job.job_id, "owner-a")
-        assert finished.status == "done"
-        segments = repo.list_conversation_segments(conversation.conversation_id, "owner-a", None)
-        assert len(segments) == 1
-        seg = segments[0]
-        assert seg.seq == 1
-        assert seg.from_message_id == msgs[0].message_id
-        assert seg.to_message_id == msgs[-1].message_id
-        assert seg.content_hash
-        assert "【指令与约束】" in seg.summary_text
-    finally:
-        worker.stop()
+    with patch.object(context_compaction, "COMPACTION_SUMMARY_MODE", "rule"):
+        worker = CompactionWorker(repo).start()
+        try:
+            job = worker.enqueue(conversation.conversation_id, "owner-a", None, "manual")
+            _wait_job_terminal(repo, job.job_id, "owner-a")
+            finished = repo.get_compaction_job(job.job_id, "owner-a")
+            assert finished.status == "done"
+            segments = repo.list_conversation_segments(conversation.conversation_id, "owner-a", None)
+            assert len(segments) == 1
+            seg = segments[0]
+            assert seg.seq == 1
+            assert seg.from_message_id == msgs[0].message_id
+            assert seg.to_message_id == msgs[-1].message_id
+            assert seg.content_hash
+            assert "【指令与约束】" in seg.summary_text
+        finally:
+            worker.stop()
 
 
 def test_worker_failure_sets_failed_and_thread_alive(tmp_path):
@@ -223,17 +239,18 @@ def test_worker_failure_sets_failed_and_thread_alive(tmp_path):
     conversation = repo.create_conversation("owner-z", None)
     for i in range(3):
         repo.create_message(conversation.conversation_id, "owner-z", "user", f"m{i}", status="completed")
-    worker = CompactionWorker(repo).start()
-    try:
-        with patch.object(context_compaction, "build_rule_summary", side_effect=RuntimeError("boom")):
-            job = worker.enqueue(conversation.conversation_id, "owner-z", None, "manual")
-            _wait_job_terminal(repo, job.job_id, "owner-a")
-        finished = repo.get_compaction_job(job.job_id, "owner-z")
-        assert finished.status == "failed"
-        assert finished.error
-        assert worker._thread.is_alive()
-    finally:
-        worker.stop()
+    with patch.object(context_compaction, "COMPACTION_SUMMARY_MODE", "rule"):
+        worker = CompactionWorker(repo).start()
+        try:
+            with patch.object(context_compaction, "build_rule_summary", side_effect=RuntimeError("boom")):
+                job = worker.enqueue(conversation.conversation_id, "owner-z", None, "manual")
+                _wait_job_terminal(repo, job.job_id, "owner-a")
+            finished = repo.get_compaction_job(job.job_id, "owner-z")
+            assert finished.status == "failed"
+            assert finished.error
+            assert worker._thread.is_alive()
+        finally:
+            worker.stop()
 
 
 def test_concurrent_enqueue_only_one_job(tmp_path):
@@ -259,15 +276,16 @@ def test_worker_respects_frozen_window(tmp_path):
         repo.create_message(conversation.conversation_id, "owner-x", "user", f"msg-{i}", status="completed")
         for i in range(1, 6)
     ]
-    worker = CompactionWorker(repo).start()
-    try:
-        job = worker.enqueue(conversation.conversation_id, "owner-x", None, "auto")
-        assert job is not None, "首次入队必须领用到 job"
-        # 入队之后追加的消息必须被冻结窗口排除
-        repo.create_message(conversation.conversation_id, "owner-x", "user", "EXTRA_AFTER_FREEZE", status="completed")
-        _wait_job_terminal(repo, job.job_id, "owner-x")
-    finally:
-        worker.stop()
+    with patch.object(context_compaction, "COMPACTION_SUMMARY_MODE", "rule"):
+        worker = CompactionWorker(repo).start()
+        try:
+            job = worker.enqueue(conversation.conversation_id, "owner-x", None, "auto")
+            assert job is not None, "首次入队必须领用到 job"
+            # 入队之后追加的消息必须被冻结窗口排除
+            repo.create_message(conversation.conversation_id, "owner-x", "user", "EXTRA_AFTER_FREEZE", status="completed")
+            _wait_job_terminal(repo, job.job_id, "owner-x")
+        finally:
+            worker.stop()
     segments = repo.list_conversation_segments(conversation.conversation_id, "owner-x", None)
     assert len(segments) == 1
     seg = segments[0]
@@ -279,16 +297,17 @@ def test_worker_respects_frozen_window(tmp_path):
 def test_worker_empty_conversation_finishes_done_without_segment(tmp_path):
     repo = MemoryRepository(tmp_path / "m.sqlite3")
     conversation = repo.create_conversation("owner-e", None)
-    worker = CompactionWorker(repo).start()
-    try:
-        job = worker.enqueue(conversation.conversation_id, "owner-e", None, "manual")
-        assert job is not None, "首次入队必须领用到 job"
-        _wait_job_terminal(repo, job.job_id, "owner-e")
-        finished = repo.get_compaction_job(job.job_id, "owner-e")
-        assert finished.status == "done"
-        assert repo.list_conversation_segments(conversation.conversation_id, "owner-e", None) == []
-    finally:
-        worker.stop()
+    with patch.object(context_compaction, "COMPACTION_SUMMARY_MODE", "rule"):
+        worker = CompactionWorker(repo).start()
+        try:
+            job = worker.enqueue(conversation.conversation_id, "owner-e", None, "manual")
+            assert job is not None, "首次入队必须领用到 job"
+            _wait_job_terminal(repo, job.job_id, "owner-e")
+            finished = repo.get_compaction_job(job.job_id, "owner-e")
+            assert finished.status == "done"
+            assert repo.list_conversation_segments(conversation.conversation_id, "owner-e", None) == []
+        finally:
+            worker.stop()
 
 
 def test_get_compaction_worker_singleton(tmp_path):

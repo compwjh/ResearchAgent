@@ -50,6 +50,10 @@ class SearchOutcome:
     degraded: bool
     error_code: Optional[str]   # "SOURCE_DEGRADED" | "SOURCE_UNAVAILABLE" | None
     diagnostics: Mapping[str, Any] = field(default_factory=dict)
+    # Server-owned catalog search snapshot.  Optional keeps injected/offline
+    # searchers compatible while allowing the acquisition bridge to persist a
+    # real handle when the Spec015 graph created one.
+    search_id: Optional[str] = None
 
 
 class CatalogSearchUnavailable(RuntimeError):
@@ -252,7 +256,8 @@ class CatalogSearchAdapter:
             )
         if outcome.degraded and not outcome.error_code:
             return SearchOutcome(outcome.catalog_paper_ids, outcome.count, degraded=True,
-                                  error_code="SOURCE_DEGRADED", diagnostics=getattr(outcome, "diagnostics", {}))
+                                  error_code="SOURCE_DEGRADED", diagnostics=getattr(outcome, "diagnostics", {}),
+                                  search_id=getattr(outcome, "search_id", None))
         return outcome
 
     def _build_spec015_searcher(self) -> Callable[[SearchRequest], SearchOutcome]:
@@ -261,7 +266,7 @@ class CatalogSearchAdapter:
         函数体内**延迟 import** Spec015，避免模块顶层就拉起重依赖。返回的闭包是
         search_catalog 的唯一出口。
         """
-        from backend.app.paper_discovery.domain.paper_discovery import SearchJob
+        from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchResult
 
         ttl_seconds = 86400
         if self._source_factory is None:
@@ -296,6 +301,88 @@ class CatalogSearchAdapter:
                 bundles[source_scope] = bundle
             return bundle
 
+        def _freeze_local_snapshot(request: SearchRequest, catalog_store: Any,
+                                   years: tuple[int, ...], papers: list[Any],
+                                   ranked: list[Mapping[str, Any]]) -> str:
+            """Persist a local-first hit through the existing catalog job seam.
+
+            Local retrieval is authoritative when it already covers the requested
+            result budget, but it must still produce the same durable snapshot as
+            the graph path.  The import batch service reads ``search_jobs`` and
+            ``search_results``; returning bare catalog IDs here would leave the
+            Research task with no server-owned handle and make confirmation
+            impossible after a refresh.
+            """
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+            expires_iso = (now + timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds").replace("+00:00", "Z")
+            search_id = uuid4().hex
+            conference_ids = ["dblp"] if request.sources and request.sources[0] == "dblp" else ["usenix-security"]
+            job = SearchJob(
+                search_id=search_id,
+                query=request.query,
+                conference_ids=conference_ids,
+                years=list(years),
+                status="queued",
+                graph_version="catalog-search-v1",
+                degraded=False,
+                error_code=None,
+                total_results=0,
+                created_at=now_iso,
+                started_at=None,
+                completed_at=None,
+                expires_at=expires_iso,
+                updated_at=now_iso,
+            )
+            by_id = {str(getattr(paper, "catalog_paper_id", "")): paper for paper in papers}
+            rows: list[SearchResult] = []
+            for item in ranked[: request.max_results]:
+                catalog_paper_id = str(item.get("catalog_paper_id") or "")
+                paper = by_id.get(catalog_paper_id)
+                if paper is None:
+                    continue
+                rank = len(rows) + 1
+                pdf_url = getattr(paper, "official_pdf_url", None) or getattr(paper, "prepublication_pdf_url", None)
+                retrieval_score = float(item.get("retrieval_score", 0) or 0)
+                rerank_score = item.get("rerank_score")
+                final_score = float(item.get("final_score", 0) or 0)
+                snapshot = {
+                    "candidate_id": catalog_paper_id,
+                    "catalog_paper_id": catalog_paper_id,
+                    "search_id": search_id,
+                    "rank": rank,
+                    "title": getattr(paper, "title", ""),
+                    "authors": list(getattr(paper, "authors", []) or []),
+                    "year": getattr(paper, "year", None),
+                    "conference_id": getattr(paper, "conference_id", ""),
+                    "conference_name": "USENIX Security",
+                    "abstract": getattr(paper, "abstract", None),
+                    "keywords": list(getattr(paper, "keywords", []) or []),
+                    "doi": getattr(paper, "doi", None),
+                    "dblp_key": getattr(paper, "dblp_key", None),
+                    "publication_stage": getattr(paper, "publication_stage", "published"),
+                    "article_url": getattr(paper, "official_page_url", None),
+                    "source_page_url": getattr(paper, "official_page_url", None),
+                    "official_pdf_url": pdf_url,
+                    "pdf_url": pdf_url,
+                    "pdf_access": "public" if pdf_url else "unknown",
+                    "source_kinds": catalog_store.get_catalog_source_kinds(catalog_paper_id)
+                    if callable(getattr(catalog_store, "get_catalog_source_kinds", None)) else ["usenix"],
+                    "retrieval_score": retrieval_score,
+                    "rerank_score": rerank_score,
+                    "final_score": final_score,
+                    "existing_paper_id": None,
+                }
+                rows.append(SearchResult(
+                    search_id, catalog_paper_id, rank, retrieval_score, rerank_score,
+                    final_score, snapshot, now_iso,
+                ))
+            if not rows:
+                raise RuntimeError("local catalog hit produced no persistable candidates")
+            catalog_store.create_search_job(job)
+            catalog_store.freeze_search_results(search_id, rows, status="completed", degraded=False)
+            return search_id
+
         def _searcher(request: SearchRequest) -> SearchOutcome:
             source_scope = request.sources[0] if request.sources else "usenix"
             if self._store is None or self._rag is None:
@@ -325,8 +412,10 @@ class CatalogSearchAdapter:
             # A sufficiently populated local catalog is authoritative for this
             # request.  This is what makes the default path local-first.
             if len(local_ids) >= request.max_results:
+                search_id = _freeze_local_snapshot(request, store, years, local, ranked_local)
                 return SearchOutcome(local_ids, len(local_ids), degraded=False, error_code=None,
-                                     diagnostics=local_diag)
+                                     diagnostics={**local_diag, "search_id": search_id},
+                                     search_id=search_id)
 
             # Local coverage is insufficient: use the existing nine-node graph
             # to refresh only missing/expired source units, then merge IDs.
@@ -378,6 +467,7 @@ class CatalogSearchAdapter:
                 degraded=bool(getattr(current or job, "degraded", False) or not ids),
                 error_code=job_error,
                 diagnostics=diagnostics,
+                search_id=job.search_id,
             )
 
         return _searcher
@@ -441,13 +531,25 @@ class SearchWorker:
             "candidates": len(ids), "error_code": outcome.error_code,
             "degraded": bool(outcome.degraded),
         }
+        search_id = getattr(outcome, "search_id", None)
+        if (
+            isinstance(search_id, str)
+            and search_id.strip()
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", search_id.strip())
+        ):
+            search_id = search_id.strip()
+            diagnostics["search_id"] = search_id
+        else:
+            search_id = None
         output = {
             "schema_version": "search-worker-v1", "work_item_id": value.get("work_item_id", ""),
             "queries": [_safe_summary(mapped["query"])], "source": mapped["source"],
             "candidates": ids, "refresh_diagnostics": diagnostics,
-            "source_refs": [f"search:{value.get('work_item_id', 'unbound')}"],
+            "source_refs": [f"search:{search_id or value.get('work_item_id', 'unbound')}"],
             "safe_summary": diagnostics,
         }
+        if search_id is not None:
+            output["search_id"] = search_id
         output["output_hash"] = _safe_hash(output)
         return output
 
@@ -458,6 +560,12 @@ class PaperEvaluator:
     It reads only catalog snapshots supplied by the existing discovery layer;
     no model, network, PDF or import side effect is performed here.
     """
+
+    # A report with a sufficiently large candidate pool should retain a small
+    # evidence set even when a strict threshold would otherwise discard most
+    # rows.  This is a floor, not a source of new evidence: promoted rows must
+    # already be present in the supplied catalog snapshot.
+    MIN_REPORT_CANDIDATES = 5
 
     def __init__(self, *, threshold: float = 0.2, soft_floor: float = 0.1) -> None:
         self.threshold = max(0.0, min(float(threshold), 1.0))
@@ -475,24 +583,42 @@ class PaperEvaluator:
                  threshold: float | None = None) -> dict[str, Any]:
         rows = [dict(item) for item in candidates if isinstance(item, Mapping)]
         requested = self.threshold if threshold is None else max(0.0, min(float(threshold), 1.0))
-        scores = [(row, self._score(row, query)) for row in rows]
+        scored = [(index, row, self._score(row, query)) for index, row in enumerate(rows)]
         effective = requested
-        kept_pairs = [(row, score) for row, score in scores if score >= effective]
+        kept_indices = {index for index, _row, score in scored if score >= effective}
         softened = False
-        if rows and not kept_pairs and requested > self.soft_floor:
+        if rows and not kept_indices and requested > self.soft_floor:
             effective = self.soft_floor
-            kept_pairs = [(row, score) for row, score in scores if score >= effective]
+            kept_indices = {index for index, _row, score in scored if score >= effective}
             softened = True
+        minimum_floor_applied = False
+        if len(rows) >= self.MIN_REPORT_CANDIDATES and len(kept_indices) < self.MIN_REPORT_CANDIDATES:
+            # Stable score/order ranking keeps the fallback deterministic.  A
+            # below-threshold row is still catalog-backed, but is explicitly
+            # labelled so callers can distinguish floor retention from a
+            # threshold match.
+            ranked = sorted(scored, key=lambda item: (-item[2], item[0]))
+            kept_indices.update(index for index, _row, _score in ranked[: self.MIN_REPORT_CANDIDATES])
+            minimum_floor_applied = True
         kept, eliminated = [], []
-        for row, score in scores:
+        for index, row, score in scored:
             candidate_id = str(row.get("catalog_paper_id", row.get("candidate_id", "")))
+            retained_by_floor = minimum_floor_applied and index in kept_indices and score < effective
             record = {"candidate_id": candidate_id, "relevance_score": score,
-                      "keep": score >= effective, "reason": "meets relevance threshold" if score >= effective else "below relevance threshold",
+                      "keep": index in kept_indices,
+                      "reason": (
+                          "retained to satisfy minimum report candidate floor"
+                          if retained_by_floor else
+                          "meets relevance threshold" if index in kept_indices else
+                          "below relevance threshold"
+                      ),
                       "evidence_refs": [f"catalog:{candidate_id}"] if candidate_id else []}
             (kept if record["keep"] else eliminated).append(record)
         diagnostics = {"threshold": requested, "effective_threshold": effective,
                        "threshold_softened": softened, "candidates": len(rows),
                        "kept": len(kept), "eliminated": len(eliminated),
+                       "minimum_report_candidates": self.MIN_REPORT_CANDIDATES,
+                       "minimum_floor_applied": minimum_floor_applied,
                        "elimination_reasons": {"below_relevance_threshold": len(eliminated)}}
         result = {"schema_version": "paper-evaluation-v1", "evaluations": kept + eliminated,
                   "kept": kept, "eliminated": eliminated, "statistics": diagnostics,

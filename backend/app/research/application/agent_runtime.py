@@ -80,10 +80,13 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
     )
     synthesis_boundary = (
         " For synthesizer, use validated_candidates from the user context and emit only the bounded report contract: "
-        "sections must be a non-empty array of objects shaped {heading, candidate_ids}, citation_manifest must contain "
+        "sections must be a non-empty array of objects shaped {heading, candidate_ids, summary}, citation_manifest must contain "
         "{citation_ref, candidate_id} entries using only the supplied catalog:<candidate_id> refs, source_refs must "
-        "equal those citation_ref values, and artifact_ids must be an empty array. Do not include section summaries, "
-        "paper findings, artifact IDs, or citations that are not present in validated_candidates."
+        "equal those citation_ref values, and artifact_ids must be an empty array. Validated candidates may include "
+        "safe catalog title/abstract/keywords/summary fields for the fixed renderer; do not rewrite or augment them. "
+        "section summary must only compare the supplied catalog metadata and must not claim full-text findings; do not include "
+        "paper findings, artifact IDs, or citations that are not present in "
+        "validated_candidates."
     )
     return (
         f"You are the {role} worker in a bounded research runtime. "
@@ -298,6 +301,13 @@ def _safe_text(value: Any, limit: int = 256) -> str:
 
 _CATALOG_URL_RE = re.compile(r"https?://[^\s<>\"']+")
 _CATALOG_ID_RE = re.compile(r"(?im)^\s*catalog_paper_id:\s*([A-Za-z0-9:_-]+)\s*$")
+_CATALOG_ID_VALUE_RE = re.compile(r"^[A-Za-z0-9:_-]{1,240}$")
+_SEARCH_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
+_CATALOG_ITEM_RE = re.compile(r"(?m)^\s*\d+[.)]\s+(.+?)\s*$")
+_CATALOG_FIELD_RE = re.compile(
+    r"^\s*(?:摘要|abstract|简介|summary|关键词|keywords|关键字|主题|topics?|方法|methods?)\s*[:：]\s*(.*?)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _safe_catalog_summary(value: Any) -> str:
@@ -309,14 +319,150 @@ def _safe_catalog_summary(value: Any) -> str:
     remove only URL tokens and retain titles/IDs/abstracts.  Other tool output
     continues to use the stricter all-or-nothing ``_safe_text`` path.
     """
-    text = _CATALOG_URL_RE.sub("[redacted-url]", str(value or ""))
+    text = _CATALOG_URL_RE.sub("[已隐藏链接]", str(value or ""))
     return _safe_text(text, limit=4096)
+
+
+def _safe_catalog_field(value: Any, *, limit: int = 4000) -> str:
+    """Normalize one directory field without retaining unsafe instructions.
+
+    Search tool results are untrusted catalog text.  URLs are replaced before
+    applying the existing strict safe-text guard; prompt/credential-like
+    values are dropped instead of being forwarded to the next AgentRun.
+    """
+    if not isinstance(value, str):
+        return ""
+    text = _CATALOG_URL_RE.sub("[已隐藏链接]", value)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return ""
+    try:
+        return _safe_text(text, limit=limit)
+    except Exception:
+        return ""
+
+
+def _safe_catalog_keywords(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = re.split(r"[,;，；|]", value)
+    elif isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        return []
+    result: list[str] = []
+    for item in values[:24]:
+        text = _safe_catalog_field(item, limit=160)
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _safe_catalog_metadata(value: Any) -> list[dict[str, Any]]:
+    """Extract bounded metadata records from a catalog tool result.
+
+    The production catalog Tool currently returns a human-readable summary,
+    while test/future adapters may return candidate mappings.  Both forms are
+    normalized here.  Only catalog IDs and descriptive fields are retained;
+    detail/download URLs never cross this boundary.
+    """
+    if isinstance(value, Mapping):
+        rows = value.get("candidates", value.get("catalog_candidates", ()))
+        if isinstance(rows, (list, tuple)):
+            records: list[dict[str, Any]] = []
+            for row in rows:
+                if not isinstance(row, Mapping):
+                    continue
+                candidate_id = row.get("catalog_paper_id", row.get("candidate_id"))
+                if not isinstance(candidate_id, str) or not _CATALOG_ID_VALUE_RE.fullmatch(candidate_id):
+                    continue
+                record: dict[str, Any] = {"candidate_id": candidate_id}
+                for field in ("title", "abstract", "summary", "method", "methods", "topic", "topics", "facets"):
+                    if field in row:
+                        clean = _safe_catalog_field(row[field])
+                        if clean:
+                            record[field] = clean
+                keywords = _safe_catalog_keywords(row.get("keywords", row.get("keyword")))
+                if keywords:
+                    record["keywords"] = keywords
+                records.append(record)
+            if records:
+                return records
+        value = value.get("summary", "")
+    text = _safe_catalog_summary(value)
+    if not text:
+        return []
+    records = []
+    current: dict[str, Any] | None = None
+    for line in text.splitlines():
+        item_match = _CATALOG_ITEM_RE.match(line)
+        if item_match:
+            if current and current.get("candidate_id"):
+                records.append(current)
+            current = {"title": _safe_catalog_field(item_match.group(1), limit=1000)}
+            continue
+        id_match = re.match(r"^\s*catalog_paper_id:\s*([A-Za-z0-9:_-]+)\s*$", line, re.IGNORECASE)
+        if id_match and current is not None:
+            current["candidate_id"] = id_match.group(1)
+            continue
+        field_match = _CATALOG_FIELD_RE.match(line)
+        if field_match and current is not None:
+            label = line.split(":", 1)[0].split("：", 1)[0].strip().casefold()
+            raw = field_match.group(1)
+            if label in {"关键词", "关键字", "keywords"}:
+                keywords = _safe_catalog_keywords(raw)
+                if keywords:
+                    current["keywords"] = keywords
+            else:
+                field = "abstract" if label in {"摘要", "abstract"} else "summary"
+                clean = _safe_catalog_field(raw)
+                if clean and clean not in {"（缺失，可对该篇详情页调用 fetch_paper_detail 补齐）", "(missing)"}:
+                    current[field] = clean
+    if current and current.get("candidate_id"):
+        records.append(current)
+    # A malformed/hostile summary must not create an unbound record or
+    # duplicate IDs.  Keep the first catalog fact for deterministic handoff.
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        candidate_id = record.get("candidate_id")
+        if candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        unique.append(record)
+    return unique[:32]
 
 
 def _catalog_ids(value: Any) -> list[str]:
     """Extract only the existing, conservative catalog ID line format."""
     text = str(value or "")
     return list(dict.fromkeys(_CATALOG_ID_RE.findall(text)))
+
+
+def _safe_search_id(value: Any) -> str | None:
+    """Accept only an opaque server handle in structured tool metadata."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if _SEARCH_ID_RE.fullmatch(value) else None
+
+
+def _trusted_catalog_search_id(summaries: Sequence[Mapping[str, Any]]) -> str | None:
+    """Return one valid handle from successful structured catalog results."""
+    handles: list[str] = []
+    for item in summaries:
+        if not isinstance(item, Mapping):
+            continue
+        if item.get("name") != "search_paper_catalog" or item.get("status") != "ok":
+            continue
+        raw_handle = item.get("search_id")
+        if raw_handle is None:
+            continue
+        handle = _safe_search_id(raw_handle)
+        if handle is None:
+            return None
+        handles.append(handle)
+    unique = set(handles)
+    return next(iter(unique)) if len(unique) == 1 else None
 
 
 def _is_cancelled(token: Any) -> bool:
@@ -905,18 +1051,24 @@ class ResearchAgentRunner:
                 "result_id": getattr(value, "name", None),
                 "output": getattr(value, "output", ""),
                 "error_code": None if ok else "TOOL_EXECUTION_FAILED",
+                "search_id": getattr(value, "search_id", None),
             }
         if isinstance(value, Mapping):
             result_id = value.get("result_id", value.get("id"))
             status = "ok" if error is None and value.get("ok", True) else "error"
             error = error or value.get("error_code")
             raw = value.get("output", value.get("content", value.get("summary", "")))
+            raw_search_id = value.get("search_id")
         else:
-            result_id, status, raw = None, "ok" if error is None else "error", value
+            result_id, status, raw, raw_search_id = None, "ok" if error is None else "error", value, None
         tool_name = entry.get("name")
         safe = {"name": tool_name, "status": status, "error_code": error,
                 "result_id": _safe_text(result_id, 80) if result_id else None,
                 "length": len(str(raw or "")), "content_hash": _hash(_safe_text(raw))}
+        search_id = _safe_search_id(raw_search_id) if tool_name == "search_paper_catalog" and not error else None
+        if search_id:
+            safe["search_id"] = search_id
+            safe["source_refs"] = [f"search:{search_id}"]
         if raw and not error:
             if tool_name == "search_paper_catalog":
                 # Preserve candidate facts for the next model turn without
@@ -926,6 +1078,11 @@ class ResearchAgentRunner:
                 ids = _catalog_ids(raw)
                 if ids:
                     safe["catalog_paper_ids"] = ids
+                metadata = _safe_catalog_metadata(value if isinstance(value, Mapping) else raw)
+                if not metadata and raw is not value:
+                    metadata = _safe_catalog_metadata(raw)
+                if metadata:
+                    safe["catalog_metadata"] = metadata
             else:
                 safe["summary"] = _safe_text(raw)
         return safe
@@ -1031,8 +1188,13 @@ class ResearchAgentRunner:
             for value in item.get("catalog_paper_ids", ()):
                 if isinstance(value, str) and value.strip() and value.strip() not in candidate_ids:
                     candidate_ids.append(value.strip())
+        # Recovery may only replace model output with facts extracted from the
+        # catalog tool.  A successful tool call without a parseable ID carries
+        # no candidate fact and must not turn a model-provided candidate list
+        # into an empty one.
         if not successful_search or not candidate_ids:
             return None
+        search_id = _trusted_catalog_search_id(summaries)
 
         work_item_input = input.work_item_input if isinstance(input.work_item_input, Mapping) else {}
         raw_query = work_item_input.get("query")
@@ -1044,14 +1206,20 @@ class ResearchAgentRunner:
         source = raw_sources[0] if isinstance(raw_sources, list) and raw_sources and isinstance(raw_sources[0], str) else work_item_input.get("source")
         if source not in {"usenix", "dblp", "all"}:
             source = "usenix"
+        safe_summary = {
+            "decision": "recovered catalog candidates after model formatting failure",
+            "degraded": True,
+            "metadata_only": True,
+        }
+        source_refs = [f"catalog:{candidate_id}" for candidate_id in candidate_ids]
+        if search_id:
+            safe_summary["search_id"] = search_id
+            safe_summary["source_refs"] = [f"search:{search_id}"]
+            source_refs = [f"search:{search_id}"]
         return {
             "schema_version": "runtime-v1",
-            "safe_summary": {
-                "decision": "recovered catalog candidates after model formatting failure",
-                "degraded": True,
-                "metadata_only": True,
-            },
-            "source_refs": [f"catalog:{candidate_id}" for candidate_id in candidate_ids],
+            "safe_summary": safe_summary,
+            "source_refs": source_refs,
             "work_item_id": input.work_item_id,
             "queries": queries,
             "source": source,
@@ -1063,6 +1231,34 @@ class ResearchAgentRunner:
                 "model_output_invalid": True,
             },
         }
+
+    @staticmethod
+    def _bind_search_worker_handle(
+        output: Mapping[str, Any], search_id: str | None
+    ) -> dict[str, Any]:
+        """Bind search output provenance to the successful catalog Tool result."""
+        result = dict(output)
+        safe_summary = dict(result.get("safe_summary") or {})
+        if search_id:
+            result["search_id"] = search_id
+            result["source_refs"] = [f"search:{search_id}"]
+            safe_summary["search_id"] = search_id
+            safe_summary["source_refs"] = [f"search:{search_id}"]
+        else:
+            # A model cannot mint a usable handle or a matching search ref.
+            result.pop("search_id", None)
+            result["source_refs"] = [
+                ref for ref in result.get("source_refs", [])
+                if isinstance(ref, str) and not ref.startswith("search:")
+            ]
+            safe_summary.pop("search_id", None)
+            if isinstance(safe_summary.get("source_refs"), list):
+                safe_summary["source_refs"] = [
+                    ref for ref in safe_summary["source_refs"]
+                    if isinstance(ref, str) and not ref.startswith("search:")
+                ]
+        result["safe_summary"] = safe_summary
+        return result
 
     def _validate_output(self, role: str, output: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(output, Mapping):
@@ -1276,7 +1472,16 @@ class ResearchAgentRunner:
                     router_role = {"search_worker": "search-worker", "paper_evaluator": "paper-evaluator", "research_critic": "research-critic"}.get(input.role, input.role)
                     tier = "strong" if attempts_used >= 4 else "fast"
                     try:
-                        choice = self.model_router.resolve(role=router_role, tier=tier)
+                        route_kwargs = {"role": router_role, "tier": tier}
+                        # Task03 observation is opt-in on the existing router;
+                        # preserve the frozen FakeModelRouter signature when
+                        # no observation sink is installed.
+                        if getattr(self.model_router, "_observation", None) is not None:
+                            route_kwargs.update(
+                                owner_id=owner,
+                                features={"attempt": attempts_used, "work_item": bool(input.work_item_id)},
+                            )
+                        choice = self.model_router.resolve(**route_kwargs)
                         resolved_model = choice.model or resolved_model
                         if self.model_factory:
                             model = self.model_factory(resolved_model, input.reasoning_effort)
@@ -1492,6 +1697,9 @@ class ResearchAgentRunner:
                         not returned_ids or not returned_ids.issubset(catalog_ids)
                     ):
                         validated_output = recovered
+                    validated_output = self._bind_search_worker_handle(
+                        validated_output, _trusted_catalog_search_id(summaries)
+                    )
                 if input.role == "search_worker" and detail_degraded_errors:
                     validated_output = self._mark_search_detail_degraded(
                         validated_output, detail_degraded_errors

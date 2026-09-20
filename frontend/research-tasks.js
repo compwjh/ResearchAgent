@@ -12,6 +12,7 @@
   const EVENT_TYPES = ['task', 'plan', 'worker', 'model', 'coverage', 'report', 'terminal', 'processing_step'];
   const NOTIFICATION_EVENT_TYPES = ['completed', 'partial', 'failed', 'waiting_approval', 'interrupted'];
   const ARTIFACT_TYPES = new Set(['markdown', 'html', 'citation_manifest']);
+  const REPORT_FORMATS = new Set(['markdown', 'html', 'json']);
   const ARTIFACT_ROUTE = /^\/api\/research-sessions\/[A-Za-z0-9._~-]+\/artifacts\/[A-Za-z0-9._~-]+\/download$/;
   const NOTIFICATION_KINDS = new Set(NOTIFICATION_EVENT_TYPES);
   const NOTIFICATION_TEXT = {
@@ -20,7 +21,7 @@
   };
   const STATUS_TEXT = {
     draft: '草稿', intake_pending: '等待补充研究参数', plan_generating: '生成计划中', plan_pending_approval: '等待计划审核',
-    queued: '排队中', planning: '规划中', running: '执行中', waiting_approval: '等待审批',
+    queued: '排队中', planning: '规划中', running: '执行中', paused: '已暂停', waiting_approval: '等待审批', recovery_required: '需要恢复',
     partial: '部分完成', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断',
   };
   const ERROR_TEXT = {
@@ -43,7 +44,16 @@
     proposed: '待执行', active: '执行中', superseded: '已被新版本替代',
     completed: '已完成', rejected: '已拒绝',
   };
-  const EVIDENCE_TEXT = { catalog: '目录证据', abstract: '摘要证据' };
+  const EVIDENCE_TEXT = { catalog: '目录证据', abstract: '摘要证据', fulltext: '全文证据' };
+  const ACQUISITION_STATUS_TEXT = {
+    existing: '已有知识库', pending: '待导入', queued: '排队中', downloading: '下载中', processing: '处理中',
+    indexing: '索引中', completed: '已完成', partial_success: '部分完成', waiting_login: '等待登录',
+    needs_login: '需要登录', failed: '失败', unavailable: '来源不可用', cancelled: '已取消', interrupted: '已中断',
+  };
+  const ACQUISITION_ERROR_TEXT = {
+    DOWNLOAD_TIMEOUT: '下载超时，可重试。', IMPORT_INTERRUPTED: '导入被中断，可重试。',
+    SEARCH_EXPIRED: '搜索快照已过期，请刷新候选。', INVALID_SEARCH_SNAPSHOT: '搜索候选快照无效。',
+  };
   const TASK_TYPE_TEXT = {
     search_catalog: '目录检索', evaluate_papers: '论文评估', check_coverage: '覆盖检查',
     replan: 'Re-plan', synthesize_preliminary_report: '报告合成',
@@ -58,6 +68,9 @@
     ['report_structure', '报告结构'], ['safety_summary', '降级策略'],
   ];
   const SESSION_APPROVAL_LABELS = { plan: '计划审批', capability_override: '能力审批', resource_extension: '资源扩容审批' };
+  function sessionApprovalStatusText(status) {
+    return SESSION_APPROVAL_STATUS_LABELS[String(status || 'pending').toLowerCase()] || '已处理';
+  }
   const SESSION_COMMAND_LABELS = {
     approve_plan: '批准计划', revise_plan: '修改计划', cancel_research: '取消研究',
     approve_capability: '批准能力', approve_resource_extension: '批准资源扩容', decline_request: '拒绝请求',
@@ -73,6 +86,27 @@
     source_degraded: '来源降级，保留已有证据并收敛。',
     source_unavailable: '来源不可用，保留已有证据并收敛。',
   };
+  const ROUTING_RESOURCE_TEXT = Object.freeze({
+    RESOURCE_PROBE_FAILED: '资源探针不可用，已按降级额度运行。',
+    STRONG_WORKER_BUSY: 'strong 额度繁忙，已排队或降级。',
+    RESOURCE_DEGRADED: '资源不足，已降级 Worker 额度。',
+    WORKER_LIMIT: '已达到 Worker 额度上限。',
+    MEMORY_LIMIT: '可用内存不足，已限制 Worker 额度。',
+    QUEUE_REQUIRED: '资源繁忙，任务进入排队。',
+  });
+  const BENCHMARK_PHASE_TEXT = Object.freeze({ warm: '热身', cold: '冷启动' });
+  const BENCHMARK_METRICS = Object.freeze({
+    median_ttft_ms: { label: '中位 TTFT', unit: 'ms', min: 0, max: 600000 },
+    throughput_completion_tokens_per_s: { label: '吞吐', unit: 'tokens/s', min: 0, max: 100000 },
+    peak_memory_bytes: { label: '峰值内存', unit: 'bytes', min: 0, max: 1e15 },
+    failure_rate: { label: '失败率', unit: '%', min: 0, max: 1 },
+  });
+  const BENCHMARK_METRIC_ALIASES = Object.freeze({
+    median_ttft_ms: ['median_ttft_ms', 'ttft_ms', 'median_ttft'],
+    throughput_completion_tokens_per_s: ['throughput_completion_tokens_per_s', 'throughput_tokens_per_s', 'throughput'],
+    peak_memory_bytes: ['peak_memory_bytes', 'peak_size_vram', 'size_vram'],
+    failure_rate: ['failure_rate'],
+  });
   const state = {
     document: null,
     conversationId: null,
@@ -85,8 +119,15 @@
     events: new Map(),
     selectedPapers: new Set(),
     selectedPaperCount: null,
+    selectionDetails: new Map(),
+    selectionSnapshotTaskId: null,
     reportSelections: [],
     report: null,
+    matrix: null,
+    reportVersions: [],
+    reportFormat: 'markdown',
+    reportViews: new Map(),
+    activeCitationNo: null,
     terminal: null,
     lastSeq: 0,
     eventSource: null,
@@ -107,7 +148,26 @@
     notificationSyncError: '',
     createIdempotencyKey: null,
     triggerMessageId: null,
+    taskActionInFlight: false,
+    acquisition: {
+      preview: [], status: null, links: [], items: [], events: [], evidence: [], selectionVersion: null,
+      selectedIds: new Set(), searchId: null, loading: false, confirming: false,
+      retrying: new Set(), pollTimer: null, generation: 0,
+    },
   };
+
+  const TASK_ACTION_PATHS = Object.freeze({
+    pause: 'pause', resume: 'resume', approve: 'feedback', cancel: 'cancel', recover: 'recover',
+  });
+  const TASK_ACTION_LABELS = Object.freeze({ pause: '暂停研究', resume: '继续研究', approve: '批准计划', cancel: '取消当前任务', recover: '检查并恢复' });
+  const TASK_ACTION_CONFIRM_LABELS = Object.freeze({ pause: '再次点击确认暂停', resume: '再次点击确认继续', approve: '再次点击确认批准', cancel: '再次点击确认取消', recover: '再次点击确认恢复' });
+  const TASK_ACTION_STATUSES = Object.freeze({
+    pause: new Set(['planning', 'running', 'waiting_approval']),
+    resume: new Set(['paused']),
+    approve: new Set(['waiting_approval']),
+    cancel: new Set(['queued', 'planning', 'running', 'paused', 'waiting_approval']),
+    recover: new Set(['interrupted', 'recovery_required']),
+  });
 
   function safeArtifactUrl(value) {
     const url = typeof value === 'string' ? value.trim() : '';
@@ -120,6 +180,12 @@
     if (artifactType === 'html') return `${safeUrl}?mode=inline`;
     if (artifactType === 'markdown' || artifactType === 'citation_manifest') return safeUrl;
     return '';
+  }
+
+  function versionedReportUrl(taskId, version, format) {
+    const id = typeof taskId === 'string' && /^[A-Za-z0-9._~-]{1,240}$/.test(taskId) ? taskId : '';
+    const number = safePositiveInteger(version);
+    return id && number && REPORT_FORMATS.has(format) ? `/api/research-tasks/${encodeURIComponent(id)}/reports/${number}?format=${format}` : '';
   }
 
   function normalizeArtifact(value) {
@@ -221,6 +287,40 @@
     return [...new Set(value.filter((item) => ['string', 'number'].includes(typeof item) && String(item).trim()).map(String))].slice(0, limit);
   }
 
+  function safeSelectionId(value) {
+    if (typeof value !== 'string' && typeof value !== 'number') return '';
+    const id = String(value).trim();
+    return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/.test(id) ? id : '';
+  }
+
+  function normalizeSelectionProjection(value) {
+    if (typeof value === 'string' || typeof value === 'number') {
+      const catalogPaperId = safeSelectionId(value);
+      return catalogPaperId ? { catalog_paper_id: catalogPaperId } : null;
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const catalogPaperId = safeSelectionId(value.catalog_paper_id || value.paper_id || value.candidate_id);
+    if (!catalogPaperId) return null;
+    const result = { catalog_paper_id: catalogPaperId };
+    const relevance = boundedNumber(value.relevance, 0, 1);
+    if (relevance !== null) result.relevance = relevance;
+    if (EVIDENCE_TEXT[value.evidence_level]) result.evidence_level = value.evidence_level;
+    if (Array.isArray(value.facets)) result.facets = value.facets.slice(0, 12);
+    return result;
+  }
+
+  function selectionProjectionValues(value, limit = 20) {
+    if (!Array.isArray(value)) return [];
+    const result = [];
+    const seen = new Set();
+    value.slice(0, limit).forEach((item) => {
+      const normalized = normalizeSelectionProjection(item);
+      if (!normalized || seen.has(normalized.catalog_paper_id)) return;
+      seen.add(normalized.catalog_paper_id); result.push(normalized);
+    });
+    return result;
+  }
+
   function safePositiveInteger(value) {
     const number = Number(value);
     return Number.isInteger(number) && number > 0 ? number : null;
@@ -230,6 +330,101 @@
     if (!payload || typeof payload !== 'object') return '';
     const value = payload.code || payload.error_code;
     return typeof value === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : '';
+  }
+
+  function safeRoutingText(value, limit = 180) {
+    if (typeof value !== 'string') return '';
+    const normalized = value.trim();
+    if (!normalized || normalized.length > limit) return '';
+    if (/(?:prompt|answer|thought|chain(?:[_ -]?of[_ -]?thought)?|owner|token|secret|password|credential|authorization|cookie|host[_ -]?path)/i.test(normalized)) return '';
+    if (/(?:https?|ftp|file):\/\//i.test(normalized)) return '';
+    // Routing explanations are labels, never path-bearing tokens. Reject any
+    // slash/backslash so absolute paths, relative paths, fragments, Windows
+    // drives and UNC shares all fail closed without directory allowlists.
+    if (/[\\/]/.test(normalized)) return '';
+    if (/(?:^|[\s"'(=,:])(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|::1)(?::\d+)?(?:\s|$)/i.test(normalized)) return '';
+    return normalized;
+  }
+
+  function safeModelName(value) {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/.test(value)) return '';
+    return safeRoutingText(value, 96);
+  }
+
+  function boundedNumber(value, min, max) {
+    let number;
+    if (typeof value === 'number') number = value;
+    else if (typeof value === 'string' && /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) number = Number(value);
+    else return null;
+    return Number.isFinite(number) && number >= min && number <= max ? number : null;
+  }
+
+  function routingResourceText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const candidates = [payload.resource_reason, payload.resource_degradation, payload.resource_code, payload.reason];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const code = candidate.trim().toUpperCase();
+      if (ROUTING_RESOURCE_TEXT[code]) return ROUTING_RESOURCE_TEXT[code];
+    }
+    if (payload.resource_degraded === true || payload.degraded === true) return '资源不足，已降级 Worker 额度。';
+    return '';
+  }
+
+  function routingInsightText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const parts = [];
+    const model = safeModelName(payload.resolved_model || payload.chosen_model);
+    if (model) parts.push(`模型：${model}`);
+    if (payload.model_tier === 'fast' || payload.model_tier === 'strong') parts.push(`档位：${payload.model_tier}`);
+    const grant = boundedNumber(payload.worker_grant ?? payload.granted, 0, 4);
+    if (grant !== null && Number.isInteger(grant)) parts.push(`Worker 额度：${grant}`);
+    const reason = safeRoutingText(payload.reason);
+    if (reason && !ROUTING_RESOURCE_TEXT[reason.toUpperCase()]) parts.push(`说明：${reason}`);
+    const resource = routingResourceText(payload);
+    if (resource) parts.push(`资源：${resource}`);
+    if (payload.from_tier === 'fast' && payload.to_tier === 'strong') parts.push('升级：fast → strong');
+    return parts.join(' · ');
+  }
+
+  function normalizeBenchmarkPhase(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const phase = {};
+    Object.entries(BENCHMARK_METRICS).forEach(([name, definition]) => {
+      const source = BENCHMARK_METRIC_ALIASES[name].find((key) => Object.prototype.hasOwnProperty.call(value, key));
+      if (!source) return;
+      const number = boundedNumber(value[source], definition.min, definition.max);
+      if (number !== null) phase[name] = number;
+    });
+    return phase;
+  }
+
+  function normalizeBenchmarkSummary(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const source = value.summary && typeof value.summary === 'object' ? value.summary : value;
+    const result = {};
+    ['warm', 'cold'].forEach((phase) => {
+      const normalized = normalizeBenchmarkPhase(source[phase]);
+      if (Object.keys(normalized).length) result[phase] = normalized;
+    });
+    const policyStatus = source.policy_status || source.policy?.status;
+    if (policyStatus === 'active' || policyStatus === 'shadow') result.policy_status = policyStatus;
+    if (source.probe_available === false || source.probe_status === 'unavailable' || source.probe_status === 'failed') result.probe_available = false;
+    if (source.probe_available === true || source.probe_status === 'available') result.probe_available = true;
+    return Object.keys(result).length ? result : {};
+  }
+
+  function benchmarkSummaryFromState() {
+    const candidates = [
+      state.selectedTask?.benchmark_summary, state.selectedTask?.benchmark,
+      state.selectedTask?.routing_benchmark, state.selectedTask?.routing?.benchmark,
+      ...[...state.events.values()].reverse().map((event) => event.payload?.benchmark_summary || event.payload?.benchmark),
+    ];
+    for (const candidate of candidates) {
+      const normalized = normalizeBenchmarkSummary(candidate);
+      if (normalized && Object.keys(normalized).length) return normalized;
+    }
+    return null;
   }
 
   function eventStopReason(payload) {
@@ -266,6 +461,19 @@
     let data = null;
     try { data = await response.json(); } catch (_) { data = null; }
     if (!response.ok) throw errorFromResponse(response, data);
+    return data;
+  }
+
+  async function requestText(url, options = {}) {
+    let response;
+    try { response = await root.fetch(url, options); } catch (error) {
+      const network = new Error('无法连接本地服务，请确认后端已启动。'); network.code = 'NETWORK_ERROR'; network.cause = error; throw network;
+    }
+    const data = await response.text();
+    if (!response.ok) {
+      let parsed = null; try { parsed = JSON.parse(data); } catch (_) { /* plain response */ }
+      throw errorFromResponse(response, parsed || { message: data });
+    }
     return data;
   }
 
@@ -440,7 +648,17 @@
       let value; try { value = JSON.parse(message.data || '{}'); } catch (_) { return; }
       applyNotification(value, kind);
     }));
+    source.addEventListener('stream_end', () => {
+      // The server uses bounded polling and closes normally after a heartbeat
+      // window.  Reconnect without presenting that expected EOF as an outage.
+      source.__gracefulEnd = true;
+      source.close();
+      if (state.notificationEventSource === source) state.notificationEventSource = null;
+      setText('research-notifications-status', '通知已同步，继续监听…');
+      scheduleNotificationReconnect();
+    });
     source.onerror = () => {
+      if (source.__gracefulEnd) return;
       source.close(); if (state.notificationEventSource === source) state.notificationEventSource = null;
       setText('research-notifications-status', `通知连接中断，将从 event_seq ${state.notificationLastSeq} 之后重连。`);
       scheduleNotificationReconnect();
@@ -653,16 +871,140 @@
   function setDetailVisibility(visible) {
     const empty = byId('research-detail-empty');
     if (empty) empty.hidden = visible;
-    ['research-plan-section', 'research-session-plan-section', 'research-timeline-section', 'research-selection-section'].forEach((id) => { const node = byId(id); if (node && !visible) node.hidden = true; });
+    ['research-plan-section', 'research-session-plan-section', 'research-timeline-section', 'research-selection-section', 'research-matrix-section', 'research-acquisition-section'].forEach((id) => { const node = byId(id); if (node && !visible) node.hidden = true; });
   }
 
-  function renderTaskHeader(task) {
+  function taskActionButton(action) {
+    const ids = {
+      pause: 'research-task-pause-button', resume: 'research-task-resume-button',
+      approve: 'research-task-approve-button', cancel: 'research-cancel-button', recover: 'research-task-recover-button',
+    };
+    return byId(ids[action]);
+  }
+
+  function resetTaskActionConfirmation(button) {
+    if (!button) return;
+    if (button.__researchConfirmTimer) root.clearTimeout(button.__researchConfirmTimer);
+    delete button.__researchConfirmTimer;
+    delete button.dataset.confirmed;
+    button.dataset.actionState = '';
+    button.setAttribute('aria-busy', 'false');
+  }
+
+  function setTaskActionState(button, stateName, label = '') {
+    if (!button) return;
+    ['loading', 'success', 'error', 'conflict', 'confirm'].forEach((name) => button.classList.toggle(`is-${name}`, stateName === name));
+    button.dataset.actionState = stateName;
+    button.setAttribute('aria-busy', stateName === 'loading' ? 'true' : 'false');
+    if (label) button.textContent = label;
+  }
+
+  function renderTaskActionControls(task, { preserveState = false } = {}) {
+    const taskId = task?.research_task_id || state.selectedTaskId;
+    const status = task?.status || '';
+    Object.keys(TASK_ACTION_PATHS).forEach((action) => {
+      const button = taskActionButton(action);
+      if (!button) return;
+      const available = Boolean(taskId) && TASK_ACTION_STATUSES[action].has(status);
+      button.hidden = !available;
+      button.setAttribute('aria-hidden', available ? 'false' : 'true');
+      if (!preserveState || !available) {
+        resetTaskActionConfirmation(button);
+        setTaskActionState(button, '', TASK_ACTION_LABELS[action]);
+      }
+      const blocked = preserveState && ['success', 'conflict'].includes(button.dataset.actionState);
+      button.disabled = !available || state.taskActionInFlight || blocked;
+    });
+    const recovery = byId('research-recovery-notice');
+    if (recovery) {
+      const visible = status === 'interrupted' || status === 'recovery_required';
+      recovery.hidden = !visible;
+      recovery.textContent = visible ? '任务已中断；刷新会话详情后可查看已持久化的检查点与事件。' : '';
+    }
+  }
+
+  function taskActionPayload(action) {
+    if (action === 'approve') return { action: 'approve' };
+    return {};
+  }
+
+  function taskActionUrl(taskId, action) {
+    if (action === 'pause') return `/api/research-tasks/${encodeURIComponent(taskId)}/pause`;
+    if (action === 'resume') return `/api/research-tasks/${encodeURIComponent(taskId)}/resume`;
+    if (action === 'cancel') return `/api/research-tasks/${encodeURIComponent(taskId)}/cancel`;
+    if (action === 'recover') return `/api/research-tasks/${encodeURIComponent(taskId)}/recover`;
+    // Keep the legacy task approval route behind the action allowlist; the
+    // Session/Approval card remains the canonical path for Session-first work.
+    return `/api/research-tasks/${encodeURIComponent(taskId)}/${TASK_ACTION_PATHS[action]}`;
+  }
+
+  async function submitTaskAction(action, button) {
+    const taskId = state.selectedTaskId || state.selectedTask?.research_task_id;
+    if (!taskId || !button || state.taskActionInFlight || button.disabled) return null;
+    state.taskActionInFlight = true;
+    setTaskActionState(button, 'loading', '提交中…');
+    renderTaskActionControls(state.selectedTask, { preserveState: true });
+    const payload = taskActionPayload(action);
+    const options = { method: 'POST' };
+    if (action === 'resume' || action === 'approve') {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify(payload);
+    }
+    try {
+      const result = await requestJson(taskActionUrl(taskId, action), options);
+      state.selectedTask = { ...state.selectedTask, ...result, research_task_id: result?.research_task_id || taskId };
+      state.tasks = state.tasks.map((item) => item.research_task_id === taskId ? { ...item, ...result } : item);
+      state.sessions = state.tasks;
+      state.statusNotice = action === 'pause' ? '研究任务已暂停，已完成证据与检查点会保留。'
+        : action === 'resume' ? '研究任务已继续，系统从持久化进度接着执行。'
+          : action === 'approve' ? '计划已批准，研究任务正在继续。'
+            : action === 'recover' ? '恢复检查完成：已清理过期租约并返回检查点摘要，未知节点不会被自动重放。'
+              : '研究会话已取消，后续节点不会继续创建。';
+      setTaskActionState(button, 'success', `${TASK_ACTION_LABELS[action]}已完成`);
+      renderTaskHeader(state.selectedTask, { preserveActions: true });
+      renderTaskList();
+      if (action === 'cancel') { closeStream(); state.streamEnded = true; }
+      else if (action === 'resume' || action === 'approve') { state.streamEnded = false; connectStream(); }
+      return result;
+    } catch (error) {
+      const code = String(error?.code || '').toUpperCase();
+      const conflict = ['TASK_TERMINAL_CONFLICT', 'TASK_RUNNING_CONFLICT', 'INVALID_STATE_TRANSITION', 'PLAN_VERSION_STALE'].includes(code);
+      setTaskActionState(button, conflict ? 'conflict' : 'error', conflict ? '状态已变化，请刷新' : '提交失败，重试');
+      button.disabled = conflict;
+      state.statusNotice = userError(error, conflict ? '任务状态已变化，请刷新任务详情。' : '操作失败，请稍后重试。');
+      setText('research-summary-text', state.statusNotice);
+      return null;
+    } finally {
+      state.taskActionInFlight = false;
+      renderTaskActionControls(state.selectedTask, { preserveState: true });
+    }
+  }
+
+  function beginTaskAction(action) {
+    const button = taskActionButton(action);
+    if (!button || button.hidden || state.taskActionInFlight) return;
+    if (button.dataset.confirmed !== 'true') {
+      button.dataset.confirmed = 'true';
+      setTaskActionState(button, 'confirm', TASK_ACTION_CONFIRM_LABELS[action]);
+      button.disabled = false;
+      button.setAttribute('aria-label', `${TASK_ACTION_CONFIRM_LABELS[action]}，${TASK_ACTION_LABELS[action]}`);
+      button.__researchConfirmTimer = root.setTimeout(() => {
+        resetTaskActionConfirmation(button);
+        setTaskActionState(button, '', TASK_ACTION_LABELS[action]);
+        button.disabled = false;
+      }, 4000);
+      return;
+    }
+    resetTaskActionConfirmation(button);
+    submitTaskAction(action, button);
+  }
+
+  function renderTaskHeader(task, { preserveActions = false } = {}) {
     const status = byId('research-detail-status');
     if (status) { status.dataset.status = text(task?.status, ''); status.textContent = statusLabel(task?.status); }
     setText('research-detail-title', task?.goal_excerpt || task?.topic || '选择一个研究会话');
     setText('research-detail-meta', task ? `${task.research_session_id ? `会话 ${task.research_session_id}` : `任务 ${text(task.research_task_id)}`} · ${task.conversation_id ? `对话 ${task.conversation_id} · ` : ''}阶段 ${text(task.current_phase || task.phase || task.stage, '—')} · ${sessionProgressText(task)} · ${sessionApprovalText(task)} · 耗时 ${sessionDurationText(task)}` : '刷新后会先恢复会话详情，再连接实时事件。');
-    const cancel = byId('research-cancel-button');
-    if (cancel) cancel.disabled = !task?.research_session_id || TERMINAL_STATUSES.has(task.status);
+    renderTaskActionControls(task, { preserveState: preserveActions });
   }
 
   function renderPlan(plan) {
@@ -867,7 +1209,7 @@
     (Array.isArray(approvals) ? approvals : []).filter((approval) => approval && Object.prototype.hasOwnProperty.call(SESSION_APPROVAL_LABELS, approval.kind)).forEach((approval) => {
       const card = state.document.createElement('article'); card.className = 'research-session-approval'; card.dataset.kind = approval.kind; card.dataset.status = approval.status || 'pending';
       const title = state.document.createElement('strong'); title.className = 'research-session-approval-title'; title.textContent = SESSION_APPROVAL_LABELS[approval.kind];
-      const status = state.document.createElement('span'); status.className = 'research-session-approval-status'; status.textContent = SESSION_APPROVAL_STATUS_LABELS[approval.status] || '待处理';
+      const status = state.document.createElement('span'); status.className = 'research-session-approval-status'; status.textContent = sessionApprovalStatusText(approval.status);
       const meta = state.document.createElement('span'); meta.className = 'research-session-approval-meta'; meta.textContent = `版本 v${text(approval.subject_version, '—')} · ${safeSessionValue(approval.approval_request_id, '无 ID')}`;
       const pending = approval.status === 'pending';
       if (pending) {
@@ -917,10 +1259,9 @@
     if (round) parts.push(`第 ${round} 轮`);
     if (TASK_TYPE_TEXT[payload.task_type]) parts.push(`节点：${TASK_TYPE_TEXT[payload.task_type]}`);
     if (ROLE_TEXT[payload.role]) parts.push(`角色：${ROLE_TEXT[payload.role]}`);
-    if (typeof payload.worker_slot === 'string' && payload.worker_slot) parts.push(`Worker：${payload.worker_slot}`);
-    if (payload.model_tier === 'fast' || payload.model_tier === 'strong') parts.push(`档位：${payload.model_tier}`);
-    if (typeof payload.resolved_model === 'string' && payload.resolved_model) parts.push(`模型：${payload.resolved_model}`);
-    if (payload.from_tier === 'fast' && payload.to_tier === 'strong') parts.push('路由：fast → strong');
+    if (typeof payload.worker_slot === 'string' && /^[A-Za-z0-9._:-]{1,80}$/.test(payload.worker_slot)) parts.push(`Worker：${payload.worker_slot}`);
+    const routing = routingInsightText(payload);
+    if (routing) parts.push(routing);
     if (Number.isFinite(Number(payload.selected_count))) parts.push(`已选：${Number(payload.selected_count)}`);
     if (Number.isFinite(Number(payload.candidate_count))) parts.push(`候选：${Number(payload.candidate_count)}`);
     const gaps = safeList(payload.gaps);
@@ -928,8 +1269,46 @@
     const failedSources = safeList(payload.failed_sources).length || safeList(payload.degraded_sources).length;
     if (failedSources) parts.push(`受影响来源：${failedSources} 个`);
     if (EVIDENCE_TEXT[payload.evidence_level]) parts.push(`证据：${evidenceLabel(payload.evidence_level)}`);
-    if (typeof payload.reason === 'string' && payload.reason.length <= 180) parts.push(`说明：${payload.reason}`);
     return parts.join(' · ') || '收到安全事件摘要';
+  }
+
+  function benchmarkMetricText(name, value) {
+    const definition = BENCHMARK_METRICS[name];
+    if (!definition) return '';
+    const normalized = boundedNumber(value, definition.min, definition.max);
+    if (normalized === null) return '';
+    const number = name === 'failure_rate' ? normalized * 100 : normalized;
+    const formatted = Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+    return `${definition.label}：${formatted} ${definition.unit}`;
+  }
+
+  function renderBenchmarkSummary() {
+    const section = byId('research-benchmark-section');
+    const metrics = byId('research-benchmark-metrics');
+    const stateNode = byId('research-benchmark-state');
+    const policyNode = byId('research-benchmark-policy');
+    if (!section || !metrics || !stateNode || !policyNode) return;
+    clearNode(metrics);
+    if (!state.selectedTask) { section.hidden = true; return; }
+    section.hidden = false;
+    const summary = benchmarkSummaryFromState();
+    const phases = summary ? ['warm', 'cold'].filter((phase) => summary[phase] && Object.keys(summary[phase]).length) : [];
+    policyNode.textContent = summary?.policy_status ? `策略：${summary.policy_status}（只读）` : '策略：暂无可用状态（只读）';
+    if (!summary || !phases.length) {
+      stateNode.textContent = summary?.probe_available === false ? '暂无指标／探针不可用。' : '暂无指标／探针不可用。';
+      const empty = state.document.createElement('li'); empty.className = 'research-benchmark-empty'; empty.textContent = '当前任务没有受控基准指标。'; metrics.appendChild(empty);
+      return;
+    }
+    stateNode.textContent = '仅展示已存在且通过数值边界校验的摘要。';
+    phases.forEach((phase) => {
+      const item = state.document.createElement('li'); item.className = 'research-benchmark-phase'; item.dataset.phase = phase;
+      const title = state.document.createElement('strong'); title.textContent = BENCHMARK_PHASE_TEXT[phase]; item.appendChild(title);
+      Object.entries(summary[phase]).forEach(([name, value]) => {
+        const metric = benchmarkMetricText(name, value); if (!metric) return;
+        const detail = state.document.createElement('span'); detail.className = 'research-benchmark-metric'; detail.textContent = metric; item.appendChild(detail);
+      });
+      metrics.appendChild(item);
+    });
   }
 
   function eventTitle(type) {
@@ -986,32 +1365,311 @@
     if (section && !treeHost.hidden) section.hidden = false;
   }
 
+  function acquisitionStatusLabel(status) { return ACQUISITION_STATUS_TEXT[status] || '处理中'; }
+
+  function acquisitionErrorText(code) {
+    const value = typeof code === 'string' ? code : '';
+    return ACQUISITION_ERROR_TEXT[value] || (value ? `错误码：${value}` : '导入失败，可重试。');
+  }
+
+  function resolveAcquisitionSearchId(task = state.selectedTask, report = state.report) {
+    const candidates = [
+      task?.search_id, task?.catalog_search_id, task?.research_search_id,
+      task?.plan?.search_id, task?.research_session?.search_id,
+      report?.search_id, report?.catalog_search_id,
+    ];
+    return candidates.find((value) => typeof value === 'string' && /^[A-Za-z0-9._~-]{1,200}$/.test(value)) || null;
+  }
+
+  function acquisitionCandidates() {
+    const reportValues = Array.isArray(state.reportSelections) ? state.reportSelections : [];
+    return reportValues.filter((value) => value && typeof value === 'object' && typeof value.catalog_paper_id === 'string' && value.catalog_paper_id.trim()).map((value) => ({
+      ...value, catalog_paper_id: value.catalog_paper_id.trim(),
+    })).slice(0, 20);
+  }
+
+  function acquisitionPreviewMap() {
+    return new Map((Array.isArray(state.acquisition.preview) ? state.acquisition.preview : []).map((item) => [String(item?.catalog_paper_id || ''), item]));
+  }
+
+  function acquisitionProjectedItems() {
+    const links = Array.isArray(state.acquisition.links) ? state.acquisition.links : [];
+    const items = Array.isArray(state.acquisition.items) ? state.acquisition.items : [];
+    const byId = new Map();
+    [...links, ...items].forEach((item) => {
+      const id = String(item?.catalog_paper_id || item?.candidate_id || item?.paper_id || '');
+      if (!id) return;
+      byId.set(id, { ...(byId.get(id) || {}), ...item, catalog_paper_id: id });
+    });
+    return [...byId.values()];
+  }
+
+  function acquisitionIsTerminal(status) {
+    return ['completed', 'partial_success', 'failed', 'cancelled'].includes(String(status || ''));
+  }
+
+  function setAcquisitionStatus(message, status = '') {
+    const node = byId('research-acquisition-status');
+    if (!node) return;
+    node.textContent = message || (status ? acquisitionStatusLabel(status) : '');
+    node.dataset.status = status;
+  }
+
+  function renderAcquisitionEvidence(values) {
+    const section = byId('research-evidence-upgrades');
+    const list = byId('research-evidence-list');
+    if (!section || !list) return;
+    clearNode(list); section.hidden = true;
+    const upgrades = (Array.isArray(values) ? values : []).filter((item) => item && typeof item === 'object').slice(0, 128);
+    upgrades.forEach((upgrade) => {
+      const item = state.document.createElement('li'); item.className = 'research-evidence-item'; item.dataset.status = String(upgrade.status || '');
+      const head = state.document.createElement('div'); head.className = 'research-evidence-item-head';
+      const title = state.document.createElement('strong'); title.className = 'research-evidence-title'; title.textContent = `Claim ${text(upgrade.claim_id, '未知')} · ${EVIDENCE_TEXT[upgrade.to_level] || text(upgrade.to_level, '证据')}`;
+      const status = state.document.createElement('span'); status.className = 'research-acquisition-badge'; status.dataset.status = String(upgrade.status || ''); status.textContent = text(upgrade.status, '已记录');
+      head.append(title, status);
+      const meta = state.document.createElement('p'); meta.className = 'research-evidence-meta';
+      const page = Number(upgrade.page); const pageEnd = Number(upgrade.page_end);
+      const pageText = Number.isInteger(page) && page > 0 ? ` · 原文第 ${pageEnd > page ? `${page}–${pageEnd}` : page} 页` : '';
+      meta.textContent = `文档：${text(upgrade.document_id, '未知')}${pageText}${Array.isArray(upgrade.chunk_ids) && upgrade.chunk_ids.length ? ` · ${upgrade.chunk_ids.length} 个切片` : ''}`;
+      const actions = state.document.createElement('div'); actions.className = 'research-acquisition-item-actions';
+      if (upgrade.document_id && (upgrade.status === 'upgraded' || upgrade.status === 'revalidation_required')) {
+        const locator = state.document.createElement('button'); locator.type = 'button'; locator.className = 'secondary-button research-evidence-locator'; locator.textContent = '打开原文切片';
+        locator.dataset.documentId = String(upgrade.document_id); locator.dataset.chunkIds = Array.isArray(upgrade.chunk_ids) ? upgrade.chunk_ids.map(String).join(' ') : '';
+        locator.addEventListener('click', () => {
+          if (typeof root.jumpToKnowledgeBase === 'function') root.jumpToKnowledgeBase(String(upgrade.document_id));
+          else if (root.location) root.location.hash = '#kb-view';
+        });
+        actions.appendChild(locator);
+      }
+      item.append(head, meta, actions); list.appendChild(item);
+    });
+    section.hidden = list.childNodes.length === 0;
+  }
+
+  function renderAcquisition() {
+    const section = byId('research-acquisition-section');
+    const list = byId('research-acquisition-candidates');
+    if (!section || !list) return;
+    const candidates = acquisitionCandidates();
+    const projected = acquisitionProjectedItems();
+    const preview = acquisitionPreviewMap();
+    const hasAcquisition = candidates.length > 0 || projected.length > 0 || state.acquisition.status;
+    section.hidden = !hasAcquisition;
+    clearNode(list);
+    candidates.forEach((candidate) => {
+      const id = candidate.catalog_paper_id;
+      const classified = preview.get(id) || {};
+      const projectedItem = projected.find((item) => item.catalog_paper_id === id) || {};
+      const status = String(projectedItem.status || classified.status || 'pending');
+      const row = state.document.createElement('li'); row.className = 'research-acquisition-candidate'; row.dataset.paperId = id; row.dataset.status = status;
+      const head = state.document.createElement('div'); head.className = 'research-acquisition-candidate-head';
+      const label = state.document.createElement('label');
+      const checkbox = state.document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = state.acquisition.selectedIds.has(id); checkbox.dataset.paperId = id;
+      checkbox.setAttribute('aria-label', `选择全文候选 ${id}`);
+      checkbox.addEventListener('change', () => { if (checkbox.checked) state.acquisition.selectedIds.add(id); else state.acquisition.selectedIds.delete(id); renderAcquisition(); });
+      const title = state.document.createElement('span'); title.className = 'research-acquisition-candidate-title'; title.textContent = `目录论文：${id}`;
+      label.append(checkbox, title);
+      const badge = state.document.createElement('span'); badge.className = 'research-acquisition-badge'; badge.dataset.status = status; badge.textContent = acquisitionStatusLabel(status);
+      head.append(label, badge);
+      const meta = state.document.createElement('p'); meta.className = 'research-acquisition-item-meta'; meta.textContent = `相关性：${text(candidate.relevance)} · ${evidenceLabel(candidate.evidence_level)}`;
+      row.append(head, meta); list.appendChild(row);
+    });
+    const count = state.acquisition.selectedIds.size;
+    setText('research-acquisition-selection-count', `已选 ${count} 篇 · 选集 v${text(state.acquisition.selectionVersion, '—')}`);
+    const confirm = byId('research-acquisition-confirm');
+    if (confirm) {
+      confirm.disabled = count === 0 || state.acquisition.confirming || state.acquisition.loading || Boolean(state.acquisition.status && state.acquisition.status !== 'failed' && state.acquisition.status !== 'cancelled');
+      confirm.textContent = state.acquisition.confirming ? '正在确认…' : state.acquisition.status && state.acquisition.status !== 'failed' ? '已确认导入' : '确认并开始导入';
+      confirm.setAttribute('aria-busy', state.acquisition.confirming ? 'true' : 'false');
+    }
+    const refresh = byId('research-acquisition-refresh');
+    if (refresh) refresh.disabled = state.acquisition.loading || projected.length === 0;
+    const progress = byId('research-acquisition-progress');
+    const progressSummary = byId('research-acquisition-progress-summary');
+    const itemsHost = byId('research-acquisition-items');
+    if (progress && progressSummary && itemsHost) {
+      clearNode(itemsHost);
+      progress.hidden = projected.length === 0;
+      const completed = projected.filter((item) => ['completed', 'existing'].includes(String(item.status))).length;
+      const waiting = projected.filter((item) => String(item.status) === 'waiting_login').length;
+      const failed = projected.filter((item) => String(item.status) === 'failed').length;
+      progressSummary.textContent = `${completed}/${projected.length} 篇已完成${waiting ? ` · ${waiting} 篇等待登录` : ''}${failed ? ` · ${failed} 篇失败可重试` : ''}`;
+      projected.forEach((item) => {
+        const row = state.document.createElement('li'); row.className = 'research-acquisition-item'; row.dataset.status = String(item.status || '');
+        const head = state.document.createElement('div'); head.className = 'research-acquisition-item-head';
+        const title = state.document.createElement('strong'); title.className = 'research-acquisition-item-title'; title.textContent = `目录论文：${text(item.catalog_paper_id, '未知')}`;
+        const badge = state.document.createElement('span'); badge.className = 'research-acquisition-badge'; badge.dataset.status = String(item.status || ''); badge.textContent = acquisitionStatusLabel(item.status);
+        head.append(title, badge);
+        const meta = state.document.createElement('p'); meta.className = 'research-acquisition-item-meta'; meta.textContent = item.document_id ? `知识库文档：${item.document_id}` : `导入条目：${text(item.import_item_id || item.item_id, '等待创建')}`;
+        const actions = state.document.createElement('div'); actions.className = 'research-acquisition-item-actions';
+        if (item.status === 'waiting_login') {
+          const wait = state.document.createElement('span'); wait.className = 'research-acquisition-item-meta'; wait.textContent = '请在既有浏览器会话完成登录，页面不会自动登录。'; actions.appendChild(wait);
+        }
+        if (item.status === 'failed' && (item.import_item_id || item.item_id)) {
+          const retry = state.document.createElement('button'); retry.type = 'button'; retry.className = 'secondary-button'; retry.textContent = state.acquisition.retrying.has(String(item.import_item_id || item.item_id)) ? '重试中…' : '重试';
+          retry.disabled = state.acquisition.retrying.has(String(item.import_item_id || item.item_id));
+          retry.addEventListener('click', () => retryAcquisitionItem(item, retry)); actions.appendChild(retry);
+        }
+        if (item.error_code) { const error = state.document.createElement('p'); error.className = 'research-acquisition-item-error'; error.textContent = acquisitionErrorText(item.error_code); row.append(error); }
+        row.append(head, meta, actions); itemsHost.appendChild(row);
+      });
+    }
+    renderAcquisitionEvidence(state.acquisition.evidence);
+  }
+
+  async function loadSelectionSnapshot(taskId = state.selectedTaskId, attempt = 0) {
+    if (!taskId || (attempt === 0 && state.selectionSnapshotTaskId === taskId)) return null;
+    if (attempt === 0) state.selectionSnapshotTaskId = taskId;
+    const planVersion = safePositiveInteger(state.selectedTask?.current_plan_version || state.report?.plan_version) || 1;
+    try {
+      // This is the existing read-only classification seam. It never downloads
+      // files; it exposes the server-owned selection snapshot after evaluation.
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisition-preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_version: planVersion }),
+      });
+      if (state.selectedTaskId !== taskId) return null;
+      const projections = selectionProjectionValues(result?.items);
+      projections.forEach((selection) => {
+        state.selectionDetails.set(selection.catalog_paper_id, {
+          ...(state.selectionDetails.get(selection.catalog_paper_id) || {}), ...selection,
+        });
+        state.selectedPapers.add(selection.catalog_paper_id);
+      });
+      if (projections.length && state.selectedPaperCount === null) state.selectedPaperCount = projections.length;
+      renderSelection();
+      return result;
+    } catch (error) {
+      // The evaluator emits its completion event just before persisting the
+      // selection snapshot. A bounded retry covers that ordering without a
+      // polling loop or exposing an internal error to the user.
+      if (error.code === 'REPORT_NOT_READY' && attempt < 3 && state.selectedTaskId === taskId) {
+        root.setTimeout(() => { loadSelectionSnapshot(taskId, attempt + 1); }, 350 * (attempt + 1));
+      }
+      return null;
+    }
+  }
+
+  async function loadAcquisitionStatus(taskId = state.selectedTaskId) {
+    if (!taskId || state.acquisition.loading) return null;
+    state.acquisition.loading = true; renderAcquisition();
+    try {
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisitions`);
+      if (state.selectedTaskId !== taskId) return null;
+      state.acquisition.status = result?.status || result?.approval_status || null;
+      state.acquisition.selectionVersion = result?.selection_version || state.acquisition.selectionVersion;
+      state.acquisition.links = Array.isArray(result?.links) ? result.links : [];
+      state.acquisition.items = Array.isArray(result?.items) ? result.items : [];
+      state.acquisition.events = Array.isArray(result?.events) ? result.events : [];
+      if (Array.isArray(result?.evidence_upgrades)) state.acquisition.evidence = result.evidence_upgrades;
+      if (result?.batch_id) state.acquisition.batchId = String(result.batch_id);
+      setAcquisitionStatus(state.acquisition.status ? `导入状态：${acquisitionStatusLabel(state.acquisition.status)}` : '已确认，等待导入状态。', state.acquisition.status || 'queued');
+      renderAcquisition();
+      scheduleAcquisitionPoll();
+      return result;
+    } catch (error) {
+      if (error.status !== 404 && error.code !== 'BATCH_NOT_FOUND') setAcquisitionStatus(userError(error, '导入状态暂时不可用。'), 'failed');
+      renderAcquisition();
+      return null;
+    } finally { state.acquisition.loading = false; renderAcquisition(); }
+  }
+
+  function scheduleAcquisitionPoll() {
+    if (state.acquisition.pollTimer || !state.selectedTaskId || !state.acquisition.status || acquisitionIsTerminal(state.acquisition.status)) return;
+    const generation = state.acquisition.generation;
+    state.acquisition.pollTimer = root.setTimeout(async () => {
+      state.acquisition.pollTimer = null;
+      if (generation !== state.acquisition.generation) return;
+      await loadAcquisitionStatus(state.selectedTaskId);
+    }, 2500);
+  }
+
+  function stopAcquisitionPoll() {
+    if (state.acquisition.pollTimer) root.clearTimeout(state.acquisition.pollTimer);
+    state.acquisition.pollTimer = null; state.acquisition.generation += 1;
+  }
+
+  async function loadAcquisitionPreview(taskId = state.selectedTaskId) {
+    const candidates = acquisitionCandidates();
+    if (!taskId || !candidates.length) { renderAcquisition(); return null; }
+    const planVersion = safePositiveInteger(state.selectedTask?.current_plan_version || state.report?.plan_version) || 1;
+    const searchId = resolveAcquisitionSearchId(); state.acquisition.searchId = searchId;
+    state.acquisition.loading = true; setAcquisitionStatus('正在读取候选分类（不会下载）…'); renderAcquisition();
+    try {
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisition-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan_version: planVersion, ...(searchId ? { search_id: searchId } : {}) }) });
+      if (state.selectedTaskId !== taskId) return null;
+      state.acquisition.selectionVersion = result?.selection_version || null;
+      state.acquisition.preview = Array.isArray(result?.items) ? result.items : [];
+      if (!state.acquisition.selectedIds.size) candidates.forEach((item) => state.acquisition.selectedIds.add(item.catalog_paper_id));
+      setAcquisitionStatus('候选已分类；确认前不会下载。'); renderAcquisition();
+      state.acquisition.loading = false;
+      await loadAcquisitionStatus(taskId);
+      return result;
+    } catch (error) {
+      setAcquisitionStatus(userError(error, '候选预览暂时不可用。'), 'failed'); renderAcquisition(); return null;
+    } finally { state.acquisition.loading = false; renderAcquisition(); }
+  }
+
+  async function confirmAcquisition() {
+    const taskId = state.selectedTaskId; const ids = [...state.acquisition.selectedIds];
+    if (!taskId || !ids.length || state.acquisition.confirming) return null;
+    if (!state.acquisition.selectionVersion) { setAcquisitionStatus('选集版本尚未就绪，请刷新任务详情。', 'failed'); return null; }
+    if (!state.acquisition.searchId) { setAcquisitionStatus('服务器搜索快照不可用，暂不能确认；请刷新任务详情后重试。', 'failed'); return null; }
+    state.acquisition.confirming = true; renderAcquisition(); setAcquisitionStatus('正在提交确认…');
+    if (!state.acquisition.idempotencyKey) state.acquisition.idempotencyKey = root.crypto?.randomUUID?.() || `research-acquisition-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      const result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/acquisitions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection_version: state.acquisition.selectionVersion, paper_ids: ids, idempotency_key: state.acquisition.idempotencyKey, search_id: state.acquisition.searchId }) });
+      state.acquisition.status = result?.status || result?.approval_status || 'queued';
+      state.acquisition.batchId = result?.batch_id || null; state.acquisition.links = Array.isArray(result?.links) ? result.links : [];
+      state.acquisition.items = Array.isArray(result?.items) ? result.items : []; state.acquisition.events = Array.isArray(result?.events) ? result.events : [];
+      setAcquisitionStatus(`已确认，导入状态：${acquisitionStatusLabel(state.acquisition.status)}`, state.acquisition.status); renderAcquisition(); scheduleAcquisitionPoll();
+      return result;
+    } catch (error) { setAcquisitionStatus(userError(error, '确认失败；候选仍未被下载。'), 'failed'); renderAcquisition(); return null; }
+    finally { state.acquisition.confirming = false; renderAcquisition(); }
+  }
+
+  async function retryAcquisitionItem(item, button) {
+    const itemId = String(item?.import_item_id || item?.item_id || '');
+    if (!itemId || state.acquisition.retrying.has(itemId)) return null;
+    state.acquisition.retrying.add(itemId); if (button) { button.disabled = true; button.textContent = '重试中…'; }
+    renderAcquisition();
+    try {
+      const result = await requestJson(`/api/papers/import-items/${encodeURIComponent(itemId)}/retry`, { method: 'POST' });
+      setAcquisitionStatus('已提交失败条目重试，正在同步既有导入状态。', 'queued');
+      state.acquisition.status = result?.status || 'queued'; await loadAcquisitionStatus(state.selectedTaskId); return result;
+    } catch (error) { setAcquisitionStatus(userError(error, '重试失败，请稍后再试。'), 'failed'); return null; }
+    finally { state.acquisition.retrying.delete(itemId); renderAcquisition(); }
+  }
+
   function renderSelection() {
     const section = byId('research-selection-section');
     const list = byId('research-selection-list');
     if (!section || !list) return;
     clearNode(list);
-    const values = [...state.selectedPapers];
+    const values = [...state.selectedPapers].map((catalogPaperId) => ({ catalog_paper_id: catalogPaperId }));
     const reportValues = Array.isArray(state.reportSelections) ? state.reportSelections : [];
-    section.hidden = values.length === 0 && state.selectedPaperCount === null && reportValues.length === 0;
-    reportValues.forEach((selection) => {
+    const detailValues = [...(state.selectionDetails?.values?.() || [])];
+    const merged = new Map();
+    [...detailValues, ...reportValues, ...values].forEach((selection) => {
+      const normalized = normalizeSelectionProjection(selection);
+      if (normalized) merged.set(normalized.catalog_paper_id, { ...(merged.get(normalized.catalog_paper_id) || {}), ...normalized });
+    });
+    section.hidden = merged.size === 0 && state.selectedPaperCount === null;
+    [...merged.values()].forEach((selection) => {
       if (!selection || typeof selection !== 'object') return;
       const item = state.document.createElement('li');
       const paperId = state.document.createElement('strong');
       paperId.textContent = `目录论文：${text(selection.catalog_paper_id, '未知 ID')}`;
       const meta = state.document.createElement('span');
-      meta.textContent = `相关性：${text(selection.relevance)} · ${evidenceLabel(selection.evidence_level)}`;
+      meta.textContent = `相关性：${selection.relevance === undefined ? '待评估详情' : text(selection.relevance)} · ${selection.evidence_level ? evidenceLabel(selection.evidence_level) : '证据等级待报告确认'}`;
       const facets = state.document.createElement('span');
       facets.textContent = `facets：${selectionFacetText(selection.facets)}`;
       item.append(paperId, meta, facets);
       list.appendChild(item);
     });
     if (state.selectedPaperCount !== null) {
-      const count = state.document.createElement('li'); count.textContent = `已选 ${state.selectedPaperCount} 篇论文（目录 ID 仅在安全事件摘要中提供）`; list.appendChild(count);
+      const count = state.document.createElement('li'); count.textContent = `已选 ${state.selectedPaperCount} 篇论文`; list.appendChild(count);
     }
-    values.filter((paperId) => !reportValues.some((selection) => selection?.catalog_paper_id === paperId)).forEach((paperId) => {
-      const item = state.document.createElement('li'); item.textContent = `目录论文：${paperId} · 证据等级待报告确认`; list.appendChild(item);
-    });
   }
 
   function selectionFacetText(value) {
@@ -1029,6 +1687,7 @@
   function renderSummary() {
     const list = byId('research-summary-list');
     clearNode(list);
+    renderBenchmarkSummary();
     const events = [...state.events.values()];
     const workers = events.filter((event) => event.type === 'worker');
     const coverage = [...events].reverse().find((event) => event.type === 'coverage');
@@ -1109,6 +1768,127 @@
     return lines.join(' · ');
   }
 
+  function normalizeMatrix(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const arrays = ['claims', 'evidence', 'dimensions', 'cells'];
+    if (arrays.some((key) => !Array.isArray(value[key]))) return null;
+    const version = safePositiveInteger(value.plan_version);
+    if (!version) return null;
+    return {
+      ...value, plan_version: version,
+      claims: value.claims.filter((item) => item && typeof item === 'object').slice(0, 512),
+      evidence: value.evidence.filter((item) => item && typeof item === 'object').slice(0, 2048),
+      dimensions: value.dimensions.filter((item) => item && typeof item === 'object').slice(0, 128),
+      cells: value.cells.filter((item) => item && typeof item === 'object').slice(0, 4096),
+      limitations: safeList(value.limitations, 256),
+    };
+  }
+
+  function citationValues(value) {
+    const manifest = value?.citation_manifest;
+    const values = Array.isArray(manifest) ? manifest : manifest && Array.isArray(manifest.citations) ? manifest.citations : [];
+    return values.filter((item) => item && typeof item === 'object' && safePositiveInteger(item.citation_no)).slice(0, 256);
+  }
+
+  function citationIndex(value) {
+    const byEvidence = new Map(); const byNo = new Map();
+    citationValues(value).forEach((citation) => {
+      const no = safePositiveInteger(citation.citation_no); byNo.set(no, citation);
+      (Array.isArray(citation.evidence_ids) ? citation.evidence_ids : []).forEach((id) => byEvidence.set(String(id), no));
+    });
+    return { byEvidence, byNo };
+  }
+
+  function locatorForEvidence(evidence) {
+    if (!evidence || typeof evidence !== 'object') return {};
+    const locator = evidence.locator && typeof evidence.locator === 'object' ? evidence.locator : {};
+    return { ...locator, document_id: locator.document_id || evidence.document_id || '', chunk_ids: Array.isArray(locator.chunk_ids) ? locator.chunk_ids : (Array.isArray(evidence.chunk_ids) ? evidence.chunk_ids : []), page: locator.page || evidence.page, page_end: locator.page_end || evidence.page_end, chunker: locator.chunker || evidence.chunker || '' };
+  }
+
+  function locatorText(locator) {
+    if (!locator || typeof locator !== 'object') return '无定位信息';
+    const page = safePositiveInteger(locator.page); const pageEnd = safePositiveInteger(locator.page_end);
+    const pages = page ? `第 ${page}${pageEnd && pageEnd >= page && pageEnd !== page ? `–${pageEnd}` : ''} 页` : '无页码';
+    const chunks = Array.isArray(locator.chunk_ids) && locator.chunk_ids.length ? `${locator.chunk_ids.length} 个切片` : '无切片';
+    return `${pages} · ${chunks}${locator.chunker ? ` · ${String(locator.chunker).slice(0, 20)}` : ''}`;
+  }
+
+  function renderMatrix(matrix = state.matrix) {
+    const section = byId('research-matrix-section');
+    const body = byId('research-evidence-matrix-body'); const empty = byId('research-matrix-empty');
+    const gaps = byId('research-matrix-gaps'); const gapList = byId('research-matrix-gap-list');
+    if (!section || !body) return;
+    clearNode(body); clearNode(gapList); section.hidden = !matrix;
+    if (!matrix) { setText('research-matrix-state', '证据矩阵尚未准备完成。'); setText('research-matrix-count', ''); if (empty) empty.hidden = false; if (gaps) gaps.hidden = true; return; }
+    const claims = new Map(matrix.claims.map((item) => [String(item.claim_id || ''), item]));
+    const dimensions = new Map(matrix.dimensions.map((item) => [String(item.dimension_id || item.id || ''), item]));
+    const index = citationIndex(state.report);
+    const rows = matrix.cells;
+    rows.forEach((cell) => {
+      const row = state.document.createElement('tr'); row.dataset.relation = String(cell.relation || 'missing');
+      const claim = state.document.createElement('td'); claim.textContent = `${text(cell.claim_id, '未知结论')} · ${text(claims.get(String(cell.claim_id))?.statement, '—')}`;
+      const paper = state.document.createElement('td'); paper.textContent = text(cell.paper_id, '未知论文');
+      const dimension = state.document.createElement('td'); dimension.textContent = text(dimensions.get(String(cell.dimension_id))?.label || cell.dimension_id, '—');
+      const relation = state.document.createElement('td'); const relationBadge = state.document.createElement('span'); relationBadge.className = 'research-matrix-relation'; relationBadge.dataset.relation = String(cell.relation || 'missing'); relationBadge.textContent = ({ supports: '支持', contradicts: '反驳', contextual: '背景', missing: '缺口' })[cell.relation] || text(cell.relation, '缺口'); relation.appendChild(relationBadge);
+      const evidence = state.document.createElement('td'); const evidenceWrap = state.document.createElement('div'); evidenceWrap.className = 'research-matrix-citations';
+      const citationNos = (Array.isArray(cell.evidence_ids) ? cell.evidence_ids : []).map((id) => index.byEvidence.get(String(id))).filter(Boolean);
+      [...new Set(citationNos)].forEach((no) => evidenceWrap.appendChild(createCitationButton(no)));
+      if (!citationNos.length) evidenceWrap.textContent = text(cell.missing_reason || cell.summary, '—');
+      evidence.appendChild(evidenceWrap); row.append(claim, paper, dimension, relation, evidence); body.appendChild(row);
+    });
+    if (empty) empty.hidden = rows.length > 0;
+    const limitations = matrix.limitations || [];
+    limitations.forEach((item) => { const li = state.document.createElement('li'); li.textContent = String(item); gapList?.appendChild(li); });
+    if (gaps) gaps.hidden = limitations.length === 0;
+    setText('research-matrix-state', `计划 v${matrix.plan_version} · ${rows.length} 个单元格 · ${limitations.length ? `${limitations.length} 个缺口` : '未发现结构化缺口'}`);
+    setText('research-matrix-count', `${matrix.claims.length} 条结论 · ${matrix.evidence.length} 条证据`);
+  }
+
+  function createCitationButton(no) {
+    const button = state.document.createElement('button'); button.type = 'button'; button.className = 'research-citation-button'; button.dataset.citationNo = String(no); button.textContent = `[${no}]`; button.setAttribute('aria-label', `展开引用 ${no}`); button.addEventListener('click', () => { state.activeCitationNo = Number(no); renderCitationDetail(no); }); return button;
+  }
+
+  function renderCitationDetail(no) {
+    const host = byId('research-report-citation-detail'); if (!host) return;
+    const index = citationIndex(state.report); const citation = index.byNo.get(Number(no));
+    const evidences = citation ? (Array.isArray(citation.evidence_ids) ? citation.evidence_ids : []).map((id) => (state.report?.evidence || state.matrix?.evidence || []).find((item) => String(item.evidence_id) === String(id))).filter(Boolean) : [];
+    clearNode(host); host.hidden = !citation;
+    if (!citation) return;
+    const head = state.document.createElement('div'); head.className = 'research-report-citation-detail-head'; const title = state.document.createElement('strong'); title.textContent = `引用 [${no}] · ${text(citation.paper_id, '未知论文')}`; const close = state.document.createElement('button'); close.type = 'button'; close.className = 'icon-button'; close.textContent = '×'; close.setAttribute('aria-label', '收起引用详情'); close.addEventListener('click', () => { host.hidden = true; state.activeCitationNo = null; }); head.append(title, close); host.appendChild(head);
+    evidences.forEach((evidence) => {
+      const locator = locatorForEvidence(evidence); const fields = state.document.createElement('dl');
+      [['证据', evidence.evidence_id], ['等级', evidenceLabel(evidence.evidence_level)], ['立场', ({ supports: '支持', contradicts: '反驳', contextual: '背景' })[evidence.stance] || evidence.stance], ['定位', locatorText(locator)], ['切片', Array.isArray(locator.chunk_ids) ? locator.chunk_ids.join('、') : '—']].forEach(([label, value]) => { const dt = state.document.createElement('dt'); dt.textContent = label; const dd = state.document.createElement('dd'); dd.textContent = value == null || value === '' ? '—' : String(value); fields.append(dt, dd); });
+      host.appendChild(fields);
+      if (locator.document_id && Array.isArray(locator.chunk_ids) && locator.chunk_ids.length) { const actions = state.document.createElement('div'); actions.className = 'research-report-citation-detail-actions'; const open = state.document.createElement('button'); open.type = 'button'; open.className = 'secondary-button'; open.textContent = '打开原文切片'; open.addEventListener('click', () => openEvidenceLocator(locator)); actions.appendChild(open); host.appendChild(actions); }
+    });
+  }
+
+  async function openEvidenceLocator(locator) {
+    const documentId = typeof locator?.document_id === 'string' ? locator.document_id.trim() : '';
+    if (!documentId) return;
+    const controller = root.__kbInspectionController; const doc = state.document;
+    doc.querySelector('[data-view="kb"]')?.click();
+    const inspectionTab = doc.getElementById('kb-tab-inspection');
+    if (!controller || !inspectionTab) { setText('research-summary-text', '已打开知识库，请在切片检查中选择对应文档。'); return; }
+    controller.activateTab(inspectionTab, true);
+    try { await controller.loadDocuments(); } catch (_) { return; }
+    const select = doc.getElementById('kb-inspection-document'); if (!select) return;
+    select.value = documentId;
+    const version = String(locator.chunker || 'v1'); const versionInput = doc.querySelector(`input[name="kb-inspection-chunker"][value="${version}"]`); if (versionInput) versionInput.checked = true;
+    await controller.loadInspection();
+    const wanted = new Set(locator.chunk_ids.map(String));
+    let chunk = [...doc.querySelectorAll('[data-chunk-id]')].find((node) => wanted.has(String(node.getAttribute('data-chunk-id') || '')));
+    const loadMore = doc.getElementById('kb-chunk-load-more');
+    let loadMoreAttempts = 0;
+    while (!chunk && loadMore && !loadMore.hidden && loadMoreAttempts < 1000) {
+      loadMoreAttempts += 1;
+      loadMore.click();
+      chunk = [...doc.querySelectorAll('[data-chunk-id]')].find((node) => wanted.has(String(node.getAttribute('data-chunk-id') || '')));
+    }
+    if (chunk) { chunk.click(); setText('research-summary-text', `已定位到知识库文档 ${documentId} 的引用切片。`); }
+    else setText('research-summary-text', `已打开知识库文档 ${documentId}，但未找到引用切片。`);
+  }
+
   function reportCitationValue(value) {
     if (value === null || value === undefined || value === '') return '';
     if (typeof value !== 'object') return String(value).slice(0, 2400);
@@ -1126,13 +1906,16 @@
     ['markdown', 'html', 'citation_manifest'].forEach((kind) => {
       const artifact = (Array.isArray(artifacts) ? artifacts : []).map(normalizeArtifact).find((item) => item?.artifact_type === kind);
       const url = artifact?.download_url || '';
-      const actionUrl = artifactActionUrl(kind, url);
+      const actionUrl = artifactActionUrl(kind, url) || versionedReportUrl(state.selectedTaskId, state.report?.report_version || state.report?.plan_version, kind === 'citation_manifest' ? 'json' : kind);
       if (!actionUrl) return;
       const link = state.document.createElement('a'); link.className = 'research-report-artifact'; link.href = actionUrl; link.textContent = labels[kind];
       link.setAttribute('aria-label', labels[kind]); link.setAttribute('rel', 'noopener noreferrer');
       if (kind === 'html') link.target = '_blank'; else link.download = '';
       host.appendChild(link);
     });
+    if (!host.childNodes.length && state.report && versionedReportUrl(state.selectedTaskId, state.report.report_version, 'markdown')) {
+      ['markdown', 'json'].forEach((format) => { const link = state.document.createElement('a'); link.className = 'research-report-artifact'; link.href = versionedReportUrl(state.selectedTaskId, state.report.report_version, format); link.textContent = format === 'markdown' ? '下载 Markdown' : '下载 JSON'; link.download = ''; link.rel = 'noopener noreferrer'; host.appendChild(link); });
+    }
     host.hidden = host.childNodes.length === 0;
   }
 
@@ -1141,9 +1924,79 @@
     const list = byId('research-report-citation-list');
     if (!details || !list) return;
     clearNode(list); details.hidden = true;
-    const values = Array.isArray(citations) ? citations.slice(0, 256) : citations && typeof citations === 'object' ? [citations] : [];
-    values.forEach((citation) => { const item = state.document.createElement('li'); item.textContent = reportCitationValue(citation); if (item.textContent) list.appendChild(item); });
+    const values = Array.isArray(citations) ? citations.slice(0, 256) : citations && Array.isArray(citations.citations) ? citations.citations.slice(0, 256) : citations && typeof citations === 'object' ? [citations] : [];
+    values.forEach((citation) => { const no = safePositiveInteger(citation?.citation_no); if (!no) return; const item = state.document.createElement('li'); const button = createCitationButton(no); button.addEventListener('click', () => { state.activeCitationNo = no; renderCitationDetail(no); }); item.appendChild(button); const label = state.document.createElement('span'); label.textContent = ` ${text(citation.paper_id, '未知论文')} · ${Array.isArray(citation.evidence_ids) ? citation.evidence_ids.join('、') : ''}`; item.appendChild(label); list.appendChild(item); });
     details.hidden = list.childNodes.length === 0;
+  }
+
+  function renderReportRaw(value) {
+    const raw = byId('research-report-raw'); if (!raw) return;
+    raw.textContent = typeof value === 'string' ? value : JSON.stringify(value || {}, null, 2);
+    raw.hidden = false;
+  }
+
+  function renderSafeHtmlReport(node, source) {
+    if (!node) return;
+    node.replaceChildren();
+    const purify = root.DOMPurify;
+    if (typeof source !== 'string' || !source.trim()) { node.hidden = true; return; }
+    if (typeof purify?.sanitize !== 'function' || typeof root.DOMParser !== 'function') { node.textContent = source; node.hidden = false; return; }
+    try {
+      const safeHtml = purify.sanitize(source, { USE_PROFILES: { html: true } });
+      const parsed = new root.DOMParser().parseFromString(safeHtml, 'text/html');
+      [...parsed.body.childNodes].forEach((child) => node.appendChild(node.ownerDocument.importNode(child, true)));
+    } catch (_) { node.textContent = source; }
+    node.hidden = false;
+  }
+
+  function renderReportFormatTabs() {
+    const controls = byId('research-report-view-controls'); const markdown = byId('research-report-markdown'); const raw = byId('research-report-raw');
+    if (controls) controls.hidden = !state.report;
+    const versionSelect = byId('research-report-version-select');
+    if (versionSelect && state.report) {
+      const versions = [...new Set([...(state.reportVersions || []), safePositiveInteger(state.report.report_version || state.report.plan_version)].filter(Boolean))].sort((a, b) => b - a);
+      if (versionSelect.childNodes.length !== versions.length || versions.some((version, index) => versionSelect.childNodes[index]?.value !== String(version))) {
+        clearNode(versionSelect); versions.forEach((version) => { const option = state.document.createElement('option'); option.value = String(version); option.textContent = `v${version}`; versionSelect.appendChild(option); });
+      }
+      versionSelect.value = String(state.report.report_version || state.report.plan_version || versions[0] || '');
+    }
+    state.document?.querySelectorAll?.('[data-report-format]').forEach((button) => { const active = button.dataset.reportFormat === state.reportFormat; button.classList.toggle('is-active', active); button.setAttribute('aria-selected', active ? 'true' : 'false'); });
+    if (!state.report) { if (markdown) { markdown.hidden = true; markdown.replaceChildren(); } if (raw) raw.hidden = true; return; }
+    const value = state.reportViews.get(`${state.report.report_version}:${state.reportFormat}`);
+    if (state.reportFormat === 'markdown') { if (raw) raw.hidden = true; renderSafeMarkdown(markdown, value || state.report.markdown); }
+    else if (state.reportFormat === 'html') { if (raw) raw.hidden = true; renderSafeHtmlReport(markdown, value); }
+    else { if (markdown) markdown.hidden = true; renderReportRaw(value); }
+  }
+
+  async function selectReportFormat(format) {
+    if (!REPORT_FORMATS.has(format) || !state.report) return null;
+    state.reportFormat = format; renderReportFormatTabs();
+    const version = safePositiveInteger(state.report.report_version || state.report.plan_version); if (!version) return null;
+    const key = `${version}:${format}`;
+    if (state.reportViews.has(key)) { renderReportFormatTabs(); return state.reportViews.get(key); }
+    try {
+      const value = format === 'json'
+        ? await requestJson(`/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/reports/${version}?format=json`)
+        : await requestText(`/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/reports/${version}?format=${format}`);
+      state.reportViews.set(key, value); if (format === 'json' && value && typeof value === 'object') state.report = { ...state.report, ...value, report_version: version };
+      renderReportCitations(state.report.citation_manifest); renderMatrix(state.matrix); renderReportFormatTabs();
+      return value;
+    } catch (error) {
+      setText('research-report-state', userError(error, `${format.toUpperCase()} 报告暂时不可用。`)); return null;
+    }
+  }
+
+  async function loadMatrix(taskId) {
+    if (!taskId) return null;
+    state.matrix = null; renderMatrix(null);
+    try {
+      const matrix = normalizeMatrix(await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/evidence-matrix`));
+      if (state.selectedTaskId !== taskId) return null;
+      state.matrix = matrix; renderMatrix(matrix); return matrix;
+    } catch (error) {
+      if (state.selectedTaskId === taskId) { setText('research-matrix-state', error.code === 'MATRIX_NOT_READY' ? '证据矩阵尚未准备完成。' : userError(error, '证据矩阵暂时不可用。')); renderMatrix(null); }
+      return null;
+    }
   }
 
   async function loadReport(taskId) {
@@ -1151,9 +2004,10 @@
     const reportNode = byId('research-report-markdown');
     if (stateNode) stateNode.textContent = '正在读取报告…';
     if (reportNode) { reportNode.hidden = true; reportNode.replaceChildren(); }
-    renderReportArtifacts([]); renderReportCitations([]);
+    const rawNode = byId('research-report-raw'); if (rawNode) { rawNode.hidden = true; rawNode.textContent = ''; }
+    renderReportArtifacts([]); renderReportCitations([]); const citationDetail = byId('research-report-citation-detail'); if (citationDetail) { citationDetail.hidden = true; citationDetail.replaceChildren(); }
     state.reportSelections = [];
-    state.report = null;
+    state.report = null; state.reportViews = new Map(); state.reportVersions = []; state.activeCitationNo = null; state.reportFormat = 'markdown'; renderReportFormatTabs();
     renderSelection();
     try {
       const report = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/report`);
@@ -1165,33 +2019,68 @@
           artifacts = Array.isArray(artifactData?.artifacts) ? artifactData.artifacts : artifacts;
         } catch (_) { /* legacy report remains readable when artifact metadata is unavailable */ }
       }
-      state.report = { ...report, artifacts, report_version: report.report_version || report.plan_version };
+      const version = safePositiveInteger(report.report_version || report.plan_version);
+      state.report = { ...report, artifacts, report_version: version };
+      if (version) {
+        state.reportVersions = [version];
+        try {
+          const canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/reports/${version}?format=json`);
+          if (canonical && typeof canonical === 'object') state.report = { ...state.report, ...canonical, artifacts, report_version: version };
+          state.reportViews.set(`${version}:json`, canonical);
+        } catch (_) { /* legacy report remains readable while the versioned seam is unavailable */ }
+      }
       state.reportSelections = Array.isArray(report.selections) ? report.selections : [];
+      state.reportSelections.forEach((selection) => {
+        const normalized = normalizeSelectionProjection(selection);
+        if (normalized) state.selectionDetails.set(normalized.catalog_paper_id, {
+          ...(state.selectionDetails.get(normalized.catalog_paper_id) || {}), ...normalized,
+        });
+      });
+      state.acquisition.evidence = Array.isArray(report.evidence_upgrades) ? report.evidence_upgrades : (Array.isArray(report.evidence) ? report.evidence : []);
       renderSelection();
+      await loadAcquisitionPreview(taskId);
       renderSummary();
-      renderSafeMarkdown(reportNode, report.markdown);
-      renderReportArtifacts(artifacts); renderReportCitations(report.citation_manifest);
-      if (stateNode) stateNode.textContent = `报告 v${text(report.plan_version)} · ${statusLabel(report.status)}`;
-      const limitations = limitationText(report.limitations);
+      if (report.markdown) state.reportViews.set(`${version}:markdown`, report.markdown);
+      renderReportFormatTabs();
+      renderReportArtifacts(artifacts); renderReportCitations(state.report.citation_manifest);
+      renderMatrix(state.matrix);
+      if (stateNode) stateNode.textContent = `报告 v${text(version || report.plan_version)} · ${statusLabel(state.report.status)}`;
+      const limitations = limitationText(state.report.limitations) || safeList(state.report.limitations).join(' · ');
       setText('research-report-limitations', limitations ? `限制：${limitations}` : '');
       return report;
     } catch (error) {
       state.reportSelections = [];
       state.report = null;
+      stopAcquisitionPoll();
+      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
+      state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
+      state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderSelection();
+      renderAcquisition();
       renderSummary();
       if (stateNode) stateNode.textContent = error.code === 'REPORT_NOT_READY' ? ERROR_TEXT.REPORT_NOT_READY : userError(error, '报告暂时不可用。');
       setText('research-report-limitations', '');
-      renderReportArtifacts([]); renderReportCitations([]);
+      renderReportArtifacts([]); renderReportCitations([]); renderReportFormatTabs();
       return null;
     }
   }
 
   function applyEvent(event) {
     const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
-    const paperIds = [...safeList(payload.selected_paper_ids), ...safeList(payload.catalog_paper_ids)];
-    paperIds.forEach((paperId) => { if (paperId) state.selectedPapers.add(String(paperId)); });
+    const selectionValues = [
+      ...selectionProjectionValues(payload.selected_paper_ids),
+      ...selectionProjectionValues(payload.catalog_paper_ids),
+      ...selectionProjectionValues(payload.selected),
+      ...selectionProjectionValues(payload.selections),
+    ];
+    selectionValues.forEach((selection) => {
+      state.selectedPapers.add(selection.catalog_paper_id);
+      state.selectionDetails.set(selection.catalog_paper_id, {
+        ...(state.selectionDetails.get(selection.catalog_paper_id) || {}), ...selection,
+      });
+    });
     if (payload.selected_count !== undefined && Number.isFinite(Number(payload.selected_count))) state.selectedPaperCount = Number(payload.selected_count);
+    if (state.selectedPaperCount > 0 && !state.selectionDetails.size && state.selectedTaskId) loadSelectionSnapshot(state.selectedTaskId);
     if (event.type === 'plan') {
       const version = safePositiveInteger(payload.plan_version);
       if (version && state.selectedTask) {
@@ -1275,12 +2164,18 @@
     closeStream();
     state.selectedTaskId = taskId || null;
     state.selectedSessionId = sessionId || state.tasks.find((item) => item.research_task_id === taskId)?.research_session_id || null;
+    stopAcquisitionPoll();
+    state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
+    state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
+    state.acquisition.searchId = null; state.acquisition.idempotencyKey = null; state.acquisition.confirming = false; state.acquisition.retrying = new Set();
     state.selectedTask = null;
     state.events = new Map();
     state.selectedPapers = new Set();
     state.selectedPaperCount = null;
+    state.selectionDetails = new Map();
+    state.selectionSnapshotTaskId = null;
     state.reportSelections = [];
-    state.report = null;
+    state.report = null; state.matrix = null; state.reportViews = new Map(); state.reportVersions = []; state.activeCitationNo = null; state.reportFormat = 'markdown';
     state.terminal = null;
     state.processingTree = null;
     state.processingTreeTaskId = null;
@@ -1310,7 +2205,7 @@
           if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) return;
           state.selectedSessionId = resolvedSessionId;
           const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
-          state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: session.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
+          state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: canonical?.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
           renderTaskHeader(state.selectedTask);
           renderSessionPlan(session.plan, session.approvals || [], session);
         } catch (_) {
@@ -1319,8 +2214,9 @@
         }
       }
       setDetailVisibility(true);
+      renderBenchmarkSummary();
       if (taskId) {
-        await loadReport(taskId);
+        await Promise.all([loadMatrix(taskId), loadReport(taskId)]);
         if (state.selectedTaskId !== taskId) return;
         connectStream();
       } else {
@@ -1341,13 +2237,15 @@
       || tasks.find((task) => task.conversation_id === state.conversationId);
     if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
-      closeStream(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
+      closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
+      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderTaskHeader(null); setDetailVisibility(false); renderSummary();
-      state.report = null; state.terminal = null;
+      state.report = null; state.matrix = null; state.terminal = null; state.reportViews = new Map(); state.reportVersions = []; renderMatrix(null); renderReportFormatTabs();
       const report = byId('research-report-markdown'); if (report) { report.hidden = true; report.replaceChildren(); }
       setText('research-report-state', '任务完成后显示报告。');
       setText('research-report-limitations', '');
       renderReportArtifacts([]); renderReportCitations([]);
+      renderAcquisition();
     }
   }
 
@@ -1361,6 +2259,14 @@
     const targetPaperCount = Number(byId('research-target-count')?.value || 12);
     const language = byId('research-language')?.value || 'zh';
     const reviewPlanFirst = Boolean(byId('research-review-plan')?.checked);
+    const yearFrom = Number(byId('research-year-from')?.value);
+    const yearTo = Number(byId('research-year-to')?.value);
+    if (!Number.isInteger(yearFrom) || !Number.isInteger(yearTo) || yearFrom < 1900 || yearTo > 2200 || yearFrom > yearTo) {
+      setText('research-create-status', '请填写有效的时间范围（起始年份不晚于结束年份）。');
+      byId('research-year-from')?.focus();
+      if (button) button.disabled = false;
+      return;
+    }
     if (!state.createIdempotencyKey) state.createIdempotencyKey = root.crypto?.randomUUID?.() || `research-session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     state.triggerMessageId = state.triggerMessageId || state.conversation?.last_message_id || state.conversation?.trigger_message_id || null;
     const payload = {
@@ -1370,6 +2276,7 @@
       ...(currentProjectId() ? { project_id: currentProjectId() } : {}),
       intake: {
         topic: goal, objective: goal, language, depth: quality,
+        time_range: { from: yearFrom, to: yearTo },
         sources: ['usenix'], citations: 'true', output: 'markdown',
         constraints: `目标论文数：${Number.isInteger(targetPaperCount) ? Math.max(1, Math.min(20, targetPaperCount)) : 12}；先审核计划：${reviewPlanFirst ? '是' : '否'}`,
       },
@@ -1400,25 +2307,7 @@
     } finally { if (button) button.disabled = false; }
   }
 
-  async function cancelTask() {
-    if (!state.selectedSessionId || !state.selectedTask || TERMINAL_STATUSES.has(state.selectedTask.status)) return;
-    const button = byId('research-cancel-button'); if (button) button.disabled = true;
-    setText('research-summary-text', '正在取消研究任务…');
-    try {
-      const result = await submitSessionCommand(
-        state.selectedSessionId, 'cancel_research', state.selectedTask.current_plan_version || state.selectedTask.research_session?.current_plan_version || 0,
-        {}, button,
-      );
-      if (!result) return;
-      state.selectedTask = { ...state.selectedTask, ...result, status: result.status || 'cancelled' };
-      state.statusNotice = '';
-      renderTaskHeader(state.selectedTask); renderTaskList();
-      setText('research-summary-text', '研究会话已取消，后续节点不会继续创建。');
-    } catch (error) {
-      setText('research-summary-text', userError(error, '取消任务失败。'));
-      if (button) button.disabled = false;
-    }
-  }
+  function cancelTask() { beginTaskAction('cancel'); }
 
   function openForConversation(conversationId) {
     if (!conversationId) return;
@@ -1469,6 +2358,22 @@
     byId('research-refresh-button')?.addEventListener('click', refreshWorkspace);
     byId('research-create-form')?.addEventListener('submit', createTask);
     byId('research-cancel-button')?.addEventListener('click', cancelTask);
+    byId('research-task-pause-button')?.addEventListener('click', () => beginTaskAction('pause'));
+    byId('research-task-resume-button')?.addEventListener('click', () => beginTaskAction('resume'));
+    byId('research-task-approve-button')?.addEventListener('click', () => beginTaskAction('approve'));
+    byId('research-task-recover-button')?.addEventListener('click', () => beginTaskAction('recover'));
+    byId('research-acquisition-confirm')?.addEventListener('click', confirmAcquisition);
+    byId('research-acquisition-refresh')?.addEventListener('click', () => loadAcquisitionStatus(state.selectedTaskId));
+    state.document.querySelectorAll('[data-report-format]').forEach((button) => button.addEventListener('click', () => selectReportFormat(button.dataset.reportFormat)));
+    byId('research-report-version-select')?.addEventListener('change', async (event) => {
+      const version = safePositiveInteger(event.target.value); if (!version || !state.selectedTaskId) return;
+      state.report = { ...state.report, report_version: version }; state.reportFormat = 'markdown'; state.reportViews = new Map(); renderReportFormatTabs();
+      try {
+        const canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/reports/${version}?format=json`);
+        state.report = { ...state.report, ...canonical, report_version: version }; state.reportViews.set(`${version}:json`, canonical); renderReportCitations(state.report.citation_manifest); renderMatrix(state.matrix); renderReportFormatTabs();
+        await selectReportFormat('markdown');
+      } catch (error) { setText('research-report-state', userError(error, '该报告版本暂时不可用。')); }
+    });
 
     // Chat approval commands publish the same backend result.  Reconcile it
     // through this Tab's canonical Session/Task state instead of maintaining a
@@ -1532,5 +2437,10 @@
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
     sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,
     renderSessionApprovals,
+    routingInsightText, boundedNumber, normalizeBenchmarkSummary, benchmarkMetricText,
+    safeSelectionId, normalizeSelectionProjection, selectionProjectionValues,
+    acquisitionStatusLabel, acquisitionErrorText, acquisitionIsTerminal,
+    normalizeMatrix, citationValues, citationIndex, locatorForEvidence, locatorText,
+    versionedReportUrl, renderMatrix, renderReportFormatTabs, selectReportFormat, loadMatrix,
   };
 }));

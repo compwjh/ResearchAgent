@@ -1644,6 +1644,83 @@ function intakeStatusLabel(status, missing = []) {
   return '收集中';
 }
 
+function prepareNewResearchDraft(assistantMessage, notice) {
+  const previous = assistantMessage?.previousElementSibling;
+  const previousUserText = previous?.classList?.contains('user')
+    ? previous.querySelector('.bubble')?.textContent?.trim()
+    : '';
+  beginDraft();
+  if (previousUserText && input) {
+    input.value = previousUserText;
+    autoGrowInput();
+  }
+  setConversationStatus(notice);
+  input?.focus();
+}
+
+function renderConversationIntakeChoiceStatus(panel, text, state = '') {
+  if (!panel) return null;
+  let status = panel.querySelector('.conversation-intake-choice-status');
+  if (!status) {
+    status = document.createElement('p');
+    status.className = 'conversation-intake-choice-status';
+    status.setAttribute('aria-live', 'polite');
+    panel.querySelector('.conversation-intake-body')?.appendChild(status);
+  }
+  status.dataset.state = state;
+  status.textContent = text || '';
+  return status;
+}
+
+async function handleConversationIntakeChoice(assistantMessage, button, choice) {
+  const panel = button?.closest('.conversation-intake');
+  if (!panel || !INTAKE_CHOICE_LABELS[choice] || panel.dataset.choiceBusy === 'true') return;
+  const choices = [...panel.querySelectorAll('.conversation-intake-choice')];
+  choices.forEach((item) => {
+    const selected = item === button;
+    item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    item.classList.toggle('is-selected', selected);
+  });
+  if (choice === 'new_conversation') {
+    prepareNewResearchDraft(assistantMessage, '已准备新会话，请检查并重新发送研究请求。');
+    return;
+  }
+  if (choice === 'modify_current') {
+    renderConversationIntakeChoiceStatus(panel, '已选择修改当前研究；当前研究会话保留，请在输入框补充要修改的主题、目标或时间范围。');
+    input?.focus();
+    return;
+  }
+
+  const sessionId = panel.dataset.researchSessionId;
+  if (!sessionId) {
+    renderConversationIntakeChoiceStatus(panel, '当前研究会话标识不可用，未执行取消；请刷新会话后重试。', 'error');
+    return;
+  }
+  panel.dataset.choiceBusy = 'true';
+  panel.setAttribute('aria-busy', 'true');
+  choices.forEach((item) => { item.disabled = true; });
+  renderConversationIntakeChoiceStatus(panel, '正在取消当前研究…');
+  try {
+    const subjectVersion = Number(panel.dataset.subjectVersion || 0);
+    await conversationFetch(`/api/research-sessions/${encodeURIComponent(sessionId)}/commands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        command: 'cancel_research',
+        subject_version: Number.isInteger(subjectVersion) && subjectVersion >= 0 ? subjectVersion : 0,
+        scope_json: {},
+        idempotency_key: researchCommandIdempotencyKey(button),
+      }),
+    });
+    prepareNewResearchDraft(assistantMessage, '当前研究已取消，已准备新会话；请检查并重新发送研究请求。');
+  } catch (error) {
+    panel.dataset.choiceBusy = 'false';
+    panel.setAttribute('aria-busy', 'false');
+    choices.forEach((item) => { item.disabled = false; });
+    renderConversationIntakeChoiceStatus(panel, `取消当前研究失败：${error.message || '请刷新后重试。'}`, 'error');
+  }
+}
+
 function createConversationIntake(assistantMessage) {
   if (!assistantMessage) return null;
   const existing = assistantMessage.querySelector('.conversation-intake');
@@ -1723,6 +1800,7 @@ function updateConversationIntake(assistantMessage, payload = {}) {
   const missingNames = Array.isArray(payload.missing) ? payload.missing.filter((name) => typeof name === 'string') : [];
   panel.dataset.status = status;
   panel.dataset.researchSessionId = payload.research_session?.research_session_id || panel.dataset.researchSessionId || '';
+  panel.dataset.subjectVersion = String(Number(payload.subject_version ?? payload.research_session?.current_plan_version) || 0);
   panel.setAttribute('aria-busy', ['running', 'intake'].includes(status) && missingNames.length > 0 ? 'true' : 'false');
   const summary = panel.querySelector('.conversation-intake-summary');
   summary.textContent = intakeStatusLabel(status, missingNames);
@@ -1765,14 +1843,28 @@ function updateConversationIntake(assistantMessage, payload = {}) {
     button.setAttribute('aria-pressed', 'false');
     button.textContent = INTAKE_CHOICE_LABELS[choice.id];
     button.addEventListener('click', () => {
-      choicesNode.querySelectorAll('.conversation-intake-choice').forEach((item) => {
-        const selected = item === button;
-        item.setAttribute('aria-pressed', selected ? 'true' : 'false');
-        item.classList.toggle('is-selected', selected);
-      });
+      handleConversationIntakeChoice(assistantMessage, button, choice.id);
     });
     choicesNode.appendChild(button);
   });
+  // A historical Intake projection may predate automatic plan generation. Ask
+  // the idempotent Session endpoint once so refresh/reopen can resume the same
+  // plan path instead of leaving the user with a completed-looking idle card.
+  if (status === 'intake' && !missingNames.length && panel.dataset.researchSessionId
+      && !assistantMessage.querySelector('.conversation-research-plan')
+      && panel.dataset.planRequested !== 'true') {
+    panel.dataset.planRequested = 'true';
+    summary.textContent = '参数已齐，正在生成研究计划…';
+    conversationFetch(`/api/research-sessions/${encodeURIComponent(panel.dataset.researchSessionId)}/plans/generate`, { method: 'POST' })
+      .then((result) => {
+        updateConversationResearchPlan(assistantMessage, result || {});
+        summary.textContent = '参数已齐，计划已生成，等待批准。';
+      })
+      .catch(() => {
+        panel.dataset.planRequested = 'false';
+        summary.textContent = '参数已齐，但计划生成失败；可重新打开会话重试。';
+      });
+  }
   return panel;
 }
 
@@ -1825,6 +1917,11 @@ const RESEARCH_APPROVAL_STATUS_LABELS = {
   pending: '待处理', approved: '已批准', rejected: '已拒绝', declined: '已拒绝',
   superseded: '已被新版本替代', cancelled: '已取消',
 };
+
+function researchApprovalStatusText(status) {
+  const normalized = String(status || 'pending').toLowerCase();
+  return RESEARCH_APPROVAL_STATUS_LABELS[normalized] || '已处理';
+}
 
 function parseResearchProjection(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -1984,6 +2081,34 @@ function addConversationResearchRefresh(button) {
   panel.querySelector('.conversation-research-plan-actions')?.appendChild(refresh);
 }
 
+function showConversationResearchNextStep(panel, command, result = {}) {
+  if (!panel || command !== 'approve_plan') return;
+  const status = String(result?.status || result?.research_session?.status || '').toLowerCase();
+  const taskId = result?.research_task_id || result?.task?.research_task_id || '';
+  const notice = panel.querySelector('.conversation-research-next-step') || document.createElement('div');
+  notice.className = 'conversation-research-next-step';
+  notice.setAttribute('role', 'status');
+  notice.setAttribute('aria-live', 'polite');
+  const queued = ['queued', 'planning', 'running'].includes(status) || Boolean(taskId);
+  notice.textContent = queued
+    ? '计划已批准，研究任务已创建并进入队列。接下来系统会自动检索论文、评估候选并生成报告；你可以打开“研究”工作台查看实时进度。'
+    : '计划已批准，研究任务正在启动。稍后会在本会话显示执行进度和最终报告。';
+  if (!notice.parentNode) panel.appendChild(notice);
+  const actions = panel.querySelector('.conversation-research-plan-actions');
+  if (actions && !actions.querySelector('.conversation-research-open-task')) {
+    const openTask = document.createElement('button');
+    openTask.type = 'button';
+    openTask.className = 'secondary-button conversation-research-open-task';
+    openTask.textContent = '查看研究进度';
+    openTask.addEventListener('click', () => {
+      const nav = document.querySelector('[data-view="research"]');
+      if (nav) nav.click();
+      else window.location.hash = '#research-view';
+    });
+    actions.appendChild(openTask);
+  }
+}
+
 async function submitResearchSessionCommand(sessionId, command, subjectVersion, scopeJson, button, onSuccess = null) {
   if (!sessionId || !command || !button || button.dataset.state === 'loading' || button.dataset.state === 'success') return null;
   setResearchCommandState(button, 'loading', '提交中…'); button.disabled = true;
@@ -2018,7 +2143,7 @@ function renderConversationApprovals(panel, approvals, plan) {
     const kind = approval.kind;
     const card = document.createElement('article'); card.className = 'conversation-research-approval'; card.dataset.kind = kind; card.dataset.status = approval.status || 'pending';
     const heading = document.createElement('strong'); heading.className = 'conversation-research-approval-title'; heading.textContent = RESEARCH_APPROVAL_LABELS[kind];
-    const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = RESEARCH_APPROVAL_STATUS_LABELS[approval.status] || '待处理';
+    const status = document.createElement('span'); status.className = 'conversation-research-approval-status'; status.textContent = researchApprovalStatusText(approval.status);
     const meta = document.createElement('span'); meta.className = 'conversation-research-approval-meta'; meta.textContent = `版本 v${safeResearchScalar(approval.subject_version, '—')} · ${safeResearchScalar(approval.approval_request_id, '无 ID')}`;
     const pending = approval.status === 'pending';
     if (pending) {
@@ -2026,7 +2151,17 @@ function renderConversationApprovals(panel, approvals, plan) {
       const approveCommand = kind === 'plan' ? 'approve_plan' : kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
       const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'send-button conversation-research-command'; approve.dataset.command = approveCommand; approve.textContent = RESEARCH_COMMAND_LABELS[approveCommand];
       const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
-      approve.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, approveCommand, approval.subject_version, researchCommandScope(approveCommand, approval, plan), approve, () => { status.textContent = '已完成'; card.dataset.status = 'approved'; }));
+      approve.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, approveCommand, approval.subject_version, researchCommandScope(approveCommand, approval, plan), approve, (result) => {
+        status.textContent = approveCommand === 'approve_plan' ? '已批准' : '已完成';
+        card.dataset.status = 'approved';
+        controls.querySelectorAll('button').forEach((item) => { item.disabled = true; });
+        if (approveCommand === 'approve_plan') {
+          panel.dataset.status = result?.status || 'queued';
+          const meta = panel.querySelector('.conversation-research-plan-meta');
+          if (meta) meta.textContent = `计划 v${panel.dataset.subjectVersion || '—'} · 已批准，任务排队中`;
+          showConversationResearchNextStep(panel, approveCommand, result);
+        }
+      }));
       decline.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'decline_request', approval.subject_version, researchCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
       controls.append(approve, decline); card.append(heading, status, meta, controls);
     } else {
@@ -2071,6 +2206,15 @@ function updateConversationResearchPlan(assistantMessage, payload = {}) {
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button danger-button conversation-research-command'; cancel.dataset.command = 'cancel_research'; cancel.textContent = RESEARCH_COMMAND_LABELS.cancel_research;
     cancel.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'cancel_research', version, {}, cancel));
     actions.append(revise, cancel);
+  }
+  const planApproval = approvals.find((approval) => approval?.kind === 'plan');
+  const sessionStatus = String(payload.status || session.status || '').toLowerCase();
+  if (planApproval?.status === 'approved' || ['queued', 'planning', 'running', 'completed', 'partial'].includes(sessionStatus)) {
+    if (panel.dataset.status === 'proposed' && planApproval?.status === 'approved') panel.dataset.status = 'approved';
+    if (meta && (planApproval?.status === 'approved' || ['queued', 'planning', 'running'].includes(sessionStatus))) {
+      meta.textContent = `计划 v${version || '—'} · 已批准，任务${['queued', 'planning'].includes(sessionStatus) ? '排队中' : '执行中'}`;
+    }
+    showConversationResearchNextStep(panel, 'approve_plan', payload);
   }
   return panel;
 }
@@ -3182,7 +3326,7 @@ async function sendConversationMessage(question, { appendUser = true, userBubble
         assistantMessage.dataset.reasoningEffort = normalizeReasoningEffort(eventData.reasoning_effort || payload.reasoning_effort);
         assistantMessage.dataset.streamActive = 'true';
         setConversationStatus(assistantMessage.dataset.reasoningEffort === 'off' ? '正在生成回答…' : '模型正在准备思考…');
-      } else if (eventData.type !== 'processing_step' && !acceptConversationEvent(assistantMessage, eventData)) {
+      } else if (!acceptConversationEvent(assistantMessage, eventData)) {
         if (assistantMessage?.dataset.sequenceGap === 'true') {
           assistantMessage.dataset.streamActive = 'false';
           assistantMessage.classList.add('is-interrupted');

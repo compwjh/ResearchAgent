@@ -1,7 +1,7 @@
 # Task 04：实现报告生成、版本和导出
 
 > 关联：[Spec 030](../../specs/030-research-evidence-reporting.md) ｜ 索引：[README](./README.md)
-> 依赖：Task03；被依赖：Task05–06；当前状态：`待执行`
+> 依赖：Task03；被依赖：Task05–06；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -26,3 +26,4 @@
 ## 变更日志
 
 - 2026-09-12：创建报告生成与导出 Task。
+- 2026-09-17：复用既有安全渲染器实现 evidence-report-v1 版本化报告与三格式导出；定向测试 4 passed，判定 PASS。

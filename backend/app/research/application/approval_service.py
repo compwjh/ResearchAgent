@@ -119,8 +119,18 @@ class PlanApprovalService:
             status="proposed",
             created_at=now,
         )
-        self.store.create_session_plan(plan, owner_id)
-        self.store.update_session_links(session_id, owner_id, current_plan_version=version)
+        if hasattr(self.store, "create_session_plan_cas"):
+            result = self.store.create_session_plan_cas(
+                plan,
+                owner_id,
+                expected_current_version=session.current_plan_version,
+            )
+            if result is None:
+                raise ResearchCommandError("PLAN_VERSION_STALE", "计划版本已更新，请刷新计划卡")
+            plan, _saved_session = result
+        else:
+            self.store.create_session_plan(plan, owner_id)
+            self.store.update_session_links(session_id, owner_id, current_plan_version=version)
         self.store.supersede_session_plans(session_id, owner_id, version)
         self.store.supersede_approvals(session_id, owner_id, before_version=version)
         approval = self.store.create_approval(
@@ -284,6 +294,14 @@ class PlanApprovalService:
             updated = self.store.update_session_links(session.research_session_id, owner_id, **links)
             if updated.status != "queued":
                 updated = self.store.update_session_status(session.research_session_id, owner_id, "queued")
+            if plan is not None:
+                # Approval transitions the immutable plan version from the
+                # proposed view into the active execution view. Without this
+                # projection update the UI keeps rendering “待执行” forever.
+                with suppress(Exception):
+                    self.store.update_session_plan_status(
+                        session.research_session_id, owner_id, plan.version, "active"
+                    )
         except Exception as exc:
             raise ResearchCommandError("SOURCE_UNAVAILABLE", "研究会话链接暂时不可用") from exc
         if self.research_service is not None:

@@ -671,6 +671,42 @@ class MemoryEvolutionService:
             after = batch[-1].event_id
         return events
 
+    def _dispatch_memory_extraction(self, events, *, project_id: Optional[str], owner_id: str) -> None:
+        """Run model-backed memory extraction outside the checkpoint worker.
+
+        Evolution's durable contract is the checkpoint and conversation summary.
+        Memory extraction is a best-effort L1 side effect and may classify one
+        model input per raw event.  Keeping it on the checkpoint worker made a
+        large session (or a slow Ollama) remain ``running`` even after its
+        summary had been written.  Dispatch a daemon job instead so durable
+        progress is observable immediately and model latency cannot block
+        retries or chat responses.
+        """
+        snapshot = list(events)
+
+        def _run() -> None:
+            with contextlib.suppress(Exception):
+                from backend.app.chat.application.context_compaction import llm_available
+
+                # Avoid entering the classifier chain when the provider is not
+                # reachable.  This is deliberately inside the daemon as the
+                # probe is advisory and must not delay checkpoint completion.
+                if not llm_available():
+                    return
+                texts = [self._event_text(event) for event in snapshot]
+                for candidate, source_text in extract_memory_candidates(texts, project_id=project_id):
+                    write_memory_candidate(
+                        self.memory_store,
+                        candidate,
+                        source_text=source_text,
+                        project_id=project_id,
+                        repository=self.repository,
+                        owner_id=owner_id,
+                    )
+
+        with contextlib.suppress(Exception):
+            threading.Thread(target=_run, name="memory-evolution-extract", daemon=True).start()
+
     def process_session(self, conversation_id: str, owner_id: str, *, trigger: str = "idle", idempotency_key: Optional[str] = None, fail_after_batches: Optional[int] = None):
         if trigger not in self.TRIGGERS:
             raise ValueError("invalid memory evolution trigger")
@@ -699,26 +735,17 @@ class MemoryEvolutionService:
             source_event_id = events[-1].event_id if events else None
             if events:
                 self.repository.upsert_conversation_summary(owner_id, conversation_id, summary, source_event_id=source_event_id)
-                # spec-038 P3：每轮结束把**抽取出的长期记忆**落进 L1（MD 真相源）。
-                # 原此处把 raw event 物化为记忆候选（依赖已停用的 memories 表）已随表移除；
-                # 这里复用每消息分析同一条抽取链路（extract_memory_candidates +
-                # write_memory_candidate），绝不把整段会话摘要倾倒进 MEMORY.md。
-                # fail-open：抽取/写入失败绝不影响 checkpoint 完成。
-                with contextlib.suppress(Exception):
-                    # 快速失败：抽取依赖模型；模型端口不可达时直接跳过，避免
-                    # langchain 链路长时间重试把 checkpoint 卡在 running。
-                    from backend.app.chat.application.context_compaction import llm_available
-
-                    if llm_available():
-                        texts = [self._event_text(event) for event in events]
-                        project_id = conversation.project_id if conversation else None
-                        for candidate, source_text in extract_memory_candidates(texts, project_id=project_id):
-                            write_memory_candidate(
-                                self.memory_store, candidate,
-                                source_text=source_text, project_id=project_id,
-                                repository=self.repository, owner_id=owner_id,
-                            )
-            return self.repository.finish_evolution_checkpoint(checkpoint.checkpoint_id, owner_id, status="completed")
+            completed = self.repository.finish_evolution_checkpoint(checkpoint.checkpoint_id, owner_id, status="completed")
+            if events:
+                # L1 extraction is deliberately post-checkpoint: it is a
+                # best-effort side effect and must not hold the durable state
+                # in ``running`` while the classifier processes a large batch.
+                self._dispatch_memory_extraction(
+                    events,
+                    project_id=conversation.project_id if conversation else None,
+                    owner_id=owner_id,
+                )
+            return completed
         except Exception as error:
             checkpoint = locals().get("checkpoint")
             if checkpoint is not None:

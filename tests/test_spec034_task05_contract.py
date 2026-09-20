@@ -501,5 +501,8 @@ def test_orchestrator_agent_pipeline_creates_bound_run_per_work_item(tmp_path):
     result = Orchestrator(store=store, search_adapter=SimpleNamespace(), planner=planner, agent_runner=runner).run(task_id, "owner-a")
     items = store.list_work_items(task_id, plan_version=1)
     assert result.status == "completed" and items[0].status == "completed"
+    # AgentRunner may finalize the WorkItem before the orchestrator writes the
+    # serialized AgentRunOutput; terminal write-back must preserve that payload.
+    assert items[0].output_json and '"schema_version": "runtime-v1"' in items[0].output_json
     run = store.get_agent_run(f"{items[0].work_item_id}:run-1", "owner-a")
     assert run is not None and run.research_session_id == session_id and run.research_task_id == task_id and run.work_item_id == items[0].work_item_id

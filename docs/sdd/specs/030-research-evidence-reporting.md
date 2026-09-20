@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：待确认**
+**当前状态：已完成**
 
 ## 一句话目标
 
@@ -58,9 +58,12 @@
 - Markdown、HTML、JSON 三种视图语义一致；恶意论文文本不能注入界面或改变 Agent 权限。
 - 最终 Task 执行一次全量回归、浏览器验收、部署和复盘。
 
-## 产品使用步骤（由产品经理在 Spec 确认后填写）
+## 产品使用步骤
 
-- 待确认后补充查看矩阵、生成报告、展开引用和下载 Markdown/JSON 的旅程。
+1. 在已完成候选评估的 Research Task 中打开“证据矩阵”，查看每篇论文与比较维度的支持、反驳或缺失状态。
+2. 点击矩阵中的证据编号，展开论文、证据等级、页码或切片定位；缺失证据保持为空并显示覆盖缺口。
+3. 矩阵校验通过后点击“生成报告”，系统创建不可覆盖的新报告版本；生成期间显示任务状态，失败可重试且不发布半份报告。
+4. 报告完成后可查看 Markdown、HTML 和 JSON 三种只读视图，三种视图共享同一引用清单；需要迁移或复核时下载 Markdown/JSON。
 
 ## 执行配置
 
@@ -77,20 +80,23 @@
 | 编号 | 任务 | 文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 Spec030 | 本文件 | — | 完成 |
-| 02 | 冻结 Claim/Evidence 与报告协议 | [`task-02-evidence-report-contract.md`](../plans/030/task-02-evidence-report-contract.md) | Spec027；全文场景依赖029 | 待执行 |
-| 03 | 实现证据矩阵与校验 | [`task-03-evidence-matrix.md`](../plans/030/task-03-evidence-matrix.md) | 02 | 待执行 |
-| 04 | 实现报告生成、版本和导出 | [`task-04-report-generation-export.md`](../plans/030/task-04-report-generation-export.md) | 03 | 待执行 |
-| 05 | 实现报告工作台与引用交互 | [`task-05-report-workspace-ui.md`](../plans/030/task-05-report-workspace-ui.md) | 04 | 待执行 |
-| 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/030/task-06-review-regression-deploy.md) | 02–05 | 待执行 |
+| 02 | 冻结 Claim/Evidence 与报告协议 | [`task-02-evidence-report-contract.md`](../plans/030/task-02-evidence-report-contract.md) | Spec027；全文场景依赖029 | 已完成（GO_FOR_TASK03） |
+| 03 | 实现证据矩阵与校验 | [`task-03-evidence-matrix.md`](../plans/030/task-03-evidence-matrix.md) | 02 | 已完成 |
+| 04 | 实现报告生成、版本和导出 | [`task-04-report-generation-export.md`](../plans/030/task-04-report-generation-export.md) | 03 | 已完成 |
+| 05 | 实现报告工作台与引用交互 | [`task-05-report-workspace-ui.md`](../plans/030/task-05-report-workspace-ui.md) | 04 | 已完成 |
+| 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/030/task-06-review-regression-deploy.md) | 02–05 | 已完成 |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/030-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/030-tech-review.md`（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/030-acceptance-review.md`（待评审（未执行））
+- 需求评审：`docs/sdd/reviews/030-requirement-review.md`（通过；Task02 合同门）
+- 技术评审：`docs/sdd/reviews/030-tech-review.md`（通过；Task02 合同门）
+- 验收评审：`docs/sdd/reviews/030-acceptance-review.md`（通过；P1 已修复并复验）
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-12 | 架构师（自身） | 创建证据矩阵和深度报告 Spec |
+| 2026-09-17 | 架构师（自身） | 用户确认 Spec030，进入实施阶段；按 Task02–06 顺序开发，Task 阶段仅运行定向测试。 |
+| 2026-09-17 | Task06 收口审计（Luna high） | 完成唯一全量回归、运行时与浏览器 smoke、固定矩阵/manifest/三格式/安全审计；发现 `EvidenceReportError.message` 缺失导致未知报告路由 500 的 P1，保持实施中并退回主 Agent 修复。 |
+| 2026-09-17 | 主 Agent / Task06 | 修复报告错误响应与矩阵未就绪状态映射，补齐旧资源版本兼容标记；全量回归 2504 passed、1 skipped，部署 smoke 全部通过，Spec030 收口为已完成。 |

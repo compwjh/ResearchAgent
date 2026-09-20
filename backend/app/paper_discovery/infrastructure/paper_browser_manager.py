@@ -152,6 +152,28 @@ class _ProfileLock:
         handle.close()
 
 
+class _PageNavigationResponse:
+    """Adapt one ``page.goto`` navigation to the download pipeline's response seam.
+
+    The authenticated download pipeline only needs ``status`` / ``headers`` /
+    ``body()``, so a navigation can be swapped in for ``BrowserContext.request``
+    without touching any of the validation that follows it.  ``body`` stays
+    lazy on purpose: a blocked or missing response must never be downloaded
+    before its status has been checked.
+    """
+
+    __slots__ = ("status", "headers", "_body")
+
+    def __init__(self, status: Any, headers: Any, body: Any) -> None:
+        self.status = int(status or 0)
+        self.headers = headers or {}
+        self._body = body
+
+    def body(self) -> bytes:
+        value = self._body() if callable(self._body) else self._body
+        return value if isinstance(value, bytes) else bytes(value)
+
+
 class BrowserSession:
     """A single site-owned page; closing it always releases its site lock."""
 
@@ -309,12 +331,80 @@ class BrowserSession:
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         pdf_page_validator: Callable[[Path], int] | None = None,
     ) -> DownloadResult:
-        """Fetch one allowlisted PDF through this session's authenticated context.
+        """Fetch one allowlisted PDF through this session's real page navigation.
 
         Playwright's ``BrowserContext.request`` shares the persistent browser
-        storage state while keeping credentials inside the browser process.
+        storage state while keeping credentials inside the browser process, but
+        it sends its own User-Agent.  A bot-challenge clearance cookie is bound
+        to the browser instance that solved it (User-Agent + TLS +
+        fingerprint), so the origin invalidates the clearance and answers 403
+        even from a fully authenticated context (measured 2026-09-14 on
+        ``dl.acm.org``).  Driving the page's own navigation keeps those
+        consistent, so the clearance is honoured.
+
         Only a validated temporary file and safe download metadata leave this
         boundary; response headers and exception text are never returned.
+        """
+        return self._authenticated_pdf_download(
+            url,
+            fetch=self._fetch_via_page,
+            temp_dir=temp_dir,
+            max_bytes=max_bytes,
+            timeout_ms=timeout_ms,
+            max_redirects=max_redirects,
+            pdf_page_validator=pdf_page_validator,
+        )
+
+    #: Explicit spelling for callers that must not depend on the default
+    #: transport staying page-based.
+    authenticated_pdf_request_via_page = authenticated_pdf_request
+
+    def authenticated_pdf_request_via_api_request(
+        self,
+        url: Any,
+        *,
+        temp_dir: os.PathLike[str] | str | None = None,
+        max_bytes: int = MAX_PDF_BYTES,
+        timeout_ms: int | None = None,
+        max_redirects: int = DEFAULT_MAX_REDIRECTS,
+        pdf_page_validator: Callable[[Path], int] | None = None,
+    ) -> DownloadResult:
+        """Same pipeline over ``BrowserContext.request`` instead of the page.
+
+        Kept as an explicit transport for callers that must issue a request
+        without navigating the page.  It shares the session storage state but
+        is rejected by challenge-protected origins, so the page navigation is
+        the default.
+        """
+        return self._authenticated_pdf_download(
+            url,
+            fetch=self._fetch_via_api_request,
+            temp_dir=temp_dir,
+            max_bytes=max_bytes,
+            timeout_ms=timeout_ms,
+            max_redirects=max_redirects,
+            pdf_page_validator=pdf_page_validator,
+        )
+
+    def _authenticated_pdf_download(
+        self,
+        url: Any,
+        *,
+        fetch: Callable[[str, int, int], Any],
+        temp_dir: os.PathLike[str] | str | None = None,
+        max_bytes: int = MAX_PDF_BYTES,
+        timeout_ms: int | None = None,
+        max_redirects: int = DEFAULT_MAX_REDIRECTS,
+        pdf_page_validator: Callable[[Path], int] | None = None,
+    ) -> DownloadResult:
+        """Shared, transport-independent download pipeline.
+
+        ``fetch(url, timeout_ms, max_redirects)`` is the only difference
+        between the transports: it must issue one hop and return a response
+        exposing ``status`` / ``headers`` / ``body()``.  Everything else —
+        origin allowlist, per-hop redirect validation, size limit, PDF magic
+        and page count, private temp file, stable error codes — is shared so
+        no transport can be weaker than another.
         """
         # ``import_candidate`` invokes downloader callbacks with the complete
         # server-side candidate, while small callers may provide a URL
@@ -334,11 +424,7 @@ class BrowserSession:
             raise PaperDownloadError(DOWNLOAD_BLOCKED, "下载地址被安全策略拒绝") from error
         if isinstance(max_bytes, bool) or max_bytes < 1:
             raise PaperDownloadError(PDF_TOO_LARGE, "PDF 大小限制无效")
-        context = self.context or self.manager._context
-        request_context = getattr(context, "request", None)
-        get = getattr(request_context, "get", None)
-        if not callable(get):
-            raise BrowserManagerError(BROWSER_UNAVAILABLE, "浏览器认证请求当前不可用")
+        hop_timeout = timeout_ms or self.manager.page_timeout_ms
 
         private_dir: Path | None = None
         final_path: Path | None = None
@@ -350,15 +436,7 @@ class BrowserSession:
             os.chmod(private_dir, 0o700)
             redirects = 0
             while True:
-                # Playwright otherwise follows redirects inside the request
-                # context.  Disable that behavior and validate each Location
-                # before issuing the next authenticated request.
-                response = get(
-                    current.url,
-                    fail_on_status_code=False,
-                    timeout=timeout_ms or self.manager.page_timeout_ms,
-                    max_redirects=0,
-                )
+                response = fetch(current.url, hop_timeout, max_redirects)
                 status = int(getattr(response, "status", 0) or 0)
                 headers = getattr(response, "headers", {}) or {}
                 if status in (301, 302, 303, 307, 308):
@@ -440,6 +518,80 @@ class BrowserSession:
         finally:
             if not succeeded and private_dir is not None:
                 shutil.rmtree(private_dir, ignore_errors=True)
+
+    # --- transports ---------------------------------------------------------
+
+    def _fetch_via_page(self, url: str, timeout_ms: int, max_redirects: int) -> _PageNavigationResponse:
+        """Issue one navigation through the browser's own network stack.
+
+        ``wait_until="commit"`` returns as soon as the response has committed,
+        so the PDF body is not buffered twice.
+
+        The page is deliberately *not* route-intercepted.  Playwright calls a
+        route handler only for the first URL of a redirect chain, never for the
+        hops, so interception could not pre-validate a hop; and aborting would
+        target the very request that carries the clearance cookie.  Redirect
+        hops are instead validated from the navigation's own ``redirected_from``
+        chain — every hop through the same URL/allowlist/DNS machinery, with the
+        redirect budget enforced — *before* the response body is read.  The
+        trade-off against the API-request transport is that the browser may
+        already have issued a hop before Python can see it; nothing from that
+        host is read, written, or returned.
+        """
+        page = self.page
+        goto = getattr(page, "goto", None)
+        if not callable(goto):
+            raise BrowserManagerError(BROWSER_UNAVAILABLE, "浏览器页面导航当前不可用")
+        response = goto(url, wait_until="commit", timeout=timeout_ms)
+        if response is None:
+            raise PaperDownloadError(DOWNLOAD_BLOCKED, "浏览器导航未返回响应")
+        self._validate_navigation_chain(response, max_redirects)
+        return _PageNavigationResponse(
+            getattr(response, "status", 0),
+            getattr(response, "headers", {}) or {},
+            getattr(response, "body", b""),
+        )
+
+    def _validate_navigation_chain(self, response: Any, max_redirects: int) -> None:
+        """Validate every hop of a navigation before its body is read.
+
+        ``_fetch_via_page`` cannot observe redirects as they happen (see its
+        docstring), so this is what replaces the manual ``Location`` loop used
+        by the API-request transport.  It fails closed: an unenumerable chain,
+        an over-budget chain, or a hop that fails validation all raise the
+        stable ``DOWNLOAD_BLOCKED`` code without touching the response body.
+        """
+        hops: list[str] = []
+        request = getattr(response, "request", None)
+        while request is not None:
+            url = getattr(request, "url", None)
+            if isinstance(url, str) and url:
+                hops.append(url)
+            request = getattr(request, "redirected_from", None)
+        hops.reverse()
+        if not hops:
+            raise PaperDownloadError(DOWNLOAD_BLOCKED, "浏览器导航未返回可校验的请求链")
+        if len(hops) - 1 > max_redirects:
+            raise PaperDownloadError(DOWNLOAD_BLOCKED, "重定向次数超过限制")
+        for hop in hops:
+            try:
+                self._validate_download_url(hop)
+            except (URLSecurityError, BrowserManagerError) as error:
+                raise PaperDownloadError(DOWNLOAD_BLOCKED, "重定向目标被拒绝") from error
+
+    def _fetch_via_api_request(self, url: str, timeout_ms: int, _max_redirects: int) -> Any:
+        """Issue one hop through ``BrowserContext.request``.
+
+        Playwright otherwise follows redirects inside the request context;
+        disable that and let the shared pipeline validate each ``Location``
+        before the next request is issued.
+        """
+        context = self.context or self.manager._context
+        request_context = getattr(context, "request", None)
+        get = getattr(request_context, "get", None)
+        if not callable(get):
+            raise BrowserManagerError(BROWSER_UNAVAILABLE, "浏览器认证请求当前不可用")
+        return get(url, fail_on_status_code=False, timeout=timeout_ms, max_redirects=0)
 
     def _validate_download_url(self, url: str) -> ValidatedURL:
         """Apply the public downloader's URL checks to authenticated fetches."""

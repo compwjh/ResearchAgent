@@ -20,6 +20,24 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _stop_cached_conversation_workers():
+    """Prevent durable conversation workers from crossing test boundaries.
+
+    The workers are intentionally process-level singletons in production.  A
+    test that completes a checkpoint may still have a best-effort extraction
+    queued when the next test patches the model factory; that makes an
+    unrelated single-generation assertion observe extra calls.  Stop and
+    evict the cached workers both before and after every test.  Explicitly
+    constructed workers remain owned by their tests and are unaffected.
+    """
+    from backend.app.chat.application.conversation_service import stop_all_workers
+
+    stop_all_workers()
+    yield
+    stop_all_workers()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_default_memory_dir(tmp_path, monkeypatch):
     """把默认 MEMORY_DIR 隔离到 tmp，保证测试不写真实记忆目录。"""
     monkeypatch.setattr(
@@ -38,3 +56,20 @@ def _isolate_capability_db(tmp_path):
     yield
     capability_store.set_db_path(None)
     clear_reasoning_capability_cache()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ollama_model_cache():
+    """Do not let a sandbox/network failure poison another test's mock call.
+
+    The production model catalogue intentionally keeps a short negative cache.
+    Tests must start from an empty cache so ordering cannot make a patched
+    ``httpx.get`` call observe an earlier transport failure.
+    """
+    from backend.app.platform import ollama
+
+    ollama._models_cache.update(expires_at=0.0, models=None)
+    ollama._models_failure.update(expires_at=0.0, error=None)
+    yield
+    ollama._models_cache.update(expires_at=0.0, models=None)
+    ollama._models_failure.update(expires_at=0.0, error=None)

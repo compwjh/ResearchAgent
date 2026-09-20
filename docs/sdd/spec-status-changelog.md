@@ -5,6 +5,10 @@
 > **收口纪律**（见 `docs/sdd/SDD-GATE-CHECKLIST.md` §3）：状态流转须与本文件同步；
 > 转 `已完成` 前必须满足——三份评审有真实结论、验收签字栏已填、本文件已追加、变更日志补齐、引用路径真实存在、复盘已落盘。
 
+## 2026-09-17
+
+- **030 跨论文证据矩阵与深度研究报告 — Task06 收口** ｜ 实施中 → 实施中（P1 阻塞） ｜ 2026-09-17：唯一全量回归完成（2495 passed、5 failed、67 subtests、退出码 1），固定矩阵/manifest/三格式/前端安全与浏览器工作台 smoke 通过；真实未知报告请求因 `EvidenceReportError.message` 缺失返回 500（应 404），不得签字或标记 Spec030 已完成，等待业务修复后复验。
+
 ## 2026-09-13
 
 - **034 会话式深度研究与真实子 Agent Runtime** ｜ 新建 → 待确认 ｜ 2026-09-13T03:13:41+08:00：经多轮 Grilling 冻结普通会话意图识别、Deep Research Skill 多轮 Intake、计划版本与前端审批、真实 `ResearchAgentRunner` 子 Agent、Registry 授权与资源扩容、论文目录真实接线、`processing_steps` 一至三级树、报告 Artifact/通知/会话写回、Research Tab 复用及旧未绑定 Task 直接清理；Spec 与 Task02–10 已落盘。确认前不修改业务代码。本次研发会话的临时模型选择不写入长期规则、记忆或产品 Runtime。
@@ -318,3 +322,52 @@
 - **037 首屏就绪缺口与 UX bug 合集** ｜ 已完成 → **实施中（追加 Bug 6-8）** ｜ 2026-09-16：用户追加三项对话布局诉求，裁决**不另立 spec**、并入本 bug 合集（原拟的 039 已撤回）。新增 Bug 6 对话框模型选择器靠右（`.composer-footer .model-picker` 加 `margin-left:auto`，因它是首个子元素而渲染在最左）；Bug 7 聊天面板最多约两个屏幕高（`.chat-panel` 只有 `min-height` 无 `max-height`，被回答内容无限撑长，改为加上限 + `.messages` 内部滚动）；Bug 8 滚动右侧时左侧栏固定（`.sidebar` 未 sticky，改 `position:sticky` 且窄屏 ≤760px 行为不变）。grill 决策：Q1=A（左侧 tags 指整个侧边栏）、Q2=A（限高作用于整个聊天面板）。约束：不改 `#model-select` 逻辑、不得回退 Bug 1「上下文模块始终可见」契约。
 - **037 首屏就绪缺口与 UX bug 合集** ｜ 实施中（Bug 6-8） → **已完成** ｜ 2026-09-16：Bug 6-8 全部落地并实测。Bug 6 模型选择器：实测 `.composer-footer` 无剩余空间（`margin-left:auto` 会无效），改为把 `.model-picker` 移到发送按钮前（id/事件/联动不变），已靠右（left 1102 / right 1298，发送按钮 1310）。Bug 7 聊天面板限高：新增 `max-height: calc(200vh - 162px)`，注入 80 条消息后面板封顶 1638px、`.messages` 内部滚动（7352>1503）、页面总高 1796px = 2.00 屏（原本会撑到 8 屏）。Bug 8 侧边栏固定：`.sidebar` 加 `position:sticky; top:0; align-self:start; max-height:100vh; overflow-y:auto`，滚动 1200px 后 top 仍为 0。回归：node 契约 21/21、`node --check` 全过、前端契约 pytest 59 passed（3 个文件同步 `styles.css?v=52`）；`#context-meter` 始终可见未回退；窄屏（720px）`sidebar display=flex` 与改动前完全一致（既有行为，非回归）。注：子代理分派连续 429，Bug 6-8 由主会话直接实现。
 - **037 首屏就绪缺口与 UX bug 合集** ｜ 已完成 → 实施中（追加 Bug 9/10） → **已完成** ｜ 2026-09-16：Bug 9 用户报告「Ollama 挂了么/模型库不显示」——实测 Ollama 正常（11434 可生成，4.8s 返回），真因是 ResearchStore 的 SQLite 连接泄漏：进程 88,778 个句柄中 88,778 个全部指向 data/research/research.sqlite3（去重仅 87 路径），fd 耗尽致新建 httpx Client 抛 EMFILE，健康检查 500、模型库空白。修复：`_connect()` 改 `@contextmanager` 保证关闭（89 个调用点零改动），新增 5 用例（还原修复后 3 failed 证明可捕获），research 定向 62 passed、全量 2401 passed 无新增失败；重启后 fd 从 88,542 降至 144、health 200、模型库返回 11 个端侧模型。Bug 10 用户截图报告侧边栏「最近会话/工作区」重叠——复现确认为 **Bug 8 实施引入的回归**：`.sidebar` 限高后成为受约束 flex 容器，`.conversation-memory`（min-height:0）被压缩至 0 高、内容外溢（修复前 工作区 top=178 < 最近会话 top=197）。修复：`.sidebar > * { flex-shrink: 0 }`，超高走栏内滚动（修复后 工作区 412 在 最近会话 298 下方、mem 高 234、内部滚动 972>700、sticky 与上下文模块契约不回退）。回归：node 契约 21/21、前端契约 pytest 64 passed、`styles.css?v=53`。
+## 2026-09-16
+
+- **029 Research Task 全文获取与知识库联动 — Task02** ｜ 实施中 → **已完成（NO-GO）** ｜ 复用审计确认下载、导入、切片定位可复用，但 Research 侧审批、document link、AcquisitionEvent 和 EvidenceUpgrade 持久化缺失；`5 passed, 1 xfailed`，Task03 先补齐合同。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task04** ｜ 实施中 → **已完成** ｜ 接通 paused、pause/resume/cancel CAS、计划版本追加、审批幂等和 checkpoint 恢复接口；定向后端与 Spec027/034 受影响测试通过，未跑全量。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task05** ｜ 实施中 → **已完成** ｜ 前端接入暂停、继续、批准、取消、恢复提示和刷新/SSE 状态恢复；前端定向合同测试通过，待 Task06 收口。
+- **029 Research Task 全文获取与知识库联动 — Task03** ｜ 实施中 → **已完成** ｜ 新增审批、document link、AcquisitionEvent、EvidenceUpgrade 桥接并复用既有 PaperImportBatchService；定向测试 `9 passed`，未下载真实 PDF。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task03** ｜ 实施中 → **已完成** ｜ 新增可恢复租约、checkpoint、资源预约与公平轮转调度器，复用既有状态机与 ResourceProbe；定向测试 `10 passed`，未跑全量。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task02** ｜ 实施中 → **已完成（GO）** ｜ ResearchStore 启用 WAL 与 30 秒 busy timeout；跨进程租约、过期接管、旧 token 拒绝、checkpoint CAS、终态不可逆及公平调度合同通过，定向测试 `6 passed`。
+- **034 会话式深度研究与真实子 Agent Runtime** ｜ 已完成 → **实施中（Task11）** ｜ 真实 Smoke 生成的 Markdown 只有一篇证据对象和引用清单；新增 Task11 补强 USENIX 至少五篇候选保留及实质性报告输出，完成后重新验收收口。
+- **028 Research Task 可靠调度、计划版本与恢复** ｜ 待确认 → **实施中（Task02）** ｜ 用户明确要求跳过等待并继续开发，先执行 SQLite WAL、租约、checkpoint 与公平调度 Go/No-Go 门禁。
+- **029 Research Task 全文获取与知识库联动** ｜ 待确认 → **实施中（等待 028 调度合同）** ｜ 用户明确要求连续推进；全文下载与导入仍依赖 028 的可靠调度合同，暂不越过前置门禁。
+- **029 Research Task 全文获取与知识库联动 — Task04** ｜ 实施中 → **已完成** ｜ 2026-09-16：接通既有 `hybrid_search` 与 inspection manifest，新增 EvidenceUpgradeService 和 evidence-upgrade API；证据保存文档、切片、页码、源哈希与 manifest 指纹，删除/重建/变更时 fail-closed。定向验证 12 passed，组合回归 69 passed、5 subtests。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task06** ｜ 实施中 → **收口中** ｜ 2026-09-16：收口审查发现恢复 API/UI、评审台账和部署 smoke 证据缺口；已补齐 `POST /recover`、前端“检查并恢复”按钮及定向测试，待最终评审、全量回归和部署验证。
+- **029 Research Task 全文获取与知识库联动 — Task05** ｜ 实施中 → **已完成** ｜ 2026-09-16：完成候选增删、只读预览、显式确认、逐篇导入状态、登录等待、失败重试和全文证据定位入口；确认前不下载。前端定向 15 passed、Node 语法/合同检查通过，待 Task06 收口。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task06** ｜ 收口中 → **实施中（运行时证据已部分补齐）** ｜ 2026-09-16：真实 FastAPI 与 Research 页面加载 smoke 已通过，最终全量回归 2450 passed；按钮旅程与强退恢复尚未执行，继续保留实施中。
+- **029 Research Task 全文获取与知识库联动 — Task06** ｜ 待执行 → **实施中** ｜ 2026-09-16：完成三份评审、全量回归和服务页面 smoke；真实公开 PDF/KB 导入与全文证据仍未执行，验收保持 NO-GO。
+- **034 会话式深度研究与真实子 Agent Runtime — Task11** ｜ 实施中 → **已完成（实现与目录复验）** ｜ 2026-09-16：使用现有 USENIX 缓存候选池 `search_id=dd5c47aa0cb541188b884c27fa233e67` 固定复验 5 篇模糊测试论文；`ReportSynthesizer` 产出 5 条引用、约 8.9k 字符 Markdown，标题/摘要来自目录，关键词缺失时明确不补写。全量回归另发现既有会话压缩 worker 用例阻塞，Spec034 总收口仍保持实施中。
+- **034 会话式深度研究与真实子 Agent Runtime** ｜ 实施中 → **已完成** ｜ 2026-09-16T22:28:29+08:00：人工验收通过后修复 Intake 流序号导致的假中断、活跃研究冲突按钮无响应、计划操作按钮字号和目录详情降级丢候选；合并 `origin/main` 后全量回归 `2478 passed, 1 skipped, 67 subtests`，验收材料和复盘同步完成。
+- **028 Research Task 可靠调度、计划版本与恢复 — Task06** ｜ 收口中 → **已完成** ｜ 2026-09-16：补齐 `GET /api/research-scheduler/status`，聚合队列、额度和安全摘要且不泄露租约 token；Spec028 定向回归 `24 passed`，最终全量回归 `2481 passed, 1 skipped, 5 warnings, 67 subtests`，8500 本机重启 smoke 的 health、首页、scheduler status 均 HTTP 200，收口文档与部署记录已同步。
+- **028 Research Task 可靠调度、计划版本与恢复** ｜ 实施中（Task06） → **已完成** ｜ 2026-09-16：Task02–06 全部完成，租约/checkpoint/公平调度、暂停/审批/取消/恢复、scheduler status 与状态台账完成；本地 `main` 已包含本 Spec 代码和文档，未 push。
+
+## 2026-09-17
+
+- **029 Research Task 全文获取与知识库联动 — Task06** ｜ 实施中 → **已完成** ｜ 修复本地优先检索缺少服务端快照句柄、Research Task 未持久化 `search_id` 和确认句柄未校验的问题；真实验证任务 `3eee288b8e5a512dad3dad524d787c63` 完成 preview→确认→既有批次→公开 USENIX PDF 导入→v1 索引→全文证据升级，最终全量回归 `2486 passed / 1 skipped / 5 warnings / 67 subtests` 退出码 0，用户人工验收通过。
+- **029 Research Task 全文获取与知识库联动** ｜ 实施中 → **已完成** ｜ Task02–06 收口，评审、运行时证据、部署记录和复盘均已落盘；本地 `main` 已包含 Spec029 修改，远程 `origin/main` 已是本地分支祖先，无需重复合并。
+## 2026-09-17
+
+- **Spec 030：跨论文证据矩阵与深度研究报告**：`待确认` → `实施中`。用户明确确认“确认 Spec030/按此执行”，开始按 Task02–06 顺序实施；Task 开发阶段执行定向测试，Spec 收口时再执行全量回归。
+- **Spec030 Task02：冻结 Claim/Evidence 与报告协议**：`实施中` → `已完成`。Luna high 子 Agent 完成 `evidence-report-v1` 合同、固定样本与 4 项定向测试，结果 `GO_FOR_TASK03`。
+- **Spec030 Task03：实现证据矩阵与校验**：`待执行` → `实施中`。依赖合同已冻结，开始接入既有 ResearchStore 和全文 provenance。
+- **Spec030 Task03：实现证据矩阵与校验**：`实施中` → `已完成`。完成 Claim/Evidence/ComparisonDimension/Cell 持久化、owner/version 隔离及矩阵 POST/GET；定向测试 3 passed，全文 provenance 复用 Spec029。
+- **Spec030 Task04：实现报告生成、版本和导出**：`待执行` → `实施中`。开始复用既有报告合成/Artifact 能力，接入 `evidence-report-v1` 矩阵和三格式只读导出。
+- **Spec030 Task04：实现报告生成、版本和导出**：`实施中` → `已完成`。完成不可覆盖 `ResearchReport` 版本、citation manifest 回查、Markdown/HTML/JSON 一致导出；定向测试 4 passed，受影响后端 89 passed。
+- **Spec030 Task05：实现报告工作台与引用交互**：`待执行` → `实施中`。开始接入矩阵、版本化报告、引用展开与只读下载 UI。
+- **Spec030 Task05：实现报告工作台与引用交互**：`实施中` → `已完成`。完成证据矩阵、覆盖缺口、版本/格式视图、citation 展开和现有切片定位；`node --check`、前端定向测试 35 passed。
+- **Spec030 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 均已通过各自定向门禁，开始唯一全量回归、浏览器 smoke、部署和收口评审。
+- **Spec030 Task06：最终评审、回归、部署与复盘**：`实施中（P1）` → `已完成`。修复 `EvidenceReportError` 错误出口与矩阵未就绪状态映射，保留旧资源版本兼容标记；后端复核通过，全量回归 2504 passed、1 skipped、67 subtests，运行时 smoke 的 health/root=200、未知矩阵=404、未知报告=404、非法格式=406。
+- **Spec 030：跨论文证据矩阵与深度研究报告**：`实施中` → `已完成`。Task02–06 全部完成，证据矩阵、不可变三格式报告、引用定位 UI、验收评审、部署验证和复盘均已落盘；未 push/merge。
+- **Spec 031：动态模型路由与资源调度优化**：`待确认` → `实施中`。用户确认所有 Spec，开始 Task02 单/多实例与 9B Worker 基准门；子 Agent 临时使用 Luna high，Task 阶段只运行定向测试。
+- **Spec031 Task02：单实例/多实例与 Worker 基准门**：`实施中` → `已完成（单实例条件放行）`。真实 1–4 Worker 基准全部 HTTP 200、失败率 0%；热吞吐提升约 28.1% 但 TTFT 约 3.45×，ResourceProbe cap=1；多实例因无第二实例/资源证据保持 NO-GO。Task03 仅按单实例 shadow/观测路径继续，P1/P2 证据增强列入 Task06。
+- **Spec031 Task03：实现路由观测与 Shadow Policy**：`待执行` → `实施中`。Task02 仅放行单实例、ResourceProbe 约束的观测路径；开始记录脱敏决策/结果、策略回放和不可阻塞降级。
+- **Spec031 Task03：实现路由观测与 Shadow Policy**：`实施中` → `已完成（单实例条件放行）`。完成值级敏感内容拒绝、ResearchStore owner/幂等隔离、生产 opt-in 观测装配和不改变生产选择的 shadow replay；独立复审 GO，定向回归 111 passed、5 subtests。生产 outcome 自动记录与 Task02 benchmark 证据增强列入 Task06。
+- **Spec031 Task04：实现内存感知 Worker 扩缩与策略激活**：`待执行` → `实施中`。Task03 复审 GO，开始在单机/单实例门禁内接入现有 ResourceProbe、ResearchScheduler 与资源预约；多实例、自动下载/卸载和跨机器调度保持禁止。
+- **Spec031 Task04：实现内存感知 Worker 扩缩与策略激活**：`实施中` → `已完成（后端 GO）`。完成 strong 跨 scheduler 原子单并发、过期 quota 恢复、同任务 grant 隔离、服务端 evidence gate 与原子策略激活；reviewer/tester 均 GO，定向回归 154 passed、5 subtests。runtime smoke、权限边界与 Task02 provenance 留给 Task06。
+- **Spec031 Task05：实现路由解释与基准界面**：`待执行` → `实施中`。Task04 reviewer/tester GO，启动前端只读解释视图和受控基准状态；不开放策略编辑、不显示敏感文本、不修改后端。
+- **Spec031 Task05：实现路由解释与基准界面**：`实施中` → `已完成（前端 GO）`。完成脱敏模型/原因/Worker/升级解释和 warm/cold 基准卡；reviewer/tester 均 GO，43 passed，严格数值与路径 fail-closed 通过。`routing_benchmark` 投影留作 Task06 P2。
+- **Spec031 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 门禁均通过，开始唯一全量回归、前后端运行时 smoke、部署证据和最终复盘；多实例 NO-GO 与遗留 P2 只做诚实记录。
+- **Spec031 Task06：最终评审、回归、部署与复盘**：`实施中` → `已完成`。修复 benchmark 质量/provenance、压缩 worker 持久化顺序、测试 worker 隔离及论文评估安全选集投影；最终全量回归 `2539 passed, 5 warnings, 67 subtests`，8500 部署 smoke 通过。
+- **Spec031：动态模型路由与资源调度优化**：`实施中` → `已完成`。Task02–06、三份评审、复盘和运行时验证已收口；仅单实例范围 GO，多实例明确 NO-GO。

@@ -30,6 +30,9 @@ class ResearchTask:
     updated_at: str
     project_id: str | None = None
     completed_at: str | None = None
+    # Server-owned catalog snapshot handle used by the Spec029 acquisition bridge.
+    # Keep it optional for pre-bridge tasks and legacy positional constructors.
+    search_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +51,7 @@ class ResearchTask:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
+            "search_id": self.search_id,
         }
 
     @classmethod
@@ -68,6 +72,7 @@ class ResearchTask:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             completed_at=row.get("completed_at"),
+            search_id=row.get("search_id"),
         )
 
 
@@ -228,6 +233,89 @@ class ResearchWorkItem:
         return value if isinstance(value, dict) else {}
 
 
+@dataclass(frozen=True)
+class SchedulerLease:
+    """Durable ownership lease for one schedulable task/work item.
+
+    ``task_id`` is intentionally generic: the scheduler uses a WorkItem id
+    today, while recovery callers may use a task id.  The database is the
+    source of truth for ownership; this value is only a read model.
+    """
+
+    task_id: str
+    owner_token: str | None
+    expires_at: str | None
+    heartbeat_at: str | None
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            task_id=row["task_id"],
+            owner_token=row.get("owner_token"),
+            expires_at=row.get("expires_at"),
+            heartbeat_at=row.get("heartbeat_at"),
+        )
+
+
+@dataclass(frozen=True)
+class SchedulerCheckpoint:
+    """Durable scheduler hand-off written before a node is advanced."""
+
+    task_id: str
+    plan_version: int
+    node_id: str
+    state_json: str
+    input_digest: str
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            task_id=row["task_id"],
+            plan_version=int(row["plan_version"]),
+            node_id=row["node_id"],
+            state_json=row["state_json"],
+            input_digest=row["input_digest"],
+            created_at=row.get("created_at", ""),
+            updated_at=row.get("updated_at", ""),
+        )
+
+
+@dataclass(frozen=True)
+class ResourceReservation:
+    """A bounded, expiring reservation held by the global scheduler."""
+
+    worker_id: str
+    model_tier: str
+    estimated_bytes: int
+    expires_at: str
+    task_id: str | None = None
+    reservation_id: str | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            worker_id=row["worker_id"],
+            model_tier=row["model_tier"],
+            estimated_bytes=int(row["estimated_bytes"]),
+            expires_at=row["expires_at"],
+            task_id=row.get("task_id"),
+            reservation_id=row.get("reservation_id"),
+            created_at=row.get("created_at", ""),
+        )
+
+
 @dataclass
 class ResearchEvent:
     """研究任务事件：用于 SSE 持久化与断线恢复的安全事件流。"""
@@ -297,6 +385,389 @@ class ResearchPaperSelection:
 
 
 @dataclass
+class AcquisitionApproval:
+    """Immutable user confirmation snapshot for one Research selection version.
+
+    ``paper_ids`` are catalog identifiers only.  The batch/document stores
+    remain the owners of candidate snapshots and canonical document ids.
+    """
+
+    task_id: str
+    selection_version: int
+    paper_ids: list[str]
+    status: str
+    idempotency_key: str | None = None
+    batch_id: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "research_task_id": self.task_id,
+            "selection_version": int(self.selection_version),
+            "paper_ids": list(self.paper_ids),
+            "status": self.status,
+            "batch_id": self.batch_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        raw = row.get("paper_ids_json") or "[]"
+        try:
+            paper_ids = json.loads(raw)
+        except (TypeError, ValueError):
+            paper_ids = []
+        if not isinstance(paper_ids, list):
+            paper_ids = []
+        return cls(
+            task_id=row.get("task_id", row.get("research_task_id")),
+            selection_version=int(row["selection_version"]),
+            paper_ids=[str(value) for value in paper_ids],
+            status=row["status"],
+            idempotency_key=row.get("idempotency_key"),
+            batch_id=row.get("batch_id"),
+            created_at=row.get("created_at", ""),
+            updated_at=row.get("updated_at", ""),
+        )
+
+
+@dataclass
+class ResearchDocumentLink:
+    """Reference from a catalog paper to an existing KB/import item."""
+
+    task_id: str
+    catalog_paper_id: str
+    document_id: str | None = None
+    import_item_id: str | None = None
+    status: str = "queued"
+    error_code: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "research_task_id": self.task_id,
+            "catalog_paper_id": self.catalog_paper_id,
+            "document_id": self.document_id,
+            "import_item_id": self.import_item_id,
+            "status": self.status,
+            "error_code": self.error_code,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            task_id=row.get("task_id", row.get("research_task_id")),
+            catalog_paper_id=row["catalog_paper_id"],
+            document_id=row.get("document_id"),
+            import_item_id=row.get("import_item_id"),
+            status=row.get("status", "queued"),
+            error_code=row.get("error_code"),
+            created_at=row.get("created_at", ""),
+            updated_at=row.get("updated_at", ""),
+        )
+
+
+@dataclass
+class EvidenceUpgrade:
+    """Durable status projection for a claim's full-text evidence upgrade."""
+
+    claim_id: str
+    from_level: str
+    to_level: str
+    chunk_ids: list[str]
+    status: str
+    task_id: str | None = None
+    document_id: str | None = None
+    page: int | None = None
+    page_end: int | None = None
+    created_at: str = ""
+    source_sha256: str | None = None
+    manifest_generation: str | None = None
+    manifest_fingerprint: str | None = None
+    chunker: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "claim_id": self.claim_id,
+            "from_level": self.from_level,
+            "to_level": self.to_level,
+            "chunk_ids": list(self.chunk_ids),
+            "status": self.status,
+            "task_id": self.task_id,
+            "document_id": self.document_id,
+            "page": self.page,
+            "page_end": self.page_end,
+            "created_at": self.created_at,
+            "source_sha256": self.source_sha256,
+            "manifest_generation": self.manifest_generation,
+            "manifest_fingerprint": self.manifest_fingerprint,
+            "chunker": self.chunker,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            chunk_ids = json.loads(row.get("chunk_ids_json") or "[]")
+        except (TypeError, ValueError):
+            chunk_ids = []
+        return cls(
+            claim_id=row["claim_id"],
+            from_level=row["from_level"],
+            to_level=row["to_level"],
+            chunk_ids=[str(value) for value in chunk_ids] if isinstance(chunk_ids, list) else [],
+            status=row["status"],
+            task_id=row.get("task_id", row.get("research_task_id")),
+            document_id=row.get("document_id"),
+            page=row.get("page"),
+            page_end=row.get("page_end"),
+            created_at=row.get("created_at", ""),
+            source_sha256=row.get("source_sha256"),
+            manifest_generation=row.get("manifest_generation"),
+            manifest_fingerprint=row.get("manifest_fingerprint"),
+            chunker=row.get("chunker"),
+        )
+
+
+@dataclass
+class ResearchClaim:
+    """A versioned, independently auditable research conclusion."""
+
+    claim_id: str
+    task_id: str
+    topic: str
+    statement: str
+    confidence: str
+    status: str
+    plan_version: int = 1
+    evidence_ids: list[str] | None = None
+    created_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "claim_id": self.claim_id, "task_id": self.task_id,
+            "research_task_id": self.task_id, "topic": self.topic,
+            "statement": self.statement, "confidence": self.confidence,
+            "status": self.status, "plan_version": int(self.plan_version),
+            "evidence_ids": list(self.evidence_ids or []), "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            ids = json.loads(row.get("evidence_ids_json") or "[]")
+        except (TypeError, ValueError):
+            ids = []
+        return cls(
+            claim_id=row["claim_id"], task_id=row.get("task_id", row.get("research_task_id")),
+            topic=row["topic"], statement=row["statement"], confidence=row["confidence"],
+            status=row["status"], plan_version=int(row.get("plan_version", 1)),
+            evidence_ids=[str(item) for item in ids] if isinstance(ids, list) else [],
+            created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
+class ClaimEvidence:
+    """A claim-to-catalog-paper relation with a server-verifiable locator."""
+
+    evidence_id: str
+    claim_id: str
+    task_id: str
+    paper_id: str
+    evidence_level: str
+    stance: str
+    status: str
+    quote_digest: str = ""
+    locator: dict | None = None
+    plan_version: int = 1
+    created_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "evidence_id": self.evidence_id, "claim_id": self.claim_id,
+            "task_id": self.task_id, "research_task_id": self.task_id,
+            "paper_id": self.paper_id, "evidence_level": self.evidence_level,
+            "stance": self.stance, "status": self.status,
+            "quote_digest": self.quote_digest, "locator": dict(self.locator or {}),
+            "plan_version": int(self.plan_version), "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            locator = json.loads(row.get("locator_json") or "{}")
+        except (TypeError, ValueError):
+            locator = {}
+        return cls(
+            evidence_id=row["evidence_id"], claim_id=row["claim_id"],
+            task_id=row.get("task_id", row.get("research_task_id")), paper_id=row["paper_id"],
+            evidence_level=row["evidence_level"], stance=row["stance"], status=row["status"],
+            quote_digest=row.get("quote_digest", ""), locator=locator if isinstance(locator, dict) else {},
+            plan_version=int(row.get("plan_version", 1)), created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
+class ComparisonDimension:
+    """A stable comparison axis within one research plan version."""
+
+    dimension_id: str
+    task_id: str
+    label: str
+    definition: str
+    display_order: int
+    plan_version: int = 1
+    created_at: str = ""
+
+    @property
+    def id(self) -> str:
+        return self.dimension_id
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.dimension_id, "dimension_id": self.dimension_id,
+            "task_id": self.task_id, "research_task_id": self.task_id,
+            "label": self.label, "definition": self.definition,
+            "order": int(self.display_order), "display_order": int(self.display_order),
+            "plan_version": int(self.plan_version), "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            dimension_id=row.get("dimension_id", row.get("id")),
+            task_id=row.get("task_id", row.get("research_task_id")),
+            label=row["label"], definition=row["definition"],
+            display_order=int(row.get("display_order", row.get("order", 0))),
+            plan_version=int(row.get("plan_version", 1)), created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
+class PaperComparisonCell:
+    """One auditable claim/paper/dimension matrix cell."""
+
+    claim_id: str
+    paper_id: str
+    dimension_id: str
+    relation: str
+    summary: str
+    evidence_ids: list[str] | None = None
+    task_id: str = ""
+    plan_version: int = 1
+    missing_reason: str | None = None
+    created_at: str = ""
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "claim_id": self.claim_id, "paper_id": self.paper_id,
+            "dimension_id": self.dimension_id, "relation": self.relation,
+            "summary": self.summary, "evidence_ids": list(self.evidence_ids or []),
+            "task_id": self.task_id, "research_task_id": self.task_id,
+            "plan_version": int(self.plan_version), "missing_reason": self.missing_reason,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            ids = json.loads(row.get("evidence_ids_json") or "[]")
+        except (TypeError, ValueError):
+            ids = []
+        return cls(
+            claim_id=row["claim_id"], paper_id=row["paper_id"], dimension_id=row["dimension_id"],
+            relation=row["relation"], summary=row["summary"],
+            evidence_ids=[str(item) for item in ids] if isinstance(ids, list) else [],
+            task_id=row.get("task_id", row.get("research_task_id", "")),
+            plan_version=int(row.get("plan_version", 1)), missing_reason=row.get("missing_reason"),
+            created_at=row.get("created_at", ""),
+        )
+
+
+# Descriptive compatibility alias: the contract calls this relation
+# ``ClaimEvidence`` while a few callers use the aggregate-prefixed name.
+ResearchClaimEvidence = ClaimEvidence
+
+
+@dataclass
+class AcquisitionEvent:
+    """A projection of an existing import item state, not a second state machine."""
+
+    paper_id: str
+    phase: str
+    status: str
+    error_code: str | None = None
+    task_id: str = ""
+    batch_id: str | None = None
+    import_item_id: str | None = None
+    created_at: str = ""
+    event_id: str | None = None
+
+    @property
+    def research_task_id(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "event_id": self.event_id,
+            "task_id": self.task_id,
+            "research_task_id": self.task_id,
+            "paper_id": self.paper_id,
+            "phase": self.phase,
+            "status": self.status,
+            "error_code": self.error_code,
+            "batch_id": self.batch_id,
+            "import_item_id": self.import_item_id,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            event_id=row.get("event_id"),
+            task_id=row.get("task_id", row.get("research_task_id")),
+            paper_id=row["paper_id"],
+            phase=row["phase"],
+            status=row["status"],
+            error_code=row.get("error_code"),
+            batch_id=row.get("batch_id"),
+            import_item_id=row.get("import_item_id"),
+            created_at=row.get("created_at", ""),
+        )
+
+
+@dataclass
 class PreliminaryReport:
     """初步/正式研究报告：只读正文，结论必须带论文引用。"""
 
@@ -329,6 +800,61 @@ class PreliminaryReport:
             markdown=row["markdown"],
             limitations_json=row["limitations_json"],
             created_at=row["created_at"],
+        )
+
+
+@dataclass
+class ResearchReport:
+    """Immutable Spec030 evidence report projection.
+
+    The JSON projection is the canonical semantic model; Markdown and HTML
+    are deterministic delivery views of the same row.  It deliberately lives
+    beside ``PreliminaryReport`` so legacy Spec027 writers remain untouched.
+    """
+
+    report_id: str
+    research_task_id: str
+    plan_version: int
+    report_version: int
+    status: str
+    markdown: str
+    html: str
+    report_json: str
+    limitations_json: str = "[]"
+    created_at: str = ""
+
+    @property
+    def task_id(self) -> str:
+        return self.research_task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "report_id": self.report_id,
+            "research_task_id": self.research_task_id,
+            "task_id": self.research_task_id,
+            "plan_version": int(self.plan_version),
+            "report_version": int(self.report_version),
+            "status": self.status,
+            "markdown": self.markdown,
+            "html": self.html,
+            "report_json": self.report_json,
+            "limitations_json": self.limitations_json,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        return cls(
+            report_id=row["report_id"],
+            research_task_id=row.get("research_task_id", row.get("task_id")),
+            plan_version=int(row["plan_version"]),
+            report_version=int(row["report_version"]),
+            status=row["status"],
+            markdown=row.get("markdown", ""),
+            html=row.get("html", ""),
+            report_json=row.get("report_json", "{}"),
+            limitations_json=row.get("limitations_json", "[]"),
+            created_at=row.get("created_at", ""),
         )
 
 

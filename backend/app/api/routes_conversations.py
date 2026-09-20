@@ -72,6 +72,14 @@ from backend.app.platform.ollama import (
     resolve_reasoning_effort,
 )
 from backend.app.research.application.intake import DEFAULT_FIELDS, ResearchIntakeCoordinator
+from backend.app.research.application.intake_projection import (
+    build_intake_projection,
+    build_plan_projection,
+    persist_intake_projection,
+    persist_plan_projection,
+)
+from backend.app.research.application.approval_service import PlanApprovalService
+from backend.app.research.application.session_plan_generation import ensure_session_plan
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.service import SkillRegistryService
 from backend.app.skills.tool_service import ToolRegistryService
@@ -92,6 +100,23 @@ def _build_research_intake_coordinator():
 
 
 register_provider("research_intake_coordinator", _build_research_intake_coordinator)
+
+
+def _ensure_research_session_plan(session):
+    """Generate the first plan after a complete conversational Intake."""
+    if session is None:
+        return None
+    state_path = KB_DIR / "skill-state.json"
+    approval_service = PlanApprovalService(
+        store=get_provider("research_store"),
+        memory_repository=_repo(),
+        skill_registry=SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
+        tool_registry=ToolRegistryService(build_default_tool_registry(), state_path),
+    )
+    return ensure_session_plan(
+        get_provider("research_store"), session, OWNER_ID,
+        approval_service.author_plan,
+    )
 
 
 def _repo() -> MemoryRepository:
@@ -201,62 +226,33 @@ def _intake_projection_for_message(repo, item, owner_id=OWNER_ID):
     return None
 
 
+def _plan_projection_for_message(repo, item, owner_id=OWNER_ID):
+    """Read the durable, allowlisted Session plan projection for history."""
+    if item.role != "assistant":
+        return None
+    try:
+        steps = repo.list_processing_steps(item.message_id, owner_id)
+    except Exception:
+        logger.warning("unable to load historical research plan projection", exc_info=True)
+        return None
+    for step in reversed(steps):
+        if step.kind != "research_plan" or not step.detail_json:
+            continue
+        try:
+            projection = json.loads(step.detail_json)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(projection, dict) and projection.get("schema_version") == "task04-plan-v1":
+            return projection
+    return None
+
+
 def _intake_projection_from_result(result):
-    """Build the durable, UI-safe projection without persisting Skill body."""
-    fields = []
-    for item in result.fields:
-        fields.append({
-            "field_name": item.field_name,
-            "value_json": item.value_json,
-            "source": item.source,
-            "confidence": item.confidence,
-            "confirmation_status": item.confirmation_status,
-            "message_id": item.updated_by_message_id,
-        })
-    activation_skill = (result.activation or {}).get("skill") or {}
-    skill = None
-    if activation_skill:
-        skill = {
-            "skill_id": activation_skill.get("skill_id"),
-            "name": activation_skill.get("name"),
-            "description": activation_skill.get("description"),
-            "version": activation_skill.get("version"),
-            "content_hash": activation_skill.get("content_hash"),
-            "tools": activation_skill.get("tools", []),
-        }
-    session = result.session.to_dict() if result.session else None
-    if session:
-        session = {
-            "research_session_id": session.get("research_session_id"),
-            "intake_draft_id": session.get("intake_draft_id"),
-            "status": session.get("status"),
-        }
-    return {
-        "schema_version": "task03-intake-v1",
-        "status": result.status,
-        "fields": fields,
-        "missing": list(result.missing),
-        "choices": list(result.choices),
-        "question": result.question,
-        "skill": skill,
-        "research_session": session,
-    }
+    return build_intake_projection(result)
 
 
 def _persist_intake_projection(repo, assistant_message, result):
-    projection = _intake_projection_from_result(result)
-    status = "failed" if result.status == "error" else "completed"
-    session = projection.get("research_session") or {}
-    repo.create_processing_step(
-        assistant_message.message_id,
-        "research_intake",
-        status,
-        "研究 Intake 已保存" if status == "completed" else "研究 Intake 失败",
-        label="研究 Intake",
-        node_key=f"research-intake:{assistant_message.message_id}",
-        detail_json=json.dumps(projection, ensure_ascii=False, sort_keys=True),
-        research_session_id=session.get("research_session_id"),
-    )
+    return persist_intake_projection(repo, assistant_message, result)
 
 
 def _message_payload(item, repo=None, owner_id=OWNER_ID):
@@ -266,6 +262,12 @@ def _message_payload(item, repo=None, owner_id=OWNER_ID):
         if intake is not None:
             payload["intake"] = intake
             payload["research_intake"] = intake
+        plan = _plan_projection_for_message(repo, item, owner_id)
+        if plan is not None:
+            payload["plan"] = plan.get("plan")
+            payload["approval"] = plan.get("approval")
+            payload["research_session_id"] = plan.get("research_session_id")
+            payload["research_plan"] = plan.get("plan")
         report = _research_report_projection(repo, item, owner_id)
         if report is not None:
             payload["report"] = report
@@ -1043,6 +1045,22 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
     owner_id = getattr(user_message, "owner_id", OWNER_ID)
     def generate():
         started = time.monotonic()
+        sequencer = EventSequencer(assistant_message.message_id)
+
+        def frame(event_type: str, **payload):
+            output = sequencer.emit(event_type, **payload)
+            if output:
+                try:
+                    repo.record_event_seq(
+                        assistant_message.message_id,
+                        owner_id,
+                        sequencer.event_seq,
+                        terminal_status=payload.get("status") if event_type == "done" else None,
+                    )
+                except Exception as error:
+                    logger.warning("intake event sequence persistence unavailable: %s", error)
+            return output
+
         try:
             _persist_intake_projection(repo, assistant_message, result)
         except Exception:
@@ -1050,7 +1068,7 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
             # temporarily unavailable; the error is observable in logs and
             # the next turn can retry its own durable projection.
             logger.exception("unable to persist research intake projection")
-        yield stream_event(
+        yield frame(
             "meta",
             project_id=conversation.project_id,
             conversation_id=conversation.conversation_id,
@@ -1061,19 +1079,47 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
             reasoning_effort=reasoning_effort,
         )
         if result.activation:
-            yield stream_event(
+            yield frame(
                 "skill_activation",
                 status="completed" if result.activation.get("ok") else "failed",
                 skill=(result.activation.get("skill") or {}).get("name"),
                 description=(result.activation.get("skill") or {}).get("description"),
             )
+        plan_result = None
+        plan_error = None
+        if result.status == "intake" and not result.missing and result.session is not None:
+            yield frame(
+                "processing_step",
+                step_id=f"research-plan:{assistant_message.message_id}",
+                kind="research_plan",
+                status="running",
+                label="研究计划",
+                summary="参数已齐，正在生成研究计划…",
+            )
+            try:
+                plan_result = _ensure_research_session_plan(result.session)
+                if plan_result:
+                    persist_plan_projection(repo, assistant_message, plan_result)
+            except Exception as error:
+                logger.exception("unable to generate conversational research session plan")
+                plan_error = error
+            yield frame(
+                "processing_step",
+                step_id=f"research-plan:{assistant_message.message_id}",
+                kind="research_plan",
+                status="completed" if plan_result else "failed",
+                label="研究计划",
+                summary=("研究计划已生成，等待用户批准。" if plan_result else "计划生成失败，可重试。"),
+            )
+            if plan_result:
+                yield frame("plan", **plan_result)
         if result.status == "active_conflict":
             # This is an interactive, recoverable choice rather than a
             # failed turn.  Keep the assistant completed so the user can
             # choose how to proceed and preserve the active Session.
             content = "当前会话已有进行中的研究，请选择修改当前研究、取消后新建或在新会话研究。"
             repo.update_message(assistant_message.message_id, owner_id, content=content, status="completed")
-            yield stream_event(
+            yield frame(
                 "intake",
                 status=result.status,
                 research_session=(result.session.to_dict() if result.session else None),
@@ -1082,7 +1128,7 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
                 choices=result.choices,
                 question=None,
             )
-            yield stream_event(
+            yield frame(
                 "done",
                 conversation_id=conversation.conversation_id,
                 message_id=assistant_message.message_id,
@@ -1093,8 +1139,8 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
         if result.error:
             content = result.error.get("message", "研究请求暂时无法处理")
             repo.update_message(assistant_message.message_id, owner_id, content=content, status="failed")
-            yield stream_event("error", **result.error)
-            yield stream_event(
+            yield frame("error", **result.error)
+            yield frame(
                 "done",
                 conversation_id=conversation.conversation_id,
                 message_id=assistant_message.message_id,
@@ -1111,9 +1157,15 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
         elif result.status == "active_conflict":
             content = result.error.get("message", "当前会话已有进行中的研究") if result.error else "当前会话已有进行中的研究"
         else:
-            content = result.question or "研究 Intake 已保存，参数齐全后将生成计划。"
+            content = (
+                "研究计划已生成，等待你批准后开始执行。"
+                if plan_result
+                else "研究 Intake 已保存，参数齐全后将生成计划。"
+            )
+            if plan_error:
+                content = "研究参数已齐，但计划生成失败，可重新发送时间范围或刷新会话重试。"
         repo.update_message(assistant_message.message_id, owner_id, content=content, status="completed")
-        yield stream_event(
+        yield frame(
             "intake",
             status=result.status,
             research_session=(result.session.to_dict() if result.session else None),
@@ -1122,7 +1174,7 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
             choices=result.choices,
             question=result.question,
         )
-        yield stream_event(
+        yield frame(
             "done",
             conversation_id=conversation.conversation_id,
             message_id=assistant_message.message_id,

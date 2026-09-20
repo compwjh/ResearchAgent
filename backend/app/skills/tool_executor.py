@@ -59,6 +59,10 @@ class DispatchResult:
     name: str
     output: str = ""
     error: str = ""
+    # Server-owned catalog search handle.  This is structured metadata rather
+    # than part of the human-readable output so downstream runtimes never
+    # need to guess a handle from model/tool text.
+    search_id: str | None = None
 
 
 # model_call: (messages, tools) -> ModelResponse

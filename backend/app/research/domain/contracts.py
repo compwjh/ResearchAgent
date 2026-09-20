@@ -107,6 +107,7 @@ TASK_STATUSES = frozenset(
         "draft",
         "planning",
         "running",
+        "paused",
         "waiting_approval",
         "partial",
         "completed",
@@ -119,9 +120,10 @@ TASK_STATUSES = frozenset(
 # ResearchTask 状态转移表（终态不得回到 running）。
 TASK_TRANSITIONS = {
     "draft": {"planning"},
-    "planning": {"running", "cancelled"},
-    "running": {"waiting_approval", "partial", "completed", "failed", "cancelled", "interrupted"},
-    "waiting_approval": {"running", "completed", "failed", "cancelled", "interrupted", "partial"},
+    "planning": {"running", "paused", "cancelled"},
+    "running": {"waiting_approval", "paused", "partial", "completed", "failed", "cancelled", "interrupted"},
+    "paused": {"running", "cancelled"},
+    "waiting_approval": {"running", "paused", "completed", "failed", "cancelled", "interrupted", "partial"},
     "partial": set(),
     "completed": set(),
     "failed": set(),

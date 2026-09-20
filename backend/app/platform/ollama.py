@@ -564,9 +564,14 @@ class ResourceProbe:
         granted = self._scheduler.acquire(task_id, requested, cap)
         return granted, code
 
-    def release(self, task_id: str) -> None:
-        """释放该 task 占用的 Worker 额度。"""
-        self._scheduler.release(task_id)
+    def release(self, task_id: str, *, count: int | None = None) -> None:
+        """释放该 task 占用的 Worker 额度。
+
+        ``count`` is used by durable expiry/grant recovery to avoid clearing
+        another live grant belonging to the same task.  ``None`` preserves the
+        legacy release-all behavior.
+        """
+        self._scheduler.release(task_id, count=count)
 
 
 class _GlobalWorkerScheduler:
@@ -584,15 +589,31 @@ class _GlobalWorkerScheduler:
 
     def acquire(self, task_id: str, requested: int, cap: int) -> int:
         with self._lock:
+            cap = max(1, int(cap))
+            requested = max(0, int(requested))
             per_task = max(1, cap // 2)  # 全局上限，任一 Task 最多拿一半，保证均分
+            current = self._grants.get(task_id, 0)
             used = sum(self._grants.values())
-            grant = max(0, min(int(requested), per_task, cap - used))
-            self._grants[task_id] = self._grants.get(task_id, 0) + grant
+            # A task may ask for more than once, but repeated calls may not
+            # bypass the per-task fairness cap.  This also prevents a retry
+            # loop from consuming every slot before another task gets a turn.
+            remaining_for_task = max(0, per_task - current)
+            grant = max(0, min(requested, remaining_for_task, cap - used))
+            if grant:
+                self._grants[task_id] = current + grant
             return grant
 
-    def release(self, task_id: str) -> None:
+    def release(self, task_id: str, *, count: int | None = None) -> None:
         with self._lock:
-            self._grants.pop(task_id, None)
+            if count is None:
+                self._grants.pop(task_id, None)
+                return
+            current = self._grants.get(task_id, 0)
+            remaining = current - max(0, int(count))
+            if remaining > 0:
+                self._grants[task_id] = remaining
+            else:
+                self._grants.pop(task_id, None)
 
     def in_use(self) -> int:
         with self._lock:

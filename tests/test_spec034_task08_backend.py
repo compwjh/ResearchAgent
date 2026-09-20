@@ -8,7 +8,12 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.memory.repository import MemoryRepository
-from backend.app.research.application.orchestrator import Orchestrator, _validate_evaluator_scope
+from backend.app.research.application.orchestrator import (
+    Orchestrator,
+    _sanitize_evaluator_binding,
+    _validated_evaluator_candidates,
+    _validate_evaluator_scope,
+)
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.processing_projector import ProcessingStepProjector
 from backend.app.research.application.report_synthesis import (
@@ -19,8 +24,9 @@ from backend.app.research.application.report_synthesis import (
     render_markdown_html,
     report_output_hash,
 )
+from backend.app.research.application.research_service import ResearchService
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter, SearchOutcome
-from backend.app.research.domain.models import ResearchArtifact, ResearchNotification
+from backend.app.research.domain.models import ResearchArtifact, ResearchNotification, ResearchTask
 from backend.app.research.infrastructure.research_store import ResearchArtifactConflict, ResearchStore
 
 
@@ -70,6 +76,96 @@ def test_evaluator_output_is_bound_to_search_worker_candidates_and_refs():
     )
 
 
+def test_aggregate_evaluator_output_expands_catalog_refs_into_candidates():
+    metadata = {
+        "c1": {"candidate_id": "c1", "title": "Paper one"},
+        "c2": {"candidate_id": "c2", "title": "Paper two"},
+    }
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": ["catalog:c1", "catalog:c2"],
+    }
+    records = _validated_evaluator_candidates([output], metadata)
+    assert [item["candidate_id"] for item in records] == ["c1", "c2"]
+    assert [item["evidence_refs"] for item in records] == [["catalog:c1"], ["catalog:c2"]]
+    assert [item["title"] for item in records] == ["Paper one", "Paper two"]
+
+
+def test_aggregate_evaluator_output_reads_safe_summary_catalog_refs():
+    metadata = {"c1": {"candidate_id": "c1", "title": "Paper one"}}
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": [],
+        "safe_summary": {"source_refs": ["catalog:c1"]},
+    }
+    records = _validated_evaluator_candidates([output], metadata)
+    assert records == [{
+        "candidate_id": "c1",
+        "verified": True,
+        "evidence_refs": ["catalog:c1"],
+        "title": "Paper one",
+    }]
+
+
+def test_evaluator_binding_uses_only_allowlisted_catalog_refs():
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": [],
+        "source_refs": ["research-paper-evaluation", "catalog:c1"],
+    }
+    normalized = _sanitize_evaluator_binding(output, {"catalog:c1"})
+    assert normalized["source_refs"] == ["catalog:c1"]
+    assert normalized["evidence_refs"] == ["catalog:c1"]
+
+
+def test_aggregate_evaluator_binding_promotes_safe_summary_catalog_refs():
+    output = {
+        "candidate_id": None,
+        "keep": True,
+        "evidence_refs": [],
+        "safe_summary": {
+            "source_refs": ["research-paper-evaluation", "catalog:c1", "catalog:outside"],
+        },
+    }
+    normalized = _sanitize_evaluator_binding(output, {"catalog:c1"})
+    assert normalized["safe_summary"]["source_refs"] == ["catalog:c1"]
+    assert normalized["evidence_refs"] == ["catalog:c1"]
+
+
+def test_report_endpoint_compatibility_reads_completed_markdown_artifact():
+    task = ResearchTask(
+        research_task_id="task-artifact", owner_id="owner-a", project_id=None,
+        conversation_id="conversation-a", goal="goal", language="zh",
+        quality_profile="speed", review_plan_first=True, target_paper_count=5,
+        soft_budget_seconds=1, status="completed", current_plan_version=1,
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+    )
+    artifact = ResearchArtifact(
+        artifact_id="artifact-md", research_task_id=task.research_task_id,
+        report_version=1, artifact_type="markdown", content_hash="hash",
+        generated_by_agent_run_id="syn-run", content="# report",
+        created_at="2026-01-01T00:00:01Z",
+    )
+
+    class Store:
+        def get_task(self, task_id, owner_id):
+            return task if (task_id, owner_id) == (task.research_task_id, task.owner_id) else None
+
+        def get_report(self, task_id, plan_version=None):
+            return None
+
+        def list_artifacts_for_task(self, task_id, owner_id, *, report_version=None):
+            return [artifact]
+
+    report = ResearchService(store=Store()).get_report(task.research_task_id, task.owner_id)
+    assert report.report_id == "artifact:artifact-md"
+    assert report.markdown == "# report"
+    assert json.loads(report.limitations_json)["artifact_backed"] is True
+
+
 @pytest.mark.parametrize("unsafe", ["https://example.invalid/report", "/tmp/report.md", "prompt: hidden", "C:\\secrets\\report"])
 def test_synthesizer_rejects_unsafe_title_and_heading_inputs(unsafe):
     with pytest.raises(ReportSynthesisError):
@@ -114,6 +210,26 @@ def test_synthesizer_consumes_model_output_only_with_evaluator_allowlist():
         )
 
 
+def test_consume_report_keeps_verified_candidates_omitted_by_model():
+    payload = {
+        "schema_version": "report-synthesis-v1", "report_version": 1,
+        "sections": [{"heading": "主题综述", "candidate_ids": ["c1"], "summary": "目录级摘要对照"}],
+        "citation_manifest": [{"citation_ref": "catalog:c1", "candidate_id": "c1"}],
+        "artifact_ids": [], "safe_summary": {"candidate_count": 5},
+        "source_refs": ["catalog:c1"],
+    }
+    payload["output_hash"] = report_output_hash(payload)
+    candidates = [
+        {"candidate_id": f"c{i}", "verified": True, "evidence_refs": [f"catalog:c{i}"],
+         "title": f"Paper {i}", "abstract": f"Abstract {i}"}
+        for i in range(1, 6)
+    ]
+    result = ReportSynthesizer().consume_validated_output(output=payload, validated_candidates=candidates)
+    assert "目录证据补充" in result.markdown
+    assert all(f"Paper {i}" in result.markdown for i in range(1, 6))
+    assert len(result.output.citation_manifest) == 5
+
+
 def test_synthesizer_output_is_hashed_and_html_escapes_xss():
     result = ReportSynthesizer().synthesize(
         report_version=1,
@@ -125,6 +241,30 @@ def test_synthesizer_output_is_hashed_and_html_escapes_xss():
     assert len(result.output.output_hash) == 64
     assert "<script>" not in result.html and "&lt;script&gt;" in result.html
     assert "catalog:c1" in result.markdown
+
+
+def test_synthesizer_renders_verified_catalog_metadata_and_rejects_unsafe_fields():
+    candidate = {
+        "candidate_id": "c1", "verified": True, "evidence_refs": ["catalog:c1"],
+        "title": "Supply-chain defenses",
+        "abstract": "A catalog abstract describing bounded defenses.",
+        "keywords": ["supply chain", "defense"],
+    }
+    result = ReportSynthesizer().synthesize(
+        report_version=1,
+        validated_candidates=[candidate],
+        citation_manifest=["catalog:c1"],
+        sections=[{"heading": "方法与主题：防御", "candidate_ids": ["c1"]}],
+    )
+    assert "#### Supply-chain defenses" in result.markdown
+    assert "- 摘要：A catalog abstract describing bounded defenses." in result.markdown
+    assert "- 关键词：supply chain、defense" in result.markdown
+    with pytest.raises(ReportSynthesisError):
+        ReportSynthesizer().synthesize(
+            report_version=1,
+            validated_candidates=[{**candidate, "abstract": "https://untrusted.invalid/paper"}],
+            citation_manifest=["catalog:c1"],
+        )
 
 
 def test_artifact_is_immutable_and_owner_scoped(tmp_path):
@@ -252,6 +392,7 @@ def test_notification_sse_polls_cursor_and_replays_new_items(monkeypatch):
     stream = routes_research._notification_event_stream(0, max_polls=2, poll_seconds=0)
     assert next(stream) == ": heartbeat\n\n"
     assert "id: 1" in next(stream)
+    assert "event: stream_end" in list(stream)[-1]
 
 
 def test_historical_conversation_message_includes_safe_report_projection(tmp_path, monkeypatch):

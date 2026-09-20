@@ -1,0 +1,29 @@
+# Spec031 Task06：Task02 benchmark 证据补强交接
+
+- 结果状态和摘要：**完成（Task02 质量/provenance P1 已补齐，单实例 cap=1 与多实例 NO-GO 不变）**
+- 根因：原 harness 仅用 HTTP `<400` 判定请求成功，未校验固定 JSON 的值级语义；原始 JSON 未保存与 ResourceProbe 同口径的可用内存/模型 footprint 快照，也没有 listener/备用端口探针或足以复现的运行环境 provenance。因此“HTTP 成功”不能作为质量门，NO-GO 证据不能只靠 raw 重放。
+- 改动文件：
+  - `docs/sdd/plans/031/artifacts/task-02/ollama-topology-benchmark.py`
+  - `docs/sdd/plans/031/artifacts/task-02/benchmark-raw.json`
+  - `docs/sdd/plans/031/artifacts/task-02/benchmark-report.md`
+  - `tests/test_spec031_task02_benchmark_contract.py`
+  - `docs/sdd/plans/031/artifacts/task-06/benchmark-evidence-fix-report.md`
+- 具体变化：
+  - 流式响应累积 content，并要求 `json.loads(content) == {"ok": true}`；失败显式记录 `QUALITY_ASSERTION_FAILED`，不再把 HTTP `<400` 直接当成功。
+  - 每档记录 `response_json_valid`、`response_text`、`quality_error`；真实重新采集的全部 30 个样本质量断言通过。
+  - 增加只读 ResourceProbe 同口径记录：可用内存、模型 footprint、已加载模型数、20% margin、usable bytes、`max_safe_workers`、时间戳和失败码。
+  - 增加 `lsof` listener 快照和 11434–11438 `/api/tags` 备用端口探针；真实结果为 11434 可达、11435–11438 连接拒绝。
+  - 增加 schema、Python/平台/架构、git revision/dirty、固定 prompt SHA-256、参数和 PID provenance；`--output` 由 harness 生成 raw，避免手工改写。
+- 测试命令、退出码和结果：
+  - `.venv/bin/python docs/sdd/plans/031/artifacts/task-02/ollama-topology-benchmark.py --warm-waves 2 --workers 1,2,3,4 --output docs/sdd/plans/031/artifacts/task-02/benchmark-raw.json`：exit 0；首次 30.01 秒，随后为 listener 脱敏刷新 28.35 秒；真实 Ollama 运行，30/30 固定 JSON 断言通过。
+  - `.venv/bin/python -m py_compile docs/sdd/plans/031/artifacts/task-02/ollama-topology-benchmark.py tests/test_spec031_task02_benchmark_contract.py`：exit 0。
+  - `.venv/bin/python -m pytest -q --noconftest tests/test_spec031_task02_benchmark_contract.py`：exit 0；2 passed。
+  - `git diff --check -- docs/sdd/plans/031/artifacts/task-02 tests/test_spec031_task02_benchmark_contract.py`：exit 0。
+- 运行结果：四档 warm failure rate 均为 0；ResourceProbe 每档 `max_safe_workers=1`；多实例备用端口无服务，未启动或修改第二 Ollama。
+- 风险：本次只补强 benchmark 证据，不证明多实例收益，也不改变生产调度；raw provenance 明确记录本次工作树 dirty（因为 Task06 其他 artifact 同时存在）。`response_text` 仅为固定测试 JSON，不含业务 Prompt/回答。
+- 主 Agent 后续动作：将本报告与 Task06 全量回归报告一起复核；若全量回归仍有失败，只修复可归属于当前收口范围的阻塞，不放宽 Task02 门禁；最终 Spec031 仍保持单实例 cap=1、多实例 NO-GO。
+- 开始时间：2026-09-17T16:33:27+08:00
+- 结束时间：2026-09-17T16:40:23+08:00
+- 总耗时：约 6 分 56 秒（含两次真实基准执行）
+- 模型：Luna high（临时 backend-dev 子 Agent）
+- Token / 工具调用统计：未提供；使用本地 shell、apply_patch 和 `.venv` 定向测试。

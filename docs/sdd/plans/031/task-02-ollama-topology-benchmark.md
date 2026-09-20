@@ -1,7 +1,7 @@
 # Task 02：单实例/多实例与 Worker 基准门
 
 > 关联：[Spec 031](../../specs/031-dynamic-model-resource-routing.md) ｜ 索引：[README](./README.md)
-> 依赖：Spec027/028 完成、Spec031 确认及双评审；被依赖：Task03–06；当前状态：`待执行`
+> 依赖：Spec027/028 完成、Spec031 确认及双评审；被依赖：Task03–06；当前状态：`已完成（单实例条件放行）`
 
 ## 一句话目标
 
@@ -21,8 +21,10 @@
 ## 主 Agent 校验、风险与产出
 
 - 统计口径必须相同；超时记录环境，不能改写为性能结论。
-- 产出基准数据、合同测试和 Go/No-Go 报告；执行结果待填写。
+- 产出基准数据、合同测试和 Go/No-Go 报告；多实例保持 NO-GO，Task03 仅按单实例 cap=1 继续。
+- Task06 前补齐固定 JSON 质量校验、ResourceProbe/环境 provenance 和 raw 汇总一致性合同。
 
 ## 变更日志
 
 - 2026-09-12：创建 Ollama 拓扑基准 Task。
+- 2026-09-17：完成 1–4 Worker 真实基准；单实例 GO（当前 ResourceProbe cap=1），多实例 NO-GO/blocked。复核有条件通过，Task03 仅限单实例 shadow/观测路径；P1/P2 证据增强列入 Task06。

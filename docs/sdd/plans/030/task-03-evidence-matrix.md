@@ -1,7 +1,7 @@
 # Task 03：实现跨论文证据矩阵
 
 > 关联：[Spec 030](../../specs/030-research-evidence-reporting.md) ｜ 索引：[README](./README.md)
-> 依赖：Task02 GO；被依赖：Task04–06；当前状态：`待执行`
+> 依赖：Task02 GO；被依赖：Task04–06；当前状态：`已完成`
 
 ## 一句话目标
 
@@ -26,3 +26,4 @@
 ## 变更日志
 
 - 2026-09-12：创建证据矩阵实现 Task。
+- 2026-09-17：完成 `evidence-report-v1` 矩阵后端与 POST/GET 接口；定向测试 3 passed，判定 PASS。

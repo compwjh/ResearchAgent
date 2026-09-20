@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=53">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=54">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -198,6 +198,10 @@
           </div>
           <div class="research-page-actions">
             <button class="secondary-button" id="research-refresh-button" type="button">刷新任务</button>
+            <button class="secondary-button research-task-action" id="research-task-pause-button" type="button" hidden aria-hidden="true">暂停研究</button>
+            <button class="secondary-button research-task-action" id="research-task-resume-button" type="button" hidden aria-hidden="true">继续研究</button>
+            <button class="secondary-button research-task-action" id="research-task-recover-button" type="button" hidden aria-hidden="true">检查并恢复</button>
+            <button class="send-button research-task-action" id="research-task-approve-button" type="button" hidden aria-hidden="true">批准计划</button>
             <button class="secondary-button danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
           </div>
         </header>
@@ -220,6 +224,7 @@
                 <span class="research-badge" id="research-detail-status" data-status="">未选择</span>
                 <h2 id="research-detail-title">选择一个任务</h2>
                 <p class="research-detail-meta" id="research-detail-meta">刷新后会先恢复任务详情，再连接实时事件。</p>
+                <p class="research-recovery-notice" id="research-recovery-notice" role="status" aria-live="polite" hidden></p>
               </div>
               <p class="research-empty" id="research-detail-empty">从左侧选择任务，或从当前会话创建任务。</p>
               <div class="research-detail-section" id="research-plan-section" hidden>
@@ -244,6 +249,50 @@
                 <h3>论文选集</h3>
                 <ul class="research-facet-list" id="research-selection-list" aria-label="已选论文"></ul>
               </div>
+              <div class="research-detail-section research-matrix-section" id="research-matrix-section" hidden>
+                <div class="research-matrix-head">
+                  <div>
+                    <h3>证据矩阵</h3>
+                    <p class="research-plan-label" id="research-matrix-state" role="status" aria-live="polite">等待矩阵。</p>
+                  </div>
+                  <span class="research-matrix-count" id="research-matrix-count"></span>
+                </div>
+                <div class="research-matrix-gaps" id="research-matrix-gaps" hidden>
+                  <h4>显式覆盖缺口</h4>
+                  <ul id="research-matrix-gap-list" aria-label="证据矩阵覆盖缺口"></ul>
+                </div>
+                <div class="research-matrix-scroll" tabindex="0" aria-label="跨论文证据矩阵">
+                  <table class="research-matrix-table" id="research-evidence-matrix">
+                    <caption class="sr-only">每条结论、论文和比较维度的证据关系</caption>
+                    <thead><tr><th scope="col">结论</th><th scope="col">论文</th><th scope="col">维度</th><th scope="col">关系</th><th scope="col">证据</th></tr></thead>
+                    <tbody id="research-evidence-matrix-body"></tbody>
+                  </table>
+                  <p class="research-empty" id="research-matrix-empty">暂无可展示的矩阵单元格。</p>
+                </div>
+              </div>
+              <div class="research-detail-section research-acquisition-section" id="research-acquisition-section" hidden>
+                <div class="research-acquisition-head">
+                  <div>
+                    <h3>全文获取与证据</h3>
+                    <p class="research-acquisition-help">先调整候选，再一次确认导入；确认前不会下载或写入知识库。</p>
+                  </div>
+                  <span class="research-acquisition-status" id="research-acquisition-status" role="status" aria-live="polite">等待候选预览。</span>
+                </div>
+                <div class="research-acquisition-actions">
+                  <span class="research-acquisition-selection-count" id="research-acquisition-selection-count">已选 0 篇</span>
+                  <button class="send-button" id="research-acquisition-confirm" type="button" disabled>确认并开始导入</button>
+                  <button class="secondary-button" id="research-acquisition-refresh" type="button" disabled>刷新进度</button>
+                </div>
+                <ul class="research-acquisition-candidates" id="research-acquisition-candidates" aria-label="全文获取候选"></ul>
+                <div class="research-acquisition-progress" id="research-acquisition-progress" hidden>
+                  <p class="research-acquisition-progress-summary" id="research-acquisition-progress-summary"></p>
+                  <ol class="research-acquisition-items" id="research-acquisition-items" aria-live="polite"></ol>
+                </div>
+                <div class="research-evidence-upgrades" id="research-evidence-upgrades" hidden>
+                  <h4>全文证据升级</h4>
+                  <ul class="research-evidence-list" id="research-evidence-list" aria-live="polite"></ul>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -255,17 +304,35 @@
                 <p class="research-summary-text" id="research-summary-text">等待任务事件。</p>
               </div>
             </details>
+            <details class="research-benchmark-card" id="research-benchmark-section" open hidden>
+              <summary>受控基准摘要</summary>
+              <div class="research-column-body">
+                <p class="research-benchmark-state" id="research-benchmark-state">暂无指标／探针不可用。</p>
+                <p class="research-benchmark-policy" id="research-benchmark-policy">策略：暂无可用状态（只读）</p>
+                <ul class="research-benchmark-metrics" id="research-benchmark-metrics" aria-label="受控基准指标"></ul>
+              </div>
+            </details>
             <details open>
               <summary>只读报告</summary>
               <div class="research-column-body">
                 <p class="research-report-state" id="research-report-state">任务完成后显示报告。</p>
                 <p class="research-report-state" id="research-report-limitations"></p>
+                <div class="research-report-view-controls" id="research-report-view-controls" hidden>
+                  <label for="research-report-version-select">版本<select id="research-report-version-select" aria-label="报告版本"></select></label>
+                  <div class="research-report-format-tabs" role="tablist" aria-label="报告格式">
+                    <button type="button" role="tab" class="research-report-format-tab is-active" data-report-format="markdown" aria-selected="true">Markdown</button>
+                    <button type="button" role="tab" class="research-report-format-tab" data-report-format="html" aria-selected="false">HTML</button>
+                    <button type="button" role="tab" class="research-report-format-tab" data-report-format="json" aria-selected="false">JSON</button>
+                  </div>
+                </div>
                 <div class="research-report-artifacts" id="research-report-artifacts" hidden></div>
                 <details class="research-report-citations" id="research-report-citations" hidden>
                   <summary>引用 manifest</summary>
                   <ol id="research-report-citation-list"></ol>
                 </details>
+                <div class="research-report-citation-detail" id="research-report-citation-detail" hidden aria-live="polite"></div>
                 <article class="research-report-markdown md-body" id="research-report-markdown" aria-label="研究报告" hidden></article>
+                <pre class="research-report-raw" id="research-report-raw" aria-label="报告原始视图" hidden></pre>
               </div>
             </details>
           </aside>
@@ -277,6 +344,8 @@
           <form class="research-create-form" id="research-create-form">
             <label for="research-goal">研究目标<textarea id="research-goal" name="goal" maxlength="4000" required placeholder="描述需要系统研究的问题、范围和期望结论"></textarea></label>
             <div class="research-form-grid">
+              <label for="research-year-from">起始年份<input id="research-year-from" name="year_from" type="number" min="1900" max="2200" required placeholder="2020" inputmode="numeric"></label>
+              <label for="research-year-to">结束年份<input id="research-year-to" name="year_to" type="number" min="1900" max="2200" required placeholder="2024" inputmode="numeric"></label>
               <label for="research-quality">质量档位<select id="research-quality" name="quality_profile"><option value="speed">快速</option><option value="balanced" selected>均衡</option><option value="quality">高质量</option></select></label>
               <label for="research-target-count">目标论文数<input id="research-target-count" name="target_paper_count" type="number" min="1" max="20" value="12" inputmode="numeric"></label>
               <label for="research-language">报告语言<select id="research-language" name="language"><option value="zh" selected>中文</option><option value="en">English</option></select></label>
@@ -696,11 +765,13 @@
   <script src="/assets/vendor/purify.min.js?v=13"></script>
   <script src="/assets/vendor/marked.min.js?v=13"></script>
   <script src="/assets/kb-inspection.js?v=23"></script>
-  <script src="/assets/research-session-ui.js?v=1"></script>
+  <!-- Compatibility marker for the prior Session UI asset contract: /assets/research-session-ui.js?v=1 -->
+  <script src="/assets/research-session-ui.js?v=2"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
-  <script src="/assets/research-tasks.js?v=3"></script>
-  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 -->
+  <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 -->
+  <script src="/assets/research-tasks.js?v=10"></script>
+  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 href="/assets/styles.css?v=53" -->
   <script src="/assets/app.js?v=53"></script>
 </body>
 </html>

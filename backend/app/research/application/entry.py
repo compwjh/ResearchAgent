@@ -31,7 +31,25 @@ from backend.app.research.application.agent_runtime import (
     RoleCapability,
     RoleCapabilityRegistry,
 )
+from backend.app.research.application.acquisition import (
+    ResearchAcquisitionError,
+    ResearchAcquisitionService,
+)
+from backend.app.research.application.evidence_upgrade import (
+    EvidenceUpgradeError,
+    EvidenceUpgradeService,
+)
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
+from backend.app.research.application.report_generation import (
+    EvidenceReportError,
+    EvidenceReportGenerator,
+    EvidenceReportService,
+    ReportGenerator,
+    ReportGenerationService,
+    render_evidence_report,
+)
 from backend.app.research.application.model_router import ModelRouter
+from backend.app.research.application.routing_observation import RoutingObservationService
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.plan_authoring import (
     RESEARCH_PLAN_OUTPUT_SCHEMA,
@@ -67,9 +85,14 @@ from backend.app.research.application.search_catalog_adapter import (
     map_download_tool_args,
 )
 from backend.app.research.domain.models import (
+    AcquisitionApproval,
+    AcquisitionEvent,
+    EvidenceUpgrade,
     PreliminaryReport,
+    ResearchDocumentLink,
     ResearchEvent,
     ResearchPaperSelection,
+    ResearchReport,
     ResearchPlan,
     ResearchSessionPlan,
     ResearchTask,
@@ -86,6 +109,18 @@ from backend.app.skills.tool_service import ToolRegistryService
 __all__ = [
     # 持久化（唯一受控出口，api 不得直连 research.infrastructure）
     "ResearchStore",
+    "ResearchAcquisitionError",
+    "ResearchAcquisitionService",
+    "EvidenceUpgradeError",
+    "EvidenceUpgradeService",
+    "EvidenceMatrixError",
+    "EvidenceMatrixService",
+    "EvidenceReportError",
+    "ReportGenerationService",
+    "EvidenceReportGenerator",
+    "EvidenceReportService",
+    "ReportGenerator",
+    "render_evidence_report",
     # 服务层与稳定错误
     "ResearchService",
     "ResearchServiceError",
@@ -111,6 +146,7 @@ __all__ = [
     "FakeModel",
     "FakeTool",
     "ResearchAgentRunner",
+    "RoutingObservationService",
     "ProcessingStepProjector",
     "REPORT_SYNTHESIS_OUTPUT_SCHEMA",
     "ReportSynthesisOutput",
@@ -131,6 +167,11 @@ __all__ = [
     "ResearchEvent",
     "ResearchPaperSelection",
     "PreliminaryReport",
+    "AcquisitionApproval",
+    "ResearchDocumentLink",
+    "EvidenceUpgrade",
+    "ResearchReport",
+    "AcquisitionEvent",
     # 工厂
     "build_research_store",
     "build_research_service",
@@ -163,7 +204,18 @@ def build_research_service() -> ResearchService:
         memory_repository = MemoryRepository()
     processing_projector = ProcessingStepProjector(store, memory_repository)
     probe = ResourceProbe()
-    router = ModelRouter()
+    # Task03 is an opt-in, write-only seam.  A telemetry/store adapter failure
+    # must leave the existing production router usable and must never alter
+    # model selection or the legacy resolve signature.
+    observation_service = None
+    try:
+        from backend.app.platform.observability import record_routing_observation
+        observation_service = RoutingObservationService(
+            store, observability=record_routing_observation
+        )
+    except Exception:
+        observation_service = None
+    router = ModelRouter(observation_service=observation_service)
     state_path = KB_DIR / "skill-state.json"
     skill_registry = SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path)
     tool_registry = ToolRegistryService(build_default_tool_registry(), state_path)

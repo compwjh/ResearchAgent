@@ -153,3 +153,12 @@ mv data/memory/legacy-backups/<timestamp>-v7/memory.sqlite3 data/memory/memory.s
 5. 重启后必须同时验证：会话列表能返回历史记录、具体会话的 `context-usage` 返回 200、浏览器打开该会话后出现上下文百分比和“压缩”按钮。
 
 空白新会话仍按设计隐藏上下文占用条；这不表示历史数据丢失。只有打开已有会话，或新会话发送第一条消息后，才展示实际占用值。
+
+### 9.2 2026-09-16 Spec034 收口部署
+
+- 本地 `main` 已合并 `origin/main`（远程已合并的认证 PDF、深链刷新和内存基线修复）以及 Spec034 修复分支；当前提交：`7970aa0`。
+- SQLite 检查：`data/memory/memory.sqlite3` 为 schema v8，包含 `conversations`、`messages`、`conversation_segments`、`conversation_compaction_jobs` 等表。
+- 全量回归：`COMPACTION_SUMMARY_MODE=rule .venv/bin/python -m pytest -q`，退出码 0，`2478 passed, 1 skipped, 67 subtests passed`。
+- 运行时：前台 `PORT=8500 RERANKER_ENABLED=false ./deploy/start.sh`；`/api/health`、`/api/models`、首页、`/c/{conversation_id}` 深链、`/api/conversations`、已有会话 `context-usage` 和手动 `compactions` 均返回 200；未知 `/api/*` 返回 404。
+- 静态资源：页面引用 `app.js?v=53`、`styles.css?v=53` 和 `research-session-ui.js?v=2`；Reranker 未启用，按 RRF 降级运行。
+- Ollama：健康接口检测到本机模型列表；本次未把模型推理作为部署门禁，真实模型可用性仍以部署机 Ollama 状态为准。

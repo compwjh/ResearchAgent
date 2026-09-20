@@ -20,6 +20,7 @@ from backend.app.research.application.intake import (
     BEGIN_RESEARCH_INTAKE_SCHEMA,
     ResearchIntakeCoordinator,
 )
+from backend.app.research.application.intake_projection import finalize_intake_message
 from backend.app.research.infrastructure.research_store import ResearchStore
 from backend.app.skills.service import SkillRegistryService
 
@@ -192,6 +193,9 @@ def test_active_conflict_sse_is_interactive_and_does_not_fail_assistant(tmp_path
     assert '"type": "intake"' in frames
     assert all(choice in frames for choice in ("modify_current", "cancel_then_new", "new_conversation"))
     assert memory.get_message(second_assistant.message_id, "owner-a").status == "completed"
+    events = [json.loads(line[6:]) for line in frames.splitlines() if line.startswith("data: ")]
+    assert [event["event_seq"] for event in events] == list(range(1, len(events) + 1))
+    assert memory.get_message(second_assistant.message_id, "owner-a").last_event_seq == len(events)
 
 
 def test_model_preflight_after_message_persistence_keeps_user_message(tmp_path):
@@ -297,6 +301,34 @@ def test_message_history_restores_persisted_intake_projection_after_refresh(tmp_
     assert intake["question"] is None
     assert intake["skill"]["skill_id"] == "deep-research-orchestration"
     assert "body" not in intake["skill"]
+
+
+def test_form_created_assistant_placeholder_is_finalized(tmp_path):
+    memory, store, conversation, registry = _setup(tmp_path)
+    skills_dir = tmp_path / "skills" / "deep-research-orchestration"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: deep-research-orchestration\ndescription: research\ntools: []\n---\nbody",
+        encoding="utf-8",
+    )
+    _conversation, user, assistant = memory.create_idempotent_message_pair(
+        conversation.conversation_id,
+        "owner-a",
+        "帮我做一个深度研究，主题是软件供应链攻击，目标是总结攻击面，时间范围是2020-2024。",
+        idempotency_key="research-form:test",
+        mode="research",
+    )
+    result = ResearchIntakeCoordinator(store, memory, registry).handle_message(
+        conversation.conversation_id, "owner-a", user.message_id, user.content
+    )
+    finalize_intake_message(memory, assistant, result)
+    saved = memory.get_message(assistant.message_id, "owner-a")
+    assert saved.status == "completed"
+    assert "参数齐全" in saved.content
+    assert any(
+        step.kind == "research_intake" and step.status == "completed"
+        for step in memory.list_processing_steps(assistant.message_id, "owner-a")
+    )
 
 
 def test_message_history_keeps_ordinary_messages_free_of_intake_fields(tmp_path):

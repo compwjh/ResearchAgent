@@ -49,8 +49,20 @@ from backend.app.memory.repository import OWNER_ID
 from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
-from backend.app.research.application.entry import ResearchServiceError
+from backend.app.research.application.entry import (
+    EvidenceReportError,
+    ReportGenerationService,
+    EvidenceMatrixError,
+    EvidenceMatrixService,
+    EvidenceUpgradeError,
+    EvidenceUpgradeService,
+    ResearchAcquisitionError,
+    ResearchAcquisitionService,
+    ResearchServiceError,
+)
 from backend.app.research.application.intake import ResearchIntakeCoordinator
+from backend.app.research.application.intake_projection import finalize_intake_message, persist_plan_projection
+from backend.app.research.application.session_plan_generation import ensure_session_plan
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.service import SkillRegistryService
 from backend.app.skills.tool_service import ToolRegistryService
@@ -58,6 +70,7 @@ from backend.app.skills.tool_service import ToolRegistryService
 router = APIRouter(prefix="/research-tasks", tags=["research-tasks"])
 session_router = APIRouter(prefix="/research-sessions", tags=["research-sessions"])
 notification_router = APIRouter(prefix="/research-notifications", tags=["research-notifications"])
+scheduler_router = APIRouter(prefix="/research-scheduler", tags=["research-scheduler"])
 logger = logging.getLogger(__name__)
 _SESSION_CREATE_LOCK = threading.RLock()
 
@@ -102,12 +115,94 @@ class ResearchTaskFeedbackRequest(BaseModel):
     add_scope: Optional[str] = Field(default=None, max_length=4000)
 
 
+class ResearchAcquisitionPreviewRequest(BaseModel):
+    """Read-only classification of the current server-side candidate snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_version: int = Field(ge=1)
+    search_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
+class ResearchAcquisitionRequest(BaseModel):
+    """User confirmation envelope; candidate URLs/snapshots are never accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selection_version: int = Field(ge=1)
+    paper_ids: list[str] = Field(min_length=1, max_length=20)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    # Compatibility echo for the server-owned snapshot handle.  The service
+    # validates it against the task's persisted handle and never trusts it as
+    # a download URL or candidate payload.
+    search_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("paper_ids")
+    @classmethod
+    def validate_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        if not normalized or len(set(normalized)) != len(normalized):
+            raise ValueError("paper_ids must be non-empty and unique")
+        return normalized
+
+
+class ResearchEvidenceUpgradeRequest(BaseModel):
+    """Full-text claim upgrade; document ids are checked against Research links."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    claim_id: str = Field(min_length=1, max_length=200)
+    question: str = Field(min_length=1, max_length=4000)
+    document_ids: list[str] = Field(min_length=1, max_length=20)
+    from_level: str = Field(default="abstract", min_length=1, max_length=32)
+    chunker: Literal["v1", "v2"] = "v1"
+    top_k: int = Field(default=5, ge=1, le=50)
+
+
+class ResearchEvidenceMatrixRequest(BaseModel):
+    """Bounded Claim/Evidence matrix proposal; facts remain server-validated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_version: Optional[int] = Field(default=None, ge=1)
+    dimensions: list[dict] = Field(default_factory=list, max_length=32)
+    claims: list[dict] = Field(default_factory=list, max_length=100)
+    evidence: list[dict] = Field(default_factory=list, max_length=500)
+    cells: list[dict] = Field(default_factory=list, max_length=2000)
+
+
+class ResearchReportRequest(BaseModel):
+    """Bounded request for deterministic generation from the stored matrix."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_version: Optional[int] = Field(default=None, ge=1)
+    report_version: Optional[int] = Field(default=None, ge=1)
+    title: str = Field(default="深度研究报告", min_length=1, max_length=200)
+
+
 class ResearchTaskPatchProjectRequest(BaseModel):
     """移动/解绑项目归属；``project_id`` 为 null 表示解绑（可显式传 null）。"""
 
     model_config = ConfigDict(extra="forbid")
 
     project_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class ResearchTaskResumeRequest(BaseModel):
+    """Optional durable SchedulerCheckpoint envelope for a paused task."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint: Optional[dict[str, object]] = None
+
+
+class ResearchTaskRecoverRequest(BaseModel):
+    """Optional checkpoint envelope for a safe interrupted-task inspection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint: Optional[dict[str, object]] = None
 
 
 class ResearchSessionCreateRequest(BaseModel):
@@ -174,6 +269,49 @@ def _store():
     return get_provider("research_store")
 
 
+def _paper_batch_service():
+    """Resolve the existing Spec015/021 batch service without creating a second one."""
+    try:
+        return get_provider("paper_batch_service")
+    except KeyError:
+        from backend.app.api.common import _paper_batch_service as factory
+
+        return factory()
+
+
+def _acquisition_service() -> ResearchAcquisitionService:
+    return ResearchAcquisitionService(_store(), _paper_batch_service())
+
+
+def _evidence_upgrade_service() -> EvidenceUpgradeService:
+    """Resolve the Task04 facade, allowing isolated tests to inject a service."""
+    try:
+        return get_provider("research_evidence_service")
+    except KeyError:
+        return EvidenceUpgradeService(_store())
+
+
+def _evidence_matrix_service() -> EvidenceMatrixService:
+    try:
+        return get_provider("research_evidence_matrix_service")
+    except KeyError:
+        return EvidenceMatrixService(_store())
+
+
+def _report_generation_service() -> ReportGenerationService:
+    try:
+        return get_provider("research_report_generation_service")
+    except KeyError:
+        return ReportGenerationService(_store())
+
+
+def _acquisition_error(exc: ResearchAcquisitionError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"error": {"code": exc.code, "message": exc.message}},
+    )
+
+
 def _approval_service() -> PlanApprovalService:
     state_path = KB_DIR / "skill-state.json"
     return PlanApprovalService(
@@ -210,6 +348,60 @@ def _intake_coordinator():
         SkillRegistryService(BASE_DIR / ".agents" / "skills", state_path),
         ToolRegistryService(build_default_tool_registry(), state_path),
     )
+
+
+def _ensure_session_plan(session):
+    """Author the first plan once Intake is complete; return a safe projection."""
+    if session is None:
+        return None
+    return ensure_session_plan(
+        _store(), session, OWNER_ID,
+        lambda session_id, owner_id, output: _approval_service().author_plan(session_id, owner_id, output),
+    )
+
+
+def _persist_recovered_plan_projection(session, plan_result):
+    """Attach a recovered plan to the original Intake assistant message."""
+    if session is None or not plan_result:
+        return
+    try:
+        messages, _ = _memory().list_messages(
+            session.conversation_id,
+            OWNER_ID,
+            target_chars=100000,
+            limit=200,
+        )
+        candidates = []
+        for item in messages:
+            if item.role != "assistant":
+                continue
+            if item.parent_message_id == session.trigger_message_id:
+                candidates.append(item)
+                continue
+            # Older Intake turns may have been created by a follow-up message
+            # and therefore do not share the Session trigger as parent.  Use
+            # their already-persisted, allowlisted Intake projection to match
+            # the same Session without guessing from message text.
+            try:
+                steps = _memory().list_processing_steps(item.message_id, OWNER_ID)
+                if any(
+                    step.kind == "research_intake"
+                    and session.research_session_id in (step.detail_json or "")
+                    for step in steps
+                ):
+                    candidates.append(item)
+            except Exception:
+                continue
+        for assistant in candidates:
+            persist_plan_projection(_memory(), assistant, plan_result)
+            _memory().update_message(
+                assistant.message_id,
+                OWNER_ID,
+                content="研究计划已生成，等待你批准后开始执行。",
+                status="completed",
+            )
+    except Exception:
+        logger.exception("unable to persist recovered research plan projection")
 
 
 def _memory():
@@ -253,6 +445,24 @@ def _error(exc: ResearchServiceError) -> JSONResponse:
     return JSONResponse(status_code=exc.http_status, content={"error": {"code": exc.code, "message": exc.message}})
 
 
+def _report_error(exc: EvidenceReportError, *, not_ready_status: int | None = None) -> JSONResponse:
+    """Return a stable, user-safe response for report-domain failures.
+
+    ``EvidenceReportError`` inherits ``ReportSynthesisError``/``ValueError`` and
+    intentionally exposes its text through ``str(exc)`` rather than a
+    ``message`` attribute. Keep the HTTP mapping at the route boundary so
+    report reads can use the API's 404-not-ready contract while generation
+    retains the service status (409).
+    """
+    status = 406 if exc.code == "FORMAT_SEMANTIC_MISMATCH" else exc.http_status
+    if not_ready_status is not None and exc.code == "REPORT_NOT_READY":
+        status = not_ready_status
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"code": exc.code, "message": str(exc)}},
+    )
+
+
 def _api_error(code: str, status_code: int, message: str) -> JSONResponse:
     """纯 HTTP 层输入校验错误出口（不入 027 冻结词表，见模块 docstring）。"""
     return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}})
@@ -277,6 +487,9 @@ def _task_summary(task) -> dict:
         "review_plan_first": bool(task.review_plan_first),
         "project_id": task.project_id,
         "conversation_id": task.conversation_id,
+        # Server-owned catalog snapshot handle; absent until a search worker
+        # returns a real handle.  Never infer or echo a client-supplied ID.
+        "search_id": getattr(task, "search_id", None),
         "created_at": task.created_at,
     }
 
@@ -559,10 +772,11 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
         if active is not None:
             return _api_error("RESEARCH_SESSION_ACTIVE_CONFLICT", 409, "当前会话已有进行中的研究 Intake")
     trigger_message_id = payload.trigger_message_id
+    created_assistant = None
     if trigger_message_id:
         trigger = memory.get_message(trigger_message_id, OWNER_ID)
     else:
-        _conversation, trigger, _assistant = memory.create_idempotent_message_pair(
+        _conversation, trigger, created_assistant = memory.create_idempotent_message_pair(
             conversation.conversation_id, OWNER_ID, _session_create_text(intake),
             idempotency_key=request_key, model=None, mode="research"
         )
@@ -582,8 +796,36 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
     if result.status == "error":
         error = result.error or {"code": "SOURCE_UNAVAILABLE", "message": "研究 Intake 暂时不可用"}
         return _api_error(str(error.get("code") or "SOURCE_UNAVAILABLE"), 503, str(error.get("message") or "研究 Intake 暂时不可用"))
+    plan_result = None
+    if result.session is not None and not result.missing:
+        try:
+            plan_result = _ensure_session_plan(result.session)
+        except Exception:
+            # Intake is already durable.  Keep it usable and expose the
+            # planning failure to the caller instead of leaving a silent
+            # pending card that looks like a model timeout.
+            logger.exception("unable to generate initial research session plan")
+    # The form endpoint creates the message pair outside the SSE path. Close
+    # that optimistic assistant placeholder and persist the same safe Intake
+    # projection used by streamed chat turns, so a refreshed conversation does
+    # not remain stuck at an empty pending card.
+    if created_assistant is not None:
+        try:
+            finalize_intake_message(memory, created_assistant, result)
+            if plan_result:
+                persist_plan_projection(memory, created_assistant, plan_result)
+                memory.update_message(
+                    created_assistant.message_id,
+                    OWNER_ID,
+                    content="研究计划已生成，等待你批准后开始执行。",
+                    status="completed",
+                )
+        except Exception:
+            logger.exception("unable to finalize research intake message")
+    current_session = _store().get_session(result.session.research_session_id, OWNER_ID) if result.session else None
     response = {
         "research_session_id": result.session.research_session_id if result.session else None,
+        "session": current_session.to_dict() if current_session else (result.session.to_dict() if result.session else None),
         "conversation": {
             "conversation_id": conversation.conversation_id,
             "project_id": conversation.project_id,
@@ -592,6 +834,10 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
         "trigger_message_id": trigger.message_id,
         "intake": _intake_payload(result),
     }
+    if plan_result:
+        response.update({"status": plan_result.get("status"), "plan": plan_result.get("plan"), "approval": plan_result.get("approval")})
+    elif result.session is not None and not result.missing:
+        response["plan_generation"] = {"status": "failed", "message": "参数已齐，但计划生成失败，可重试。"}
     if result.session is not None:
         _store().save_session_create_request(
             owner_id=OWNER_ID, idempotency_key=request_key, request_fingerprint=fingerprint,
@@ -761,6 +1007,10 @@ def _notification_event_stream(
             yield ": heartbeat\n\n"
         if poll + 1 < max_polls:
             time.sleep(max(0.0, min(float(poll_seconds), 1.0)))
+    # The endpoint intentionally uses bounded polling so tests and proxies do
+    # not hold a request forever.  Mark normal expiry explicitly; browsers
+    # otherwise surface EventSource's expected EOF as a connection failure.
+    yield f"event: stream_end\ndata: {json.dumps({'after_seq': cursor})}\n\n"
 
 
 @session_router.get("/{research_session_id}")
@@ -769,9 +1019,20 @@ def get_research_session(research_session_id: str):
     try:
         service = _approval_service()
         session = service.get_session(research_session_id, OWNER_ID)
+        if session.research_task_id:
+            # Repair stale Session projections after a worker finished between
+            # the Task and Session commits (or after a process restart).
+            session = _service().reconcile_session_projection(
+                session.research_task_id, OWNER_ID
+            ) or session
         plan = _store().get_session_plan(research_session_id, OWNER_ID)
+        task = (
+            _store().get_task(session.research_task_id, OWNER_ID)
+            if session.research_task_id else None
+        )
         return {
             **session.to_dict(),
+            "task": _task_summary(task) if task else None,
             "plan": plan.to_dict() if plan else None,
             "plans": [item.to_dict() for item in _store().list_session_plans(research_session_id, OWNER_ID)],
             "approvals": [item.to_dict() for item in _store().list_approvals(research_session_id, OWNER_ID)],
@@ -882,6 +1143,28 @@ def author_research_session_plan(research_session_id: str, payload: dict):
         return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "计划服务暂时不可用"))
 
 
+@session_router.post("/{research_session_id}/plans/generate", status_code=202)
+def generate_research_session_plan(research_session_id: str):
+    """Resume the automatic first-plan step for a completed Intake.
+
+    This endpoint is deliberately idempotent: an existing plan is replayed,
+    while an Intake that is not complete remains unchanged and returns the
+    stable validation error.
+    """
+    try:
+        session = _approval_service().get_session(research_session_id, OWNER_ID)
+        result = _ensure_session_plan(session)
+        if result is None:
+            raise ResearchCommandError("INTAKE_INCOMPLETE", "研究主题、目标和时间范围仍未完整确认")
+        _persist_recovered_plan_projection(session, result)
+        return result
+    except ResearchCommandError as exc:
+        return _command_error(exc)
+    except Exception:
+        logger.exception("research session plan generation failed")
+        return _command_error(ResearchCommandError("SOURCE_UNAVAILABLE", "计划服务暂时不可用"))
+
+
 @router.post("", status_code=202)
 def create_research_task(payload: ResearchTaskCreateRequest):
     """Legacy adapter: enter the unified Session/Intake flow only.
@@ -960,6 +1243,18 @@ def list_research_tasks(
     return {"research_tasks": [_task_summary(item) for item in items], "next_cursor": next_cursor}
 
 
+@scheduler_router.get("/status")
+def get_research_scheduler_status():
+    """Return a stable, aggregate scheduler status without sensitive ownership data."""
+    try:
+        return _service().scheduler_status()
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research scheduler status unavailable")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "调度器状态暂时不可用"))
+
+
 @router.get("/{research_task_id}")
 def get_research_task(research_task_id: str):
     """任务详情及 owner-scoped Session/plan/approval projection."""
@@ -995,6 +1290,218 @@ def get_research_task(research_task_id: str):
     except Exception:
         logger.exception("research task detail projection failed")
         return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/acquisition-preview")
+def preview_research_acquisition(research_task_id: str, payload: ResearchAcquisitionPreviewRequest):
+    """Classify candidates without downloading or creating KB documents."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        selections = _store().list_selections(research_task_id)
+        current_version = int(_store().get_selection_version(research_task_id))
+        if not selections or current_version < 1:
+            return _api_error("REPORT_NOT_READY", 409, "论文选集尚未准备完成")
+        if payload.plan_version > int(_service().get_task(research_task_id, OWNER_ID).current_plan_version):
+            return _api_error("REPORT_NOT_READY", 409, "研究计划尚未准备完成")
+        discovery = getattr(_paper_batch_service(), "discovery_store", None)
+        candidates: dict[str, object] = {}
+        if payload.search_id and discovery is not None:
+            for item in discovery.get_candidates(payload.search_id):
+                candidates[str(getattr(item, "candidate_id", ""))] = item
+            if not candidates:
+                for result in discovery.get_search_results(payload.search_id):
+                    snapshot = dict(getattr(result, "snapshot", {}) or {})
+                    candidate_id = snapshot.get("candidate_id") or snapshot.get("catalog_paper_id") or getattr(result, "catalog_paper_id", None)
+                    if candidate_id:
+                        candidates[str(candidate_id)] = snapshot
+        items = []
+        for selection in selections:
+            paper_id = str(selection.catalog_paper_id)
+            candidate = candidates.get(paper_id)
+            if isinstance(candidate, dict):
+                existing = candidate.get("existing_paper_id")
+                access = str(candidate.get("pdf_access", "unknown") or "unknown")
+            else:
+                existing = getattr(candidate, "existing_paper_id", None) if candidate is not None else None
+                access = str(getattr(candidate, "pdf_access", "unknown") or "unknown") if candidate is not None else "unknown"
+            status = "existing" if existing else (
+                "needs_login" if access in {"login", "requires_login", "restricted"} else
+                "unavailable" if access in {"unavailable", "blocked", "unknown"} and candidate is not None else "pending"
+            )
+            items.append({"catalog_paper_id": paper_id, "status": status, "document_id": existing})
+        return {
+            "research_task_id": research_task_id,
+            "selection_version": current_version,
+            "items": items,
+        }
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research acquisition preview failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究任务依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/acquisitions", status_code=202)
+def confirm_research_acquisition(research_task_id: str, payload: ResearchAcquisitionRequest):
+    """Confirm a selection once, then reuse the existing import batch service."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        return _acquisition_service().confirm(
+            research_task_id,
+            selection_version=payload.selection_version,
+            paper_ids=payload.paper_ids,
+            idempotency_key=payload.idempotency_key,
+            search_id=payload.search_id,
+        )
+    except ResearchAcquisitionError as exc:
+        return _acquisition_error(exc)
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research acquisition confirmation failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "论文导入依赖暂时不可用"))
+
+
+@router.get("/{research_task_id}/acquisitions")
+def get_research_acquisition(research_task_id: str):
+    """Return per-paper links and the projected status of the existing batch."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        return _acquisition_service().status(research_task_id)
+    except ResearchAcquisitionError as exc:
+        return _acquisition_error(exc)
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research acquisition status failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "论文导入依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/evidence-upgrade", status_code=202)
+def upgrade_research_evidence(research_task_id: str, payload: ResearchEvidenceUpgradeRequest):
+    """Upgrade one claim from abstract evidence to a verified full-text locator."""
+    try:
+        _service().get_task(research_task_id, OWNER_ID)
+        result = _evidence_upgrade_service().upgrade(
+            research_task_id,
+            claim_id=payload.claim_id,
+            question=payload.question,
+            document_ids=payload.document_ids,
+            from_level=payload.from_level,
+            chunker=payload.chunker,
+            top_k=payload.top_k,
+        )
+        return result.to_dict()
+    except EvidenceUpgradeError as exc:
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"error": {"code": exc.code, "message": exc.message}},
+        )
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research evidence upgrade failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "全文证据依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/evidence-matrix", status_code=202)
+def build_research_evidence_matrix(research_task_id: str, payload: ResearchEvidenceMatrixRequest):
+    """Validate and persist one versioned cross-paper evidence matrix."""
+    try:
+        result = _evidence_matrix_service().build_matrix(
+            research_task_id, OWNER_ID, plan_version=payload.plan_version,
+            dimensions=payload.dimensions or None, claims=payload.claims or None,
+            evidence=payload.evidence or None, cells=payload.cells or None,
+        )
+        # The matrix is durable before the 202 response is emitted.  The
+        # response keeps the WorkItem-shaped status expected by the task API
+        # while exposing the canonical projection for deterministic clients.
+        result["status"] = "completed" if not result["limitations"] else "partial"
+        result["work_item"] = {"status": result["status"], "task_id": research_task_id, "plan_version": result["plan_version"]}
+        return result
+    except EvidenceMatrixError as exc:
+        return JSONResponse(status_code=exc.http_status, content={"error": {"code": exc.code, "message": exc.message}})
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research evidence matrix build failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "证据矩阵依赖暂时不可用"))
+
+
+@router.get("/{research_task_id}/evidence-matrix")
+def get_research_evidence_matrix(research_task_id: str, plan_version: Optional[int] = Query(None, ge=1)):
+    """Read the current owner-scoped matrix projection and explicit gaps."""
+    try:
+        return _evidence_matrix_service().read_matrix(research_task_id, OWNER_ID, plan_version=plan_version)
+    except EvidenceMatrixError as exc:
+        return JSONResponse(status_code=exc.http_status, content={"error": {"code": exc.code, "message": exc.message}})
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research evidence matrix read failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "证据矩阵依赖暂时不可用"))
+
+
+@router.post("/{research_task_id}/reports", status_code=202)
+def generate_research_report(research_task_id: str, payload: ResearchReportRequest):
+    """Generate one immutable report version from the validated matrix."""
+    try:
+        built = _report_generation_service().generate(
+            research_task_id, OWNER_ID, plan_version=payload.plan_version,
+            report_version=payload.report_version, title=payload.title,
+        )
+        report = built["report"]
+        return {
+            "report_id": report["report_id"], "research_task_id": research_task_id,
+            "plan_version": report["plan_version"], "report_version": report["report_version"],
+            "status": report["status"], "limitations": report["limitations"],
+        }
+    except EvidenceReportError as exc:
+        return _report_error(exc)
+    except EvidenceMatrixError as exc:
+        if exc.code == "MATRIX_NOT_READY":
+            return _report_error(EvidenceReportError("report is not ready", code="REPORT_NOT_READY"))
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"error": {"code": exc.code, "message": exc.message}},
+        )
+    except Exception:
+        logger.exception("research report generation failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究报告依赖暂时不可用"))
+
+
+@router.get("/{research_task_id}/reports/{report_version}")
+def get_versioned_research_report(
+    research_task_id: str, report_version: int, format: str = Query("json")
+):
+    """Read one immutable report version in JSON, Markdown, or safe HTML."""
+    if report_version < 1:
+        return JSONResponse(status_code=400, content={"error": {"code": "REPORT_SCHEMA_INVALID", "message": "report_version 无效"}})
+    if format not in {"json", "markdown", "html"}:
+        return JSONResponse(status_code=406, content={"error": {"code": "FORMAT_SEMANTIC_MISMATCH", "message": "不支持的报告格式"}})
+    try:
+        content = _report_generation_service().read(
+            research_task_id, OWNER_ID, report_version=report_version, format=format,
+        )
+        if format == "json":
+            response = Response(json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")), media_type="application/json; charset=utf-8")
+            suffix = "json"
+        elif format == "markdown":
+            response = Response(content, media_type="text/markdown; charset=utf-8")
+            suffix = "md"
+        else:
+            response = Response(content, media_type="text/html; charset=utf-8")
+            suffix = "html"
+        response.headers["Content-Disposition"] = f'attachment; filename="research-report-v{report_version}.{suffix}"'
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Security-Policy"] = "default-src 'none'"
+        return response
+    except EvidenceReportError as exc:
+        return _report_error(exc, not_ready_status=404)
+    except Exception:
+        logger.exception("versioned research report read failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究报告依赖暂时不可用"))
 
 
 @router.get("/{research_task_id}/events")
@@ -1181,6 +1688,65 @@ def cancel_research_task(research_task_id: str):
         "status": task.status,
         "cancelled_work_items": max(0, _cancelled_item_count(research_task_id) - before),
     }
+
+
+@router.post("/{research_task_id}/pause")
+def pause_research_task(research_task_id: str):
+    """Pause dispatch without discarding completed evidence or queued nodes."""
+    try:
+        task = _service().pause(research_task_id, OWNER_ID)
+    except ResearchServiceError as exc:
+        return _error(exc)
+    return {
+        "research_task_id": task.research_task_id,
+        "status": task.status,
+        "current_plan_version": task.current_plan_version,
+    }
+
+
+@router.post("/{research_task_id}/resume")
+def resume_research_task(
+    research_task_id: str,
+    payload: ResearchTaskResumeRequest | None = None,
+):
+    """Resume a paused task after validating an optional checkpoint envelope."""
+    try:
+        task = _service().resume(
+            research_task_id,
+            OWNER_ID,
+            checkpoint=payload.checkpoint if payload is not None else None,
+        )
+    except ResearchServiceError as exc:
+        return _error(exc)
+    return {
+        "research_task_id": task.research_task_id,
+        "status": task.status,
+        "current_plan_version": task.current_plan_version,
+    }
+
+
+@router.post("/{research_task_id}/recover")
+def recover_research_task(
+    research_task_id: str,
+    payload: ResearchTaskRecoverRequest | None = None,
+):
+    """Inspect and safely recover durable ownership/checkpoint state.
+
+    The endpoint never reopens an interrupted terminal task or replays an
+    external call with an unknown result; it returns a bounded recovery
+    summary for the UI/operator to review.
+    """
+    try:
+        return _service().recover(
+            research_task_id,
+            OWNER_ID,
+            checkpoint=payload.checkpoint if payload is not None else None,
+        )
+    except ResearchServiceError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception("research task recovery inspection failed")
+        return _error(ResearchServiceError("SOURCE_UNAVAILABLE", 503, "研究恢复依赖暂时不可用"))
 
 
 @router.patch("/{research_task_id}/project")
