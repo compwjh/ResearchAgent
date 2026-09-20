@@ -71,3 +71,14 @@ PASS：USENIX 官方目录 → 冻结候选快照 → 既有下载/身份校验/
 - 再次读取同一目录候选的 provenance：HTTP `200`，`index_status=indexed`，标题、摘要和官方详情页仍在 SQLite 目录记录中。
 
 结论：重启不会丢失该 USENIX 目录记录或其导入状态；本样本可供后续人工验收复现。
+
+## 多来源探针（未宣称通过）
+
+为确认 Spec032 的非 USENIX 运行时边界，发起了仅包含目录元数据的 IEEE S&P 2024 同步：
+
+```http
+POST /api/papers/sources/ieee_sp/sync
+{"scope":{"years":[2024]}}
+```
+
+同步任务 `sync-ieee_sp-5685719bd4884ffb` 被正确入队并可查询，但终态为 `failed`、`error_code=SOURCE_FAILED`、`paper_count=0`。这不是论文 PDF 下载失败，而是来源目录同步尚未形成可供导入的候选，因此本轮没有向你索取替代下载路径。该结果保留为 Task14 的真实阻塞证据：IEEE S&P 不能被标记为已验证，后续需要先定位来源同步失败，再进行候选导入探针。
