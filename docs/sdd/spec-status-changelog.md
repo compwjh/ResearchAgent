@@ -366,3 +366,14 @@
 - **Spec031 Task06：最终评审、回归、部署与复盘**：`待执行` → `实施中`。Task02–05 门禁均通过，开始唯一全量回归、前后端运行时 smoke、部署证据和最终复盘；多实例 NO-GO 与遗留 P2 只做诚实记录。
 - **Spec031 Task06：最终评审、回归、部署与复盘**：`实施中` → `已完成`。修复 benchmark 质量/provenance、压缩 worker 持久化顺序、测试 worker 隔离及论文评估安全选集投影；最终全量回归 `2539 passed, 5 warnings, 67 subtests`，8500 部署 smoke 通过。
 - **Spec031：动态模型路由与资源调度优化**：`实施中` → `已完成`。Task02–06、三份评审、复盘和运行时验证已收口；仅单实例范围 GO，多实例明确 NO-GO。
+- **Spec034：会话式深度研究 Agent Runtime**：`已完成` → `实施中`。真实浏览器端到端排查确认后端链路正常（approve_plan 返回 200、`research_service.start` 在进程内后台线程执行编排、SSE 可取到事件），缺口在前端：计划批准后未加载新建 Task 详情与事件流，时间线因无 Task 事件（`hidden = events.length === 0`）不渲染，致使 spec028 运行/调度恢复、spec029 全文获取、spec030 证据矩阵无法验证；新增 Task12 承接该前端修复。
+- **Spec034 Task12：批准后加载 Task 视图与事件流（时间线渲染）**：`待执行` → `已完成`。修复竞态——并发 `refreshWorkspace` 清空选中导致在途 `selectTask` 被守卫误杀、新建 Task 接口从未请求；加 `selectTask` 在途保护并消除批准后重复 SSE 管道；真实浏览器验证批准后 6s 内时间线渲染，`node --check` 通过。
+- **Spec034：会话式深度研究 Agent Runtime**：`实施中` → `已完成`。Task12 收口，Task01–12 全部完成；端到端中 spec029 全文获取 / spec030 证据矩阵在本机仍因真实检索与 LLM 耗时在窗口内未到达而 SKIP，属环境耗时而非功能缺陷。
+
+## 2026-09-20
+
+- **Spec032 Research Task 数据源与安全会议扩展** ｜ `已确认` → `待确认` ｜ 2026-09-20T03:38:32+08:00：用户经多轮 Grilling 确认多来源 Worker Skill、统一 Tool、官网优先、批准计划内自动导入与待处理论文人工修复。原任务已有代码与真实产品接线存在差距，修订 Spec、审计和 Task06–14 已落盘；本次仅文档，不改业务代码，等待新版 Spec 明确确认。
+- **Spec032.1 USENIX Skill 解耦与详情页摘要补齐** ｜ `已确认` → `已确认`（移交记录，状态未变） ｜ 2026-09-20T03:38:32+08:00：作为 Spec032 子规格保留 Task02–06 成果；原 Task08/10 待办转由 Spec032 Task13 承接，Task07 自身评审仍未完成，未标记完成或伪造 Task09 结果。
+- **Spec032 Research Task 数据源与安全会议扩展** ｜ `待确认` → `实施中` ｜ 2026-09-20T03:50:06+08:00：用户确认新版 Spec032 并授权开发；启动 Task06，先统一七来源 ID、字段真实来源、权威级别与结构化返回合同。子 Agent 临时使用 Luna xhigh；Task 阶段只运行定向测试。
+- **Spec032 Task06：统一来源 ID、权威、返回合同与旧回归** ｜ `进行中` → `已完成` ｜ 2026-09-20：Luna high 子 Agent 完成版本化 SourceResult/ImportResult、七来源 canonical ID、真实 authority 归一化、旧 SQLite 别名迁移和统一薄包装；主 Agent 复跑 206 个相关测试，ruff、compileall、git diff --check 均通过，放行 Task07。
+- **Spec032 Task07：官网目录优先、聚合兜底与逐年字段覆盖** ｜ `实施中` → `部分完成` ｜ 2026-09-20：IEEE S&P 2024 官方目录固定样本、字段 provenance、缺失摘要/关键词告警及 PDF 响应拒绝已通过 76 个定向测试；CCS/NDSS 与其余年度保持未验证/NO-GO，不伪造覆盖，Task08 只可接入已验证范围。

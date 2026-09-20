@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "ResearchAgent 知识库上传与索引数据流",
+    "locale": "zh-CN",
+    "subtitle": "不可变文档、代次绑定索引和可分页切片检查",
+    "viewBox": [1080, 820],
+    "animation": "trace",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "upload-to-index", "label": "上传到索引", "focus": ["upload", "source", "metadata", "task", "parser", "qdrant"], "note": "跟踪上传文件如何变成可检索的向量索引。" },
+      { "id": "inspection", "label": "切片检查", "focus": ["qdrant", "manifest", "inspection", "source"], "note": "查看原文、manifest 和切片分页之间的关系。" },
+      { "id": "retrieval", "label": "项目召回", "focus": ["qdrant", "retrieval", "chat"], "note": "查看项目绑定文档如何进入对话 RAG。" }
+    ]
+  },
+  "stages": [
+    { "label": "上传" },
+    { "label": "规范存储" },
+    { "label": "后台索引" },
+    { "label": "检查与代次" },
+    { "label": "召回" }
+  ],
+  "nodes": [
+    { "id": "upload", "type": "frontend", "label": "文档上传 API", "sublabel": "PDF", "stage": 0, "row": 1, "tag": "immutable input", "width": 150 },
+    { "id": "source", "type": "database", "label": "规范源文件", "sublabel": "data/kb/papers", "stage": 1, "row": 0, "tag": "owned bytes", "width": 145 },
+    { "id": "metadata", "type": "database", "label": "文档元数据", "sublabel": "papers.json + project", "stage": 1, "row": 2, "tag": "canonical", "width": 155 },
+    { "id": "task", "type": "backend", "label": "Index Task", "sublabel": "single worker + lease", "stage": 2, "row": 1, "tag": "async", "width": 150 },
+    { "id": "parser", "type": "backend", "label": "解析与切片", "sublabel": "PDF pages · chunker v1/v2", "stage": 2, "row": 3, "width": 160 },
+    { "id": "qdrant", "type": "database", "label": "Generation Index", "sublabel": "dense + sparse vectors", "stage": 3, "row": 1, "tag": "marker-bound", "width": 160 },
+    { "id": "manifest", "type": "database", "label": "Inspection Manifest", "sublabel": "source blocks + anchors", "stage": 3, "row": 3, "tag": "cursor pages", "width": 165 },
+    { "id": "inspection", "type": "backend", "label": "切片检查 API", "sublabel": "原文 ↔ 切片", "stage": 3, "row": 0, "width": 145 },
+    { "id": "retrieval", "type": "backend", "label": "Hybrid Retrieval", "sublabel": "RRF + optional rerank", "stage": 4, "row": 1, "tag": "project filter", "width": 160 },
+    { "id": "chat", "type": "frontend", "label": "对话回答", "sublabel": "sources after answer", "stage": 4, "row": 3, "width": 150 }
+  ],
+  "flows": [
+    { "id": "upload-source", "from": "upload", "to": "source", "label": "store", "classification": "owned file", "variant": "emphasis", "route": "auto", "labelAt": [110, 330] },
+    { "id": "upload-metadata", "from": "upload", "to": "metadata", "label": "record", "classification": "canonical record", "variant": "default", "route": "auto", "labelAt": [280, 205] },
+    { "id": "source-task", "from": "source", "to": "task", "label": "queue", "classification": "background", "variant": "emphasis", "route": "auto", "labelAt": [400, 220] },
+    { "id": "metadata-task", "from": "metadata", "to": "task", "label": "id", "classification": "generation check", "variant": "default", "route": "auto", "labelAt": [400, 425] },
+    { "id": "task-parser", "from": "task", "to": "parser", "label": "chunk", "classification": "lease owned", "variant": "emphasis", "route": "auto", "labelAt": [530, 330] },
+    { "id": "parser-qdrant", "from": "parser", "to": "qdrant", "label": "vectors", "classification": "active generation", "variant": "emphasis", "route": "vertical-channel", "labelAt": [700, 430] },
+    { "id": "parser-manifest", "from": "parser", "to": "manifest", "label": "anchors", "classification": "inspection", "variant": "default", "route": "auto", "labelAt": [636, 550] },
+    { "id": "qdrant-retrieval", "from": "qdrant", "to": "retrieval", "label": "RRF", "classification": "project filter", "variant": "emphasis", "route": "auto", "labelAt": [850, 330] },
+    { "id": "retrieval-chat", "from": "retrieval", "to": "chat", "label": "evidence", "classification": "citations", "variant": "emphasis", "route": "auto", "labelAt": [960, 330] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Storage Contract", "items": ["源文件和元数据先持久化，索引任务随后异步执行", "索引只能写入当前 generation marker 指向的集合"] },
+    { "dot": "emerald", "title": "Inspection Contract", "items": ["Inspection 首次访问可触发 manifest 生成", "前端用 cursor 分页读取原文块和切片锚点"] },
+    { "dot": "amber", "title": "Retrieval Contract", "items": ["dense、sparse 和 RRF 共用同一项目文档过滤器", "搜索只返回知识库证据，PDF 下载不在召回阶段发生"] }
+  ]
+}

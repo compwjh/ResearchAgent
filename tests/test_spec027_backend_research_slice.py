@@ -1164,9 +1164,14 @@ class UntrustedPaperTests(_ResearchSliceTestCase):
         for needle in MALICIOUS_PAPER_NEEDLES:
             offenders = [text for text in texts if needle in text]
             self.assertEqual(offenders, [], f"论文文本不得进入 research 任何结构：{needle!r} -> {offenders}")
+        # 白名单式冻结：新增字段必须在此显式登记，防止论文文本字段被悄悄加进来。
+        # source_search_id 是服务端检索句柄（search_id），不是论文文本，允许存在。
         self.assertEqual(
             set(ResearchPaperSelection.__dataclass_fields__),
-            {"research_task_id", "catalog_paper_id", "relevance", "facets_json", "evidence_level", "created_at"},
+            {
+                "research_task_id", "catalog_paper_id", "relevance", "facets_json",
+                "evidence_level", "created_at", "source_search_id",
+            },
             "论文选集结构不得含 title/abstract/authors/url 等论文文本字段",
         )
 

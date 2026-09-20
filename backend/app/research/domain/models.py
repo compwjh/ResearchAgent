@@ -361,6 +361,11 @@ class ResearchPaperSelection:
     facets_json: str
     evidence_level: str
     created_at: str
+    # 该候选来自哪一次检索（search_id）。一个任务可扇出多个 search worker，
+    # 各自产出不同的 server 快照句柄；导入桥必须按来源快照分别建批次，
+    # 否则「选集来自 s2、任务只持久化 s1」会让确认必然失败（见 Spec029）。
+    # 旧行可能为 NULL，读取时回落到任务级 search_id。
+    source_search_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -370,10 +375,13 @@ class ResearchPaperSelection:
             "facets_json": self.facets_json,
             "evidence_level": self.evidence_level,
             "created_at": self.created_at,
+            "source_search_id": self.source_search_id,
         }
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> Self:
+        raw_source = row.get("source_search_id")
+        source_search_id = str(raw_source).strip() if raw_source else None
         return cls(
             research_task_id=row["research_task_id"],
             catalog_paper_id=row["catalog_paper_id"],
@@ -381,6 +389,7 @@ class ResearchPaperSelection:
             facets_json=row["facets_json"],
             evidence_level=row["evidence_level"],
             created_at=row["created_at"],
+            source_search_id=source_search_id or None,
         )
 
 
@@ -398,12 +407,28 @@ class AcquisitionApproval:
     status: str
     idempotency_key: str | None = None
     batch_id: str | None = None
+    # 选集可能横跨多个 search worker 的快照，导入桥按来源快照分别建批次。
+    # batch_id 保持为主批次（首个），batch_ids_json 记录全部批次 id（JSON 数组）。
+    batch_ids_json: str | None = None
     created_at: str = ""
     updated_at: str = ""
 
     @property
     def research_task_id(self) -> str:
         return self.task_id
+
+    def batch_ids(self) -> list[str]:
+        """全部批次 id；缺省时退化为单批次 ``batch_id``。"""
+        if self.batch_ids_json:
+            try:
+                parsed = json.loads(self.batch_ids_json)
+            except (TypeError, ValueError):
+                parsed = []
+            if isinstance(parsed, list):
+                values = [str(item) for item in parsed if item]
+                if values:
+                    return values
+        return [self.batch_id] if self.batch_id else []
 
     def to_dict(self) -> dict:
         return {
@@ -413,6 +438,8 @@ class AcquisitionApproval:
             "paper_ids": list(self.paper_ids),
             "status": self.status,
             "batch_id": self.batch_id,
+            "batch_ids_json": self.batch_ids_json,
+            "batch_ids": self.batch_ids(),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -433,6 +460,7 @@ class AcquisitionApproval:
             status=row["status"],
             idempotency_key=row.get("idempotency_key"),
             batch_id=row.get("batch_id"),
+            batch_ids_json=row.get("batch_ids_json"),
             created_at=row.get("created_at", ""),
             updated_at=row.get("updated_at", ""),
         )

@@ -12,12 +12,18 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.app.platform.config import BASE_DIR
 
+# 搜索快照（search_jobs.expires_at）的默认有效期。
+# 研究任务从检索到用户确认全文获取往往跨若干天：原 24h 会让「隔天点确认」必然
+# 撞上 SEARCH_EXPIRED，导入桥在下载前就失败。7 天覆盖典型的一周研究周期；
+# 仍可用 PAPER_DISCOVERY_SEARCH_TTL_SECONDS 覆盖。
+DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS = 7 * 24 * 60 * 60
+
 
 class PaperDiscoverySettings(BaseModel):
     paper_discovery_search_limit: int = 20
     paper_discovery_max_search_limit: int = 100
     paper_discovery_candidate_pool: int = 200
-    paper_discovery_search_ttl_seconds: int = 86400
+    paper_discovery_search_ttl_seconds: int = DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS
     paper_discovery_db_path: str = str(BASE_DIR / "data" / "paper_search" / "state.sqlite3")
     paper_discovery_default_years: int = 5
     paper_discovery_request_timeout_seconds: float = 20.0

@@ -567,3 +567,49 @@ def test_storage_locked_via_injected_indexer_maps_to_kb_storage_locked(tmp_path)
             temp_dir=tmp_path,
         )
     assert exc.value.code == KB_STORAGE_LOCKED
+
+
+def test_storage_locked_returned_in_index_result_maps_to_kb_storage_locked(tmp_path):
+    """索引器**不抛异常**、只把存储占用原因放进结果映射时，也必须映射到 KB_STORAGE_LOCKED。
+
+    真实链路（本机 Qdrant 被另一个实例占用）里，KB 适配器把索引失败收敛成一句裸的
+    ``RuntimeError("index failed")``，索引器给的原因只留在结果里。此前上层再也认不出
+    这是存储争用，被吞成不可行动的 KB_INDEX_FAILED，用户只看到「请稍后重建索引」。
+    """
+    def locked_result_indexer(_record, _path):
+        return {
+            "status": "failed",
+            "error": "索引失败：Storage folder data/kb/qdrant is already accessed "
+                     "by another instance of Qdrant client",
+        }
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []),
+            paper_import_port=_port(tmp_path / "papers", tmp_path / "papers.json",
+                                    indexer=locked_result_indexer),
+            temp_dir=tmp_path,
+        )
+    assert exc.value.code == KB_STORAGE_LOCKED
+    assert exc.value.message == "知识库存储被另一个实例占用，请关闭其他服务实例后重试"
+    # 含路径的索引器原文绝不得进入 error_code / message。
+    assert "qdrant" not in str(exc.value)
+    assert "data/kb" not in exc.value.message
+
+
+def test_unrelated_index_result_failure_is_not_treated_as_storage_locked(tmp_path):
+    """窄匹配仍成立：结果里的失败原因与存储争用无关时，不得误报 KB_STORAGE_LOCKED。"""
+    def broken_indexer(_record, _path):
+        return {"status": "failed", "error": "索引失败：embedding 超时"}
+
+    with pytest.raises(PaperImportError) as exc:
+        import_candidate(
+            _candidate(), ArticleSettings(), {"papers.example"}, conference_short_name="CCS",
+            downloader=_downloader(tmp_path, []),
+            paper_import_port=_port(tmp_path / "papers", tmp_path / "papers.json",
+                                    indexer=broken_indexer),
+            temp_dir=tmp_path,
+        )
+    assert exc.value.code != KB_STORAGE_LOCKED
+    assert "另一个实例" not in exc.value.message

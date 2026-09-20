@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "ResearchAgent 动态模型路由与观测流程",
+    "locale": "zh-CN",
+    "subtitle": "能力探测、档位选择、Worker 配额和 Langfuse 记录",
+    "viewBox": [1200, 720],
+    "column_fit": "spread",
+    "animation": "trace",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "route-and-grant", "label": "路由与配额", "focus": ["api", "catalog", "router", "scheduler", "provider"], "note": "查看模型能力清单如何转成模型选择和 worker grant。" },
+      { "id": "provider-branches", "label": "Provider 分支", "focus": ["router", "provider", "api"], "note": "查看 direct 仅用于 Ollama，Online Model 回退到 LangChain。" },
+      { "id": "observation", "label": "观测写入", "focus": ["api", "provider", "langfuse"], "note": "查看 generation 指标和路由决策如何异步记录。" }
+    ]
+  },
+  "participants": [
+    { "id": "api", "type": "backend", "label": "应用请求" },
+    { "id": "catalog", "type": "backend", "label": "Model Catalog" },
+    { "id": "router", "type": "backend", "label": "ModelRouter" },
+    { "id": "scheduler", "type": "backend", "label": "ResearchScheduler" },
+    { "id": "provider", "type": "external", "label": "Provider" },
+    { "id": "langfuse", "type": "cloud", "label": "Langfuse" }
+  ],
+  "segments": [
+    { "from": 150, "to": 300, "label": "Resolve" },
+    { "from": 310, "to": 500, "label": "Invoke" },
+    { "from": 510, "to": 650, "label": "Observe" }
+  ],
+  "messages": [
+    { "id": "request", "from": "api", "to": "catalog", "y": 160, "label": "list available models", "variant": "default" },
+    { "id": "models", "from": "catalog", "to": "api", "y": 188, "label": "models + capabilities", "variant": "return" },
+    { "id": "resolve", "from": "api", "to": "router", "y": 220, "label": "resolve(role, tier)", "variant": "emphasis" },
+    { "id": "choice", "from": "router", "to": "api", "y": 248, "label": "model choice", "variant": "return" },
+    { "id": "grant", "from": "router", "to": "scheduler", "y": 280, "label": "grant workers", "variant": "security" },
+    { "id": "grant-result", "from": "scheduler", "to": "router", "y": 308, "label": "bounded grant", "variant": "return" },
+    { "id": "invoke", "from": "api", "to": "provider", "y": 350, "label": "invoke selected model", "variant": "emphasis" },
+    { "id": "stream", "from": "provider", "to": "api", "y": 390, "label": "tokens + timings", "variant": "return" },
+    { "id": "release", "from": "api", "to": "scheduler", "y": 430, "label": "release grant", "variant": "dashed" },
+    { "id": "route-observe", "from": "router", "to": "langfuse", "y": 490, "label": "routing decision", "variant": "dashed" },
+    { "id": "generation-observe", "from": "api", "to": "langfuse", "y": 530, "label": "TTFT · eval · success", "variant": "dashed" },
+    { "id": "response", "from": "provider", "to": "api", "y": 574, "label": "return answer", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "api", "from": 158, "to": 600, "type": "backend" },
+    { "participant": "catalog", "from": 158, "to": 198, "type": "backend" },
+    { "participant": "router", "from": 216, "to": 328, "type": "backend" },
+    { "participant": "scheduler", "from": 276, "to": 444, "type": "backend" },
+    { "participant": "provider", "from": 346, "to": 408, "type": "external" },
+    { "participant": "langfuse", "from": 486, "to": 548, "type": "cloud" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Selection", "items": ["ModelRouter only chooses from the available model catalog", "AdaptiveRoutingService acquires worker capacity after resolving the model"] },
+    { "dot": "emerald", "title": "Provider Branch", "items": ["direct is Ollama-only", "Online Model requests are forced through the LangChain route"] },
+    { "dot": "amber", "title": "Observation", "items": ["Routing decisions and generation metrics are write-only observations", "Observation failures never change the selected model or response"] }
+  ]
+}

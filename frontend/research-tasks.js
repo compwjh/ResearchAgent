@@ -148,6 +148,9 @@
     createIdempotencyKey: null,
     triggerMessageId: null,
     taskActionInFlight: false,
+    selectTaskInFlight: null,
+    paperDisplays: new Map(),
+    paperDisplaysPending: new Set(),
     acquisition: {
       preview: [], status: null, links: [], items: [], events: [], evidence: [], selectionVersion: null,
       selectedIds: new Set(), searchId: null, loading: false, confirming: false,
@@ -1466,7 +1469,8 @@
       const checkbox = state.document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = state.acquisition.selectedIds.has(id); checkbox.dataset.paperId = id;
       checkbox.setAttribute('aria-label', `选择全文候选 ${id}`);
       checkbox.addEventListener('change', () => { if (checkbox.checked) state.acquisition.selectedIds.add(id); else state.acquisition.selectedIds.delete(id); renderAcquisition(); });
-      const title = state.document.createElement('span'); title.className = 'research-acquisition-candidate-title'; title.textContent = `目录论文：${id}`;
+      const title = state.document.createElement('span'); title.className = 'research-acquisition-candidate-title'; title.textContent = paperLabel(id);
+      title.appendChild(paperIdHint(id));
       label.append(checkbox, title);
       const badge = state.document.createElement('span'); badge.className = 'research-acquisition-badge'; badge.dataset.status = status; badge.textContent = acquisitionStatusLabel(status);
       head.append(label, badge);
@@ -1496,7 +1500,8 @@
       projected.forEach((item) => {
         const row = state.document.createElement('li'); row.className = 'research-acquisition-item'; row.dataset.status = String(item.status || '');
         const head = state.document.createElement('div'); head.className = 'research-acquisition-item-head';
-        const title = state.document.createElement('strong'); title.className = 'research-acquisition-item-title'; title.textContent = `目录论文：${text(item.catalog_paper_id, '未知')}`;
+        const title = state.document.createElement('strong'); title.className = 'research-acquisition-item-title'; title.textContent = paperLabel(item.catalog_paper_id);
+        title.appendChild(paperIdHint(text(item.catalog_paper_id, '未知 ID')));
         const badge = state.document.createElement('span'); badge.className = 'research-acquisition-badge'; badge.dataset.status = String(item.status || ''); badge.textContent = acquisitionStatusLabel(item.status);
         head.append(title, badge);
         const meta = state.document.createElement('p'); meta.className = 'research-acquisition-item-meta'; meta.textContent = item.document_id ? `知识库文档：${item.document_id}` : `导入条目：${text(item.import_item_id || item.item_id, '等待创建')}`;
@@ -1513,6 +1518,10 @@
         row.append(head, meta, actions); itemsHost.appendChild(row);
       });
     }
+    refreshPaperDisplays(
+      [...candidates.map((candidate) => candidate.catalog_paper_id), ...projected.map((item) => item.catalog_paper_id)],
+      renderAcquisition,
+    );
     renderAcquisitionEvidence(state.acquisition.evidence);
   }
 
@@ -1657,18 +1666,23 @@
     [...merged.values()].forEach((selection) => {
       if (!selection || typeof selection !== 'object') return;
       const item = state.document.createElement('li');
-      const paperId = state.document.createElement('strong');
-      paperId.textContent = `目录论文：${text(selection.catalog_paper_id, '未知 ID')}`;
+      const paperTitle = state.document.createElement('strong');
+      paperTitle.textContent = paperLabel(selection.catalog_paper_id);
+      paperTitle.appendChild(paperIdHint(text(selection.catalog_paper_id, '未知 ID')));
       const meta = state.document.createElement('span');
       meta.textContent = `相关性：${selection.relevance === undefined ? '待评估详情' : text(selection.relevance)} · ${selection.evidence_level ? evidenceLabel(selection.evidence_level) : '证据等级待报告确认'}`;
       const facets = state.document.createElement('span');
       facets.textContent = `facets：${selectionFacetText(selection.facets)}`;
-      item.append(paperId, meta, facets);
+      item.append(paperTitle, meta, facets);
       list.appendChild(item);
     });
     if (state.selectedPaperCount !== null) {
       const count = state.document.createElement('li'); count.textContent = `已选 ${state.selectedPaperCount} 篇论文`; list.appendChild(count);
     }
+    refreshPaperDisplays(
+      [...merged.values()].map((selection) => selection?.catalog_paper_id),
+      renderSelection,
+    );
   }
 
   function selectionFacetText(value) {
@@ -1812,6 +1826,50 @@
     return `${pages} · ${chunks}${locator.chunker ? ` · ${String(locator.chunker).slice(0, 20)}` : ''}`;
   }
 
+  function paperLabel(paperId) {
+    const key = String(paperId || '').trim();
+    if (!key) return '未知论文';
+    const record = state.paperDisplays.get(key);
+    const label = record ? String(record.display_label || '').trim() : '';
+    return label || key;
+  }
+
+  function paperIdHint(paperId) {
+    const hint = state.document.createElement('span');
+    hint.className = 'research-paper-id-hint';
+    hint.textContent = String(paperId || '').trim();
+    return hint;
+  }
+
+  async function ensurePaperDisplays(paperIds) {
+    const wanted = [...new Set((paperIds || [])
+      .map((value) => String(value == null ? '' : value).trim())
+      .filter(Boolean))]
+      .filter((value) => !state.paperDisplays.has(value) && !state.paperDisplaysPending.has(value));
+    if (!wanted.length || !state.selectedTaskId) return false;
+    wanted.forEach((value) => state.paperDisplaysPending.add(value));
+    try {
+      const result = await requestJson(
+        `/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/paper-displays`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paper_ids: wanted }) },
+      );
+      const papers = (result && result.papers) || {};
+      wanted.forEach((value) => state.paperDisplays.set(value, papers[value] || null));
+      return true;
+    } catch (_) {
+      wanted.forEach((value) => state.paperDisplays.set(value, null));
+      return false;
+    } finally {
+      wanted.forEach((value) => state.paperDisplaysPending.delete(value));
+    }
+  }
+
+  function refreshPaperDisplays(paperIds, rerender) {
+    ensurePaperDisplays(paperIds).then((changed) => {
+      if (changed && typeof rerender === 'function') rerender();
+    });
+  }
+
   function renderMatrix(matrix = state.matrix) {
     const section = byId('research-matrix-section');
     const body = byId('research-evidence-matrix-body'); const empty = byId('research-matrix-empty');
@@ -1826,7 +1884,7 @@
     rows.forEach((cell) => {
       const row = state.document.createElement('tr'); row.dataset.relation = String(cell.relation || 'missing');
       const claim = state.document.createElement('td'); claim.textContent = `${text(cell.claim_id, '未知结论')} · ${text(claims.get(String(cell.claim_id))?.statement, '—')}`;
-      const paper = state.document.createElement('td'); paper.textContent = text(cell.paper_id, '未知论文');
+      const paper = state.document.createElement('td'); paper.textContent = paperLabel(cell.paper_id);
       const dimension = state.document.createElement('td'); dimension.textContent = text(dimensions.get(String(cell.dimension_id))?.label || cell.dimension_id, '—');
       const relation = state.document.createElement('td'); const relationBadge = state.document.createElement('span'); relationBadge.className = 'research-matrix-relation'; relationBadge.dataset.relation = String(cell.relation || 'missing'); relationBadge.textContent = ({ supports: '支持', contradicts: '反驳', contextual: '背景', missing: '缺口' })[cell.relation] || text(cell.relation, '缺口'); relation.appendChild(relationBadge);
       const evidence = state.document.createElement('td'); const evidenceWrap = state.document.createElement('div'); evidenceWrap.className = 'research-matrix-citations';
@@ -1835,6 +1893,7 @@
       if (!citationNos.length) evidenceWrap.textContent = text(cell.missing_reason || cell.summary, '—');
       evidence.appendChild(evidenceWrap); row.append(claim, paper, dimension, relation, evidence); body.appendChild(row);
     });
+    refreshPaperDisplays(rows.map((cell) => cell.paper_id), () => renderMatrix(matrix));
     if (empty) empty.hidden = rows.length > 0;
     const limitations = matrix.limitations || [];
     limitations.forEach((item) => { const li = state.document.createElement('li'); li.textContent = String(item); gapList?.appendChild(li); });
@@ -1853,7 +1912,7 @@
     const evidences = citation ? (Array.isArray(citation.evidence_ids) ? citation.evidence_ids : []).map((id) => (state.report?.evidence || state.matrix?.evidence || []).find((item) => String(item.evidence_id) === String(id))).filter(Boolean) : [];
     clearNode(host); host.hidden = !citation;
     if (!citation) return;
-    const head = state.document.createElement('div'); head.className = 'research-report-citation-detail-head'; const title = state.document.createElement('strong'); title.textContent = `引用 [${no}] · ${text(citation.paper_id, '未知论文')}`; const close = state.document.createElement('button'); close.type = 'button'; close.className = 'icon-button'; close.textContent = '×'; close.setAttribute('aria-label', '收起引用详情'); close.addEventListener('click', () => { host.hidden = true; state.activeCitationNo = null; }); head.append(title, close); host.appendChild(head);
+    const head = state.document.createElement('div'); head.className = 'research-report-citation-detail-head'; const title = state.document.createElement('strong'); title.textContent = `引用 [${no}] · ${paperLabel(citation.paper_id)}`; const close = state.document.createElement('button'); close.type = 'button'; close.className = 'icon-button'; close.textContent = '×'; close.setAttribute('aria-label', '收起引用详情'); close.addEventListener('click', () => { host.hidden = true; state.activeCitationNo = null; }); head.append(title, close); host.appendChild(head);
     evidences.forEach((evidence) => {
       const locator = locatorForEvidence(evidence); const fields = state.document.createElement('dl');
       [['证据', evidence.evidence_id], ['等级', evidenceLabel(evidence.evidence_level)], ['立场', ({ supports: '支持', contradicts: '反驳', contextual: '背景' })[evidence.stance] || evidence.stance], ['定位', locatorText(locator)], ['切片', Array.isArray(locator.chunk_ids) ? locator.chunk_ids.join('、') : '—']].forEach(([label, value]) => { const dt = state.document.createElement('dt'); dt.textContent = label; const dd = state.document.createElement('dd'); dd.textContent = value == null || value === '' ? '—' : String(value); fields.append(dt, dd); });
@@ -1924,8 +1983,9 @@
     if (!details || !list) return;
     clearNode(list); details.hidden = true;
     const values = Array.isArray(citations) ? citations.slice(0, 256) : citations && Array.isArray(citations.citations) ? citations.citations.slice(0, 256) : citations && typeof citations === 'object' ? [citations] : [];
-    values.forEach((citation) => { const no = safePositiveInteger(citation?.citation_no); if (!no) return; const item = state.document.createElement('li'); const button = createCitationButton(no); button.addEventListener('click', () => { state.activeCitationNo = no; renderCitationDetail(no); }); item.appendChild(button); const label = state.document.createElement('span'); label.textContent = ` ${text(citation.paper_id, '未知论文')} · ${Array.isArray(citation.evidence_ids) ? citation.evidence_ids.join('、') : ''}`; item.appendChild(label); list.appendChild(item); });
+    values.forEach((citation) => { const no = safePositiveInteger(citation?.citation_no); if (!no) return; const item = state.document.createElement('li'); const button = createCitationButton(no); button.addEventListener('click', () => { state.activeCitationNo = no; renderCitationDetail(no); }); item.appendChild(button); const label = state.document.createElement('span'); label.textContent = ` ${paperLabel(citation.paper_id)} · ${Array.isArray(citation.evidence_ids) ? citation.evidence_ids.join('、') : ''}`; item.appendChild(label); list.appendChild(item); });
     details.hidden = list.childNodes.length === 0;
+    refreshPaperDisplays(values.map((citation) => citation?.paper_id), () => renderReportCitations(citations));
   }
 
   function renderReportRaw(value) {
@@ -2159,7 +2219,9 @@
   }
 
   async function selectTask(taskId, sessionId = null) {
+    const target = taskId || sessionId;
     if (!taskId && !sessionId) return;
+    state.selectTaskInFlight = target;
     closeStream();
     state.selectedTaskId = taskId || null;
     state.selectedSessionId = sessionId || state.tasks.find((item) => item.research_task_id === taskId)?.research_session_id || null;
@@ -2201,7 +2263,7 @@
       if (resolvedSessionId) {
         try {
           const session = task.research_session?.research_session_id === resolvedSessionId ? task.research_session : await requestJson(`/api/research-sessions/${encodeURIComponent(resolvedSessionId)}`);
-          if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) return;
+          if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) { return; }
           state.selectedSessionId = resolvedSessionId;
           const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
           state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: canonical?.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
@@ -2225,6 +2287,8 @@
       setText('research-detail-empty', userError(error, '任务详情加载失败。'));
       setDetailVisibility(false);
       setText('research-summary-text', userError(error));
+    } finally {
+      if (state.selectTaskInFlight === target) state.selectTaskInFlight = null;
     }
   }
 
@@ -2234,6 +2298,13 @@
     const selected = state.selectedTaskId && tasks.find((task) => task.research_task_id === state.selectedTaskId)
       || state.selectedSessionId && tasks.find((task) => task.research_session_id === state.selectedSessionId)
       || tasks.find((task) => task.conversation_id === state.conversationId);
+    // A selectTask is currently in flight loading a specific task/session. Do not
+    // start another selection or reset this one: the in-flight load owns the
+    // selection and will reconcile state once it resolves. Otherwise the in-flight
+    // selectTask would hit its stale-selection guard and silently abort (loadReport
+    // / connectStream never run), and a re-select here would open a duplicate SSE
+    // pipe after approval.
+    if (state.selectTaskInFlight) return;
     if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
       closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
@@ -2432,6 +2503,7 @@
 
   return {
     boot, parseConversationId, statusLabel, userError, renderSafeMarkdown,
+    mergeSessionCommandResult, selectTask, refreshWorkspace, state,
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,
     sessionTaskProjection, sessionDurationText, sessionProgressText, sessionApprovalText, sessionAgentToolText,

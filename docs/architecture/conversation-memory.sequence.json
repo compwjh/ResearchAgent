@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "ResearchAgent 对话、记忆与上下文流程",
+    "locale": "zh-CN",
+    "subtitle": "记忆召回、项目 RAG、模型流式输出和异步压缩",
+    "viewBox": [1100, 820],
+    "column_fit": "spread",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "context-build", "label": "上下文装配", "focus": ["user", "web", "api", "memory", "kb", "router"], "note": "查看消息进入 API 后如何召回记忆、项目文档并选择模型。" },
+      { "id": "streaming-answer", "label": "思考与回答流", "focus": ["api", "router", "model", "events", "web", "user"], "note": "查看 reasoning、token、sources 和 done 事件的先后顺序。" },
+      { "id": "async-maintenance", "label": "异步维护", "focus": ["api", "memory", "events", "langfuse"], "note": "查看回答结束后的记忆演化、上下文压缩和观测写入。" }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "用户" },
+    { "id": "web", "type": "frontend", "label": "Web 前端" },
+    { "id": "api", "type": "backend", "label": "API" },
+    { "id": "memory", "type": "database", "label": "Memory" },
+    { "id": "kb", "type": "database", "label": "KB Index" },
+    { "id": "router", "type": "backend", "label": "Model Router" },
+    { "id": "model", "type": "external", "label": "Provider" },
+    { "id": "events", "type": "messagebus", "label": "Events" },
+    { "id": "langfuse", "type": "cloud", "label": "Langfuse" }
+  ],
+  "segments": [
+    { "from": 150, "to": 300, "label": "Request + context" },
+    { "from": 310, "to": 560, "label": "Model stream" },
+    { "from": 570, "to": 760, "label": "Async maintenance" }
+  ],
+  "messages": [
+    { "id": "user-send", "from": "user", "to": "web", "y": 160, "label": "发送问题", "variant": "default" },
+    { "id": "web-message", "from": "web", "to": "api", "y": 188, "label": "POST /conversations/messages", "variant": "emphasis" },
+    { "id": "recall", "from": "api", "to": "memory", "y": 220, "label": "召回摘要 + FTS5", "variant": "default" },
+    { "id": "recall-result", "from": "memory", "to": "api", "y": 248, "label": "全局 / 项目记忆", "variant": "return" },
+    { "id": "kb-query", "from": "api", "to": "kb", "y": 278, "label": "项目文档可见性", "variant": "security" },
+    { "id": "kb-result", "from": "kb", "to": "api", "y": 306, "label": "dense + sparse + RRF", "variant": "return" },
+    { "id": "route", "from": "api", "to": "router", "y": 338, "label": "解析模型与 reasoning", "variant": "security" },
+    { "id": "invoke", "from": "router", "to": "model", "y": 370, "label": "direct / LangChain invoke", "variant": "emphasis" },
+    { "id": "model-stream", "from": "model", "to": "api", "y": 404, "label": "thinking + token", "variant": "return" },
+    { "id": "event-progress", "from": "api", "to": "events", "y": 436, "label": "progress / reasoning_delta", "variant": "dashed" },
+    { "id": "event-ui", "from": "events", "to": "web", "y": 468, "label": "更新处理过程", "variant": "return" },
+    { "id": "answer", "from": "api", "to": "web", "y": 500, "label": "done + sources", "variant": "return" },
+    { "id": "ui-user", "from": "web", "to": "user", "y": 532, "label": "展示回答", "variant": "return" },
+    { "id": "evolution", "from": "api", "to": "memory", "y": 590, "label": "enqueue memory evolution", "variant": "dashed" },
+    { "id": "compaction", "from": "api", "to": "memory", "y": 622, "label": "enqueue compaction", "variant": "dashed" },
+    { "id": "metrics", "from": "api", "to": "langfuse", "y": 654, "label": "TTFT + generation metrics", "variant": "dashed" },
+    { "id": "async-events", "from": "memory", "to": "events", "y": 690, "label": "后台状态可观测", "variant": "dashed" }
+  ],
+  "activations": [
+    { "participant": "web", "from": 184, "to": 540, "type": "frontend" },
+    { "participant": "api", "from": 188, "to": 670, "type": "backend" },
+    { "participant": "memory", "from": 216, "to": 714, "type": "database" },
+    { "participant": "kb", "from": 274, "to": 316, "type": "database" },
+    { "participant": "router", "from": 334, "to": 382, "type": "backend" },
+    { "participant": "model", "from": 366, "to": 416, "type": "external" },
+    { "participant": "events", "from": 432, "to": 704, "type": "messagebus" },
+    { "participant": "langfuse", "from": 650, "to": 688, "type": "cloud" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Context Build", "items": ["记忆召回失败时 fail-open，不阻断普通回答", "只有绑定项目且存在文档时才执行项目 RAG"] },
+    { "dot": "emerald", "title": "Stream Contract", "items": ["thinking 在 token 之前，sources 在回答完成后", "事件带序列号，前端可重连并恢复进度"] },
+    { "dot": "amber", "title": "Async Maintenance", "items": ["记忆演化与上下文压缩在回答后后台执行", "Langfuse 观测失败不影响用户可见回答"] }
+  ]
+}

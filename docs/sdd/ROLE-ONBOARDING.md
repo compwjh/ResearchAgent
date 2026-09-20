@@ -1,12 +1,14 @@
 # 角色上手指南（Role Onboarding）
 
 > 目的：让每个角色 Agent **只加载自己该看的少量文档**就开始工作，避免全项目扫描、挤占上下文窗口与 token。
-> 用法：启动时先读本文件里自己那一段，只打开「重点读」列出的文件；`忽略` 里的不要主动读取，除非当前任务确实需要。
+> 用法：启动时先读本文件里自己那一段（标题里的反引号名即 `.codebuddy/agents/<name>.md`），只打开「重点读」列出的文件；`忽略` 里的不要主动读取，除非当前任务确实需要。
 > 完整流程见 `AGENTS.md`；spec 模板见 `00-sdd-spec-template.md`。
+> **本文件不复述模型型号**：档位唯一真源是 `.codebuddy/agents/<name>.md` 的 `model` 字段，清单见 `docs/sdd/MODEL_REGISTRY.md`。
+> **（2026-09-20 修正）** `PM` / `Tech Lead` / `Junior Dev` 在 `.codebuddy/agents/` 下**没有对应文件**，已改为真实 agent 名。
 
 ---
 
-## 架构师（Architect）
+## 架构师（Architect）— `architect`
 
 - **何时接手**：收到新需求 / 需求变更，spec 处于 `待确认` 之前。
 - **重点读**：
@@ -18,7 +20,7 @@
 - **忽略**：`reviews/` 历史、`backend/`/`frontend/` 实现代码（除非需确认接口现状）
 - **上下文建议**：64k–200k（旗舰推理模型）
 
-## 产品经理（PM）
+## 文档更新（Doc Updater）— `doc-updater`（历史称 PM）
 
 - **何时接手**：spec 已 `已确认`，补「产品使用步骤」段。
 - **重点读**：
@@ -28,7 +30,7 @@
 - **忽略**：模型选型、CI 配置、后端实现细节
 - **上下文建议**：32k–64k（中等推理/写作模型，可本地）
 
-## 开发主管（Tech Lead）
+## 架构师（评审/合并）— `architect`（历史称 Tech Lead）
 
 - **何时接手**：评审门禁节点；PR 合并裁决。
 - **重点读**：
@@ -39,15 +41,13 @@
 - **忽略**：模型库细节（除非预算异常）、前端样式实现
 - **上下文建议**：64k–200k（强推理/代码模型）
 
-## 初级开发（Junior Dev）
+## 跨端 / 归属不确定的改动（**不存在 `junior-dev`**）
 
-- **何时接手**：spec `已确认` 后，在 `spec/NNN-*` 或 `fix/NNN-*` 分支编码。
-- **重点读**：
-  - 对应 spec 的「数据模型 / 端点接口 / 边界 / 明确不做 / 产品使用步骤」段
-  - 自己分支相关文件
-- **产出**：代码 + 自测结果（lint/test/覆盖率）
-- **忽略**：`reviews/` 历史、其他 spec、架构决策讨论
-- **上下文建议**：32k（中等代码模型，优先本地 Ollama）
+- **本项目没有 `junior-dev`**（`.codebuddy/agents/` 下无此文件），历史文档里的「初级开发」一律按下面方式落地：
+  - 纯 `backend/**` → 见「后端开发」段，分派 `backend-dev`
+  - 纯 `frontend/**` → 见「前端开发」段，分派 `frontend-dev`
+  - 跨端 → **拆成两个任务分别分派**，不要派一个 agent 通吃两端
+- 分支：spec `已确认` 后在 `feature/spec-NNN-*` 或 `fix/spec-NNN-*` 分支编码（见 `AGENTS.md`「Git 规范」）。
 
 ## 测试（QA）
 
@@ -65,7 +65,7 @@
 - **重点读**：spec 的数据模型/接口/边界段 + `.codebuddy/skills/backend-patterns/SKILL.md` + `regression-guard`（第 5–9 条）
 - **产出**：后端代码 + 自测结果（`py_compile` / `pytest`）
 - **忽略**：`frontend/**`、前端测试、其他 spec（前端改动转派 `frontend-dev`）
-- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（后端含并发/事务/边界，必须 27B 级）
+- **上下文建议**：32k（模型档位读 `.codebuddy/agents/backend-dev.md` 的 `model` 字段，本文件不写死）
 
 ## 前端开发（Frontend Dev）— `frontend-dev`
 
@@ -73,7 +73,7 @@
 - **重点读**：spec 的边界段 + `.codebuddy/skills/frontend-patterns/SKILL.md` + `regression-guard`（第 1–4 条）
 - **产出**：前端代码 + 三项自查（class 与 CSS 对应 / `?v=N` 已升 / 无 `innerHTML`）
 - **忽略**：`backend/**`、后端 pytest（后端改动转派 `backend-dev`）
-- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（2026-09-05 用户指定升配，质量优先）
+- **上下文建议**：32k（模型档位读 `.codebuddy/agents/frontend-dev.md` 的 `model` 字段，本文件不写死）
 
 ## 后端评审（Backend Reviewer）— `backend-reviewer`
 
@@ -81,7 +81,7 @@
 - **重点读**：spec 全部 + 改动文件 + `backend-patterns` + `regression-guard`（第 5–9 条）
 - **产出**：后端评审报告（`docs/sdd/reviews/`）
 - **忽略**：前端改动（转 `frontend-reviewer`）
-- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（评审需强推理）
+- **上下文建议**：32k（模型档位读 `.codebuddy/agents/backend-reviewer.md` 的 `model` 字段，本文件不写死）
 
 ## 前端评审（Frontend Reviewer）— `frontend-reviewer`
 
@@ -89,7 +89,7 @@
 - **重点读**：改动文件 + `frontend-patterns` + `regression-guard`（第 1–4 条）
 - **产出**：前端评审报告（DOM 契约 / `?v=N` / XSS 三项必查逐项结论）
 - **忽略**：后端改动（转 `backend-reviewer`）
-- **上下文建议**：32k，模型 `qwen3.8:27b-mlx`（2026-09-05 用户指定升配）
+- **上下文建议**：32k（模型档位读 `.codebuddy/agents/frontend-reviewer.md` 的 `model` 字段，本文件不写死）
 
 ## 后端回归（Backend Tester）— `backend-tester`
 
@@ -97,7 +97,7 @@
 - **重点读**：验收点 + 相关后端测试 + `backend-patterns`
 - **产出**：后端验收结论（命令 / 退出码 / 真实输出摘要）
 - **忽略**：前端测试（转 `frontend-tester`）——**单端改动只跑该端回归，省资源**
-- **上下文建议**：32k，模型 `qwen3.5:9b`
+- **上下文建议**：32k（模型档位读对应 agent 文件的 `model` 字段，本文件不写死）
 
 ## 前端回归（Frontend Tester）— `frontend-tester`
 
@@ -105,4 +105,4 @@
 - **重点读**：改动文件 + `frontend-patterns`
 - **产出**：前端验收结论（`node --check` / class 对应 / `?v=N` / XSS 四项）
 - **忽略**：后端 pytest（转 `backend-tester`）
-- **上下文建议**：32k，模型 `qwen3.5:9b`
+- **上下文建议**：32k（模型档位读对应 agent 文件的 `model` 字段，本文件不写死）
