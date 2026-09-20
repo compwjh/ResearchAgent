@@ -61,3 +61,13 @@ PASS：USENIX 官方目录 → 冻结候选快照 → 既有下载/身份校验/
 ## 导入后 provenance 复核
 
 `GET /api/papers/ff93de0782629d6876f5cc97d93f919f/provenance` 返回 HTTP `200`，目录记录的 `index_status` 为 `indexed`，官方详情页仍可读，摘要保持可用。该端点的 `paper_id` 是目录候选 ID；导入响应里的 `paper_id=cacd8936bc074af7a8eb0b2fc9c5df30` 是知识库文档句柄，两者按现有领域边界分别使用，不能混用。
+
+## 重启后复核
+
+服务按 `PORT=18080 RERANKER_ENABLED=false ./deploy/start.sh` 重启后复核：
+
+- `GET /api/health`：HTTP `200`，`paper_discovery_enabled=true`。
+- `GET /api/ready`：HTTP `200`，jieba、Ollama、embedding、Qdrant 均为 `ready`。
+- 再次读取同一目录候选的 provenance：HTTP `200`，`index_status=indexed`，标题、摘要和官方详情页仍在 SQLite 目录记录中。
+
+结论：重启不会丢失该 USENIX 目录记录或其导入状态；本样本可供后续人工验收复现。
