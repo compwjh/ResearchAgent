@@ -85,6 +85,30 @@ def test_usenix_and_ieee_use_same_result_validator():
         assert checked.payload["candidates"][0]["candidate_id"].startswith(f"{source}:")
 
 
+def test_generic_source_worker_honors_candidate_limit():
+    class _ManyIeee(_Ieee):
+        def sync_units(self, _scope):
+            records = tuple({"title": f"IEEE paper {index}", "year": 2024, "doi": f"10.1/{index}"}
+                            for index in range(5))
+            return type("Result", (), {"records": records, "failed_years": (), "error_code": None})()
+
+    registry = _Registry()
+    registry._adapters["ieee_sp"] = _ManyIeee()
+    facade = PaperDiscoveryToolFacade(registry=registry, store=_Store())
+    result = facade.discover("ieee_sp", {"years": [2024], "limit": 2})
+
+    assert result.status == "completed"
+    assert len(result.payload["candidates"]) == 2
+
+
+def test_worker_rejects_out_of_range_limit():
+    facade = PaperDiscoveryToolFacade(registry=_Registry(), store=_Store())
+    result = facade.discover("ieee_sp", {"years": [2024], "limit": 0})
+
+    assert result.status == "failed"
+    assert result.error_code == "INVALID_LIMIT"
+
+
 def test_unknown_source_and_arbitrary_url_fail_closed():
     facade = PaperDiscoveryToolFacade(registry=_Registry(), store=_Store())
     unknown = facade.discover("made-up", {"years": [2024]})
