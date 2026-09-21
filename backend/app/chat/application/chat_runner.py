@@ -25,6 +25,7 @@ from backend.app.platform.ollama_direct import (
     OllamaChatResult,
     OllamaTimings,
     chat_direct_stream,
+    normalize_ollama_messages,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,13 +64,8 @@ def _normalize_langchain_messages(messages: List[Dict[str, str]]) -> List[Dict[s
     every system message into the first one while retaining the relative order
     of all user/assistant/tool history messages.
     """
-    system_messages = [message for message in messages if message.get("role") == "system"]
-    if not system_messages:
-        return [dict(message) for message in messages]
-
-    merged_system = dict(system_messages[0])
-    merged_system["content"] = "\n\n".join(message.get("content", "") for message in system_messages)
-    return [merged_system, *(dict(message) for message in messages if message.get("role") != "system")]
+    # 委托 platform 层的统一归一化实现，避免两条链路逻辑重复（行为字节级不变）。
+    return normalize_ollama_messages(messages)
 
 
 def _langchain_drive(run: "ChatRun", model: str, messages, reasoning: bool | str, *, explicit_reasoning: bool = False):
