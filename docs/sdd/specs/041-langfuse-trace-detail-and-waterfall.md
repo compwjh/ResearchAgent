@@ -236,6 +236,57 @@ with tracer.start_as_current_span("phase:load", start_time=load_start_ns) as ote
 | T-A | Langfuse 部署切换为 dual | `vendor/langfuse/.env` 已设 `LANGFUSE_MIGRATION_V4_WRITE_MODE=dual` 并重启 Langfuse | 01 | 已落地（运行期变更，**不入库**：vendor 目录不进版本控制） |
 | T-B | 埋点 input 全量 | `backend/app/platform/observability/spans.py` input 全量 + 新增 tests 用例 | 01 | 已落地（后端评审通过） |
 | T-D | ClickHouse 补 query_log | `~/opt/clickhouse/config.xml` 新增 query_log 段并重启；`system.query_log` 已创建并开始写入，worker `V4LegacyApiUsageJob failed` 报错已停止 | 01 | 已落地（运行期变更，**不入库**：~/opt 目录不进版本控制） |
+| T-E | 方案 2：阶段子 span | `spans.py` 新增 `_report_phase_spans()`，OTel 直 API 生成 4 个带精确起止的 phase span | 01 | 已落地（口径后被 T-H 实测修正） |
+| T-F | 修复 direct 链路全量 500 | `ollama_direct.py` 新增 `normalize_ollama_messages()`，下发前合并多条 system | T-E | 已落地（`3497019`） |
+| T-G | 回填 generation 起点 | `spans.py` 新增 `_backdate_generation_start()`，修正延迟统计 | T-E | 已落地 |
+| T-H | 修正阶段口径 | decode 改用服务端时间轴，四段首尾相接铺满调用窗口 | T-E | 已落地 |
+
+## 实测修正（2026-09-22）：默认链路切 direct 后暴露的三个缺陷
+
+`OLLAMA_ROUTE` 默认值由 `langchain` 改为 `direct` 后（spec-013:118 同步修订），直连链路首次成为主路径，随即暴露三个此前被掩盖的缺陷。三者均由**实测数据**发现，非推测。
+
+### T-F：每个 `/api/chat` 返回 HTTP 500
+
+- 现象：改默认后所有对话请求失败，`mode=developer` 下报 `Ollama /api/chat 失败（HTTP 500）`。
+- 根因（最小复现 + Ollama 服务端日志双证）：qwen3.8 的 Ollama chat template **不接受第二条 system 消息**，抛 `Jinja Exception: System message must be at the beginning` → Ollama 返回 500。而 `/api/chat` 固定构造 `[system(平台提示), system(USER.md 或空串), user]`（`build_role_aware_messages` 无条件追加第二条；命中 skill 时还在 user 之后再追加一条）。
+- 为何此前不炸：langchain 分支有 `_normalize_langchain_messages` 做合并；direct 分支原样透传。
+- 修法：platform 层新增 `normalize_ollama_messages()`（合并所有 system 进第一条、`"\n\n"` 连接、空串参与、不就地改入参），`_stream_chunks` **只对下发的 payload** 归一化，调用方 messages 列表原样保留（本 spec 的 input 观测依赖原始多 system 形态）；`_normalize_langchain_messages` 改为委托它，行为字节级不变。
+- 验证：`tests/test_ollama_direct.py` 新增 11 个用例；真实请求实测返回完整 token 流与 `done`。
+
+### T-G：generation 延迟恒为个位数毫秒
+
+- 现象：一次总耗时 21.8s 的调用，Langfuse 里 `GENERATION ollama-chat` 落在末尾、`dur = 11ms`。
+- 根因：`record_ollama_generation` 在调用**结束后**才建 generation，而 SDK 的 `start_as_current_observation` 不接受 `start_time` → startTime ≈ endTime。
+- 后果：瀑布图父子关系颠倒；**所有基于 generation 延迟的 P50/P95 与 Dashboard 恒为个位数毫秒，全部失真**。
+- 修法：新增 `_backdate_generation_start()`，在 generation 被 end 前把底层 OTel span 的 `_start_time` 回填为真实请求起点；三处起点（`completion_start_time` / 回填 / 阶段子 span）**共用同一个 `base`**，不再各算一份。回填只作用于过去（未来时间戳不回填），`_otel_span` 缺失时静默降级。
+- 实证：回填 7000ms 后 Langfuse 读回 `startTime` 与 `endTime` 之差正好 7000ms。
+
+### T-H：阶段口径错误，decode 冲出真实结束时刻
+
+- 现象：`phase:decode` 的终点跑到父 generation **之外**，`phase:overhead` 恒为 0。
+- 根因：原口径 `decode = [first_token_ms, first_token_ms + eval_ms]`，但 `eval_ms` 是 Ollama 的**全部**解码时长（含思考 token 的生成），它从 prefill 结束就开始算，不是从「首个可见 token」开始，于是被重复叠加了一段思考时间。
+- 实测（预热后一次真实调用）：真实墙钟 3916ms、`first_token_ms` 2450ms、`load/prompt_eval/eval` = 27 / 353 / 3450ms → 旧口径 `ft + eval = 5900ms`，**比真实墙钟多出 1.98s**。
+- 修法：改用服务端自身时间轴，四段首尾相接铺满 `[base, base + client_wall_ms]`：
+
+| 阶段 | 区间 |
+|---|---|
+| `load` | `[0, load_ms]` |
+| `prefill` | `[load_ms, load_ms + prompt_eval_ms]` |
+| `decode` | `[load_ms + prompt_eval_ms, 服务端 total]` |
+| `overhead` | `[服务端 total, client_wall_ms]` |
+
+  `first_token`（TTFT）仍由 generation 的 `completion_start_time` 承载，不单独成 span。边界非负、终点不早于起点，服务端字段异常时不产生负时长。
+
+### 修正后的实测瀑布（trace `16c1c5c4…`，curl 墙钟 22.1s）
+
+```
+type         name              offset(ms)   dur(ms)
+GENERATION   ollama-chat              0.0   21294.0   ← 起点归零、时长正确
+SPAN         phase:load               0.0   15772.0   ← 冷加载
+SPAN         phase:prefill        15772.0    1205.0
+SPAN         phase:decode         16977.0    4084.0   ← 不再外溢
+SPAN         phase:overhead       21061.0      81.0   ← 不再恒为 0
+```
 
 ## 评审记录
 
@@ -251,3 +302,4 @@ with tracer.start_as_current_span("phase:load", start_time=load_start_ns) as ote
 | 2026-09-21 | 产品经理(doc-updater) | 补写产品使用步骤与验收场景 |
 | 2026-09-21 | 架构师(自身) | 按需求/技术评审必改项修订：input 全量锚定 spec-013 A2、重写 V4 降级链、声明历史不回填、记录边界 4/5 实证结果与待裁决项 |
 | 2026-09-21 | 架构师(自身) | 用户裁决三选一为**方案 2**：在修复范围 3 中明确 spans.py 走 OTel 直 API + LangfuseOtelSpanAttributes 生成 4 子 span + completion_start_time；任务计划新增 T-E；明确不做条目更新「不引入第三套上报路径」 |
+| 2026-09-22 | 架构师(自身) | 默认链路切 direct 后实测暴露三缺陷并全部修复：T-F（qwen3.8 拒收第二条 system → 全量 500）、T-G（generation 起点未回填 → 延迟统计失真）、T-H（decode 用 first_token+eval 重复叠加思考时间 → 冲出真实结束时刻、overhead 恒 0）。阶段口径按服务端时间轴重定义为四段首尾相接 |
