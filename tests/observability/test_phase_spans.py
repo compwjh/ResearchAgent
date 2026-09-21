@@ -57,16 +57,22 @@ SAMPLE_PROMPT = [
 
 
 def _expected_phases(started_at: datetime, result: OllamaChatResult):
-    """与 spans._report_phase_spans 同源的绝对起止时刻（started_at + timings）。"""
+    """与 spans._report_phase_spans 同源的绝对起止时刻（started_at + 服务端时间轴）。
+
+    spec-041 T-H 修正：decode 不再从 first_token_ms 起算（eval_ms 含思考 token 的
+    生成，从 prefill 结束就开始算），四段改为首尾相接铺满 [base, base + 墙钟]。
+    """
     t = result.timings
+    server_total_ms = t.load_ms + t.prompt_eval_ms + t.eval_ms
+    end_ms = max(result.client_wall_ms, server_total_ms)
     load_start = started_at
     load_end = started_at + timedelta(milliseconds=t.load_ms)
     prefill_start = load_end
     prefill_end = prefill_start + timedelta(milliseconds=t.prompt_eval_ms)
-    decode_start = started_at + timedelta(milliseconds=result.first_token_ms)
-    decode_end = decode_start + timedelta(milliseconds=t.eval_ms)
+    decode_start = prefill_end
+    decode_end = started_at + timedelta(milliseconds=server_total_ms)
     overhead_start = decode_end
-    overhead_end = started_at + timedelta(milliseconds=result.client_wall_ms)
+    overhead_end = started_at + timedelta(milliseconds=end_ms)
     return {
         "phase:load": (load_start, load_end),
         "phase:prefill": (prefill_start, prefill_end),
@@ -173,6 +179,67 @@ class PhaseSpanCaptureTests(unittest.TestCase):
                 f"{name} 缺少 langfuse.observation.type=span",
             )
 
+    def test_phases_are_contiguous_and_never_exceed_client_wall(self):
+        """四段须首尾相接，且任何一段都不得超出真实结束时刻（client_wall_ms）。"""
+        self._run(_result(), started_at=self.started_at)
+
+        spans = {s.name: s for s in self.exporter.get_finished_spans()}
+        wall_end = _to_ns(self.started_at + timedelta(milliseconds=_result().client_wall_ms))
+        for name, span in spans.items():
+            self.assertGreaterEqual(
+                span.end_time, span.start_time, f"{name} 出现了负时长",
+            )
+            self.assertLessEqual(
+                span.end_time, wall_end + 1,
+                f"{name} 结束于 {span.end_time}，超出真实墙钟结束时刻 {wall_end}",
+            )
+        order = ["phase:load", "phase:prefill", "phase:decode", "phase:overhead"]
+        for prev, nxt in zip(order, order[1:], strict=False):
+            self.assertTrue(
+                abs(spans[prev].end_time - spans[nxt].start_time) <= 1,
+                f"{prev} 终点 {spans[prev].end_time} 与 {nxt} 起点 {spans[nxt].start_time} 不相接",
+            )
+
+    def test_decode_uses_server_timeline_not_first_token_plus_eval(self):
+        """spec-041 T-H 回归锁定：用一次真实调用（预热后）的实测数字。
+
+        旧口径 decode=[first_token_ms, first_token_ms+eval_ms] 会算出 2449.6+3450=
+        5899.6ms，比真实墙钟 3915.9ms 多出近 2s：decode 条会伸出父 generation 之外，
+        且 overhead 因起点晚于终点而被压成 0。新口径按服务端时间轴 (load+prefill+eval)
+        截断，四段铺满 [0, 墙钟]。
+        """
+        real = _result(
+            timings=OllamaTimings(
+                load_ms=26.8, prompt_eval_ms=352.5, eval_ms=3450.0,
+                total_ms=3845.6, prompt_tokens=103, completion_tokens=18,
+            ),
+            first_token_ms=2449.6,
+            client_wall_ms=3915.9,
+        )
+        self._run(real, started_at=self.started_at)
+
+        spans = {s.name: s for s in self.exporter.get_finished_spans()}
+        # 正向：decode 终点必须是服务端三阶段之和
+        expected_decode_end = _to_ns(
+            self.started_at + timedelta(milliseconds=26.8 + 352.5 + 3450.0)
+        )
+        self.assertTrue(
+            abs(spans["phase:decode"].end_time - expected_decode_end) <= 1,
+            f"decode 终点期望 {expected_decode_end}（服务端 total），实际 {spans['phase:decode'].end_time}",
+        )
+        # 反向（防恒真）：绝不能落回旧口径的 first_token_ms + eval_ms
+        old_decode_end = _to_ns(self.started_at + timedelta(milliseconds=2449.6 + 3450.0))
+        self.assertNotEqual(
+            spans["phase:decode"].end_time, old_decode_end,
+            "decode 退回了旧口径 first_token_ms + eval_ms（会超出真实墙钟）",
+        )
+        # overhead 必须仍是有效时长（旧口径下会被压成 0）
+        overhead = spans["phase:overhead"]
+        self.assertGreater(
+            overhead.end_time - overhead.start_time, 0,
+            "overhead 不应为 0：客户端开销 = 墙钟 - 服务端 total",
+        )
+
     def test_generation_completion_start_time_equals_started_at_plus_first_token(self):
         self._run(_result(), started_at=self.started_at)
 
@@ -256,6 +323,181 @@ class PhaseSpanCaptureTests(unittest.TestCase):
                 span.attributes.get("langfuse.observation.type"), "span",
                 f"{name} 缺失 helper 时仍应打最小属性集 observation.type=span",
             )
+
+
+class _BackdatingClient(_FakeClient):
+    """让 generation 持有**真实** OTel span，便于断言起点回填结果。
+
+    复用真实 tracer 的 `start_span`（非 current），使 `_backdate_generation_start`
+    改写的是真实 `Span._start_time`，从而能被逐字断言。
+    """
+
+    def __init__(self, tracer):
+        super().__init__(tracer)
+        self.generation = None
+        self.generation_span = None
+
+    def start_as_current_observation(self, **kwargs):
+        self.last_start_kwargs = kwargs
+        span = self._otel_tracer.start_span("ollama-chat")
+        self.generation_span = span
+        generation = _FakeGeneration()
+        generation._otel_span = span
+        self.generation = generation
+        return _FakeObservation(generation)
+
+
+class GenerationStartBackdateTests(unittest.TestCase):
+    """spec-041 T-G：generation 主体起点必须回填到真实请求起点。
+
+    不回填时 startTime≈endTime（SDK 不支持 start_time）：实测一次 21.8s 的调用
+    generation 落在末尾且 dur 只有 11ms，瀑布图父子颠倒、延迟分位统计全是错的。
+    """
+
+    def setUp(self):
+        obs_client.reset_for_tests()
+        self.provider = TracerProvider()
+        self.exporter = InMemorySpanExporter()
+        self.provider.add_span_processor(SimpleSpanProcessor(self.exporter))
+        self.client = _BackdatingClient(self.provider.get_tracer("langfuse-test"))
+
+    def tearDown(self):
+        obs_client.reset_for_tests()
+        self.exporter.clear()
+        self.provider.shutdown()
+
+    def _run(self, result, started_at=None):
+        with mock.patch.object(config, "LANGFUSE_ENABLED", True), \
+             mock.patch.object(config, "LANGFUSE_PUBLIC_KEY", "pk"), \
+             mock.patch.object(config, "LANGFUSE_SECRET_KEY", "sk"), \
+             mock.patch.object(config, "LANGFUSE_SAMPLE_RATE_RAW", "1.0"), \
+             mock.patch.object(obs_client, "get_client", return_value=self.client):
+            record_ollama_generation(
+                model="m",
+                prompt_messages=SAMPLE_PROMPT,
+                result=result,
+                route="direct",
+                started_at=started_at,
+            )
+
+    def test_generation_start_equals_started_at_exactly(self):
+        result = _result()  # client_wall_ms=8500
+        started_at = datetime.now(timezone.utc) - timedelta(milliseconds=result.client_wall_ms)
+
+        self._run(result, started_at=started_at)
+
+        span = self.client.generation_span
+        self.assertIsNotNone(span, "generation 未被上报")
+        # 非恒真：逐字比对绝对纳秒时间戳，允许 ±1ns
+        self.assertTrue(
+            abs(span.start_time - _to_ns(started_at)) <= 1,
+            f"generation 起点期望 {_to_ns(started_at)}（started_at），实际 {span.start_time}",
+        )
+
+    def test_phase_spans_never_start_before_generation(self):
+        """父 generation 起点回填后，4 个子 span 都不得早于它（父子关系不得颠倒）。"""
+        result = _result()
+        started_at = datetime.now(timezone.utc) - timedelta(milliseconds=result.client_wall_ms)
+
+        self._run(result, started_at=started_at)
+
+        gen_start = self.client.generation_span.start_time
+        phase_spans = [s for s in self.exporter.get_finished_spans() if s.name.startswith("phase:")]
+        self.assertEqual(len(phase_spans), 4, f"应有 4 个阶段 span，实际 {len(phase_spans)}")
+        for span in phase_spans:
+            self.assertGreaterEqual(
+                span.start_time, gen_start,
+                f"{span.name} 起点 {span.start_time} 早于 generation 起点 {gen_start}",
+            )
+
+    def test_without_started_at_backdates_by_client_wall_ms(self):
+        result = _result()  # client_wall_ms=8500
+        before = datetime.now(timezone.utc)
+
+        self._run(result, started_at=None)
+
+        span = self.client.generation_span
+        expected = _to_ns(before - timedelta(milliseconds=result.client_wall_ms))
+        # 容差 500ms：只验算「确实是往过去回填了约一个墙钟」，不做逐字比对
+        self.assertTrue(
+            abs(span.start_time - expected) <= 500 * 1_000_000,
+            f"未传 started_at 时期望约 {expected}，实际 {span.start_time}",
+        )
+        # 反向断言（防恒真）：必须明显早于「现在」，即确实被回填过
+        self.assertLess(
+            span.start_time, _to_ns(before) - 5000 * 1_000_000,
+            f"generation 起点 {span.start_time} 未被回填，仍约等于上报时刻",
+        )
+
+    def test_future_started_at_is_not_backdated(self):
+        """起点落在未来时不得回填，绝不产生未来时间戳或负时长。"""
+        result = _result()
+        started_at = datetime.now(timezone.utc) + timedelta(seconds=60)
+        before = datetime.now(timezone.utc)
+
+        self._run(result, started_at=started_at)
+
+        span = self.client.generation_span
+        now_ns = _to_ns(datetime.now(timezone.utc))
+        self.assertLessEqual(span.start_time, now_ns, "回填产生了未来时间戳")
+        self.assertGreater(
+            span.start_time, _to_ns(before) - 1_000_000_000,
+            f"未回填时起点应保持在调用时刻附近，实际 {span.start_time}",
+        )
+
+    def test_missing_otel_span_is_fail_open(self):
+        """`_otel_span` 缺失 / 不可回填时静默降级：不抛异常，generation 仍上报。"""
+        class _NoSpanGeneration(_FakeGeneration):
+            @property
+            def _otel_span(self):
+                return None
+
+        class _NoSpanClient(_FakeClient):
+            def start_as_current_observation(self, **kwargs):
+                self.last_start_kwargs = kwargs
+                return _FakeObservation(_NoSpanGeneration())
+
+        self.client = _NoSpanClient(self.provider.get_tracer("langfuse-test"))
+        started_at = datetime.now(timezone.utc) - timedelta(milliseconds=8500)
+
+        # 不抛到业务层（fail-open）
+        self._run(_result(), started_at=started_at)
+
+        self.assertIsNotNone(
+            self.client.last_start_kwargs, "otel span 缺失时 generation 仍应上报"
+        )
+        # 阶段子 span 也不受影响
+        self.assertEqual(
+            len(self.exporter.get_finished_spans()), 4,
+            "otel span 缺失时 4 个阶段子 span 仍应创建",
+        )
+
+    def test_backdate_failure_is_fail_open(self):
+        """写入 `_start_time` 抛异常时不得冒泡，generation 仍上报。"""
+        class _FrozenStartSpan:
+            """_start_time 只读（property 无 setter）→ 赋值抛 AttributeError。"""
+            def __init__(self):
+                self._value = _to_ns(datetime.now(timezone.utc))
+
+            @property
+            def _start_time(self):
+                return self._value
+
+        class _FrozenClient(_FakeClient):
+            def start_as_current_observation(self, **kwargs):
+                self.last_start_kwargs = kwargs
+                generation = _FakeGeneration()
+                generation._otel_span = _FrozenStartSpan()
+                return _FakeObservation(generation)
+
+        self.client = _FrozenClient(self.provider.get_tracer("langfuse-test"))
+        started_at = datetime.now(timezone.utc) - timedelta(milliseconds=8500)
+
+        self._run(_result(), started_at=started_at)
+
+        self.assertIsNotNone(
+            self.client.last_start_kwargs, "回填抛异常时 generation 仍应上报（fail-open）"
+        )
 
 
 if __name__ == "__main__":
