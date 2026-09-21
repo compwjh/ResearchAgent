@@ -54,9 +54,10 @@ def should_sample() -> bool:
 
 
 def route() -> str:
-    """对话链路选择：`langchain`（默认）或 `direct`。
+    """对话链路选择：`direct`（默认，spec-041：采集 Ollama 服务端原生 timings 支撑
+    5 阶段瀑布观测）或 `langchain`（A6 双链路对比可显式指定）。
 
-    未知取值一律回退到 `langchain`，保持既有行为不变。
+    未知取值一律回退到 `langchain`，保持稳定行为。
     """
     value = config.OLLAMA_ROUTE
     if value not in ("langchain", "direct"):
