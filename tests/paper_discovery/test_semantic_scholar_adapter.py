@@ -3,6 +3,7 @@ import httpx
 from backend.app.paper_discovery.infrastructure.semantic_scholar_adapter import (
     SEMANTIC_SCHOLAR_API_URL,
     SemanticScholarFallbackAdapter,
+    SemanticScholarRequestLimiter,
 )
 
 
@@ -99,3 +100,34 @@ def test_lookup_treats_malformed_open_access_url_as_no_pdf():
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json=body)))
     )
     assert adapter.lookup(_candidate(), allowed_hosts={"arxiv.org"}).code == "SEMANTIC_SCHOLAR_NO_OPEN_PDF"
+
+
+def test_rate_limiter_is_shared_by_independent_adapter_instances():
+    clock = {"value": 0.0}
+    waits = []
+
+    def now():
+        return clock["value"]
+
+    def sleep(seconds):
+        waits.append(seconds)
+        clock["value"] += seconds
+
+    limiter = SemanticScholarRequestLimiter(now=now, sleep=sleep)
+    responses = [_payload(), _payload()]
+
+    def handler(_request):
+        return httpx.Response(200, json=responses.pop(0))
+
+    first = SemanticScholarFallbackAdapter(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        rate_limiter=limiter,
+    )
+    second = SemanticScholarFallbackAdapter(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        rate_limiter=limiter,
+    )
+
+    assert first.lookup(_candidate(), allowed_hosts={"arxiv.org"}).matched
+    assert second.lookup(_candidate(), allowed_hosts={"arxiv.org"}).matched
+    assert waits == [1.0]

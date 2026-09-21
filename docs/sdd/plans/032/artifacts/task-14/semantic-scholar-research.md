@@ -1,6 +1,6 @@
 # Semantic Scholar 论文下载回退调研
 
-> 调研范围：Spec032 Task14。本文只读检查现有下载链、来源注册、Skill/Tool 契约和测试，并核对 Semantic Scholar 官方公开资料；本轮未修改业务代码。
+> 调研范围：Spec032 Task14。本文检查现有下载链、来源注册、Skill/Tool 契约和测试，并核对 Semantic Scholar 官方公开资料；代码接入与验证结果记录在文末。
 
 ## 结论摘要
 
@@ -30,8 +30,12 @@ Semantic Scholar 页面和 Reader 页面可以作为用户人工核验入口，�
 
 官方文档明确支持：
 
+- `GET /graph/v1/paper/autocomplete?query=...` 只用于交互式标题补全，返回最小候选（论文 ID、标题、作者/年份摘要）；查询文本最多取前 100 个字符。它不能替代会议目录检索，也不返回完整摘要、关键词或 PDF。
 - `GET /graph/v1/paper/{paper_id}`，其中 `paper_id` 可使用 Semantic Scholar `paperId`、`CorpusId:<id>`、DOI 或 `ARXIV:<id>`等受支持的论文标识；实现优先使用服务端已有 DOI 或 arXiv ID，避免标题搜索误匹配。
 - `GET /graph/v1/paper/search`，可返回相关度排序结果；可用 `year`、`publicationDateOrYear`、`openAccessPdf` 等过滤项。搜索最多返回 1000 个相关度结果，因此不能把它当作无限量目录。
+- `GET /graph/v1/paper/search/bulk`，适合批量候选检索，支持年份、发表日期、venue、开放 PDF、引用数、出版类型、排序和 continuation token；应优先于资源消耗更高的 relevance search。
+- `POST /recommendations/v1/papers`，可根据一个或多个正/负样本推荐相关论文；`/citations` 与 `/references` 可用于构建引用关系和研究覆盖补搜。
+- `POST /graph/v1/paper/batch` 可批量补齐多个论文的详情字段；大规模长期同步才考虑 Datasets API，不纳入当前在线 Worker 主链路。
 - `fields` 控制返回字段。对本项目有用的字段是 `paperId,title,abstract,authors,year,venue,publicationDate,publicationTypes,url,openAccessPdf,externalIds`。`openAccessPdf`通常包含 `url` 和 `status`；没有公开 PDF 时为 `null`。
 - 大多数 Academic Graph API 端点可免 API key 使用，但仍受共享速率限制；官方建议有 key 时通过大小写敏感的 `x-api-key` header 传递。API key 不得写入候选、日志、Skill 或前端。
 - API 可能返回 429；调用方应使用有限次数、指数退避和明确的 `retryable` 状态，不能无限重试。
@@ -152,6 +156,16 @@ Semantic Scholar 不应新增下载器，`openAccessPdf.url` 只能转换为现�
 - 不把 key 写进 `.env.example` 的真实值、候选 JSON、事件、进度消息或 Skill Prompt；日志只记录是否配置，不记录 key。
 - 统一客户端应设置 connect/read/total timeout、单次请求字段白名单、有限重试和指数退避；429 和网络错误才可重试，401/403/匹配不确定不得盲目重试。
 - API 搜索/详情结果应做短 TTL 缓存，避免重复查同一 DOI/arXiv ID；缓存属于元数据缓存，不等价于 PDF 已下载。
+
+### 本次限流修订
+
+`paper_import` 的回退入口会按候选创建适配器实例；如果把计时器放在实例内，连续导入会重置计时器并突破 API key 的 1 RPS 配额。现已改为：
+
+- `SemanticScholarRequestLimiter` 作为进程内共享限流器，所有适配器实例和重试请求共用同一个 1 秒窗口；
+- 429、网络错误等重试也必须重新取得限流槽位；
+- 生产部署继续保持单 Uvicorn worker（项目本地 Qdrant 也要求单进程），因此进程内共享限流器覆盖当前部署模型；
+- 多进程或多机器部署时，必须把该限流器迁移到共享队列/SQLite 租约，再提高并发，不能简单增加 Worker 数量；
+- 定向测试覆盖“两个独立适配器实例连续调用仍等待 1 秒”的场景。
 
 ## 需要补充的测试
 

@@ -29,6 +29,43 @@ SEMANTIC_SCHOLAR_TITLE_THRESHOLD = 0.86
 SEMANTIC_SCHOLAR_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 
 
+class SemanticScholarRequestLimiter:
+    """Serialize Academic Graph requests at or below the configured rate.
+
+    The API key quota is shared by all endpoints, so this limiter must be
+    shared by adapter instances created by concurrent import workers.  The
+    default module-level instance provides that process-wide sharing while
+    tests may inject a clock/sleep pair for deterministic verification.
+    """
+
+    def __init__(
+        self,
+        *,
+        interval_seconds: float = SEMANTIC_SCHOLAR_MIN_REQUEST_INTERVAL_SECONDS,
+        sleep: Callable[[float], None] = time.sleep,
+        now: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.interval_seconds = max(0.0, float(interval_seconds))
+        self.sleep = sleep
+        self.now = now
+        self._lock = threading.Lock()
+        self._last_request: Optional[float] = None
+
+    def wait_for_slot(self) -> None:
+        """Block until the next request is at least one interval apart."""
+        with self._lock:
+            current = self.now()
+            if self._last_request is not None:
+                wait = self.interval_seconds - (current - self._last_request)
+                if wait > 0:
+                    self.sleep(wait)
+                    current = self.now()
+            self._last_request = current
+
+
+_GLOBAL_REQUEST_LIMITER = SemanticScholarRequestLimiter()
+
+
 @dataclass(frozen=True)
 class SemanticScholarMatch:
     paper_id: str
@@ -116,6 +153,7 @@ class SemanticScholarFallbackAdapter:
         retries: int = 1,
         backoff: float = 0.5,
         api_key: Optional[str] = None,
+        rate_limiter: Optional[SemanticScholarRequestLimiter] = None,
     ) -> None:
         self.client = client
         self.sleep = sleep
@@ -125,8 +163,21 @@ class SemanticScholarFallbackAdapter:
         self.backoff = max(0.0, float(backoff))
         self.api_key = (api_key if api_key is not None else os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")).strip()
         self._cache: dict[str, tuple[float, SemanticScholarResult]] = {}
-        self._last_request: Optional[float] = None
         self._lock = threading.Lock()
+        if rate_limiter is not None:
+            self._rate_limiter = rate_limiter
+        elif sleep is time.sleep and now is time.monotonic:
+            # Production adapters share one process-wide quota.  The service
+            # is intentionally deployed as a single Uvicorn worker because
+            # the local Qdrant store is not multi-process safe.
+            self._rate_limiter = _GLOBAL_REQUEST_LIMITER
+        else:
+            # Keep injected clocks local and deterministic for tests.
+            self._rate_limiter = SemanticScholarRequestLimiter(
+                interval_seconds=SEMANTIC_SCHOLAR_MIN_REQUEST_INTERVAL_SECONDS,
+                sleep=sleep,
+                now=now,
+            )
 
     def lookup(self, candidate: Any, *, allowed_hosts: Iterable[str] = ()) -> SemanticScholarResult:
         identifier, expected_kind = self._identifier(candidate)
@@ -248,18 +299,14 @@ class SemanticScholarFallbackAdapter:
         return result
 
     def _wait_for_slot(self) -> None:
-        with self._lock:
-            if self._last_request is not None:
-                wait = SEMANTIC_SCHOLAR_MIN_REQUEST_INTERVAL_SECONDS - (self.now() - self._last_request)
-                if wait > 0:
-                    self.sleep(wait)
-            self._last_request = self.now()
+        self._rate_limiter.wait_for_slot()
 
 
 __all__ = [
     "SEMANTIC_SCHOLAR_API_HOST",
     "SEMANTIC_SCHOLAR_API_URL",
     "SEMANTIC_SCHOLAR_FIELDS",
+    "SemanticScholarRequestLimiter",
     "SemanticScholarFallbackAdapter",
     "SemanticScholarMatch",
     "SemanticScholarResult",
