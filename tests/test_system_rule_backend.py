@@ -131,11 +131,16 @@ def test_user_md_write_failure_is_stable_unavailable_error(tmp_path: Path):
     assert response.json()["detail"]["code"] == "SYSTEM_RULE_UNAVAILABLE"
 
 
-def test_observation_input_is_redacted_but_role_metadata_is_preserved():
+def test_observation_input_preserves_content_and_role_metadata():
+    # spec-041：用户裁决 input 与 output 全量可见，redact_prompt_messages 不再
+    # 清空 content，仅保留 role 归一化。role 顺序与 char_counts 等 metadata 不变。
     from backend.app.platform.observability import prompt_observation_metadata, redact_prompt_messages
 
     messages = [{"role": "system", "content": "secret rule"}, {"role": "user", "content": "secret question"}]
-    assert redact_prompt_messages(messages) == [{"role": "system", "content": ""}, {"role": "user", "content": ""}]
+    assert redact_prompt_messages(messages) == [
+        {"role": "system", "content": "secret rule"},
+        {"role": "user", "content": "secret question"},
+    ]
     assert prompt_observation_metadata(messages, system_rule_enabled=True) == {
         "role_count": 2,
         "role_names": ["system", "user"],
