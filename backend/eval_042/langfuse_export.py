@@ -27,6 +27,51 @@ def _get(url: str) -> dict:
         return json.loads(resp.read().decode())
 
 
+def _post(url: str, body: dict) -> dict:
+    """POST JSON 到本机 Langfuse public API（loopback 守卫）。返回解析后的 JSON。"""
+    assert_loopback(url)
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode(),
+        headers={**_auth_header(), "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
+def post_score(name: str, value: float, trace_id: str, comment: str,
+               observation_id: str | None = None) -> dict:
+    """写回一条 score 到指定 trace（自建判官 -> Langfuse 仅作 score 落点）。
+
+    R4 范式：comment 承载「Explanation / Answer」理由；绝不给 SKIPPED/UNAVAILABLE 记 0 分。
+    """
+    body = {"name": name, "value": value, "traceId": trace_id, "comment": comment}
+    if observation_id:
+        body["observationId"] = observation_id
+    return _post(f"{LANGFUSE_BASE}/api/public/scores", body)
+
+
+def list_scores(trace_id: str, limit: int = 100) -> list[dict]:
+    """按 trace 回查已挂的 score 列表（分页，用于验证写回）。
+
+    注意：Langfuse public scores API 的 limit 上限为 100，超出返回 400；
+    故分页直到 meta.totalPages，避免单次大 limit 报错。
+    """
+    out: list[dict] = []
+    page = 1
+    while True:
+        d = _get(f"{LANGFUSE_BASE}/api/public/scores?traceId={trace_id}"
+                 f"&limit={limit}&page={page}")
+        out.extend(d.get("data", []))
+        meta = d.get("meta", {}) or {}
+        total = meta.get("totalPages") or 1
+        if page >= total:
+            break
+        page += 1
+    return out
+
+
 # ---------- 纯函数：分类（便于单测，无网络） ----------
 def classify_output(output_text, intake_markers=INTAKE_MARKERS, min_answer_chars=1):
     """返回 (status, reason)。

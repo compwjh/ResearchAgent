@@ -1,5 +1,5 @@
 > 关联：[spec-042](../../specs/042-openeval-agent-evaluation.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 01；当前状态：`待执行`
+> 依赖：任务 01；当前状态：**`已完成`**（Go/No-Go 判定：**Go**，报告见 [task-02-gono-go-report.md](./task-02-gono-go-report.md)）
 
 # Task 02 — Go/No-Go：验证最高风险前提
 

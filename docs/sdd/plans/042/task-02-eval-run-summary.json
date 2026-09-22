@@ -1,0 +1,25 @@
+{
+  "dataset": "/Users/wjh/ResearchAgent_codebuddy/docs/sdd/plans/042/task-02-eval-dataset.json",
+  "primary_judge": "qwen3.5:9b",
+  "repeats": 3,
+  "n_items": 24,
+  "written": 2,
+  "skipped": 0,
+  "unavailable": 0,
+  "verified_on_trace": 0,
+  "dry_run": true,
+  "results": [
+    {
+      "trace_id": "9a93fe5d085320fdd3a39f3101327a1e",
+      "status": "dry_run_scored",
+      "label": null,
+      "score": null
+    },
+    {
+      "trace_id": "84c78c44035c06a265a54aa5a9e93360",
+      "status": "dry_run_scored",
+      "label": null,
+      "score": null
+    }
+  ]
+}

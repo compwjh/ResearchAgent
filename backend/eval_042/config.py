@@ -24,6 +24,12 @@ REPEATS = 3  # 同一条温度 0 重复评分次数（判官自一致门禁）
 # 判官自一致门禁：3 次标签完全一致的项占比 >= 此值才算「稳定」
 SELF_CONSISTENCY_THRESHOLD = 0.90
 
+# 记忆探针门禁（spec-042 Task 03）：
+#  G2 判别有效性：多数标签 == 构造 gold 的占比阈值
+GOLD_ACC_THRESHOLD = 0.80
+#  G3 跨判官一致：9b 多数标签 == 27b 多数标签的占比阈值
+CROSS_AGREE_THRESHOLD = 0.80
+
 # ---------- 枚举标签 -> 0..1 分数映射（判官只输出枚举，分数由本脚本映射，避免弱模型打数值分） ----------
 QUALITY_ENUMS = {"good": 1.0, "partial": 0.5, "poor": 0.0}
 MEMORY_ENUMS = {
@@ -58,12 +64,18 @@ PROMPTS = {
             "Answer: <one of: remembered|partially_remembered|forgotten|fabricated>"
         ),
         "user_tmpl": (
-            "User instruction / prior context:\n{q}\n\nAgent answer:\n{a}\n\n"
-            "Judge whether the agent correctly recalled a user-stated preference or fact: "
-            "remembered=correctly recalled; partially_remembered=recalled with gaps; "
-            "forgotten=failed to recall a stated preference/fact; "
-            "fabricated=invented a preference/fact not stated. "
-            "If no memory signal is present, output forgotten."
+            "User previously stated (PRIOR CONTEXT - the only facts/preferences you may rely on):\n"
+            "{ctx}\n\n"
+            "Follow-up question:\n{q}\n\n"
+            "Agent answer:\n{a}\n\n"
+            "Judge ONLY against what was ACTUALLY STATED in the PRIOR CONTEXT above:\n"
+            "remembered = the answer correctly and completely recalls a stated preference/fact;\n"
+            "partially_remembered = the answer recalls it but OMITS a key detail or gets a detail WRONG;\n"
+            "forgotten = the answer fails to recall it (no mention, says it does not know your preference, "
+            "or gives a generic unrelated answer);\n"
+            "fabricated = the answer restates a preference/fact that was NEVER stated in the PRIOR CONTEXT "
+            "(it contradicts the context or appears from nowhere).\n"
+            "Do NOT assume any unstated preference. Base your verdict solely on the PRIOR CONTEXT."
         ),
     },
 }

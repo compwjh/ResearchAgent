@@ -9,12 +9,31 @@ from __future__ import annotations
 
 import json
 import re
+import string
 import urllib.request
 
 from .config import ENUM_MAPS, OLLAMA_BASE, PROMPTS
 from .offline_guard import assert_loopback
 
 _ANSWER_RE = re.compile(r"answer\s*:\s*([a-z_]+)", re.IGNORECASE)
+
+
+def _render(tmpl: str, q: str, a: str, ctx: str | None = None) -> str:
+    """安全渲染用户模板：仅填充模板中实际存在的占位符。
+
+    - 对没有 {ctx} 占位符的模板（如 chat_quality），即使传入 ctx 也不注入，
+      行为与改动前完全一致（向后兼容）；
+    - 对 {ctx} 占位符，仅当 ctx 非 None 时填充，避免 KeyError。
+    """
+    fields = {name for _, name, _, _ in string.Formatter().parse(tmpl) if name}
+    kwargs: dict = {}
+    if "q" in fields:
+        kwargs["q"] = q
+    if "a" in fields:
+        kwargs["a"] = a
+    if "ctx" in fields:
+        kwargs["ctx"] = ctx if ctx is not None else ""
+    return tmpl.format(**kwargs)
 
 
 def parse_r4(text: str, allowed_labels: set[str]) -> tuple[str | None, str]:
@@ -59,13 +78,17 @@ def call_ollama(model: str, messages: list[dict], timeout: int = 180) -> str:
     return (data.get("message", {}) or {}).get("content", "") or ""
 
 
-def judge_one(model: str, task: str, question: str, answer: str) -> dict:
-    """对单条单次评分。返回结构化结果，含 status=scored|unavailable。"""
+def judge_one(model: str, task: str, question: str, answer: str,
+              ctx: str | None = None) -> dict:
+    """对单条单次评分。返回结构化结果，含 status=scored|unavailable。
+
+    ctx：可选，先前陈述上下文（memory_correctness 用）；不传时行为与改动前一致。
+    """
     allowed = set(ENUM_MAPS.get(task, {}).keys())
     prompt = PROMPTS[task]
     messages = [
         {"role": "system", "content": prompt["system"]},
-        {"role": "user", "content": prompt["user_tmpl"].format(q=question, a=answer)},
+        {"role": "user", "content": _render(prompt["user_tmpl"], question, answer, ctx)},
     ]
     try:
         raw = call_ollama(model, messages)
@@ -90,5 +113,5 @@ def judge_one(model: str, task: str, question: str, answer: str) -> dict:
 
 
 def judge_repeats(model: str, task: str, question: str, answer: str,
-                  repeats: int = 3) -> list[dict]:
-    return [judge_one(model, task, question, answer) for _ in range(repeats)]
+                  repeats: int = 3, ctx: str | None = None) -> list[dict]:
+    return [judge_one(model, task, question, answer, ctx=ctx) for _ in range(repeats)]

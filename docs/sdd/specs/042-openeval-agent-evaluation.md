@@ -83,6 +83,20 @@
 > 则 **openeval-cli 可能整体不必要**。Task 02 须在 Go/No-Go 报告中给出结论；
 > 若判定不必要，再回头修订本 spec 的范围与标题（属范围变更，需重新确认）。
 
+### 补充事实（第二轮实测追加）
+
+| # | 事实 | 来源 |
+|---|---|---|
+| F16 | **SSRF 白名单可放行本机 Ollama**：`LANGFUSE_LLM_CONNECTION_WHITELISTED_HOST` / `_IPS` / `_IP_SEGMENTS`（`docker-compose.yml:32-34`、`packages/shared/src/env.ts:435-452`）。实测追加 `=localhost,127.0.0.1` / `=127.0.0.1` 后：`PUT /api/public/llm-connections` 返回 **201**（baseURL=`http://localhost:11434/v1`、model=qwen3.5:9b），创建 evaluator 返回 **200**，**worker 日志实证连到 127.0.0.1:11434** | Task 02 第二轮实测 |
+| F17 | ⚠️ **Langfuse 内置 evaluator 在本机 Ollama 上产不出 score**：创建规则返回 **422** `No object generated: response did not match schema`。根因是 **Ollama 的 OpenAI 兼容 `/v1` 端点不支持 `response_format: json_schema`（strict）**，而 Langfuse 内置结构化输出判官引擎依赖该模式。属**端点能力限制**，非配置问题，禁止改业务代码绕过 | Task 02 第二轮实测 |
+
+**Q9=C 前半段据此证伪并修订**：「通用维度用 Langfuse 内置 evaluators」在本机**不可行**（F17）。
+**修订为：全部维度走自建判官，Langfuse 仅作 score 落点**（Q4 落点不变）。依据：自建判官已实测可用——
+chat_quality 上 9b/27b 自一致率均 **1.0**、跨判官一致率 **1.0**（n=20），decision=adopt `qwen3.5:9b`。范围实质不变。
+
+**闭环已跑通（第三轮实测）**：自建判官 → 读 Langfuse（727 条）→ **写回 score 成功**（score id `8f24dd05`）→
+删除校验 202。产物：`plans/042/task-02-run-eval.py`、`plans/042/task-02-eval-run-summary.json`。
+
 ## 决策裁决状态（grill with docs）
 
 > **Q1–Q7 已裁决**（2026-09-22），正文已按裁决结果修订：Q1=B、Q2=A、Q3=**B（用户改判）**、
@@ -99,6 +113,8 @@
 | `EvalItem.output` | string | 必填；**为空或过短则跳过，不参与评分** |
 | `EvalItem.reference` | string \| null | 可选；有人参考答案时用于有参照评分 |
 | `EvalItem.trajectory` | json \| null | 可选；第二期用于工具调用/轨迹评估 |
+| `EvalItem.prior_context` | string \| null | `memory_correctness` 必填（用户先前陈述的偏好/事实，判官判定的唯一依据）；缺失 → `SKIPPED`（边界 9） |
+| `EvalItem.gold` | string \| null | 仅**合成探针**使用（构造真值，非人工标注）；真实 trace 为 null |
 | `EvalResult.evaluator` | string | 必填；评估器名（如 `answer_quality`） |
 | `EvalResult.score` | number | 必填；**0.0–1.0**，越界视为失败 |
 | `EvalResult.reason` | string | 必填；判官给出的理由 |
@@ -132,6 +148,7 @@
 6. 全链路**不得发起任何外网请求**（离线校验：断网/hosts 拦截下仍能跑通）。
 7. 回写 Langfuse 失败时，本地报告仍完整落盘，整体退出码反映回写失败。
 8. 评测过程**不修改**任何业务数据（只读 Langfuse，不写业务库）。
+9. **`memory_correctness` 样本必须携带「先前陈述上下文」（`prior_context`）**；缺失该上下文的样本一律标 `SKIPPED`（`skip_reason=no_prior_context`），**不得强行四选一**——Task 02 遗留 L2（跨判官一致率 0.5）即因违反此项导致标签实质随机，属**输入不适定**而非维度不可评（Task 03 已实证：补上 prior context + 三段式 `{ctx}/{q}/{a}` 判官模板后，该维度 G1=1.0 / G2=0.975 / G3=0.95 全部过阈）。
 
 ## 明确不做（划出范围，防 AI 自由发挥）
 
@@ -169,9 +186,8 @@
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-042（含 grill with docs 分析） | 本文件 | — | 完成（待确认） |
-| 02 | Go/No-Go：验证最高风险前提（判官质量 + 数据桥接 + F5 路由矛盾） | [`task-02-validate-feasibility.md`](../plans/042/task-02-validate-feasibility.md) | 01 | 待执行 |
-
-> 任务 03 起**待 Q1–Q7 裁决后**再增补，裁决前不创建，避免留下无法跳转的占位链接。
+| 02 | Go/No-Go：验证最高风险前提（判官质量 + 数据桥接 + F5 路由矛盾） | [`task-02-validate-feasibility.md`](../plans/042/task-02-validate-feasibility.md) | 01 | 已完成（**Go**） |
+| 03 | 专用记忆探针重测 `memory_correctness`（收敛遗留 L2） | [`task-03-memory-probe.md`](../plans/042/task-03-memory-probe.md) | 02 | 已完成（`adopt:qwen3.5:9b`，[报告](../plans/042/task-03-memory-probe-report.md)） |
 
 ## 评审记录
 
@@ -184,6 +200,7 @@
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-22 | 架构师(自身) | 编写本 spec：基于 Langfuse 实测数据与 OpenEval 调研，用 grill with docs 梳理 Q1–Q7 决策点，按推荐默认值起草，状态「待确认」 |
+| 2026-09-23 | 架构师(自身) | Task 03 完成后回写：新增边界 9（`memory_correctness` 须带 `prior_context`，缺失即 `SKIPPED`），数据模型补 `prior_context` / `gold` 两字段；任务计划补 Task 03 并置为已完成。依据 `plans/042/task-03-memory-probe-report.md`：G1=1.0 / G2=0.975 / G3=0.95，`adopt:qwen3.5:9b`。**未新增决策点、范围不变** |
 
 ---
 
