@@ -139,8 +139,8 @@ trace (root observation)
 - **不做 Docker 部署**（用户明确要求命令行启动）
 - **不覆盖文章检索下载链路**（本次只做对话 + 知识库 RAG）
 - **不改动现有 LangGraph 流程与 KB 业务逻辑**，埋点以包裹方式外挂
-- **不替换 `ChatOllama` 为默认链路**：`OLLAMA_ROUTE` 默认 `langchain`，保持现有行为不变
-- **不自研甘特图组件**（复用 Langfuse 瀑布图）
+- **不替换 `ChatOllama` 为默认链路**：`OLLAMA_ROUTE` 默认 `langchain`，保持现有行为不变 —— **2026-09-21 修订（spec-041 实证后）**：默认改为 `direct`。依据：langchain 链路拿不到 Ollama 服务端 timings（`load_ms` / `prompt_eval_ms` / `eval_ms` 恒为 0，见 `spans.py` 注释「无原生 timings（langchain 链路）时 total_ms 为 0」），A4 的 5 阶段瀑布条在该链路下时长恒为 0，等于观测失效；而用户 grill 裁决为「目标是必须看到瀑布图」。故默认链路改为直连（direct）；A6 双链路对比仍可通过显式 `route` 参数走 langchain，`ChatOllama` 链路本身不删除。
+- **不自研甘特图组件**（复用 Langfuse 瀑布图）—— spec-041 方案 2 在 spans.py 内补 4 个 phase 子 span（load/prefill/decode/overhead）+ generation 主体 `completion_start_time` 标记首 token，仍由 Langfuse 原生瀑布图渲染，**不违反**本约束
 - **不做用户体系 / 权限**（本地单人使用）
 - **不做自动告警与阈值通知**（v4 的 Monitors 功能本次不启用）
 - **不做自动告警与阈值通知**（v4 的 Monitors 功能本次不启用）
@@ -152,10 +152,10 @@ trace (root observation)
 | 验收点 | 验证方法 |
 |---|---|
 | A1 平台可访问 | Langfuse Web 在 `http://127.0.0.1:3000` 打开，能创建项目并拿到 API Key |
-| A2 请求详情 | 发起一次对话，在 Langfuse 中能看到该次调用，展开可见完整 prompt 组成（system / 历史 / 用户问题） |
+| A2 请求详情 | 发起一次对话，在 Langfuse 中能看到该次调用，展开可见完整 prompt 组成（system / 历史 / 用户问题）——**input（prompt 原文）全量可见**（依据 spec-041 用户裁决，不再脱敏） |
 | A3 返回详情 | 可见完整输出内容；使用思考模型时，思考过程与正式输出**分别可见** |
-| A4 阶段耗时 | trace 详情页瀑布图呈现 `load / prefill / first_token / decode / overhead` 各阶段时间条，长度与实测耗时一致 |
-| A5 首 token 归因 | 对同一模型做冷调用（模型已卸载）与热调用（刚调过），瀑布图能明显区分：冷调用 load 段很长，热调用 load 段接近 0 |
+| A4 阶段耗时 | trace 详情页瀑布图呈现 `load / prefill / first_token / decode / overhead` 各阶段时间条，长度与实测耗时一致。spec-041 方案 2 落地后，由 spans.py 通过 OTel 直 API 上报 4 子 span + Langfuse generation 主体 `completion_start_time` 标记首 token 实现 |
+| A5 首 token 归因 | 对同一模型做冷调用（模型已卸载）与热调用（刚调过），瀑布图能明显区分：冷调用 load 段很长，热调用 load 段接近 0。**已达成**——2026-09-21 三次实测（`qwen3.5:9b`，direct 链路）：冷调用 load **5.575s**（trace `29c97aef…`）→ 第二次 **3.632s**（`f7fe6f9d…`，模型尚未完全热）→ 第三次 **0.003s**（`959a7164…`，模型已在内存）。热调用 load 确实归零，冷/热差异肉眼可辨；中途曾因「模型未真正热起来」误判为部分达成，第三次实测修正 |
 | A6 双链路对比 | 基准对比能给出 `langchain` 与 `direct` 两条链路各自的耗时与差值 |
 | A7 KB 链路 | 知识库提问的 trace 中能看到 embedding / 检索 / 重排 / 生成各阶段 |
 | A8 统计六项 | 首 token 分解与冷/热对比、分位与 Top N、吞吐、输入规模相关性、耗时构成占比、思考过程占比与趋势，六项均可查看 |
@@ -215,6 +215,7 @@ trace (root observation)
 | 2026-09-03 | 架构师（自身） | 修复并验证 MinIO 凭据/运行状态；v4 events_only 口径以 events_full/events_core 为准，Task 04 真实上报通过；spec 转为已确认 |
 | 2026-09-03 | 用户 | 要求补齐 Task 06 固定样本与 Dashboard 配置，并将 Langfuse v4.27 源码导入项目内进行可追踪二次开发 |
 | 2026-09-03 | 架构师（自身） | 将 Task 07 改为项目内 vendor 导入 + 固定版本基线 + Ollama Insights，禁止直接修改项目外源码目录 |
+| 2026-09-21 | 架构师(自身) | 据 spec-041 用户裁决（不需要隐私脱敏），A2 明确 input（prompt 原文）不再脱敏、全量可见；A3 的 output 表述不变；第 143 行「不自研甘特图」约束维持（其是否修订取决于用户尚未作出的 A4/A5 裁决） |
 
 ---
 **五条自检**：①每条规则能不能写成测试？不能就是没说清。②人能在 2 分钟内审完吗？③范围划死了吗？④执行配置里每个角色都有模型与上下文吗？⑤产品使用步骤是否可映射到验收点？
