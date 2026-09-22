@@ -27,6 +27,7 @@ SEMANTIC_SCHOLAR_FIELDS = (
 )
 SEMANTIC_SCHOLAR_TITLE_THRESHOLD = 0.86
 SEMANTIC_SCHOLAR_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+SEMANTIC_SCHOLAR_MAX_RETRY_DELAY_SECONDS = 30.0
 
 
 class SemanticScholarRequestLimiter:
@@ -64,6 +65,38 @@ class SemanticScholarRequestLimiter:
 
 
 _GLOBAL_REQUEST_LIMITER = SemanticScholarRequestLimiter()
+
+
+def get_semantic_scholar_request_limiter() -> SemanticScholarRequestLimiter:
+    """Return the process-wide Academic Graph limiter shared by all clients."""
+    return _GLOBAL_REQUEST_LIMITER
+
+
+def semantic_scholar_retry_delay(
+    response: Optional[httpx.Response],
+    attempt: int,
+    base_delay: float,
+) -> float:
+    """Return a bounded exponential delay, honoring a numeric Retry-After.
+
+    Provider-controlled delays are never allowed to create an unbounded wait;
+    malformed or negative headers fall back to the local exponential schedule.
+    The caller still passes every retry through the shared one-request-per-
+    second limiter.
+    """
+    exponent = max(0, int(attempt))
+    fallback = max(0.0, float(base_delay)) * (2**exponent)
+    retry_after = None
+    if response is not None:
+        raw = response.headers.get("Retry-After", "").strip()
+        try:
+            parsed = float(raw)
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None and parsed >= 0:
+            retry_after = parsed
+    delay = max(fallback, retry_after or 0.0)
+    return min(delay, SEMANTIC_SCHOLAR_MAX_RETRY_DELAY_SECONDS)
 
 
 @dataclass(frozen=True)
@@ -213,14 +246,20 @@ class SemanticScholarFallbackAdapter:
         if client is None:
             client = httpx.Client(timeout=20.0, trust_env=False)
         last_code = "SEMANTIC_SCHOLAR_UNAVAILABLE"
+        last_response: Optional[httpx.Response] = None
         try:
             for attempt in range(self.retries + 1):
                 self._wait_for_slot()
+                # Retry-After is scoped to the response that just failed.  Do
+                # not reuse a previous 429 header when the next attempt fails
+                # before receiving an HTTP response (for example, a timeout).
+                last_response = None
                 try:
                     response = client.get(endpoint, params={"fields": SEMANTIC_SCHOLAR_FIELDS}, headers=headers)
                 except (httpx.TimeoutException, httpx.HTTPError, OSError):
                     last_code = "SEMANTIC_SCHOLAR_UNAVAILABLE"
                 else:
+                    last_response = response
                     if response.status_code == 401 or response.status_code == 403:
                         return SemanticScholarResult(code="SEMANTIC_SCHOLAR_AUTH_FAILED")
                     if response.status_code == 404:
@@ -238,7 +277,7 @@ class SemanticScholarFallbackAdapter:
                             return SemanticScholarResult(code="SEMANTIC_SCHOLAR_INVALID_RESPONSE")
                         return self._parse(payload, candidate, identifier, kind)
                 if attempt < self.retries:
-                    self.sleep(self.backoff * (2**attempt))
+                    self.sleep(semantic_scholar_retry_delay(last_response, attempt, self.backoff))
             return SemanticScholarResult(code=last_code, retryable=True)
         finally:
             if owned_client:
@@ -306,8 +345,11 @@ __all__ = [
     "SEMANTIC_SCHOLAR_API_HOST",
     "SEMANTIC_SCHOLAR_API_URL",
     "SEMANTIC_SCHOLAR_FIELDS",
+    "SEMANTIC_SCHOLAR_MAX_RETRY_DELAY_SECONDS",
     "SemanticScholarRequestLimiter",
     "SemanticScholarFallbackAdapter",
     "SemanticScholarMatch",
     "SemanticScholarResult",
+    "get_semantic_scholar_request_limiter",
+    "semantic_scholar_retry_delay",
 ]

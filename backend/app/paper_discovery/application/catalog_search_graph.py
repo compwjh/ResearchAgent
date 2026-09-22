@@ -10,7 +10,9 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Mapping, Optional, TypedDict
 from uuid import NAMESPACE_URL, uuid5
@@ -399,7 +401,9 @@ class CatalogSearchGraph:
 
     def __init__(self, *, store: Any, accepted_source: Any, dblp_source: Any,
                  rag: Optional[CatalogRagAdapter] = None, ttl_seconds: int = 86400,
-                 dblp_enabled: Optional[bool] = None, source_scope: str = "all"):
+                 dblp_enabled: Optional[bool] = None, source_scope: str = "all",
+                 semantic_scholar_client: Any = None,
+                 semantic_scholar_enabled: Optional[bool] = None):
         if source_scope not in {"usenix", "dblp", "all"}:
             raise ValueError("INVALID_SOURCE_SCOPE")
         self.store = store
@@ -411,6 +415,8 @@ class CatalogSearchGraph:
         # the source is disabled by default in production configuration.
         self.dblp_enabled_override = dblp_enabled
         self.source_scope = source_scope
+        self.semantic_scholar_client = semantic_scholar_client
+        self.semantic_scholar_enabled_override = semantic_scholar_enabled
         self.compiled_graph = self._build_graph()
 
     def _build_graph(self):
@@ -849,6 +855,25 @@ class CatalogSearchGraph:
             else:
                 self.store.upsert_catalog_paper(merged)
             paper = merged
+            # Spec032 field-level provenance: only the fields DBLP actually
+            # filled (base was empty) may be attributed to DBLP.  Fields the
+            # official row already owned keep their existing attribution.
+            filled = {
+                name: value
+                for name, base_value, value in (
+                    ("title", base.title, merged.title),
+                    ("abstract", base.abstract, merged.abstract),
+                    ("doi", base.doi, merged.doi),
+                    ("dblp_key", base.dblp_key, merged.dblp_key),
+                    ("official_page_url", base.official_page_url, merged.official_page_url),
+                    ("official_pdf_url", base.official_pdf_url, merged.official_pdf_url),
+                )
+                if value and not base_value
+            }
+            if merged.authors and not base.authors:
+                filled["authors"] = merged.authors
+            if merged.keywords and not base.keywords:
+                filled["keywords"] = merged.keywords
         else:
             # DBLP-only metadata without an abstract is not visible until the
             # authoritative USENIX row arrives, but its source is harmless to
@@ -864,10 +889,53 @@ class CatalogSearchGraph:
                 hashlib.sha256(json.dumps(metadata, sort_keys=True, default=str).encode()).hexdigest(),
             )
             self.store.upsert_catalog_paper(paper)
+            filled = {
+                name: value
+                for name, value in (
+                    ("title", title),
+                    ("abstract", info.get("abstract")),
+                    ("doi", doi),
+                    ("dblp_key", info.get("key")),
+                    ("official_page_url", info.get("url")),
+                    ("official_pdf_url", info.get("ee")),
+                )
+                if value
+            }
+            if authors:
+                filled["authors"] = authors
+        record_id = f"dblp|{paper.catalog_paper_id}"
         self.store.save_source_record(CatalogSourceRecord(
-            f"dblp|{paper.catalog_paper_id}", paper.catalog_paper_id, unit_id, "dblp",
+            record_id, paper.catalog_paper_id, unit_id, "dblp",
             str(info.get("key") or paper.catalog_paper_id), dict(info), _now(),
         ))
+        self._record_field_provenance(paper.catalog_paper_id, "dblp", record_id, filled, _now())
+
+    def _record_field_provenance(
+        self,
+        catalog_paper_id: str,
+        source_id: str,
+        source_record_id: str,
+        filled: Mapping[str, Any],
+        now: str,
+    ) -> None:
+        """Persist Spec032 field-level provenance for fields ``source_id`` supplied.
+
+        Best-effort and never fatal: provenance is attribution metadata, so a
+        store without ``save_field_provenance`` (older schema or a test double)
+        simply skips it rather than failing the import.
+        """
+        sink = getattr(self.store, "save_field_provenance", None)
+        if not callable(sink) or not filled:
+            return
+        for field_name in filled:
+            with contextlib.suppress(Exception):
+                sink(
+                    catalog_paper_id,
+                    field_name,
+                    source_id,
+                    source_record_id=source_record_id,
+                    now=now,
+                )
 
     def merge_catalog_metadata(self, job: SearchJob, *_: Any) -> None:
         # Task14's standalone source runner also records a source-local job for
@@ -878,7 +946,200 @@ class CatalogSearchGraph:
             False, None, 0, job.created_at, job.started_at or _now(), None, job.expires_at, _now(),
         ))
         self._merge_existing_catalog_duplicates(job)
+        self._enrich_catalog_metadata(job)
+        self._recall_semantic_scholar_candidates(job)
         self._event(job.search_id, "merge_catalog_metadata", "NODE_COMPLETED", "merging")
+
+    def _semantic_scholar_enabled(self) -> bool:
+        if self.semantic_scholar_enabled_override is not None:
+            return bool(self.semantic_scholar_enabled_override)
+        raw = os.getenv("SEMANTIC_SCHOLAR_METADATA_ENRICHMENT_ENABLED", "").strip().casefold()
+        if raw in {"0", "false", "no", "off"}:
+            return False
+        # A configured key opts the service into the bounded, metadata-only
+        # enrichment path.  Without a key, ordinary searches never make an
+        # unauthenticated external request.
+        return bool(os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip())
+
+    def _enrich_catalog_metadata(self, job: SearchJob) -> None:
+        """Fill missing abstract/author/identifier fields from Academic Graph.
+
+        Official venue and DBLP values are never overwritten.  Semantic Scholar
+        is an aggregate provider, so it is intentionally limited to gaps and
+        its provenance is recorded per field.  A network/API failure is a
+        degraded enrichment, not a failed catalog search.
+        """
+        if not self._semantic_scholar_enabled() and self.semantic_scholar_client is None:
+            return
+        client = self.semantic_scholar_client
+        if client is None:
+            try:
+                from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
+                    SemanticScholarGraphClient,
+                )
+                client = SemanticScholarGraphClient()
+            except Exception:
+                return
+        try:
+            papers = self.store.list_catalog_papers(
+                self._catalog_conference_ids(job), job.years, index_status=None
+            )
+            candidates = [paper for paper in papers if (
+                (paper.doi or paper.arxiv_id) and
+                (not paper.abstract or not paper.authors or not paper.doi or not paper.arxiv_id)
+            )]
+            if not candidates:
+                return
+            enrichments = client.enrich(candidates)
+        except Exception:
+            self._event(job.search_id, "merge_catalog_metadata", "ENRICHMENT_DEGRADED", "merging",
+                        payload={"message_code": "SOURCE_FAILED"})
+            return
+        updated = 0
+        for enrichment in enrichments:
+            metadata = getattr(enrichment, "metadata", None)
+            catalog_id = str(getattr(enrichment, "catalog_paper_id", "") or "")
+            if metadata is None or not catalog_id:
+                continue
+            paper = next((item for item in candidates if item.catalog_paper_id == catalog_id), None)
+            if paper is None:
+                continue
+            filled: dict[str, Any] = {}
+            values = {
+                "abstract": metadata.abstract,
+                "authors": list(metadata.authors),
+                "doi": metadata.doi,
+                "arxiv_id": metadata.arxiv_id,
+            }
+            for field_name, value in values.items():
+                if value and not getattr(paper, field_name):
+                    filled[field_name] = value
+            if not filled:
+                continue
+            merged = replace(paper, **filled)
+            merged.metadata_hash = hashlib.sha256(json.dumps({
+                "title": merged.title, "year": merged.year, "abstract": merged.abstract,
+                "authors": merged.authors, "keywords": merged.keywords, "doi": merged.doi,
+                "arxiv_id": merged.arxiv_id, "official_page_url": merged.official_page_url,
+            }, sort_keys=True, default=str).encode()).hexdigest()
+            self.store.upsert_catalog_paper(merged)
+            for field_name in filled:
+                sink = getattr(self.store, "save_field_provenance", None)
+                if callable(sink):
+                    with contextlib.suppress(Exception):
+                        sink(catalog_id, field_name, "semantic_scholar", now=_now())
+            updated += 1
+        if updated:
+            self._event(job.search_id, "merge_catalog_metadata", "SEMANTIC_SCHOLAR_ENRICHED", "merging",
+                        payload={"count": updated, "message_code": "MERGING_METADATA"})
+
+    def _recall_semantic_scholar_candidates(self, job: SearchJob) -> None:
+        """Optionally add a bounded aggregate candidate pool when official data is sparse."""
+        if self.source_scope != "all":
+            return
+        raw_enabled = os.getenv("SEMANTIC_SCHOLAR_BULK_RECALL_ENABLED", "").strip().casefold()
+        if raw_enabled in {"0", "false", "no", "off"}:
+            return
+        if raw_enabled not in {"1", "true", "yes", "on"} and not os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip():
+            return
+        try:
+            minimum = max(1, min(int(os.getenv("SEMANTIC_SCHOLAR_BULK_RECALL_MIN_RESULTS", "5")), 20))
+        except ValueError:
+            minimum = 5
+        conference_id = self._catalog_conference_ids(job)[0]
+        cache_key = f"{job.query.strip().casefold()}|{','.join(str(year) for year in sorted(set(job.years)))}"
+        query_key = hashlib.sha256(cache_key.encode()).hexdigest()[:16]
+        unit_id = f"semantic_scholar|{conference_id}|bulk|{query_key}"
+        get_unit = getattr(self.store, "get_fetch_unit", None)
+        if callable(get_unit):
+            cached_unit = get_unit(unit_id)
+            if cached_unit is not None and cached_unit.status == "completed":
+                return
+        existing = self.store.list_catalog_papers([conference_id], job.years, index_status=None)
+        missing = max(0, minimum - len(existing))
+        if not missing:
+            return
+        client = self.semantic_scholar_client
+        if client is None:
+            try:
+                from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
+                    SemanticScholarGraphClient,
+                )
+                client = SemanticScholarGraphClient()
+            except Exception:
+                return
+        try:
+            response = client.search_bulk(job.query, limit=min(20, missing + 2))
+            if getattr(response, "code", None):
+                self._event(job.search_id, "merge_catalog_metadata", "SEMANTIC_SCHOLAR_RECALL_DEGRADED", "merging",
+                            payload={"message_code": "SOURCE_FAILED"})
+                return
+            metadata_rows = client.parse_search_results(getattr(response, "payload", None))
+        except Exception:
+            self._event(job.search_id, "merge_catalog_metadata", "SEMANTIC_SCHOLAR_RECALL_DEGRADED", "merging",
+                        payload={"message_code": "SOURCE_FAILED"})
+            return
+        now = _now()
+        ensure = getattr(self.store, "ensure_fetch_unit", None)
+        unit = SourceFetchUnit(
+            fetch_unit_id=unit_id, source_kind="semantic_scholar", conference_id=conference_id,
+            unit_key=f"bulk|{query_key}", status="fetching", paper_count=0,
+            created_at=now, updated_at=now,
+        )
+        if callable(ensure):
+            ensure(unit, now)
+        added = 0
+        for metadata in metadata_rows:
+            if added >= missing:
+                break
+            if metadata.year is not None and job.years and metadata.year not in set(job.years):
+                continue
+            duplicate = next((paper for paper in existing if (
+                (metadata.doi and normalize_doi(paper.doi) == metadata.doi) or
+                (paper.normalized_title == normalize_title(metadata.title) and paper.year == metadata.year)
+            )), None)
+            if duplicate:
+                continue
+            stable_key = metadata.doi or metadata.arxiv_id or metadata.paper_id
+            paper_id = hashlib.sha256(f"semantic_scholar|{conference_id}|{stable_key}".encode()).hexdigest()[:32]
+            paper = CatalogPaper(
+                paper_id, conference_id, metadata.year, metadata.title,
+                normalize_title(metadata.title), list(metadata.authors), metadata.abstract,
+                [], metadata.doi, None, "published", None, None, None, metadata.arxiv_id,
+                hashlib.sha256(json.dumps({"title": metadata.title, "year": metadata.year,
+                                           "abstract": metadata.abstract, "doi": metadata.doi,
+                                           "authors": metadata.authors}, sort_keys=True, default=str).encode()).hexdigest(),
+                "pending", 0, now, now,
+            )
+            self.store.upsert_catalog_paper(paper, now)
+            record_id = f"semantic_scholar|{conference_id}|{metadata.paper_id}"
+            save_record = getattr(self.store, "save_source_record", None)
+            if callable(save_record):
+                with contextlib.suppress(Exception):
+                    save_record(CatalogSourceRecord(
+                        record_id, paper_id, unit_id, "semantic_scholar", f"{conference_id}|{metadata.paper_id}",
+                        {"paperId": metadata.paper_id, "title": metadata.title, "year": metadata.year,
+                         "doi": metadata.doi, "arxiv_id": metadata.arxiv_id, "venue": metadata.venue}, now,
+                    ), now)
+            self._record_field_provenance(
+                paper_id, "semantic_scholar", record_id,
+                {field: value for field, value in {
+                    "title": metadata.title, "authors": metadata.authors,
+                    "abstract": metadata.abstract, "doi": metadata.doi,
+                    "arxiv_id": metadata.arxiv_id,
+                }.items() if value}, now,
+            )
+            existing.append(paper)
+            added += 1
+        save_unit = getattr(self.store, "save_fetch_unit", None)
+        if callable(save_unit):
+            save_unit(
+                replace(unit, status="completed", paper_count=added, last_success_at=now, updated_at=now),
+                now,
+            )
+        if added:
+            self._event(job.search_id, "merge_catalog_metadata", "SEMANTIC_SCHOLAR_RECALLED", "merging",
+                        payload={"count": added, "message_code": "MERGING_METADATA"})
 
     def _merge_existing_catalog_duplicates(self, job: SearchJob) -> None:
         """Reconcile records when DBLP wins the source-node race.

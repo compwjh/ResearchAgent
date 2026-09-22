@@ -37,6 +37,10 @@ import httpx
 from backend.app.core.url_security import URLSecurityError, validate_url
 from backend.app.paper_discovery.domain.paper_discovery import SourceFetchUnit
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.source_contract import (
+    SOURCE_CONTRACT_SCHEMA_VERSION,
+    SourceContractMixin,
+)
 from backend.app.paper_discovery.infrastructure.ccs_paper_parser import (
     CCS_AGGREGATOR_AUTHORITY,
     CCS_BIBLIOGRAPHIC_QUERY,
@@ -134,13 +138,14 @@ class CcsSyncResult:
     cached_years: tuple[int, ...] = ()
 
 
-class CcsPublicationSource:
+class CcsPublicationSource(SourceContractMixin):
     """ACM CCS 主会目录来源（Crossref 目录 + OpenAlex 摘要）。"""
 
     source_id = CCS_SOURCE_ID
     source_kind = CCS_SOURCE_KIND
     #: 官方 DOI 元数据（ACM member 320 自提交），低于官方会议页面、高于聚合书目来源。
     authority_rank = CCS_OFFICIAL_DOI_AUTHORITY
+    contract_schema_version = SOURCE_CONTRACT_SCHEMA_VERSION
     allowed_hosts = frozenset({CROSSREF_HOST, OPENALEX_HOST})
     #: CCS 首届为 1993；上界留出提前配置的余地。
     MIN_YEAR = 1993

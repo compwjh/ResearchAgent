@@ -1,11 +1,17 @@
 """Task11 durable candidate issue and recovery contracts."""
 
 import asyncio
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
 from backend.app.api import routes_paper
+from backend.app.paper_discovery.application.paper_import import PaperImportResult
+from backend.app.paper_discovery.application.paper_import_batch_service import PaperImportBatchService
+from backend.app.paper_discovery.domain.paper_discovery import PaperCandidate, SearchSession
 from backend.app.paper_discovery.domain.paper_import_batch import PaperImportBatch
+from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
+from backend.app.paper_discovery.infrastructure.paper_import_batch_store import PaperImportBatchStore
 from backend.app.research.application.acquisition import ResearchAcquisitionService
 from backend.app.research.domain.models import (
     AcquisitionApproval,
@@ -78,6 +84,49 @@ def test_research_sync_projects_waiting_login_as_actionable_issue(tmp_path: Path
     assert result["issues"][0]["actions"] == ["login", "resume", "upload"]
     link = store.list_document_links("task-issue")[0]
     assert link.status == "waiting_login"
+
+
+def test_restarted_research_acquisition_projects_issue_without_refreshing_search(tmp_path: Path):
+    research = ResearchStore(tmp_path / "research.sqlite3")
+    _task(research, "task-restarted")
+    research.set_task_search_id("task-restarted", "search-1")
+    research.replace_selections(
+        "task-restarted",
+        [ResearchPaperSelection("task-restarted", "paper-restarted", 1.0, "[]", "catalog", "", "search-1")],
+    )
+    batch_store = PaperImportBatchStore(tmp_path / "imports.sqlite3")
+    batch = batch_store.create_batch("search-1", ["paper-restarted"])
+    item = batch_store.get_items(batch.batch_id)[0]
+    batch_store.claim_item(item.item_id, "worker")
+    batch_store.transition_item(
+        item.item_id,
+        "waiting_login",
+        expected_state="downloading",
+        lease_owner="worker",
+        error_code="LOGIN_REQUIRED",
+    )
+    research.create_acquisition_approval(
+        AcquisitionApproval("task-restarted", 1, ["paper-restarted"], "confirmed", "restart-request", batch.batch_id)
+    )
+
+    refreshed = []
+
+    def must_not_refresh(*_args):
+        refreshed.append(True)
+        raise AssertionError("research recovery must not re-run paper search")
+
+    restarted = ResearchAcquisitionService(
+        research,
+        PaperImportBatchService(batch_store),
+        search_refresher=must_not_refresh,
+    )
+    result = restarted.status("task-restarted")
+
+    assert refreshed == []
+    assert result["items"][0]["status"] == "waiting_login"
+    assert result["issues"][0]["candidate_id"] == "paper-restarted"
+    assert result["issues"][0]["task_ids"] == ["task-restarted"]
+    assert result["issues"][0]["actions"] == ["login", "resume", "upload"]
 
 
 def test_manual_upload_resolution_closes_issue_without_rewriting_report(tmp_path: Path):
@@ -181,3 +230,71 @@ def test_resolved_issue_cannot_be_uploaded_again(tmp_path: Path, monkeypatch):
     response = asyncio.run(routes_paper.upload_paper_acquisition_issue(issue.issue_id, SimpleNamespace(), None))
     assert response.status_code == 400
     assert response.body and b"ISSUE_ACTION_NOT_ALLOWED" in response.body
+
+
+def test_approved_plan_failed_item_is_visible_in_papers_issue_api(tmp_path: Path, monkeypatch):
+    """The automatic Research path records a failed item before issue listing."""
+    from backend.app.research.application.acquisition import ApprovedPlanAutoImporter
+
+    research = ResearchStore(tmp_path / "research.sqlite3")
+    _task(research, "task-auto-issue")
+    research.set_task_search_id("task-auto-issue", "search-auto-issue")
+    research.replace_selections(
+        "task-auto-issue",
+        [ResearchPaperSelection("task-auto-issue", "paper-failed", 1.0, "[]", "catalog", "", "search-auto-issue")],
+    )
+    candidate = PaperCandidate(
+        "paper-failed", "search-auto-issue", "A failed paper", "ccs", "CCS",
+        year=2025, doi="10.1000/paper-failed", pdf_url="https://example.test/paper.pdf",
+    )
+    discovery = PaperDiscoveryStore(tmp_path / "discovery.sqlite3")
+    discovery.save_search(SearchSession("search-auto-issue", "goal", "2099-01-01T00:00:00Z"), [candidate])
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def importer(*_args, **_kwargs):
+        started.set()
+        assert release.wait(timeout=5)
+        return PaperImportResult(None, None, "failed", error_code="DOWNLOAD_TIMEOUT")
+
+    batch = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "batch.sqlite3"),
+        discovery_store=discovery,
+        importer=importer,
+    )
+    submitted = {}
+    submit_batch = batch.submit_batch
+
+    def capture_submit(batch_id, *, candidates=None):
+        future = submit_batch(batch_id, candidates=candidates)
+        submitted[batch_id] = future
+        return future
+
+    monkeypatch.setattr(batch, "submit_batch", capture_submit)
+    acquisition = ResearchAcquisitionService(research, batch)
+    result = ApprovedPlanAutoImporter(research, acquisition).run(
+        "task-auto-issue", approved_plan=True, target_paper_count=1,
+    )
+    batch_id = result["batch_id"]
+    assert started.wait(timeout=5)
+
+    monkeypatch.setattr(routes_paper, "_paper_discovery_enabled", lambda: True)
+    monkeypatch.setattr(routes_paper, "_research_issue_store", lambda: research)
+    pending = routes_paper.list_paper_acquisition_issues(
+        task_id="task-auto-issue", status="open", reason_code=None, limit=100,
+    )
+    assert pending["count"] == 0
+
+    release.set()
+    submitted[batch_id].result(timeout=5)
+
+    response = routes_paper.list_paper_acquisition_issues(
+        task_id="task-auto-issue", status="open", reason_code=None, limit=100,
+    )
+    assert response["count"] == 1
+    issue = response["issues"][0]
+    assert issue["candidate_id"] == "paper-failed"
+    assert issue["task_ids"] == ["task-auto-issue"]
+    assert issue["reason_code"] == "DOWNLOAD_TIMEOUT"
+    assert issue["batch_id"] == batch_id

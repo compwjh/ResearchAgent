@@ -23,7 +23,9 @@ import math
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
+from backend.app.paper_discovery.domain.source_authority import canonical_source_id
 from backend.app.research.domain.contracts import (
     GOAL_MAX_CHARS,
     GOAL_MIN_CHARS,
@@ -78,6 +80,8 @@ class Planner:
         quality_profile: str = "balanced",
         target_paper_count: int | None = None,
         language: str = "zh",
+        source_ids: tuple[str, ...] | list[str] | None = None,
+        scope: dict | None = None,
     ) -> ResearchPlanDraft:
         """生成受校验计划；任一校验不通过抛 PlanRejected(稳定错误码)。"""
         # 1) goal 归一化（NFC 避免同形字符绕过长度校验）+ 长度校验。
@@ -93,11 +97,26 @@ class Planner:
         low, high = TARGET_PAPER_COUNT_RANGE
         target_paper_count = max(low, min(int(target_paper_count), high))
 
+        normalized_sources: tuple[str, ...] = ()
+        if source_ids is not None:
+            if not isinstance(source_ids, (list, tuple)) or not source_ids:
+                raise PlanRejected("PLAN_VALIDATION_FAILED")
+            try:
+                normalized_sources = tuple(dict.fromkeys(
+                    canonical_source_id(item, strict=True) for item in source_ids
+                ))
+            except (TypeError, ValueError):
+                raise PlanRejected("PLAN_VALIDATION_FAILED") from None
+        normalized_scope = self._normalize_scope(scope)
+
         # 3) facets 确定性切分（为什么不用 LLM 见模块 docstring）。
         facets = self._split_facets(normalized)
 
         # 4) 生成 WorkItem（本批不做 replan，属 Task05）。
-        work_items = self._build_work_items(facets, normalized, target_paper_count, language)
+        work_items = self._build_work_items(
+            facets, normalized, target_paper_count, language,
+            source_ids=normalized_sources, scope=normalized_scope,
+        )
 
         # 5) 冻结校验器兜底：类型白名单 / 参数允许列表 / 角色 / 无环 / 预算。
         ok, code = validate_plan({"work_items": [dict(item) for item in work_items]})
@@ -116,6 +135,33 @@ class Planner:
     # ------------------------------------------------------------------ #
     # 内部：确定性切分与计划构造
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _normalize_scope(scope: dict | None) -> dict:
+        if scope is None:
+            return {}
+        if not isinstance(scope, dict) or set(scope) - {"years", "from_year", "to_year", "from", "to"}:
+            raise PlanRejected("PLAN_VALIDATION_FAILED")
+        current_year = datetime.now(timezone.utc).year
+        result: dict[str, object] = {}
+        if "years" in scope:
+            years = scope["years"]
+            if (not isinstance(years, (list, tuple)) or not years or
+                    any(isinstance(year, bool) or not isinstance(year, int) or year < 1900 or year > current_year
+                        for year in years)):
+                raise PlanRejected("PLAN_VALIDATION_FAILED")
+            result["years"] = sorted(set(years))
+        for name, alias in (("from_year", "from"), ("to_year", "to")):
+            if name in scope or alias in scope:
+                year = scope.get(name, scope.get(alias))
+                if isinstance(year, str) and year.strip().isdigit():
+                    year = int(year.strip())
+                if isinstance(year, bool) or not isinstance(year, int) or year < 1900 or year > current_year:
+                    raise PlanRejected("PLAN_VALIDATION_FAILED")
+                result[name] = year
+        if "from_year" in result and "to_year" in result and result["from_year"] > result["to_year"]:
+            raise PlanRejected("PLAN_VALIDATION_FAILED")
+        return result
 
     def _split_facets(self, goal: str) -> list[str]:
         """按中英分隔符切分 goal 为 facets；去空、去重、保序，最多 max_facets 个。
@@ -139,7 +185,8 @@ class Planner:
         return unique[: self.max_facets]
 
     def _build_work_items(
-        self, facets: list[str], goal: str, target_paper_count: int, language: str
+        self, facets: list[str], goal: str, target_paper_count: int, language: str,
+        *, source_ids: tuple[str, ...] = (), scope: dict | None = None
     ) -> list[dict]:
         """生成四类 WorkItem（search/evaluate/coverage/synthesize），不含 replan。
 
@@ -170,6 +217,11 @@ class Planner:
                     },
                 }
             )
+            if source_ids:
+                items[-1]["params"]["sources"] = list(source_ids)
+                items[-1]["params"]["source_ids"] = list(source_ids)
+            if scope:
+                items[-1]["params"]["scope"] = dict(scope)
         items.append(
             {
                 "id": "e1",

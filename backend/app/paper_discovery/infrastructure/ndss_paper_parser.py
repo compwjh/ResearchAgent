@@ -33,10 +33,19 @@ import html
 import json
 import re
 from dataclasses import dataclass, field, replace
+from html.parser import HTMLParser
 from typing import Any, Iterable, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
-from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.source_authority import (
+    AUTHORITY_AGGREGATOR,
+    AUTHORITY_OFFICIAL_DOI,
+    AUTHORITY_OFFICIAL_VENUE,
+    DEFAULT_SOURCE_AUTHORITY,
+    UNKNOWN_SOURCE_AUTHORITY,
+    may_overwrite,
+)
 from backend.app.paper_discovery.infrastructure.openalex_enricher import _abstract_from_inverted_index
 
 NDSS_SOURCE_ID = "ndss"
@@ -57,17 +66,13 @@ NDSS_INVALID_RESPONSE = "NDSS_INVALID_RESPONSE"
 #: 有条目但没有任何一条通过会议容器过滤——这是「容器标题变化导致静默返回 0」的可观测信号。
 NDSS_VENUE_FILTER_EMPTY = "NDSS_VENUE_FILTER_EMPTY"
 
-AUTHORITY_OFFICIAL_VENUE = 3
-AUTHORITY_OFFICIAL_DOI = 2
-AUTHORITY_AGGREGATOR = 1
+# 旧值 3/2/1（数值越大越权威）与聚合 adapter 的 10/20/30 方向相反，已在 Task05 统一为
+# domain/source_authority 的 10/20/30（数值越小越权威）；以下为兼容别名/映射。
 NDSS_OFFICIAL_DOI_AUTHORITY = AUTHORITY_OFFICIAL_DOI
 NDSS_AGGREGATOR_AUTHORITY = AUTHORITY_AGGREGATOR
 #: 字段来源 → 权威级别。未知来源按最高权威处理（宁可少写，不可覆盖）。
-SOURCE_AUTHORITY: Mapping[str, int] = {
-    CROSSREF_SOURCE_ID: AUTHORITY_OFFICIAL_DOI,
-    OPENALEX_SOURCE_ID: AUTHORITY_AGGREGATOR,
-}
-_UNKNOWN_SOURCE_AUTHORITY = AUTHORITY_OFFICIAL_VENUE
+SOURCE_AUTHORITY: Mapping[str, int] = dict(DEFAULT_SOURCE_AUTHORITY)
+_UNKNOWN_SOURCE_AUTHORITY = UNKNOWN_SOURCE_AUTHORITY
 
 DROP_FOREIGN_VENUE = "FOREIGN_VENUE"
 DROP_NON_PAPER_TITLE = "NON_PAPER_TITLE"
@@ -75,6 +80,16 @@ DROP_MISSING_YEAR = "MISSING_YEAR"
 
 #: NDSS 官方论文托管主机（Internet Society 自提交的 primary resource）。
 NDSS_PAPER_HOST = "www.ndss-symposium.org"
+# Keep provenance within the canonical SourceRegistry ID; the official route and
+# fetch-unit key distinguish the page-backed record from the Crossref fallback.
+NDSS_OFFICIAL_SOURCE_ID = NDSS_SOURCE_ID
+NDSS_OFFICIAL_HOST = NDSS_PAPER_HOST
+NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS = {
+    2024: f"https://{NDSS_OFFICIAL_HOST}/ndss2024/accepted-papers/",
+}
+NDSS_OFFICIAL_ABSTRACT_MISSING = "NDSS_OFFICIAL_ABSTRACT_MISSING"
+NDSS_OFFICIAL_KEYWORDS_MISSING = "NDSS_OFFICIAL_KEYWORDS_MISSING"
+NDSS_OFFICIAL_INVALID_RESPONSE = "NDSS_OFFICIAL_INVALID_RESPONSE"
 DOI_RESOLVER_HOST = "doi.org"
 
 # 前置页 / 非论文条目：前言、研讨会、海报、教程、主题演讲、目录、索引。
@@ -149,6 +164,61 @@ class NdssCatalogResult:
     records: tuple[NdssCatalogRecord, ...] = ()
     dropped: tuple[NdssDropped, ...] = ()
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _OfficialBlock:
+    tag: str
+    text: str
+    href: str | None = None
+
+
+class _OfficialCatalogHTMLParser(HTMLParser):
+    """Collect semantic blocks from the NDSS accepted-papers page.
+
+    The official page is a WordPress-rendered document whose paper entries are
+    represented by heading/paragraph blocks.  Semantic blocks tolerate CSS
+    changes and never follow links during parsing.
+    """
+
+    _BLOCK_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "dt", "dd"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[_OfficialBlock] = []
+        self._active: list[dict[str, Any]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.casefold()
+        if tag in self._BLOCK_TAGS:
+            if self._active:
+                self._finish_block()
+            attrs_map = dict(attrs)
+            self._active.append({"tag": tag, "parts": [], "href": None})
+            self._active[-1]["href"] = attrs_map.get("data-href")
+        elif tag == "a" and self._active:
+            href = dict(attrs).get("href")
+            if href and self._active[-1]["href"] is None:
+                self._active[-1]["href"] = str(href)
+
+    def handle_data(self, data: str) -> None:
+        if self._active and data:
+            self._active[-1]["parts"].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._active and tag.casefold() == self._active[-1]["tag"]:
+            self._finish_block()
+
+    def _finish_block(self) -> None:
+        item = self._active.pop()
+        text = " ".join("".join(item["parts"]).split())
+        if text:
+            self.blocks.append(_OfficialBlock(tag=item["tag"], text=text, href=item["href"]))
+
+    def close(self) -> None:
+        while self._active:
+            self._finish_block()
+        super().close()
 
 
 @dataclass(frozen=True)
@@ -408,6 +478,114 @@ def parse_crossref_catalog(payload: Any, *, year: int | None = None) -> NdssCata
     return NdssCatalogResult(tuple(records), tuple(dropped), warnings)
 
 
+# --- 官网目录解析 -------------------------------------------------------------
+
+
+_OFFICIAL_HEADING_TAGS = frozenset({"h2", "h3", "h4", "h5", "h6"})
+_OFFICIAL_SECTION_NAMES = frozenset({
+    "accepted papers", "ndss symposium 2024 accepted papers", "accepted posters",
+    "read more accepted papers", "symposium program", "program", "program papers",
+})
+
+
+def _official_author_names(raw: str) -> tuple[str, ...]:
+    """Extract names while discarding parenthesized affiliations."""
+    names: list[str] = []
+    for part in re.split(r",\s*(?=[A-ZÀ-ÖØ-Ý][^,]*\s*\()", raw):
+        name = re.sub(r"\s*\([^)]*\)", "", part)
+        name = " ".join(name.split()).strip(" ,;:—–")
+        if name and name not in names:
+            names.append(name)
+    if not names and raw.strip():
+        names.append(" ".join(raw.split()))
+    return tuple(names)
+
+
+def _official_page_url(raw: Any, fallback: str) -> str:
+    candidate = raw
+    if isinstance(candidate, str) and candidate.strip().startswith("/"):
+        candidate = urljoin(fallback, candidate.strip())
+    return _safe_record_url(candidate, hosts=(NDSS_OFFICIAL_HOST,)) or (
+        _safe_record_url(fallback, hosts=(NDSS_OFFICIAL_HOST,)) or ""
+    )
+
+
+def parse_official_catalog(payload: Any, *, year: int, page_url: str = "") -> NdssCatalogResult:
+    """Parse an NDSS accepted-papers page without inventing DOI/PDF fields.
+
+    The official page establishes title, authors, year, venue and page URL only.
+    DOI, abstract, keywords and PDF remain empty for Crossref/OpenAlex fill-if-
+    missing, with their actual provenance preserved by the later merge.
+    """
+    if isinstance(payload, (bytes, bytearray)):
+        try:
+            payload = bytes(payload).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise NdssPaperParseError(code=NDSS_OFFICIAL_INVALID_RESPONSE) from error
+    if not isinstance(payload, str) or not payload.strip():
+        raise NdssPaperParseError(code=NDSS_OFFICIAL_INVALID_RESPONSE)
+    if payload.lstrip().startswith("%PDF-"):
+        raise NdssPaperParseError(code=NDSS_OFFICIAL_INVALID_RESPONSE)
+
+    parser = _OfficialCatalogHTMLParser()
+    try:
+        parser.feed(payload)
+        parser.close()
+    except (TypeError, ValueError) as error:
+        raise NdssPaperParseError(code=NDSS_OFFICIAL_INVALID_RESPONSE) from error
+
+    records: list[NdssCatalogRecord] = []
+    seen_titles: set[str] = set()
+    for index, block in enumerate(parser.blocks[:-1]):
+        if block.tag not in _OFFICIAL_HEADING_TAGS:
+            continue
+        title = " ".join(html.unescape(block.text).split())
+        normalized = title.casefold().strip(" .:")
+        if not title or normalized in _OFFICIAL_SECTION_NAMES:
+            continue
+        if normalized.startswith("ndss symposium") and "accepted" not in normalized:
+            continue
+        author_block = parser.blocks[index + 1]
+        if author_block.tag not in {"p", "li", "dd"}:
+            continue
+        authors = _official_author_names(author_block.text)
+        if not authors:
+            continue
+        title_key = normalize_title(title)
+        if not title_key or title_key in seen_titles:
+            continue
+        seen_titles.add(title_key)
+        records.append(NdssCatalogRecord(
+            doi="",
+            title=title,
+            authors=authors,
+            year=int(year),
+            container_title=f"{int(year)} Network and Distributed System Security Symposium",
+            article_url=_official_page_url(block.href, page_url),
+            source_kind=NDSS_SOURCE_KIND,
+            abstract=None,
+            keywords=(),
+            pdf_url=None,
+            pdf_access="unknown",
+            provenance={
+                "title": NDSS_OFFICIAL_SOURCE_ID,
+                "authors": NDSS_OFFICIAL_SOURCE_ID,
+                "year": NDSS_OFFICIAL_SOURCE_ID,
+                "container_title": NDSS_OFFICIAL_SOURCE_ID,
+                "article_url": NDSS_OFFICIAL_SOURCE_ID,
+            },
+        ))
+
+    if not records:
+        raise NdssPaperParseError(
+            "NDSS 官网目录未解析出 accepted paper 条目",
+            code=NDSS_OFFICIAL_INVALID_RESPONSE,
+        )
+    return NdssCatalogResult(
+        tuple(records), (), (NDSS_OFFICIAL_ABSTRACT_MISSING, NDSS_OFFICIAL_KEYWORDS_MISSING)
+    )
+
+
 # --- OpenAlex 富化与合并 -------------------------------------------------------
 
 
@@ -450,13 +628,11 @@ def parse_openalex_work(payload: Any) -> NdssEnrichment:
 def _may_write(existing_source: str | None, incoming_source: str) -> bool:
     """低权威来源不得覆盖高权威字段（spec-032 字段级 provenance 合同）。
 
+    委托给 domain.source_authority.may_overwrite（唯一方向：数值越小越权威）。
     ``existing_source is None`` 表示该字段还没有归属来源 → 可写。来源 id 未知时按最高
     权威处理：宁可少写一次，也不能把未知（很可能是官方页面）的值覆盖掉。
     """
-    if existing_source is None:
-        return True
-    existing = SOURCE_AUTHORITY.get(existing_source, _UNKNOWN_SOURCE_AUTHORITY)
-    return existing < SOURCE_AUTHORITY.get(incoming_source, _UNKNOWN_SOURCE_AUTHORITY)
+    return may_overwrite(existing_source, incoming_source)
 
 
 def merge_enrichment(record: NdssCatalogRecord, enrichment: NdssEnrichment) -> NdssCatalogRecord:
@@ -496,6 +672,9 @@ class NdssCatalogParser:
     def parse_catalog(self, payload: Any, *, year: int | None = None) -> NdssCatalogResult:
         return parse_crossref_catalog(payload, year=year)
 
+    def parse_official_catalog(self, payload: Any, *, year: int, page_url: str = "") -> NdssCatalogResult:
+        return parse_official_catalog(payload, year=year, page_url=page_url)
+
     def parse_enrichment(self, payload: Any) -> NdssEnrichment:
         return parse_openalex_work(payload)
 
@@ -518,7 +697,13 @@ __all__ = [
     "NDSS_CONTAINER_PHRASE",
     "NDSS_DOI_PREFIX",
     "NDSS_INVALID_RESPONSE",
+    "NDSS_OFFICIAL_ABSTRACT_MISSING",
+    "NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS",
     "NDSS_OFFICIAL_DOI_AUTHORITY",
+    "NDSS_OFFICIAL_HOST",
+    "NDSS_OFFICIAL_INVALID_RESPONSE",
+    "NDSS_OFFICIAL_KEYWORDS_MISSING",
+    "NDSS_OFFICIAL_SOURCE_ID",
     "NDSS_PAPER_HOST",
     "NDSS_PARSE_FAILED",
     "NDSS_SOURCE_ID",
@@ -540,5 +725,6 @@ __all__ = [
     "is_ndss_research_paper",
     "merge_enrichment",
     "parse_crossref_catalog",
+    "parse_official_catalog",
     "parse_openalex_work",
 ]

@@ -1,7 +1,9 @@
 # Task 08：本地会话可用的 USENIX 论文助手 Skill（含执行脚本）
 
 > 关联：[spec-032.1](../../specs/032.1-usenix-skill-decoupling.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 04（产品侧 Tool 与 API 已就绪）；当前状态：`待执行`
+> 依赖：任务 04（产品侧 Tool 与 API 已就绪）；当前状态：`待执行，移交 Spec032 Task13`
+
+> 2026-09-20：本任务保留为原始需求与验收记录，执行入口改为 [Spec032 Task13](../032/task-13-spec0321-carryover.md)；需按新版多来源合同核对既有 API，不得照旧文档假定端口 8000 或接口已完全接线。
 
 ## 一句话目标
 
@@ -70,4 +72,8 @@
 
 ## 产出物、执行结果与变更日志
 
-> 待执行后填写：脚本路径、用法示例、实测输出、验收结果。
+### 移交至 Spec032 Task13 的执行结果（2026-09-20）
+
+- 静态/契约：PASS。脚本路径为 `.codebuddy/skills/usenix-paper-assistant/scripts/search_papers.py` 与 `download_paper.py`；只调用本地产品 API，不接受客户端 URL。Task13 定向测试 `4 passed`，脚本 Ruff、`py_compile` 退出码均为 `0`。
+- 不可达合同：PASS。`--base-url http://127.0.0.1:9` 退出码 `2`，输出中文错误、无 traceback；本轮修复错误文本显示实际 base URL，不再固定误报 8000。
+- 真实服务：PASS（2026-09-20 复跑）。`search_papers.py --base-url http://127.0.0.1:18080 --query agent --years 2024 --limit 3` 返回 `partial` 和 3 个真实候选；随后第三个候选通过 `download_paper.py` 返回 `paper_id=7dfec772f919481aad9fc3bcbcf96041`、`status=indexed`、`existing=false`。首个候选重复导入返回 409，第二个候选返回 424，均符合失败/重复语义并记录在 [`artifacts/task-13/carryover.md`](../032/artifacts/task-13/carryover.md)。

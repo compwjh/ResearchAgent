@@ -1,7 +1,7 @@
 # Task 03：详情页抓取单元接入目录同步
 
 > 关联：[spec-032.1](../../specs/032.1-usenix-skill-decoupling.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 02；当前状态：`待执行`
+> 依赖：任务 02；当前状态：`已完成（待本规格收口复核）`
 
 ## 一句话目标
 
@@ -81,4 +81,10 @@
 
 ## 产出物、执行结果与变更日志
 
-> 待执行后填写：真实命令、退出码、测试结果、改动文件清单、unit_id 设计说明。
+### 执行结果（2026-09-20 对账）
+
+- 改动文件：`backend/app/paper_discovery/infrastructure/usenix_publication_source.py`、
+  `tests/test_usenix_publication_source.py`。
+- 定向验证：`.venv/bin/python -m pytest tests/test_usenix_publication_source.py -q` → **42 passed，exit 0**（5 个既有依赖告警）。
+- 复核结论：详情单元按 `usenix|{conference_id}|{year}|{cycle}|detail:{slug}` 维持增量/可重试语义；fill-if-missing、缓存跳过、单篇失败隔离、URL 白名单和 PDF 禁探测均有离线测试覆盖。
+- 规格收口仍待 032.1 Task07 的独立需求/验收评审，不将本任务证据等同于整规格完成。

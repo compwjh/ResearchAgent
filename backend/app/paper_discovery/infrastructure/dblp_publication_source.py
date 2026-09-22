@@ -8,6 +8,11 @@ import httpx
 
 from backend.app.paper_discovery.domain.paper_discovery import ConferenceSource
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.source_authority import AUTHORITY_OFFICIAL_VENUE
+from backend.app.paper_discovery.domain.source_contract import (
+    SOURCE_CONTRACT_SCHEMA_VERSION,
+    SourceContractMixin,
+)
 
 _EXCLUDED = re.compile(r"\b(workshop|poster|doctoral|soups|demo|tutorial|ccsw|spw)\b", re.I)
 
@@ -75,9 +80,13 @@ class DBLPPublicationResult:
     failed_years: Tuple[int, ...] = ()
 
 
-class DBLPPublicationSource:
+class DBLPPublicationSource(SourceContractMixin):
     endpoint = "https://dblp.org/search/publ/api"
     user_agent = "ResearchAgent-Spec015/1.0 (+https://localhost)"
+    source_id = "dblp"
+    source_kind = "dblp"
+    authority_rank = AUTHORITY_OFFICIAL_VENUE
+    contract_schema_version = SOURCE_CONTRACT_SCHEMA_VERSION
 
     def __init__(self, *, timeout: float = 20, retries: int = 2, backoff: float = .25,
                  client: Optional[httpx.Client] = None, transport: Any = None, sleep=time.sleep):

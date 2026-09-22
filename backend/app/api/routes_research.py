@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 from contextlib import suppress
@@ -80,6 +81,11 @@ _TASK_TERMINAL = frozenset({"partial", "completed", "failed", "cancelled", "inte
 
 # 任务摘要里 goal 的截断长度（与 service 的 draft 事件摘要一致，不放大段原文）。
 _GOAL_EXCERPT_CHARS = 120
+
+# Task summaries expose only stable runtime telemetry.  Provider and error
+# values are aliases/codes, never free-form model output or provider details.
+_SAFE_RUNTIME_ALIAS = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
+_SAFE_RUNTIME_CODE = re.compile(r"^[A-Z0-9][A-Z0-9_.-]{0,79}$")
 
 # SSE：轮询间隔、心跳间隔（秒）与单批读取上限。
 _EVENT_POLL_SECONDS = 0.05
@@ -551,6 +557,109 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _safe_runtime_alias(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text if _SAFE_RUNTIME_ALIAS.fullmatch(text) else None
+
+
+def _safe_runtime_code(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text if _SAFE_RUNTIME_CODE.fullmatch(text) else None
+
+
+def _safe_runtime_timestamp(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text or len(text) > 64:
+        return None
+    try:
+        datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return text
+
+
+def _task_runtime_observability(research_task_id: str) -> dict:
+    """Aggregate bounded retry/provider telemetry from the durable WorkItems.
+
+    This projection deliberately has no prompt, output, exception text, model
+    response, or credential fields.  Provider fallback events are used only to
+    refine the current provider alias; the WorkItem list remains the source of
+    retry state and counts.
+    """
+    empty = {
+        "waiting_retry": 0,
+        "retry_count": 0,
+        "next_retry_at": None,
+        "last_error_code": None,
+        "current_provider": None,
+    }
+    try:
+        store = _store()
+        items = list(store.list_work_items(research_task_id) or [])
+    except Exception:
+        logger.exception("research task runtime observability unavailable")
+        return empty
+
+    waiting = [item for item in items if getattr(item, "status", None) == "waiting_retry"]
+    retry_count = 0
+    retry_at_values: list[str] = []
+    latest_error: tuple[str, str] | None = None
+    providers: dict[str, str | None] = {}
+    for item in items:
+        item_id = str(getattr(item, "work_item_id", ""))
+        providers[item_id] = _safe_runtime_alias(getattr(item, "provider", None))
+        if providers[item_id] is None and getattr(item, "resolved_model", None):
+            # The existing local runtime uses Ollama for a resolved WorkItem;
+            # a fallback event below replaces this with the online alias.
+            providers[item_id] = "ollama"
+        try:
+            retry_count += max(0, int(getattr(item, "retry_count", 0) or 0))
+        except (TypeError, ValueError):
+            pass
+        if getattr(item, "status", None) == "waiting_retry":
+            retry_at = _safe_runtime_timestamp(getattr(item, "next_retry_at", None))
+            if retry_at is not None:
+                retry_at_values.append(retry_at)
+        error_code = _safe_runtime_code(
+            getattr(item, "last_error_code", None) or getattr(item, "error_code", None)
+        )
+        updated_at = _safe_runtime_timestamp(getattr(item, "updated_at", None)) or ""
+        if error_code is not None and (latest_error is None or updated_at >= latest_error[0]):
+            latest_error = (updated_at, error_code)
+
+    # Provider fallback events are already sanitized by ResearchStore.  Read
+    # only the allowlisted event fields, and only for this task's WorkItems.
+    list_events = getattr(store, "list_events", None)
+    if callable(list_events):
+        try:
+            for event in list_events(research_task_id, limit=1000) or []:
+                if getattr(event, "event_type", None) != "worker":
+                    continue
+                try:
+                    payload = json.loads(getattr(event, "safe_payload_json", "{}") or "{}")
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(payload, dict) or payload.get("event_type") != "provider_fallback":
+                    continue
+                item_id = str(payload.get("work_item_id") or "")
+                provider = _safe_runtime_alias(payload.get("to_provider"))
+                if item_id in providers and provider is not None:
+                    providers[item_id] = provider
+        except Exception:
+            # Telemetry projection must not turn a task status read into a 503.
+            logger.exception("research task provider observability unavailable")
+
+    provider_values = list(dict.fromkeys(value for value in providers.values() if value))
+    current_provider = provider_values[0] if len(provider_values) == 1 else ("mixed" if provider_values else None)
+    return {
+        "waiting_retry": len(waiting),
+        "retry_count": retry_count,
+        "next_retry_at": min(retry_at_values) if retry_at_values else None,
+        "last_error_code": latest_error[1] if latest_error else None,
+        "current_provider": current_provider,
+    }
+
+
 def _task_summary(task) -> dict:
     """任务摘要（不含完整 goal：只给截断摘要，避免大段原文进列表响应）。"""
     goal = task.goal or ""
@@ -569,6 +678,7 @@ def _task_summary(task) -> dict:
         # returns a real handle.  Never infer or echo a client-supplied ID.
         "search_id": getattr(task, "search_id", None),
         "created_at": task.created_at,
+        "runtime_observability": _task_runtime_observability(task.research_task_id),
     }
 
 

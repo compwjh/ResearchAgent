@@ -148,3 +148,26 @@ def test_async_search_other_errors_do_not_leak_details():
     assert response.status_code == 400
     assert response.json()["code"] == "UNSUPPORTED_CONFERENCE"
     assert "details" not in response.json()
+
+
+def test_async_search_endpoint_remains_legacy_usenix_scope():
+    """Spec032 Research searches use SearchWorker/CatalogSearchAdapter instead.
+
+    The direct async endpoint is the pre-Spec032 USENIX snapshot contract; a
+    non-USENIX source must not silently enter that graph and create a second
+    multi-source search path.
+    """
+    with NamedTemporaryFile(suffix=".sqlite3") as database:
+        store = PaperDiscoveryStore(database.name)
+        with patch.object(routes_paper, "_paper_store", return_value=store), patch.object(
+            routes_paper, "submit_paper_catalog_search"
+        ) as submit:
+            client = TestClient(app)
+            response = client.post("/api/papers/searches", json={
+                "query": "agent security", "conference_ids": ["ieee-sp"], "years": [2024],
+            })
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "UNSUPPORTED_CONFERENCE"
+        submit.assert_not_called()
+        assert store.list_search_ids() == []

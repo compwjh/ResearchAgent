@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import uuid
 from collections import defaultdict
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
@@ -103,6 +104,10 @@ class ResearchScheduler:
         return all(by_id.get(dep) is not None and by_id[dep].status == "completed" for dep in item.depends_on)
 
     def _queued_candidates(self) -> list[ResearchWorkItem]:
+        # Restart recovery and recurring scheduler ticks make due retries
+        # claimable without resetting their persisted retry counters.
+        with suppress(Exception):
+            self.store.requeue_due_work_items()
         candidates: list[ResearchWorkItem] = []
         for status in ("planning", "running", "waiting_approval"):
             for task in self.store.list_tasks_for_status(status):

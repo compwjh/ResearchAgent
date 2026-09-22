@@ -1,7 +1,7 @@
 # Task 06：非领域规则归位与 Skill 编写边界
 
 > 关联：[spec-032.1](../../specs/032.1-usenix-skill-decoupling.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 05；当前状态：`待执行`
+> 依赖：任务 05；当前状态：`已完成（待本规格收口复核）`
 
 ## 一句话目标
 
@@ -64,4 +64,9 @@
 
 ## 产出物、执行结果与变更日志
 
-> 待执行后填写：真实改动位置、核对结论、台账登记内容。
+### 执行结果（2026-09-20 对账）
+
+- 改动文件：`AGENTS.md`、`docs/sdd/spec-status-changelog.md`；未改动任何 `.agents/skills/**`、`backend/**` 或 `frontend/**`。
+- 核对结论：已在 `AGENTS.md` 增加 Skill 编写边界与唯一落点；确认现有角色定义中不存在 `junior-dev`，且未创建未实现的 task-ledger 回填记录。
+- 静态核对：`rg -n "junior-dev" .codebuddy/agents .agents/skills` → 仅命中遗留 Skill 的待迁移正文（待后续迁移，不代表角色存在）；`.codebuddy/agents` 角色清单与本任务说明一致。
+- 规格收口仍待 032.1 Task07 的独立需求/验收评审。

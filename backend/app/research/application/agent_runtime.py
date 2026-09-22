@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,48 @@ TASK_MODEL_LOOP_HARD_CAP = 640
 TASK_TOOL_CALL_HARD_CAP = 2560
 TASK_TIME_HARD_CAP = 6 * 60 * 60
 MAX_EXTENSIONS = 3
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Bounded retry policy shared by runtime and WorkItem scheduling."""
+
+    max_attempts: int = 5
+    base_delay_seconds: float = 2.0
+    max_delay_seconds: float = 120.0
+    jitter_ratio: float = 0.2
+    retryable_error_codes: frozenset[str] = frozenset({
+        "RESOURCE_PROBE_FAILED", "MODEL_UNAVAILABLE", "MODEL_TIMEOUT",
+        "MODEL_RATE_LIMITED", "MODEL_SERVER_ERROR", "TOOL_EXECUTION_FAILED",
+    })
+
+    def __post_init__(self) -> None:
+        if not 1 <= int(self.max_attempts) <= 5:
+            raise ValueError("max_attempts must be between 1 and 5")
+        if not 0 < float(self.base_delay_seconds) <= 30:
+            raise ValueError("base_delay_seconds must be between 0 and 30")
+        if not 0 < float(self.max_delay_seconds) <= 120:
+            raise ValueError("max_delay_seconds must be between 0 and 120")
+        if not 0 <= float(self.jitter_ratio) <= 0.5:
+            raise ValueError("jitter_ratio must be between 0 and 0.5")
+
+
+def compute_retry_delay(
+    retry_count: int,
+    *,
+    policy: RetryPolicy | None = None,
+    random_source: Callable[[], float] | None = None,
+) -> float:
+    """Return bounded ``base * 2^(n-1)`` delay with injectable jitter."""
+    selected = policy or RetryPolicy()
+    count = int(retry_count)
+    if count < 1:
+        raise ValueError("retry_count must be positive")
+    raw_delay = min(float(selected.max_delay_seconds), float(selected.base_delay_seconds) * (2 ** (count - 1)))
+    source = random_source or random.random
+    sample = max(0.0, min(1.0, float(source())))
+    jitter = (sample * 2.0 - 1.0) * float(selected.jitter_ratio)
+    return min(float(selected.max_delay_seconds), raw_delay * (1.0 + jitter))
 
 ROLE_SKILL_DEFAULTS = {
     "planner": "research-plan-authoring",
@@ -80,6 +123,7 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
     )
     synthesis_boundary = (
         " For synthesizer, use validated_candidates from the user context and emit only the bounded report contract: "
+        "report_version must equal work_item_input.report_version (the approved plan version), never a publication year or date; "
         "sections must be a non-empty array of objects shaped {heading, candidate_ids, summary}, citation_manifest must contain "
         "{citation_ref, candidate_id} entries using only the supplied catalog:<candidate_id> refs, source_refs must "
         "equal those citation_ref values, and artifact_ids must be an empty array. Validated candidates may include "
@@ -105,6 +149,53 @@ class AgentRuntimeError(ValueError):
     def __init__(self, code: str, message: str = "") -> None:
         self.code = code
         super().__init__(message or code)
+
+
+_ONLINE_FALLBACK_ERROR_CODES = frozenset({
+    "MODEL_UNAVAILABLE", "MODEL_TIMEOUT", "MODEL_RATE_LIMITED", "MODEL_SERVER_ERROR",
+})
+_ONLINE_FALLBACK_BLOCKED_CODES = frozenset({
+    "CAPABILITY_NOT_AUTHORIZED", "SKILL_DISABLED", "CANCELLED", "EVIDENCE_OUT_OF_SCOPE",
+    "AGENT_OUTPUT_INVALID", "TOOL_EXECUTION_FAILED",
+})
+
+
+def _classify_model_exception(exc: BaseException) -> str:
+    """Map provider failures to stable runtime codes without retaining details."""
+    if isinstance(exc, AgentRuntimeError):
+        return exc.code
+    status = getattr(exc, "status_code", None)
+    response = getattr(exc, "response", None)
+    if status is None and response is not None:
+        status = getattr(response, "status_code", None)
+    try:
+        status = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        status = None
+    if status == 429:
+        return "MODEL_RATE_LIMITED"
+    if status is not None and 500 <= status <= 599:
+        return "MODEL_SERVER_ERROR"
+    name = type(exc).__name__.casefold()
+    message = str(exc).casefold()
+    if "timeout" in name or "timed out" in message or "timeout" in message:
+        return "MODEL_TIMEOUT"
+    if any(value in name or value in message for value in ("ratelimit", "rate_limit", "too many requests")):
+        return "MODEL_RATE_LIMITED"
+    if any(value in name or value in message for value in ("servererror", "serviceunavailable", "badgateway", "gatewaytimeout")):
+        return "MODEL_SERVER_ERROR"
+    return "MODEL_UNAVAILABLE"
+
+
+def _online_fallback_is_enabled(explicit: bool | None) -> bool:
+    if explicit is not None:
+        return bool(explicit)
+    try:
+        from backend.app.platform import config
+
+        return bool(getattr(config, "RESEARCH_ONLINE_FALLBACK_ENABLED", False))
+    except Exception:
+        return False
 
 
 @dataclass(frozen=True)
@@ -481,9 +572,19 @@ def _is_cancelled(token: Any) -> bool:
 
 def _ollama_model_factory(model_name: str, effort: str) -> Any:
     """Build through the existing Ollama platform adapter only."""
+    from backend.app.platform.model_catalog import get_online_model
     from backend.app.platform.ollama import create_chat_model, resolve_reasoning_effort
 
     requested_effort = str(effort or "").strip().lower()
+    online_entry = get_online_model(model_name)
+    if online_entry is not None:
+        adapter = _OllamaRunnerAdapter(
+            create_chat_model(model_name, reasoning=None),
+            model_name=model_name,
+            effort=requested_effort or "off",
+        )
+        adapter.provider = online_entry.provider
+        return adapter
     if requested_effort == "off":
         return _OllamaRunnerAdapter(
             create_chat_model(model_name, reasoning=False),
@@ -506,6 +607,7 @@ class _OllamaRunnerAdapter:
         self.model = model
         self.model_name = model_name
         self.reasoning_effort = effort
+        self.provider = "ollama"
 
     def invoke(self, context: Mapping[str, Any], tools: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
         bound = self.model
@@ -822,7 +924,7 @@ def _parse_json_mapping(raw: Any) -> Mapping[str, Any] | None:
 class ResearchAgentRunner:
     """Run one isolated sub-agent under deterministic budget/cancel barriers."""
 
-    def __init__(self, *, store=None, model=None, model_factory=None, model_router=None, tool_executor=None, capability_registry=None, resource_probe=None, clock=None, event_sink: Callable[[ResearchEvent], None] | None = None):
+    def __init__(self, *, store=None, model=None, model_factory=None, model_router=None, tool_executor=None, capability_registry=None, resource_probe=None, clock=None, event_sink: Callable[[ResearchEvent], None] | None = None, online_fallback_enabled: bool | None = None, online_fallback_factory=None):
         self.store = store
         self.model = model
         self.model_factory = model_factory or (_ollama_model_factory if model is None and model_router is not None else None)
@@ -831,11 +933,84 @@ class ResearchAgentRunner:
         self.capabilities = capability_registry or RoleCapabilityRegistry()
         self.resource_probe = resource_probe
         self.clock = clock or time.monotonic
+        self.online_fallback_enabled = online_fallback_enabled
+        self.online_fallback_factory = online_fallback_factory
         # Orchestrator installs this callback after construction.  The runner
         # remains the only skill/tool execution seam; the callback only fans
         # durable events into the existing projection path.
         self.event_sink = event_sink
         self._checkpoints: dict[str, dict[str, Any]] = {}
+
+    def _online_choice(self):
+        """Resolve one registered online alias through the existing router seam."""
+        if self.model_router is not None:
+            resolver = getattr(self.model_router, "resolve_online_fallback", None)
+            if callable(resolver):
+                try:
+                    choice = resolver()
+                    if getattr(choice, "model", None):
+                        provider = getattr(choice, "provider", None) or str(choice.model).split(":", 1)[0]
+                        return type("OnlineChoice", (), {
+                            "model": str(choice.model),
+                            "provider": str(provider),
+                            "tier": getattr(choice, "tier", "online"),
+                        })()
+                except Exception:
+                    pass
+        try:
+            from backend.app.platform.model_catalog import get_online_models
+
+            entries = list(get_online_models() or [])
+        except Exception:
+            entries = []
+        def entry_value(item, key: str, default: Any = None):
+            return item.get(key, default) if isinstance(item, Mapping) else getattr(item, key, default)
+
+        entry = next((item for item in entries if entry_value(item, "id")), None)
+        if entry is None:
+            return None
+        return type("OnlineChoice", (), {
+            "model": str(entry_value(entry, "id")),
+            "provider": str(entry_value(entry, "provider", "online")),
+            "tier": "online",
+        })()
+
+    def _fallback_event(self, input: AgentRunInput, *, choice: Any, reason_code: str, attempt: int, from_model: str, from_provider: str = "ollama") -> None:
+        """Persist a bounded provider_fallback event with aliases only."""
+        self._runtime_event(
+            input,
+            node_type="model",
+            node_key=f"model-fallback:{input.work_item_id or input.agent_run_id}",
+            status="running",
+            event_type="provider_fallback",
+            code="PROVIDER_FALLBACK",
+            reason_code=str(reason_code)[:80],
+            attempt=int(attempt),
+            from_provider=str(from_provider or "ollama")[:80],
+            to_provider=str(getattr(choice, "provider", "online"))[:80],
+            from_model=str(from_model or "local")[:160],
+            to_model=str(getattr(choice, "model", ""))[:160],
+        )
+
+    def _build_online_fallback(self, input: AgentRunInput, *, reason_code: str, attempt: int, from_model: str, from_provider: str = "ollama"):
+        if reason_code in _ONLINE_FALLBACK_BLOCKED_CODES and reason_code != "AGENT_OUTPUT_INVALID":
+            return None, None
+        if not _online_fallback_is_enabled(self.online_fallback_enabled):
+            return None, None
+        choice = self._online_choice()
+        if choice is None or not getattr(choice, "model", None):
+            return None, None
+        factory = self.online_fallback_factory or self.model_factory
+        if not callable(factory):
+            return None, None
+        self._fallback_event(input, choice=choice, reason_code=reason_code, attempt=attempt, from_model=from_model, from_provider=from_provider)
+        try:
+            model = factory(str(choice.model), input.reasoning_effort)
+        except AgentRuntimeError as exc:
+            return None, _classify_model_exception(exc)
+        except Exception as exc:
+            return None, _classify_model_exception(exc)
+        return model, None
 
     def _runtime_event(self, input: AgentRunInput, *, node_type: str, node_key: str, status: str, **payload: Any) -> None:
         """Append a stable skill/tool event and notify the owning orchestrator."""
@@ -1008,9 +1183,16 @@ class ResearchAgentRunner:
         try:
             return fn(context, tools)
         except TypeError:
-            return fn(context)
+            try:
+                return fn(context)
+            except AgentRuntimeError:
+                raise
+            except Exception as exc:
+                raise AgentRuntimeError(_classify_model_exception(exc)) from exc
+        except AgentRuntimeError:
+            raise
         except Exception as exc:
-            raise AgentRuntimeError("MODEL_UNAVAILABLE") from exc
+            raise AgentRuntimeError(_classify_model_exception(exc)) from exc
 
     @staticmethod
     def _tool_entry(capability: RoleCapability, name: str) -> Mapping[str, Any] | None:
@@ -1419,21 +1601,59 @@ class ResearchAgentRunner:
         last_checkpoint_ref: str | None = input.checkpoint_ref
         last_checkpoint_hash: str | None = input.checkpoint_hash
         model = self.model
+        resolved_model = input.resolved_model or "injected"
+        fallback_attempted = False
+        original_error_code: str | None = None
+        fallback_error_code: str | None = None
+
+        def fallback_metadata() -> dict[str, Any]:
+            values: dict[str, Any] = {}
+            if original_error_code:
+                values["original_error_code"] = original_error_code
+            if fallback_error_code:
+                values["fallback_error_code"] = fallback_error_code
+            if fallback_attempted:
+                values["fallback_attempted"] = True
+            return values
         if self.model_factory and self.model_router is None:
             try:
                 model = self.model_factory(input.resolved_model, input.reasoning_effort)
-            except Exception:
-                self._cancel(run, owner, status="failed", error_code="MODEL_UNAVAILABLE")
-                lease_held = self._release_lease(input.research_task_id, lease_held)
-                return AgentRunOutput(
-                    "failed", error_code="MODEL_UNAVAILABLE",
-                    model_metadata={"model": input.resolved_model or "injected", "reasoning_effort": input.reasoning_effort, **resource_metadata},
+            except AgentRuntimeError as exc:
+                original_error_code = exc.code
+                model, fallback_error_code = self._build_online_fallback(
+                    input, reason_code=exc.code, attempt=1, from_model=resolved_model
                 )
-        resolved_model = input.resolved_model or "injected"
+                if model is not None:
+                    fallback_attempted = True
+                    resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                else:
+                    error_code = fallback_error_code or exc.code
+                    self._cancel(run, owner, status="failed", error_code=error_code)
+                    lease_held = self._release_lease(input.research_task_id, lease_held)
+                    return AgentRunOutput(
+                        "failed", error_code=error_code,
+                        model_metadata={"model": resolved_model, "reasoning_effort": input.reasoning_effort, **fallback_metadata(), **resource_metadata},
+                    )
+            except Exception as exc:
+                original_error_code = _classify_model_exception(exc)
+                model, fallback_error_code = self._build_online_fallback(
+                    input, reason_code=original_error_code, attempt=1, from_model=resolved_model
+                )
+                if model is not None:
+                    fallback_attempted = True
+                    resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                else:
+                    error_code = fallback_error_code or original_error_code
+                    self._cancel(run, owner, status="failed", error_code=error_code)
+                    lease_held = self._release_lease(input.research_task_id, lease_held)
+                    return AgentRunOutput(
+                        "failed", error_code=error_code,
+                        model_metadata={"model": resolved_model, "reasoning_effort": input.reasoning_effort, **fallback_metadata(), **resource_metadata},
+                    )
         if model is None and self.model_router is None:
             self._cancel(run, owner, status="failed", error_code="MODEL_UNAVAILABLE")
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput("failed", error_code="MODEL_UNAVAILABLE", model_metadata={"model": input.resolved_model, "reasoning_effort": input.reasoning_effort})
+            return AgentRunOutput("failed", error_code="MODEL_UNAVAILABLE", model_metadata={"model": input.resolved_model, "reasoning_effort": input.reasoning_effort, **resource_metadata})
         if model is not None or self.model_router is None:
             try:
                 run = self._record_model_metadata(run, owner, model, resolved_model, input.reasoning_effort)
@@ -1468,7 +1688,7 @@ class ResearchAgentRunner:
                 run_loops += 1
                 self._save_counters(run.agent_run_id, owner, model_loop_count=run_loops, tool_call_count=run_calls, expected_generation=run.generation)
                 attempts_used += 1
-                if self.model_router is not None:
+                if self.model_router is not None and not fallback_attempted:
                     router_role = {"search_worker": "search-worker", "paper_evaluator": "paper-evaluator", "research_critic": "research-critic"}.get(input.role, input.role)
                     tier = "strong" if attempts_used >= 4 else "fast"
                     try:
@@ -1486,8 +1706,43 @@ class ResearchAgentRunner:
                         if self.model_factory:
                             model = self.model_factory(resolved_model, input.reasoning_effort)
                         run = self._record_model_metadata(run, owner, model, resolved_model, input.reasoning_effort)
+                    except AgentRuntimeError as exc:
+                        if not fallback_attempted and exc.code in _ONLINE_FALLBACK_ERROR_CODES:
+                            original_error_code = exc.code
+                            fallback_model, fallback_error_code = self._build_online_fallback(
+                                input,
+                                reason_code=exc.code,
+                                attempt=attempts_used,
+                                from_model=resolved_model,
+                                from_provider=str(getattr(model, "provider", "ollama")),
+                            )
+                            if fallback_model is not None:
+                                model = fallback_model
+                                fallback_attempted = True
+                                resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                            else:
+                                raise
+                        else:
+                            raise
                     except Exception as exc:
-                        raise AgentRuntimeError("MODEL_UNAVAILABLE") from exc
+                        code = _classify_model_exception(exc)
+                        if not fallback_attempted and code in _ONLINE_FALLBACK_ERROR_CODES:
+                            original_error_code = code
+                            fallback_model, fallback_error_code = self._build_online_fallback(
+                                input,
+                                reason_code=code,
+                                attempt=attempts_used,
+                                from_model=resolved_model,
+                                from_provider=str(getattr(model, "provider", "ollama")),
+                            )
+                            if fallback_model is not None:
+                                model = fallback_model
+                                fallback_attempted = True
+                                resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                            else:
+                                raise AgentRuntimeError(code) from exc
+                        else:
+                            raise AgentRuntimeError(code) from exc
                 # Once an optional detail fetch has failed after a successful
                 # catalog search, do not spend another model/tool loop retrying
                 # the same non-essential network operation.  The model still
@@ -1498,7 +1753,31 @@ class ResearchAgentRunner:
                     if not (detail_tool_disabled and item.get("name") == "fetch_paper_detail")
                     and not (output_only and str(item.get("side_effect_class", "side_effect")) in {"read_only", "none"})
                 )
-                response = self._invoke(model, context, invoke_tools)
+                try:
+                    response = self._invoke(model, context, invoke_tools)
+                except AgentRuntimeError as exc:
+                    # A provider-level transient failure can switch once to a
+                    # registered online alias.  Capability, cancellation and
+                    # evidence errors remain terminal and are never exported.
+                    if fallback_attempted:
+                        fallback_error_code = exc.code
+                    if not fallback_attempted and exc.code in _ONLINE_FALLBACK_ERROR_CODES:
+                        original_error_code = exc.code
+                        fallback_model, fallback_error_code = self._build_online_fallback(
+                            input,
+                            reason_code=exc.code,
+                            attempt=attempts_used,
+                            from_model=resolved_model,
+                            from_provider=str(getattr(model, "provider", "ollama")),
+                        )
+                        if fallback_model is not None:
+                            model = fallback_model
+                            fallback_attempted = True
+                            resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                            continue
+                        if fallback_error_code:
+                            raise AgentRuntimeError(fallback_error_code) from exc
+                    raise
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
@@ -1656,7 +1935,7 @@ class ResearchAgentRunner:
                     if recovered is not None:
                         validated_output = self._validate_output(input.role, recovered)
                         output = recovered
-                    elif attempts_used < 4:
+                    elif input.attempt + attempts_used <= 4:
                         # The contract permits three fast attempts followed by one
                         # strong attempt.  Fake models can therefore deterministically
                         # return invalid → invalid → valid without a provider/router.
@@ -1671,6 +1950,25 @@ class ResearchAgentRunner:
                         }
                         continue
                     else:
+                        if not fallback_attempted:
+                            original_error_code = "AGENT_OUTPUT_INVALID"
+                            fallback_model, fallback_error_code = self._build_online_fallback(
+                                input,
+                                reason_code="AGENT_OUTPUT_INVALID",
+                                attempt=attempts_used,
+                                from_model=resolved_model,
+                                from_provider=str(getattr(model, "provider", "ollama")),
+                            )
+                            if fallback_model is not None:
+                                model = fallback_model
+                                fallback_attempted = True
+                                resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                                attempts_used = 0
+                                continue
+                            if fallback_error_code:
+                                raise AgentRuntimeError(fallback_error_code) from None
+                        else:
+                            fallback_error_code = "AGENT_OUTPUT_INVALID"
                         raise
                 if input.role == "search_worker":
                     # A schema-valid response can still discard the catalog
@@ -1729,12 +2027,12 @@ class ResearchAgentRunner:
                     return AgentRunOutput(current.status if current else "cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 lease_held = self._release_lease(input.research_task_id, lease_held)
                 self._runtime_event(input, node_type="skill", node_key=skill_key, status="completed", skill_name=skill_name)
-                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries), agent_run_id=run.agent_run_id)
+                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries), agent_run_id=run.agent_run_id)
         except AgentRuntimeError as exc:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code=exc.code)
             self._cancel(run, owner, status="failed", error_code=exc.code)
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
         except Exception:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code="MODEL_UNAVAILABLE")
             # A failing Store read must not bypass the lease release barrier.
@@ -1745,7 +2043,7 @@ class ResearchAgentRunner:
             if current is None or current.status == "running":
                 self._cancel(run, owner, status="failed", error_code="MODEL_UNAVAILABLE")
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
 
 
-__all__ = ["AgentRunInput", "AgentRunOutput", "AgentRuntimeError", "BudgetSnapshot", "FakeModel", "FakeTool", "RoleCapability", "RoleCapabilityRegistry", "ResearchAgentRunner"]
+__all__ = ["AgentRunInput", "AgentRunOutput", "AgentRuntimeError", "BudgetSnapshot", "FakeModel", "FakeTool", "RetryPolicy", "compute_retry_delay", "RoleCapability", "RoleCapabilityRegistry", "ResearchAgentRunner"]

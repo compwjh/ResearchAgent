@@ -1,12 +1,12 @@
 import logging
 import uuid
 from contextlib import suppress
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,8 +32,13 @@ from backend.app.paper_discovery.application.entry import (
     LOGIN_REQUIRED,
     PDF_NOT_FOUND,
     PDF_TOO_LARGE,
+    SOURCE_SYNC_GRAPH_VERSION,
     BrowserManagerError,
+    CatalogSourceRuntime,
     PaperDownloadError,
+    SourceRegistry,
+    SourceToggleForbiddenError,
+    submit_catalog_source_sync,
 )
 from backend.app.paper_discovery.application.paper_discovery_search import PaperDiscoverySearchService
 from backend.app.paper_discovery.application.paper_import import (
@@ -51,17 +56,114 @@ from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchServiceError,
 )
 from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchSession, SearchSourceProgress
+from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
+    SEMANTIC_SCHOLAR_MAX_PAPER_ID_LENGTH,
+    SemanticScholarGraphClient,
+)
 from backend.app.platform.settings.paper_discovery_settings import (
     DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
 )
-from backend.app.paper_discovery.infrastructure.source_registry import (
-    SourceRegistry,
-    SourceToggleForbiddenError,
+from backend.app.research.application.entry import (
+    AcquisitionEvent,
+    ManualResolution,
+    ResearchAcquisitionService,
+    ResearchDocumentLink,
+    build_research_store,
 )
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+# Academic Graph requests are read-only and share the metadata client's
+# process-wide limiter.  Keep one lazy client so concurrent API calls do not
+# accidentally create independent rate-limit state.
+_SEMANTIC_SCHOLAR_GRAPH_CLIENT: SemanticScholarGraphClient | None = None
+
+
+def _semantic_scholar_graph_client() -> SemanticScholarGraphClient:
+    global _SEMANTIC_SCHOLAR_GRAPH_CLIENT
+    if _SEMANTIC_SCHOLAR_GRAPH_CLIENT is None:
+        _SEMANTIC_SCHOLAR_GRAPH_CLIENT = SemanticScholarGraphClient()
+    return _SEMANTIC_SCHOLAR_GRAPH_CLIENT
+
+
+def _semantic_scholar_safe_metadata(metadata: object) -> dict:
+    """Project provider metadata to the stable, non-secret graph contract."""
+    return {
+        "paper_id": str(getattr(metadata, "paper_id", "") or ""),
+        "title": str(getattr(metadata, "title", "") or ""),
+        "authors": list(getattr(metadata, "authors", ()) or ()),
+        "year": getattr(metadata, "year", None),
+        "doi": getattr(metadata, "doi", None),
+        "arxiv_id": getattr(metadata, "arxiv_id", None),
+        "abstract": getattr(metadata, "abstract", None),
+        "venue": getattr(metadata, "venue", None),
+        "fields_of_study": list(getattr(metadata, "fields_of_study", ()) or ()),
+        "citation_count": getattr(metadata, "citation_count", None),
+        "source_url": getattr(metadata, "source_url", None),
+    }
+
+
+def _semantic_scholar_result_error(result: object) -> JSONResponse:
+    """Convert a client failure to the existing redacted paper API shape."""
+    code = str(getattr(result, "code", None) or "SEMANTIC_SCHOLAR_UNAVAILABLE")
+    retryable = bool(getattr(result, "retryable", False))
+    status = 429 if code == "SEMANTIC_SCHOLAR_RATE_LIMITED" else 503
+    messages = {
+        "SEMANTIC_SCHOLAR_AUTH_REQUIRED": "Semantic Scholar 图服务未配置 API key",
+        "SEMANTIC_SCHOLAR_AUTH_FAILED": "Semantic Scholar 图服务认证失败",
+        "SEMANTIC_SCHOLAR_RATE_LIMITED": "Semantic Scholar 图服务请求过于频繁",
+        "SEMANTIC_SCHOLAR_NOT_FOUND": "Semantic Scholar 论文不存在",
+        "SEMANTIC_SCHOLAR_RELATION_UNSUPPORTED": "不支持的引用关系",
+        "SEMANTIC_SCHOLAR_IDENTIFIER_INVALID": "paper_id 不符合受控格式",
+        "SEMANTIC_SCHOLAR_IDENTIFIER_REQUIRED": "paper_id 不能为空",
+        "SEMANTIC_SCHOLAR_QUERY_REQUIRED": "查询关键词不能为空",
+        "SEMANTIC_SCHOLAR_INVALID_RESPONSE": "Semantic Scholar 返回结果不可用",
+    }
+    return _paper_api_error(status, code, messages.get(code, "Semantic Scholar 图服务暂时不可用"), retryable)
+
+
+def _semantic_scholar_auth_error(client: object) -> JSONResponse | None:
+    # A missing key is reported before making a provider request.  This keeps
+    # the API deterministic and prevents unauthenticated calls from consuming
+    # the shared quota; injected test clients may explicitly provide a key.
+    if not str(getattr(client, "api_key", "") or "").strip():
+        return _paper_api_error(503, "SEMANTIC_SCHOLAR_AUTH_REQUIRED", "Semantic Scholar 图服务未配置 API key")
+    return None
+
+
+def _semantic_scholar_autocomplete_candidates(payload: object, limit: int) -> list[dict]:
+    rows = payload.get("matches") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        rows = payload.get("data") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return []
+    candidates: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        paper_id = str(row.get("paperId") or row.get("id") or "").strip()
+        title = str(row.get("title") or "").strip()
+        if not paper_id or not title or paper_id in seen:
+            continue
+        seen.add(paper_id)
+        candidates.append({"paper_id": paper_id, "title": title[:300]})
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _semantic_scholar_graph_payload(page: object) -> dict:
+    return {
+        "relation": str(getattr(page, "relation", "") or ""),
+        "source_paper_id": str(getattr(page, "source_paper_id", "") or ""),
+        "items": [_semantic_scholar_safe_metadata(item) for item in (getattr(page, "items", ()) or ())],
+        "offset": getattr(page, "offset", 0),
+        "next_offset": getattr(page, "next_offset", None),
+        "total": getattr(page, "total", None),
+    }
 def _async_progress_payload(progress) -> dict:
     return {
         "source_kind": progress.source_kind, "status": progress.status,
@@ -171,6 +273,103 @@ def get_async_paper_results(search_id: str, page: int = Query(default=1)):
         "search_id": search_id, "status": job.status, "page": page, "page_size": page_size,
         "total": total, "total_pages": total_pages, "has_next": page < total_pages,
         "items": [row.snapshot for row in rows],
+    }
+
+
+@router.get("/papers/semantic-scholar/autocomplete")
+def semantic_scholar_autocomplete(
+    query: str = Query(default="", alias="query"),
+    limit: int = Query(default=10),
+    q: str | None = Query(default=None),
+):
+    """Return short Academic Graph title candidates for interactive selection."""
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    raw_query = query if query.strip() else (q or "")
+    raw_query = raw_query.strip()
+    if not raw_query:
+        return _paper_api_error(400, "SEMANTIC_SCHOLAR_QUERY_REQUIRED", "查询关键词不能为空")
+    if len(raw_query) > 100:
+        return _paper_api_error(400, "SEMANTIC_SCHOLAR_QUERY_TOO_LONG", "查询关键词不得超过 100 个字符")
+    if limit < 1 or limit > 20:
+        return _paper_api_error(400, "SEMANTIC_SCHOLAR_LIMIT_INVALID", "limit 必须为 1 到 20")
+
+    client = _semantic_scholar_graph_client()
+    auth_error = _semantic_scholar_auth_error(client)
+    if auth_error is not None:
+        return auth_error
+    try:
+        result = client.autocomplete(raw_query, limit=limit)
+    except Exception:
+        logger.exception("Semantic Scholar 自动补全失败")
+        return _paper_api_error(503, "SEMANTIC_SCHOLAR_UNAVAILABLE", "Semantic Scholar 图服务暂时不可用", True)
+    if getattr(result, "code", None):
+        return _semantic_scholar_result_error(result)
+    return {
+        "query": raw_query,
+        "candidates": _semantic_scholar_autocomplete_candidates(getattr(result, "payload", None), limit),
+    }
+
+
+@router.get("/papers/semantic-scholar/{paper_id}/{relation}")
+def semantic_scholar_graph_edges(
+    paper_id: str,
+    relation: str,
+    limit: int = Query(default=20),
+    offset: int = Query(default=0),
+):
+    """Return one metadata-only citations/references page without persisting it."""
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    if relation not in {"citations", "references"}:
+        return _paper_api_error(400, "SEMANTIC_SCHOLAR_RELATION_UNSUPPORTED", "不支持的引用关系")
+    identifier = paper_id.strip()
+    if (
+        not identifier
+        or len(identifier) > SEMANTIC_SCHOLAR_MAX_PAPER_ID_LENGTH
+        or any(ord(character) < 32 for character in identifier)
+        or any(character in "/?#" for character in identifier)
+    ):
+        return _paper_api_error(400, "SEMANTIC_SCHOLAR_IDENTIFIER_INVALID", "paper_id 不符合受控格式")
+    if limit < 1 or limit > 100:
+        return _paper_api_error(400, "SEMANTIC_SCHOLAR_LIMIT_INVALID", "limit 必须为 1 到 100")
+    if offset < 0:
+        return _paper_api_error(400, "SEMANTIC_SCHOLAR_PAGINATION_INVALID", "offset 必须为非负整数")
+
+    client = _semantic_scholar_graph_client()
+    auth_error = _semantic_scholar_auth_error(client)
+    if auth_error is not None:
+        return auth_error
+    try:
+        result = client.graph_edges(identifier, relation, limit=limit, offset=offset)
+    except Exception:
+        logger.exception("Semantic Scholar 引用图请求失败")
+        return _paper_api_error(503, "SEMANTIC_SCHOLAR_UNAVAILABLE", "Semantic Scholar 图服务暂时不可用", True)
+    if getattr(result, "code", None):
+        return _semantic_scholar_result_error(result)
+    page = getattr(result, "graph_page", None)
+    if page is None:
+        return _paper_api_error(503, "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "Semantic Scholar 返回结果不可用")
+    return _semantic_scholar_graph_payload(page)
+
+
+@router.get("/papers/{paper_id}/provenance")
+def get_paper_provenance(paper_id: str):
+    """Return one persisted catalog paper together with field-level provenance."""
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    try:
+        store = _paper_store()
+        paper = store.get_catalog_paper(paper_id)
+        if paper is None:
+            return _paper_api_error(404, "PAPER_NOT_FOUND", "论文不存在")
+        provenance = store.get_field_provenance(paper_id)
+    except Exception:
+        return _paper_api_error(503, "PAPER_DISCOVERY_STORE_UNAVAILABLE", "论文来源信息暂时不可用", True)
+    return {
+        "paper_id": paper_id,
+        "paper": asdict(paper),
+        "provenance": provenance,
     }
 
 
@@ -532,6 +731,8 @@ _PAPER_BATCH_ERROR_STATUS = {
     "INVALID_CANDIDATE_ID": 400,
     "EMPTY_BATCH": 400,
     "BATCH_LIMIT_EXCEEDED": 400,
+    "INVALID_BATCH_STATUS": 400,
+    "INVALID_BATCH_LIMIT": 400,
     "DATABASE_LOCKED": 503,
     "SNAPSHOT_REBUILD_REQUIRED": 503,
     "COMPENSATION_PENDING": 409,
@@ -561,6 +762,8 @@ def _paper_batch_error_response(error: PaperImportBatchServiceError) -> JSONResp
         "INVALID_CANDIDATE_ID": "候选编号无效",
         "EMPTY_BATCH": "批量导入至少需要一项",
         "BATCH_LIMIT_EXCEEDED": "单批最多 20 项",
+        "INVALID_BATCH_STATUS": "未知批次状态",
+        "INVALID_BATCH_LIMIT": "limit 必须为 1 到 100",
         "DATABASE_LOCKED": "批次状态库正忙，请稍后重试",
         "SNAPSHOT_REBUILD_REQUIRED": "批次候选快照需要重建",
         "COMPENSATION_PENDING": "导入资源补偿仍在等待",
@@ -769,6 +972,40 @@ def import_paper(request: PaperImportBatchRequest | PaperImportRequest):
 def create_paper_import_batch(request: PaperImportBatchRequest):
     """Compatibility alias for the pre-Task06 batch path."""
     return _create_paper_import_batch(request)
+
+
+@router.get("/papers/imports")
+@router.get("/papers/import-batches")
+def list_paper_import_batches(
+    status: str | None = Query(default=None, max_length=32),
+    active: bool = Query(default=True),
+    recent: bool = Query(default=True),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """List durable, recoverable import batches for client refresh.
+
+    The response uses the same redacted batch/item DTO as the single-batch
+    endpoint; no attempt capability, cookie, or credential field is exposed.
+    """
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    try:
+        service = _paper_batch_service()
+        result = service.list_batches(status=status, active=active, limit=limit, recent=recent)
+        return {
+            "batches": [
+                _paper_batch_payload(entry["batch"], list(entry.get("items") or []))
+                for entry in result.get("batches", [])
+            ],
+            "count": int(result.get("count") or 0),
+        }
+    except PaperImportBatchServiceError as error:
+        return _paper_batch_error_response(error)
+    except Exception as error:
+        logger.exception("批量导入列表读取未预期异常：%s", type(error).__name__)
+        return _paper_batch_error_response(
+            PaperImportBatchServiceError("IMPORT_BATCH_ERROR", "批量导入列表暂时不可用", retryable=True)
+        )
 
 
 @router.get("/papers/imports/{batch_id}", response_model=PaperImportBatchResponse)
@@ -997,6 +1234,186 @@ def retry_paper_import_item(item_id: str, _request: PaperImportItemActionRequest
         )
 
 
+# --- Task11: candidate-scoped recovery queue ---------------------------------
+
+def _research_issue_store():
+    """Use the existing ResearchStore; no paper/import store is duplicated."""
+    return build_research_store()
+
+
+def _issue_payload(issue: object) -> dict:
+    value = issue.to_dict() if hasattr(issue, "to_dict") else dict(issue)
+    value.setdefault("actions", [])
+    value.setdefault("task_ids", [])
+    try:
+        value["resolutions"] = [
+            item.to_dict() for item in _research_issue_store().list_manual_resolutions(value.get("issue_id"))
+        ]
+    except Exception:
+        value["resolutions"] = []
+    return value
+
+
+def _refresh_issue_links(issue: object) -> None:
+    """Re-project existing batch state after login/resume/retry."""
+    task_ids = list(getattr(issue, "task_ids", []) or [])
+    if not task_ids:
+        return
+    with suppress(Exception):
+        acquisition = ResearchAcquisitionService(_research_issue_store(), _paper_batch_service())
+        for task_id in task_ids:
+            with suppress(Exception):
+                acquisition.status(task_id)
+
+
+def _issue_action(issue_id: str, action: str):
+    store = _research_issue_store()
+    issue = store.get_acquisition_issue(issue_id)
+    if issue is None:
+        return _paper_api_error(404, "ISSUE_NOT_FOUND", "待处理论文不存在")
+    if action not in set(issue.actions or []):
+        # In particular, waiting_login must not fall through to retry: the
+        # existing batch store only permits retry from failed.
+        return _paper_api_error(400, "ISSUE_ACTION_NOT_ALLOWED", "当前待处理状态不允许此操作")
+    item_id = issue.import_item_id
+    if not item_id:
+        return _paper_api_error(409, "ISSUE_ITEM_NOT_AVAILABLE", "待处理论文尚未绑定导入条目")
+    if action == "login":
+        result = login_paper_import_item(item_id)
+    elif action == "resume":
+        result = resume_paper_import_item(item_id)
+    else:
+        result = retry_paper_import_item(item_id)
+    if isinstance(result, JSONResponse) and result.status_code >= 400:
+        return result
+    with suppress(Exception):
+        store.add_manual_resolution(ManualResolution(
+            issue_id=issue.issue_id,
+            method=action,
+            identity_verdict="uncertain",
+            confirmed_at=datetime.now(timezone.utc).isoformat(),
+            evidence={"action": action, "import_item_id": item_id},
+        ))
+    _refresh_issue_links(issue)
+    refreshed = store.get_acquisition_issue(issue_id) or issue
+    body = result.model_dump() if hasattr(result, "model_dump") else result
+    return {"issue": _issue_payload(refreshed), "result": body}
+
+
+@router.get("/papers/issues")
+def list_paper_acquisition_issues(
+    task_id: str | None = Query(default=None, max_length=200),
+    status: str | None = Query(default=None, max_length=32),
+    reason_code: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """List one actionable row per candidate, optionally scoped to a task."""
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    try:
+        store = _research_issue_store()
+        issues = store.list_acquisition_issues(
+            task_id=task_id, status=status, reason_code=reason_code, limit=limit,
+        )
+        return {"issues": [_issue_payload(item) for item in issues], "count": len(issues)}
+    except Exception:
+        logger.exception("论文待处理队列读取失败")
+        return _paper_api_error(503, "ISSUE_STORE_UNAVAILABLE", "待处理论文暂时不可用", True)
+
+
+@router.get("/papers/issues/{issue_id}")
+def get_paper_acquisition_issue(issue_id: str):
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    issue = _research_issue_store().get_acquisition_issue(issue_id)
+    if issue is None:
+        return _paper_api_error(404, "ISSUE_NOT_FOUND", "待处理论文不存在")
+    return _issue_payload(issue)
+
+
+@router.post("/papers/issues/{issue_id}/login")
+def login_paper_acquisition_issue(issue_id: str):
+    return _issue_action(issue_id, "login")
+
+
+@router.post("/papers/issues/{issue_id}/resume")
+def resume_paper_acquisition_issue(issue_id: str):
+    return _issue_action(issue_id, "resume")
+
+
+@router.post("/papers/issues/{issue_id}/retry")
+def retry_paper_acquisition_issue(issue_id: str):
+    return _issue_action(issue_id, "retry")
+
+
+@router.post("/papers/issues/{issue_id}/upload", status_code=201)
+async def upload_paper_acquisition_issue(
+    issue_id: str,
+    request: Request,
+    file: UploadFile | None = File(default=None),  # noqa: B008
+    identity_verdict: str | None = Query(default=None, max_length=32),
+    identity_confirmed: bool = Query(default=False),
+):
+    """Upload through the canonical KB route, then bind only confirmed identity."""
+    store = _research_issue_store()
+    issue = store.get_acquisition_issue(issue_id)
+    if issue is None:
+        return _paper_api_error(404, "ISSUE_NOT_FOUND", "待处理论文不存在")
+    if issue.status == "resolved" or "upload" not in set(issue.actions or []):
+        return _paper_api_error(400, "ISSUE_ACTION_NOT_ALLOWED", "当前待处理状态不允许此操作")
+    if file is None:
+        return _paper_api_error(400, "INVALID_REQUEST", "upload 请求缺少 file")
+    verdict = str(identity_verdict or "").strip().casefold()
+    if verdict in {"mismatch", "wrong", "invalid", "rejected"}:
+        return _paper_api_error(400, "IDENTITY_MISMATCH", "上传文件与候选论文身份冲突")
+    if verdict in {"", "uncertain", "unknown", "pending"} and not identity_confirmed:
+        return _paper_api_error(409, "IDENTITY_CONFIRMATION_REQUIRED", "无法确认论文身份，请先完成人工确认")
+    effective_verdict = "confirmed" if verdict in {"", "uncertain", "unknown", "pending"} else verdict
+    try:
+        # Keep all MIME, size, magic-header, immutable-source and index checks
+        # in the canonical KB upload route rather than creating a PDF path here.
+        from backend.app.api.routes_kb import upload_document
+
+        uploaded = await upload_document(request, file)
+        if isinstance(uploaded, JSONResponse):
+            return uploaded
+        document_id = str(uploaded.get("document_id") or "")
+        if not document_id:
+            return _paper_api_error(503, "KB_IMPORT_FAILED", "知识库上传未返回文档句柄", True)
+        resolution = ManualResolution(
+            issue_id=issue.issue_id, method="upload", user_document_id=document_id,
+            identity_verdict=effective_verdict, confirmed_at=datetime.now(timezone.utc).isoformat(),
+            evidence={"file_name": uploaded.get("file_name"), "source_sha256": uploaded.get("source_sha256")},
+        )
+        store.add_manual_resolution(resolution)
+        for task_id in issue.task_ids or []:
+            store.upsert_document_link(
+                ResearchDocumentLink(
+                    task_id=task_id, catalog_paper_id=issue.candidate_id,
+                    document_id=document_id, import_item_id=issue.import_item_id,
+                    status="completed", error_code=None,
+                )
+            )
+            store.append_acquisition_event(
+                AcquisitionEvent(
+                    task_id=task_id, paper_id=issue.candidate_id, phase="upload",
+                    status="completed", batch_id=issue.batch_id, import_item_id=issue.import_item_id,
+                )
+            )
+        resolved = store.resolve_acquisition_issue(issue.issue_id, {
+            "method": "upload", "user_document_id": document_id,
+            "identity_verdict": effective_verdict,
+        })
+        return {
+            "issue": _issue_payload(resolved), "document_id": document_id,
+            "research_task_ids": list(issue.task_ids or []),
+            "report_action": "generate_new_version",
+        }
+    except Exception:
+        logger.exception("待处理论文上传失败")
+        return _paper_api_error(503, "KB_IMPORT_FAILED", "知识库上传失败", True)
+
+
 @router.get("/papers/browser/health")
 @router.get("/papers/browser-health")
 def paper_browser_health():
@@ -1071,7 +1488,10 @@ def _source_registry() -> SourceRegistry:
     """
     global _SOURCE_REGISTRY_SINGLETON
     if _SOURCE_REGISTRY_SINGLETON is None:
-        _SOURCE_REGISTRY_SINGLETON = SourceRegistry()
+        _SOURCE_REGISTRY_SINGLETON = SourceRegistry(
+            store=_paper_store(),
+            timeout=float(getattr(common.article_settings, "paper_discovery_request_timeout_seconds", 20)),
+        )
     return _SOURCE_REGISTRY_SINGLETON
 
 
@@ -1160,20 +1580,58 @@ def sync_paper_source(source_id: str, request: PaperSourceSyncRequest | None = N
     if entry is None:
         return _paper_api_error(404, "SOURCE_NOT_FOUND", "来源不存在")
     if not entry.enabled:
-        return _paper_api_error(409, "SOURCE_DISABLED", "来源已停用，无法同步")
-    entrypoint = _SOURCE_SYNC_ENTRYPOINTS.get(source_id)
-    if entrypoint is None:
-        # dblp / openalex / crossref 通过既有检索图刷新，没有独立的同步入口。
-        return _paper_api_error(409, "SYNC_ENTRYPOINT_UNAVAILABLE", "该来源没有独立的同步入口")
+        return _paper_api_error(422, "SOURCE_DISABLED", "来源已停用，无法同步")
     scope = request.scope if request is not None else None
     years = list(getattr(scope, "years", None) or [])
     error_code = _validate_sync_years(years)
     if error_code is not None:
         return _paper_api_error(400, error_code, "同步范围无效")
+    source_id = entry.source_id
+    sync_id = f"sync-{source_id}-{uuid.uuid4().hex[:16]}"
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    store = _paper_store()
+    job = SearchJob(
+        sync_id, f"source:{source_id}", [source_id], sorted(set(years)), "queued",
+        SOURCE_SYNC_GRAPH_VERSION, False, None, 0, now, None, None, "2099-01-01T00:00:00Z", now,
+    )
+    try:
+        store.create_search_job(job)
+        store.save_source_progress(SearchSourceProgress(sync_id, source_id, "queued", updated_at=now))
+        runtime = CatalogSourceRuntime(
+            store=store, registry=registry,
+            timeout=float(getattr(common.article_settings, "paper_discovery_request_timeout_seconds", 20)),
+        )
+        if not submit_catalog_source_sync(runtime, sync_id, source_id, sorted(set(years))):
+            return _paper_api_error(409, "SYNC_ALREADY_RUNNING", "来源同步已在运行")
+    except Exception:
+        return _paper_api_error(503, "SYNC_SCHEDULER_UNAVAILABLE", "来源同步调度暂时不可用", True)
     return {
-        "sync_id": f"sync-{source_id}-{uuid.uuid4().hex[:16]}",
+        "sync_id": sync_id,
         "source_id": source_id,
-        "entrypoint": entrypoint,
+        "entrypoint": _SOURCE_SYNC_ENTRYPOINTS.get(source_id, "source_registry.adapter"),
         "scope": {"years": sorted(set(years))},
         "status": "queued",
+    }
+
+
+@router.get("/papers/sources/{source_id}/sync/{sync_id}")
+def get_paper_source_sync(source_id: str, sync_id: str):
+    """读取复用 search_jobs/source_progress 的真实来源同步终态。"""
+    if not _paper_discovery_enabled():
+        return _paper_api_error(503, "PAPER_DISCOVERY_DISABLED", "论文检索功能当前已关闭")
+    registry = _source_registry()
+    entry = registry.get(source_id)
+    if entry is None:
+        return _paper_api_error(404, "SOURCE_NOT_FOUND", "来源不存在")
+    store = _paper_store()
+    job = store.get_search_job(sync_id)
+    if job is None or job.graph_version != SOURCE_SYNC_GRAPH_VERSION or entry.source_id not in job.conference_ids:
+        return _paper_api_error(404, "SYNC_NOT_FOUND", "来源同步任务不存在")
+    progress = next((item for item in store.get_source_progress(sync_id)
+                     if item.source_kind == entry.source_id), None)
+    return {
+        "sync_id": sync_id, "source_id": entry.source_id, "status": job.status,
+        "scope": {"years": list(job.years)}, "error_code": job.error_code,
+        "degraded": bool(job.degraded),
+        "progress": _async_progress_payload(progress) if progress else None,
     }

@@ -1,7 +1,7 @@
 # Task 02：`parse_usenix_detail` 补齐 abstract 解析
 
 > 关联：[spec-032.1](../../specs/032.1-usenix-skill-decoupling.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 01；当前状态：`待执行`
+> 依赖：任务 01；当前状态：`已完成（待本规格收口复核）`
 
 ## 一句话目标
 
@@ -78,4 +78,11 @@
 
 ## 产出物、执行结果与变更日志
 
-> 待执行后填写：真实命令、退出码、测试结果、改动文件清单。
+### 执行结果（2026-09-20 对账）
+
+- 改动文件：`backend/app/paper_discovery/infrastructure/usenix_paper_parser.py`、
+  `tests/fixtures/usenix/presentation-detail.html`、
+  `tests/fixtures/usenix/presentation-detail-no-abstract.html`、
+  `tests/test_usenix_paper_parser.py`。
+- 定向验证：`.venv/bin/python -m pytest tests/test_usenix_paper_parser.py -q` → **47 passed，exit 0**。
+- 覆盖边界：详情页摘要字段解析、无摘要保持空值、`.description` 站点说明不被误取；未引入网络请求或第二套解析器。

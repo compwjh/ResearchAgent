@@ -4,6 +4,7 @@ from backend.app.paper_discovery.infrastructure.semantic_scholar_adapter import 
     SEMANTIC_SCHOLAR_API_URL,
     SemanticScholarFallbackAdapter,
     SemanticScholarRequestLimiter,
+    semantic_scholar_retry_delay,
 )
 
 
@@ -100,6 +101,55 @@ def test_lookup_treats_malformed_open_access_url_as_no_pdf():
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json=body)))
     )
     assert adapter.lookup(_candidate(), allowed_hosts={"arxiv.org"}).code == "SEMANTIC_SCHOLAR_NO_OPEN_PDF"
+
+
+def test_rate_limit_retry_honors_retry_after_without_exposing_provider_body():
+    sleeps = []
+    responses = [
+        httpx.Response(429, headers={"Retry-After": "3"}, text="secret=provider"),
+        httpx.Response(200, json=_payload()),
+    ]
+    adapter = SemanticScholarFallbackAdapter(
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: responses.pop(0))),
+        retries=1,
+        backoff=1.0,
+        sleep=sleeps.append,
+        rate_limiter=SemanticScholarRequestLimiter(interval_seconds=0),
+    )
+
+    assert adapter.lookup(_candidate(), allowed_hosts={"arxiv.org"}).matched
+    assert sleeps == [3.0]
+
+
+def test_retry_after_is_not_reused_after_network_failure():
+    sleeps = []
+    responses = [
+        httpx.Response(429, headers={"Retry-After": "3"}, text="secret=provider"),
+        httpx.ConnectError("network down"),
+        httpx.Response(200, json=_payload()),
+    ]
+
+    def handler(request):
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise httpx.ConnectError(str(response), request=request)
+        return response
+
+    adapter = SemanticScholarFallbackAdapter(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retries=2,
+        backoff=1.0,
+        sleep=sleeps.append,
+        rate_limiter=SemanticScholarRequestLimiter(interval_seconds=0),
+    )
+
+    assert adapter.lookup(_candidate(), allowed_hosts={"arxiv.org"}).matched
+    assert sleeps == [3.0, 2.0]
+
+
+def test_retry_after_is_bounded_and_malformed_header_uses_exponential_delay():
+    assert semantic_scholar_retry_delay(httpx.Response(429, headers={"Retry-After": "999"}), 0, 1.0) == 30.0
+    assert semantic_scholar_retry_delay(httpx.Response(429, headers={"Retry-After": "not-a-number"}), 1, 1.0) == 2.0
 
 
 def test_rate_limiter_is_shared_by_independent_adapter_instances():

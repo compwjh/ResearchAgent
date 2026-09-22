@@ -24,6 +24,31 @@ def build_default_tool_registry() -> list[ToolEntry]:
     """返回进程默认 Tool 注册表（代码即事实源）。"""
     return [
         ToolEntry(
+            name="paper_discovery",
+            description=(
+                "多来源 Worker 的统一论文目录/导入 Tool。operation=discover 时只接受服务器"
+                "受控的 source_id、query/years/scope；operation=import 时只接受 discover 返回的"
+                "候选快照。返回 worker-tool-v1 机器可读 envelope，未知来源、Tool 和任意 URL fail-closed。"
+            ),
+            entry=(
+                "backend.app.paper_discovery.application.worker_tool"
+                ".PaperDiscoveryToolFacade.dispatch"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string", "enum": ["discover", "import"]},
+                    "source_id": {
+                        "type": "string",
+                        "enum": ["usenix", "dblp", "ieee_sp", "ccs", "ndss", "openalex", "crossref"],
+                    },
+                    "scope": {"type": "object"},
+                    "candidate": {"type": "object"},
+                },
+                "required": ["operation", "source_id"],
+            },
+        ),
+        ToolEntry(
             name="search_paper_catalog",
             description=(
                 "检索 USENIX Security / DBLP 论文目录元数据（标题、作者、摘要、关键词、年份），"

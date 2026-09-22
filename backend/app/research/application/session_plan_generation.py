@@ -16,7 +16,6 @@ from typing import Any, Callable
 from backend.app.research.application.plan_authoring import plan_output_hash
 from backend.app.research.application.planner import Planner
 
-
 _DEFAULT_CAPABILITIES = (
     {"skill": "usenix-catalog-orchestration", "tools": ["search_paper_catalog", "fetch_paper_detail"]},
     {"skill": "research-paper-evaluation", "tools": []},
@@ -66,6 +65,8 @@ def build_session_plan_output(store, session, owner_id: str) -> dict[str, Any]:
         quality_profile=quality_profile,
         target_paper_count=target,
         language=language,
+        source_ids=sources,
+        scope=time_range,
     )
     work_items = [dict(item) for item in draft.work_items]
     # Session plan output is capped at three dependency levels.  Keep the

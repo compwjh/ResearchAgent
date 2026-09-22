@@ -1,7 +1,7 @@
 # Task 04：注册 `fetch_paper_detail` Tool
 
 > 关联：[spec-032.1](../../specs/032.1-usenix-skill-decoupling.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03；当前状态：`待执行`
+> 依赖：任务 03；当前状态：`已完成（待本规格收口复核）`
 
 ## 一句话目标
 
@@ -58,4 +58,11 @@
 
 ## 产出物、执行结果与变更日志
 
-> 待执行后填写：真实命令、退出码、测试结果、公开入口签名、ToolEntry 定义。
+### 执行结果（2026-09-20 对账）
+
+- 改动文件：`backend/app/paper_discovery/infrastructure/usenix_publication_source.py`、
+  `backend/app/skills/registry.py`、`backend/app/skills/tool_dispatch.py`、
+  `tests/test_usenix_detail_tool.py`、`tests/test_fetch_paper_detail_dispatch.py`。
+- 定向验证：`.venv/bin/python -m pytest tests/test_usenix_detail_tool.py tests/test_fetch_paper_detail_dispatch.py -q` → **24 passed，exit 0**。
+- 复核结论：`fetch_paper_detail` 已注册并接入分派器；入口可导入、非法 URL 不触网、未注册/禁用工具仍拒绝；Tool 路径复用共享 USENIX source 实例以保持缓存/限流。
+- 规格收口仍待 032.1 Task07 的独立需求/验收评审。

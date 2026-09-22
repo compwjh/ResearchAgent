@@ -31,6 +31,9 @@ from importlib import import_module
 from typing import Any, Callable, Iterable, Mapping, Optional, Tuple
 from uuid import uuid4
 
+_GENERIC_SOURCE_IDS = frozenset({"ieee_sp", "ccs", "ndss", "openalex", "crossref"})
+_CATALOG_SOURCE_SCOPES = frozenset({"usenix", "dblp", "all", *_GENERIC_SOURCE_IDS})
+
 
 @dataclass(frozen=True)
 class SearchRequest:
@@ -77,22 +80,29 @@ class CatalogSourceBundle:
     dblp_source: Any
     rag: Any
     graph: Any
+    # Non-USENIX/DBLP sources use the shared paper_discovery Worker Tool
+    # envelope instead of the legacy two-node catalog graph.  Keeping this in
+    # the same bundle makes the factory the only composition seam.
+    worker_tool: Any = None
 
 
 class CatalogSourceFactory:
     """Build the real Spec015 catalog stack using the configured cache path."""
 
     def __init__(self, *, store=None, accepted_source=None, dblp_source=None,
-                 rag=None, database_path=None, settings=None) -> None:
+                 rag=None, database_path=None, settings=None, source_registry=None,
+                 worker_tool=None) -> None:
         self.store = store
         self.accepted_source = accepted_source
         self.dblp_source = dblp_source
         self.rag = rag
         self.database_path = database_path
         self.settings = settings
+        self.source_registry = source_registry
+        self.worker_tool = worker_tool
 
     def build(self, *, source_scope: str = "all") -> CatalogSourceBundle:
-        if source_scope not in {"usenix", "dblp", "all"}:
+        if source_scope not in _CATALOG_SOURCE_SCOPES:
             raise ValueError("invalid catalog source scope")
         # Imports stay lazy: importing the Research application must not create
         # a database or touch a network endpoint.
@@ -100,14 +110,13 @@ class CatalogSourceFactory:
             CatalogRagAdapter,
             CatalogSearchGraph,
         )
+        from backend.app.paper_discovery.infrastructure.source_registry import SourceRegistry
         # Resolve the existing infrastructure through its controlled
         # application entry.  Split class names keep this orchestration module
         # from being mistaken for a second source implementation by the static
         # reuse guard.
         source_entry = import_module("backend.app.paper_discovery.application.entry")
         store_type = getattr(source_entry, "Paper" + "DiscoveryStore")
-        accepted_type = getattr(source_entry, "Usenix" + "AcceptedSource")
-        dblp_type = getattr(source_entry, "DBLP" + "PublicationSource")
         from backend.app.platform.config import BASE_DIR
         from backend.app.platform.settings.paper_discovery_settings import (
             DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
@@ -127,20 +136,33 @@ class CatalogSourceFactory:
                     path = BASE_DIR / path
             store = store_type(database_path=path)
         timeout = float(getattr(settings, "paper_discovery_request_timeout_seconds", 20))
-        accepted = self.accepted_source or accepted_type(timeout=timeout, store=store)
+        registry = self.source_registry or SourceRegistry(store=store, timeout=timeout)
+        accepted = self.accepted_source or registry.adapter("usenix", store=store, timeout=timeout)
         # Keep a single store on the existing USENIX source, including when a
         # test double was supplied without one.
         if getattr(accepted, "store", None) is None:
             with suppress(AttributeError):
                 accepted.store = store
-        dblp = self.dblp_source or dblp_type(timeout=timeout)
+        dblp = self.dblp_source or registry.adapter("dblp", store=store, timeout=timeout)
         rag = self.rag or CatalogRagAdapter()
         # Freeze the shared composition once. Subsequent source scopes create
         # only a differently-scoped Graph over these same objects.
         self.store = store
         self.accepted_source = accepted
         self.dblp_source = dblp
+        self.source_registry = registry
         self.rag = rag
+        from backend.app.paper_discovery.application.worker_tool import PaperDiscoveryToolFacade
+
+        worker_tool = self.worker_tool or PaperDiscoveryToolFacade(
+            registry=registry, store=store, timeout=timeout,
+        )
+        self.worker_tool = worker_tool
+        if source_scope in _GENERIC_SOURCE_IDS:
+            # The legacy graph deliberately owns only USENIX/DBLP.  Generic
+            # sources must still be represented by the same bundle, but their
+            # runtime path is the shared Worker Tool facade.
+            return CatalogSourceBundle(store, accepted, dblp, rag, None, worker_tool)
         graph = CatalogSearchGraph(
             store=store,
             accepted_source=accepted,
@@ -155,7 +177,7 @@ class CatalogSourceFactory:
             # the historical flag behavior for its default ``all`` scope.
             dblp_enabled=True if source_scope in {"dblp", "all"} else None,
         )
-        return CatalogSourceBundle(store, accepted, dblp, rag, graph)
+        return CatalogSourceBundle(store, accepted, dblp, rag, graph, worker_tool)
 
     create = build
 
@@ -167,14 +189,14 @@ def map_catalog_tool_args(value: Mapping[str, Any]) -> dict[str, Any]:
     in the query/context and must never become unregistered Tool parameters.
     """
     raw = dict(value or {})
-    sources = raw.get("sources", raw.get("source"))
+    sources = raw.get("source_ids", raw.get("sources", raw.get("source")))
     if isinstance(sources, str):
         source = sources
     elif isinstance(sources, (list, tuple)) and sources:
         source = sources[0]
     else:
         source = "usenix"
-    if source not in {"usenix", "dblp", "all"}:
+    if source not in {"usenix", "dblp", "all", "ieee_sp", "ccs", "ndss", "openalex", "crossref"}:
         raise ValueError("invalid catalog source")
     query = raw.get("query", "")
     if not isinstance(query, str) or not query.strip():
@@ -185,6 +207,11 @@ def map_catalog_tool_args(value: Mapping[str, Any]) -> dict[str, Any]:
     mapped: dict[str, Any] = {"source": source, "query": query}
     if years is not None:
         mapped["years"] = list(years) if isinstance(years, (list, tuple)) else years
+    scope = raw.get("scope")
+    if isinstance(scope, Mapping):
+        scoped_years = scope.get("years")
+        if scoped_years is not None:
+            mapped["years"] = list(scoped_years) if isinstance(scoped_years, (list, tuple)) else scoped_years
     if raw.get("max_results") is not None:
         mapped["limit"] = raw["max_results"]
     elif raw.get("limit") is not None:
@@ -214,7 +241,8 @@ class CatalogSearchAdapter:
 
     def __init__(self, *, searcher: Optional[Callable[[SearchRequest], SearchOutcome]] = None,
                  store=None, rag=None, accepted_source=None, dblp_source=None,
-                 source_factory: Optional[CatalogSourceFactory] = None) -> None:
+                 source_factory: Optional[CatalogSourceFactory] = None,
+                 worker_tool: Any = None) -> None:
         self._searcher = searcher
         self._store = store
         self._rag = rag
@@ -223,6 +251,7 @@ class CatalogSearchAdapter:
         self._accepted_source = accepted_source
         self._dblp_source = dblp_source
         self._source_factory = source_factory
+        self._worker_tool = worker_tool
 
     def search(self, *, query: str, facets: Optional[Iterable[str]] = None,
                sources: Optional[Iterable[str]] = None, max_results: int = 20,
@@ -272,7 +301,6 @@ class CatalogSearchAdapter:
         search_catalog 的唯一出口。
         """
         from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchResult
-
         from backend.app.platform.settings.paper_discovery_settings import (
             DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
         )
@@ -316,6 +344,7 @@ class CatalogSearchAdapter:
                 self._store, self._accepted_source, self._dblp_source, self._rag = (
                     bundle.store, bundle.accepted_source, bundle.dblp_source, bundle.rag
                 )
+                self._worker_tool = getattr(bundle, "worker_tool", None) or self._worker_tool
                 bundles[source_scope] = bundle
             return bundle
 
@@ -401,8 +430,45 @@ class CatalogSearchAdapter:
             catalog_store.freeze_search_results(search_id, rows, status="completed", degraded=False)
             return search_id
 
+        def _worker_search(request: SearchRequest, source_scope: str) -> SearchOutcome:
+            """Run non-legacy sources through the shared paper_discovery Worker Tool."""
+            bundle = _ensure_bundle(source_scope)
+            worker = self._worker_tool or getattr(bundle, "worker_tool", None)
+            if worker is None or not callable(getattr(worker, "discover", None)):
+                return SearchOutcome(
+                    (), 0, degraded=True, error_code="SOURCE_UNAVAILABLE",
+                    diagnostics={"source": source_scope, "stage": "worker_unavailable"},
+                )
+            years = request.years or tuple(range(datetime.now(timezone.utc).year - 5,
+                                                  datetime.now(timezone.utc).year))
+            scope: dict[str, Any] = {"query": request.query, "years": list(years), "limit": request.max_results}
+            if request.publication_scope:
+                scope["publication_scope"] = request.publication_scope
+            try:
+                raw = worker.discover(source_scope, scope)
+                payload = raw.to_dict() if hasattr(raw, "to_dict") else raw
+                from backend.app.paper_discovery.application.worker_tool import validate_worker_tool_result
+
+                result = validate_worker_tool_result(
+                    payload, expected_source=source_scope, expected_operation="discover",
+                )
+            except Exception:
+                return SearchOutcome(
+                    (), 0, degraded=True, error_code="SOURCE_UNAVAILABLE",
+                    diagnostics={"source": source_scope, "stage": "worker_failed"},
+                )
+            worker_payload = result.payload if isinstance(result.payload, Mapping) else {}
+            candidates = [dict(item) for item in worker_payload.get("candidates", ())
+                          if isinstance(item, Mapping)]
+            return _materialize_worker_candidates(
+                request=request, source_scope=source_scope, bundle=bundle,
+                result=result, candidates=candidates, ttl_seconds=ttl_seconds,
+            )
+
         def _searcher(request: SearchRequest) -> SearchOutcome:
             source_scope = request.sources[0] if request.sources else "usenix"
+            if source_scope in _GENERIC_SOURCE_IDS:
+                return _worker_search(request, source_scope)
             if self._store is None or self._rag is None:
                 current_bundle = _ensure_bundle(source_scope)
                 store, rag = current_bundle.store, current_bundle.rag
@@ -489,6 +555,212 @@ class CatalogSearchAdapter:
             )
 
         return _searcher
+
+
+def _materialize_worker_candidates(*, request: SearchRequest, source_scope: str,
+                                   bundle: CatalogSourceBundle, result: Any,
+                                   candidates: list[Mapping[str, Any]],
+                                   ttl_seconds: int) -> SearchOutcome:
+    """Materialize a validated Worker envelope into the existing catalog snapshot.
+
+    This is deliberately a contract adapter: it does not fetch, parse, download,
+    embed, or import.  All source-specific work already happened inside
+    ``PaperDiscoveryToolFacade`` and its ``SourceRegistry`` adapter.
+    """
+    from backend.app.paper_discovery.domain.paper_discovery import (
+        CatalogPaper,
+        CatalogSourceRecord,
+        SearchJob,
+        SearchResult,
+        SourceFetchUnit,
+    )
+    from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
+
+    store = bundle.store
+    years = request.years or tuple(range(datetime.now(timezone.utc).year - 5,
+                                          datetime.now(timezone.utc).year))
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+    source_error = getattr(result, "error_code", None)
+
+    if not candidates:
+        search_id = uuid4().hex
+        store.create_search_job(SearchJob(
+            search_id, request.query, [source_scope], list(years), "queued",
+            "catalog-search-v1", False, None, 0, now_iso, None, None, now_iso, now_iso,
+        ))
+        error_code = source_error or "SOURCE_UNAVAILABLE"
+        store.freeze_search_results(search_id, (), status="failed", degraded=True, error_code=error_code)
+        return SearchOutcome(
+            (), 0, degraded=True, error_code=error_code,
+            diagnostics={"source": source_scope, "worker_status": getattr(result, "status", "failed"),
+                         "remote_refresh": 1, "fetched": 0, "search_id": search_id},
+            search_id=search_id,
+        )
+
+    def value(item: Mapping[str, Any], *names: str, default: Any = None) -> Any:
+        for name in names:
+            current = item.get(name)
+            if current is not None and current != "":
+                return current
+        return default
+
+    papers: list[CatalogPaper] = []
+    raw_by_id: dict[str, Mapping[str, Any]] = {}
+    units: dict[Any, str] = {}
+    for candidate in candidates:
+        paper_id = str(value(candidate, "catalog_paper_id", "candidate_id", "stable_id", default="")).strip()
+        title = str(value(candidate, "title", default="")).strip()
+        if not paper_id or not title:
+            continue
+        raw_year = value(candidate, "year", "publication_year")
+        try:
+            year = int(raw_year) if raw_year is not None else None
+        except (TypeError, ValueError):
+            year = None
+        authors = value(candidate, "authors", default=())
+        authors = [authors] if isinstance(authors, str) else list(authors or ()) if isinstance(authors, (list, tuple)) else []
+        keywords = value(candidate, "keywords", default=())
+        keywords = [keywords] if isinstance(keywords, str) else list(keywords or ()) if isinstance(keywords, (list, tuple)) else []
+        abstract = value(candidate, "abstract", default=None)
+        doi = value(candidate, "doi", default=None)
+        page_url = value(candidate, "article_url", "page_url", "official_page_url", default=None)
+        pdf_url = value(candidate, "pdf_url", "official_pdf_url", default=None)
+        metadata = {
+            "source_id": source_scope, "candidate_id": paper_id, "title": title, "year": year,
+            "authors": authors, "abstract": abstract, "keywords": keywords,
+            "doi": doi, "page_url": page_url, "pdf_url": pdf_url,
+        }
+        paper = CatalogPaper(
+            catalog_paper_id=paper_id, conference_id=source_scope, year=year,
+            title=title, normalized_title=normalize_title(title),
+            authors=[str(item) for item in authors],
+            abstract=str(abstract) if abstract is not None else None,
+            keywords=[str(item) for item in keywords],
+            doi=str(doi) if doi is not None else None,
+            dblp_key=value(candidate, "dblp_key", "key"),
+            publication_stage=str(value(candidate, "publication_stage", default="published")),
+            official_page_url=page_url, official_pdf_url=pdf_url,
+            arxiv_id=value(candidate, "arxiv_id"), metadata_hash=_safe_hash(metadata),
+            index_status="pending", created_at=now_iso, updated_at=now_iso,
+        )
+        store.upsert_catalog_paper(paper, now_iso)
+        papers.append(paper)
+        raw_by_id[paper_id] = candidate
+        units.setdefault(year, f"{source_scope}|{source_scope}|{year or 'scope'}|worker")
+
+    if not papers:
+        return SearchOutcome(
+            (), 0, degraded=True, error_code="SOURCE_DEGRADED",
+            diagnostics={"source": source_scope, "stage": "invalid_worker_candidates"},
+        )
+
+    for year, unit_id in units.items():
+        unit = SourceFetchUnit(
+            fetch_unit_id=unit_id, source_kind=source_scope, conference_id=source_scope,
+            year=year, unit_key=unit_id, status="completed",
+            paper_count=sum(1 for paper in papers if paper.year == year),
+            created_at=now_iso, updated_at=now_iso,
+        )
+        ensure = getattr(store, "ensure_fetch_unit", None)
+        if callable(ensure):
+            ensure(unit, now_iso)
+        else:
+            store.save_fetch_unit(unit, now_iso)
+
+    provenance_by_id = getattr(result, "provenance", {})
+    for paper in papers:
+        candidate = raw_by_id[paper.catalog_paper_id]
+        record_id = f"{source_scope}|{paper.catalog_paper_id}"
+        unit_id = units.get(paper.year) or next(iter(units.values()))
+        store.save_source_record(CatalogSourceRecord(
+            record_id, paper.catalog_paper_id, unit_id, source_scope, paper.catalog_paper_id,
+            dict(candidate), now_iso,
+        ), now_iso)
+        fields = provenance_by_id.get(paper.catalog_paper_id) if isinstance(provenance_by_id, Mapping) else None
+        if not isinstance(fields, Mapping):
+            fields = candidate.get("provenance")
+        save_provenance = getattr(store, "save_field_provenance", None)
+        if callable(save_provenance) and isinstance(fields, Mapping):
+            for field_name, field_source in fields.items():
+                if field_name in {"title", "abstract", "keywords", "authors", "year", "doi", "page_url", "pdf_url"} and field_source:
+                    save_provenance(
+                        paper.catalog_paper_id, field_name, str(field_source),
+                        source_record_id=record_id, now=now_iso,
+                    )
+
+    # Reuse the existing RAG/index boundary when available.  No new embedding
+    # client is created here; lack of indexing remains an explicit degradation.
+    indexed = False
+    index = getattr(bundle.rag, "index", None)
+    if callable(index):
+        try:
+            indexed = index(papers) is not False
+        except Exception:
+            indexed = False
+        if indexed and callable(getattr(store, "mark_catalog_indexed", None)):
+            for paper in papers:
+                store.mark_catalog_indexed(paper.catalog_paper_id)
+    ranked: list[Mapping[str, Any]] = []
+    retrieve = getattr(bundle.rag, "retrieve_and_rerank", None)
+    if indexed and callable(retrieve):
+        try:
+            ranked = list(retrieve(request.query, papers, conference_ids=[source_scope], years=years) or ())
+        except Exception:
+            ranked = []
+    ranked_by_id = {
+        str(item.get("catalog_paper_id")): item for item in ranked
+        if isinstance(item, Mapping) and item.get("catalog_paper_id")
+    }
+    ordered: list[Mapping[str, Any]] = [
+        ranked_by_id[str(paper.catalog_paper_id)] for paper in papers
+        if str(paper.catalog_paper_id) in ranked_by_id
+    ]
+    ordered.extend(
+        {str(paper.catalog_paper_id): {"catalog_paper_id": paper.catalog_paper_id}
+         for paper in papers if str(paper.catalog_paper_id) not in ranked_by_id}.values()
+    )
+
+    search_id = uuid4().hex
+    expires_iso = (now + timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    store.create_search_job(SearchJob(
+        search_id, request.query, [source_scope], list(years), "queued", "catalog-search-v1",
+        False, None, 0, now_iso, None, None, expires_iso, now_iso,
+    ))
+    by_id = {paper.catalog_paper_id: paper for paper in papers}
+    rows: list[SearchResult] = []
+    for item in ordered[:request.max_results]:
+        paper_id = str(item.get("catalog_paper_id") or "")
+        paper = by_id.get(paper_id)
+        if paper is None:
+            continue
+        rank = len(rows) + 1
+        retrieval_score = float(item.get("retrieval_score", 0) or 0)
+        rerank_score = item.get("rerank_score")
+        final_score = float(item.get("final_score", 0) or 0)
+        snapshot = {
+            "candidate_id": paper_id, "catalog_paper_id": paper_id, "search_id": search_id,
+            "rank": rank, "title": paper.title, "authors": list(paper.authors), "year": paper.year,
+            "conference_id": source_scope, "conference_name": source_scope,
+            "abstract": paper.abstract, "keywords": list(paper.keywords), "doi": paper.doi,
+            "article_url": paper.official_page_url, "source_page_url": paper.official_page_url,
+            "official_pdf_url": paper.official_pdf_url, "pdf_url": paper.official_pdf_url,
+            "source_kinds": [source_scope], "retrieval_score": retrieval_score,
+            "rerank_score": rerank_score, "final_score": final_score, "existing_paper_id": None,
+        }
+        rows.append(SearchResult(search_id, paper_id, rank, retrieval_score, rerank_score, final_score, snapshot, now_iso))
+    degraded = getattr(result, "status", "completed") != "completed" or not indexed
+    error_code = source_error if getattr(result, "status", "completed") != "completed" else ("SOURCE_DEGRADED" if not indexed else None)
+    status = "partial" if getattr(result, "status", "completed") == "partial" else "completed"
+    store.freeze_search_results(search_id, rows, status=status, degraded=degraded, error_code=error_code)
+    ids = tuple(row.catalog_paper_id for row in rows)
+    return SearchOutcome(
+        ids, len(ids), degraded=degraded, error_code=error_code,
+        diagnostics={"source": source_scope, "cache_hit": 0, "remote_refresh": 1,
+                     "fetched": len(papers), "worker_status": getattr(result, "status", "completed"),
+                     "search_id": search_id},
+        search_id=search_id,
+    )
 
 
 def build_outcome_from_catalog_rows(rows: Iterable[object], max_results: int = 20) -> SearchOutcome:

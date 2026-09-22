@@ -236,3 +236,15 @@ Semantic Scholar 不应新增下载器，`openAccessPdf.url` 只能转换为现�
 当前仍未宣称真实外部成功：本环境访问 `api.semanticscholar.org` DNS 失败。部署环境需
 用 `ARXIV:2403.11445` 或已知 DOI 进行一次 API probe；失败时应显示稳定错误并保留人工
 下载/上传入口，而不是伪造导入成功。
+
+## Task15–17 扩展实现记录（2026-09-21）
+
+- 新增 `semantic_scholar_metadata.py`：统一 Academic Graph 客户端支持批量详情、`/paper/search/bulk`、autocomplete、citations/references；所有请求复用进程级 1 秒限流，批量详情最多 500 个 ID，重试重新占用配额。
+- `CatalogSearchGraph.merge_catalog_metadata` 在配置 key 后只为 DOI/ArXiv 已识别且缺失的摘要、作者或标识符调用批量详情；标题/作者/年份门禁失败不写库，官方字段与关键词不覆盖，补齐字段写入 `semantic_scholar` provenance。
+- 批量响应按稳定缓存键复用，API 失败仅产生富化降级事件，不阻塞官方目录搜索；当前不会把 Semantic Scholar 写入 `search_source_progress` 或官方 SourceRegistry，避免旧 SQLite CHECK 约束被未知来源破坏。
+- `tests/paper_discovery/test_semantic_scholar_metadata.py` 覆盖批量请求、严格匹配、缓存、autocomplete、引用图及非法关系；Task16 的聚合候选主图接线和 Task17 的产品 API 仍需在后续任务完成后再进行真实外部验收。
+## 2026-09-22 真实 API smoke（Task15–17）
+
+- 使用项目 `.env` 中的 `SEMANTIC_SCHOLAR_API_KEY`（只在进程内读取，不输出或落盘）调用官方 `paper/autocomplete`，请求参数为 `query=security&limit=3`。
+- 本机在当前执行环境无法解析 `api.semanticscholar.org`（`URLError: [Errno 8] nodename nor servname provided, or not known`），因此没有把此次结果记为成功，也没有伪造候选数量。
+- 代码侧 34 项 Semantic Scholar 定向测试和 Ruff 已通过；真实 key、429/5xx、服务重启后的缓存读取仍是 Task14 的外部环境验收项。

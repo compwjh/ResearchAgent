@@ -85,7 +85,18 @@ DEFAULT_SOURCE_AUTHORITY: Mapping[str, int] = {
     # OpenAlex is an aggregate enrichment source.
     "crossref": AUTHORITY_OFFICIAL_DOI,
     "openalex": AUTHORITY_AGGREGATE,
+    # Semantic Scholar Academic Graph is an aggregate enrichment/recall
+    # provider.  It may fill missing fields, but it can never replace venue
+    # or publisher metadata.
+    "semantic_scholar": AUTHORITY_AGGREGATE,
 }
+
+# A conference adapter can expose an official venue route in addition to its
+# Crossref DOI route.  The public source selector remains the canonical
+# conference ID (for example ``ndss``); the qualified ID is only used in
+# field/source-record provenance so the two routes cannot silently share
+# authority.  Qualified IDs are deliberately not source-registry entries.
+OFFICIAL_ROUTE_SOURCE_SUFFIX = ":official"
 
 #: 未知来源按最高权威（最小数值）处理：宁可少写一次，也不可被未知来源覆盖官方字段。
 UNKNOWN_SOURCE_AUTHORITY = AUTHORITY_OFFICIAL_VENUE
@@ -109,8 +120,28 @@ def canonical_source_id(source_id: object, *, strict: bool = False) -> str:
     return canonical
 
 
+def route_source_id(source_id: object, route: object = "") -> str:
+    """Return the provenance ID for one adapter route.
+
+    Route-qualified IDs are an internal provenance detail.  Keeping the public
+    selector canonical preserves the seven-source Tool/Registry contract while
+    allowing an official venue record to be distinguished from the adapter's
+    Crossref DOI record.
+    """
+    canonical = canonical_source_id(source_id)
+    route_name = str(route or "").strip().casefold()
+    if route_name in {"official", "official_catalog", "venue"}:
+        return f"{canonical}{OFFICIAL_ROUTE_SOURCE_SUFFIX}"
+    return canonical
+
+
 def authority_rank_for(source_id: object) -> int:
     """Resolve the rank for a source ID after applying controlled aliases."""
+    raw = str(source_id or "").strip().casefold()
+    if raw.endswith(OFFICIAL_ROUTE_SOURCE_SUFFIX):
+        base = canonical_source_id(raw[:-len(OFFICIAL_ROUTE_SOURCE_SUFFIX)])
+        if base in SOURCE_KINDS:
+            return AUTHORITY_OFFICIAL_VENUE
     return DEFAULT_SOURCE_AUTHORITY.get(canonical_source_id(source_id), UNKNOWN_SOURCE_AUTHORITY)
 
 
@@ -137,6 +168,7 @@ __all__ = [
     "AUTHORITY_OFFICIAL_VENUE",
     "CANONICAL_SOURCE_IDS",
     "DEFAULT_SOURCE_AUTHORITY",
+    "OFFICIAL_ROUTE_SOURCE_SUFFIX",
     "SOURCE_ID_ALIASES",
     "SOURCE_KINDS",
     "SourceKind",
@@ -144,4 +176,5 @@ __all__ = [
     "authority_rank_for",
     "canonical_source_id",
     "may_overwrite",
+    "route_source_id",
 ]

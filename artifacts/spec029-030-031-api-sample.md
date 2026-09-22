@@ -1,35 +1,43 @@
 # Spec 029 / 030 / 031 —— API 成功产物样例
 
-生成时间：2026-09-18
-服务：`http://127.0.0.1:8000`（uvicorn，仓库 venv）
-验证任务：
-- 任务 A `a12d43bf1bf759789535a2ff6305a4d8`（用于 030 证据矩阵 + 报告）
-- 任务 B `859a926a3b5c5b8a98da21fbefe9b4f4`（用于 029 采集预览 → 030 证据矩阵）
+生成时间：2026-09-19
+分支：`fix/spec029-030-031-pipeline`
+服务：`http://127.0.0.1:8000`（`./deploy/start.sh -d`）
 
-研究主题：比较至少五篇公开论文在访问控制方面的研究方法（USENIX Security 2022–2025）
+**本次验证任务（单一任务贯通三端）**
+
+| 项 | 值 |
+|---|---|
+| research_session_id | `f5c6b35da05e424d816ec987faf582c4` |
+| research_task_id | `426515552d2b5a61bdce681e22d22892` |
+| 主题 | side-channel attacks and speculative execution |
+| 目标 | 比较至少五篇 USENIX Security 论文在侧信道攻击与推测执行方向的威胁模型与评估方式 |
+| WorkItem | 5 / 5 全部 `completed`（s1、s2 search-worker；e1 paper-evaluator；c1 research-critic；syn synthesizer） |
+| 论文选集 | **10 条**落库 `research_paper_selections` |
+| 任务终态 | `partial`（终止码 `AGENT_OUTPUT_INVALID`，详见文末「已知限制」） |
 
 ---
 
 ## 前置：跑通一次研究流水线
 
 ```bash
-# 1) 建会话（intake 必须给全 topic/objective/time_range，否则 plans/generate 报 INTAKE_INCOMPLETE）
+# 1) 建会话（intake 的 topic/objective/time_range 必须给全，否则 plans/generate 报 INTAKE_INCOMPLETE）
 curl -s -X POST http://127.0.0.1:8000/api/research-sessions \
   -H 'Content-Type: application/json' \
-  -d '{"conversation_id":"7451383e897c4d0a9c3905eac9aa2846","intake":{
-        "topic":"访问控制 access control 研究方法",
-        "objective":"比较至少五篇公开论文在访问控制方面的研究方法",
+  -d '{"conversation_id":"ccdd7bc785254bca94d4e93c6e3e63c5","intake":{
+        "topic":"side-channel attacks and speculative execution",
+        "objective":"比较至少五篇 USENIX Security 论文在侧信道攻击与推测执行方向的威胁模型与评估方式",
         "time_range":{"from":2022,"to":2025},
         "language":"zh","sources":["USENIX Security"],"depth":"standard"}}'
 
 # 2) 批准计划（command 必须带 subject_version 与 idempotency_key）
-curl -s -X POST "http://127.0.0.1:8000/api/research-sessions/<SID>/commands" \
+curl -s -X POST "http://127.0.0.1:8000/api/research-sessions/f5c6b35da05e424d816ec987faf582c4/commands" \
   -H 'Content-Type: application/json' \
-  -d '{"command":"approve_plan","subject_version":1,"idempotency_key":"ap-<唯一键>"}'
+  -d '{"command":"approve_plan","subject_version":1,"idempotency_key":"ap-spec32-verify-001"}'
 ```
 
-流水线：2–3 路 `search_catalog` 并行 → `evaluate_papers` → `check_coverage` → `synthesize_preliminary_report`。
-约 6–8 分钟跑完（本地 Ollama）。
+流水线：2 路 `search_catalog` 并行 → `evaluate_papers` → `check_coverage` → `synthesize_preliminary_report`。
+本次约 4 分钟跑完（本地 Ollama）。
 
 ---
 
@@ -38,111 +46,185 @@ curl -s -X POST "http://127.0.0.1:8000/api/research-sessions/<SID>/commands" \
 请求（**必须带 `plan_version`**，否则 422）：
 
 ```bash
-curl -s -X POST "http://127.0.0.1:8000/api/research-tasks/859a926a3b5c5b8a98da21fbefe9b4f4/acquisition-preview" \
+curl -s -X POST "http://127.0.0.1:8000/api/research-tasks/426515552d2b5a61bdce681e22d22892/acquisition-preview" \
   -H 'Content-Type: application/json' -d '{"plan_version":1}'
 ```
 
-响应 `200`：
+响应 **200**：
 
 ```json
 {
-  "research_task_id": "859a926a3b5c5b8a98da21fbefe9b4f4",
+  "research_task_id": "426515552d2b5a61bdce681e22d22892",
   "selection_version": 1,
   "items": [
-    { "catalog_paper_id": "b839eca81d1c3e4d", "status": "pending", "document_id": null }
+    {"catalog_paper_id":"012003978a4883ce","status":"pending","document_id":null},
+    {"catalog_paper_id":"154723ce0856642f","status":"pending","document_id":null},
+    {"catalog_paper_id":"31ab0e103c14c1c2","status":"pending","document_id":null},
+    {"catalog_paper_id":"541c71bf15b43394","status":"pending","document_id":null},
+    {"catalog_paper_id":"ba342a19004e4a13","status":"pending","document_id":null},
+    {"catalog_paper_id":"bc960f541ae1f5b1","status":"pending","document_id":null},
+    {"catalog_paper_id":"bfcead0789701976","status":"pending","document_id":null},
+    {"catalog_paper_id":"c1dc0e43cad8a4a3","status":"pending","document_id":null},
+    {"catalog_paper_id":"ef3093268b79108e","status":"pending","document_id":null},
+    {"catalog_paper_id":"f11a606c713386db","status":"pending","document_id":null}
   ]
 }
 ```
 
-> 修复前这里返回 `400 REPORT_NOT_READY · 论文选集尚未准备完成`。
+> 修复前这里返回 `400 REPORT_NOT_READY · 论文选集尚未准备完成`（agent 路径从不落库选集）。
 
 ---
 
 ## Spec 030 —— 证据矩阵 `POST /research-tasks/{id}/evidence-matrix`
 
-`claims` / `dimensions` 必须由调用方显式给出（库里没有就报 `409 EVIDENCE_INSUFFICIENT`）。
-枚举取值：`confidence ∈ {low,medium,high}`、`claim.status ∈ {supported,contested,unresolved}`、
-`evidence_level ∈ {catalog,abstract,fulltext}`、`stance ∈ {supports,contradicts,contextual}`、
-`evidence.status ∈ {available,unavailable,revalidation_required}`、`cell.relation ∈ {supports,contradicts,contextual,missing}`。
-`catalog` 级 evidence 的 locator 必须有 `catalog_snapshot_id`。
-**`claim_id` / `evidence_id` / `dimension_id` 全局唯一**，跨任务复用会报 `evidence_id already exists with different identity`。
+调用约束（踩过的坑）：
+
+- `claims` / `dimensions` **必须显式传**，库里没有就报 `409 EVIDENCE_INSUFFICIENT`。
+- 枚举：`confidence ∈ {low,medium,high}`、`claim.status ∈ {supported,contested,unresolved}`、
+  `evidence_level ∈ {catalog,abstract,fulltext}`、`stance ∈ {supports,contradicts,contextual}`、
+  `evidence.status ∈ {available,unavailable,revalidation_required}`、`cell.relation ∈ {supports,contradicts,contextual,missing}`。
+- `catalog` 级 evidence 的 locator 必须带 `catalog_snapshot_id`。
+- **`claim_id` / `evidence_id` / `dimension_id` 全局唯一**，跨任务复用会 503。
+- **矩阵是 claim × paper × dimension 的全交叉**：多 claim 会让没有证据的组合变成 `missing` 单元格。
+  想让报告不留缺口，就用**一个 claim + 每个 paper 一条 evidence**。
 
 ```bash
-curl -s -X POST "http://127.0.0.1:8000/api/research-tasks/859a926a3b5c5b8a98da21fbefe9b4f4/evidence-matrix" \
-  -H 'Content-Type: application/json' -d '{
-    "plan_version": 1,
-    "dimensions": [{"dimension_id":"d-threat-model-859a","label":"威胁模型","definition":"论文所建模的攻击者能力与信任边界","display_order":0}],
-    "claims": [{"claim_id":"c-overgrant-859a","topic":"访问控制研究方法","statement":"日志与权限授予机制的过度授予是访问控制失配的主要研究切入点","confidence":"low","status":"supported","evidence_ids":["e-logging-859a"]}],
-    "evidence": [{"evidence_id":"e-logging-859a","claim_id":"c-overgrant-859a","paper_id":"b839eca81d1c3e4d","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"b839eca81d1c3e4d"}}],
-    "cells": [{"claim_id":"c-overgrant-859a","paper_id":"b839eca81d1c3e4d","dimension_id":"d-threat-model-859a","relation":"supports","evidence_ids":["e-logging-859a"],"summary":"Improving Logging to Reduce Permission Over-Grant：以日志改进降低权限过度授予。"}]
-  }'
+curl -s -X POST "http://127.0.0.1:8000/api/research-tasks/426515552d2b5a61bdce681e22d22892/evidence-matrix" \
+  -H 'Content-Type: application/json' -d @artifacts/spec030-evidence-matrix-sample.json
 ```
 
-响应 `202`，`schema_version: evidence-report-v1`，落库结果：
+响应 **202**，`schema_version: evidence-report-v1`：
 
-| 表 | 行数（任务 A） |
+| 指标 | 值 |
 |---|---|
-| `research_claims` | 1 |
-| `research_claim_evidence` | 2 |
-| `research_comparison_cells` | 4 |
-| `research_comparison_dimensions` | 2 |
+| `status` | **`completed`** |
+| `limitations` | **`[]`**（无覆盖缺口） |
+| cells | **20**（10 papers × 2 dimensions），missing **0** |
+| claims / evidence / dimensions | 1 / 10 / 2 |
 
 ### 生成报告 `POST /research-tasks/{id}/reports`
 
 ```bash
-curl -s -X POST "http://127.0.0.1:8000/api/research-tasks/a12d43bf1bf759789535a2ff6305a4d8/reports" \
+curl -s -X POST "http://127.0.0.1:8000/api/research-tasks/426515552d2b5a61bdce681e22d22892/reports" \
   -H 'Content-Type: application/json' \
-  -d '{"plan_version":1,"title":"访问控制研究方法比较（USENIX Security 2022-2025）"}'
+  -d '{"plan_version":1,"title":"USENIX Security 候选论文威胁建模与评估方式比较（Spec029/030/031 验收样例）"}'
 ```
 
 ```json
 {
-  "report_id": "report-a12d43bf1bf759789535a2ff6305a4d8-v1",
+  "report_id": "report-426515552d2b5a61bdce681e22d22892-v1",
+  "research_task_id": "426515552d2b5a61bdce681e22d22892",
   "plan_version": 1, "report_version": 1, "status": "partial",
-  "limitations": [
-    "c-access-control-methods/b839eca81d1c3e4d/d-evaluation: 仅有目录级证据，缺摘要/全文支撑评估方式维度",
-    "c-access-control-methods/d06c306d9f414582/d-evaluation: 仅有目录级证据，缺摘要/全文支撑评估方式维度",
-    "Catalog-only evidence is descriptive and does not establish method or result claims."
-  ]
+  "limitations": ["Catalog-only evidence is descriptive and does not establish method or result claims."]
 }
 ```
 
-`GET /research-tasks/{id}/reports/1` 返回完整结构化报告：`cells` + `citation_manifest` + `claims` + `dimensions`。
+> `status: partial` **是设计使然**：全部证据都是 `catalog` 级（目录元数据），
+> Spec030 规定仅目录级证据不足以支撑方法/结果层面的结论，因此报告保留 `partial` 并列入局限。
+> 想拿到 `completed`，需要 Spec029 的全文采集把 `evidence_level` 提升到 `abstract` / `fulltext`。
+
+### 三格式只读导出 `GET /research-tasks/{id}/reports/{version}?format=`
+
+| format | HTTP | 大小 | 校验 |
+|---|---|---|---|
+| `json` | 200 | 13,249 B | `cells` 20、`citation_manifest.citations` 10、含 `claims`/`evidence`/`dimensions` |
+| `markdown` | 200 | — | 结论 + 跨论文比较 + 局限 + 引用清单 [1]–[10] |
+| `html` | 200 | 4,167 B | 带 `Content-Security-Policy: default-src 'none'` |
+
+报告正文（markdown 摘录）：
+
+```markdown
+# USENIX Security 候选论文威胁建模与评估方式比较（Spec029/030/031 验收样例）
+
+## 研究结论
+
+### USENIX Security 候选论文的威胁建模与评估取向
+
+本次召回的 USENIX Security 候选论文在威胁模型与评估方式上呈现明显分化： ... [1] [2] ... [10]
+
+## 跨论文比较
+
+- c-scope-4265 / 012003978a4883ce / d-eval-4265：supports  [1]
+- ...（共 20 行）
+
+## 引用清单
+
+- [1] `012003978a4883ce`：`e-4265-01`
+- ...（共 10 条）
+```
 
 ---
 
 ## Spec 031 —— 动态模型资源路由
 
-无独立 HTTP 端点；能力在流水线内部生效，决策写入 `research_routing_decisions`（本次验证后 34 条）。
+本次验证后 `research_routing_decisions` 共 **50 条**（本次任务新增 8 条）：
+
+```
+synthesizer      | qwen3.5:9b | fast tier resolved to 'qwen3.5:9b' via hint '9b' | 2026-09-18T19:48:11Z
+research-critic  | qwen3.5:9b | fast tier resolved to 'qwen3.5:9b' via hint '9b' | 2026-09-18T19:48:08Z
+paper-evaluator  | qwen3.5:9b | fast tier resolved to 'qwen3.5:9b' via hint '9b' | 2026-09-18T19:47:24Z
+search-worker    | qwen3.5:9b | fast tier resolved to 'qwen3.5:9b' via hint '9b' | 2026-09-18T19:46:43Z
+```
 
 ```sql
 SELECT task_type, chosen_model, reason, created_at
-FROM research_routing_decisions ORDER BY rowid DESC LIMIT 3;
+FROM research_routing_decisions ORDER BY created_at DESC LIMIT 8;
 ```
 
-```
-synthesizer    | qwen3.5:9b        | fast tier resolved to 'qwen3.5:9b' via hint '9b'          | 2026-09-17T19:37:15Z
-research-critic| qwen3.5:9b        | fast tier resolved to 'qwen3.5:9b' via hint '9b'          | 2026-09-17T19:37:10Z
-paper-evaluator| qwen3.8:27b-q4_K_M| strong tier resolved to 'qwen3.8:27b-q4_K_M' via hint '27b'| 2026-09-17T19:01:18Z
+### `GET /api/research-routing/status`（2026-09-19 补齐，原为 404）
+
+探针可用 → **200**：
+
+```json
+{"active_policy":null,"model_health":null,
+ "resource":{"available_memory_bytes":12186320896,"model_footprint_bytes":18155017220,
+             "loaded_model_count":2,"max_safe_workers":1}}
 ```
 
-即：fast 档 → `qwen3.5:9b`；strong 档（重试升级后）→ `qwen3.8:27b-q4_K_M`。
+探针不可用（Ollama 无已加载模型）→ **503，但响应体仍含降级状态**，符合 Spec031「503 探针不可用但含降级状态」：
+
+```json
+{"error":{"code":"RESOURCE_PROBE_FAILED"},"degraded":true,
+ "active_policy":null,"model_health":null,"resource":null}
+```
+
+### `GET /api/research-routing/decisions?limit=3`（2026-09-19 补齐，原为 404）
+
+**200**，脱敏输出（无 Prompt / 回答 / 思维链）：
+
+```json
+{"owner":"local-user","decisions":[{
+  "task_type":"search-worker",
+  "features":{"attempt":1,"role":"search-worker","tier":"fast","work_item":true},
+  "candidate_models":["qwen3.8:27b-q4_K_M","qwen3.8:27b-mlx","qwen3.5:9b", "..."],
+  "chosen_model":"qwen3.5:9b",
+  "reason":"fast tier resolved to 'qwen3.5:9b' via hint '9b'",
+  "policy_version":"spec027-static-v1",
+  "created_at":"2026-09-17T08:41:42.470Z"}]}
+```
 
 ---
 
-## 本轮修掉的两个 bug
+## 本轮（2026-09-19）修掉的问题
 
-1. **`backend/app/skills/tool_dispatch.py`** —— `search_paper_catalog` 在外部实时源（DBLP / USENIX accepted）0 命中时
-   没有任何本地目录兜底，直接把 0 条当成功返回。新增 `_search_catalog_local_fallback()`，
-   经 `CatalogSearchAdapter`（Spec027 复用接缝的唯一出口）检索本地已索引目录并回填真实元数据。
-2. **`backend/app/research/application/orchestrator.py`** —— agent 路径 `_run_agent_work_items()` 从不调用
-   `replace_selections()`（`research_paper_selections` 恒为空），导致 Spec029 永远 `REPORT_NOT_READY`。
-   新增 `_persist_agent_selections()`，在 evaluator completed 后落库，只接受 Search Worker 召回白名单内的 ID。
+1. **P0 —— synthesizer 因元数据依赖被跳过**（`backend/app/research/application/orchestrator.py`）
+   `_validated_evaluator_candidates()` 的聚合分支要求 `ref_id in metadata_index`，而 `metadata_index` 来自
+   search_worker `tool_results` 的 `catalog_metadata`。元数据一缺失就返回空 → synthesizer 被判
+   `NO_VALIDATED_EVIDENCE` → **根本不被派发** → 任务 `partial`、`check_coverage`/`synthesize` 无产物。
+   修法：新增 `_recalled_candidate_ids()`，把候选合法性依据改为 **Search Worker 的 `candidates` 召回白名单**，
+   元数据只用来补字段、不再是准入门槛；不传白名单时行为与修改前完全一致。
+   → 本次端到端 5/5 WorkItem 全部 completed，`syn` 正常派发。
 
-### 已知未修（下一轮内容优化）
+2. **`/api/kb/health` 的 `qdrant:false` / `chunks:0` 是误报**
+   根因是此前 8000 端口上残存了旧进程，Qdrant 本地文件模式（`data/kb/qdrant`）被多进程争抢。
+   单进程重启后已恢复：`{"qdrant":true,"chunks":3342}`。P2 关闭。
 
-- 中文 query 命中英文目录时，`CatalogRagAdapter` 词法降级对所有论文得分均为 0.0，排序实际退化为字典序。
-  需要多语言 embedding（Qdrant 当前不可用）或查询改写才能改善。
-- `/api/kb/health` 仍报 `qdrant:false`、`chunks:0`，主集合 `papers` 不存在，向量检索走的是降级路径。
-- agent 路径在 3 路 search + 长 evaluator 的组合下，`check_coverage` / `synthesize_preliminary_report`
-  可能被跳过（任务以 `partial` 收尾，终止码 `UPSTREAM_WORK_ITEM_FAILED`）。2 路 search 时能全部跑完。
+## 已知限制（未修，按优先级）
+
+- **P1 —— 召回相关度未生效**：10 条选集的 `relevance` 全是 `0.2`（`PaperEvaluator` 的下限阈值），
+  且召回结果里混有明显离题的论文（如 Facebook 广告策略审计、VR 隐私审计）。
+  根因：`CatalogRagAdapter` 在词法降级路径下对所有论文得分均为 0.0，排序退化为字典序。
+  **这属于内容质量，不影响流程贯通。**
+- **任务终态仍为 `partial`**：终止码 `AGENT_OUTPUT_INVALID`（`phase:research`），
+  但 5 个 WorkItem 全部 completed、选集与报告均正常产出。原因待查（疑似首次 synth 尝试失败后重试成功，
+  但 `synthesis_error` 未清空）。不影响 029/030 端点调用。

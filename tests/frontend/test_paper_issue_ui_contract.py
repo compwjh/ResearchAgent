@@ -32,3 +32,18 @@ def test_issue_recovery_actions_are_status_scoped_and_upload_requires_confirmati
     assert 'id="research-issue-queue"' in INDEX
     assert "research-field-provenance" in RESEARCH
     assert ".innerHTML" not in RESEARCH
+
+
+def test_report_failure_reconciles_task_acquisitions_before_resetting_report_state() -> None:
+    start = RESEARCH.index("async function loadReport")
+    catch_start = RESEARCH.index("} catch (error) {", start)
+    catch_end = RESEARCH.index("\n    }\n  }", catch_start)
+    failure_path = RESEARCH[catch_start:catch_end]
+    assert "const acquisition = await loadAcquisitionStatus(taskId);" in failure_path
+    assert failure_path.index("loadAcquisitionStatus(taskId)") < failure_path.index("state.acquisition.preview = []")
+    assert "state.acquisition.issues = [];" not in failure_path
+    # A missing batch is a normal pre-confirmation state, not an acquisition error.
+    status_start = RESEARCH.index("async function loadAcquisitionStatus")
+    status_end = RESEARCH.index("\n  function scheduleAcquisitionPoll", status_start)
+    status_path = RESEARCH[status_start:status_end]
+    assert "error.status !== 404 && error.code !== 'BATCH_NOT_FOUND'" in status_path

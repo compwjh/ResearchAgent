@@ -15,7 +15,6 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -193,14 +192,14 @@ def _safe_identifier(value: Any, field: str) -> str:
     return value
 
 
-def _safe_text_input(value: Any, field: str, *, default: str = "") -> str:
+def _safe_text_input(value: Any, field: str, *, default: str = "", max_length: int = 200) -> str:
     """Validate user/model-facing report labels before they enter Markdown."""
     if value is None:
         value = default
     if not isinstance(value, str):
         raise ReportSynthesisError(f"invalid {field}")
     text = value.strip()
-    if len(text) > 200 or _PATH_RE.search(text) or _FILE_NAME_RE.search(text) or re.search(r"(?:https?://|ftp://|www\.)", text, re.I):
+    if len(text) > max_length or _PATH_RE.search(text) or _FILE_NAME_RE.search(text) or re.search(r"(?:https?://|ftp://|www\.)", text, re.I):
         raise ReportSynthesisError(f"unsafe {field}")
     lowered = text.casefold()
     if any(part in lowered for part in _FORBIDDEN_PARTS) or any(
@@ -256,23 +255,65 @@ def _safe_catalog_metadata(candidate: Mapping[str, Any]) -> dict[str, Any]:
             if clean and clean not in clean_keywords:
                 clean_keywords.append(clean)
         metadata["keywords"] = clean_keywords
+    year = candidate.get("year")
+    if year is not None:
+        if isinstance(year, bool) or not isinstance(year, int) or year < 0 or year > 9999:
+            raise ReportSynthesisError("invalid catalog year")
+        metadata["year"] = year
+    for field in ("source", "source_id"):
+        value = candidate.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ReportSynthesisError(f"invalid catalog {field}")
+        metadata[field] = safe_long_text(value, field, 200)
+    source_kinds = candidate.get("source_kinds")
+    if source_kinds is not None:
+        if isinstance(source_kinds, str):
+            source_kinds = [source_kinds]
+        if not isinstance(source_kinds, (list, tuple)):
+            raise ReportSynthesisError("invalid catalog source_kinds")
+        metadata["source_kinds"] = [
+            safe_long_text(value, "source_kind", 100)
+            for value in source_kinds[:8]
+            if isinstance(value, str) and value.strip()
+        ]
+    official_url = candidate.get("official_url", candidate.get("official_page_url"))
+    if official_url is not None:
+        if not isinstance(official_url, str):
+            raise ReportSynthesisError("invalid catalog official_url")
+        official_url = official_url.strip()
+        # This value comes from the trusted catalog store, not model output.
+        # Keep the report link useful while rejecting credentials, control
+        # characters, and non-web schemes.
+        if (
+            len(official_url) > 2000
+            or not re.fullmatch(r"https://[^\s<>\"']+", official_url, re.I)
+            or "@" in official_url.split("/", 3)[2]
+        ):
+            raise ReportSynthesisError("unsafe catalog official_url")
+        metadata["official_url"] = official_url
     return metadata
 
 
 def _candidate_markdown_lines(candidate_id: str, candidate: Mapping[str, Any], refs: Iterable[str]) -> list[str]:
-    """Render one verified catalog candidate with optional directory facts."""
+    """Render one verified catalog candidate with explicit missing-field labels."""
     metadata = _safe_catalog_metadata(candidate)
-    title = metadata.get("title") or f"证据对象 {candidate_id}"
+    title = metadata.get("title") or "官方未提供"
     lines = [f"#### {title}", "", f"- 证据对象 `{candidate_id}`（引用：{', '.join(f'[{ref}]' for ref in refs)}）"]
     abstract = metadata.get("abstract") or metadata.get("summary")
-    if abstract:
-        lines.append(f"- 摘要：{abstract}")
+    lines.append(f"- 摘要：{abstract or '官方未提供'}")
     keywords = metadata.get("keywords") or []
-    if keywords:
-        lines.append(f"- 关键词：{'、'.join(keywords)}")
-    # Method/topic grouping is represented by the Synthesizer's validated
-    # section heading; title + catalog abstract provide the bounded group
-    # content without inventing findings or full-text claims.
+    lines.append(f"- 关键词：{'、'.join(keywords) if keywords else '官方未提供'}")
+    method = metadata.get("method") or metadata.get("methods")
+    lines.append(f"- 研究方法：{method or '官方未提供'}")
+    source = metadata.get("source") or metadata.get("source_id")
+    if not source:
+        source_kinds = metadata.get("source_kinds") or []
+        source = "、".join(source_kinds)
+    lines.append(f"- 来源：{source or '官方未提供'}")
+    lines.append(f"- 年份：{metadata.get('year') or '官方未提供'}")
+    lines.append(f"- 官方 URL：{metadata.get('official_url') or '官方未提供'}")
     lines.append("")
     return lines
 
@@ -433,9 +474,22 @@ class ReportSynthesizer:
             if not isinstance(item, Mapping):
                 raise ReportSynthesisError("invalid citation manifest")
             ref = _safe_identifier(item.get("citation_ref", item.get("evidence_ref")), "citation_ref")
-            candidate_id = _safe_identifier(item.get("candidate_id"), "candidate_id")
+            supplied_candidate_id = _safe_identifier(item.get("candidate_id"), "candidate_id")
+            candidate_id = supplied_candidate_id
             if candidate_id not in verified or ref not in allowed[candidate_id]:
-                raise ReportSynthesisError("citation is outside evaluator evidence allowlist")
+                # Small/local models occasionally copy the first candidate ID
+                # onto every citation row while preserving the actual
+                # ``catalog:<id>`` reference.  The citation reference is the
+                # durable evidence key; when it belongs to exactly one
+                # verified candidate, repair only that bookkeeping field.
+                # Ambiguous or unknown references remain a hard failure.
+                matches = [
+                    verified_id for verified_id, refs in allowed.items()
+                    if ref in refs
+                ]
+                if len(matches) != 1:
+                    raise ReportSynthesisError("citation is outside evaluator evidence allowlist")
+                candidate_id = matches[0]
             manifest.append({"citation_ref": ref, "candidate_id": candidate_id})
         if not verified or not manifest:
             raise ReportSynthesisError("report requires kept candidates and validation evidence")
@@ -459,7 +513,7 @@ class ReportSynthesizer:
             summary = section.get("summary", "")
             if summary is not None and not isinstance(summary, str):
                 raise ReportSynthesisError("section summary must be text")
-            clean_summary = _safe_text_input(summary, "section summary", default="") if summary else ""
+            clean_summary = _safe_text_input(summary, "section summary", default="", max_length=4000) if summary else ""
             report_sections.append({"heading": heading, "candidate_ids": clean_ids, "summary": clean_summary})
             reported_ids.update(clean_ids)
         if not report_sections:

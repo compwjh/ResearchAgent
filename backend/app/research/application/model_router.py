@@ -84,7 +84,8 @@ class ModelRouter:
 
     def __init__(self, *, available_models_provider: Optional[Callable[[], List[str]]] = None,
                  fallback_model: Optional[str] = None, observation_service=None,
-                 observation=None, policy_version: str = "spec027-static-v1") -> None:
+                 observation=None, policy_version: str = "spec027-static-v1",
+                 online_models_provider=None) -> None:
         # available_models_provider 默认 backend.app.platform.ollama.get_available_models
         # （Spec027 复用接缝：禁止第二套模型客户端，模型清单只能来自这里）。
         self._provider = available_models_provider or get_available_models
@@ -93,6 +94,10 @@ class ModelRouter:
         # never consulted when choosing the production model.
         self._observation = observation_service or observation
         self._policy_version = policy_version
+        # Online candidates are deliberately a separate, injectable seam.  The
+        # production default is Spec035's registry, never a model-name list in
+        # the runtime/router itself.
+        self._online_models_provider = online_models_provider
 
     def _available_models(self) -> List[str]:
         """取可用模型清单；任何异常都降级为空列表，不向上冒泡。"""
@@ -149,6 +154,36 @@ class ModelRouter:
             except Exception:
                 pass
         return choice
+
+    def resolve_online_fallback(self) -> ModelChoice:
+        """Return the first registered online alias, without probing it.
+
+        Registry entries are already validated for provider/key/base URL by
+        Spec035.  Keeping this method side-effect free makes fallback policy
+        testable and prevents a failed local call from causing an extra probe
+        or leaking credentials into runtime metadata.
+        """
+        provider = self._online_models_provider
+        if provider is None:
+            from backend.app.platform.model_catalog import get_online_models
+
+            provider = get_online_models
+        try:
+            entries = list(provider() or [])
+        except Exception:
+            entries = []
+        def entry_id(item):
+            return getattr(item, "id", None) if not isinstance(item, dict) else item.get("id")
+
+        entry = next((item for item in entries if entry_id(item)), None)
+        if entry is None:
+            return ModelChoice("online", None, "online fallback: no registered model")
+        alias = str(entry_id(entry))
+        return ModelChoice(
+            "online",
+            alias,
+            f"online fallback: selected registered alias {alias!r}",
+        )
 
     def resolve_adaptive(
         self,

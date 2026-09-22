@@ -3787,6 +3787,8 @@ const paperState = {
   searchController: null,
   conferencesLoaded: false,
   batches: new Map(),
+  batchListLoaded: false,
+  batchListLoading: false,
   candidateById: new Map(),
   inFlightImports: new Set(),
   batchPollTimer: null,
@@ -3866,7 +3868,63 @@ async function paperJson(response) {
   return data;
 }
 
+function paperImportBatchList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  if (payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) return paperImportBatchList(payload.data);
+  const values = payload.batches || payload.imports || payload.data
+    || (Array.isArray(payload.items) && payload.items.some((item) => item && typeof item === 'object' && item.batch_id) ? payload.items : null);
+  if (Array.isArray(values)) return values;
+  if (payload.batch && typeof payload.batch === 'object') return [payload.batch];
+  return payload.batch_id ? [payload] : [];
+}
+
+function normalizePaperImportBatch(value) {
+  if (!value || typeof value !== 'object') return null;
+  if (value.batch && typeof value.batch === 'object') {
+    return { ...value.batch, ...(Array.isArray(value.items) ? { items: value.items } : {}) };
+  }
+  return value;
+}
+
+async function loadPaperImportBatches(force = false) {
+  if (!paperState.enabled || paperState.batchListLoading || (paperState.batchListLoaded && !force)) return null;
+  paperState.batchListLoading = true;
+  try {
+    const response = await fetch('/api/papers/imports');
+    const payload = await paperJson(response);
+    if (!paperState.enabled) return null;
+    const batches = paperImportBatchList(payload).map(normalizePaperImportBatch)
+      .filter((batch) => batch && typeof batch === 'object' && paperText(batch.batch_id, ''))
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.updated_at || left.created_at || '') || 0;
+        const rightTime = Date.parse(right.updated_at || right.created_at || '') || 0;
+        return rightTime - leftTime;
+      });
+    batches.forEach((batch) => {
+      const batchId = paperText(batch.batch_id, '');
+      paperState.batches.set(batchId, batch);
+      // A restored batch is part of the visible import history until the user
+      // starts a new import round (which intentionally resets this set).
+      paperState.currentRoundBatchIds.add(batchId);
+      renderPaperBatch(batch);
+    });
+    paperState.batchListLoaded = true;
+    if (batches.length) renderImportSummary();
+    schedulePaperBatchPoll();
+    return batches;
+  } catch (error) {
+    // The list is best-effort during startup; individual status reads and
+    // existing create/retry flows keep their own actionable error handling.
+    if (error.code === 'PAPER_DISCOVERY_DISABLED') setPaperEnabled(false);
+    return null;
+  } finally {
+    paperState.batchListLoading = false;
+  }
+}
+
 function setPaperEnabled(enabled) {
+  const wasEnabled = paperState.enabled;
   paperState.enabled = Boolean(enabled);
   if (paperNav) paperNav.hidden = !paperState.enabled;
   if (!paperState.enabled) {
@@ -3885,6 +3943,10 @@ function setPaperEnabled(enabled) {
     }
     paperState.inFlightImports.clear();
     if (paperView) paperView.hidden = true;
+  }
+  if (paperState.enabled) {
+    if (!wasEnabled) paperState.batchListLoaded = false;
+    loadPaperImportBatches();
   }
 }
 
@@ -4095,32 +4157,72 @@ function paperUnitCount(value) {
   return Number.isFinite(count) && count >= 0 ? count : 0;
 }
 
+function paperSourceCount(source, pluralKey, singularKey) {
+  return paperUnitCount(source?.[pluralKey] ?? source?.[singularKey]);
+}
+
 function paperSourceProgressByKind(progress) {
   const byKind = new Map();
-  (Array.isArray(progress) ? progress : []).forEach((item) => {
-    if (item && (item.source_kind === 'usenix' || item.source_kind === 'dblp')) byKind.set(item.source_kind, item);
+  const values = Array.isArray(progress) ? progress : progress && typeof progress === 'object' ? Object.entries(progress).map(([source_kind, item]) => ({ ...(item || {}), source_kind })) : [];
+  values.forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    const sourceKind = String(item.source_id || item.source_kind || item.source || '').trim();
+    if (!sourceKind || sourceKind.length > 120 || /[\s/\\?#]/.test(sourceKind)) return;
+    byKind.set(sourceKind, item);
   });
   return byKind;
+}
+
+function paperSourceVerifiedYears(source) {
+  const coverage = source?.coverage && typeof source.coverage === 'object' ? source.coverage : {};
+  const values = source?.verified_years ?? coverage.verified_years ?? source?.years ?? coverage.years;
+  const years = Array.isArray(values) ? values : values == null ? [] : [values];
+  return [...new Set(years.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 1900 && value <= 2200))]
+    .sort((left, right) => left - right);
+}
+
+function paperSourceLabel(source, sourceKind) {
+  const value = source?.source_label || source?.source_name || source?.label || PAPER_SOURCE_LABELS[sourceKind] || sourceKind;
+  const label = String(value || '').trim();
+  return label.slice(0, 180) || '受控来源';
+}
+
+function renderPaperSourceCard(sourceKind, source) {
+  const card = document.createElement('article'); card.className = 'paper-source-card';
+  card.dataset.sourceKind = sourceKind; card.setAttribute('aria-live', 'polite');
+  const rawStatus = source?.partial === true && !source?.status ? 'partial' : String(source?.status || 'queued');
+  const status = PAPER_SOURCE_STATUS_TEXT[rawStatus] ? rawStatus : 'queued';
+  card.classList.add(`status-${status}`);
+  const head = document.createElement('div'); head.className = 'paper-source-card-head';
+  const title = document.createElement('h3'); title.textContent = paperSourceLabel(source, sourceKind);
+  const statusNode = document.createElement('span'); statusNode.className = 'paper-source-status';
+  statusNode.textContent = PAPER_SOURCE_STATUS_TEXT[rawStatus] || PAPER_SOURCE_MESSAGE_TEXT[source?.message_code] || '正在整理来源';
+  head.append(title, statusNode);
+  const counts = document.createElement('p'); counts.className = 'paper-source-counts';
+  counts.textContent = `缓存 ${paperSourceCount(source, 'cached_units', 'cached_count')} · 获取 ${paperSourceCount(source, 'fetching_units', 'fetching_count')} · 完成 ${paperSourceCount(source, 'completed_units', 'completed_count')} · 论文 ${paperUnitCount(source?.paper_count ?? source?.papers)}`;
+  const years = paperSourceVerifiedYears(source);
+  const coverage = document.createElement('p'); coverage.className = 'paper-source-coverage';
+  const partial = source?.partial === true || source?.coverage?.partial === true || rawStatus === 'partial';
+  coverage.textContent = `已验证年份：${years.length ? years.join('、') : '未提供'}${partial ? ' · 部分覆盖' : ''}`;
+  const error = document.createElement('p'); error.className = 'paper-source-error';
+  const errorText = source?.error_code ? (PAPER_SOURCE_ERROR_TEXT[source.error_code] || (status === 'failed' ? '该来源暂时不可用' : `错误码：${String(source.error_code).slice(0, 80)}`)) : '';
+  error.textContent = errorText; error.hidden = !errorText;
+  card.append(head, counts, coverage, error);
+  return card;
 }
 
 function renderPaperSourceProgress(payload = {}) {
   const progress = paperSourceProgressByKind(payload.source_progress || payload.sources);
   if (paperProgressPanel) paperProgressPanel.hidden = false;
-  ['usenix', 'dblp'].forEach((sourceKind) => {
-    const card = document.querySelector(`#paper-source-${sourceKind}`);
-    const statusNode = document.querySelector(`#paper-source-${sourceKind}-status`);
-    const countsNode = document.querySelector(`#paper-source-${sourceKind}-counts`);
-    const errorNode = document.querySelector(`#paper-source-${sourceKind}-error`);
-    const source = progress.get(sourceKind) || { status: 'queued', cached_units: [], fetching_units: [], completed_units: [], paper_count: 0 };
-    const status = PAPER_SOURCE_STATUS_TEXT[source.status] ? source.status : 'queued';
-    const message = PAPER_SOURCE_STATUS_TEXT[source.status]
-      || PAPER_SOURCE_MESSAGE_TEXT[source.message_code] || '正在整理来源';
-    const errorText = source.error_code ? (PAPER_SOURCE_ERROR_TEXT[source.error_code] || (status === 'failed' ? '该来源暂时不可用' : '')) : '';
-    if (card) card.className = `paper-source-card status-${status}`;
-    if (statusNode) statusNode.textContent = message;
-    if (countsNode) countsNode.textContent = `缓存 ${paperUnitCount(source.cached_units)} · 获取 ${paperUnitCount(source.fetching_units)} · 完成 ${paperUnitCount(source.completed_units)} · 论文 ${paperUnitCount(source.paper_count)}`;
-    if (errorNode) { errorNode.textContent = errorText; errorNode.hidden = !errorText; }
-  });
+  const host = document.querySelector('#paper-source-progress');
+  if (host) {
+    host.replaceChildren();
+    const entries = [...progress.entries()];
+    if (!entries.length) {
+      const empty = document.createElement('p'); empty.className = 'paper-source-empty';
+      empty.textContent = '等待服务器返回来源进度。'; host.appendChild(empty);
+    } else entries.forEach(([sourceKind, source]) => host.appendChild(renderPaperSourceCard(sourceKind, source)));
+  }
   const jobStatus = payload.status;
   if (paperProgressStatus) {
     paperProgressStatus.textContent = jobStatus === 'partial'
@@ -4910,7 +5012,10 @@ function showView(view) {
     loadSystemRule();
     if (memoryNavigationSnapshot.scope === null) loadMemories();
   }
-  if (nextView === 'papers' && paperState.enabled && !paperState.conferencesLoaded) loadPaperConferences();
+  if (nextView === 'papers' && paperState.enabled) {
+    loadPaperImportBatches();
+    if (!paperState.conferencesLoaded) loadPaperConferences();
+  }
   if (nextView === 'skill-tool') {
     loadSkills();
     loadTools();

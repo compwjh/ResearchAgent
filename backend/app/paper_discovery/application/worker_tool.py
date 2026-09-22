@@ -8,13 +8,17 @@ PDF 导入仍由既有 ``SourceRegistry``、来源 Adapter 与 ``paper_import`` 
 from __future__ import annotations
 
 import hashlib
+import json
 import time
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
+from backend.app.paper_discovery.domain.paper_discovery import SourceFetchUnit
 from backend.app.paper_discovery.domain.source_authority import canonical_source_id
 from backend.app.paper_discovery.domain.source_contract import (
+    IMPORT_RESULT_STATUSES,
+    SOURCE_RESULT_STATUSES,
     ContractError,
     ImportResult,
     SourceResult,
@@ -73,6 +77,9 @@ class WorkerToolResult:
             raise ValueError(f"unsupported worker tool: {self.tool!r}")
         if self.operation not in {"discover", "import"}:
             raise ValueError(f"unsupported worker operation: {self.operation!r}")
+        valid_statuses = SOURCE_RESULT_STATUSES if self.operation == "discover" else IMPORT_RESULT_STATUSES
+        if self.status not in valid_statuses:
+            raise ValueError(f"unsupported worker result status for {self.operation}: {self.status!r}")
         if self.schema_version != WORKER_TOOL_SCHEMA_VERSION:
             raise ValueError(f"unsupported worker tool schema version: {self.schema_version!r}")
         if not isinstance(self.elapsed_ms, int) or isinstance(self.elapsed_ms, bool) or self.elapsed_ms < 0:
@@ -257,6 +264,80 @@ class PaperDiscoveryToolFacade:
             return next((item for item in conferences if item.enabled), None)
         return next((item for item in conferences if item.conference_id.replace("-", "_") == source_id), None)
 
+    def _cached_records(self, source_id: str, scope: Mapping[str, Any]) -> tuple[list[Any], set[int]]:
+        """Read complete catalog units and their source records after a restart.
+
+        ``sync_units`` keeps adapter-local state, so calling it directly from a new
+        Worker process loses the durable cache written by ``CatalogSourceRuntime``.
+        The existing source-fetch/source-record tables are the source of truth here;
+        pending catalog papers are intentionally readable because indexing is a
+        separate concern.
+        """
+        connect = getattr(self.store, "_connect", None) if self.store is not None else None
+        if not callable(connect):
+            return [], set()
+        years = {int(value) for value in scope.get("years", ()) if isinstance(value, int) and not isinstance(value, bool)}
+        requested_route = str(scope.get("route") or scope.get("catalog") or "").strip().casefold()
+        route_filter = ""
+        params: list[Any] = [source_id, source_id]
+        if years:
+            route_filter += " AND p.year IN (" + ",".join("?" for _ in years) + ")"
+            params.extend(sorted(years))
+        if requested_route in {"official", "official_catalog", "venue"}:
+            route_filter += " AND u.unit_key LIKE '%:official'"
+        elif requested_route in {"crossref", "doi"}:
+            route_filter += " AND u.unit_key NOT LIKE '%:official'"
+        query = (
+            "SELECT r.catalog_paper_id, r.fetch_unit_id, r.raw_metadata_json, "
+            "u.year AS unit_year, u.unit_key, p.title, p.authors_json, p.abstract, "
+            "p.keywords_json, p.doi, p.publication_stage, p.official_page_url, "
+            "p.official_pdf_url, p.prepublication_pdf_url, p.year AS paper_year "
+            "FROM catalog_source_records AS r "
+            "JOIN source_fetch_units AS u ON u.fetch_unit_id = r.fetch_unit_id "
+            "JOIN catalog_papers AS p ON p.catalog_paper_id = r.catalog_paper_id "
+            "WHERE r.source_kind=? AND u.source_kind=? AND u.status='completed'" +
+            route_filter +
+            " ORDER BY CASE WHEN u.unit_key LIKE '%:official' THEN 0 ELSE 1 END, "
+            "u.year DESC, r.catalog_paper_id"
+        )
+        records: list[Any] = []
+        covered_years: set[int] = set()
+        seen_ids: set[str] = set()
+        try:
+            with connect() as connection:
+                rows = connection.execute(query, tuple(params)).fetchall()
+        except Exception:  # noqa: BLE001 - cache reads must not break live fallback
+            return [], set()
+        for row in rows:
+            candidate_id = str(row["catalog_paper_id"] or "")
+            if not candidate_id or candidate_id in seen_ids:
+                continue
+            try:
+                raw = json.loads(row["raw_metadata_json"] or "{}")
+            except (TypeError, ValueError):
+                raw = {}
+            record = dict(raw) if isinstance(raw, Mapping) else {}
+            record.setdefault("candidate_id", candidate_id)
+            record.setdefault("source_id", source_id)
+            record.setdefault("title", row["title"] or "")
+            record.setdefault("authors", json.loads(row["authors_json"] or "[]"))
+            record.setdefault("abstract", row["abstract"])
+            record.setdefault("keywords", json.loads(row["keywords_json"] or "[]"))
+            record.setdefault("doi", row["doi"])
+            record.setdefault("year", row["paper_year"] if row["paper_year"] is not None else row["unit_year"])
+            record.setdefault("publication_stage", row["publication_stage"] or "published")
+            record.setdefault("article_url", row["official_page_url"])
+            record.setdefault("pdf_url", row["official_pdf_url"])
+            record.setdefault("prepublication_pdf_url", row["prepublication_pdf_url"])
+            if not isinstance(record.get("provenance"), Mapping):
+                record["provenance"] = {"record": source_id}
+            records.append(record)
+            seen_ids.add(candidate_id)
+            year = row["unit_year"] if row["unit_year"] is not None else row["paper_year"]
+            if year is not None:
+                covered_years.add(int(year))
+        return records, covered_years
+
     def _discover_records(self, source_id: str, scope: Mapping[str, Any], adapter: Any) -> tuple[list[Any], dict[str, Any], str | None]:
         years = scope.get("years") or []
         if source_id in {"usenix", "dblp"}:
@@ -269,11 +350,28 @@ class PaperDiscoveryToolFacade:
             result = adapter.search(conference, query, years, limit=int(scope.get("limit") or 20))
             return list(getattr(result, "records", ()) or ()), {"years": years}, getattr(result, "error_code", None)
         if callable(getattr(adapter, "sync_units", None)):
-            result = adapter.sync_units(dict(scope))
+            cached_records, cached_years = self._cached_records(source_id, scope)
+            requested_years = [int(year) for year in years]
+            missing_years = [year for year in requested_years if year not in cached_years]
+            # A complete persistent unit is authoritative for Worker discovery;
+            # only missing/failed/expired units go back through the adapter.
+            if cached_records and (not requested_years or not missing_years):
+                return cached_records[:int(scope.get("limit") or 20)], {
+                    "years": requested_years,
+                    "failed_years": [],
+                    "cached_years": sorted(cached_years),
+                    "cache_hit": True,
+                }, None
+            sync_scope = dict(scope)
+            if requested_years and missing_years:
+                sync_scope["years"] = missing_years
+            result = adapter.sync_units(sync_scope)
             records = list(getattr(result, "records", ()) or ())
+            records = cached_records + records
             records = records[:int(scope.get("limit") or 20)]
             failed = list(getattr(result, "failed_years", ()) or ())
-            coverage = {"years": years, "failed_years": failed}
+            coverage = {"years": requested_years, "failed_years": failed,
+                        "cached_years": sorted(cached_years), "cache_hit": bool(cached_records)}
             return records, coverage, getattr(result, "error_code", None)
         if callable(getattr(adapter, "discover_units", None)):
             units = list(adapter.discover_units(dict(scope)))
@@ -292,6 +390,81 @@ class PaperDiscoveryToolFacade:
             return records, {"years": years, "failed_units": failures}, "SOURCE_FAILED" if failures and not records else None
         return [], {}, "SOURCE_UNSUPPORTED"
 
+    def _persist_legacy_candidates(self, source_id: str, records: list[Any],
+                                   scope: Mapping[str, Any]) -> list[Any]:
+        """Persist query-scoped USENIX/DBLP hits and replace transient IDs.
+
+        The legacy ``search`` adapters return source records, while import is
+        intentionally keyed by server-owned catalog IDs. Reuse the catalog
+        runtime's existing merge/provenance writer so discover and import share
+        one durable identity instead of inventing an import-only lookup.
+        """
+        if source_id not in {"usenix", "dblp"} or not records:
+            return records
+        if self.store is None or not callable(getattr(self.store, "save_fetch_unit", None)):
+            raise RuntimeError("catalog persistence unavailable")
+        from backend.app.paper_discovery.application.catalog_runtime import CatalogSourceRuntime
+
+        runtime = CatalogSourceRuntime(store=self.store, registry=self.registry, timeout=self.timeout)
+        conference_id = "usenix-security"
+        query = str(scope.get("query") or "")
+        query_key = hashlib.sha256(query.casefold().encode("utf-8")).hexdigest()[:16]
+        requested_years = [int(year) for year in scope.get("years", ())]
+        year_records: dict[int, list[Any]] = {}
+        for record in records:
+            info = record.get("info", record) if isinstance(record, Mapping) else {}
+            raw_year = info.get("year") if isinstance(info, Mapping) else getattr(record, "year", None)
+            try:
+                year = int(raw_year) if raw_year is not None else (requested_years[0] if len(requested_years) == 1 else None)
+            except (TypeError, ValueError):
+                year = requested_years[0] if len(requested_years) == 1 else None
+            if year is None:
+                continue
+            year_records.setdefault(year, []).append(record)
+
+        persisted_records: list[Any] = []
+        for year, records_for_year in year_records.items():
+            unit_key = f"worker-query:{year}:official" if source_id == "usenix" else f"worker-query:{year}"
+            fetch_unit_id = f"{source_id}|worker-query|{year}|{query_key}"
+            now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            unit = SourceFetchUnit(
+                fetch_unit_id=fetch_unit_id,
+                source_kind=source_id,
+                conference_id=conference_id,
+                year=year,
+                unit_key=unit_key,
+                status="pending",
+                paper_count=0,
+                created_at=now,
+                updated_at=now,
+            )
+            self.store.save_fetch_unit(unit, now)
+            persisted_ids: set[str] = set()
+            try:
+                for record in records_for_year:
+                    catalog_paper_id = runtime._persist_record(source_id, unit, record)
+                    if not catalog_paper_id:
+                        continue
+                    persisted_ids.add(catalog_paper_id)
+                    item = _safe(record)
+                    if isinstance(item, dict):
+                        item["candidate_id"] = catalog_paper_id
+                        item["catalog_paper_id"] = catalog_paper_id
+                        item["source_id"] = source_id
+                        persisted_records.append(item)
+                    else:
+                        persisted_records.append({"candidate_id": catalog_paper_id, "source_id": source_id, "record": item})
+            except Exception:
+                persisted_count = len(persisted_ids)
+                terminal = replace(unit, status="partial" if persisted_count else "failed",
+                                   paper_count=persisted_count, updated_at=now)
+                self.store.save_fetch_unit(terminal, now)
+                raise
+            persisted_count = len(persisted_ids)
+            terminal = replace(unit, status="completed", paper_count=persisted_count, updated_at=now)
+            self.store.save_fetch_unit(terminal, now)
+        return persisted_records
+
     def discover(self, source_id: str, scope: Mapping[str, Any] | None = None) -> WorkerToolResult:
         started = time.monotonic()
         try:
@@ -306,6 +479,7 @@ class PaperDiscoveryToolFacade:
                 return self._failed("discover", canonical, scope_error, started)
             adapter = self.registry.adapter(canonical, store=self.store, timeout=self.timeout)
             records, coverage, code = self._discover_records(canonical, safe_scope or {}, adapter)
+            records = self._persist_legacy_candidates(canonical, records, safe_scope or {})
             candidates = []
             provenance: dict[str, Any] = {}
             for record in records:
@@ -349,34 +523,85 @@ class PaperDiscoveryToolFacade:
                 raise ValueError("unknown source id")
             if not entry.enabled:
                 return self._failed("import", canonical, _error("SOURCE_DISABLED"), started)
-            if not isinstance(candidate, Mapping) or not str(candidate.get("title") or "").strip():
+            if not isinstance(candidate, Mapping):
                 return self._failed("import", canonical, _error("INVALID_CANDIDATE"), started)
-            candidate_source = candidate.get("source_id") or candidate.get("source_kind") or canonical
-            if canonical_source_id(candidate_source, strict=True) != canonical:
+            candidate_id = str(candidate.get("candidate_id") or "").strip()
+            if not candidate_id:
+                return self._failed("import", canonical, _error("INVALID_CANDIDATE"), started)
+            supplied_source = candidate.get("source_id") or candidate.get("source_kind")
+            if supplied_source and canonical_source_id(supplied_source, strict=True) != canonical:
                 return self._failed("import", canonical, _error("SOURCE_MISMATCH"), started)
-            candidate_id = self._candidate_id(candidate, canonical)
+            # The Tool input carries only a stable ID. All metadata and URL
+            # candidates must be recovered from the server-owned catalog.
+            get_catalog_paper = getattr(self.store, "get_catalog_paper", None)
+            get_catalog_source_kinds = getattr(self.store, "get_catalog_source_kinds", None)
+            if not callable(get_catalog_paper) or not callable(get_catalog_source_kinds):
+                return self._failed("import", canonical, _error("CATALOG_UNAVAILABLE"), started, candidate_id=candidate_id)
+            paper = get_catalog_paper(candidate_id)
+            if paper is None or str(getattr(paper, "catalog_paper_id", "")) != candidate_id:
+                return self._failed("import", canonical, _error("CANDIDATE_NOT_FOUND"), started, candidate_id=candidate_id)
+            source_kinds = {
+                canonical_source_id(item, strict=True)
+                for item in get_catalog_source_kinds(candidate_id)
+            }
+            if canonical not in source_kinds:
+                return self._failed("import", canonical, _error("SOURCE_MISMATCH"), started, candidate_id=candidate_id)
+            if not str(getattr(paper, "title", "") or "").strip():
+                return self._failed("import", canonical, _error("INVALID_CANDIDATE"), started, candidate_id=candidate_id)
+            # This snapshot is reconstructed exclusively from persisted catalog
+            # fields; untrusted caller metadata and URLs never reach import.
+            trusted_candidate = {
+                "candidate_id": candidate_id,
+                "catalog_paper_id": candidate_id,
+                "source_id": canonical,
+                "source_kind": canonical,
+                "conference_id": getattr(paper, "conference_id", None),
+                "title": paper.title,
+                "authors": list(getattr(paper, "authors", ()) or ()),
+                "year": getattr(paper, "year", None),
+                "doi": getattr(paper, "doi", None),
+                "abstract": getattr(paper, "abstract", None),
+                "keywords": list(getattr(paper, "keywords", ()) or ()),
+                "dblp_key": getattr(paper, "dblp_key", None),
+                "publication_stage": getattr(paper, "publication_stage", "published"),
+                "official_page_url": getattr(paper, "official_page_url", None),
+                "article_url": getattr(paper, "official_page_url", None),
+                "source_page_url": getattr(paper, "official_page_url", None),
+                "pdf_url": getattr(paper, "official_pdf_url", None),
+                "prepublication_pdf_url": getattr(paper, "prepublication_pdf_url", None),
+                "arxiv_id": getattr(paper, "arxiv_id", None),
+            }
+            trusted_candidate["source_links"] = [
+                {"kind": kind, "url": url}
+                for kind, url in (
+                    ("official_page", trusted_candidate["official_page_url"]),
+                    ("official_pdf", trusted_candidate["pdf_url"]),
+                    ("prepublication_pdf", trusted_candidate["prepublication_pdf_url"]),
+                )
+                if url
+            ]
             # Preserve the existing fixed server allowlist. Never derive allowed hosts from
             # candidate URLs and never accept a caller-provided URL as an allowlist entry.
             from backend.app.api.common import _paper_candidate_hosts
             from backend.app.paper_discovery.application.paper_import import import_candidate as import_existing
             from backend.app.platform.settings.settings_repository import load_article_settings
 
-            target_url = candidate.get("pdf_url")
-            urls: list[Any] = [target_url, candidate.get("article_url"), candidate.get("official_page_url")]
-            links = candidate.get("source_links")
+            target_url = trusted_candidate.get("pdf_url")
+            urls: list[Any] = [target_url, trusted_candidate.get("article_url"), trusted_candidate.get("official_page_url"), trusted_candidate.get("prepublication_pdf_url")]
+            links = trusted_candidate.get("source_links")
             if isinstance(links, list):
                 urls.extend(
                     link.get("url") if isinstance(link, Mapping) else link
                     for link in links
                 )
-            allowed_hosts = {item.casefold() for item in _paper_candidate_hosts(candidate)}
+            allowed_hosts = {item.casefold() for item in _paper_candidate_hosts(trusted_candidate)}
             for raw_url in urls:
                 if not raw_url:
                     continue
                 host = urlsplit(str(raw_url)).hostname
                 if not host or host.casefold() not in allowed_hosts:
                     return self._failed("import", canonical, _error("UNAUTHORIZED_URL"), started, candidate_id=candidate_id)
-            result = import_existing(candidate, settings=load_article_settings(), allowed_hosts=allowed_hosts)
+            result = import_existing(trusted_candidate, settings=load_article_settings(), allowed_hosts=allowed_hosts)
             document_id = getattr(result, "paper_id", None)
             result_code = getattr(result, "error_code", None)
             status = "completed" if document_id and not result_code else "failed"

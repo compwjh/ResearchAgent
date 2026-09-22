@@ -41,6 +41,7 @@ _SAFE_DETAIL_KEYS = {
     "role", "skill_name", "tool_name", "status", "reason", "display_order",
     "model_tier", "resolved_model", "worker_slot", "source_ref", "result_id",
     "result_length", "content_hash", "selected_count", "counts", "facets",
+    "reason_code", "from_provider", "to_provider", "from_model", "to_model",
 }
 _SENSITIVE_KEY_PARTS = {
     "prompt", "cot", "reasoning", "credential", "password", "secret",

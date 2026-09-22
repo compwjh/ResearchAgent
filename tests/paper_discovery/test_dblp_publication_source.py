@@ -90,6 +90,23 @@ def test_malformed_dblp_envelope_is_structured_invalid_response():
         assert result.error_code == "DBLP_INVALID_RESPONSE"
 
 
+def test_non_json_dblp_response_is_structured_invalid_response():
+    result = DBLPPublicationSource(
+        retries=0,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                content=b"<html><title>Just a moment...</title></html>",
+            )
+        ),
+    ).search(SOURCE, "secure search", [2024])
+
+    assert result.records == ()
+    assert result.warnings == ("DBLP_INVALID_RESPONSE",)
+    assert result.error_code == "DBLP_INVALID_RESPONSE"
+
+
 def test_identity_normalization_keeps_cross_year_titles_and_normalizes_doi_variants():
     assert normalize_doi("HTTP://doi.org/10.1/ABC.") == "10.1/abc"
     assert normalize_doi("doi: 10.1/ABC.") == "10.1/abc"

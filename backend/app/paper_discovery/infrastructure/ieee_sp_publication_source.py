@@ -37,6 +37,10 @@ import httpx
 from backend.app.core.url_security import URLSecurityError, validate_url
 from backend.app.paper_discovery.domain.paper_discovery import SourceFetchUnit
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
+from backend.app.paper_discovery.domain.source_contract import (
+    SOURCE_CONTRACT_SCHEMA_VERSION,
+    SourceContractMixin,
+)
 from backend.app.paper_discovery.infrastructure.conference_pdf_downloader import build_publisher_pdf_url
 from backend.app.paper_discovery.infrastructure.ieee_sp_paper_parser import (
     CROSSREF_HOST,
@@ -45,6 +49,8 @@ from backend.app.paper_discovery.infrastructure.ieee_sp_paper_parser import (
     IEEE_SP_BIBLIOGRAPHIC_QUERY,
     IEEE_SP_INVALID_RESPONSE,
     IEEE_SP_OFFICIAL_DOI_AUTHORITY,
+    IEEE_SP_OFFICIAL_HOST,
+    IEEE_SP_OFFICIAL_INVALID_RESPONSE,
     IEEE_SP_SOURCE_ID,
     IEEE_SP_SOURCE_KIND,
     OPENALEX_HOST,
@@ -75,6 +81,10 @@ DEFAULT_USER_AGENT = (
     "ResearchAgent-Spec032/1.0 (IEEE S&P source; mailto:research-agent@example.invalid)"
 )
 CONFERENCE_ID = "sp"
+IEEE_SP_OFFICIAL_CATALOG_URLS = {
+    2024: f"https://{IEEE_SP_OFFICIAL_HOST}/program-papers.html",
+}
+IEEE_SP_OFFICIAL_ROUTE = "official"
 _ACCEPT_JSON = {"Accept": "application/json"}
 
 
@@ -136,14 +146,16 @@ class IeeeSpSyncResult:
     cached_years: tuple[int, ...] = ()
 
 
-class IeeeSpPublicationSource:
+class IeeeSpPublicationSource(SourceContractMixin):
     """IEEE S&P 主会目录来源（Crossref 目录 + OpenAlex 摘要）。"""
 
     source_id = IEEE_SP_SOURCE_ID
     source_kind = IEEE_SP_SOURCE_KIND
     #: 官方 DOI 元数据（IEEE member 263 自提交），低于官方会议页面、高于聚合书目来源。
     authority_rank = IEEE_SP_OFFICIAL_DOI_AUTHORITY
+    contract_schema_version = SOURCE_CONTRACT_SCHEMA_VERSION
     allowed_hosts = frozenset({CROSSREF_HOST, OPENALEX_HOST})
+    official_allowed_hosts = frozenset({IEEE_SP_OFFICIAL_HOST})
     #: S&P 首届为 1980；上界留出提前配置的余地。
     MIN_YEAR = 1980
     MAX_YEAR = 2100
@@ -182,23 +194,41 @@ class IeeeSpPublicationSource:
     # --- 合同：单元发现 -------------------------------------------------------
 
     def discover_units(self, scope: Any) -> tuple[SourceFetchUnit, ...]:
-        """按年份产出抓取单元；范围非法时抛 ``IeeeSpUnitRejected``（不发任何请求）。"""
+        """按年份产出抓取单元；范围非法时不发任何请求。"""
         years = self._scope_years(scope)
+        route = self._scope_route(scope)
         now = self._utcnow()
-        return tuple(
-            SourceFetchUnit(
-                fetch_unit_id=f"{self.source_id}|{CONFERENCE_ID}|{year}",
+        units: list[SourceFetchUnit] = []
+        for year in years:
+            if route == IEEE_SP_OFFICIAL_ROUTE:
+                source_url = IEEE_SP_OFFICIAL_CATALOG_URLS.get(year)
+                if not source_url:
+                    continue
+                suffix = "|official"
+                unit_key = f"{CONFERENCE_ID}:{year}:official"
+            else:
+                source_url = self._crossref_url(year)
+                suffix = ""
+                unit_key = f"{CONFERENCE_ID}:{year}"
+            units.append(SourceFetchUnit(
+                fetch_unit_id=f"{self.source_id}|{CONFERENCE_ID}|{year}{suffix}",
                 source_kind=self.source_kind,
                 conference_id=CONFERENCE_ID,
                 year=year,
-                unit_key=f"{CONFERENCE_ID}:{year}",
-                source_url=self._crossref_url(year),
+                unit_key=unit_key,
+                source_url=source_url,
                 status="pending",
                 created_at=now,
                 updated_at=now,
-            )
-            for year in years
-        )
+            ))
+        return tuple(units)
+
+    @staticmethod
+    def _scope_route(scope: Any) -> str:
+        if not isinstance(scope, Mapping):
+            return "crossref"
+        route = str(scope.get("route") or scope.get("catalog") or "").strip().casefold()
+        return IEEE_SP_OFFICIAL_ROUTE if route in {"official", "official_catalog", "venue"} else "crossref"
 
     def _scope_years(self, scope: Any) -> list[int]:
         if isinstance(scope, Mapping):
@@ -257,14 +287,18 @@ class IeeeSpPublicationSource:
         因此单元本身就是增量缓存载体。304 视为「内容未变化」：不产生新 ``content_hash``，
         保留旧值，供上层决定是否复用已索引记录。
         """
+        is_official = unit.unit_key.endswith(":official")
+        allowed_hosts = self.official_allowed_hosts if is_official else {CROSSREF_HOST}
         try:
-            validate_url(unit.source_url, allowed_hosts={CROSSREF_HOST}, dns_resolver=self.dns_resolver)
+            validate_url(unit.source_url, allowed_hosts=allowed_hosts, dns_resolver=self.dns_resolver)
         except URLSecurityError:
             return IeeeSpFetchOutcome(
                 unit=self._failed_unit(unit, IEEE_SP_UNIT_REJECTED),
                 error_code=IEEE_SP_UNIT_REJECTED,
             )
-        headers = {"User-Agent": self.user_agent, **_ACCEPT_JSON}
+        headers = {"User-Agent": self.user_agent}
+        if not is_official:
+            headers.update(_ACCEPT_JSON)
         headers.update(dict(conditional_headers) if conditional_headers is not None else self._conditional_headers(unit))
         try:
             self._before_request()
@@ -291,6 +325,32 @@ class IeeeSpPublicationSource:
         if response.status_code >= 400:
             return IeeeSpFetchOutcome(unit=self._failed_unit(unit, IEEE_SP_UNAVAILABLE), error_code=IEEE_SP_UNAVAILABLE)
         body = response.content if response.content is not None else response.text.encode("utf-8")
+        if is_official:
+            if body.lstrip().startswith(b"%PDF-") or "pdf" in response.headers.get("content-type", "").casefold():
+                return IeeeSpFetchOutcome(
+                    unit=self._failed_unit(unit, IEEE_SP_UNIT_REJECTED), error_code=IEEE_SP_UNIT_REJECTED
+                )
+            try:
+                official_html = body.decode("utf-8")
+            except UnicodeDecodeError:
+                return IeeeSpFetchOutcome(
+                    unit=self._failed_unit(unit, IEEE_SP_OFFICIAL_INVALID_RESPONSE),
+                    error_code=IEEE_SP_OFFICIAL_INVALID_RESPONSE,
+                )
+            return IeeeSpFetchOutcome(
+                unit=replace(
+                    unit,
+                    status="completed",
+                    etag=response.headers.get("ETag"),
+                    last_modified=response.headers.get("Last-Modified"),
+                    content_hash=hashlib.sha256(body).hexdigest(),
+                    error_code=None,
+                    last_attempt_at=self._utcnow(),
+                    last_success_at=self._utcnow(),
+                ),
+                payload={"official_html": official_html},
+                body=body,
+            )
         try:
             payload = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -332,8 +392,17 @@ class IeeeSpPublicationSource:
             payload: Any = response.payload
             if year is None:
                 year = response.unit.year
+            if isinstance(payload, Mapping) and "official_html" in payload:
+                return self.parser.parse_official_catalog(
+                    payload["official_html"], year=int(year or 0),
+                    page_url=response.unit.source_url or "",
+                )
         else:
             payload = response
+            if isinstance(payload, Mapping) and "official_html" in payload:
+                return self.parser.parse_official_catalog(
+                    payload["official_html"], year=int(year or 0)
+                )
         if payload is None:
             raise IeeeSpPaperParseError(code=IEEE_SP_INVALID_RESPONSE)
         return self.parser.parse_catalog(payload, year=year)
@@ -353,6 +422,9 @@ class IeeeSpPublicationSource:
             "authority_rank": self.authority_rank,
             "enabled": True,
             "allowed_hosts": sorted(self.allowed_hosts),
+            "official_allowed_hosts": sorted(self.official_allowed_hosts),
+            "official_catalog_years": sorted(IEEE_SP_OFFICIAL_CATALOG_URLS),
+            "official_catalog_route": IEEE_SP_OFFICIAL_ROUTE,
             "unit_scope": "year",
             "min_year": self.MIN_YEAR,
             "max_year": self.MAX_YEAR,
@@ -489,9 +561,27 @@ class IeeeSpPublicationSource:
 
     # --- 编排：年份单元同步 ---------------------------------------------------
 
-    def sync_year(self, year: int, *, previous_unit: Optional[SourceFetchUnit] = None) -> IeeeSpYearResult:
-        """抓取、解析并富化一个年份单元；内容未变化时复用已富化记录。"""
-        unit = self.discover_units([year])[0]
+    def sync_year(
+        self, year: int, *, previous_unit: Optional[SourceFetchUnit] = None,
+        route: str = "crossref",
+    ) -> IeeeSpYearResult:
+        """抓取、解析并富化一个年份单元；官网路由不探测 PDF。"""
+        unit_options = self.discover_units({"years": [year], "route": route})
+        if not unit_options:
+            now = self._utcnow()
+            rejected = SourceFetchUnit(
+                fetch_unit_id=f"{self.source_id}|{CONFERENCE_ID}|{year}|{route}",
+                source_kind=self.source_kind,
+                conference_id=CONFERENCE_ID,
+                year=int(year),
+                unit_key=f"{CONFERENCE_ID}:{year}:{route}",
+                status="failed",
+                error_code=IEEE_SP_UNIT_REJECTED,
+                created_at=now,
+                updated_at=now,
+            )
+            return IeeeSpYearResult(year=int(year), unit=rejected, error_code=IEEE_SP_UNIT_REJECTED)
+        unit = unit_options[0]
         conditional: Mapping[str, str] = {}
         if previous_unit is not None:
             unit = replace(
@@ -517,6 +607,30 @@ class IeeeSpPublicationSource:
             )
             if outcome.error_code is not None:
                 return IeeeSpYearResult(year=int(year), unit=outcome.unit, error_code=outcome.error_code)
+
+        if route == IEEE_SP_OFFICIAL_ROUTE:
+            try:
+                result = self.parse_catalog(outcome, year=int(year))
+            except IeeeSpPaperParseError as error:
+                return IeeeSpYearResult(
+                    year=int(year), unit=self._failed_unit(outcome.unit, error.code),
+                    error_code=error.code,
+                )
+            completed = replace(
+                outcome.unit,
+                status="completed",
+                paper_count=len(result.records),
+                error_code=None,
+                last_success_at=self._utcnow(),
+                updated_at=self._utcnow(),
+            )
+            records = tuple(result.records)
+            with self._lock:
+                self._record_cache[(unit.fetch_unit_id, completed.content_hash)] = records
+            return IeeeSpYearResult(
+                year=int(year), unit=completed, records=records,
+                warnings=result.warnings, dropped=result.dropped,
+            )
 
         try:
             items, bodies, total = self._fetch_pages(int(year), unit, outcome)
@@ -596,13 +710,16 @@ class IeeeSpPublicationSource:
     def sync_units(self, scope: Any) -> IeeeSpSyncResult:
         """按年份单元同步；单年失败不影响其他年份（不产生跨年副作用）。"""
         units = self.discover_units(scope)
+        route = self._scope_route(scope)
+        if not units and route == IEEE_SP_OFFICIAL_ROUTE:
+            return IeeeSpSyncResult(status="failed", error_code=IEEE_SP_UNIT_REJECTED)
         records: list[IeeeSpCatalogRecord] = []
         warnings: list[str] = []
         failed: list[int] = []
         cached: list[int] = []
         completed_units: list[SourceFetchUnit] = []
         for unit in units:
-            outcome = self.sync_year(int(unit.year or 0))
+            outcome = self.sync_year(int(unit.year or 0), route=route)
             completed_units.append(outcome.unit)
             if outcome.error_code is not None:
                 failed.append(outcome.year)
@@ -649,7 +766,10 @@ __all__ = [
     "CONFERENCE_ID",
     "DEFAULT_USER_AGENT",
     "IEEE_SP_AGGREGATOR_AUTHORITY",
+    "IEEE_SP_OFFICIAL_CATALOG_URLS",
     "IEEE_SP_OFFICIAL_DOI_AUTHORITY",
+    "IEEE_SP_OFFICIAL_HOST",
+    "IEEE_SP_OFFICIAL_ROUTE",
     "IEEE_SP_OPENALEX_INVALID_RESPONSE",
     "IEEE_SP_OPENALEX_NO_HIT",
     "IEEE_SP_OPENALEX_UNAVAILABLE",

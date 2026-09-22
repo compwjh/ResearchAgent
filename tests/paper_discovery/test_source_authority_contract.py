@@ -24,6 +24,7 @@ def test_current_source_authority_matches_adapter_backing_sources():
         "ndss": AUTHORITY_OFFICIAL_DOI,
         "crossref": AUTHORITY_OFFICIAL_DOI,
         "openalex": AUTHORITY_AGGREGATE,
+        "semantic_scholar": AUTHORITY_AGGREGATE,
     }
 
 
@@ -31,6 +32,8 @@ def test_doi_backed_sources_enrich_aggregate_but_do_not_replace_official_venue()
     assert may_overwrite("openalex", "ieee_sp") is True
     assert may_overwrite("usenix", "ieee_sp") is False
     assert may_overwrite("acm-ccs", "openalex") is False
+    assert may_overwrite(None, "semantic_scholar") is True
+    assert may_overwrite("usenix", "semantic_scholar") is False
 
 
 def test_route_qualified_official_provenance_has_venue_rank():

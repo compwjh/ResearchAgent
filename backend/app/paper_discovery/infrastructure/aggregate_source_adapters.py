@@ -27,14 +27,24 @@ from backend.app.paper_discovery.domain.paper_discovery_normalization import (
     normalize_doi,
     normalize_title,
 )
+from backend.app.paper_discovery.domain.source_authority import (
+    AUTHORITY_AGGREGATE,
+    AUTHORITY_OFFICIAL_DOI,
+    AUTHORITY_OFFICIAL_VENUE,
+    canonical_source_id,
+)
+from backend.app.paper_discovery.domain.source_contract import (
+    SOURCE_CONTRACT_SCHEMA_VERSION,
+    SourceResult,
+)
 from backend.app.paper_discovery.infrastructure.openalex_enricher import (
     _abstract_from_inverted_index,
 )
 
-# 权威级别：数值越小越权威。官方会议目录为 10，聚合书目来源排在后面。
-AUTHORITY_OFFICIAL = 10
-AUTHORITY_DOI_METADATA = 20
-AUTHORITY_AGGREGATE = 30
+# 权威常量集中定义于 domain/source_authority（唯一方向：数值越小越权威）。
+# 此处保留旧名 AUTHORITY_OFFICIAL / AUTHORITY_AGGREGATE 作为别名（被测试引用），
+# 指向同一套唯一常量，避免两套方向相反的判定；AUTHORITY_DOI_METADATA 已不再使用并删除。
+AUTHORITY_OFFICIAL = AUTHORITY_OFFICIAL_VENUE
 
 # 只有这些字段参与跨来源合并，且低权威只能填补缺失值。
 MERGEABLE_FIELDS = (
@@ -65,6 +75,17 @@ class SourceRecord:
     page_url: str = ""
     pdf_url: str = ""
     provenance: Dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Source records may be reconstructed from a pre-Task06 cache.  Normalize
+        # only the controlled historical aliases; extension/unknown provenance is
+        # deliberately preserved and handled fail-closed by authority_rank_for().
+        object.__setattr__(self, "source_id", canonical_source_id(self.source_id))
+        object.__setattr__(
+            self,
+            "provenance",
+            {field: canonical_source_id(source) for field, source in self.provenance.items()},
+        )
 
     def identity_key(self) -> str:
         """去重身份：优先规范化 DOI，退回规范化标题+年份。"""
@@ -174,6 +195,7 @@ class SourceAdapter:
     authority_rank: int = AUTHORITY_AGGREGATE
     endpoint: str = ""
     user_agent: str = "ResearchAgent-Spec032/1.0"
+    contract_schema_version: str = SOURCE_CONTRACT_SCHEMA_VERSION
 
     def __init__(self, *, timeout: float = 20.0, client: Any = None):
         self.timeout = timeout
@@ -202,6 +224,47 @@ class SourceAdapter:
 
     def health(self) -> Dict[str, Any]:
         raise NotImplementedError
+
+    def result(
+        self,
+        operation: str,
+        *,
+        status: str = "completed",
+        scope: Optional[Mapping[str, Any]] = None,
+        coverage: Optional[Mapping[str, Any]] = None,
+        papers: Iterable[Any] = (),
+        error: Any = None,
+        artifact_handles: Optional[Mapping[str, Any]] = None,
+        elapsed_ms: int = 0,
+    ) -> SourceResult:
+        """Wrap source-specific records in the shared Task06 result envelope.
+
+        Existing ``parse_catalog`` callers keep their typed list return; Worker
+        implementations can opt into this wrapper without duplicating a second
+        parser or network client.
+        """
+        return SourceResult(
+            schema_version=self.contract_schema_version,
+            source_id=self.source_id,
+            operation=operation,
+            status=status,
+            scope=dict(scope or {}),
+            coverage=dict(coverage or {}),
+            papers=tuple(papers),
+            error=error,
+            artifact_handles=dict(artifact_handles or {}),
+            elapsed_ms=elapsed_ms,
+        )
+
+    def parse_catalog_result(
+        self, response: Any, *, scope: Optional[Mapping[str, Any]] = None,
+        coverage: Optional[Mapping[str, Any]] = None,
+    ) -> SourceResult:
+        """Parse and return a versioned result while preserving ``parse_catalog``."""
+        records = self.parse_catalog(response)
+        return self.result(
+            "parse_catalog", scope=scope, coverage=coverage, papers=records,
+        )
 
     # -- 公共工具 --------------------------------------------------------
     def _get(self, params: Mapping[str, Any], headers: Optional[Mapping[str, str]] = None):
@@ -248,7 +311,7 @@ class OpenAlexCatalogAdapter(SourceAdapter):
     """OpenAlex works 目录适配器（聚合书目来源）。"""
 
     source_id = "openalex"
-    source_kind = "aggregate"
+    source_kind = "openalex"
     authority_rank = AUTHORITY_AGGREGATE
     endpoint = "https://api.openalex.org/works"
     user_agent = "ResearchAgent-Spec032/1.0 (OpenAlex)"
@@ -362,15 +425,20 @@ class OpenAlexCatalogAdapter(SourceAdapter):
     def health(self) -> Dict[str, Any]:
         response = self._get({"per-page": 1, "select": "id"})
         ok = response is not None and getattr(response, "status_code", None) == 200
-        return {"source_id": self.source_id, "ok": bool(ok), "kind": self.source_kind}
+        # ``kind`` is a legacy health payload key retained for old callers.  The
+        # canonical contract identity is exposed by ``source_kind`` on the adapter
+        # and by SourceResult.source_id; Task06 does not break this read path.
+        return {"source_id": self.source_id, "ok": bool(ok), "kind": "aggregate"}
 
 
 class CrossrefCatalogAdapter(SourceAdapter):
     """Crossref works 目录适配器（聚合书目来源）。"""
 
     source_id = "crossref"
-    source_kind = "aggregate"
-    authority_rank = AUTHORITY_AGGREGATE
+    source_kind = "crossref"
+    # Crossref member/publisher metadata is DOI authority (rank 20), not a
+    # conference-venue rank.  Conference filtering does not change provenance.
+    authority_rank = AUTHORITY_OFFICIAL_DOI
     endpoint = "https://api.crossref.org/works"
     user_agent = "ResearchAgent-Spec032/1.0 (Crossref; mailto:unset@example.invalid)"
 
@@ -487,7 +555,7 @@ class CrossrefCatalogAdapter(SourceAdapter):
     def health(self) -> Dict[str, Any]:
         response = self._get({"rows": 1})
         ok = response is not None and getattr(response, "status_code", None) == 200
-        return {"source_id": self.source_id, "ok": bool(ok), "kind": self.source_kind}
+        return {"source_id": self.source_id, "ok": bool(ok), "kind": "aggregate"}
 
 
 def _years(scope: Mapping[str, Any]) -> List[int]:

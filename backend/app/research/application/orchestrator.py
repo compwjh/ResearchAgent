@@ -27,7 +27,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Mapping
 
 from backend.app.research.application.planner import Planner
@@ -36,6 +36,7 @@ from backend.app.research.application.report_synthesis import (
     ReportSynthesisError,
     ReportSynthesizer,
     ResearchNotificationService,
+    report_output_hash,
     validate_report_synthesis_output,
 )
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
@@ -164,13 +165,21 @@ def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Map
                 if candidate_id not in ids:
                     continue
                 clean = {"candidate_id": candidate_id}
-                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                for field in (
+                    "title", "abstract", "keywords", "summary", "method", "methods",
+                    "topic", "topics", "facets", "year", "source", "source_id",
+                    "source_kinds",
+                ):
                     if field in item:
                         value = item[field]
                         if isinstance(value, str):
                             clean[field] = value[:8000]
+                        elif field == "year" and isinstance(value, int) and not isinstance(value, bool):
+                            clean[field] = value
                         elif field == "keywords" and isinstance(value, (list, tuple)):
                             clean[field] = [str(keyword)[:160] for keyword in value[:24] if isinstance(keyword, str)]
+                        elif field == "source_kinds" and isinstance(value, (list, tuple)):
+                            clean[field] = [str(source)[:100] for source in value[:8] if isinstance(source, str)]
                 bounded.append(clean)
             if bounded:
                 entry["catalog_metadata"] = bounded
@@ -210,7 +219,10 @@ def _validated_evaluator_candidates(
     candidate is still accepted (recall proves it was returned) with empty
     metadata — metadata is supplementary presentation text, not a gating fact.
     """
-    METADATA_FIELDS = ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets")
+    METADATA_FIELDS = (
+        "title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets",
+        "year", "source", "source_id", "source_kinds", "official_url", "official_page_url",
+    )
     records: list[dict] = []
     seen: set[str] = set()
     if recall_allowlist is not None:
@@ -221,6 +233,17 @@ def _validated_evaluator_candidates(
         # Prefer already-indexed metadata.  Otherwise backfill from the local
         # catalog directory — but only for IDs the Search Workers recalled.
         if ref_id in effective_metadata:
+            existing = effective_metadata[ref_id]
+            if metadata_resolver is not None:
+                # The Tool handoff may contain title/abstract/keywords while
+                # omitting source/year/official URL.  Merge only missing
+                # fields from the same catalog store; never let the resolver
+                # replace an already-sanitized higher-level fact.
+                backfilled = metadata_resolver(ref_id)
+                if isinstance(backfilled, Mapping):
+                    merged = dict(backfilled)
+                    merged.update(existing)
+                    effective_metadata[ref_id] = merged
             return effective_metadata[ref_id]
         if recall_allowlist is not None and ref_id not in recall_allowlist:
             return None
@@ -267,8 +290,28 @@ def _validated_evaluator_candidates(
             if not refs:
                 continue
             candidate_ids: list[str] = []
+            expanded_from_refs = False
             if candidate_id:
-                candidate_ids = [str(candidate_id)]
+                candidate_id = str(candidate_id)
+                # A model may emit one representative candidate_id while
+                # putting a batch of retained catalog refs in evidence_refs.
+                # Catalog refs are the durable per-paper identity; expand
+                # this shape only when every referenced ID is inside the
+                # Search Worker recall allowlist, never from arbitrary model
+                # text.
+                ref_ids = [ref.split(":", 1)[1].strip() for ref in refs if isinstance(ref, str) and ref.startswith("catalog:")]
+                if (
+                    len(ref_ids) > 1
+                    and candidate_id == ref_ids[0]
+                    and all(
+                        ref_id and (recall_allowlist is None or ref_id in recall_allowlist)
+                        for ref_id in ref_ids
+                    )
+                ):
+                    candidate_ids = ref_ids
+                    expanded_from_refs = True
+                else:
+                    candidate_ids = [candidate_id]
             else:
                 # Aggregate evaluator output: derive IDs exclusively from
                 # catalog references.  Accept a ref when its metadata is
@@ -288,7 +331,11 @@ def _validated_evaluator_candidates(
             for normalized_id in candidate_ids:
                 if not normalized_id or normalized_id in seen:
                     continue
-                candidate_refs = list(refs) if candidate_id else [f"catalog:{normalized_id}"]
+                candidate_refs = (
+                    [f"catalog:{normalized_id}"]
+                    if expanded_from_refs
+                    else (list(refs) if candidate_id else [f"catalog:{normalized_id}"])
+                )
                 record = {"candidate_id": normalized_id, "verified": True, "evidence_refs": candidate_refs}
                 # Metadata is copied only from the already-sanitized Search Worker
                 # catalog handoff or the local catalog directory backfill, never
@@ -303,6 +350,63 @@ def _validated_evaluator_candidates(
     return records
 
 
+def _promote_catalog_floor(
+    validated: Iterable[Mapping[str, Any]],
+    recall_ids: Iterable[str],
+    metadata_by_id: Mapping[str, Mapping[str, Any]],
+    metadata_resolver: Callable[[str], Mapping[str, Any] | None] | None,
+    query: str,
+) -> list[dict[str, Any]]:
+    """Fill the minimum report set from the already-recalled catalog pool.
+
+    This is a deterministic safety net for evaluators that return ``keep``
+    false/null or malformed batch fields.  It never searches, downloads, or
+    adds an ID outside the Search Worker recall set.
+    """
+    records = [dict(item) for item in validated if isinstance(item, Mapping)]
+    existing = {item.get("candidate_id") for item in records if isinstance(item.get("candidate_id"), str)}
+    ordered_ids = [item for item in recall_ids if isinstance(item, str) and item and item not in existing]
+    if len(existing) >= _MIN_REPORT_CANDIDATES or len(existing) + len(ordered_ids) < _MIN_REPORT_CANDIDATES:
+        return records
+    metadata_rows: list[dict[str, Any]] = []
+    metadata_lookup: dict[str, Mapping[str, Any]] = {}
+    for candidate_id in ordered_ids:
+        metadata = metadata_by_id.get(candidate_id)
+        if not isinstance(metadata, Mapping) and metadata_resolver is not None:
+            with suppress(Exception):
+                metadata = metadata_resolver(candidate_id)
+        if isinstance(metadata, Mapping):
+            metadata_lookup[candidate_id] = metadata
+            metadata_rows.append({**metadata, "catalog_paper_id": candidate_id})
+        else:
+            metadata_rows.append({"catalog_paper_id": candidate_id})
+    from backend.app.research.application.search_catalog_adapter import PaperEvaluator
+
+    floor = PaperEvaluator(threshold=0.2, soft_floor=0.1).evaluate(metadata_rows, query=query)
+    for item in floor.get("kept", ()) if isinstance(floor, Mapping) else ():
+        candidate_id = item.get("candidate_id") if isinstance(item, Mapping) else None
+        if not isinstance(candidate_id, str) or candidate_id in existing:
+            continue
+        record: dict[str, Any] = {
+            "candidate_id": candidate_id,
+            "verified": True,
+            "evidence_refs": [f"catalog:{candidate_id}"],
+        }
+        metadata = metadata_lookup.get(candidate_id)
+        if isinstance(metadata, Mapping):
+            for field in (
+                "title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets",
+                "year", "source", "source_id", "source_kinds", "official_url", "official_page_url",
+            ):
+                if field in metadata:
+                    record[field] = metadata[field]
+        records.append(record)
+        existing.add(candidate_id)
+        if len(existing) >= _MIN_REPORT_CANDIDATES:
+            break
+    return records
+
+
 def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str]) -> dict:
     """Drop evaluator provenance labels that are outside Search evidence.
 
@@ -313,10 +417,46 @@ def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str
     aggregate record omitted that field.
     """
     normalized = dict(output)
-    valid_refs = lambda value: [
-        ref for ref in value
-        if isinstance(ref, str) and ref in allowed_refs and ref.startswith("catalog:")
-    ] if isinstance(value, list) else []
+
+    def valid_refs(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [
+            ref
+            for ref in value
+            if isinstance(ref, str) and ref in allowed_refs and ref.startswith("catalog:")
+        ]
+
+    # Small/local models sometimes serialize a batch decision using parallel
+    # top-level arrays (``candidate_id=[...]``, ``relevance_score=[...]``)
+    # instead of the canonical ``kept=[{...}, ...]`` contract.  Treat that
+    # shape as a formatting variant, not as one literal candidate whose ID is
+    # the string representation of the whole array.  The runtime still binds
+    # every row to the Search Worker catalog allowlist below.
+    raw_candidate_ids = normalized.get("candidate_id")
+    if isinstance(raw_candidate_ids, list) and "kept" not in normalized:
+        raw_scores = normalized.get("relevance_score")
+        raw_keep = normalized.get("keep")
+        kept_rows: list[dict[str, Any]] = []
+        for index, candidate_id in enumerate(raw_candidate_ids):
+            if not isinstance(candidate_id, str) or not candidate_id.strip():
+                continue
+            candidate_id = candidate_id.strip()
+            ref = f"catalog:{candidate_id}"
+            if ref not in allowed_refs:
+                continue
+            score = raw_scores[index] if isinstance(raw_scores, list) and index < len(raw_scores) else raw_scores
+            keep = raw_keep[index] if isinstance(raw_keep, list) and index < len(raw_keep) else raw_keep
+            kept_rows.append({
+                "candidate_id": candidate_id,
+                "keep": keep if isinstance(keep, bool) else True,
+                "relevance_score": score if isinstance(score, (int, float)) else 0.0,
+                "evidence_refs": [ref],
+            })
+        if kept_rows:
+            normalized["kept"] = kept_rows
+            normalized["candidate_id"] = None
+            normalized["evidence_refs"] = [row["evidence_refs"][0] for row in kept_rows]
     if "source_refs" in normalized:
         normalized["source_refs"] = valid_refs(normalized.get("source_refs"))
     summary = normalized.get("safe_summary")
@@ -409,6 +549,23 @@ def _evaluator_records(output) -> list[dict]:
     """Normalize evaluator output without accepting truthy/non-boolean flags."""
     kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
     return [item for item in kept if isinstance(item, dict)]
+
+
+def _bind_synthesis_report_version(output: Mapping[str, Any], expected_version: int) -> dict[str, Any]:
+    """Bind the model-facing report envelope to the approved plan version.
+
+    ``report_version`` is runtime-owned metadata, not a research claim.  Some
+    local models occasionally emit a date-like string (for example
+    ``"2024.9.30"``) after seeing publication years in the catalog.  Treating
+    that as a hard synthesis failure makes an otherwise valid report disappear.
+    Normalize only this runtime field and recompute the envelope hash; all
+    sections, citations and evidence remain subject to the normal validator.
+    """
+    normalized = dict(output)
+    if normalized.get("report_version") != expected_version:
+        normalized["report_version"] = int(expected_version)
+        normalized["output_hash"] = report_output_hash(normalized)
+    return normalized
 
 
 def _validate_evaluator_scope(
@@ -510,7 +667,9 @@ class Orchestrator:
     """稳定受控骨架：plan -> search -> evaluate -> coverage -> bounded re-plan -> synthesize。"""
 
     def __init__(
-        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None, agent_runner=None, processing_projector=None, memory_repository=None
+        self, *, store, search_adapter=None, model_router=None, planner=None, probe=None, monotonic=None,
+        agent_runner=None, processing_projector=None, memory_repository=None, auto_importer=None,
+        retry_policy=None, clock=None, random_source=None,
     ) -> None:
         self._store = store
         # 检索唯一出口：Spec015 CatalogSearchAdapter（未注入时走其内部惰性装配）。
@@ -523,6 +682,10 @@ class Orchestrator:
         self._agent_runner = agent_runner
         self._processing_projector = processing_projector
         self._memory_repository = memory_repository or getattr(processing_projector, "memory_repository", None)
+        # Optional injection keeps tests deterministic.  Production resolves
+        # the existing PaperImportBatchService lazily only after an approved
+        # plan has produced a bounded selection.
+        self._auto_importer = auto_importer
         self._owner_by_task: dict[str, str] = {}
         if self._agent_runner is not None:
             # Install the callback on the already-constructed runner so skill
@@ -531,6 +694,11 @@ class Orchestrator:
                 self._agent_runner.event_sink = self._on_runtime_event
         self._planner = planner or Planner()
         self._monotonic = monotonic or time.monotonic
+        from backend.app.research.application.agent_runtime import RetryPolicy
+
+        self._retry_policy = retry_policy or RetryPolicy()
+        self._retry_clock = clock or _utcnow
+        self._retry_random_source = random_source
         # probe 默认 ResourceProbe()；惰性导入避免编排器模块在导入期就拉起 ollama 依赖。
         if probe is None:
             from backend.app.platform.ollama import ResourceProbe
@@ -543,6 +711,89 @@ class Orchestrator:
         if self._agent_runner is None:
             raise RuntimeError("agent runner is not configured")
         return self._agent_runner.run(run_input)
+
+    def _retry_now(self) -> datetime:
+        value = self._retry_clock()
+        if isinstance(value, datetime):
+            current = value
+        elif isinstance(value, (int, float)):
+            current = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        else:
+            current = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        return current.astimezone(timezone.utc)
+
+    def _schedule_retry(self, item: ResearchWorkItem, error_code: str) -> ResearchWorkItem | None:
+        """Persist a bounded retry without reopening terminal evidence."""
+        from backend.app.research.application.agent_runtime import compute_retry_delay
+
+        current = self._store.get_work_item(item.work_item_id)
+        if current is None or current.status in {"completed", "failed", "cancelled", "interrupted"}:
+            return current
+        retry_count = int(getattr(current, "retry_count", 0) or 0) + 1
+        if retry_count > int(self._retry_policy.max_attempts):
+            return self._store.update_work_item_status(
+                current.work_item_id,
+                "failed",
+                error_code=error_code,
+                last_error_code=error_code,
+                retry_count=int(getattr(current, "retry_count", 0) or 0),
+            )
+        delay = compute_retry_delay(
+            retry_count, policy=self._retry_policy, random_source=self._retry_random_source,
+        )
+        next_retry_at = self._retry_now() + timedelta(seconds=delay)
+        next_retry_text = next_retry_at.isoformat(timespec="seconds").replace("+00:00", "Z")
+        scheduler = getattr(self._store, "schedule_work_item_retry", None)
+        if callable(scheduler):
+            updated = scheduler(
+                current.work_item_id,
+                error_code=error_code,
+                next_retry_at=next_retry_text,
+                retry_count=retry_count,
+            )
+        else:
+            updated = self._store.update_work_item_status(
+                current.work_item_id,
+                "waiting_retry",
+                error_code=error_code,
+                last_error_code=error_code,
+                retry_count=retry_count,
+                next_retry_at=next_retry_text,
+            )
+        with suppress(Exception):
+            self._emit(
+                current.research_task_id,
+                "worker",
+                self._worker_event_payload(
+                    updated,
+                    "waiting_retry",
+                    error_code=error_code,
+                    retry_count=updated.retry_count,
+                    next_retry_at=updated.next_retry_at,
+                    last_error_code=updated.last_error_code,
+                ),
+            )
+        return updated
+
+    def _recover_search_worker_output(self, work_item_input: Mapping[str, Any], work_item_id: str) -> dict[str, Any] | None:
+        """Recover a read-only catalog result when the model never emits JSON.
+
+        Search itself remains delegated to the existing ``SearchWorker`` /
+        ``CatalogSearchAdapter`` seam.  This recovery is intentionally limited
+        to model-format failures; it does not invent candidates or introduce a
+        second source implementation.
+        """
+        try:
+            from backend.app.research.application.search_catalog_adapter import SearchWorker
+
+            output = SearchWorker(adapter=self._adapter).run({**dict(work_item_input), "work_item_id": work_item_id})
+        except Exception:
+            return None
+        if not isinstance(output, Mapping) or not isinstance(output.get("candidates"), list) or not output.get("candidates"):
+            return None
+        return _canonicalize_search_worker_binding(dict(output), work_item_id=work_item_id)
 
     # ------------------------------------------------------------------ #
     # 对外入口
@@ -795,6 +1046,15 @@ class Orchestrator:
             current_plan_version = next_version
             replan_round += 1
 
+        # Full-text acquisition is an approved-plan side effect only.  This
+        # call is intentionally after the final frozen selection is written;
+        # ordinary catalog searches and unapproved plans never reach it.
+        self._auto_import_approved_selection(
+            task=task,
+            owner_id=owner_id,
+            plan_version=current_plan_version,
+        )
+
         # 阶段 7：synthesize_preliminary_report（catalog 证据；局限写入 limitations_json）。
         task = self._refresh(research_task_id, owner_id)
         if isinstance(task, OrchestratorResult):
@@ -945,6 +1205,7 @@ class Orchestrator:
             "research-critic": "research_critic", "synthesizer": "synthesizer",
         }
         failures = 0
+        failure_error_code: str | None = None
         synthesis_run_id = None
         synthesis_output: dict | None = None
         synthesis_attempts = 1
@@ -980,6 +1241,19 @@ class Orchestrator:
         completed_search_evidence: dict[str, list[dict]] = {}
         item_by_id = {item.work_item_id: item for item in items}
         for item in items:
+            # A restart or a second orchestration trigger may hold a stale
+            # snapshot.  Requeue only due retries and never execute a row that
+            # another worker already owns or has completed.
+            with suppress(Exception):
+                self._store.requeue_due_work_items(
+                    now=self._retry_now().isoformat(timespec="seconds").replace("+00:00", "Z"),
+                    research_task_id=task.research_task_id,
+                )
+            fresh_item = self._store.get_work_item(item.work_item_id)
+            if fresh_item is not None:
+                item = fresh_item
+            if item.status != "queued":
+                continue
             # Pause is checked at every dispatch boundary.  A node already in
             # the external call may finish and persist evidence; no following
             # node is started until the caller explicitly resumes the task.
@@ -1000,8 +1274,18 @@ class Orchestrator:
                 dependencies = []
             dependencies = [str(dep) for dep in dependencies] if isinstance(dependencies, list) else []
             if any(dep not in completed_ids for dep in dependencies):
+                dependency_rows = [self._store.get_work_item(dep) for dep in dependencies]
+                if any(
+                    dependency is not None
+                    and dependency.status in {"queued", "running", "waiting_retry"}
+                    for dependency in dependency_rows
+                ):
+                    # An upstream retry is recoverable; do not turn all
+                    # downstream nodes into terminal failures in this pass.
+                    continue
                 failures += 1
                 error_code = "UPSTREAM_WORK_ITEM_FAILED" if any(dep in failed_ids for dep in dependencies) else "UPSTREAM_WORK_ITEM_NOT_READY"
+                failure_error_code = failure_error_code or error_code
                 failed_ids.add(item.work_item_id)
                 self._fail_work_item(task.research_task_id, item, error_code)
                 if role == "synthesizer":
@@ -1126,13 +1410,41 @@ class Orchestrator:
                 # Candidate legitimacy is owned by the Search Worker recall
                 # allowlist, independent of catalog_metadata completeness, so a
                 # missing catalog_metadata can never drop the synthesizer.
-                allowed_candidate_ids = _recalled_candidate_ids(completed_outputs, item_by_id)
                 validated = _validated_evaluator_candidates(
                     [evaluator_outputs_by_id[work_item_id] for work_item_id in evaluator_ids if work_item_id in evaluator_outputs_by_id],
                     catalog_metadata,
                     recall_allowlist=recall_allowlist,
                     metadata_resolver=metadata_resolver,
                 )
+                # The synthesizer must still receive a bounded evidence set
+                # when the evaluator returns an explicit null/empty decision.
+                # Promote from the same Search Worker recall pool before
+                # deciding that no evidence exists; this keeps the report
+                # floor deterministic and avoids a false NO_VALIDATED_EVIDENCE
+                # terminal state caused solely by small-model formatting.
+                if len(validated) < _MIN_REPORT_CANDIDATES:
+                    validated = _promote_catalog_floor(
+                        validated,
+                        recall_allowlist,
+                        catalog_metadata,
+                        metadata_resolver,
+                        task.goal,
+                    )
+                    if len(validated) >= _MIN_REPORT_CANDIDATES:
+                        self._persist_agent_selections(
+                            task.research_task_id,
+                            {
+                                "kept": [
+                                    {
+                                        "candidate_id": item["candidate_id"],
+                                        "keep": True,
+                                        "evidence_refs": list(item["evidence_refs"]),
+                                    }
+                                    for item in validated
+                                ]
+                            },
+                            set(recall_allowlist),
+                        )
                 if not validated:
                     failures += 1
                     synthesis_error = "NO_VALIDATED_EVIDENCE"
@@ -1145,6 +1457,9 @@ class Orchestrator:
                     for candidate in validated for ref in candidate["evidence_refs"]
                     if isinstance(ref, str)
                 ]
+                # The report version belongs to the approved plan subject; the
+                # model may not derive it from publication years or timestamps.
+                work_item_input["report_version"] = plan_version
             with suppress(Exception):
                 self._store.update_work_item_input(
                     item.work_item_id,
@@ -1153,13 +1468,14 @@ class Orchestrator:
             running_item = self._store.update_work_item_status(
                 item.work_item_id,
                 "running",
+                attempt=max(1, int(item.attempt) + 1),
                 **self._model_kwargs(
                     item.role,
                     research_task_id=task.research_task_id,
                     task_type=item.task_type,
                 ),
             )
-            run_id = f"{item.work_item_id}:run-{max(1, item.attempt + 1)}"
+            run_id = f"{item.work_item_id}:run-{max(1, running_item.attempt)}"
             try:
                 worker_event = self._emit(
                     task.research_task_id,
@@ -1177,7 +1493,7 @@ class Orchestrator:
                     skill_snapshot=capability,
                     tool_snapshot=capability.get("tools", ()) if capability else None,
                     budget_snapshot=budget_snapshot,
-                    attempt=max(1, item.attempt + 1),
+                    attempt=max(1, running_item.attempt),
                     resolved_model=item.resolved_model or "",
                     reasoning_effort="off",
                     parent_source_event_id=(
@@ -1185,11 +1501,51 @@ class Orchestrator:
                         if worker_event else None
                     ),
                 ))
-            except Exception:
+            except Exception as exc:
+                from backend.app.research.application.agent_runtime import AgentRuntimeError
+
+                if isinstance(exc, AgentRuntimeError):
+                    error_code = exc.code
+                    failure_error_code = failure_error_code or error_code
+                    if error_code in self._retry_policy.retryable_error_codes:
+                        scheduled = self._schedule_retry(item, error_code)
+                        if scheduled is not None and scheduled.status == "failed":
+                            failures += 1
+                            failure_error_code = failure_error_code or error_code
+                            failed_ids.add(item.work_item_id)
+                        continue
+                    current_item = self._store.get_work_item(item.work_item_id)
+                    if current_item is None or current_item.status in {"completed", "failed", "cancelled", "interrupted"}:
+                        continue
+                    failures += 1
+                    failed_item = self._store.update_work_item_status(
+                        item.work_item_id, "failed", error_code=error_code, last_error_code=error_code,
+                    )
+                    self._emit(
+                        task.research_task_id, "worker",
+                        self._worker_event_payload(failed_item, "failed", error_code=error_code),
+                    )
+                    failed_ids.add(item.work_item_id)
+                    continue
                 failures += 1
                 with suppress(Exception):
-                    failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code="AGENT_RUN_FAILED")
-                    self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code="AGENT_RUN_FAILED"))
+                    error_code = "AGENT_RUN_FAILED"
+                    failure_error_code = failure_error_code or error_code
+                    failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code=error_code, last_error_code=error_code)
+                    self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code=error_code))
+                continue
+            current_after_run = self._store.get_work_item(item.work_item_id)
+            if (
+                result.status in {"failed", "limit_reached"}
+                and result.error_code in self._retry_policy.retryable_error_codes
+                and current_after_run is not None
+                and current_after_run.status in {"queued", "running", "waiting_retry"}
+            ):
+                scheduled = self._schedule_retry(item, str(result.error_code))
+                if scheduled is not None and scheduled.status == "failed":
+                    failures += 1
+                    failure_error_code = failure_error_code or str(result.error_code)
+                    failed_ids.add(item.work_item_id)
                 continue
             terminal = result.status if result.status in {"completed", "failed", "cancelled", "limit_reached"} else "failed"
             semantic_error = None
@@ -1216,6 +1572,12 @@ class Orchestrator:
                 ):
                     semantic_error = "EVALUATOR_EVIDENCE_OUT_OF_SCOPE"
                     terminal = "failed"
+            if terminal != "completed" and role == "search_worker":
+                recovered = self._recover_search_worker_output(work_item_input, item.work_item_id)
+                if recovered is not None:
+                    normalized_output = recovered
+                    terminal = "completed"
+                    semantic_error = None
             if terminal != "completed":
                 failures += 1
                 failed_ids.add(item.work_item_id)
@@ -1238,7 +1600,9 @@ class Orchestrator:
                     # opaque server-owned handle and retains the first one.
                     with suppress(AttributeError, ValueError):
                         self._store.set_task_search_id(task.research_task_id, search_id)
-            error_code = result.error_code or semantic_error
+            error_code = (result.error_code or semantic_error) if terminal != "completed" else None
+            if error_code:
+                failure_error_code = failure_error_code or error_code
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 evaluator_outputs.append(dict(normalized_output))
                 evaluator_outputs_by_id[item.work_item_id] = dict(normalized_output)
@@ -1251,7 +1615,11 @@ class Orchestrator:
                 )
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
-                synthesis_output = dict(normalized_output) if isinstance(normalized_output, dict) else None
+                synthesis_output = (
+                    _bind_synthesis_report_version(normalized_output, plan_version)
+                    if isinstance(normalized_output, dict)
+                    else None
+                )
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
             elif role == "synthesizer" and terminal != "completed":
                 synthesis_error = result.error_code or "AGENT_OUTPUT_INVALID"
@@ -1263,6 +1631,7 @@ class Orchestrator:
                     "completed" if terminal == "completed" else ("cancelled" if terminal == "cancelled" else "failed"),
                     output_json=output_json,
                     error_code=error_code,
+                    last_error_code=error_code,
                     resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
                 )
                 event_extra = {"error_code": error_code} if error_code else {}
@@ -1273,6 +1642,22 @@ class Orchestrator:
                     "worker",
                     self._worker_event_payload(updated, terminal, **event_extra),
                 )
+        waiting_items = [
+            current for current in self._store.list_work_items(task.research_task_id, plan_version=plan_version)
+            if current.status == "waiting_retry"
+        ]
+        if waiting_items:
+            return self._result(
+                task.research_task_id,
+                "running",
+                plan_version,
+                selected_count,
+                None,
+                (),
+                True,
+                waiting_items[0].last_error_code or "RESOURCE_PROBE_FAILED",
+            )
+
         synthesis_artifact_id = None
         if self._memory_repository is not None:
             session = self._store.get_session_by_task(task.research_task_id, owner_id)
@@ -1306,23 +1691,43 @@ class Orchestrator:
                     )
                 )
                 # If the real evaluator retained fewer than the report floor,
-                # use only already-sanitized catalog metadata to fill the
-                # bounded evidence set.  This is deliberately fail-closed:
-                # without five metadata-backed catalog rows, no candidates are
-                # invented and the existing NO_VALIDATED_EVIDENCE path wins.
-                if len({item["candidate_id"] for item in validated_candidates}) < _MIN_REPORT_CANDIDATES:
-                    catalog_rows = [
-                        {**metadata, "catalog_paper_id": candidate_id}
-                        for candidate_id, metadata in catalog_metadata.items()
-                        if isinstance(candidate_id, str) and isinstance(metadata, Mapping)
-                    ]
+                # promote more rows from the *same Search Worker recall set*.
+                # The previous implementation used only ``catalog_metadata``
+                # handed through the model-facing summary.  That summary is
+                # intentionally bounded/redacted, so a six-paper catalog could
+                # look like a three-row pool and the final report stopped at
+                # two evaluator picks.  Resolve the missing metadata from the
+                # existing catalog store, but never enlarge the recall set.
+                existing_ids = {item["candidate_id"] for item in validated_candidates}
+                if len(existing_ids) < _MIN_REPORT_CANDIDATES:
+                    recall_ids: list[str] = []
+                    for work_item_id, output in completed_outputs.items():
+                        if item_by_id.get(work_item_id) is None or item_by_id[work_item_id].role != "search-worker":
+                            continue
+                        for candidate_id in output.get("candidates", ()) if isinstance(output.get("candidates"), list) else ():
+                            if isinstance(candidate_id, str) and candidate_id and candidate_id not in recall_ids:
+                                recall_ids.append(candidate_id)
+                    metadata_resolver = self._catalog_metadata_resolver()
+                    catalog_rows: list[dict[str, Any]] = []
+                    metadata_by_recall_id: dict[str, Mapping[str, Any]] = {}
+                    for candidate_id in recall_ids:
+                        metadata = catalog_metadata.get(candidate_id)
+                        if not isinstance(metadata, Mapping) and metadata_resolver is not None:
+                            metadata = metadata_resolver(candidate_id)
+                        if isinstance(metadata, Mapping):
+                            metadata_by_recall_id[candidate_id] = metadata
+                            catalog_rows.append({**metadata, "catalog_paper_id": candidate_id})
+                        else:
+                            # A recalled ID remains valid evidence even when a
+                            # local row was deleted between search and report.
+                            # It is retained with explicit missing metadata.
+                            catalog_rows.append({"catalog_paper_id": candidate_id})
                     if len(catalog_rows) >= _MIN_REPORT_CANDIDATES:
                         from backend.app.research.application.search_catalog_adapter import PaperEvaluator
 
                         floor_output = PaperEvaluator(threshold=0.2, soft_floor=0.1).evaluate(
                             catalog_rows, query=task.goal
                         )
-                        existing_ids = {item["candidate_id"] for item in validated_candidates}
                         for item in floor_output["kept"]:
                             candidate_id = item.get("candidate_id")
                             if not isinstance(candidate_id, str) or candidate_id in existing_ids:
@@ -1332,15 +1737,38 @@ class Orchestrator:
                                 "verified": True,
                                 "evidence_refs": [f"catalog:{candidate_id}"],
                             }
-                            metadata = catalog_metadata.get(candidate_id)
+                            metadata = metadata_by_recall_id.get(candidate_id)
                             if isinstance(metadata, Mapping):
-                                for field in ("title", "abstract", "keywords", "summary", "method", "methods", "topic", "topics", "facets"):
+                                for field in (
+                                    "title", "abstract", "keywords", "summary", "method", "methods",
+                                    "topic", "topics", "facets", "year", "source", "source_id",
+                                    "source_kinds", "official_url", "official_page_url",
+                                ):
                                     if field in metadata:
                                         record[field] = metadata[field]
                             validated_candidates.append(record)
                             existing_ids.add(candidate_id)
                             if len(existing_ids) >= _MIN_REPORT_CANDIDATES:
                                 break
+                    # Keep the durable selection projection aligned with the
+                    # report floor.  The evaluator model may have returned a
+                    # short subset, but every promoted row is still bounded by
+                    # the Search Worker allowlist and carries catalog evidence.
+                    if len(existing_ids) >= _MIN_REPORT_CANDIDATES:
+                        self._persist_agent_selections(
+                            task.research_task_id,
+                            {
+                                "kept": [
+                                    {
+                                        "candidate_id": item["candidate_id"],
+                                        "keep": True,
+                                        "evidence_refs": list(item["evidence_refs"]),
+                                    }
+                                    for item in validated_candidates
+                                ]
+                            },
+                            set(recall_ids),
+                        )
                 selected_count = len(validated_candidates)
                 try:
                     if synthesis_run_id is None or synthesis_output is None:
@@ -1368,11 +1796,51 @@ class Orchestrator:
                     synthesis_artifact_id = delivered["artifacts"][0]["artifact_id"]
                 except Exception as exc:
                     synthesis_error = getattr(exc, "code", "AGENT_OUTPUT_INVALID")
-                    self._emit_synthesis_failure_notification(
-                        task=task, session=session, owner_id=owner_id,
-                        version=plan_version, code=synthesis_error,
-                        retry_attempt=synthesis_attempts if synthesis_attempts > 1 else None,
+                    # The model is not the delivery authority.  If it emits
+                    # an empty/partial-but-safe structure, reuse the already
+                    # validated catalog candidates with the fixed renderer so
+                    # the user still receives a complete metadata report.
+                    # This fallback never broadens evidence and keeps the
+                    # original model error observable in the task events.
+                    logger.warning(
+                        "synthesizer output degraded for task %s: %s",
+                        task.research_task_id,
+                        synthesis_error,
                     )
+                    try:
+                        fallback_citations = [
+                            {"citation_ref": ref, "candidate_id": item["candidate_id"]}
+                            for item in validated_candidates
+                            for ref in item.get("evidence_refs", ())
+                            if isinstance(ref, str)
+                        ]
+                        fallback_result = ReportSynthesizer().synthesize(
+                            report_version=plan_version,
+                            validated_candidates=validated_candidates,
+                            citation_manifest=fallback_citations,
+                            title="深度研究报告",
+                        )
+                        delivered = ReportDeliveryService(
+                            store=self._store, memory_repository=self._memory_repository,
+                        ).deliver(
+                            session=session, owner_id=owner_id,
+                            generated_by_agent_run_id=synthesis_run_id,
+                            result=fallback_result,
+                            notification_kind="completed",
+                        )
+                        synthesis_artifact_id = delivered["artifacts"][0]["artifact_id"]
+                        synthesis_error = None
+                    except Exception as fallback_exc:
+                        logger.exception(
+                            "deterministic report fallback failed for task %s",
+                            task.research_task_id,
+                        )
+                        synthesis_error = getattr(fallback_exc, "code", synthesis_error)
+                        self._emit_synthesis_failure_notification(
+                            task=task, session=session, owner_id=owner_id,
+                            version=plan_version, code=synthesis_error,
+                            retry_attempt=synthesis_attempts if synthesis_attempts > 1 else None,
+                        )
         # A runner-less legacy caller has no Task08 delivery seam.  Once the
         # seam is present, an empty evaluator result is a degraded outcome,
         # never a successful empty report.
@@ -1380,27 +1848,113 @@ class Orchestrator:
             if not evaluator_outputs:
                 synthesis_error = "NO_VALIDATED_EVIDENCE"
             else:
+                # ``validated_candidates`` also contains the deterministic
+                # report-floor promotions from the Search Worker recall set.
+                # Do not discard an otherwise valid five-paper report merely
+                # because the small evaluator returned an empty/short
+                # ``kept`` list; those promoted rows carry the same catalog
+                # evidence refs and are persisted above.
                 has_evidence = any(
-                    isinstance(item, dict)
+                    isinstance(item, Mapping)
+                    and item.get("verified") is True
                     and isinstance(item.get("evidence_refs"), list)
                     and bool(item.get("evidence_refs"))
-                    for evaluation in evaluator_outputs
-                    for item in (
-                        evaluation.get("kept", ())
-                        if isinstance(evaluation.get("kept"), list)
-                        else (evaluation,)
-                    )
-                    if isinstance(item, dict) and (item.get("keep") is True or item.get("verified") is True)
+                    for item in validated_candidates
                 )
                 if not has_evidence:
                     synthesis_error = "NO_VALIDATED_EVIDENCE"
+        self._auto_import_approved_selection(
+            task=task,
+            owner_id=owner_id,
+            plan_version=plan_version,
+        )
         if synthesis_error:
             failures += 1
+            failure_error_code = synthesis_error
         final_status = "completed" if items and failures == 0 else "partial"
         with suppress(InvalidStateTransition):
             self._store.update_task_status(task.research_task_id, owner_id, final_status)
-        self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": selected_count, "error_code": None if failures == 0 else (synthesis_error or "AGENT_RUN_FAILED")})
-        return self._result(task.research_task_id, final_status, plan_version, selected_count, synthesis_artifact_id, (), failures > 0, synthesis_error or (None if failures == 0 else "AGENT_RUN_FAILED"))
+        final_error_code = None if failures == 0 else (synthesis_error or failure_error_code or "AGENT_RUN_FAILED")
+        self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": selected_count, "error_code": final_error_code})
+        return self._result(task.research_task_id, final_status, plan_version, selected_count, synthesis_artifact_id, (), failures > 0, final_error_code)
+
+    def _plan_is_approved(self, task, owner_id: str) -> bool:
+        """Require durable approval evidence before any PDF side effect."""
+        # The caller may be holding a pre-search task snapshot.  Refresh the
+        # durable row immediately before the side effect so cancellation (or a
+        # newer plan version) wins over a stale in-memory approval view.
+        getter = getattr(self._store, "get_task", None)
+        if callable(getter):
+            with suppress(Exception):
+                current = getter(task.research_task_id, owner_id)
+                if current is not None:
+                    task = current
+        if not bool(getattr(task, "review_plan_first", False)):
+            return False
+        # Cancellation wins over an earlier approval.  A scheduler race or a
+        # replayed terminal turn must not create a new PDF batch after the
+        # user has cancelled the Research task.
+        if str(getattr(task, "status", "") or "").casefold() in {"cancelled", "canceled"}:
+            return False
+        # Spec034's approval request is the durable source of truth when the
+        # conversational plan path is used.
+        with suppress(Exception):
+            session = self._store.get_session_by_task(task.research_task_id, owner_id)
+            approvals = self._store.list_approvals(
+                session.research_session_id, owner_id, subject_version=task.current_plan_version
+            ) if session is not None else ()
+            if any(
+                getattr(item, "kind", None) == "plan"
+                and getattr(item, "status", None) == "approved"
+                and getattr(item, "subject_id", None) == session.research_session_id
+                for item in approvals
+            ):
+                return True
+        # Legacy ResearchService approval records an explicit event.  Do not
+        # infer approval from a merely running task: ordinary research tasks
+        # can also be running without authorization for PDF acquisition.
+        with suppress(Exception):
+            for event in self._store.list_events(task.research_task_id):
+                if event.event_type != "task":
+                    continue
+                payload = json.loads(event.safe_payload_json or "{}")
+                if payload.get("reason") == "plan_approved" or payload.get("status") == "approved":
+                    return True
+        return False
+
+    def _auto_import_approved_selection(self, *, task, owner_id: str, plan_version: int) -> dict[str, Any] | None:
+        """Invoke the existing batch service once; item failures stay partial."""
+        if not self._plan_is_approved(task, owner_id):
+            return None
+        importer = self._auto_importer
+        if importer is None:
+            try:
+                from backend.app.api.common import _paper_batch_service
+                from backend.app.research.application.acquisition import (
+                    ApprovedPlanAutoImporter,
+                    ResearchAcquisitionService,
+                )
+                importer = ApprovedPlanAutoImporter(
+                    self._store,
+                    ResearchAcquisitionService(self._store, _paper_batch_service()),
+                )
+            except Exception:
+                logger.warning("approved-plan auto import is unavailable", exc_info=True)
+                return None
+        try:
+            runner = getattr(importer, "run", importer)
+            return runner(
+                task.research_task_id,
+                approved_plan=True,
+                target_paper_count=int(task.target_paper_count),
+                plan_version=int(plan_version),
+            )
+        except Exception:
+            # Import is an item-level recovery path; a transient batch/store
+            # error must not turn a completed research report into false
+            # success or prevent other candidates from being attempted.
+            logger.warning("approved-plan auto import failed", exc_info=True)
+            return None
 
     def _catalog_metadata_resolver(self) -> Callable[[str], Mapping[str, Any] | None] | None:
         """Return the sanctioned local-directory metadata backfill, or None.
@@ -1415,9 +1969,19 @@ class Orchestrator:
         recall allowlist and never contributes to the allowlist itself.
         """
         catalog_store = getattr(self._adapter, "_store", None)
+        if catalog_store is None:
+            # The interactive Tool and the Research adapter share the same
+            # configured PaperDiscoveryStore, but the adapter is lazy and may
+            # not have been materialized on this path yet.  Resolve that
+            # existing provider instead of creating a second catalog/cache.
+            with suppress(Exception):
+                from backend.app.api.common import _paper_store
+
+                catalog_store = _paper_store()
         get_catalog_paper = getattr(catalog_store, "get_catalog_paper", None)
         if not callable(get_catalog_paper):
             return None
+        get_source_kinds = getattr(catalog_store, "get_catalog_source_kinds", None)
 
         def resolver(catalog_paper_id: str, _get_catalog_paper=get_catalog_paper) -> dict[str, Any] | None:
             row = _get_catalog_paper(catalog_paper_id)
@@ -1433,6 +1997,26 @@ class Orchestrator:
             keywords = getattr(row, "keywords", None)
             if isinstance(keywords, (list, tuple)) and keywords:
                 data["keywords"] = [str(key) for key in keywords[:24] if isinstance(key, str)]
+            year = getattr(row, "year", None)
+            if isinstance(year, int) and not isinstance(year, bool):
+                data["year"] = year
+            source_kinds = ()
+            if callable(get_source_kinds):
+                with suppress(Exception):
+                    source_kinds = get_source_kinds(catalog_paper_id) or ()
+            if isinstance(source_kinds, str):
+                source_kinds = [source_kinds]
+            source_kinds = [str(value) for value in source_kinds if isinstance(value, str) and value]
+            if source_kinds:
+                data["source_kinds"] = source_kinds
+                data["source"] = source_kinds[0]
+            else:
+                source = getattr(row, "conference_id", None)
+                if isinstance(source, str) and source:
+                    data["source"] = source
+            official_url = getattr(row, "official_page_url", None)
+            if isinstance(official_url, str) and official_url.strip():
+                data["official_url"] = official_url.strip()
             return data or None
 
         return resolver
@@ -1579,6 +2163,7 @@ class Orchestrator:
         ]
         requested = len(search_items)
         before_candidates = len(candidates)
+        candidate_sources: dict[str, str] = {}
         try:
             granted, probe_code = self._probe.arbitrate(research_task_id, requested)
             if probe_code is not None:
@@ -1597,8 +2182,22 @@ class Orchestrator:
                         if not ids:
                             degraded_sources.append(f"{item.work_item_id}:{error_code}")
                             continue
+                        # _run_search persists the worker's server-owned
+                        # snapshot handle inside the WorkItem output.  Carry
+                        # that frozen handle into each selection row so the
+                        # acquisition bridge never guesses a task-level URL.
+                        search_id = None
+                        with suppress(Exception):
+                            persisted = store.get_work_item(item.work_item_id)
+                            raw_output = json.loads(persisted.output_json or "{}") if persisted is not None else {}
+                            worker_output = raw_output.get("search_worker", {}) if isinstance(raw_output, dict) else {}
+                            value = worker_output.get("search_id") if isinstance(worker_output, dict) else None
+                            if isinstance(value, str) and value.strip():
+                                search_id = value.strip()
                         facet = self._facet_of(item)
                         for paper_id in ids:
+                            if search_id:
+                                candidate_sources.setdefault(paper_id, search_id)
                             if paper_id not in facets_by_paper:
                                 facets_by_paper[paper_id] = []
                                 candidates.append(paper_id)
@@ -1722,6 +2321,7 @@ class Orchestrator:
                     facets_json=json.dumps(item["facets"], ensure_ascii=False),
                     evidence_level=item["evidence_level"],
                     created_at=_utcnow(),
+                    source_search_id=candidate_sources.get(item["catalog_paper_id"]),
                 )
                 for item in selected
             ],
@@ -2083,10 +2683,13 @@ class Orchestrator:
         facets_by_paper: dict[str, list[str]],
         gaps: tuple[str, ...],
     ) -> str:
-        """生成 markdown 报告：goal、facet 小标题、按 facet 列出 catalog_paper_id 引用、局限段。
-
-        引用一律用 ``catalog_paper_id``（Spec015 全局目录引用），不复制任何论文元数据。
-        """
+        """生成目录级报告，并从共享目录按 ID 展示可验证元数据。"""
+        metadata_resolver = self._catalog_metadata_resolver()
+        metadata_by_id = {
+            str(item.get("catalog_paper_id")): (metadata_resolver(str(item["catalog_paper_id"])) or {})
+            for item in selected
+            if isinstance(item, dict) and item.get("catalog_paper_id") and metadata_resolver is not None
+        }
         lines = [
             "# 初步研究报告（Spec027 动态编排 MVP）",
             "",
@@ -2109,7 +2712,25 @@ class Orchestrator:
                 if facet in facets_by_paper.get(item["catalog_paper_id"], ())
             ]
             if refs:
-                lines.extend(f"- `{paper_id}`（catalog 引用，relevance 见论文选集）" for paper_id in refs)
+                for paper_id in refs:
+                    metadata = metadata_by_id.get(paper_id, {})
+                    title = metadata.get("title") or "官方未提供"
+                    abstract = metadata.get("abstract") or "官方未提供"
+                    keywords = metadata.get("keywords") or []
+                    source = metadata.get("source") or metadata.get("source_id") or "官方未提供"
+                    year = metadata.get("year") or "官方未提供"
+                    official_url = metadata.get("official_url") or "官方未提供"
+                    method = metadata.get("method") or metadata.get("methods") or "官方未提供"
+                    citation = f"catalog:{paper_id}"
+                    lines.extend([
+                        f"- **{title}**（`{paper_id}`，引用：`{citation}`）",
+                        f"  - 摘要：{abstract}",
+                        f"  - 关键词：{'、'.join(keywords) if keywords else '官方未提供'}",
+                        f"  - 研究方法：{method}",
+                        f"  - 来源：{source}",
+                        f"  - 年份：{year}",
+                        f"  - 官方 URL：{official_url}",
+                    ])
             else:
                 lines.append("- （该子方向未获得入选论文）")
             lines.append("")
@@ -2121,7 +2742,7 @@ class Orchestrator:
         lines.append("- 证据等级为 catalog：未下载或分析全文，结论不可据此推断方法与实验细节。")
         lines.append("- 仅执行有界 catalog 补搜；仍未覆盖的子方向保留在本报告与 limitations 中。")
         lines.append("")
-        lines.append("> 所有结论均须带论文引用；此处仅以 catalog_paper_id 引用 Spec015 全局目录，不复制元数据。")
+        lines.append("> 所有结论均须带论文引用；以上字段仅来自共享目录，缺失字段明确标为“官方未提供”。")
         return "\n".join(lines)
 
     def _synthesis_run_id(self, *, task, session, work_item, owner_id: str) -> str | None:
@@ -2186,7 +2807,12 @@ class Orchestrator:
             paper_id = item.get("catalog_paper_id") if isinstance(item, dict) else None
             if not paper_id:
                 continue
-            verified.append({"candidate_id": str(paper_id), "verified": True})
+            metadata = {}
+            resolver = self._catalog_metadata_resolver()
+            if resolver is not None:
+                with suppress(Exception):
+                    metadata = dict(resolver(str(paper_id)) or {})
+            verified.append({"candidate_id": str(paper_id), "verified": True, **metadata})
             citations.append({"citation_ref": f"catalog:{paper_id}", "candidate_id": str(paper_id)})
         sections = []
         for facet in facets:
@@ -2415,7 +3041,7 @@ class Orchestrator:
                             research_task_id, session.activity_message_id, owner_id,
                             research_session_id=session.research_session_id,
                         )
-                except Exception as exc:
+                except Exception:
                     # The durable ResearchEvent remains authoritative; retain
                     # a ResearchStore retry marker while the activity message
                     # projection is repaired asynchronously.

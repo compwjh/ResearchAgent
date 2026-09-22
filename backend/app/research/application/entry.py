@@ -20,6 +20,10 @@ from functools import lru_cache
 from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.platform.ollama import ResourceProbe
+from backend.app.research.application.acquisition import (
+    ResearchAcquisitionError,
+    ResearchAcquisitionService,
+)
 from backend.app.research.application.agent_runtime import (
     AgentRunInput,
     AgentRunOutput,
@@ -31,25 +35,12 @@ from backend.app.research.application.agent_runtime import (
     RoleCapability,
     RoleCapabilityRegistry,
 )
-from backend.app.research.application.acquisition import (
-    ResearchAcquisitionError,
-    ResearchAcquisitionService,
-)
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
 from backend.app.research.application.evidence_upgrade import (
     EvidenceUpgradeError,
     EvidenceUpgradeService,
 )
-from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
-from backend.app.research.application.report_generation import (
-    EvidenceReportError,
-    EvidenceReportGenerator,
-    EvidenceReportService,
-    ReportGenerator,
-    ReportGenerationService,
-    render_evidence_report,
-)
 from backend.app.research.application.model_router import ModelRouter
-from backend.app.research.application.routing_observation import RoutingObservationService
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.plan_authoring import (
     RESEARCH_PLAN_OUTPUT_SCHEMA,
@@ -58,6 +49,14 @@ from backend.app.research.application.plan_authoring import (
 )
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.processing_projector import ProcessingStepProjector
+from backend.app.research.application.report_generation import (
+    EvidenceReportError,
+    EvidenceReportGenerator,
+    EvidenceReportService,
+    ReportGenerationService,
+    ReportGenerator,
+    render_evidence_report,
+)
 from backend.app.research.application.report_synthesis import (
     REPORT_SYNTHESIS_OUTPUT_SCHEMA,
     ReportDeliveryService,
@@ -73,6 +72,7 @@ from backend.app.research.application.research_service import (
     ResearchService,
     ResearchServiceError,
 )
+from backend.app.research.application.routing_observation import RoutingObservationService
 from backend.app.research.application.search_catalog_adapter import (
     CatalogSearchAdapter,
     CatalogSourceBundle,
@@ -87,19 +87,22 @@ from backend.app.research.application.search_catalog_adapter import (
 from backend.app.research.domain.models import (
     AcquisitionApproval,
     AcquisitionEvent,
+    AcquisitionIssue,
     EvidenceUpgrade,
+    ManualResolution,
     PreliminaryReport,
     ResearchDocumentLink,
     ResearchEvent,
     ResearchPaperSelection,
-    ResearchReport,
     ResearchPlan,
+    ResearchReport,
     ResearchSessionPlan,
     ResearchTask,
     ResearchWorkItem,
 )
 from backend.app.research.infrastructure.research_store import (
     ResearchStore,
+    decode_cursor,
     default_database_path,
 )
 from backend.app.skills.registry import build_default_tool_registry
@@ -109,6 +112,7 @@ from backend.app.skills.tool_service import ToolRegistryService
 __all__ = [
     # 持久化（唯一受控出口，api 不得直连 research.infrastructure）
     "ResearchStore",
+    "decode_cursor",
     "ResearchAcquisitionError",
     "ResearchAcquisitionService",
     "EvidenceUpgradeError",
@@ -169,6 +173,8 @@ __all__ = [
     "PreliminaryReport",
     "AcquisitionApproval",
     "ResearchDocumentLink",
+    "AcquisitionIssue",
+    "ManualResolution",
     "EvidenceUpgrade",
     "ResearchReport",
     "AcquisitionEvent",

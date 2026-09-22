@@ -1,0 +1,29 @@
+{
+  "plan_version": 1,
+  "dimensions": [
+    {"dimension_id":"d-threat-4265","label":"威胁模型","definition":"论文所建模的攻击者能力、信任边界与假设前提","display_order":0},
+    {"dimension_id":"d-eval-4265","label":"评估方式","definition":"实验数据集、对比基线与评测指标","display_order":1}
+  ],
+  "claims": [
+    {
+      "claim_id":"c-scope-4265",
+      "topic":"USENIX Security 候选论文的威胁建模与评估取向",
+      "statement":"本次召回的 USENIX Security 候选论文在威胁模型与评估方式上呈现明显分化：一部分针对具体攻击面做实测审计，另一部分提出通用机制并以可扩展性为主要评估指标；该结论当前仅有目录级证据支撑，不足以判定方法或结果层面的优劣。",
+      "confidence":"low",
+      "status":"supported",
+      "evidence_ids":["e-4265-01","e-4265-02","e-4265-03","e-4265-04","e-4265-05","e-4265-06","e-4265-07","e-4265-08","e-4265-09","e-4265-10"]
+    }
+  ],
+  "evidence": [
+    {"evidence_id":"e-4265-01","claim_id":"c-scope-4265","paper_id":"012003978a4883ce","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"012003978a4883ce"}},
+    {"evidence_id":"e-4265-02","claim_id":"c-scope-4265","paper_id":"154723ce0856642f","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"154723ce0856642f"}},
+    {"evidence_id":"e-4265-03","claim_id":"c-scope-4265","paper_id":"31ab0e103c14c1c2","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"31ab0e103c14c1c2"}},
+    {"evidence_id":"e-4265-04","claim_id":"c-scope-4265","paper_id":"541c71bf15b43394","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"541c71bf15b43394"}},
+    {"evidence_id":"e-4265-05","claim_id":"c-scope-4265","paper_id":"ba342a19004e4a13","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"ba342a19004e4a13"}},
+    {"evidence_id":"e-4265-06","claim_id":"c-scope-4265","paper_id":"bc960f541ae1f5b1","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"bc960f541ae1f5b1"}},
+    {"evidence_id":"e-4265-07","claim_id":"c-scope-4265","paper_id":"bfcead0789701976","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"bfcead0789701976"}},
+    {"evidence_id":"e-4265-08","claim_id":"c-scope-4265","paper_id":"c1dc0e43cad8a4a3","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"c1dc0e43cad8a4a3"}},
+    {"evidence_id":"e-4265-09","claim_id":"c-scope-4265","paper_id":"ef3093268b79108e","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"ef3093268b79108e"}},
+    {"evidence_id":"e-4265-10","claim_id":"c-scope-4265","paper_id":"f11a606c713386db","evidence_level":"catalog","stance":"supports","status":"available","quote_digest":"","locator":{"catalog_snapshot_id":"f11a606c713386db"}}
+  ]
+}

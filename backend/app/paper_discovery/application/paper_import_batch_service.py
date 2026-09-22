@@ -36,8 +36,10 @@ from backend.app.paper_discovery.application.paper_import import (
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
 from backend.app.paper_discovery.domain.paper_import_batch import (
+    BATCH_STATES,
     ITEM_COMPLETED,
     ITEM_DOWNLOADING,
+    ITEM_FAILED,
     ITEM_INDEXING,
     ITEM_QUEUED,
     ITEM_VALIDATING,
@@ -77,7 +79,13 @@ SEARCH_NOT_READY = "SEARCH_NOT_READY"
 CANDIDATE_NOT_FOUND = "CANDIDATE_NOT_FOUND"
 COMPENSATION_PENDING = "COMPENSATION_PENDING"
 BATCH_NOT_FOUND_ERROR = BATCH_NOT_FOUND
-CLAIM_WAIT_TIMEOUT_SECONDS = 2.0
+# Resume calls may arrive immediately after the asynchronous initial runner is
+# submitted.  Under a busy test/deployment process the runner can be queued
+# behind other bounded imports for a few seconds; returning that transient
+# queued snapshot would make the API report a misleading 200 success.  Keep
+# this wait bounded, but leave enough room for the runner to reach its stable
+# waiting_login/failed state before the resume claim is retried.
+CLAIM_WAIT_TIMEOUT_SECONDS = 5.0
 CLAIM_WAIT_INTERVAL_SECONDS = 0.01
 
 
@@ -176,6 +184,10 @@ class PaperImportBatchService:
         # submission (spec-021): at most one runner per batch at a time.
         self._batch_runners: dict[str, Future] = {}
         self._runner_lock = threading.Lock()
+        # Research-approved imports register a task-scoped issue recorder at
+        # batch creation time.  This is process-local orchestration context;
+        # the import item and issue itself remain durable in their stores.
+        self._issue_recorders: dict[str, tuple[str, Callable[..., Any]]] = {}
 
     @staticmethod
     def _store_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -288,6 +300,8 @@ class PaperImportBatchService:
         candidates: Optional[Iterable[Any]] = None,
         idempotency_key: Optional[str] = None,
         auto_run: bool = False,
+        task_id: Optional[str] = None,
+        issue_recorder: Optional[Callable[..., Any]] = None,
     ) -> PaperImportBatch:
         """Validate server snapshots and persist a queued batch.
 
@@ -337,6 +351,8 @@ class PaperImportBatchService:
         except PaperImportBatchStoreError as error:
             raise PaperImportBatchServiceError(error.code, str(error)) from error
         self._snapshots[batch.batch_id] = {str(_value(item, "candidate_id")): item for item in item_snapshots}
+        if task_id and callable(issue_recorder):
+            self._issue_recorders[batch.batch_id] = (str(task_id), issue_recorder)
         if auto_run:
             # Submit the run to the background executor and return the queued
             # batch immediately.  The HTTP request must not block on the
@@ -625,19 +641,31 @@ class PaperImportBatchService:
             raise PaperImportBatchServiceError(error.code, str(error)) from error
         return True
 
-    def _wait_for_claim_winner(self, item_id: str, fallback: PaperImportItem) -> PaperImportItem:
+    def _wait_for_claim_winner(
+        self,
+        item_id: str,
+        fallback: PaperImportItem,
+        *,
+        include_queued: bool = False,
+    ) -> PaperImportItem:
         """Observe a competing worker's CAS result without running the importer.
 
         A losing process/resume call should normally return the winner's final
         state, not a transient ``downloading`` snapshot.  The wait is read-only
         and bounded so a crashed worker cannot make the caller hang forever.
+        ``resume_item`` also uses this wait while the initial background runner
+        is still queued; it must observe that runner's first attempt reaching
+        ``waiting_login`` before claiming the resume attempt.
         """
         deadline = time.monotonic() + CLAIM_WAIT_TIMEOUT_SECONDS
+        waiting_states = {ITEM_DOWNLOADING, ITEM_VALIDATING, ITEM_INDEXING}
+        if include_queued:
+            waiting_states.add(ITEM_QUEUED)
         while True:
             current = self.store.get_item(item_id)
             if current is None:
                 return fallback
-            if current.status not in {ITEM_DOWNLOADING, ITEM_VALIDATING, ITEM_INDEXING}:
+            if current.status not in waiting_states:
                 return current
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -664,11 +692,24 @@ class PaperImportBatchService:
                 raise PaperImportBatchServiceError(error.code, str(error)) from error
             return self._wait_for_claim_winner(item.item_id, item)
         claimed = self.store.get_item(item.item_id) or item
-        return self._import_one(
+        result = self._import_one(
             claimed, snapshots[item.candidate_id], owner,
             attempt_owner=claimed.attempt_owner or attempt_owner,
             attempt_token=claimed.attempt_token or attempt_token,
         )
+        self._notify_issue(result)
+        return result
+
+    def _notify_issue(self, item: PaperImportItem) -> None:
+        """Notify a Research issue projection after a failed item transition."""
+        context = self._issue_recorders.get(item.batch_id)
+        if context is None or item.status not in {"failed", "waiting_login"}:
+            return
+        task_id, recorder = context
+        try:
+            recorder(task_id, item, batch_id=item.batch_id)
+        except Exception:  # noqa: BLE001 - issue projection must not break imports
+            logger.exception("研究任务论文 issue 投影失败：%s", item.item_id)
 
     def run_batch(self, batch_id: str, *, candidates: Optional[Iterable[Any]] = None) -> PaperImportBatch:
         """Process queued items concurrently; a login item never blocks peers."""
@@ -723,6 +764,9 @@ class PaperImportBatchService:
                         self.store.mark_failed, item.item_id,
                         "IMPORT_INTERRUPTED", "导入被中断，请重试", lease_owner=None,
                     )
+                    current = self.store.get_item(item.item_id)
+                    if current is not None:
+                        self._notify_issue(current)
         except Exception:  # noqa: BLE001 - recovery must not obscure the original failure
             logger.exception("标记中断条目失败：%s", batch_id)
 
@@ -822,24 +866,42 @@ class PaperImportBatchService:
         owner = lease_owner or uuid.uuid4().hex
         attempt_owner = f"paper-import:{uuid.uuid4().hex}"
         attempt_token = secrets.token_urlsafe(32)
-        try:
-            self._store_call(
-                self.store.resume_item, item_id, owner,
-                lease_seconds=self.lease_seconds,
-                attempt_owner=attempt_owner,
-                attempt_token=attempt_token,
-            )
-        except PaperImportBatchStoreError as error:
-            if error.code != INVALID_STATE_TRANSITION:
-                raise PaperImportBatchServiceError(error.code, str(error)) from error
-            return self._wait_for_claim_winner(item_id, item)
+        retry_after_initial_queue = item.status == ITEM_QUEUED
+        while True:
+            try:
+                self._store_call(
+                    self.store.resume_item, item_id, owner,
+                    lease_seconds=self.lease_seconds,
+                    attempt_owner=attempt_owner,
+                    attempt_token=attempt_token,
+                )
+            except PaperImportBatchStoreError as error:
+                if error.code != INVALID_STATE_TRANSITION:
+                    raise PaperImportBatchServiceError(error.code, str(error)) from error
+                current = self._wait_for_claim_winner(
+                    item_id,
+                    item,
+                    include_queued=retry_after_initial_queue,
+                )
+                # The initial background runner is allowed to claim the queued
+                # item, but it must first finish its login-required attempt. A
+                # second resume claim after that stable CAS transition is safe;
+                # a losing concurrent resume must only observe the winner.
+                if retry_after_initial_queue and current.status in {ITEM_WAITING_LOGIN, ITEM_FAILED}:
+                    item = current
+                    retry_after_initial_queue = False
+                    continue
+                return current
+            break
         resumed = self.store.get_item(item_id) or item
-        return self._import_one(
+        result = self._import_one(
             resumed, snapshots[resumed.candidate_id], owner,
             attempt_owner=resumed.attempt_owner or attempt_owner,
             attempt_token=resumed.attempt_token or attempt_token,
             downloader=downloader, context=context,
         )
+        self._notify_issue(result)
+        return result
 
     def cancel_batch(self, batch_id: str) -> PaperImportBatch:
         try:
@@ -882,6 +944,39 @@ class PaperImportBatchService:
         if batch is None:
             raise PaperImportBatchServiceError(BATCH_NOT_FOUND_ERROR, "导入批次不存在")
         return {"batch": batch.to_dict(), "items": [item.to_dict() for item in self.store.get_items(batch_id)]}
+
+    def list_batches(
+        self,
+        *,
+        status: Optional[str] = None,
+        active: bool = True,
+        limit: int = 20,
+        recent: bool = True,
+    ) -> dict[str, Any]:
+        """Return durable batch snapshots for a refresh/recovery client.
+
+        This is a read-only projection over ``PaperImportBatchStore``.  It
+        deliberately does not inspect or start runners, and item dicts are
+        later passed through the same HTTP redaction projection as single
+        batch status responses.
+        """
+        if status is not None and status not in BATCH_STATES:
+            raise PaperImportBatchServiceError("INVALID_BATCH_STATUS", "未知批次状态")
+        if int(limit) < 1 or int(limit) > 100:
+            raise PaperImportBatchServiceError("INVALID_BATCH_LIMIT", "limit 必须为 1 到 100")
+        batches = self.store.list_batches(
+            status=status,
+            active_only=bool(active),
+            limit=int(limit),
+            recent=bool(recent),
+        )
+        return {
+            "batches": [
+                {"batch": batch.to_dict(), "items": [item.to_dict() for item in self.store.get_items(batch.batch_id)]}
+                for batch in batches
+            ],
+            "count": len(batches),
+        }
 
     status = get_status
 

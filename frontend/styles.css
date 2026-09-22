@@ -1884,9 +1884,16 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #papers-view .paper-source-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
   padding: 14px 20px 18px;
+}
+
+#papers-view .paper-source-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font: 11px/1.55 'DM Mono', monospace;
 }
 
 #papers-view .paper-source-card {
@@ -1926,13 +1933,15 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #papers-view .paper-source-status,
 #papers-view .paper-source-counts,
+#papers-view .paper-source-coverage,
 #papers-view .paper-source-error {
   margin: 0;
   overflow-wrap: anywhere;
 }
 
 #papers-view .paper-source-status,
-#papers-view .paper-source-counts {
+#papers-view .paper-source-counts,
+#papers-view .paper-source-coverage {
   color: var(--muted);
   font: 10px/1.55 'DM Mono', monospace;
 }
@@ -3837,6 +3846,30 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #research-view .research-acquisition-item-actions button[hidden] { display: none; }
 #research-view .research-evidence-upgrades { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
 #research-view .research-evidence-locator { color: var(--accent); font-size: 11px; font-weight: 700; }
+#research-view .research-issue-queue { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+#research-view .research-issue-queue[hidden] { display: none; }
+#research-view .research-issue-queue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+#research-view .research-issue-queue h4 { margin: 0; }
+#research-view .research-issue-queue-status,
+#research-view .research-issue-meta,
+#research-view .research-issue-resolution { margin: 4px 0 0; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
+#research-view .research-issue-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+#research-view .research-issue-item { display: grid; gap: 6px; min-width: 0; padding: 10px; border: 1px solid #f2d19b; border-radius: 9px; background: #fffaf0; }
+#research-view .research-issue-item[data-status="failed"] { border-color: #f0b4b4; background: #fff7f7; }
+#research-view .research-issue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+#research-view .research-issue-title { min-width: 0; color: var(--ink); font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
+#research-view .research-issue-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+#research-view .research-issue-actions button { min-height: 30px; padding: 6px 9px; }
+#research-view .research-issue-confirm { display: inline-flex; align-items: flex-start; gap: 6px; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
+#research-view .research-issue-confirm input { margin-top: 2px; accent-color: var(--accent); }
+#research-view .research-issue-actions button:focus-visible,
+#research-view .research-issue-confirm input:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+#research-view .research-field-provenance { margin-top: 4px; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
+#research-view .research-field-provenance summary { cursor: pointer; color: var(--accent); }
+#research-view .research-field-provenance-list { display: grid; grid-template-columns: minmax(80px, .5fr) minmax(0, 1fr); gap: 4px 8px; margin: 6px 0 0; }
+#research-view .research-field-provenance-list dt,
+#research-view .research-field-provenance-list dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+#research-view .research-field-provenance-list dd { color: var(--ink); }
 #research-view .research-evidence-locator:focus-visible,
 #research-view .research-acquisition-candidate input:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
 @media (max-width: 760px) {

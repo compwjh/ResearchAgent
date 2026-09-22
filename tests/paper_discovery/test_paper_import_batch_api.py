@@ -1,5 +1,6 @@
 import time
-from threading import Event
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Timer
 
 import pytest
 from fastapi.testclient import TestClient
@@ -125,6 +126,59 @@ def test_batch_create_rejects_client_urls_with_stable_error(monkeypatch, tmp_pat
     assert response.status_code == 422
     assert response.json()["code"] == "INVALID_IMPORT_BATCH_REQUEST"
     assert set(response.json()) == {"code", "message", "retryable", "request_id"}
+
+
+def test_import_batch_list_returns_active_recent_redacted_batches(monkeypatch, tmp_path):
+    service, _browser = _setup(monkeypatch, tmp_path, lambda *_args: PaperImportResult("paper-1", "safe.pdf", "indexed"))
+    active = service.store.create_batch("search-1", ["candidate-active"])
+    item = service.store.get_items(active.batch_id)[0]
+    service.store.claim_item(item.item_id, "worker")
+    service.store.transition_item(
+        item.item_id,
+        "waiting_login",
+        expected_state="downloading",
+        lease_owner="worker",
+        error_code="LOGIN_REQUIRED",
+        error_message="secret cookie must not escape",
+    )
+    completed = service.store.create_batch("search-1", ["candidate-completed"])
+    completed_item = service.store.get_items(completed.batch_id)[0]
+    service.store.claim_item(completed_item.item_id, "worker")
+    service.store.transition_item(completed_item.item_id, "validating", expected_state="downloading", lease_owner="worker")
+    service.store.transition_item(completed_item.item_id, "indexing", expected_state="validating", lease_owner="worker")
+    service.store.transition_item(completed_item.item_id, "completed", expected_state="indexing", lease_owner="worker", paper_id="doc-1")
+
+    response = TestClient(app).get("/api/papers/imports", params={"limit": 10})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert [row["batch_id"] for row in body["batches"]] == [active.batch_id]
+    assert body["batches"][0]["status"] == "waiting_login"
+    assert body["batches"][0]["items"][0]["candidate_id"] == "candidate-active"
+    serialized = response.text.lower()
+    assert "attempt_token" not in serialized
+    assert "cookie" not in serialized
+    assert "secret" not in serialized
+
+
+def test_import_batch_list_filters_status_and_limit(monkeypatch, tmp_path):
+    service, _browser = _setup(monkeypatch, tmp_path, lambda *_args: PaperImportResult("paper-1", "safe.pdf", "indexed"))
+    first = service.store.create_batch("search-1", ["candidate-1"])
+    second = service.store.create_batch("search-1", ["candidate-2"])
+    for batch in (first, second):
+        item = service.store.get_items(batch.batch_id)[0]
+        service.store.claim_item(item.item_id, "worker")
+        service.store.transition_item(item.item_id, "waiting_login", expected_state="downloading", lease_owner="worker")
+
+    response = TestClient(app).get(
+        "/api/papers/imports",
+        params={"active": "false", "status": "waiting_login", "limit": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["batches"][0]["status"] == "waiting_login"
 
 
 def test_batch_status_and_resume_use_server_snapshot(monkeypatch, tmp_path):
@@ -279,6 +333,48 @@ def test_resume_browser_session_race_returns_424_without_reimport(monkeypatch, t
     current = service.store.get_item(item_id)
     assert current.status == "failed"
     assert current.error_code == browser_code
+
+
+def test_resume_waits_for_queued_initial_runner_before_browser_failure(monkeypatch, tmp_path):
+    """A queued initial runner must settle before resume returns a payload."""
+    from backend.app.paper_discovery.application import paper_import_batch_service as batch_service_module
+
+    gate = Event()
+    executor = ThreadPoolExecutor(max_workers=1)
+    executor.submit(gate.wait, 2)
+    monkeypatch.setattr(batch_service_module, "_batch_runner_executor", executor)
+
+    def importer(candidate, *_args, downloader=None, **_kwargs):
+        if downloader is None:
+            raise PaperImportError(LOGIN_REQUIRED, "需要登录")
+        downloader(candidate)
+        return PaperImportResult("paper-1", "safe.pdf", "indexed")
+
+    service, browser = _setup(
+        monkeypatch,
+        tmp_path,
+        importer,
+        browser_download_error=BROWSER_SESSION_REQUIRED,
+    )
+    client = TestClient(app)
+    created = client.post(
+        "/api/papers/import-batches",
+        json={"search_id": "search-1", "candidate_ids": ["candidate-1"]},
+    )
+    item_id = created.json()["items"][0]["item_id"]
+    client.post(f"/api/papers/import-items/{item_id}/login")
+    release = Timer(0.05, gate.set)
+    release.start()
+    try:
+        response = client.post(f"/api/papers/import-items/{item_id}/resume")
+    finally:
+        gate.set()
+        executor.shutdown(wait=True)
+
+    assert response.status_code == 424
+    assert response.json()["code"] == BROWSER_SESSION_REQUIRED
+    assert service.store.get_item(item_id).error_code == BROWSER_SESSION_REQUIRED
+    assert browser.sessions[0].closed is True
 
 
 def test_single_import_error_response_uses_fixed_safe_message():

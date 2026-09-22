@@ -464,7 +464,7 @@ class ResearchService:
             # materialized plan), require an explicit valid checkpoint rather
             # than pretending the task can make progress.
             items = self._store.list_work_items(research_task_id)
-            if not items or not any(item.status in {"queued", "running"} for item in items):
+            if not items or not any(item.status in {"queued", "running", "waiting_retry"} for item in items):
                 raise ResearchServiceError("INVALID_STATE_TRANSITION", 409, "没有可恢复节点")
         try:
             updated = self._store.resume_task_cas(research_task_id, owner_id) if hasattr(self._store, "resume_task_cas") else self._store.update_task_status(research_task_id, owner_id, "running")
@@ -526,7 +526,7 @@ class ResearchService:
             self._validate_resume_checkpoint(task, checkpoint)
 
         counts = {status: sum(item.status == status for item in items) for status in (
-            "queued", "running", "completed", "failed", "cancelled", "interrupted"
+            "queued", "running", "waiting_retry", "completed", "failed", "cancelled", "interrupted"
         )}
         summary = {
             "research_task_id": research_task_id,

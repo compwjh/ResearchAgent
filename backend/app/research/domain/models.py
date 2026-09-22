@@ -162,6 +162,9 @@ class ResearchWorkItem:
     error_code: str | None = None
     started_at: str | None = None
     ended_at: str | None = None
+    retry_count: int = 0
+    next_retry_at: str | None = None
+    last_error_code: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -181,6 +184,9 @@ class ResearchWorkItem:
             "error_code": self.error_code,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
+            "retry_count": self.retry_count,
+            "next_retry_at": self.next_retry_at,
+            "last_error_code": self.last_error_code,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -206,6 +212,9 @@ class ResearchWorkItem:
             error_code=row.get("error_code"),
             started_at=row.get("started_at"),
             ended_at=row.get("ended_at"),
+            retry_count=int(row.get("retry_count") or 0),
+            next_retry_at=row.get("next_retry_at"),
+            last_error_code=row.get("last_error_code"),
         )
 
     @property
@@ -507,6 +516,112 @@ class ResearchDocumentLink:
             error_code=row.get("error_code"),
             created_at=row.get("created_at", ""),
             updated_at=row.get("updated_at", ""),
+        )
+
+
+@dataclass
+class AcquisitionIssue:
+    """Durable, candidate-scoped work item for a recoverable acquisition failure.
+
+    The candidate id is the de-duplication key across Research tasks.  Task ids,
+    attempts and actions are intentionally JSON-shaped at the persistence
+    boundary so one issue can retain a compact history without copying paper
+    metadata or introducing another import state machine.
+    """
+
+    candidate_id: str
+    reason_code: str
+    issue_id: str | None = None
+    status: str = "open"
+    task_ids: list[str] | None = None
+    attempts: list[dict[str, Any]] | None = None
+    actions: list[str] | None = None
+    resolution: dict[str, Any] | None = None
+    import_item_id: str | None = None
+    batch_id: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+    resolved_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "issue_id": self.issue_id,
+            "candidate_id": self.candidate_id,
+            "task_ids": list(self.task_ids or []),
+            "reason_code": self.reason_code,
+            "status": self.status,
+            "attempts": list(self.attempts or []),
+            "actions": list(self.actions or []),
+            "resolution": dict(self.resolution or {}) if self.resolution else None,
+            "import_item_id": self.import_item_id,
+            "batch_id": self.batch_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "resolved_at": self.resolved_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        def decode(name: str, default):
+            try:
+                value = json.loads(row.get(name) or "")
+            except (TypeError, ValueError):
+                value = default
+            return value if isinstance(value, type(default)) else default
+
+        tasks = decode("task_ids_json", [])
+        attempts = decode("attempts_json", [])
+        actions = decode("actions_json", [])
+        resolution = decode("resolution_json", {})
+        return cls(
+            issue_id=row.get("issue_id"), candidate_id=row["candidate_id"],
+            task_ids=[str(value) for value in tasks if value],
+            reason_code=row.get("reason_code", "ACQUISITION_FAILED"),
+            status=row.get("status", "open"), attempts=attempts,
+            actions=[str(value) for value in actions if value],
+            resolution=resolution or None, import_item_id=row.get("import_item_id"),
+            batch_id=row.get("batch_id"), created_at=row.get("created_at", ""),
+            updated_at=row.get("updated_at", ""), resolved_at=row.get("resolved_at"),
+        )
+
+
+@dataclass
+class ManualResolution:
+    """An auditable user action that resolves (or advances) one issue."""
+
+    issue_id: str
+    method: str
+    user_document_id: str | None = None
+    identity_verdict: str = "uncertain"
+    confirmed_at: str | None = None
+    evidence: dict[str, Any] | None = None
+    resolution_id: str | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "resolution_id": self.resolution_id,
+            "issue_id": self.issue_id,
+            "method": self.method,
+            "user_document_id": self.user_document_id,
+            "identity_verdict": self.identity_verdict,
+            "confirmed_at": self.confirmed_at,
+            "evidence": dict(self.evidence or {}) if self.evidence else {},
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Self:
+        try:
+            evidence = json.loads(row.get("evidence_json") or "{}")
+        except (TypeError, ValueError):
+            evidence = {}
+        return cls(
+            resolution_id=row.get("resolution_id"), issue_id=row["issue_id"],
+            method=row["method"], user_document_id=row.get("user_document_id"),
+            identity_verdict=row.get("identity_verdict", "uncertain"),
+            confirmed_at=row.get("confirmed_at"), evidence=evidence if isinstance(evidence, dict) else {},
+            created_at=row.get("created_at", ""),
         )
 
 

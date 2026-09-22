@@ -54,26 +54,28 @@ from backend.app.research.domain.contracts import (
     WORKITEM_TERMINAL,
 )
 from backend.app.research.domain.models import (
+    AcquisitionApproval,
+    AcquisitionEvent,
+    AcquisitionIssue,
     AgentCheckpoint,
     AgentRun,
     ApprovalRequest,
-    IntakeField,
-    PreliminaryReport,
-    ResearchArtifact,
-    AcquisitionApproval,
-    AcquisitionEvent,
     ClaimEvidence,
     ComparisonDimension,
     EvidenceUpgrade,
+    IntakeField,
+    ManualResolution,
     PaperComparisonCell,
-    ResearchEvent,
+    PreliminaryReport,
+    ResearchArtifact,
+    ResearchClaim,
     ResearchDocumentLink,
+    ResearchEvent,
     ResearchIntakeDraft,
     ResearchNotification,
     ResearchPaperSelection,
-    ResearchClaim,
-    ResearchReport,
     ResearchPlan,
+    ResearchReport,
     ResearchSession,
     ResearchSessionPlan,
     ResearchTask,
@@ -119,6 +121,7 @@ _EVENT_SAFE_KEYS = {
     "parent_step_id", "kind", "label", "summary", "display_order", "research_session_id",
     "skill_name", "tool_name", "result_id", "result_length", "length", "content_hash", "tool_call_id",
     "attempt", "event_type", "from_tier", "to_tier", "granted", "source_ref", "facets_by_paper",
+    "reason_code", "from_provider", "to_provider", "from_model", "to_model",
 }
 _EVENT_SENSITIVE_PARTS = ("prompt", "cot", "reasoning", "credential", "password", "secret", "token", "authorization", "cookie", "api_key", "access_key")
 
@@ -424,6 +427,7 @@ class ResearchStore:
             self._ensure_spec029_schema(connection)
             self._ensure_spec030_schema(connection)
             self._ensure_spec031_schema(connection)
+            self._ensure_spec040_schema(connection)
             self._validate_schema_meta(connection)
             connection.commit()
 
@@ -484,6 +488,9 @@ class ResearchStore:
                 error_code TEXT,
                 started_at TEXT,
                 ended_at TEXT,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                next_retry_at TEXT,
+                last_error_code TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )"""
@@ -618,6 +625,37 @@ class ResearchStore:
         )""")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_acq_events_task ON research_acquisition_events(research_task_id, created_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_research_doc_links_task ON research_document_links(research_task_id, catalog_paper_id)")
+        # Task11 keeps one durable issue per candidate across Research tasks;
+        # JSON columns retain compact task/attempt/action history without
+        # copying candidate metadata or creating a second import state machine.
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_acquisition_issues(
+            issue_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL UNIQUE,
+            task_ids_json TEXT NOT NULL DEFAULT '[]',
+            reason_code TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            attempts_json TEXT NOT NULL DEFAULT '[]',
+            actions_json TEXT NOT NULL DEFAULT '[]',
+            resolution_json TEXT,
+            import_item_id TEXT,
+            batch_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            resolved_at TEXT
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS research_manual_resolutions(
+            resolution_id TEXT PRIMARY KEY,
+            issue_id TEXT NOT NULL REFERENCES research_acquisition_issues(issue_id) ON DELETE RESTRICT,
+            method TEXT NOT NULL,
+            user_document_id TEXT,
+            identity_verdict TEXT NOT NULL,
+            confirmed_at TEXT,
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_acq_issues_status ON research_acquisition_issues(status, updated_at)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_acq_issues_candidate ON research_acquisition_issues(candidate_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_research_manual_resolutions_issue ON research_manual_resolutions(issue_id, created_at)")
         # Task04 adds provenance to the already shipped evidence projection.
         # Keep this additive so Task03 databases remain readable.
         columns = {
@@ -805,6 +843,21 @@ class ResearchStore:
             FOREIGN KEY(resource_snapshot_id) REFERENCES research_resource_snapshots(snapshot_id) ON DELETE RESTRICT
         )""")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_routing_gate_evidence_policy ON research_routing_gate_evidence(policy_version, created_at)")
+
+    @staticmethod
+    def _ensure_spec040_schema(connection: sqlite3.Connection) -> None:
+        """Add durable retry metadata to existing WorkItem tables."""
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(research_work_items)").fetchall()}
+        if "retry_count" not in columns:
+            connection.execute("ALTER TABLE research_work_items ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
+        if "next_retry_at" not in columns:
+            connection.execute("ALTER TABLE research_work_items ADD COLUMN next_retry_at TEXT")
+        if "last_error_code" not in columns:
+            connection.execute("ALTER TABLE research_work_items ADD COLUMN last_error_code TEXT")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_work_items_retry_due "
+            "ON research_work_items(status, next_retry_at, research_task_id)"
+        )
 
     @staticmethod
     def _ensure_scheduler_schema(connection: sqlite3.Connection) -> None:
@@ -2237,8 +2290,8 @@ class ResearchStore:
                             work_item_id, research_task_id, plan_version, task_type, role,
                             depends_on_json, input_json, output_json, model_tier, resolved_model,
                             worker_slot, status, attempt, error_code, started_at, ended_at,
-                            created_at, updated_at
-                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            retry_count, next_retry_at, last_error_code, created_at, updated_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             it.work_item_id,
                             research_task_id,
@@ -2256,6 +2309,9 @@ class ResearchStore:
                             it.error_code,
                             it.started_at,
                             it.ended_at,
+                            it.retry_count,
+                            it.next_retry_at,
+                            it.last_error_code,
                             it.created_at or now,
                             it.updated_at or now,
                         ),
@@ -2293,6 +2349,76 @@ class ResearchStore:
             raise ResearchWorkItemNotFound(work_item_id)
         return ResearchWorkItem.from_row(dict(row))
 
+    def schedule_work_item_retry(
+        self,
+        work_item_id: str,
+        *,
+        error_code: str,
+        next_retry_at: str,
+        retry_count: int | None = None,
+    ) -> ResearchWorkItem:
+        """Atomically move a live WorkItem to durable ``waiting_retry``.
+
+        Terminal rows win races with a late failure and are returned untouched;
+        this prevents a stale worker from reopening completed evidence.
+        """
+        if not error_code or not next_retry_at:
+            raise ValueError("error_code and next_retry_at are required")
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "SELECT * FROM research_work_items WHERE work_item_id=?", (work_item_id,)
+                ).fetchone()
+                if row is None:
+                    raise ResearchWorkItemNotFound(work_item_id)
+                current = row["status"]
+                if current in WORKITEM_TERMINAL:
+                    conn.commit()
+                    return ResearchWorkItem.from_row(dict(row))
+                if current != "waiting_retry":
+                    transition_workitem(current, "waiting_retry")
+                count = int(row["retry_count"] or 0) + 1 if retry_count is None else int(retry_count)
+                if count < 1:
+                    raise ValueError("retry_count must be positive")
+                now = _utcnow()
+                conn.execute(
+                    """UPDATE research_work_items
+                       SET status='waiting_retry', retry_count=?, next_retry_at=?,
+                           last_error_code=?, error_code=?, ended_at=NULL, updated_at=?
+                       WHERE work_item_id=? AND status NOT IN ('completed','failed','cancelled','interrupted')""",
+                    (count, next_retry_at, error_code, error_code, now, work_item_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_work_items WHERE work_item_id=?", (work_item_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ResearchWorkItem.from_row(dict(row))
+
+    def requeue_due_work_items(self, *, now: str | None = None, research_task_id: str | None = None) -> int:
+        """Make due waiting items claimable in one transaction after restart."""
+        current = now or _utcnow()
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                clauses = ["status='waiting_retry'", "(next_retry_at IS NULL OR next_retry_at<=?)"]
+                params: list[object] = [current]
+                if research_task_id is not None:
+                    clauses.append("research_task_id=?")
+                    params.append(research_task_id)
+                changed = conn.execute(
+                    f"UPDATE research_work_items SET status='queued', next_retry_at=NULL, updated_at=? WHERE {' AND '.join(clauses)}",
+                    [current, *params],
+                ).rowcount
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return int(changed)
+
     def list_work_items(
         self, research_task_id: str, *, plan_version: Optional[int] = None
     ) -> list[ResearchWorkItem]:
@@ -2318,6 +2444,9 @@ class ResearchStore:
         model_tier: Optional[str] = None,
         worker_slot: Optional[str] = None,
         attempt: Optional[int] = None,
+        retry_count: Optional[int] = None,
+        next_retry_at: Optional[str] = None,
+        last_error_code: Optional[str] = None,
     ) -> ResearchWorkItem:
         """更新 WorkItem 状态并可选写回结果字段；状态机校验非法则抛 InvalidStateTransition。
 
@@ -2345,7 +2474,7 @@ class ResearchStore:
                     and current_status in WORKITEM_TERMINAL
                     and any(value is not None for value in (
                         error_code, output_json, resolved_model, model_tier,
-                        worker_slot, attempt,
+                        worker_slot, attempt, retry_count, next_retry_at, last_error_code,
                     ))
                 )
                 if not same_terminal_writeback:
@@ -2377,6 +2506,17 @@ class ResearchStore:
                 if attempt is not None:
                     set_clauses.append("attempt=?")
                     params.append(attempt)
+                if retry_count is not None:
+                    if int(retry_count) < 0:
+                        raise ValueError("retry_count must be non-negative")
+                    set_clauses.append("retry_count=?")
+                    params.append(int(retry_count))
+                if next_retry_at is not None:
+                    set_clauses.append("next_retry_at=?")
+                    params.append(next_retry_at)
+                if last_error_code is not None:
+                    set_clauses.append("last_error_code=?")
+                    params.append(last_error_code)
                 set_clauses.append("updated_at=?")
                 params.append(now)
                 params.append(work_item_id)
@@ -5386,6 +5526,176 @@ class ResearchStore:
                 (research_task_id,),
             ).fetchall()
         return [AcquisitionEvent.from_row(dict(row)) for row in rows]
+
+    # ------------------------------------------------------------------ #
+    # Task11 candidate-scoped acquisition issues / manual resolutions
+    # ------------------------------------------------------------------ #
+
+    def upsert_acquisition_issue(self, issue: AcquisitionIssue, *, task_id: str | None = None) -> AcquisitionIssue:
+        """Create or merge the one issue row for a stable candidate id.
+
+        Repeated batch status polls are idempotent for the issue identity while
+        preserving distinct attempts and Research task associations.  No
+        client-provided URL or credential enters this table.
+        """
+        candidate_id = str(issue.candidate_id or "").strip()
+        reason_code = str(issue.reason_code or "ACQUISITION_FAILED").strip()
+        if not candidate_id or not reason_code:
+            raise ValueError("acquisition issue requires candidate_id and reason_code")
+        supplied_tasks = [str(value).strip() for value in (issue.task_ids or []) if str(value).strip()]
+        if task_id and str(task_id).strip():
+            supplied_tasks.append(str(task_id).strip())
+        supplied_attempts = [dict(value) for value in (issue.attempts or []) if isinstance(value, dict)]
+        supplied_actions = [str(value).strip() for value in (issue.actions or []) if str(value).strip()]
+        now = issue.updated_at or issue.created_at or _utcnow()
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = conn.execute(
+                    "SELECT * FROM research_acquisition_issues WHERE candidate_id=?", (candidate_id,)
+                ).fetchone()
+                if existing is not None:
+                    current = AcquisitionIssue.from_row(dict(existing))
+                    issue_id = current.issue_id
+                    task_ids = list(dict.fromkeys((current.task_ids or []) + supplied_tasks))
+                    attempts = list(current.attempts or [])
+                    for attempt in supplied_attempts:
+                        if attempt not in attempts:
+                            attempts.append(attempt)
+                    # Actions describe the current recoverable state, while
+                    # ``attempts`` retains the historical action paths. Do
+                    # not union actions across states: a candidate that moved
+                    # from ``waiting_login`` to ``failed`` must not keep
+                    # exposing ``login``/``resume`` after the browser window
+                    # is gone.
+                    actions = supplied_actions or list(current.actions or [])
+                    status = str(issue.status or current.status or "open")
+                    resolution = issue.resolution if issue.resolution is not None else current.resolution
+                    # A fresh failure after a prior resolution is a new
+                    # actionable episode, but a completed import stays closed.
+                    resolved_at = issue.resolved_at if status == "resolved" else None
+                    conn.execute(
+                        """UPDATE research_acquisition_issues SET task_ids_json=?, reason_code=?, status=?,
+                           attempts_json=?, actions_json=?, resolution_json=?, import_item_id=?, batch_id=?,
+                           updated_at=?, resolved_at=? WHERE issue_id=?""",
+                        (json.dumps(task_ids, ensure_ascii=False), reason_code, status,
+                         json.dumps(attempts[-100:], ensure_ascii=False), json.dumps(actions, ensure_ascii=False),
+                         json.dumps(resolution, ensure_ascii=False) if resolution is not None else None,
+                         issue.import_item_id or current.import_item_id, issue.batch_id or current.batch_id,
+                         now, resolved_at, issue_id),
+                    )
+                else:
+                    issue_id = issue.issue_id or f"acq-{hashlib.sha256(candidate_id.encode('utf-8')).hexdigest()[:32]}"
+                    task_ids = list(dict.fromkeys(supplied_tasks))
+                    resolution_json = json.dumps(issue.resolution, ensure_ascii=False) if issue.resolution is not None else None
+                    conn.execute(
+                        """INSERT INTO research_acquisition_issues(
+                           issue_id,candidate_id,task_ids_json,reason_code,status,attempts_json,actions_json,
+                           resolution_json,import_item_id,batch_id,created_at,updated_at,resolved_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (issue_id, candidate_id, json.dumps(task_ids, ensure_ascii=False), reason_code,
+                         issue.status or "open", json.dumps(supplied_attempts[-100:], ensure_ascii=False),
+                         json.dumps(supplied_actions, ensure_ascii=False), resolution_json,
+                         issue.import_item_id, issue.batch_id, issue.created_at or now, now, issue.resolved_at),
+                    )
+                row = conn.execute("SELECT * FROM research_acquisition_issues WHERE issue_id=?", (issue_id,)).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return AcquisitionIssue.from_row(dict(row))
+
+    def record_acquisition_issue(
+        self, *, candidate_id: str, task_id: str, reason_code: str, status: str = "open",
+        actions: list[str] | None = None, attempt: dict | None = None,
+        import_item_id: str | None = None, batch_id: str | None = None,
+    ) -> AcquisitionIssue:
+        return self.upsert_acquisition_issue(
+            AcquisitionIssue(
+                candidate_id=candidate_id, reason_code=reason_code, status=status,
+                attempts=[attempt] if attempt else [], actions=actions or [],
+                import_item_id=import_item_id, batch_id=batch_id,
+            ), task_id=task_id,
+        )
+
+    def get_acquisition_issue(self, issue_id: str) -> AcquisitionIssue | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_acquisition_issues WHERE issue_id=?", (str(issue_id),)
+            ).fetchone()
+        return AcquisitionIssue.from_row(dict(row)) if row else None
+
+    def get_acquisition_issue_for_candidate(self, candidate_id: str) -> AcquisitionIssue | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_acquisition_issues WHERE candidate_id=?", (str(candidate_id),)
+            ).fetchone()
+        return AcquisitionIssue.from_row(dict(row)) if row else None
+
+    def list_acquisition_issues(
+        self, *, task_id: str | None = None, status: str | None = None,
+        reason_code: str | None = None, limit: int = 100,
+    ) -> list[AcquisitionIssue]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_acquisition_issues ORDER BY updated_at DESC, issue_id LIMIT ?",
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+        result: list[AcquisitionIssue] = []
+        for row in rows:
+            issue = AcquisitionIssue.from_row(dict(row))
+            if task_id and str(task_id) not in (issue.task_ids or []):
+                continue
+            if status and issue.status != status:
+                continue
+            if reason_code and issue.reason_code != reason_code:
+                continue
+            result.append(issue)
+        return result
+
+    def resolve_acquisition_issue(self, issue_id: str, resolution: dict[str, object]) -> AcquisitionIssue:
+        issue = self.get_acquisition_issue(issue_id)
+        if issue is None:
+            raise ValueError("acquisition issue not found")
+        now = _utcnow()
+        updated = AcquisitionIssue(
+            **{**issue.__dict__, "status": "resolved", "resolution": dict(resolution),
+               "updated_at": now, "resolved_at": now}
+        )
+        return self.upsert_acquisition_issue(updated)
+
+    def add_manual_resolution(self, resolution: ManualResolution) -> ManualResolution:
+        if not resolution.issue_id or resolution.method not in {"login", "resume", "upload", "retry", "import"}:
+            raise ValueError("invalid manual resolution")
+        now = resolution.created_at or _utcnow()
+        resolution_id = resolution.resolution_id or uuid.uuid4().hex
+        with _write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(
+                    """INSERT INTO research_manual_resolutions(
+                       resolution_id,issue_id,method,user_document_id,identity_verdict,confirmed_at,evidence_json,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?)""",
+                    (resolution_id, resolution.issue_id, resolution.method, resolution.user_document_id,
+                     resolution.identity_verdict, resolution.confirmed_at or now,
+                     json.dumps(resolution.evidence or {}, ensure_ascii=False), now),
+                )
+                row = conn.execute(
+                    "SELECT * FROM research_manual_resolutions WHERE resolution_id=?", (resolution_id,)
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ManualResolution.from_row(dict(row))
+
+    def list_manual_resolutions(self, issue_id: str) -> list[ManualResolution]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM research_manual_resolutions WHERE issue_id=? ORDER BY created_at,resolution_id",
+                (str(issue_id),),
+            ).fetchall()
+        return [ManualResolution.from_row(dict(row)) for row in rows]
 
     def save_evidence_upgrade(self, upgrade: EvidenceUpgrade) -> EvidenceUpgrade:
         if not upgrade.claim_id or not upgrade.from_level or not upgrade.to_level:

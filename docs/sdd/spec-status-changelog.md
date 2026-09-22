@@ -372,8 +372,45 @@
 
 ## 2026-09-20
 
+- **Spec040 Research Runtime 指数退避与线上模型兜底** ｜ `新建` → `待确认` ｜ 2026-09-20：根据会话 `14355ba3973e46d6a59fd2819df6f9b8` 暴露的资源竞争快速失败，落盘失败分类、持久化指数退避、受控线上模型回退和观测验收边界；尚未修改业务代码，等待用户确认。
+
+- **039 API 端到端成功案例与人工验收协议** ｜ `待确认` → `实施中` ｜ 2026-09-20：用户确认先完成 Spec039，再以 Spec032 作为示范；启动验收协议 Skill、模板接入和 Spec032 API E2E/人工案例产出。子 Agent 临时使用 Luna high。
+- **039 API 端到端成功案例与人工验收协议** ｜ `实施中` → `阻塞` ｜ 2026-09-20：验收协议、Skill、模板和真实 API 证据已落盘；Spec032 任务链已完成但报告仍缺少标题/摘要/关键词/方法比较，且浏览器投影与恢复路径未复核，按 90% 门禁暂不交付。
+- **039 API 端到端成功案例与人工验收协议** ｜ `阻塞` → `待人工验收` ｜ 2026-09-20：运行 D 已生成 5 篇可读报告并完成 Artifact/浏览器复核，运行 E 补齐处理中 task/Worker/Skill/Tool 状态采样；修复小模型重复 citation candidate_id 的唯一引用归属校正，定向测试 81 passed、5 subtests，允许用户开始人工验收，Spec 尚未收口。
+- **039 API 端到端成功案例与人工验收协议** ｜ `待人工验收` → `待人工验收` ｜ 2026-09-20：继续修复评估器数组/批量证据展开、搜索 Worker 只读恢复、长摘要安全上限和固定渲染回退；定向测试 85 passed、5 subtests，真实报告 API 返回 200。保持待人工验收，未提前收口。
+- **039 API 端到端成功案例与人工验收协议** ｜ 新建 → `待确认` ｜ 2026-09-20：根据用户要求把自然语言 Intake 作为主验收路径，增加真实 API E2E 前置门禁、详细人工步骤和 90% 准备度阈值；仅落盘 Spec 与任务文档，等待确认后再创建验收 Skill。
+
 - **Spec032 Research Task 数据源与安全会议扩展** ｜ `已确认` → `待确认` ｜ 2026-09-20T03:38:32+08:00：用户经多轮 Grilling 确认多来源 Worker Skill、统一 Tool、官网优先、批准计划内自动导入与待处理论文人工修复。原任务已有代码与真实产品接线存在差距，修订 Spec、审计和 Task06–14 已落盘；本次仅文档，不改业务代码，等待新版 Spec 明确确认。
 - **Spec032.1 USENIX Skill 解耦与详情页摘要补齐** ｜ `已确认` → `已确认`（移交记录，状态未变） ｜ 2026-09-20T03:38:32+08:00：作为 Spec032 子规格保留 Task02–06 成果；原 Task08/10 待办转由 Spec032 Task13 承接，Task07 自身评审仍未完成，未标记完成或伪造 Task09 结果。
 - **Spec032 Research Task 数据源与安全会议扩展** ｜ `待确认` → `实施中` ｜ 2026-09-20T03:50:06+08:00：用户确认新版 Spec032 并授权开发；启动 Task06，先统一七来源 ID、字段真实来源、权威级别与结构化返回合同。子 Agent 临时使用 Luna xhigh；Task 阶段只运行定向测试。
 - **Spec032 Task06：统一来源 ID、权威、返回合同与旧回归** ｜ `进行中` → `已完成` ｜ 2026-09-20：Luna high 子 Agent 完成版本化 SourceResult/ImportResult、七来源 canonical ID、真实 authority 归一化、旧 SQLite 别名迁移和统一薄包装；主 Agent 复跑 206 个相关测试，ruff、compileall、git diff --check 均通过，放行 Task07。
 - **Spec032 Task07：官网目录优先、聚合兜底与逐年字段覆盖** ｜ `实施中` → `部分完成` ｜ 2026-09-20：IEEE S&P 2024 官方目录固定样本、字段 provenance、缺失摘要/关键词告警及 PDF 响应拒绝已通过 76 个定向测试；CCS/NDSS 与其余年度保持未验证/NO-GO，不伪造覆盖，Task08 只可接入已验证范围。
+- **Spec032 Task08：来源注册、真实同步与 Graph/Store/Planner 接线** ｜ `实施中` → `部分完成` ｜ 2026-09-20：七来源 Registry 工厂、受控同步 API、真实终态、SQLite 重启读取和 generic adapter 状态修复通过 48 个相关测试与 12 个 subtests；Graph/Planner 全量 source_ids 接线尚未完成，保持诚实的部分状态。
+- **Spec032 Task09：多来源 Worker Skill 与统一 Python Tool** ｜ `实施中` → `已完成` ｜ 2026-09-20：统一 `paper_discovery` 的 `worker-tool-v1` facade、来源 Skill、注册/分派入口和 fail-closed 校验完成；132 个相关测试、21 个 subtests 及静态检查通过，CCS/NDSS 未验证状态未被伪造为成功。
+- **032 论文来源扩展 — Task10** ｜ 实施中 → 已完成（定向验证通过） ｜ 2026-09-20：批准计划自动导入复用既有批量导入、安全下载、身份核验与索引链路；普通检索、未批准或已取消计划不触发 PDF 请求。定向测试 206 passed，Ruff、compileall、diff-check 通过。
+- **032 论文来源扩展 — Task11** ｜ 实施中 → 已完成（后端定向验证通过；前端留 Task12） ｜ 2026-09-20：新增候选级持久待处理队列与人工解决记录，复用既有登录/继续/重试和 KB 上传；跨任务去重、身份不确定阻断、ResearchDocumentLink 回填通过 102 passed、12 subtests，静态检查通过。
+- **032 论文来源扩展 — Task12** ｜ 待执行 → 实施中（前端） ｜ 2026-09-20：Task11 后端问题队列接口已冻结，启动来源动态进度卡、待处理论文入口、登录/上传/重试动作和字段来源展示；仅分派前端角色，保留真实浏览器 smoke 到最终验收。
+- **032 论文来源扩展 — Task12** ｜ 实施中（前端） → 已完成（前端定向验证通过；真实 smoke 留 Task14） ｜ 2026-09-20：前端完成七来源动态进度卡、候选字段来源展开、waiting_login/failed 动作和人工确认上传；`229 passed`、Node syntax、diff-check 通过。
+- **032 论文来源扩展 — Task13** ｜ 待执行 → 实施中 ｜ 2026-09-20：Task12 已完成，启动 032.1 余项审计与 IDE/会话 Skill 粘性移交；不代签 032.1 评审，不伪造产品 API 成功。
+- **032 论文来源扩展 — Task13** ｜ 实施中 → 部分完成（静态/契约通过；真实服务 smoke 阻塞） ｜ 2026-09-20：补齐 IDE Skill 的 `source_page_url` 官方详情页回退；Task13 合同 4 passed，会话/仓储/Skill 相关测试 73 passed。服务未启动导致真实检索→导入 smoke 留 Task14。
+- **032 论文来源扩展 — Task14** ｜ 待执行 → 实施中 ｜ 2026-09-20：Task06–12 定向实现完成、Task13 已诚实记录 smoke 阻塞，启动最终复用审计、三门评审、唯一全量回归、受控服务 smoke、部署与收口复盘。
+- **032 论文来源扩展 — Task08 follow-up** ｜ 部分完成 → 已完成（定向验证通过；真实 smoke 留 Task14） ｜ 2026-09-20：修复 Planner→Research Worker 的多来源接线；`ieee_sp/ccs/ndss/openalex/crossref` 统一走 `PaperDiscoveryToolFacade`，转换并冻结既有目录/来源记录/provenance/SearchJob/SearchResult，USENIX/DBLP/all 旧 Graph 保持不变。Task08/09/Spec034 合同 23 passed、相关来源/Graph 回归 215 passed，Ruff、compileall、diff-check 通过。
+- **032 论文来源扩展 — Task07 follow-up** ｜ 部分完成 → 部分完成（新增 NDSS 2024 固定样本） ｜ 2026-09-20：补齐 NDSS 官方 accepted-papers 2024 路由、HTML 解析、ETag/content-hash、PDF 响应拒绝和字段缺失告警；82 项相关定向测试通过。NDSS 仅为 2024 bounded subset，2021–2023/2025 未验证；CCS 仍 NO-GO，未伪造年度覆盖。
+- **032 论文来源扩展 — Task07 CCS follow-up** ｜ 部分完成 → 部分完成（CCS bounded NO-GO） ｜ 2026-09-20：审计 CCS 2021–2025 官方入口；2021/2022/2024 缺稳定身份键，2023 动态数据库故障，2025 依赖 JavaScript。新增 `artifacts/task-07/ccs-coverage.md` 与 56 项 gate 测试，保留 Crossref/OpenAlex 兜底，未新增不可靠官方解析器。
+- **032 论文来源扩展 — Task14 follow-up** ｜ 实施中 → 实施中 ｜ 2026-09-20：纳入 Task08 多来源 Worker bridge 与 Task07 CCS bounded NO-GO；Spec032 相关回归更新为 `765 passed`。18080 health/ready 已 HTTP 200，受控目录 smoke 有成功和 degraded 两类真实结果；完整覆盖、登录/导入和业务恢复仍缺收口证据，暂不收口。
+- **032 论文来源扩展 — Task11 recovery follow-up** ｜ 已完成（后端定向验证通过） → 已完成（补充状态保护） ｜ 2026-09-20：动作投影随 waiting_login/failed 最新状态收敛，resume 审计、resolved 重复上传保护补齐；定向 106 passed/12 subtests，Spec032 相关回归 764 passed。真实登录/上传 smoke 留 Task14。
+- **032 论文来源扩展 — Task14 runtime follow-up** ｜ 实施中 → 实施中 ｜ 2026-09-20：18080 沙箱外 health/ready HTTP 200；USENIX 2024（227）与 NDSS 2024 official（142）目录 sync 完成并在重启后可读；IEEE S&P 2024 外站 sync 返回 `SOURCE_FAILED`/degraded，完整四会覆盖、候选评估→导入与业务批次恢复仍未达收口门禁。
+- **032 论文来源扩展 — Task07/08 NDSS runtime follow-up** ｜ 部分完成 → 部分完成 ｜ 2026-09-20：修复 NDSS 2024 runtime 未传 `route=official` 的接线缺口；新增 2024 official/其它年份 Crossref fallback 测试，相关定向测试通过，目录阶段仍不探测 PDF。
+- **Spec040 Research Runtime 指数退避与线上模型兜底** ｜ `待确认` → `已确认` ｜ 2026-09-20：用户要求立即开始开发并指定子 Agent 使用 Luna high；确认失败分类、指数退避和受控线上模型回退范围，进入实现前评审与 Task02。
+- **Spec040 Research Runtime 指数退避与线上模型兜底** ｜ `已确认` → `实施中` ｜ 2026-09-20：开始 Task02 失败分类与 Go/No-Go 门禁；Task 阶段仅运行定向测试，线上 Provider 默认保持关闭。
+- **Spec040 Task02–03：失败分类与指数退避** ｜ `实施中` → `已完成（后端定向验证通过）` ｜ 2026-09-20：AgentRuntimeError 保留真实稳定错误码；资源忙进入持久化 `waiting_retry`，实现有界指数退避、重启恢复和原子领取。定向研究运行时回归 91 passed，线上 Provider 回退留 Task04。
+- **Spec040 Task04–05：Research Runtime 指数退避与线上模型兜底** ｜ 待执行 → 已完成（Task06 收口保留） ｜ 2026-09-20：完成线上 Provider 受控回退、任务运行时脱敏观测投影与前端等待/切换状态提示；定向验证通过，保留全量回归、真实 API E2E、部署和复盘门禁。
+- **Spec040 Research Runtime 指数退避与线上模型兜底** ｜ 实施中 → 已完成 ｜ 2026-09-20：Task06 收口通过；全量回归 `2684 passed, 3 skipped, 67 subtests`，8500 回环部署的 health/ready/models/research-task/scheduler API 通过，DeepSeek Provider 探针在模型别名修正后 HTTP 200；验收评审、人工步骤、准备度矩阵和复盘已落盘。Qdrant warmup 单独降级记录，不属于 Spec040 阻塞。
+
+- **Spec032 Research Task 数据源与安全会议扩展** ｜ 实施中 → **实施中（Semantic Scholar 扩展）** ｜ 2026-09-21：用户确认把 Semantic Scholar Academic Graph 从仅 OA 下载兜底扩展为批量元数据补全、候选池辅助召回和 autocomplete/引用图辅助；新增 Task15–17。Task15 已落地统一客户端、字段 provenance 和 Graph 缺字段补全，Task16–17 保留候选来源门禁与产品接线，不提前宣称完成。
+- **Spec032 Task17 图辅助** ｜ 实施中 → **最小实现完成，待 Task14** ｜ 2026-09-21：Luna high 子 agent 完成 citations/references 的稳定分页契约、paperId/limit/offset 输入边界、去重解析、429/5xx 脱敏降级与定向测试；产品 API/UI 仍按 Spec 边界关闭，真实 key 与最终回归留 Task14。
+- **Spec032 Task16 缓存语义** ｜ 最小实现完成 → **最小实现完成（缓存审计补强）** ｜ 2026-09-22：重复 query + conference 读取已完成的 Semantic Scholar fetch unit，跳过重复 bulk 请求和重复写入，并回填 paper_count/last_success_at；并发租约仍留 Task14/后续收口。
+- **Spec032 Task17 产品 API** ｜ 最小实现完成 → **最小实现完成（受控 API 已接线）** ｜ 2026-09-22：新增 metadata-only autocomplete、citations、references 只读端点，复用共享限流与脱敏错误合同；前端 UI、目录写入和报告引用链保持关闭，真实 key/部署验收留 Task14。
+- **Spec032 Task15–17 外部 smoke** ｜ 实施中 → **实施中（外部网络阻塞）** ｜ 2026-09-22：使用 `.env` 中的 key 发起官方 autocomplete probe 时，本机 DNS 无法解析 `api.semanticscholar.org`；未伪造成功，代码侧定向回归保持 66 passed，真实 key/429/重启验证继续留 Task14。
+- **Spec032 Semantic Scholar 429 处理** ｜ 实施中 → **实施中（退避补强）** ｜ 2026-09-22：元数据客户端与 OA 回退适配器统一采用有界指数退避，优先使用合法 `Retry-After`（最大 30 秒），并新增 429 重试测试；相关定向回归 72 passed，Spec032 仍待 Task14 收口。
+- **Spec032 Task16 持久化复核** ｜ 实施中 → **实施中（SQLite 重启验证补齐）** ｜ 2026-09-22：Semantic Scholar bulk recall 已验证 fetch unit、目录论文、来源记录和字段 provenance 可跨 SQLite 重启复用；重复 query 只发起一次 bulk 请求。Task14 的真实来源覆盖、导入恢复和最终签字仍未完成。

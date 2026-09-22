@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=55">
+    <link rel="stylesheet" href="/assets/styles.css?v=56">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -290,6 +290,15 @@
                 <div class="research-evidence-upgrades" id="research-evidence-upgrades" hidden>
                   <h4>全文证据升级</h4>
                   <ul class="research-evidence-list" id="research-evidence-list" aria-live="polite"></ul>
+                </div>
+                <div class="research-issue-queue" id="research-issue-queue" hidden>
+                  <div class="research-issue-queue-head">
+                    <div>
+                      <h4>待处理论文</h4>
+                      <p class="research-issue-queue-status" id="research-issue-queue-status" role="status" aria-live="polite"></p>
+                    </div>
+                  </div>
+                  <ul class="research-issue-list" id="research-issue-list" aria-label="待处理论文列表" aria-live="polite"></ul>
                 </div>
               </div>
             </div>
@@ -606,16 +615,9 @@
             </div>
           </header>
           <div class="paper-source-grid" id="paper-source-progress">
-            <article class="paper-source-card" id="paper-source-usenix" data-source-kind="usenix" aria-live="polite">
-              <div class="paper-source-card-head"><h3>USENIX Security 官网</h3><span class="paper-source-status" id="paper-source-usenix-status">未开始</span></div>
-              <p class="paper-source-counts" id="paper-source-usenix-counts">缓存 0 · 获取 0 · 完成 0 · 论文 0</p>
-              <p class="paper-source-error" id="paper-source-usenix-error" hidden></p>
-            </article>
-            <article class="paper-source-card" id="paper-source-dblp" data-source-kind="dblp" aria-live="polite">
-              <div class="paper-source-card-head"><h3>DBLP 辅助书目</h3><span class="paper-source-status" id="paper-source-dblp-status">未开始</span></div>
-              <p class="paper-source-counts" id="paper-source-dblp-counts">缓存 0 · 获取 0 · 完成 0 · 论文 0</p>
-              <p class="paper-source-error" id="paper-source-dblp-error" hidden></p>
-            </article>
+            <!-- Historical render targets id="paper-source-usenix" and id="paper-source-dblp"
+                 remain compatibility markers; cards are now created from server progress. -->
+            <p class="paper-source-empty" id="paper-source-empty">等待服务器返回来源进度。</p>
           </div>
         </section>
 
@@ -768,9 +770,9 @@
   <script src="/assets/research-session-ui.js?v=2"></script>
   <script src="/assets/conversation-research.js?v=1"></script>
   <script src="/assets/processing-tree.js?v=1"></script>
-  <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 -->
-  <script src="/assets/research-tasks.js?v=10"></script>
-  <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 href="/assets/styles.css?v=53" -->
-  <script src="/assets/app.js?v=55"></script>
+  <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 /assets/research-tasks.js?v=10 -->
+  <script src="/assets/research-tasks.js?v=15"></script>
+  <!-- Legacy asset-version markers: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/app.js?v=53 /assets/app.js?v=55 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 /assets/styles.css?v=55 href="/assets/styles.css?v=53" src="/assets/app.js?v=53" -->
+  <script src="/assets/app.js?v=57"></script>
 </body>
 </html>

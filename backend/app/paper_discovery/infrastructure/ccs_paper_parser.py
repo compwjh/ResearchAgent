@@ -26,10 +26,20 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
+from backend.app.paper_discovery.domain.source_authority import (
+    AUTHORITY_AGGREGATOR,
+    AUTHORITY_OFFICIAL_DOI,
+    AUTHORITY_OFFICIAL_VENUE,
+    DEFAULT_SOURCE_AUTHORITY,
+    UNKNOWN_SOURCE_AUTHORITY,
+    may_overwrite,
+)
 from backend.app.paper_discovery.infrastructure.openalex_enricher import _abstract_from_inverted_index
 
-CCS_SOURCE_ID = "acm-ccs"
-CCS_SOURCE_KIND = "acm_ccs"
+# Canonical Spec032 source ID/kind.  ``acm-ccs`` and ``acm_ccs`` remain readable
+# through ``domain.source_authority.canonical_source_id`` for old cache rows.
+CCS_SOURCE_ID = "ccs"
+CCS_SOURCE_KIND = "ccs"
 CROSSREF_SOURCE_ID = "crossref"
 OPENALEX_SOURCE_ID = "openalex"
 CROSSREF_HOST = "api.crossref.org"
@@ -44,17 +54,13 @@ CCS_INVALID_RESPONSE = "CCS_INVALID_RESPONSE"
 #: 有条目但没有任何一条通过会议容器过滤——这是「标题漂移导致静默返回 0」的可观测信号。
 CCS_VENUE_FILTER_EMPTY = "CCS_VENUE_FILTER_EMPTY"
 
-AUTHORITY_OFFICIAL_VENUE = 3
-AUTHORITY_OFFICIAL_DOI = 2
-AUTHORITY_AGGREGATOR = 1
+# 旧值 3/2/1（数值越大越权威）与聚合 adapter 的 10/20/30 方向相反，已在 Task05 统一为
+# domain/source_authority 的 10/20/30（数值越小越权威）；以下为兼容别名/映射。
 CCS_OFFICIAL_DOI_AUTHORITY = AUTHORITY_OFFICIAL_DOI
 CCS_AGGREGATOR_AUTHORITY = AUTHORITY_AGGREGATOR
 #: 字段来源 → 权威级别。未知来源按最高权威处理（宁可少写，不可覆盖）。
-SOURCE_AUTHORITY: Mapping[str, int] = {
-    CROSSREF_SOURCE_ID: AUTHORITY_OFFICIAL_DOI,
-    OPENALEX_SOURCE_ID: AUTHORITY_AGGREGATOR,
-}
-_UNKNOWN_SOURCE_AUTHORITY = AUTHORITY_OFFICIAL_VENUE
+SOURCE_AUTHORITY: Mapping[str, int] = dict(DEFAULT_SOURCE_AUTHORITY)
+_UNKNOWN_SOURCE_AUTHORITY = UNKNOWN_SOURCE_AUTHORITY
 
 DROP_FOREIGN_VENUE = "FOREIGN_VENUE"
 DROP_NON_PAPER_TITLE = "NON_PAPER_TITLE"
@@ -440,13 +446,11 @@ def parse_openalex_work(payload: Any) -> CcsEnrichment:
 def _may_write(existing_source: str | None, incoming_source: str) -> bool:
     """低权威来源不得覆盖高权威字段（spec-032 字段级 provenance 合同）。
 
+    委托给 domain.source_authority.may_overwrite（唯一方向：数值越小越权威）。
     ``existing_source is None`` 表示该字段还没有归属来源 → 可写。来源 id 未知时按最高
     权威处理：宁可少写一次，也不能把未知（很可能是官方页面）的值覆盖掉。
     """
-    if existing_source is None:
-        return True
-    existing = SOURCE_AUTHORITY.get(existing_source, _UNKNOWN_SOURCE_AUTHORITY)
-    return existing < SOURCE_AUTHORITY.get(incoming_source, _UNKNOWN_SOURCE_AUTHORITY)
+    return may_overwrite(existing_source, incoming_source)
 
 
 def merge_enrichment(record: CcsCatalogRecord, enrichment: CcsEnrichment) -> CcsCatalogRecord:

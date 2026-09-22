@@ -4,12 +4,18 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_paper
 from backend.app.main import app
 from backend.app.paper_discovery.application.catalog_runtime import CatalogSourceRuntime
-from backend.app.paper_discovery.application.worker_tool import PAPER_DISCOVERY_TOOL_NAME, WorkerToolResult
+from backend.app.paper_discovery.application.catalog_search_graph import CatalogSearchGraph
+from backend.app.paper_discovery.application.worker_tool import (
+    PAPER_DISCOVERY_TOOL_NAME,
+    PaperDiscoveryToolFacade,
+    WorkerToolResult,
+)
 from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SourceFetchUnit
 from backend.app.paper_discovery.infrastructure.aggregate_source_adapters import (
     CrossrefCatalogAdapter,
@@ -233,6 +239,53 @@ def test_catalog_runtime_uses_ndss_official_2024_route_and_keeps_other_years_fal
     assert unit.paper_count == 3
 
 
+def test_worker_discover_reuses_completed_source_records_after_restart(tmp_path):
+    """A restarted generic worker must not re-fetch a durable 2024 catalog."""
+    database_path = tmp_path / "worker-cache-restart.sqlite3"
+    store = PaperDiscoveryStore(database_path)
+    registry = SourceRegistry(store=store)
+    runtime = CatalogSourceRuntime(store=store, registry=registry)
+
+    for source_id, conference_id, route in (
+        ("ieee_sp", "sp", "official"),
+        ("ccs", "ccs", "crossref"),
+        ("ndss", "ndss", "official"),
+    ):
+        suffix = "|official" if route == "official" else ""
+        unit = SourceFetchUnit(
+            f"{source_id}|{conference_id}|2024{suffix}", source_id, conference_id, 2024,
+            f"{conference_id}:2024{':official' if route == 'official' else ''}",
+            status="completed", content_hash=f"{source_id}-cache",
+        )
+        runtime._save_unit(unit)
+        runtime._persist_record(source_id, unit, {
+            "title": f"Cached {source_id} paper", "authors": ["Cache Author"],
+            "year": 2024, "doi": f"10.1000/{source_id}-cached",
+            "article_url": f"https://example.test/{source_id}",
+            "provenance": {"title": source_id, "doi": source_id},
+        })
+
+    class RestartedAdapter:
+        def sync_units(self, scope):
+            raise AssertionError(f"unexpected network sync: {scope}")
+
+    restarted = PaperDiscoveryStore(database_path)
+    restarted_registry = SourceRegistry(store=restarted)
+    for source_id in ("ieee_sp", "ccs", "ndss"):
+        restarted_registry._adapters[source_id] = RestartedAdapter()
+    worker = PaperDiscoveryToolFacade(store=restarted, registry=restarted_registry)
+
+    for source_id in ("ieee_sp", "ccs", "ndss"):
+        result = worker.discover(source_id, {"query": "cached", "years": [2024], "limit": 1})
+        assert result.status == "completed"
+        assert result.error is None
+        candidate = result.payload["candidates"][0]
+        assert candidate["candidate_id"]
+        assert candidate["source_id"] == source_id
+        assert result.payload["source_result"]["coverage"]["cache_hit"] is True
+        assert result.provenance[candidate["candidate_id"]]["title"] == source_id
+
+
 def test_catalog_runtime_keeps_official_and_doi_provenance_distinct(tmp_path):
     store = PaperDiscoveryStore(tmp_path / "route-provenance.sqlite3")
     runtime = CatalogSourceRuntime(store=store, registry=SourceRegistry(store=store))
@@ -347,3 +400,30 @@ def test_catalog_source_factory_exposes_worker_for_non_legacy_scope(tmp_path):
 
     assert bundle.graph is None
     assert bundle.worker_tool is not None
+
+
+def test_catalog_factory_routes_registered_nonlegacy_sources_to_shared_worker(tmp_path):
+    """The legacy graph remains a USENIX/DBLP seam; all registry extensions use the facade."""
+    store = PaperDiscoveryStore(tmp_path / "worker-factory-all-sources.sqlite3")
+    registry = SourceRegistry(store=store)
+    factory = CatalogSourceFactory(store=store, source_registry=registry)
+
+    worker = None
+    for source_id in ("ieee_sp", "ccs", "ndss", "openalex", "crossref"):
+        bundle = factory.build(source_scope=source_id)
+        assert bundle.graph is None
+        assert bundle.worker_tool is not None
+        assert bundle.worker_tool.registry is registry
+        assert bundle.worker_tool.store is store
+        worker = worker or bundle.worker_tool
+        assert bundle.worker_tool is worker
+
+    legacy = factory.build(source_scope="all")
+    assert isinstance(legacy.graph, CatalogSearchGraph)
+    with pytest.raises(ValueError, match="INVALID_SOURCE_SCOPE"):
+        CatalogSearchGraph(
+            store=store,
+            accepted_source=legacy.accepted_source,
+            dblp_source=legacy.dblp_source,
+            source_scope="ieee_sp",
+        )

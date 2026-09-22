@@ -23,7 +23,11 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SourceFetchUnit,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
-from backend.app.paper_discovery.domain.source_authority import SOURCE_KINDS, may_overwrite
+from backend.app.paper_discovery.domain.source_authority import (
+    SOURCE_KINDS,
+    canonical_source_id,
+    may_overwrite,
+)
 from backend.app.platform.config import BASE_DIR
 
 SCHEMA_VERSION = 4
@@ -350,7 +354,14 @@ class PaperDiscoveryStore:
             """INSERT INTO search_source_progress(
                    search_id, source_kind, status, cached_units_json, fetching_units_json,
                    completed_units_json, paper_count, error_code, message_code, updated_at)
-               SELECT search_id, source_kind, status, cached_units_json, fetching_units_json,
+               SELECT search_id,
+                   CASE source_kind
+                       WHEN 'ieee-sp' THEN 'ieee_sp'
+                       WHEN 'acm_ccs' THEN 'ccs'
+                       WHEN 'acm-ccs' THEN 'ccs'
+                       ELSE source_kind
+                   END,
+                   status, cached_units_json, fetching_units_json,
                    completed_units_json, paper_count, error_code, message_code, updated_at
                FROM search_source_progress_v2_old"""
         )
@@ -551,7 +562,7 @@ class PaperDiscoveryStore:
                         item.conference_name, item.year, json.dumps(item.authors), item.dblp_key, item.doi,
                         item.abstract, item.article_url, item.pdf_url, item.pdf_access, item.retrieval_score,
                         item.rerank_score, item.final_score, item.rank, item.existing_paper_id, item.initial_rank,
-                        item.publication_stage, item.source_kind, item.source_page_url, item.arxiv_id,
+                        item.publication_stage, canonical_source_id(item.source_kind), item.source_page_url, item.arxiv_id,
                         json.dumps(item.source_links),
                     )
                 )
@@ -563,6 +574,7 @@ class PaperDiscoveryStore:
         payload = {field: row[field] for field in PaperCandidate.__dataclass_fields__}
         payload["authors"] = json.loads(payload["authors"])
         payload["source_links"] = json.loads(payload["source_links"] or "[]")
+        payload["source_kind"] = canonical_source_id(payload["source_kind"])
         return PaperCandidate(**payload)
 
     def get_candidates(self, search_id: str) -> List[PaperCandidate]:
@@ -653,7 +665,7 @@ class PaperDiscoveryStore:
     @staticmethod
     def _fetch_unit_from_row(row: sqlite3.Row) -> SourceFetchUnit:
         return SourceFetchUnit(
-            row["fetch_unit_id"], row["source_kind"], row["conference_id"], row["year"], row["unit_key"],
+            row["fetch_unit_id"], canonical_source_id(row["source_kind"]), row["conference_id"], row["year"], row["unit_key"],
             row["source_url"], row["status"], row["etag"], row["last_modified"], row["content_hash"],
             row["paper_count"], row["error_code"], row["lease_owner"], row["lease_expires_at"],
             row["last_attempt_at"], row["last_success_at"], row["created_at"], row["updated_at"],
@@ -671,6 +683,7 @@ class PaperDiscoveryStore:
 
     def save_fetch_unit(self, unit: SourceFetchUnit, now: Optional[str] = None) -> None:
         now = now or _utcnow()
+        source_kind = canonical_source_id(unit.source_kind)
         with self._connect() as connection:
             connection.execute("BEGIN")
             connection.execute(
@@ -686,7 +699,7 @@ class PaperDiscoveryStore:
                      lease_expires_at=excluded.lease_expires_at, last_attempt_at=excluded.last_attempt_at,
                      last_success_at=excluded.last_success_at, updated_at=excluded.updated_at""",
                 (
-                    unit.fetch_unit_id, unit.source_kind, unit.conference_id, unit.year, unit.unit_key,
+                    unit.fetch_unit_id, source_kind, unit.conference_id, unit.year, unit.unit_key,
                     unit.source_url, unit.status, unit.etag, unit.last_modified, unit.content_hash,
                     unit.paper_count, unit.error_code, unit.lease_owner, unit.lease_expires_at,
                     unit.last_attempt_at, unit.last_success_at, unit.created_at or now, now,
@@ -702,6 +715,7 @@ class PaperDiscoveryStore:
         first worker's lease before it can claim the row.
         """
         now = now or _utcnow()
+        source_kind = canonical_source_id(unit.source_kind)
         with self._connect() as connection:
             connection.execute("BEGIN")
             cursor = connection.execute(
@@ -712,7 +726,7 @@ class PaperDiscoveryStore:
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(fetch_unit_id) DO NOTHING""",
                 (
-                    unit.fetch_unit_id, unit.source_kind, unit.conference_id, unit.year, unit.unit_key,
+                    unit.fetch_unit_id, source_kind, unit.conference_id, unit.year, unit.unit_key,
                     unit.source_url, unit.status, unit.etag, unit.last_modified, unit.content_hash,
                     unit.paper_count, unit.error_code, unit.lease_owner, unit.lease_expires_at,
                     unit.last_attempt_at, unit.last_success_at, unit.created_at or now, now,
@@ -824,6 +838,7 @@ class PaperDiscoveryStore:
 
     def save_source_record(self, record: CatalogSourceRecord, now: Optional[str] = None) -> None:
         now = now or _utcnow()
+        source_kind = canonical_source_id(record.source_kind)
         with self._connect() as connection:
             connection.execute("BEGIN")
             connection.execute(
@@ -838,7 +853,7 @@ class PaperDiscoveryStore:
                      observed_at=excluded.observed_at""",
                 (
                     record.source_record_id, record.catalog_paper_id, record.fetch_unit_id,
-                    record.source_kind, record.source_key, json.dumps(record.raw_metadata),
+                    source_kind, record.source_key, json.dumps(record.raw_metadata),
                     record.observed_at or now,
                 ),
             )
@@ -860,6 +875,7 @@ class PaperDiscoveryStore:
         source therefore only ever fills gaps and never overwrites.
         """
         now = now or _utcnow()
+        source_id = canonical_source_id(source_id)
         with self._connect() as connection:
             connection.execute("BEGIN")
             row = connection.execute(
@@ -891,7 +907,7 @@ class PaperDiscoveryStore:
             ).fetchall()
         return {
             row["field_name"]: {
-                "source_id": row["source_id"],
+                "source_id": canonical_source_id(row["source_id"]),
                 "source_record_id": row["source_record_id"],
                 "observed_at": row["observed_at"],
             }
@@ -925,6 +941,7 @@ class PaperDiscoveryStore:
 
     def save_source_progress(self, progress: SearchSourceProgress, now: Optional[str] = None) -> None:
         now = now or _utcnow()
+        source_kind = canonical_source_id(progress.source_kind)
         with self._connect() as connection:
             connection.execute("BEGIN")
             connection.execute(
@@ -939,7 +956,7 @@ class PaperDiscoveryStore:
                      paper_count=excluded.paper_count, error_code=excluded.error_code,
                      message_code=excluded.message_code, updated_at=excluded.updated_at""",
                 (
-                    progress.search_id, progress.source_kind, progress.status,
+                    progress.search_id, source_kind, progress.status,
                     json.dumps(progress.cached_units), json.dumps(progress.fetching_units),
                     json.dumps(progress.completed_units), progress.paper_count, progress.error_code,
                     progress.message_code, progress.updated_at or now,
@@ -963,8 +980,8 @@ class PaperDiscoveryStore:
                         or not _SAFE_UNIT_ID.fullmatch(value)):
                     continue
             elif key == "source_kind":
-                value = str(value)
-                if value not in {"usenix", "dblp"}:
+                value = canonical_source_id(value)
+                if value not in SOURCE_KINDS:
                     continue
             elif key == "error_code":
                 value = str(value)
@@ -983,7 +1000,9 @@ class PaperDiscoveryStore:
                       created_at)
                    VALUES(?,?,?,?,?,?,?)""",
                 (
-                    event.search_id, event.node_name, event.source_kind, event.event_type, event.status,
+                    event.search_id, event.node_name,
+                    canonical_source_id(event.source_kind) if event.source_kind else None,
+                    event.event_type, event.status,
                     json.dumps(payload), event.created_at or now,
                 ),
             )
@@ -1163,7 +1182,7 @@ class PaperDiscoveryStore:
                 "SELECT * FROM search_source_progress WHERE search_id=? ORDER BY source_kind", (search_id,)
             ).fetchall()
         return [SearchSourceProgress(
-            row["search_id"], row["source_kind"], row["status"],
+            row["search_id"], canonical_source_id(row["source_kind"]), row["status"],
             json.loads(row["cached_units_json"] or "[]"), json.loads(row["fetching_units_json"] or "[]"),
             json.loads(row["completed_units_json"] or "[]"), row["paper_count"], row["error_code"],
             row["message_code"], row["updated_at"],
@@ -1184,7 +1203,8 @@ class PaperDiscoveryStore:
                     (search_id, int(after_event_id), limit),
                 ).fetchall()
         return [SearchEvent(
-            row["event_id"], row["search_id"], row["node_name"], row["source_kind"],
+            row["event_id"], row["search_id"], row["node_name"], canonical_source_id(row["source_kind"])
+            if row["source_kind"] else None,
             row["event_type"], row["status"], json.loads(row["safe_payload_json"] or "{}"), row["created_at"],
         ) for row in rows]
 
@@ -1203,7 +1223,7 @@ class PaperDiscoveryStore:
                 "SELECT DISTINCT source_kind FROM catalog_source_records WHERE catalog_paper_id=? ORDER BY source_kind",
                 (catalog_paper_id,),
             ).fetchall()
-        return [str(row[0]) for row in rows]
+        return [canonical_source_id(row[0]) for row in rows]
 
     def list_catalog_papers(self, conference_ids: Optional[Iterable[str]] = None,
                             years: Optional[Iterable[int]] = None,

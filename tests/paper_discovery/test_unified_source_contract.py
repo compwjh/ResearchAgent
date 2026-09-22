@@ -55,6 +55,9 @@ def test_canonical_source_ids_and_actual_field_authority_are_stable():
         "ndss": AUTHORITY_OFFICIAL_DOI,
         "crossref": AUTHORITY_OFFICIAL_DOI,
         "openalex": AUTHORITY_AGGREGATE,
+        # Semantic Scholar is an aggregate enrichment/recall provider, not an
+        # additional canonical venue source.
+        "semantic_scholar": AUTHORITY_AGGREGATE,
     }
     assert AUTHORITY_OFFICIAL_VENUE < AUTHORITY_OFFICIAL_DOI < AUTHORITY_AGGREGATE
     assert may_overwrite("openalex", "crossref") is True

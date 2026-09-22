@@ -514,6 +514,43 @@ class PaperImportBatchStore:
             row = connection.execute("SELECT * FROM paper_import_batches WHERE idempotency_key=?", (key,)).fetchone()
             return self._batch_from_row(row, connection) if row else None
 
+    def list_batches(
+        self,
+        *,
+        status: Optional[str] = None,
+        active_only: bool = True,
+        limit: int = 20,
+        recent: bool = True,
+    ) -> list[PaperImportBatch]:
+        """Read durable batches for recovery/discovery without exposing secrets.
+
+        The store remains the sole owner of batch state.  ``active_only`` is
+        the default so a freshly opened client sees queued/running/login
+        batches; an explicit status filter takes precedence and may request a
+        terminal state for history.  Ordering is deterministic across process
+        restarts and never relies on an in-memory runner registry.
+        """
+        if status is not None and status not in BATCH_STATES:
+            raise PaperImportBatchStoreError("INVALID_BATCH_STATUS", "未知批次状态")
+        bounded_limit = max(1, min(int(limit), 100))
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        if status is not None:
+            clauses.append("state=?")
+            parameters.append(status)
+        elif active_only:
+            placeholders = ",".join("?" for _ in (BATCH_QUEUED, BATCH_RUNNING, BATCH_WAITING_LOGIN))
+            clauses.append(f"state IN ({placeholders})")
+            parameters.extend((BATCH_QUEUED, BATCH_RUNNING, BATCH_WAITING_LOGIN))
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        order = "updated_at DESC, batch_id" if recent else "created_at ASC, batch_id"
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT * FROM paper_import_batches{where} ORDER BY {order} LIMIT ?",
+                (*parameters, bounded_limit),
+            ).fetchall()
+            return [self._batch_from_row(row, connection) for row in rows]
+
     def get_items(self, batch_id: str) -> list[PaperImportItem]:
         with self._connect() as connection:
             rows = connection.execute("SELECT * FROM paper_import_items WHERE batch_id=? ORDER BY rowid", (batch_id,)).fetchall()

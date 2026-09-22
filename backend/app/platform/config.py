@@ -219,3 +219,6 @@ CHAT_TOOL_OUTPUT_KEEP_RECENT = _env_positive_number("CHAT_TOOL_OUTPUT_KEEP_RECEN
 # 线上模型清单：逗号分隔的 provider:model；解析与注册见 platform/model_catalog.py。
 # 非法项在解析时跳过 + warning，不 fail-fast（与上方「warn 后回退」风格一致）。
 ONLINE_MODELS = os.getenv("ONLINE_MODELS", "")
+# Research Runtime 的线上 Provider 回退必须显式授权；默认关闭，避免本地
+# 模型故障时在用户不知情的情况下外发研究上下文。
+RESEARCH_ONLINE_FALLBACK_ENABLED = _env_bool("RESEARCH_ONLINE_FALLBACK_ENABLED", False)

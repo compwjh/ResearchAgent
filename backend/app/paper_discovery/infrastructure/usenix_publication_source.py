@@ -27,6 +27,11 @@ from backend.app.paper_discovery.domain.paper_discovery import (
     SourceFetchUnit,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_title
+from backend.app.paper_discovery.domain.source_authority import AUTHORITY_OFFICIAL_VENUE
+from backend.app.paper_discovery.domain.source_contract import (
+    SOURCE_CONTRACT_SCHEMA_VERSION,
+    SourceContractMixin,
+)
 from backend.app.paper_discovery.infrastructure.arxiv_adapter import ArxivFallbackAdapter
 from backend.app.paper_discovery.infrastructure.paper_download import (
     INVALID_PDF,
@@ -136,7 +141,7 @@ class UsenixAcceptedResult:
     error_code: Optional[str] = None
 
 
-class UsenixAcceptedSource:
+class UsenixAcceptedSource(SourceContractMixin):
     """Recall USENIX accepted papers with official media priority.
 
     The client is injected so callers can use a fixture transport.  No network
@@ -144,6 +149,10 @@ class UsenixAcceptedSource:
     """
 
     origin = "https://www.usenix.org"
+    source_id = "usenix"
+    source_kind = "usenix"
+    authority_rank = AUTHORITY_OFFICIAL_VENUE
+    contract_schema_version = SOURCE_CONTRACT_SCHEMA_VERSION
 
     def __init__(self, *, client: Optional[httpx.Client] = None,
                  parser: Optional[UsenixAcceptedParser] = None,

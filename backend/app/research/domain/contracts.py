@@ -60,7 +60,7 @@ WORKITEM_SCHEMAS = {
     "search_catalog": {
         "role": "search-worker",
         "parallel_allowed": True,
-        "allowed_params": {"query", "facets", "sources", "max_results", "language"},
+        "allowed_params": {"query", "facets", "sources", "source_ids", "scope", "max_results", "language"},
         "required_params": {"query"},
         "depends_on_task_types": [],
         "budget_field": "count",  # 计划内 search_catalog 数量计入 max_search_items
@@ -136,13 +136,14 @@ TASK_TERMINAL = frozenset({"partial", "completed", "failed", "cancelled", "inter
 
 # ResearchWorkItem 状态集合。
 WORKITEM_STATUSES = frozenset(
-    {"queued", "running", "completed", "failed", "cancelled", "interrupted"}
+    {"queued", "running", "waiting_retry", "completed", "failed", "cancelled", "interrupted"}
 )
 
 # ResearchWorkItem 状态转移表（终态不得回到 running 或 queued）。
 WORKITEM_TRANSITIONS = {
-    "queued": {"running", "cancelled"},
-    "running": {"completed", "failed", "cancelled", "interrupted"},
+    "queued": {"running", "waiting_retry", "cancelled"},
+    "running": {"completed", "failed", "waiting_retry", "cancelled", "interrupted"},
+    "waiting_retry": {"queued", "running", "failed", "cancelled", "interrupted"},
     "completed": set(),
     "failed": set(),
     "cancelled": set(),
@@ -233,7 +234,8 @@ RESEARCH_SESSION_ERROR_CODES = frozenset(
         "PLAN_VERSION_STALE", "APPROVAL_STALE", "APPROVAL_CONFLICT", "SKILL_DISABLED",
         "CAPABILITY_NOT_AUTHORIZED", "AGENT_OUTPUT_INVALID", "MODEL_LOOP_LIMIT_REACHED",
         "TOOL_CALL_LIMIT_REACHED", "TASK_MODEL_LIMIT_REACHED", "TASK_TOOL_CALL_LIMIT_REACHED", "TASK_TIME_LIMIT_REACHED",
-        "TRACE_PROJECTION_FAILED", "ARTIFACT_NOT_READY", "MODEL_UNAVAILABLE", "TOOL_EXECUTION_FAILED",
+        "TRACE_PROJECTION_FAILED", "ARTIFACT_NOT_READY", "MODEL_UNAVAILABLE", "MODEL_TIMEOUT",
+        "MODEL_RATE_LIMITED", "MODEL_SERVER_ERROR", "TOOL_EXECUTION_FAILED",
     }
 )
 

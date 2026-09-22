@@ -7,16 +7,18 @@ creates a knowledge-base document itself.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from typing import Any
 
 from backend.app.paper_discovery.application.paper_import_batch_service import (
-    PaperImportBatchServiceError,
     SEARCH_EXPIRED,
     SEARCH_NOT_FOUND,
+    PaperImportBatchServiceError,
 )
+from backend.app.paper_discovery.domain.paper_import_identity import identity_keys_for_candidate
 from backend.app.research.domain.models import (
     AcquisitionApproval,
     AcquisitionEvent,
@@ -88,6 +90,8 @@ class ResearchAcquisitionService:
                     idempotency_key=idempotency_key,
                     candidates=candidate_values or None,
                     auto_run=True,
+                    task_id=task_id,
+                    issue_recorder=self.record_acquisition_issue,
                 ),
                 search_id,
             )
@@ -110,6 +114,8 @@ class ResearchAcquisitionService:
                     idempotency_key=idempotency_key,
                     candidates=candidate_values or None,
                     auto_run=True,
+                    task_id=task_id,
+                    issue_recorder=self.record_acquisition_issue,
                 ),
                 refreshed,
             )
@@ -227,16 +233,22 @@ class ResearchAcquisitionService:
                 return self.status(task_id, approval=approval)
 
         candidate_values = list(candidates or ())
+        candidate_by_id = {
+            str(_value(item, "candidate_id", _value(item, "catalog_paper_id", ""))): item
+            for item in candidate_values
+            if _value(item, "candidate_id", _value(item, "catalog_paper_id", ""))
+        }
         batches: list[Any] = []
         batch_ids: list[str] = []
         for index, (group_search_id, group_paper_ids) in enumerate(sorted(grouped.items())):
             try:
+                group_candidates = [candidate_by_id[paper_id] for paper_id in group_paper_ids if paper_id in candidate_by_id]
                 batch, _ = self._create_batch(
                     task_id,
                     group_search_id,
                     group_paper_ids,
                     idempotency_key=f"{idempotency_key}#{index}",
-                    candidate_values=candidate_values,
+                    candidate_values=group_candidates,
                 )
             except PaperImportBatchServiceError as error:
                 self.store.update_acquisition_approval(task_id, selection_version, status="failed")
@@ -287,10 +299,24 @@ class ResearchAcquisitionService:
         ids: list[str] = [str(value) for value in ([batch_ids] if isinstance(batch_ids, str) else batch_ids) if value]
         if not ids:
             raise ResearchAcquisitionError("BATCH_NOT_FOUND", "导入批次不存在")
-        allowed = set(str(value) for value in (paper_ids or ()))
+        allowed = {str(value) for value in (paper_ids or ())}
         batches: list[Any] = []
         items: list[Any] = []
         for batch_id in ids:
+            # The batch service owns the durable snapshot/lease state.  A
+            # status read is also the first recovery opportunity after a
+            # process restart; re-submit is single-flight inside the existing
+            # service and therefore cannot start a duplicate import pass.
+            with suppress(Exception):
+                recover = getattr(self.batch_service, "maybe_recover_batch", None)
+                if callable(recover):
+                    recover(batch_id)
+            with suppress(Exception):
+                batch_reader = getattr(self.batch_service, "store", None)
+                queued = batch_reader.get_batch(batch_id) if batch_reader is not None else None
+                submit = getattr(self.batch_service, "submit_batch", None)
+                if queued is not None and _value(queued, "status", _value(queued, "state", None)) == "queued" and callable(submit):
+                    submit(batch_id)
             result = self.batch_service.get_status(batch_id)
             batch = result.get("batch") if isinstance(result, Mapping) else None
             batch_items = result.get("items", ()) if isinstance(result, Mapping) else ()
@@ -324,6 +350,10 @@ class ResearchAcquisitionService:
                         import_item_id=_value(item, "item_id"),
                     )
                 )
+                self._sync_issue_projection(
+                    task_id, catalog_id, status=status, error_code=error_code,
+                    batch_id=batch_id, import_item_id=_value(item, "item_id"),
+                )
                 items.append(item)
         if not batches:
             raise ResearchAcquisitionError("BATCH_NOT_FOUND", "导入批次不存在")
@@ -342,7 +372,77 @@ class ResearchAcquisitionService:
             "items": items,
             "links": [item.to_dict() for item in self.store.list_document_links(task_id)],
             "events": [item.to_dict() for item in self.store.list_acquisition_events(task_id)],
+            "issues": [item.to_dict() for item in getattr(self.store, "list_acquisition_issues", lambda **_: [])(task_id=task_id, status="open")],
         }
+
+    def _sync_issue_projection(
+        self, task_id: str, candidate_id: str, *, status: str, error_code: str | None,
+        batch_id: str | None, import_item_id: str | None,
+    ) -> None:
+        """Project import state into the shared candidate issue queue.
+
+        This is deliberately a projection only: PaperImportBatchService remains
+        the sole owner of item transitions and download/index behavior.
+        """
+        recorder = getattr(self.store, "record_acquisition_issue", None)
+        if not callable(recorder):
+            return
+        normalized = str(status or "queued")
+        if normalized in {"waiting_login", "failed"}:
+            reason = str(error_code or ("LOGIN_REQUIRED" if normalized == "waiting_login" else "IMPORT_FAILED"))
+            actions = ["login", "resume", "upload"] if normalized == "waiting_login" else ["retry", "upload"]
+            try:
+                recorder(
+                    candidate_id=candidate_id, task_id=task_id, reason_code=reason,
+                    status="open", actions=actions,
+                    attempt={"status": normalized, "error_code": error_code, "batch_id": batch_id,
+                             "import_item_id": import_item_id},
+                    import_item_id=import_item_id, batch_id=batch_id,
+                )
+            except Exception:
+                # Issue projection must not make the existing acquisition status
+                # endpoint fail when a legacy store is temporarily unavailable.
+                return
+        elif normalized in {"completed", "existing"}:
+            getter = getattr(self.store, "get_acquisition_issue_for_candidate", None)
+            resolver = getattr(self.store, "resolve_acquisition_issue", None)
+            if not callable(getter) or not callable(resolver):
+                return
+            try:
+                issue = getter(candidate_id)
+                if issue is not None and issue.status != "resolved":
+                    resolver(issue.issue_id, {
+                        "method": "import", "identity_verdict": "verified",
+                        "document_id": None,
+                    })
+            except Exception:
+                return
+
+    def record_acquisition_issue(
+        self, task_id: str, item: Any, *, batch_id: str | None = None,
+    ) -> None:
+        """Persist a failed batch item for the task-scoped issue queue.
+
+        ``PaperImportBatchService`` calls this hook after its CAS transition so
+        the durable import item is already in ``failed``/``waiting_login``.
+        Keeping the recorder on the Research service preserves one issue-store
+        boundary and lets ``GET /api/papers/issues`` observe background failures
+        without requiring a separate status poll.
+        """
+        candidate_id = str(_value(item, "candidate_id", "") or "").strip()
+        if not candidate_id:
+            return
+        status = str(_value(item, "status", _value(item, "state", "")) or "")
+        if status not in {"failed", "waiting_login"}:
+            return
+        self._sync_issue_projection(
+            task_id,
+            candidate_id,
+            status=status,
+            error_code=_value(item, "error_code"),
+            batch_id=batch_id or _value(item, "batch_id"),
+            import_item_id=_value(item, "item_id"),
+        )
 
     def status(self, task_id: str, *, approval: AcquisitionApproval | None = None) -> dict[str, Any]:
         current = approval or self.store.get_acquisition_approval(task_id)
@@ -358,8 +458,151 @@ class ResearchAcquisitionService:
                 "items": [],
                 "links": [item.to_dict() for item in self.store.list_document_links(task_id)],
                 "events": [item.to_dict() for item in self.store.list_acquisition_events(task_id)],
+                "issues": [item.to_dict() for item in getattr(self.store, "list_acquisition_issues", lambda **_: [])(task_id=task_id, status="open")],
             }
         return self._sync(task_id, current.batch_ids(), current.paper_ids)
 
 
-__all__ = ["ResearchAcquisitionError", "ResearchAcquisitionService"]
+class ApprovedPlanAutoImporter:
+    """Start the existing import batch only for an approved Research plan.
+
+    This is deliberately a thin policy facade over ``ResearchAcquisitionService``:
+    it does not download a PDF, parse a PDF, or create a second import state
+    machine.  Selection rows remain the server-owned frozen handle; the plan's
+    ``target_paper_count`` is the only automatic-import cap.
+    """
+
+    _SKIPPED_NOT_APPROVED = "PLAN_NOT_APPROVED"
+    _SKIPPED_NO_SELECTION = "NO_SELECTED_CANDIDATES"
+    _IDENTITY_UNCERTAIN = "IDENTITY_UNCERTAIN"
+    _IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
+
+    def __init__(self, store: Any, acquisition: ResearchAcquisitionService, *, identity_verifier: Any = None) -> None:
+        self.store = store
+        self.acquisition = acquisition
+        self.identity_verifier = identity_verifier if callable(identity_verifier) else None
+
+    @staticmethod
+    def _identity_verdict(candidate: Any, verifier: Any = None) -> str:
+        """Return a conservative verdict for a server-side candidate snapshot.
+
+        Normal candidates are checked through the shared canonical identity
+        helper.  Tests and a future PDF metadata verifier may provide an
+        explicit ``identity_verdict``/``identity_match``; mismatch is never
+        allowed to enter the batch and an unavailable verifier is uncertain.
+        """
+        declared = str(_value(candidate, "identity_verdict", "") or "").strip().casefold()
+        if declared in {"mismatch", "wrong", "invalid", "rejected"}:
+            return ApprovedPlanAutoImporter._IDENTITY_MISMATCH
+        if _value(candidate, "identity_match", None) is False:
+            return ApprovedPlanAutoImporter._IDENTITY_MISMATCH
+        if declared in {"uncertain", "unknown", "pending"}:
+            return ApprovedPlanAutoImporter._IDENTITY_UNCERTAIN
+        if verifier is not None:
+            try:
+                verdict = verifier(candidate)
+            except Exception:  # fail closed; do not leak verifier details
+                return ApprovedPlanAutoImporter._IDENTITY_UNCERTAIN
+            if isinstance(verdict, Mapping):
+                verdict = verdict.get("identity_verdict", verdict.get("verdict"))
+            if verdict is False or str(verdict or "").strip().casefold() in {"mismatch", "wrong", "invalid", "rejected"}:
+                return ApprovedPlanAutoImporter._IDENTITY_MISMATCH
+            if verdict is None or str(verdict).strip().casefold() in {"uncertain", "unknown", "pending"}:
+                return ApprovedPlanAutoImporter._IDENTITY_UNCERTAIN
+        try:
+            return "verified" if identity_keys_for_candidate(candidate) else ApprovedPlanAutoImporter._IDENTITY_UNCERTAIN
+        except Exception:
+            return ApprovedPlanAutoImporter._IDENTITY_UNCERTAIN
+
+    def _record_identity_issue(self, task_id: str, paper_id: str, code: str) -> None:
+        """Project one blocked candidate without poisoning its peers."""
+        with suppress(Exception):
+            self.store.upsert_document_link(
+                ResearchDocumentLink(
+                    task_id=task_id, catalog_paper_id=paper_id,
+                    status="waiting_identity", error_code=code,
+                )
+            )
+        with suppress(Exception):
+            self.store.append_acquisition_event(
+                AcquisitionEvent(
+                    task_id=task_id, paper_id=paper_id, phase="identity",
+                    status="waiting_identity", error_code=code,
+                )
+            )
+        with suppress(Exception):
+            recorder = getattr(self.store, "record_acquisition_issue", None)
+            if callable(recorder):
+                recorder(
+                    candidate_id=paper_id, task_id=task_id, reason_code=code,
+                    status="open", actions=["upload"],
+                    attempt={"status": "waiting_identity", "error_code": code},
+                )
+
+    def run(
+        self,
+        task_id: str,
+        *,
+        approved_plan: bool,
+        target_paper_count: int,
+        plan_version: int = 1,
+        candidates: Iterable[Any] | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Create/reuse one existing import batch for the bounded selection."""
+        if not approved_plan:
+            return {"status": "skipped", "reason": self._SKIPPED_NOT_APPROVED, "items": [], "issues": []}
+        try:
+            budget = max(0, int(target_paper_count))
+        except (TypeError, ValueError):
+            budget = 0
+        selections = list(self.store.list_selections(task_id))
+        selected = selections[:budget]
+        if not selected:
+            return {"status": "skipped", "reason": self._SKIPPED_NO_SELECTION, "items": [], "issues": []}
+        selected_ids = [str(_value(item, "catalog_paper_id", "")) for item in selected if _value(item, "catalog_paper_id", "")]
+        provided = list(candidates) if candidates is not None else None
+        candidate_map = {
+            str(_value(item, "candidate_id", _value(item, "catalog_paper_id", ""))): item
+            for item in (provided or ())
+            if _value(item, "candidate_id", _value(item, "catalog_paper_id", ""))
+        }
+        valid_ids: list[str] = []
+        valid_candidates: list[Any] = []
+        issues: list[dict[str, str]] = []
+        for paper_id in selected_ids:
+            candidate = candidate_map.get(paper_id) if provided is not None else None
+            # No candidate list means the batch service will resolve its own
+            # hash-verified frozen snapshot; do not invent client metadata.
+            if provided is None:
+                valid_ids.append(paper_id)
+                continue
+            if candidate is None:
+                code = self._IDENTITY_UNCERTAIN
+            else:
+                code = self._identity_verdict(candidate, self.identity_verifier)
+            if code != "verified":
+                self._record_identity_issue(task_id, paper_id, code)
+                issues.append({"candidate_id": paper_id, "error_code": code})
+                continue
+            valid_ids.append(paper_id)
+            valid_candidates.append(candidate)
+        if not valid_ids:
+            return {"status": "partial", "reason": "IDENTITY_BLOCKED", "items": [], "issues": issues}
+        selection_version = int(self.store.get_selection_version(task_id))
+        digest = hashlib.sha256("|".join(valid_ids).encode("utf-8")).hexdigest()[:16]
+        key = str(idempotency_key or f"research-auto-import:{task_id}:v{int(plan_version)}:s{selection_version}:{digest}")
+        result = self.acquisition.confirm(
+            task_id,
+            selection_version=selection_version,
+            paper_ids=valid_ids,
+            idempotency_key=key,
+            candidates=valid_candidates if provided is not None else None,
+        )
+        result = {**result, "status": "partial", "issues": issues} if issues else {**result, "issues": []}
+        return result
+
+    auto_import = run
+
+
+__all__ = ["ApprovedPlanAutoImporter", "ResearchAcquisitionError", "ResearchAcquisitionService"]
