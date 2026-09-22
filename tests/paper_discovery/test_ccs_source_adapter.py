@@ -40,7 +40,7 @@ from backend.app.paper_discovery.infrastructure.ccs_publication_source import (
     CcsUnitRejected,
 )
 
-FIXTURES = Path(__file__).parents[1] / "fixtures" / "ccs"
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "ccs"
 PUBLIC_IP = "93.184.216.34"
 
 # 真实研究论文（Crossref 主会容器 + 完整篇幅），必须保留。
@@ -205,7 +205,7 @@ def test_openalex_abstract_and_oa_pdf_carry_aggregator_provenance():
     assert merged.abstract.startswith("PKI schemes provide a critical foundation")
     assert merged.pdf_url == "https://dl.acm.org/doi/pdf/10.1145/3658644.3670374"
     assert merged.keywords[0] == "Computer science"
-    assert CCS_OFFICIAL_DOI_AUTHORITY < CCS_AGGREGATOR_AUTHORITY
+    assert CCS_AGGREGATOR_AUTHORITY > CCS_OFFICIAL_DOI_AUTHORITY
 
     from backend.app.paper_discovery.infrastructure.ccs_paper_parser import merge_enrichment
 

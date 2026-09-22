@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { createKbInspectionController } = require('../frontend/kb-inspection.js');
+const { createKbInspectionController } = require('../../frontend/kb-inspection.js');
 
 class FakeElement {
   constructor(tagName, documentRef) {

@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { createProcessingTree, normalizeStep } = require('../frontend/processing-tree.js');
+const { createProcessingTree, normalizeStep } = require('../../frontend/processing-tree.js');
 
 class FakeElement {
   constructor(tagName, documentRef) {

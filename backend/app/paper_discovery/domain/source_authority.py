@@ -97,7 +97,6 @@ DEFAULT_SOURCE_AUTHORITY: Mapping[str, int] = {
 # field/source-record provenance so the two routes cannot silently share
 # authority.  Qualified IDs are deliberately not source-registry entries.
 OFFICIAL_ROUTE_SOURCE_SUFFIX = ":official"
-
 #: 未知来源按最高权威（最小数值）处理：宁可少写一次，也不可被未知来源覆盖官方字段。
 UNKNOWN_SOURCE_AUTHORITY = AUTHORITY_OFFICIAL_VENUE
 

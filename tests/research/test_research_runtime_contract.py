@@ -717,7 +717,7 @@ def test_reuse_seam_research_namespace_has_no_second_implementation():
             if token in text:
                 offenders.append(f"{path.relative_to(RESEARCH_NS_DIR)} -> {token}")
     # Task03 复审 P2-C 加强：防止目录被清空时断言静默失效。口径同同族切片测试
-    # `tests/research/test_research_slice_backend.py` 的 `assertGreater(scanned, 0)`：
+    # `tests/research/test_research_backend_slice.py` 的 `assertGreater(scanned, 0)`：
     # 一个实现文件都没扫到（全部被删除/改名）时，本门禁必须**失败**而不是空转通过。
     assert scanned > 0, "research 命名空间未扫描到任何实现文件：实现被删除或改名，门禁失效"
     assert offenders == [], (
@@ -748,7 +748,7 @@ def test_reuse_seam_research_search_catalog_anchors_to_spec015():
     # 原写法 `if not candidates: return`（Task02「实现尚未落地」时的状态）在
     # `backend/app/research/**` 一个 .py 都没有（实现被整目录删除或改名）时**静默通过**，
     # 门禁形同虚设。Task03 起实现已落地，故改为硬断言：扫描到的文件数必须 > 0，
-    # 口径与同族切片测试 `tests/research/test_research_slice_backend.py` 的
+    # 口径与同族切片测试 `tests/research/test_research_backend_slice.py` 的
     # `assertGreater(scanned, 0)` 一致（属**加强**，非放松）。
     assert candidates, f"{RESEARCH_NS_DIR} 下未扫描到任何 .py：研究编排实现被删除或改名，门禁失效"
     scanned = [path for path in candidates if "__pycache__" not in path.parts]

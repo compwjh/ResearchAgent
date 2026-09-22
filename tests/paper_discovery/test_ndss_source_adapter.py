@@ -42,7 +42,7 @@ from backend.app.paper_discovery.infrastructure.ndss_publication_source import (
     NdssUnitRejected,
 )
 
-FIXTURES = Path(__file__).parents[1] / "fixtures" / "ndss"
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "ndss"
 PUBLIC_IP = "93.184.216.34"
 
 #: 各年份 fixture 里真实主会论文的 DOI（顺序即 fixture 顺序）。
@@ -305,7 +305,7 @@ def test_openalex_abstract_is_merged_with_aggregator_provenance():
     enrichment = parse_openalex_work(_load(OPENALEX_2024_WITH_ABSTRACT))
     assert enrichment.abstract.startswith('Decoy passwords, or "honeywords,"')
     assert enrichment.keywords[0] == "Password"
-    assert AUTHORITY_OFFICIAL_VENUE < NDSS_OFFICIAL_DOI_AUTHORITY < NDSS_AGGREGATOR_AUTHORITY
+    assert NDSS_AGGREGATOR_AUTHORITY > NDSS_OFFICIAL_DOI_AUTHORITY > AUTHORITY_OFFICIAL_VENUE
 
     merged = merge_enrichment(record, enrichment)
 

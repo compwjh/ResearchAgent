@@ -41,7 +41,7 @@ from backend.app.paper_discovery.infrastructure.ieee_sp_publication_source impor
     IeeeSpUnitRejected,
 )
 
-FIXTURES = Path(__file__).parents[1] / "fixtures" / "ieee_sp"
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "ieee_sp"
 PUBLIC_IP = "93.184.216.34"
 
 # 真实研究论文（IEEE S&P 主会容器 + 完整篇幅），必须保留。
@@ -302,7 +302,7 @@ def test_openalex_abstract_and_oa_pdf_carry_aggregator_provenance():
     assert merged.abstract.startswith("The widespread adoption of conversational AI platforms")
     assert merged.pdf_url == "https://arxiv.org/pdf/2504.06552"
     assert merged.keywords
-    assert IEEE_SP_OFFICIAL_DOI_AUTHORITY < IEEE_SP_AGGREGATOR_AUTHORITY
+    assert IEEE_SP_AGGREGATOR_AUTHORITY > IEEE_SP_OFFICIAL_DOI_AUTHORITY
 
     filled = merge_enrichment(record, merged)
     assert filled.abstract == merged.abstract

@@ -12,7 +12,7 @@ from backend.app.paper_discovery.infrastructure.usenix_paper_parser import (
     parse_usenix_detail,
 )
 
-FIXTURE_DIR = pathlib.Path(__file__).parents[1] / "fixtures" / "usenix"
+FIXTURE_DIR = pathlib.Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "usenix"
 
 
 LISTING_URL = "https://www.usenix.org/conference/usenixsecurity26/cycle1-accepted-papers"

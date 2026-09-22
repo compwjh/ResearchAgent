@@ -99,7 +99,6 @@ def builtin_allowed_hosts(source_id: str) -> Tuple[str, ...]:
         (),
     )
 
-
 def _builtin_entries() -> List[SourceEntry]:
     return [
         SourceEntry("usenix", "usenix", AUTHORITY_OFFICIAL_VENUE, True,

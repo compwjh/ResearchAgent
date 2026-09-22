@@ -66,7 +66,7 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
     download_candidate,
 )
 
-FIXTURES = Path(__file__).parents[1] / "fixtures"
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 PUBLIC_IP = "93.184.216.34"
 
 CCS_2024_NO_OA = "10.1145/3658644.3670328"

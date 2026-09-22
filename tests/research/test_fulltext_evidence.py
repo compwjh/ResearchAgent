@@ -51,7 +51,7 @@ def test_default_generation_reader_uses_published_finalize_store(monkeypatch, tm
     monkeypatch.setattr(evidence_upgrade, "FinalizeBundleStore", FakeFinalizeStore)
     service = EvidenceUpgradeService(ResearchStore(tmp_path / "research.sqlite3"), search=lambda *_args, **_kwargs: [])
 
-    assert calls == [evidence_upgrade.KB_DIR.parents[1]]
+    assert calls == [evidence_upgrade.KB_DIR.parents[2]]
     assert service._generation_reader() == {"run_id": "generation-default"}
 
 
