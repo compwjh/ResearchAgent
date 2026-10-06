@@ -1,7 +1,7 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "06c3412",
-  "inventory_digest": "d74952df4e3457b07a8cee4cf70b240a9ebc44397bb7b4a25d75bc9e9a122bc0",
+  "inventory_digest": "52f70f06429013729c095dd02c1ce4b59e86ee09bb43f977d2e0bcf8a9223452",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {
@@ -14,11 +14,11 @@
     },
     {
       "path": "backend/app/api/routes_paper.py",
-      "sha256": "99e419a59ab392f48be3b9c8f51591ca074ccfed9ed83cadb2fe542bbd849aeb"
+      "sha256": "fc2698ca5c047665d28b502ac8c80a84f8188a1d3a0353e85ce793611cfe91ef"
     },
     {
       "path": "backend/app/knowledge_base/application.py",
-      "sha256": "5d7e437c58c5aa922b91bd523482c92fd4f059c29ab5675a1040090a442eed26"
+      "sha256": "6a1186a761051f61ec3bdb758f5369f90b2e45468ce17596c2d037216d8f246d"
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/store.py",
@@ -185,7 +185,7 @@
     {
       "entry_id": "paper-import-retry-routes",
       "entry_kind": "route",
-      "route_or_symbol": "POST /api/papers/imports/{batch_id}/retry and POST /api/papers/import-batches/{batch_id}/retry -> routes_paper.retry_paper_import_batch; POST /api/papers/import-items/{item_id}/retry -> routes_paper.retry_paper_import_item",
+      "route_or_symbol": "POST /api/papers/imports/{batch_id}/retry and POST /api/papers/import-batches/{batch_id}/retry -> routes_paper.retry_paper_import_batch; POST /api/papers/import-items/{item_id}/retry -> routes_paper.retry_paper_import_item; POST /api/papers/issues/{issue_id}/upload -> routes_paper.upload_paper_acquisition_issue",
       "current_behavior": "Reloads the server snapshot and retries a durable batch.",
       "target_behavior": "Retry only through the same immutable item import application and existing dedupe policy.",
       "allowed_callers": [
