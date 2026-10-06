@@ -9,10 +9,10 @@
 from __future__ import annotations
 
 import pytest
-from eval_042 import config
-from eval_042.judge_client import parse_r4
-from eval_042.langfuse_export import classify_output
-from eval_042.memory_probe import MEMORY_PROBES, MemoryProbe, build_probe_dataset
+from backend.eval_042 import config
+from backend.eval_042.judge_client import parse_r4
+from backend.eval_042.langfuse_export import classify_output
+from backend.eval_042.memory_probe import MEMORY_PROBES, MemoryProbe, build_probe_dataset
 
 VALID_GOLDS = {"remembered", "partially_remembered", "forgotten", "fabricated"}
 
