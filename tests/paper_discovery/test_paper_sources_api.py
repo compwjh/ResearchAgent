@@ -12,10 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_paper
-from backend.app.api.routes_paper import (
-    _SOURCE_SYNC_ENTRYPOINTS,
-    _validate_sync_years,
-)
+from backend.app.api.routes_paper import _validate_sync_years
 from backend.app.main import app
 from backend.app.paper_discovery.infrastructure.source_registry import (
     REQUIRED_SOURCE_IDS,
@@ -102,20 +99,20 @@ def test_patch_rejects_unknown_body_fields(client):
 
 
 def test_sync_accepts_controlled_year_scope(client):
-    source_id = next(iter(_SOURCE_SYNC_ENTRYPOINTS))
+    source_id = "usenix"
     response = client.post(
         f"/api/papers/sources/{source_id}/sync", json={"scope": {"years": [2024, 2025]}}
     )
     assert response.status_code == 202
     payload = response.json()
     assert payload["status"] == "queued"
-    assert payload["entrypoint"] == _SOURCE_SYNC_ENTRYPOINTS[source_id]
+    assert payload["entrypoint"] == "source_registry.adapter"
     assert payload["scope"]["years"] == [2024, 2025]
 
 
 def test_sync_rejects_arbitrary_host_or_url_in_scope(client):
     """SSRF：scope 只接受年度单元，任意 host / URL 一律拒收。"""
-    source_id = next(iter(_SOURCE_SYNC_ENTRYPOINTS))
+    source_id = "usenix"
     response = client.post(
         f"/api/papers/sources/{source_id}/sync",
         json={"scope": {"years": [2024], "url": "http://evil.example.com"}},
@@ -124,7 +121,7 @@ def test_sync_rejects_arbitrary_host_or_url_in_scope(client):
 
 
 def test_sync_rejects_out_of_range_years(client):
-    source_id = next(iter(_SOURCE_SYNC_ENTRYPOINTS))
+    source_id = "usenix"
     response = client.post(
         f"/api/papers/sources/{source_id}/sync", json={"scope": {"years": [1]}}
     )
@@ -133,7 +130,7 @@ def test_sync_rejects_out_of_range_years(client):
 
 
 def test_sync_rejects_oversized_scope(client):
-    source_id = next(iter(_SOURCE_SYNC_ENTRYPOINTS))
+    source_id = "usenix"
     response = client.post(
         f"/api/papers/sources/{source_id}/sync", json={"scope": {"years": list(range(1900, 1960))}}
     )
@@ -144,9 +141,17 @@ def test_sync_unknown_source_is_404(client):
     assert client.post("/api/papers/sources/nope/sync", json={}).status_code == 404
 
 
-def test_sync_without_entrypoint_is_409(client, monkeypatch):
-    """无独立同步入口的来源不伪造成功。"""
-    monkeypatch.setattr(routes_paper, "_SOURCE_SYNC_ENTRYPOINTS", {})
+def test_sync_without_registry_adapter_is_409(client, monkeypatch):
+    """registry adapter 不可用时不得伪造 queued，也不得启动调度。"""
+    def unavailable_adapter(self, source_id, **kwargs):
+        raise LookupError(f"no controlled adapter for {source_id}")
+
+    monkeypatch.setattr(SourceRegistry, "adapter", unavailable_adapter)
+    monkeypatch.setattr(
+        routes_paper,
+        "submit_catalog_source_sync",
+        lambda *_args, **_kwargs: pytest.fail("unavailable adapter must not be scheduled"),
+    )
     response = client.post("/api/papers/sources/usenix/sync", json={"scope": {"years": [2024]}})
     assert response.status_code == 409
     assert response.json()["code"] == "SYNC_ENTRYPOINT_UNAVAILABLE"

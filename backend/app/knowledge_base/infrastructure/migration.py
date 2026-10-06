@@ -21,6 +21,7 @@ from typing import Any, Mapping
 from jsonschema import Draft202012Validator, FormatChecker
 
 from backend.app.knowledge_base.infrastructure.store import (
+    AUTO_REQUEUED_CHUNKERS,
     CHUNKERS,
     STATUS_FAILED,
     STATUS_INDEXED,
@@ -48,6 +49,7 @@ _LEGACY_FIELDS = {
     "paper_id", "file_name", "status", "page_count", "chunk_count", "uploaded_at",
     "error", "chunkers", "title", "authors", "year", "conference_id",
     "conference_name", "doi", "dblp_key", "source_url", "import_source", "stored_name",
+    AUTO_REQUEUED_CHUNKERS,
 }
 
 
@@ -105,6 +107,22 @@ def _normalize_timestamp(value: Any) -> str | None:
         parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.isoformat()
     return value
+
+
+def _valid_auto_requeue_markers(value: Any) -> bool:
+    """Return whether the startup-recovery marker uses the canonical shape."""
+    if not isinstance(value, Mapping) or set(value) - set(CHUNKERS):
+        return False
+    for timestamp in value.values():
+        if not isinstance(timestamp, str) or not timestamp.strip() or "T" not in timestamp:
+            return False
+        try:
+            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return False
+    return True
 
 
 def _safe_id(value: Any) -> str:
@@ -206,6 +224,11 @@ def _canonical_record(record: Mapping[str, Any], papers_dir: Path) -> dict[str, 
         "source_url": record.get("source_url"),
         "import_source": record.get("import_source"),
     }
+    if AUTO_REQUEUED_CHUNKERS in record:
+        # Startup recovery owns this top-level marker.  Preserve it through
+        # legacy migration; the canonical schema validates its exact
+        # v1/v2 -> RFC3339 timestamp shape below.
+        result[AUTO_REQUEUED_CHUNKERS] = record[AUTO_REQUEUED_CHUNKERS]
     return result
 
 
@@ -216,6 +239,10 @@ def _validate(records: list[dict[str, Any]], schema_path: Path) -> None:
         raise KnowledgeDocumentMigrationError(MIGRATION_WRITE_FAILED) from error
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     for record in records:
+        if AUTO_REQUEUED_CHUNKERS in record and not _valid_auto_requeue_markers(
+            record[AUTO_REQUEUED_CHUNKERS]
+        ):
+            raise KnowledgeDocumentMigrationError(MIGRATION_INPUT_INVALID)
         if list(validator.iter_errors(record)):
             raise KnowledgeDocumentMigrationError(MIGRATION_INPUT_INVALID)
 

@@ -39,6 +39,10 @@ from backend.app.paper_discovery.infrastructure.paper_download import (
 from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     PaperImportBatchStore,
 )
+from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
+    SEMANTIC_SCHOLAR_MAX_PAPER_ID_LENGTH,
+    SemanticScholarGraphClient,
+)
 from backend.app.paper_discovery.infrastructure.source_registry import (
     SourceRegistry,
     SourceToggleForbiddenError,
@@ -60,6 +64,8 @@ __all__ = [
     "PaperImportBatchStore",
     "SourceRegistry",
     "SourceToggleForbiddenError",
+    "SEMANTIC_SCHOLAR_MAX_PAPER_ID_LENGTH",
+    "SemanticScholarGraphClient",
     "CatalogSourceRuntime",
     "SOURCE_SYNC_GRAPH_VERSION",
     "submit_catalog_source_sync",

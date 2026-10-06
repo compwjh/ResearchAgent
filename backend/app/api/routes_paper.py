@@ -32,10 +32,12 @@ from backend.app.paper_discovery.application.entry import (
     LOGIN_REQUIRED,
     PDF_NOT_FOUND,
     PDF_TOO_LARGE,
+    SEMANTIC_SCHOLAR_MAX_PAPER_ID_LENGTH,
     SOURCE_SYNC_GRAPH_VERSION,
     BrowserManagerError,
     CatalogSourceRuntime,
     PaperDownloadError,
+    SemanticScholarGraphClient,
     SourceRegistry,
     SourceToggleForbiddenError,
     submit_catalog_source_sync,
@@ -56,10 +58,6 @@ from backend.app.paper_discovery.application.paper_import_batch_service import (
     PaperImportBatchServiceError,
 )
 from backend.app.paper_discovery.domain.paper_discovery import SearchJob, SearchSession, SearchSourceProgress
-from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
-    SEMANTIC_SCHOLAR_MAX_PAPER_ID_LENGTH,
-    SemanticScholarGraphClient,
-)
 from backend.app.platform.settings.paper_discovery_settings import (
     DEFAULT_PAPER_DISCOVERY_SEARCH_TTL_SECONDS,
 )
@@ -1444,14 +1442,6 @@ _BROWSER_ERROR_STATUS = {
 # 来源集合由服务端受控的 ``SourceRegistry`` 决定，调用方不能新增来源，也不能传
 # 任意根 URL / host（SSRF 规则沿用既有平台能力）。
 
-#: 各来源的自有同步入口（真实抓取由既有调度路径驱动，不在请求线程内发起网络请求）。
-_SOURCE_SYNC_ENTRYPOINTS = {
-    "usenix": "sync_usenix_units",
-    "ccs": "sync_units",
-    "ieee_sp": "sync_units",
-    "ndss": "sync_units",
-}
-
 _SYNC_YEAR_MIN = 1900
 _SYNC_YEAR_MAX = 2100
 _SYNC_YEARS_MAX = 32
@@ -1587,9 +1577,22 @@ def sync_paper_source(source_id: str, request: PaperSourceSyncRequest | None = N
     if error_code is not None:
         return _paper_api_error(400, error_code, "同步范围无效")
     source_id = entry.source_id
+    store = _paper_store()
+    try:
+        # The registry adapter is the single controlled composition seam for
+        # source sync.  Preflight it before creating any durable job/progress
+        # rows so an unavailable source cannot be reported as queued.
+        adapter = registry.adapter(
+            source_id,
+            store=store,
+            timeout=float(getattr(common.article_settings, "paper_discovery_request_timeout_seconds", 20)),
+        )
+    except Exception:
+        adapter = None
+    if adapter is None:
+        return _paper_api_error(409, "SYNC_ENTRYPOINT_UNAVAILABLE", "来源同步入口暂不可用")
     sync_id = f"sync-{source_id}-{uuid.uuid4().hex[:16]}"
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-    store = _paper_store()
     job = SearchJob(
         sync_id, f"source:{source_id}", [source_id], sorted(set(years)), "queued",
         SOURCE_SYNC_GRAPH_VERSION, False, None, 0, now, None, None, "2099-01-01T00:00:00Z", now,
@@ -1608,7 +1611,7 @@ def sync_paper_source(source_id: str, request: PaperSourceSyncRequest | None = N
     return {
         "sync_id": sync_id,
         "source_id": source_id,
-        "entrypoint": _SOURCE_SYNC_ENTRYPOINTS.get(source_id, "source_registry.adapter"),
+        "entrypoint": "source_registry.adapter",
         "scope": {"years": sorted(set(years))},
         "status": "queued",
     }
