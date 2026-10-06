@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：`已完成`（Task02–07 已收口；首轮 NO-GO、生产安全遗留与后台异步遗留均保留在历史记录和最终验收报告中）**
+**当前状态：`已完成`（2026-10-06 当前整合版本补验通过；历史 PASS/首次补验失败保留，当前结论见验收补充报告）**
 
 > 2026-09-08 首轮 Task02 的 `NO-GO` 与固定证据永久保留；Task02A-A～C 已完成并分别通过独立后端评审。2026-09-09 用户明确旧 Qdrant 索引可以全部抛弃，只要求新索引生效，因此撤销此前“逐 point/vector 快照、原地恢复、首次打开自动升级”的未完成设计，改为一次性全库候选 Collection 重建与维护窗口切换。全库替换修订随后完成需求、技术、实现和验收门禁；最终全量回归与运行时 smoke 均通过。未提交的旧快照实现不属于交付物；一个历史文档 v2 后台任务仍为 `indexing`，按验收报告作为非阻塞遗留记录。
 
@@ -11,6 +11,10 @@
 在个人知识库中新增“切片检查”Tab，让用户选择一份已入库的 PDF 或 Markdown 文档，在原文视图与切片视图之间进行文本块级双向点击、滚动和高亮，并看到真正写入索引的 v1/v2 切片结果。
 
 ## 背景与问题
+
+### 2026-10-06 整合版本补验缺陷（同范围修复）
+
+真实 multipart API E2E 发现 PDF 与 Markdown 新上传均返回 `400 MIGRATION_INPUT_INVALID`。启动恢复为历史记录新增 `auto_requeued_chunkers`（chunker → ISO 时间戳），而知识文档严格元数据 schema 未包含该字段，导致整份历史目录校验阻断新文档创建。本轮修复必须统一持久化字段协议并保留非法字段拒绝，不关闭严格校验、不删除历史记录或恢复标记；验收需包含合法旧记录下新增两种文档、非法标记拒绝、恢复幂等以及真实上传到检查清单完整闭环。
 
 - 当前知识库只在问答命中引用时展示少数切片，无法查看某份文档的完整切分结果。
 - 当前 `Chunk` 只保存文本、页码范围、切片序号和章节，没有 PDF 坐标、Markdown 块位置或稳定来源锚点。
@@ -483,7 +487,7 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 06 | 真实全库索引替换、恢复与性能验收 | [`task-06-legacy-backfill-and-resilience.md`](../plans/018/task-06-legacy-backfill-and-resilience.md) | 04、05 | 已完成（功能收口；后台遗留已记录） |
 | 06E | 修复来源锚点稀疏映射与双向定位回归 | [`task-06e-sparse-source-anchor-correction.md`](../plans/018/task-06e-sparse-source-anchor-correction.md) | 04、05、当前 v1 manifest | 已完成 |
 | 06F | 修复 PDF 上传失败与错误可见性 | [`task-06f-pdf-upload-repair.md`](../plans/018/task-06f-pdf-upload-repair.md) | 04、06E 当前服务 | 已完成 |
-| 07 | 评审、验收、部署与复盘 | [`task-07-review-acceptance-deploy-retro.md`](../plans/018/task-07-review-acceptance-deploy-retro.md) | 06 | 已完成 |
+| 07 | 评审、验收、部署与复盘 | [`task-07-review-acceptance-deploy-retro.md`](../plans/018/task-07-review-acceptance-deploy-retro.md) | 06 | 已完成（2026-10-06 当前版本补验 PASS） |
 
 ## 评审记录
 
@@ -520,3 +524,4 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 2026-09-10 | 架构师（自身） | Task06F 已完成：真实服务验证常见 PDF multipart MIME 与新文档上传均返回 201，非法 PDF 返回稳定 400；前端错误显示已刷新为 `app.js?v=19`，探针文档已清理。 |
 | 2026-09-10 | 架构师（自身） | 用户反馈索引完成后切片检查无内容；确认 direct reindex 未发布 InspectionManifest，且缺失清单分支只有 claim 没有 worker。已复用现有 provenance/chunker/reindex 能力，让同一批 chunks 同时写入 Qdrant 与 manifest；重复检查请求保持 202 可轮询，真实 PDF v1/v2 均验证返回非空切片。 |
 | 2026-09-10 | 用户 / 架构师（自身） | 用户验证 Spec018 功能无问题并同意收口；最终验收通过（全量 956 passed、1 skipped、38 subtests，HTTP/切片检查通过），Spec018 标记为 `已完成`。同时固化长期规则：Task 开发只跑相关定向测试，Spec 收口前统一跑一次全量回归；MAD-HTLC v2 后台 indexing 与 reranker disabled 作为非阻塞遗留记录。 |
+| 2026-10-06 | 架构师（自身）/独立 tester/reviewer | 完成整合版本补验；修复恢复 marker/schema 冲突及测试契约漂移，真实新 PDF/Markdown API E2E、2893 passed 全量和独立验收签字通过，恢复已完成状态。人工步骤与复盘落盘，旧库未验证边界、Langfuse collector 和清单全量预取债务保留；依用户明确授权合回 main 并推送。 |

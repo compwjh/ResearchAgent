@@ -107,3 +107,53 @@
 核对项：最终全量回归、HTTP smoke、Spec/Task/状态台账更新、部署验证均已完成；已知后台 v2 indexing 与 reranker disabled 遗留已记录，且不影响用户已验证路径。
 
 签字时间：2026-09-10 +0800
+
+---
+
+## 2026-10-06 当前候选补充验收与架构签字
+
+本节是对当前候选的补充验收记录。上文 2026-09-10 的 `956 passed`、旧服务状态和旧样本仍作为历史证据保留；当前候选的结论以本节及其引用的最新证据为准，不用新结果覆盖历史失败记录。
+
+### 候选与独立性
+
+- 生产修复：`ecbb91f`；最终候选：`9a9733f`。
+- 当前真实 API 服务由 `ecbb91f` 重启并验证；没有把后续仅含测试合同整理的 `9a9733f` 推断为已加载到运行中的服务。
+- `9a9733f` 的测试文件变更由 `/root` 独立复核；本架构复审不以此前参与的测试搬迁作为自评证据。
+- 本次验收未修改业务代码、前端代码、用户数据或 Git 历史，且未读取 `.env`。
+
+### 当前真实 API E2E
+
+证据：`docs/sdd/plans/018/artifacts/task-07/current-api-e2e-success-report.md`、`docs/sdd/plans/018/artifacts/task-07/current-api-e2e-success-evidence.json`。
+
+本轮只新增两份明确授权、内容 hash 不同的样本：Markdown `a95357cf37344160859a812852f7863f` 与 PDF `f51024342ecd46a7a0c17adefbd67abd` 均 `POST 201`，最终状态为 `indexed`。两份样本的 v1/v2 inspection 均 HTTP 200、manifest ready、anchors 非空且 source hash verified；原件读取通过 HTTP 200，Range 通过 HTTP 206，条件 GET 通过 HTTP 304，缺失 ID 通过 HTTP 404。`/api/health`、`/api/kb/health` 与 `/api/ready` 均为 200，四个 warmup 均 ready。
+
+这组证据证明当前上传、迁移兼容和检查入口闭环恢复；它不证明旧资料库已全部重新索引，也不允许把“改文件名即可绕过 SHA 去重”的人工指导当成验收依据。旧文档没有在本轮被删除、重建或批量重索引。
+
+### 最终回归
+
+最终命令及原始结果见 `docs/sdd/plans/018/artifacts/task-07/current-full-regression-report.md`：
+
+```text
+.venv/bin/python -m pytest tests --cov=backend --cov-report=term --cov-report=json:/private/tmp/researchagent-integration-final-coverage.json -q
+退出码：0
+2893 passed, 3 skipped, 67 subtests passed, 5 warnings
+覆盖率：81.79139962786851%
+```
+
+报告仍保留此前 `2872 passed / 10 failed / 3 skipped` 的历史段；不得用当前通过结果改写或掩盖该历史诊断。当前全量结果与真实 API E2E 一起关闭了原评审中的 P1-1（恢复 marker 与 strict schema 冲突）及 P1-2（全量回归非零）。
+
+### 已知非阻塞环境告警与后续债务
+
+1. Langfuse/OTEL 本地 collector `127.0.0.1:3000` 不可用，导出出现失败、重试和超时；它未改变 pytest 退出码或本轮 API 业务结果，记录为环境观测告警而非当前 P1。后续部署应单独恢复观测端点并复验 telemetry。
+2. 当前验收只覆盖两份新授权样本。旧资料、历史 v2 状态差异和未重新验证的旧索引仍应保留为维护债务；不得从这两份样本推断全库（包括历史约 40 条记录）均已迁移成功。
+3. 万切片性能证据是本地 route-intercept 合成测试：10,000 slices、20 页 × 500，首屏 DOM 分段和显式 load-more 通过，未观察到 >=50ms long task。其限制是前端在首个 DOM 渲染前仍会预取 20 页并把 10,000 slices 放入 JS state；这是真实网络/API 规模性能尚未证明的预取债务，不阻塞本轮功能验收，但应进入后续性能任务。报告：`docs/sdd/plans/018/artifacts/task-07/current-long-document-performance-report.md`。
+
+### 当前候选结论
+
+**验收 PASS；P0=0，当前候选 P1=0。** 原 P1 已由 `ecbb91f` 重启后的真实上传 E2E 与 `9a9733f` 的最终全量回归关闭；Langfuse collector、旧数据覆盖边界和万切片预取属于已披露的非阻塞环境/后续债务。允许主会话继续完成 Spec018 的部署验证、状态台账和收口记录。
+
+### 架构师签字
+
+**架构师（独立整合复审）：`/root/branch_inventory`；同意当前候选进入最终收口。**
+
+签字时间：2026-10-06 22:11 +0800

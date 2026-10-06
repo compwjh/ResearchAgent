@@ -1,7 +1,7 @@
 # Spec 018 执行计划：知识文档切片检查器
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md)
-> 当前状态：`已完成`。2026-09-10 独立验收、最终一次全量回归、HTTP smoke、部署验证和架构师签字均已完成；Task06 的历史生产安全/后台异步遗留按验收报告保留，不影响已验证功能路径。
+> 当前状态：`已完成`（2026-10-06 当前版本补验 PASS）。历史验收和首次失败证据保留；当前 PDF/Markdown API E2E、全量回归、独立签字及部署验证见 task-07 产物。万切片测试为合成规模验证，不推断旧库全部迁移成功。
 
 ## 任务索引
 
@@ -16,7 +16,7 @@
 | [06](./task-06-legacy-backfill-and-resilience.md) | 执行真实全库索引替换、恢复与性能验收 | 04、05 | 已完成（功能收口；后台遗留已记录） |
 | [06E](./task-06e-sparse-source-anchor-correction.md) | 修复模糊全连接 anchor，恢复真实双向定位 | 04、05、06 当前 manifest | 已完成 |
 | [06F](./task-06f-pdf-upload-repair.md) | 修复 PDF 上传失败与错误可见性 | 04、06E 当前服务 | 已完成 |
-| [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 已完成 |
+| [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 已完成（2026-10-06 当前版本补验 PASS） |
 
 ## 当前路线
 

@@ -1,7 +1,7 @@
 # Task 07：评审、验收、部署与复盘
 
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md) ｜ [任务索引](./README.md)
-> 依赖：Task06；当前状态：`已完成`
+> 依赖：Task06；当前状态：`已完成`（2026-10-06 当前版本补验通过；历史完成结果保留）
 
 ## 一句话目标
 
@@ -101,3 +101,4 @@
 - 2026-09-08：创建 Task。
 - 2026-09-09：最终验收改为全库候选重建、alias/finalize、不可变原件与运行时门禁，不再验收旧 point 快照恢复。
 - 2026-09-10：独立 tester 完成最终验收与一次全量回归，架构师签字收口；同步 Spec、状态台账和长期测试范围规则。
+- 2026-10-06：当前整合候选补验完成：全量 2893 passed / 3 skipped / 67 subtests，真实新 PDF/Markdown 双版本 indexed/ready，首页 HTTP 200；独立架构师签字通过。证据在 `artifacts/task-07/current-*-report.md`，人工步骤见 `manual-acceptance.md` 第 6 节，复盘见 `current-retrospective.md`。旧失败证据和非阻塞债务保留。

@@ -1,0 +1,126 @@
+{
+  "spec": "018",
+  "task": "07",
+  "run_id": "spec018-api-e2e-20261006T133558Z",
+  "result": "blocked",
+  "blocking_code": "MIGRATION_INPUT_INVALID",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "workspace_branch_observed": "main",
+    "workspace_head_observed": "7bd9602bf024e0d7362cd68a195c7cb2cc391dbc",
+    "started_at": "2026-10-06T13:35:58Z",
+    "ended_at": "2026-10-06T13:40:22Z",
+    "http_client": "httpx.Client(trust_env=False)",
+    "service_data_mutated": false
+  },
+  "dependency_observation": {
+    "get_health": {
+      "status_code": 200,
+      "status": "ok"
+    },
+    "get_kb_health": {
+      "status_code": 200,
+      "generation_ready": true,
+      "generation_error_code": null,
+      "qdrant": true,
+      "embedding": false
+    },
+    "get_ready": {
+      "status_code": 200,
+      "ready": true,
+      "warmup_embedding_status": "failed",
+      "warmup_embedding_error": "timeout after 30s",
+      "warmup_qdrant_status": "ready",
+      "warmup_jieba_status": "ready",
+      "warmup_ollama_tags_status": "ready",
+      "interpretation": "ready=true is not treated as proof that embedding warmup succeeded"
+    }
+  },
+  "fixtures": {
+    "markdown": {
+      "local_path": "/private/tmp/spec018-e2e-markdown-20261006-213558.md",
+      "file_name": "spec018-e2e-markdown-20261006-213558.md",
+      "media_type": "text/markdown",
+      "bytes": 576,
+      "sha256_prefix": "be0190595ad4"
+    },
+    "pdf": {
+      "local_path": "/Users/wjh/ResearchAgent/docs/sdd/fixtures/spec-018/pdf-single-column-v1.pdf",
+      "upload_file_name": "spec018-e2e-pdf-single-column-v1.pdf",
+      "media_type": "application/pdf",
+      "bytes": 1551,
+      "sha256_prefix": "3cc6b61497f4"
+    },
+    "source_text_recorded": false
+  },
+  "requests": [
+    {
+      "case": "markdown-initial",
+      "method": "POST",
+      "path": "/api/kb/documents/upload",
+      "multipart_field": "file",
+      "status_code": 400,
+      "error_code": "MIGRATION_INPUT_INVALID",
+      "retryable": false,
+      "request_id_recorded": true,
+      "document_id": null
+    },
+    {
+      "case": "markdown-error-capture-retry",
+      "method": "POST",
+      "path": "/api/kb/documents/upload",
+      "multipart_field": "file",
+      "status_code": 400,
+      "error_code": "MIGRATION_INPUT_INVALID",
+      "retryable": false,
+      "request_id_recorded": true,
+      "document_id": null
+    },
+    {
+      "case": "fixed-pdf",
+      "method": "POST",
+      "path": "/api/kb/documents/upload",
+      "multipart_field": "file",
+      "status_code": 400,
+      "error_code": "MIGRATION_INPUT_INVALID",
+      "retryable": false,
+      "request_id_recorded": true,
+      "document_id": null
+    }
+  ],
+  "post_failure_guard": {
+    "method": "GET",
+    "path": "/api/kb/documents?limit=100",
+    "status_code": 200,
+    "total": 40,
+    "page_count": 40,
+    "next_cursor": null,
+    "new_markdown_present": false,
+    "new_pdf_present": false,
+    "etag_present": true
+  },
+  "follow_up": {
+    "polling": "not_performed",
+    "inspection_v1": "not_performed",
+    "inspection_v2": "not_performed",
+    "source_head": "not_performed",
+    "source_range": "not_performed",
+    "reason": "Upload returned no document_id; polling or inspection of an existing document would not be evidence for this new-entity E2E case"
+  },
+  "static_diagnosis": {
+    "metadata_path": "data/kb/papers.json",
+    "record_count": 40,
+    "schema_forbidden_field_records": 13,
+    "forbidden_field": "auto_requeued_chunkers",
+    "duplicate_document_ids": 0,
+    "interpretation": "The stable upload error is consistent with strict metadata validation; no service or metadata mutation was performed"
+  },
+  "safety": {
+    "existing_user_documents_deleted": false,
+    "reindex_or_rebuild_started": false,
+    "qdrant_written_or_switched": false,
+    "embedding_requested_by_tester": false,
+    "private_source_body_included": false
+  }
+}

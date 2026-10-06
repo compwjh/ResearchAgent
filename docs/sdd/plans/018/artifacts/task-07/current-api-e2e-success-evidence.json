@@ -1,0 +1,357 @@
+{
+  "spec": "018",
+  "task": "07",
+  "run_id": "spec018-api-e2e-success-20261006T135538Z",
+  "result": "passed",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "workspace_branch_observed": "codex/integrate-current-code-to-main",
+    "base_head_main": "7bd9602bf024e0d7362cd68a195c7cb2cc391dbc",
+    "service_restart_commit": "ecbb91fa8651f0be09e89016fb1cf131a631b373",
+    "workspace_head_observed_after_run": "9a9733facbcb414f08142a575a53e385d09857e9",
+    "service_commit_note": "The service was restarted with the ecbb91f fix per run coordination. The workspace subsequently advanced to 9a9733f; this report does not infer that the later commit was loaded into the already-running process.",
+    "started_at": "2026-10-06T13:55:12Z",
+    "ended_at": "2026-10-06T14:01:30Z",
+    "http_client": "httpx.Client(trust_env=False)",
+    "service_data_mutated": true,
+    "mutation_scope": "Two explicitly authorized new sample uploads only; no existing document was deleted, reindexed, rebuilt, or switched."
+  },
+  "dependency_observation": {
+    "get_health": {
+      "status_code": 200,
+      "status": "ok"
+    },
+    "get_kb_health": {
+      "status_code": 200,
+      "generation_ready": true,
+      "generation_error_code": null,
+      "qdrant": true,
+      "embedding": true
+    },
+    "get_ready": {
+      "status_code": 200,
+      "ready": true,
+      "warmup_embedding_status": "ready",
+      "warmup_embedding_elapsed_ms": 424.7,
+      "warmup_qdrant_status": "ready",
+      "warmup_qdrant_elapsed_ms": 1166.3,
+      "warmup_jieba_status": "ready",
+      "warmup_jieba_elapsed_ms": 299.1,
+      "warmup_ollama_tags_status": "ready",
+      "warmup_ollama_tags_elapsed_ms": 13.4
+    },
+    "topology_interpretation": "Generation/current Qdrant metadata and committed/run state are snapshot provenance, not a claim of live truth. The earlier offline 497-versus-live-460 difference was caused by different inputs (an in-memory 214-chunk rebuild versus the persisted 308-chunk snapshot). This run relies on live API responses and verified source_sha256 values for its new samples."
+  },
+  "fixtures": {
+    "markdown": {
+      "local_path": "/Users/wjh/ResearchAgent/docs/sdd/fixtures/spec-018/upload-acceptance.md",
+      "file_name": "spec018-upload-acceptance-20261006.md",
+      "media_type": "text/markdown",
+      "bytes": 642,
+      "sha256": "d6d2ba410fd582f28463408749ffae2e66175351d1dd376ff997756bbbe72764"
+    },
+    "pdf": {
+      "local_path": "/Users/wjh/ResearchAgent/docs/sdd/fixtures/spec-018/pdf-single-column-v1.pdf",
+      "file_name": "spec018-upload-acceptance-pdf-20261006.pdf",
+      "media_type": "application/pdf",
+      "bytes": 1551,
+      "sha256": "3cc6b61497f483fcb1933919cb00f1568ad1fd609953c96e4970c772cbe4e4ec"
+    },
+    "source_body_recorded": false
+  },
+  "uploads": [
+    {
+      "case": "markdown",
+      "method": "POST",
+      "path": "/api/kb/documents/upload",
+      "multipart_field": "file",
+      "status_code": 201,
+      "document_id": "a95357cf37344160859a812852f7863f",
+      "task_id": "dda321293959475ba78b3192406a9e8e",
+      "initial_status": "indexing",
+      "initial_chunkers": {
+        "v1": {
+          "status": "indexing",
+          "progress": 0,
+          "chunk_count": 0
+        },
+        "v2": {
+          "status": "indexing",
+          "progress": 0,
+          "chunk_count": 0
+        }
+      },
+      "source_sha256_prefix_in_response": "d6d2ba410fd5"
+    },
+    {
+      "case": "fixed-pdf",
+      "method": "POST",
+      "path": "/api/kb/documents/upload",
+      "multipart_field": "file",
+      "status_code": 201,
+      "document_id": "f51024342ecd46a7a0c17adefbd67abd",
+      "task_id": "d729bfad744245d6826268cbaebb7dfc",
+      "initial_status": "indexing",
+      "initial_chunkers": {
+        "v1": {
+          "status": "indexing",
+          "progress": 0,
+          "chunk_count": 0
+        },
+        "v2": {
+          "status": "indexing",
+          "progress": 0,
+          "chunk_count": 0
+        }
+      },
+      "source_sha256_prefix_in_response": "3cc6b61497f4"
+    }
+  ],
+  "status_polling": [
+    {
+      "case": "markdown",
+      "method": "GET",
+      "path": "/api/kb/documents?limit=100",
+      "status_code": 200,
+      "document_status": "indexed",
+      "v1": {
+        "status": "indexed",
+        "progress": 100,
+        "chunk_count": 9,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed",
+        "progress": 100,
+        "chunk_count": 6,
+        "error": null
+      }
+    },
+    {
+      "case": "fixed-pdf",
+      "method": "GET",
+      "path": "/api/kb/documents?limit=100",
+      "status_code": 200,
+      "document_status": "indexed",
+      "v1": {
+        "status": "indexed",
+        "progress": 100,
+        "chunk_count": 1,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed",
+        "progress": 100,
+        "chunk_count": 1,
+        "error": null
+      }
+    }
+  ],
+  "inspections": {
+    "markdown": {
+      "document_id": "a95357cf37344160859a812852f7863f",
+      "v1": {
+        "method": "GET",
+        "path": "/api/kb/documents/a95357cf37344160859a812852f7863f/inspection?chunker=v1&page_size=500",
+        "status_code": 200,
+        "manifest_status": "ready",
+        "progress": 100,
+        "source_hash_state": "verified",
+        "source_sha256": "d6d2ba410fd582f28463408749ffae2e66175351d1dd376ff997756bbbe72764",
+        "mapping_algorithm_version": "source-anchor-v2",
+        "mapped_count": 9,
+        "unmapped_count": 0,
+        "unmapped_reasons": {},
+        "total": {
+          "blocks": 9,
+          "chunks": 9,
+          "anchors": 9
+        },
+        "anchors_nonempty": true,
+        "next_cursor_present": false,
+        "etag_present": true
+      },
+      "v2": {
+        "method": "GET",
+        "path": "/api/kb/documents/a95357cf37344160859a812852f7863f/inspection?chunker=v2&page_size=500",
+        "status_code": 200,
+        "manifest_status": "ready",
+        "progress": 100,
+        "source_hash_state": "verified",
+        "source_sha256": "d6d2ba410fd582f28463408749ffae2e66175351d1dd376ff997756bbbe72764",
+        "mapping_algorithm_version": "source-anchor-v2",
+        "mapped_count": 6,
+        "unmapped_count": 0,
+        "unmapped_reasons": {},
+        "total": {
+          "blocks": 9,
+          "chunks": 6,
+          "anchors": 9
+        },
+        "anchors_nonempty": true,
+        "next_cursor_present": false,
+        "etag_present": true
+      }
+    },
+    "pdf": {
+      "document_id": "f51024342ecd46a7a0c17adefbd67abd",
+      "v1": {
+        "method": "GET",
+        "path": "/api/kb/documents/f51024342ecd46a7a0c17adefbd67abd/inspection?chunker=v1&page_size=500",
+        "status_code": 200,
+        "manifest_status": "ready",
+        "progress": 100,
+        "source_hash_state": "verified",
+        "source_sha256": "3cc6b61497f483fcb1933919cb00f1568ad1fd609953c96e4970c772cbe4e4ec",
+        "mapping_algorithm_version": "source-anchor-v2",
+        "mapped_count": 1,
+        "unmapped_count": 0,
+        "unmapped_reasons": {},
+        "total": {
+          "blocks": 3,
+          "chunks": 1,
+          "anchors": 3
+        },
+        "anchors_nonempty": true,
+        "next_cursor_present": false,
+        "etag_present": true
+      },
+      "v2": {
+        "method": "GET",
+        "path": "/api/kb/documents/f51024342ecd46a7a0c17adefbd67abd/inspection?chunker=v2&page_size=500",
+        "status_code": 200,
+        "manifest_status": "ready",
+        "progress": 100,
+        "source_hash_state": "verified",
+        "source_sha256": "3cc6b61497f483fcb1933919cb00f1568ad1fd609953c96e4970c772cbe4e4ec",
+        "mapping_algorithm_version": "source-anchor-v2",
+        "mapped_count": 1,
+        "unmapped_count": 0,
+        "unmapped_reasons": {},
+        "total": {
+          "blocks": 3,
+          "chunks": 1,
+          "anchors": 3
+        },
+        "anchors_nonempty": true,
+        "next_cursor_present": false,
+        "etag_present": true
+      }
+    }
+  },
+  "source_contract": {
+    "markdown": {
+      "head": {
+        "method": "HEAD",
+        "path": "/api/kb/documents/a95357cf37344160859a812852f7863f/source",
+        "status_code": 200,
+        "content_type": "text/markdown",
+        "content_length": 642,
+        "accept_ranges": "bytes",
+        "etag_present": true,
+        "body_bytes": 0
+      },
+      "range": {
+        "method": "GET",
+        "path": "/api/kb/documents/a95357cf37344160859a812852f7863f/source",
+        "range": "bytes=0-15",
+        "status_code": 206,
+        "content_range": "bytes 0-15/642",
+        "content_length": 16,
+        "etag_present": true,
+        "etag_matches_head": true,
+        "body_bytes": 16
+      },
+      "conditional_get": {
+        "method": "GET",
+        "status_code": 304,
+        "body_bytes": 0,
+        "etag_present": true
+      },
+      "missing_source": {
+        "method": "GET",
+        "status_code": 404
+      }
+    },
+    "pdf": {
+      "head": {
+        "method": "HEAD",
+        "path": "/api/kb/documents/f51024342ecd46a7a0c17adefbd67abd/source",
+        "status_code": 200,
+        "content_type": "application/pdf",
+        "content_length": 1551,
+        "accept_ranges": "bytes",
+        "etag_present": true,
+        "body_bytes": 0
+      },
+      "range": {
+        "method": "GET",
+        "path": "/api/kb/documents/f51024342ecd46a7a0c17adefbd67abd/source",
+        "range": "bytes=0-15",
+        "status_code": 206,
+        "content_range": "bytes 0-15/1551",
+        "content_length": 16,
+        "etag_present": true,
+        "etag_matches_head": true,
+        "body_bytes": 16
+      },
+      "conditional_get": {
+        "method": "GET",
+        "status_code": 304,
+        "body_bytes": 0,
+        "etag_present": true
+      },
+      "missing_source": {
+        "method": "GET",
+        "status_code": 404
+      }
+    }
+  },
+  "final_listing": {
+    "method": "GET",
+    "path": "/api/kb/documents?limit=100",
+    "status_code": 200,
+    "reported_total": 42,
+    "returned_count": 42,
+    "new_documents": [
+      {
+        "document_id": "a95357cf37344160859a812852f7863f",
+        "file_name": "spec018-upload-acceptance-20261006.md",
+        "media_type": "text/markdown",
+        "status": "indexed",
+        "page_count": null
+      },
+      {
+        "document_id": "f51024342ecd46a7a0c17adefbd67abd",
+        "file_name": "spec018-upload-acceptance-pdf-20261006.pdf",
+        "media_type": "application/pdf",
+        "status": "indexed",
+        "page_count": 0
+      }
+    ]
+  },
+  "ui_observation": {
+    "browser": "Chrome",
+    "url": "http://127.0.0.1:8000/",
+    "knowledge_base_button": "左侧主导航的“▤ 知识库 42”",
+    "qa_tab": "问答（selected）",
+    "upload_control": "问答 Tab 内的“＋ 点击上传 PDF 论文”按钮，旁边提示“本地解析 · 本地向量化 · 不出本机”",
+    "inspection_tab": "切片检查 Tab；该 Tab 没有上传按钮，只有文档选择、v1/v2 版本选择和原文/切片面板",
+    "observed_new_rows": [
+      "spec018-upload-acceptance-20261006.md：已索引，v1 9 片段，v2 6 片段",
+      "spec018-upload-acceptance-pdf-20261006.pdf：已索引，v1 1 片段，v2 1 片段"
+    ],
+    "browser_upload_performed": false,
+    "ui_observation_scope": "Read-only DOM/accessibility inspection; API upload above is the authorized state-changing action."
+  },
+  "safety": {
+    "existing_user_documents_deleted": false,
+    "reindex_or_rebuild_started": false,
+    "qdrant_written_or_switched_by_tester": false,
+    "internal_functions_or_mock_used": false,
+    "private_source_body_included": false,
+    "old_failed_attempt_preserved": true,
+    "old_failed_evidence": "docs/sdd/plans/018/artifacts/task-07/current-api-e2e-evidence.json"
+  }
+}
