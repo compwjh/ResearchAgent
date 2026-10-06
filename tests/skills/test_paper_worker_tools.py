@@ -8,6 +8,7 @@ from backend.app.paper_discovery.application.worker_tool import (
     PaperDiscoveryToolFacade,
     validate_worker_tool_result,
 )
+from backend.app.paper_discovery.domain.paper_discovery import CatalogPaper
 from backend.app.skills.registry import build_default_tool_registry
 from backend.app.skills.tool_dispatch import build_default_dispatch
 
@@ -19,10 +20,62 @@ class _Entry:
 
 
 class _Store:
+    _IMPORT_CANDIDATE_ID = "ieee_sp:doi:10.1109/example"
+
+    def __init__(self):
+        # This double exposes the same server-owned persistence seam used by
+        # the facade.  The import fixture is seeded in the catalog, so the
+        # production identity/source gate remains exercised by the test.
+        self._papers = {
+            self._IMPORT_CANDIDATE_ID: CatalogPaper(
+                catalog_paper_id=self._IMPORT_CANDIDATE_ID,
+                conference_id="ieee-sp",
+                year=2024,
+                title="IEEE paper",
+                normalized_title="ieee paper",
+                official_pdf_url="https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?arnumber=1",
+            ),
+        }
+        self._source_kinds = {self._IMPORT_CANDIDATE_ID: {"ieee_sp"}}
+        self._fetch_units = {}
+
     def list_conferences(self):
         return [
             type("Conference", (), {"conference_id": "usenix-security", "enabled": True})(),
         ]
+
+    def save_fetch_unit(self, unit, _now=None):
+        self._fetch_units[unit.fetch_unit_id] = unit
+
+    def get_fetch_unit(self, fetch_unit_id):
+        return self._fetch_units.get(fetch_unit_id)
+
+    def list_catalog_papers(self, conference_ids=None, years=None, *, index_status=None):
+        del index_status
+        papers = list(self._papers.values())
+        if conference_ids:
+            allowed_conferences = {str(value) for value in conference_ids}
+            papers = [paper for paper in papers if paper.conference_id in allowed_conferences]
+        if years:
+            allowed_years = {int(value) for value in years}
+            papers = [paper for paper in papers if paper.year in allowed_years]
+        return papers
+
+    def save_field_provenance(self, *_args, **_kwargs):
+        return True
+
+    def upsert_catalog_paper(self, paper, _now=None):
+        self._papers[paper.catalog_paper_id] = paper
+        return True
+
+    def save_source_record(self, record, _now=None):
+        self._source_kinds.setdefault(record.catalog_paper_id, set()).add(record.source_kind)
+
+    def get_catalog_paper(self, catalog_paper_id):
+        return self._papers.get(catalog_paper_id)
+
+    def get_catalog_source_kinds(self, catalog_paper_id):
+        return sorted(self._source_kinds.get(catalog_paper_id, ()))
 
 
 class _Usenix:
@@ -82,7 +135,10 @@ def test_usenix_and_ieee_use_same_result_validator():
         assert checked.provenance
         assert checked.elapsed_ms >= 0
         assert checked.error is None
-        assert checked.payload["candidates"][0]["candidate_id"].startswith(f"{source}:")
+        candidate = checked.payload["candidates"][0]
+        assert candidate["candidate_id"]
+        assert candidate["source_id"] == source
+        assert candidate["candidate_id"] in checked.provenance
 
 
 def test_generic_source_worker_honors_candidate_limit():

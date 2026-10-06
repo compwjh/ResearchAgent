@@ -30,7 +30,7 @@ def test_a_aggregate_with_metadata_expands_to_n_records():
 def test_b_aggregate_without_metadata_but_in_allowlist_still_expands():
     """b) 聚合形 + 元数据为空 + 白名单含该 ID -> 仍展开为 N 条记录（本次修复点）。"""
     outputs = [{"kept": [_aggregate(["catalog:c1", "catalog:c2"])]}]
-    records = _validated_evaluator_candidates(outputs, {}, allowed_candidate_ids={"c1", "c2"})
+    records = _validated_evaluator_candidates(outputs, {}, recall_allowlist={"c1", "c2"})
     assert [r["candidate_id"] for r in records] == ["c1", "c2"]
     # 缺失元数据时记录仍必须生成，且字段完整（candidate_id + evidence_refs + verified）。
     for r in records:
@@ -43,14 +43,14 @@ def test_b_aggregate_without_metadata_but_in_allowlist_still_expands():
 def test_c_aggregate_without_metadata_and_id_not_in_allowlist_is_empty():
     """c) 聚合形 + 元数据为空 + 白名单不含该 ID -> 返回空（fail-closed 不退化）。"""
     outputs = [{"kept": [_aggregate(["catalog:c1"])]}]
-    records = _validated_evaluator_candidates(outputs, {}, allowed_candidate_ids={"c9"})
+    records = _validated_evaluator_candidates(outputs, {}, recall_allowlist={"c9"})
     assert records == []
 
 
 def test_d_non_catalog_refs_are_ignored():
     """d) 非 catalog: 前缀的 ref 被忽略（search:/arxiv: 等一律不成为候选）。"""
     outputs = [{"kept": [_aggregate(["catalog:c1", "arxiv:c1", "search:x", "catalog:c2"])]}]
-    records = _validated_evaluator_candidates(outputs, {}, allowed_candidate_ids={"c1", "c2"})
+    records = _validated_evaluator_candidates(outputs, {}, recall_allowlist={"c1", "c2"})
     assert {r["candidate_id"] for r in records} == {"c1", "c2"}
 
 
@@ -59,7 +59,7 @@ def test_e_no_allowlist_behaves_identical_to_before():
     # 元数据齐全：返回记录
     outputs_ok = [{"kept": [_aggregate(["catalog:c1"])]}]
     meta = {"c1": {"title": "P1"}}
-    explicit = _validated_evaluator_candidates(outputs_ok, meta, allowed_candidate_ids=None)
+    explicit = _validated_evaluator_candidates(outputs_ok, meta, recall_allowlist=None)
     default = _validated_evaluator_candidates(outputs_ok, meta)
     assert explicit == default
     assert [r["candidate_id"] for r in explicit] == ["c1"]
@@ -67,14 +67,14 @@ def test_e_no_allowlist_behaves_identical_to_before():
     # 元数据缺失且未传白名单：返回空（与修复前一致，不静默接受）
     outputs_missing = [{"kept": [_aggregate(["catalog:cz"])]}]
     assert _validated_evaluator_candidates(outputs_missing, {}) == []
-    assert _validated_evaluator_candidates(outputs_missing, {}, allowed_candidate_ids=None) == []
+    assert _validated_evaluator_candidates(outputs_missing, {}, recall_allowlist=None) == []
 
 
 def test_allowlist_prefers_allowlist_over_metadata_gap():
     """白名单命中但元数据部分缺失：只被白名单命中的记录生成，元数据仍仅补字段。"""
     outputs = [{"kept": [_aggregate(["catalog:c1", "catalog:c2"])]}]
     # 只有 c1 有元数据，c2 缺失
-    records = _validated_evaluator_candidates(outputs, {"c1": {"title": "P1"}}, allowed_candidate_ids={"c1", "c2"})
+    records = _validated_evaluator_candidates(outputs, {"c1": {"title": "P1"}}, recall_allowlist={"c1", "c2"})
     by_id = {r["candidate_id"]: r for r in records}
     assert set(by_id) == {"c1", "c2"}
     assert by_id["c1"]["title"] == "P1"

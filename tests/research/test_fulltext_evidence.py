@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from backend.app.knowledge_base.infrastructure.retrieve import Hit
 import backend.app.research.application.evidence_upgrade as evidence_upgrade
+from backend.app.knowledge_base.infrastructure.retrieve import Hit
 from backend.app.research.application.evidence_upgrade import EvidenceUpgradeError, EvidenceUpgradeService
 from backend.app.research.domain.models import ResearchDocumentLink, ResearchTask
 from backend.app.research.infrastructure.research_store import ResearchStore
@@ -51,7 +51,7 @@ def test_default_generation_reader_uses_published_finalize_store(monkeypatch, tm
     monkeypatch.setattr(evidence_upgrade, "FinalizeBundleStore", FakeFinalizeStore)
     service = EvidenceUpgradeService(ResearchStore(tmp_path / "research.sqlite3"), search=lambda *_args, **_kwargs: [])
 
-    assert calls == [evidence_upgrade.KB_DIR.parents[2]]
+    assert calls == [evidence_upgrade.KB_DIR.parents[1]]
     assert service._generation_reader() == {"run_id": "generation-default"}
 
 
