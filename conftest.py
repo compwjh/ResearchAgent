@@ -73,3 +73,21 @@ def _isolate_ollama_model_cache():
     yield
     ollama._models_cache.update(expires_at=0.0, models=None)
     ollama._models_failure.update(expires_at=0.0, error=None)
+
+
+@pytest.fixture(autouse=True)
+def _pin_default_route_to_langchain_in_tests(monkeypatch):
+    """历史契约测试多数 mock 的是 langchain 路径（create_chat_model）。
+
+    spec-041 将生产默认链路由 langchain 改为 direct；为不破坏这些既有契约测试
+    （它们用 create_chat_model 假对象模拟 langchain 链路、断言 langchain 行为），
+    在测试环境把默认路由固定为 langchain，使其继续离线运行、不触发真实 Ollama。
+
+    只改 chat_runner 模块内导入的 OLLAMA_ROUTE 副本，不动 platform.config.OLLAMA_ROUTE
+    （生产默认仍是 direct，由 tests/test_chat_route.py::RunChatTests::
+    test_default_route_is_direct 显式 patch 回 direct 来验证）。显式传入 route= 的
+    用例不受影响。
+    """
+    monkeypatch.setattr(
+        "backend.app.chat.application.chat_runner.OLLAMA_ROUTE", "langchain"
+    )

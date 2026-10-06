@@ -10,21 +10,43 @@
 - `metadata` = 完整耗时分解，供 UI 展示与自研视图读取
 - numeric score = 关键指标，供原生 Dashboard 做分位与聚合
 
-## 为什么不做"虚拟阶段 span"
+## 阶段子 span（spec-041 T-E）
 
-原计划把 load → prefill → decode 映射成子 span，让瀑布图直接显示各阶段时间条。
-但核实 SDK 后确认：`start_as_current_observation` **不支持指定 start_time**
-（只有 `end(end_time=)` 可控），无法把服务端 timings 反推成精确的时间段；
-硬做只能走 OTel 内部 API，脆弱且依赖未公开实现。
+`start_as_current_observation` 不接受 `start_time`，SDK 主路径下 generation 主体的
+startTime≈endTime（实测差约 4ms）。为满足"瀑布图直接显示各阶段时间条"，本任务绕开 SDK 主路径：
+进入 `with langfuse.start_as_current_observation(...)` 之后，直接用与 SDK 同款的私有 tracer
+（`langfuse._otel_tracer`）创建 4 个带精确 `start_time`/`end_time` 的 OTel child span：
 
-因此改为：阶段耗时以 **metadata + numeric score** 承载（Langfuse 原生就能展示与聚合），
-**精确甘特图由任务 07 的自研视图从 metadata 渲染**。
-这样既不依赖 SDK 内部实现，甘特图的呈现也更可控。
+- `phase:load`     = [started_at, started_at + load_ms]
+- `phase:prefill`  = [started_at + load_ms, started_at + load_ms + prompt_eval_ms]
+- `phase:decode`   = [started_at + load_ms + prompt_eval_ms, started_at + 服务端 total]
+- `phase:overhead` = [started_at + 服务端 total, started_at + client_wall_ms]
+
+四段首尾相接铺满整个调用窗口（详见 `_report_phase_spans` 的修正说明）。
+
+`first_token` 不单独成 span，而是写入 generation 主体的 `completion_start_time`（SDK 原生支持，供 TTFT）。
+每个阶段独立 try：单个阶段上报失败不影响其余阶段与 generation 上报（fail-open）。
+metadata + numeric score 仍照常上报，作为双保险与自研视图数据源。
+
+## generation 主体起点回填（spec-041 T-G）
+
+同一个 SDK 限制还会让 **generation 主体**的 startTime≈endTime（它在调用结束后才创建），
+实测一次 21.8s 的调用 dur 只有 11ms：瀑布图父子关系颠倒，且延迟分位统计全是错的。
+`_backdate_generation_start()` 在 generation 被 end 前把底层 OTel span 的 `_start_time`
+改成真实请求起点；三处起点（`completion_start_time` / 回填 / 阶段子 span）共用同一个 `base`。
 """
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
+
+# Langfuse 私有符号：升版改名/移除时不得让整个 observability 模块在**导入期**崩溃
+# （导入期异常不在 safe_call 保护范围内，会连 record_event 一起挂）。故容错导入：
+# 缺失时降级为 None，运行期跳过富化属性，但仍照常创建并上报子 span。
+try:
+    from langfuse._client.attributes import create_span_attributes as _create_span_attributes
+except ImportError:  # pragma: no cover - 仅在 langfuse 私有符号变动时触发
+    _create_span_attributes = None
 
 from backend.app.platform.observability import client as obs_client
 from backend.app.platform.observability import config as obs_config
@@ -123,6 +145,147 @@ def _build_metadata(
     return metadata
 
 
+def _to_ns(dt: datetime) -> int:
+    """把带时区的时间戳转成 OTel 所需的纳秒整数（int(dt.timestamp() * 1e9)）。"""
+    return int(dt.timestamp() * 1_000_000_000)
+
+
+def _backdate_generation_start(generation: Any, base: datetime) -> None:
+    """把 generation 主体的起点回填到真实请求起点（fail-open）。
+
+    SDK 的 `start_as_current_observation` 不接受 `start_time`，而 `record_ollama_generation`
+    是在调用**结束后**才被调用的，于是 generation 的 startTime≈endTime≈上报时刻：
+    实测一次 21.8s 的调用，generation 落在末尾且 dur 只有 11ms——瀑布图父子关系颠倒，
+    且所有基于 generation 延迟的统计（P50/P95、Dashboard）恒等于个位数毫秒，全是错的。
+
+    这里在 generation 被 end 之前，把它底层 OTel span 的 `_start_time` 改成 `base`
+    （与 `completion_start_time`、`_report_phase_spans` 同源的起点）。实测：回填
+    7000ms 后 Langfuse 读回的 startTime 与 endTime 之差正好 7000ms。
+
+    失效语义（fail-open）：`_otel_span` 缺失、没有 `_start_time` 属性、或 `base` 不在
+    过去，一律**静默跳过**，退化为「起点≈上报时刻」的既有行为，绝不抛异常、不影响业务。
+    """
+    span = getattr(generation, "_otel_span", None)
+    if span is None or not hasattr(span, "_start_time"):
+        logger.debug("generation 底层 otel span 不可回填，跳过（退化为既有行为）")
+        return
+
+    target_ns = _to_ns(base)
+    now_ns = _to_ns(datetime.now(timezone.utc))
+    # 只往过去回填：base 落在现在或未来时不动，避免出现未来时间戳与负时长。
+    if target_ns >= now_ns:
+        logger.debug("回填起点不在过去，跳过（避免未来时间戳）")
+        return
+
+    try:
+        span._start_time = target_ns
+    except Exception as error:  # noqa: BLE001 — 回填失败不得影响 generation 上报
+        logger.warning("generation 起点回填失败（已忽略）：%s", type(error).__name__)
+
+
+# Langfuse 私有属性 key（硬编码字符串而非 import，避免依赖私有符号导致导入失败）。
+# 即使没有 _create_span_attributes helper，也必须给子 span 打上 observation.type=span，
+# 否则 dual 模式下不被识别为 observation。这是「最小属性集」，保证 fail-open 下子 span 仍有效。
+_LF_OBSERVATION_TYPE = "langfuse.observation.type"
+
+
+def _set_phase_span_attributes(span, phase_name: str) -> None:
+    """给阶段子 span 打 Langfuse 约定属性（fail-open）。
+
+    最小属性集始终打 `langfuse.observation.type=span`（硬编码字符串），保证私有
+    helper 缺失时子 span 仍被识别为 observation。富化 metadata（phase 名）仅在
+    `_create_span_attributes` 可用时进行；缺失时跳过，不影响 4 个子 span 的时间戳上报。
+    """
+    span.set_attribute(_LF_OBSERVATION_TYPE, "span")
+    if _create_span_attributes is not None:
+        span.set_attributes(
+            _create_span_attributes(observation_type="span", metadata={"phase": phase_name})
+        )
+
+
+def _report_phase_spans(
+    langfuse: Any,
+    result: OllamaChatResult,
+    started_at: Optional[datetime],
+) -> None:
+    """为一次 LLM 调用反推 4 个阶段子 span（load/prefill/decode/overhead）。
+
+    Langfuse SDK 的 `start_as_current_observation` 不接受 `start_time`，主路径下
+    generation 主体的 startTime≈endTime。为让瀑布图显示各阶段时间条，这里绕开主路径，
+    直接用与 SDK 同款的私有 tracer（`langfuse._otel_tracer`）创建带精确起止时间的
+    OTel child span，并打 `langfuse.observation.type=span` 属性，保证 dual 模式下
+    落回 legacy observations。
+
+    四个阶段按**服务端自身时间轴**首尾相接铺满 [base, base + 客户端墙钟]：
+
+    - `load`     = [0, load_ms]
+    - `prefill`  = [load_ms, load_ms + prompt_eval_ms]
+    - `decode`   = [load_ms + prompt_eval_ms, 服务端 total]
+    - `overhead` = [服务端 total, client_wall_ms]（客户端侧开销）
+
+    ⚠️ 修正（spec-041 T-H，实测推翻原口径）：原口径把 decode 写成
+    `[first_token_ms, first_token_ms + eval_ms]`，但 `eval_ms` 是 Ollama 的**全部**
+    解码时长（含思考 token 的生成），它从 prefill 结束就开始算，不是从「首个可见
+    token」开始。实测（预热后）：真实墙钟 3916ms、first_token_ms 2450ms、
+    eval_ms 3450ms → `ft + eval = 5900ms`，比真实墙钟多出 1.98s，decode 条会
+    伸出父 generation 之外，同时 overhead 恒等于 0。`first_token` 仍由 generation
+    主体的 `completion_start_time` 承载（TTFT），不单独成 span。
+
+    fail-open：tracer 缺失/不可用时直接返回；每个阶段独立 try，单个阶段上报失败
+    不影响其余阶段与 generation 上报。整段已处在 `_report` 的 `safe_call` 内，
+    任何意外都不会冒泡到业务。
+    """
+    tracer = getattr(langfuse, "_otel_tracer", None)
+    if tracer is None:
+        return
+
+    # 与 completion_start_time 同源：优先用调用方传入的请求起点
+    base = started_at or (
+        datetime.now(timezone.utc) - timedelta(milliseconds=result.client_wall_ms)
+    )
+    timings = result.timings
+
+    # 服务端三阶段之和即服务端视角的总耗时；客户端墙钟是唯一可信的「真实结束时刻」，
+    # 两者略有出入（服务端 total 偶尔略大于墙钟）时以较大者为准，避免负时长。
+    server_total_ms = timings.load_ms + timings.prompt_eval_ms + timings.eval_ms
+    end_ms = max(result.client_wall_ms, server_total_ms)
+
+    # 归一化：起点非负、终点不早于起点，保证 4 条时间条单调相接、不出现负时长。
+    boundaries = [
+        ("phase:load", 0.0, timings.load_ms),
+        ("phase:prefill", timings.load_ms, timings.load_ms + timings.prompt_eval_ms),
+        ("phase:decode", timings.load_ms + timings.prompt_eval_ms, server_total_ms),
+        ("phase:overhead", server_total_ms, end_ms),
+    ]
+    phases = []
+    for phase_name, start_ms, stop_ms in boundaries:
+        start_ms = max(start_ms, 0.0)
+        stop_ms = max(stop_ms, start_ms)
+        phases.append(
+            (
+                phase_name,
+                base + timedelta(milliseconds=start_ms),
+                base + timedelta(milliseconds=stop_ms),
+            )
+        )
+
+    for phase_name, start_dt, end_dt in phases:
+        try:
+            with tracer.start_as_current_span(
+                phase_name, start_time=_to_ns(start_dt), end_on_exit=False
+            ) as span:
+                try:
+                    _set_phase_span_attributes(span, phase_name)
+                finally:
+                    # end_on_exit=False，必须显式结束；即使 set_attributes 抛错也要结束，避免 span 泄漏
+                    span.end(end_time=_to_ns(end_dt))
+        except Exception as error:  # noqa: BLE001 — 单阶段失败不得影响其它阶段与 generation
+            logger.warning(
+                "阶段 span '%s' 上报失败（已忽略，不影响业务与 generation）：%s: %s",
+                phase_name, type(error).__name__, error,
+            )
+
+
 def record_ollama_generation(
     *,
     model: str,
@@ -162,30 +325,34 @@ def record_ollama_generation(
         return
 
     metrics = derive_metrics(result)
-    # input_chars 必须是**截断前**的原始长度：先格式化、量长度，再交给 _truncate 截断。
-    # Even callers that still pass the historical full list are sanitized at
-    # this seam; observability must never persist user/system prompt text.
-    formatted_input = _format_messages(redact_prompt_messages(prompt_messages))
-    input_chars = sum(len(str(message.get("content", "") or "")) for message in prompt_messages)
-    metadata = _build_metadata(
-        result,
-        metrics,
-        model=model,
-        route=route,
-        input_chars=input_chars,
-        extra=extra_metadata,
-    )
-    if error_type and not success:
-        metadata["error_code"] = str(error_type)
 
-    # 首 token 时刻（TTFT）是本次诊断的核心指标，不能因为调用方漏传 started_at 就丢失：
-    # 没有起点时，用「当前时刻 - 客户端墙钟」反推请求起点，再叠加首 token 延迟。
+    # 请求起点是**单一事实来源**：completion_start_time（TTFT）、generation 起点回填、
+    # 4 个阶段子 span 三处都必须用它，否则瀑布图会出现父子时间错位。
+    # 调用方漏传 started_at 时，用「当前时刻 - 客户端墙钟」反推，保证 TTFT 与瀑布图不丢失。
+    base = started_at or (datetime.now(timezone.utc) - timedelta(milliseconds=result.client_wall_ms))
     completion_start_time: Optional[datetime] = None
     if result.first_token_ms > 0:
-        base = started_at or (datetime.now(timezone.utc) - timedelta(milliseconds=result.client_wall_ms))
         completion_start_time = base + timedelta(milliseconds=result.first_token_ms)
 
     def _report() -> None:
+        # spec-041：用户裁决「无需隐私设计，input 与 output 全量可见」，
+        # 故 redact_prompt_messages 保留原文 content。把输入格式化搬进 safe_call
+        # 内部，任何格式化异常都会被 fail-open 吞掉，绝不波及业务主链路。
+        formatted_input = _format_messages(redact_prompt_messages(prompt_messages))
+        # input_chars 必须是**截断前**的原始长度：量的是 prompt_messages 原文，
+        # 而上报的 input 由 _truncate 另行截断，二者解耦。
+        input_chars = sum(len(str(message.get("content", "") or "")) for message in prompt_messages)
+        metadata = _build_metadata(
+            result,
+            metrics,
+            model=model,
+            route=route,
+            input_chars=input_chars,
+            extra=extra_metadata,
+        )
+        if error_type and not success:
+            metadata["error_code"] = str(error_type)
+
         with langfuse.start_as_current_observation(
             as_type="generation",
             name=name,
@@ -199,6 +366,11 @@ def record_ollama_generation(
                 "output": result.timings.completion_tokens,
             },
         ) as generation:
+            # spec-041 T-G：generation 主体起点回填到真实请求起点，否则它的
+            # startTime≈endTime（SDK 不支持 start_time），瀑布图父子关系颠倒、
+            # 延迟分位统计恒为个位数毫秒。必须在建子 span **之前**、generation
+            # 被 end **之前**执行；失效时静默退化为既有行为。
+            _backdate_generation_start(generation, base)
             generation.update(output=_truncate(result.content, obs_config.max_output_chars()))
             for metric_name in SCORE_METRICS:
                 generation.score(
@@ -206,6 +378,10 @@ def record_ollama_generation(
                     value=metrics.get(metric_name, 0.0),
                     data_type="NUMERIC",
                 )
+            # spec-041 T-E：反推 4 个阶段子 span（load/prefill/decode/overhead），
+            # 带精确起止时间，让 Langfuse 瀑布图显示各阶段时间条。处于 safe_call 内，
+            # 且各阶段独立 try，单阶段失败不影响 generation 上报与业务。
+            _report_phase_spans(langfuse, result, base)
 
     safe_call(_report)
 
@@ -223,8 +399,16 @@ def _format_messages(messages: Sequence[Dict[str, str]]) -> str:
 
 
 def redact_prompt_messages(messages: Sequence[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Return role-preserving observation input with all prompt text removed."""
-    return [{"role": str(message.get("role", "unknown")), "content": ""} for message in messages]
+    """Return observation input for a prompt, preserving role and content.
+
+    spec-041：用户已裁决「无需隐私设计，input 与 output 全量可见」，因此
+    ``content`` 原样保留（不再清零）。仅做 role 归一化与 content 缺省兜底，
+    返回结构（逐条 ``{role, content}``）与签名保持不变，调用方用法无需改动。
+    """
+    return [
+        {"role": str(message.get("role", "unknown")), "content": str(message.get("content", "") or "")}
+        for message in messages
+    ]
 
 
 def prompt_observation_metadata(messages: Sequence[Dict[str, str]], *, system_rule_enabled: Optional[bool] = None) -> Dict[str, Any]:

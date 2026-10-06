@@ -127,8 +127,11 @@ LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY", "")
 LANGFUSE_SAMPLE_RATE_RAW = os.getenv("LANGFUSE_SAMPLE_RATE", "1.0")
 # 上报超时（秒）：观测不得拖慢业务，超时即放弃本次上报。
 LANGFUSE_TIMEOUT = int(os.getenv("LANGFUSE_TIMEOUT", "5"))
-# 对话链路：langchain（默认，保持既有行为）| direct（直连 Ollama 以采集原生 timings）
-OLLAMA_ROUTE = os.getenv("OLLAMA_ROUTE", "langchain").strip().lower()
+# 对话链路：direct（默认）| langchain（A6 双链路对比可显式 route=langchain 走回退）。
+# 默认改 direct（spec-041 / spec-013:118 修订）：langchain 链路拿不到 Ollama 服务端
+# timings（load_ms / prompt_eval_ms / eval_ms 恒为 0），导致 5 阶段瀑布图 4 个阶段条
+# 时长全为 0、观测不可用；direct 直连可采到真实值（trace 29c97aefb086cf65 vs f589b138fca8aa17）。
+OLLAMA_ROUTE = os.getenv("OLLAMA_ROUTE", "direct").strip().lower()
 # 冷启动判定阈值（毫秒）：load_duration 超过该值即标记为冷启动
 OBS_COLD_START_THRESHOLD_MS = float(os.getenv("OBS_COLD_START_THRESHOLD_MS", "200"))
 # 对话内 Tool 执行（spec-023 Task07）：最大编排轮次、单次模型调用超时（秒）、重试次数。

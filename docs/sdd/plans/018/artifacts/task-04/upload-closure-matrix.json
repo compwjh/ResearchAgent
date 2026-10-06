@@ -1,12 +1,12 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "06c3412",
-  "inventory_digest": "52f70f06429013729c095dd02c1ce4b59e86ee09bb43f977d2e0bcf8a9223452",
+  "inventory_digest": "8fb4520d53ed2f6a3c09814d9e067388717d68b29ba38cb0a736efbce31fb2f1",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {
       "path": "backend/app/main.py",
-      "sha256": "c5a294fe4b46a5e46ea79dc7a0f6492c68d1532cd85484b657ec4a79864b13d5"
+      "sha256": "43a41025609611fb959c3305c6ef6af8743883d7947f8c397c16a5925d7f0fff"
     },
     {
       "path": "backend/app/api/routes_kb.py",
@@ -14,15 +14,15 @@
     },
     {
       "path": "backend/app/api/routes_paper.py",
-      "sha256": "fc2698ca5c047665d28b502ac8c80a84f8188a1d3a0353e85ce793611cfe91ef"
+      "sha256": "d8fbdaa65c6c4fa35141d119f72ece96690d19136392e7fede0b3b52bfe47c41"
     },
     {
       "path": "backend/app/knowledge_base/application.py",
-      "sha256": "6a1186a761051f61ec3bdb758f5369f90b2e45468ce17596c2d037216d8f246d"
+      "sha256": "574112e82b5140d41bf6e572e1bdecae5881e5ec09c7818cb12c1bdff5e93ae5"
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/store.py",
-      "sha256": "31fb4ad4f7287917ace93872012186344d61bff9f0d62b221395f9ec54562a87"
+      "sha256": "d6fc6431ea7e55e4ed460e1869c52b19778414baf5c0e4ec199c54bb67922dcf"
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/index.py",
@@ -34,7 +34,7 @@
     },
     {
       "path": "backend/app/paper_discovery/application/paper_import.py",
-      "sha256": "83a601d48c59dc44f03f2be93bde848d1908a7803220ce9870fa4eb29e28dd51"
+      "sha256": "42d1eb879f0176d76794aa32e38416180dbf489c56a0a166e752e0bceaee95d7"
     }
   ],
   "closed_enums": {
@@ -343,7 +343,7 @@
     {
       "entry_id": "store-source-metadata",
       "entry_kind": "store",
-      "route_or_symbol": "store.save_upload, store.save_papers, store.upsert_paper, store.remove_paper, store.register_import_capability, store.compensate_import_resource, store.update_chunker_state and store.mark_interrupted_tasks",
+      "route_or_symbol": "store.save_upload, store.save_papers, store.upsert_paper, store.remove_paper, store.register_import_capability, store.compensate_import_resource, store.update_chunker_state, store.mark_interrupted_tasks and store.mark_chunker_auto_requeued",
       "current_behavior": "save_upload can overwrite <paper_id>.pdf; save/upsert/update/interrupt rewrite metadata; remove_paper deletes metadata and source.",
       "target_behavior": "Source creation is server-ID create-exclusive; metadata writes are application-owned and version/owner checked; deletion is tombstone-driven and never best-effort.",
       "allowed_callers": [
@@ -415,7 +415,7 @@
     {
       "entry_id": "service-startup-index-migration",
       "entry_kind": "maintenance",
-      "route_or_symbol": "main.lifespan -> application.backfill_chunker_defaults and application.mark_interrupted_on_startup",
+      "route_or_symbol": "main.lifespan -> application.backfill_chunker_defaults, application.mark_interrupted_on_startup and application.recover_failed_reindexes",
       "current_behavior": "Service startup best-effort mutates legacy fixed-collection payloads and interrupted metadata before accepting requests.",
       "target_behavior": "Remove legacy fixed-collection backfill; startup may only validate the generation marker and recover document reindex state without source writes or rebuild-FSM guessing.",
       "allowed_callers": [

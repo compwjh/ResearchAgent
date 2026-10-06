@@ -86,13 +86,14 @@ class KbAskTraceTests(unittest.TestCase):
         self.assertEqual(kwargs["model"], "m1")
         self.assertEqual(kwargs["name"], "kb.generation")
         self.assertEqual(kwargs["tags"], ["kb"])
-        # 观测只保留角色顺序与脱敏 content；平台约束、系统规则和
+        # spec-041：input 全量可见，content 不再脱敏清空；平台约束、系统规则和
         # evidence/advisory 的系统消息数量可随合同扩展，不再硬编码旧数量。
         roles = [message["role"] for message in kwargs["prompt_messages"]]
         self.assertGreaterEqual(len(roles), 2)
         self.assertEqual(roles[-1], "user")
         self.assertTrue(all(role == "system" for role in roles[:-1]))
-        self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
+        # content 原样保留（全量可见），不得为空
+        self.assertTrue(all(message["content"] for message in kwargs["prompt_messages"]))
         self.assertEqual(kwargs["extra_metadata"]["role_names"], roles)
         self.assertEqual(kwargs["route"], "langchain")
         extra = kwargs["extra_metadata"]

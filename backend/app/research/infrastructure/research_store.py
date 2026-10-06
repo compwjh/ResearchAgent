@@ -27,7 +27,9 @@ import re
 import sqlite3
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from typing import Iterator
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -1187,20 +1189,32 @@ class ResearchStore:
         if row[1] != "integer" or row[0] != SCHEMA_VERSION:
             raise RuntimeError(f"Unsupported or corrupt research schema version: {row[0]!r}")
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         """新建跨进程安全的 SQLite 连接。
 
         `journal_mode=WAL` 是数据库级幂等设置；每个连接重复执行不会改变语义，
         但会让多个 worker 在恢复/调度时可以并发读库，写入仍由 SQLite 串行化。
         `busy_timeout` 与 Python 连接 timeout 同步，避免短暂写锁竞争直接暴露为
         ``database is locked``。
+
+        必须以 ``with`` 使用（spec-037 Bug 9）：``sqlite3.Connection`` 作上下文管理器
+        **只管理事务（成功提交 / 异常回滚），并不关闭连接**；此前 89 个调用点全部写成
+        ``with self._connect() as conn:`` 而全文件没有一处 ``close()``，连接只能等 GC
+        回收，实测泄漏数万个文件句柄，最终 ``OSError: [Errno 24] Too many open files``
+        使所有新建 httpx Client 失败（表现为健康检查 500、模型库空白）。内层
+        ``with connection:`` 保持原有事务语义不变，``finally`` 保证任何路径下都关闭连接。
         """
         connection = sqlite3.connect(str(self.database_path), timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA busy_timeout = 30000")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     # ------------------------------------------------------------------ #
     # ResearchTask 写 / 读

@@ -16,6 +16,7 @@ from backend.app.platform.ollama_direct import (
     OllamaTimings,
     chat_direct,
     chat_direct_stream,
+    normalize_ollama_messages,
 )
 
 
@@ -419,6 +420,128 @@ class RealStreamCallTests(unittest.TestCase):
         via_direct = chat_direct(messages, model)
         self.assertTrue(via_direct.content, "chat_direct content 应非空")
         self.assertTrue(stream.result.content, "chat_direct_stream content 应非空")
+
+
+class NormalizeOllamaMessagesTests(unittest.TestCase):
+    """直连链路归一化：多条 system 合并进第一条，且不就地改入参。"""
+
+    def test_two_system_messages_merged_into_one(self):
+        msgs = [
+            {"role": "system", "content": "a"},
+            {"role": "system", "content": "b"},
+            {"role": "user", "content": "hi"},
+        ]
+        out = normalize_ollama_messages(msgs)
+        systems = [m for m in out if m["role"] == "system"]
+        self.assertEqual(len(systems), 1, "合并后只能有一条 system")
+        self.assertEqual(systems[0]["content"], "a\n\nb")
+        self.assertEqual([m["role"] for m in out], ["system", "user"])
+
+    def test_system_after_user_is_merged_to_front(self):
+        """skill 场景：system 出现在 user 之后，归一化后仍合并到首位。"""
+        msgs = [
+            {"role": "user", "content": "hi"},
+            {"role": "system", "content": "skill-body"},
+        ]
+        out = normalize_ollama_messages(msgs)
+        self.assertEqual([m["role"] for m in out], ["system", "user"])
+        self.assertEqual(out[0]["content"], "skill-body")
+        self.assertEqual(out[1]["content"], "hi")
+
+    def test_no_system_passthrough_is_unchanged(self):
+        msgs = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "ok"},
+        ]
+        out = normalize_ollama_messages(msgs)
+        self.assertEqual(out, msgs, "无 system 时顺序/条数/内容应原样")
+        self.assertEqual(len(out), 2)
+
+    def test_input_list_is_not_mutated(self):
+        msgs = [
+            {"role": "system", "content": "a"},
+            {"role": "system", "content": "b"},
+            {"role": "user", "content": "hi"},
+        ]
+        before = [dict(m) for m in msgs]
+        normalize_ollama_messages(msgs)
+        self.assertEqual(msgs, before, "入参不得被就地修改（spec-041 观测依赖原始多 system 形态）")
+
+    def test_empty_system_content_participates_in_join(self):
+        """空串也参与 join，与 langchain 分支既有行为一致，不得过滤。"""
+        msgs = [
+            {"role": "system", "content": ""},
+            {"role": "system", "content": "b"},
+            {"role": "user", "content": "hi"},
+        ]
+        out = normalize_ollama_messages(msgs)
+        systems = [m for m in out if m["role"] == "system"]
+        self.assertEqual(systems[0]["content"], "\n\nb")
+
+
+class DirectPayloadNormalizationTests(unittest.TestCase):
+    """集成：实际发给 httpx 的 payload 已被归一化，且调用方列表不被改。"""
+
+    def test_payload_has_single_system_when_multiple(self):
+        capture = {}
+        msgs = [
+            {"role": "system", "content": "a"},
+            {"role": "system", "content": "b"},
+            {"role": "user", "content": "hi"},
+        ]
+        with mock.patch(
+            "backend.app.platform.ollama_direct.httpx.stream",
+            _stream_patch(_FakeResponse([_done_event()]), capture=capture),
+        ):
+            chat_direct(msgs, "m")
+
+        payload_msgs = capture["json"]["messages"]
+        systems = [m for m in payload_msgs if m["role"] == "system"]
+        self.assertEqual(len(systems), 1)
+        self.assertEqual(systems[0]["content"], "a\n\nb")
+        self.assertEqual([m["role"] for m in payload_msgs], ["system", "user"])
+        # 下发的 payload 是归一化后的新列表，而非调用方原列表
+        self.assertIsNot(payload_msgs, msgs)
+
+    def test_payload_passthrough_without_system(self):
+        capture = {}
+        msgs = [{"role": "user", "content": "hi"}]
+        with mock.patch(
+            "backend.app.platform.ollama_direct.httpx.stream",
+            _stream_patch(_FakeResponse([_done_event()]), capture=capture),
+        ):
+            chat_direct(msgs, "m")
+        self.assertEqual(capture["json"]["messages"], msgs)
+
+
+class DirectStreamMultipleSystemE2ETests(unittest.TestCase):
+    """端到端：direct 链路传入两条 system 时仍能正常产出 token 与结果。"""
+
+    def test_two_system_messages_yields_tokens_and_result(self):
+        events = [
+            {"message": {"role": "assistant", "content": "幂"}, "done": False},
+            {"message": {"role": "assistant", "content": "等"}, "done": False},
+            _done_event(),
+        ]
+        with mock.patch(
+            "backend.app.platform.ollama_direct.httpx.stream",
+            _stream_patch(_FakeResponse(events)),
+        ):
+            stream = chat_direct_stream(
+                [
+                    {"role": "system", "content": "平台约束"},
+                    {"role": "system", "content": "用户记忆"},
+                    {"role": "user", "content": "什么是幂等性"},
+                ],
+                "qwen3.8:27b",
+            )
+            yielded = list(stream)
+
+        self.assertIsInstance(stream.result, OllamaChatResult)
+        self.assertTrue(stream.result.completed_normally)
+        self.assertEqual(stream.result.content, "幂等")
+        token_events = [e for e in yielded if e.get("type") == "token"]
+        self.assertEqual("".join(e["content"] for e in token_events), "幂等")
 
 
 if __name__ == "__main__":

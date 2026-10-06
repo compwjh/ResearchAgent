@@ -51,6 +51,27 @@ def _ms(nanoseconds: float) -> float:
     return nanoseconds / 1_000_000.0
 
 
+def normalize_ollama_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """归并所有 system 消息为第一条，供下发 Ollama 的 payload 使用。
+
+    qwen3.8 的 chat template 拒绝包含多条 system 的 payload
+    （"System message must be at the beginning."），因此把所有 ``role == "system"``
+    的消息合并进第一条 system，用 ``"\\n\\n"`` 连接；非 system 消息保持原有相对顺序。
+
+    语义与既有 ``_normalize_langchain_messages`` 完全一致：空串也参与 join（不过滤），
+    以免改变 langchain 分支的既有行为；返回的是**新建列表 + 浅拷贝**，绝不就地修改
+    入参，调用方传进来的 messages 原样保留（spec-041 观测逻辑依赖其原始多 system 形态）。
+    没有 system 消息时返回原样浅拷贝。
+    """
+    system_messages = [message for message in messages if message.get("role") == "system"]
+    if not system_messages:
+        return [dict(message) for message in messages]
+
+    merged_system = dict(system_messages[0])
+    merged_system["content"] = "\n\n".join(message.get("content", "") for message in system_messages)
+    return [merged_system, *(dict(message) for message in messages if message.get("role") != "system")]
+
+
 def _stream_chunks(
     messages: List[Dict[str, str]],
     model: str,
@@ -76,7 +97,9 @@ def _stream_chunks(
     url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/chat"
     payload: Dict[str, object] = {
         "model": model,
-        "messages": messages,
+        # 只归一化「发给 Ollama 的 payload」：多条 system 合并进第一条，
+        # 避免 qwen3.8 模板拒绝（HTTP 500）。调用方传进来的 messages 列表原样保留。
+        "messages": normalize_ollama_messages(messages),
         "stream": True,
         # 思考模型（如 qwen3.5）默认会先吐出大量思考内容，首个"正式" token 要等思考结束，
         # 实测一次简单问答的思考就达 30+ 秒，会把 load/prefill 的差异完全淹没

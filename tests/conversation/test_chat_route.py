@@ -145,12 +145,34 @@ class RunChatTests(unittest.TestCase):
             self.assertEqual(events[0]["type"], "token")
             self.assertEqual(run.result.content, "x")
 
-    def test_default_route_is_langchain(self):
-        with patch("backend.app.platform.ollama.create_chat_model", side_effect=_mock_model(["a"])):
+    def test_default_route_is_direct(self):
+        # spec-041：默认链路由 langchain 改为 direct（采集 Ollama 服务端原生 timings，
+        # 5 阶段瀑布图才有真实时长；langchain 链路 timings 恒为 0）。
+        class _FakeStream:
+            result = OllamaChatResult(
+                content="direct-out",
+                thinking="",
+                timings=OllamaTimings(),
+                timings_available=True,
+                first_token_ms=0.0,
+                client_wall_ms=0.0,
+            )
+
+            def __iter__(self):
+                yield {"type": "token", "content": "d"}
+
+        with patch(
+            "backend.app.chat.application.chat_runner.chat_direct_stream"
+        ) as mock_stream, patch(
+            "backend.app.chat.application.chat_runner.OLLAMA_ROUTE", "direct"
+        ):
+            fake = _FakeStream()
+            mock_stream.return_value = fake
             run = run_chat("q", "m")
-            self.assertEqual(run.route, "langchain")
+            self.assertEqual(run.route, "direct")
             list(run)
-            self.assertEqual(run.result.content, "a")
+            self.assertEqual(run.result.content, "direct-out")
+        mock_stream.assert_called_once()
 
     def test_direct_route_uses_chat_direct_stream(self):
         class _FakeStream:
@@ -222,15 +244,17 @@ class ChatApiTests(unittest.TestCase):
             [message["role"] for message in kwargs["prompt_messages"]],
             ["system", "system", "user"],
         )
-        self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
+        # spec-041：input 全量可见，content 不再清空（用户消息原文保留）
+        self.assertEqual(kwargs["prompt_messages"][-1]["content"], "hi")
         self.assertEqual(kwargs["extra_metadata"]["role_count"], 3)
         self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "system", "user"])
         self.assertEqual(kwargs["extra_metadata"]["char_counts"][-1], len("hi"))
         self.assertEqual(kwargs["tags"], ["chat"])
         self.assertIsNotNone(kwargs["result"])
 
-    def test_prompt_never_contains_secrets(self):
-        # 即便问题里含敏感样内容，观测只保留 role 与脱敏后的空 content。
+    def test_prompt_input_retains_full_content_per_spec041(self):
+        # spec-041 用户裁决：input 与 output 全量可见，观测不再脱敏清空 content。
+        # 因此即便问题含敏感字样，也会原样出现在 observation 的 prompt_messages 中。
         with patch("backend.app.api.routes_chat.get_available_models", return_value=["qwen3.5:9b"]), patch(
             "backend.app.platform.ollama.create_chat_model", side_effect=_mock_model(["ok"])
         ), patch("backend.app.api.routes_chat.record_ollama_generation") as mock_record:
@@ -240,8 +264,9 @@ class ChatApiTests(unittest.TestCase):
             [message["role"] for message in kwargs["prompt_messages"]],
             ["system", "system", "user"],
         )
-        self.assertTrue(all(message["content"] == "" for message in kwargs["prompt_messages"]))
-        self.assertNotIn("secret-token", repr(kwargs["prompt_messages"]))
+        # spec-041：content 全量可见，不再清空（用户问题原文保留）
+        self.assertEqual(kwargs["prompt_messages"][-1]["content"], "secret-token")
+        self.assertIn("secret-token", repr(kwargs["prompt_messages"]))
         self.assertEqual(kwargs["extra_metadata"]["role_names"], ["system", "system", "user"])
         self.assertEqual(kwargs["extra_metadata"]["char_counts"][-1], len("secret-token"))
 
