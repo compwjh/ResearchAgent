@@ -1,0 +1,26 @@
+{
+  "primary": "qwen3.5:9b",
+  "fallback": "qwen3.8:27b",
+  "repeats": 3,
+  "self_consistency_threshold": 0.9,
+  "tasks": {
+    "chat_quality": {
+      "qwen3.5:9b": {
+        "self_consistency_rate": 1.0,
+        "label_switch_rate": 0.0,
+        "unavailable_rate": 0.0
+      },
+      "qwen3.8:27b": {
+        "self_consistency_rate": 1.0,
+        "label_switch_rate": 0.0,
+        "unavailable_rate": 0.0
+      },
+      "cross_agreement_rate": 1.0,
+      "cross_agreement_n": 20,
+      "decision": "adopt:qwen3.5:9b"
+    }
+  },
+  "n_scored_items": 20,
+  "human_agree_rate": null,
+  "human_agree_rate_note": "需架构师标注 gold 标签后回填 reference 文件再算；本自动跑不伪造人工一致率。硬门禁以自一致率（方差）为准。"
+}
