@@ -243,6 +243,7 @@ def test_sync_unit_ensures_new_fetch_unit_before_acquire(monkeypatch):
     )
 
     assert calls[:2] == ["ensure", "acquire"]
+    assert source.store.unit.year == 2024
     assert result.completed == ["usenix|usenix-security|/conference/usenixsecurity24/summer-accepted-papers/"]
 
 
@@ -367,6 +368,7 @@ def test_usenix_http_failure_releases_lease_for_retry_after_restart(tmp_path):
     assert result.status == "failed"
     failed = store.get_fetch_unit(unit_id)
     assert failed and failed.status == "failed"
+    assert failed.year == 2025
     assert failed.lease_owner is None and failed.lease_expires_at is None
 
     # A fresh store instance models a worker restart; the failed unit must be
@@ -712,6 +714,8 @@ def test_detail_unit_backfills_missing_abstract():
     assert calls == [PAPER_A, PAPER_B]
     assert result.status == "completed"
     assert {UNIT_24, DETAIL_A, DETAIL_B} <= set(store.units)
+    assert store.units[UNIT_24].year == 2024
+    assert store.units[DETAIL_A].year == 2024
     assert store.units[DETAIL_A].status == "completed"
     assert store.units[DETAIL_A].content_hash
     assert store.units[DETAIL_A].lease_owner is None
@@ -1023,6 +1027,8 @@ def test_listing_and_detail_failures_are_tracked_in_separate_buckets(tmp_path):
     assert result.detail_failed == [DETAIL_A, DETAIL_B]
     # The detail bucket must never leak into the listing bucket.
     assert not set(result.failed) & set(result.detail_failed)
+    assert store.get_fetch_unit(FALL_UNIT_24).year == 2024
+    assert store.get_fetch_unit(DETAIL_A).year == 2024
 
 
 def test_detail_failure_does_not_emit_unit_failed_event(tmp_path):

@@ -100,21 +100,24 @@ def builtin_allowed_hosts(source_id: str) -> Tuple[str, ...]:
     )
 
 def _builtin_entries() -> List[SourceEntry]:
+    # ``verified_years`` is the conservative allowlist from the current
+    # acceptance evidence, not the parser's supported range and not proof that
+    # every paper was downloaded or imported.  Add a year only after its
+    # fixed-sample, real-directory, field, and trusted-import evidence closes.
     return [
         SourceEntry("usenix", "usenix", AUTHORITY_OFFICIAL_VENUE, True,
-                    ("www.usenix.org",), ("discover_units", "sync"), "year", True, tuple(range(2022, 2027))),
+                    ("www.usenix.org",), ("discover_units", "sync"), "year", True, (2024,)),
         SourceEntry("dblp", "dblp", AUTHORITY_OFFICIAL_VENUE, True,
                     ("dblp.org",), ("discover_units", "sync"), "year", True),
         # These adapters currently enumerate publisher/member DOI metadata;
         # they must not inherit the future official-venue rank merely from the
         # conference label.  Task07 may add an official-page path later.
         SourceEntry("ieee_sp", "ieee_sp", AUTHORITY_OFFICIAL_DOI, True,
-                    ("ieeexplore.ieee.org", "doi.org"), ("discover_units", "sync"), "year", True, (2024,)),
+                    ("ieeexplore.ieee.org", "doi.org"), ("discover_units", "sync"), "year", True),
         SourceEntry("ccs", "ccs", AUTHORITY_OFFICIAL_DOI, True,
                     ("dl.acm.org", "doi.org"), ("discover_units", "sync"), "year", True),
-        # 2024 is a bounded official-page sample, not a claim of 2021–2025 full coverage.
         SourceEntry("ndss", "ndss", AUTHORITY_OFFICIAL_DOI, True,
-                    ("www.ndss-symposium.org", "doi.org"), ("discover_units", "sync"), "year", True, (2024,)),
+                    ("www.ndss-symposium.org", "doi.org"), ("discover_units", "sync"), "year", True),
         # 聚合来源：默认启用但可被服务端配置关闭（非必需源）。
         SourceEntry("openalex", "openalex", AUTHORITY_AGGREGATE, True,
                     ("api.openalex.org",), ("discover_units", "sync"), "global", False),

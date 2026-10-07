@@ -431,6 +431,15 @@ class UsenixAcceptedSource(SourceContractMixin):
         return path if path.endswith("/") else f"{path}/"
 
     @staticmethod
+    def _year_from_usenix_url(url: Any) -> Optional[int]:
+        """Extract the existing publication year encoded in a USENIX URL."""
+        path = urlsplit(str(url)).path
+        match = re.search(r"/conference/usenixsecurity(?P<yy>\d{2})(?:/|$)", path)
+        if match is None:
+            return None
+        return 2000 + int(match.group("yy"))
+
+    @staticmethod
     def _accepted_path_ok(path: str) -> bool:
         norm = path.rstrip("/")
         return bool(
@@ -541,6 +550,10 @@ class UsenixAcceptedSource(SourceContractMixin):
         listing = self._listing_for(page, route)
 
         existing = self.store.get_fetch_unit(unit_id)
+        # Do not backfill an old row whose year is NULL.  New units receive the
+        # year already encoded by the controlled listing URL; existing rows keep
+        # their persisted value until an explicit migration is approved.
+        unit_year = existing.year if existing is not None else self._year_from_usenix_url(page)
         if existing is not None and existing.status == "completed" and existing.content_hash:
             with self._lock:
                 result.cached.append(unit_id)
@@ -554,6 +567,7 @@ class UsenixAcceptedSource(SourceContractMixin):
 
         pending_unit = SourceFetchUnit(
             fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+            year=unit_year,
             unit_key=listing, status="pending",
             created_at=existing.created_at if existing is not None and existing.created_at else now,
             updated_at=now,
@@ -579,6 +593,7 @@ class UsenixAcceptedSource(SourceContractMixin):
             if text is None:
                 failed_unit = SourceFetchUnit(
                     fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+                    year=unit_year,
                     status="failed", error_code=fetch_error, lease_owner=owner,
                     lease_expires_at=_lease_expires_at(now, lease_seconds),
                     last_attempt_at=now, created_at=now, updated_at=now,
@@ -609,6 +624,7 @@ class UsenixAcceptedSource(SourceContractMixin):
 
             completed_unit = SourceFetchUnit(
                 fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+                year=unit_year,
                 status="completed", content_hash=unit_hash, paper_count=paper_count,
                 lease_owner=owner, last_attempt_at=now, last_success_at=now,
                 created_at=existing.created_at if existing is not None and existing.created_at else now,
@@ -794,7 +810,8 @@ class UsenixAcceptedSource(SourceContractMixin):
             attempted.add(unit_id)
             self._sync_detail_unit(search_id, conference_id, url,
                                    owner, lease_seconds, now, result,
-                                   catalog_paper_id=catalog_paper_id)
+                                   catalog_paper_id=catalog_paper_id,
+                                   year=getattr(paper, "year", None))
 
     def _abstract_missing(self, catalog_paper_id: str, persist_ids: set[str]) -> bool:
         """True only when we can prove this paper's abstract is still empty."""
@@ -844,11 +861,13 @@ class UsenixAcceptedSource(SourceContractMixin):
             resumed.add(unit_id)
             self._sync_detail_unit(search_id, conference_id, url, owner,
                                    lease_seconds, now, result,
-                                   catalog_paper_id=paper.catalog_paper_id)
+                                   catalog_paper_id=paper.catalog_paper_id,
+                                   year=getattr(paper, "year", None))
 
     def _sync_detail_unit(self, search_id: str, conference_id: str, url: Any,
                           owner: str, lease_seconds: int, now: str,
-                          result: "_SyncResult", *, catalog_paper_id: str) -> None:
+                          result: "_SyncResult", *, catalog_paper_id: str,
+                          year: Optional[int] = None) -> None:
         """Fetch, parse and fill one presentation page's abstract."""
         unit_id = self._detail_unit_id(conference_id, url)
         if unit_id is None:
@@ -858,6 +877,11 @@ class UsenixAcceptedSource(SourceContractMixin):
             return
 
         existing = self.store.get_fetch_unit(unit_id)
+        # Preserve a pre-existing value (including NULL) so this fix does not
+        # migrate old rows implicitly; derive a year only for a new detail unit.
+        unit_year = existing.year if existing is not None else (
+            int(year) if year is not None else self._year_from_usenix_url(url)
+        )
         if existing is not None and existing.status == "completed" and existing.content_hash:
             with self._lock:
                 result.cached.append(unit_id)
@@ -865,6 +889,7 @@ class UsenixAcceptedSource(SourceContractMixin):
 
         pending_unit = SourceFetchUnit(
             fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+            year=unit_year,
             unit_key=url, status="pending",
             created_at=existing.created_at if existing is not None and existing.created_at else now,
             updated_at=now,
@@ -887,13 +912,15 @@ class UsenixAcceptedSource(SourceContractMixin):
             text, error_code = self._fetch_detail(url)
             if text is None:
                 self._fail_detail_unit(search_id, conference_id, unit_id, url, owner,
-                                       lease_seconds, now, result, error_code, existing)
+                                       lease_seconds, now, result, error_code, existing,
+                                       unit_year)
                 return
             detail = parse_usenix_detail(text, page_url=url)
             self._fill_abstract(conference_id, catalog_paper_id, detail, now)
             detail_hash = self._content_hash(text)
             completed_unit = SourceFetchUnit(
                 fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+                year=unit_year,
                 unit_key=url, status="completed", content_hash=detail_hash, paper_count=1,
                 lease_owner=owner, last_attempt_at=now, last_success_at=now,
                 created_at=existing.created_at if existing is not None and existing.created_at else now,
@@ -906,7 +933,8 @@ class UsenixAcceptedSource(SourceContractMixin):
                 result.completed.append(unit_id)
         except Exception:  # noqa: BLE001 - one detail page must never abort the page
             self._fail_detail_unit(search_id, conference_id, unit_id, url, owner,
-                                   lease_seconds, now, result, "USENIX_PARSE_FAILED", existing)
+                                   lease_seconds, now, result, "USENIX_PARSE_FAILED", existing,
+                                   unit_year)
 
     def _fetch_detail(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """Fetch one allowlisted presentation page; returns (text, error_code).
@@ -942,10 +970,12 @@ class UsenixAcceptedSource(SourceContractMixin):
 
     def _fail_detail_unit(self, search_id: str, conference_id: str, unit_id: str, url: str,
                           owner: str, lease_seconds: int, now: str, result: "_SyncResult",
-                          error_code: Optional[str], existing: Optional[SourceFetchUnit]) -> None:
+                          error_code: Optional[str], existing: Optional[SourceFetchUnit],
+                          year: Optional[int] = None) -> None:
         """Mark a detail unit failed and always hand its lease back."""
         failed_unit = SourceFetchUnit(
             fetch_unit_id=unit_id, source_kind="usenix", conference_id=conference_id,
+            year=existing.year if existing is not None else year,
             unit_key=url, status="failed", error_code=error_code, lease_owner=owner,
             lease_expires_at=_lease_expires_at(now, lease_seconds), last_attempt_at=now,
             created_at=existing.created_at if existing is not None and existing.created_at else now,
