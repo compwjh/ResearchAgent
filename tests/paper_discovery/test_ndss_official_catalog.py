@@ -28,11 +28,17 @@ from backend.app.paper_discovery.infrastructure.ndss_publication_source import (
 )
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "ndss" / "official-accepted-papers-2024.html"
+FIXTURE_2025 = Path(__file__).parents[1] / "fixtures" / "ndss" / "official-accepted-papers-2025.html"
 OFFICIAL_URL = NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS[2024]
+OFFICIAL_URL_2025 = NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS[2025]
 
 
 def _body() -> bytes:
     return FIXTURE.read_bytes()
+
+
+def _body_2025() -> bytes:
+    return FIXTURE_2025.read_bytes()
 
 
 def _source(handler) -> NdssPublicationSource:
@@ -69,6 +75,31 @@ def test_official_fixture_parses_metadata_with_explicit_missing_fields():
     assert set(result.warnings) == {NDSS_OFFICIAL_ABSTRACT_MISSING, NDSS_OFFICIAL_KEYWORDS_MISSING}
 
 
+def test_official_2025_fixture_reuses_listing_parser_without_inventing_fields():
+    result = parse_official_catalog(_body_2025(), year=2025, page_url=OFFICIAL_URL_2025)
+
+    assert [record.title for record in result.records] == [
+        "”Who is Trying to Access My Account?” Exploring User Perceptions and Reactions to Risk-based Authentication Notifications",
+        "“Where Are We On Cyber?” – A Qualitative Study On Boards’ Cybersecurity Risk Decision Making",
+        "A Comprehensive Memory Safety Analysis of Bootloaders",
+    ]
+    assert [record.year for record in result.records] == [2025, 2025, 2025]
+    assert result.records[0].authors == (
+        "Tongxin Wei", "Ding Wang", "Yutong Li", "Yuehuan Wang",
+    )
+    assert result.records[0].article_url == (
+        "https://www.ndss-symposium.org/ndss-paper/"
+        "who-is-trying-to-access-my-account-exploring-user-perceptions-and-reactions-to-risk-based-authentication-notifications/"
+    )
+    assert all(record.doi == "" for record in result.records)
+    assert all(record.abstract is None and record.keywords == () for record in result.records)
+    assert all(record.pdf_url is None for record in result.records)
+    assert hashlib.sha256(_body_2025()).hexdigest() == (
+        "75d77e4c5c4aff058e51d738a94e553f28960b5afa148e586584a03317e244d3"
+    )
+    assert set(result.warnings) == {NDSS_OFFICIAL_ABSTRACT_MISSING, NDSS_OFFICIAL_KEYWORDS_MISSING}
+
+
 def test_official_route_fetches_html_and_records_content_hash_without_pdf_probe():
     calls: list[str] = []
 
@@ -90,14 +121,34 @@ def test_official_route_fetches_html_and_records_content_hash_without_pdf_probe(
     assert result.unit.paper_count == len(result.records)
 
 
-def test_official_discovery_is_explicit_and_other_years_are_not_invented():
+def test_official_2025_route_fetches_html_without_pdf_probe():
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        assert request.url.host == NDSS_OFFICIAL_HOST
+        assert not request.url.path.endswith(".pdf")
+        return httpx.Response(200, content=_body_2025(), headers={"ETag": '"official-2025-v1"'})
+
+    source = _source(handler)
+    result = source.sync_year(2025, route="official")
+
+    assert calls == [OFFICIAL_URL_2025]
+    assert result.error_code is None
+    assert [record.year for record in result.records] == [2025, 2025, 2025]
+    assert result.unit.unit_key == "ndss:2025:official"
+    assert result.unit.content_hash == hashlib.sha256(_body_2025()).hexdigest()
+    assert result.unit.etag == '"official-2025-v1"'
+    assert result.unit.paper_count == len(result.records)
+
+
+def test_official_discovery_exposes_only_evidence_backed_years():
     source = _source(lambda request: httpx.Response(500))
-    units = source.discover_units({"years": [2024], "route": "official"})
-    assert len(units) == 1
-    assert units[0].source_url == OFFICIAL_URL
-    assert units[0].unit_key == "ndss:2024:official"
-    assert source.discover_units({"years": [2025], "route": "official"}) == ()
-    unavailable = source.sync_units({"years": [2025], "route": "official"})
+    units = source.discover_units({"years": [2024, 2025], "route": "official"})
+    assert [unit.source_url for unit in units] == [OFFICIAL_URL, OFFICIAL_URL_2025]
+    assert [unit.unit_key for unit in units] == ["ndss:2024:official", "ndss:2025:official"]
+    assert source.discover_units({"years": [2023], "route": "official"}) == ()
+    unavailable = source.sync_units({"years": [2023], "route": "official"})
     assert unavailable.status == "failed"
     assert unavailable.error_code == NDSS_UNIT_REJECTED
 

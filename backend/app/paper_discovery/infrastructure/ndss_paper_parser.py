@@ -84,8 +84,11 @@ NDSS_PAPER_HOST = "www.ndss-symposium.org"
 # fetch-unit key distinguish the page-backed record from the Crossref fallback.
 NDSS_OFFICIAL_SOURCE_ID = NDSS_SOURCE_ID
 NDSS_OFFICIAL_HOST = NDSS_PAPER_HOST
+# These are explicitly verified official listing routes (2024 and 2025), not
+# the SourceRegistry's trusted full-import/year-coverage gate.
 NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS = {
     2024: f"https://{NDSS_OFFICIAL_HOST}/ndss2024/accepted-papers/",
+    2025: f"https://{NDSS_OFFICIAL_HOST}/ndss2025/accepted-papers/",
 }
 NDSS_OFFICIAL_ABSTRACT_MISSING = "NDSS_OFFICIAL_ABSTRACT_MISSING"
 NDSS_OFFICIAL_KEYWORDS_MISSING = "NDSS_OFFICIAL_KEYWORDS_MISSING"
