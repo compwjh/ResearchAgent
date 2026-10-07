@@ -1,0 +1,211 @@
+{
+  "schema_version": "spec032-task14-research-e2e-evidence-v1",
+  "spec": "032",
+  "task": "14",
+  "run_id": "spec032-task14-research-e2e-20261006T144639Z",
+  "decision": "BLOCKED",
+  "api_e2e_result": "blocked",
+  "generated_at": "2026-10-06T14:47:18Z",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "branch": "codex/spec032-final-acceptance",
+    "commit": "5b1b1d918db8858e848a73da4cee2df54f513ea2",
+    "model": "qwen3.5:9b",
+    "reasoning_effort": "off",
+    "model_global_config_changed": false
+  },
+  "scope": {
+    "natural_language_request": "请进行一次深度研究。主题是USENIX Security 2024中的security/privacy方法，目标是比较至少5篇方法与局限，并且最多选择5篇论文，目标论文数: 5，来源限定为USENIX Security，输出中文Markdown报告并使用行内引用。时间范围是2024-2024。",
+    "requested_source": "USENIX Security",
+    "requested_year": 2024,
+    "requested_max_papers": 5,
+    "requested_output": "中文 Markdown，行内引用",
+    "old_semantic_evidence_preserved": true,
+    "env_or_api_key_read": false,
+    "mock_or_form_substitute_used": false,
+    "login_performed": false,
+    "old_documents_deleted_or_reindexed": false
+  },
+  "requests": [
+    {
+      "id": "natural-intake-01",
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "content": "请进行一次深度研究。主题是USENIX Security 2024中的security/privacy方法，目标是比较至少5篇方法与局限，并且最多选择5篇论文，目标论文数: 5，来源限定为USENIX Security，输出中文Markdown报告并使用行内引用。时间范围是2024-2024。",
+        "model": "qwen3.5:9b",
+        "mode": "normal",
+        "reasoning_effort": "off"
+      },
+      "status": 200,
+      "elapsed_ms": 209.975,
+      "response": {
+        "media_type": "text/event-stream",
+        "event_types": [
+          "meta",
+          "skill_activation",
+          "processing_step",
+          "processing_step",
+          "plan",
+          "intake",
+          "done"
+        ],
+        "meta": {
+          "conversation_id": "c5a1fe652fb44a17bd648d7226588000",
+          "user_message_id": "f92b1136b35541e6bdfa3b4c6e13da2d",
+          "assistant_message_id": "16d8b471c685402ebc8114d66fb406da",
+          "model": "qwen3.5:9b",
+          "reasoning_effort": "off"
+        },
+        "skill_activation": {
+          "status": "completed",
+          "skill": "deep-research-orchestration"
+        },
+        "processing_steps": [
+          {"status": "running", "label": "研究计划", "summary": "参数已齐，正在生成研究计划…"},
+          {"status": "completed", "label": "研究计划", "summary": "研究计划已生成，等待用户批准。"}
+        ],
+        "intake": {
+          "status": "intake",
+          "research_session_id": "d8e5b699c7fb448094f8c96323b5b3de",
+          "missing": [],
+          "fields": {
+            "topic": {"value": "USENIX Security 2024中的security/privacy方法", "source": "user_explicit"},
+            "objective": {"value": "比较至少5篇方法与局限", "source": "user_explicit"},
+            "time_range": {"value": {"from": 2024, "to": 2024}, "source": "user_explicit"},
+            "sources": {"value": ["usenix"], "source": "system_default"},
+            "constraints": {"value": [], "source": "system_default"},
+            "output": {"value": "markdown", "source": "system_default"},
+            "citations": {"value": "inline", "source": "system_default"}
+          }
+        },
+        "done": {"status": "completed", "duration_ms": 87.42775}
+      },
+      "response_note": "SSE body is summarized by event and safe fields; no reasoning content was emitted or recorded."
+    },
+    {
+      "id": "session-state-01",
+      "method": "GET",
+      "path": "/api/research-sessions/d8e5b699c7fb448094f8c96323b5b3de",
+      "headers": {},
+      "status": 200,
+      "elapsed_ms": 12.663,
+      "response": {
+        "research_session_id": "d8e5b699c7fb448094f8c96323b5b3de",
+        "conversation_id": "c5a1fe652fb44a17bd648d7226588000",
+        "status": "plan_pending_approval",
+        "current_plan_version": 1,
+        "research_task_id": null,
+        "activity_message_id": null,
+        "final_message_id": null,
+        "approval": {
+          "approval_request_id": "8160b199cbed4f0fa9bf3e960b0d5269",
+          "kind": "plan",
+          "status": "pending",
+          "subject_version": 1,
+          "approved_scope_json": null
+        },
+        "artifacts": [],
+        "notifications": []
+      }
+    },
+    {
+      "id": "conversation-history-01",
+      "method": "GET",
+      "path": "/api/conversations/c5a1fe652fb44a17bd648d7226588000/messages",
+      "query": {"target_chars": 12000},
+      "headers": {},
+      "status": 200,
+      "elapsed_ms": 12.999,
+      "response": {
+        "user_message_id": "f92b1136b35541e6bdfa3b4c6e13da2d",
+        "assistant_message_id": "16d8b471c685402ebc8114d66fb406da",
+        "assistant_content": "研究计划已生成，等待你批准后开始执行。",
+        "intake_constraints": [],
+        "plan_target_paper_count": 12,
+        "report_projection": null
+      }
+    }
+  ],
+  "state_trace": [
+    {
+      "at": "2026-10-06T14:46:39.184183Z",
+      "state": "intake_created",
+      "conversation_id": "c5a1fe652fb44a17bd648d7226588000",
+      "research_session_id": "d8e5b699c7fb448094f8c96323b5b3de",
+      "research_task_id": null
+    },
+    {
+      "at": "2026-10-06T14:46:39.245360Z",
+      "state": "plan_pending_approval",
+      "plan_version": 1,
+      "output_hash": "9dfebea40ce6c03acdbd253c3c5e7f390724ad6b14fa9cee880546914aa6e8ba",
+      "approval_request_id": "8160b199cbed4f0fa9bf3e960b0d5269",
+      "target_paper_count": 12,
+      "requested_max_papers": 5
+    },
+    {
+      "at": "2026-10-06T14:47:00Z",
+      "state": "blocked_before_approval",
+      "reason": "natural-language max-paper constraint was not preserved; approval would authorize a 12-paper plan"
+    }
+  ],
+  "artifacts": {
+    "research_task_id": null,
+    "import_batch_id": null,
+    "document_ids": [],
+    "issue_ids": [],
+    "report_id": null,
+    "report_version": null,
+    "artifact_ids": [],
+    "report_view_path": null,
+    "report_title": null,
+    "report_word_count": null,
+    "citation_count": null
+  },
+  "result": {
+    "status": "blocked",
+    "blocking_code": "NATURAL_LANGUAGE_BUDGET_NOT_PRESERVED",
+    "failure": "User requested max 5 papers, but natural-language Intake stored constraints=[] and deterministic plan generation produced target_paper_count=12.",
+    "retry_allowed": false,
+    "retry_condition": "Fix bounded natural-language extraction/plan budget propagation, then start a new run_id; do not approve this plan."
+  },
+  "readiness": [
+    {"item": 1, "result": "PASS", "evidence": "POST and GET current service endpoints returned HTTP 200"},
+    {"item": 2, "result": "PASS", "evidence": "New conversation, messages, research session and plan persisted"},
+    {"item": 3, "result": "FAIL", "evidence": "The explicit max-paper/target-5 requirement was lost; plan budget is 12"},
+    {"item": 4, "result": "FAIL", "evidence": "Stopped before approval; no ResearchTask state progression"},
+    {"item": 5, "result": "FAIL", "evidence": "Current UI processing text not verified; only server SSE was observed"},
+    {"item": 6, "result": "FAIL", "evidence": "Current UI wait/click instructions not verified"},
+    {"item": 7, "result": "FAIL", "evidence": "No import/report artifact exists because plan was unsafe to approve"},
+    {"item": 8, "result": "FAIL", "evidence": "No user-operable recovery path can correct this plan without implementation fix"},
+    {"item": 9, "result": "FAIL", "evidence": "UI/API consistency not verified; API remains pending approval"},
+    {"item": 10, "result": "FAIL", "evidence": "Reproduction stops at the unsafe plan and cannot complete the requested product journey"}
+  ],
+  "code_candidates": [
+    {
+      "priority": "P1",
+      "area": "backend/app/research/application/intake.py",
+      "defect": "Natural-language extraction only captures topic/objective/time_range; phrase '最多选择5篇论文，目标论文数: 5' is omitted and constraints defaults to [] after the objective regex stops at the first comma.",
+      "evidence": {
+        "intake_constraints": [],
+        "intake_constraints_source": "system_default",
+        "plan_target_paper_count": 12,
+        "requested_max_papers": 5,
+        "research_session_id": "d8e5b699c7fb448094f8c96323b5b3de"
+      },
+      "minimal_fix": "Parse bounded '最多 N 篇'/'目标论文数 N' into an explicit constrained field (or existing constraints) and make session_plan_generation use that value; add a natural-language contract test asserting plan budget 5 and reject invalid/conflicting values.",
+      "owner": "backend-dev"
+    }
+  ],
+  "safety_notes": [
+    "Plan approval endpoint was not called.",
+    "No ResearchTask, candidate search, import batch, PDF request, issue, document, or report was created.",
+    "No .env/API key was read and no hidden reasoning content was recorded.",
+    "The pending Session is retained as real failure evidence; it was not deleted or rewritten."
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "schema_version": "spec032-task14-semantic-live-evidence-v1",
+  "spec": "032",
+  "task": "14",
+  "run_id": "spec032-task14-semantic-live-20261006T1442Z",
+  "generated_at": "2026-10-06T14:42:15Z",
+  "scope": "semantic_scholar_read_only_api_only",
+  "decision": "BLOCKED",
+  "api_slice_result": "PASS",
+  "full_spec_e2e_assessed": false,
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "branch": "codex/spec032-final-acceptance",
+    "commit": "5b1b1d918db8858e848a73da4cee2df54f513ea2",
+    "health_status": 200,
+    "paper_discovery_enabled": true,
+    "health_elapsed_ms": 33.438
+  },
+  "constraints": {
+    "known_public_identity": "ARXIV:2403.11445",
+    "api_key_read": false,
+    "env_file_read": false,
+    "cookies_recorded": false,
+    "parallel_requests": false,
+    "business_calls_per_endpoint_max": 2,
+    "pdf_download": false,
+    "research_task_created": false,
+    "source_modified": false,
+    "provider_html_or_reader_scraped": false
+  },
+  "preflight": {
+    "request": {
+      "method": "GET",
+      "path": "/api/health",
+      "headers": {}
+    },
+    "response": {
+      "status": 200,
+      "body": {
+        "status": "ok",
+        "paper_discovery_enabled": true,
+        "model": "qwen3.8:27b",
+        "models_present": true
+      },
+      "redaction": "model list omitted here; no credentials were present"
+    }
+  },
+  "requests": [
+    {
+      "id": "autocomplete-01",
+      "method": "GET",
+      "path": "/api/papers/semantic-scholar/autocomplete",
+      "query": {
+        "query": "Noise-Augmented Privacy-Preserving Empirical Risk Minimization",
+        "limit": 5
+      },
+      "headers": {},
+      "status": 200,
+      "elapsed_ms": 2404.533,
+      "response": {
+        "query": "Noise-Augmented Privacy-Preserving Empirical Risk Minimization",
+        "candidates": []
+      },
+      "response_note": "Real empty-match success response; no error body."
+    },
+    {
+      "id": "autocomplete-02",
+      "method": "GET",
+      "path": "/api/papers/semantic-scholar/autocomplete",
+      "query": {
+        "query": "privacy",
+        "limit": 5
+      },
+      "headers": {},
+      "status": 200,
+      "elapsed_ms": 3628.177,
+      "response": {
+        "query": "privacy",
+        "candidates": [
+          {
+            "paper_id": "1d1a045884911fe99b502960bf9e2718b32c238a",
+            "title": "Privacy and freedom"
+          },
+          {
+            "paper_id": "123d00c6a664ea6d4da57d0d89d980dd02347c79",
+            "title": "Privacy Preserving Data Mining"
+          },
+          {
+            "paper_id": "f2f8f7a2ec1b2ede48cbcd189b376ab9fa0735ef",
+            "title": "Privacy-preserving deep learning"
+          },
+          {
+            "paper_id": "abb826f40ce51ffb1154231640c35537faa0712e",
+            "title": "Privacy in Context: Technology, Policy, and the Integrity of Social Life"
+          },
+          {
+            "paper_id": "df077652e3e119e28a81d8a2e9d26f4e91c34676",
+            "title": "Privacy as contextual integrity"
+          }
+        ]
+      }
+    },
+    {
+      "id": "citations-01",
+      "method": "GET",
+      "path": "/api/papers/semantic-scholar/ARXIV:2403.11445/citations",
+      "query": {
+        "limit": 3,
+        "offset": 0
+      },
+      "headers": {},
+      "status": 200,
+      "elapsed_ms": 3581.23,
+      "response": {
+        "relation": "citations",
+        "source_paper_id": "ARXIV:2403.11445",
+        "offset": 0,
+        "next_offset": 3,
+        "total": null,
+        "items": [
+          {
+            "paper_id": "affe4beb57abb513df3974d874aab8fd92eff19c",
+            "title": "Privacy-Preserving Rényi Layer-Wise Budget Allocation Against Gradient Leakage for Federated Learning",
+            "authors": ["Leyu Shi", "Ying Gao", "Chong Chen", "Siquan Huang", "Jia-Feng Zhao", "Xiping Hu"],
+            "year": 2026,
+            "doi": "10.1109/tmc.2025.3618185",
+            "arxiv_id": null,
+            "venue": "IEEE Transactions on Mobile Computing",
+            "fields_of_study": ["Computer Science"],
+            "citation_count": 1,
+            "abstract": "[truncated: real response contained a non-empty abstract]",
+            "source_url": "https://www.semanticscholar.org/paper/affe4beb57abb513df3974d874aab8fd92eff19c"
+          },
+          {
+            "paper_id": "7958772ef27f2fef3e04190f6cfb21a1919752c2",
+            "title": "Metric Embedding Initialization-Based Differentially Private and Explainable Graph Clustering",
+            "authors": ["Haochen You", "Baojing Liu"],
+            "year": 2025,
+            "doi": "10.48550/arxiv.2509.06214",
+            "arxiv_id": "2509.06214",
+            "venue": "Knowledge Science, Engineering and Management",
+            "fields_of_study": ["Computer Science"],
+            "citation_count": 0,
+            "abstract": "[truncated: real response contained a non-empty abstract]",
+            "source_url": "https://www.semanticscholar.org/paper/7958772ef27f2fef3e04190f6cfb21a1919752c2"
+          },
+          {
+            "paper_id": "0eded5cf7033f6082311bf692d07ee2e99817712",
+            "title": "Meeting Utility Constraints in Differential Privacy: A Privacy-Boosting Approach",
+            "authors": ["Bo Jiang", "Wan-Rong Zhang", "Dong-Hang Lu", "Jian Du", "Sagar Sharma", "Qiang Yan"],
+            "year": 2024,
+            "doi": "10.1109/sp61157.2025.00064",
+            "arxiv_id": "2412.10612",
+            "venue": "IEEE Symposium on Security and Privacy",
+            "fields_of_study": ["Computer Science", "Mathematics"],
+            "citation_count": 2,
+            "abstract": "[truncated: real response contained a non-empty abstract]",
+            "source_url": "https://www.semanticscholar.org/paper/0eded5cf7033f6082311bf692d07ee2e99817712"
+          }
+        ]
+      },
+      "response_note": "Provider returned total=null; route preserved the real value and next_offset=3."
+    },
+    {
+      "id": "references-01",
+      "method": "GET",
+      "path": "/api/papers/semantic-scholar/ARXIV:2403.11445/references",
+      "query": {
+        "limit": 3,
+        "offset": 0
+      },
+      "headers": {},
+      "status": 200,
+      "elapsed_ms": 9232.776,
+      "response": {
+        "relation": "references",
+        "source_paper_id": "ARXIV:2403.11445",
+        "offset": 0,
+        "next_offset": 3,
+        "total": null,
+        "items": [
+          {
+            "paper_id": "b845207461d896163d5c036d5d43da8f88e6dbb2",
+            "title": "Privacy-Preserving Methods for Repeated Measures Designs",
+            "authors": ["Kevin Liou", "Wen-Jing Zheng", "Sathyanarayan Anand"],
+            "year": 2022,
+            "doi": "10.1145/3487553.3524216",
+            "arxiv_id": null,
+            "venue": "The Web Conference",
+            "fields_of_study": ["Computer Science"],
+            "citation_count": 6,
+            "abstract": "[truncated: real response contained a non-empty abstract]",
+            "source_url": "https://www.semanticscholar.org/paper/b845207461d896163d5c036d5d43da8f88e6dbb2"
+          },
+          {
+            "paper_id": "fe6f8b49e73ca96f24c83cc933f3072c57a3e0c7",
+            "title": "Optimal Accounting of Differential Privacy via Characteristic Function",
+            "authors": ["Yuqing Zhu", "Jinshuo Dong", "Yu-Xiang Wang"],
+            "year": 2021,
+            "doi": null,
+            "arxiv_id": "2106.08567",
+            "venue": "International Conference on Artificial Intelligence and Statistics",
+            "fields_of_study": ["Computer Science"],
+            "citation_count": 143,
+            "abstract": "[truncated: real response contained a non-empty abstract]",
+            "source_url": "https://www.semanticscholar.org/paper/fe6f8b49e73ca96f24c83cc933f3072c57a3e0c7"
+          },
+          {
+            "paper_id": "b60875567006195647f83963f0d86a9773bf1b7f",
+            "title": "Tight Approximate Differential Privacy for Discrete-Valued Mechanisms Using FFT",
+            "authors": ["A. Koskela", "Joonas Jälkö", "Lukas Prediger", "Antti Honkela"],
+            "year": 2020,
+            "doi": null,
+            "arxiv_id": null,
+            "venue": "arXiv.org",
+            "fields_of_study": ["Mathematics", "Computer Science"],
+            "citation_count": 10,
+            "abstract": null,
+            "source_url": "https://www.semanticscholar.org/paper/b60875567006195647f83963f0d86a9773bf1b7f"
+          }
+        ]
+      },
+      "response_note": "Provider returned total=null; one real item had abstract=null and was preserved as missing."
+    }
+  ],
+  "entities": {
+    "source_identity": "ARXIV:2403.11445",
+    "autocomplete_candidate_ids": [
+      "1d1a045884911fe99b502960bf9e2718b32c238a",
+      "123d00c6a664ea6d4da57d0d89d980dd02347c79",
+      "f2f8f7a2ec1b2ede48cbcd189b376ab9fa0735ef",
+      "abb826f40ce51ffb1154231640c35537faa0712e",
+      "df077652e3e119e28a81d8a2e9d26f4e91c34676"
+    ],
+    "citation_item_ids": [
+      "affe4beb57abb513df3974d874aab8fd92eff19c",
+      "7958772ef27f2fef3e04190f6cfb21a1919752c2",
+      "0eded5cf7033f6082311bf692d07ee2e99817712"
+    ],
+    "reference_item_ids": [
+      "b845207461d896163d5c036d5d43da8f88e6dbb2",
+      "fe6f8b49e73ca96f24c83cc933f3072c57a3e0c7",
+      "b60875567006195647f83963f0d86a9773bf1b7f"
+    ],
+    "persistent_product_entities_created": false,
+    "artifact_ids": []
+  },
+  "rate_limit": {
+    "strategy": "serialized requests through service process-global SemanticScholarGraphClient limiter",
+    "minimum_interval_seconds": 1,
+    "parallel_requests": false,
+    "429_seen": false,
+    "retry_after_seen": false,
+    "retry_count": 0,
+    "timing_note": "Each next call was issued after the previous call returned; the curl wrapper recorded response elapsed time, but not separate inter-request timestamps. No call was intentionally repeated to manufacture a 429."
+  },
+  "manual_acceptance": {
+    "status": "not_verified",
+    "reason": "Task17 states frontend UI entry remains closed; this run was explicitly limited to read-only API success paths.",
+    "api_reproduction_only": true
+  },
+  "readiness": [
+    {"item": 1, "result": "PASS", "evidence": "GET /api/health HTTP 200"},
+    {"item": 2, "result": "N/A", "evidence": "Read-only graph API has no create-entry state"},
+    {"item": 3, "result": "PASS", "evidence": "Query, limit, relation, paper_id and offset returned valid contracts"},
+    {"item": 4, "result": "N/A", "evidence": "No asynchronous task/state machine in metadata-only routes"},
+    {"item": 5, "result": "FAIL", "evidence": "Frontend graph-assistance entry remains closed"},
+    {"item": 6, "result": "FAIL", "evidence": "No current UI wait/click text could be verified"},
+    {"item": 7, "result": "N/A", "evidence": "No report/PDF/KB artifact is created by design"},
+    {"item": 8, "result": "N/A", "evidence": "Only successful live calls were allowed in this run; no live 429/5xx recovery evidence"},
+    {"item": 9, "result": "FAIL", "evidence": "No open UI surface to compare with API state"},
+    {"item": 10, "result": "FAIL", "evidence": "API reproduction is not a user-facing Spec032 product journey"}
+  ],
+  "code_candidates": [],
+  "evidence_notes": [
+    "All response bodies are real responses; long abstracts are explicitly marked truncated in this artifact.",
+    "No API key, Cookie, Authorization header, environment file, PDF bytes, or hidden chain-of-thought was recorded.",
+    "Successful read-only API calls do not prove Spec032 source coverage, candidate evaluation, import, recovery, frontend, or report-version acceptance."
+  ]
+}
