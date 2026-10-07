@@ -21,6 +21,7 @@ from backend.app.research.application.intake import (
     ResearchIntakeCoordinator,
 )
 from backend.app.research.application.intake_projection import finalize_intake_message
+from backend.app.research.application.session_plan_generation import build_session_plan_output
 from backend.app.research.infrastructure.research_store import ResearchStore
 from backend.app.skills.service import SkillRegistryService
 
@@ -84,6 +85,131 @@ def test_explicit_request_activates_skill_and_collects_defaults(tmp_path):
     assert fields["objective"].confirmation_status == "confirmed"
     assert json.loads(fields["time_range"].value_json) == {"from": 2020, "to": 2024}
     assert fields["language"].source == "system_default"
+
+
+def test_natural_language_paper_count_constraints_are_persisted(tmp_path):
+    memory, store, conversation, registry = _setup(tmp_path)
+    skills_dir = tmp_path / "skills" / "deep-research-orchestration"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: deep-research-orchestration\ndescription: research\ntools: []\n---\nbody",
+        encoding="utf-8",
+    )
+    coordinator = ResearchIntakeCoordinator(store, memory, registry)
+    _conversation, user, _assistant = memory.create_message_pair(
+        conversation.conversation_id,
+        "owner-a",
+        "请进行深度研究，主题是安全隐私方法，目标是比较方法与局限，最多选择5篇论文，目标论文数: 5，时间范围是2024-2024。",
+    )
+    result = coordinator.handle_message(
+        conversation.conversation_id, "owner-a", user.message_id, user.content
+    )
+    fields = {item.field_name: item for item in store.list_intake_fields(result.session.intake_draft_id, "owner-a")}
+    assert json.loads(fields["constraints"].value_json) == [
+        "max_paper_count:5",
+        "target_paper_count:5",
+    ]
+    assert fields["constraints"].source == "user_explicit"
+    assert result.missing == []
+    plan = build_session_plan_output(store, result.session, "owner-a")
+    assert plan["budget"]["target_paper_count"] == 5
+
+
+def test_natural_language_minimum_count_is_kept_as_a_lower_bound(tmp_path):
+    memory, store, conversation, registry = _setup(tmp_path)
+    skills_dir = tmp_path / "skills" / "deep-research-orchestration"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: deep-research-orchestration\ndescription: research\ntools: []\n---\nbody",
+        encoding="utf-8",
+    )
+    coordinator = ResearchIntakeCoordinator(store, memory, registry)
+    _conversation, user, _assistant = memory.create_message_pair(
+        conversation.conversation_id,
+        "owner-a",
+        "请进行深度研究，主题是安全隐私方法，目标是比较至少5篇论文，至少5篇论文，时间范围是2024-2024。",
+    )
+    result = coordinator.handle_message(
+        conversation.conversation_id, "owner-a", user.message_id, user.content
+    )
+    fields = {item.field_name: item for item in store.list_intake_fields(result.session.intake_draft_id, "owner-a")}
+    assert json.loads(fields["constraints"].value_json) == ["min_paper_count:5"]
+    assert result.missing == []
+
+
+def test_conflicting_paper_count_constraints_keep_intake_in_clarification(tmp_path):
+    memory, store, conversation, registry = _setup(tmp_path)
+    skills_dir = tmp_path / "skills" / "deep-research-orchestration"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: deep-research-orchestration\ndescription: research\ntools: []\n---\nbody",
+        encoding="utf-8",
+    )
+    coordinator = ResearchIntakeCoordinator(store, memory, registry)
+    _conversation, user, _assistant = memory.create_message_pair(
+        conversation.conversation_id,
+        "owner-a",
+        "请进行深度研究，主题是安全隐私方法，目标是比较方法与局限，最多选择5篇论文，至少8篇论文，时间范围是2024-2024。",
+    )
+    result = coordinator.handle_message(
+        conversation.conversation_id, "owner-a", user.message_id, user.content
+    )
+    assert result.missing == ["constraints"]
+    assert "论文数量约束" in (result.question or "")
+    assert store.get_intake_draft(result.session.research_session_id, "owner-a").status == "collecting"
+    _conversation, follow_up, _assistant = memory.create_message_pair(
+        conversation.conversation_id,
+        "owner-a",
+        "最多5篇论文",
+    )
+    fixed = coordinator.handle_message(
+        conversation.conversation_id, "owner-a", follow_up.message_id, follow_up.content
+    )
+    assert fixed.missing == []
+    assert store.get_intake_draft(fixed.session.research_session_id, "owner-a").status == "complete"
+
+
+def test_invalid_paper_count_requires_the_same_constraint_clarification(tmp_path):
+    memory, store, conversation, registry = _setup(tmp_path)
+    skills_dir = tmp_path / "skills" / "deep-research-orchestration"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: deep-research-orchestration\ndescription: research\ntools: []\n---\nbody",
+        encoding="utf-8",
+    )
+    coordinator = ResearchIntakeCoordinator(store, memory, registry)
+    _conversation, user, _assistant = memory.create_message_pair(
+        conversation.conversation_id,
+        "owner-a",
+        "请进行深度研究，主题是安全隐私方法，目标是比较方法与局限，最多选择0篇论文，时间范围是2024-2024。",
+    )
+    result = coordinator.handle_message(
+        conversation.conversation_id, "owner-a", user.message_id, user.content
+    )
+    assert result.missing == ["constraints"]
+    assert "论文数量约束" in (result.question or "")
+
+
+def test_oversized_paper_count_requires_constraint_clarification(tmp_path):
+    memory, store, conversation, registry = _setup(tmp_path)
+    skills_dir = tmp_path / "skills" / "deep-research-orchestration"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: deep-research-orchestration\ndescription: research\ntools: []\n---\nbody",
+        encoding="utf-8",
+    )
+    coordinator = ResearchIntakeCoordinator(store, memory, registry)
+    oversized = "9" * 5000
+    _conversation, user, _assistant = memory.create_message_pair(
+        conversation.conversation_id,
+        "owner-a",
+        f"请进行深度研究，主题是安全隐私方法，目标是比较方法与局限，最多选择{oversized}篇论文，时间范围是2024-2024。",
+    )
+    result = coordinator.handle_message(
+        conversation.conversation_id, "owner-a", user.message_id, user.content
+    )
+    assert result.missing == ["constraints"]
+    assert "论文数量约束" in (result.question or "")
 
 
 def test_repeated_message_is_idempotent_and_active_conflict_is_stable(tmp_path):

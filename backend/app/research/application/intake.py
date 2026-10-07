@@ -15,6 +15,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.app.research.application.session_plan_generation import (
+    extract_paper_count_constraints,
+    resolve_paper_count_constraints,
+)
 from backend.app.research.domain.contracts import SESSION_TERMINAL
 from backend.app.research.domain.models import IntakeField, ResearchSession
 from backend.app.research.infrastructure.research_store import (
@@ -283,7 +287,7 @@ class ResearchIntakeCoordinator:
             return self._active_conflict(self._active_session(conversation_id, owner_id))
         self._persist_fields(session, fields or {}, message_id, owner_id)
         saved = self.store.list_intake_fields(session.intake_draft_id, owner_id)
-        missing = [name for name in BLOCKING_FIELDS if not self._has_value(saved, name)]
+        missing = self._missing_fields(saved)
         if not missing:
             self.store.update_intake_status(session.intake_draft_id, owner_id, "complete")
         return IntakeResult(
@@ -351,7 +355,7 @@ class ResearchIntakeCoordinator:
                 self._persist_fields(session, self._extract_follow_up(session, message), message_id, owner_id)
 
         saved = self.store.list_intake_fields(session.intake_draft_id, owner_id)
-        missing = [name for name in BLOCKING_FIELDS if not self._has_value(saved, name)]
+        missing = self._missing_fields(saved)
         if not missing:
             draft = self.store.get_intake_draft(session.research_session_id, owner_id)
             if draft is not None and draft.status == "collecting":
@@ -437,6 +441,9 @@ class ResearchIntakeCoordinator:
         years = re.search(r"(20\d{2})\s*(?:-|–|—|~|至|到)\s*(20\d{2})", text)
         if years:
             values["time_range"] = {"from": int(years.group(1)), "to": int(years.group(2))}
+        constraints = extract_paper_count_constraints(text)
+        if constraints:
+            values["constraints"] = constraints
         return values
 
     def _extract_follow_up(self, session: ResearchSession, message: str) -> dict[str, Any]:
@@ -457,9 +464,28 @@ class ResearchIntakeCoordinator:
     def _has_value(fields: list[IntakeField], name: str) -> bool:
         return any(item.field_name == name and item.value_json not in ("", "null", "[]") for item in fields)
 
+    @classmethod
+    def _missing_fields(cls, fields: list[IntakeField]) -> list[str]:
+        missing = [name for name in BLOCKING_FIELDS if not cls._has_value(fields, name)]
+        constraints = next((item for item in fields if item.field_name == "constraints"), None)
+        if constraints is not None:
+            try:
+                value = json.loads(constraints.value_json or "null")
+            except (TypeError, ValueError):
+                value = None
+            resolution = resolve_paper_count_constraints(value)
+            if resolution["has_count_constraint"] and not resolution["valid"]:
+                missing.append("constraints")
+        return missing
+
     @staticmethod
     def _question(missing: list[str]) -> str | None:
-        labels = {"topic": "研究主题", "objective": "研究目标", "time_range": "时间范围"}
+        labels = {
+            "topic": "研究主题",
+            "objective": "研究目标",
+            "time_range": "时间范围",
+            "constraints": "论文数量约束",
+        }
         return "请补充：" + "、".join(labels[item] for item in missing) if missing else None
 
 
