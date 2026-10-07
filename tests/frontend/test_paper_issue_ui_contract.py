@@ -47,3 +47,65 @@ def test_report_failure_reconciles_task_acquisitions_before_resetting_report_sta
     status_end = RESEARCH.index("\n  function scheduleAcquisitionPoll", status_start)
     status_path = RESEARCH[status_start:status_end]
     assert "error.status !== 404 && error.code !== 'BATCH_NOT_FOUND'" in status_path
+
+
+def test_report_action_uses_an_explicit_versioned_generation_button() -> None:
+    action_start = RESEARCH.index("async function generateReportVersion")
+    action_end = RESEARCH.index("\n  function issueState", action_start)
+    action = RESEARCH[action_start:action_end]
+    assert "/api/research-tasks/${encodeURIComponent(taskId)}/reports" in action
+    assert "method: 'POST'" in action
+    assert "JSON.stringify({ plan_version: planVersion })" in action
+    post_start = action.index("result = await requestJson")
+    post_end = action.index("});", post_start)
+    assert "report_version" not in action[post_start:post_end]
+    assert "generateReportVersion" in RESEARCH
+    assert "readGeneratedReportVersion" in action
+    assert "button.disabled = state.acquisition.reportActionInFlight" in RESEARCH
+    assert "/assets/research-tasks.js?v=16" in INDEX
+
+
+def test_upload_only_surfaces_report_action_and_does_not_generate_implicitly() -> None:
+    upload_start = RESEARCH.index("async function uploadIssue")
+    upload_end = RESEARCH.index("\n  function renderAcquisitionIssues", upload_start)
+    upload_handler = RESEARCH[upload_start:upload_end]
+    assert "/api/papers/issues/${encodeURIComponent(issueId)}/upload" in upload_handler
+    assert "/api/research-tasks/${encodeURIComponent(taskId)}/reports" not in upload_handler
+    assert "reportActionTaskIds" in upload_handler
+
+
+def test_report_action_failure_restores_the_previous_report_for_retry() -> None:
+    action_start = RESEARCH.index("async function generateReportVersion")
+    action_end = RESEARCH.index("\n  function issueState", action_start)
+    action = RESEARCH[action_start:action_end]
+    assert "const previousReport = state.report" in action
+    assert "state.report = previousReport" in action
+    assert "旧报告保持不变" in action
+
+
+def test_report_actions_and_version_selection_guard_delayed_responses() -> None:
+    action_start = RESEARCH.index("async function generateReportVersion")
+    action_end = RESEARCH.index("\n  const ISSUE_ACTION_LABELS", action_start)
+    action = RESEARCH[action_start:action_end]
+    assert "const requestGeneration = state.taskGeneration" in action
+    assert "isCurrentTaskGeneration(taskId, requestGeneration)" in action
+    assert "if (!isCurrent()) return null" in action
+    assert "if (isCurrent())" in action
+    assert "async function uploadIssue" in RESEARCH
+    upload_start = RESEARCH.index("async function uploadIssue")
+    upload_end = RESEARCH.index("\n  function renderAcquisitionIssues", upload_start)
+    upload = RESEARCH[upload_start:upload_end]
+    assert "const requestGeneration = state.taskGeneration" in upload
+    assert "if (!isCurrent()) return null" in upload
+    version_start = RESEARCH.index("async function selectReportVersion")
+    version_end = RESEARCH.index("\n  async function loadMatrix", version_start)
+    version = RESEARCH[version_start:version_end]
+    assert "const requestId = ++state.reportVersionRequest" in version
+    assert "const previousReportViews = new Map(state.reportViews || [])" in version
+    assert "state.report = previousReport" in version
+    assert "requestText" in version
+    select_start = RESEARCH.index("async function selectTask")
+    select_end = RESEARCH.index("\n  async function refreshWorkspace", select_start)
+    selection = RESEARCH[select_start:select_end]
+    assert "state.taskGeneration += 1" in selection
+    assert "state.reportVersionRequest += 1" in selection

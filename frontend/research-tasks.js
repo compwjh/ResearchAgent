@@ -156,12 +156,15 @@
     triggerMessageId: null,
     taskActionInFlight: false,
     selectTaskInFlight: null,
+    taskGeneration: 0,
+    reportVersionRequest: 0,
     paperDisplays: new Map(),
     paperDisplaysPending: new Set(),
     acquisition: {
       preview: [], status: null, links: [], items: [], events: [], evidence: [], selectionVersion: null,
       selectedIds: new Set(), searchId: null, loading: false, confirming: false,
-      issues: [], reportActionMessage: '', retrying: new Set(), issueActions: new Set(), pollTimer: null, generation: 0,
+      issues: [], reportActionMessage: '', reportActionTaskIds: [], reportActionStatus: '', reportActionVersion: null,
+      reportActionInFlight: false, retrying: new Set(), issueActions: new Set(), pollTimer: null, generation: 0,
     },
   };
 
@@ -1709,6 +1712,158 @@
     finally { state.acquisition.retrying.delete(itemId); renderAcquisition(); }
   }
 
+  function normalizeReportActionTaskId(value) {
+    const id = typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+    return /^[A-Za-z0-9._~-]{1,240}$/.test(id) ? id : '';
+  }
+
+  function isCurrentTaskGeneration(taskId, generation) {
+    return normalizeReportActionTaskId(taskId) === normalizeReportActionTaskId(state.selectedTaskId)
+      && state.taskGeneration === generation;
+  }
+
+  function isCurrentReportVersionRequest(taskId, generation, requestId) {
+    return isCurrentTaskGeneration(taskId, generation) && state.reportVersionRequest === requestId;
+  }
+
+  function reportActionTaskId() {
+    const selected = normalizeReportActionTaskId(state.selectedTaskId);
+    const taskIds = Array.isArray(state.acquisition.reportActionTaskIds)
+      ? [...new Set(state.acquisition.reportActionTaskIds.map(normalizeReportActionTaskId).filter(Boolean))]
+      : [];
+    return selected && (!taskIds.length || taskIds.includes(selected)) ? selected : '';
+  }
+
+  function reportActionPlanVersion(taskId) {
+    const current = normalizeReportActionTaskId(taskId) === normalizeReportActionTaskId(state.selectedTaskId)
+      ? state.selectedTask : null;
+    return safePositiveInteger(current?.current_plan_version)
+      || safePositiveInteger(current?.plan_version)
+      || safePositiveInteger(state.report?.plan_version) || 1;
+  }
+
+  async function readGeneratedReportVersion(taskId, version, requestGeneration = state.taskGeneration) {
+    const safeTaskId = normalizeReportActionTaskId(taskId);
+    const safeVersion = safePositiveInteger(version);
+    if (!safeTaskId || !safeVersion) return null;
+    if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
+    const previousReport = state.report;
+    const previousReportVersions = [...(state.reportVersions || [])];
+    const previousReportViews = new Map(state.reportViews || []);
+    const previousReportFormat = state.reportFormat;
+    try {
+      const canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(safeTaskId)}/reports/${safeVersion}?format=json`);
+      if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
+      if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical) || safePositiveInteger(canonical.report_version) !== safeVersion) {
+        const error = new Error('报告版本响应无效'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+      }
+      const markdown = await requestText(`/api/research-tasks/${encodeURIComponent(safeTaskId)}/reports/${safeVersion}?format=markdown`);
+      if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
+      if (typeof markdown !== 'string' || !markdown.trim()) {
+        const error = new Error('报告正文为空'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+      }
+      state.reportVersions = [...new Set([...previousReportVersions, safeVersion].map(safePositiveInteger).filter(Boolean))].sort((a, b) => b - a);
+      state.reportViews = new Map(previousReportViews);
+      state.reportViews.set(`${safeVersion}:json`, canonical);
+      state.reportViews.set(`${safeVersion}:markdown`, markdown);
+      state.report = { ...canonical, markdown, artifacts: [], report_version: safeVersion };
+      state.reportFormat = 'markdown';
+      const requestGuard = () => isCurrentTaskGeneration(safeTaskId, requestGeneration);
+      renderReportCitations(state.report.citation_manifest, requestGuard);
+      renderReportArtifacts([]);
+      renderReportFormatTabs();
+      renderMatrix(state.matrix, requestGuard);
+      renderSummary();
+      setText('research-report-state', `报告 v${text(safeVersion)} · ${statusLabel(state.report.status)}`);
+      const limitations = limitationText(state.report.limitations) || safeList(state.report.limitations).join(' · ');
+      setText('research-report-limitations', limitations ? `限制：${limitations}` : '');
+      return state.report;
+    } catch (error) {
+      if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
+      state.report = previousReport;
+      state.reportVersions = previousReportVersions;
+      state.reportViews = previousReportViews;
+      state.reportFormat = previousReportFormat;
+      renderReportCitations(state.report?.citation_manifest || []);
+      renderReportArtifacts(state.report?.artifacts || []);
+      renderReportFormatTabs();
+      renderMatrix(state.matrix);
+      renderSummary();
+      throw error;
+    }
+  }
+
+  async function generateReportVersion(taskId = reportActionTaskId()) {
+    taskId = normalizeReportActionTaskId(taskId);
+    const requestGeneration = state.taskGeneration;
+    if (!taskId || state.acquisition.reportActionInFlight) return null;
+    const isCurrent = () => isCurrentTaskGeneration(taskId, requestGeneration);
+    const previousReport = state.report;
+    const previousReportViews = new Map(state.reportViews || []);
+    const previousReportVersions = [...(state.reportVersions || [])];
+    const previousReportFormat = state.reportFormat;
+    const retryVersion = state.acquisition.reportActionStatus === 'retryable'
+      ? safePositiveInteger(state.acquisition.reportActionVersion) : null;
+    state.acquisition.reportActionInFlight = true;
+    state.acquisition.reportActionStatus = retryVersion ? 'reading' : 'generating';
+    state.acquisition.reportActionMessage = retryVersion ? `正在读取报告 v${retryVersion}…` : '正在生成报告新版本…';
+    renderAcquisition();
+    try {
+      let result = null;
+      let version = retryVersion;
+      if (!version) {
+        const planVersion = reportActionPlanVersion(taskId);
+        result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/reports`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan_version: planVersion }),
+        });
+        if (!isCurrent()) return null;
+        version = safePositiveInteger(result?.report_version);
+        if (!version) {
+          const error = new Error('生成报告未返回版本号'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+        }
+        state.acquisition.reportActionVersion = version;
+      }
+      try {
+        const loaded = await readGeneratedReportVersion(taskId, version, requestGeneration);
+        if (!isCurrent() || !loaded) return null;
+      } catch (error) {
+        if (!isCurrent()) return null;
+        state.acquisition.reportActionStatus = 'retryable';
+        state.acquisition.reportActionVersion = version;
+        state.acquisition.reportActionMessage = `报告 v${version} 已生成但读取失败，可重试读取；旧报告保持不变。${userError(error, '报告暂时不可用。')}`;
+        setAcquisitionStatus(state.acquisition.reportActionMessage, 'failed');
+        return result;
+      }
+      state.acquisition.reportActionStatus = 'completed';
+      state.acquisition.reportActionMessage = `报告 v${version} 已生成；当前入口未返回 canonical artifact 或会话通知，旧报告保持不变。`;
+      setAcquisitionStatus('报告新版本已生成，旧报告保持不变。', 'completed');
+      return result;
+    } catch (error) {
+      if (!isCurrent()) return null;
+      state.report = previousReport;
+      state.reportViews = previousReportViews;
+      state.reportVersions = previousReportVersions;
+      state.reportFormat = previousReportFormat;
+      renderReportCitations(state.report?.citation_manifest || []);
+      renderReportArtifacts(state.report?.artifacts || []);
+      renderReportFormatTabs();
+      renderMatrix(state.matrix);
+      renderSummary();
+      state.acquisition.reportActionStatus = 'available';
+      state.acquisition.reportActionVersion = null;
+      state.acquisition.reportActionMessage = `报告新版本生成失败，可重试；旧报告保持不变。${userError(error, '报告生成失败。')}`;
+      setAcquisitionStatus(state.acquisition.reportActionMessage, 'failed');
+      return null;
+    } finally {
+      if (isCurrent()) {
+        state.acquisition.reportActionInFlight = false;
+        renderAcquisition();
+      }
+    }
+  }
+
   const ISSUE_ACTION_LABELS = Object.freeze({ login: '打开登录', resume: '登录后继续', retry: '重试' });
 
   function issueState(issue) {
@@ -1781,29 +1936,42 @@
 
   async function uploadIssue(issue, file, confirmInput, button) {
     const issueId = String(issue?.issue_id || '').trim();
-    if (!issueId || !file || typeof file !== 'object' || !confirmInput?.checked) return null;
+    const requestTaskId = normalizeReportActionTaskId(state.selectedTaskId);
+    const requestGeneration = state.taskGeneration;
+    const isCurrent = () => isCurrentTaskGeneration(requestTaskId, requestGeneration);
+    if (!issueId || !requestTaskId || !file || typeof file !== 'object' || !confirmInput?.checked) return null;
     const key = `${issueId}:upload`;
-    if (state.acquisition.issueActions.has(key)) return null;
-    state.acquisition.issueActions.add(key);
+    const actionSet = state.acquisition.issueActions;
+    if (actionSet.has(key)) return null;
+    actionSet.add(key);
     if (button) { button.disabled = true; button.textContent = '上传中…'; }
     try {
       const form = new root.FormData(); form.append('file', file, file.name || 'paper.pdf');
       const result = await requestJson(`/api/papers/issues/${encodeURIComponent(issueId)}/upload?identity_verdict=confirmed&identity_confirmed=true`, { method: 'POST', body: form });
+      if (!isCurrent()) return null;
       const refreshed = result?.issue;
       if (refreshed && typeof refreshed === 'object') {
         state.acquisition.issues = state.acquisition.issues.map((item) => item.issue_id === issueId ? refreshed : item);
       }
       if (result?.report_action === 'generate_new_version') {
-        state.acquisition.reportActionMessage = '论文已关联到知识库；请生成报告新版本，旧报告不会被改写。';
+        const returnedTaskIds = Array.isArray(result?.research_task_ids)
+          ? result.research_task_ids.map(normalizeReportActionTaskId).filter(Boolean) : [];
+        const selectedTaskId = normalizeReportActionTaskId(state.selectedTaskId);
+        state.acquisition.reportActionTaskIds = [...new Set([...returnedTaskIds, selectedTaskId].filter(Boolean))].slice(0, 20);
+        state.acquisition.reportActionStatus = 'available';
+        state.acquisition.reportActionVersion = null;
+        state.acquisition.reportActionMessage = '论文已关联到知识库；请点击“生成报告新版本”，旧报告不会被改写。';
       }
       setAcquisitionStatus('上传完成，研究证据已更新。', 'completed');
-      await loadAcquisitionStatus(state.selectedTaskId);
+      await loadAcquisitionStatus(requestTaskId);
       return result;
     } catch (error) {
+      if (!isCurrent()) return null;
       setAcquisitionStatus(userError(error, '上传失败；文件未关联到研究任务。'), 'failed');
       return null;
     } finally {
-      state.acquisition.issueActions.delete(key); renderAcquisition();
+      actionSet.delete(key);
+      if (isCurrent()) renderAcquisition();
     }
   }
 
@@ -1819,6 +1987,23 @@
     if (status) status.textContent = state.acquisition.reportActionMessage || (issues.length ? `${issues.length} 篇论文需要人工处理。` : '');
     if (state.acquisition.reportActionMessage) {
       const note = state.document.createElement('p'); note.className = 'research-issue-resolution'; note.textContent = state.acquisition.reportActionMessage; list.appendChild(note);
+      const taskId = reportActionTaskId();
+      if (taskId) {
+        const actionItem = state.document.createElement('li'); actionItem.className = 'research-issue-item'; actionItem.dataset.action = 'report-version';
+        const actions = state.document.createElement('div'); actions.className = 'research-issue-actions';
+        const button = state.document.createElement('button'); button.type = 'button'; button.className = 'secondary-button';
+        const version = safePositiveInteger(state.acquisition.reportActionVersion);
+        button.textContent = state.acquisition.reportActionInFlight
+          ? (state.acquisition.reportActionStatus === 'reading' ? '读取报告…' : '生成报告…')
+          : state.acquisition.reportActionStatus === 'completed'
+            ? `已生成报告 v${version || '新版本'}`
+            : state.acquisition.reportActionStatus === 'retryable'
+              ? `重试读取报告 v${version || ''}`.trim()
+              : '生成报告新版本';
+        button.disabled = state.acquisition.reportActionInFlight || state.acquisition.reportActionStatus === 'completed';
+        button.addEventListener('click', () => generateReportVersion(taskId));
+        actions.appendChild(button); actionItem.appendChild(actions); list.appendChild(actionItem);
+      }
     }
     issues.forEach((issue) => {
       const issueId = String(issue.issue_id || '');
@@ -2072,17 +2257,20 @@
   }
 
   async function ensurePaperDisplays(paperIds) {
+    const requestTaskId = normalizeReportActionTaskId(state.selectedTaskId);
+    const requestGeneration = state.taskGeneration;
     const wanted = [...new Set((paperIds || [])
       .map((value) => String(value == null ? '' : value).trim())
       .filter(Boolean))]
       .filter((value) => !state.paperDisplays.has(value) && !state.paperDisplaysPending.has(value));
-    if (!wanted.length || !state.selectedTaskId) return false;
+    if (!wanted.length || !requestTaskId) return false;
     wanted.forEach((value) => state.paperDisplaysPending.add(value));
     try {
       const result = await requestJson(
-        `/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/paper-displays`,
+        `/api/research-tasks/${encodeURIComponent(requestTaskId)}/paper-displays`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paper_ids: wanted }) },
       );
+      if (!isCurrentTaskGeneration(requestTaskId, requestGeneration)) return false;
       const papers = (result && result.papers) || {};
       wanted.forEach((value) => state.paperDisplays.set(value, papers[value] || null));
       return true;
@@ -2100,7 +2288,7 @@
     });
   }
 
-  function renderMatrix(matrix = state.matrix) {
+  function renderMatrix(matrix = state.matrix, requestGuard = null) {
     const section = byId('research-matrix-section');
     const body = byId('research-evidence-matrix-body'); const empty = byId('research-matrix-empty');
     const gaps = byId('research-matrix-gaps'); const gapList = byId('research-matrix-gap-list');
@@ -2123,7 +2311,10 @@
       if (!citationNos.length) evidenceWrap.textContent = text(cell.missing_reason || cell.summary, '—');
       evidence.appendChild(evidenceWrap); row.append(claim, paper, dimension, relation, evidence); body.appendChild(row);
     });
-    refreshPaperDisplays(rows.map((cell) => cell.paper_id), () => renderMatrix(matrix));
+    const rerender = typeof requestGuard === 'function'
+      ? () => { if (requestGuard()) renderMatrix(matrix, requestGuard); }
+      : () => renderMatrix(matrix);
+    refreshPaperDisplays(rows.map((cell) => cell.paper_id), rerender);
     if (empty) empty.hidden = rows.length > 0;
     const limitations = matrix.limitations || [];
     limitations.forEach((item) => { const li = state.document.createElement('li'); li.textContent = String(item); gapList?.appendChild(li); });
@@ -2207,7 +2398,7 @@
     host.hidden = host.childNodes.length === 0;
   }
 
-  function renderReportCitations(citations) {
+  function renderReportCitations(citations, requestGuard = null) {
     const details = byId('research-report-citations');
     const list = byId('research-report-citation-list');
     if (!details || !list) return;
@@ -2215,7 +2406,10 @@
     const values = Array.isArray(citations) ? citations.slice(0, 256) : citations && Array.isArray(citations.citations) ? citations.citations.slice(0, 256) : citations && typeof citations === 'object' ? [citations] : [];
     values.forEach((citation) => { const no = safePositiveInteger(citation?.citation_no); if (!no) return; const item = state.document.createElement('li'); const button = createCitationButton(no); button.addEventListener('click', () => { state.activeCitationNo = no; renderCitationDetail(no); }); item.appendChild(button); const label = state.document.createElement('span'); label.textContent = ` ${paperLabel(citation.paper_id)} · ${Array.isArray(citation.evidence_ids) ? citation.evidence_ids.join('、') : ''}`; item.appendChild(label); list.appendChild(item); });
     details.hidden = list.childNodes.length === 0;
-    refreshPaperDisplays(values.map((citation) => citation?.paper_id), () => renderReportCitations(citations));
+    const rerender = typeof requestGuard === 'function'
+      ? () => { if (requestGuard()) renderReportCitations(citations, requestGuard); }
+      : () => renderReportCitations(citations);
+    refreshPaperDisplays(values.map((citation) => citation?.paper_id), rerender);
   }
 
   function renderReportRaw(value) {
@@ -2272,6 +2466,55 @@
       return value;
     } catch (error) {
       setText('research-report-state', userError(error, `${format.toUpperCase()} 报告暂时不可用。`)); return null;
+    }
+  }
+
+  async function selectReportVersion(version) {
+    const targetVersion = safePositiveInteger(version);
+    const taskId = normalizeReportActionTaskId(state.selectedTaskId);
+    if (!targetVersion || !taskId || !state.report) return null;
+    const taskGeneration = state.taskGeneration;
+    const requestId = ++state.reportVersionRequest;
+    const isCurrent = () => isCurrentReportVersionRequest(taskId, taskGeneration, requestId);
+    const previousReport = state.report;
+    const previousReportViews = new Map(state.reportViews || []);
+    const previousReportFormat = state.reportFormat;
+    // Keep the previous version visible while the target is in flight. This
+    // prevents a target label from being paired with the previous正文.
+    renderReportFormatTabs();
+    setText('research-report-state', '正在读取报告 v' + targetVersion + '…');
+    try {
+      const canonical = await requestJson('/api/research-tasks/' + encodeURIComponent(taskId) + '/reports/' + targetVersion + '?format=json');
+      if (!isCurrent()) return null;
+      if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical) || safePositiveInteger(canonical.report_version) !== targetVersion) {
+        const error = new Error('报告版本响应无效'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+      }
+      const markdown = await requestText('/api/research-tasks/' + encodeURIComponent(taskId) + '/reports/' + targetVersion + '?format=markdown');
+      if (!isCurrent()) return null;
+      if (typeof markdown !== 'string' || !markdown.trim()) {
+        const error = new Error('报告正文为空'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+      }
+      const requestGuard = () => isCurrent();
+      state.report = { ...previousReport, ...canonical, markdown, report_version: targetVersion };
+      state.reportViews = new Map(previousReportViews);
+      state.reportViews.set(String(targetVersion) + ':json', canonical);
+      state.reportViews.set(String(targetVersion) + ':markdown', markdown);
+      state.reportFormat = 'markdown';
+      renderReportCitations(state.report.citation_manifest, requestGuard);
+      renderMatrix(state.matrix, requestGuard);
+      renderReportFormatTabs();
+      setText('research-report-state', '报告 v' + text(targetVersion) + ' · ' + statusLabel(state.report.status));
+      const limitations = limitationText(state.report.limitations) || safeList(state.report.limitations).join(' · ');
+      setText('research-report-limitations', limitations ? '限制：' + limitations : '');
+      return state.report;
+    } catch (error) {
+      if (!isCurrent()) return null;
+      state.report = previousReport;
+      state.reportViews = previousReportViews;
+      state.reportFormat = previousReportFormat;
+      renderReportFormatTabs();
+      setText('research-report-state', userError(error, '该报告版本暂时不可用。'));
+      return null;
     }
   }
 
@@ -2348,7 +2591,7 @@
       state.report = null;
       stopAcquisitionPoll();
       state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
-      state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.reportActionMessage = ''; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
+      state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
       state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderSelection();
       renderAcquisition();
@@ -2457,14 +2700,16 @@
   async function selectTask(taskId, sessionId = null) {
     const target = taskId || sessionId;
     if (!taskId && !sessionId) return;
+    state.taskGeneration += 1;
+    state.reportVersionRequest += 1;
     state.selectTaskInFlight = target;
     closeStream();
     state.selectedTaskId = taskId || null;
     state.selectedSessionId = sessionId || state.tasks.find((item) => item.research_task_id === taskId)?.research_session_id || null;
     stopAcquisitionPoll();
     state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
-    state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
-    state.acquisition.searchId = null; state.acquisition.idempotencyKey = null; state.acquisition.confirming = false; state.acquisition.retrying = new Set();
+    state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
+    state.acquisition.searchId = null; state.acquisition.idempotencyKey = null; state.acquisition.confirming = false; state.acquisition.retrying = new Set(); state.acquisition.issueActions = new Set();
     state.selectedTask = null;
     state.events = new Map();
     state.selectedPapers = new Set();
@@ -2543,8 +2788,10 @@
     if (state.selectTaskInFlight) return;
     if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
+      state.taskGeneration += 1;
+      state.reportVersionRequest += 1;
       closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
-      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
+      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderTaskHeader(null); setDetailVisibility(false); renderSummary();
       state.report = null; state.matrix = null; state.terminal = null; state.reportViews = new Map(); state.reportVersions = []; renderMatrix(null); renderReportFormatTabs();
       const report = byId('research-report-markdown'); if (report) { report.hidden = true; report.replaceChildren(); }
@@ -2671,15 +2918,7 @@
     byId('research-acquisition-confirm')?.addEventListener('click', confirmAcquisition);
     byId('research-acquisition-refresh')?.addEventListener('click', () => loadAcquisitionStatus(state.selectedTaskId));
     state.document.querySelectorAll('[data-report-format]').forEach((button) => button.addEventListener('click', () => selectReportFormat(button.dataset.reportFormat)));
-    byId('research-report-version-select')?.addEventListener('change', async (event) => {
-      const version = safePositiveInteger(event.target.value); if (!version || !state.selectedTaskId) return;
-      state.report = { ...state.report, report_version: version }; state.reportFormat = 'markdown'; state.reportViews = new Map(); renderReportFormatTabs();
-      try {
-        const canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/reports/${version}?format=json`);
-        state.report = { ...state.report, ...canonical, report_version: version }; state.reportViews.set(`${version}:json`, canonical); renderReportCitations(state.report.citation_manifest); renderMatrix(state.matrix); renderReportFormatTabs();
-        await selectReportFormat('markdown');
-      } catch (error) { setText('research-report-state', userError(error, '该报告版本暂时不可用。')); }
-    });
+    byId('research-report-version-select')?.addEventListener('change', (event) => selectReportVersion(event.target.value));
 
     // Chat approval commands publish the same backend result.  Reconcile it
     // through this Tab's canonical Session/Task state instead of maintaining a
@@ -2737,7 +2976,7 @@
     if (root.location.hash === '#research-view') root.setTimeout(() => { showView(); refreshWorkspace(); }, 0);
   }
 
-  return {
+  const api = {
     boot, parseConversationId, statusLabel, userError, renderSafeMarkdown,
     mergeSessionCommandResult, selectTask, refreshWorkspace, state,
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
@@ -2750,4 +2989,12 @@
     normalizeMatrix, citationValues, citationIndex, locatorForEvidence, locatorText,
     versionedReportUrl, renderMatrix, renderReportFormatTabs, selectReportFormat, loadMatrix,
   };
+  // Keep race probes available to the CommonJS contract harness without
+  // expanding the browser-facing ResearchTasks surface.
+  if (typeof module === 'object' && module.exports) {
+    api.selectReportVersion = selectReportVersion;
+    api.generateReportVersion = generateReportVersion;
+    api.uploadIssue = uploadIssue;
+  }
+  return api;
 }));
