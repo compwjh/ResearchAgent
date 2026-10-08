@@ -130,7 +130,12 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
         "safe catalog title/abstract/keywords/summary fields for the fixed renderer; do not rewrite or augment them. "
         "section summary must only compare the supplied catalog metadata and must not claim full-text findings; do not include "
         "paper findings, artifact IDs, or citations that are not present in "
-        "validated_candidates."
+        "validated_candidates. When work_item_input.matrix_context is present, you may additionally emit an internal-only "
+        "evidence_matrix object with schema_version evidence-report-v1 and exactly the server-provided dimensions; its claims, "
+        "evidence and cells must use only the allowlisted paper_id values and the supplied catalog_snapshot_id/abstract_digest "
+        "locators. Use only catalog or abstract evidence, never fulltext, URLs, document IDs, chunks or invented dimensions. "
+        "Keep every evidence_matrix claims, evidence and cells array at most 64 items, matching the runtime safety limit. "
+        "Omit evidence_matrix when no supported claim can be grounded in the supplied snapshot facts."
     )
     return (
         f"You are the {role} worker in a bounded research runtime. "

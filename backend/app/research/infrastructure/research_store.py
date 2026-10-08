@@ -29,9 +29,8 @@ import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Iterator
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 from backend.app.platform.config import BASE_DIR
 from backend.app.research.domain.contracts import (
@@ -5759,6 +5758,136 @@ class ResearchStore:
     # ------------------------------------------------------------------ #
     # Spec030 evidence matrix
     # ------------------------------------------------------------------ #
+
+    def _persist_evidence_matrix_rows(
+        self,
+        connection: sqlite3.Connection,
+        research_task_id: str,
+        plan_version: int,
+        claims: list[ResearchClaim],
+        evidence: list[ClaimEvidence],
+        dimensions: list[ComparisonDimension],
+        cells: list[PaperComparisonCell],
+    ) -> None:
+        """Write the four matrix projections on an already-open transaction.
+
+        The caller owns ``BEGIN``/commit/rollback.  Keeping the row writes in
+        one private seam makes failure injection and the all-or-nothing
+        boundary explicit without adding a table or changing any public
+        Research schema.
+        """
+        for claim in claims:
+            encoded = json.dumps(list(claim.evidence_ids or []), ensure_ascii=False, separators=(",", ":"))
+            now = claim.created_at or _utcnow()
+            existing = connection.execute(
+                "SELECT * FROM research_claims WHERE claim_id=?", (claim.claim_id,)
+            ).fetchone()
+            if existing is not None:
+                current = ResearchClaim.from_row(dict(existing))
+                if current.to_dict() | {"created_at": claim.created_at or current.created_at} != claim.to_dict() | {"created_at": current.created_at}:
+                    raise ValueError("claim_id already exists with different content")
+                continue
+            connection.execute(
+                """INSERT INTO research_claims(
+                    claim_id,research_task_id,plan_version,topic,statement,confidence,status,evidence_ids_json,created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (
+                    claim.claim_id, claim.task_id, int(claim.plan_version), claim.topic, claim.statement,
+                    claim.confidence, claim.status, encoded, now,
+                ),
+            )
+
+        for item in evidence:
+            now = item.created_at or _utcnow()
+            existing = connection.execute(
+                "SELECT * FROM research_claim_evidence WHERE evidence_id=?", (item.evidence_id,)
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    """INSERT INTO research_claim_evidence(
+                        evidence_id,claim_id,research_task_id,plan_version,paper_id,evidence_level,stance,status,
+                        quote_digest,locator_json,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        item.evidence_id, item.claim_id, item.task_id, int(item.plan_version), item.paper_id,
+                        item.evidence_level, item.stance, item.status, item.quote_digest,
+                        json.dumps(item.locator or {}, ensure_ascii=False, separators=(",", ":")), now,
+                    ),
+                )
+            else:
+                current = ClaimEvidence.from_row(dict(existing))
+                immutable = (
+                    current.claim_id, current.task_id, current.plan_version,
+                    current.paper_id, current.evidence_level, current.stance,
+                )
+                requested = (
+                    item.claim_id, item.task_id, int(item.plan_version),
+                    item.paper_id, item.evidence_level, item.stance,
+                )
+                if immutable != requested:
+                    raise ValueError("evidence_id already exists with different identity")
+                connection.execute(
+                    """UPDATE research_claim_evidence
+                       SET status=?, quote_digest=?, locator_json=?
+                       WHERE evidence_id=?""",
+                    (
+                        item.status, item.quote_digest,
+                        json.dumps(item.locator or {}, ensure_ascii=False, separators=(",", ":")), item.evidence_id,
+                    ),
+                )
+
+        connection.execute(
+            "DELETE FROM research_comparison_dimensions WHERE research_task_id=? AND plan_version=?",
+            (research_task_id, int(plan_version)),
+        )
+        for item in dimensions:
+            connection.execute(
+                """INSERT INTO research_comparison_dimensions(
+                    dimension_id,research_task_id,plan_version,label,definition,display_order,created_at
+                ) VALUES(?,?,?,?,?,?,?)""",
+                (
+                    item.dimension_id, research_task_id, int(plan_version), item.label, item.definition,
+                    int(item.display_order), item.created_at or _utcnow(),
+                ),
+            )
+
+        connection.execute(
+            "DELETE FROM research_comparison_cells WHERE research_task_id=? AND plan_version=?",
+            (research_task_id, int(plan_version)),
+        )
+        for item in cells:
+            connection.execute(
+                """INSERT INTO research_comparison_cells(
+                    research_task_id,plan_version,claim_id,paper_id,dimension_id,relation,summary,evidence_ids_json,missing_reason,created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    research_task_id, int(plan_version), item.claim_id, item.paper_id, item.dimension_id,
+                    item.relation, item.summary,
+                    json.dumps(list(item.evidence_ids or []), ensure_ascii=False, separators=(",", ":")),
+                    item.missing_reason, item.created_at or _utcnow(),
+                ),
+            )
+
+    def persist_evidence_matrix(
+        self,
+        research_task_id: str,
+        plan_version: int,
+        claims: list[ResearchClaim],
+        evidence: list[ClaimEvidence],
+        dimensions: list[ComparisonDimension],
+        cells: list[PaperComparisonCell],
+    ) -> None:
+        """Persist one complete matrix atomically across its four projections."""
+        with _write_lock, self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                self._persist_evidence_matrix_rows(
+                    connection, research_task_id, int(plan_version), claims, evidence, dimensions, cells,
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
 
     def save_claim(self, claim: ResearchClaim) -> ResearchClaim:
         """Insert an immutable claim projection; identical retries are idempotent."""

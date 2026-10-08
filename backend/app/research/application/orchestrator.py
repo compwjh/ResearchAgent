@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -30,7 +31,9 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Mapping
 
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
 from backend.app.research.application.planner import Planner
+from backend.app.research.application.report_generation import ReportGenerationService
 from backend.app.research.application.report_synthesis import (
     ReportDeliveryService,
     ReportSynthesisError,
@@ -65,6 +68,38 @@ _REPORT_STATUS = "preliminary"
 # least five candidates.  This does not create candidates or download papers;
 # it only raises the deterministic selection cap within the existing pool.
 _MIN_REPORT_CANDIDATES = 5
+
+_MATRIX_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,240}$")
+_MATRIX_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_MATRIX_DIMENSION_KEYS = frozenset({"dimension_id", "label", "definition", "display_order"})
+_MATRIX_CLAIM_KEYS = frozenset({"claim_id", "topic", "statement", "confidence", "status", "evidence_ids"})
+_MATRIX_EVIDENCE_KEYS = frozenset({
+    "evidence_id", "claim_id", "paper_id", "evidence_level", "stance", "status", "locator",
+})
+_MATRIX_EVIDENCE_OPTIONAL_KEYS = frozenset({"quote_digest"})
+_MATRIX_CELL_KEYS = frozenset({"claim_id", "paper_id", "dimension_id", "relation", "evidence_ids"})
+_MATRIX_CELL_OPTIONAL_KEYS = frozenset({"summary", "missing_reason"})
+_MATRIX_MAX_ITEMS = 64
+
+
+def _matrix_id(value: Any, field: str) -> str:
+    if not isinstance(value, str) or _MATRIX_ID_RE.fullmatch(value.strip()) is None:
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", f"{field} 无效")
+    return value.strip()
+
+
+def _matrix_text(value: Any, field: str, *, required: bool = True, max_chars: int = 4000) -> str:
+    if not isinstance(value, str):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", f"{field} 无效")
+    text = value.strip()
+    if required and not text:
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", f"{field} 无效")
+    if len(text) > max_chars:
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", f"{field} 过长")
+    lowered = text.casefold()
+    if any(marker in lowered for marker in ("http://", "https://", "ftp://", "www.", "<script", "javascript:")):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", f"{field} 含不安全内容")
+    return text
 
 
 def _utcnow() -> str:
@@ -566,6 +601,240 @@ def _bind_synthesis_report_version(output: Mapping[str, Any], expected_version: 
         normalized["report_version"] = int(expected_version)
         normalized["output_hash"] = report_output_hash(normalized)
     return normalized
+
+
+def _validate_synthesis_matrix_payload(
+    payload: Any,
+    context: Mapping[str, Any],
+    *,
+    plan_version: int,
+) -> dict[str, Any]:
+    """Validate the optional internal matrix against server-owned facts.
+
+    This is deliberately stricter than ``EvidenceMatrixService`` at the model
+    boundary: dimensions and snapshot locators come from the server context,
+    catalog evidence cannot claim support/contradiction, and fulltext is never
+    accepted from the natural-language synthesizer.  The returned mapping is
+    still an internal value; it is never part of ``ReportSynthesisOutput``.
+    """
+    if not isinstance(payload, Mapping) or not isinstance(context, Mapping):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix payload/context 无效")
+    if payload.get("schema_version") != "evidence-report-v1":
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix schema_version 无效")
+    if isinstance(payload.get("plan_version"), bool) or payload.get("plan_version") != int(plan_version):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix plan_version 不匹配")
+    if context.get("schema_version") != "evidence-report-v1" or context.get("plan_version") != int(plan_version):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix context 不匹配")
+
+    dimensions = context.get("dimensions")
+    supplied_dimensions = payload.get("dimensions")
+    if not isinstance(dimensions, list) or not dimensions or supplied_dimensions != dimensions:
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix dimensions 不得偏离已批准范围")
+    for dimension in dimensions:
+        if not isinstance(dimension, Mapping) or set(dimension) != _MATRIX_DIMENSION_KEYS:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix dimension 合同无效")
+        _matrix_id(dimension.get("dimension_id"), "dimension_id")
+        _matrix_text(dimension.get("label"), "dimension label", max_chars=500)
+        _matrix_text(dimension.get("definition"), "dimension definition", max_chars=2000)
+        order = dimension.get("display_order")
+        if isinstance(order, bool) or not isinstance(order, int) or order < 0:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "dimension order 无效")
+
+    raw_candidates = context.get("candidates")
+    raw_allowed = context.get("allowed_paper_ids")
+    if not isinstance(raw_candidates, list) or not isinstance(raw_allowed, list) or not raw_candidates:
+        raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix snapshot context 缺失")
+    allowed_ids = {_matrix_id(value, "allowed_paper_id") for value in raw_allowed}
+    snapshots: dict[str, Mapping[str, Any]] = {}
+    for candidate in raw_candidates:
+        if not isinstance(candidate, Mapping):
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix snapshot context 无效")
+        paper_id = _matrix_id(candidate.get("paper_id"), "paper_id")
+        if paper_id in snapshots:
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix snapshot candidate 重复")
+        snapshot_id = _matrix_id(candidate.get("catalog_snapshot_id"), "catalog_snapshot_id")
+        _matrix_text(candidate.get("title"), "snapshot title", max_chars=8000)
+        abstract = candidate.get("abstract")
+        if abstract is not None:
+            _matrix_text(abstract, "snapshot abstract", required=False, max_chars=8000)
+        digest = candidate.get("abstract_digest")
+        if digest is not None and (
+            not isinstance(digest, str) or _MATRIX_HASH_RE.fullmatch(digest.lower()) is None
+        ):
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "snapshot abstract digest 无效")
+        if isinstance(abstract, str) and abstract.strip():
+            expected = hashlib.sha256(abstract.encode("utf-8")).hexdigest()
+            if digest != expected:
+                raise EvidenceMatrixError("MATRIX_NOT_READY", "snapshot abstract digest 不匹配")
+        abstract_ref = candidate.get("abstract_ref", f"catalog:{paper_id}")
+        if abstract_ref != f"catalog:{paper_id}":
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "snapshot abstract ref 不匹配")
+        snapshots[paper_id] = {
+            "paper_id": paper_id,
+            "catalog_snapshot_id": snapshot_id,
+            "title": candidate.get("title"),
+            "abstract": abstract,
+            "abstract_digest": digest,
+            "abstract_ref": abstract_ref,
+        }
+    if set(snapshots) != allowed_ids:
+        raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix snapshot allowlist 不完整")
+
+    expected_top = {"schema_version", "plan_version", "dimensions", "claims", "evidence", "cells"}
+    if set(payload) != expected_top:
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix 顶层字段无效")
+    raw_claims = payload.get("claims")
+    raw_evidence = payload.get("evidence")
+    raw_cells = payload.get("cells")
+    if not isinstance(raw_claims, list) or not isinstance(raw_evidence, list) or not isinstance(raw_cells, list):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix claims/evidence/cells 无效")
+    if (
+        len(raw_claims) > _MATRIX_MAX_ITEMS
+        or len(raw_evidence) > _MATRIX_MAX_ITEMS
+        or len(raw_cells) > _MATRIX_MAX_ITEMS
+    ):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix 列表过长")
+
+    claims: dict[str, Mapping[str, Any]] = {}
+    for raw in raw_claims:
+        if not isinstance(raw, Mapping) or set(raw) != _MATRIX_CLAIM_KEYS:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix claim 合同无效")
+        claim_id = _matrix_id(raw.get("claim_id"), "claim_id")
+        if claim_id in claims:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix claim 重复")
+        _matrix_text(raw.get("topic"), "claim topic", max_chars=1000)
+        _matrix_text(raw.get("statement"), "claim statement", max_chars=4000)
+        if raw.get("confidence") not in {"low", "medium", "high"} or raw.get("status") not in {"supported", "contested", "unresolved"}:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix claim 枚举无效")
+        evidence_ids = raw.get("evidence_ids")
+        if not isinstance(evidence_ids, list) or any(not isinstance(value, str) for value in evidence_ids):
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix claim evidence_ids 无效")
+        clean_evidence_ids = [_matrix_id(value, "claim evidence_id") for value in evidence_ids]
+        if len(set(clean_evidence_ids)) != len(clean_evidence_ids):
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix claim evidence_ids 重复")
+        if raw.get("status") != "unresolved" and not clean_evidence_ids:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "有结论的 claim 必须有 evidence")
+        claims[claim_id] = {**raw, "claim_id": claim_id, "evidence_ids": clean_evidence_ids}
+
+    evidence_by_id: dict[str, Mapping[str, Any]] = {}
+    supported_claim = False
+    for raw in raw_evidence:
+        if not isinstance(raw, Mapping) or not set(raw).issubset(_MATRIX_EVIDENCE_KEYS | _MATRIX_EVIDENCE_OPTIONAL_KEYS) or not _MATRIX_EVIDENCE_KEYS.issubset(raw):
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix evidence 合同无效")
+        evidence_id = _matrix_id(raw.get("evidence_id"), "evidence_id")
+        if evidence_id in evidence_by_id:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix evidence 重复")
+        claim_id = _matrix_id(raw.get("claim_id"), "evidence claim_id")
+        paper_id = _matrix_id(raw.get("paper_id"), "evidence paper_id")
+        if claim_id not in claims or paper_id not in snapshots:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix evidence 归属无效")
+        level = raw.get("evidence_level")
+        stance = raw.get("stance")
+        status = raw.get("status")
+        if level not in {"catalog", "abstract"} or stance not in {"supports", "contradicts", "contextual"} or status != "available":
+            raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "matrix evidence level/stance/status 无效")
+        if level == "catalog" and stance != "contextual":
+            raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "catalog evidence 只能作为 contextual")
+        _matrix_text(raw.get("quote_digest", ""), "evidence quote_digest", required=False, max_chars=4000)
+        locator = raw.get("locator")
+        if not isinstance(locator, Mapping):
+            raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "matrix evidence locator 无效")
+        snapshot = snapshots[paper_id]
+        if locator.get("catalog_snapshot_id") != snapshot["catalog_snapshot_id"]:
+            raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "matrix evidence snapshot 不匹配")
+        if level == "catalog":
+            if set(locator) != {"catalog_snapshot_id"}:
+                raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "catalog locator 字段无效")
+        else:
+            if set(locator) != {"catalog_snapshot_id", "abstract_ref", "abstract_digest"}:
+                raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "abstract locator 字段无效")
+            abstract = snapshot.get("abstract")
+            digest = snapshot.get("abstract_digest")
+            if not isinstance(abstract, str) or not abstract.strip() or not isinstance(digest, str):
+                raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "abstract snapshot 缺失")
+            if locator.get("abstract_ref") != f"catalog:{paper_id}" or locator.get("abstract_digest") != digest:
+                raise EvidenceMatrixError("EVIDENCE_LOCATOR_INVALID", "abstract locator 不匹配")
+        evidence_by_id[evidence_id] = {**raw, "evidence_id": evidence_id}
+        if stance == "supports" and any(
+            claim.get("claim_id") == claim_id and claim.get("status") == "supported" for claim in claims.values()
+        ):
+            supported_claim = True
+
+    for claim in claims.values():
+        for evidence_id in claim["evidence_ids"]:
+            evidence = evidence_by_id.get(evidence_id)
+            if evidence is None or evidence["claim_id"] != claim["claim_id"]:
+                raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "claim 引用的 evidence 不匹配")
+        if claim["status"] == "supported" and not any(
+            evidence_by_id[evidence_id]["stance"] == "supports" for evidence_id in claim["evidence_ids"]
+        ):
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "supported claim 缺少支持性 evidence")
+    if not supported_claim:
+        raise EvidenceMatrixError("EVIDENCE_INSUFFICIENT", "matrix 缺少可验证 supported claim")
+
+    for raw in raw_cells:
+        if not isinstance(raw, Mapping) or not set(raw).issubset(_MATRIX_CELL_KEYS | _MATRIX_CELL_OPTIONAL_KEYS) or not _MATRIX_CELL_KEYS.issubset(raw):
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix cell 合同无效")
+        claim_id = _matrix_id(raw.get("claim_id"), "cell claim_id")
+        paper_id = _matrix_id(raw.get("paper_id"), "cell paper_id")
+        dimension_id = _matrix_id(raw.get("dimension_id"), "cell dimension_id")
+        relation = raw.get("relation")
+        evidence_ids = raw.get("evidence_ids")
+        if claim_id not in claims or paper_id not in snapshots or dimension_id not in {item["dimension_id"] for item in dimensions}:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix cell 归属无效")
+        if relation not in {"supports", "contradicts", "contextual", "missing"} or not isinstance(evidence_ids, list):
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix cell relation/evidence_ids 无效")
+        if relation == "missing":
+            if evidence_ids or not isinstance(raw.get("missing_reason"), str) or not raw["missing_reason"].strip():
+                raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "missing cell 必须说明原因且无 evidence")
+        else:
+            if not evidence_ids:
+                raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "非 missing cell 必须有 evidence")
+            for evidence_id in evidence_ids:
+                evidence = evidence_by_id.get(evidence_id)
+                if evidence is None or evidence["claim_id"] != claim_id or evidence["paper_id"] != paper_id or evidence["stance"] != relation:
+                    raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "cell evidence 不匹配")
+        _matrix_text(raw.get("summary", ""), "cell summary", required=False, max_chars=4000)
+        if raw.get("missing_reason") is not None:
+            _matrix_text(raw.get("missing_reason"), "cell missing_reason", required=False, max_chars=1000)
+
+    return {
+        "schema_version": "evidence-report-v1",
+        "plan_version": int(plan_version),
+        "dimensions": [dict(item) for item in dimensions],
+        "claims": [dict(item) for item in claims.values()],
+        "evidence": [dict(item) for item in evidence_by_id.values()],
+        "cells": [dict(item) for item in raw_cells],
+    }
+
+
+def _separate_synthesis_matrix(
+    output: Mapping[str, Any],
+    context: Mapping[str, Any] | None,
+    *,
+    plan_version: int,
+) -> tuple[dict[str, Any], dict[str, Any] | None, str | None]:
+    """Detach the optional matrix without changing the candidate artifact contract."""
+    artifact_output = dict(output)
+    raw_matrix = artifact_output.pop("evidence_matrix", None)
+    if raw_matrix is None:
+        return artifact_output, None, None
+    raw_hash = output.get("output_hash") if isinstance(output, Mapping) else None
+    if not isinstance(raw_hash, str) or raw_hash != report_output_hash(output):
+        return artifact_output, None, "AGENT_OUTPUT_INVALID"
+    try:
+        if context is None:
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix snapshot context unavailable")
+        matrix = _validate_synthesis_matrix_payload(raw_matrix, context, plan_version=plan_version)
+    except Exception as exc:  # noqa: BLE001 - invalid optional extension degrades only the matrix path
+        artifact_output["output_hash"] = report_output_hash(
+            {key: value for key, value in artifact_output.items() if key != "output_hash"}
+        )
+        return artifact_output, None, getattr(exc, "code", "MATRIX_NOT_READY")
+    artifact_output["output_hash"] = report_output_hash(
+        {key: value for key, value in artifact_output.items() if key != "output_hash"}
+    )
+    return artifact_output, matrix, None
 
 
 def _validate_evaluator_scope(
@@ -1208,6 +1477,9 @@ class Orchestrator:
         failure_error_code: str | None = None
         synthesis_run_id = None
         synthesis_output: dict | None = None
+        synthesis_matrix_context: dict[str, Any] | None = None
+        synthesis_matrix_payload: dict[str, Any] | None = None
+        synthesis_matrix_error: str | None = None
         synthesis_attempts = 1
         synthesis_error: str | None = None
         evaluator_outputs: list[dict] = []
@@ -1460,6 +1732,17 @@ class Orchestrator:
                 # The report version belongs to the approved plan subject; the
                 # model may not derive it from publication years or timestamps.
                 work_item_input["report_version"] = plan_version
+                # Matrix evidence is opt-in and server-bounded.  Never let a
+                # stale/request-provided context authorize a producer; only
+                # the current frozen selections and plan facets can do so.
+                work_item_input.pop("matrix_context", None)
+                synthesis_matrix_context = self._build_synthesis_matrix_context(
+                    task=task,
+                    plan_version=plan_version,
+                    validated_candidates=validated,
+                )
+                if synthesis_matrix_context is not None:
+                    work_item_input["matrix_context"] = synthesis_matrix_context
             with suppress(Exception):
                 self._store.update_work_item_input(
                     item.work_item_id,
@@ -1615,11 +1898,21 @@ class Orchestrator:
                 )
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
-                synthesis_output = (
+                normalized_synthesis_output = (
                     _bind_synthesis_report_version(normalized_output, plan_version)
                     if isinstance(normalized_output, dict)
                     else None
                 )
+                if isinstance(normalized_synthesis_output, dict):
+                    synthesis_output, synthesis_matrix_payload, synthesis_matrix_error = _separate_synthesis_matrix(
+                        normalized_synthesis_output,
+                        synthesis_matrix_context,
+                        plan_version=plan_version,
+                    )
+                else:
+                    synthesis_output = None
+                    synthesis_matrix_payload = None
+                    synthesis_matrix_error = None
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
             elif role == "synthesizer" and terminal != "completed":
                 synthesis_error = result.error_code or "AGENT_OUTPUT_INVALID"
@@ -1770,32 +2063,96 @@ class Orchestrator:
                             set(recall_ids),
                         )
                 selected_count = len(validated_candidates)
+                matrix_built = False
                 try:
                     if synthesis_run_id is None or synthesis_output is None:
                         raise ReportSynthesisError(
                             "synthesizer run did not complete", code=synthesis_error or "AGENT_OUTPUT_INVALID"
                         )
-                    # Validate and consume the actual model output.  The
-                    # delivery service is deliberately downstream of this
-                    # semantic boundary; it never re-composes a replacement
-                    # report from evaluator data.
+                    # Validate and consume the candidate-level envelope before
+                    # touching any matrix row.  A malformed artifact must not
+                    # leave a durable Claim/Evidence/Dimension/Cell set
+                    # behind for a later report read.
                     validate_report_synthesis_output(synthesis_output, expected_version=plan_version)
                     synthesis = ReportSynthesizer().consume_validated_output(
                         output=synthesis_output,
                         validated_candidates=validated_candidates,
                         title="深度研究报告",
                     )
+
+                    matrix_failure = "MATRIX_NOT_READY" if synthesis_matrix_error else None
+                    if matrix_failure:
+                        logger.warning(
+                            "synthesizer matrix extension degraded for task %s: %s",
+                            task.research_task_id,
+                            matrix_failure,
+                        )
+                    elif synthesis_matrix_payload is None and self._memory_repository is not None:
+                        # With the Task08 delivery seam enabled, a candidate
+                        # artifact alone is not a canonical research report.
+                        # Missing optional output therefore remains an
+                        # explicit degraded terminal condition.
+                        matrix_failure = "MATRIX_NOT_READY"
+                    if matrix_failure is None and synthesis_matrix_payload is not None:
+                        try:
+                            EvidenceMatrixService(self._store).build_matrix(
+                                task.research_task_id,
+                                owner_id,
+                                plan_version=plan_version,
+                                dimensions=synthesis_matrix_payload["dimensions"],
+                                claims=synthesis_matrix_payload["claims"],
+                                evidence=synthesis_matrix_payload["evidence"],
+                                cells=synthesis_matrix_payload["cells"],
+                            )
+                            matrix_built = True
+                        except Exception:  # noqa: BLE001 - preserve candidate artifact on optional failure
+                            matrix_failure = "MATRIX_NOT_READY"
+                            logger.warning(
+                                "synthesizer matrix build degraded for task %s: %s",
+                                task.research_task_id,
+                                matrix_failure,
+                            )
+                            synthesis_matrix_payload = None
+                    if matrix_failure:
+                        synthesis_error = synthesis_error or matrix_failure
+                    if matrix_built:
+                        try:
+                            # The canonical report is the success gate for a
+                            # completed user-visible delivery.  Generate it
+                            # before activity/notification writes so a
+                            # failure cannot leave a completed fact behind.
+                            ReportGenerationService(self._store).generate(
+                                task.research_task_id,
+                                owner_id,
+                                plan_version=plan_version,
+                                report_version=None,
+                                title="深度研究报告",
+                            )
+                        except Exception:  # noqa: BLE001 - candidate artifact remains the durable fallback
+                            synthesis_error = synthesis_error or "REPORT_NOT_READY"
+                            logger.warning(
+                                "synthesizer canonical report degraded for task %s: %s",
+                                task.research_task_id,
+                                "REPORT_NOT_READY",
+                            )
                     delivered = ReportDeliveryService(
                         store=self._store, memory_repository=self._memory_repository,
                     ).deliver(
                         session=session, owner_id=owner_id,
                         generated_by_agent_run_id=synthesis_run_id,
                         result=synthesis,
-                        notification_kind="partial" if failures else "completed",
+                        notification_kind="partial" if (failures or synthesis_error) else "completed",
                     )
                     synthesis_artifact_id = delivered["artifacts"][0]["artifact_id"]
                 except Exception as exc:
+                    prior_error = synthesis_error
+                    if prior_error is None and self._memory_repository is not None:
+                        prior_error = "MATRIX_NOT_READY" if synthesis_matrix_payload is None else "REPORT_NOT_READY"
+                    if prior_error is None and matrix_built:
+                        prior_error = "REPORT_NOT_READY"
                     synthesis_error = getattr(exc, "code", "AGENT_OUTPUT_INVALID")
+                    if prior_error:
+                        synthesis_error = prior_error
                     # The model is not the delivery authority.  If it emits
                     # an empty/partial-but-safe structure, reuse the already
                     # validated catalog candidates with the fixed renderer so
@@ -1826,10 +2183,13 @@ class Orchestrator:
                             session=session, owner_id=owner_id,
                             generated_by_agent_run_id=synthesis_run_id,
                             result=fallback_result,
-                            notification_kind="completed",
+                            notification_kind="partial" if prior_error else "completed",
                         )
                         synthesis_artifact_id = delivered["artifacts"][0]["artifact_id"]
-                        synthesis_error = None
+                        # A deterministic candidate artifact is a safe
+                        # fallback, not proof that matrix/canonical report
+                        # generation succeeded.
+                        synthesis_error = prior_error
                     except Exception as fallback_exc:
                         logger.exception(
                             "deterministic report fallback failed for task %s",
@@ -1871,6 +2231,11 @@ class Orchestrator:
         if synthesis_error:
             failures += 1
             failure_error_code = synthesis_error
+            self._emit_synthesis_failure_notification(
+                task=task, session=session, owner_id=owner_id,
+                version=plan_version, code=synthesis_error,
+                retry_attempt=synthesis_attempts if synthesis_attempts > 1 else None,
+            )
         final_status = "completed" if items and failures == 0 else "partial"
         with suppress(InvalidStateTransition):
             self._store.update_task_status(task.research_task_id, owner_id, final_status)
@@ -2921,6 +3286,172 @@ class Orchestrator:
         if not isinstance(value, list):
             return ()
         return tuple(str(item) for item in value)
+
+    def _matrix_dimensions(self, research_task_id: str, plan_version: int) -> list[dict[str, Any]] | None:
+        """Derive comparison dimensions only from the approved plan facets."""
+        getter = getattr(self._store, "get_plan", None)
+        if not callable(getter):
+            return None
+        plan = getter(research_task_id, int(plan_version))
+        if plan is None:
+            return None
+        try:
+            raw_facets = json.loads(plan.facets_json or "[]")
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(raw_facets, list) or not raw_facets or len(raw_facets) > 16:
+            return None
+        dimensions: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for index, raw_facet in enumerate(raw_facets):
+            if not isinstance(raw_facet, str):
+                return None
+            facet = raw_facet.strip()
+            if not facet or len(facet) > 500 or facet in seen:
+                return None
+            seen.add(facet)
+            dimensions.append({
+                "dimension_id": f"facet-{index + 1}",
+                "label": facet,
+                "definition": f"已批准研究范围维度：{facet}",
+                "display_order": index,
+            })
+        return dimensions
+
+    def _build_synthesis_matrix_context(
+        self,
+        *,
+        task,
+        plan_version: int,
+        validated_candidates: Iterable[Mapping[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Build a bounded synthesizer context from real frozen search rows.
+
+        The research store contains only candidate references.  Every matrix
+        candidate therefore has to resolve through its persisted per-selection
+        ``source_search_id`` (or an old task-level handle whose frozen result
+        explicitly contains that candidate).  No global catalog row is used
+        as evidence provenance.
+        """
+        dimensions = self._matrix_dimensions(task.research_task_id, plan_version)
+        if not dimensions:
+            return None
+        catalog_store = getattr(self._adapter, "_store", None)
+        get_job = getattr(catalog_store, "get_search_job", None)
+        get_results = getattr(catalog_store, "get_search_results", None)
+        if not callable(get_job) or not callable(get_results):
+            return None
+        list_selections = getattr(self._store, "list_selections", None)
+        if not callable(list_selections):
+            return None
+        try:
+            selections = list(list_selections(task.research_task_id) or ())
+        except Exception:
+            return None
+        selection_by_id = {
+            str(getattr(item, "catalog_paper_id", "")): item
+            for item in selections
+            if getattr(item, "catalog_paper_id", None)
+        }
+        fallback_search_id = getattr(task, "search_id", None)
+        if not isinstance(fallback_search_id, str) or not fallback_search_id.strip():
+            getter = getattr(self._store, "get_task_search_id", None)
+            if callable(getter):
+                with suppress(Exception):
+                    fallback_search_id = getter(task.research_task_id)
+        fallback_search_id = fallback_search_id.strip() or None if isinstance(fallback_search_id, str) else None
+
+        validated_candidates = list(validated_candidates)
+        validated_ids = {
+            str(item.get("candidate_id", item.get("catalog_paper_id"))).strip()
+            for item in validated_candidates
+            if isinstance(item, Mapping)
+            and isinstance(item.get("candidate_id", item.get("catalog_paper_id")), str)
+            and str(item.get("candidate_id", item.get("catalog_paper_id"))).strip()
+        }
+        if not validated_ids or len(validated_ids) != len(validated_candidates):
+            return None
+        # EvidenceMatrixService expands durable selections when deriving
+        # missing cells.  Refuse a context whose candidate allowlist differs
+        # from that durable projection; otherwise a canonical report could
+        # silently include a Paper outside the evaluator-approved set.
+        if set(selection_by_id) != validated_ids:
+            return None
+
+        now = datetime.now(timezone.utc)
+        context_candidates: list[dict[str, Any]] = []
+        for candidate in validated_candidates:
+            if not isinstance(candidate, Mapping):
+                return None
+            raw_id = candidate.get("candidate_id", candidate.get("catalog_paper_id"))
+            if not isinstance(raw_id, str) or not raw_id.strip():
+                return None
+            paper_id = raw_id.strip()
+            selection = selection_by_id.get(paper_id)
+            search_id = getattr(selection, "source_search_id", None) if selection is not None else None
+            if not isinstance(search_id, str) or not search_id.strip():
+                search_id = fallback_search_id
+            if not isinstance(search_id, str) or _MATRIX_ID_RE.fullmatch(search_id.strip()) is None:
+                return None
+            search_id = search_id.strip()
+            try:
+                job = get_job(search_id)
+                if job is None or str(getattr(job, "status", "")) not in {"completed", "partial"}:
+                    return None
+                expires_at = getattr(job, "expires_at", None)
+                expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=timezone.utc)
+                if expiry.astimezone(timezone.utc) <= now:
+                    return None
+                results = list(get_results(search_id) or ())
+            except Exception:
+                return None
+            matched = next(
+                (
+                    row for row in results
+                    if str(getattr(row, "search_id", "")) == search_id
+                    and str(getattr(row, "catalog_paper_id", "")) == paper_id
+                ),
+                None,
+            )
+            if matched is None or not isinstance(getattr(matched, "snapshot", None), Mapping):
+                return None
+            snapshot = dict(matched.snapshot)
+            snapshot_id = snapshot.get("catalog_paper_id", snapshot.get("candidate_id"))
+            if snapshot_id != paper_id:
+                return None
+            title = snapshot.get("title")
+            if not isinstance(title, str) or not title.strip() or len(title) > 8000:
+                return None
+            raw_abstract = snapshot.get("abstract")
+            if raw_abstract is None:
+                raw_abstract = ""
+            if not isinstance(raw_abstract, str) or len(raw_abstract) > 8000:
+                return None
+            # The frozen catalog snapshot is the evidence object.  Hash its
+            # exact UTF-8 bytes; presentation trimming would create a digest
+            # that no longer identifies the persisted snapshot content.
+            digest = hashlib.sha256(raw_abstract.encode("utf-8")).hexdigest() if raw_abstract else None
+            context_candidates.append({
+                "paper_id": paper_id,
+                "catalog_snapshot_id": search_id,
+                "title": title.strip(),
+                "abstract": raw_abstract,
+                "abstract_digest": digest,
+                "abstract_ref": f"catalog:{paper_id}",
+            })
+        if not context_candidates:
+            return None
+        if len(context_candidates) > 64:
+            return None
+        return {
+            "schema_version": "evidence-report-v1",
+            "plan_version": int(plan_version),
+            "dimensions": dimensions,
+            "candidates": context_candidates,
+            "allowed_paper_ids": [item["paper_id"] for item in context_candidates],
+        }
 
     @staticmethod
     def _facet_of(item: ResearchWorkItem) -> str:

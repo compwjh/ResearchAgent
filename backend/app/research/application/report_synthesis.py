@@ -324,6 +324,10 @@ class SynthesisResult:
     markdown: str
     html: str
     citation_manifest: tuple[dict[str, Any], ...]
+    # Internal-only bridge payload.  ReportDeliveryService deliberately reads
+    # only the public candidate-level fields above, so this optional value can
+    # never enter the immutable artifact envelope.
+    evidence_matrix: Mapping[str, Any] | None = None
 
 
 class ReportSynthesizer:
@@ -444,6 +448,7 @@ class ReportSynthesizer:
         output: Mapping[str, Any],
         validated_candidates: Iterable[Mapping[str, Any]],
         title: str = "深度研究报告",
+        evidence_matrix: Mapping[str, Any] | None = None,
     ) -> SynthesisResult:
         """Consume the actual Synthesizer Run output after semantic validation.
 
@@ -557,7 +562,13 @@ class ReportSynthesizer:
         clean["artifact_ids"] = []
         clean["output_hash"] = report_output_hash({key: value for key, value in clean.items() if key != "output_hash"})
         clean_output = ReportSynthesisOutput.model_validate(clean)
-        return SynthesisResult(clean_output, markdown, render_markdown_html(markdown), tuple(manifest))
+        return SynthesisResult(
+            clean_output,
+            markdown,
+            render_markdown_html(markdown),
+            tuple(manifest),
+            evidence_matrix,
+        )
 
 
 class ReportDeliveryService:
@@ -647,6 +658,10 @@ class ReportDeliveryService:
         payload["output_hash"] = report_output_hash({key: value for key, value in payload.items() if key != "output_hash"})
         output = ReportSynthesisOutput.model_validate(payload)
         key = f"research-report:{task_id}:{version}"
+        message_status = (
+            "partial" if notification_kind == "partial"
+            else "failed" if notification_kind == "failed" else "completed"
+        )
         existing_message = self.memory_repository.get_activity_message(
             session.conversation_id, owner_id, key
         )
@@ -655,10 +670,15 @@ class ReportDeliveryService:
         message = self.memory_repository.create_activity_message(
             session.conversation_id, owner_id, result.markdown,
             activity_idempotency_key=key,
-            status="completed",
+            status=message_status,
             parent_message_id=session.activity_message_id,
         )
-        message = self.memory_repository.update_message(message.message_id, owner_id, content=result.markdown, status="completed") or message
+        message = self.memory_repository.update_message(
+            message.message_id,
+            owner_id,
+            content=result.markdown,
+            status=message_status,
+        ) or message
         self.store.update_session_links(session.research_session_id, owner_id, final_message_id=message.message_id)
         notification = self.notify(
             owner_id=owner_id, research_session_id=session.research_session_id,

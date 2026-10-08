@@ -8,7 +8,6 @@ their existing services.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -233,12 +232,20 @@ class EvidenceMatrixService:
                     if cell.relation == "missing":
                         limitations.append(f"{claim.claim_id}/{paper_id}/{dimension.dimension_id}: {cell.missing_reason}")
         # All validation has completed before any matrix rows are replaced.
-        for item in parsed_claims:
-            self.store.save_claim(item)
-        for item in parsed_evidence:
-            self.store.save_claim_evidence(item)
-        self.store.replace_comparison_dimensions(task_id, version, parsed_dimensions)
-        self.store.replace_comparison_cells(task_id, version, output_cells)
+        # ResearchStore owns one transaction for all four projections.  Do not
+        # fall back to four independent writes: that would make an error after
+        # the first table observable as an orphaned matrix.
+        persist = getattr(self.store, "persist_evidence_matrix", None)
+        if not callable(persist):
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix store transaction unavailable")
+        persist(
+            task_id,
+            version,
+            parsed_claims,
+            parsed_evidence,
+            parsed_dimensions,
+            output_cells,
+        )
         return self._projection(task_id, version, parsed_claims, parsed_evidence, parsed_dimensions, output_cells, limitations)
 
     def read_matrix(self, task_id: str, owner_id: str, *, plan_version: int | None = None) -> dict:
