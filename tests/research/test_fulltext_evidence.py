@@ -87,6 +87,26 @@ def test_fulltext_upgrade_is_allowlisted_and_persists_locator_provenance(tmp_pat
     assert store.get_evidence_upgrade("claim-1").to_dict() == result.to_dict()
 
 
+def test_indexing_document_link_is_allowed_only_when_manifest_is_verified(tmp_path: Path):
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    _task(store)
+    store.upsert_document_link(ResearchDocumentLink(
+        "task-029", "paper-a", "document-a", "item-a", "indexing",
+    ))
+    service = EvidenceUpgradeService(
+        store,
+        search=lambda *_args, **_kwargs: [Hit("document-a", "paper.pdf", 3, 2, "indexed full text", 0.9, page_end=4)],
+        manifest_reader=lambda document_id, chunker: _manifest(document_id),
+        generation_reader=lambda: {"run_id": "generation-1"},
+    )
+
+    result = service.upgrade(
+        "task-029", claim_id="claim-indexing", question="q", document_ids=["document-a"],
+    )
+
+    assert result.status == "upgraded"
+
+
 def test_unapproved_document_and_unlocatable_hit_fail_closed(tmp_path: Path):
     store = ResearchStore(tmp_path / "research.sqlite3")
     _task(store)

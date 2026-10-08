@@ -12,13 +12,14 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from backend.app.research.application.evidence_matrix import EvidenceMatrixService
+from backend.app.research.application.evidence_upgrade import EvidenceUpgradeService
 from backend.app.research.application.report_synthesis import (
     ReportSynthesisError,
     ReportSynthesizer,
     _safe_text_input,
     render_markdown_html,
 )
-from backend.app.research.application.evidence_matrix import EvidenceMatrixService
 from backend.app.research.domain.models import ResearchReport
 
 
@@ -220,6 +221,15 @@ class ReportGenerationService:
         task = self.store.get_task(research_task_id, owner_id)
         if task is None:
             raise EvidenceReportError("research task not found", code="TASK_NOT_FOUND")
+        # An explicit report action must re-check any previously upgraded
+        # full-text locator against the current KB manifest/generation.  This
+        # only projects existing EvidenceUpgrade state; it does not reopen a
+        # task, create an AgentRun, or introduce a second report path.
+        if callable(getattr(self.store, "list_evidence_upgrades", None)):
+            try:
+                EvidenceUpgradeService(self.store).revalidate(research_task_id)
+            except Exception as error:
+                raise EvidenceReportError("full-text evidence validation failed", code="REPORT_NOT_READY") from error
         matrix = EvidenceMatrixService(self.store).read_matrix(research_task_id, owner_id, plan_version=plan_version)
         version = int(report_version or self.store.next_report_version(research_task_id, owner_id))
         if version < 1:

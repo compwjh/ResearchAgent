@@ -153,6 +153,38 @@ def test_manual_upload_resolution_closes_issue_without_rewriting_report(tmp_path
     assert store.list_document_links("task-upload")[0].document_id == "document-1"
 
 
+def test_upload_projects_canonical_indexing_status_to_document_link(tmp_path: Path, monkeypatch):
+    from backend.app.api import routes_kb
+
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    _task(store, "task-upload-route")
+    issue = store.record_acquisition_issue(
+        candidate_id="paper-upload-route", task_id="task-upload-route",
+        reason_code="IMPORT_FAILED", actions=["upload"],
+        import_item_id="item-upload-route", batch_id="batch-upload-route",
+    )
+
+    async def fake_upload(_request, _file):
+        return {
+            "document_id": "document-upload-route",
+            "status": "indexing",
+            "file_name": "paper.pdf",
+            "source_sha256": "a" * 64,
+        }
+
+    monkeypatch.setattr(routes_paper, "_research_issue_store", lambda: store)
+    monkeypatch.setattr(routes_kb, "upload_document", fake_upload)
+
+    result = asyncio.run(routes_paper.upload_paper_acquisition_issue(
+        issue.issue_id, SimpleNamespace(), object(),
+        identity_verdict="confirmed", identity_confirmed=True,
+    ))
+
+    assert result["report_action"] == "generate_new_version"
+    link = store.list_document_links("task-upload-route")[0]
+    assert link.status == "indexing"
+
+
 def test_issue_actions_follow_latest_item_state(tmp_path: Path):
     store = ResearchStore(tmp_path / "research.sqlite3")
     _task(store, "task-state")
