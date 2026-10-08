@@ -28,6 +28,9 @@
 
 ## 变更日志
 
+- 2026-10-08：当前审计确认来源 API 的静态 verified_years 不等于目录/字段/可信导入覆盖，按真实证据收紧并补 USENIX 新建单元 year；旧 NULL 单元不批量回填。后续年度扩展先固定官方页面样本，再沿既有 parser/source/detail 合同实现和受控验证，不能仅扩充 URL 常量便标已验证。
+- 2026-10-08：主会话实际读取 NDSS 2025 官方 accepted-papers（https://www.ndss-symposium.org/ndss2025/accepted-papers/）与 IEEE S&P 2025 官方 accepted-papers（https://sp2025.ieee-security.org/accepted-papers.html），页面存在可读标题/作者列表；这是后续受控抓取入口线索，不是生产 API、完整字段或 PDF 导入成功证据。CCS 2024 官方列表存在但身份/详情关联仍须验证，不取消已有 NO-GO。
+
 - 2026-09-20：承接原 Task04 已有会议代码，补足其未实现的官网优先和覆盖证明。
 - 2026-09-20：Luna high 子 Agent 完成 IEEE S&P 2024 官方 HTML 路由、固定样本、字段缺失告警和 PDF 响应拒绝；主 Agent 复跑 76 个定向测试，ruff、compileall、git diff --check 通过。Task08 仅可启用已验证的 IEEE 2024，其余来源继续按 NO-GO 处理。
 - 2026-09-20：Luna high 子 Agent 补齐 NDSS 2024 官方 accepted-papers HTML 路由、固定样本、字段缺失告警和 PDF 响应拒绝；仅验证 2024 固定样本子集，2021–2023、2025 仍未验证。CCS 官方节目页仍因 JavaScript/入口身份无法在受控样本中可靠隔离，保持 NO-GO。

@@ -12,6 +12,17 @@
 
 ## 分派与归属
 
+### 2026-10-08 增量进度
+
+- 自然语言论文数量约束与批次持久快照恢复均已独立复审通过，分别提交为 `9d16d22`、`4b07ffa`；此前失败的真实研究 E2E 证据保留。
+- 报告新版本前端动作仍在修复跨任务响应竞态；复审通过前不作为已验收能力部署。
+- NDSS 2025 仅新增官方目录解析样本，尚待独立复审；不等同于摘要、全文或完整年度验收。
+- PDF 上传与全文证据升级、新报告交付的后端接缝继续核对。不得以上传成功冒充全文已进入报告，不得伪造 AgentRun 或更改旧报告。
+- 上述定向门禁通过后重启候选服务，再用新的 run_id 跑自然语言五篇研究 API E2E；全量回归留到最终收口。
+- 前端竞态与 NDSS 2025 runtime 接线已复审并提交为 `725ad09`、`005f707`。8000 候选健康检查返回 ready；随后发现并发后端全文恢复候选也已落盘，运行代码不能仅用 HEAD 代表，故暂停本轮 E2E 写入，不将其计为成功证据。待该切片复审、重新启动后再用新 run_id 验证。
+- 全文恢复切片已复审通过并提交 `4e0cec9`。服务重新启动后 `/api/ready` 为 true；本轮禁止并发业务代码修改，由 tester 使用新的 reviewed run 验证自然语言五篇研究链。原暂停 run 没有 Intake/审批/下载写入，证据保留。
+- 架构师依据 `current-remaining-scope-audit.md` 裁决：恢复后的新旧 `ResearchReport` 与版本下载链接为当前硬验收；额外 `ResearchArtifact/session message/notification` 并未在恢复条款明确要求，不以此扩张本次阻塞。原审查中的该项仅保留为条件性建议；新 PDF 指论文全文，不新增报告 PDF 格式。
+
 - backend-tester：逐年来源证据矩阵，current-source-coverage-audit.md。
 - backend-reviewer：自动导入及恢复接缝，current-recovery-audit.md。
 - tester：Semantic Scholar 有界真实 API，current-semantic-live-report.md / evidence.json。

@@ -1,0 +1,114 @@
+{
+  "schema_version": "spec032-task14-research-e2e-candidate-v1",
+  "spec": "032",
+  "task": "14",
+  "run_id": "spec032-task14-research-e2e-candidate-unreviewed-20261007T172607Z",
+  "generated_at": "2026-10-07T17:26:07Z",
+  "decision": "BLOCKED",
+  "candidate_unreviewed": true,
+  "formal_acceptance": false,
+  "scope": "natural_language_research_e2e_preflight_only",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "branch": "codex/spec032-final-acceptance",
+    "commit": "005f707",
+    "process_session": "8648",
+    "observed_health_model": "qwen3.8:27b",
+    "requested_message_model": "qwen3.5:9b",
+    "requested_reasoning_effort": "off"
+  },
+  "constraints": {
+    "new_conversation_created": false,
+    "new_research_session_created": false,
+    "plan_approved": false,
+    "research_task_created": false,
+    "candidate_evaluation_started": false,
+    "paper_download_or_import_started": false,
+    "report_generated": false,
+    "global_model_changed": false,
+    "threshold_changed": false,
+    "env_read_or_changed": false,
+    "old_evidence_overwritten": false
+  },
+  "preflight_requests": [
+    {
+      "id": "ready-01",
+      "method": "GET",
+      "path": "/api/ready",
+      "headers": {},
+      "status": 200,
+      "response": {
+        "ready": true,
+        "warmup": {
+          "jieba": "ready",
+          "ollama_tags": "ready",
+          "embedding": "ready",
+          "qdrant": "ready"
+        }
+      },
+      "redaction": "No credentials or cookies recorded. Warmup timing/error fields omitted from this summary only."
+    },
+    {
+      "id": "health-01",
+      "method": "GET",
+      "path": "/api/health",
+      "headers": {},
+      "status": 200,
+      "response": {
+        "status": "ok",
+        "model": "qwen3.8:27b",
+        "paper_discovery_enabled": true,
+        "models_present": true
+      },
+      "redaction": "Model inventory omitted; no credentials, cookies, or authorization headers recorded."
+    }
+  ],
+  "not_sent_request": {
+    "method": "POST",
+    "path": "/api/conversations/messages",
+    "body": {
+      "content": "请进行一次深度研究。主题是USENIX Security 2024中的security/privacy方法，目标是比较至少5篇方法与局限，并且最多选择5篇论文，目标论文数: 5，来源限定为USENIX Security，输出中文Markdown报告并使用行内引用。时间范围是2024-2024。",
+      "model": "qwen3.5:9b",
+      "mode": "normal",
+      "reasoning_effort": "off"
+    },
+    "status": "not_sent",
+    "reason": "主 agent 暂停新 E2E 写入；当前服务可能载入尚未独立复审的生产切片。"
+  },
+  "state_trace": [
+    {
+      "stage": "preflight",
+      "status": "ready",
+      "evidence": ["ready-01", "health-01"]
+    },
+    {
+      "stage": "natural_language_intake",
+      "status": "not_started",
+      "reason": "UNREVIEWED_RUNTIME_HOLD"
+    }
+  ],
+  "entities": {
+    "conversation_id": null,
+    "research_session_id": null,
+    "plan_version": null,
+    "plan_output_hash": null,
+    "approval_request_id": null,
+    "research_task_id": null,
+    "search_id": null,
+    "artifact_ids": []
+  },
+  "artifacts": [],
+  "result": {
+    "code": "UNREVIEWED_RUNTIME_HOLD",
+    "completed_to": "read-only readiness and health preflight",
+    "blocked_before": "natural-language conversation creation",
+    "retry_allowed": true,
+    "retry_condition": "Complete the independent review of the newly landed production slice, restart the service, confirm the new commit/runtime, then create a new run_id."
+  },
+  "preserved_evidence": [
+    "docs/sdd/plans/032/artifacts/task-14/current-research-e2e-report.md",
+    "docs/sdd/plans/032/artifacts/task-14/current-research-e2e-evidence.json",
+    "docs/sdd/plans/032/artifacts/task-14/evidence.json"
+  ]
+}
