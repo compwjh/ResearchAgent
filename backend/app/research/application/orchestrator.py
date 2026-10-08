@@ -1578,6 +1578,13 @@ class Orchestrator:
         synthesis_matrix_context: dict[str, Any] | None = None
         synthesis_matrix_payload: dict[str, Any] | None = None
         synthesis_matrix_error: str | None = None
+        # Freeze the exact candidate set handed to the synthesizer.  The
+        # report consumer must not independently re-run the evaluator floor
+        # after the model has produced citations: a different bounded prefix
+        # would make a valid citation look out of scope and can also invalidate
+        # the server-owned snapshot context.
+        synthesis_validated_candidates: list[dict[str, Any]] | None = None
+        synthesis_candidate_sources: dict[str, str] = {}
         synthesis_attempts = 1
         synthesis_error: str | None = None
         evaluator_outputs: list[dict] = []
@@ -1801,22 +1808,6 @@ class Orchestrator:
                         metadata_resolver,
                         task.goal,
                     )
-                    if len(validated) >= _MIN_REPORT_CANDIDATES:
-                        self._persist_agent_selections(
-                            task.research_task_id,
-                            {
-                                "kept": [
-                                    {
-                                        "candidate_id": item["candidate_id"],
-                                        "keep": True,
-                                        "evidence_refs": list(item["evidence_refs"]),
-                                    }
-                                    for item in validated
-                                ]
-                            },
-                            set(recall_allowlist),
-                            target_paper_count=task.target_paper_count,
-                        )
                 # This is the single final selection set for all agent-path
                 # consumers: persistence, synthesizer input, matrix context,
                 # acquisition and terminal accounting must not each apply a
@@ -1828,6 +1819,38 @@ class Orchestrator:
                     failed_ids.add(item.work_item_id)
                     self._fail_work_item(task.research_task_id, item, synthesis_error)
                     continue
+                synthesis_validated_candidates = [dict(candidate) for candidate in validated]
+                for dependency_id, dependency_output in completed_outputs.items():
+                    dependency_item = item_by_id.get(dependency_id)
+                    if dependency_item is None or dependency_item.role != "search-worker":
+                        continue
+                    search_id = dependency_output.get("search_id")
+                    if not isinstance(search_id, str) or not search_id.strip():
+                        continue
+                    for candidate_id in dependency_output.get("candidates", ()) if isinstance(dependency_output.get("candidates"), list) else ():
+                        if isinstance(candidate_id, str) and candidate_id.strip():
+                            synthesis_candidate_sources.setdefault(candidate_id.strip(), search_id.strip())
+                # Reconcile the durable selection projection with the exact
+                # frozen set sent to the model before resolving matrix
+                # snapshots.  This preserves per-candidate source_search_id
+                # provenance and prevents a later floor pass from replacing a
+                # cited candidate with a different recalled row.
+                self._persist_agent_selections(
+                    task.research_task_id,
+                    {
+                        "kept": [
+                            {
+                                "candidate_id": candidate["candidate_id"],
+                                "keep": True,
+                                "evidence_refs": list(candidate["evidence_refs"]),
+                            }
+                            for candidate in synthesis_validated_candidates
+                        ]
+                    },
+                    {candidate["candidate_id"] for candidate in synthesis_validated_candidates},
+                    candidate_sources=synthesis_candidate_sources,
+                    target_paper_count=task.target_paper_count,
+                )
                 work_item_input["validated_candidates"] = validated
                 work_item_input["citation_allowlist"] = [
                     {"citation_ref": ref, "candidate_id": candidate["candidate_id"]}
@@ -2172,6 +2195,31 @@ class Orchestrator:
                             set(recall_ids),
                             target_paper_count=task.target_paper_count,
                         )
+                if synthesis_validated_candidates is not None:
+                    # The synthesizer output and its citation allowlist are
+                    # authoritative for this run.  Reuse the same validated
+                    # records rather than the independent post-run floor
+                    # calculation above, which may choose a different
+                    # recalled candidate due to ordering/metadata drift.
+                    validated_candidates = [
+                        dict(candidate) for candidate in synthesis_validated_candidates
+                    ]
+                    self._persist_agent_selections(
+                        task.research_task_id,
+                        {
+                            "kept": [
+                                {
+                                    "candidate_id": candidate["candidate_id"],
+                                    "keep": True,
+                                    "evidence_refs": list(candidate["evidence_refs"]),
+                                }
+                                for candidate in validated_candidates
+                            ]
+                        },
+                        {candidate["candidate_id"] for candidate in validated_candidates},
+                        candidate_sources=synthesis_candidate_sources,
+                        target_paper_count=task.target_paper_count,
+                    )
                 validated_candidates = _bound_agent_selection(
                     validated_candidates, task.target_paper_count
                 )

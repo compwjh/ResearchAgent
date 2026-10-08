@@ -390,6 +390,7 @@ def _run_matrix_agent_scenario(
     target_paper_count: int = 1,
     minimum_paper_count: int | None = None,
     candidate_count: int = 1,
+    validated_sequences: list[list[dict]] | None = None,
 ):
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     conversation, user, activity = memory.create_conversation_messages(
@@ -547,9 +548,18 @@ def _run_matrix_agent_scenario(
             {"id": "syn", "task_type": "synthesize_preliminary_report", "role": "synthesizer", "depends_on": ["e1"], "params": {}},
         ),
     ))
+    validated_calls = {"count": 0}
+
+    def validated_candidates(*_args, **_kwargs):
+        if validated_sequences:
+            index = min(validated_calls["count"], len(validated_sequences) - 1)
+            validated_calls["count"] += 1
+            return [dict(item) for item in validated_sequences[index]]
+        return list(candidates)
+
     monkeypatch.setattr(
         "backend.app.research.application.orchestrator._validated_evaluator_candidates",
-        lambda *_args, **_kwargs: list(candidates),
+        validated_candidates,
     )
     monkeypatch.setattr(
         "backend.app.research.application.orchestrator._promote_catalog_floor",
@@ -587,6 +597,41 @@ def _run_matrix_agent_scenario(
         store=store, planner=planner, agent_runner=Runner(), probe=Probe(), memory_repository=memory,
     ).run(task.research_task_id, "owner")
     return result, store, task, memory
+
+
+def test_synthesis_keeps_the_same_candidate_allowlist_after_final_projection_changes(
+    tmp_path, monkeypatch
+) -> None:
+    """A valid model citation must not be invalidated by a second floor pass."""
+    candidates = [
+        {
+            "candidate_id": f"paper-{chr(ord('a') + index)}",
+            "verified": True,
+            "evidence_refs": [f"catalog:paper-{chr(ord('a') + index)}"],
+        }
+        for index in range(5)
+    ]
+    result, store, task, _memory = _run_matrix_agent_scenario(
+        tmp_path,
+        monkeypatch,
+        candidate_count=5,
+        validated_sequences=[
+            candidates,
+            [*candidates[:4], {
+                "candidate_id": "paper-x",
+                "verified": True,
+                "evidence_refs": ["catalog:paper-x"],
+            }],
+        ],
+    )
+
+    assert result.status == "completed"
+    assert result.error_code is None
+    assert result.selected_count == 5
+    assert {item.catalog_paper_id for item in store.list_selections(task.research_task_id)} == {
+        item["candidate_id"] for item in candidates
+    }
+    assert store.list_research_reports(task.research_task_id, "owner")
 
 
 def test_matrix_build_failure_cannot_close_agent_task_as_completed(tmp_path, monkeypatch) -> None:
