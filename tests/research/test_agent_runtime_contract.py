@@ -16,6 +16,7 @@ from backend.app.research.application.agent_runtime import (
     FakeTool,
     ResearchAgentRunner,
     RoleCapabilityRegistry,
+    _hash,
     _OllamaRunnerAdapter,
 )
 from backend.app.research.application.approval_service import PlanApprovalService
@@ -159,6 +160,48 @@ def test_fake_output_is_structured_and_checkpointed():
     assert result.checkpoint_ref.startswith("checkpoint:run-1:")
     assert len(result.checkpoint_hash) == 64
     assert result.usage == {"model_loops": 1, "tool_calls": 0}
+
+
+@pytest.mark.parametrize("role", ["search_worker", "paper_evaluator", "research_critic", "synthesizer"])
+def test_runtime_binds_server_work_item_id_before_hash_and_checkpoint(role):
+    output = _output(role)
+    output["work_item_id"] = "model-owned"
+    runner = _runner(role=role, model=FakeModel({"output_json": output}))
+
+    result = runner.run(AgentRunInput(
+        f"identity-{role}", "session-1", role,
+        skill_snapshot=_skill(role), research_task_id="task-1", work_item_id="server-work-item",
+    ))
+
+    assert result.status == "completed", result.to_dict()
+    assert result.output_json["work_item_id"] == "server-work-item"
+    expected_hash = _hash({key: value for key, value in result.output_json.items() if key != "output_hash"})
+    assert result.output_hash == expected_hash
+    assert result.output_json["output_hash"] == expected_hash
+    checkpoint = runner._checkpoints[result.checkpoint_ref]
+    assert checkpoint["output"]["work_item_id"] == "server-work-item"
+    assert checkpoint["output"]["output_hash"] == expected_hash
+
+
+@pytest.mark.parametrize(
+    ("field_name", "conflicting_value"),
+    [
+        ("research_task_id", "other-task"),
+        ("research_session_id", "other-session"),
+        ("owner_id", "other-owner"),
+    ],
+)
+def test_runtime_rejects_conflicting_identity_reference(field_name, conflicting_value):
+    output = _output("research_critic")
+    output[field_name] = conflicting_value
+    result = _runner(role="research_critic", model=FakeModel({"output_json": output})).run(AgentRunInput(
+        "identity-conflict", "session-1", "research_critic",
+        skill_snapshot=_skill("research_critic"), research_task_id="task-1", work_item_id="server-work-item",
+        owner_id="owner",
+    ))
+
+    assert result.status == "failed"
+    assert result.error_code == "AGENT_OUTPUT_INVALID"
 
 
 def test_invalid_output_retries_at_most_four_attempts():

@@ -8,10 +8,6 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from tests.research.test_research_plan_approval_contract import OWNER, _output, _setup
-from tests.research.test_agent_runtime_contract import _output as _runtime_output
-from tests.research.test_agent_runtime_contract import _skill as _runtime_skill
-from tests.research.test_research_legacy_cleanup_contract import _legacy
 
 from backend.app.research.application.agent_runtime import (
     AgentRunInput,
@@ -23,10 +19,14 @@ from backend.app.research.application.agent_runtime import (
     _OllamaRunnerAdapter,
     _safe_catalog_metadata,
 )
-from backend.app.research.application.orchestrator import _canonicalize_search_worker_binding, _catalog_evidence_view
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
 from backend.app.research.application.cleanup_snapshot import build_cross_store_snapshot_provider
+from backend.app.research.application.orchestrator import _canonicalize_search_worker_binding, _catalog_evidence_view
 from backend.app.research.infrastructure.research_store import ResearchStore
+from tests.research.test_agent_runtime_contract import _output as _runtime_output
+from tests.research.test_agent_runtime_contract import _skill as _runtime_skill
+from tests.research.test_research_legacy_cleanup_contract import _legacy
+from tests.research.test_research_plan_approval_contract import OWNER, _output, _setup
 
 
 class _FakeResearchService:
@@ -73,7 +73,11 @@ def test_ollama_adapter_sends_role_contract_before_context():
 
     adapter = _OllamaRunnerAdapter(Chat(), model_name="test-model", effort="off")
     response = adapter.invoke(
-        {"role": "search_worker", "tool_results": [{"catalog_paper_ids": ["paper-1"]}]},
+        {
+            "role": "search_worker",
+            "server_work_item_id": "task:s1",
+            "tool_results": [{"catalog_paper_ids": ["paper-1"]}],
+        },
     )
 
     messages = captured["messages"]
@@ -84,6 +88,8 @@ def test_ollama_adapter_sends_role_contract_before_context():
         assert field in contract
     assert "Do not call a tool again" in contract
     assert "download or import PDFs" in contract
+    assert "task:s1" in contract
+    assert "server-provided work_item_id" in contract
     assert '"catalog_paper_ids"' in messages[1]["content"]
     assert response["output_json"]["schema_version"] == "runtime-v1"
 

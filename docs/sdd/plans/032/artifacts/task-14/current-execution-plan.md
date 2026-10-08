@@ -28,6 +28,12 @@
 - tester：Semantic Scholar 有界真实 API，current-semantic-live-report.md / evidence.json。
 - 编码与后续验收依据以上固定报告分派，不要求子 Agent 重扫项目。模型只通过本次调用覆盖，未修改长期配置。
 
+## 2026-10-09 后续风险：推理档位广告与缓存不一致
+
+- `qwen3.5:9b/off` 的失败证据不是 provider 版本变更证明：失败窗口的 resolver 命中了仅含 `low` 的 24 小时能力缓存，随后同一部署的受控 `refresh=1` probe 实际返回 `off/low/medium/high/xhigh`。
+- 当前 `/api/models` 对本地模型静态广告五档，不能当作真实能力覆盖；它可能与 `reasoning-options`/消息 resolver 的缓存结果冲突，并误导用户选择最终返回 `REASONING_EFFORT_UNSUPPORTED` 的档位。`refresh=1` 只刷新能力缓存，不是业务研究重试，也不产生研究/报告证据。
+- 收口前必须保留上述失败 run，并由 backend-dev 以单一能力来源补一致性测试；之后用全新 conversation/run 验证 `qwen3.5:9b + off`。不得省略档位、替换模型或把当前 provider 结果外推成永久支持。
+
 ## 停止与失败记录
 
 保存每次真实失败请求和脱敏响应，修复后用新 run_id，禁止覆盖旧证据。遇授权或登录阻塞先尽可能验证公开来源与上传路径；确需用户帮助时明确候选、网站、操作和继续按钮。未经全部门禁通过，Spec032 保持实施中，不请求用户代为排查。

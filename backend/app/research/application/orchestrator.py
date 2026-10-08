@@ -122,6 +122,36 @@ def _work_item_output(value) -> dict:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
+def _completed_output_envelope(value) -> tuple[dict, dict, list[dict]] | None:
+    """Read a completed AgentRun envelope without treating failure as output.
+
+    WorkItem ``output_json`` stores the whole ``AgentRunOutput.to_dict()``
+    envelope.  Recovery must distinguish that durable wrapper from the inner
+    model output: a failed/null/malformed wrapper is not evidence and must not
+    be promoted into ``completed_outputs``.  Tool results are returned only as
+    bounded mappings for the existing catalog-evidence projection.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        envelope = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(envelope, dict) or envelope.get("status") != "completed":
+        return None
+    if envelope.get("schema_version") not in (None, "runtime-v1"):
+        return None
+    if envelope.get("error_code") not in (None, ""):
+        return None
+    output = envelope.get("output_json")
+    if not isinstance(output, dict):
+        return None
+    raw_tool_results = envelope.get("tool_results", [])
+    if not isinstance(raw_tool_results, list) or any(not isinstance(item, dict) for item in raw_tool_results):
+        return None
+    return dict(envelope), dict(output), [dict(item) for item in raw_tool_results]
+
+
 def _recall_allowlist_from_search_outputs(search_outputs: Iterable[Mapping[str, Any]]) -> set[str]:
     """Collect the catalog IDs the Search Workers actually recalled.
 
@@ -1541,7 +1571,15 @@ class Orchestrator:
 
     def _run_agent_work_items(self, *, task, owner_id: str, plan_version: int) -> OrchestratorResult:
         """Create and dispatch one complete AgentRunInput per WorkItem."""
-        from backend.app.research.application.agent_runtime import ROLE_SKILL_DEFAULTS, AgentRunInput
+        from backend.app.research.application.agent_runtime import (
+            ROLE_SKILL_DEFAULTS,
+            AgentRunInput,
+            AgentRuntimeError,
+            ResearchAgentRunner,
+            _hash,
+            _safe_search_id,
+            _trusted_catalog_search_id,
+        )
 
         session = self._store.get_session_by_task(task.research_task_id, owner_id)
         if session is None:
@@ -1618,6 +1656,263 @@ class Orchestrator:
         completed_outputs: dict[str, dict] = {}
         completed_search_evidence: dict[str, list[dict]] = {}
         item_by_id = {item.work_item_id: item for item in items}
+        hydration_invalid_ids: set[str] = set()
+
+        def dependencies_for(work_item) -> list[str]:
+            try:
+                raw_dependencies = json.loads(work_item.depends_on_json or "[]")
+            except (TypeError, ValueError):
+                raw_dependencies = []
+            return [str(dep) for dep in raw_dependencies] if isinstance(raw_dependencies, list) else []
+
+        def valid_runtime_binding(output: Mapping[str, Any], work_item) -> bool:
+            """Check only durable WorkItem identity before the shared validator."""
+            if output.get("work_item_id") != work_item.work_item_id:
+                return False
+            task_id = output.get("research_task_id")
+            return task_id is None or task_id == task.research_task_id
+
+        runtime_validator = ResearchAgentRunner(store=self._store)
+
+        def checkpoint_binds_envelope(
+            envelope: Mapping[str, Any],
+            output: Mapping[str, Any],
+            tool_results: list[dict],
+            agent_run,
+            work_item,
+        ) -> bool:
+            """Require the immutable runtime checkpoint to back the envelope."""
+            checkpoint_ref = envelope.get("checkpoint_ref")
+            checkpoint_hash = envelope.get("checkpoint_hash")
+            if (
+                not isinstance(checkpoint_ref, str)
+                or not checkpoint_ref.strip()
+                or not isinstance(checkpoint_hash, str)
+                or not checkpoint_hash.strip()
+                or agent_run.checkpoint_ref != checkpoint_ref
+                or agent_run.checkpoint_hash != checkpoint_hash
+            ):
+                return False
+            try:
+                checkpoint = self._store.get_agent_checkpoint(checkpoint_ref, owner_id)
+            except Exception:
+                return False
+            if checkpoint is None or not isinstance(checkpoint.content, str):
+                return False
+            if (
+                checkpoint.owner_id != owner_id
+                or checkpoint.research_session_id != session.research_session_id
+                or checkpoint.research_task_id != task.research_task_id
+                or checkpoint.work_item_id != work_item.work_item_id
+                or checkpoint.agent_run_id != envelope.get("agent_run_id")
+                or checkpoint.continued_from_agent_run_id != agent_run.continued_from_agent_run_id
+                or checkpoint.schema_version != output.get("schema_version")
+                or checkpoint.content_hash != checkpoint_hash
+                or hashlib.sha256(checkpoint.content.encode("utf-8")).hexdigest() != checkpoint.content_hash
+            ):
+                return False
+            try:
+                checkpoint_payload = json.loads(checkpoint.content)
+            except (TypeError, ValueError):
+                return False
+            return (
+                isinstance(checkpoint_payload, Mapping)
+                and _hash(checkpoint_payload) == checkpoint_hash
+                and checkpoint_payload.get("schema_version") == checkpoint.schema_version
+                and checkpoint_payload.get("output") == dict(output)
+                and checkpoint_payload.get("tool_results") == tool_results
+                and isinstance(checkpoint_payload.get("tool_results"), list)
+                and all(isinstance(item, Mapping) for item in checkpoint_payload["tool_results"])
+            )
+
+        # A restart loads terminal WorkItems from the store before dispatching
+        # any queued consumer.  Re-project only valid, runtime-owned output
+        # envelopes into this pass's context; do not reopen or re-run terminal
+        # rows.  The topological order makes Search output available for the
+        # persisted Evaluator allowlist check below.
+        for item in items:
+            persisted_item = self._store.get_work_item(item.work_item_id) or item
+            if persisted_item.status != "completed":
+                continue
+            envelope_data = _completed_output_envelope(persisted_item.output_json)
+            envelope = envelope_data[0] if envelope_data is not None else None
+            output = envelope_data[1] if envelope_data is not None else None
+            tool_results = envelope_data[2] if envelope_data is not None else []
+            role = role_map.get(persisted_item.role, persisted_item.role)
+            valid = output is not None and valid_runtime_binding(output, persisted_item)
+            validated_output: dict[str, Any] | None = None
+            try:
+                persisted_input = json.loads(persisted_item.input_json or "{}")
+            except (TypeError, ValueError):
+                persisted_input = {}
+            if not isinstance(persisted_input, Mapping):
+                persisted_input = {}
+            if valid:
+                # The WorkItem row stores a complete AgentRun envelope.  The
+                # inner digest, wrapper digest, and the immutable AgentRun
+                # row must all agree before any output can re-enter context.
+                expected_hash = _hash({key: value for key, value in output.items() if key != "output_hash"})
+                agent_run_id = envelope.get("agent_run_id") if envelope else None
+                agent_run = None
+                if (
+                    envelope is None
+                    or envelope.get("schema_version") != "runtime-v1"
+                    or envelope.get("error_code") not in (None, "")
+                    or not isinstance(agent_run_id, str)
+                    or not agent_run_id.strip()
+                    or envelope.get("output_hash") != expected_hash
+                    or output.get("output_hash") != expected_hash
+                ):
+                    valid = False
+                else:
+                    with suppress(Exception):
+                        agent_run = self._store.get_agent_run(agent_run_id, owner_id)
+                    valid = (
+                        agent_run is not None
+                        and agent_run.status == "completed"
+                        and agent_run.research_session_id == session.research_session_id
+                        and agent_run.research_task_id == task.research_task_id
+                        and agent_run.work_item_id == persisted_item.work_item_id
+                        and agent_run.role == role
+                        and agent_run.skill_name == ROLE_SKILL_DEFAULTS.get(role)
+                        and agent_run.output_hash == expected_hash
+                    )
+                    if valid:
+                        valid = checkpoint_binds_envelope(
+                            envelope,
+                            output,
+                            tool_results,
+                            agent_run,
+                            persisted_item,
+                        )
+            if valid and role not in ROLE_SKILL_DEFAULTS:
+                valid = False
+            if valid:
+                try:
+                    validated_output = runtime_validator._validate_output(
+                        role,
+                        output,
+                        require_synthesis_matrix=(
+                            role == "synthesizer"
+                            and isinstance(persisted_input.get("matrix_context"), Mapping)
+                            and bool(persisted_input.get("matrix_context"))
+                        ),
+                        search_source_scope=persisted_input if role == "search_worker" else None,
+                        search_skill_name=ROLE_SKILL_DEFAULTS.get(role),
+                        expected_work_item_id=persisted_item.work_item_id,
+                        expected_research_task_id=task.research_task_id,
+                        expected_research_session_id=session.research_session_id,
+                        expected_owner_id=owner_id,
+                    )
+                except (AgentRuntimeError, KeyError, TypeError, ValueError):
+                    valid = False
+            if valid and role == "search_worker":
+                candidates = validated_output.get("candidates") if validated_output else None
+                successful_catalog = [
+                    result for result in tool_results
+                    if result.get("name") == "search_paper_catalog" and result.get("status") == "ok"
+                ]
+                trusted_handle = _trusted_catalog_search_id(tool_results)
+                output_handle = _safe_search_id(validated_output.get("search_id")) if validated_output else None
+                expected_source_ref = f"search:{trusted_handle}" if trusted_handle else None
+                catalog_ids: set[str] = set()
+                catalog_results_valid = bool(successful_catalog)
+                for result in successful_catalog:
+                    result_ids = result.get("catalog_paper_ids", [])
+                    result_refs = result.get("source_refs")
+                    if (
+                        not isinstance(result_ids, list)
+                        or any(not isinstance(candidate, str) or not candidate.strip() for candidate in result_ids)
+                        or not isinstance(result_refs, list)
+                        or result_refs != [expected_source_ref]
+                    ):
+                        catalog_results_valid = False
+                        continue
+                    catalog_ids.update(candidate.strip() for candidate in result_ids)
+                safe_summary = validated_output.get("safe_summary") if validated_output else None
+                valid = (
+                    catalog_results_valid
+                    and trusted_handle is not None
+                    and output_handle == trusted_handle
+                    and isinstance(candidates, list)
+                    and all(isinstance(candidate, str) and candidate.strip() for candidate in candidates)
+                    and set(candidates).issubset(catalog_ids)
+                    and validated_output.get("source_refs") == [expected_source_ref]
+                    and isinstance(safe_summary, Mapping)
+                    and safe_summary.get("search_id") == trusted_handle
+                    and safe_summary.get("source_refs") == [expected_source_ref]
+                )
+                if valid:
+                    completed_ids.add(persisted_item.work_item_id)
+                    completed_outputs[persisted_item.work_item_id] = dict(validated_output)
+                    completed_search_evidence[persisted_item.work_item_id] = _catalog_evidence_view(
+                        validated_output, tool_results
+                    )
+                    continue
+            elif valid and role == "paper_evaluator":
+                output = validated_output
+                dependencies = dependencies_for(persisted_item)
+                allowed_candidates: set[str] = set()
+                allowed_refs: set[str] = set()
+                allowed_sources: set[str] = set()
+                allowed_source_refs: set[str] = set()
+                binding_invalid = any(
+                    dependency_id not in completed_ids
+                    or item_by_id.get(dependency_id) is None
+                    or item_by_id[dependency_id].role != "search-worker"
+                    for dependency_id in dependencies
+                )
+                for dependency_id in dependencies:
+                    search_output = completed_outputs.get(dependency_id)
+                    if binding_invalid or not isinstance(search_output, Mapping):
+                        continue
+                    if (
+                        (search_output.get("work_item_id") is not None and search_output.get("work_item_id") != dependency_id)
+                        or (search_output.get("research_task_id") is not None and search_output.get("research_task_id") != task.research_task_id)
+                        or search_output.get("source") not in {"usenix", "dblp", "all"}
+                    ):
+                        binding_invalid = True
+                        continue
+                    allowed_candidates.update(
+                        candidate
+                        for candidate in search_output.get("candidates", ())
+                        if isinstance(candidate, str) and candidate.strip()
+                    )
+                    allowed_sources.add(search_output["source"])
+                    for ref in search_output.get("evidence_refs", ()) if isinstance(search_output.get("evidence_refs"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_refs.add(ref)
+                    for ref in search_output.get("citation_allowlist", ()) if isinstance(search_output.get("citation_allowlist"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_refs.add(ref)
+                    allowed_refs.update(f"catalog:{candidate}" for candidate in allowed_candidates)
+                    for ref in search_output.get("source_refs", ()) if isinstance(search_output.get("source_refs"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_source_refs.add(ref)
+                if valid and isinstance(output.get("evidence_refs"), list) and isinstance(output.get("reason"), str):
+                    normalized_output = _sanitize_evaluator_binding(output, allowed_refs)
+                    valid = not binding_invalid and _validate_evaluator_scope(
+                        normalized_output,
+                        allowed_candidates,
+                        allowed_refs,
+                        allowed_sources,
+                        allowed_source_refs,
+                    )
+                    if valid:
+                        completed_ids.add(persisted_item.work_item_id)
+                        completed_outputs[persisted_item.work_item_id] = normalized_output
+                        evaluator_outputs.append(dict(normalized_output))
+                        evaluator_outputs_by_id[persisted_item.work_item_id] = dict(normalized_output)
+                        continue
+            elif valid:
+                # Critic/synthesizer outputs passed the shared role contract;
+                # preserve them without reopening or re-running terminal rows.
+                completed_ids.add(persisted_item.work_item_id)
+                completed_outputs[persisted_item.work_item_id] = dict(validated_output)
+                continue
+            hydration_invalid_ids.add(persisted_item.work_item_id)
+            failed_ids.add(persisted_item.work_item_id)
+            failures += 1
         for item in items:
             # A restart or a second orchestration trigger may hold a stale
             # snapshot.  Requeue only due retries and never execute a row that
@@ -1961,13 +2256,12 @@ class Orchestrator:
             terminal = result.status if result.status in {"completed", "failed", "cancelled", "limit_reached"} else "failed"
             semantic_error = None
             normalized_output = result.output_json
-            if terminal == "completed" and role == "search_worker" and isinstance(normalized_output, dict):
-                # The runtime, rather than the model, owns the durable
-                # WorkItem binding; the model's presentation value is ignored.
-                normalized_output = _canonicalize_search_worker_binding(
-                    normalized_output,
-                    work_item_id=item.work_item_id,
-                )
+            if terminal == "completed" and not isinstance(normalized_output, dict):
+                # A completed AgentRun without a structured output cannot
+                # become a completed WorkItem.  Keep the row open until this
+                # branch writes a failed envelope below.
+                semantic_error = "AGENT_OUTPUT_INVALID"
+                terminal = "failed"
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 raw_output = dict(normalized_output)
                 # The evaluator model is not trusted to choose provenance
@@ -1984,11 +2278,15 @@ class Orchestrator:
                     semantic_error = "EVALUATOR_EVIDENCE_OUT_OF_SCOPE"
                     terminal = "failed"
             if terminal != "completed" and role == "search_worker":
-                recovered = self._recover_search_worker_output(work_item_input, item.work_item_id)
-                if recovered is not None:
-                    normalized_output = recovered
-                    terminal = "completed"
-                    semantic_error = None
+                # Search recovery is owned by ResearchAgentRunner, where the
+                # controlled tool result is validated, hashed, checkpointed,
+                # and bound to the real AgentRun before that run can complete.
+                # The orchestrator only has the returned AgentRunOutput here;
+                # promoting a separate adapter result would create a
+                # completed WorkItem whose envelope/hash no longer describes
+                # the real AgentRun (especially when output_json is None).
+                # Keep the failure instead of fabricating a terminal success.
+                semantic_error = semantic_error or "AGENT_OUTPUT_INVALID"
             if terminal != "completed":
                 failures += 1
                 failed_ids.add(item.work_item_id)
@@ -2049,24 +2347,28 @@ class Orchestrator:
             elif role == "synthesizer" and terminal != "completed":
                 synthesis_error = result.error_code or "AGENT_OUTPUT_INVALID"
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
-            output_json = json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)[:100000]
-            with suppress(Exception):
-                updated = self._store.update_work_item_status(
-                    item.work_item_id,
-                    "completed" if terminal == "completed" else ("cancelled" if terminal == "cancelled" else "failed"),
-                    output_json=output_json,
-                    error_code=error_code,
-                    last_error_code=error_code,
-                    resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
-                )
-                event_extra = {"error_code": error_code} if error_code else {}
-                if search_id is not None:
-                    event_extra["search_id"] = search_id
-                self._emit(
-                    task.research_task_id,
-                    "worker",
-                    self._worker_event_payload(updated, terminal, **event_extra),
-                )
+            output_json = json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)
+            if len(output_json) > 100000:
+                raise ValueError("AGENT_OUTPUT_INVALID: work item output exceeds bounded envelope")
+            # The store transaction is the WorkItem terminal commit.  Do not
+            # suppress a failed write: until this succeeds a completed result
+            # has no durable payload and must not be reported as completed.
+            updated = self._store.update_work_item_status(
+                item.work_item_id,
+                "completed" if terminal == "completed" else ("cancelled" if terminal == "cancelled" else "failed"),
+                output_json=output_json,
+                error_code=error_code,
+                last_error_code=error_code,
+                resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
+            )
+            event_extra = {"error_code": error_code} if error_code else {}
+            if search_id is not None:
+                event_extra["search_id"] = search_id
+            self._emit(
+                task.research_task_id,
+                "worker",
+                self._worker_event_payload(updated, terminal, **event_extra),
+            )
         waiting_items = [
             current for current in self._store.list_work_items(task.research_task_id, plan_version=plan_version)
             if current.status == "waiting_retry"
@@ -2411,6 +2713,8 @@ class Orchestrator:
                 reason=selection_shortfall_reason,
                 retry_attempt=synthesis_attempts if synthesis_attempts > 1 else None,
             )
+        if failures and failure_error_code is None and hydration_invalid_ids:
+            failure_error_code = "AGENT_OUTPUT_INVALID"
         final_status = "completed" if items and failures == 0 else "partial"
         with suppress(InvalidStateTransition):
             self._store.update_task_status(task.research_task_id, owner_id, final_status)
