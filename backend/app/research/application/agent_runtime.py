@@ -100,9 +100,83 @@ ROLE_OUTPUT_FIELDS = {
 ROLE_GENERIC_OUTPUT_FIELDS = ("schema_version", "safe_summary", "source_refs")
 
 
-def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
+_SYNTHESIS_MATRIX_EXAMPLE: dict[str, Any] = {
+    "schema_version": "evidence-report-v1",
+    "plan_version": 1,
+    "dimensions": [{
+        "dimension_id": "<server-dimension-id>",
+        "label": "<server-label>",
+        "definition": "<server-definition>",
+        "display_order": 0,
+    }],
+    "claims": [{
+        "claim_id": "claim-1",
+        "topic": "<supported-topic>",
+        "statement": "<supported-by-snapshot-fact>",
+        "confidence": "medium",
+        "status": "supported",
+        "evidence_ids": ["evidence-1"],
+    }],
+    "evidence": [{
+        "evidence_id": "evidence-1",
+        "claim_id": "claim-1",
+        "paper_id": "<allowlisted-paper-id>",
+        "evidence_level": "abstract",
+        "stance": "supports",
+        "status": "available",
+        "quote_digest": "<snapshot-abstract-sha256>",
+        "locator": {
+            "catalog_snapshot_id": "<server-snapshot-id>",
+            "abstract_ref": "catalog:<allowlisted-paper-id>",
+            "abstract_digest": "<snapshot-abstract-sha256>",
+        },
+    }],
+    "cells": [{
+        "claim_id": "claim-1",
+        "paper_id": "<allowlisted-paper-id>",
+        "dimension_id": "<server-dimension-id>",
+        "relation": "supports",
+        "summary": "<bounded comparison of the supplied snapshot>",
+        "evidence_ids": ["evidence-1"],
+    }],
+}
+
+
+def _synthesis_matrix_required(work_item_input: Mapping[str, Any] | None) -> bool:
+    """Require the internal matrix extension only for a non-empty server context."""
+    if not isinstance(work_item_input, Mapping):
+        return False
+    context = work_item_input.get("matrix_context")
+    return isinstance(context, Mapping) and bool(context)
+
+
+def _matrix_validation_feedback() -> dict[str, Any]:
+    """Return bounded, provider-safe feedback for a matrix contract retry."""
+    return {
+        "code": "MATRIX_NOT_READY",
+        "message": "evidence_matrix is required when matrix_context is supplied; emit an object grounded in that context.",
+        "required_fields": ["evidence_matrix"],
+        "shape": {
+            "schema_version": "evidence-report-v1",
+            "plan_version": "approved plan version",
+            "dimensions": "exactly the server-provided dimensions",
+            "claims": "bounded claims supported by supplied snapshot facts",
+            "evidence": "abstract-level evidence with server snapshot locators",
+            "cells": "bounded claim/paper/dimension relations",
+        },
+    }
+
+
+def _role_contract_prompt(
+    role: str,
+    *,
+    has_tool_results: bool,
+    require_synthesis_matrix: bool = False,
+) -> str:
     """Build the small, stable system contract used by the isolated adapter."""
     role_fields = ROLE_OUTPUT_FIELDS.get(role, ())
+    if role == "synthesizer" and require_synthesis_matrix:
+        role_fields = (*role_fields, "evidence_matrix")
     required = tuple(dict.fromkeys((*ROLE_GENERIC_OUTPUT_FIELDS, *role_fields)))
     fields = ", ".join(required)
     finish = (
@@ -130,14 +204,21 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
         "safe catalog title/abstract/keywords/summary fields for the fixed renderer; do not rewrite or augment them. "
         "section summary must only compare the supplied catalog metadata and must not claim full-text findings; do not include "
         "paper findings, artifact IDs, or citations that are not present in "
-        "validated_candidates. When work_item_input.matrix_context is present, the canonical comparison path requires an "
-        "internal-only evidence_matrix object whenever at least one supported claim can be grounded in the supplied snapshot. "
-        "Emit that evidence_matrix object with schema_version evidence-report-v1 and exactly the server-provided dimensions; its claims, "
-        "evidence and cells must use only the allowlisted paper_id values and the supplied catalog_snapshot_id/abstract_digest "
-        "locators. Use only catalog or abstract evidence, never fulltext, URLs, document IDs, chunks or invented dimensions. "
-        "Keep every evidence_matrix claims, evidence and cells array at most 64 items, matching the runtime safety limit. "
-        "If no supported claim can be grounded in the supplied snapshot facts, omit evidence_matrix so the runtime records "
-        "MATRIX_NOT_READY; never invent a claim or locator to satisfy the comparison path."
+        "validated_candidates. "
+        + (
+            "When work_item_input.matrix_context is present, evidence_matrix is required as an internal-only top-level field. "
+            "Use this exact bounded shape as a guide (replace placeholders only with supplied facts): "
+            f"{{\"evidence_matrix\":{json.dumps(_SYNTHESIS_MATRIX_EXAMPLE, ensure_ascii=False, sort_keys=True, separators=(',', ':'))}}}. "
+            "Set schema_version to evidence-report-v1, plan_version to the approved plan version, and dimensions to exactly "
+            "the server-provided dimensions; claims, evidence and cells must use only allowlisted paper_id values and the "
+            "supplied catalog_snapshot_id/abstract_digest locators. Use only catalog or abstract evidence, never fulltext, "
+            "URLs, document IDs, chunks or invented dimensions. Keep every evidence_matrix claims, evidence and cells array "
+            "at most 64 items, matching the runtime safety limit. If no supported claim can be grounded in the supplied snapshot "
+            "facts, the runtime will return MATRIX_NOT_READY; do not invent a claim or locator."
+            if require_synthesis_matrix
+            else
+            "When work_item_input.matrix_context is absent, evidence_matrix is optional and must not be invented."
+        )
     )
     return (
         f"You are the {role} worker in a bounded research runtime. "
@@ -163,7 +244,7 @@ _ONLINE_FALLBACK_ERROR_CODES = frozenset({
 })
 _ONLINE_FALLBACK_BLOCKED_CODES = frozenset({
     "CAPABILITY_NOT_AUTHORIZED", "SKILL_DISABLED", "CANCELLED", "EVIDENCE_OUT_OF_SCOPE",
-    "AGENT_OUTPUT_INVALID", "TOOL_EXECUTION_FAILED",
+    "AGENT_OUTPUT_INVALID", "MATRIX_NOT_READY", "TOOL_EXECUTION_FAILED",
 })
 
 
@@ -637,6 +718,10 @@ class _OllamaRunnerAdapter:
                 "content": _role_contract_prompt(
                     str(context.get("role") or "worker"),
                     has_tool_results=bool(context.get("tool_results")),
+                    require_synthesis_matrix=(
+                        str(context.get("role") or "") == "synthesizer"
+                        and _synthesis_matrix_required(context.get("work_item_input"))
+                    ),
                 ),
             },
             {"role": "user", "content": json.dumps(dict(context), ensure_ascii=False, sort_keys=True)},
@@ -1122,6 +1207,8 @@ class ResearchAgentRunner:
         owner: str,
         attempts_used: int,
         summaries: Sequence[Mapping[str, Any]],
+        *,
+        error_code: str = "AGENT_OUTPUT_INVALID",
     ) -> tuple[AgentRun, str, str]:
         """Close an invalid attempt and persist the next independent Run link."""
         handoff = {"schema_version": "runtime-v1", "output": None, "tool_results": list(summaries)}
@@ -1157,7 +1244,7 @@ class ResearchAgentRunner:
                 run.agent_run_id,
                 owner,
                 "limit_reached",
-                error_code="AGENT_OUTPUT_INVALID",
+                error_code=error_code,
             )
             next_run = replace(
                 run,
@@ -1449,7 +1536,13 @@ class ResearchAgentRunner:
         result["safe_summary"] = safe_summary
         return result
 
-    def _validate_output(self, role: str, output: Mapping[str, Any]) -> dict[str, Any]:
+    def _validate_output(
+        self,
+        role: str,
+        output: Mapping[str, Any],
+        *,
+        require_synthesis_matrix: bool = False,
+    ) -> dict[str, Any]:
         if not isinstance(output, Mapping):
             raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
         try:
@@ -1468,6 +1561,11 @@ class ResearchAgentRunner:
         for key in ROLE_OUTPUT_FIELDS[role]:
             if key not in result:
                 raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+        if role == "synthesizer" and require_synthesis_matrix and not isinstance(result.get("evidence_matrix"), Mapping):
+            raise AgentRuntimeError(
+                "MATRIX_NOT_READY",
+                "synthesizer output must include an evidence_matrix object when matrix_context is supplied",
+            )
         if role == "search_worker":
             # The downstream evaluator consumes stable catalog IDs, while a
             # provider may return rich candidate objects.  Normalize at the
@@ -1668,7 +1766,11 @@ class ResearchAgentRunner:
                 self._cancel(run, owner, status="failed", error_code=exc.code)
                 lease_held = self._release_lease(input.research_task_id, lease_held)
                 return AgentRunOutput("failed", error_code=exc.code)
-        context = {"role": input.role, "work_item_input": dict(input.work_item_input or {}), "checkpoint_ref": input.checkpoint_ref, "skill": dict(capability.skill)}
+        work_item_input = dict(input.work_item_input or {})
+        require_synthesis_matrix = (
+            input.role == "synthesizer" and _synthesis_matrix_required(work_item_input)
+        )
+        context = {"role": input.role, "work_item_input": work_item_input, "checkpoint_ref": input.checkpoint_ref, "skill": dict(capability.skill)}
         if isinstance(saved, Mapping):
             # Resume only the verified minimum handoff, never hidden history.
             context["checkpoint"] = {"output": saved.get("output"), "tool_results": saved.get("tool_results", ())}
@@ -1932,31 +2034,49 @@ class ResearchAgentRunner:
                     context = {**context, "tool_results": summaries[-len(validated):]}
                     continue
                 try:
-                    validated_output = self._validate_output(input.role, output or {})
-                except AgentRuntimeError:
+                    validated_output = self._validate_output(
+                        input.role,
+                        output or {},
+                        require_synthesis_matrix=require_synthesis_matrix,
+                    )
+                except AgentRuntimeError as validation_error:
                     recovered = (
                         self._recover_search_output_from_catalog(input, summaries)
                         if input.role == "search_worker"
                         else None
                     )
                     if recovered is not None:
-                        validated_output = self._validate_output(input.role, recovered)
+                        validated_output = self._validate_output(
+                            input.role,
+                            recovered,
+                            require_synthesis_matrix=require_synthesis_matrix,
+                        )
                         output = recovered
                     elif input.attempt + attempts_used <= 4:
                         # The contract permits three fast attempts followed by one
                         # strong attempt.  Fake models can therefore deterministically
                         # return invalid → invalid → valid without a provider/router.
                         run, last_checkpoint_ref, last_checkpoint_hash = self._start_retry_attempt(
-                            run, input, owner, attempts_used, summaries
+                            run,
+                            input,
+                            owner,
+                            attempts_used,
+                            summaries,
+                            error_code=validation_error.code,
                         )
                         run_loops, run_calls = 0, 0
-                        context = {
+                        retry_context = {
                             **context,
                             "checkpoint_ref": last_checkpoint_ref,
                             "checkpoint": {"output": None, "tool_results": list(summaries)},
                         }
+                        if validation_error.code == "MATRIX_NOT_READY":
+                            retry_context["validation_feedback"] = _matrix_validation_feedback()
+                        context = retry_context
                         continue
                     else:
+                        if validation_error.code == "MATRIX_NOT_READY":
+                            raise validation_error
                         if not fallback_attempted:
                             original_error_code = "AGENT_OUTPUT_INVALID"
                             fallback_model, fallback_error_code = self._build_online_fallback(

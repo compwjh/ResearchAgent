@@ -391,6 +391,7 @@ def _run_matrix_agent_scenario(
     minimum_paper_count: int | None = None,
     candidate_count: int = 1,
     validated_sequences: list[list[dict]] | None = None,
+    synthesis_has_matrix: bool = True,
 ):
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     conversation, user, activity = memory.create_conversation_messages(
@@ -428,7 +429,8 @@ def _run_matrix_agent_scenario(
             for paper_id in paper_ids
         ],
     ).output.model_dump(mode="json")
-    synthesis["evidence_matrix"] = _payload(paper_ids)
+    if synthesis_has_matrix:
+        synthesis["evidence_matrix"] = _payload(paper_ids)
     synthesis["output_hash"] = report_output_hash(synthesis)
     seeded_artifact = {"done": False}
 
@@ -637,6 +639,18 @@ def test_synthesis_keeps_the_same_candidate_allowlist_after_final_projection_cha
 def test_matrix_build_failure_cannot_close_agent_task_as_completed(tmp_path, monkeypatch) -> None:
     """A candidate artifact fallback is still a degraded, non-canonical result."""
     result, store, task, _memory = _run_matrix_agent_scenario(tmp_path, monkeypatch, fail_matrix=True)
+
+    assert result.status == "partial"
+    assert result.error_code == "MATRIX_NOT_READY"
+    assert store.list_research_reports(task.research_task_id, "owner") == []
+
+
+def test_missing_matrix_output_stays_partial_without_canonical_report(tmp_path, monkeypatch) -> None:
+    result, store, task, _memory = _run_matrix_agent_scenario(
+        tmp_path,
+        monkeypatch,
+        synthesis_has_matrix=False,
+    )
 
     assert result.status == "partial"
     assert result.error_code == "MATRIX_NOT_READY"

@@ -1,0 +1,214 @@
+{
+  "schema": "spec032-task14-research-e2e-frozen-v1",
+  "run_id": "spec032-task14-frozen-20261008T202830Z",
+  "result": "BLOCKED",
+  "blockers": [
+    {
+      "stage": "evidence_matrix",
+      "http_status": 409,
+      "error_code": "MATRIX_NOT_READY",
+      "message": "证据矩阵尚未准备完成"
+    },
+    {
+      "stage": "canonical_report",
+      "formats": ["json", "markdown", "html"],
+      "http_status": 404,
+      "error_code": "REPORT_NOT_READY"
+    }
+  ],
+  "runtime": {
+    "head": "4b61c3f",
+    "port": 8000,
+    "restart_session": "61488",
+    "ready": true,
+    "ready_http_status": 200,
+    "global_model": "qwen3.8:27b",
+    "request_model": "qwen3.5:9b",
+    "reasoning_effort": "off",
+    "global_model_changed": false,
+    "environment_changed": false,
+    "thresholds_changed": false
+  },
+  "request": {
+    "method": "POST",
+    "path": "/api/conversations/messages",
+    "http_status": 200,
+    "conversation_id": "70986d07888844dc9eb7de256ddadc27",
+    "user_message_id": "9519bd4a14e44275b1145c03d99ca8d0",
+    "assistant_message_id": "9e5cc7acb4194cb0b06f69a27b3f2f16",
+    "content": "请进行一次深度研究。主题是USENIX Security 2024中的security/privacy方法，目标是比较至少5篇方法与局限，并且最少选择5篇论文，最多选择5篇论文，目标论文数: 5，来源限定为USENIX Security，输出中文Markdown报告并使用行内引用。时间范围是2024-2024。",
+    "response_state": "plan_pending_approval"
+  },
+  "ids": {
+    "research_session_id": "c129b90b6b2246258de471713ae0bf0b",
+    "intake_draft_id": "ee408db2e6b7498185482602e426d55f",
+    "research_task_id": "659d5279ac4b5574ab317c6368a6527c",
+    "search_ids": {
+      "s1": "882a91d62bdf4b28add6d5f6fbaf8a8e",
+      "s2": "8d2c71df62b949e8b45ca229dd81d21f"
+    }
+  },
+  "plan_gate": {
+    "http_status": 200,
+    "plan_version": 1,
+    "subject_version": 1,
+    "output_hash": "f7cdc582002b1c9ddbf086fe029a00bf55652d80168a218e2e39e3c7d28adcb8",
+    "constraints": {
+      "min_paper_count": 5,
+      "max_paper_count": 5,
+      "target_paper_count": 5
+    },
+    "budget_target_paper_count": 5,
+    "search_max_results": {"s1": 5, "s2": 5},
+    "sources": ["usenix"],
+    "time_range": {"from": 2024, "to": 2024}
+  },
+  "approval": {
+    "method": "POST",
+    "path": "/api/research-sessions/c129b90b6b2246258de471713ae0bf0b/commands",
+    "http_status": 200,
+    "command": "approve_plan",
+    "subject_version": 1,
+    "scope_json": {
+      "plan_version": 1,
+      "output_hash": "f7cdc582002b1c9ddbf086fe029a00bf55652d80168a218e2e39e3c7d28adcb8"
+    },
+    "idempotency_key": "plan-approval:c129b90b6b2246258de471713ae0bf0b:1",
+    "approval_status": "approved",
+    "created_task_id": "659d5279ac4b5574ab317c6368a6527c",
+    "initial_status": "planning"
+  },
+  "task_terminal": {
+    "http_status": 200,
+    "status": "partial",
+    "target_paper_count": 5,
+    "selected_count": 5,
+    "created_at": "2026-10-08T20:28:30Z",
+    "completed_at": "2026-10-08T20:33:30Z",
+    "search_id": "882a91d62bdf4b28add6d5f6fbaf8a8e",
+    "runtime_retry_count": 0,
+    "runtime_last_error_code": null,
+    "terminal_event": {
+      "event_seq": 27,
+      "status": "partial",
+      "selected_count": 5,
+      "error_code": "MATRIX_NOT_READY",
+      "created_at": "2026-10-08T20:33:30Z"
+    }
+  },
+  "events": [
+    {"event_seq": 8, "work_item": "s1", "task_type": "search_catalog", "status": "completed", "resolved_model": "qwen3.5:9b", "search_id": "882a91d62bdf4b28add6d5f6fbaf8a8e", "created_at": "2026-10-08T20:29:27Z"},
+    {"event_seq": 14, "work_item": "s2", "task_type": "search_catalog", "status": "completed", "resolved_model": "qwen3.5:9b", "search_id": "8d2c71df62b949e8b45ca229dd81d21f", "created_at": "2026-10-08T20:31:02Z"},
+    {"event_seq": 18, "work_item": "e1", "task_type": "evaluate_papers", "status": "completed", "resolved_model": "qwen3.5:9b", "created_at": "2026-10-08T20:32:05Z"},
+    {"event_seq": 22, "work_item": "c1", "task_type": "check_coverage", "status": "completed", "resolved_model": "qwen3.5:9b", "startup_model_event": "qwen3.8:27b-q4_K_M", "created_at": "2026-10-08T20:32:10Z"},
+    {"event_seq": 26, "work_item": "syn", "task_type": "synthesize_preliminary_report", "status": "completed", "resolved_model": "qwen3.5:9b", "startup_model_event": "qwen3.8:27b-q4_K_M", "created_at": "2026-10-08T20:33:30Z"}
+  ],
+  "acquisition": {
+    "http_status": 200,
+    "batch_id": "2f3a1e04-f929-41c1-9e6c-63dbac2bfd02",
+    "selection_version": 4,
+    "approval_status": "completed",
+    "item_count": 5,
+    "link_count": 5,
+    "items_status": "completed",
+    "paper_count": 5,
+    "document_count": 5,
+    "records": [
+      {"candidate_id": "4e6322a23b92a271dbec9906c51fe0ab", "paper_id": "a151fcff09944e7cbd1f4086376ae914", "document_id": "a151fcff09944e7cbd1f4086376ae914", "import_item_id": "d324a2dc-d22c-4afb-96f8-b639ec66912e", "status": "completed", "stored_name": "2024-USENIX-Security-GhostRace-Exploiting-and-Mitigating-Speculative-Race-Conditions.pdf"},
+      {"candidate_id": "57e0402f82fe2ce354bea423b201fde3", "paper_id": "527fe0c1515d48c78adec8f4eb7f4979", "document_id": "527fe0c1515d48c78adec8f4eb7f4979", "import_item_id": "5507977a-6314-433a-9165-3021b9ddfb19", "status": "completed", "stored_name": "2024-USENIX-Security-DNN-GP-Diagnosing-and-Mitigating-Model-s-Faults-Using-Latent-Concepts.pdf"},
+      {"candidate_id": "bb826cac3486a295d93eb9b6cea0a6f8", "paper_id": "fa82faf63802431da803e1a99ce1411b", "document_id": "fa82faf63802431da803e1a99ce1411b", "import_item_id": "71339c71-2888-44f4-981d-7c25da2d79a2", "status": "completed", "stored_name": "2024-USENIX-Security-DARKFLEECE-Probing-the-Dark-Side-of-Android-Subscription-Apps.pdf"},
+      {"candidate_id": "c74fdf1babb53a9cbcb6a6ac9fa5cd0e", "paper_id": "2f002c403d4e49e79b4d2781fea38fc6", "document_id": "2f002c403d4e49e79b4d2781fea38fc6", "import_item_id": "c0783591-4e92-4a4f-85e3-d8ed8bf70344", "status": "completed", "stored_name": "2024-USENIX-Security-Batch-PIR-and-Labeled-PSI-with-Oblivious-Ciphertext-Compression.pdf"},
+      {"candidate_id": "ef9e0846844e5b02834163586ea6ddc9", "paper_id": "56fc315e952342158e5ae2f5ef6f01a0", "document_id": "56fc315e952342158e5ae2f5ef6f01a0", "import_item_id": "95528e91-4d3e-43b2-86e0-d4878a582b88", "status": "completed", "stored_name": "2024-USENIX-Security-Stop-Don-t-Click-Here-Anymore-Boosting-Website-Fingerprinting-By-Considering-Sets-of-Subpages.pdf"}
+    ]
+  },
+  "candidate_report": {
+    "path": "/api/research-tasks/659d5279ac4b5574ab317c6368a6527c/report",
+    "http_status": 200,
+    "status": "partial",
+    "report_id": "artifact:64bdca35859e43c2b813a06c5c2a581a",
+    "title": "# 深度研究报告",
+    "markdown_chars": 15563,
+    "markdown_utf8_bytes": 17311,
+    "selection_count": 5,
+    "unique_citation_refs": 5,
+    "limitations": {"artifact_backed": true}
+  },
+  "artifacts": [
+    {"artifact_id": "d2b3e09d409f45e79058dd93ed563fe3", "report_version": 1, "type": "citation_manifest", "db_content_chars": 551, "download_http_status": 200, "download_bytes": 551, "content_hash": "62e7286793c9347a0019ad4fd3420ed29e7ff5027fa4ec52e17a8ca39f43109", "download_path": "/api/research-sessions/c129b90b6b2246258de471713ae0bf0b/artifacts/d2b3e09d409f45e79058dd93ed563fe3/download"},
+    {"artifact_id": "ee513fbebb264683a79ae9c512dc6b7b", "report_version": 1, "type": "html", "db_content_chars": 16464, "download_http_status": 200, "download_bytes": 18362, "content_hash": "37a520edbf319ec7560dedb031165dfe538d77f4cd4a7d068ebc6e80ca84e4a2", "download_path": "/api/research-sessions/c129b90b6b2246258de471713ae0bf0b/artifacts/ee513fbebb264683a79ae9c512dc6b7b/download"},
+    {"artifact_id": "64bdca35859e43c2b813a06c5c2a581a", "report_version": 1, "type": "markdown", "db_content_chars": 15563, "download_http_status": 200, "download_bytes": 17311, "content_hash": "2935e855081931eeead84a2176aa2f1660653e2b69cd478604209b564b7d2cae", "download_path": "/api/research-sessions/c129b90b6b2246258de471713ae0bf0b/artifacts/64bdca35859e43c2b813a06c5c2a581a/download"}
+  ],
+  "matrix_check": {
+    "path": "/api/research-tasks/659d5279ac4b5574ab317c6368a6527c/evidence-matrix",
+    "http_status": 409,
+    "error_code": "MATRIX_NOT_READY",
+    "nonempty": false
+  },
+  "canonical_report_checks": [
+    {"path": "/api/research-tasks/659d5279ac4b5574ab317c6368a6527c/reports/1?format=json", "http_status": 404, "error_code": "REPORT_NOT_READY", "nonempty": false},
+    {"path": "/api/research-tasks/659d5279ac4b5574ab317c6368a6527c/reports/1?format=markdown", "http_status": 404, "error_code": "REPORT_NOT_READY", "nonempty": false},
+    {"path": "/api/research-tasks/659d5279ac4b5574ab317c6368a6527c/reports/1?format=html", "http_status": 404, "error_code": "REPORT_NOT_READY", "nonempty": false}
+  ],
+  "synthesizer_contract": {
+    "work_item_id": "659d5279ac4b5574ab317c6368a6527c:syn",
+    "work_item_status": "completed",
+    "input_bytes": 17903,
+    "output_wrapper_bytes": 2757,
+    "agent_run": {
+      "resolved_model": "qwen3.5:9b",
+      "reasoning_effort": "off",
+      "role": "synthesizer",
+      "skill_name": "research-report-synthesis",
+      "status": "completed",
+      "output_hash": "5858468a1d885a92c177b4fce0fff04c2eb05056d7257a5cc7a4c56a7133b13f"
+    },
+    "input_top_level_keys": ["citation_allowlist", "evidence_level", "goal", "language", "matrix_context", "report_version", "validated_candidates"],
+    "input_matrix_context": {
+      "allowed_paper_count": 5,
+      "candidate_count": 5,
+      "dimension_ids": ["facet-1", "facet-2"],
+      "allowed_paper_ids": ["ef9e0846844e5b02834163586ea6ddc9", "bb826cac3486a295d93eb9b6cea0a6f8", "c74fdf1babb53a9cbcb6a6ac9fa5cd0e", "4e6322a23b92a271dbec9906c51fe0ab", "57e0402f82fe2ce354bea423b201fde3"]
+    },
+    "validated_candidate_ids": ["ef9e0846844e5b02834163586ea6ddc9", "bb826cac3486a295d93eb9b6cea0a6f8", "c74fdf1babb53a9cbcb6a6ac9fa5cd0e", "4e6322a23b92a271dbec9906c51fe0ab", "57e0402f82fe2ce354bea423b201fde3"],
+    "citation_allowlist_count": 5,
+    "output_top_level_keys": ["artifact_ids", "citation_manifest", "output_hash", "report_version", "safe_summary", "schema_version", "sections", "source_refs"],
+    "output_section_count": 2,
+    "output_section_candidate_ids_match_input": true,
+    "output_source_ref_count": 5,
+    "output_has_evidence_matrix": false,
+    "output_artifact_ids": [],
+    "hidden_reasoning_saved": false
+  },
+  "readiness": [
+    {"item": 1, "name": "deployment_ready", "status": "PASS"},
+    {"item": 2, "name": "natural_language_new_run", "status": "PASS"},
+    {"item": 3, "name": "intake_plan_budget_five", "status": "PASS"},
+    {"item": 4, "name": "approval_version_hash_bound", "status": "PASS"},
+    {"item": 5, "name": "search_evaluate_coverage_status", "status": "PASS"},
+    {"item": 6, "name": "selected_five_with_entity_ids", "status": "PASS"},
+    {"item": 7, "name": "controlled_import_five_of_five", "status": "PASS"},
+    {"item": 8, "name": "nonempty_evidence_matrix", "status": "FAIL", "error_code": "MATRIX_NOT_READY"},
+    {"item": 9, "name": "canonical_json_markdown_html", "status": "FAIL", "error_code": "REPORT_NOT_READY"},
+    {"item": 10, "name": "manual_acceptance_view_and_recovery", "status": "BLOCKED"}
+  ],
+  "prior_evidence_preserved": [
+    "current-research-e2e-report.md",
+    "current-research-e2e-evidence.json",
+    "current-research-e2e-candidate-report.md",
+    "current-research-e2e-candidate-evidence.json",
+    "current-research-e2e-reviewed-report.md",
+    "current-research-e2e-reviewed-evidence.json",
+    "current-research-e2e-matrix-report.md",
+    "current-research-e2e-matrix-evidence.json",
+    "current-research-e2e-converged-report.md",
+    "current-research-e2e-converged-evidence.json"
+  ],
+  "mutations": {
+    "business_code_changed": false,
+    "old_task_retried": false,
+    "old_artifacts_deleted_or_overwritten": false,
+    "global_model_or_threshold_changed": false,
+    "env_read": false,
+    "full_suite_run": false
+  }
+}

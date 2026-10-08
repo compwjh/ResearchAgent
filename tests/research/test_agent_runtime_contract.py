@@ -16,9 +16,11 @@ from backend.app.research.application.agent_runtime import (
     FakeTool,
     ResearchAgentRunner,
     RoleCapabilityRegistry,
+    _OllamaRunnerAdapter,
 )
 from backend.app.research.application.approval_service import PlanApprovalService
 from backend.app.research.application.orchestrator import Orchestrator
+from backend.app.research.application.report_synthesis import report_output_hash
 from backend.app.research.domain.models import AgentCheckpoint, ResearchSession, ResearchTask
 from backend.app.research.infrastructure.research_store import AgentRunWriteDiscarded, ResearchStore
 from backend.app.skills.models import ToolEntry
@@ -54,6 +56,101 @@ def _runner(role="planner", model=None, tools=()):
     return ResearchAgentRunner(model=model, capability_registry=registry)
 
 
+def _matrix_context() -> dict:
+    abstract = "A bounded catalog abstract for a supported comparison claim."
+    digest = hashlib.sha256(abstract.encode("utf-8")).hexdigest()
+    return {
+        "schema_version": "evidence-report-v1",
+        "plan_version": 1,
+        "dimensions": [{
+            "dimension_id": "facet-1",
+            "label": "Privacy",
+            "definition": "Approved research-scope comparison dimension.",
+            "display_order": 0,
+        }],
+        "candidates": [{
+            "paper_id": "paper-a",
+            "catalog_snapshot_id": "search-a",
+            "title": "Paper A",
+            "abstract": abstract,
+            "abstract_digest": digest,
+        }],
+        "allowed_paper_ids": ["paper-a"],
+    }
+
+
+def _synthesizer_output(*, evidence_matrix: dict | None = None) -> dict:
+    output = _output("synthesizer")
+    output.update({
+        "sections": [{
+            "heading": "Bounded comparison",
+            "candidate_ids": ["paper-a"],
+            "summary": "The supplied catalog abstract supports the comparison.",
+        }],
+        "citation_manifest": [{"citation_ref": "catalog:paper-a", "candidate_id": "paper-a"}],
+        "source_refs": ["catalog:paper-a"],
+    })
+    if evidence_matrix is not None:
+        output["evidence_matrix"] = evidence_matrix
+    output["output_hash"] = report_output_hash(output)
+    return output
+
+
+def _matrix_output() -> dict:
+    context = _matrix_context()
+    digest = context["candidates"][0]["abstract_digest"]
+    return {
+        "schema_version": "evidence-report-v1",
+        "plan_version": 1,
+        "dimensions": context["dimensions"],
+        "claims": [{
+            "claim_id": "claim-1",
+            "topic": "Privacy",
+            "statement": "The supplied abstract supports a privacy boundary.",
+            "confidence": "medium",
+            "status": "supported",
+            "evidence_ids": ["evidence-1"],
+        }],
+        "evidence": [{
+            "evidence_id": "evidence-1",
+            "claim_id": "claim-1",
+            "paper_id": "paper-a",
+            "evidence_level": "abstract",
+            "stance": "supports",
+            "status": "available",
+            "quote_digest": digest,
+            "locator": {
+                "catalog_snapshot_id": "search-a",
+                "abstract_ref": "catalog:paper-a",
+                "abstract_digest": digest,
+            },
+        }],
+        "cells": [{
+            "claim_id": "claim-1",
+            "paper_id": "paper-a",
+            "dimension_id": "facet-1",
+            "relation": "supports",
+            "summary": "The supplied abstract supports the claim.",
+            "evidence_ids": ["evidence-1"],
+        }],
+    }
+
+
+def _synthesizer_input(*, matrix_context: dict | None) -> AgentRunInput:
+    work_item_input = {"validated_candidates": [{"candidate_id": "paper-a"}]}
+    if matrix_context is not None:
+        work_item_input["matrix_context"] = matrix_context
+    return AgentRunInput(
+        "matrix-run",
+        "session-1",
+        "synthesizer",
+        work_item_input=work_item_input,
+        skill_snapshot=_skill("synthesizer"),
+        research_task_id="task-1",
+        work_item_id="work-1",
+    )
+
+
 def test_fake_output_is_structured_and_checkpointed():
     result = _runner().run(AgentRunInput("run-1", "session-1", "planner", skill_snapshot=_skill("planner")))
     assert result.status == "completed"
@@ -71,6 +168,71 @@ def test_invalid_output_retries_at_most_four_attempts():
     assert result.error_code == "AGENT_OUTPUT_INVALID"
     assert result.usage["model_loops"] == 4
     assert len(model.calls) == 4
+
+
+def test_synthesizer_requires_matrix_when_context_is_present_and_retries_with_feedback():
+    missing_matrix = {"output_json": _synthesizer_output()}
+    legal_matrix = {"output_json": _synthesizer_output(evidence_matrix=_matrix_output())}
+    model = FakeModel([missing_matrix, legal_matrix])
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=_matrix_context())
+    )
+
+    assert result.status == "completed"
+    assert result.output_json is not None
+    assert result.output_json["evidence_matrix"]["schema_version"] == "evidence-report-v1"
+    assert len(model.calls) == 2
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "MATRIX_NOT_READY"
+    assert "evidence_matrix" in feedback["required_fields"]
+    assert "claims" in feedback["shape"]
+
+
+def test_synthesizer_matrix_requirement_exhausts_as_bounded_failure():
+    model = FakeModel([{"output_json": _synthesizer_output()}] * 4)
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=_matrix_context())
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "MATRIX_NOT_READY"
+    assert result.usage["model_loops"] == 4
+    assert len(model.calls) == 4
+    assert all(call[0]["validation_feedback"]["code"] == "MATRIX_NOT_READY" for call in model.calls[1:])
+
+
+def test_synthesizer_without_matrix_context_keeps_optional_extension_compatibility():
+    model = FakeModel({"output_json": _synthesizer_output()})
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=None)
+    )
+
+    assert result.status == "completed"
+    assert len(model.calls) == 1
+    assert "validation_feedback" not in model.calls[0][0]
+
+
+def test_ollama_synthesizer_prompt_exposes_internal_matrix_shape_only_with_context():
+    captured = {}
+
+    class Chat:
+        def invoke(self, messages):
+            captured["messages"] = messages
+            return SimpleNamespace(content="{}", tool_calls=[])
+
+    adapter = _OllamaRunnerAdapter(Chat(), model_name="test-model", effort="off")
+    adapter.invoke({
+        "role": "synthesizer",
+        "work_item_input": {"matrix_context": _matrix_context()},
+    })
+
+    contract = captured["messages"][0]["content"]
+    assert '"evidence_matrix"' in contract
+    assert '"schema_version":"evidence-report-v1"' in contract
+    assert '"claims"' in contract and '"evidence"' in contract and '"cells"' in contract
 
 
 def test_invalid_tool_batch_executes_nothing():
