@@ -130,6 +130,44 @@ def test_catalog_floor_promotes_from_recalled_ids_when_evaluator_returns_none():
     assert all(item["verified"] is True for item in records)
 
 
+def test_catalog_floor_counts_existing_records_when_evaluating_remaining_pool():
+    ids = [f"paper-{index}" for index in range(1, 6)]
+    existing = [
+        {
+            "candidate_id": paper_id,
+            "verified": True,
+            "evidence_refs": [f"catalog:{paper_id}"],
+        }
+        for paper_id in ids[:4]
+    ]
+
+    records = _promote_catalog_floor(
+        existing,
+        ids,
+        {ids[-1]: {"title": "unrelated", "abstract": ""}},
+        None,
+        "needle",
+    )
+
+    assert [item["candidate_id"] for item in records] == ids
+
+
+def test_catalog_floor_does_not_fabricate_when_recall_pool_is_short():
+    ids = [f"paper-{index}" for index in range(1, 5)]
+    existing = [
+        {
+            "candidate_id": paper_id,
+            "verified": True,
+            "evidence_refs": [f"catalog:{paper_id}"],
+        }
+        for paper_id in ids
+    ]
+
+    records = _promote_catalog_floor(existing, ids, {}, None, "needle")
+
+    assert [item["candidate_id"] for item in records] == ids
+
+
 def test_synthesis_accepts_bounded_section_summary_for_real_report_content():
     candidate = {"candidate_id": "paper-1", "verified": True, "evidence_refs": ["catalog:paper-1"], "title": "Paper"}
     base = ReportSynthesizer().synthesize(

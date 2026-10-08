@@ -39,10 +39,12 @@ from backend.app.research.application.report_synthesis import (
     ReportSynthesisError,
     ReportSynthesizer,
     ResearchNotificationService,
+    render_markdown_html,
     report_output_hash,
     validate_report_synthesis_output,
 )
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
+from backend.app.research.application.session_plan_generation import resolve_paper_count_constraints
 from backend.app.research.domain.contracts import BUDGET_CAPS, EVENT_TYPES, TASK_TERMINAL
 from backend.app.research.domain.models import (
     PreliminaryReport,
@@ -400,12 +402,27 @@ def _promote_catalog_floor(
     """
     records = [dict(item) for item in validated if isinstance(item, Mapping)]
     existing = {item.get("candidate_id") for item in records if isinstance(item.get("candidate_id"), str)}
-    ordered_ids = [item for item in recall_ids if isinstance(item, str) and item and item not in existing]
+    existing_order = [
+        item["candidate_id"]
+        for item in records
+        if isinstance(item.get("candidate_id"), str)
+    ]
+    ordered_ids: list[str] = []
+    seen_recall = set(existing_order)
+    for item in recall_ids:
+        if isinstance(item, str) and item and item not in seen_recall:
+            ordered_ids.append(item)
+            seen_recall.add(item)
     if len(existing) >= _MIN_REPORT_CANDIDATES or len(existing) + len(ordered_ids) < _MIN_REPORT_CANDIDATES:
         return records
+    # Evaluate the complete already-recalled pool, not only the rows missing
+    # from ``validated``.  PaperEvaluator's existing minimum floor is defined
+    # over the supplied pool; passing only one remaining row would make a
+    # five-row recalled pool look too small and leave a valid report at four.
+    pool_ids = existing_order + ordered_ids
     metadata_rows: list[dict[str, Any]] = []
     metadata_lookup: dict[str, Mapping[str, Any]] = {}
-    for candidate_id in ordered_ids:
+    for candidate_id in pool_ids:
         metadata = metadata_by_id.get(candidate_id)
         if not isinstance(metadata, Mapping) and metadata_resolver is not None:
             with suppress(Exception):
@@ -440,6 +457,86 @@ def _promote_catalog_floor(
         if len(existing) >= _MIN_REPORT_CANDIDATES:
             break
     return records
+
+
+def _agent_selection_limit(target_paper_count: int | None) -> int:
+    """Return the one final selection cap shared by agent-path consumers."""
+    if target_paper_count is None:
+        requested = BUDGET_CAPS["max_selected"]
+    else:
+        try:
+            requested = max(0, int(target_paper_count))
+        except (TypeError, ValueError):
+            requested = BUDGET_CAPS["max_selected"]
+    return min(max(requested, _MIN_REPORT_CANDIDATES), BUDGET_CAPS["max_selected"])
+
+
+def _approved_minimum_paper_count(session_plan: Any) -> int:
+    """Read only the explicit approved minimum; a target is not a minimum."""
+    if session_plan is None:
+        return 1
+    try:
+        raw_scope = json.loads(getattr(session_plan, "scope_json", "[]") or "[]")
+    except (TypeError, ValueError):
+        return 1
+    constraints = raw_scope.get("constraints", ()) if isinstance(raw_scope, Mapping) else raw_scope
+    resolved = resolve_paper_count_constraints(constraints, default=1)
+    minimum = resolved.get("min_count") if resolved.get("valid") else None
+    if isinstance(minimum, bool) or not isinstance(minimum, int):
+        return 1
+    return max(1, min(minimum, BUDGET_CAPS["max_selected"]))
+
+
+def _selection_shortfall_reason(selected_count: int, minimum_paper_count: int) -> str | None:
+    if selected_count >= minimum_paper_count:
+        return None
+    return (
+        "approved minimum paper count not met: "
+        f"selected {selected_count} of {minimum_paper_count}"
+    )
+
+
+def _add_synthesis_limitation(result, limitation: str):
+    """Keep the same safe count limitation in every candidate artifact view."""
+    payload = result.output.model_dump(mode="json")
+    safe_summary = dict(payload.get("safe_summary") or {})
+    limitations = safe_summary.get("limitations")
+    if not isinstance(limitations, list):
+        limitations = []
+    if limitation not in limitations:
+        limitations.append(limitation)
+    safe_summary["limitations"] = limitations
+    payload["safe_summary"] = safe_summary
+    payload["output_hash"] = report_output_hash(
+        {key: value for key, value in payload.items() if key != "output_hash"}
+    )
+    output = type(result.output).model_validate(payload)
+    markdown = result.markdown.rstrip() + f"\n\n## 局限\n\n- {limitation}\n"
+    return replace(
+        result,
+        output=output,
+        markdown=markdown,
+        html=render_markdown_html(markdown),
+    )
+
+
+def _bound_agent_selection(
+    candidates: Iterable[Mapping[str, Any]], target_paper_count: int | None,
+) -> list[dict[str, Any]]:
+    """Deduplicate and stably cap the final agent selection before fan-out."""
+    bounded: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not isinstance(item, Mapping):
+            continue
+        candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+        if not isinstance(candidate_id, str) or not candidate_id or candidate_id in seen:
+            continue
+        bounded.append(dict(item))
+        seen.add(candidate_id)
+        if len(bounded) >= _agent_selection_limit(target_paper_count):
+            break
+    return bounded
 
 
 def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str]) -> dict:
@@ -1454,6 +1551,7 @@ class Orchestrator:
         approved_capabilities: dict[str, dict] = {}
         budget_snapshot: dict = {}
         session_plan = self._store.get_session_plan(session.research_session_id, owner_id, plan_version)
+        minimum_paper_count = _approved_minimum_paper_count(session_plan)
         if session_plan is not None:
             try:
                 raw_capabilities = json.loads(session_plan.capabilities_json or "[]")
@@ -1485,6 +1583,7 @@ class Orchestrator:
         evaluator_outputs: list[dict] = []
         evaluator_outputs_by_id: dict[str, dict] = {}
         selected_count = 0
+        selection_shortfall_reason: str | None = None
         items = self._store.list_work_items(task.research_task_id, plan_version=plan_version)
         # Store order is not a scheduling contract.  Topologically order the
         # existing WorkItems so a producer always runs before its consumer;
@@ -1716,7 +1815,13 @@ class Orchestrator:
                                 ]
                             },
                             set(recall_allowlist),
+                            target_paper_count=task.target_paper_count,
                         )
+                # This is the single final selection set for all agent-path
+                # consumers: persistence, synthesizer input, matrix context,
+                # acquisition and terminal accounting must not each apply a
+                # different budget or duplicate policy.
+                validated = _bound_agent_selection(validated, task.target_paper_count)
                 if not validated:
                     failures += 1
                     synthesis_error = "NO_VALIDATED_EVIDENCE"
@@ -1894,7 +1999,11 @@ class Orchestrator:
                 # 后立即把真实候选持久化；只接受 allowed_candidates 白名单内的召回 ID，
                 # 落库失败不阻断后续 WorkItem（选集写不进去不该把任务打成 failed）。
                 self._persist_agent_selections(
-                    task.research_task_id, normalized_output, allowed_candidates, candidate_sources
+                    task.research_task_id,
+                    normalized_output,
+                    allowed_candidates,
+                    candidate_sources,
+                    target_paper_count=task.target_paper_count,
                 )
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
@@ -2061,8 +2170,17 @@ class Orchestrator:
                                 ]
                             },
                             set(recall_ids),
+                            target_paper_count=task.target_paper_count,
                         )
+                validated_candidates = _bound_agent_selection(
+                    validated_candidates, task.target_paper_count
+                )
                 selected_count = len(validated_candidates)
+                selection_shortfall_reason = _selection_shortfall_reason(
+                    selected_count, minimum_paper_count
+                )
+                if selection_shortfall_reason and synthesis_error is None:
+                    synthesis_error = "EVIDENCE_INSUFFICIENT"
                 matrix_built = False
                 try:
                     if synthesis_run_id is None or synthesis_output is None:
@@ -2079,6 +2197,8 @@ class Orchestrator:
                         validated_candidates=validated_candidates,
                         title="深度研究报告",
                     )
+                    if selection_shortfall_reason:
+                        synthesis = _add_synthesis_limitation(synthesis, selection_shortfall_reason)
 
                     matrix_failure = "MATRIX_NOT_READY" if synthesis_matrix_error else None
                     if matrix_failure:
@@ -2127,6 +2247,8 @@ class Orchestrator:
                                 plan_version=plan_version,
                                 report_version=None,
                                 title="深度研究报告",
+                                additional_limitations=(selection_shortfall_reason,)
+                                if selection_shortfall_reason else (),
                             )
                         except Exception:  # noqa: BLE001 - candidate artifact remains the durable fallback
                             synthesis_error = synthesis_error or "REPORT_NOT_READY"
@@ -2177,6 +2299,10 @@ class Orchestrator:
                             citation_manifest=fallback_citations,
                             title="深度研究报告",
                         )
+                        if selection_shortfall_reason:
+                            fallback_result = _add_synthesis_limitation(
+                                fallback_result, selection_shortfall_reason
+                            )
                         delivered = ReportDeliveryService(
                             store=self._store, memory_repository=self._memory_repository,
                         ).deliver(
@@ -2234,13 +2360,21 @@ class Orchestrator:
             self._emit_synthesis_failure_notification(
                 task=task, session=session, owner_id=owner_id,
                 version=plan_version, code=synthesis_error,
+                reason=selection_shortfall_reason,
                 retry_attempt=synthesis_attempts if synthesis_attempts > 1 else None,
             )
         final_status = "completed" if items and failures == 0 else "partial"
         with suppress(InvalidStateTransition):
             self._store.update_task_status(task.research_task_id, owner_id, final_status)
         final_error_code = None if failures == 0 else (synthesis_error or failure_error_code or "AGENT_RUN_FAILED")
-        self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": selected_count, "error_code": final_error_code})
+        terminal_payload = {
+            "status": final_status,
+            "selected_count": selected_count,
+            "error_code": final_error_code,
+        }
+        if selection_shortfall_reason:
+            terminal_payload["reason"] = selection_shortfall_reason
+        self._emit(task.research_task_id, "terminal", terminal_payload)
         return self._result(task.research_task_id, final_status, plan_version, selected_count, synthesis_artifact_id, (), failures > 0, final_error_code)
 
     def _plan_is_approved(self, task, owner_id: str) -> bool:
@@ -2414,6 +2548,7 @@ class Orchestrator:
         evaluator_output: dict,
         allowed_candidates: set[str],
         candidate_sources: dict[str, str] | None = None,
+        target_paper_count: int | None = None,
     ) -> None:
         """把 agent 路径 evaluator 产出的真实候选落库为 research_paper_selections。
 
@@ -2496,6 +2631,11 @@ class Orchestrator:
                 ))
         if not selections:
             return
+        # The durable projection is one of the consumers of the final agent
+        # selection set. Keep it on the same stable, deduplicated prefix as
+        # the synthesizer/matrix/terminal path; acquisition must not be the
+        # first place where an over-budget evaluator output is truncated.
+        selections = selections[:_agent_selection_limit(target_paper_count)]
         try:
             self._store.replace_selections(research_task_id, selections)
         except Exception as exc:  # noqa: BLE001 - 选集写不进去不应把任务打成 failed
@@ -3214,19 +3354,22 @@ class Orchestrator:
 
     def _emit_synthesis_failure_notification(
         self, *, task, session, owner_id: str, version: int, code: str,
-        retry_attempt: int | None = None,
+        retry_attempt: int | None = None, reason: str | None = None,
     ) -> None:
         if not session or not self._store:
             return
         try:
             service = ResearchNotificationService(store=self._store)
+            payload = {"report_version": version, "error_code": code}
+            if reason:
+                payload["reason"] = reason
             service.emit(
                 owner_id=owner_id,
                 research_session_id=session.research_session_id,
                 research_task_id=task.research_task_id,
                 notification_kind="failed",
                 subject_version=version,
-                payload={"report_version": version, "error_code": code},
+                payload=payload,
                 idempotency_key=f"research-report:{task.research_task_id}:{version}:failed",
             )
             # Failure and degraded completion are separate durable facts.  A
@@ -3238,7 +3381,7 @@ class Orchestrator:
                 research_task_id=task.research_task_id,
                 notification_kind="partial",
                 subject_version=version,
-                payload={"report_version": version, "error_code": code},
+                payload=payload,
                 idempotency_key=f"research-report:{task.research_task_id}:{version}:partial",
             )
             if retry_attempt is not None and retry_attempt > 1:
@@ -3248,7 +3391,7 @@ class Orchestrator:
                     research_task_id=task.research_task_id,
                     notification_kind="failed",
                     subject_version=version,
-                    payload={"report_version": version, "error_code": code, "retry_attempt": retry_attempt},
+                    payload={**payload, "retry_attempt": retry_attempt},
                     idempotency_key=f"research-report:{task.research_task_id}:{version}:retry:{retry_attempt}",
                 )
         except Exception:
@@ -3337,6 +3480,16 @@ class Orchestrator:
         if not dimensions:
             return None
         catalog_store = getattr(self._adapter, "_store", None)
+        if catalog_store is None:
+            # The production adapter is intentionally lazy and may still have
+            # no private store reference when the model/tool path created the
+            # frozen search snapshot.  Reuse the configured paper-discovery
+            # provider, exactly as the candidate metadata resolver does; do
+            # not construct another catalog/cache or use global rows.
+            with suppress(Exception):
+                from backend.app.api.common import _paper_store
+
+                catalog_store = _paper_store()
         get_job = getattr(catalog_store, "get_search_job", None)
         get_results = getattr(catalog_store, "get_search_results", None)
         if not callable(get_job) or not callable(get_results):

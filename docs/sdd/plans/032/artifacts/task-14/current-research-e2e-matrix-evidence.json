@@ -1,0 +1,336 @@
+{
+  "spec": "032",
+  "task": "14",
+  "run_id": "spec032-task14-research-e2e-matrix-20261008T183733Z",
+  "result": "blocked",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "branch": "codex/spec032-final-acceptance",
+    "commit": "68315ba",
+    "service_session": "96818",
+    "started_at": "2026-10-08T18:37:33Z",
+    "request_model": "qwen3.5:9b",
+    "request_reasoning_effort": "off",
+    "global_model_changed": false,
+    "env_changed": false
+  },
+  "requests": [
+    {
+      "id": "ready-01",
+      "method": "GET",
+      "path": "/api/ready",
+      "http_status": 200,
+      "response": {
+        "ready": true,
+        "warmup": {
+          "jieba": "ready",
+          "ollama_tags": "ready",
+          "embedding": "ready",
+          "qdrant": "ready"
+        }
+      }
+    },
+    {
+      "id": "health-01",
+      "method": "GET",
+      "path": "/api/health",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "default_model": "qwen3.8:27b",
+        "paper_discovery_enabled": true,
+        "credentials_recorded": false
+      }
+    }
+  ],
+  "natural_language_intake": {
+    "id": "intake-01",
+    "method": "POST",
+    "path": "/api/conversations/messages",
+    "http_status": 200,
+    "request": {
+      "content": "请进行一次深度研究。主题是 USENIX Security 2024 中的 security/privacy 方法，目标是比较至少 5 篇方法与局限，并且最多选择 5 篇论文，目标论文数为 5。来源限定为 USENIX Security，时间范围是 2024-2024，输出中文 Markdown 报告并使用行内引用。",
+      "model": "qwen3.5:9b",
+      "reasoning_effort": "off",
+      "mode": "normal"
+    },
+    "response": {
+      "stream": "SSE",
+      "terminal_status": "completed",
+      "event_types": ["meta", "skill_activation", "processing_step", "plan", "intake", "done"],
+      "conversation_id": "81661d4218724b56a2d35017e2cb5c5a",
+      "user_message_id": "40f43ce818c74a2b8db1654b172d8a43",
+      "assistant_message_id": "554a1175c5374490ba0b9cfcd6c8d7b7",
+      "research_session_id": "3b74b17ca3b949f8919cab5db62e5f45",
+      "session_status": "plan_pending_approval",
+      "subject_version": 1
+    }
+  },
+  "entities": {
+    "conversation_id": "81661d4218724b56a2d35017e2cb5c5a",
+    "trigger_message_id": "40f43ce818c74a2b8db1654b172d8a43",
+    "assistant_plan_message_id": "554a1175c5374490ba0b9cfcd6c8d7b7",
+    "research_session_id": "3b74b17ca3b949f8919cab5db62e5f45",
+    "intake_draft_id": "992c7423d7524bb5a32c7c82f0174016",
+    "approval_request_id": "0f097714ccc74f0ba053fb2b1d41ae18",
+    "plan_version": 1,
+    "plan_output_hash": "de7ce0245c7b6468164e2f224a2744238fe73765e29e663b38dd1e4ef5648a7f"
+  },
+  "plan_gate": {
+    "status": "plan_pending_approval",
+    "topic": "USENIX Security 2024 中的 security/privacy 方法",
+    "objective": "比较至少 5 篇方法与局限",
+    "source_ids": ["usenix"],
+    "time_range": {"from": 2024, "to": 2024},
+    "constraints": {"min_paper_count": 5, "max_paper_count": 5, "target_paper_count": 5},
+    "budget_target_paper_count": 5,
+    "approval_allowed": true,
+    "approval_not_sent_at_capture": true
+  },
+  "approval": {
+    "id": "approval-01",
+    "method": "POST",
+    "path": "/api/research-sessions/3b74b17ca3b949f8919cab5db62e5f45/commands",
+    "http_status": 200,
+    "request": {
+      "command": "approve_plan",
+      "subject_version": 1,
+      "scope_json": {"plan_version": 1, "output_hash": "de7ce0245c7b6468164e2f224a2744238fe73765e29e663b38dd1e4ef5648a7f"},
+      "idempotency_key": "plan-approval:3b74b17ca3b949f8919cab5db62e5f45:1"
+    },
+    "response": {
+      "session_status": "queued",
+      "approval_status": "approved",
+      "decided_at": "2026-10-08T18:38:55Z",
+      "research_task_id": "e1591ee5833954e7a6e98221ff60cc01",
+      "task_status_at_response": "planning",
+      "target_paper_count": 5
+    }
+  },
+  "task": {
+    "research_task_id": "e1591ee5833954e7a6e98221ff60cc01",
+    "status_first_read": "running",
+    "target_paper_count": 5,
+    "current_plan_version": 1,
+    "conversation_id": "81661d4218724b56a2d35017e2cb5c5a",
+    "research_session_id": "3b74b17ca3b949f8919cab5db62e5f45"
+  },
+  "execution_events": [
+    {
+      "id": "events-01",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/events?after_seq=0",
+      "http_status": 200,
+      "observed": [
+        {"event_seq": 1, "type": "task", "node_key": "phase:research", "status": "running"},
+        {"event_seq": 2, "type": "plan", "plan_version": 1, "status": "running"},
+        {"event_seq": 3, "type": "worker", "role": "search-worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:s1", "status": "running", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 4, "type": "worker", "skill_name": "usenix-catalog-orchestration", "status": "running"},
+        {"event_seq": 5, "type": "worker", "tool_name": "search_paper_catalog", "status": "running"},
+        {"event_seq": 6, "type": "worker", "tool_name": "search_paper_catalog", "status": "completed", "candidate_count": 3, "content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093"}
+      ],
+      "read_timeout_seconds": 5,
+      "read_timeout_note": "No later event arrived during the bounded stream read; this was not treated as a task failure."
+    },
+    {
+      "id": "events-02",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/events?after_seq=6",
+      "http_status": 200,
+      "observed": [
+        {"event_seq": 7, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:s1", "status": "completed"},
+        {"event_seq": 8, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:s1", "status": "completed", "search_id": "85353bd52fdb492398a965a28a48c296", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 9, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:s2", "status": "running", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 10, "type": "worker", "skill_name": "usenix-catalog-orchestration", "status": "running"},
+        {"event_seq": 11, "type": "worker", "tool_name": "search_paper_catalog", "status": "running"},
+        {"event_seq": 12, "type": "worker", "tool_name": "search_paper_catalog", "status": "completed", "candidate_count": 3, "content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093"}
+      ],
+      "trace_projection": {"code": "TRACE_PROJECTION_FAILED", "retryable": true, "treated_as": "transient"},
+      "read_timeout_seconds": 5
+    },
+    {
+      "id": "events-03",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/events?after_seq=12",
+      "http_status": 200,
+      "observed": [
+        {"event_seq": 13, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:s2", "status": "completed"},
+        {"event_seq": 14, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:s2", "status": "completed", "search_id": "278c31d7b163455ba5dd4bf7773f917c", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 15, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:e1", "role": "paper-evaluator", "status": "running", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 16, "type": "worker", "skill_name": "research-paper-evaluation", "status": "running"}
+      ],
+      "trace_projection": {"code": "TRACE_PROJECTION_FAILED", "retryable": true, "treated_as": "transient"},
+      "read_timeout_seconds": 5,
+      "read_timeout_note": "The bounded stream read ended after the available frames; task remained running."
+    },
+    {
+      "id": "events-04",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/events?after_seq=16",
+      "http_status": 200,
+      "observed": [],
+      "read_timeout_seconds": 5,
+      "read_timeout_note": "No new event frame arrived during the bounded read; task remained running."
+    },
+    {
+      "id": "events-05",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/events?after_seq=16",
+      "http_status": 200,
+      "observed": [],
+      "read_timeout_seconds": 5,
+      "read_timeout_note": "No new event frame arrived during the bounded read; evaluator remained running."
+    },
+    {
+      "id": "events-06",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/events?after_seq=16",
+      "http_status": 200,
+      "observed": [
+        {"event_seq": 17, "type": "worker", "skill_name": "research-paper-evaluation", "status": "completed"},
+        {"event_seq": 18, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:e1", "role": "paper-evaluator", "status": "completed", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 19, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:c1", "role": "research-critic", "status": "running", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 20, "type": "worker", "skill_name": "research-coverage-review", "status": "running"},
+        {"event_seq": 21, "type": "worker", "skill_name": "research-coverage-review", "status": "completed"},
+        {"event_seq": 22, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:c1", "role": "research-critic", "status": "completed", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 23, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:syn", "role": "synthesizer", "status": "running", "resolved_model": "qwen3.8:27b-q4_K_M"},
+        {"event_seq": 24, "type": "worker", "skill_name": "research-report-synthesis", "status": "running"}
+      ],
+      "trace_projection": {"code": "TRACE_PROJECTION_FAILED", "retryable": true, "treated_as": "transient"},
+      "read_timeout_seconds": 5,
+      "read_timeout_note": "The bounded stream read ended after available frames; synthesizer remained running."
+    },
+    {
+      "id": "events-07",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/events?after_seq=24",
+      "http_status": 200,
+      "observed": [
+        {"event_seq": 25, "type": "worker", "skill_name": "research-report-synthesis", "status": "completed"},
+        {"event_seq": 26, "type": "worker", "work_item_id": "e1591ee5833954e7a6e98221ff60cc01:syn", "role": "synthesizer", "status": "completed", "resolved_model": "qwen3.5:9b"},
+        {"event_seq": 27, "type": "terminal", "status": "partial", "error_code": "MATRIX_NOT_READY", "selected_count": 4}
+      ],
+      "trace_projection": {"code": "TRACE_PROJECTION_FAILED", "retryable": true, "treated_as": "transient"},
+      "terminal": {"status": "partial", "error_code": "MATRIX_NOT_READY", "selected_count": 4, "completed_at": "2026-10-08T18:47:25Z"}
+    }
+  ],
+  "read_only_checks": [
+    {
+      "id": "task-02",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01",
+      "http_status": 200,
+      "response": {"status": "running", "updated_at": "2026-10-08T18:43:00Z", "target_paper_count": 5, "current_plan_version": 1}
+    },
+    {
+      "id": "task-03",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01",
+      "http_status": 200,
+      "response": {"status": "running", "updated_at": "2026-10-08T18:43:00Z", "target_paper_count": 5, "current_plan_version": 1},
+      "interpretation": "No state change observed since task-02."
+    },
+    {
+      "id": "acquisitions-02",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/acquisitions",
+      "http_status": 404,
+      "response": {"code": "BATCH_NOT_FOUND", "message": "研究任务尚未确认全文获取"},
+      "interpretation": "阶段性未创建全文批次；未视为终态失败。"
+    },
+    {
+      "id": "matrix-01",
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/evidence-matrix?plan_version=1",
+      "http_status": 409,
+      "response": {"code": "MATRIX_NOT_READY", "message": "证据矩阵尚未准备完成"},
+      "interpretation": "评估/导入尚未完成；未尝试伪造矩阵。"
+    }
+  ],
+  "acquisitions": {
+    "id": "acquisitions-03",
+    "method": "GET",
+    "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/acquisitions",
+    "http_status": 200,
+    "response_summary": {
+      "status": "completed",
+      "approval_status": "running",
+      "selection_version": 1,
+      "batch_ids": ["f10f2307-ec0e-484e-ae9c-4221366c0ea7", "18bb9c71-1805-4d31-88ed-84ca394b7061"],
+      "selected_count": 4,
+      "items_completed": 4,
+      "items_failed": 0,
+      "links_completed": 4
+    },
+    "items": [
+      {"candidate_id": "57e0402f82fe2ce354bea423b201fde3", "paper_id": "527fe0c1515d48c78adec8f4eb7f4979", "document_id": "527fe0c1515d48c78adec8f4eb7f4979", "import_item_id": "40586d11-0f82-4f66-a1a8-1f11357ab77d", "title_slug": "dnngpdiagnosingandmitigatingmodelsfaultsusinglatentconcepts", "status": "completed", "year": 2024},
+      {"candidate_id": "4e6322a23b92a271dbec9906c51fe0ab", "paper_id": "a151fcff09944e7cbd1f4086376ae914", "document_id": "a151fcff09944e7cbd1f4086376ae914", "import_item_id": "0646477f-da5d-45e4-a210-16494de5187c", "title_slug": "ghostraceexploitingandmitigatingspeculativeraceconditions", "status": "completed", "year": 2024},
+      {"candidate_id": "9793a4a35caad52ee99f926ae7c90810", "paper_id": "929a342c0b8d4c8283198751cae9b327", "document_id": "929a342c0b8d4c8283198751cae9b327", "import_item_id": "c2acc111-901e-423f-a827-738868980c79", "title_slug": "cascadecpufuzzingviaintricateprogramgeneration", "status": "completed", "year": 2024},
+      {"candidate_id": "ef9e0846844e5b02834163586ea6ddc9", "paper_id": "56fc315e952342158e5ae2f5ef6f01a0", "document_id": "56fc315e952342158e5ae2f5ef6f01a0", "import_item_id": "6e46a74e-d31a-4c30-a4aa-8a458a554184", "title_slug": "stopdontclickhereanymoreboostingwebsitefingerprintingbyconsideringsetsofsubpages", "status": "completed", "year": 2024}
+    ],
+    "interpretation": "自动全文获取/导入对 4 个被选候选均完成；目标/下限为 5，但 terminal selected_count=4，因此不能判定主路径通过。"
+  },
+  "report_checks": {
+    "matrix": {
+      "method": "GET",
+      "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/evidence-matrix?plan_version=1",
+      "http_status": 409,
+      "response": {"code": "MATRIX_NOT_READY", "message": "证据矩阵尚未准备完成"}
+    },
+    "canonical_report": [
+      {"format": "json", "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/reports/1?format=json", "http_status": 404, "response": {"code": "REPORT_NOT_READY", "message": "report is not ready"}},
+      {"format": "markdown", "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/reports/1?format=markdown", "http_status": 404, "response": {"code": "REPORT_NOT_READY", "message": "report is not ready"}},
+      {"format": "html", "path": "/api/research-tasks/e1591ee5833954e7a6e98221ff60cc01/reports/1?format=html", "http_status": 404, "response": {"code": "REPORT_NOT_READY", "message": "report is not ready"}}
+    ],
+    "session_artifacts": {
+      "method": "GET",
+      "path": "/api/research-sessions/3b74b17ca3b949f8919cab5db62e5f45/artifacts?report_version=1",
+      "http_status": 200,
+      "metadata_only": true,
+      "artifact_types": ["citation_manifest", "html", "markdown"],
+      "artifact_ids": {
+        "citation_manifest": "121b96d648754c5d819550fb13509c72",
+        "html": "f7c3ee2f49bd45c6bebfcf10987b5730",
+        "markdown": "cc16eb2b3753471198cefd6cd14766e6"
+      },
+      "content_hashes": {
+        "html": "e3a42acaa0f604803b01eac8a5b2089a0b286dd6fe585ef0d6d13f5b6e4cac6e",
+        "markdown": "cb63be8b4375ae6058baf2996087f3cc577c1ecb4a504c01254f98a6927c1102",
+        "citation_manifest": "099f2e15f3bf23d7016383f93acd8abd3202d15a78d3201598951580674877a6"
+      },
+      "note": "这些是合成阶段的 artifact metadata/摘要产物；canonical ResearchReport GET 仍 REPORT_NOT_READY，不能把 artifact metadata 或摘要当作全文证据矩阵。"
+    },
+    "artifact_download_checks": {
+      "markdown": {"http_status": 200, "bytes": 9307, "sha256_matches_metadata": true, "citation_entries": 4, "evidence_level": "catalog_summary_not_fulltext"},
+      "html": {"http_status": 200, "bytes": 9921, "sha256_matches_metadata": true, "citation_entries": 4, "evidence_level": "catalog_summary_not_fulltext"}
+    }
+  },
+  "failure": {
+    "stage": "research_terminal_after_evaluation_and_catalog_synthesis",
+    "status": "BLOCKED",
+    "code": "MATRIX_NOT_READY",
+    "selected_count": 4,
+    "required_min_max_target": 5,
+    "message": "自然语言计划要求 min=max=target=5，但真实候选评估终止为 selected_count=4；自动导入完成 4 篇，却未建立 Evidence Matrix，canonical ResearchReport 及其 markdown/html 下载不可用。"
+  },
+  "state_trace": [
+    {"at": "2026-10-08T18:38:01Z", "entity": "conversation", "id": "81661d4218724b56a2d35017e2cb5c5a", "state": "message_completed"},
+    {"at": "2026-10-08T18:38:01Z", "entity": "research_session", "id": "3b74b17ca3b949f8919cab5db62e5f45", "state": "plan_pending_approval", "condition": "budget min=max=target=5"},
+    {"at": "2026-10-08T18:38:55Z", "entity": "research_session", "id": "3b74b17ca3b949f8919cab5db62e5f45", "state": "queued", "condition": "approve_plan subject_version=1 hash matched"},
+    {"at": "2026-10-08T18:39:08Z", "entity": "research_task", "id": "e1591ee5833954e7a6e98221ff60cc01", "state": "running", "condition": "target_paper_count=5"},
+    {"at": "2026-10-08T18:39:08Z", "entity": "work_item:s1", "id": "e1591ee5833954e7a6e98221ff60cc01:s1", "state": "search_completed", "candidate_count": 3},
+    {"at": "2026-10-08T18:41:27Z", "entity": "search", "id": "85353bd52fdb492398a965a28a48c296", "state": "s1_s2_completed", "candidate_count_per_worker": 3},
+    {"at": "2026-10-08T18:43:40Z", "entity": "work_item:e1", "id": "e1591ee5833954e7a6e98221ff60cc01:e1", "state": "evaluation_running", "resolved_model": "qwen3.5:9b"}
+    ,{"at": "2026-10-08T18:46:23Z", "entity": "work_item:e1", "id": "e1591ee5833954e7a6e98221ff60cc01:e1", "state": "evaluation_completed"}
+    ,{"at": "2026-10-08T18:46:23Z", "entity": "work_item:c1", "id": "e1591ee5833954e7a6e98221ff60cc01:c1", "state": "coverage_check_completed"}
+    ,{"at": "2026-10-08T18:46:23Z", "entity": "work_item:syn", "id": "e1591ee5833954e7a6e98221ff60cc01:syn", "state": "synthesis_running", "resolved_model": "qwen3.8:27b-q4_K_M"}
+    ,{"at": "2026-10-08T18:47:25Z", "entity": "research_task", "id": "e1591ee5833954e7a6e98221ff60cc01", "state": "partial", "error_code": "MATRIX_NOT_READY", "selected_count": 4}
+    ,{"at": "2026-10-08T18:47:51Z", "entity": "acquisition", "id": "f10f2307-ec0e-484e-ae9c-4221366c0ea7", "state": "all_selected_items_completed", "item_count": 4}
+  ],
+  "artifacts": [],
+  "notes": [
+    "Only this new run may be appended; prior evidence files remain untouched.",
+    "No old batch will be retried, no PDF has been downloaded in this run, and no secret/env value is recorded."
+  ]
+}

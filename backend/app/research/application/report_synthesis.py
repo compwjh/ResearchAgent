@@ -683,7 +683,20 @@ class ReportDeliveryService:
         notification = self.notify(
             owner_id=owner_id, research_session_id=session.research_session_id,
             research_task_id=task_id, notification_kind=notification_kind,
-            subject_version=version, payload={"report_version": version, "artifact_ids": artifact_ids, "message_id": message.message_id},
+            subject_version=version,
+            payload={
+                "report_version": version,
+                "artifact_ids": artifact_ids,
+                "message_id": message.message_id,
+                **(
+                    {"reason": result.output.safe_summary["limitations"][-1]}
+                    if isinstance(result.output.safe_summary.get("limitations"), list)
+                    and result.output.safe_summary["limitations"]
+                    and isinstance(result.output.safe_summary["limitations"][-1], str)
+                    and result.output.safe_summary["limitations"][-1]
+                    else {}
+                ),
+            },
             idempotency_key=key,
         )
         return {
