@@ -32,6 +32,8 @@ from backend.app.knowledge_base.infrastructure.inspection import (
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _CHUNKERS = {"v1", "v2"}
 _lock = threading.RLock()
+_EMPTY_BOOTSTRAP_RUN_ID = "empty-bootstrap"
+_EMPTY_BOOTSTRAP_COLLECTION = "papers_rebuild_empty_bootstrap"
 
 
 def _with_manifest_lock(function):
@@ -632,10 +634,10 @@ class FinalizeBundleStore:
             metadata_path = self.live_root / "papers.json"
             if not metadata_path.exists():
                 _atomic_bytes(metadata_path, b"[]")
-            alias_target = "papers_rebuild_empty_bootstrap"
+            alias_target = _EMPTY_BOOTSTRAP_COLLECTION
             marker = {
                 "schema_version": "index-generation-v1",
-                "run_id": "empty-bootstrap",
+                "run_id": _EMPTY_BOOTSTRAP_RUN_ID,
                 "alias_name": "papers",
                 "alias_target": alias_target,
                 "bundle_sha256": _sha256_json({}),
@@ -655,6 +657,7 @@ class FinalizeBundleStore:
         *,
         finalize_pending: bool = False,
         allow_bootstrap: bool = False,
+        allow_stale_metadata: bool = False,
     ) -> dict[str, Any]:
         marker_path = self.live_root / "index-generation.json"
         if not marker_path.exists():
@@ -669,15 +672,52 @@ class FinalizeBundleStore:
             self._bootstrap_empty_generation()
         marker = _read_json(marker_path, "INDEX_FINALIZE_REQUIRED")
         _validate("index-generation.schema.json", marker, "INDEX_FINALIZE_REQUIRED")
+        if allow_stale_metadata:
+            self._validate_committed_marker(marker)
         try:
             metadata_hash = _sha256_bytes((self.live_root / "papers.json").read_bytes())
         except OSError as error:
             raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503) from error
-        if metadata_hash != marker.get("metadata_sha256"):
+        if metadata_hash != marker.get("metadata_sha256") and not allow_stale_metadata:
             raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
         if self._live_manifests_digest() != marker.get("manifests_digest"):
             raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
         return marker
+
+    def _validate_committed_marker(self, marker: Mapping[str, Any]) -> None:
+        """Prove marker identity before any stale-metadata tolerance.
+
+        ``metadata_sha256`` is the only digest allowed to lag during a
+        canonical state write.  All other marker identity fields must still
+        match the immutable finalize bundle that published this generation.
+        The bootstrap marker has no bundle and therefore uses its fixed
+        self-contained identity.
+        """
+        run_id = marker.get("run_id")
+        if run_id == _EMPTY_BOOTSTRAP_RUN_ID:
+            expected_bundle = _sha256_json({})
+            expected_fingerprint = _sha256_bytes(_EMPTY_BOOTSTRAP_COLLECTION.encode("utf-8"))
+            if (
+                marker.get("alias_name") != "papers"
+                or marker.get("alias_target") != _EMPTY_BOOTSTRAP_COLLECTION
+                or marker.get("bundle_sha256") != expected_bundle
+                or marker.get("collection_fingerprint") != expected_fingerprint
+            ):
+                raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+            return
+
+        try:
+            bundle = self._read_bundle(str(run_id))
+        except ManifestStoreError as error:
+            raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503) from error
+        if (
+            marker.get("run_id") != bundle.get("run_id")
+            or marker.get("alias_name") != bundle.get("alias_name")
+            or marker.get("alias_target") != bundle.get("candidate_collection")
+            or marker.get("bundle_sha256") != bundle.get("bundle_sha256")
+            or marker.get("collection_fingerprint") != bundle.get("collection_fingerprint")
+        ):
+            raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
 
 
 __all__ = ["FinalizeBundleStore", "InspectionManifestStore", "ManifestClaim", "ManifestStoreError"]

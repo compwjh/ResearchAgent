@@ -159,3 +159,59 @@ def test_assert_generation_binding_tolerates_stale_but_catches_drift(tmp_path):
             meta, "papers_rebuild_other", allow_stale_metadata=True
         )
     assert exc.value.code == "INDEX_GENERATION_DRIFT"
+
+
+def test_import_tolerates_digest_window_after_indexer_returns(tmp_path):
+    """A concurrent metadata write between indexing and finalization is retry-safe."""
+    root, meta, papers = _root_with_generation(tmp_path, "gen-one", "papers_rebuild_one")
+    source = tmp_path / "window.pdf"
+    source.write_bytes(PDF)
+
+    def indexer(_record, _path):
+        records = json.loads(meta.read_text(encoding="utf-8"))
+        records[0]["title"] = "Concurrent writer"
+        meta.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+        return {"status": "indexed"}
+
+    port = create_paper_import_port(papers_dir=papers, meta_path=meta, indexer=indexer)
+    result = port.import_paper(
+        PaperImportRequest(
+            {"title": "Digest Window", "year": 2026, "conference_id": "ccs", "doi": "10/window"},
+            source,
+        )
+    )
+
+    assert result.index_status.value == "indexed", result
+    assert result.error_code is None
+    assert result.paper_id
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("alias_name", "not-papers"),
+        ("run_id", "gen-two"),
+        ("bundle_sha256", "b" * 64),
+        ("collection_fingerprint", "c" * 64),
+        ("manifests_digest", "d" * 64),
+    ),
+)
+def test_stale_metadata_does_not_bypass_marker_integrity(tmp_path, field, value):
+    """Only a metadata digest window may be tolerated by the import guard."""
+    import backend.app.knowledge_base.application as application_module
+
+    root, meta, _papers = _root_with_generation(tmp_path, "gen-one", "papers_rebuild_one")
+    marker_path = root / "data" / "kb" / "index-generation.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker[field] = value
+    marker_path.write_text(json.dumps(marker, ensure_ascii=False), encoding="utf-8")
+    # Force the intended stale-metadata path so each non-metadata tamper is
+    # tested against the same fallback entry point.
+    meta.write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(KnowledgeDocumentMigrationError):
+        application_module._assert_generation_binding(
+            meta,
+            "papers_rebuild_one",
+            allow_stale_metadata=True,
+        )
