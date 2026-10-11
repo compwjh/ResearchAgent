@@ -222,6 +222,55 @@ def test_invalid_output_retries_at_most_four_attempts():
     assert len(model.calls) == 4
 
 
+@pytest.mark.parametrize(
+    ("first_response", "rule_id", "field_path"),
+    [
+        ({"content": "not-json"}, "agent.output.json_parse", "provider.content"),
+        ({"output_json": {"schema_version": "runtime-v1", "safe_summary": {}, "source_refs": []}}, "agent.output.required_fields", "plan_version"),
+        ({"output_json": {**_output("research_critic"), "research_task_id": "other-task"}}, "agent.output.identity", "research_task_id"),
+    ],
+)
+def test_generic_output_contract_failures_record_stage_and_send_bounded_feedback(first_response, rule_id, field_path):
+    role = "research_critic" if field_path == "research_task_id" else "planner"
+    model = FakeModel([first_response, {"output_json": _output(role)}])
+    input_value = AgentRunInput(
+        "generic-contract-retry", "session-1", role,
+        skill_snapshot=_skill(role), research_task_id="task-1", work_item_id="work-1"
+        if role != "planner" else None,
+    )
+
+    result = _runner(role=role, model=model).run(input_value)
+
+    assert result.status == "completed", result.to_dict()
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["rule_id"] == rule_id
+    assert diagnostic["field_paths"] == [field_path]
+    assert diagnostic["feedback_sent"] is True
+    assert diagnostic["feedback_classification"] == "output_contract"
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "AGENT_OUTPUT_INVALID"
+    assert "required_fields" in feedback
+    assert set(feedback["failure"]) == {"rule_id", "field_paths"}
+    assert "not-json" not in json.dumps(feedback)
+
+
+def test_provider_content_block_shape_is_diagnosed_without_persisting_content():
+    model = FakeModel([
+        SimpleNamespace(content=[{"type": "text", "text": "{\"unsafe\":true}"}], tool_calls=[]),
+        {"output_json": _output("planner")},
+    ])
+
+    result = _runner(model=model).run(AgentRunInput("provider-shape", "session-1", "planner", skill_snapshot=_skill("planner")))
+
+    assert result.status == "completed", result.to_dict()
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["rule_id"] == "agent.output.provider_content"
+    assert diagnostic["field_paths"] == ["provider.content"]
+    assert "unsafe" not in json.dumps(result.model_metadata)
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert "provider.content" in json.dumps(feedback)
+
+
 def test_synthesizer_requires_matrix_when_context_is_present_and_retries_with_feedback():
     missing_matrix = {"output_json": _synthesizer_output()}
     legal_matrix = {"output_json": _synthesizer_output(evidence_matrix=_matrix_output())}

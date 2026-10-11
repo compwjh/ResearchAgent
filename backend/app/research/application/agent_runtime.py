@@ -193,6 +193,77 @@ def _matrix_validation_feedback(validation_error: Any = None) -> dict[str, Any]:
     return feedback
 
 
+_OUTPUT_CONTRACT_DIAGNOSTICS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "json_parse": ("agent.output.json_parse", ("provider.content",)),
+    "provider_content": ("agent.output.provider_content", ("provider.content",)),
+    "required_fields": ("agent.output.required_fields", ("output",)),
+    "safety": ("agent.output.safety", ("output",)),
+    "identity": ("agent.output.identity", ("output.identity",)),
+    "source_binding": ("agent.output.source_binding", ("output.source",)),
+    "structure": ("agent.output.structure", ("output",)),
+}
+_OUTPUT_CONTRACT_PATHS = frozenset({
+    "provider.content", "output", "output.identity", "output.source", "source_refs",
+    "schema_version", "safe_summary", "plan_version", "objective", "scope",
+    "work_items", "capabilities", "budget", "report_structure", "queries", "source",
+    "candidates", "refresh_diagnostics", "candidate_id", "relevance_score", "keep",
+    "reason", "evidence_refs", "coverage", "gaps", "recommendations", "bounded_replan",
+    "report_version", "sections", "citation_manifest", "artifact_ids", "evidence_matrix",
+    "research_task_id", "research_session_id", "owner_id",
+})
+
+
+def _output_contract_error(
+    stage: str,
+    *,
+    field_paths: tuple[str, ...] = (),
+    message: str = "",
+) -> AgentRuntimeError:
+    """Create a stable output-contract error without retaining provider text."""
+    error = AgentRuntimeError("AGENT_OUTPUT_INVALID", message)
+    if stage in _OUTPUT_CONTRACT_DIAGNOSTICS:
+        error.output_contract_stage = stage
+    # ``field_paths`` is intentionally accepted only for fixed call-site
+    # constants.  The diagnostic builder applies a second fixed allowlist, so
+    # model-derived values cannot be persisted.
+    safe_paths = tuple(path for path in field_paths if path in _OUTPUT_CONTRACT_PATHS)
+    if safe_paths:
+        error.output_contract_field_paths = safe_paths
+    return error
+
+
+def _output_contract_feedback(
+    role: str,
+    *,
+    require_synthesis_matrix: bool,
+    validation_error: Any = None,
+) -> dict[str, Any]:
+    """Return bounded correction instructions for any output-contract retry."""
+    required = tuple(dict.fromkeys((*ROLE_GENERIC_OUTPUT_FIELDS, *ROLE_OUTPUT_FIELDS.get(role, ()))))
+    if role == "synthesizer" and require_synthesis_matrix:
+        required = tuple(dict.fromkeys((*required, "evidence_matrix")))
+    stage = getattr(validation_error, "output_contract_stage", None)
+    safe = _OUTPUT_CONTRACT_DIAGNOSTICS.get(stage)
+    feedback: dict[str, Any] = {
+        "code": "AGENT_OUTPUT_INVALID",
+        "message": "Emit exactly one JSON object with the required fields; do not emit prose, markdown, code fences, URLs, prompts, credentials, or hidden reasoning.",
+        "required_fields": list(required),
+        "shape": {
+            "schema_version": "non-empty string",
+            "safe_summary": "object",
+            "source_refs": "array of stable IDs",
+            "role_fields": "all role-specific required fields",
+        },
+    }
+    if safe is not None:
+        observed_paths = getattr(validation_error, "output_contract_field_paths", ())
+        feedback["failure"] = {
+            "rule_id": safe[0],
+            "field_paths": list(observed_paths) if observed_paths else list(safe[1]),
+        }
+    return feedback
+
+
 def _validation_diagnostic(
     validation_error: Any,
     *,
@@ -214,6 +285,16 @@ def _validation_diagnostic(
     }
     if code == "MATRIX_NOT_READY":
         diagnostic.update(matrix_validation_diagnostic(validation_error))
+    else:
+        # Only copy values from the fixed internal map attached by
+        # ``_validate_output``.  Provider text and exception messages never
+        # cross the persistence boundary.
+        stage = getattr(validation_error, "output_contract_stage", None)
+        safe = _OUTPUT_CONTRACT_DIAGNOSTICS.get(stage)
+        if safe is not None:
+            diagnostic["rule_id"], paths = safe
+            observed_paths = getattr(validation_error, "output_contract_field_paths", ())
+            diagnostic["field_paths"] = list(observed_paths) if observed_paths else list(paths)
     return diagnostic
 
 
@@ -826,7 +907,11 @@ class _OllamaRunnerAdapter:
         content = getattr(response, "content", response if isinstance(response, str) else "")
         parsed_content = _parse_json_mapping(content)
         output_json = dict(parsed_content) if parsed_content is not None else None
-        return {"output_json": output_json, "tool_calls": calls}
+        return {
+            "output_json": output_json,
+            "tool_calls": calls,
+            "output_observation": _classify_output_observation(content, parsed_content),
+        }
 
 
 class RoleCapabilityRegistry:
@@ -1059,16 +1144,39 @@ class FakeTool:
         return self.handler(arguments)
 
 
-def _response_parts(response: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+def _classify_output_observation(raw: Any, parsed: Mapping[str, Any] | None) -> str | None:
+    """Classify parse failures using provider-shape metadata only."""
+    if parsed is not None:
+        return None
+    if isinstance(raw, (list, tuple)):
+        # LangChain providers may expose content blocks instead of a string;
+        # retain only the shape, never the block text.
+        return "provider_content"
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return "provider_content"
+    if isinstance(raw, str):
+        return "json_parse"
+    return "provider_content"
+
+
+def _response_parts(response: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str | None]:
     if isinstance(response, Mapping):
         raw = response.get("output_json", response.get("output", response.get("content")))
         calls = response.get("tool_calls", ())
+        observation = response.get("output_observation")
     else:
         raw = getattr(response, "output_json", getattr(response, "output", getattr(response, "content", None)))
         calls = getattr(response, "tool_calls", ())
-    raw = _parse_json_mapping(raw)
+        observation = getattr(response, "output_observation", None)
+    parsed = _parse_json_mapping(raw)
     calls = list(calls or ()) if isinstance(calls, (list, tuple)) else []
-    return (dict(raw) if isinstance(raw, Mapping) else None), [dict(item) for item in calls if isinstance(item, Mapping)]
+    if observation not in _OUTPUT_CONTRACT_DIAGNOSTICS:
+        observation = _classify_output_observation(raw, parsed)
+    return (
+        dict(parsed) if isinstance(parsed, Mapping) else None,
+        [dict(item) for item in calls if isinstance(item, Mapping)],
+        observation,
+    )
 
 
 def _parse_json_mapping(raw: Any) -> Mapping[str, Any] | None:
@@ -1634,10 +1742,11 @@ class ResearchAgentRunner:
     def _validate_output(
         self,
         role: str,
-        output: Mapping[str, Any],
+        output: Mapping[str, Any] | None,
         *,
         require_synthesis_matrix: bool = False,
         synthesis_matrix_context: Mapping[str, Any] | None = None,
+        output_observation: str | None = None,
         search_source_scope: Mapping[str, Any] | None = None,
         search_skill_name: str | None = None,
         expected_work_item_id: str | None = None,
@@ -1646,19 +1755,19 @@ class ResearchAgentRunner:
         expected_owner_id: str | None = None,
     ) -> dict[str, Any]:
         if not isinstance(output, Mapping):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+            raise _output_contract_error(output_observation or "provider_content")
         try:
             validate_safe_scope(dict(output))
         except PlanOutputInvalid:
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID") from None
+            raise _output_contract_error("safety") from None
         source_refs = output.get("source_refs", [])
         if not isinstance(source_refs, list) or any(not isinstance(ref, str) or not ref.strip() or not all(char.isalnum() or char in ":_-" for char in ref) for ref in source_refs):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+            raise _output_contract_error("structure", field_paths=("source_refs",))
         result = dict(output)
         if not isinstance(result.get("schema_version"), str) or not result.get("schema_version"):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+            raise _output_contract_error("required_fields", field_paths=("schema_version",))
         if not isinstance(result.get("safe_summary"), Mapping):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+            raise _output_contract_error("required_fields", field_paths=("safe_summary",))
         if expected_work_item_id:
             # WorkItem identity is server-owned.  Bind the model's presentation
             # field before hashing/checkpointing; the model cannot select a
@@ -1673,14 +1782,14 @@ class ResearchAgentRunner:
                 # Unlike WorkItem's presentation field, real task/session/owner
                 # references are provenance claims.  A conflicting claim must
                 # fail closed rather than be rewritten by the runtime.
-                raise AgentRuntimeError("AGENT_OUTPUT_INVALID", f"{field_name} binding is not approved")
+                raise _output_contract_error("identity", field_paths=(field_name,), message=f"{field_name} binding is not approved")
         if role == "search_worker" and isinstance(search_source_scope, Mapping) and any(
             field in search_source_scope for field in ("source_ids", "sources", "source")
         ):
             approved_source = _approved_search_source(search_source_scope)
             model_source = result.get("source")
             if approved_source is None:
-                raise AgentRuntimeError("AGENT_OUTPUT_INVALID", "search source scope is ambiguous")
+                raise _output_contract_error("source_binding", message="search source scope is ambiguous")
             if model_source == approved_source:
                 pass
             elif (
@@ -1694,10 +1803,10 @@ class ResearchAgentRunner:
                 # without changing IDs or evidence references.
                 result["source"] = approved_source
             else:
-                raise AgentRuntimeError("AGENT_OUTPUT_INVALID", "search source binding is not approved")
+                raise _output_contract_error("source_binding", message="search source binding is not approved")
         for key in ROLE_OUTPUT_FIELDS[role]:
             if key not in result:
-                raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+                raise _output_contract_error("required_fields", field_paths=(key,))
         if role == "synthesizer" and require_synthesis_matrix and not isinstance(result.get("evidence_matrix"), Mapping):
             raise AgentRuntimeError(
                 "MATRIX_NOT_READY",
@@ -1723,7 +1832,7 @@ class ResearchAgentRunner:
             # silently become an empty evaluator input.
             candidates = result.get("candidates")
             if not isinstance(candidates, list):
-                raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+                raise _output_contract_error("structure", field_paths=("candidates",))
             normalized_candidates: list[str] = []
             for candidate in candidates:
                 value = candidate.get("catalog_paper_id") if isinstance(candidate, Mapping) else candidate
@@ -1866,6 +1975,7 @@ class ResearchAgentRunner:
         fallback_error_code: str | None = None
         validation_diagnostics: list[dict[str, Any]] = []
         pending_feedback_index: int | None = None
+        pending_feedback_classification: str | None = None
 
         def fallback_metadata() -> dict[str, Any]:
             values: dict[str, Any] = {}
@@ -1884,12 +1994,12 @@ class ResearchAgentRunner:
 
         def mark_feedback_invocation_completed() -> None:
             """Confirm only a returned provider call that carried retry feedback."""
-            nonlocal pending_feedback_index
+            nonlocal pending_feedback_index, pending_feedback_classification
             if pending_feedback_index is None:
                 return
             diagnostic = dict(validation_diagnostics[pending_feedback_index])
             diagnostic["feedback_sent"] = True
-            diagnostic["feedback_classification"] = "matrix_validation"
+            diagnostic["feedback_classification"] = pending_feedback_classification or "output_contract"
             validation_diagnostics[pending_feedback_index] = diagnostic
             self._runtime_event(
                 input,
@@ -1901,6 +2011,7 @@ class ResearchAgentRunner:
                 validation_diagnostic=diagnostic,
             )
             pending_feedback_index = None
+            pending_feedback_classification = None
         if self.model_factory and self.model_router is None:
             try:
                 model = self.model_factory(input.resolved_model, input.reasoning_effort)
@@ -2079,7 +2190,7 @@ class ResearchAgentRunner:
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
                     return AgentRunOutput("cancelled", error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
-                output, raw_calls = _response_parts(response)
+                output, raw_calls, output_observation = _response_parts(response)
                 if detail_tool_disabled and raw_calls:
                     # A provider may ignore the reduced schema and repeat the
                     # optional detail call.  Do not execute it again; the
@@ -2224,10 +2335,11 @@ class ResearchAgentRunner:
                 try:
                     validated_output = self._validate_output(
                         input.role,
-                        output or {},
+                        output,
                         require_synthesis_matrix=require_synthesis_matrix,
                         synthesis_matrix_context=work_item_input.get("matrix_context")
                         if require_synthesis_matrix else None,
+                        output_observation=output_observation,
                         search_source_scope=work_item_input,
                         search_skill_name=str(capability.skill.get("name") or ""),
                         expected_work_item_id=input.work_item_id,
@@ -2248,6 +2360,7 @@ class ResearchAgentRunner:
                             require_synthesis_matrix=require_synthesis_matrix,
                             synthesis_matrix_context=work_item_input.get("matrix_context")
                             if require_synthesis_matrix else None,
+                            output_observation=output_observation,
                             search_source_scope=work_item_input,
                             search_skill_name=str(capability.skill.get("name") or ""),
                             expected_work_item_id=input.work_item_id,
@@ -2296,8 +2409,16 @@ class ResearchAgentRunner:
                         }
                         if validation_error.code == "MATRIX_NOT_READY":
                             retry_context["validation_feedback"] = _matrix_validation_feedback(validation_error)
+                            pending_feedback_classification = "matrix_validation"
+                        elif validation_error.code == "AGENT_OUTPUT_INVALID":
+                            retry_context["validation_feedback"] = _output_contract_feedback(
+                                input.role,
+                                require_synthesis_matrix=require_synthesis_matrix,
+                                validation_error=validation_error,
+                            )
+                            pending_feedback_classification = "output_contract"
                         context = retry_context
-                        if validation_error.code == "MATRIX_NOT_READY":
+                        if validation_error.code in {"MATRIX_NOT_READY", "AGENT_OUTPUT_INVALID"}:
                             pending_feedback_index = len(validation_diagnostics) - 1
                         continue
                     elif recovered is None:
