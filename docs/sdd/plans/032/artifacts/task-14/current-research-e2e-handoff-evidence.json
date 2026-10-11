@@ -1,0 +1,284 @@
+{
+  "run_id": "spec032-task14-e2e-handoff-20261008T225025Z",
+  "deployment": {
+    "commit": "1699a53",
+    "base_url": "http://127.0.0.1:8000",
+    "restart_session": "4937",
+    "ready": {
+      "request": "GET /api/ready",
+      "http_status": 200,
+      "response": {
+        "ready": true,
+        "warmup": {
+          "jieba": "ready",
+          "ollama_tags": "ready",
+          "embedding": "ready",
+          "qdrant": "ready"
+        }
+      }
+    },
+    "models": {
+      "request": "GET /api/models?probe=1",
+      "http_status": 200,
+      "current": "qwen3.8:27b",
+      "requested_model": "qwen3.5:9b",
+      "requested_model_status": "ready",
+      "supported_reasoning_efforts": ["off", "low", "medium", "high", "xhigh"],
+      "request_level_effort": "low",
+      "global_model_changed": false
+    }
+  },
+  "natural_language": {
+    "request": {
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "json": {
+        "content": "请进行一次新的深度研究。研究主题限定为 USENIX Security 2024 的 security/privacy 方法，目标是比较至少5篇方法与局限；最少选择5篇论文，最多选择5篇论文，目标论文数为5。来源限定为 USENIX Security，时间范围为2024-2024。请输出中文 Markdown 报告并使用行内引用。生成计划后等待我批准。",
+        "model": "qwen3.5:9b",
+        "reasoning_effort": "low"
+      }
+    },
+    "http_status": 200,
+    "entity_ids": {
+      "conversation_id": "1373b37e27f441939af28e9db4c57942",
+      "user_message_id": "d7802641c538496d80d7877e0f3adcc4",
+      "assistant_message_id": "a3fbba1e42504ce8a86fb39d1318868b",
+      "research_session_id": "9f479edfeb7b4b41bf1ac7cf3ea5c590",
+      "intake_draft_id": "a5a687cac7dc4cd883df0b4ca8b6aa34",
+      "approval_request_id": "db25031f088d44749d3aff091fffb134"
+    },
+    "response_summary": {
+      "skill_activation": "deep-research-orchestration completed",
+      "intake_status": "intake",
+      "missing": [],
+      "plan_status": "plan_pending_approval",
+      "plan_version": 1
+    }
+  },
+  "plan_gate": {
+    "plan_version": 1,
+    "schema_version": "session-plan-v1",
+    "output_hash": "f7cdc582002b1c9ddbf086fe029a00bf55652d80168a218e2e39e3c7d28adcb8",
+    "constraints": {
+      "min_paper_count": 5,
+      "max_paper_count": 5,
+      "target_paper_count": 5,
+      "budget_target_paper_count": 5,
+      "search_max_results": [5, 5],
+      "sources": ["usenix"],
+      "time_range": {"from": 2024, "to": 2024},
+      "format": "markdown",
+      "language": "zh",
+      "citations": "inline"
+    },
+    "approval_request": {
+      "method": "POST",
+      "path": "/api/research-sessions/9f479edfeb7b4b41bf1ac7cf3ea5c590/commands",
+      "json": {
+        "command": "approve_plan",
+        "subject_version": 1,
+        "scope_json": {
+          "plan_version": 1,
+          "output_hash": "f7cdc582002b1c9ddbf086fe029a00bf55652d80168a218e2e39e3c7d28adcb8"
+        },
+        "idempotency_key": "plan-approval:9f479edfeb7b4b41bf1ac7cf3ea5c590:1"
+      },
+      "http_status": 200,
+      "response_summary": {
+        "status": "queued",
+        "approval_status": "approved",
+        "research_task_id": "0681e0df0b355deda6ea47abcad24d74",
+        "task_status": "planning"
+      }
+    }
+  },
+  "task": {
+    "research_task_id": "0681e0df0b355deda6ea47abcad24d74",
+    "conversation_id": "1373b37e27f441939af28e9db4c57942",
+    "research_session_id": "9f479edfeb7b4b41bf1ac7cf3ea5c590",
+    "final_status": "partial",
+    "final_error_code": "MATRIX_NOT_READY",
+    "selected_count": 5,
+    "search_id": "ab03b68ad3bd487fb0cda0287efdcc0f",
+    "retry_count": 0,
+    "completed_at": "2026-10-08T22:57:25Z",
+    "work_items": [
+      {
+        "id": "s1",
+        "role": "search-worker",
+        "status": "completed",
+        "resolved_model": "qwen3.5:9b",
+        "search_id": "ab03b68ad3bd487fb0cda0287efdcc0f",
+        "completion_event_seq": 8
+      },
+      {
+        "id": "s2",
+        "role": "search-worker",
+        "status": "completed",
+        "resolved_model": "qwen3.5:9b",
+        "search_id": "01d0ac7c66b44781be931580b96b259d",
+        "completion_event_seq": 14
+      },
+      {
+        "id": "e1",
+        "role": "paper-evaluator",
+        "status": "completed",
+        "resolved_model": "qwen3.5:9b",
+        "completion_event_seq": 18
+      },
+      {
+        "id": "c1",
+        "role": "research-critic",
+        "status": "completed",
+        "resolved_model": "qwen3.5:9b",
+        "completion_event_seq": 22
+      },
+      {
+        "id": "syn",
+        "role": "synthesizer",
+        "status": "completed",
+        "resolved_model": "qwen3.5:9b",
+        "completion_event_seq": 26
+      }
+    ],
+    "terminal_event": {
+      "event_seq": 27,
+      "status": "partial",
+      "selected_count": 5,
+      "error_code": "MATRIX_NOT_READY"
+    }
+  },
+  "acquisition": {
+    "request": "GET /api/research-tasks/0681e0df0b355deda6ea47abcad24d74/acquisitions",
+    "http_status": 200,
+    "batch_id": "42bc5078-cc00-49f0-afc7-61d971877c31",
+    "selection_version": 4,
+    "approval_status": "completed",
+    "items_completed": 5,
+    "links_completed": 5,
+    "items": [
+      {
+        "candidate_id": "4e6322a23b92a271dbec9906c51fe0ab",
+        "paper_id": "a151fcff09944e7cbd1f4086376ae914",
+        "document_id": "a151fcff09944e7cbd1f4086376ae914",
+        "import_item_id": "0592ed37-e641-4ac8-abab-91fe5da39e87",
+        "year": 2024,
+        "conference_id": "usenix-security",
+        "status": "completed"
+      },
+      {
+        "candidate_id": "57e0402f82fe2ce354bea423b201fde3",
+        "paper_id": "527fe0c1515d48c78adec8f4eb7f4979",
+        "document_id": "527fe0c1515d48c78adec8f4eb7f4979",
+        "import_item_id": "e5100aaf-bf35-47dc-a810-8a26e80ef0de",
+        "year": 2024,
+        "conference_id": "usenix-security",
+        "status": "completed"
+      },
+      {
+        "candidate_id": "9793a4a35caad52ee99f926ae7c90810",
+        "paper_id": "929a342c0b8d4c8283198751cae9b327",
+        "document_id": "929a342c0b8d4c8283198751cae9b327",
+        "import_item_id": "37f02352-2bd0-4eb0-9a79-bc1524901b08",
+        "year": 2024,
+        "conference_id": "usenix-security",
+        "status": "completed"
+      },
+      {
+        "candidate_id": "bb826cac3486a295d93eb9b6cea0a6f8",
+        "paper_id": "fa82faf63802431da803e1a99ce1411b",
+        "document_id": "fa82faf63802431da803e1a99ce1411b",
+        "import_item_id": "0c10c2c7-e381-41f5-ae95-35c838342b22",
+        "year": 2024,
+        "conference_id": "usenix-security",
+        "status": "completed"
+      },
+      {
+        "candidate_id": "ef9e0846844e5b02834163586ea6ddc9",
+        "paper_id": "56fc315e952342158e5ae2f5ef6f01a0",
+        "document_id": "56fc315e952342158e5ae2f5ef6f01a0",
+        "import_item_id": "2af1aedf-04df-43c2-affb-5f30c9cea57f",
+        "year": 2024,
+        "conference_id": "usenix-security",
+        "status": "completed"
+      }
+    ]
+  },
+  "matrix_and_reports": {
+    "matrix": {
+      "request": "GET /api/research-tasks/0681e0df0b355deda6ea47abcad24d74/evidence-matrix",
+      "http_status": 409,
+      "error_code": "MATRIX_NOT_READY"
+    },
+    "artifact_backed_projection": {
+      "request": "GET /api/research-tasks/0681e0df0b355deda6ea47abcad24d74/report",
+      "http_status": 200,
+      "report_id": "artifact:384b5b754a06458bbd8eaae6922735aa",
+      "status": "partial",
+      "limitations": {"artifact_backed": true},
+      "artifact_title": "深度研究报告",
+      "artifact_markdown_bytes": 8266,
+      "artifact_citation_count": 5
+    },
+    "canonical": {
+      "json": {"path": "/api/research-tasks/0681e0df0b355deda6ea47abcad24d74/reports/1?format=json", "http_status": 404, "error_code": "REPORT_NOT_READY"},
+      "markdown": {"path": "/api/research-tasks/0681e0df0b355deda6ea47abcad24d74/reports/1?format=markdown", "http_status": 404, "error_code": "REPORT_NOT_READY"},
+      "html": {"path": "/api/research-tasks/0681e0df0b355deda6ea47abcad24d74/reports/1?format=html", "http_status": 404, "error_code": "REPORT_NOT_READY"}
+    },
+    "report_generation_posted": false
+  },
+  "artifacts": {
+    "request": "GET /api/research-sessions/9f479edfeb7b4b41bf1ac7cf3ea5c590/artifacts",
+    "http_status": 200,
+    "generated_by_agent_run_id": "0681e0df0b355deda6ea47abcad24d74:syn:run-1",
+    "items": [
+      {
+        "artifact_type": "citation_manifest",
+        "artifact_id": "736281ae501e494e819e96506fee3e4c",
+        "content_hash": "53da76af26c6164470c7c425e80559332ccc02c7ca1042f1ba90d5c0f001a631",
+        "download_http_status": 200,
+        "bytes": 551,
+        "download_path": "/api/research-sessions/9f479edfeb7b4b41bf1ac7cf3ea5c590/artifacts/736281ae501e494e819e96506fee3e4c/download"
+      },
+      {
+        "artifact_type": "html",
+        "artifact_id": "83413ba47b3d4caca4bcdba1bd1dd989",
+        "content_hash": "7cae94dac4ad798008c738687580810cd05feb2abdb5d47966ea4a91a70f78cd",
+        "download_http_status": 200,
+        "bytes": 8914,
+        "download_path": "/api/research-sessions/9f479edfeb7b4b41bf1ac7cf3ea5c590/artifacts/83413ba47b3d4caca4bcdba1bd1dd989/download"
+      },
+      {
+        "artifact_type": "markdown",
+        "artifact_id": "384b5b754a06458bbd8eaae6922735aa",
+        "content_hash": "29c96bc031d16e0ab19105f26b753a940a0cb8f85f023f3507b6259960b7b0ce",
+        "download_http_status": 200,
+        "bytes": 8266,
+        "download_path": "/api/research-sessions/9f479edfeb7b4b41bf1ac7cf3ea5c590/artifacts/384b5b754a06458bbd8eaae6922735aa/download"
+      }
+    ]
+  },
+  "readiness": {
+    "score": "4/10",
+    "checks": {
+      "ready": true,
+      "natural_language": true,
+      "constraints": true,
+      "task_progression": true,
+      "frontend_processing_prompt": false,
+      "wait_condition_ui": false,
+      "canonical_core_artifact": false,
+      "recovery_to_canonical": false,
+      "ui_api_consistency": false,
+      "reproducible_final_view_path": false
+    }
+  },
+  "safety_boundaries": [
+    "没有读取 .env 或 API key",
+    "没有修改全局模型、reasoning threshold、环境变量或业务代码",
+    "没有重试旧 task/batch、删除数据或重建索引",
+    "受控导入数量为 5，未超过批准上限",
+    "没有调用 POST /reports，因为 matrix 明确未 ready",
+    "没有保存隐藏推理或模型内部思维内容"
+  ]
+}

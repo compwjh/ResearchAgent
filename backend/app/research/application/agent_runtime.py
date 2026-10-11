@@ -19,6 +19,8 @@ from dataclasses import dataclass, field, replace
 from threading import Event
 from typing import Any, Callable, Mapping, Sequence
 
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError
+from backend.app.research.application.matrix_contract import validate_synthesis_matrix_payload
 from backend.app.research.application.plan_authoring import PlanOutputInvalid, validate_safe_scope
 from backend.app.research.domain.contracts import AGENT_ROLES
 from backend.app.research.domain.models import AgentCheckpoint, AgentRun, ResearchEvent
@@ -157,11 +159,17 @@ def _synthesis_matrix_required(work_item_input: Mapping[str, Any] | None) -> boo
     return isinstance(context, Mapping) and bool(context)
 
 
-def _matrix_validation_feedback() -> dict[str, Any]:
+def _matrix_validation_feedback(validation_error: Any = None) -> dict[str, Any]:
     """Return bounded, provider-safe feedback for a matrix contract retry."""
-    return {
+    message = (
+        "evidence_matrix is required when matrix_context is supplied; emit an object grounded in that context. "
+        "Each cell evidence_ids entry must reference evidence with the same claim_id as the cell and the same paper_id "
+        "as the cell "
+        "and a stance equal to the cell relation; do not copy all claim evidence into every paper cell."
+    )
+    feedback = {
         "code": "MATRIX_NOT_READY",
-        "message": "evidence_matrix is required when matrix_context is supplied; emit an object grounded in that context.",
+        "message": message,
         "required_fields": ["evidence_matrix"],
         "shape": {
             "schema_version": "evidence-report-v1",
@@ -172,6 +180,14 @@ def _matrix_validation_feedback() -> dict[str, Any]:
             "cells": "bounded claim/paper/dimension relations",
         },
     }
+    if validation_error is not None:
+        matrix_error_code = getattr(validation_error, "matrix_error_code", None)
+        if isinstance(matrix_error_code, str) and matrix_error_code:
+            feedback["matrix_error_code"] = matrix_error_code
+        detail = str(validation_error).strip()
+        if detail and detail != "MATRIX_NOT_READY":
+            feedback["message"] = f"{message} Contract detail: {detail}"
+    return feedback
 
 
 def _role_contract_prompt(
@@ -221,7 +237,9 @@ def _role_contract_prompt(
             "the server-provided dimensions; claims, evidence and cells must use only allowlisted paper_id values and the "
             "supplied catalog_snapshot_id/abstract_digest locators. Use only catalog or abstract evidence, never fulltext, "
             "URLs, document IDs, chunks or invented dimensions. Keep every evidence_matrix claims, evidence and cells array "
-            "at most 64 items, matching the runtime safety limit. If no supported claim can be grounded in the supplied snapshot "
+            "at most 64 items, matching the runtime safety limit. Each cell is scoped to one claim_id, paper_id and dimension_id: "
+            "its evidence_ids may contain only evidence rows with the same claim_id and paper_id and a matching stance; "
+            "emit separate cells per paper/dimension and never copy all claim evidence IDs into every cell. If no supported claim can be grounded in the supplied snapshot "
             "facts, the runtime will return MATRIX_NOT_READY; do not invent a claim or locator."
             if require_synthesis_matrix
             else
@@ -1588,6 +1606,7 @@ class ResearchAgentRunner:
         output: Mapping[str, Any],
         *,
         require_synthesis_matrix: bool = False,
+        synthesis_matrix_context: Mapping[str, Any] | None = None,
         search_source_scope: Mapping[str, Any] | None = None,
         search_skill_name: str | None = None,
         expected_work_item_id: str | None = None,
@@ -1653,6 +1672,19 @@ class ResearchAgentRunner:
                 "MATRIX_NOT_READY",
                 "synthesizer output must include an evidence_matrix object when matrix_context is supplied",
             )
+        if role == "synthesizer" and require_synthesis_matrix:
+            try:
+                validate_synthesis_matrix_payload(
+                    result.get("evidence_matrix"),
+                    synthesis_matrix_context or {},
+                )
+            except EvidenceMatrixError as exc:
+                runtime_error = AgentRuntimeError(
+                    "MATRIX_NOT_READY",
+                    f"{exc.code}: {exc.message}",
+                )
+                runtime_error.matrix_error_code = exc.code
+                raise runtime_error from None
         if role == "search_worker":
             # The downstream evaluator consumes stable catalog IDs, while a
             # provider may return rich candidate objects.  Normalize at the
@@ -2135,6 +2167,8 @@ class ResearchAgentRunner:
                         input.role,
                         output or {},
                         require_synthesis_matrix=require_synthesis_matrix,
+                        synthesis_matrix_context=work_item_input.get("matrix_context")
+                        if require_synthesis_matrix else None,
                         search_source_scope=work_item_input,
                         search_skill_name=str(capability.skill.get("name") or ""),
                         expected_work_item_id=input.work_item_id,
@@ -2153,6 +2187,8 @@ class ResearchAgentRunner:
                             input.role,
                             recovered,
                             require_synthesis_matrix=require_synthesis_matrix,
+                            synthesis_matrix_context=work_item_input.get("matrix_context")
+                            if require_synthesis_matrix else None,
                             search_source_scope=work_item_input,
                             search_skill_name=str(capability.skill.get("name") or ""),
                             expected_work_item_id=input.work_item_id,
@@ -2180,7 +2216,7 @@ class ResearchAgentRunner:
                             "checkpoint": {"output": None, "tool_results": list(summaries)},
                         }
                         if validation_error.code == "MATRIX_NOT_READY":
-                            retry_context["validation_feedback"] = _matrix_validation_feedback()
+                            retry_context["validation_feedback"] = _matrix_validation_feedback(validation_error)
                         context = retry_context
                         continue
                     else:

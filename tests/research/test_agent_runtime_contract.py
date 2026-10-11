@@ -1,6 +1,7 @@
 """Task05 Fake Runtime contracts; no Ollama/network dependency."""
 
 import hashlib
+import json
 import uuid
 from threading import Event
 from types import SimpleNamespace
@@ -230,6 +231,122 @@ def test_synthesizer_requires_matrix_when_context_is_present_and_retries_with_fe
     assert feedback["code"] == "MATRIX_NOT_READY"
     assert "evidence_matrix" in feedback["required_fields"]
     assert "claims" in feedback["shape"]
+
+
+def test_synthesizer_retries_when_cell_reuses_other_paper_evidence():
+    context = _matrix_context()
+    second_abstract = "A bounded catalog abstract for paper B."
+    context["candidates"].append({
+        "paper_id": "paper-b",
+        "catalog_snapshot_id": "search-b",
+        "title": "Paper B",
+        "abstract": second_abstract,
+        "abstract_digest": hashlib.sha256(second_abstract.encode("utf-8")).hexdigest(),
+    })
+    context["allowed_paper_ids"].append("paper-b")
+    legal_matrix = _matrix_output()
+    legal_matrix["evidence"].append({
+        "evidence_id": "evidence-2",
+        "claim_id": "claim-1",
+        "paper_id": "paper-b",
+        "evidence_level": "abstract",
+        "stance": "supports",
+        "status": "available",
+        "quote_digest": context["candidates"][1]["abstract_digest"],
+        "locator": {
+            "catalog_snapshot_id": "search-b",
+            "abstract_ref": "catalog:paper-b",
+            "abstract_digest": context["candidates"][1]["abstract_digest"],
+        },
+    })
+    legal_matrix["claims"][0]["evidence_ids"].append("evidence-2")
+    legal_matrix["cells"].append({
+        "claim_id": "claim-1",
+        "paper_id": "paper-b",
+        "dimension_id": "facet-1",
+        "relation": "supports",
+        "summary": "The supplied abstract supports the claim.",
+        "evidence_ids": ["evidence-2"],
+    })
+    malformed_matrix = json.loads(json.dumps(legal_matrix))
+    malformed_matrix["cells"][0]["evidence_ids"] = ["evidence-1", "evidence-2"]
+    model = FakeModel([
+        {"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)},
+        {"output_json": _synthesizer_output(evidence_matrix=legal_matrix)},
+    ])
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=context)
+    )
+
+    assert result.status == "completed"
+    assert result.output_json["evidence_matrix"]["cells"][0]["evidence_ids"] == ["evidence-1"]
+    assert len(model.calls) == 2
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "MATRIX_NOT_READY"
+    assert "same paper_id" in feedback["message"]
+
+
+@pytest.mark.parametrize(
+    ("violation", "expected_matrix_code", "expected_detail"),
+    [
+        ("dimension", "REPORT_SCHEMA_INVALID", "matrix cell 归属无效"),
+        ("locator", "EVIDENCE_LOCATOR_INVALID", "matrix evidence snapshot 不匹配"),
+        ("digest", "EVIDENCE_LOCATOR_INVALID", "abstract locator 不匹配"),
+        ("missing_reason", "REPORT_SCHEMA_INVALID", "missing cell 必须说明原因且无 evidence"),
+        ("cell_evidence_type", "REPORT_SCHEMA_INVALID", "matrix cell evidence_ids 无效"),
+        ("claim_enum_type", "REPORT_SCHEMA_INVALID", "matrix claim 枚举无效"),
+        ("evidence_enum_type", "EVIDENCE_LOCATOR_INVALID", "matrix evidence level/stance/status 无效"),
+        ("cell_relation_type", "REPORT_SCHEMA_INVALID", "matrix cell relation/evidence_ids 无效"),
+    ],
+)
+def test_synthesizer_retries_before_completion_for_full_matrix_contract_failures(
+    violation, expected_matrix_code, expected_detail
+):
+    context = _matrix_context()
+    malformed_matrix = _matrix_output()
+    if violation == "dimension":
+        malformed_matrix["cells"][0]["dimension_id"] = "facet-forged"
+    elif violation == "locator":
+        malformed_matrix["evidence"][0]["locator"]["catalog_snapshot_id"] = "search-forged"
+    elif violation == "digest":
+        malformed_matrix["evidence"][0]["locator"]["abstract_digest"] = "0" * 64
+    elif violation == "missing_reason":
+        malformed_matrix["cells"][0]["relation"] = "missing"
+        malformed_matrix["cells"][0]["evidence_ids"] = []
+        malformed_matrix["cells"][0].pop("missing_reason", None)
+    else:
+        if violation == "cell_evidence_type":
+            malformed_matrix["cells"][0]["evidence_ids"] = [{"evidence_id": "evidence-1"}]
+        elif violation == "claim_enum_type":
+            malformed_matrix["claims"][0]["confidence"] = []
+        elif violation == "evidence_enum_type":
+            malformed_matrix["evidence"][0]["stance"] = []
+        else:
+            malformed_matrix["cells"][0]["relation"] = []
+    legal_matrix = _matrix_output()
+    model = FakeModel([
+        {"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)},
+        {"output_json": _synthesizer_output(evidence_matrix=legal_matrix)},
+    ])
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=context)
+    )
+
+    assert result.status == "completed", result.to_dict()
+    assert len(model.calls) == 2
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "MATRIX_NOT_READY"
+    assert feedback["matrix_error_code"] == expected_matrix_code
+    assert expected_detail in feedback["message"]
+
+
+def test_orchestrator_matrix_export_is_the_shared_contract_validator():
+    from backend.app.research.application.matrix_contract import validate_synthesis_matrix_payload
+    from backend.app.research.application.orchestrator import _validate_synthesis_matrix_payload
+
+    assert _validate_synthesis_matrix_payload is validate_synthesis_matrix_payload
 
 
 def test_synthesizer_matrix_requirement_exhausts_as_bounded_failure():

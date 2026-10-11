@@ -1,5 +1,6 @@
 """Restart recovery for durable AgentRun WorkItem output envelopes."""
 
+import hashlib
 import json
 import uuid
 from types import SimpleNamespace
@@ -181,6 +182,8 @@ def _build_store(
     seed_agent_runs=True,
     completed_role_outputs=None,
     search_output_hash_override=None,
+    synthesizer_output=None,
+    synthesizer_input=None,
 ):
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     conversation, user, assistant = memory.create_conversation_messages(
@@ -278,6 +281,11 @@ def _build_store(
     )
 
     def role_output(role, work_item_id):
+        if role == "synthesizer" and isinstance(synthesizer_output, dict):
+            output = dict(synthesizer_output)
+            output.setdefault("work_item_id", work_item_id)
+            output.setdefault("research_task_id", task.research_task_id)
+            return output
         if role == "research_critic":
             output = {
                 "schema_version": "critic-v1",
@@ -317,6 +325,9 @@ def _build_store(
         if "synthesizer" in completed_role_outputs
         else None
     )
+    synth_input = {"goal": "goal"}
+    if isinstance(synthesizer_input, dict):
+        synth_input.update(synthesizer_input)
     items = [
         ResearchWorkItem(
             search_id, task.research_task_id, 1, "search_catalog", "search-worker", "[]",
@@ -339,7 +350,7 @@ def _build_store(
         ),
         ResearchWorkItem(
             synth_id, task.research_task_id, 1, "synthesize_preliminary_report", "synthesizer",
-            json.dumps([critic_id]), '{"goal":"goal"}',
+            json.dumps([critic_id]), json.dumps(synth_input, ensure_ascii=False),
             "completed" if synth_envelope is not None else "queued",
             1 if synth_envelope is not None else 0,
             now if synth_envelope is not None else now,
@@ -583,3 +594,91 @@ def test_recovery_rejects_completed_role_output_missing_role_contract(tmp_path, 
     assert all(call.role != role for call in runner.calls)
     work_item_key = "critic" if role == "research_critic" else "synth"
     assert store.get_work_item(ids[work_item_key]).status == "completed"
+
+
+def test_restart_rejects_persisted_synthesis_matrix_before_reuse(tmp_path):
+    abstract = "A bounded persisted catalog abstract for recovery validation."
+    digest = hashlib.sha256(abstract.encode("utf-8")).hexdigest()
+    matrix_context = {
+        "schema_version": "evidence-report-v1",
+        "plan_version": 1,
+        "dimensions": [{
+            "dimension_id": "facet-1",
+            "label": "Systems",
+            "definition": "Approved comparison dimension.",
+            "display_order": 0,
+        }],
+        "candidates": [{
+            "paper_id": "paper-1",
+            "catalog_snapshot_id": "search-1",
+            "title": "Paper 1",
+            "abstract": abstract,
+            "abstract_digest": digest,
+        }],
+        "allowed_paper_ids": ["paper-1"],
+    }
+    malformed_matrix = {
+        "schema_version": "evidence-report-v1",
+        "plan_version": 1,
+        "dimensions": matrix_context["dimensions"],
+        "claims": [{
+            "claim_id": "claim-1",
+            "topic": "Systems",
+            "statement": "The persisted abstract supports the claim.",
+            "confidence": "medium",
+            "status": "supported",
+            "evidence_ids": ["evidence-1"],
+        }],
+        "evidence": [{
+            "evidence_id": "evidence-1",
+            "claim_id": "claim-1",
+            "paper_id": "paper-1",
+            "evidence_level": "abstract",
+            "stance": "supports",
+            "status": "available",
+            "quote_digest": digest,
+            "locator": {
+                "catalog_snapshot_id": "search-1",
+                "abstract_ref": "catalog:paper-1",
+                "abstract_digest": digest,
+            },
+        }],
+        "cells": [{
+            "claim_id": "claim-1",
+            "paper_id": "paper-1",
+            "dimension_id": "facet-forged",
+            "relation": "supports",
+            "summary": "The persisted abstract supports the claim.",
+            "evidence_ids": ["evidence-1"],
+        }],
+    }
+    synth_output = {
+        "schema_version": "synthesis-v1",
+        "safe_summary": {"decision": "persisted synthesis"},
+        "source_refs": [],
+        "report_version": 1,
+        "sections": [{"heading": "summary"}],
+        "citation_manifest": [],
+        "artifact_ids": [],
+        "evidence_matrix": malformed_matrix,
+    }
+    store, task, ids = _build_store(
+        tmp_path,
+        completed_role_outputs={"research_critic": "persisted", "synthesizer": "persisted"},
+        synthesizer_output=synth_output,
+        synthesizer_input={"matrix_context": matrix_context},
+    )
+    runner = _CountingRunner()
+
+    result = Orchestrator(
+        store=store,
+        planner=_planner(),
+        agent_runner=runner,
+        probe=_Probe(),
+        memory_repository=None,
+    ).run(task.research_task_id, "owner")
+
+    assert result.status == "partial"
+    assert result.error_code == "AGENT_OUTPUT_INVALID"
+    assert runner.calls == []
+    assert store.get_work_item(ids["synth"]).status == "completed"
