@@ -550,6 +550,12 @@ def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str
     aggregate record omitted that field.
     """
     normalized = dict(output)
+    # JSON-capable models sometimes serialize the aggregate marker ``null`` as
+    # the literal string ``"null"``.  Treat it as the aggregate container only
+    # when the server did not actually recall the candidate ID ``null``; a real
+    # allowlisted ``catalog:null`` remains a per-candidate decision.
+    if normalized.get("candidate_id") == "null" and "catalog:null" not in allowed_refs:
+        normalized["candidate_id"] = None
 
     def valid_refs(value: Any) -> list[str]:
         if not isinstance(value, list):
@@ -741,6 +747,12 @@ def _validate_evaluator_scope(
         allowed_sources = {"usenix", "dblp", "all"}
     if allowed_source_refs is None:
         allowed_source_refs = set()
+    candidate_id = output.get("candidate_id")
+    if "candidate_id" in output and candidate_id is not None and not isinstance(candidate_id, str):
+        # Only None (the aggregate container) or a string candidate ID may
+        # reach scope validation.  False/0/[]/{} must not be mistaken for the
+        # aggregate marker and allowed evidence must never persist for them.
+        return False
     def source_ref_allowed(ref: object) -> bool:
         if not isinstance(ref, str):
             return False

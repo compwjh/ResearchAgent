@@ -11,8 +11,8 @@ from backend.app.memory.repository import MemoryRepository
 from backend.app.research.application.orchestrator import (
     Orchestrator,
     _sanitize_evaluator_binding,
-    _validated_evaluator_candidates,
     _validate_evaluator_scope,
+    _validated_evaluator_candidates,
 )
 from backend.app.research.application.planner import Planner
 from backend.app.research.application.processing_projector import ProcessingStepProjector
@@ -26,7 +26,7 @@ from backend.app.research.application.report_synthesis import (
 )
 from backend.app.research.application.research_service import ResearchService
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter, SearchOutcome
-from backend.app.research.domain.models import ResearchArtifact, ResearchNotification, ResearchTask
+from backend.app.research.domain.models import ResearchArtifact, ResearchTask
 from backend.app.research.infrastructure.research_store import ResearchArtifactConflict, ResearchStore
 
 
@@ -74,6 +74,107 @@ def test_evaluator_output_is_bound_to_search_worker_candidates_and_refs():
         {"source": "usenix", "source_refs": ["search:s1"], "candidate_id": "c1", "keep": True, "evidence_refs": ["catalog:c1"]},
         allowed_candidates, allowed_refs, {"usenix"}, {"search:s1"},
     )
+
+
+@pytest.mark.parametrize("candidate_id", [False, 0, [], {}])
+def test_evaluator_rejects_non_string_falsey_candidate_ids_before_aggregate_expansion(candidate_id):
+    assert not _validate_evaluator_scope(
+        {
+            "candidate_id": candidate_id,
+            "keep": True,
+            "evidence_refs": ["catalog:c1"],
+        },
+        {"c1"},
+        {"catalog:c1"},
+    )
+
+
+def test_evaluator_accepts_literal_null_aggregate_marker_from_json_model():
+    """A real qwen evaluator emitted candidate_id as the text ``"null"``."""
+    recalled_ids = {
+        "5c85c0b7af7336e768cb62131b24df93",
+        "4e6322a23b92a271dbec9906c51fe0ab",
+        "db2c6ce34dae4bf8988903ce8de871ca",
+        "1ae0b8101d7d6d0b9dc77592a4de9032",
+        "ad616f4f6cf150c525df8fb2a3820350",
+        "45d6ac07d66a0777b02eabf6a2570806",
+        "494effa3cc4fbb517135c94497369839",
+        "f5e1aea5a8e7a6c51c5e43890738147a",
+        "a915c4b9219985b21b2da552dbeba006",
+        "be1e7ee924f3bb21ee8b966c201ee751",
+        "463a2ea96cc09b2b62050be045baf099",
+        "ab05f3f4289fcb2cdde17379c22d03ba",
+        "077bbff9185f9f53d049e966115d36d3",
+    }
+    kept_ids = (
+        "5c85c0b7af7336e768cb62131b24df93",
+        "4e6322a23b92a271dbec9906c51fe0ab",
+        "db2c6ce34dae4bf8988903ce8de871ca",
+        "1ae0b8101d7d6d0b9dc77592a4de9032",
+        "ad616f4f6cf150c525df8fb2a3820350",
+    )
+    allowed_refs = {f"catalog:{paper_id}" for paper_id in recalled_ids}
+    output = {
+        "candidate_id": "null",
+        "evidence_refs": [f"catalog:{paper_id}" for paper_id in kept_ids],
+        "keep": True,
+        "reason": "retain the bounded recalled set",
+        "source": "usenix",
+        "source_refs": [f"catalog:{paper_id}" for paper_id in kept_ids],
+    }
+
+    normalized = _sanitize_evaluator_binding(output, allowed_refs)
+
+    assert normalized["candidate_id"] is None
+    assert _validate_evaluator_scope(
+        normalized,
+        recalled_ids,
+        allowed_refs,
+        {"usenix"},
+        {"search:s1", "search:s2"},
+    )
+
+
+def test_literal_null_aggregate_marker_does_not_expand_allowlist():
+    normalized = _sanitize_evaluator_binding(
+        {
+            "candidate_id": "null",
+            "keep": True,
+            "evidence_refs": ["catalog:recalled", "catalog:forged"],
+            "source_refs": ["catalog:recalled", "catalog:forged"],
+        },
+        {"catalog:recalled"},
+    )
+
+    assert normalized["candidate_id"] is None
+    assert normalized["evidence_refs"] == ["catalog:recalled"]
+    assert _validated_evaluator_candidates(
+        [normalized],
+        {},
+        recall_allowlist={"recalled"},
+    ) == [{
+        "candidate_id": "recalled",
+        "verified": True,
+        "evidence_refs": ["catalog:recalled"],
+    }]
+
+
+def test_evaluator_preserves_allowlisted_literal_null_candidate_id():
+    normalized = _sanitize_evaluator_binding(
+        {
+            "candidate_id": "null",
+            "keep": False,
+            "evidence_refs": ["catalog:null"],
+        },
+        {"catalog:null"},
+    )
+
+    assert normalized["candidate_id"] == "null"
+    assert _validated_evaluator_candidates(
+        [normalized],
+        {},
+        recall_allowlist={"null"},
+    ) == []
 
 
 def test_aggregate_evaluator_output_expands_catalog_refs_into_candidates():
@@ -332,8 +433,6 @@ def test_delivery_rechecks_hash_after_concurrent_insert(tmp_path, monkeypatch):
     wrong_content = "# a different report\n"
     wrong = ResearchArtifact(_id(), task.research_task_id, 1, "markdown", hashlib.sha256(wrong_content.encode()).hexdigest(), run.agent_run_id, content=wrong_content)
     calls = {"count": 0}
-    original_list = store.list_artifacts_for_task
-
     def raced_list(*args, **kwargs):
         calls["count"] += 1
         return [] if calls["count"] == 1 else [wrong]

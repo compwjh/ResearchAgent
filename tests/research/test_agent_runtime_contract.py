@@ -19,6 +19,7 @@ from backend.app.research.application.agent_runtime import (
     RoleCapabilityRegistry,
     _hash,
     _OllamaRunnerAdapter,
+    _role_contract_prompt,
 )
 from backend.app.research.application.approval_service import PlanApprovalService
 from backend.app.research.application.orchestrator import Orchestrator
@@ -393,6 +394,14 @@ def test_ollama_synthesizer_prompt_exposes_internal_matrix_shape_only_with_conte
     assert '"evidence_matrix"' in contract
     assert '"schema_version":"evidence-report-v1"' in contract
     assert '"claims"' in contract and '"evidence"' in contract and '"cells"' in contract
+
+
+def test_evaluator_prompt_matches_non_empty_aggregate_contract():
+    prompt = _role_contract_prompt("paper_evaluator", has_tool_results=False)
+
+    assert "candidate_id may be null as the aggregate container" in prompt
+    assert "even when evidence_refs is non-empty" in prompt
+    assert "otherwise candidate_id must be one of those supplied IDs" in prompt
 
 
 def test_invalid_tool_batch_executes_nothing():

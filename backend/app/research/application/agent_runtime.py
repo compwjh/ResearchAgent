@@ -211,9 +211,10 @@ def _role_contract_prompt(
     search_boundary = " For search_worker, candidates must come from catalog tool results; never download or import PDFs."
     evaluator_boundary = (
         " For paper_evaluator, use work_item_input.catalog_paper_ids and the bounded "
-        "work_item_input.catalog_evidence summaries; candidate_id must be one of those IDs "
-        "(or null only when the list is empty), keep must be boolean, and evidence_refs must "
-        "only cite supplied catalog:<candidate_id> evidence. Catalog-level relevance may be "
+        "work_item_input.catalog_evidence summaries; candidate_id may be null as the aggregate "
+        "container even when evidence_refs is non-empty; otherwise candidate_id must be one "
+        "of those supplied IDs for a per-candidate decision. Keep must be boolean, and "
+        "evidence_refs must only cite supplied catalog:<candidate_id> evidence. Catalog-level relevance may be "
         "decided from a directly matching title even when the abstract is missing: keep the "
         "candidate, set relevance_score from the title-only match, and explain that the "
         "decision is metadata-only. Do not invent abstract/content claims or reject every "
