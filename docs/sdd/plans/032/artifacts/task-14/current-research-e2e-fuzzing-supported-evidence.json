@@ -1,0 +1,609 @@
+{
+  "schema": "spec032-task14-real-api-e2e-evidence-v1",
+  "spec": "032",
+  "task": "14",
+  "run_id": "spec032-task14-fuzzing-supported-20261011T035216Z",
+  "result": "blocked",
+  "decision": "BLOCKED",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "branch": "codex/spec032-final-acceptance",
+    "commit": "e83fdd6f8a43484f42e06d69a0d57f29f408bf51",
+    "requested_model": "qwen3.5:9b",
+    "requested_reasoning_effort": "xhigh",
+    "started_at": "2026-10-11T03:52:16.611241Z",
+    "ended_at": "2026-10-11T04:10:54.846912Z",
+    "service_checks": {
+      "ready": {
+        "path": "/api/ready",
+        "http_status": 200,
+        "ready": true,
+        "warmup": {
+          "jieba": "ready",
+          "ollama_tags": "ready",
+          "embedding": "ready",
+          "qdrant": "ready"
+        }
+      },
+      "home": {
+        "path": "/",
+        "http_status": 200,
+        "bytes": 62488,
+        "static_assets": {
+          "styles": "styles.css?v=56",
+          "app": "app.js?v=57"
+        }
+      },
+      "reasoning_options": {
+        "path": "/api/chat/reasoning-options?model=qwen3.5:9b",
+        "http_status": 200,
+        "model": "qwen3.5:9b",
+        "supported_efforts": [
+          "xhigh"
+        ],
+        "default_effort": "xhigh",
+        "source": "cache",
+        "cached_at": "2026-10-11T03:35:22.015092+00:00",
+        "refresh_called": false
+      },
+      "ollama_version": {
+        "path": "http://127.0.0.1:11434/api/version",
+        "http_status": 200,
+        "version": "0.34.4",
+        "read_before_run": true
+      },
+      "models_projection": {
+        "path": "/api/models",
+        "http_status": 200,
+        "qwen3.5:9b_status": "ready",
+        "capability_projection_used_for_gate": false,
+        "note": "静态 projection 与无刷新 reasoning-options 不一致；本轮以真实 options 为准。"
+      }
+    },
+    "deployment": {
+      "existing_service_reused": true,
+      "second_deploy_started": false,
+      "business_code_changed": false,
+      "environment_changed": false,
+      "global_model_changed": false,
+      "threshold_changed": false
+    }
+  },
+  "scope": {
+    "topic": "USENIX Security 2024 模糊测试与漏洞发现",
+    "objective": "比较至少5篇研究的方法与局限",
+    "min_paper_count": 5,
+    "max_paper_count": 5,
+    "target_paper_count": 5,
+    "source": "usenix",
+    "time_range": {
+      "from": 2024,
+      "to": 2024
+    },
+    "language": "zh",
+    "format": "markdown",
+    "citations": "inline",
+    "plan_after_intake": "等待批准"
+  },
+  "api_evidence": {
+    "natural_language_post": {
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "http_status": 200,
+      "body": {
+        "content": "请进行一次新的深度研究。研究主题限定为 USENIX Security 2024 的模糊测试与漏洞发现。研究目标是比较至少5篇研究的方法与局限。请最少选择5篇论文，最多选择5篇论文，目标论文数为5；来源限定为 USENIX Security，时间范围为 2024-2024；输出中文 Markdown 报告并使用行内引用；生成计划后等待我批准。",
+        "model": "qwen3.5:9b",
+        "reasoning_effort": "xhigh"
+      },
+      "sse": {
+        "event_types": [
+          "meta",
+          "skill_activation",
+          "processing_step",
+          "plan",
+          "intake",
+          "done"
+        ],
+        "conversation_id": "e222c0f6f2214eada3507df2672584df",
+        "user_message_id": "2622bc77a69f470cae8541b5f443bc3d",
+        "assistant_message_id": "daa3e11c068346fab0b33072ad393ea6",
+        "status": "completed",
+        "research_session_id": "a6fd24342d084811ae7abb144bf08ea6",
+        "intake_draft_id": "3433768d107f4786a65befd694f464d7",
+        "approval_request_id": "aba559909f284a7786e498b005925574",
+        "subject_version": 1,
+        "plan_version": 1,
+        "output_hash": "869643dc5f85dff50c41d83aad948d03709e3a69d02ec316e3f62118a1bc1f7a",
+        "constraints": {
+          "min_paper_count": 5,
+          "max_paper_count": 5,
+          "target_paper_count": 5
+        },
+        "scope": {
+          "sources": [
+            "usenix"
+          ],
+          "time_range": {
+            "from": 2024,
+            "to": 2024
+          },
+          "language": "zh",
+          "format": "markdown",
+          "citations": "inline"
+        }
+      }
+    },
+    "plan_approval": {
+      "method": "POST",
+      "path": "/api/research-sessions/a6fd24342d084811ae7abb144bf08ea6/commands",
+      "http_status": 200,
+      "body": {
+        "command": "approve_plan",
+        "subject_version": 1,
+        "scope_json": {
+          "plan_version": 1,
+          "output_hash": "869643dc5f85dff50c41d83aad948d03709e3a69d02ec316e3f62118a1bc1f7a"
+        },
+        "idempotency_key": "plan-approval:a6fd24342d084811ae7abb144bf08ea6:1"
+      },
+      "response": {
+        "status": "queued",
+        "approval_status": "approved",
+        "research_task_id": "8fed1bc44a8158b59e3d48812ab4016b",
+        "task_status": "planning",
+        "approval_request_id": "aba559909f284a7786e498b005925574"
+      }
+    },
+    "task_final": {
+      "method": "GET",
+      "path": "/api/research-tasks/8fed1bc44a8158b59e3d48812ab4016b",
+      "http_status": 200,
+      "research_task_id": "8fed1bc44a8158b59e3d48812ab4016b",
+      "status": "partial",
+      "current_plan_version": 1,
+      "target_paper_count": 5,
+      "research_session_id": "a6fd24342d084811ae7abb144bf08ea6",
+      "conversation_id": "e222c0f6f2214eada3507df2672584df",
+      "updated_at": "2026-10-11T04:10:54Z",
+      "completed_at": "2026-10-11T04:10:54Z",
+      "runtime_observability": {
+        "waiting_retry": 0,
+        "retry_count": 0,
+        "next_retry_at": null,
+        "last_error_code": "MATRIX_NOT_READY",
+        "current_provider": "ollama"
+      }
+    },
+    "searches": [
+      {
+        "work_item_id": "8fed1bc44a8158b59e3d48812ab4016b:s1",
+        "role": "search-worker",
+        "resolved_model": "qwen3.5:9b",
+        "search_id": "a86edcca600c4e6ea6c304f1e6bb62b4",
+        "status_path": "/api/papers/searches/a86edcca600c4e6ea6c304f1e6bb62b4",
+        "status_http": 200,
+        "status": "completed",
+        "total_results": 5,
+        "results_path": "/api/papers/searches/a86edcca600c4e6ea6c304f1e6bb62b4/results?page=1",
+        "results_http": 200,
+        "source": "usenix",
+        "year": 2024,
+        "raw_candidate_ids": [
+          "ef9e0846844e5b02834163586ea6ddc9",
+          "9793a4a35caad52ee99f926ae7c90810",
+          "bb826cac3486a295d93eb9b6cea0a6f8",
+          "57e0402f82fe2ce354bea423b201fde3",
+          "c74fdf1babb53a9cbcb6a6ac9fa5cd0e"
+        ],
+        "raw_candidates": [
+          {
+            "candidate_id": "ef9e0846844e5b02834163586ea6ddc9",
+            "title": "Stop, Don't Click Here Anymore: Boosting Website Fingerprinting By Considering Sets of Subpages",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 1
+          },
+          {
+            "candidate_id": "9793a4a35caad52ee99f926ae7c90810",
+            "title": "Cascade: CPU Fuzzing via Intricate Program Generation",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 2
+          },
+          {
+            "candidate_id": "bb826cac3486a295d93eb9b6cea0a6f8",
+            "title": "DARKFLEECE: Probing the Dark Side of Android Subscription Apps",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 3
+          },
+          {
+            "candidate_id": "57e0402f82fe2ce354bea423b201fde3",
+            "title": "DNN-GP: Diagnosing and Mitigating Model's Faults Using Latent Concepts",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 4
+          },
+          {
+            "candidate_id": "c74fdf1babb53a9cbcb6a6ac9fa5cd0e",
+            "title": "Batch PIR and Labeled PSI with Oblivious Ciphertext Compression",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 5
+          }
+        ],
+        "source_progress_projection": {
+          "usenix": "queued",
+          "dblp": "queued",
+          "note": "status projection observed as queued although search result rows are completed USENIX candidates."
+        }
+      },
+      {
+        "work_item_id": "8fed1bc44a8158b59e3d48812ab4016b:s2",
+        "role": "search-worker",
+        "resolved_model": "qwen3.5:9b",
+        "search_id": "43592c6feaf947daa46a62d8a0e8a6f6",
+        "status_path": "/api/papers/searches/43592c6feaf947daa46a62d8a0e8a6f6",
+        "status_http": 200,
+        "status": "completed",
+        "total_results": 5,
+        "results_path": "/api/papers/searches/43592c6feaf947daa46a62d8a0e8a6f6/results?page=1",
+        "results_http": 200,
+        "source": "usenix",
+        "year": 2024,
+        "raw_candidate_ids": [
+          "ef9e0846844e5b02834163586ea6ddc9",
+          "9793a4a35caad52ee99f926ae7c90810",
+          "57e0402f82fe2ce354bea423b201fde3",
+          "4e6322a23b92a271dbec9906c51fe0ab",
+          "bb826cac3486a295d93eb9b6cea0a6f8"
+        ],
+        "raw_candidates": [
+          {
+            "candidate_id": "ef9e0846844e5b02834163586ea6ddc9",
+            "title": "Stop, Don't Click Here Anymore: Boosting Website Fingerprinting By Considering Sets of Subpages",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 1
+          },
+          {
+            "candidate_id": "9793a4a35caad52ee99f926ae7c90810",
+            "title": "Cascade: CPU Fuzzing via Intricate Program Generation",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 2
+          },
+          {
+            "candidate_id": "57e0402f82fe2ce354bea423b201fde3",
+            "title": "DNN-GP: Diagnosing and Mitigating Model's Faults Using Latent Concepts",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 3
+          },
+          {
+            "candidate_id": "4e6322a23b92a271dbec9906c51fe0ab",
+            "title": "GhostRace: Exploiting and Mitigating Speculative Race Conditions",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 4
+          },
+          {
+            "candidate_id": "bb826cac3486a295d93eb9b6cea0a6f8",
+            "title": "DARKFLEECE: Probing the Dark Side of Android Subscription Apps",
+            "conference_id": "usenix-security",
+            "year": 2024,
+            "rank": 5
+          }
+        ],
+        "source_progress_projection": {
+          "usenix": "queued",
+          "dblp": "queued",
+          "note": "status projection observed as queued although search result rows are completed USENIX candidates."
+        }
+      }
+    ],
+    "selection": {
+      "terminal_selected_count": 5,
+      "selection_version": 3,
+      "selected_candidate_ids": [
+        "57e0402f82fe2ce354bea423b201fde3",
+        "9793a4a35caad52ee99f926ae7c90810",
+        "bb826cac3486a295d93eb9b6cea0a6f8",
+        "c74fdf1babb53a9cbcb6a6ac9fa5cd0e",
+        "ef9e0846844e5b02834163586ea6ddc9"
+      ],
+      "selection_source": "terminal selected_count plus acquisition links",
+      "manual_supplement": false,
+      "sixth_download": false
+    },
+    "acquisitions": {
+      "path": "/api/research-tasks/8fed1bc44a8158b59e3d48812ab4016b/acquisitions",
+      "http_status": 200,
+      "batch_id": "761195d6-c2f9-469f-8217-388cc03ba21f",
+      "batch_ids": [
+        "761195d6-c2f9-469f-8217-388cc03ba21f"
+      ],
+      "status": "completed",
+      "selection_version": 3,
+      "approval_status_observed": "running",
+      "completed_count": 5,
+      "total_count": 5,
+      "items": [
+        {
+          "candidate_id": "57e0402f82fe2ce354bea423b201fde3",
+          "paper_id": "527fe0c1515d48c78adec8f4eb7f4979",
+          "document_id": "527fe0c1515d48c78adec8f4eb7f4979",
+          "import_item_id": "3229e397-b6f3-4259-80aa-294a8a1d7df8",
+          "title": "DNN-GP: Diagnosing and Mitigating Model's Faults Using Latent Concepts",
+          "state": "completed",
+          "stored_name": "2024-USENIX-Security-DNN-GP-Diagnosing-and-Mitigating-Model-s-Faults-Using-Latent-Concepts.pdf",
+          "error_code": null
+        },
+        {
+          "candidate_id": "9793a4a35caad52ee99f926ae7c90810",
+          "paper_id": "929a342c0b8d4c8283198751cae9b327",
+          "document_id": "929a342c0b8d4c8283198751cae9b327",
+          "import_item_id": "40294538-4b1c-4064-8bd8-33bd336eb12f",
+          "title": "Cascade: CPU Fuzzing via Intricate Program Generation",
+          "state": "completed",
+          "stored_name": "2024-USENIX-Security-Cascade-CPU-Fuzzing-via-Intricate-Program-Generation.pdf",
+          "error_code": null
+        },
+        {
+          "candidate_id": "bb826cac3486a295d93eb9b6cea0a6f8",
+          "paper_id": "fa82faf63802431da803e1a99ce1411b",
+          "document_id": "fa82faf63802431da803e1a99ce1411b",
+          "import_item_id": "ba13aeac-d6c0-49a2-b805-927055ca144e",
+          "title": "DARKFLEECE: Probing the Dark Side of Android Subscription Apps",
+          "state": "completed",
+          "stored_name": "2024-USENIX-Security-DARKFLEECE-Probing-the-Dark-Side-of-Android-Subscription-Apps.pdf",
+          "error_code": null
+        },
+        {
+          "candidate_id": "c74fdf1babb53a9cbcb6a6ac9fa5cd0e",
+          "paper_id": "2f002c403d4e49e79b4d2781fea38fc6",
+          "document_id": "2f002c403d4e49e79b4d2781fea38fc6",
+          "import_item_id": "21775682-9b25-4a09-835e-8ec4f6a091a5",
+          "title": "Batch PIR and Labeled PSI with Oblivious Ciphertext Compression",
+          "state": "completed",
+          "stored_name": "2024-USENIX-Security-Batch-PIR-and-Labeled-PSI-with-Oblivious-Ciphertext-Compression.pdf",
+          "error_code": null
+        },
+        {
+          "candidate_id": "ef9e0846844e5b02834163586ea6ddc9",
+          "paper_id": "56fc315e952342158e5ae2f5ef6f01a0",
+          "document_id": "56fc315e952342158e5ae2f5ef6f01a0",
+          "import_item_id": "d404a272-7ebb-4680-b703-f2d8b5cae502",
+          "title": "Stop, Don't Click Here Anymore: Boosting Website Fingerprinting By Considering Sets of Subpages",
+          "state": "completed",
+          "stored_name": "2024-USENIX-Security-Stop-Don-t-Click-Here-Anymore-Boosting-Website-Fingerprinting-By-Considering-Sets-of-Subpages.pdf",
+          "error_code": null
+        }
+      ]
+    },
+    "matrix": {
+      "method": "GET",
+      "path": "/api/research-tasks/8fed1bc44a8158b59e3d48812ab4016b/evidence-matrix?plan_version=1",
+      "http_status": 409,
+      "error": {
+        "code": "MATRIX_NOT_READY",
+        "message": "证据矩阵尚未准备完成"
+      }
+    },
+    "legacy_report": {
+      "method": "GET",
+      "path": "/api/research-tasks/8fed1bc44a8158b59e3d48812ab4016b/report?plan_version=1",
+      "http_status": 409,
+      "error": {
+        "code": "REPORT_NOT_READY",
+        "message": "report not ready: 8fed1bc44a8158b59e3d48812ab4016b"
+      }
+    },
+    "canonical_reports": {
+      "json": {
+        "path": "/api/research-tasks/8fed1bc44a8158b59e3d48812ab4016b/reports/1?format=json",
+        "http_status": 404,
+        "error_code": "REPORT_NOT_READY",
+        "non_empty_body": false
+      },
+      "markdown": {
+        "path": "/api/research-tasks/8fed1bc44a8158b59e3d48812ab4016b/reports/1?format=markdown",
+        "http_status": 404,
+        "error_code": "REPORT_NOT_READY",
+        "non_empty_body": false
+      },
+      "html": {
+        "path": "/api/research-tasks/8fed1bc44a8158b59e3d48812ab4016b/reports/1?format=html",
+        "http_status": 404,
+        "error_code": "REPORT_NOT_READY",
+        "non_empty_body": false
+      }
+    },
+    "artifacts": {
+      "method": "GET",
+      "path": "/api/research-sessions/a6fd24342d084811ae7abb144bf08ea6/artifacts?report_version=1",
+      "http_status": 200,
+      "artifacts": [],
+      "artifact_substituted_for_canonical": false
+    }
+  },
+  "state_trace": [
+    {
+      "event_seq": 1,
+      "entity": "phase:research",
+      "status": "running"
+    },
+    {
+      "event_seq": 2,
+      "entity": "phase:plan",
+      "status": "running",
+      "plan_version": 1
+    },
+    {
+      "event_seq": 8,
+      "entity": "work_item:s1",
+      "status": "completed",
+      "resolved_model": "qwen3.5:9b",
+      "search_id": "a86edcca600c4e6ea6c304f1e6bb62b4"
+    },
+    {
+      "event_seq": 14,
+      "entity": "work_item:s2",
+      "status": "completed",
+      "resolved_model": "qwen3.5:9b",
+      "search_id": "43592c6feaf947daa46a62d8a0e8a6f6"
+    },
+    {
+      "event_seq": 18,
+      "entity": "work_item:e1",
+      "status": "completed",
+      "resolved_model": "qwen3.8:27b-q4_K_M"
+    },
+    {
+      "event_seq": 22,
+      "entity": "work_item:c1",
+      "status": "completed",
+      "resolved_model": "qwen3.5:9b"
+    },
+    {
+      "event_seq": 25,
+      "entity": "work_item:syn",
+      "status": "failed",
+      "resolved_model": "qwen3.8:27b-q4_K_M",
+      "error_code": "MATRIX_NOT_READY"
+    },
+    {
+      "event_seq": 26,
+      "entity": "agent:syn",
+      "status": "failed",
+      "resolved_model": "qwen3.8:27b-q4_K_M",
+      "error_code": "MATRIX_NOT_READY"
+    },
+    {
+      "event_seq": 27,
+      "entity": "phase:research",
+      "status": "partial",
+      "error_code": "AGENT_OUTPUT_INVALID",
+      "selected_count": 5
+    }
+  ],
+  "observability": {
+    "trace_projection_errors": {
+      "code": "TRACE_PROJECTION_FAILED",
+      "retryable": true,
+      "effect": "processing_step projection warning; worker terminal events remained readable"
+    },
+    "sse_polling": {
+      "mode": "single_task",
+      "low_frequency_seconds": "20-30",
+      "max_window_minutes": 25,
+      "old_task_retried": false,
+      "new_run_started": false,
+      "concurrent_model_probe": false
+    }
+  },
+  "failure": {
+    "stage": "syn/research-report-synthesis",
+    "error_code": "MATRIX_NOT_READY",
+    "message": "Evidence Matrix was not ready for preliminary synthesis",
+    "retryable": null,
+    "terminal_error_code": "AGENT_OUTPUT_INVALID",
+    "terminal_status": "partial",
+    "selected_count": 5,
+    "cause_claim_boundary": "仅记录 API/SSE 可见失败；未臆测隐藏实现原因，未人工 POST 矩阵或报告。"
+  },
+  "readiness": [
+    {
+      "item": 1,
+      "name": "service_accessible",
+      "status": "PASS",
+      "evidence": [
+        "/api/ready",
+        "/"
+      ]
+    },
+    {
+      "item": 2,
+      "name": "real_natural_language_creation",
+      "status": "PASS",
+      "evidence": [
+        "POST /api/conversations/messages",
+        "conversation_id=e222c0f6f2214eada3507df2672584df"
+      ]
+    },
+    {
+      "item": 3,
+      "name": "natural_language_parameters",
+      "status": "PASS",
+      "evidence": [
+        "plan constraints min=max=target=5",
+        "USENIX/2024",
+        "zh/markdown/inline"
+      ]
+    },
+    {
+      "item": 4,
+      "name": "state_progression",
+      "status": "PASS",
+      "evidence": [
+        "approval",
+        "s1",
+        "s2",
+        "e1",
+        "c1",
+        "syn",
+        "terminal"
+      ]
+    },
+    {
+      "item": 5,
+      "name": "frontend_processing_prompt",
+      "status": "FAIL",
+      "note": "本轮 backend API 验收，未执行 UI"
+    },
+    {
+      "item": 6,
+      "name": "wait_guidance",
+      "status": "FAIL",
+      "note": "未执行 UI，且 canonical 产物未就绪"
+    },
+    {
+      "item": 7,
+      "name": "core_artifacts",
+      "status": "FAIL",
+      "note": "5 imports 成功；matrix/canonical report 缺失"
+    },
+    {
+      "item": 8,
+      "name": "actionable_recovery",
+      "status": "FAIL",
+      "note": "错误已具体记录，但没有改变状态重试"
+    },
+    {
+      "item": 9,
+      "name": "page_api_consistency",
+      "status": "FAIL",
+      "note": "未执行 UI"
+    },
+    {
+      "item": 10,
+      "name": "context_free_manual_steps",
+      "status": "FAIL",
+      "note": "矩阵/报告门禁未通过"
+    }
+  ],
+  "readiness_score": "4/10",
+  "unverified": [
+    "Evidence Matrix HTTP 200 正文",
+    "canonical JSON/Markdown/HTML 非空正文与 citations",
+    "artifact 下载",
+    "前端人工路径",
+    "错误恢复后的重新验收"
+  ],
+  "evidence_files": {
+    "report": "/Users/wjh/ResearchAgent/docs/sdd/plans/032/artifacts/task-14/current-research-e2e-fuzzing-supported-report.md",
+    "evidence": "/Users/wjh/ResearchAgent/docs/sdd/plans/032/artifacts/task-14/current-research-e2e-fuzzing-supported-evidence.json",
+    "progress_log": "/Users/wjh/ResearchAgent/.codebuddy/agent-logs/spec-032/task-14/backend-tester/20261011-fuzzing-xhigh-supported-e2e.md",
+    "previous_low_failure_report": "/Users/wjh/ResearchAgent/docs/sdd/plans/032/artifacts/task-14/current-research-e2e-fuzzing-report.md"
+  }
+}

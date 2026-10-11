@@ -28,6 +28,99 @@ _MATRIX_CELL_KEYS = frozenset({"claim_id", "paper_id", "dimension_id", "relation
 _MATRIX_CELL_OPTIONAL_KEYS = frozenset({"summary", "missing_reason"})
 MATRIX_MAX_ITEMS = 64
 
+# Validator messages are intentionally not persisted as diagnostics: they can
+# grow with implementation wording and may eventually contain model-derived
+# text.  Keep the public-safe explanation as fixed rule IDs and paths instead.
+_DIAGNOSTIC_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "synthesizer output must include an evidence_matrix object",
+        "matrix.evidence_matrix.required",
+        ("evidence_matrix",),
+    ),
+    ("matrix payload/context 无效", "matrix.payload_context", ("evidence_matrix", "matrix_context")),
+    ("matrix plan_version context 无效", "matrix.context.plan_version", ("matrix_context.plan_version",)),
+    ("matrix schema_version 无效", "matrix.schema_version", ("evidence_matrix.schema_version",)),
+    ("matrix plan_version 不匹配", "matrix.plan_version", ("evidence_matrix.plan_version",)),
+    ("matrix context 不匹配", "matrix.context", ("matrix_context",)),
+    ("matrix dimensions 不得偏离已批准范围", "matrix.dimensions", ("evidence_matrix.dimensions",)),
+    ("matrix dimension 合同无效", "matrix.dimension.contract", ("evidence_matrix.dimensions[]",)),
+    ("cell dimension_id 无效", "matrix.cell.dimension_id", ("evidence_matrix.cells[].dimension_id",)),
+    ("cell claim_id 无效", "matrix.cell.claim_id", ("evidence_matrix.cells[].claim_id",)),
+    ("cell paper_id 无效", "matrix.cell.paper_id", ("evidence_matrix.cells[].paper_id",)),
+    ("evidence claim_id 无效", "matrix.evidence.claim_id", ("evidence_matrix.evidence[].claim_id",)),
+    ("evidence paper_id 无效", "matrix.evidence.paper_id", ("evidence_matrix.evidence[].paper_id",)),
+    ("claim evidence_id 无效", "matrix.claim.evidence_id", ("evidence_matrix.claims[].evidence_ids",)),
+    ("evidence_id 无效", "matrix.evidence.evidence_id", ("evidence_matrix.evidence[].evidence_id",)),
+    ("catalog_snapshot_id 无效", "matrix_context.candidate.catalog_snapshot_id", ("matrix_context.candidates[].catalog_snapshot_id",)),
+    ("allowed_paper_id 无效", "matrix_context.allowlist.paper_id", ("matrix_context.allowed_paper_ids[]",)),
+    ("dimension_id 无效", "matrix.dimension.dimension_id", ("evidence_matrix.dimensions[].dimension_id",)),
+    ("dimension label", "matrix.dimension.label", ("evidence_matrix.dimensions[].label",)),
+    ("dimension definition", "matrix.dimension.definition", ("evidence_matrix.dimensions[].definition",)),
+    ("dimension order 无效", "matrix.dimension.display_order", ("evidence_matrix.dimensions[].display_order",)),
+    ("matrix snapshot context 缺失", "matrix_context.candidates", ("matrix_context.candidates",)),
+    ("matrix snapshot context 无效", "matrix_context.candidates", ("matrix_context.candidates[]",)),
+    ("matrix snapshot candidate 重复", "matrix_context.candidate.paper_id", ("matrix_context.candidates[].paper_id",)),
+    ("paper_id 无效", "matrix_context.candidate.paper_id", ("matrix_context.candidates[].paper_id",)),
+    ("claim_id 无效", "matrix.claim.claim_id", ("evidence_matrix.claims[].claim_id",)),
+    ("snapshot title", "matrix_context.candidate.title", ("matrix_context.candidates[].title",)),
+    ("snapshot abstract digest 无效", "matrix_context.candidate.abstract_digest", ("matrix_context.candidates[].abstract_digest",)),
+    ("snapshot abstract digest 不匹配", "matrix_context.candidate.abstract_digest", ("matrix_context.candidates[].abstract_digest",)),
+    ("snapshot abstract ref 不匹配", "matrix_context.candidate.abstract_ref", ("matrix_context.candidates[].abstract_ref",)),
+    ("snapshot abstract", "matrix_context.candidate.abstract", ("matrix_context.candidates[].abstract",)),
+    ("matrix snapshot allowlist 不完整", "matrix_context.allowlist", ("matrix_context.allowed_paper_ids", "matrix_context.candidates[].paper_id")),
+    ("matrix 顶层字段无效", "matrix.top_level", ("evidence_matrix",)),
+    ("matrix claims/evidence/cells 无效", "matrix.collections", ("evidence_matrix.claims", "evidence_matrix.evidence", "evidence_matrix.cells")),
+    ("matrix 列表过长", "matrix.collection_limit", ("evidence_matrix.claims", "evidence_matrix.evidence", "evidence_matrix.cells")),
+    ("matrix claim 合同无效", "matrix.claim.contract", ("evidence_matrix.claims[]",)),
+    ("matrix claim 重复", "matrix.claim.claim_id", ("evidence_matrix.claims[].claim_id",)),
+    ("claim topic", "matrix.claim.topic", ("evidence_matrix.claims[].topic",)),
+    ("claim statement", "matrix.claim.statement", ("evidence_matrix.claims[].statement",)),
+    ("matrix claim 枚举无效", "matrix.claim.enums", ("evidence_matrix.claims[].confidence", "evidence_matrix.claims[].status")),
+    ("matrix claim evidence_ids 无效", "matrix.claim.evidence_ids", ("evidence_matrix.claims[].evidence_ids",)),
+    ("matrix claim evidence_ids 重复", "matrix.claim.evidence_ids_unique", ("evidence_matrix.claims[].evidence_ids",)),
+    ("有结论的 claim 必须有 evidence", "matrix.claim.evidence_required", ("evidence_matrix.claims[].evidence_ids",)),
+    ("matrix evidence 合同无效", "matrix.evidence.contract", ("evidence_matrix.evidence[]",)),
+    ("matrix evidence 重复", "matrix.evidence.evidence_id", ("evidence_matrix.evidence[].evidence_id",)),
+    ("matrix evidence 归属无效", "matrix.evidence.ownership", ("evidence_matrix.evidence[].claim_id", "evidence_matrix.evidence[].paper_id")),
+    ("matrix evidence level/stance/status 无效", "matrix.evidence.enums", ("evidence_matrix.evidence[].evidence_level", "evidence_matrix.evidence[].stance", "evidence_matrix.evidence[].status")),
+    ("catalog evidence 只能作为 contextual", "matrix.evidence.catalog_stance", ("evidence_matrix.evidence[].stance",)),
+    ("evidence quote_digest", "matrix.evidence.quote_digest", ("evidence_matrix.evidence[].quote_digest",)),
+    ("matrix evidence locator 无效", "matrix.evidence.locator", ("evidence_matrix.evidence[].locator",)),
+    ("matrix evidence snapshot 不匹配", "matrix.evidence.locator.snapshot", ("evidence_matrix.evidence[].locator.catalog_snapshot_id",)),
+    ("catalog locator 字段无效", "matrix.evidence.catalog_locator", ("evidence_matrix.evidence[].locator",)),
+    ("abstract locator 字段无效", "matrix.evidence.abstract_locator", ("evidence_matrix.evidence[].locator",)),
+    ("abstract snapshot 缺失", "matrix.evidence.abstract_snapshot", ("matrix_context.candidates[].abstract", "matrix_context.candidates[].abstract_digest")),
+    ("abstract locator 不匹配", "matrix.evidence.abstract_locator", ("evidence_matrix.evidence[].locator.abstract_ref", "evidence_matrix.evidence[].locator.abstract_digest")),
+    ("claim 引用的 evidence 不匹配", "matrix.claim.evidence_ownership", ("evidence_matrix.claims[].evidence_ids",)),
+    ("supported claim 缺少支持性 evidence", "matrix.claim.supporting_evidence", ("evidence_matrix.claims[].evidence_ids",)),
+    ("matrix 缺少可验证 supported claim", "matrix.claim.supported_required", ("evidence_matrix.claims", "evidence_matrix.evidence")),
+    ("matrix cell 合同无效", "matrix.cell.contract", ("evidence_matrix.cells[]",)),
+    ("matrix cell 归属无效", "matrix.cell.ownership", ("evidence_matrix.cells[].claim_id", "evidence_matrix.cells[].paper_id", "evidence_matrix.cells[].dimension_id")),
+    ("matrix cell relation/evidence_ids 无效", "matrix.cell.relation", ("evidence_matrix.cells[].relation", "evidence_matrix.cells[].evidence_ids")),
+    ("matrix cell evidence_ids 无效", "matrix.cell.evidence_ids", ("evidence_matrix.cells[].evidence_ids",)),
+    ("missing cell 必须说明原因且无 evidence", "matrix.cell.missing_reason", ("evidence_matrix.cells[].missing_reason", "evidence_matrix.cells[].evidence_ids")),
+    ("非 missing cell 必须有 evidence", "matrix.cell.evidence_required", ("evidence_matrix.cells[].evidence_ids",)),
+    ("cell evidence 不匹配", "matrix.cell.evidence_ownership", ("evidence_matrix.cells[].evidence_ids",)),
+    ("cell summary", "matrix.cell.summary", ("evidence_matrix.cells[].summary",)),
+    ("cell missing_reason", "matrix.cell.missing_reason", ("evidence_matrix.cells[].missing_reason",)),
+)
+
+_MATRIX_DIAGNOSTIC_CODES = frozenset({
+    "MATRIX_NOT_READY", "REPORT_SCHEMA_INVALID", "EVIDENCE_LOCATOR_INVALID", "EVIDENCE_INSUFFICIENT",
+})
+
+
+def matrix_validation_diagnostic(error: Any) -> dict[str, Any]:
+    """Return bounded rule metadata without persisting validator wording or values."""
+    code = str(getattr(error, "matrix_error_code", None) or getattr(error, "code", "MATRIX_NOT_READY"))
+    if code not in _MATRIX_DIAGNOSTIC_CODES:
+        code = "MATRIX_NOT_READY"
+    message = str(getattr(error, "message", "") or error or "")
+    for marker, rule_id, field_paths in _DIAGNOSTIC_RULES:
+        if marker in message:
+            return {"matrix_error_code": code, "rule_id": rule_id, "field_paths": list(field_paths)}
+    return {"matrix_error_code": code, "rule_id": "matrix.contract", "field_paths": ["evidence_matrix"]}
+
 
 def _matrix_id(value: Any, field: str) -> str:
     if not isinstance(value, str) or MATRIX_ID_RE.fullmatch(value.strip()) is None:
@@ -277,4 +370,4 @@ def validate_synthesis_matrix_payload(
     }
 
 
-__all__ = ["MATRIX_ID_RE", "MATRIX_MAX_ITEMS", "validate_synthesis_matrix_payload"]
+__all__ = ["MATRIX_ID_RE", "MATRIX_MAX_ITEMS", "matrix_validation_diagnostic", "validate_synthesis_matrix_payload"]

@@ -123,6 +123,8 @@ _EVENT_SAFE_KEYS = {
     "skill_name", "tool_name", "result_id", "result_length", "length", "content_hash", "tool_call_id",
     "attempt", "event_type", "from_tier", "to_tier", "granted", "source_ref", "facets_by_paper",
     "reason_code", "from_provider", "to_provider", "from_model", "to_model",
+    "validation_diagnostic", "matrix_error_code", "rule_id", "field_paths",
+    "feedback_classification", "feedback_sent",
 }
 _EVENT_SENSITIVE_PARTS = ("prompt", "cot", "reasoning", "credential", "password", "secret", "token", "authorization", "cookie", "api_key", "access_key")
 

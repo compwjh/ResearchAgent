@@ -20,7 +20,10 @@ from threading import Event
 from typing import Any, Callable, Mapping, Sequence
 
 from backend.app.research.application.evidence_matrix import EvidenceMatrixError
-from backend.app.research.application.matrix_contract import validate_synthesis_matrix_payload
+from backend.app.research.application.matrix_contract import (
+    matrix_validation_diagnostic,
+    validate_synthesis_matrix_payload,
+)
 from backend.app.research.application.plan_authoring import PlanOutputInvalid, validate_safe_scope
 from backend.app.research.domain.contracts import AGENT_ROLES
 from backend.app.research.domain.models import AgentCheckpoint, AgentRun, ResearchEvent
@@ -188,6 +191,30 @@ def _matrix_validation_feedback(validation_error: Any = None) -> dict[str, Any]:
         if detail and detail != "MATRIX_NOT_READY":
             feedback["message"] = f"{message} Contract detail: {detail}"
     return feedback
+
+
+def _validation_diagnostic(
+    validation_error: Any,
+    *,
+    attempt: int,
+    feedback_sent: bool,
+) -> dict[str, Any]:
+    """Build bounded metadata; ``feedback_sent`` means the next invoke returned."""
+    raw_code = getattr(validation_error, "code", "AGENT_OUTPUT_INVALID")
+    code = raw_code if isinstance(raw_code, str) and raw_code in {
+        "AGENT_OUTPUT_INVALID", "MATRIX_NOT_READY",
+    } else "AGENT_OUTPUT_INVALID"
+    diagnostic = {
+        "attempt": max(1, min(4, int(attempt))),
+        "error_code": code,
+        "rule_id": "agent.output_contract",
+        "field_paths": [],
+        "feedback_classification": "matrix_validation" if feedback_sent else "not_sent",
+        "feedback_sent": bool(feedback_sent),
+    }
+    if code == "MATRIX_NOT_READY":
+        diagnostic.update(matrix_validation_diagnostic(validation_error))
+    return diagnostic
 
 
 def _role_contract_prompt(
@@ -1274,9 +1301,12 @@ class ResearchAgentRunner:
         summaries: Sequence[Mapping[str, Any]],
         *,
         error_code: str = "AGENT_OUTPUT_INVALID",
+        validation_diagnostic: Mapping[str, Any] | None = None,
     ) -> tuple[AgentRun, str, str]:
         """Close an invalid attempt and persist the next independent Run link."""
         handoff = {"schema_version": "runtime-v1", "output": None, "tool_results": list(summaries)}
+        if isinstance(validation_diagnostic, Mapping):
+            handoff["validation_diagnostic"] = dict(validation_diagnostic)
         handoff_hash = _hash(handoff)
         handoff_ref = f"checkpoint:{run.agent_run_id}:{handoff_hash[:16]}"
         self._checkpoints[handoff_ref] = handoff
@@ -1834,6 +1864,8 @@ class ResearchAgentRunner:
         fallback_attempted = False
         original_error_code: str | None = None
         fallback_error_code: str | None = None
+        validation_diagnostics: list[dict[str, Any]] = []
+        pending_feedback_index: int | None = None
 
         def fallback_metadata() -> dict[str, Any]:
             values: dict[str, Any] = {}
@@ -1844,6 +1876,31 @@ class ResearchAgentRunner:
             if fallback_attempted:
                 values["fallback_attempted"] = True
             return values
+
+        def validation_metadata() -> dict[str, Any]:
+            if not validation_diagnostics:
+                return {}
+            return {"validation_diagnostics": [dict(item) for item in validation_diagnostics]}
+
+        def mark_feedback_invocation_completed() -> None:
+            """Confirm only a returned provider call that carried retry feedback."""
+            nonlocal pending_feedback_index
+            if pending_feedback_index is None:
+                return
+            diagnostic = dict(validation_diagnostics[pending_feedback_index])
+            diagnostic["feedback_sent"] = True
+            diagnostic["feedback_classification"] = "matrix_validation"
+            validation_diagnostics[pending_feedback_index] = diagnostic
+            self._runtime_event(
+                input,
+                node_type="skill",
+                node_key=f"skill:{input.work_item_id}:validation-feedback:{diagnostic['attempt']}",
+                status="completed",
+                event_type="validation_feedback",
+                error_code=diagnostic["error_code"],
+                validation_diagnostic=diagnostic,
+            )
+            pending_feedback_index = None
         if self.model_factory and self.model_router is None:
             try:
                 model = self.model_factory(input.resolved_model, input.reasoning_effort)
@@ -1910,18 +1967,18 @@ class ResearchAgentRunner:
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if self.clock() - start + budget.elapsed_seconds >= budget.max_seconds:
                     code = "TASK_TIME_LIMIT_REACHED"
                     self._cancel(run, owner, status="limit_reached")
                     lease_held = self._release_lease(input.research_task_id, lease_held)
                     signal = {"kind": "resource_extension", "reason": code, "increment_seconds": 90 * 60}
-                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal=signal, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal=signal, model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if loops >= budget.max_model_loops or task_loops >= budget.task_max_model_loops:
                     code = "MODEL_LOOP_LIMIT_REACHED" if loops >= budget.max_model_loops else "TASK_MODEL_LIMIT_REACHED"
                     self._cancel(run, owner, status="limit_reached")
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_model_loops": 40, "increment_task_model_loops": 160}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_model_loops": 40, "increment_task_model_loops": 160}, model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 loops += 1
                 task_loops += 1
                 run_loops += 1
@@ -2017,10 +2074,11 @@ class ResearchAgentRunner:
                         if fallback_error_code:
                             raise AgentRuntimeError(fallback_error_code) from exc
                     raise
+                mark_feedback_invocation_completed()
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("cancelled", error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 output, raw_calls = _response_parts(response)
                 if detail_tool_disabled and raw_calls:
                     # A provider may ignore the reduced schema and repeat the
@@ -2052,7 +2110,7 @@ class ResearchAgentRunner:
                         code = "TOOL_CALL_LIMIT_REACHED" if calls + len(raw_calls) > budget.max_tool_calls else "TASK_TOOL_CALL_LIMIT_REACHED"
                         self._cancel(run, owner, status="limit_reached")
                         lease_held = self._release_lease(input.research_task_id, lease_held)
-                        return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_tool_calls": 160, "increment_task_tool_calls": 640}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                        return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_tool_calls": 160, "increment_task_tool_calls": 640}, model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                     # Atomic validation: no dispatch happens until every call passes.
                     validated = self._validate_calls(capability, raw_calls)
                     calls += len(validated)
@@ -2111,7 +2169,7 @@ class ResearchAgentRunner:
                     if _is_cancelled(input.cancellation_token):
                         self._cancel(run, owner)
                         lease_held = self._release_lease(input.research_task_id, lease_held)
-                        return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                        return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                     batch_summaries = summaries[-len(validated):]
                     successful_catalog_search = any(
                         item.get("name") == "search_paper_catalog" and item.get("status") == "ok"
@@ -2144,7 +2202,7 @@ class ResearchAgentRunner:
                     if non_optional_failures:
                         self._cancel(run, owner, status="failed", error_code="TOOL_EXECUTION_FAILED")
                         lease_held = self._release_lease(input.research_task_id, lease_held)
-                        return AgentRunOutput("failed", error_code="TOOL_EXECUTION_FAILED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                        return AgentRunOutput("failed", error_code="TOOL_EXECUTION_FAILED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                     checkpoint = {"schema_version": "runtime-v1", "output": None, "tool_results": summaries}
                     checkpoint_hash = _hash(checkpoint)
                     checkpoint_ref = f"checkpoint:{input.agent_run_id}:{checkpoint_hash[:16]}"
@@ -2198,7 +2256,26 @@ class ResearchAgentRunner:
                             expected_owner_id=input.owner_id,
                         )
                         output = recovered
-                    elif input.attempt + attempts_used <= 4:
+                    else:
+                        diagnostic = _validation_diagnostic(
+                            validation_error,
+                            # ``input.attempt`` may start at a resumed chain
+                            # attempt; keep telemetry aligned with the
+                            # durable AgentRun attempt rather than the local
+                            # loop counter.
+                            attempt=input.attempt + attempts_used - 1,
+                            feedback_sent=False,
+                        )
+                        validation_diagnostics.append(diagnostic)
+                        self._runtime_event(
+                            input,
+                            node_type="skill",
+                            node_key=f"skill:{input.work_item_id}:validation:{attempts_used}",
+                            status="failed",
+                            error_code=validation_error.code,
+                            validation_diagnostic=diagnostic,
+                        )
+                    if recovered is None and input.attempt + attempts_used <= 4:
                         # The contract permits three fast attempts followed by one
                         # strong attempt.  Fake models can therefore deterministically
                         # return invalid → invalid → valid without a provider/router.
@@ -2209,6 +2286,7 @@ class ResearchAgentRunner:
                             attempts_used,
                             summaries,
                             error_code=validation_error.code,
+                            validation_diagnostic=validation_diagnostics[-1],
                         )
                         run_loops, run_calls = 0, 0
                         retry_context = {
@@ -2219,8 +2297,10 @@ class ResearchAgentRunner:
                         if validation_error.code == "MATRIX_NOT_READY":
                             retry_context["validation_feedback"] = _matrix_validation_feedback(validation_error)
                         context = retry_context
+                        if validation_error.code == "MATRIX_NOT_READY":
+                            pending_feedback_index = len(validation_diagnostics) - 1
                         continue
-                    else:
+                    elif recovered is None:
                         if validation_error.code == "MATRIX_NOT_READY":
                             raise validation_error
                         if not fallback_attempted:
@@ -2288,7 +2368,7 @@ class ResearchAgentRunner:
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("cancelled", error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if self.store is not None:
                     self.store.create_agent_checkpoint(AgentCheckpoint(
                         checkpoint_ref=checkpoint_ref, owner_id=owner,
@@ -2302,15 +2382,15 @@ class ResearchAgentRunner:
                 self._save_counters(run.agent_run_id, owner, model_loop_count=run_loops, tool_call_count=run_calls, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, expected_generation=run.generation)
                 if not self._cancel(run, owner, status="completed"):
                     current = self.store.get_agent_run(run.agent_run_id, owner) if self.store is not None else None
-                    return AgentRunOutput(current.status if current else "cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput(current.status if current else "cancelled", error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 lease_held = self._release_lease(input.research_task_id, lease_held)
                 self._runtime_event(input, node_type="skill", node_key=skill_key, status="completed", skill_name=skill_name)
-                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries), agent_run_id=run.agent_run_id)
+                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata, **validation_metadata()}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries), agent_run_id=run.agent_run_id)
         except AgentRuntimeError as exc:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code=exc.code)
             self._cancel(run, owner, status="failed", error_code=exc.code)
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata, **validation_metadata()}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
         except Exception:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code="MODEL_UNAVAILABLE")
             # A failing Store read must not bypass the lease release barrier.
@@ -2321,7 +2401,7 @@ class ResearchAgentRunner:
             if current is None or current.status == "running":
                 self._cancel(run, owner, status="failed", error_code="MODEL_UNAVAILABLE")
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata, **validation_metadata()}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
 
 
 __all__ = ["AgentRunInput", "AgentRunOutput", "AgentRuntimeError", "BudgetSnapshot", "FakeModel", "FakeTool", "RetryPolicy", "compute_retry_delay", "RoleCapability", "RoleCapabilityRegistry", "ResearchAgentRunner"]
