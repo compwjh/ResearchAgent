@@ -125,13 +125,13 @@ Task 文件顶部保存一个有明确起止标记的 JSON 元数据块。CLI �
 | `doctor` | repo/worktree | schema、依赖、镜像、敏感信息检查 | 非零退出并列出阻塞项，不修改 tracked 文件 |
 | `rebuild` | 可选 `--all-worktrees` | 从 Task 与 run 摘要重建 SQLite | 文档冲突/重复 ID 时停止，不猜测 |
 | `status` | 可选 `--json` | 可执行、等待、运行、阻塞、完成列表 | 数据库缺失时提示先 rebuild |
-| `next --claim` | `--ide`、`--executor` | 原子领取一个 Task，返回 run/worktree/角色/Prompt 路径 | 无可执行项时返回原因矩阵，不改变 Task |
-| `event` | run、type、payload | 追加事件并刷新租约 | run/owner 不匹配时拒绝 |
-| `complete` | run、`--result` | 校验结果、生成摘要、同步状态、本地 commit | 越界改动、测试失败或 hash 漂移时拒绝提交 |
-| `fail` | run、错误与结果文件 | 保存失败摘要，按改动情况决定重试或保留恢复 | 第三次连续失败将 Task 置 blocked |
+| `next --claim` | `--ide`、`--executor`、`--owner-pid`（持久执行器进程的正整数 PID） | 原子领取一个 Task，返回 run/worktree/角色/Prompt 路径 | 无可执行项时返回原因矩阵，不改变 Task；执行器 PID 不可确认时拒绝领取 |
+| `event` | `--run-id`、`--executor`、`--owner-pid`、`--type`、`--payload-json` | 追加 observation/evidence/decision/action/result/next_step 之一并刷新租约 | run/owner 不匹配或 payload 不安全时拒绝 |
+| `complete` | `--run-id`、`--executor`、`--owner-pid`、`--result` | 校验结果、生成摘要、同步状态、本地 commit | 越界改动、测试失败或 hash 漂移时拒绝提交 |
+| `fail` | `--run-id`、`--executor`、`--owner-pid`、`--result` | 保存失败摘要，按改动情况决定重试或保留恢复 | 第三次连续失败将 Task 置 blocked |
 | `recover` | run 或 task | 恢复过期/中断任务 | 活跃 owner 或基线不明时拒绝接管 |
-| `result` | run、可选 `--json` | 返回主 Agent 所需统一交接内容 | 结果未完成时返回当前状态 |
-| `metrics` | 时间/角色/model/filter | JSON 或 CSV 指标 | 缺失字段保留 null，不伪造数据 |
+| `result` | `--run-id`、`--json` | 返回 ledger terminal summary 中完整且已验证的 sdd-run-result/v1 | 结果未可用时返回稳定 `RESULT_NOT_AVAILABLE`；只读，不需 owner 身份 |
+| `metrics` | 时间/角色/model/filter、`--format` | JSON 或 CSV 指标 | 缺失字段保留 null，不伪造数据 |
 
 `next --claim` 的固定选择顺序：可恢复的中断任务优先；之后选择所有门禁和依赖已满足的 `pending` Task，按 priority 降序、创建时间升序、Task ID 升序排列，一次只返回一个。
 
@@ -267,8 +267,8 @@ Codex、CodeBuddy 或其他获准 CLI 执行器调用 status/next。SQLite 原�
 | 02 | 验证 Task 运行时（Go/No-Go） | [`task-02-validate-task-runtime.md`](../plans/016/task-02-validate-task-runtime.md) | 01 | 进行中（CodeBuddy待本地） |
 | 03 | 定义 Task 文档与 Prompt 协议 | [`task-03-task-document-contract.md`](../plans/016/task-03-task-document-contract.md) | 云端阶段授权 + Task02前置证据 | 完成 |
 | 04 | 实现 SQLite Task 账本 | [`task-04-sqlite-task-ledger.md`](../plans/016/task-04-sqlite-task-ledger.md) | 03 | 完成 |
-| 05 | 实现领取、worktree 与恢复 | [`task-05-claim-worktree-recovery.md`](../plans/016/task-05-claim-worktree-recovery.md) | 04 | 进行中 |
-| 06 | 实现 Prompt、结果与指标闭环 | [`task-06-prompt-result-metrics.md`](../plans/016/task-06-prompt-result-metrics.md) | 04, 05 | 待执行 |
+| 05 | 实现领取、worktree 与恢复 | [`task-05-claim-worktree-recovery.md`](../plans/016/task-05-claim-worktree-recovery.md) | 04 | 完成 |
+| 06 | 实现 Prompt、结果与指标闭环 | [`task-06-prompt-result-metrics.md`](../plans/016/task-06-prompt-result-metrics.md) | 04, 05 | 进行中 |
 | 07 | 创建 Codex/CodeBuddy 跨 IDE Skills | [`task-07-cross-ide-skills.md`](../plans/016/task-07-cross-ide-skills.md) | 06 | 待执行 |
 | 08 | 对账并迁移 spec-013～015 | [`task-08-reconcile-legacy-tasks.md`](../plans/016/task-08-reconcile-legacy-tasks.md) | 07 | 待执行 |
 | 09 | 评审、验收、提交与复盘 | [`task-09-review-acceptance-retro.md`](../plans/016/task-09-review-acceptance-retro.md) | 08 | 待执行 |

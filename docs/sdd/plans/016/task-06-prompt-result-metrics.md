@@ -1,7 +1,7 @@
 # 任务 06 — 实现 Prompt、结果与指标闭环
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 04、05 ｜ 被依赖：任务 07 ｜ 当前状态：`待执行`
+> 依赖：任务 04、05 ｜ 被依赖：任务 07 ｜ 当前状态：`进行中`
 
 ## 一句话目标
 
@@ -40,7 +40,7 @@
 ### C. 失败、结果查询与指标
 
 9. fail 保存原因；无改动时释放为可重试，有部分改动时保留恢复；第三次失败 blocked。
-10. `result --json` 固定返回主 Agent 需要的信息，不让 IDE 解析 Markdown。
+10. `result --json --run-id <uuid>` 只读返回已完成 ledger summary 中完整且已验证的 sdd-run-result/v1，不让 IDE 解析 Markdown；terminal result 可由新 owner 会话读取。
 11. metrics 从 run/event/artifact 导出 JSON/CSV；模型/token/tool count 缺失为 null，并保存来源。
 12. 敏感扫描命中时拒绝写 Git 摘要与提交，要求生成脱敏 result。
 
@@ -105,7 +105,7 @@ Prompt：只允许替换 RUN_ID、WORKTREE、BASE_COMMIT、RESULT_PATH、EVENT_P
 
 总改动不超过 150 行；Python 3.9+ 标准库；测试使用 tempfile Git repo。
 
-next --claim 成功后写 rendered prompt 并返回路径/hash。新增 event、complete --result、fail、result --json、metrics。complete 顺序必须是：验证 result → 验证 diff/allowed paths → 跑声明验证命令 → 生成脱敏摘要 → 更新 Task 与镜像 → 精确 stage → 本地 commit；任一步失败不得生成成功提交。禁止 push/merge/reset/stash/clean。fail 有变化保留恢复，无变化可重试，第三次 blocked。
+next --claim 成功后写 rendered prompt 并返回路径/hash。新增 `event --run-id <uuid> --executor <id> --owner-pid <pid> --type <observation|evidence|decision|action|result|next_step> --payload-json <object>`、`complete --run-id <uuid> --executor <id> --owner-pid <pid> --result <path>`、`fail --run-id <uuid> --executor <id> --owner-pid <pid> --result <path>`、`result --json --run-id <uuid>`、`metrics --format json|csv`。event/complete/fail 要求 owner PID 指向持久执行器进程；CLI 以 executor/PID/process-start identity 核验 owner，从本地账本取 token；token 不得作为命令参数、输出或日志。result/status/metrics 只读、不需 owner principal；result 只返回 ledger terminal summary 中完整且已验证的 sdd-run-result/v1，没有可用 summary 时返回 `RESULT_NOT_AVAILABLE`，不信任 runtime result.json。complete 顺序必须是：验证 result → 验证 diff/allowed paths → 跑声明验证命令 → 生成脱敏摘要 → 更新 Task 与镜像 → 精确 stage → 本地 commit；任一步失败不得生成成功提交。禁止 push/merge/reset/stash/clean。fail 有变化保留恢复，无变化可重试，第三次 blocked。
 
 测试覆盖成功闭环、越界、测试失败、敏感摘要、hash 漂移、三次失败、有/无部分改动、只提交允许路径、没有 push。记录实际命令与退出码到 result.json。
 ```
@@ -113,7 +113,7 @@ next --claim 成功后写 rendered prompt 并返回路径/hash。新增 event、
 ## 子代理返回后主 Agent 必须执行
 
 1. 读回所有生产与测试文件，确认每批范围和行数。
-2. 在临时 Git fixture 走完 `rebuild → next --claim → event → complete → result → metrics`。
+2. 在临时 Git fixture 走完 `rebuild → next --claim --ide <id> --executor <id> --owner-pid <persistent-executor-pid> → event → complete → result → metrics`；owner PID 必须是持久执行器进程，不是短命 CLI 子进程。
 3. 检查成功 commit 的 staged/committed 文件与 allowed paths 完全一致，远端引用未变化。
 4. 分别注入 secret、越界文件、失败测试、hash 漂移和第三次失败，核对停止行为。
 5. 删除 fixture SQLite 后 rebuild，确认 Task/run 摘要恢复且租约不伪造。

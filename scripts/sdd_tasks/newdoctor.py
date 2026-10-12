@@ -63,20 +63,38 @@ def doctor(repo_root: Path) -> Dict[str, Any]:
 
     present, schema_check = False, "not_initialized"
     if roots:
+        database = roots[0] / ".sdd/runtime/task-ledger.sqlite3"
+        parent_fd = None
         try:
-            database = contained(roots[0], ".sdd/runtime/task-ledger.sqlite3")
-            info = database.lstat()
-            if not stat.S_ISREG(info.st_mode):
-                raise ValueError("DATABASE_PATH_UNSAFE")
             parent_fd = open_parent(database.parent, create=False)
-            os.close(parent_fd)
-            present, schema_check = True, "not_run_requires_status"
-            diagnostics.append({"code": "ledger_status_required"})
         except FileNotFoundError:
             pass
         except (OSError, ValueError):
             schema_check = "unsafe"
             diagnostics.append({"code": "DATABASE_PATH_UNSAFE"})
+        if parent_fd is not None:
+            info = None
+            try:
+                try:
+                    info = os.stat(database.name, dir_fd=parent_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    schema_check = "unsafe"
+                    diagnostics.append({"code": "DATABASE_PATH_UNSAFE"})
+            finally:
+                os.close(parent_fd)
+            if info is not None:
+                present = True
+                try:
+                    if not stat.S_ISREG(info.st_mode):
+                        raise ValueError("DATABASE_PATH_UNSAFE")
+                    contained(roots[0], ".sdd/runtime/task-ledger.sqlite3")
+                    schema_check = "not_run_requires_status"
+                    diagnostics.append({"code": "ledger_status_required"})
+                except (OSError, ValueError):
+                    schema_check = "unsafe"
+                    diagnostics.append({"code": "DATABASE_PATH_UNSAFE"})
     warning_codes = {"legacy_tasks_ignored", "stale_task_copies_ignored", "no_protocol_tasks", "ledger_status_required"}
     errors = {item["code"] for item in diagnostics} - warning_codes
     diagnostics = [{"code": code} for code in sorted({item["code"] for item in diagnostics})]

@@ -1,7 +1,7 @@
 # 任务 05 — 实现领取、worktree 与恢复
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 04 ｜ 被依赖：任务 06 ｜ 当前状态：`进行中`
+> 依赖：任务 04 ｜ 被依赖：任务 06 ｜ 当前状态：`完成`
 
 ## 一句话目标
 
@@ -103,7 +103,7 @@
 
 总改动不超过 150 行；Python 3.9+ 标准库。
 
-实现命令：doctor、rebuild、status --json、next --claim --ide --executor、recover。stdout 的 JSON schema 固定，诊断写 stderr；成功/无任务/定义无效/活跃租约/工作区冲突使用稳定退出码。next 只领取一个，不渲染最终 Prompt；Task 06 再补。
+实现命令：doctor、rebuild、status --json、`next --claim --ide <id> --executor <id> --owner-pid <persistent-executor-pid>`、recover --run-id <uuid>。`--owner-pid` 必须指向持久执行器进程，不能指向领取后即退出的 CLI 子进程；无可核验执行器身份时拒绝领取。stdout 的 JSON schema 固定，诊断写 stderr；成功/无任务/定义无效/活跃租约/工作区冲突使用稳定退出码。next 只领取一个，不渲染最终 Prompt；Task 06 再补。
 
 不得实现 complete/fail/result/metrics，不修改文档、Git 状态或业务代码，不 push/merge/reset/stash/clean。
 
@@ -152,7 +152,7 @@ tail -f .sdd/runtime/runs/<run-id>/events.jsonl
 
 ## 执行结果
 
-> 待 Task 04 完成后填写。
+2026-10-12 云端 Task05 已通过独立集中评审。Python 3.9.25 工具包 170/170、Ruff、compileall 与 8 组真实 Git/SQLite smoke 通过；实际命令见 [task05-validation.md](./artifacts/task05-validation.md)，签字见 [016-task05-review.md](../../reviews/016-task05-review.md)。真实双进程领取、partial 恢复链和 CLI 恢复后重新领取均有本轮证据。评审中 doctor 的非阻塞 P2 正在定向修复；CodeBuddy Task02/A6 仍待本地，Task06 生命周期不包含在本签字中。
 
 ## 变更日志
 

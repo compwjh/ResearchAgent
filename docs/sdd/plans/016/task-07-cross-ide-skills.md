@@ -33,7 +33,7 @@
 
 ### B. 通用执行 Skill
 
-5. `sdd-run-next-task` 收到自然语言触发后固定执行 doctor、rebuild/status、next --claim。
+5. `sdd-run-next-task` 收到自然语言触发后固定执行 doctor、rebuild/status、`next --claim --ide <id> --executor <id> --owner-pid <persistent-executor-pid>`；owner PID 必须来自持久执行器进程，执行器 PID/存活身份不可用时停止并返回结构化错误。
 6. 根据 CLI 返回的逻辑 agent_role 选择 IDE 适配器，原样传递 rendered prompt。
 7. 只接受 result.json；完成后调用 complete/fail 和 result，不根据自然语言摘要自行判定。
 8. 门禁、用户交互、缺角色、越界或失败时停止并回传结构化原因。
@@ -64,7 +64,7 @@
 
 sdd-plan-tasks：要求产出 spec + README + Task 02 起所有文档；每个 Task 含完整 Prompt 和结果协议；落盘后停在待确认。Plan Mode 不允许写时，明确在下一可写 turn 首先落盘。
 
-sdd-run-next-task：固定调用 doctor/status/next --claim；按 agent_role 调用可用子 Agent；原样传 Prompt；只认 result.json；调用 complete/fail/result；一次只执行一个；缺能力/门禁/用户交互时停止。禁止自己改 Task、写业务代码、push/merge/reset/stash/clean。
+sdd-run-next-task：固定调用 doctor/status/`next --claim --ide <id> --executor <id> --owner-pid <persistent-executor-pid>`；owner PID 必须是持久执行器进程，缺失或无法核验时停止；按 agent_role 调用可用子 Agent；原样传 Prompt；只认 result.json；调用 complete/fail/result；一次只执行一个；缺能力/门禁/用户交互时停止。禁止自己改 Task、写业务代码、push/merge/reset/stash/clean。
 
 按 skill-creator validator 校验。结果写 .sdd/runtime/runs/{{RUN_ID}}/result.json，使用完整 sdd-run-result/v1。
 ```

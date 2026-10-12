@@ -1,5 +1,6 @@
 import hashlib
 import os
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -100,25 +101,50 @@ class WorkspaceSnapshotTests(unittest.TestCase):
             result = compare_snapshot(before, replace(before, branch="feature/other"))
             self.assertEqual((result.kind, result.error_code), ("conflict", "workspace_identity_mismatch"))
 
-    def test_capture_rejects_symlinks_and_fifo_without_following_or_blocking(self):
+    def test_capture_hashes_safe_file_links_and_rejects_escapes_broken_links_and_fifo(self):
         with tempfile.TemporaryDirectory() as temp:
             main, worktree, task, _ = _fixture(temp)
-            sentinel = worktree / "outside.txt"
+            target = worktree / "scripts/sdd_tasks/seed.txt"
             link = worktree / "tests/sdd_tasks/link.txt"
+            link.symlink_to(target)
+            snapshot = capture_snapshot(main, task)
+            self.assertEqual(snapshot.allowed_hashes["tests/sdd_tasks/link.txt"],
+                             hashlib.sha256(target.read_bytes()).hexdigest())
+            link.unlink()
+
+            sentinel = Path(temp) / "outside-sentinel.txt"
+            sentinel.write_text("outside\n", encoding="utf-8")
             link.symlink_to(sentinel)
             with self.assertRaises(WorkspaceError) as error:
                 capture_snapshot(main, task)
             self.assertEqual(error.exception.code, "workspace_path_unsafe")
             link.unlink()
+
             link_dir = worktree / "tests/sdd_tasks/link-dir"
             link_dir.symlink_to(worktree / "scripts/sdd_tasks", target_is_directory=True)
-            with self.assertRaises(WorkspaceError):
+            with self.assertRaises(WorkspaceError) as error:
                 capture_snapshot(main, task)
+            self.assertEqual(error.exception.code, "workspace_path_unsafe")
             link_dir.unlink()
+
+            link.symlink_to(sentinel.with_name("missing-target.txt"))
+            with self.assertRaises(WorkspaceError) as error:
+                capture_snapshot(main, task)
+            self.assertEqual(error.exception.code, "workspace_path_unsafe")
+            link.unlink()
+
             fifo = worktree / "tests/sdd_tasks/pipe"
             os.mkfifo(fifo)
-            with self.assertRaises(WorkspaceError):
-                capture_snapshot(main, task)
+            previous = signal.signal(signal.SIGALRM,
+                                      lambda *_: (_ for _ in ()).throw(AssertionError("FIFO scan blocked")))
+            signal.alarm(3)
+            try:
+                with self.assertRaises(WorkspaceError) as error:
+                    capture_snapshot(main, task)
+                self.assertEqual(error.exception.code, "workspace_path_unsafe")
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, previous)
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside\n")
 
 

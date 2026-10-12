@@ -40,3 +40,7 @@
 分支 `feature/spec-016-portable-task-ledger`，worktree 为主仓库的 `.worktrees/spec-016`。本轮重新实现基线为 `5b1b1d918db8858e848a73da4cee2df54f513ea2`；旧云端提交尚未恢复。
 
 代码及测试由 Luna xhigh 子 agent 执行，主 agent 负责分派、读回和收口。所有结果来自本轮实际命令，不沿用历史聊天测试计数。
+
+## 2026-10-12 Task05 集中验收
+
+Task05 云端 PASS：170 项 Python 3.9 工具测试、Ruff、编译和 8 组真实 Git/SQLite smoke 全部通过，独立评审已签字。Task06 Prompt/结果与 journal 开始分批开发；doctor 非阻塞 P2 正在修复。阶段成果已 push 到 `65e0e12` 和 `1047abc`，详见 [remote-checkpoints.md](./remote-checkpoints.md)。上面的未完成清单保留为此前检查点历史，Task05 不再待开发。

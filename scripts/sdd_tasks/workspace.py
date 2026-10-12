@@ -56,6 +56,35 @@ def _digest(fd: int) -> str:
     return digest.hexdigest()
 
 
+def _hash_link(parent_fd: int, name: str, relative: str, root: Path, info, result: dict) -> None:
+    try:
+        link = os.readlink(name, dir_fd=parent_fd)
+        base = Path(root).resolve(strict=True)
+        target = (base / relative).resolve(strict=True)
+        target.relative_to(base)
+        target_parent = _open_directory(target.parent)
+        try:
+            fd = os.open(target.name, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0),
+                         dir_fd=target_parent)
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    raise WorkspaceError("workspace_path_unsafe")
+                digest = _digest(fd)
+            finally:
+                os.close(fd)
+        finally:
+            os.close(target_parent)
+        current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if ((current.st_dev, current.st_ino) != (info.st_dev, info.st_ino) or
+                os.readlink(name, dir_fd=parent_fd) != link):
+            raise WorkspaceError("workspace_path_changed")
+        result[relative] = digest
+    except WorkspaceError:
+        raise
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise WorkspaceError("workspace_path_unsafe") from exc
+
+
 def _open_node(parent_fd: int, name: str, expected, directory: bool) -> int:
     flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
     if directory:
@@ -69,13 +98,13 @@ def _open_node(parent_fd: int, name: str, expected, directory: bool) -> int:
     return fd
 
 
-def _hash_node(parent_fd: int, name: str, relative: str, result: dict) -> None:
+def _hash_node(parent_fd: int, name: str, relative: str, root: Path, result: dict) -> None:
     info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
     if stat.S_ISDIR(info.st_mode):
         result[relative] = None
         fd = _open_node(parent_fd, name, info, True)
         try:
-            _hash_tree(fd, relative, result)
+            _hash_tree(fd, relative, root, result)
         finally:
             os.close(fd)
     elif stat.S_ISREG(info.st_mode):
@@ -84,14 +113,16 @@ def _hash_node(parent_fd: int, name: str, relative: str, result: dict) -> None:
             result[relative] = _digest(fd)
         finally:
             os.close(fd)
+    elif stat.S_ISLNK(info.st_mode):
+        _hash_link(parent_fd, name, relative, root, info, result)
     else:
         raise WorkspaceError("workspace_path_unsafe")
 
 
-def _hash_tree(root_fd: int, prefix: str, result: dict) -> None:
+def _hash_tree(root_fd: int, prefix: str, root: Path, result: dict) -> None:
     for name in sorted(os.listdir(root_fd)):
         relative = prefix + "/" + name if prefix else name
-        _hash_node(root_fd, name, relative, result)
+        _hash_node(root_fd, name, relative, root, result)
 
 
 def _allowed_hashes(root: Path, allowed: list) -> Dict[str, Optional[str]]:
@@ -99,9 +130,14 @@ def _allowed_hashes(root: Path, allowed: list) -> Dict[str, Optional[str]]:
     for relative in allowed:
         try:
             path = contained(root, relative)
+        except ValueError as exc:
+            if str(exc) != "path_escape: symlink component":
+                raise
+            path = Path(root).resolve(strict=True) / relative
+        try:
             parent_fd = _open_directory(path.parent)
             try:
-                _hash_node(parent_fd, path.name, relative, result)
+                _hash_node(parent_fd, path.name, relative, Path(root).resolve(strict=True), result)
             finally:
                 os.close(parent_fd)
         except FileNotFoundError:
@@ -111,6 +147,14 @@ def _allowed_hashes(root: Path, allowed: list) -> Dict[str, Optional[str]]:
                 raise
             raise WorkspaceError("workspace_path_unsafe") from exc
     return result
+
+
+def hash_artifact(root: Path, relative: str) -> str:
+    """Hash a regular artifact or safe in-root file symlink; directories are invalid."""
+    digest = _allowed_hashes(root, [relative]).get(relative)
+    if not isinstance(digest, str):
+        raise WorkspaceError("workspace_artifact_invalid")
+    return digest
 
 
 def capture_snapshot(repo_root: Path, task) -> WorkspaceSnapshot:

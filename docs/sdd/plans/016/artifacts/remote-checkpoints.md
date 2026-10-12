@@ -5,5 +5,6 @@
 | 提交 | 保存内容 | 远端核验 | 阶段状态 |
 |---|---|---|---|
 | `65e0e12534541e050a6f5b170da946a3a692e1dd` | 重建协议、Task03/04 基础、Task05 领取及恢复实现与已读回测试 | `git push -u origin feature/spec-016-portable-task-ledger` exit 0；随后 `git ls-remote --heads origin feature/spec-016-portable-task-ledger` 返回相同完整 SHA | Task05 集中验收与 CLI 扩展测试进行中；Task06–09 未完成 |
+| `1047abca43f9058053c62581ae1466ae7de7d158` | CLI 领取/partial 恢复、状态一致性扩展测试；170 项工具测试与 8 组 Git/SQLite smoke 的实测报告 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `65e0e12..1047abc` | Task05 独立评审随后通过；Task06 继续实施 |
 
 该检查点可从 GitHub 恢复，不能解释为整项 Spec 已完成。真实 CodeBuddy 验收仍待本地执行。

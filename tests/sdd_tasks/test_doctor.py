@@ -35,6 +35,7 @@ class DoctorTests(unittest.TestCase):
             result = doctor(root)
             self.assertEqual((before, (root / ".sdd").exists()), (False, False))
             self.assertTrue(result["healthy"])
+            self.assertEqual(result["ledger"], {"present": False, "schema_check": "not_initialized"})
             self.assertEqual(result["ledger"]["schema_check"], "not_initialized")
 
     def test_legacy_only_repository_is_healthy_with_warning(self):
@@ -83,8 +84,22 @@ class DoctorTests(unittest.TestCase):
             codes = {item["code"] for item in result["diagnostics"]}
             self.assertFalse(result["healthy"])
             self.assertIn("DATABASE_PATH_UNSAFE", codes)
+            self.assertEqual(result["ledger"], {"present": True, "schema_check": "unsafe"})
             self.assertEqual(target.read_bytes(), b"preserve")
             self.assertTrue(db.is_symlink())
+
+    def test_extant_nonregular_database_path_is_present_and_unsafe(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, _, _, _ = _repo(td)
+            db = root / ".sdd/runtime/task-ledger.sqlite3"
+            db.parent.mkdir(parents=True)
+            db.mkdir()
+            result = doctor(root)
+            codes = {item["code"] for item in result["diagnostics"]}
+            self.assertFalse(result["healthy"])
+            self.assertIn("DATABASE_PATH_UNSAFE", codes)
+            self.assertEqual(result["ledger"], {"present": True, "schema_check": "unsafe"})
+            self.assertTrue(db.is_dir())
 
 
 if __name__ == "__main__":

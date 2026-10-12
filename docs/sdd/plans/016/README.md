@@ -20,8 +20,8 @@
 | 02 | 验证 Task 运行时（Go/No-Go） | [task-02](./task-02-validate-task-runtime.md) | 01 | 进行中（CodeBuddy待本地） |
 | 03 | 定义 Task 文档与 Prompt 协议 | [task-03](./task-03-task-document-contract.md) | 云端阶段授权 + Task02前置证据 | 完成 |
 | 04 | 实现 SQLite Task 账本 | [task-04](./task-04-sqlite-task-ledger.md) | 03 | 完成 |
-| 05 | 实现领取、worktree 与恢复 | [task-05](./task-05-claim-worktree-recovery.md) | 04 | 进行中 |
-| 06 | 实现 Prompt、结果与指标闭环 | [task-06](./task-06-prompt-result-metrics.md) | 04, 05 | 待执行 |
+| 05 | 实现领取、worktree 与恢复 | [task-05](./task-05-claim-worktree-recovery.md) | 04 | 完成 |
+| 06 | 实现 Prompt、结果与指标闭环 | [task-06](./task-06-prompt-result-metrics.md) | 04, 05 | 进行中 |
 | 07 | 创建 Codex/CodeBuddy 跨 IDE Skills | [task-07](./task-07-cross-ide-skills.md) | 06 | 待执行 |
 | 08 | 对账并迁移 spec-013～015 | [task-08](./task-08-reconcile-legacy-tasks.md) | 07 | 待执行 |
 | 09 | 评审、验收、提交与复盘 | [task-09](./task-09-review-acceptance-retro.md) | 08 | 待执行 |
