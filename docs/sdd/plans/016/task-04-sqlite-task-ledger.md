@@ -1,7 +1,7 @@
 # 任务 04 — 实现 SQLite Task 账本
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03 ｜ 被依赖：任务 05、06 ｜ 当前状态：`待执行`
+> 依赖：任务 03 ｜ 被依赖：任务 05、06 ｜ 当前状态：`完成`
 
 ## 一句话目标
 
@@ -19,7 +19,7 @@
 1. Task 03 已完成并通过合法/非法 fixture 验证。
 2. `docs/sdd/TASK-PROTOCOL.md` 的 schema v1、状态枚举和路径发现规则已冻结。
 3. 已在 `feature/spec-016-portable-task-ledger` 的 `.worktrees/spec-016` 中执行；主工作树保持原状。
-4. 每次 `junior-dev` 分派最多两个文件、150 行；完成一批后主 Agent 必须读回和测试再继续。
+4. 每次 `backend-dev` 分派最多两个文件、150 行；完成一批后主 Agent 必须读回和测试再继续。
 
 ## 思维链
 
@@ -42,16 +42,16 @@
 9. 通过 `git worktree list --porcelain` 获取主仓库和 linked worktree，不假设当前 cwd 是主工作树。
 10. 扫描各 worktree 的 `docs/sdd/plans/*/task-*.md` 与 `docs/sdd/runs/`；相同 Task ID/同 hash 去重，不同 hash 报冲突。
 11. 依赖图做缺失节点与环检测，输出完整问题路径。
-12. `rebuild` 使用临时数据库构建成功后再原子替换目标 DB；失败保留旧数据库。
+12. `rebuild` 先验证完整 catalog；已有 DB 在原库单事务合并且保留 WAL、事件及租约，活动租约时拒绝。首次创建以临时库 fsync 后无覆盖发布；失败保留原数据库。
 
 ## 子任务拆分与分派
 
-### 分派 1：`junior-dev` — Task 定义与文档解析
+### 分派 1：`backend-dev` — Task 定义与文档解析
 
 **完整 Prompt：**
 
 ```text
-你是 spec-016 Task 04 分派 1 的 junior-dev。实现 Task schema v1 的 Python 领域对象和 Markdown JSON 元数据解析器。
+你是 spec-016 Task 04 分派 1 的 backend-dev。实现 Task schema v1 的 Python 领域对象和 Markdown JSON 元数据解析器。
 
 只读取：docs/sdd/TASK-PROTOCOL.md、docs/sdd/specs/016-portable-task-ledger.md、docs/sdd/plans/016/task-04-sqlite-task-ledger.md，以及一个协议指定的 fixture Task。
 
@@ -68,12 +68,12 @@
 把结构化结果写到 .sdd/runtime/runs/{{RUN_ID}}/result.json，字段必须包含 outcome、summary、changed_files、artifacts、commands、tests、decisions、risks、blockers、main_agent_actions、started_at、ended_at、duration_ms、model、token_usage、tool_call_count、log_paths。可用指标未知时写 null。回传只给摘要和结果路径。
 ```
 
-### 分派 2：`junior-dev` — SQLite schema 与 catalog/rebuild
+### 分派 2：`backend-dev` — SQLite schema 与 catalog/rebuild
 
 **完整 Prompt：**
 
 ```text
-你是 spec-016 Task 04 分派 2 的 junior-dev。在分派 1 已通过后，实现 SQLite 账本和跨 worktree catalog。
+你是 spec-016 Task 04 分派 2 的 backend-dev。在分派 1 已通过后，实现 SQLite 账本和跨 worktree catalog。
 
 只读取：docs/sdd/TASK-PROTOCOL.md、Task 04、scripts/sdd_tasks/documents.py、git worktree list --porcelain 的真实输出。
 
@@ -90,12 +90,12 @@
 结果写 .sdd/runtime/runs/{{RUN_ID}}/result.json，固定字段同 sdd-run-result/v1：outcome、summary、changed_files、artifacts、commands、tests、decisions、risks、blockers、main_agent_actions、started_at、ended_at、duration_ms、model、token_usage、tool_call_count、log_paths。
 ```
 
-### 分派 3：`junior-dev` — 单元测试
+### 分派 3：`backend-dev` — 单元测试
 
 **完整 Prompt：**
 
 ```text
-你是 spec-016 Task 04 分派 3 的 junior-dev。只为已经存在的文档解析和 SQLite/catalog 行为补单元测试，不改变生产实现。
+你是 spec-016 Task 04 分派 3 的 backend-dev。只为已经存在的文档解析和 SQLite/catalog 行为补单元测试，不改变生产实现。
 
 只读取：docs/sdd/TASK-PROTOCOL.md、Task 04、scripts/sdd_tasks/{documents,store,catalog}.py 和现有测试风格。
 
@@ -140,7 +140,7 @@ python3 -m unittest tests.test_sdd_task_documents tests.test_sdd_task_store
 
 - 单模块超过模型可控输出或 150 行：继续拆分，不让主 Agent代写代码。
 - 协议与实现产生新字段需求：停止并回 Task 03 修订，不在代码中私自扩展。
-- rebuild 可能覆盖有效 DB：必须先使用临时 DB + 原子替换，否则不得通过。
+- rebuild 可能覆盖有效 DB：已有数据库必须在原库事务内合并且保留历史；首次发布须无覆盖，禁止替换已有 DB/WAL。
 - 回滚为停用新包；未启用前不影响现有流程。
 
 ## 产出物
@@ -152,7 +152,7 @@ python3 -m unittest tests.test_sdd_task_documents tests.test_sdd_task_store
 
 ## 执行结果
 
-> 待 Task 03 完成后填写。
+Python 3.9.25 工具包 89/89 通过，Ruff、编译和 8 组真实 Git/SQLite smoke 均通过。独立评审签署云端 Task04 PASS，无未解决 P0/P1/P2。详见 [验证记录](./artifacts/task04-validation.md) 与 [独立评审](../../reviews/016-task04-review.md)。该结论不含 CodeBuddy 本地验收或后续 CLI 生命周期。
 
 ## 变更日志
 
@@ -160,3 +160,7 @@ python3 -m unittest tests.test_sdd_task_documents tests.test_sdd_task_store
 |---|---|---|
 | 2026-09-03 | 架构师（自身） | 创建 Task 04，状态置待执行 |
 
+
+## 本轮执行记录（2026-10-11）
+
+本轮 Task04 自动化实现、测试和独立复评已完成；允许进入 Task05。整体 Spec016 仍实施中，CodeBuddy 本地验证未完成。

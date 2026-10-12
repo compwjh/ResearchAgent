@@ -2,10 +2,10 @@
 
 ## 状态
 
-**当前状态：`待确认`**
+**当前状态：`实施中`**
 
 > 本 spec 只改变项目研发流程与 Agent 编排工具，不改变 ResearchAgent 的业务接口。
-> 当前阶段仅落盘 spec 与任务文档；需求/技术评审通过且用户再次明确确认前，不执行 Task 02–09。
+> 用户已授权按记录恢复或重做云端 CLI 与测试；独立需求/技术评审通过。真实 CodeBuddy 验收延期本地，Task 02 与 A6 保持未完成，整体 Spec 不提前收口。
 > 状态变更须同步追加 `docs/sdd/spec-status-changelog.md`。
 
 ## 一句话目标
@@ -32,6 +32,8 @@
 这里的“保存在 Git 中”仅指把 Markdown 作为仓库普通文本文件并创建本地 commit，不代表自动上传 GitHub；本 spec 仍禁止自动 push 或合并 `main`。
 
 ## 回滚点（Rollback Baseline）
+
+本轮真实基线：`5b1b1d918db8858e848a73da4cee2df54f513ea2`；独立分支 `feature/spec-016-portable-task-ledger`，worktree `.worktrees/spec-016`。原云端未推送提交没有恢复，本轮测试须重新执行。授权与恢复证据见 [recovery-context.md](../plans/016/artifacts/recovery-context.md)。以下表格保留原始设计时的历史基线。
 
 | 项 | 当前值 |
 |---|---|
@@ -71,6 +73,7 @@
 | `title` | str | 必填 | 任务标题 |
 | `status` | enum | `pending/blocked/completed/cancelled` | 持久状态唯一事实源 |
 | `priority` | int | 默认 `100`，值越大越优先 | 多个任务同时可执行时排序 |
+| `created_at` | str | 必填，带时区 ISO 8601 | 同优先级按创建时间排序 |
 | `depends_on` | list[str] | 默认空，不得成环 | 跨 Task / 跨 Spec 依赖 |
 | `required_gates` | list[str] | 必填 | spec 确认、评审、用户交互等门禁 |
 | `agent_role` | str | 必填 | 逻辑角色，不绑定具体 IDE API |
@@ -182,20 +185,76 @@ Task 文件顶部保存一个有明确起止标记的 JSON 元数据块。CLI �
 | A13 Legacy 对账 | spec-013～015 已完成/部分完成/未验证状态均有证据，不重复执行已完成工作 |
 | A14 回归 | ResearchAgent 既有测试与运行时行为不受流程工具影响 |
 
-## 产品使用步骤（由产品经理在 spec 确认后填写）
+## 产品使用步骤
 
-> 待 PM 补充：覆盖“强 Agent 规划并落盘”“用户确认”“弱调度 Agent 执行一个 Task”“换 IDE 查看结果”“中断后恢复”五条用户旅程，并逐条映射到 A1–A14。
+评审者：protocol_review
+评审角色：architect
+评审模型：gpt-6-luna xhigh
+分派方式：collaboration.spawn_agent
+
+## 旅程 1：强 Agent 规划并落盘
+
+架构师/规划 Agent 读取 Spec、README、已有 Task 与真实证据，填写版本化 metadata、完整 Prompt、角色、allowed_paths、validation commands、依赖和结果 schema。解析器拒绝缺字段/缺完整 Prompt；状态镜像由权威 Task 状态生成。用户可审阅 Task，而不必从历史聊天猜测执行范围。
+
+映射：A1 文档自足；A2 Prompt 完整；A5 gate；A13 legacy 对账。
+
+## 旅程 2：用户确认并开放执行
+
+用户审阅需求/技术评审与验收界限，确认后留下可核实 gate 记录。用户本轮明确允许云端 CLI 和测试先执行，真实 CodeBuddy 验收延至本地；系统因此允许 Task03/04 按 cloud-stage gate 进行，但保留 Task02/A6 的待完成状态。未满足的用户参与、登录或本地 IDE gate 会阻止对应阶段领取，不生成虚假通过。
+
+映射：A5 gate；A6 双 IDE；A12 Git 边界；A14 回归。
+
+## 旅程 3：弱调度器领取并分派一个 Task
+
+Codex、CodeBuddy 或其他获准 CLI 执行器调用 status/next。SQLite 原子事务重新校验文档 hash、状态、depends_on、required_gates 和 lease，按固定排序只返回一个 Task；CLI 返回固定 JSON 和预生成 Prompt 路径。执行角色通过 IDE 适配器映射到当下可用的逻辑角色（本工具后端工作为 backend-dev），调度器不改写 Prompt、不扩路径、不补协议字段。
+
+映射：A2 Prompt 完整；A3 单任务选择；A4 防双领；A5 gate。
+
+## 旅程 4：换 IDE 查看结果
+
+另一 IDE 通过 docs/sdd/runs 中 Git 跟踪的脱敏 summary 和 Task/spec/README 状态镜像了解完成项、证据、风险和主 Agent 待办；如果本机 SQLite 不存在，可以从 Task 与合法 summary rebuild。原始 events 和 lease 是本机运行数据，丢失后保持未知，不会从 summary 伪造。metrics 对不可得值显示 null/source。
+
+映射：A1 文档自足；A7 结果闭环；A10 可重建；A11 指标；A12 Git 边界。
+
+## 旅程 5：执行器中断并恢复
+
+心跳/事件刷新 120 分钟 lease。租约过期后，恢复器先确认原 owner 进程已结束，再核对 worktree、base、Task/Prompt hashes 和 dirty path。无改动 run 可标记 abandoned 并重排；有部分改动时保留原 worktree 并提供文件清单恢复；任何 hash/path/ref 冲突都留住 journal 与改动，返回 blocker，不自动清理或回滚。
+
+映射：A4 防重复领取；A7 结果闭环；A8 越界保护；A9 中断恢复；A10 rebuild。
+
+## 全部验收映射
+
+- A1：旅程1、4
+- A2：旅程1、3
+- A3：旅程3
+- A4：旅程3、5
+- A5：旅程1、2、3
+- A6：旅程2（当前待本地 CodeBuddy 实测）、3
+- A7：旅程4、5
+- A8：旅程5
+- A9：旅程5
+- A10：旅程4、5
+- A11：旅程4
+- A12：旅程2、4
+- A13：旅程1
+- A14：旅程2
+
+以上为产品流程与验收关联，不替代各 Task 的可复现实测结果或用户尚未执行的本地 CodeBuddy 验收。
+
 
 ## 执行配置（由架构师填写，落盘可查）
 
 | 角色 | 选用模型 | 上下文上限 | 分派方式 | 职责 |
 |---|---|---|---|---|
-| 架构师 | 自身（当前执行任务的 Agent，不写死模型代号） | 200k | 主会话 | 编写/修订 spec、定义协议、编排与落地校验 |
-| 产品经理 | `qwen3.5:9b`（本地 Ollama，2026-09-03 实测存在） | 32k | `Task(pm)` | 补产品使用步骤与跨 IDE 用户旅程 |
-| 开发主管 | `qwen3.8:27b-mlx`（本地 Ollama，2026-09-03 实测存在；执行前同步模型库） | 32k | `Task(tech-lead)` | 需求/技术评审、代码审查、验收签字 |
-| 初级开发 | `qwen3.8:27b-mlx`（本地 Ollama，2026-09-03 实测存在；执行前同步模型库） | 32k | `Task(junior-dev)` | 按每次最多 2 文件、150 行实现 CLI 与适配器 |
-| 测试 | `qwen3.5:9b`（本地 Ollama，2026-09-03 实测存在） | 32k | `Task(tester)` | 并发、恢复、迁移、双 IDE 和回归验收 |
-| 弱调度执行器 | `qwen3.5:9b` 或任意具备 shell + 子 Agent 调用能力的已注册模型 | 16k | `sdd-run-next-task` skill | 只执行固定领取/分派/回填流程，不改进 Task |
+| 架构师 | 自身（当前执行任务的 Agent） | 200k | 主会话 | 编排、修订文档、读回校验与决策 |
+| 文档更新 doc-updater | gpt-6-luna，xhigh（用户明确指定，Codex覆盖） | 32k | Codex 子 agent | 产品旅程、legacy证据与交接 |
+| 独立评审 architect | gpt-6-luna，xhigh（用户明确指定，Codex覆盖） | 32k | Codex 子 agent | 需求/技术/安全评审及验收签字 |
+| 工具开发 backend-dev | gpt-6-luna，xhigh（用户明确指定，Codex覆盖） | 32k | Codex 子 agent | 本 Spec 的 scripts 工具范围；每分派最多2文件150行 |
+| 独立测试 tester | gpt-6-luna，xhigh（用户明确指定，Codex覆盖） | 32k | Codex 子 agent | Python3.9、并发、恢复、回归和真实运行 |
+| 前端开发/测试 | 不适用（本 Spec 无前端改动） | — | — | — |
+| 弱调度执行器 | 调用方实际已注册模型 | 16k | sdd-run-next-task skill | 只按冻结协议领取、分派、回填 |
+
+本轮角色名称按现行框架映射；项目 CodeBuddy 模型默认值不修改。Task 03/04 的云端阶段依据用户授权与 [独立技术评审](../reviews/016-tech-review.md) 执行，不伪造 Task 02 双 IDE Go。冻结接口及强制安全条件见 [TASK-PROTOCOL.md](../TASK-PROTOCOL.md)。
 
 ## 任务计划
 
@@ -205,10 +264,10 @@ Task 文件顶部保存一个有明确起止标记的 JSON 元数据块。CLI �
 | 编号 | 任务 | 思维链文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-016 与任务计划 | 本文件 | — | 完成 |
-| 02 | 验证 Task 运行时（Go/No-Go） | [`task-02-validate-task-runtime.md`](../plans/016/task-02-validate-task-runtime.md) | 01 | 待执行 |
-| 03 | 定义 Task 文档与 Prompt 协议 | [`task-03-task-document-contract.md`](../plans/016/task-03-task-document-contract.md) | 02 Go | 待执行 |
-| 04 | 实现 SQLite Task 账本 | [`task-04-sqlite-task-ledger.md`](../plans/016/task-04-sqlite-task-ledger.md) | 03 | 待执行 |
-| 05 | 实现领取、worktree 与恢复 | [`task-05-claim-worktree-recovery.md`](../plans/016/task-05-claim-worktree-recovery.md) | 04 | 待执行 |
+| 02 | 验证 Task 运行时（Go/No-Go） | [`task-02-validate-task-runtime.md`](../plans/016/task-02-validate-task-runtime.md) | 01 | 进行中（CodeBuddy待本地） |
+| 03 | 定义 Task 文档与 Prompt 协议 | [`task-03-task-document-contract.md`](../plans/016/task-03-task-document-contract.md) | 云端阶段授权 + Task02前置证据 | 完成 |
+| 04 | 实现 SQLite Task 账本 | [`task-04-sqlite-task-ledger.md`](../plans/016/task-04-sqlite-task-ledger.md) | 03 | 完成 |
+| 05 | 实现领取、worktree 与恢复 | [`task-05-claim-worktree-recovery.md`](../plans/016/task-05-claim-worktree-recovery.md) | 04 | 进行中 |
 | 06 | 实现 Prompt、结果与指标闭环 | [`task-06-prompt-result-metrics.md`](../plans/016/task-06-prompt-result-metrics.md) | 04, 05 | 待执行 |
 | 07 | 创建 Codex/CodeBuddy 跨 IDE Skills | [`task-07-cross-ide-skills.md`](../plans/016/task-07-cross-ide-skills.md) | 06 | 待执行 |
 | 08 | 对账并迁移 spec-013～015 | [`task-08-reconcile-legacy-tasks.md`](../plans/016/task-08-reconcile-legacy-tasks.md) | 07 | 待执行 |
@@ -216,8 +275,8 @@ Task 文件顶部保存一个有明确起止标记的 JSON 元数据块。CLI �
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/016-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/016-tech-review.md`（待评审（未执行））
+- 需求评审：`docs/sdd/reviews/016-requirement-review.md`（2026-10-11 独立评审通过云端阶段；完整双 IDE 验收未完成）
+- 技术评审：`docs/sdd/reviews/016-tech-review.md`（2026-10-11 独立评审通过云端阶段；完整双 IDE 验收未完成）
 - 验收评审：`docs/sdd/reviews/016-acceptance-review.md`（测试报告 + 开发主管签字；待评审（未执行））
 
 ## 变更日志（Changelog）
@@ -228,6 +287,7 @@ Task 文件顶部保存一个有明确起止标记的 JSON 元数据块。CLI �
 | 2026-09-03 | 用户 | 确认 v1 采用同机共享仓库、一次一个 Task、Git 保存脱敏摘要、SQLite 保存完整运行数据、每个 Spec 自动独立 worktree |
 | 2026-09-03 | 用户 | 确认方案内容，并要求参照 spec-013 格式先落盘 Spec 016 与全部 Task 文件 |
 | 2026-09-03 | 架构师（自身） | 核实当前基线、现有 Task/Agent/SQLite 结构与本机模型，创建本 spec，状态置待确认 |
+| 2026-10-11 | 用户 / 架构师 | 按先前授权重做云端范围，恢复真实Git基线；独立需求/技术评审通过，状态转实施中，CodeBuddy延期本地 |
 
 ---
 **六条自检**：①每条边界均可变成测试；②spec 描述“做什么”，task 承载“怎么做”；③Task 02–09 链接真实且依赖无环；④Git 文档与 SQLite 的事实边界明确；⑤执行配置包含全部角色、模型与上下文；⑥A1–A14 可由产品步骤和验收报告逐项映射。

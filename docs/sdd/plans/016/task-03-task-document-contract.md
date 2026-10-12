@@ -1,7 +1,7 @@
 # 任务 03 — 定义 Task 文档与 Prompt 协议
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 02 Go ｜ 被依赖：任务 04 ｜ 当前状态：`待执行`
+> 依赖：用户云端阶段授权与 Task 02 云端前置证据 ｜ 被依赖：任务 04 ｜ 当前状态：`完成`
 
 ## 一句话目标
 
@@ -47,12 +47,12 @@
 
 ## 子代理分派计划
 
-### 分派 1：`tech-lead` — 协议设计复核与精确草案
+### 分派 1：`architect` — 协议设计复核与精确草案
 
 **完整 Prompt：**
 
 ```text
-你是 spec-016 Task 03 的 tech-lead。请基于真实旧 Task 设计可机器解析且适合人阅读的 Task 文档协议；本轮只产出精确草案，不修改业务代码。
+你是 spec-016 Task 03 的 architect。请基于真实旧 Task 设计可机器解析且适合人阅读的 Task 文档协议；本轮只产出精确草案，不修改业务代码。
 
 只读取：
 1. docs/sdd/specs/016-portable-task-ledger.md
@@ -134,3 +134,7 @@ git diff -- docs/sdd/TASK-PROTOCOL.md docs/sdd/00-sdd-spec-template.md docs/sdd/
 |---|---|---|
 | 2026-09-03 | 架构师（自身） | 创建 Task 03，状态置待执行 |
 
+
+## 本轮执行记录（2026-10-11）
+
+协议与合法、非法文档/Prompt fixtures 已完成；Python 3.9 工具包 89/89 通过，独立签字见 `docs/sdd/reviews/016-task04-review.md`。用户已授权延期真实 CodeBuddy，整体 Task02 不标完成。

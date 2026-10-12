@@ -1,7 +1,7 @@
 # 任务 02 — 验证 Task 运行时（Go/No-Go）
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 01 ｜ 被依赖：任务 03 ｜ 当前状态：`待执行`
+> 依赖：任务 01 ｜ 被依赖：任务 03 ｜ 当前状态：`进行中（CodeBuddy待本地）`
 
 ## 一句话目标
 
@@ -89,12 +89,12 @@ result.json 必须符合 sdd-run-result/v1，包含：outcome、summary、change
 完成后只回传：Go/No-Go、通过项数量、失败项、result.json 路径、日志路径、主 Agent 下一步。不要粘贴完整日志。
 ```
 
-### 分派 2：`tech-lead` — Go/No-Go 复核
+### 分派 2：`architect` — Go/No-Go 复核
 
 **完整 Prompt：**
 
 ```text
-你是 spec-016 Task 02 的 tech-lead。只复核运行时可行性证据，不实现正式工具。
+你是 spec-016 Task 02 的 architect。只复核运行时可行性证据，不实现正式工具。
 
 只读取：
 1. docs/sdd/specs/016-portable-task-ledger.md
@@ -120,7 +120,7 @@ result.json 使用 sdd-run-result/v1，固定返回 outcome、summary、commands
 1. 读回两个 `result.json`，核对路径存在、JSON 可解析、时间与命令真实。
 2. 抽查并发领取结果必须为“一成功、一拒绝”，不能只看两个进程退出码。
 3. `git status --short` 确认真实仓库除本 Task 状态回填外没有新增实验文件。
-4. 将命令、结果和 tech-lead 结论回填本文件；同步 spec 与 README 状态。
+4. 将命令、结果和 architect 结论回填本文件；同步 spec 与 README 状态。
 5. No-Go 时 Task 03–09 保持待执行，并将 spec 标记阻塞或退回待确认；不得继续实现。
 
 ## 实时监控命令
@@ -139,7 +139,7 @@ tail -f .sdd/runtime/runs/<run-id>/events.jsonl
 - 四类无效文档均被稳定拒绝。
 - worktree 实验未改变真实主工作树已有文件。
 - Codex/CodeBuddy 可消费同一 CLI JSON 与 Prompt/结果 schema。
-- tester 与 tech-lead 均给出 Go，才允许开始 Task 03。
+- tester 与 architect 均给出 Go，才允许开始 Task 03。
 
 ## 风险、停止条件与回滚
 
@@ -151,7 +151,7 @@ tail -f .sdd/runtime/runs/<run-id>/events.jsonl
 ## 产出物
 
 - SQLite、Markdown 重建、worktree 和跨 IDE 可行性矩阵。
-- tester 与 tech-lead 的结构化结果。
+- tester 与 architect 的结构化结果。
 - 本文件中的 Go/No-Go 结论与真实执行记录。
 
 ## 执行结果
@@ -164,3 +164,7 @@ tail -f .sdd/runtime/runs/<run-id>/events.jsonl
 |---|---|---|
 | 2026-09-03 | 架构师（自身） | 创建 Task 02，状态置待执行 |
 
+
+## 本轮执行记录（2026-10-11）
+
+独立评审已通过云端阶段，冻结协议见 `docs/sdd/TASK-PROTOCOL.md`。用户已授权延期真实 CodeBuddy，整体 Task 02 不标完成。Python3.9环境已建立；本阶段实际测试结果将逐批补齐。
