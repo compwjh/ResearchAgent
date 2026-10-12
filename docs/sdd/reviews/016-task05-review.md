@@ -9,7 +9,7 @@
 
 - P0：无。
 - P1：无。
-- P2（发现与关闭）：初审发现不安全但已存在的 ledger 会错误返回 `present=false`。后续 [newdoctor.py](../../../scripts/sdd_tasks/newdoctor.py#L66) 先安全打开父目录，再用不跟随符号链接的 leaf stat 确认是否存在；符号链接与非普通文件现返回 `present=true, schema_check=unsafe` 并保持阻塞。新增回归用例覆盖符号链接目标不变与目录型 ledger。root 读回确认 doctor 专项 6 项测试和 Ruff 通过；本评审者未重跑这些跟进命令。P2 已关闭。
+- P2（发现与关闭）：初审发现不安全但已存在的 ledger 会错误返回 `present=false`。后续 [newdoctor.py](../../../scripts/sdd_tasks/newdoctor.py#L66) 先安全打开父目录，再用不跟随符号链接的 leaf stat 确认是否存在；符号链接与非普通文件现返回 `present=true, schema_check=unsafe` 并保持阻塞。新增回归用例覆盖符号链接目标不变与目录型 ledger。[Task05 跟进验证记录](../plans/016/artifacts/task05-status-catalog-validation.md) 记载 doctor 专项 6 项测试、Python 3.9 compile 与 Ruff 全部 exit 0；本评审者未重跑这些跟进命令。P2 已关闭。
 
 ## 冻结 CLI 接口闭环
 

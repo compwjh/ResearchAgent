@@ -24,3 +24,10 @@
 ## 边界
 
 结果校验不执行任务声明的命令，也不把结果 JSON 中自报的成功当作命令执行证据。completion runner 必须使用声明的安全 argv 再次执行、收集真实退出码/时长并将脱敏短收据关联到该 run，然后才能进入完成 journal 流程。`ValidationReport` 只报告验证结果，不写 DB/Git。
+
+## Independent behavior-test results (completed cases)
+
+- Prompt renderer, including nonclaimable Spec and unsatisfied-gate refusal: `PYTHONDONTWRITEBYTECODE=1 /workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_prompts -v` — exit 0, 7 tests passed in 5.321s; `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_prompts.py` — exit 0, all checks passed.
+- Workspace safe/escaping symlinks: `PYTHONDONTWRITEBYTECODE=1 /workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_workspace -v` — exit 0, 5 tests passed in 1.062s; `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_workspace.py` — exit 0, all checks passed.
+- The independent Result suite below includes partial-failure artifacts, claim-state/status drift, and safe artifact-symlink cases.
+- Result validator: `PYTHONDONTWRITEBYTECODE=1 /workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_results -v` — exit 0, 9 tests passed in 13.230s; `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_results.py` — exit 0, all checks passed. Coverage includes failed/blocked missing-artifact blockers, success command declarations, change classifications/hashes, stale snapshots/Task authority, and safe/escaping artifact symlinks.
