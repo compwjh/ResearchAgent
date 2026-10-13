@@ -19,4 +19,6 @@
 
 | `468f47036250a680f5cb95327e9f2960d7593d49` | J2 恢复遵循冻结的文档 Git 执行位，原子写入保持默认私有权限；26 项 journal/安全测试证据 | `git push` exit 0，远端更新 `be29bc1..468f470` | 完整生命周期、失败历史及 Task07–09 尚未完成 |
 
+| `5ea861f0ea5bd7b19fa45db92b7b327523f30bef` | 原始基线可穿过含观察事件的 abandoned 父 run；10 项定向测试及真实 owner 死亡/Task05 恢复证据 | `git push` exit 0，远端更新 `468f470..5ea861f` | failed 历史公开领取尚未接线；真实中断恢复继续验收 |
+
 该检查点可从 GitHub 恢复，不能解释为整项 Spec 已完成。真实 CodeBuddy 验收仍待本地执行。

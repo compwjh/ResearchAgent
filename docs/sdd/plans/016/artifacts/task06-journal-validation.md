@@ -89,3 +89,31 @@ J1/J2 cover journal primitives and document recovery; J3 covers Git index snapsh
 - `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_candidate` — exit 0; 6 tests passed.
 - `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_candidate.py` — exit 0.
 - After fixture code moves HEAD manually to the candidate while the real index retains its original bytes, `check_source_anchors` passes; symlink text, source bytes, mode, or expected-document drift then refuses. Deleted tree paths are checked from parsed `ls-tree` output. This verifies source-anchor behavior only, not ref CAS.
+
+## J5 expected-old ref CAS and replay
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_candidate_cas` — exit 0; 2 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_candidate_cas.py` — exit 0.
+- The real J6 fixture prepares `index-after`, writes those exact bytes into the identity-pinned owned lock, and durably journals `lock_index_durable` plus `commit_pending`. CAS moves the validated feature branch once; replay at `HEAD=candidate` performs no second `update-ref`. Both calls preserve the old real-index bytes and lock image/identity; a reference-transaction hook marker remains absent.
+- Unexpected HEAD refuses without changing the competitor ref, real index, or lock image. These deterministic tests do not cover process death between CAS and journal advancement.
+
+## J5 update-ref race and public lock-image writer
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_candidate_cas` — exit 0; 3 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_candidate_cas.py` — exit 0.
+- The fixture now uses public `write_owned_index_image` and verifies the exact `index_after` hash in the lock. A real competing `update-ref` immediately before expected-old CAS wins; candidate CAS returns refusal and preserves that ref, the old real index, and the owned lock image/identity with journal phase still `commit_pending`.
+
+## J5 CAS lock, branch, root, and partial-journal refusals
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_candidate_cas` — exit 0; 7 tests passed (42.477s).
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_candidate_cas.py` — exit 0.
+- The actual Git fixture verifies refusal for altered owned-lock bytes, a same-bytes replacement lock inode, a mismatched task branch, a nested non-root path, and an omitted worktree-registry entry. The registry response is deterministically injected at the Git wrapper boundary; no real registry files are modified.
+- A partial in-memory journal derived from `read_journal` with `index_after=None` fails schema validation before Git mutation. Each refusal compares actual refs, index bytes, lock bytes and inode, and persisted journal bytes before and after.
+
+## Task06 context, prepare, and end-to-end lifecycle QA
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_lifecycle_context` — exit 0; 2 tests passed in 4.350s. Ruff on `tests/sdd_tasks/test_lifecycle_context.py` — exit 0.
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_prepare` — exit 0; 2 tests passed in 5.291s. Ruff on `tests/sdd_tasks/test_completion_prepare.py` — exit 0. The pure builder is checked against actual `validate_result` reports and captured Git/workspace state; failed/blocked receipts are explicitly skipped and not described as executed validation.
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_lifecycle tests.sdd_tasks.test_completion_prepare` — exit 0; 3 tests passed in 17.644s. Ruff on both files — exit 0.
+- The end-to-end fixture runs the declared command through `run_validations`, records the actual runner snapshot, validates a report using server end time and measured Git diff counts, durably publishes a prepared journal, then runs the dispatcher through CAS, index installation, and terminal SQLite finalization. It checks complete-phase replay, the candidate branch/HEAD, index tree and clean worktree, the committed source bytes, lease removal, result query, and catalog rebuild/result query. The fixture intentionally leaves the main-worktree Task copy stale after canonical status publication; catalog rebuild reports and the test asserts `stale_task_copies_ignored`.
+- These are lifecycle success and prepare-boundary results; no separate-process crash-recovery case has yet been run.
