@@ -275,4 +275,3 @@ def run_validations(task: TaskDefinition, claim: Claim, repo_root: Path, *,
     finally:
         context.conn.close()
 
-

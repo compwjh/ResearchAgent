@@ -51,4 +51,3 @@ The symlinked `.sdd/runtime/runs` refusal is caught by the earlier ignore-path c
 | `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_validation_runner -k run_validations` | 0 | 6 public runner tests passed under Python 3.9.25 across the two bounded slices. |
 | `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_validation_process tests.sdd_tasks.test_validation_runner` | 0 | 15 tests passed under Python 3.9.25: 5 process helper, 4 active-context, and 6 public runner tests. |
 | `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_validation_process.py tests/sdd_tasks/test_validation_runner.py` | 0 | All checks passed. |
-

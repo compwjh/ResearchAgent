@@ -69,3 +69,23 @@ J1/J2 cover journal primitives and document recovery; J3 covers Git index snapsh
 - `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_expected_entries` — exit 0; 6 tests passed.
 - `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_expected_entries.py` — exit 0.
 - Actual Git/filesystem mutations between capture reads verify refusal for symlink link-text retargeting with identical resolved bytes, mode change, index replacement, HEAD advance, and config change. Disabled attributes are accepted; `core.autocrlf=input` and invalid boolean config fail closed. The injected races are deterministic in-process tests, not separate-process crash/CAS coverage.
+
+## J5 candidate blob, tree, and commit
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_candidate` — exit 0; 2 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_candidate.py` — exit 0.
+- Real journal fixtures capture expected blobs before `prepared`, recover documents through `docs_written`, and acquire the owned index lock. Verified blob storage, isolated candidate tree construction, and unreferenced candidate commit preserve HEAD, real index bytes, and lock bytes while excluding a pre-staged outsider. Retargeted symlink text with identical resolved bytes, mode drift, document drift, and active filter attributes refuse.
+- The `index_after_prepared` input is a shape-only J6 fixture derived from target anchors; reconciliation image creation/install, ref CAS, and process-crash recovery are not covered.
+
+## J5 candidate path and race refusals
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_candidate` — exit 0; 5 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_candidate.py` — exit 0.
+- Real alternate-index replacements with target staged or unmerged entries refuse without changing index/lock bytes. Candidate trees verify new, deleted, and rename-shaped paths containing spaces, newline, and shell metacharacters; a malformed `index_after` anchor refuses.
+- A deterministic HEAD advance after temporary tree construction makes candidate creation refuse before publishing a candidate ref. This tests refusal around movement; it is not a CAS or separate-process crash test.
+
+## J5 post-CAS source-anchor checks
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_candidate` — exit 0; 6 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_candidate.py` — exit 0.
+- After fixture code moves HEAD manually to the candidate while the real index retains its original bytes, `check_source_anchors` passes; symlink text, source bytes, mode, or expected-document drift then refuses. Deleted tree paths are checked from parsed `ls-tree` output. This verifies source-anchor behavior only, not ref CAS.

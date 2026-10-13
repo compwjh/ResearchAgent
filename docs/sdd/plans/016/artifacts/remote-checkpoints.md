@@ -11,5 +11,6 @@
 | `3ddf4e7490ac133a8de384b7ce4f6f2362be4be4` | Task06 不可变 Git blob/mode schema、可重试索引锁标记、运行摘要；13 项 journal、7 项锁原语和 4 项摘要定向测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `101781b..3ddf4e7` | Task06 锁包装器、验证回执、结果统计及最终提交链继续实施 |
 | `e0c300140936a5991b3ac3e47638a360a1c2344a` | 只读结果查询、固定 schema 的 JSON/CSV 统计及 CLI；9 项独立定向测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `3ddf4e7..e0c3001` | Task06 防御性查询测试与最终提交链继续实施 |
 | `c53b68100673cbe22b2171208cc22bb70019287f` | 原始 blob/mode 捕获与变更检查、owned lock 包装器及恢复；6 项捕获测试和 13 项锁测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `e0c3001..c53b681` | Task06 候选提交、索引恢复及最终 DB 事务继续实施 |
+| `5a1c5ea475af0f900a6286710cc68acdf3b84fde` | 实际验证命令、私有日志与回执；15 项进程/运行器测试以及 11 项结果/统计/CLI 测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `c53b681..5a1c5ea` | Task06 候选提交、索引恢复及最终 DB 事务继续实施 |
 
 该检查点可从 GitHub 恢复，不能解释为整项 Spec 已完成。真实 CodeBuddy 验收仍待本地执行。
