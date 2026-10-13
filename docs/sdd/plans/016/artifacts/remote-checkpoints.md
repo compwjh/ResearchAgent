@@ -8,5 +8,6 @@
 | `1047abca43f9058053c62581ae1466ae7de7d158` | CLI 领取/partial 恢复、状态一致性扩展测试；170 项工具测试与 8 组 Git/SQLite smoke 的实测报告 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `65e0e12..1047abc` | Task05 独立评审随后通过；Task06 继续实施 |
 | `01e064178ab5f1c6282189c027b576fddbaa2feb` | Task05 签字/P2 修复、Task06 冻结协议、Prompt 与安全产物 hash | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `1047abc..01e0641` | Task06 提交日志、结果及事件继续分批实现 |
 | `101781b99740ff635275d9bf95284f60429b8833` | Task06 J1/J2 文档恢复、J3 索引快照、结果、owner 与事件/JSONL；独立定向测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `01e0641..101781b` | Task06 索引锁、验证回执及最终提交链继续实施 |
+| `3ddf4e7490ac133a8de384b7ce4f6f2362be4be4` | Task06 不可变 Git blob/mode schema、可重试索引锁标记、运行摘要；13 项 journal、7 项锁原语和 4 项摘要定向测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `101781b..3ddf4e7` | Task06 锁包装器、验证回执、结果统计及最终提交链继续实施 |
 
 该检查点可从 GitHub 恢复，不能解释为整项 Spec 已完成。真实 CodeBuddy 验收仍待本地执行。
