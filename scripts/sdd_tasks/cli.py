@@ -15,6 +15,7 @@ from .catalog import CatalogError, rebuild
 from .catalog_status import status
 from .locks import runtime_root
 from .newcli_claim import claim_from_cli
+from .newcli_event import event_from_cli
 from .newcli_recover import recover_from_cli
 from .newcli_results import metrics_from_cli, result_from_cli
 from .newdoctor import doctor
@@ -42,6 +43,10 @@ def _code(exc: Exception) -> str:
 
 def _exit_code(code: str) -> int:
     normalized = code.upper()
+    if normalized in {"EVENT_PAYLOAD_INVALID", "EVENT_RUN_ID_INVALID"}:
+        return 2
+    if normalized == "CLAIM_PROMPT_RENDER_FAILED":
+        return 6
     if normalized in {"COMMAND_FAILED", "DOCTOR_CHECK_FAILED", "GIT_DISCOVERY_FAILED"}:
         return 6
     if normalized in {"NEXT_NOT_READY", "RECOVER_NOT_READY"}:
@@ -50,6 +55,8 @@ def _exit_code(code: str) -> int:
         return 2
     if "LEASE" in normalized or "OWNER" in normalized:
         return 4
+    if normalized.startswith("EVENT_"):
+        return 6
     if any(word in normalized for word in ("WORKTREE", "WORKSPACE", "BASELINE", "DATABASE_PATH")):
         return 5
     if any(word in normalized for word in ("RESULT", "SUMMARY", "VALIDATION")):
@@ -76,6 +83,15 @@ def _parser() -> _Parser:
     next_parser.add_argument("--base-commit")
     recover_parser = commands.add_parser("recover", add_help=False)
     recover_parser.add_argument("--run-id", required=True)
+    event_parser = commands.add_parser("event", add_help=False)
+    event_parser.add_argument("--run-id", required=True)
+    event_parser.add_argument("--executor", required=True)
+    event_parser.add_argument("--owner-pid", type=int, required=True)
+    event_parser.add_argument(
+        "--type", choices=("observation", "evidence", "decision", "action", "result", "next_step"),
+        required=True,
+    )
+    event_parser.add_argument("--payload-json", required=True)
     result_parser = commands.add_parser("result", add_help=False)
     result_parser.add_argument("--json", action="store_true", required=True)
     result_parser.add_argument("--run-id", required=True)
@@ -148,6 +164,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "recover":
             report = recover_from_cli(root, args.run_id)
             _emit(True, "OK", "recovery complete", report)
+            return 0
+        if args.command == "event":
+            data = event_from_cli(root, args.run_id, args.executor, args.owner_pid,
+                                  args.type, args.payload_json)
+            _emit(True, "OK", "event appended", data)
             return 0
         if args.command == "result":
             data = result_from_cli(_existing_database(root), args.run_id)

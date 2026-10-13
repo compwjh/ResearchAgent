@@ -16,8 +16,9 @@ from .claims import ClaimError
 from .documents import TaskDocumentError, parse_task_text
 from .eligibility import database_blockers, rank_candidates
 from .gates import load_satisfied_gates
-from .locks import maintenance_lock, repository_paths
+from .locks import maintenance_lock, repository_paths, runtime_root
 from .owners import current_owner
+from .prompts import PromptError, render_prompt
 from .recovery_snapshots import load_recovery_snapshot
 from .selection import claim_next
 from .spec_status import is_claimable, load_spec_status
@@ -69,13 +70,14 @@ def _matches_base(main: Path, base: str, relative: str, task) -> None:
         raise ClaimError("CLAIM_TASK_HASH_STALE", task.metadata["task_id"])
 
 
-def _payload(claim) -> dict:
+def _payload(claim, prompt_path: str, rendered_prompt_hash: str) -> dict:
     return {
         "run_id": claim.run_id, "task_id": claim.task.metadata["task_id"],
         "attempt": claim.attempt, "worktree": claim.task.metadata["worktree"]["path"],
         "branch": claim.branch, "base_commit": claim.base_commit,
         "task_hash": claim.task_hash, "prompt_hash": claim.prompt_hash,
-        "prompt_path": None, "recovery_of": claim.recovery_of,
+        "prompt_path": prompt_path, "rendered_prompt_hash": rendered_prompt_hash,
+        "recovery_of": claim.recovery_of,
     }
 
 
@@ -152,5 +154,10 @@ def claim_from_cli(repo_root: Path, ide: str, executor: str, owner_pid: int,
                 claim = claim_next(conn, [task], gates, workspace_snapshots={task_id: snapshot},
                                    ide=ide, owner=owner, now=now)
                 if claim is not None:
-                    return _payload(claim), None
+                    try:
+                        rendered = render_prompt(claim.task, claim, snapshot, runtime_root(main))
+                    except PromptError as exc:
+                        raise CatalogError("CLAIM_PROMPT_RENDER_FAILED", "prompt persistence failed") from exc
+                    prompt_path = rendered.path.relative_to(main).as_posix()
+                    return _payload(claim, prompt_path, rendered.rendered_hash), None
             return None, status(conn)

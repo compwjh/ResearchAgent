@@ -1,3 +1,5 @@
+import hashlib
+import io
 import json
 import os
 import subprocess
@@ -5,10 +7,14 @@ import sys
 import tempfile
 import unittest
 import uuid
-from contextlib import closing
+from contextlib import closing, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
+from scripts.sdd_tasks import newcli_claim
 from scripts.sdd_tasks.catalog import rebuild
+from scripts.sdd_tasks.cli import main
+from scripts.sdd_tasks.prompts import PromptError
 from scripts.sdd_tasks.store import connect
 from scripts.sdd_tasks.workspace import snapshot_payload
 from tests.sdd_tasks._fixtures import task_markdown
@@ -85,8 +91,13 @@ class CliClaimTests(unittest.TestCase):
             self.assertEqual(data["branch"], snapshot.branch)
             self.assertEqual(data["base_commit"], snapshot.head)
             self.assertEqual(data["task_hash"], task.task_hash)
-            self.assertRegex(data["prompt_hash"], r"^[0-9a-f]{64}$")
-            self.assertIsNone(data["prompt_path"])
+            self.assertEqual(data["prompt_hash"], task.prompt_hash)
+            expected_path = ".sdd/runtime/runs/{}/prompt.md".format(data["run_id"])
+            self.assertEqual(data["prompt_path"], expected_path)
+            rendered = (root / expected_path).read_bytes()
+            self.assertEqual(data["rendered_prompt_hash"], hashlib.sha256(rendered).hexdigest())
+            self.assertNotIn(str(root / expected_path), raw)
+            self.assertNotIn(rendered.decode("utf-8"), raw)
             self.assertNotEqual(uuid.UUID(data["run_id"]).int, 0)
             self.assertNotIn(str(root), raw)
             self.assertNotIn("owner", raw.lower())
@@ -218,6 +229,41 @@ class CliClaimTests(unittest.TestCase):
                 self.assertEqual(set(running["reasons"]), {"run_state:claimed", "active_lease"})
                 self.assertEqual(_rows(db), unchanged)
                 self.assertEqual(target.read_text(encoding="utf-8"), "partial\n")
+            finally:
+                if child.poll() is None:
+                    child.terminate()
+                child.wait(timeout=10)
+
+    def test_renderer_failure_keeps_claim_and_lease_statusable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, _, task, _, db = _fixture(td)
+            child, owner = _process()
+            output = io.StringIO()
+            try:
+                args = ["--repo", str(root), "next", "--claim", "--ide", "codex",
+                        "--executor", owner.executor_id, "--owner-pid", str(child.pid)]
+                with patch.object(newcli_claim, "render_prompt",
+                                  side_effect=PromptError("RENDER_PRIVATE_SENTINEL")), \
+                        redirect_stdout(output):
+                    code = main(args)
+                result = json.loads(output.getvalue())
+                self.assertEqual((code, result["ok"], result["code"], result["data"]),
+                                 (6, False, "CLAIM_PROMPT_RENDER_FAILED", None))
+                self.assertNotIn("RENDER_PRIVATE_SENTINEL", output.getvalue())
+                self.assertNotIn(str(root), output.getvalue())
+                with closing(connect(db)) as conn:
+                    run = conn.execute("SELECT run_id,task_id,state,started_at,ended_at,owner_json "
+                                       "FROM runs").fetchone()
+                    lease = conn.execute("SELECT run_id,owner_token FROM leases").fetchone()
+                self.assertEqual((run[1], run[2], run[3], run[4]),
+                                 (task.metadata["task_id"], "claimed", None, None))
+                self.assertEqual((lease[0], lease[1]), (run[0], json.loads(run[5])["token"]))
+                self.assertFalse((root / ".sdd/runtime/runs" / run[0] / "prompt.md").exists())
+                status, body = _invoke(root, "status", "--json")
+                self.assertEqual((status.returncode, body["code"]), (0, "OK"))
+                active = next(row for row in body["data"]["running"]
+                              if row["task_id"] == task.metadata["task_id"])
+                self.assertEqual(set(active["reasons"]), {"run_state:claimed", "active_lease"})
             finally:
                 if child.poll() is None:
                     child.terminate()

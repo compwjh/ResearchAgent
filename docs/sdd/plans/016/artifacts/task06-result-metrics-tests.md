@@ -60,6 +60,40 @@ Ran 6 tests — OK (exit 0)
 All checks passed (exit 0)
 ```
 
+## Workspace observation QA (private helpers only)
+
+Three test batches added `tests/sdd_tasks/test_workspace_observation.py`. Batch 1 created the
+141-line fixture and its four initial tests. Batch 2 added the positive record-to-terminal-failure
+decoder case and hardened the malformed/secret payload cases (46 additions, 6 deletions; net 40).
+Batch 3 added baseline-copy and refusal coverage (122 additions, 1 deletion). The source-file batch
+totals are exact additions/deletions, not net sizes.
+
+| Batch | Added / deleted lines | Coverage |
+|---|---:|---|
+| 1 | 141 / 0 | Active owner records one private event and syncs one log; idempotent replay; owner/time/snapshot mismatch and post-capture workspace change refuse without DB writes. |
+| 2 | 46 / 6 | Real record→failed-run→decode preserves canonical roots and original snapshot hashes after files change; malformed time/path/symlink, duplicate event/key, NaN, status path, and extra owner payload refusals. |
+| 3 | 122 / 1 | Private failed-baseline helper returns the original copied snapshot read-only; malformed/missing/duplicate/gapped/out-of-time events, run-hash/owner mismatch, and self-cycle refuse read-only. |
+
+The payload scanner still checks status paths and all extra/private payload fields. Only the three
+already-validated canonical root fields (`repo_root`, `common_dir`, and `worktree_path`) are omitted
+from the scanner's validation copy; the stored payload remains complete. The positive decoder test
+also intentionally corrupts the initial `workspace_snapshot` event and still decodes the observation.
+This records the boundary: `_decode_observation_event` validates an observation envelope against
+its supplied expected tip; it does not establish complete journal history or independently prove
+that expected tip. `_load_failed_run_baseline` checks the original copied snapshot and its local
+event bindings only. These private-helper fixtures do not demonstrate multi-hop failed/abandoned
+lineage, public recovery eligibility, or the Task 05 expired-owner-before-observation transition
+(which must classify as abandoned).
+
+```text
+/workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_workspace_observation
+Ran 7 tests — OK (exit 0)
+/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_workspace_observation.py scripts/sdd_tasks/workspace_observation.py
+All checks passed (exit 0)
+git diff --check
+Passed (exit 0)
+```
+
 ## J7 final suite recheck
 
 The expanded suite includes 16 tests: six helper tests plus ten public-path finalizer tests. It

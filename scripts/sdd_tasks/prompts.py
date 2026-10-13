@@ -5,7 +5,6 @@ import os
 import re
 import stat
 import uuid
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
@@ -51,9 +50,19 @@ def _private_run_dir(runtime: Path, run_id: str) -> Path:
     fd = -1
     try:
         fd = _open_directory(runtime)
+        root_info = os.fstat(fd)
+        if (not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid() or
+                root_info.st_mode & 0o077):
+            raise PromptError("PROMPT_RUN_DIR_UNSAFE")
         for name in ("runs", run_id):
-            with suppress(FileExistsError):
+            created = False
+            try:
                 os.mkdir(name, 0o700, dir_fd=fd)
+                created = True
+            except FileExistsError:
+                pass
+            if created:
+                os.fsync(fd)
             child = os.open(name, flags, dir_fd=fd)
             info = os.fstat(child)
             if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or
