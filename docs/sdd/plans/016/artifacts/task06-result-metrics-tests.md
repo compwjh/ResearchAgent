@@ -94,6 +94,36 @@ git diff --check
 Passed (exit 0)
 ```
 
+## Task05 abandoned ancestry follow-up
+
+Two approved test-file batches add a real expired-owner recovery transition and abandoned-ancestor
+guards. Batch 4 changed `tests/sdd_tasks/test_workspace_observation.py` by 66 additions and 1
+deletion. Batch 5 added 43 lines. The Task05 fixtures record an observation while the actual owner
+process is alive, terminate it, expire the lease, and call `recover_expired`; one path returns
+`abandoned/requeued` with `unchanged`, and the other changes one allowed file and returns
+`abandoned/preserved_for_recovery` with `partial`. The latter uses actual `claim_next` to create a
+linked recovery child and checks that the private baseline helper returns the original copied
+snapshot across that observed abandoned parent. An initially failing regression exposed the
+abandoned-observation rejection; after the source fix, the full focused suite passes.
+
+The unchanged path directly validates the legal optional recovery-decision event and decodes the
+abandoned observation. Added read-only refusals cover a malformed observation envelope and an event
+after the recovery decision. The recovery parent, owner death, lease recovery, and child claim use
+real APIs; the child is marked terminal failed by a direct SQLite update. These fixtures do not run
+Task06 finalization or prove public failed-history recovery eligibility. The selected failed run's
+observation tip still requires the separate history verifier.
+
+```text
+/workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_workspace_observation
+Before the abandoned-envelope guards: Ran 9 tests in 33.188s — OK
+After the guards: Ran 10 tests in 89.762s — OK
+/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_workspace_observation.py scripts/sdd_tasks/workspace_observation.py
+All checks passed (exit 0)
+git diff --check
+git diff --cached --check
+Both passed (exit 0)
+```
+
 ## J7 final suite recheck
 
 The expanded suite includes 16 tests: six helper tests plus ten public-path finalizer tests. It

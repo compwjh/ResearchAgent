@@ -174,16 +174,17 @@ def record_workspace_observation(
         raise WorkspaceObservationError("OBSERVATION_LOG_SYNC_FAILED") from exc
 
 
-def _decode_observation_event(
+def _decode_run_observation_event(
     conn: sqlite3.Connection, run_id: str, task: TaskDefinition, repo_root: Path,
-    *, expected_tip: str,
+    *, expected_tip: str, expected_state: str,
 ) -> WorkspaceSnapshot:
-    """Decode one failed-run observation after a caller validates expected_tip history.
+    """Decode one terminal observation after a caller validates expected_tip history.
 
     This checks the event envelope and canonical identities only; it does not prove
     the before-snapshot lineage or authorize failed-source recovery.
     """
     if (not isinstance(conn, sqlite3.Connection) or type(task) is not TaskDefinition or
+            not isinstance(expected_state, str) or expected_state not in {"failed", "abandoned"} or
             not isinstance(expected_tip, str) or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", expected_tip)):
         raise WorkspaceObservationError("OBSERVATION_ARGUMENT_INVALID")
     try:
@@ -200,7 +201,7 @@ def _decode_observation_event(
             raise WorkspaceObservationError("OBSERVATION_WORKTREE_UNREGISTERED")
         row = conn.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         run = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
-        if row is None or run is None or run["state"] != "failed" or run["ended_at"] is None:
+        if row is None or run is None or run["state"] != expected_state or run["ended_at"] is None:
             raise WorkspaceObservationError("OBSERVATION_FAILED_RUN_REQUIRED")
         stored = json.loads(row["definition_json"], object_pairs_hook=_pairs)
         task_path = contained(worktree, row["source_path"])
@@ -293,6 +294,17 @@ def _decode_observation_event(
         raise WorkspaceObservationError("OBSERVATION_VALIDATION_FAILED") from exc
 
 
+def _decode_observation_event(conn, run_id, task, repo_root, *, expected_tip):
+    """Decode one failed-run observation; the failed-state check stays strict."""
+    return _decode_run_observation_event(conn, run_id, task, repo_root,
+                                         expected_tip=expected_tip, expected_state="failed")
+
+
+def _decode_abandoned_observation_event(conn, run_id, task, repo_root, *, expected_tip):
+    return _decode_run_observation_event(conn, run_id, task, repo_root,
+                                         expected_tip=expected_tip, expected_state="abandoned")
+
+
 def _validate_snapshot_history_events(conn, run):
     events = conn.execute(
         "SELECT sequence,timestamp,event_type FROM events WHERE run_id=? ORDER BY sequence",
@@ -306,7 +318,7 @@ def _validate_snapshot_history_events(conn, run):
     decisions = [item for item in events if item["event_type"] == "recovery_decision"]
     if (len(claims) > 1 or (claims and claims[0]["sequence"] != 2) or
             (run["state"] == "failed" and len(observations) != 1) or
-            (run["state"] == "abandoned" and observations) or
+            (run["state"] == "abandoned" and len(observations) > 1) or
             (run["state"] == "abandoned" and len(decisions) != 1) or
             (run["state"] == "failed" and len(decisions) > 1)):
         raise WorkspaceObservationError("OBSERVATION_HISTORY_EVENTS_INVALID")
@@ -325,7 +337,6 @@ def _validate_snapshot_history_events(conn, run):
         allowed = {("requeued", "unchanged"), ("preserved_for_recovery", "partial")}
         if (not isinstance(decision, dict) or set(decision) != {"schema", "action", "decision"} or
                 decision.get("schema") != "sdd-run-recovery/v1" or pair not in allowed or
-                (run["state"] == "abandoned" and pair != ("preserved_for_recovery", "partial")) or
                 decisions[0]["sequence"] != events[-1]["sequence"]):
             raise WorkspaceObservationError("OBSERVATION_HISTORY_DECISION_INVALID")
         if run["state"] == "abandoned" and _instant(decisions[0]["timestamp"], "decision.timestamp") != ended:
@@ -385,6 +396,11 @@ def _load_failed_run_baseline(
             if stored_owner(run["owner_json"]).executor_id != run["executor_id"]:
                 raise WorkspaceObservationError("OBSERVATION_HISTORY_OWNER_INVALID")
             _validate_snapshot_history_events(conn, run)
+            if (run["state"] == "abandoned" and conn.execute(
+                    "SELECT 1 FROM events WHERE run_id=? AND event_type='workspace_observation'", (cursor,),
+            ).fetchone()):
+                _decode_abandoned_observation_event(conn, cursor, task, main,
+                                                    expected_tip=run["base_commit"])
             source, snapshot = _snapshot(
                 _event(conn, cursor, "workspace_snapshot", True), task, run, main, common, worktree)
             if baseline is not None and snapshot != baseline:

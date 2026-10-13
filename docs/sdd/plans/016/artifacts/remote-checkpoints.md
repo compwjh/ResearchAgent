@@ -17,4 +17,6 @@
 | `e4710817ae523bccbc5d8e54d1480e7dad11bdc8` | 终态 SQLite 事务、不可变产物及重放保护；16 项定向测试证据 | `git push` exit 0，远端更新 `f5b3162..e471081` | Task06 完整 Git/SQLite 生命周期集成尚未完成 |
 | `be29bc199b46829cbe605ad182e38e26829bdea8` | CLI 事件、领取后 Prompt 持久化及私有观察快照；17 项 CLI/Prompt 与 7 项观察定向测试证据 | `git push` exit 0，远端更新 `e471081..be29bc1`；`git ls-remote --heads` 返回同一完整 SHA | Task06 完整提交及失败历史恢复继续实施；缓存检查发现测试 EOF 空行，后续修正 |
 
+| `468f47036250a680f5cb95327e9f2960d7593d49` | J2 恢复遵循冻结的文档 Git 执行位，原子写入保持默认私有权限；26 项 journal/安全测试证据 | `git push` exit 0，远端更新 `be29bc1..468f470` | 完整生命周期、失败历史及 Task07–09 尚未完成 |
+
 该检查点可从 GitHub 恢复，不能解释为整项 Spec 已完成。真实 CodeBuddy 验收仍待本地执行。
