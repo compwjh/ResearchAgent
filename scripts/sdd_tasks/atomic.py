@@ -73,8 +73,11 @@ def read_text(path: Path) -> str:
             os.close(parent_fd)
 
 
-def atomic_write(path: Path, content: Union[str, bytes]) -> None:
+def atomic_write(path: Path, content: Union[str, bytes], *, executable: bool = False) -> None:
     """Durably replace a regular file through a pinned, symlink-free directory."""
+    if type(executable) is not bool:
+        raise TypeError("executable must be a bool")
+    temporary_mode = 0o700 if executable else 0o600
     payload = content.encode("utf-8") if isinstance(content, str) else content
     expected_hash = hashlib.sha256(payload).hexdigest()
     target = Path(path)
@@ -105,7 +108,7 @@ def atomic_write(path: Path, content: Union[str, bytes]) -> None:
             try:
                 temp_fd = os.open(
                     temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                    0o600, dir_fd=parent_fd,
+                    temporary_mode, dir_fd=parent_fd,
                 )
                 break
             except FileExistsError:
@@ -113,6 +116,7 @@ def atomic_write(path: Path, content: Union[str, bytes]) -> None:
         if temp_fd < 0:
             raise OSError("atomic_write: could not reserve temporary file")
         phase = "write_temp"
+        os.fchmod(temp_fd, temporary_mode)
         with os.fdopen(temp_fd, "wb") as stream:
             temp_fd = -1
             stream.write(payload)

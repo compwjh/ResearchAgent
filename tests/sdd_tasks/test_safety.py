@@ -120,6 +120,19 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), "old")
             self.assertEqual(list(Path(temp).glob(".sdd-atomic-*")), [])
 
+    def test_atomic_write_modes_keep_default_private_and_require_exact_bool(self):
+        with tempfile.TemporaryDirectory() as temp:
+            private, executable = Path(temp) / "private.json", Path(temp) / "task.md"
+            atomic_write(private, "private")
+            self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o600)
+            atomic_write(executable, "task", executable=True)
+            self.assertEqual(stat.S_IMODE(executable.stat().st_mode), 0o700)
+            for index, value in enumerate((0, 1, None, "yes")):
+                target = Path(temp) / "invalid-{}".format(index)
+                with self.subTest(value=value), self.assertRaises(TypeError):
+                    atomic_write(target, "invalid", executable=value)
+                self.assertFalse(target.exists())
+
     @unittest.skipUnless(os.name == "posix", "symlinks require POSIX")
     def test_atomic_write_rejects_symlink_parents_and_target(self):
         with tempfile.TemporaryDirectory() as temp:

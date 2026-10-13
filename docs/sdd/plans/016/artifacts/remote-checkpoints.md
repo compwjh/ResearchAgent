@@ -14,4 +14,7 @@
 | `5a1c5ea475af0f900a6286710cc68acdf3b84fde` | 实际验证命令、私有日志与回执；15 项进程/运行器测试以及 11 项结果/统计/CLI 测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0，远端更新 `c53b681..5a1c5ea` | Task06 候选提交、索引恢复及最终 DB 事务继续实施 |
 | `f5b3162337cc15c41c2a295ff0bf70cc77f29783` | 隔离索引中的候选提交、校验后原始文件检查；6 项真实 Git 候选测试证据 | `git push origin feature/spec-016-portable-task-ledger` exit 0；`git ls-remote --heads` 返回同一完整 SHA | Task06 分支 CAS、索引安装及最终 DB 事务继续实施 |
 
+| `e4710817ae523bccbc5d8e54d1480e7dad11bdc8` | 终态 SQLite 事务、不可变产物及重放保护；16 项定向测试证据 | `git push` exit 0，远端更新 `f5b3162..e471081` | Task06 完整 Git/SQLite 生命周期集成尚未完成 |
+| `be29bc199b46829cbe605ad182e38e26829bdea8` | CLI 事件、领取后 Prompt 持久化及私有观察快照；17 项 CLI/Prompt 与 7 项观察定向测试证据 | `git push` exit 0，远端更新 `e471081..be29bc1`；`git ls-remote --heads` 返回同一完整 SHA | Task06 完整提交及失败历史恢复继续实施；缓存检查发现测试 EOF 空行，后续修正 |
+
 该检查点可从 GitHub 恢复，不能解释为整项 Spec 已完成。真实 CodeBuddy 验收仍待本地执行。

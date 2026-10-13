@@ -175,6 +175,9 @@ def recover_expected_documents(repo_root: Path, journal_path: Path) -> dict:
         raise JournalError("JOURNAL_DOCUMENT_PHASE_INVALID")
 
     documents = journal["expected_docs"]
+    expected_modes = {item["path"]: item["mode"] for item in journal["expected_git_entries"]}
+    if any(expected_modes.get(doc["path"]) not in {"100644", "100755"} for doc in documents):
+        raise JournalError("JOURNAL_DOCUMENT_MODE_INVALID")
     observed = {doc["path"]: _document_hash(root, doc["path"]) for doc in documents}
     for doc in documents:
         current = observed[doc["path"]]
@@ -193,7 +196,8 @@ def recover_expected_documents(repo_root: Path, journal_path: Path) -> dict:
         if current != doc["before_sha256"]:
             raise JournalError("JOURNAL_DOCUMENT_STATE_CHANGED")
         _ensure_document_parent(root, path)
-        atomic.atomic_write(atomic.contained(root, path), doc["content"].encode("utf-8"))
+        atomic.atomic_write(atomic.contained(root, path), doc["content"].encode("utf-8"),
+                            executable=expected_modes[path] == "100755")
 
     if any(_document_hash(root, doc["path"]) != doc["after_sha256"] for doc in documents):
         raise JournalError("JOURNAL_DOCUMENT_AFTER_HASH_MISMATCH")

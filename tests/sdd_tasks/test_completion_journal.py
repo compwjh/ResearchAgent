@@ -1,6 +1,8 @@
 import copy
 import hashlib
 import json
+import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -60,14 +62,15 @@ def _document(path, before, after):
             "after_sha256": hashlib.sha256(after.encode()).hexdigest()}
 
 
-def _prepared(root, specs):
+def _prepared(root, specs, modes=None):
     journal = _journal()
+    modes = modes or {}
     journal["expected_docs"] = [_document(*spec) for spec in specs]
     paths = ["src/change.py"] + [spec[0] for spec in specs]
     journal["committed_paths"] = paths
     journal["staged_paths"] = paths.copy()
     journal["expected_git_entries"] = [
-        {"path": path, "mode": "100644", "object_id": "7" * 40}
+        {"path": path, "mode": modes.get(path, "100644"), "object_id": "7" * 40}
         for path in sorted(paths, key=lambda item: item.encode("utf-8"))]
     for path, before, _ in specs:
         if before is not None:
@@ -257,8 +260,8 @@ class CompletionJournalTests(unittest.TestCase):
             first = root / "docs/a.md"
             atomic_write = atomic.atomic_write
 
-            def crash_after_replace(path, content):
-                atomic_write(path, content)
+            def crash_after_replace(path, content, **kwargs):
+                atomic_write(path, content, **kwargs)
                 if Path(path) == first:
                     raise OSError("simulated process death")
 
@@ -272,6 +275,31 @@ class CompletionJournalTests(unittest.TestCase):
             self.assertEqual(result["phase"], "docs_written")
             self.assertEqual(first.read_text(encoding="utf-8"), "after-a")
             self.assertEqual((root / "docs/b.md").read_text(encoding="utf-8"), "after-b")
+
+    def test_replay_restores_frozen_executable_task_and_spec_modes_repeatably(self):
+        task_path, spec_path = "docs/sdd/plans/016/task-06.md", "docs/sdd/specs/016.md"
+        for filemode in ("true", "false"):
+            with self.subTest(core_filemode=filemode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
+                subprocess.run(["git", "config", "core.filemode", filemode], cwd=str(root), check=True)
+                _, journal_path = _prepared(
+                    root, [(task_path, "old task", "new task"),
+                           (spec_path, "old spec", "new spec")],
+                    modes={task_path: "100755", spec_path: "100755"},
+                )
+                anchors = {item["path"]: item["mode"] for item in read_journal(journal_path)["expected_git_entries"]}
+                self.assertEqual((anchors[task_path], anchors[spec_path]), ("100755", "100755"))
+                result = recover_expected_documents(root, journal_path)
+                self.assertEqual(result["phase"], "docs_written")
+                for path, contents in ((task_path, "new task"), (spec_path, "new spec")):
+                    target = root / path
+                    self.assertEqual(target.read_text(encoding="utf-8"), contents)
+                    self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o700)
+                replay = recover_expected_documents(root, journal_path)
+                self.assertEqual(replay["phase"], "docs_written")
+                for path in (task_path, spec_path):
+                    self.assertEqual(stat.S_IMODE((root / path).stat().st_mode), 0o700)
 
     def test_missing_document_parent_is_created_only_after_prepared(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -303,8 +331,8 @@ class CompletionJournalTests(unittest.TestCase):
             target = root / "docs/a.md"
             atomic_write = atomic.atomic_write
 
-            def corrupt_after_replace(path, content):
-                atomic_write(path, content)
+            def corrupt_after_replace(path, content, **kwargs):
+                atomic_write(path, content, **kwargs)
                 if Path(path) == target:
                     target.write_text("third-state", encoding="utf-8")
 
