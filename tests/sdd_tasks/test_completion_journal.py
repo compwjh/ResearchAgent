@@ -33,6 +33,9 @@ def _journal():
         "base_commit": "1" * 40, "original_head": "1" * 40, "task_hash": _hash("2"),
         "prompt_hash": _hash("3"), "allowed_paths": ["src/change.py"],
         "expected_result": result, "terminal_outcome": "succeeded",
+        "expected_git_entries": [
+            {"path": "docs/task.md", "mode": "100644", "object_id": "8" * 40},
+            {"path": "src/change.py", "mode": "100644", "object_id": "7" * 40}],
         "changed_paths": [{"path": "src/change.py", "before_sha256": _hash("4"),
                            "after_sha256": _hash("5")}],
         "expected_docs": [{"path": "docs/task.md", "before_sha256": hashlib.sha256(doc.encode()).hexdigest(),
@@ -63,6 +66,9 @@ def _prepared(root, specs):
     paths = ["src/change.py"] + [spec[0] for spec in specs]
     journal["committed_paths"] = paths
     journal["staged_paths"] = paths.copy()
+    journal["expected_git_entries"] = [
+        {"path": path, "mode": "100644", "object_id": "7" * 40}
+        for path in sorted(paths, key=lambda item: item.encode("utf-8"))]
     for path, before, _ in specs:
         if before is not None:
             target = root / path
@@ -130,6 +136,46 @@ class CompletionJournalTests(unittest.TestCase):
             with self.subTest(mutate=mutate), self.assertRaises(JournalError):
                 validate_journal(case)
 
+    def test_expected_git_entries_are_complete_ordered_and_git_shaped(self):
+        valid = _journal()
+        self.assertEqual(validate_journal(valid)["expected_git_entries"], valid["expected_git_entries"])
+        for mode in ("100644", "100755", "120000"):
+            candidate = copy.deepcopy(valid)
+            candidate["expected_git_entries"][0]["mode"] = mode
+            with self.subTest(mode=mode):
+                validate_journal(candidate)
+        deleted = copy.deepcopy(valid)
+        deleted["expected_git_entries"][0].update(mode=None, object_id=None)
+        validate_journal(deleted)
+
+        invalid = []
+        missing_field = copy.deepcopy(valid)
+        missing_field.pop("expected_git_entries")
+        invalid.append(missing_field)
+        for mutate in (
+                lambda j: j["expected_git_entries"].reverse(),
+                lambda j: j["expected_git_entries"][0].update(path="other.md"),
+                lambda j: j["expected_git_entries"][0].update(extra=True),
+                lambda j: j["expected_git_entries"][0].update(mode="160000"),
+                lambda j: j["expected_git_entries"][0].update(object_id="A" * 40),
+                lambda j: j["expected_git_entries"][0].update(mode=None),
+                lambda j: j["expected_git_entries"][0].update(object_id=None),
+        ):
+            candidate = copy.deepcopy(valid)
+            mutate(candidate)
+            invalid.append(candidate)
+        long_oid = copy.deepcopy(valid)
+        long_oid["original_head"] = "f" * 64
+        for entry in long_oid["expected_git_entries"]:
+            entry["object_id"] = entry["object_id"][0] * 64
+        validate_journal(long_oid)
+        wrong_oid_length = copy.deepcopy(long_oid)
+        wrong_oid_length["expected_git_entries"][0]["object_id"] = "b" * 40
+        invalid.append(wrong_oid_length)
+        for candidate in invalid:
+            with self.subTest(entries=candidate.get("expected_git_entries")), self.assertRaises(JournalError):
+                validate_journal(candidate)
+
     def test_phase_must_be_same_or_immediate_successor(self):
         for previous, current in (("prepared", "prepared"), ("prepared", "docs_writing"),
                                   ("docs_writing", "docs_written")):
@@ -172,7 +218,7 @@ class CompletionJournalTests(unittest.TestCase):
             original = _journal()
             write_journal(path, original)
             original_bytes = path.read_bytes()
-            for kind in ("run", "result", "document"):
+            for kind in ("run", "result", "document", "git_entries"):
                 changed = copy.deepcopy(original)
                 changed["phase"] = "docs_writing"
                 if kind == "run":
@@ -184,6 +230,9 @@ class CompletionJournalTests(unittest.TestCase):
                     changed["expected_docs"][0]["path"] = "docs/other.md"
                     changed["committed_paths"] = ["src/change.py", "docs/other.md"]
                     changed["staged_paths"] = changed["committed_paths"]
+                    changed["expected_git_entries"][0]["path"] = "docs/other.md"
+                if kind == "git_entries":
+                    changed["expected_git_entries"][0]["object_id"] = "d" * 40
                 with self.subTest(kind=kind), self.assertRaises(JournalError):
                     write_journal(path, changed, previous_phase="prepared")
                 self.assertEqual(path.read_bytes(), original_bytes)

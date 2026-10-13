@@ -7,6 +7,7 @@ from .journal_fields import (
     require_text,
     validate_changed_paths,
     validate_expected_docs,
+    validate_expected_git_entries,
     validate_hash,
     validate_index_snapshot,
     validate_lock_identity,
@@ -24,7 +25,7 @@ INDEX_STAGES = ("not_acquired", "marker_temp_durable", "marker_durable", "reconc
                 "lock_index_durable", "ref_committed", "index_installed")
 FIELDS = {"schema", "run_id", "task_id", "owner", "base_commit", "original_head", "task_hash",
           "prompt_hash", "allowed_paths", "changed_paths", "expected_docs", "expected_result",
-          "terminal_outcome", "committed_paths", "staged_paths", "index_before",
+          "terminal_outcome", "expected_git_entries", "committed_paths", "staged_paths", "index_before",
           "index_observed_before", "index_after", "index_lock_owner_token", "index_lock_temp_path",
           "index_lock_identity", "index_recovery_stage", "candidate_commit_hash", "commit_message", "phase"}
 _STAGE_MIN_PHASE = (0, 3, 3, 4, 4, 6, 6)
@@ -68,6 +69,8 @@ def validate_journal(data: object) -> dict:
     changed = validate_changed_paths(v["changed_paths"], v["allowed_paths"])
     docs = validate_expected_docs(v["expected_docs"])
     committed = validate_paths(v["committed_paths"], "committed_paths")
+    validate_expected_git_entries(v["expected_git_entries"], committed,
+                                   oid_length=len(v["original_head"]))
     staged = validate_paths(v["staged_paths"], "staged_paths")
     if set(committed) != set(staged) or not set(committed) <= changed | docs:
         _bad("committed_paths.binding")

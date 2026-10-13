@@ -84,6 +84,29 @@ def validate_index_entries(values, name):
         seen.add((path, entry["stage"]))
 
 
+def validate_expected_git_entries(values, committed_paths, *, oid_length):
+    if not isinstance(values, list):
+        _bad("expected_git_entries.array")
+    paths = []
+    for entry in values:
+        _object(entry, {"path", "mode", "object_id"}, "expected_git_entries[]")
+        paths.append(validate_path(entry["path"], "expected_git_entries.path"))
+        mode, object_id = entry["mode"], entry["object_id"]
+        if mode is None and object_id is None:
+            continue
+        if not isinstance(mode, str) or mode not in {"100644", "100755", "120000"}:
+            _bad("expected_git_entries.mode")
+        validate_object_id(object_id, "expected_git_entries.object_id")
+        if len(object_id) != oid_length:
+            _bad("expected_git_entries.object_id_format")
+    try:
+        ordered = sorted(paths, key=lambda path: path.encode("utf-8"))
+    except UnicodeEncodeError:
+        _bad("expected_git_entries.path")
+    if paths != ordered or len(paths) != len(committed_paths) or set(paths) != set(committed_paths):
+        _bad("expected_git_entries.paths")
+
+
 def validate_index_snapshot(value, name, *, initial=False):
     fields = {"index_sha256", "committed_entries", "other_entries_sha256"}
     if initial:

@@ -1,7 +1,7 @@
 # Task06 completion journal / Git index slice plan
 
 - Reviewer/planner: `protocol_review` (architect, gpt-6-luna xhigh)
-- Basis: frozen `docs/sdd/TASK-PROTOCOL.md` §6 only; no protocol or feature-scope changes proposed.
+- Basis: `docs/sdd/TASK-PROTOCOL.md` §6, with the root-approved private journal v1 byte/mode safety correction recorded below. This is a technical correction to the unreleased contract; user-visible scope is unchanged.
 - Scope: completion journal, candidate commit construction, expected-old ref CAS, real index reconciliation, crash recovery. Prompt/result/event/metrics are prerequisites or separate Task06 slices, not included here.
 - Safety gate: no automatic success commit until every crash-boundary test below passes in an isolated temporary Git repository.
 
@@ -9,11 +9,17 @@
 
 1. Validate result, Task/Prompt hashes, commands, artifacts, allowed diff and base before the first durable journal. Capture real index snapshot and write/fsync `prepared` journal before any Task/spec/README/DB mutation.
 2. Journal updates and each document write use same-directory temp, file fsync, atomic replace, parent fsync. Advance phase durably before the corresponding side effect. Recovery accepts only exact before-hash or expected-after-hash; any third value blocks without overwrite.
-3. Candidate commit uses a temporary `GIT_INDEX_FILE`; exact candidate paths, modes and blobs must equal the declared changed files plus Task/spec/README/summary whitelist. Never include unrelated staged entries in the candidate.
+3. Candidate commit uses a temporary `GIT_INDEX_FILE`; exact candidate paths, modes and blobs must equal immutable `expected_git_entries`, whose path set is exactly `committed_paths` (including every expected document). Never include unrelated staged entries in the candidate.
 4. Durable candidate hash precedes `update-ref <branch> <candidate> <original_head>`. Ref mismatch blocks; never force update, push, merge, reset, stash, checkout or clean.
 5. The real `index.lock` is created from a fully written/fsynced marker using no-replace publication. Journal records token and device/inode before replacing marker bytes. Unknown locks are never removed or overwritten.
 6. While holding owned `index.lock`, snapshot the then-current real index. Target entries must still match the original snapshot and have no user staged/unmerged delta; non-target entries from this later snapshot are preserved. Build/index-after contains candidate entries only for target paths.
 7. Install reconciled index atomically only after ref CAS and exact HEAD/index/lock checks. Commit TaskRun success and lease closure with owner/hash/state CAS in one SQLite transaction last; recovery is idempotent. Any uncertainty retains journal and returns recovery-required.
+
+## Required private journal v1 byte/mode anchor
+
+Before the first durable `prepared` journal, freeze `expected_git_entries` for every `committed_paths` path, sorted by UTF-8 path bytes. Each entry is exactly `{path, mode, object_id}`: created or modified blobs use mode `100644`, `100755` or `120000` and a full repository-format blob OID; deletion uses null mode and OID. Compute OIDs with `git hash-object --stdin` without `-w` or `--path`, from raw no-follow file bytes, symlink link-text bytes, or expected document UTF-8 bytes. Keep resolved artifact-content hashes separate from symlink blob hashes. Honor the original index mode for an already tracked path when effective `core.fileMode=false`; infer new-path mode from raw type/executable bit.
+
+Refuse before journaling when a committed path has active `filter`, `working-tree-encoding`, `text`, `eol`, `crlf` or `ident` attributes, or effective `core.autocrlf`; allow unset/unspecified or explicitly disabled attributes and unset/false `core.autocrlf`. Do not edit Git configuration. Candidate tree, reconciliation index, replay and pre-CAS checks compare exact path/mode/blob OID to the immutable entries, so same resolved symlink target does not hide changed link text or mode. Extend the full journal schema and strict validator for the required field, with a follow-up fixture covering sorted exact entries, deletion, executable/symlink modes, conversion refusal, `core.fileMode=false`, and post-validation link-text/mode drift. This is a private, unreleased v1 technical correction, not new product scope.
 
 ## Assignment sequence
 
