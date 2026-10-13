@@ -12,12 +12,14 @@ files were changed by this QA work.
 | 2 | `tests/sdd_tasks/test_metrics.py` | 118 / 0 | Fixed JSON/CSV schema, exact filters and time boundaries, stable ordering, null/provenance semantics, private owner/event exclusion, and no writes. |
 | 3 | `tests/sdd_tasks/test_metrics.py` | 41 / 0 | Unknown change counts stay null; observed empty changes yield zero; malformed or missing summary refuses the whole export. |
 | 4 | `tests/sdd_tasks/test_cli_results.py` | 59 / 0 | `main()` result/metrics envelopes, parsed JSON vs CSV content, no owner arguments, and missing-runtime refusal without creation. |
+| 5 | `tests/sdd_tasks/test_result_query.py` | 68 / 1 | Completed Task status keeps the stable definition hash; malformed, duplicate, private, and symlink-parent summaries refuse read-only. |
+| 6 | `tests/sdd_tasks/test_result_query.py` | 12 / 5 | Duplicate-key and sensitive-value tests now start from a full valid result; each introduces only its target fault. |
 
 ## Validation
 
 ```text
 /workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_result_query
-Ran 3 tests — OK (exit 0)
+Ran 5 tests — OK (exit 0)
 /workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_result_query.py
 All checks passed (exit 0)
 
@@ -32,7 +34,7 @@ Ran 2 tests — OK (exit 0)
 All checks passed (exit 0)
 ```
 
-Total focused coverage is 9 tests. An initial pytest invocation exited 1 during the repository-wide
+Total focused coverage is 11 tests. J7 finalizer behavior has not been tested in this QA slice. An initial pytest invocation exited 1 during the repository-wide
 `conftest.py` autouse setup because `python-dotenv` is absent (`ModuleNotFoundError: dotenv`); no test
 body ran. The requested Python 3.9 stdlib unittest commands passed. The repo's `.sdd/runtime` was
 not used or changed; runtime and result fixtures stayed inside temporary repositories.
