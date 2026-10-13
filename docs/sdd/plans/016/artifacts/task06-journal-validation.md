@@ -10,7 +10,7 @@ First test slice: 131 added lines in that file; tests cover strict envelope roun
 
 ## Remaining
 
-J1/J2 cover journal primitives and document recovery; J3 covers Git index snapshots; J4's first slices cover marker primitives and their refusal/fault windows, and its schema fixture covers immutable expected Git entries. Wrapper integration, blob-anchor generation/conversion checks, commit/ref CAS, reconciliation, ledger finalization, and the mandatory crash matrix remain untested. No commit was created.
+J1/J2 cover journal primitives and document recovery; J3 covers Git index snapshots; J4 covers marker primitives, immutable expected-entry schema, owned-lock wrapper acquisition/replay/refusal against a real index, and expected-entry capture cases. Commit/ref CAS, reconciliation, ledger finalization, and the mandatory process-crash matrix remain untested. No commit was created.
 
 ## J2 document recovery
 
@@ -44,3 +44,28 @@ J1/J2 cover journal primitives and document recovery; J3 covers Git index snapsh
 - `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_journal` — exit 0; 13 tests passed (J1/J2 plus the expected-entry fixture).
 - `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_completion_journal.py` — exit 0.
 - The shared journal fixture now includes sorted expected entries; tests cover exact committed-path binding, ordering, permitted modes, 40/64-character blob IDs, paired deletion nulls, malformed entries, and immutability across journal updates. Blob-anchor generation, Git attribute/config refusal, and wrapper integration are not covered by this schema-only batch.
+
+## J4 owned-lock wrapper with a real Git index
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_index_lock` — exit 0; 10 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_index_lock.py` — exit 0.
+- Registered temporary Git repositories use hash-object/update-index and commit-tree setup. The shape-only journal goes prepared → docs_writing → docs_written; wrapper tests cover durable marker/temp/identity replay, the temp-unlinked-before-journal-save window, late outsider-stage preservation, and target-stage drift refusal. Candidate expected blob anchors are not evidence in these wrapper-only fixtures.
+
+## J4 wrapper identity-save and refusal windows
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_index_lock` — exit 0; 13 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_index_lock.py` — exit 0.
+- Real Git fixtures inject failure before the durable identity journal save and replay the published lock; they also preserve a foreign `index.lock` plus this run's temp marker, and refuse a valid third-party index replacement after marker identity was recorded. Assertions retain exact index/lock bytes and prior journal observation.
+- These are deterministic filesystem fault simulations; they do not claim separate-process crash recovery, CAS, index reconciliation, or commit behavior.
+
+## Expected Git-entry capture basics
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_expected_entries` — exit 0; 3 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_expected_entries.py` — exit 0.
+- Real Git fixtures verify raw symlink link-text blob identity (distinct from target bytes), expected-document UTF-8 content hashing, deletions, UTF-8 path ordering, tracked executable-mode preservation with `core.filemode=false`, new executable detection, and refusal of active conversion attributes or `core.autocrlf=true`.
+
+## Expected Git-entry capture races
+
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_git_expected_entries` — exit 0; 6 tests passed.
+- `/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_git_expected_entries.py` — exit 0.
+- Actual Git/filesystem mutations between capture reads verify refusal for symlink link-text retargeting with identical resolved bytes, mode change, index replacement, HEAD advance, and config change. Disabled attributes are accepted; `core.autocrlf=input` and invalid boolean config fail closed. The injected races are deterministic in-process tests, not separate-process crash/CAS coverage.

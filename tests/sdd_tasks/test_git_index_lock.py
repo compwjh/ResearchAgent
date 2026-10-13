@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.sdd_tasks import git_index_lock_primitives as locks
+from scripts.sdd_tasks.completion_journal import read_journal, recover_expected_documents, write_journal
+from scripts.sdd_tasks.git_index import GitIndexError, read_index_snapshot
+from scripts.sdd_tasks.git_index_lock import acquire_owned_index_lock
 from scripts.sdd_tasks.git_index_lock_primitives import GitIndexLockError
+from tests.sdd_tasks.test_completion_journal import _journal
 
 MARKER = {
     "schema": "sdd-index-lock/v1",
@@ -33,6 +37,45 @@ def _fixture(directory):
     git_dir = Path(_git(root, "rev-parse", "--absolute-git-dir").decode().strip())
     index_path = git_dir / "index"
     return index_path, index_path.read_bytes()
+
+
+def _worktree_fixture(directory):
+    root = Path(directory) / "repo"
+    root.mkdir()
+    subprocess.run(["git", "-C", str(root), "init", "-q", "-b", "main"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Fixture"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "fixture@example.invalid"], check=True)
+    files = (("src/change.py", b"before source\n"),
+             ("docs/task.md", b"original task document\n"))
+    for name, content in files:
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        blob = _git(root, "hash-object", "-w", "--stdin", input=content).decode().strip()
+        _git(root, "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}")
+    tree = _git(root, "write-tree").decode().strip()
+    head = _git(root, "commit-tree", tree, "-m", "fixture baseline").decode().strip()
+    _git(root, "update-ref", "refs/heads/main", head)
+    return root
+
+
+def _write_wrapper_journal(root):
+    journal = _journal()
+    head = _git(root, "rev-parse", "HEAD").decode().strip()
+    journal["base_commit"] = journal["original_head"] = head
+    journal["index_before"] = read_index_snapshot(
+        root, journal["committed_paths"], original_head=head
+    )
+    path = root / ".sdd/runtime/runs" / journal["run_id"] / "completion.json"
+    path.parent.mkdir(parents=True)
+    write_journal(path, journal)
+    return path, journal
+
+
+def _advance_docs_to_written(path, root):
+    journal = dict(read_journal(path), phase="docs_writing")
+    write_journal(path, journal, previous_phase="prepared")
+    return recover_expected_documents(root, path)
 
 
 def _payload(marker):
@@ -247,6 +290,159 @@ class GitIndexLockPrimitiveTests(unittest.TestCase):
                     locks.create_marker_temp(index_path, TEMP_NAME, candidate)
             self.assertFalse(index_path.with_name(TEMP_NAME).exists())
             self.assertEqual(index_path.read_bytes(), index_before)
+
+    def test_wrapper_records_owned_lock_and_preserves_late_outsider_stage_on_replay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = _worktree_fixture(directory)
+            journal_path, journal = _write_wrapper_journal(root)
+            self.assertEqual(read_journal(journal_path)["phase"], "prepared")
+            self.assertEqual(_advance_docs_to_written(journal_path, root)["phase"], "docs_written")
+            outsider = _git(root, "hash-object", "-w", "--stdin", input=b"outsider staged\n").decode().strip()
+            _git(root, "update-index", "--add", "--cacheinfo", f"100644,{outsider},outsider.txt")
+            index_path = Path(journal["index_before"]["git_index_path"])
+            index_before = index_path.read_bytes()
+            current = read_index_snapshot(root, journal["committed_paths"], original_head=journal["original_head"])
+            expected_observation = {key: current[key] for key in
+                                    ("index_sha256", "committed_entries", "other_entries_sha256")}
+
+            locked = acquire_owned_index_lock(root, journal_path)
+            self.assertEqual(locked["phase"], "index_locking")
+            self.assertEqual(locked["index_recovery_stage"], "marker_durable")
+            self.assertEqual(locked["index_observed_before"], expected_observation)
+            self.assertEqual(index_path.read_bytes(), index_before)
+            lock_path = index_path.with_name("index.lock")
+            identity = lock_path.stat()
+            self.assertEqual(locked["index_lock_identity"],
+                             {"device": identity.st_dev, "inode": identity.st_ino})
+            lock_bytes = lock_path.read_bytes()
+            replayed = acquire_owned_index_lock(root, journal_path)
+            self.assertEqual(replayed, locked)
+            self.assertEqual(lock_path.read_bytes(), lock_bytes)
+            self.assertEqual(index_path.read_bytes(), index_before)
+
+    def test_wrapper_adopts_published_lock_after_temp_unlink_before_journal_save(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = _worktree_fixture(directory)
+            journal_path, journal = _write_wrapper_journal(root)
+            _advance_docs_to_written(journal_path, root)
+            journal = dict(read_journal(journal_path), phase="index_locking")
+            write_journal(journal_path, journal, previous_phase="docs_written")
+            journal = dict(journal, index_lock_temp_path=TEMP_NAME)
+            write_journal(journal_path, journal, previous_phase="index_locking")
+            index_path = Path(journal["index_before"]["git_index_path"])
+            marker = {"schema": "sdd-index-lock/v1", "run_id": journal["run_id"],
+                      "index_lock_owner_token": journal["index_lock_owner_token"],
+                      "index_before_sha256": journal["index_before"]["index_sha256"]}
+            locks.create_marker_temp(index_path, TEMP_NAME, marker)
+            journal = dict(read_journal(journal_path), index_recovery_stage="marker_temp_durable")
+            write_journal(journal_path, journal, previous_phase="index_locking")
+            identity = locks.publish_marker_lock(index_path, TEMP_NAME, marker)
+            self.assertFalse(index_path.with_name(TEMP_NAME).exists())
+            self.assertEqual(read_journal(journal_path)["index_recovery_stage"], "marker_temp_durable")
+            self.assertIsNone(read_journal(journal_path)["index_lock_identity"])
+
+            recovered = acquire_owned_index_lock(root, journal_path)
+            self.assertEqual(recovered["index_recovery_stage"], "marker_durable")
+            self.assertEqual(recovered["index_lock_identity"], identity)
+            self.assertFalse(index_path.with_name(TEMP_NAME).exists())
+            self.assertEqual(list(index_path.parent.glob(".sdd-index-lock-*")), [])
+
+    def test_wrapper_refuses_target_stage_drift_without_changing_index_or_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = _worktree_fixture(directory)
+            journal_path, journal = _write_wrapper_journal(root)
+            _advance_docs_to_written(journal_path, root)
+            changed = _git(root, "hash-object", "-w", "--stdin", input=b"raced target\n").decode().strip()
+            _git(root, "update-index", "--cacheinfo", f"100644,{changed},src/change.py")
+            index_path = Path(journal["index_before"]["git_index_path"])
+            staged_index = index_path.read_bytes()
+
+            with self.assertRaisesRegex(GitIndexError, "GIT_TARGET_PRESTAGED"):
+                acquire_owned_index_lock(root, journal_path)
+            self.assertEqual(index_path.read_bytes(), staged_index)
+            self.assertFalse(index_path.with_name("index.lock").exists())
+            self.assertEqual(read_journal(journal_path)["phase"], "index_locking")
+
+    def test_wrapper_replays_lock_when_identity_journal_save_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = _worktree_fixture(directory)
+            journal_path, journal = _write_wrapper_journal(root)
+            _advance_docs_to_written(journal_path, root)
+            index_path = Path(journal["index_before"]["git_index_path"])
+            real_write = write_journal
+
+            def fail_identity_save(path, value, **kwargs):
+                if value["index_recovery_stage"] == "marker_durable":
+                    raise OSError("simulated crash before identity journal commit")
+                return real_write(path, value, **kwargs)
+
+            with patch("scripts.sdd_tasks.git_index_lock.write_journal", side_effect=fail_identity_save), \
+                    self.assertRaisesRegex(OSError, "identity journal commit"):
+                acquire_owned_index_lock(root, journal_path)
+            pending = read_journal(journal_path)
+            self.assertEqual(pending["index_recovery_stage"], "marker_temp_durable")
+            self.assertIsNone(pending["index_lock_identity"])
+            self.assertFalse(index_path.with_name(pending["index_lock_temp_path"]).exists())
+            lock_path = index_path.with_name("index.lock")
+            lock_before = lock_path.read_bytes()
+            index_before = index_path.read_bytes()
+
+            recovered = acquire_owned_index_lock(root, journal_path)
+            self.assertEqual(recovered["index_recovery_stage"], "marker_durable")
+            self.assertEqual(recovered["index_lock_identity"],
+                             {"device": lock_path.stat().st_dev, "inode": lock_path.stat().st_ino})
+            self.assertEqual(lock_path.read_bytes(), lock_before)
+            self.assertEqual(index_path.read_bytes(), index_before)
+
+    def test_wrapper_preserves_foreign_standard_lock_and_its_marker_temp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = _worktree_fixture(directory)
+            journal_path, journal = _write_wrapper_journal(root)
+            _advance_docs_to_written(journal_path, root)
+            index_path = Path(journal["index_before"]["git_index_path"])
+            lock_path = index_path.with_name("index.lock")
+            foreign = b"another process owns this lock\n"
+            lock_path.write_bytes(foreign)
+            lock_path.chmod(0o600)
+            index_before = index_path.read_bytes()
+
+            with self.assertRaisesRegex(GitIndexLockError, "GIT_LOCK_MARKER_MISMATCH"):
+                acquire_owned_index_lock(root, journal_path)
+            pending = read_journal(journal_path)
+            temp_path = index_path.with_name(pending["index_lock_temp_path"])
+            self.assertEqual(pending["index_recovery_stage"], "marker_temp_durable")
+            self.assertIsNone(pending["index_lock_identity"])
+            self.assertEqual(lock_path.read_bytes(), foreign)
+            self.assertEqual(temp_path.read_bytes(), _payload({
+                "schema": "sdd-index-lock/v1", "run_id": journal["run_id"],
+                "index_lock_owner_token": journal["index_lock_owner_token"],
+                "index_before_sha256": journal["index_before"]["index_sha256"]}))
+            self.assertEqual(index_path.read_bytes(), index_before)
+
+    def test_wrapper_refuses_third_party_index_change_after_marker_is_durable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = _worktree_fixture(directory)
+            journal_path, journal = _write_wrapper_journal(root)
+            _advance_docs_to_written(journal_path, root)
+            locked = acquire_owned_index_lock(root, journal_path)
+            index_path = Path(journal["index_before"]["git_index_path"])
+            lock_path = index_path.with_name("index.lock")
+            lock_before = lock_path.read_bytes()
+            outsider = _git(root, "hash-object", "-w", "--stdin", input=b"third-party staged\n").decode().strip()
+            alternate = index_path.with_name("index.thirdparty")
+            alternate.write_bytes(index_path.read_bytes())
+            environment = os.environ.copy()
+            environment["GIT_INDEX_FILE"] = str(alternate)
+            subprocess.run(["git", "-C", str(root), "update-index", "--add", "--cacheinfo",
+                            f"100644,{outsider},outsider.txt"], env=environment, check=True)
+            changed_index = alternate.read_bytes()
+            os.replace(alternate, index_path)
+
+            with self.assertRaisesRegex(GitIndexLockError, "GIT_INDEX_OBSERVATION_CHANGED"):
+                acquire_owned_index_lock(root, journal_path)
+            self.assertEqual(index_path.read_bytes(), changed_index)
+            self.assertEqual(lock_path.read_bytes(), lock_before)
+            self.assertEqual(read_journal(journal_path)["index_observed_before"], locked["index_observed_before"])
 
 
 if __name__ == "__main__":
