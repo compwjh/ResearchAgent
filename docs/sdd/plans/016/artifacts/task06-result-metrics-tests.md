@@ -193,6 +193,10 @@ CLI 与旧恢复最新 7 项通过（12.012 秒），Ruff 通过。matching comp
 账本和 journal 未变化。`failed_recovery.py` 当前 139 行仅为已读审、编译/Ruff 通过的私有基础，
 尚缺当前工作区与失败观察的语义比较及可选 decision 的正确读取，不接入公开领取接口。
 
+随后完成私有 loader 的当前工作区投影比较、严格可选 decision 和二次历史证明（仅静态验收）。
+纯 failed_workspace 比较模块的独立 4 项测试通过（0.310 秒），Ruff 通过；覆盖文档专属目录投影、
+allowed root 保留、其他后代和 rename 另一端越界、伪造 proof 拒绝与输入不变。公开领取仍未接线。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件

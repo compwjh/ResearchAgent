@@ -8,6 +8,8 @@ from .failed_workspace import (
     FailedWorkspaceError,
     VerifiedFailedWorkspace,
     _identity,
+    _inside,
+    _project,
     compare_verified_failed_workspace,
 )
 from .failure_history import (
@@ -17,8 +19,7 @@ from .failure_history import (
     _text,
     verify_failed_run_history,
 )
-from .recovery_snapshots import _event
-from .workspace import WorkspaceSnapshot, _allowed_hashes
+from .workspace import RecoveryDecision, WorkspaceSnapshot, _allowed_hashes
 from .workspace_observation import (
     _decode_observation_event,
     _load_failed_run_baseline,
@@ -98,6 +99,52 @@ def _same_capture(left, right):
                for name in left.__dataclass_fields__ if name != "captured_at")
 
 
+def compare_failed_observation_current(proof, current, task):
+    """Compare the failed observation with a current capture at the proven docs tip."""
+    if (type(proof) is not VerifiedFailedWorkspace or type(current) is not WorkspaceSnapshot or
+            compare_verified_failed_workspace(proof, task).kind not in {"partial", "unchanged"}):
+        raise FailedRecoveryError("FAILED_RECOVERY_PROOF_INVALID")
+    base = proof.baseline
+    expected = (str(base.repo_root), str(base.common_dir), str(base.worktree_path),
+                task.metadata["spec_id"], task.metadata["task_id"], task.task_hash,
+                task.prompt_hash, task.metadata["worktree"]["branch"])
+    if (_identity(current) != expected or _identity(proof.observation) != expected or
+            proof.observation.head != proof.observation_tip or
+            current.head != proof.active_claim_tip or
+            proof.history.current_tip != proof.active_claim_tip):
+        raise FailedRecoveryError("FAILED_RECOVERY_PROOF_MISMATCH")
+    roots, excluded = tuple(task.metadata["allowed_paths"]), tuple(proof.excluded_paths)
+    old_status, old_hashes = _project(proof.observation, excluded, roots)
+    new_status, new_hashes = _project(current, excluded, roots)
+    changed = {path for path in old_status.keys() | new_status.keys()
+               if old_status.get(path) != new_status.get(path)}
+    changed.update(path for path in old_hashes.keys() | new_hashes.keys()
+                   if old_hashes.get(path) != new_hashes.get(path))
+    paths = tuple(sorted(changed))
+    outside = tuple(path for path in paths if not _inside(path, roots))
+    if outside:
+        return RecoveryDecision("out_of_scope", paths, outside, False, "workspace_out_of_scope")
+    return RecoveryDecision("partial" if paths else "unchanged", paths, (), True, None)
+
+
+def _stored_decision(conn, run_id):
+    rows = conn.execute(
+        "SELECT payload_json FROM events WHERE run_id=? AND event_type='recovery_decision'",
+        (run_id,),
+    ).fetchall()
+    if len(rows) > 1:
+        raise FailedRecoveryError("FAILED_RECOVERY_DECISION_INVALID")
+    if not rows:
+        return None
+    data = _strict_json(rows[0][0].encode("utf-8"))
+    actions = {"requeued": "unchanged", "preserved_for_recovery": "partial"}
+    if (not isinstance(data, dict) or set(data) != {"schema", "action", "decision"} or
+            data.get("schema") != "sdd-run-recovery/v1" or
+            data.get("action") not in actions or data.get("decision") != actions[data["action"]]):
+        raise FailedRecoveryError("FAILED_RECOVERY_DECISION_INVALID")
+    return data["decision"]
+
+
 def load_failed_recovery_source(conn, run_id, task, repo_root):
     """Load one latest failed source after binding DB, observation, and Git proofs."""
     try:
@@ -119,18 +166,18 @@ def load_failed_recovery_source(conn, run_id, task, repo_root):
             tuple(task.metadata["allowed_paths"]), history.excluded_paths,
         )
         decision = compare_verified_failed_workspace(proof, task)
-        stored = _event(conn, run_id, "recovery_decision", False)
-        if stored is not None:
-            expected = {"requeued": "unchanged", "preserved_for_recovery": "partial"}
-            if (not isinstance(stored, dict) or stored.get("schema") != "sdd-run-recovery/v1" or
-                    stored.get("action") not in expected or
-                    stored.get("decision") != expected[stored["action"]] or
-                    stored["decision"] != decision.kind):
-                raise FailedRecoveryError("FAILED_RECOVERY_DECISION_MISMATCH")
+        if not decision.recoverable or decision.kind not in {"unchanged", "partial"}:
+            raise FailedRecoveryError("FAILED_RECOVERY_SOURCE_NOT_RECOVERABLE")
+        stored = _stored_decision(conn, run_id)
+        if stored is not None and stored != decision.kind:
+            raise FailedRecoveryError("FAILED_RECOVERY_DECISION_MISMATCH")
+        history_after = verify_failed_run_history(conn, run_id, task, repo_root)
         last = _capture(baseline.repo_root, task, baseline)
         _eligible_source(conn, run_id, task)
-        if (not _same_capture(first, last) or first.head != history.current_tip or
-                last.head != history.current_tip):
+        if (not _same_capture(first, last) or history_after != history or
+                first.head != history.current_tip or last.head != history.current_tip or
+                compare_failed_observation_current(proof, first, task).kind != "unchanged" or
+                compare_failed_observation_current(proof, last, task).kind != "unchanged"):
             raise FailedRecoveryError("FAILED_RECOVERY_WORKSPACE_CHANGED")
         return proof
     except (FailedRecoveryError, FailureHistoryError, FailedWorkspaceError):
