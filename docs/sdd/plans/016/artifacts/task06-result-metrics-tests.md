@@ -172,6 +172,22 @@ Ran 4 tests in 9.505s — OK
 All checks passed
 ```
 
+## 2026-10-14 Completion-service elapsed time and principal replay QA
+
+The updated Python 3.9 service suite passes 9 tests in 17.410s; Ruff passes. The returned
+`duration_ms` is checked against the floored elapsed milliseconds between the server's returned
+`started_at` and `ended_at`. For both terminal complete and fail journals, a wrong principal with
+malformed raw input is rejected before validation or observation; the journal, ledger, and public
+result remain unchanged. This service-level replay check does not cover the separate CLI result-file
+read behavior or failed-history/new-retry flow.
+
+```text
+/workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_completion_service
+Ran 9 tests in 17.410s — OK
+/workspace/researchagent-cli-venv39/bin/ruff check scripts/sdd_tasks/completion_service.py tests/sdd_tasks/test_completion_service.py
+All checks passed
+```
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
@@ -251,6 +267,17 @@ fail、结果文件 symlink/超限拒绝以及真实崩溃后的 CLI recover。f
 走通 CLI recover → abandoned/partial → 私有观察解码 → 同 Task child 领取，snapshot 严格保持原基线。
 失败历史套件扩至 5 项通过（9.669 秒），Ruff 通过；覆盖额外 SOURCE commit、篡改私有 Git anchor
 的拒绝，以及已暂存 SOURCE 的只读证明。上述 fixture 均有预期 stale_task_copies_ignored warning。
+
+## 2026-10-14 工具域阶段回归
+
+独立 Luna xhigh 执行 `python -m unittest discover -s tests/sdd_tasks -t .`：
+348 项通过，129.610 秒；`ruff check scripts/sdd_tasks tests/sdd_tasks` 通过。
+测试前 HEAD 为 `a4d704d`，存在尚未跟踪的 failed_workspace.py；测试后 HEAD 为 `8a2020a`，
+service 测试有并行增量。故此为阶段性工具域回归，不冒充冻结源码的最终 Spec 验收，
+也不覆盖尚无测试的 failed_workspace 模块。业务全量回归尚未执行。
+
+随后服务定向套件 9 项通过（17.410 秒），Ruff 通过；新增精确服务端 duration_ms 检查，
+及 complete/fail 两条已有 journal 的错误 principal 重放拒绝和无副作用检查。
 
 ```text
 /workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_completion_service

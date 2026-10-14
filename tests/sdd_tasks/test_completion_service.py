@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import closing
+from datetime import datetime
 from unittest.mock import patch
 
 from scripts.sdd_tasks.completion_journal import read_journal
@@ -72,6 +73,10 @@ class CompletionServiceTests(unittest.TestCase):
                 self.assertEqual(result["model"], database_model or "draft model")
                 self.assertEqual(result["started_at"], claim.claimed_at)
                 self.assertNotEqual(result["ended_at"], "2000-01-01T00:00:01Z")
+                started = datetime.fromisoformat(result["started_at"].replace("Z", "+00:00"))
+                ended = datetime.fromisoformat(result["ended_at"].replace("Z", "+00:00"))
+                self.assertEqual(result["duration_ms"],
+                                 int((ended - started).total_seconds() * 1000))
                 self.assertNotEqual(result["duration_ms"], 999999)
                 self.assertEqual(result["commands"][0]["argv"], shlex.split(COMMAND))
                 self.assertEqual((result["commands"][0]["status"],
@@ -221,6 +226,30 @@ class CompletionServiceTests(unittest.TestCase):
                     observe.assert_not_called()
                 self.assertEqual(_rows(conn), before)
                 self.assertFalse(run_dir.exists())
+
+    def test_existing_journal_wrong_principal_refuses_matching_complete_and_fail_routes(self):
+        for outcome, operation in (("succeeded", complete_run), ("failed", fail_run)):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as temp, \
+                    _claimed_with_command(temp) as state:
+                root, _, task, database, _, _, claim = state
+                run_dir = root / ".sdd/runtime/runs" / claim.run_id
+                journal_path = run_dir / "completion.json"
+                with closing(connect(database)) as conn, maintenance_lock(root):
+                    result = operation(conn, root, claim.run_id, claim.owner.executor_id,
+                                       claim.owner.pid,
+                                       json.dumps(_draft(task, claim, outcome=outcome)))
+                    before, journal_bytes = _rows(conn), journal_path.read_bytes()
+                    with patch("scripts.sdd_tasks.completion_service.run_validations") as validate, \
+                            patch("scripts.sdd_tasks.completion_service.record_workspace_observation") as observe:
+                        with self.assertRaises(CompletionServiceError) as caught:
+                            operation(conn, root, claim.run_id, "wrong-principal",
+                                      claim.owner.pid, "malformed ignored replay input")
+                        self.assertEqual(caught.exception.code, "COMPLETION_OWNER_MISMATCH")
+                        validate.assert_not_called()
+                        observe.assert_not_called()
+                    self.assertEqual(_rows(conn), before)
+                    self.assertEqual(result_for_run(conn, claim.run_id), result)
+                    self.assertEqual(journal_path.read_bytes(), journal_bytes)
 
     def test_blocked_outcome_commits_three_mirrors_and_summary_without_source(self):
         with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
