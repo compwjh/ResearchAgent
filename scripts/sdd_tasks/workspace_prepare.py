@@ -108,3 +108,36 @@ def prepare_worktree(repo_root: Path, task, base_commit: str, *,
     if not decision.recoverable or decision.kind not in {"unchanged", "partial"}:
         raise WorkspaceError("workspace_recovery_conflict")
     return current
+
+
+def prepare_failed_worktree(repo_root: Path, task, source) -> WorkspaceSnapshot:
+    """Validate a proven partial source while retaining its original baseline."""
+    from .failed_recovery import _capture, compare_failed_observation_current
+    from .failed_selection import FailedClaimSource
+    from .failed_workspace import compare_verified_failed_workspace
+
+    if type(source) is not FailedClaimSource or source.mode != "partial":
+        raise WorkspaceError("workspace_failed_recovery_invalid")
+    proof, baseline = source.proof, source.proof.baseline
+    decision = compare_verified_failed_workspace(proof, task)
+    if (source.decision != decision or decision.kind != "partial" or not decision.recoverable or
+            source.snapshot != baseline or source.base_commit != baseline.head or
+            source.recovery_of != proof.source_run_id or task.metadata.get("status") != "pending"):
+        raise WorkspaceError("workspace_failed_recovery_invalid")
+    try:
+        main, common = repository_paths(repo_root)
+        worktree = contained(main, task.metadata["worktree"]["path"]).resolve(strict=True)
+        registered = _registered(main)
+    except (OSError, ValueError) as exc:
+        raise WorkspaceError("workspace_failed_recovery_identity_invalid") from exc
+    if (main != baseline.repo_root or common != baseline.common_dir or
+            worktree != baseline.worktree_path or
+            registered.get(worktree) != "refs/heads/" + task.metadata["worktree"]["branch"] or
+            _common(worktree) != common):
+        raise WorkspaceError("workspace_failed_recovery_identity_invalid")
+    current = _capture(main, task, baseline)
+    if (current.branch != task.metadata["worktree"]["branch"] or
+            current.head != proof.active_claim_tip or
+            compare_failed_observation_current(proof, current, task).kind != "unchanged"):
+        raise WorkspaceError("workspace_failed_recovery_changed")
+    return baseline
