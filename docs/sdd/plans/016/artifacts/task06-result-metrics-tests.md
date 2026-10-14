@@ -202,6 +202,13 @@ allowed root 保留、其他后代和 rename 另一端越界、伪造 proof 拒�
 Git 文档对象证明提取的原 5 项回归通过（8.755 秒）。active_failed_recovery.py 首批 91 行
 仅做已读审/静态检查的活动 retry 绑定，尚无 owner/lease 与完整历史 wrapper，不接入公开调用。
 
+后续独立增量：failed-source adapter/prepare 与原 worktree prepare 共 10 项通过（8.405 秒），
+Ruff 通过；partial 返回原始 snapshot，unchanged 使用实际 doc tip 且 source 指针为空。
+loader 防御套件 5 项通过（15.051 秒），Ruff 通过；包括合法可选 decision、mismatch 和重复事件拒绝，
+以及 forged current/head 和 staged/unstaged 源码漂移。重复 decision 在前序 history 校验已被拒绝。
+active_failed_recovery.py 完整 wrapper 已读审并静态检查通过，核验唯一消费、活 owner/lease、
+原始基线、原始 Git 文档对象与当前精确文档内容；尚待真实公开领取后的独立集成验收。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
