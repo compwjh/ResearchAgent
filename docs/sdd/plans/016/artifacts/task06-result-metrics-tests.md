@@ -172,6 +172,13 @@ Ran 4 tests in 9.505s — OK
 All checks passed
 ```
 
+## 2026-10-14 服务重放与 principal 校验增量
+
+Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
+6 项通过（9.949 秒），Ruff 通过。合法重放忽略损坏的草稿，不再次验证或写观察事件，
+账本、journal 和结果保持一致。错误 executor 在读取草稿前被拒绝且不创建运行时目录。
+本增量不覆盖显式 blocked、观察已保存但 journal 缺失和 CLI 路由。
+
 The temporary repository fixtures emitted `stale_task_copies_ignored` warnings during catalog
 rebuild; all four tests passed. This slice does not cover blocked outcomes, the three-failure retry
 threshold, existing-journal replay with raw-input bypass, failed-history/public-caller proof, or CLI
@@ -209,3 +216,13 @@ All checks passed (Ruff 0.16.10)
 
 A failed terminal run followed by a real new retry, failed-history verification, and CLI wiring are
 not covered by this slice. No retry was synthesized with direct SQL.
+
+## 2026-10-14 Prepared-journal crash boundary
+
+Three methods cover seven real process exits, including exits before and halfway through the first prepared-journal write; the latter leaves only a fsynced mode-0600 strict-prefix temp. Both initial-write crashes leave `completion.json` absent; `resume_dead_completion()` returns `None` with the active run, pending Task, and lease unchanged. This verifies only the no-journal Task05 boundary; public recovery routing remains pending.
+```text
+/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_crash_recovery
+Ran 3 tests in 11.633s — OK
+/workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_completion_crash_recovery.py tests/sdd_tasks/test_completion_prepare.py
+All checks passed
+```

@@ -15,6 +15,7 @@ from .catalog import CatalogError, rebuild
 from .catalog_status import status
 from .locks import runtime_root
 from .newcli_claim import claim_from_cli
+from .newcli_completion import complete_from_cli, fail_from_cli
 from .newcli_event import event_from_cli
 from .newcli_recover import recover_from_cli
 from .newcli_results import metrics_from_cli, result_from_cli
@@ -61,7 +62,7 @@ def _exit_code(code: str) -> int:
         return 5
     if any(word in normalized for word in ("RESULT", "SUMMARY", "VALIDATION")):
         return 6
-    if "JOURNAL" in normalized:
+    if normalized.startswith("RECOVER_") or "JOURNAL" in normalized or normalized == "COMPLETION_RECOVERY_REQUIRED":
         return 7
     return 3
 
@@ -83,6 +84,12 @@ def _parser() -> _Parser:
     next_parser.add_argument("--base-commit")
     recover_parser = commands.add_parser("recover", add_help=False)
     recover_parser.add_argument("--run-id", required=True)
+    for name in ("complete", "fail"):
+        lifecycle_parser = commands.add_parser(name, add_help=False)
+        lifecycle_parser.add_argument("--run-id", required=True)
+        lifecycle_parser.add_argument("--executor", required=True)
+        lifecycle_parser.add_argument("--owner-pid", type=int, required=True)
+        lifecycle_parser.add_argument("--result", type=Path, required=True)
     event_parser = commands.add_parser("event", add_help=False)
     event_parser.add_argument("--run-id", required=True)
     event_parser.add_argument("--executor", required=True)
@@ -164,6 +171,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "recover":
             report = recover_from_cli(root, args.run_id)
             _emit(True, "OK", "recovery complete", report)
+            return 0
+        if args.command in {"complete", "fail"}:
+            adapter = complete_from_cli if args.command == "complete" else fail_from_cli
+            data = adapter(root, args.run_id, args.executor, args.owner_pid, args.result)
+            _emit(True, "OK", "completion processed", data)
             return 0
         if args.command == "event":
             data = event_from_cli(root, args.run_id, args.executor, args.owner_pid,

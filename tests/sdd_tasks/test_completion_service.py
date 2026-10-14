@@ -183,6 +183,44 @@ class CompletionServiceTests(unittest.TestCase):
             self.assertEqual(len(journal["committed_paths"]), 1)
             self.assertNotIn(SOURCE, journal["committed_paths"])
 
+    def test_existing_journal_replay_ignores_raw_input_and_does_not_validate_again(self):
+        with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
+            root, _, task, database, _, _, claim = state
+            raw = json.dumps(_draft(task, claim))
+            with closing(connect(database)) as conn, maintenance_lock(root):
+                original = complete_run(conn, root, claim.run_id, claim.owner.executor_id,
+                                        claim.owner.pid, raw)
+                run_dir = root / ".sdd/runtime/runs" / claim.run_id
+                journal = run_dir / "completion.json"
+                journal_bytes, rows = journal.read_bytes(), _rows(conn)
+                with patch("scripts.sdd_tasks.completion_service.run_validations") as validate, \
+                        patch("scripts.sdd_tasks.completion_service.record_workspace_observation") as observe:
+                    replay = complete_run(conn, root, claim.run_id, claim.owner.executor_id,
+                                          claim.owner.pid, "malformed ignored replay input")
+                    validate.assert_not_called()
+                    observe.assert_not_called()
+                self.assertEqual(replay, original)
+                self.assertEqual(result_for_run(conn, claim.run_id), original)
+                self.assertEqual(_rows(conn), rows)
+                self.assertEqual(journal.read_bytes(), journal_bytes)
+
+    def test_wrong_principal_refuses_before_raw_parsing_or_side_effects(self):
+        with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
+            root, _, _, database, _, _, claim = state
+            run_dir = root / ".sdd/runtime/runs" / claim.run_id
+            with closing(connect(database)) as conn, maintenance_lock(root):
+                before = _rows(conn)
+                with patch("scripts.sdd_tasks.completion_service.run_validations") as validate, \
+                        patch("scripts.sdd_tasks.completion_service.record_workspace_observation") as observe:
+                    with self.assertRaises(CompletionServiceError) as caught:
+                        complete_run(conn, root, claim.run_id, "wrong-principal",
+                                     claim.owner.pid, "malformed ignored unauthorized input")
+                    self.assertEqual(caught.exception.code, "COMPLETION_OWNER_MISMATCH")
+                    validate.assert_not_called()
+                    observe.assert_not_called()
+                self.assertEqual(_rows(conn), before)
+                self.assertFalse(run_dir.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

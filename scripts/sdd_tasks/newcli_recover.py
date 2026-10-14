@@ -4,6 +4,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .completion_recovery import resume_dead_completion
 from .lease_recovery import stored_owner
 from .leases import LeaseError, _live_task, recover_expired
 from .locks import maintenance_lock, repository_paths
@@ -17,6 +18,10 @@ from .workspace import capture_snapshot, compare_snapshot
 def recover_from_cli(repo_root: Path, run_id: str) -> dict:
     main, _ = repository_paths(repo_root)
     with maintenance_lock(main), closing(connect(_database(main))) as conn:
+        result = resume_dead_completion(conn, repo_root, run_id)
+        if result is not None:
+            return {"run_id": run_id, "state": result["outcome"],
+                    "action": "completion_resumed"}
         run = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
         if run is None:
             raise LeaseError("LEASE_NOT_FOUND", "run does not exist")

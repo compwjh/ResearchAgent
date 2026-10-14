@@ -1,6 +1,7 @@
 import hashlib
 import multiprocessing
 import os
+import stat
 import subprocess
 import tempfile
 import traceback
@@ -20,7 +21,9 @@ from scripts.sdd_tasks.catalog import rebuild
 from scripts.sdd_tasks.completion_journal import read_journal, write_journal
 from scripts.sdd_tasks.completion_lifecycle import run_completion_journal
 from scripts.sdd_tasks.completion_prepare import prepare_completion_journal
+from scripts.sdd_tasks.completion_recovery import resume_dead_completion
 from scripts.sdd_tasks.events import append_event
+from scripts.sdd_tasks.lease_recovery import stored_owner
 from scripts.sdd_tasks.lifecycle_context import load_active_claim
 from scripts.sdd_tasks.locks import maintenance_lock
 from scripts.sdd_tasks.owners import OwnerIdentity, OwnerStatus, current_owner, observe_owner
@@ -75,7 +78,44 @@ def _crash_worker(directory, ready, request):
                     raise AssertionError(report.errors)
                 journal = prepare_completion_journal(task, claim, before, after, report, root)
                 path = root / ".sdd/runtime/runs" / claim.run_id / "completion.json"
-                write_journal(path, journal)
+                if point == "prepared_before_write":
+                    os._exit(86)
+                if point == "prepared_partial_write":
+                    real_fdopen = completion_journal.atomic.os.fdopen
+
+                    class PartialWriter:
+                        def __init__(self, stream):
+                            self.stream = stream
+
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *args):
+                            return self.stream.__exit__(*args)
+
+                        def __getattr__(self, name):
+                            return getattr(self.stream, name)
+
+                        def write(self, payload):
+                            prefix = payload[:len(payload) // 2]
+                            written = self.stream.write(prefix)
+                            if written != len(prefix):
+                                raise AssertionError("short initial journal write")
+                            self.stream.flush()
+                            os.fsync(self.stream.fileno())
+                            ready.put(("partial", len(prefix), len(payload),
+                                       hashlib.sha256(prefix).hexdigest()))
+                            ready.close()
+                            ready.join_thread()
+                            os._exit(86)
+
+                    def partial_fdopen(fd, mode):
+                        return PartialWriter(real_fdopen(fd, mode))
+
+                    with patch.object(completion_journal.atomic.os, "fdopen", partial_fdopen):
+                        write_journal(path, journal)
+                else:
+                    write_journal(path, journal)
                 if point == "documents":
                     real_atomic_write = completion_journal.atomic.atomic_write
 
@@ -353,6 +393,63 @@ class CompletionCrashRecoveryTests(unittest.TestCase):
                 self.assertEqual(rebuilt.runs, 1)
                 with closing(connect(database)) as conn:
                     self.assertEqual(result_for_run(conn, run_id), journal["expected_result"])
+
+    def test_initial_journal_write_crashes_remain_at_task05_boundary(self):
+        for point in ("prepared_before_write", "prepared_partial_write"):
+            with self.subTest(point=point), tempfile.TemporaryDirectory() as temp:
+                context = multiprocessing.get_context("fork")
+                ready, request = context.Queue(), context.Queue()
+                process = context.Process(target=_crash_worker, args=(temp, ready, request))
+                process.start()
+                try:
+                    message = ready.get(timeout=120)
+                    self.assertEqual(message[0], "ready", message)
+                    _, root, canonical, database, run_id = message
+                    request.put(point)
+                    process.join(120)
+                    self.assertFalse(process.is_alive(), "crash worker did not stop")
+                    self.assertEqual(process.exitcode, 86)
+                    partial = ready.get(timeout=10) if point == "prepared_partial_write" else None
+                finally:
+                    if process.is_alive():
+                        process.terminate()
+                    process.join(10)
+                journal = Path(root) / ".sdd/runtime/runs" / run_id / "completion.json"
+                temporaries = list(journal.parent.glob(".sdd-atomic-*"))
+                self.assertFalse(journal.exists())
+                if point == "prepared_before_write":
+                    self.assertEqual(temporaries, [])
+                else:
+                    self.assertEqual(partial[0], "partial")
+                    self.assertEqual(len(temporaries), 1)
+                    image = temporaries[0].read_bytes()
+                    self.assertEqual(len(image), partial[1])
+                    self.assertLess(partial[1], partial[2])
+                    self.assertEqual(hashlib.sha256(image).hexdigest(), partial[3])
+                    self.assertEqual(stat.S_IMODE(temporaries[0].stat().st_mode), 0o600)
+                with closing(connect(database)) as conn, maintenance_lock(Path(root)):
+                    run = conn.execute("SELECT task_id,state,owner_json FROM runs WHERE run_id=?",
+                                       (run_id,)).fetchone()
+                    task = conn.execute("SELECT status FROM tasks WHERE task_id=?",
+                                        (run["task_id"],)).fetchone()
+                    lease = conn.execute("SELECT task_id,run_id,owner_token,expires_at FROM leases "
+                                         "WHERE run_id=?", (run_id,)).fetchone()
+                    before = (run["state"], run["owner_json"], task["status"], tuple(lease))
+                    self.assertIs(observe_owner(stored_owner(run["owner_json"])), OwnerStatus.DEAD)
+                    self.assertEqual((run["state"], task["status"], len(lease)),
+                                     ("running", "pending", 4))
+                    self.assertIsNone(resume_dead_completion(conn, Path(root), run_id))
+                    after_run = conn.execute("SELECT state,owner_json FROM runs WHERE run_id=?",
+                                             (run_id,)).fetchone()
+                    after_task = conn.execute("SELECT status FROM tasks WHERE task_id=?",
+                                              (run["task_id"],)).fetchone()
+                    after_lease = conn.execute("SELECT task_id,run_id,owner_token,expires_at FROM leases "
+                                               "WHERE run_id=?", (run_id,)).fetchone()
+                    self.assertEqual((after_run["state"], after_run["owner_json"],
+                                      after_task["status"], tuple(after_lease)), before)
+                summary = (Path(canonical) / "docs/sdd/runs/016" /
+                           ("task-{}".format(run["task_id"][-2:])) / (run_id + ".md"))
+                self.assertFalse(summary.exists())
 
 
 if __name__ == "__main__":
