@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import closing, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.sdd_tasks.cli import main
 from scripts.sdd_tasks.completion_journal import read_journal
@@ -14,6 +15,7 @@ from scripts.sdd_tasks.store import connect
 from tests.sdd_tasks.test_completion_crash_recovery import _crash_worker
 from tests.sdd_tasks.test_completion_prepare import SOURCE, _claimed_with_command
 from tests.sdd_tasks.test_completion_service import _changed_source, _draft
+from tests.sdd_tasks.test_run_owner import _rows
 
 
 def _invoke(root, *args):
@@ -26,8 +28,8 @@ def _invoke(root, *args):
     return code, json.loads(raw)
 
 
-def _finish_args(claim, result):
-    return ["--run-id", claim.run_id, "--executor", claim.owner.executor_id,
+def _finish_args(claim, result, executor=None):
+    return ["--run-id", claim.run_id, "--executor", executor or claim.owner.executor_id,
             "--owner-pid", str(claim.owner.pid), "--result", str(result)]
 
 
@@ -46,6 +48,29 @@ class CliCompletionTests(unittest.TestCase):
             self.assertEqual((code, row["state"], row["outcome"]), (0, "succeeded", "succeeded"))
             replay = _invoke(root, "complete", *_finish_args(claim, "missing.json"))
             self.assertEqual((replay[0], replay[1]["data"]), (0, completed["data"]))
+
+    def test_wrong_owner_cannot_replay_before_missing_result_read_for_complete_and_fail(self):
+        for outcome, command in (("succeeded", "complete"), ("failed", "fail")):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as temp, \
+                    _claimed_with_command(temp) as state:
+                root, _, task, database, _, _, claim = state
+                draft = root / "draft.json"
+                draft.write_text(json.dumps(_draft(task, claim, outcome=outcome)), encoding="utf-8")
+                finished = _invoke(root, command, *_finish_args(claim, "draft.json"))
+                self.assertEqual((finished[0], finished[1]["code"]), (0, "OK"))
+                journal = root / ".sdd/runtime/runs" / claim.run_id / "completion.json"
+                before_journal = journal.read_bytes()
+                with closing(connect(database)) as conn:
+                    before_rows = _rows(conn)
+                    with patch("scripts.sdd_tasks.newcli_completion._read_result") as read_result:
+                        code, refused = _invoke(
+                            root, command, *_finish_args(claim, "missing.json", "wrong-principal")
+                        )
+                        read_result.assert_not_called()
+                    self.assertEqual((code, refused["ok"], refused["code"], refused["data"]),
+                                     (4, False, "COMPLETION_OWNER_MISMATCH", None))
+                    self.assertEqual(_rows(conn), before_rows)
+                self.assertEqual(journal.read_bytes(), before_journal)
 
     def test_fail_commits_only_summary_and_keeps_source_change_unstaged(self):
         with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:

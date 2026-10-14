@@ -188,6 +188,11 @@ Ran 9 tests in 17.410s — OK
 All checks passed
 ```
 
+CLI 与旧恢复最新 7 项通过（12.012 秒），Ruff 通过。matching complete/fail terminal journal
+遭错误 executor 重放时，退出码 4、COMPLETION_OWNER_MISMATCH，结果文件读取函数未调用，
+账本和 journal 未变化。`failed_recovery.py` 当前 139 行仅为已读审、编译/Ruff 通过的私有基础，
+尚缺当前工作区与失败观察的语义比较及可选 decision 的正确读取，不接入公开领取接口。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
@@ -281,7 +286,7 @@ service 测试有并行增量。故此为阶段性工具域回归，不冒充冻
 
 ```text
 /workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_completion_service
-Ran 8 tests in 13.242s — OK
+Ran 9 tests in 17.410s — OK
 /workspace/researchagent-cli-venv39/bin/ruff check scripts/sdd_tasks/completion_service.py tests/sdd_tasks/test_completion_service.py
 All checks passed
 ```
