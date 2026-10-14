@@ -130,3 +130,8 @@ J1/J2 cover journal primitives and document recovery; J3 covers Git index snapsh
 
 - 后续恢复测试确认原 owner 为真实 `DEAD`，在共同维护锁内使其 lease 过期，再由独立 `spawn` 进程调用生产 dispatcher。日志到达 complete，原 run 数量仍为一、lease 已关闭、result 查询与 journal 一致，Git HEAD/索引树一致且工作树干净；rebuild 后同一结果可查询。
 - `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_crash_recovery`：1 项通过，2.023 秒；Ruff 通过。该结果仅覆盖文档替换后的真实退出及恢复，其他中断边界继续补验。
+
+### CAS 和 DB 提交后的实际恢复补验
+
+- 后续 2 个测试方法覆盖文档替换、真实 CAS 完成但 journal 仍 commit_pending、DB 已提交但 journal 仍 ledger_finalizing 三处退出。独立 spawn 恢复后验证同一 run、结果、lease 关闭、候选 HEAD/ref、索引树、干净工作树、无 index.lock，并 rebuild 查询同一结果。
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_crash_recovery`：2 项通过，7.616 秒；Ruff 通过。部分索引、rename、首次 journal 与 CLI 接线仍待完成。

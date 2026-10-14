@@ -84,7 +84,7 @@ def _crash_worker(directory, ready, request):
                     real_reconcile = completion_lifecycle.reconcile_candidate_ref
 
                     def crash_after_cas(*args, **kwargs):
-                        candidate = real_reconcile(*args, **kwargs)
+                        real_reconcile(*args, **kwargs)
                         os._exit(86)
 
                     hook = patch.object(completion_lifecycle, "reconcile_candidate_ref", crash_after_cas)
@@ -104,7 +104,7 @@ def _crash_worker(directory, ready, request):
         os._exit(91)
     except BaseException:
         ready.put(("error", traceback.format_exc()))
-        raise SystemExit(90)
+        raise SystemExit(90) from None
 
 
 def _resume_worker(root, database, run_id, output):
@@ -115,7 +115,7 @@ def _resume_worker(root, database, run_id, output):
             output.put(("ok", run_completion_journal(conn, path, branch, _utc())))
     except BaseException:
         output.put(("error", traceback.format_exc()))
-        raise SystemExit(90)
+        raise SystemExit(90) from None
 
 
 class CompletionCrashRecoveryTests(unittest.TestCase):
@@ -264,6 +264,32 @@ class CompletionCrashRecoveryTests(unittest.TestCase):
                                                   (journal["task_id"],)).fetchone()[0], 1)
                     self.assertEqual(conn.execute("SELECT COUNT(*) FROM leases WHERE run_id=?",
                                                   (run_id,)).fetchone()[0], 0)
+                worktree = Path(canonical)
+                head = subprocess.run(["git", "-C", str(worktree), "rev-parse", "HEAD"],
+                                      check=True, capture_output=True, text=True).stdout.strip()
+                branch_tip = subprocess.run(["git", "-C", str(worktree), "rev-parse",
+                                             "refs/heads/" + branch], check=True,
+                                            capture_output=True, text=True).stdout.strip()
+                tree = subprocess.run(["git", "-C", str(worktree), "write-tree"], check=True,
+                                      capture_output=True, text=True).stdout.strip()
+                committed = subprocess.run(["git", "-C", str(worktree), "rev-parse", "HEAD^{tree}"],
+                                           check=True, capture_output=True, text=True).stdout.strip()
+                status = subprocess.run(["git", "-C", str(worktree), "status", "--porcelain"],
+                                        check=True, capture_output=True).stdout
+                self.assertEqual((head, branch_tip, tree, status),
+                                 (journal["candidate_commit_hash"], head, committed, b""))
+                lock_text = subprocess.run(["git", "-C", str(worktree), "rev-parse", "--git-path",
+                                            "index.lock"], check=True, capture_output=True,
+                                           text=True).stdout.strip()
+                index_lock = Path(lock_text)
+                if not index_lock.is_absolute():
+                    index_lock = worktree / index_lock
+                self.assertFalse(index_lock.exists())
+                with self.assertWarnsRegex(RuntimeWarning, "stale_task_copies_ignored"):
+                    rebuilt = rebuild(Path(database), Path(root))
+                self.assertEqual(rebuilt.runs, 1)
+                with closing(connect(database)) as conn:
+                    self.assertEqual(result_for_run(conn, run_id), journal["expected_result"])
 
 
 if __name__ == "__main__":

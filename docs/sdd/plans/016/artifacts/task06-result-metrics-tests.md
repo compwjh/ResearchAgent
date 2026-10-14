@@ -124,14 +124,15 @@ git diff --cached --check
 Both passed (exit 0)
 ```
 
-## J7 final suite recheck
-
 ## 2026-10-14 服务入口恢复后定向复测
 
 - 未 push 的旧服务源码已在新环境重建，当前 complete_run/fail_run 尚未接入 CLI。主 agent 读回后修复观察事件时间晚于终态 ended_at 的问题：合法结果先记录真实观察，再获取最终服务端时间；无效结果和 complete 的失败命令不写观察。
 - `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_service`：2 个测试方法通过，4.800 秒。成功方法包含 NULL/非 NULL 数据库 model 两种真实完成流程；拒绝方法包含损坏 JSON、敏感内容、重复键与 NaN 四种输入。
 - 实际声明命令覆盖自报命令，时间来自服务端，观察事件恰好一条且不晚于 ended_at；首次无 run 目录可完成。无效输入不执行命令、不记录观察且账本不变。Ruff 0.17.0 对服务和测试通过。
 - fail 的真实非零命令、部分代码保留、blocked、重放及失败历史恢复尚待本环境验收，不以旧环境记录冒充通过。
+  其中非零 fail/部分源码的后续复测见下文；blocked、重放及失败历史仍待验收。
+
+## J7 final suite recheck
 
 The expanded suite includes 16 tests: six helper tests plus ten public-path finalizer tests. It
 covers committed terminal rows and lease closure, failed-run results and retries, database rollback,
@@ -146,3 +147,32 @@ Ran 16 tests — OK (exit 0)
 /workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_ledger_finalize.py
 All checks passed (exit 0)
 ```
+
+## Task06 completion-service QA reconstructed after reset
+
+This QA slice reconstructs completion-service tests whose unpushed workspace changes were lost in an
+environment reset. The historical run output and any prior push were not recovered; the evidence
+below is from the current focused rerun only. Four test methods cover two success model cases, four
+invalid JSON/content cases, a nonzero validation followed by failed publication for the same run,
+and a failed outcome with an actual passing validation and an unstaged source edit.
+
+The success path reruns the task's declared command, publishes the server-owned timestamps and
+actual command receipt, preserves a draft model only when the database model is null, and records
+one private workspace observation before the returned result end time. Malformed, sensitive,
+duplicate-key, and NaN inputs fail before validation, observation, database changes, or run-directory
+creation. A successful completion with a deleted validation input is refused after the actual
+nonzero command receipt is written; the lease and ledger stay active. `fail_run` then publishes the
+accurate deletion in the public result, closes the lease, and commits only the run summary. A
+separate failed-outcome case confirms a passing command does not stage or commit its modified source.
+
+```text
+/workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_completion_service
+Ran 4 tests in 9.505s — OK
+/workspace/researchagent-cli-venv39/bin/ruff check scripts/sdd_tasks/completion_service.py tests/sdd_tasks/test_completion_service.py
+All checks passed
+```
+
+The temporary repository fixtures emitted `stale_task_copies_ignored` warnings during catalog
+rebuild; all four tests passed. This slice does not cover blocked outcomes, the three-failure retry
+threshold, existing-journal replay with raw-input bypass, failed-history/public-caller proof, or CLI
+wiring. Those remain separate QA gates.
