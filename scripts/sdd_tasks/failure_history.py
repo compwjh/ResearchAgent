@@ -1,5 +1,6 @@
 """Read-only verification of private terminal failure commit history."""
 
+import hashlib
 import hmac
 import json
 import os
@@ -11,7 +12,7 @@ from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .atomic import contained
+from .atomic import contained, read_text
 from .catalog import discover_worktrees
 from .documents import TaskDefinition
 from .git_index import GitIndexError, _index_state
@@ -19,6 +20,8 @@ from .git_reconciliation_index import _main_run_fd, _read_private_file, _verify_
 from .journal_schema import validate_journal
 from .lease_recovery import stored_owner
 from .leases import _main_root
+from .ledger_finalize import _target_task_status
+from .mirrors import render_status_update
 from .result_query import result_for_run
 from .workspace_observation import _decode_observation_event, _load_failed_run_baseline
 
@@ -236,6 +239,8 @@ def _verify_history_runs(conn, main, worktree, selected_run_id, task, base, chai
         if (owner.executor_id != run["executor_id"] or not _same_owner(owner_value, journal["owner"]) or
                 journal["phase"] != "complete" or journal["run_id"] != run_id or
                 journal["task_id"] != task_id or journal["candidate_commit_hash"] != oid or
+                journal["task_hash"] != task.task_hash or journal["prompt_hash"] != task.prompt_hash or
+                journal["allowed_paths"] != task.metadata["allowed_paths"] or
                 journal["original_head"] != parent or journal["base_commit"] != base or
                 journal["terminal_outcome"] != outcome or journal["expected_result"] != result or
                 raw_message not in {journal["commit_message"].encode("utf-8"),
@@ -269,4 +274,82 @@ def _verify_failure_history_core(conn, run_id, task, repo_root):
     after = _git_state(worktree)
     if after != before:
         raise FailureHistoryError("FAILURE_HISTORY_WORKTREE_CHANGED")
-    return main, worktree, baseline, before[0], verified, tuple(tips)
+    return main, worktree, baseline, before, verified, tuple(tips)
+
+
+def _tree_entries(worktree, treeish):
+    entries = {}
+    try:
+        for record in _git(worktree, "ls-tree", "-r", "-z", "--full-tree", treeish).split(b"\0"):
+            if not record:
+                continue
+            header, raw_path = record.split(b"\t", 1)
+            mode, kind, oid = header.decode("ascii").split()
+            path = raw_path.decode("utf-8")
+            if path in entries or not _OID.fullmatch(oid):
+                raise ValueError("duplicate or malformed tree entry")
+            entries[path] = (mode, kind, oid)
+    except (UnicodeError, ValueError) as exc:
+        raise FailureHistoryError("FAILURE_HISTORY_TREE_INVALID") from exc
+    return entries
+
+
+def _verify_document_history(conn, worktree, task, records):
+    all_paths, latest = set(), {}
+    for run, _result, journal, oid, parent, _tree, _message in records:
+        target = _target_task_status(conn, run, task.metadata, journal["terminal_outcome"],
+                                     transaction_required=False)
+        summary = "docs/sdd/runs/{}/task-{}/{}.md".format(
+            task.metadata["spec_id"], task.metadata["task_id"][-2:], run["run_id"])
+        mirrors = render_status_update(task, target, worktree) if target != "pending" else {}
+        docs = {item["path"]: item for item in journal["expected_docs"]}
+        paths = set(mirrors) | {summary}
+        expected_git = {item["path"]: item for item in journal["expected_git_entries"]}
+        if (set(docs) != paths or set(journal["staged_paths"]) != paths or
+                set(journal["committed_paths"]) != paths or set(expected_git) != paths):
+            raise FailureHistoryError("FAILURE_HISTORY_DOCUMENT_SET_INVALID")
+        before_tree, after_tree = _tree_entries(worktree, parent), _tree_entries(worktree, oid)
+        changed = set()
+        for path, doc in docs.items():
+            content = doc["content"]
+            if not isinstance(content, str) or (path in mirrors and content != mirrors[path]):
+                raise FailureHistoryError("FAILURE_HISTORY_DOCUMENT_CONTENT_INVALID")
+            payload = content.encode("utf-8")
+            old, new = before_tree.get(path), after_tree.get(path)
+            old_bytes = _git(worktree, "cat-file", "blob", old[2]) if old else None
+            digest_before = hashlib.sha256(old_bytes).hexdigest() if old_bytes is not None else None
+            digest_after = hashlib.sha256(payload).hexdigest()
+            entry = expected_git[path]
+            if (doc["before_sha256"] != digest_before or doc["after_sha256"] != digest_after or
+                    new is None or new[1] != "blob" or entry != {
+                        "path": path, "mode": new[0], "object_id": new[2]} or
+                    _git(worktree, "cat-file", "blob", new[2]) != payload):
+                raise FailureHistoryError("FAILURE_HISTORY_DOCUMENT_BLOB_INVALID")
+            if (old is None or old != new):
+                changed.add(path)
+            latest[path] = content
+            all_paths.add(path)
+        actual = _git(worktree, "diff-tree", "--no-commit-id", "--name-only", "-r",
+                      "--no-renames", "-z", parent, oid).split(b"\0")
+        actual_paths = {item.decode("utf-8") for item in actual if item}
+        if actual_paths != changed:
+            raise FailureHistoryError("FAILURE_HISTORY_DIFF_PATHS_INVALID")
+    for path, content in latest.items():
+        if read_text(contained(worktree, path)) != content:
+            raise FailureHistoryError("FAILURE_HISTORY_WORKTREE_DOCUMENT_MISMATCH")
+    return tuple(sorted(all_paths))
+
+
+def verify_failed_run_history(conn, run_id, task, repo_root):
+    """Return proof of a documents-only failed-run chain ending at current HEAD."""
+    try:
+        main, worktree, _baseline, before, records, tips = _verify_failure_history_core(
+            conn, run_id, task, repo_root)
+        excluded = _verify_document_history(conn, worktree, task, records)
+        if _git_state(worktree) != before:
+            raise FailureHistoryError("FAILURE_HISTORY_WORKTREE_CHANGED")
+        return VerifiedFailureHistory(tips, excluded, before[0])
+    except FailureHistoryError:
+        raise
+    except (OSError, TypeError, ValueError, KeyError, IndexError, sqlite3.Error) as exc:
+        raise FailureHistoryError("FAILURE_HISTORY_INVALID") from exc

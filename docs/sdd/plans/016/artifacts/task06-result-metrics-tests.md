@@ -188,3 +188,24 @@ partial-index 阶段另外核验 owned inode 与原始 image 严格前缀；rena
 
 `completion_recovery.py` 与失败历史核心目前仅完成主 agent 源码读审、Python 3.9 编译及 Ruff；
 恢复拒绝矩阵、失败历史文档证明及 CLI 接线尚待独立验收，不视为已完成。
+
+
+## 2026-10-14 Completion-recovery QA
+
+A fresh focused run covers missing and malformed journals, mocked ALIVE/UNKNOWN/DEAD owners with an
+unexpired lease, and real dead-owner recovery. Missing journal returns `None` without database
+changes; malformed and unsafe-to-recover cases preserve both database rows and journal bytes. The
+real recovery fixture exits its owner process at the documents crash point, expires the lease, then
+recovers the durable journal. Replaying its completed terminal journal returns the same public
+result. Owner-status refusal cases use a patched classifier; the dead-owner acceptance uses a real
+child-process exit.
+
+```text
+/workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_completion_recovery
+Ran 3 tests in 2.935s — OK
+/workspace/researchagent-cli-venv39/bin/ruff check scripts/sdd_tasks/completion_recovery.py tests/sdd_tasks/test_completion_recovery.py
+All checks passed (Ruff 0.16.10)
+```
+
+A failed terminal run followed by a real new retry, failed-history verification, and CLI wiring are
+not covered by this slice. No retry was synthesized with direct SQL.
