@@ -197,6 +197,11 @@ CLI 与旧恢复最新 7 项通过（12.012 秒），Ruff 通过。matching comp
 纯 failed_workspace 比较模块的独立 4 项测试通过（0.310 秒），Ruff 通过；覆盖文档专属目录投影、
 allowed root 保留、其他后代和 rename 另一端越界、伪造 proof 拒绝与输入不变。公开领取仍未接线。
 
+私有 failed-source loader、纯比较及历史证明的 12 项独立测试通过（14.641 秒），Ruff 通过。
+真实 partial 和无源码改动的 unchanged 均保留原始基线；失败终态后新增源码改动被拒绝。
+Git 文档对象证明提取的原 5 项回归通过（8.755 秒）。active_failed_recovery.py 首批 91 行
+仅做已读审/静态检查的活动 retry 绑定，尚无 owner/lease 与完整历史 wrapper，不接入公开调用。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件

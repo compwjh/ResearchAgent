@@ -294,7 +294,7 @@ def _tree_entries(worktree, treeish):
     return entries
 
 
-def _verify_document_history(conn, worktree, task, records):
+def _verify_document_objects(conn, worktree, task, records):
     all_paths, latest = set(), {}
     for run, _result, journal, oid, parent, _tree, _message in records:
         target = _target_task_status(conn, run, task.metadata, journal["terminal_outcome"],
@@ -334,10 +334,15 @@ def _verify_document_history(conn, worktree, task, records):
         actual_paths = {item.decode("utf-8") for item in actual if item}
         if actual_paths != changed:
             raise FailureHistoryError("FAILURE_HISTORY_DIFF_PATHS_INVALID")
+    return tuple(sorted(all_paths)), latest
+
+
+def _verify_document_history(conn, worktree, task, records):
+    excluded, latest = _verify_document_objects(conn, worktree, task, records)
     for path, content in latest.items():
         if read_text(contained(worktree, path)) != content:
             raise FailureHistoryError("FAILURE_HISTORY_WORKTREE_DOCUMENT_MISMATCH")
-    return tuple(sorted(all_paths))
+    return excluded
 
 
 def verify_failed_run_history(conn, run_id, task, repo_root):
