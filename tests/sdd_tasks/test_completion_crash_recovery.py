@@ -10,7 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.sdd_tasks import completion_journal, completion_lifecycle, ledger_finalize
+from scripts.sdd_tasks import (
+    completion_journal,
+    completion_lifecycle,
+    git_reconciliation_index,
+    ledger_finalize,
+)
 from scripts.sdd_tasks.catalog import rebuild
 from scripts.sdd_tasks.completion_journal import read_journal, write_journal
 from scripts.sdd_tasks.completion_lifecycle import run_completion_journal
@@ -97,6 +102,38 @@ def _crash_worker(directory, ready, request):
                         real_write_journal(journal_path, data, **kwargs)
 
                     hook = patch.object(ledger_finalize, "write_journal", crash_after_db_commit)
+                elif point == "partial_index":
+                    real_write = git_reconciliation_index.os.write
+
+                    def crash_after_partial_image(fd, data):
+                        current = read_journal(path)
+                        identity = current["index_lock_identity"]
+                        opened = os.fstat(fd)
+                        if ((current["phase"], current["index_recovery_stage"]) ==
+                                ("index_after_prepared", "reconciliation_index_durable") and
+                                identity is not None and
+                                (opened.st_dev, opened.st_ino) ==
+                                (identity["device"], identity["inode"])):
+                            prefix = data[:len(data) // 2]
+                            written = real_write(fd, prefix)
+                            if written != len(prefix):
+                                raise AssertionError("short partial index write")
+                            os.fsync(fd)
+                            os._exit(86)
+                        return real_write(fd, data)
+
+                    hook = patch.object(git_reconciliation_index.os, "write", crash_after_partial_image)
+                elif point == "index_rename":
+                    real_replace = git_reconciliation_index.os.replace
+
+                    def crash_after_index_rename(source, target, *args, **kwargs):
+                        result = real_replace(source, target, *args, **kwargs)
+                        if (source, target) == ("index.lock", "index") and kwargs.get("src_dir_fd") is not None:
+                            os.fsync(kwargs["dst_dir_fd"])
+                            os._exit(86)
+                        return result
+
+                    hook = patch.object(git_reconciliation_index.os, "replace", crash_after_index_rename)
                 else:
                     raise AssertionError("unknown crash point: " + point)
                 with hook:
@@ -199,7 +236,9 @@ class CompletionCrashRecoveryTests(unittest.TestCase):
                 process.join(10)
 
     def test_post_cas_and_post_dbcommit_process_exits_resume_exactly_once(self):
-        for point, phase in (("cas", "commit_pending"), ("db", "ledger_finalizing")):
+        cases = (("cas", "commit_pending"), ("db", "ledger_finalizing"),
+                 ("partial_index", "index_after_prepared"), ("index_rename", "committed"))
+        for point, phase in cases:
             with self.subTest(point=point), tempfile.TemporaryDirectory() as temp:
                 context = multiprocessing.get_context("fork")
                 ready, request = context.Queue(), context.Queue()
@@ -212,7 +251,12 @@ class CompletionCrashRecoveryTests(unittest.TestCase):
                     request.put(point)
                     process.join(120)
                     self.assertFalse(process.is_alive(), "crash worker did not stop")
-                    self.assertEqual(process.exitcode, 86)
+                    if process.exitcode != 86:
+                        try:
+                            detail = ready.get_nowait()
+                        except Exception:
+                            detail = None
+                        self.fail("crash worker exited {}; detail={!r}".format(process.exitcode, detail))
                 finally:
                     if process.is_alive():
                         process.terminate()
@@ -221,6 +265,23 @@ class CompletionCrashRecoveryTests(unittest.TestCase):
                 journal = read_journal(path)
                 self.assertEqual(journal["phase"], phase)
                 self.assertIs(observe_owner(OwnerIdentity(**journal["owner"])), OwnerStatus.DEAD)
+                if point == "partial_index":
+                    self.assertEqual(journal["index_recovery_stage"], "reconciliation_index_durable")
+                    image = (Path(root) / ".sdd/runtime/runs" / run_id / "index-after").read_bytes()
+                    lock = Path(journal["index_before"]["git_index_path"]).with_name("index.lock")
+                    partial = lock.read_bytes()
+                    self.assertGreater(len(partial), 0)
+                    self.assertLess(len(partial), len(image))
+                    self.assertEqual(partial, image[:len(partial)])
+                    identity = journal["index_lock_identity"]
+                    self.assertEqual((lock.stat().st_dev, lock.stat().st_ino),
+                                     (identity["device"], identity["inode"]))
+                elif point == "index_rename":
+                    self.assertEqual(journal["index_recovery_stage"], "ref_committed")
+                    index = Path(journal["index_before"]["git_index_path"])
+                    self.assertEqual(hashlib.sha256(index.read_bytes()).hexdigest(),
+                                     journal["index_after"]["index_sha256"])
+                    self.assertFalse(index.with_name("index.lock").exists())
                 with closing(connect(database)) as conn:
                     run = conn.execute("SELECT task_id,branch,state FROM runs WHERE run_id=?",
                                        (run_id,)).fetchone()
@@ -229,15 +290,17 @@ class CompletionCrashRecoveryTests(unittest.TestCase):
                     leases = conn.execute("SELECT COUNT(*) FROM leases WHERE run_id=?",
                                           (run_id,)).fetchone()[0]
                     self.assertEqual(count, 1)
-                    if point == "cas":
-                        self.assertEqual((run["state"], leases), ("running", 1))
-                    else:
+                    if point == "db":
                         self.assertEqual((run["state"], leases), ("succeeded", 0))
+                    else:
+                        self.assertEqual((run["state"], leases), ("running", 1))
                     branch = run["branch"]
-                if point == "cas":
-                    tip = subprocess.run(["git", "-C", canonical, "rev-parse", "refs/heads/" + branch],
-                                         check=True, capture_output=True, text=True).stdout.strip()
-                    self.assertEqual(tip, journal["candidate_commit_hash"])
+                tip = subprocess.run(["git", "-C", canonical, "rev-parse", "refs/heads/" + branch],
+                                     check=True, capture_output=True, text=True).stdout.strip()
+                expected_tip = (journal["original_head"] if point == "partial_index" else
+                                journal["candidate_commit_hash"])
+                self.assertEqual(tip, expected_tip)
+                if leases:
                     with closing(connect(database)) as conn, maintenance_lock(Path(root)):
                         conn.execute("UPDATE leases SET expires_at=? WHERE run_id=?",
                                      ("2000-01-01T00:00:00Z", run_id))

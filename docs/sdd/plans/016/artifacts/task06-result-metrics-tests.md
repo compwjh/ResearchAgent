@@ -176,3 +176,15 @@ The temporary repository fixtures emitted `stale_task_copies_ignored` warnings d
 rebuild; all four tests passed. This slice does not cover blocked outcomes, the three-failure retry
 threshold, existing-journal replay with raw-input bypass, failed-history/public-caller proof, or CLI
 wiring. Those remain separate QA gates.
+
+## 2026-10-14 五个真实进程中断点
+
+Luna xhigh 独立 QA 扩展 `test_completion_crash_recovery.py`，主 agent 读回后执行：
+Python 3.9 定向套件 2 项测试、5 个中断点通过，耗时 10.822 秒；两个指定测试文件 Ruff 通过。
+中断点为文档写入后、CAS 后、SQLite COMMIT 后、owned index image 部分写入后及 index rename 后。
+恢复使用 fresh-spawn 进程，核验单一 run、无残留 lease/index.lock、候选 HEAD、索引树和重建结果。
+partial-index 阶段另外核验 owned inode 与原始 image 严格前缀；rename 阶段核验已安装索引 hash。
+这是进程退出实验，不构成断电实验。fixture 的 stale_task_copies_ignored warning 为预期。
+
+`completion_recovery.py` 与失败历史核心目前仅完成主 agent 源码读审、Python 3.9 编译及 Ruff；
+恢复拒绝矩阵、失败历史文档证明及 CLI 接线尚待独立验收，不视为已完成。
