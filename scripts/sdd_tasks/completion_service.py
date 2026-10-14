@@ -2,13 +2,26 @@
 
 import hmac
 import json
+import os
 import sqlite3
+import stat
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from .owners import OwnerIdentity
+from .atomic import _open_directory
+from .catalog_status import _metadata
+from .completion_lifecycle import run_completion_journal
+from .git_reconciliation_index import (
+    _git,
+    _main_run_fd,
+    _read_private_file,
+    _verify_run_fd,
+)
+from .journal_schema import validate_journal
+from .lease_recovery import stored_owner
+from .owners import OwnerIdentity, OwnerStatus, observe_owner
 from .result_schema import validate_summary_result
 
 _OWNER_FIELDS = {"executor_id", "host_id", "pid", "process_started_at", "token"}
@@ -116,3 +129,127 @@ def _same_owner(actual: OwnerIdentity, expected: Dict[str, Any]) -> bool:
         return hmac.compare_digest(actual.token.encode("utf-8"), expected["token"].encode("utf-8"))
     except (AttributeError, UnicodeError):
         return False
+
+
+def _run_directory_present(main: Path, run_id: str) -> bool:
+    """Inspect the private run path without creating directories or following links."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+    current = -1
+    try:
+        try:
+            current = _open_directory(main / ".sdd" / "runtime")
+        except FileNotFoundError:
+            return False
+        info = os.fstat(current)
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise CompletionServiceError("COMPLETION_RUNTIME_UNSAFE")
+        for name in ("runs", run_id):
+            try:
+                child = os.open(name, flags, dir_fd=current)
+            except FileNotFoundError:
+                return False
+            info = os.fstat(child)
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or
+                    stat.S_IMODE(info.st_mode) != 0o700):
+                os.close(child)
+                raise CompletionServiceError("COMPLETION_RUNTIME_UNSAFE")
+            os.close(current)
+            current = child
+        return True
+    except CompletionServiceError:
+        raise
+    except OSError as exc:
+        raise CompletionServiceError("COMPLETION_RUNTIME_UNSAFE") from exc
+    finally:
+        if current >= 0:
+            os.close(current)
+
+
+def _read_existing_journal(main: Path, run_id: str):
+    """Read a canonical journal through pinned private directories; absence is read-only."""
+    path = main / ".sdd" / "runtime" / "runs" / run_id / "completion.json"
+    if not _run_directory_present(main, run_id):
+        return None
+    try:
+        _git(main, "check-ignore", "--quiet", "--", ".sdd/runtime/runs/{}/completion.json".format(run_id))
+        _, parent = _main_run_fd(main, path, run_id)
+        try:
+            try:
+                os.stat("completion.json", dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                return None
+            content = _read_private_file(parent, "completion.json")
+            _verify_run_fd(main, run_id, parent)
+        finally:
+            os.close(parent)
+        value = json.loads(content.decode("utf-8"), object_pairs_hook=_pairs,
+                           parse_constant=_reject_json_constant)
+        return validate_journal(value)
+    except CompletionServiceError:
+        raise
+    except (OSError, TypeError, ValueError, UnicodeError) as exc:
+        raise CompletionServiceError("COMPLETION_JOURNAL_UNSAFE") from exc
+
+
+def _authenticate_journal(
+    conn: sqlite3.Connection, journal: Dict[str, Any], run, executor_id: str, owner_pid: int,
+) -> str:
+    """Bind an existing journal to its stored live owner and immutable ledger rows."""
+    try:
+        expected = _owner_value(journal["owner"])
+        stored = stored_owner(run["owner_json"])
+        if (expected["executor_id"] != executor_id or expected["pid"] != owner_pid or
+                not _same_owner(stored, expected) or observe_owner(stored) is not OwnerStatus.ALIVE):
+            raise CompletionServiceError("COMPLETION_OWNER_MISMATCH")
+        if (journal["run_id"] != run["run_id"] or journal["task_id"] != run["task_id"] or
+                run["executor_id"] != expected["executor_id"] or
+                journal["base_commit"] != run["base_commit"] or
+                journal["task_hash"] != run["task_hash"] or
+                journal["prompt_hash"] != run["prompt_hash"]):
+            raise CompletionServiceError("COMPLETION_JOURNAL_BINDING_MISMATCH")
+        task = conn.execute("SELECT * FROM tasks WHERE task_id=?", (run["task_id"],)).fetchone()
+        if task is None:
+            raise CompletionServiceError("COMPLETION_JOURNAL_BINDING_MISMATCH")
+        metadata = _metadata(dict(task))
+        worktree = metadata.get("worktree")
+        if (task["task_hash"] != journal["task_hash"] or
+                task["prompt_hash"] != journal["prompt_hash"] or
+                not isinstance(worktree, dict) or run["worktree"] != worktree.get("path") or
+                run["branch"] != worktree.get("branch")):
+            raise CompletionServiceError("COMPLETION_JOURNAL_BINDING_MISMATCH")
+
+        lease = conn.execute("SELECT * FROM leases WHERE run_id=?", (run["run_id"],)).fetchone()
+        if run["state"] in {"claimed", "running"} and run["ended_at"] is None:
+            if (lease is None or lease["task_id"] != run["task_id"] or
+                    lease["run_id"] != run["run_id"] or
+                    not hmac.compare_digest(lease["owner_token"].encode("utf-8"),
+                                            stored.token.encode("utf-8"))):
+                raise CompletionServiceError("COMPLETION_JOURNAL_OWNER_MISMATCH")
+        elif (lease is not None or run["state"] != journal["terminal_outcome"] or
+              run["ended_at"] is None or journal["phase"] not in {"ledger_finalizing", "complete"}):
+            raise CompletionServiceError("COMPLETION_JOURNAL_OUTCOME_MISMATCH")
+        return run["branch"]
+    except CompletionServiceError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_JOURNAL_BINDING_MISMATCH") from exc
+
+
+def _replay_existing(
+    conn: sqlite3.Connection, main: Path, run_id: str, executor_id: str, owner_pid: int,
+    allowed_outcomes,
+):
+    journal = _read_existing_journal(main, run_id)
+    if journal is None:
+        return None
+    if journal["run_id"] != run_id or journal["terminal_outcome"] not in allowed_outcomes:
+        raise CompletionServiceError("COMPLETION_JOURNAL_OUTCOME_MISMATCH")
+    run = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+    if run is None:
+        raise CompletionServiceError("COMPLETION_JOURNAL_BINDING_MISMATCH")
+    branch = _authenticate_journal(conn, journal, run, executor_id, owner_pid)
+    path = main / ".sdd" / "runtime" / "runs" / run_id / "completion.json"
+    try:
+        return run_completion_journal(conn, path, branch, _server_now())
+    except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_RECOVERY_REQUIRED") from exc

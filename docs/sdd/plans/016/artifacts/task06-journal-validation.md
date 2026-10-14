@@ -117,3 +117,11 @@ J1/J2 cover journal primitives and document recovery; J3 covers Git index snapsh
 - `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_lifecycle tests.sdd_tasks.test_completion_prepare` — exit 0; 3 tests passed in 17.644s. Ruff on both files — exit 0.
 - The end-to-end fixture runs the declared command through `run_validations`, records the actual runner snapshot, validates a report using server end time and measured Git diff counts, durably publishes a prepared journal, then runs the dispatcher through CAS, index installation, and terminal SQLite finalization. It checks complete-phase replay, the candidate branch/HEAD, index tree and clean worktree, the committed source bytes, lease removal, result query, and catalog rebuild/result query. The fixture intentionally leaves the main-worktree Task copy stale after canonical status publication; catalog rebuild reports and the test asserts `stale_task_copies_ignored`.
 - These are lifecycle success and prepare-boundary results; no separate-process crash-recovery case has yet been run.
+
+## 2026-10-14 环境恢复后的真实进程退出检查
+
+- 已从远端 `dfd6a30` 重建工作树。未 push 的旧进程测试不在新环境中，本段记录重新编写后实际运行的结果。
+- Luna xhigh QA 使用真实 owner PID 领取任务，执行声明的命令、记录快照并持久化 prepared journal，然后在第一份预期文档原子替换后调用 `os._exit(86)`。父进程确认 owner 已死、阶段仍为 `docs_writing`，第一份文档为 after hash，其余为 before hash，原 run 数量仍为一。
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_crash_recovery tests.sdd_tasks.test_completion_prepare tests.sdd_tasks.test_completion_lifecycle`：4 项通过，3.503 秒。
+- Ruff 0.17.0 对 crash/prepare 两份测试检查通过。初次静态检查的未使用队列变量已按 1+/1- 修复，保留队列接收行为。
+- 此轮尚未证明新进程恢复；CAS、部分索引、索引 rename、DB 收尾与 prepared 之前的中断矩阵继续恢复并验收。测试用默认 owner 生命周期由 60 秒调整为 300 秒，未更改生产 owner 死亡判断。

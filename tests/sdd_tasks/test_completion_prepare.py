@@ -57,7 +57,7 @@ def _claimed_with_command(directory, owner_identity=None):
     os.chmod(database.parent, 0o700)
     before = capture_snapshot(root, task)
     child = (None if owner_identity is not None else
-             subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]))
+             subprocess.Popen([sys.executable, "-c", "import time; time.sleep(300)"]))
     try:
         owner = owner_identity or current_owner("prepare-fixture", pid=child.pid)
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
