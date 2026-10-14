@@ -245,6 +245,13 @@ fail、结果文件 symlink/超限拒绝以及真实崩溃后的 CLI recover。f
 真实失败提交仅含 summary，源代码保留；校验读取不改 DB、HEAD/refs、索引和对象文件列表。
 篡改工作树 summary 会被拒绝。此轮未覆盖多次失败后的真实新 retry。
 
+后续独立增量：CLI 与旧恢复 6 项通过（7.777 秒），失败草稿采用 Task worktree 内的相对路径，
+真实 journal 仅提交 summary；SOURCE 保持修改、未暂存，HEAD 内容仍为 baseline。Ruff 通过。
+真实中断套件 3 项、7 个退出点通过（12.782 秒）；首次 journal 写入前/中断的两个场景进一步
+走通 CLI recover → abandoned/partial → 私有观察解码 → 同 Task child 领取，snapshot 严格保持原基线。
+失败历史套件扩至 5 项通过（9.669 秒），Ruff 通过；覆盖额外 SOURCE commit、篡改私有 Git anchor
+的拒绝，以及已暂存 SOURCE 的只读证明。上述 fixture 均有预期 stale_task_copies_ignored warning。
+
 ```text
 /workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_completion_service
 Ran 8 tests in 13.242s — OK

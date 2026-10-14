@@ -22,17 +22,24 @@ from scripts.sdd_tasks.completion_journal import read_journal, write_journal
 from scripts.sdd_tasks.completion_lifecycle import run_completion_journal
 from scripts.sdd_tasks.completion_prepare import prepare_completion_journal
 from scripts.sdd_tasks.completion_recovery import resume_dead_completion
+from scripts.sdd_tasks.documents import parse_task
 from scripts.sdd_tasks.events import append_event
 from scripts.sdd_tasks.lease_recovery import stored_owner
 from scripts.sdd_tasks.lifecycle_context import load_active_claim
 from scripts.sdd_tasks.locks import maintenance_lock
+from scripts.sdd_tasks.newcli_claim import claim_from_cli
+from scripts.sdd_tasks.newcli_recover import recover_from_cli
 from scripts.sdd_tasks.owners import OwnerIdentity, OwnerStatus, current_owner, observe_owner
+from scripts.sdd_tasks.recovery_snapshots import load_recovery_snapshot
 from scripts.sdd_tasks.result_query import result_for_run
 from scripts.sdd_tasks.results import validate_result
 from scripts.sdd_tasks.store import connect
 from scripts.sdd_tasks.validation_runner import run_validations
 from scripts.sdd_tasks.workspace import capture_snapshot
-from scripts.sdd_tasks.workspace_observation import record_workspace_observation
+from scripts.sdd_tasks.workspace_observation import (
+    _decode_abandoned_observation_event,
+    record_workspace_observation,
+)
 from tests.sdd_tasks.test_completion_prepare import SOURCE, _claimed_with_command
 from tests.sdd_tasks.test_result_schema import valid_result
 
@@ -447,9 +454,41 @@ class CompletionCrashRecoveryTests(unittest.TestCase):
                                                "WHERE run_id=?", (run_id,)).fetchone()
                     self.assertEqual((after_run["state"], after_run["owner_json"],
                                       after_task["status"], tuple(after_lease)), before)
+                    conn.execute("UPDATE leases SET expires_at=? WHERE run_id=?",
+                                 ("2000-01-01T00:00:00Z", run_id))
                 summary = (Path(canonical) / "docs/sdd/runs/016" /
                            ("task-{}".format(run["task_id"][-2:])) / (run_id + ".md"))
                 self.assertFalse(summary.exists())
+                source = Path(canonical) / SOURCE
+                original_source = source.read_bytes()
+                recovered = recover_from_cli(Path(root), run_id)
+                self.assertEqual(recovered, {"run_id": run_id, "state": "abandoned",
+                                             "action": "preserved_for_recovery"})
+                with closing(connect(database)) as conn:
+                    task_row = conn.execute("SELECT source_path FROM tasks WHERE task_id=?",
+                                            (run["task_id"],)).fetchone()
+                    task = parse_task(Path(canonical) / task_row["source_path"])
+                    parent_run = conn.execute("SELECT * FROM runs WHERE run_id=?",
+                                              (run_id,)).fetchone()
+                    self.assertEqual(parent_run["state"], "abandoned")
+                    baseline = load_recovery_snapshot(conn, run_id, task, Path(root))
+                    observed = _decode_abandoned_observation_event(
+                        conn, run_id, task, Path(root), expected_tip=parent_run["base_commit"])
+                    self.assertEqual(observed.allowed_hashes[SOURCE],
+                                     hashlib.sha256(original_source).hexdigest())
+                child, status = claim_from_cli(Path(root), "codex", "crash-child", os.getpid())
+                self.assertIsNone(status)
+                self.assertIsNotNone(child)
+                self.assertEqual((child["task_id"], child["recovery_of"], child["base_commit"]),
+                                 (run["task_id"], run_id, baseline.head))
+                with closing(connect(database)) as conn:
+                    child_baseline = load_recovery_snapshot(conn, child["run_id"], task, Path(root))
+                    child_run = conn.execute("SELECT state,owner_json FROM runs WHERE run_id=?",
+                                             (child["run_id"],)).fetchone()
+                self.assertEqual(child_baseline, baseline)
+                self.assertEqual(child_run["state"], "claimed")
+                self.assertIs(observe_owner(stored_owner(child_run["owner_json"])), OwnerStatus.ALIVE)
+                self.assertEqual(source.read_bytes(), original_source)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,19 @@ def _failed_run(directory):
         yield root, worktree, task, database, claim, source, parent_tip, result, run_dir
 
 
+def _assert_proof_readonly(test, conn, root, worktree, claim, task, reject=False):
+    rows, state = _rows(conn), _repo_state(worktree)
+    if reject:
+        with test.assertRaises(FailureHistoryError):
+            verify_failed_run_history(conn, claim.run_id, task, root)
+        proof = None
+    else:
+        proof = verify_failed_run_history(conn, claim.run_id, task, root)
+    test.assertEqual(_rows(conn), rows)
+    test.assertEqual(_repo_state(worktree), state)
+    return proof, state
+
+
 class FailureHistoryTests(unittest.TestCase):
     def test_failed_history_proves_docs_only_commit_without_mutation(self):
         with tempfile.TemporaryDirectory() as temp, _failed_run(temp) as data:
@@ -70,6 +83,38 @@ class FailureHistoryTests(unittest.TestCase):
             self.assertEqual(proof.observation_tips, ((claim.run_id, parent_tip),))
             self.assertEqual(proof.excluded_paths, (summary,))
             self.assertEqual(proof.current_tip, git_state[0])
+
+    def test_source_commit_is_rejected_read_only(self):
+        with tempfile.TemporaryDirectory() as temp, _failed_run(temp) as data:
+            root, worktree, task, database, claim = data[:5]
+            _git(worktree, "add", SOURCE)
+            _git(worktree, "commit", "-m", "unauthorized source commit")
+            with closing(connect(database)) as conn:
+                _assert_proof_readonly(self, conn, root, worktree, claim, task, reject=True)
+
+    def test_tampered_private_expected_git_is_rejected_read_only(self):
+        with tempfile.TemporaryDirectory() as temp, _failed_run(temp) as data:
+            root, worktree, task, database, claim = data[:5]
+            journal_path = data[-1] / "completion.json"
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            journal["expected_git_entries"][0]["object_id"] = "0" * 40
+            journal_path.write_text(json.dumps(journal), encoding="utf-8")
+            tampered = journal_path.read_bytes()
+            with closing(connect(database)) as conn:
+                _assert_proof_readonly(self, conn, root, worktree, claim, task, reject=True)
+            self.assertEqual(journal_path.read_bytes(), tampered)
+
+    def test_staged_source_is_preserved_by_read_only_proof(self):
+        with tempfile.TemporaryDirectory() as temp, _failed_run(temp) as data:
+            root, worktree, task, database, claim = data[:5]
+            _git(worktree, "add", SOURCE)
+            self.assertEqual(_git(worktree, "diff", "--cached", "--name-only", "--", SOURCE), SOURCE)
+            with closing(connect(database)) as conn:
+                proof, state = _assert_proof_readonly(self, conn, root, worktree, claim, task)
+            self.assertEqual(proof.observation_tips, ((claim.run_id, data[6]),))
+            self.assertEqual(proof.excluded_paths, ("docs/sdd/runs/016/task-04/{}.md".format(
+                claim.run_id),))
+            self.assertEqual(proof.current_tip, state[0])
 
     def test_tampered_summary_is_rejected_without_mutation(self):
         with tempfile.TemporaryDirectory() as temp, _failed_run(temp) as data:

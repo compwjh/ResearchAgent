@@ -1,6 +1,7 @@
 import io
 import json
 import multiprocessing
+import subprocess
 import tempfile
 import unittest
 from contextlib import closing, redirect_stdout
@@ -11,8 +12,8 @@ from scripts.sdd_tasks.completion_journal import read_journal
 from scripts.sdd_tasks.locks import maintenance_lock
 from scripts.sdd_tasks.store import connect
 from tests.sdd_tasks.test_completion_crash_recovery import _crash_worker
-from tests.sdd_tasks.test_completion_prepare import _claimed_with_command
-from tests.sdd_tasks.test_completion_service import _draft
+from tests.sdd_tasks.test_completion_prepare import SOURCE, _claimed_with_command
+from tests.sdd_tasks.test_completion_service import _changed_source, _draft
 
 
 def _invoke(root, *args):
@@ -46,15 +47,30 @@ class CliCompletionTests(unittest.TestCase):
             replay = _invoke(root, "complete", *_finish_args(claim, "missing.json"))
             self.assertEqual((replay[0], replay[1]["data"]), (0, completed["data"]))
 
-    def test_fail_publishes_a_summary_without_changed_files(self):
+    def test_fail_commits_only_summary_and_keeps_source_change_unstaged(self):
         with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
-            root, _, task, _, _, _, claim = state
-            draft = root / "failed.json"
-            draft.write_text(json.dumps(_draft(task, claim, outcome="failed")), encoding="utf-8")
-            code, body = _invoke(root, "fail", *_finish_args(claim, "failed.json"))
+            root, worktree, task, _, _, _, claim = state
+            source = worktree / SOURCE
+            source.write_text("failure partial source change\n", encoding="utf-8")
+            draft = worktree / ".sdd/runtime/failure.json"
+            draft.parent.mkdir(parents=True, exist_ok=True)
+            draft.write_text(json.dumps(_draft(
+                task, claim, outcome="failed", changed_files=[_changed_source(worktree)]
+            )), encoding="utf-8")
+            code, body = _invoke(worktree, "fail", *_finish_args(claim, ".sdd/runtime/failure.json"))
             self.assertEqual((code, body["ok"], body["code"]), (0, True, "OK"))
             self.assertEqual(body["data"]["outcome"], "failed")
-            self.assertEqual(body["data"]["changed_files"], [])
+            journal = read_journal(root / ".sdd/runtime/runs" / claim.run_id / "completion.json")
+            self.assertEqual(len(journal["committed_paths"]), 1)
+            self.assertTrue(journal["committed_paths"][0].startswith("docs/sdd/runs/"))
+            self.assertNotIn(SOURCE, journal["committed_paths"])
+            self.assertEqual(source.read_text(encoding="utf-8"), "failure partial source change\n")
+            staged = subprocess.run(["git", "-C", str(worktree), "diff", "--cached", "--name-only",
+                                     "--", SOURCE], check=True, capture_output=True, text=True).stdout
+            self.assertEqual(staged, "")
+            committed = subprocess.run(["git", "-C", str(worktree), "show", "HEAD:" + SOURCE],
+                                       check=True, capture_output=True).stdout
+            self.assertEqual(committed, b"baseline\n")
 
     def test_result_symlink_and_oversize_are_rejected_without_finishing_run(self):
         for kind, expected in (("symlink", "COMPLETION_RESULT_FILE_INVALID"),
