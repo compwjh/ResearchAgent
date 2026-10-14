@@ -226,3 +226,28 @@ Ran 3 tests in 11.633s — OK
 /workspace/researchagent-cli-venv39/bin/ruff check tests/sdd_tasks/test_completion_crash_recovery.py tests/sdd_tasks/test_completion_prepare.py
 All checks passed
 ```
+
+## 2026-10-14 Completion-service blocked and journal-gap QA
+
+The focused Python 3.9 suite passes 8 tests in 13.242s and Ruff passes. A real blocked `fail_run`
+executes the declared command successfully, then commits exactly three blocked status mirrors plus
+the run summary; the source path is excluded and remains byte-for-byte unchanged.
+
+A private observation without a completion journal makes both `complete_run` and `fail_run` return
+`COMPLETION_RECOVERY_REQUIRED` before validation, preserving ledger rows without journal/receipt
+creation or validation/observation reruns. A real failed-history/new-retry flow and CLI routing remain
+untested by this service slice.
+
+独立补充验收：`python -m unittest tests.sdd_tasks.test_cli_completion tests.sdd_tasks.test_cli_recover`
+共 6 项通过（8.697 秒），新 CLI 测试 Ruff 通过；覆盖 complete/result/metrics、缺草稿的重放、
+fail、结果文件 symlink/超限拒绝以及真实崩溃后的 CLI recover。fail 的完整提交路径证明待扩展。
+`python -m unittest -v tests.sdd_tasks.test_failure_history` 2 项通过（3.94 秒），Ruff 通过；
+真实失败提交仅含 summary，源代码保留；校验读取不改 DB、HEAD/refs、索引和对象文件列表。
+篡改工作树 summary 会被拒绝。此轮未覆盖多次失败后的真实新 retry。
+
+```text
+/workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_completion_service
+Ran 8 tests in 13.242s — OK
+/workspace/researchagent-cli-venv39/bin/ruff check scripts/sdd_tasks/completion_service.py tests/sdd_tasks/test_completion_service.py
+All checks passed
+```

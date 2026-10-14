@@ -12,6 +12,7 @@ from scripts.sdd_tasks.completion_service import CompletionServiceError, complet
 from scripts.sdd_tasks.locks import maintenance_lock
 from scripts.sdd_tasks.result_query import result_for_run
 from scripts.sdd_tasks.store import connect
+from scripts.sdd_tasks.workspace_observation import record_workspace_observation
 from tests.sdd_tasks.test_completion_prepare import COMMAND, SOURCE, _claimed_with_command
 from tests.sdd_tasks.test_result_schema import valid_result
 from tests.sdd_tasks.test_run_owner import _rows
@@ -220,6 +221,66 @@ class CompletionServiceTests(unittest.TestCase):
                     observe.assert_not_called()
                 self.assertEqual(_rows(conn), before)
                 self.assertFalse(run_dir.exists())
+
+    def test_blocked_outcome_commits_three_mirrors_and_summary_without_source(self):
+        with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
+            root, worktree, task, database, _, _, claim = state
+            source = worktree / SOURCE
+            head_source = subprocess.run(
+                ["git", "-C", str(worktree), "show", "HEAD:" + SOURCE],
+                check=True, capture_output=True,
+            ).stdout
+            run_dir = root / ".sdd/runtime/runs" / claim.run_id
+            with closing(connect(database)) as conn, maintenance_lock(root):
+                result = fail_run(conn, root, claim.run_id, claim.owner.executor_id,
+                                  claim.owner.pid, json.dumps(_draft(task, claim, outcome="blocked")))
+                receipt = json.loads((run_dir / "validation" / "receipt.json").read_text(
+                    encoding="utf-8"))
+                run = conn.execute("SELECT state,result_doc FROM runs WHERE run_id=?",
+                                   (claim.run_id,)).fetchone()
+                status = conn.execute("SELECT status FROM tasks WHERE task_id=?",
+                                      (task.metadata["task_id"],)).fetchone()[0]
+                self.assertEqual(result_for_run(conn, claim.run_id), result)
+            journal = read_journal(run_dir / "completion.json")
+            docs = {item["path"]: item for item in journal["expected_docs"]}
+            mirrors = {task.path.relative_to(worktree).as_posix(),
+                       "docs/sdd/specs/016-portable-task-ledger.md",
+                       "docs/sdd/plans/016/README.md"}
+            summaries = {path for path in docs if path.startswith("docs/sdd/runs/")}
+            self.assertEqual((result["outcome"], run["state"], status),
+                             ("blocked", "blocked", "blocked"))
+            self.assertEqual(summaries, {run["result_doc"]})
+            self.assertEqual(set(docs) - summaries, mirrors)
+            self.assertEqual(set(journal["committed_paths"]), set(docs))
+            self.assertEqual(journal["changed_paths"], [])
+            self.assertTrue(all("阻塞" in docs[path]["content"] for path in mirrors))
+            self.assertEqual((receipt["commands"][0]["status"],
+                              receipt["commands"][0]["exit_code"]), ("executed", 0))
+            self.assertNotIn(SOURCE, journal["committed_paths"])
+            self.assertEqual(source.read_bytes(), head_source)
+
+    def test_observation_without_journal_refuses_complete_and_fail_before_validation(self):
+        with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
+            root, _, _, database, before, _, claim = state
+            run_dir = root / ".sdd/runtime/runs" / claim.run_id
+            journal_path = run_dir / "completion.json"
+            with closing(connect(database)) as conn, maintenance_lock(root):
+                record_workspace_observation(conn, claim.run_id, claim.owner, before,
+                                             now=claim.claimed_at)
+                rows = _rows(conn)
+                self.assertFalse(journal_path.exists())
+                with patch("scripts.sdd_tasks.completion_service.run_validations") as validate, \
+                        patch("scripts.sdd_tasks.completion_service.record_workspace_observation") as observe:
+                    for operation in (complete_run, fail_run):
+                        with self.assertRaises(CompletionServiceError) as caught:
+                            operation(conn, root, claim.run_id, claim.owner.executor_id,
+                                      claim.owner.pid, "malformed ignored without journal")
+                        self.assertEqual(caught.exception.code, "COMPLETION_RECOVERY_REQUIRED")
+                    validate.assert_not_called()
+                    observe.assert_not_called()
+                self.assertEqual(_rows(conn), rows)
+                self.assertFalse(journal_path.exists())
+                self.assertFalse((run_dir / "validation" / "receipt.json").exists())
 
 
 if __name__ == "__main__":
