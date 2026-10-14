@@ -126,6 +126,13 @@ Both passed (exit 0)
 
 ## J7 final suite recheck
 
+## 2026-10-14 服务入口恢复后定向复测
+
+- 未 push 的旧服务源码已在新环境重建，当前 complete_run/fail_run 尚未接入 CLI。主 agent 读回后修复观察事件时间晚于终态 ended_at 的问题：合法结果先记录真实观察，再获取最终服务端时间；无效结果和 complete 的失败命令不写观察。
+- `/workspace/researchagent-cli-venv39/bin/python -m unittest tests.sdd_tasks.test_completion_service`：2 个测试方法通过，4.800 秒。成功方法包含 NULL/非 NULL 数据库 model 两种真实完成流程；拒绝方法包含损坏 JSON、敏感内容、重复键与 NaN 四种输入。
+- 实际声明命令覆盖自报命令，时间来自服务端，观察事件恰好一条且不晚于 ended_at；首次无 run 目录可完成。无效输入不执行命令、不记录观察且账本不变。Ruff 0.17.0 对服务和测试通过。
+- fail 的真实非零命令、部分代码保留、blocked、重放及失败历史恢复尚待本环境验收，不以旧环境记录冒充通过。
+
 The expanded suite includes 16 tests: six helper tests plus ten public-path finalizer tests. It
 covers committed terminal rows and lease closure, failed-run results and retries, database rollback,
 pre-transaction journal-write failure, and replay after terminating the fixture child once. The

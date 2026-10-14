@@ -10,9 +10,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from .atomic import _open_directory
-from .catalog_status import _metadata
+from .atomic import _open_directory, contained
+from .catalog_status import _gate_context, _metadata
+from .completion_journal import write_journal
 from .completion_lifecycle import run_completion_journal
+from .completion_prepare import prepare_completion_journal
 from .git_reconciliation_index import (
     _git,
     _main_run_fd,
@@ -21,8 +23,15 @@ from .git_reconciliation_index import (
 )
 from .journal_schema import validate_journal
 from .lease_recovery import stored_owner
+from .ledger_finalize import _target_task_status
+from .lifecycle_context import load_active_claim
 from .owners import OwnerIdentity, OwnerStatus, observe_owner
 from .result_schema import validate_summary_result
+from .results import validate_result
+from .run_owner import resolve_run_owner
+from .validation_runner import run_validations
+from .workspace import capture_snapshot
+from .workspace_observation import record_workspace_observation
 
 _OWNER_FIELDS = {"executor_id", "host_id", "pid", "process_started_at", "token"}
 
@@ -253,3 +262,140 @@ def _replay_existing(
         return run_completion_journal(conn, path, branch, _server_now())
     except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
         raise CompletionServiceError("COMPLETION_RECOVERY_REQUIRED") from exc
+
+
+def _run_context(conn: sqlite3.Connection, repo_root: Path, run_id: str):
+    main, roots = _gate_context(conn)
+    supplied = repo_root.resolve(strict=True)
+    run = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+    if run is None:
+        raise CompletionServiceError("COMPLETION_RUN_NOT_FOUND")
+    task = conn.execute("SELECT * FROM tasks WHERE task_id=?", (run["task_id"],)).fetchone()
+    if task is None:
+        raise CompletionServiceError("COMPLETION_TASK_NOT_FOUND")
+    metadata = _metadata(dict(task))
+    relative = metadata["worktree"]["path"]
+    worktree = contained(main, relative).resolve(strict=True)
+    if (supplied not in {main, worktree} or worktree not in roots or not worktree.is_dir() or
+            run["worktree"] != relative or run["branch"] != metadata["worktree"]["branch"] or
+            run["task_hash"] != task["task_hash"] or run["prompt_hash"] != task["prompt_hash"]):
+        raise CompletionServiceError("COMPLETION_RUN_BINDING_MISMATCH")
+    return main, worktree, task, run
+
+
+def _started_at(conn: sqlite3.Connection, run, claim) -> str:
+    rows = conn.execute(
+        "SELECT timestamp,event_type FROM events WHERE run_id=? ORDER BY sequence", (run["run_id"],)
+    ).fetchall()
+    first = next((row for row in rows if row["event_type"] in
+                  {"observation", "evidence", "decision", "action", "result", "next_step"}), None)
+    return first["timestamp"] if first is not None else claim.claimed_at
+
+
+def _finish_run(conn, repo_root, run_id, executor_id, owner_pid, raw_result, outcomes):
+    canonical_id = _validate_request(conn, repo_root, run_id, executor_id, owner_pid)
+    try:
+        main, worktree, task_row, run = _run_context(conn, repo_root, canonical_id)
+    except CompletionServiceError:
+        raise
+    except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_RUN_BINDING_MISMATCH") from exc
+    replayed = _replay_existing(conn, main, canonical_id, executor_id, owner_pid, outcomes)
+    if replayed is not None:
+        return replayed
+    try:
+        owner = resolve_run_owner(conn, canonical_id, executor_id, owner_pid)
+    except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_OWNER_MISMATCH") from exc
+    observation = conn.execute(
+        "SELECT 1 FROM events WHERE run_id=? AND event_type='workspace_observation' LIMIT 1",
+        (canonical_id,),
+    ).fetchone()
+    if observation is not None:
+        raise CompletionServiceError("COMPLETION_RECOVERY_REQUIRED")
+    try:
+        task, claim, before = load_active_claim(conn, canonical_id, owner, repo_root)
+    except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_RUN_BINDING_MISMATCH") from exc
+    result = _parse_result(raw_result)
+    if (result["run_id"] != canonical_id or result["task_id"] != task.metadata["task_id"] or
+            result["task_hash"] != task.task_hash or result["prompt_hash"] != task.prompt_hash):
+        raise CompletionServiceError("COMPLETION_RESULT_INVALID")
+    if result["outcome"] not in outcomes:
+        raise CompletionServiceError("COMPLETION_JOURNAL_OUTCOME_MISMATCH")
+    try:
+        command_rows, receipt = run_validations(task, claim, repo_root)
+    except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_VALIDATION_FAILED") from exc
+    actual_commands = [dict(row) for row in command_rows]
+    if (not isinstance(receipt, dict) or receipt.get("schema") != "sdd-validation-receipt/v1" or
+            receipt.get("run_id") != claim.run_id or receipt.get("task_id") != task.metadata["task_id"] or
+            receipt.get("task_hash") != task.task_hash or receipt.get("prompt_hash") != task.prompt_hash or
+            receipt.get("commands") != actual_commands):
+        raise CompletionServiceError("COMPLETION_VALIDATION_FAILED")
+    commands_succeeded = all(row["status"] == "executed" and row["exit_code"] == 0
+                             for row in actual_commands)
+    if "succeeded" in outcomes and (receipt.get("valid") is not True or not commands_succeeded):
+        raise CompletionServiceError("COMPLETION_VALIDATION_FAILED")
+
+    result["commands"] = actual_commands
+    result["log_paths"] = [".sdd/runtime/runs/{}/validation/receipt.json".format(canonical_id)]
+    result["model"] = result["model"] if run["model"] is None else run["model"]
+    result["started_at"] = _started_at(conn, run, claim)
+    try:
+        result["ended_at"] = receipt["ended_at"]
+        result["duration_ms"] = _elapsed_ms(result["started_at"], result["ended_at"])
+        after = capture_snapshot(main, task)
+        report = validate_result(result, task, claim, before, after)
+        if not report.valid:
+            raise CompletionServiceError("COMPLETION_VALIDATION_FAILED")
+        observation_at = _server_now()
+        try:
+            record_workspace_observation(conn, canonical_id, owner, after, now=observation_at)
+        except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+            raise CompletionServiceError("COMPLETION_OBSERVATION_FAILED") from exc
+        ended_at = _server_now()
+        if (_instant(ended_at, "ended_at") < _instant(observation_at, "observation_at") or
+                _instant(ended_at, "ended_at") < _instant(result["ended_at"], "receipt.ended_at")):
+            raise CompletionServiceError("COMPLETION_TIME_REGRESSION")
+        result["ended_at"] = ended_at
+        result["duration_ms"] = _elapsed_ms(result["started_at"], ended_at)
+        report = validate_result(result, task, claim, before, after)
+        if not report.valid:
+            raise CompletionServiceError("COMPLETION_VALIDATION_FAILED")
+        target = _target_task_status(conn, run, task.metadata, result["outcome"],
+                                     transaction_required=False)
+    except CompletionServiceError:
+        raise
+    except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_VALIDATION_FAILED") from exc
+    try:
+        journal = prepare_completion_journal(
+            task, claim, before, after, report, main, target_task_status=target,
+        )
+        path = main / ".sdd" / "runtime" / "runs" / canonical_id / "completion.json"
+        _git(main, "check-ignore", "--quiet", "--", ".sdd/runtime/runs/{}/completion.json".format(canonical_id))
+        write_journal(path, journal)
+    except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_RECOVERY_REQUIRED") from exc
+    try:
+        return run_completion_journal(conn, path, claim.branch, _server_now())
+    except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise CompletionServiceError("COMPLETION_RECOVERY_REQUIRED") from exc
+
+
+def complete_run(
+    conn: sqlite3.Connection, repo_root: Path, run_id: str, executor_id: str,
+    owner_pid: int, raw_result: Any,
+) -> dict:
+    """Complete a run from its receipt; caller must hold the common maintenance lock."""
+    return _finish_run(conn, repo_root, run_id, executor_id, owner_pid, raw_result, {"succeeded"})
+
+
+def fail_run(
+    conn: sqlite3.Connection, repo_root: Path, run_id: str, executor_id: str,
+    owner_pid: int, raw_result: Any,
+) -> dict:
+    """Fail a run; caller must hold the common maintenance lock for the full lifecycle."""
+    return _finish_run(conn, repo_root, run_id, executor_id, owner_pid, raw_result,
+                       {"failed", "blocked"})
