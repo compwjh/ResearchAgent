@@ -10,7 +10,7 @@ from pathlib import Path
 from .atomic import contained
 from .documents import TaskDocumentError, parse_task
 from .lease_recovery import RecoveryCheckError, require_dead_owner, verify_recovery_decision
-from .recovery_snapshots import load_recovery_snapshot
+from .recovery_snapshots import _event, load_recovery_snapshot
 from .store import transaction
 from .workspace import RecoveryDecision, WorkspaceError, capture_snapshot
 
@@ -164,6 +164,16 @@ def _live_task(conn: sqlite3.Connection, run, main: Path):
     return task
 
 
+def _failed_source_run_id(conn, run_id, task_id):
+    payload = _event(conn, run_id, "workspace_snapshot", True)
+    source_id = payload.get("source_run_id") if isinstance(payload, dict) else None
+    if not isinstance(source_id, str):
+        return None
+    source = conn.execute("SELECT state,task_id FROM runs WHERE run_id=?", (source_id,)).fetchone()
+    return source_id if source is not None and (source["state"], source["task_id"]) == (
+        "failed", task_id) else None
+
+
 def _verify_events(conn: sqlite3.Connection, run_id: str) -> int:
     rows = conn.execute("SELECT sequence,timestamp,event_type,payload_json FROM events "
                         "WHERE run_id=? ORDER BY sequence", (run_id,)).fetchall()
@@ -221,9 +231,22 @@ def recover_expired(
             main = _main_root(conn)
             task = _live_task(conn, row, main)
             next_sequence = _verify_events(conn, run_id)
-            before = load_recovery_snapshot(conn, run_id, task, main)
             current = capture_snapshot(main, task)
-            actual = verify_recovery_decision(before, current, decision)
+            if _failed_source_run_id(conn, run_id, row["task_id"]) is None:
+                before = load_recovery_snapshot(conn, run_id, task, main)
+                actual = verify_recovery_decision(before, current, decision)
+            else:
+                from .active_failed_recovery import (
+                    compare_active_failed_workspace,
+                    load_expired_failed_source,
+                )
+
+                proof = load_expired_failed_source(conn, run_id, task, main, now=now)
+                actual = compare_active_failed_workspace(proof, current, task)
+                if decision != actual:
+                    raise RecoveryCheckError("RECOVERY_DECISION_MISMATCH")
+                if not actual.recoverable or actual.kind not in {"unchanged", "partial"}:
+                    raise RecoveryCheckError("RECOVERY_WORKSPACE_CONFLICT")
             action = "requeued" if actual.kind == "unchanged" else "preserved_for_recovery"
             conn.execute("UPDATE runs SET state='abandoned',ended_at=?,error_code=? "
                          "WHERE run_id=? AND state IN('claimed','running')",

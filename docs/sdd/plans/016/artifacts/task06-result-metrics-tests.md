@@ -365,3 +365,10 @@ All checks passed
 27 项通过，35.569 秒，退出码 0。四个相关生产模块及 pure test 编译与 Ruff 通过。
 新增 expired failed-source 的只读 DEAD/租约证明 wrapper（46 行）尚未接入 CLI，
 因此不代表真实 failed retry 崩溃测试已修复；该回归仍保留原成功断言，当前未通过。
+
+direct-failed dead-owner CLI 接线后的独立复测：
+`python -m unittest -v tests.sdd_tasks.test_cli_recover tests.sdd_tasks.test_lease_recovery tests.sdd_tasks.test_failed_retry_crash`
+运行 8 项，7 通过、1 error，3.617 秒，退出码 1；其中原 CLI recover 2 项、lease recovery 5 项通过。
+真实 failed retry 崩溃用例已通过 recover→abandoned/preserved 检查，仍在后续 `next`
+的 strict generic loader 报 `RECOVERY_SOURCE_INVALID`（newcli_claim.py:134）。
+此为缺口缩小的阶段证据，不作为闭环通过；成功断言保持原样。
