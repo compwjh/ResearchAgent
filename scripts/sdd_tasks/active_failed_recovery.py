@@ -11,6 +11,7 @@ from .failed_recovery import _stored_decision
 from .failed_workspace import (
     VerifiedFailedWorkspace,
     _identity,
+    _project,
     compare_verified_failed_workspace,
 )
 from .failure_history import (
@@ -23,6 +24,7 @@ from .failure_history import (
 from .lease_recovery import stored_owner
 from .recovery_snapshots import _event, _snapshot, _uuid
 from .run_owner import resolve_run_owner
+from .workspace import RecoveryDecision, WorkspaceSnapshot
 from .workspace_observation import _decode_observation_event
 
 
@@ -201,3 +203,40 @@ def load_active_failed_source(conn, active_run_id, task, repo_root) -> VerifiedF
         raise
     except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
         raise ActiveFailedRecoveryError("ACTIVE_FAILED_PROOF_INVALID") from exc
+
+
+def compare_active_failed_workspace(proof, current, task) -> RecoveryDecision:
+    """Compare the original baseline with an active capture at its proven document tip."""
+
+    def conflict(code):
+        return RecoveryDecision("conflict", (), (), False, code)
+
+    if (type(proof) is not VerifiedFailedWorkspace or type(current) is not WorkspaceSnapshot or
+            type(task) is not TaskDefinition):
+        return conflict("ACTIVE_FAILED_COMPARISON_INPUT_INVALID")
+    try:
+        source = compare_verified_failed_workspace(proof, task)
+        roots = tuple(task.metadata["allowed_paths"])
+        if not source.recoverable or source.kind != "partial":
+            return conflict("ACTIVE_FAILED_SOURCE_NOT_PARTIAL")
+        if (proof.original_base != proof.baseline.head or
+                proof.history.current_tip != proof.active_claim_tip or
+                proof.allowed_roots != roots or _identity(current) != _identity(proof.baseline) or
+                current.head != proof.active_claim_tip):
+            return conflict("ACTIVE_FAILED_COMPARISON_MISMATCH")
+        old_status, old_hashes = _project(proof.baseline, proof.excluded_paths, roots)
+        new_status, new_hashes = _project(current, proof.excluded_paths, roots)
+        changed = {path for path in old_status.keys() | new_status.keys()
+                   if old_status.get(path) != new_status.get(path)}
+        changed.update(path for path in old_hashes.keys() | new_hashes.keys()
+                       if old_hashes.get(path) != new_hashes.get(path))
+        changed_paths = tuple(sorted(changed))
+        outside = tuple(path for path in changed_paths
+                        if not any(path == root or path.startswith(root + "/") for root in roots))
+        if outside:
+            return RecoveryDecision("out_of_scope", changed_paths, outside, False,
+                                    "workspace_out_of_scope")
+        return RecoveryDecision("partial" if changed_paths else "unchanged",
+                                changed_paths, (), True, None)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        return conflict(getattr(exc, "code", "ACTIVE_FAILED_COMPARISON_INVALID"))
