@@ -89,7 +89,7 @@ def validate_result(data: Dict[str, Any], task: TaskDefinition, claim: Claim,
 
             proof = claim.failed_source
             if (type(proof) is not VerifiedFailedWorkspace or
-                    claim.recovery_of != proof.source_run_id or
+                    claim.recovery_of != proof.recovery_source_id or
                     claim.base_commit != proof.original_base or before != proof.baseline):
                 _add(errors, "RESULT_FAILED_SOURCE_MISMATCH")
             else:

@@ -130,7 +130,8 @@ def render_prompt(task: TaskDefinition, claim: Claim, snapshot: WorkspaceSnapsho
 
             proof = claim.failed_source
             if (type(proof) is not VerifiedFailedWorkspace or
-                    recovery != proof.source_run_id or claim.base_commit != proof.original_base or
+                    recovery != proof.recovery_source_id or
+                    claim.base_commit != proof.original_base or
                     snapshot != proof.baseline):
                 raise PromptError("PROMPT_FAILED_SOURCE_INVALID")
             live, confirmed, spec_state, checked_main, _authority, _roots = _canonical_candidate(
@@ -138,9 +139,17 @@ def render_prompt(task: TaskDefinition, claim: Claim, snapshot: WorkspaceSnapsho
             )
             decision = compare_verified_failed_workspace(proof, live)
             current = _capture(checked_main, live, proof.baseline)
-            if (not decision.recoverable or decision.kind != "partial" or
-                    compare_failed_observation_current(proof, current, live).kind != "unchanged"):
+            if not decision.recoverable or decision.kind != "partial":
                 raise PromptError("PROMPT_FAILED_SOURCE_INVALID")
+            if proof.lineage is None:
+                if compare_failed_observation_current(proof, current, live).kind != "unchanged":
+                    raise PromptError("PROMPT_FAILED_SOURCE_INVALID")
+            else:
+                from .active_failed_recovery import compare_active_failed_workspace
+
+                active = compare_active_failed_workspace(proof, current, live)
+                if not active.recoverable or active.kind != "partial":
+                    raise PromptError("PROMPT_FAILED_SOURCE_INVALID")
         if spec_state not in {"已确认", "实施中"}:
             raise PromptError("PROMPT_SPEC_NOT_CLAIMABLE")
         if not set(live.metadata["required_gates"]).issubset(confirmed):
