@@ -105,10 +105,25 @@ def prepare_completion_journal(
                 raise CompletionPrepareError("COMPLETION_PREPARE_SUMMARY_EXISTS")
             expected_docs.append({"path": path, "before_sha256": old_hash, "content": content,
                                   "after_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()})
+        proof_changed_paths = None
+        if claim.failed_source is not None:
+            from .active_failed_recovery import compare_active_failed_workspace
+            from .failed_workspace import VerifiedFailedWorkspace
+
+            proof = claim.failed_source
+            if (type(proof) is not VerifiedFailedWorkspace or
+                    claim.recovery_of != proof.source_run_id or
+                    claim.base_commit != proof.original_base or before != proof.baseline):
+                raise CompletionPrepareError("COMPLETION_PREPARE_FAILED_SOURCE_MISMATCH")
+            decision = compare_active_failed_workspace(proof, after, task)
+            if not decision.recoverable:
+                raise CompletionPrepareError("COMPLETION_PREPARE_FAILED_SOURCE_INVALID")
+            proof_changed_paths = set(decision.changed_paths)
         changed = tuple(sorted(path for path in before.allowed_hashes.keys() | after.allowed_hashes.keys()
                                if before.allowed_hashes.get(path) != after.allowed_hashes.get(path) and
                                (isinstance(before.allowed_hashes.get(path), str) or
-                                isinstance(after.allowed_hashes.get(path), str))))
+                                isinstance(after.allowed_hashes.get(path), str)) and
+                               (proof_changed_paths is None or path in proof_changed_paths)))
         if changed != tuple(sorted(report.changed_paths)):
             raise CompletionPrepareError("COMPLETION_PREPARE_CHANGED_PATHS_MISMATCH")
         changed_paths = [{"path": path, "before_sha256": before.allowed_hashes.get(path),

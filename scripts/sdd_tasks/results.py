@@ -80,12 +80,28 @@ def validate_result(data: Dict[str, Any], task: TaskDefinition, claim: Claim,
         observed = capture_snapshot(main, task)
         if compare_snapshot(after, observed).kind != "unchanged":
             _add(errors, "RESULT_AFTER_SNAPSHOT_STALE")
-        decision = compare_snapshot(before, observed)
-        if not decision.recoverable:
+        decision = None
+        if claim.failed_source is None:
+            decision = compare_snapshot(before, observed)
+        else:
+            from .active_failed_recovery import compare_active_failed_workspace
+            from .failed_workspace import VerifiedFailedWorkspace
+
+            proof = claim.failed_source
+            if (type(proof) is not VerifiedFailedWorkspace or
+                    claim.recovery_of != proof.source_run_id or
+                    claim.base_commit != proof.original_base or before != proof.baseline):
+                _add(errors, "RESULT_FAILED_SOURCE_MISMATCH")
+            else:
+                decision = compare_active_failed_workspace(proof, observed, task)
+        if decision is not None and not decision.recoverable:
             _add(errors, "RESULT_WORKSPACE_OUT_OF_SCOPE")
         old, new = before.allowed_hashes, observed.allowed_hashes
-        changed_paths = tuple(sorted(path for path in decision.changed_paths
-                                     if isinstance(old.get(path), str) or isinstance(new.get(path), str)))
+        changed_paths = ()
+        if decision is not None:
+            changed_paths = tuple(sorted(path for path in decision.changed_paths
+                                         if isinstance(old.get(path), str) or
+                                         isinstance(new.get(path), str)))
         rename_paths = {path for snap in (before, observed)
                         for path, code in _status_paths(snap.status_records).items()
                         if "R" in code or "C" in code}
