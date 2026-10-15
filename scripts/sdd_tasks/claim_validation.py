@@ -21,6 +21,27 @@ def validate_candidate(
     """Return the live canonical Task, gates confirmed in both views, and Spec state."""
     task_id = task.metadata.get("task_id", "unknown")
     try:
+        live, gates, spec_state, main, authority, roots = _canonical_candidate(
+            task, repo_root, satisfied_gates,
+        )
+        _validate_snapshot(live, snapshot, main, authority, roots, recovery_kind)
+        return live, gates, spec_state
+    except ClaimError:
+        raise
+    except TaskDocumentError as exc:
+        raise ClaimError(exc.code, task_id) from exc
+    except MirrorError as exc:
+        raise ClaimError(exc.code, task_id) from exc
+    except (CatalogError, GateEvidenceError, SpecStatusError) as exc:
+        raise ClaimError(exc.code, task_id) from exc
+    except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
+        raise ClaimError("CLAIM_AUTHORITY_INVALID", task_id) from exc
+
+
+def _canonical_candidate(task, repo_root, satisfied_gates):
+    """Resolve canonical Task authority and preserve all live claim checks."""
+    task_id = task.metadata.get("task_id", "unknown")
+    try:
         main = Path(repo_root).resolve(strict=True)
         roots = discover_worktrees(main)
         if not roots or roots[0] != main:
@@ -41,8 +62,7 @@ def validate_candidate(
         validate_mirrors(live, authority)
         spec_state = load_spec_status(live, main)
         gates = load_satisfied_gates(live, main)
-        _validate_snapshot(live, snapshot, main, authority, roots, recovery_kind)
-        return live, gates.intersection(satisfied_gates), spec_state
+        return live, gates.intersection(satisfied_gates), spec_state, main, authority, roots
     except ClaimError:
         raise
     except TaskDocumentError as exc:
@@ -53,6 +73,59 @@ def validate_candidate(
         raise ClaimError(exc.code, task_id) from exc
     except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
         raise ClaimError("CLAIM_AUTHORITY_INVALID", task_id) from exc
+
+
+def validate_failed_candidate(conn, task, source, repo_root, satisfied_gates):
+    """Revalidate a typed failed-source proof and its current workspace for claiming."""
+    import sqlite3
+
+    from .failed_recovery import (
+        _capture,
+        _same_capture,
+        compare_failed_observation_current,
+        load_failed_recovery_source,
+    )
+    from .failed_selection import FailedClaimSource
+    from .failed_workspace import VerifiedFailedWorkspace, compare_verified_failed_workspace
+    from .workspace import WorkspaceSnapshot
+
+    task_id = task.metadata.get("task_id", "unknown")
+    if not isinstance(conn, sqlite3.Connection) or not conn.in_transaction:
+        raise ClaimError("CLAIM_TRANSACTION_REQUIRED", task_id)
+    live, gates, spec_state, main, _authority, _roots = _canonical_candidate(
+        task, repo_root, satisfied_gates,
+    )
+    task_id = live.metadata["task_id"]
+    try:
+        if (type(source) is not FailedClaimSource or
+                source.mode not in {"partial", "unchanged"} or
+                type(source.proof) is not VerifiedFailedWorkspace):
+            raise ValueError("failed source type or mode is invalid")
+        proof = load_failed_recovery_source(conn, source.proof.source_run_id, live, main)
+        decision = compare_verified_failed_workspace(proof, live)
+        if (proof != source.proof or decision != source.decision or
+                source.mode != decision.kind or not decision.recoverable or
+                type(source.snapshot) is not WorkspaceSnapshot):
+            raise ValueError("failed source proof is stale")
+        current = _capture(main, live, proof.baseline)
+        if compare_failed_observation_current(proof, current, live).kind != "unchanged":
+            raise ValueError("failed source workspace changed")
+        if source.mode == "partial":
+            valid_snapshot = source.snapshot == proof.baseline
+            valid_claim = (source.base_commit == proof.original_base and
+                           source.recovery_of == proof.source_run_id)
+        else:
+            valid_snapshot = (_same_capture(source.snapshot, current) and
+                              not current.status_records)
+            valid_claim = (source.base_commit == proof.active_claim_tip and
+                           source.recovery_of is None)
+        if not valid_snapshot or not valid_claim:
+            raise ValueError("failed claim does not match its verified source")
+        return live, gates, spec_state
+    except ClaimError:
+        raise
+    except (AttributeError, IndexError, KeyError, OSError, TypeError, ValueError) as exc:
+        raise ClaimError("CLAIM_FAILED_SOURCE_INVALID", task_id) from exc
 
 
 def _validate_snapshot(task, snapshot, main: Path, authority: Path, roots, recovery_kind=None) -> None:

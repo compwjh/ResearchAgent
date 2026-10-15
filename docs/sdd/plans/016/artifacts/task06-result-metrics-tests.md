@@ -209,6 +209,13 @@ loader 防御套件 5 项通过（15.051 秒），Ruff 通过；包括合法可�
 active_failed_recovery.py 完整 wrapper 已读审并静态检查通过，核验唯一消费、活 owner/lease、
 原始基线、原始 Git 文档对象与当前精确文档内容；尚待真实公开领取后的独立集成验收。
 
+## 2026-10-15 恢复后的 canonical 校验增量
+
+Luna xhigh 复核 claim_validation 因子提取及专用 failed validator：Python 3.9 编译、
+Ruff 0.16.10 通过；5 个现有 focused unittest 模块共 28 项通过（9.227 秒）。
+pytest 入口曾因业务全局 conftest 缺 python-dotenv 而 setup 失败，未进入测试体；
+工具测试最终使用标准库 unittest 正常执行。该增量仍未接入公开 failed 领取。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
