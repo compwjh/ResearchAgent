@@ -132,6 +132,8 @@ def claim_next(
             if database_blockers(conn, candidate, satisfied_gates, claimed_at):
                 continue
             abandoned = _latest_abandoned(conn, task_id)
+            prior_decision = (_check_recovery_event(conn, abandoned["run_id"])
+                              if abandoned is not None else None)
             failed_retry = None
             if abandoned is not None:
                 from .failed_lineage import FailedRetryLineageError, failed_retry_origin
@@ -148,7 +150,6 @@ def claim_next(
             snapshot = workspace_snapshots.get(task_id)
             if abandoned is not None:
                 run_id = abandoned["run_id"]
-                prior_decision = _check_recovery_event(conn, run_id)
                 try:
                     baseline = load_recovery_snapshot(conn, run_id, candidate, main)
                     current = capture_snapshot(main, candidate)

@@ -113,8 +113,20 @@ def _recovery_reason(conn: sqlite3.Connection, task, main: Path):
         "SELECT run_id,state FROM runs WHERE task_id=? ORDER BY attempt DESC,run_id DESC LIMIT 1",
         (task.metadata["task_id"],),
     ).fetchone()
-    if latest is None or latest["state"] != "abandoned":
+    if latest is None:
         return None
+    if latest["state"] == "failed":
+        return _failed_recovery_reason(conn, latest["run_id"], task, main)
+    if latest["state"] != "abandoned":
+        return None
+    from .failed_lineage import FailedRetryLineageError, failed_retry_origin
+
+    try:
+        origin = failed_retry_origin(conn, latest["run_id"], task, main)
+    except FailedRetryLineageError as exc:
+        return "recovery_invalid:" + exc.code
+    if origin is not None:
+        return _failed_recovery_reason(conn, latest["run_id"], task, main)
     rows = conn.execute(
         "SELECT payload_json FROM events WHERE run_id=? AND event_type='recovery_decision'",
         (latest["run_id"],),
@@ -140,6 +152,16 @@ def _recovery_reason(conn: sqlite3.Connection, task, main: Path):
             (event["decision"] == "unchanged" and decision.kind != "unchanged")):
         return "recovery_workspace_conflict"
     return "recovery_ready:" + decision.kind
+
+
+def _failed_recovery_reason(conn: sqlite3.Connection, run_id, task, main: Path):
+    from .failed_selection import resolve_failed_source
+
+    try:
+        source = resolve_failed_source(conn, run_id, task, main)
+    except ValueError as exc:
+        return "recovery_invalid:" + getattr(exc, "code", "RECOVERY_VALIDATION_FAILED")
+    return "recovery_ready:" + source.decision.kind
 
 
 def status(conn: sqlite3.Connection) -> Dict[str, Any]:
