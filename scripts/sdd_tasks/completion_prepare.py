@@ -112,7 +112,7 @@ def prepare_completion_journal(
 
             proof = claim.failed_source
             if (type(proof) is not VerifiedFailedWorkspace or
-                    claim.recovery_of != proof.source_run_id or
+                    claim.recovery_of != proof.recovery_source_id or
                     claim.base_commit != proof.original_base or before != proof.baseline):
                 raise CompletionPrepareError("COMPLETION_PREPARE_FAILED_SOURCE_MISMATCH")
             decision = compare_active_failed_workspace(proof, after, task)
