@@ -1,0 +1,4 @@
+interface:
+  display_name: "SDD Plan Tasks"
+  short_description: "Plan SDD specs, tasks, and complete prompts"
+  default_prompt: "Use $sdd-plan-tasks to turn this request into a complete SDD plan."
