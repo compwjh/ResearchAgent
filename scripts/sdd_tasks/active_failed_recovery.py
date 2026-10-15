@@ -215,6 +215,52 @@ def load_active_failed_source(conn, active_run_id, task, repo_root) -> VerifiedF
         raise ActiveFailedRecoveryError("ACTIVE_FAILED_PROOF_INVALID") from exc
 
 
+def load_expired_failed_source(conn, active_run_id, task, repo_root, *, now) -> VerifiedFailedWorkspace:
+    """Prove a failed retry source after its dead owner's lease expires."""
+    from datetime import timedelta, timezone
+
+    from .lease_recovery import RecoveryCheckError, require_dead_owner
+    from .leases import LeaseError, _timestamp
+
+    try:
+        binding = _active_source_binding(conn, active_run_id, task, repo_root)
+        _main, _worktree, active, source, _baseline = binding
+        task_row = conn.execute("SELECT status FROM tasks WHERE task_id=?",
+                                (task.metadata["task_id"],)).fetchone()
+        if (task_row is None or task_row["status"] != "pending" or
+                task.metadata.get("status") != "pending"):
+            _reject("ACTIVE_FAILED_TASK_NOT_PENDING")
+        owner = require_dead_owner(active["owner_json"], False)
+        if owner.executor_id != active["executor_id"]:
+            _reject("ACTIVE_FAILED_OWNER_INVALID")
+        leases = conn.execute("SELECT * FROM leases WHERE task_id=? OR run_id=?",
+                              (active["task_id"], active_run_id)).fetchall()
+        if (len(leases) != 1 or leases[0]["task_id"] != active["task_id"] or
+                leases[0]["run_id"] != active_run_id or
+                leases[0]["claimed_at"] != active["claimed_at"] or
+                not isinstance(leases[0]["owner_token"], str) or
+                not hmac.compare_digest(leases[0]["owner_token"].encode("utf-8"),
+                                        owner.token.encode("utf-8"))):
+            _reject("ACTIVE_FAILED_LEASE_MISMATCH")
+        instant = _timestamp(now, "now")
+        if instant.utcoffset() != timedelta(0):
+            _reject("ACTIVE_FAILED_NOW_INVALID")
+        instant = instant.astimezone(timezone.utc)
+        claimed_at = _timestamp(active["claimed_at"], "claimed_at")
+        expires_at = _timestamp(leases[0]["expires_at"], "expires_at")
+        if (claimed_at.astimezone(timezone.utc) > instant or
+                expires_at.astimezone(timezone.utc) > instant):
+            _reject("ACTIVE_FAILED_LEASE_NOT_EXPIRED")
+        _only_active_consumer(conn, active["task_id"], source["run_id"], active_run_id)
+        return _bound_failed_proof(conn, task, repo_root, binding)
+    except ActiveFailedRecoveryError:
+        raise
+    except (RecoveryCheckError, LeaseError) as exc:
+        raise ActiveFailedRecoveryError(exc.code) from exc
+    except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise ActiveFailedRecoveryError("ACTIVE_FAILED_EXPIRED_PROOF_INVALID") from exc
+
+
 def compare_active_failed_workspace(proof, current, task) -> RecoveryDecision:
     """Compare the original baseline with an active capture at its proven document tip."""
 
