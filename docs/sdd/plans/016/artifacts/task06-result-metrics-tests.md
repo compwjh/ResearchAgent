@@ -240,6 +240,14 @@ run/base/snapshot 的原始基线不改写。原 observation/results/prepare/ser
 真实 failed CLI next 的独立 2 项通过（3.683 秒），Ruff 通过；验证原始 base、source 指针、
 Prompt 精确文本/hash、错误显式 base 的无副作用拒绝及 unchanged 的 fresh doc tip。
 
+## 2026-10-15 failed retry 再次中断的未解决回归
+
+独立真实 fork 进程测试 `test_failed_retry_crash` 当前为失败复现：真实 failed → partial child，
+child 在 completion journal 之前退出；owner DEAD、lease 仅做时间过期注入，源码保留。
+`recover_from_cli` 在 recovery_snapshots.py 的父状态检查抛 `RECOVERY_SOURCE_INVALID`，
+尚不能走通 abandon → 新 child。Ruff 通过，首次单项测试 1.562 秒失败。
+该测试保留正确成功期望并随检查点保存；不标 xfail、不降低断言，Task06 不得据此收口。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
