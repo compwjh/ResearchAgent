@@ -3,6 +3,7 @@
 import re
 import uuid
 from dataclasses import dataclass
+from typing import Optional
 
 from .documents import TaskDefinition
 from .failure_history import VerifiedFailureHistory
@@ -15,6 +16,16 @@ _SHA = re.compile(r"[0-9a-f]{64}\Z")
 
 class FailedWorkspaceError(WorkspaceError):
     """A failed workspace projection is malformed or lacks matching proof."""
+
+
+@dataclass(frozen=True)
+class FailedRetryLineage:
+    """Immediate retry ancestry leading to the original failed source."""
+
+    origin_run_id: str
+    immediate_source_run_id: str
+    run_ids: tuple
+    history_tips: tuple
 
 
 @dataclass(frozen=True)
@@ -31,6 +42,12 @@ class VerifiedFailedWorkspace:
     active_claim_tip: str
     allowed_roots: tuple
     excluded_paths: tuple
+    lineage: Optional[FailedRetryLineage] = None
+
+    @property
+    def recovery_source_id(self):
+        return (self.source_run_id if self.lineage is None
+                else self.lineage.immediate_source_run_id)
 
 
 def _identity(snapshot):
@@ -41,6 +58,35 @@ def _identity(snapshot):
 
 def _inside(path, roots):
     return any(path == root or path.startswith(root + "/") for root in roots)
+
+
+def _canonical_uuid(value):
+    try:
+        return isinstance(value, str) and str(uuid.UUID(value)) == value
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def _validate_retry_lineage(lineage, origin_run_id, expected_tip):
+    if (type(lineage) is not FailedRetryLineage or lineage.origin_run_id != origin_run_id or
+            type(lineage.run_ids) is not tuple or len(lineage.run_ids) < 2 or
+            lineage.run_ids[0] != lineage.immediate_source_run_id or
+            lineage.run_ids[-1] != origin_run_id or
+            any(not _canonical_uuid(run_id) for run_id in lineage.run_ids) or
+            len(set(lineage.run_ids)) != len(lineage.run_ids) or
+            type(lineage.history_tips) is not tuple):
+        raise FailedWorkspaceError("FAILED_WORKSPACE_LINEAGE_INVALID")
+    tip_sources = set()
+    for item in lineage.history_tips:
+        if (type(item) is not tuple or len(item) != 2 or
+                not _canonical_uuid(item[0]) or
+                item[0] not in lineage.run_ids[:-1] or item[0] in tip_sources or
+                not isinstance(item[1], str) or not _OID.fullmatch(item[1]) or
+                item[1] != expected_tip):
+            raise FailedWorkspaceError("FAILED_WORKSPACE_LINEAGE_INVALID")
+        tip_sources.add(item[0])
+    if tip_sources != set(lineage.run_ids[:-1]):
+        raise FailedWorkspaceError("FAILED_WORKSPACE_LINEAGE_INVALID")
 
 
 def _strict_status(records):
@@ -129,6 +175,8 @@ def compare_verified_failed_workspace(proof, task):
                 len({run_id for run_id, _tip in proof.history.observation_tips}) !=
                 len(proof.history.observation_tips)):
             raise FailedWorkspaceError("FAILED_WORKSPACE_PROOF_MISMATCH")
+        if proof.lineage is not None:
+            _validate_retry_lineage(proof.lineage, proof.source_run_id, proof.active_claim_tip)
         old_status, old_hashes = _project(base, excluded, roots)
         new_status, new_hashes = _project(observed, excluded, roots)
         changed = {path for path in old_status.keys() | new_status.keys()

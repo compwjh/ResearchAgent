@@ -146,31 +146,10 @@ def _only_active_consumer(conn, task_id, source_id, active_run_id) -> None:
         _reject("ACTIVE_FAILED_SOURCE_CONSUMED")
 
 
-def load_active_failed_source(conn, active_run_id, task, repo_root) -> VerifiedFailedWorkspace:
-    """Prove an active partial retry's baseline and failed-source document tip."""
+def _bound_failed_proof(conn, task, repo_root, binding) -> VerifiedFailedWorkspace:
+    """Prove failed-source history and current immutable documents for a bound run."""
+    main, worktree, _active, source, baseline = binding
     try:
-        main, worktree, active, source, baseline = _active_source_binding(
-            conn, active_run_id, task, repo_root)
-        task_row = conn.execute("SELECT status FROM tasks WHERE task_id=?",
-                                (task.metadata["task_id"],)).fetchone()
-        if (task_row is None or task_row["status"] != "pending" or
-                task.metadata.get("status") != "pending"):
-            _reject("ACTIVE_FAILED_TASK_NOT_PENDING")
-        owner = stored_owner(active["owner_json"])
-        resolved = resolve_run_owner(conn, active_run_id, active["executor_id"], owner.pid)
-        if not _same_owner(resolved, owner):
-            _reject("ACTIVE_FAILED_OWNER_MISMATCH")
-        leases = conn.execute("SELECT * FROM leases WHERE task_id=? OR run_id=?",
-                              (active["task_id"], active_run_id)).fetchall()
-        if (len(leases) != 1 or leases[0]["task_id"] != active["task_id"] or
-                leases[0]["run_id"] != active_run_id or
-                leases[0]["claimed_at"] != active["claimed_at"] or
-                not isinstance(leases[0]["owner_token"], str) or
-                not hmac.compare_digest(leases[0]["owner_token"].encode("utf-8"),
-                                        owner.token.encode("utf-8"))):
-            _reject("ACTIVE_FAILED_LEASE_MISMATCH")
-        _only_active_consumer(conn, active["task_id"], source["run_id"], active_run_id)
-
         verified = _verify_failure_history_core(conn, source["run_id"], task, repo_root)
         history_main, history_worktree, history_baseline, before, records, tips = verified
         if (history_main != main or history_worktree != worktree or history_baseline != baseline or
@@ -199,6 +178,37 @@ def load_active_failed_source(conn, active_run_id, task, repo_root) -> VerifiedF
         if _git_state(worktree) != before:
             _reject("ACTIVE_FAILED_WORKTREE_CHANGED")
         return proof
+    except ActiveFailedRecoveryError:
+        raise
+    except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise ActiveFailedRecoveryError("ACTIVE_FAILED_PROOF_INVALID") from exc
+
+
+def load_active_failed_source(conn, active_run_id, task, repo_root) -> VerifiedFailedWorkspace:
+    """Prove an active partial retry's baseline and failed-source document tip."""
+    try:
+        binding = _active_source_binding(conn, active_run_id, task, repo_root)
+        main, worktree, active, source, baseline = binding
+        task_row = conn.execute("SELECT status FROM tasks WHERE task_id=?",
+                                (task.metadata["task_id"],)).fetchone()
+        if (task_row is None or task_row["status"] != "pending" or
+                task.metadata.get("status") != "pending"):
+            _reject("ACTIVE_FAILED_TASK_NOT_PENDING")
+        owner = stored_owner(active["owner_json"])
+        resolved = resolve_run_owner(conn, active_run_id, active["executor_id"], owner.pid)
+        if not _same_owner(resolved, owner):
+            _reject("ACTIVE_FAILED_OWNER_MISMATCH")
+        leases = conn.execute("SELECT * FROM leases WHERE task_id=? OR run_id=?",
+                              (active["task_id"], active_run_id)).fetchall()
+        if (len(leases) != 1 or leases[0]["task_id"] != active["task_id"] or
+                leases[0]["run_id"] != active_run_id or
+                leases[0]["claimed_at"] != active["claimed_at"] or
+                not isinstance(leases[0]["owner_token"], str) or
+                not hmac.compare_digest(leases[0]["owner_token"].encode("utf-8"),
+                                        owner.token.encode("utf-8"))):
+            _reject("ACTIVE_FAILED_LEASE_MISMATCH")
+        _only_active_consumer(conn, active["task_id"], source["run_id"], active_run_id)
+        return _bound_failed_proof(conn, task, repo_root, binding)
     except ActiveFailedRecoveryError:
         raise
     except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:

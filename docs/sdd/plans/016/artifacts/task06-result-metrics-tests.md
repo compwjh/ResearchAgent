@@ -253,6 +253,11 @@ failed → next → complete 会实际提交 SOURCE 并完成 Task，重放旧 f
 实际三次 fail（每次经真实领取/验证命令）后 Task blocked、无 lease、next 返回 NO_TASK，
 三条 run 仍为 failed，SOURCE 保留且未提交/暂存。此通过不覆盖上述再次中断缺口。
 
+中断修复准备：新增内部不可变 lineage 元数据，区分 failed 历史锚点与 immediate 恢复来源；
+纯比较对链 ID、完整 tip 映射做结构检查。原 active loader 的只读历史证明已独立提取，
+ALIVE/lease/唯一消费者校验顺序保持。两项源码增量已读审、编译与 Ruff 通过，尚待定向动态复验，
+上述真实中断测试仍为失败状态，不宣称恢复缺口已解决。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
