@@ -229,6 +229,11 @@ pytest 入口曾因业务全局 conftest 缺 python-dotenv 而 setup 失败，�
 test_claim_validation、test_selection、test_recovery_claim、test_failed_selection、test_cli_claim。
 此前并行编辑中间态造成 CLI 导入失败，冻结后复验已排除；不将中间态当最终验收结果。
 
+执行上下文/验证器的 22 项原定向测试通过（17.3 秒），Ruff 通过；结果、prepare 与服务的
+20 项通过（12.566 秒），Ruff 通过。CLI/prompt 接线后的原 14 项通过（2.613 秒），
+命令为 `python -m unittest -q tests.sdd_tasks.test_cli_claim tests.sdd_tasks.test_prompts`。
+失败 child 的 observation 绑定及完整 complete/fail 集成仍待下一增量。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件

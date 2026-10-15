@@ -119,9 +119,28 @@ def render_prompt(task: TaskDefinition, claim: Claim, snapshot: WorkspaceSnapsho
                 runtime.resolve(strict=True) != Path(runtime_root).resolve(strict=True)):
             raise PromptError("PROMPT_RUNTIME_ROOT_INVALID")
         gates = load_satisfied_gates(task, main)
-        live, confirmed, spec_state = validate_candidate(
-            task, snapshot, main, gates, "partial" if recovery is not None else None,
-        )
+        if claim.failed_source is None:
+            live, confirmed, spec_state = validate_candidate(
+                task, snapshot, main, gates, "partial" if recovery is not None else None,
+            )
+        else:
+            from .claim_validation import _canonical_candidate
+            from .failed_recovery import _capture, compare_failed_observation_current
+            from .failed_workspace import VerifiedFailedWorkspace, compare_verified_failed_workspace
+
+            proof = claim.failed_source
+            if (type(proof) is not VerifiedFailedWorkspace or
+                    recovery != proof.source_run_id or claim.base_commit != proof.original_base or
+                    snapshot != proof.baseline):
+                raise PromptError("PROMPT_FAILED_SOURCE_INVALID")
+            live, confirmed, spec_state, checked_main, _authority, _roots = _canonical_candidate(
+                task, main, gates,
+            )
+            decision = compare_verified_failed_workspace(proof, live)
+            current = _capture(checked_main, live, proof.baseline)
+            if (not decision.recoverable or decision.kind != "partial" or
+                    compare_failed_observation_current(proof, current, live).kind != "unchanged"):
+                raise PromptError("PROMPT_FAILED_SOURCE_INVALID")
         if spec_state not in {"已确认", "实施中"}:
             raise PromptError("PROMPT_SPEC_NOT_CLAIMABLE")
         if not set(live.metadata["required_gates"]).issubset(confirmed):

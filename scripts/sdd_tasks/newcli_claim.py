@@ -24,6 +24,7 @@ from .selection import claim_next
 from .spec_status import is_claimable, load_spec_status
 from .store import connect
 from .workspace import WorkspaceError, compare_snapshot, prepare_worktree
+from .workspace_prepare import prepare_failed_worktree
 
 
 def _git(root: Path, *args: str) -> str:
@@ -98,7 +99,11 @@ def claim_from_cli(repo_root: Path, ide: str, executor: str, owner_pid: int,
             abandoned = {row[0] for row in conn.execute(
                 "SELECT task_id FROM runs r WHERE state='abandoned' AND attempt=("
                 "SELECT MAX(attempt) FROM runs WHERE task_id=r.task_id)")}
-            for task in rank_candidates(tasks, abandoned):
+            failed = {row[0]: row[1] for row in conn.execute(
+                "SELECT task_id,run_id FROM runs r WHERE state='failed' AND run_id=("
+                "SELECT run_id FROM runs WHERE task_id=r.task_id ORDER BY attempt DESC,run_id DESC LIMIT 1)"
+            )}
+            for task in rank_candidates(tasks, abandoned | set(failed)):
                 task_id = task.metadata["task_id"]
                 if task.metadata["status"] != "pending":
                     continue
@@ -120,7 +125,7 @@ def claim_from_cli(repo_root: Path, ide: str, executor: str, owner_pid: int,
                         if any(gate not in prechecked_gates
                                for gate in task.metadata["required_gates"]):
                             continue
-                baseline, snapshot = None, None
+                baseline, snapshot, failed_source = None, None, None
                 if task_id in abandoned:
                     previous = conn.execute(
                         "SELECT run_id FROM runs WHERE task_id=? AND state='abandoned' "
@@ -130,6 +135,18 @@ def claim_from_cli(repo_root: Path, ide: str, executor: str, owner_pid: int,
                     if base_commit is not None and base_commit != baseline.head:
                         raise ClaimError("CLAIM_BASE_COMMIT_INVALID", task_id)
                     base = baseline.head
+                elif task_id in failed:
+                    from .failed_selection import FailedSelectionError, resolve_failed_source
+
+                    try:
+                        failed_source = resolve_failed_source(conn, failed[task_id], task, main)
+                    except FailedSelectionError as exc:
+                        raise ClaimError(exc.code, task_id) from exc
+                    except ValueError as exc:
+                        raise ClaimError("CLAIM_FAILED_SOURCE_INVALID", task_id) from exc
+                    base = failed_source.base_commit
+                    if base_commit is not None and base_commit != base:
+                        raise ClaimError("CLAIM_BASE_COMMIT_INVALID", task_id)
                 else:
                     base_root = canonical if canonical in roots else main
                     base = base_commit or _git(base_root, "rev-parse", "HEAD")
@@ -139,7 +156,9 @@ def claim_from_cli(repo_root: Path, ide: str, executor: str, owner_pid: int,
                 _matches_base(main, base, relative, task)
                 owner = current_owner(executor, pid=owner_pid)
                 try:
-                    snapshot = prepare_worktree(main, task, base, recovery_snapshot=baseline)
+                    snapshot = (prepare_failed_worktree(main, task, failed_source)
+                                if failed_source is not None and failed_source.mode == "partial"
+                                else prepare_worktree(main, task, base, recovery_snapshot=baseline))
                 except WorkspaceError as exc:
                     if exc.code == "workspace_recovery_conflict":
                         continue
