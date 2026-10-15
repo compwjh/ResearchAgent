@@ -30,3 +30,4 @@ class Claim:
     prompt_hash: str
     state: str
     recovery_of: Optional[str]
+    failed_source: Optional[object] = None
