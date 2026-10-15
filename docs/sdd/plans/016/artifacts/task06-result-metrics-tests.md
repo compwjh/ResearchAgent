@@ -234,6 +234,12 @@ test_claim_validation、test_selection、test_recovery_claim、test_failed_selec
 命令为 `python -m unittest -q tests.sdd_tasks.test_cli_claim tests.sdd_tasks.test_prompts`。
 失败 child 的 observation 绑定及完整 complete/fail 集成仍待下一增量。
 
+随后 observation 绑定已接入：仅 DB 证明的 failed-source active run 使用独立 doc tip，
+run/base/snapshot 的原始基线不改写。原 observation/results/prepare/service 共 30 项通过
+（16.157 秒），相关八个模块 Ruff 通过。
+真实 failed CLI next 的独立 2 项通过（3.683 秒），Ruff 通过；验证原始 base、source 指针、
+Prompt 精确文本/hash、错误显式 base 的无副作用拒绝及 unchanged 的 fresh doc tip。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件

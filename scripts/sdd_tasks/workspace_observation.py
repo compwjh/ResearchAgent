@@ -98,7 +98,26 @@ def record_workspace_observation(
             if run is None or lease is None or run["state"] not in {"claimed", "running"} or run["ended_at"] is not None:
                 raise WorkspaceObservationError("OBSERVATION_RUN_NOT_ACTIVE")
             task = _live_task(conn, run, main)
-            baseline = load_recovery_snapshot(conn, run_id, task, main)
+            snapshot_event = _event(conn, run_id, "workspace_snapshot", True)
+            source_run_id = (snapshot_event.get("source_run_id")
+                             if isinstance(snapshot_event, dict) else None)
+            source = (conn.execute("SELECT state,task_id FROM runs WHERE run_id=?",
+                                   (source_run_id,)).fetchone()
+                      if isinstance(source_run_id, str) else None)
+            failed_source = None
+            expected_head = run["base_commit"]
+            if (source is not None and source["state"] == "failed" and
+                    source["task_id"] == run["task_id"]):
+                from .active_failed_recovery import (
+                    compare_active_failed_workspace,
+                    load_active_failed_source,
+                )
+
+                failed_source = load_active_failed_source(conn, run_id, task, main)
+                baseline = failed_source.baseline
+                expected_head = failed_source.active_claim_tip
+            else:
+                baseline = load_recovery_snapshot(conn, run_id, task, main)
             captured = _instant(snapshot.captured_at, "snapshot.captured_at")
             lease_expiry = _instant(lease["expires_at"], "lease.expires_at")
             if (lease["task_id"] != run["task_id"] or lease_expiry <= instant or
@@ -107,7 +126,7 @@ def record_workspace_observation(
                     run["base_commit"] != baseline.head or run["worktree"] != task.metadata["worktree"]["path"] or
                     run["branch"] != task.metadata["worktree"]["branch"] or
                     snapshot.task_id != run["task_id"] or snapshot.task_hash != run["task_hash"] or
-                    snapshot.prompt_hash != run["prompt_hash"] or snapshot.head != run["base_commit"] or
+                    snapshot.prompt_hash != run["prompt_hash"] or snapshot.head != expected_head or
                     snapshot.branch != run["branch"] or snapshot.repo_root != baseline.repo_root or
                     snapshot.common_dir != baseline.common_dir or snapshot.worktree_path != baseline.worktree_path or
                     captured < _instant(baseline.captured_at, "baseline.captured_at") or
@@ -116,6 +135,9 @@ def record_workspace_observation(
             current = capture_snapshot(main, task)
             if not _same_capture(snapshot, current):
                 raise WorkspaceObservationError("OBSERVATION_SNAPSHOT_MISMATCH")
+            if (failed_source is not None and
+                    not compare_active_failed_workspace(failed_source, current, task).recoverable):
+                raise WorkspaceObservationError("OBSERVATION_WORKSPACE_OUT_OF_SCOPE")
             rows = conn.execute(
                 "SELECT sequence,timestamp,event_type FROM events WHERE run_id=? ORDER BY sequence",
                 (run_id,),
