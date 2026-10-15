@@ -3,6 +3,7 @@ import hmac
 import sqlite3
 from pathlib import Path
 
+from .active_failed_recovery import load_active_failed_source
 from .atomic import contained
 from .catalog_status import _gate_context, _live_gate_task, _metadata
 from .claims import Claim
@@ -97,13 +98,24 @@ def load_active_claim(
         resolved_owner = resolve_run_owner(conn, run_id, owner.executor_id, owner.pid)
         if not _same_owner(resolved_owner, owner):
             raise LifecycleContextError("LIFECYCLE_OWNER_MISMATCH")
-        baseline = load_recovery_snapshot(conn, run_id, task, main)
+        snapshot_event = _event(conn, run_id, "workspace_snapshot", True)
+        recovery_of = (snapshot_event.get("source_run_id")
+                      if isinstance(snapshot_event, dict) else None)
+        source = (conn.execute("SELECT state,task_id FROM runs WHERE run_id=?",
+                               (recovery_of,)).fetchone()
+                  if isinstance(recovery_of, str) else None)
+        failed_source = None
+        if (source is not None and source["state"] == "failed" and
+                source["task_id"] == row["task_id"]):
+            failed_source = load_active_failed_source(conn, run_id, task, main)
+            baseline = failed_source.baseline
+        else:
+            baseline = load_recovery_snapshot(conn, run_id, task, main)
         if (baseline.repo_root != main or baseline.worktree_path != canonical or
                 baseline.branch != row["branch"] or baseline.head != row["base_commit"] or
                 baseline.task_id != task.metadata["task_id"] or
                 baseline.task_hash != task.task_hash or baseline.prompt_hash != task.prompt_hash):
             raise LifecycleContextError("LIFECYCLE_BASELINE_MISMATCH")
-        snapshot_event = _event(conn, run_id, "workspace_snapshot", True)
         recovery_of = snapshot_event["source_run_id"]
 
         row, lease = _active_row(conn, run_id)
@@ -120,7 +132,8 @@ def load_active_claim(
             raise LifecycleContextError("LIFECYCLE_LEASE_INACTIVE")
         claim = Claim(task, run_id, row["attempt"], row["ide"], final_owner, row["claimed_at"],
                       lease["expires_at"], canonical, row["branch"], row["base_commit"],
-                      row["task_hash"], row["prompt_hash"], row["state"], recovery_of)
+                      row["task_hash"], row["prompt_hash"], row["state"], recovery_of,
+                      failed_source=failed_source)
         return task, claim, baseline
     except LifecycleContextError:
         raise

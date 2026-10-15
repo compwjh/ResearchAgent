@@ -15,17 +15,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from .active_failed_recovery import compare_active_failed_workspace, load_active_failed_source
 from .atomic import _open_directory, atomic_write, contained
 from .catalog import discover_worktrees
 from .catalog_status import _live_gate_task, _metadata
 from .claims import Claim
 from .documents import TaskDefinition
+from .failed_workspace import VerifiedFailedWorkspace
 from .gates import load_satisfied_gates
 from .internalvalidation_process import ValidationProcessError, run_one_validation
 from .leases import _main_root
 from .locks import repository_paths
 from .owners import OwnerIdentity
-from .recovery_snapshots import load_recovery_snapshot
+from .recovery_snapshots import _event, load_recovery_snapshot
 from .run_owner import resolve_run_owner
 from .spec_status import is_claimable, load_spec_status
 from .store import connect
@@ -46,6 +48,7 @@ class _ValidationContext:
     worktree: Path
     run: sqlite3.Row
     before: WorkspaceSnapshot
+    failed_source: Optional[VerifiedFailedWorkspace] = None
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -190,11 +193,27 @@ def _active_context(task: TaskDefinition, claim: Claim, repo_root: Path) -> _Val
         if (actual != expected or claim.worktree_path.resolve(strict=True) != worktree or
                 claim.branch != task.metadata["worktree"]["branch"] or worktree not in roots):
             raise ValidationRunnerError("VALIDATION_BINDING_MISMATCH")
-        before = load_recovery_snapshot(conn, claim.run_id, canonical_task, main)
+        snapshot_event = _event(conn, claim.run_id, "workspace_snapshot", True)
+        recovery_of = (snapshot_event.get("source_run_id")
+                      if isinstance(snapshot_event, dict) else None)
+        source = (conn.execute("SELECT state,task_id FROM runs WHERE run_id=?",
+                               (recovery_of,)).fetchone()
+                  if isinstance(recovery_of, str) else None)
+        failed_source = None
+        if (source is not None and source["state"] == "failed" and
+                source["task_id"] == run["task_id"]):
+            failed_source = load_active_failed_source(conn, claim.run_id, canonical_task, main)
+            if (claim.failed_source is not None and claim.failed_source != failed_source):
+                raise ValidationRunnerError("VALIDATION_FAILED_SOURCE_MISMATCH")
+            before = failed_source.baseline
+        else:
+            if claim.failed_source is not None:
+                raise ValidationRunnerError("VALIDATION_FAILED_SOURCE_MISMATCH")
+            before = load_recovery_snapshot(conn, claim.run_id, canonical_task, main)
         if (before.head != claim.base_commit or before.worktree_path != worktree or
                 before.common_dir != common):
             raise ValidationRunnerError("VALIDATION_BASELINE_MISMATCH")
-        return _ValidationContext(conn, main, common, worktree, run, before)
+        return _ValidationContext(conn, main, common, worktree, run, before, failed_source)
     except ValidationRunnerError:
         if conn is not None:
             conn.close()
@@ -251,7 +270,8 @@ def run_validations(task: TaskDefinition, claim: Claim, repo_root: Path, *,
             })
 
         after = capture_snapshot(context.main, task)
-        scope = compare_snapshot(context.before, after)
+        scope = (compare_active_failed_workspace(context.failed_source, after, task)
+                 if context.failed_source is not None else compare_snapshot(context.before, after))
         ended_at, duration_ms = _utc_now(), int((time.monotonic() - started) * 1000)
         receipt = {
             "schema": "sdd-validation-receipt/v1", "run_id": claim.run_id,
