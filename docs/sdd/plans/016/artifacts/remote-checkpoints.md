@@ -63,3 +63,18 @@
 尚未进入远端的服务入口、服务测试、真实进程中断测试及失败历史辅助模块，按会话记录由 Luna xhigh 子 agent 分批重建并重新验证；之前环境里的通过记录不冒充本环境复测结果。Python 3.9.25 与 Ruff 0.17.0 已实际恢复。后续已读回的增量及时保存到远端，实施中的内部模块会明确记录验证状态，CLI 自动提交仍待验收门禁。
 
 该检查点可从 GitHub 恢复，不能解释为整项 Spec 已完成。真实 CodeBuddy 验收仍待本地执行。
+
+### 2026-10-15 Task06 后续检查点
+
+以下为本次已验证远端保存的增量，均在 `feature/spec-016-portable-task-ledger`：
+
+| 提交 | 已保存范围与证据 |
+|---|---|
+| `7422fa8` | 真实 CLI failed→retry→complete、多次失败 blocked；2 项通过 |
+| `706113d` | failed retry 真实进程退出回归；保留成功断言，暴露恢复链缺口 |
+| `9e75051` | 祖先 observation 绑定 verified journal tip；冻结源码下 27 项通过 |
+| `e5c9fa9` | expired failed retry 只读 DEAD/lease wrapper；静态通过，尚未接 CLI |
+| `3e5b700` | closed failed retry lineage proof factory；Python3.9 编译/Ruff 通过，尚待动态接线 |
+
+`e5c9fa9` 与 `3e5b700` 普通 push 均退出 0。崩溃回归尚未通过，Task06、Task07–09
+和最终业务回归继续进行；不能将这些阶段检查点视作 Spec 完成或 CodeBuddy 验收。
