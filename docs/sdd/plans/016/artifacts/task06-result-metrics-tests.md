@@ -248,6 +248,11 @@ child 在 completion journal 之前退出；owner DEAD、lease 仅做时间过�
 尚不能走通 abandon → 新 child。Ruff 通过，首次单项测试 1.562 秒失败。
 该测试保留正确成功期望并随检查点保存；不标 xfail、不降低断言，Task06 不得据此收口。
 
+同日非中断的真实 CLI 生命周期独立 2 项通过（8.557 秒），Ruff 通过，文件 test_failed_lifecycle.py：
+failed → next → complete 会实际提交 SOURCE 并完成 Task，重放旧 failed 摘要不改账本；
+实际三次 fail（每次经真实领取/验证命令）后 Task blocked、无 lease、next 返回 NO_TASK，
+三条 run 仍为 failed，SOURCE 保留且未提交/暂存。此通过不覆盖上述再次中断缺口。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
