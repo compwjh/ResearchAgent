@@ -1,6 +1,7 @@
 """Structural walk of closed retries that descend from a failed Task run."""
 
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 from .atomic import contained, read_text
@@ -21,7 +22,7 @@ from .lease_recovery import stored_owner
 from .leases import _main_root
 from .locks import repository_paths
 from .recovery_snapshots import _event, _snapshot, _uuid
-from .workspace import WorkspaceError
+from .workspace import RecoveryDecision, WorkspaceError, WorkspaceSnapshot
 from .workspace_observation import (
     _decode_abandoned_observation_event,
     _decode_observation_event,
@@ -32,6 +33,14 @@ from .workspace_observation import (
 
 class FailedRetryLineageError(WorkspaceError):
     """A closed retry chain is malformed or not bound to one failed source."""
+
+
+@dataclass(frozen=True)
+class AbandonedFailedRetrySource:
+    proof: VerifiedFailedWorkspace
+    current: WorkspaceSnapshot
+    decision: RecoveryDecision
+    prior_decision: str
 
 
 def _retry_claim(source, claim, run_id):
@@ -60,7 +69,7 @@ def _one_consumer(conn, task_id, source_id, child_id):
                 raise FailedRetryLineageError("FAILED_RETRY_CONSUMPTION_INVALID")
             if source == source_id:
                 consumers.append(run_id)
-    if consumers != [child_id]:
+    if consumers != ([] if child_id is None else [child_id]):
         raise FailedRetryLineageError("FAILED_RETRY_SOURCE_CONSUMED")
 
 
@@ -210,3 +219,55 @@ def verify_failed_retry_lineage(
     except (OSError, KeyError, TypeError, ValueError, IndexError, sqlite3.Error) as exc:
         raise FailedRetryLineageError(
             getattr(exc, "code", str(exc) or "FAILED_RETRY_PROOF_INVALID")) from exc
+
+
+def _check_retry_top(conn, closed_source_id, task):
+    latest = conn.execute(
+        "SELECT run_id,state FROM runs WHERE task_id=? ORDER BY attempt DESC,run_id DESC LIMIT 1",
+        (task.metadata["task_id"],),
+    ).fetchone()
+    run = conn.execute("SELECT * FROM runs WHERE run_id=?", (closed_source_id,)).fetchone()
+    stored = conn.execute("SELECT status,task_hash,prompt_hash FROM tasks WHERE task_id=?",
+                          (task.metadata["task_id"],)).fetchone()
+    if (latest is None or (latest["run_id"], latest["state"]) !=
+            (closed_source_id, "abandoned") or run is None or run["ended_at"] is None or
+            stored is None or stored["status"] != "pending" or task.metadata.get("status") != "pending" or
+            (stored["task_hash"], stored["prompt_hash"]) != (task.task_hash, task.prompt_hash)):
+        raise FailedRetryLineageError("FAILED_RETRY_TOP_NOT_ELIGIBLE")
+    if conn.execute("SELECT 1 FROM leases WHERE task_id=?", (task.metadata["task_id"],)).fetchone():
+        raise FailedRetryLineageError("FAILED_RETRY_TASK_LEASE_PRESENT")
+    _one_consumer(conn, task.metadata["task_id"], closed_source_id, None)
+
+
+def load_abandoned_failed_retry_source(
+    conn, closed_source_id: str, task: TaskDefinition, repo_root,
+) -> AbandonedFailedRetrySource:
+    """Reprove a latest, unconsumed abandoned retry against its failed anchor."""
+    try:
+        _check_retry_top(conn, closed_source_id, task)
+        proof = verify_failed_retry_lineage(conn, closed_source_id, task, repo_root)
+        from .active_failed_recovery import compare_active_failed_workspace
+        from .failed_recovery import _capture, _same_capture, _stored_decision
+
+        prior = _stored_decision(conn, closed_source_id)
+        if prior not in {"partial", "unchanged"}:
+            raise FailedRetryLineageError("FAILED_RETRY_DECISION_INVALID")
+        first = _capture(proof.baseline.repo_root, task, proof.baseline)
+        decision = compare_active_failed_workspace(proof, first, task)
+        if (not decision.recoverable or decision.kind not in {"partial", "unchanged"} or
+                (prior == "unchanged" and decision.kind != "unchanged")):
+            raise FailedRetryLineageError("FAILED_RETRY_CURRENT_INVALID")
+        checked = verify_failed_retry_lineage(conn, closed_source_id, task, repo_root)
+        second = _capture(proof.baseline.repo_root, task, proof.baseline)
+        current_decision = compare_active_failed_workspace(checked, second, task)
+        prior_after = _stored_decision(conn, closed_source_id)
+        if (checked != proof or prior_after != prior or not _same_capture(first, second) or
+                current_decision != decision):
+            raise FailedRetryLineageError("FAILED_RETRY_CURRENT_CHANGED")
+        _check_retry_top(conn, closed_source_id, task)
+        return AbandonedFailedRetrySource(proof, second, decision, prior)
+    except FailedRetryLineageError:
+        raise
+    except (OSError, KeyError, TypeError, ValueError, IndexError, sqlite3.Error) as exc:
+        raise FailedRetryLineageError(
+            getattr(exc, "code", str(exc) or "FAILED_RETRY_SELECTION_INVALID")) from exc
