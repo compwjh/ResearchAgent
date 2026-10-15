@@ -8,6 +8,12 @@
 
 ---
 
+## CLI Task 的最小入口
+
+收到 CLI 渲染的 Task Prompt 时，先读该 Prompt 的 `Read:` 清单和对应角色段；
+完整 Task/结果协议见 `docs/sdd/TASK-PROTOCOL.md`。不得扩展读取为全仓扫描。
+按 `Result:` 指定路径交付结果，终态由协调者通过 CLI 校验；通用分派纪律见 `AGENTS.md`。
+
 ## 架构师（Architect）— `architect`
 
 - **何时接手**：收到新需求 / 需求变更，spec 处于 `待确认` 之前。
