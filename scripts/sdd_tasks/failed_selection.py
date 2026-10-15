@@ -34,6 +34,31 @@ class FailedClaimSource:
 def resolve_failed_source(conn, run_id, task, repo_root):
     """Choose exact original-baseline partial recovery or a fresh failed-source epoch."""
     try:
+        row = conn.execute("SELECT state FROM runs WHERE run_id=?", (run_id,)).fetchone()
+        if row is not None and row["state"] == "abandoned":
+            from .failed_lineage import (
+                FailedRetryLineageError,
+                failed_retry_origin,
+                load_abandoned_failed_retry_source,
+            )
+
+            try:
+                if failed_retry_origin(conn, run_id, task, repo_root) is None:
+                    raise FailedSelectionError("FAILED_SELECTION_NO_FAILED_ANCESTOR")
+                source = load_abandoned_failed_retry_source(conn, run_id, task, repo_root)
+            except FailedRetryLineageError as exc:
+                raise FailedSelectionError(exc.code) from exc
+            if source.decision.kind == "partial":
+                return FailedClaimSource(
+                    source.proof, source.decision, "partial", source.proof.baseline,
+                    source.proof.original_base, source.proof.recovery_source_id,
+                )
+            if source.current.status_records:
+                raise FailedSelectionError("FAILED_SELECTION_WORKSPACE_CHANGED")
+            return FailedClaimSource(
+                source.proof, source.decision, "unchanged", source.current,
+                source.current.head, None,
+            )
         proof = load_failed_recovery_source(conn, run_id, task, repo_root)
         decision = compare_verified_failed_workspace(proof, task)
         if not decision.recoverable or decision.kind not in {"partial", "unchanged"}:

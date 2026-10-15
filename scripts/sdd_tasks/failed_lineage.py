@@ -134,12 +134,16 @@ def _closed_retry_context(conn, closed_source_id, task, repo_root):
             if run["state"] == "failed":
                 payloads.append((cursor, snapshot_payload, claim, observation, decision))
                 return tuple(closed), cursor, tuple(payloads)
-            if run["error_code"] != "OWNER_DEAD_LEASE_EXPIRED" or source is None:
+            if run["error_code"] != "OWNER_DEAD_LEASE_EXPIRED":
                 raise FailedRetryLineageError("FAILED_RETRY_ABANDONED_INVALID")
             pair = ((decision.get("action"), decision.get("decision"))
                     if isinstance(decision, dict) else None)
             if len(closed) and pair != ("preserved_for_recovery", "partial"):
                 raise FailedRetryLineageError("FAILED_RETRY_DECISION_INVALID")
+            if source is None:
+                closed.append(run)
+                payloads.append((cursor, snapshot_payload, claim, observation, decision))
+                return tuple(closed), None, tuple(payloads)
             parent = conn.execute("SELECT state,task_id,attempt,ended_at FROM runs WHERE run_id=?",
                                   (source,)).fetchone()
             if (parent is None or parent["task_id"] != task_id or
@@ -159,6 +163,12 @@ def _closed_retry_context(conn, closed_source_id, task, repo_root):
         raise FailedRetryLineageError(getattr(exc, "code", "FAILED_RETRY_CONTEXT_INVALID")) from exc
 
 
+def failed_retry_origin(conn, closed_source_id: str, task: TaskDefinition, repo_root):
+    """Classify a closed abandoned ancestry without trusting unproved run pointers."""
+    _closed, origin_id, _payloads = _closed_retry_context(conn, closed_source_id, task, repo_root)
+    return origin_id
+
+
 def verify_failed_retry_lineage(
     conn, closed_source_id: str, task: TaskDefinition, repo_root,
 ) -> VerifiedFailedWorkspace:
@@ -166,6 +176,8 @@ def verify_failed_retry_lineage(
     try:
         closed, origin_id, payloads = _closed_retry_context(
             conn, closed_source_id, task, repo_root)
+        if origin_id is None:
+            raise FailedRetryLineageError("FAILED_RETRY_NO_FAILED_ANCESTOR")
         main, worktree, baseline, before, records, tips = _verify_failure_history_core(
             conn, origin_id, task, repo_root)
         anchor = conn.execute("SELECT * FROM runs WHERE run_id=?", (origin_id,)).fetchone()
