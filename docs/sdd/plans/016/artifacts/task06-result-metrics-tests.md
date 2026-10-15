@@ -372,3 +372,10 @@ direct-failed dead-owner CLI 接线后的独立复测：
 真实 failed retry 崩溃用例已通过 recover→abandoned/preserved 检查，仍在后续 `next`
 的 strict generic loader 报 `RECOVERY_SOURCE_INVALID`（newcli_claim.py:134）。
 此为缺口缩小的阶段证据，不作为闭环通过；成功断言保持原样。
+
+closed-source active wrapper 与领取前校验的兼容复测：冻结源码运行
+`python -m unittest -v tests.sdd_tasks.test_failed_retry_policy tests.sdd_tasks.test_failed_claim tests.sdd_tasks.test_failed_cli tests.sdd_tasks.test_failed_lifecycle tests.sdd_tasks.test_active_failed_workspace tests.sdd_tasks.test_cli_recover tests.sdd_tasks.test_lease_recovery`，
+20 项全部通过，27.510 秒，退出码 0。新 policy 测试包括真实 ALIVE、真实 DEAD 但租约未过期，
+以及通过注入 remote host 标识得到的 UNKNOWN；分别拒绝且 ledger/HEAD/refs/index/objects/源文件不变。
+UNKNOWN 是故障夹具，不作为真实远程 IDE 验收。新测试与领取前校验编译/Ruff 通过；
+closed-source wrapper 作者的编译/Ruff 亦通过。公开 closed-next 接线尚待完成，原崩溃回归仍未判通过。

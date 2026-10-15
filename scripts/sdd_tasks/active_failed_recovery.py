@@ -69,11 +69,24 @@ def _active_source_binding(conn, active_run_id, task, repo_root):
             _reject("ACTIVE_FAILED_CLAIM_MISMATCH")
         source = conn.execute("SELECT * FROM runs WHERE run_id=?", (source_id,)).fetchone()
         if (source is None or source["task_id"] != active["task_id"] or
-                source["state"] != "failed" or source["ended_at"] is None or
+                source["state"] not in {"failed", "abandoned"} or source["ended_at"] is None or
                 conn.execute("SELECT 1 FROM leases WHERE run_id=?", (source_id,)).fetchone()):
             _reject("ACTIVE_FAILED_SOURCE_INVALID")
 
-        main, worktree, baseline = _task_context(conn, source_id, task, Path(repo_root))
+        closed_proof = None
+        if source["state"] == "failed":
+            main, worktree, baseline = _task_context(conn, source_id, task, Path(repo_root))
+        else:
+            from .failed_lineage import verify_failed_retry_lineage
+            from .failed_recovery import _stored_decision
+
+            closed_proof = verify_failed_retry_lineage(conn, source_id, task, repo_root)
+            if (closed_proof.lineage is None or
+                    closed_proof.lineage.immediate_source_run_id != source_id or
+                    _stored_decision(conn, source_id) != "partial"):
+                _reject("ACTIVE_FAILED_CLOSED_SOURCE_INVALID")
+            baseline = closed_proof.baseline
+            main, worktree = Path(baseline.repo_root), Path(baseline.worktree_path)
         active_fields = (active["task_id"], active["task_hash"], active["prompt_hash"],
                          active["worktree"], active["branch"], active["agent_role"],
                          active["base_commit"])
@@ -102,7 +115,11 @@ def _active_source_binding(conn, active_run_id, task, repo_root):
         ).fetchone()
         if latest is None or latest["run_id"] != active_run_id or previous is None or previous["run_id"] != source_id:
             _reject("ACTIVE_FAILED_ATTEMPT_ORDER_INVALID")
-        return main, worktree, active, source, baseline
+        if (type(active["attempt"]) is not int or active["attempt"] < 1 or
+                type(source["attempt"]) is not int or source["attempt"] < 1 or
+                active["attempt"] != source["attempt"] + 1):
+            _reject("ACTIVE_FAILED_ATTEMPT_ORDER_INVALID")
+        return main, worktree, active, source, baseline, closed_proof
     except ActiveFailedRecoveryError:
         raise
     except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
@@ -148,7 +165,7 @@ def _only_active_consumer(conn, task_id, source_id, active_run_id) -> None:
 
 def _bound_failed_proof(conn, task, repo_root, binding) -> VerifiedFailedWorkspace:
     """Prove failed-source history and current immutable documents for a bound run."""
-    main, worktree, _active, source, baseline = binding
+    main, worktree, _active, source, baseline = binding[:5]
     try:
         verified = _verify_failure_history_core(conn, source["run_id"], task, repo_root)
         history_main, history_worktree, history_baseline, before, records, tips = verified
@@ -188,7 +205,7 @@ def load_active_failed_source(conn, active_run_id, task, repo_root) -> VerifiedF
     """Prove an active partial retry's baseline and failed-source document tip."""
     try:
         binding = _active_source_binding(conn, active_run_id, task, repo_root)
-        main, worktree, active, source, baseline = binding
+        main, worktree, active, source, baseline, closed_proof = binding
         task_row = conn.execute("SELECT status FROM tasks WHERE task_id=?",
                                 (task.metadata["task_id"],)).fetchone()
         if (task_row is None or task_row["status"] != "pending" or
@@ -208,7 +225,7 @@ def load_active_failed_source(conn, active_run_id, task, repo_root) -> VerifiedF
                                         owner.token.encode("utf-8"))):
             _reject("ACTIVE_FAILED_LEASE_MISMATCH")
         _only_active_consumer(conn, active["task_id"], source["run_id"], active_run_id)
-        return _bound_failed_proof(conn, task, repo_root, binding)
+        return closed_proof or _bound_failed_proof(conn, task, repo_root, binding)
     except ActiveFailedRecoveryError:
         raise
     except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
@@ -224,7 +241,7 @@ def load_expired_failed_source(conn, active_run_id, task, repo_root, *, now) -> 
 
     try:
         binding = _active_source_binding(conn, active_run_id, task, repo_root)
-        _main, _worktree, active, source, _baseline = binding
+        _main, _worktree, active, source, _baseline, closed_proof = binding
         task_row = conn.execute("SELECT status FROM tasks WHERE task_id=?",
                                 (task.metadata["task_id"],)).fetchone()
         if (task_row is None or task_row["status"] != "pending" or
@@ -252,7 +269,10 @@ def load_expired_failed_source(conn, active_run_id, task, repo_root, *, now) -> 
                 expires_at.astimezone(timezone.utc) > instant):
             _reject("ACTIVE_FAILED_LEASE_NOT_EXPIRED")
         _only_active_consumer(conn, active["task_id"], source["run_id"], active_run_id)
-        return _bound_failed_proof(conn, task, repo_root, binding)
+        from .failed_lineage import _one_consumer
+
+        _one_consumer(conn, active["task_id"], active_run_id, None)
+        return closed_proof or _bound_failed_proof(conn, task, repo_root, binding)
     except ActiveFailedRecoveryError:
         raise
     except (RecoveryCheckError, LeaseError) as exc:

@@ -112,6 +112,7 @@ def prepare_worktree(repo_root: Path, task, base_commit: str, *,
 
 def prepare_failed_worktree(repo_root: Path, task, source) -> WorkspaceSnapshot:
     """Validate a proven partial source while retaining its original baseline."""
+    from .active_failed_recovery import compare_active_failed_workspace
     from .failed_recovery import _capture, compare_failed_observation_current
     from .failed_selection import FailedClaimSource
     from .failed_workspace import compare_verified_failed_workspace
@@ -120,9 +121,12 @@ def prepare_failed_worktree(repo_root: Path, task, source) -> WorkspaceSnapshot:
         raise WorkspaceError("workspace_failed_recovery_invalid")
     proof, baseline = source.proof, source.proof.baseline
     decision = compare_verified_failed_workspace(proof, task)
-    if (source.decision != decision or decision.kind != "partial" or not decision.recoverable or
+    if (decision.kind != "partial" or not decision.recoverable or
             source.snapshot != baseline or source.base_commit != baseline.head or
-            source.recovery_of != proof.source_run_id or task.metadata.get("status") != "pending"):
+            source.recovery_of != proof.recovery_source_id or task.metadata.get("status") != "pending" or
+            (proof.lineage is None and source.decision != decision) or
+            (proof.lineage is not None and
+             (not source.decision.recoverable or source.decision.kind != "partial"))):
         raise WorkspaceError("workspace_failed_recovery_invalid")
     try:
         main, common = repository_paths(repo_root)
@@ -136,8 +140,12 @@ def prepare_failed_worktree(repo_root: Path, task, source) -> WorkspaceSnapshot:
             _common(worktree) != common):
         raise WorkspaceError("workspace_failed_recovery_identity_invalid")
     current = _capture(main, task, baseline)
-    if (current.branch != task.metadata["worktree"]["branch"] or
-            current.head != proof.active_claim_tip or
-            compare_failed_observation_current(proof, current, task).kind != "unchanged"):
+    if current.branch != task.metadata["worktree"]["branch"] or current.head != proof.active_claim_tip:
         raise WorkspaceError("workspace_failed_recovery_changed")
+    if proof.lineage is None:
+        if compare_failed_observation_current(proof, current, task).kind != "unchanged":
+            raise WorkspaceError("workspace_failed_recovery_changed")
+    else:
+        if compare_active_failed_workspace(proof, current, task) != source.decision:
+            raise WorkspaceError("workspace_failed_recovery_changed")
     return baseline

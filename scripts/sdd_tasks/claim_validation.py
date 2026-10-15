@@ -101,23 +101,34 @@ def validate_failed_candidate(conn, task, source, repo_root, satisfied_gates):
                 source.mode not in {"partial", "unchanged"} or
                 type(source.proof) is not VerifiedFailedWorkspace):
             raise ValueError("failed source type or mode is invalid")
-        proof = load_failed_recovery_source(conn, source.proof.source_run_id, live, main)
-        decision = compare_verified_failed_workspace(proof, live)
+        if source.proof.lineage is None:
+            proof = load_failed_recovery_source(conn, source.proof.source_run_id, live, main)
+            decision = compare_verified_failed_workspace(proof, live)
+            current = _capture(main, live, proof.baseline)
+            if compare_failed_observation_current(proof, current, live).kind != "unchanged":
+                raise ValueError("failed source workspace changed")
+        else:
+            from .active_failed_recovery import compare_active_failed_workspace
+            from .failed_lineage import load_abandoned_failed_retry_source
+
+            retry = load_abandoned_failed_retry_source(
+                conn, source.proof.recovery_source_id, live, main,
+            )
+            proof, decision, current = retry.proof, retry.decision, retry.current
+            if compare_active_failed_workspace(proof, current, live) != decision:
+                raise ValueError("failed retry workspace changed")
         if (proof != source.proof or decision != source.decision or
                 source.mode != decision.kind or not decision.recoverable or
                 type(source.snapshot) is not WorkspaceSnapshot):
             raise ValueError("failed source proof is stale")
-        current = _capture(main, live, proof.baseline)
-        if compare_failed_observation_current(proof, current, live).kind != "unchanged":
-            raise ValueError("failed source workspace changed")
         if source.mode == "partial":
             valid_snapshot = source.snapshot == proof.baseline
             valid_claim = (source.base_commit == proof.original_base and
-                           source.recovery_of == proof.source_run_id)
+                           source.recovery_of == proof.recovery_source_id)
         else:
             valid_snapshot = (_same_capture(source.snapshot, current) and
                               not current.status_records)
-            valid_claim = (source.base_commit == proof.active_claim_tip and
+            valid_claim = (source.base_commit == current.head and
                            source.recovery_of is None)
         if not valid_snapshot or not valid_claim:
             raise ValueError("failed claim does not match its verified source")
