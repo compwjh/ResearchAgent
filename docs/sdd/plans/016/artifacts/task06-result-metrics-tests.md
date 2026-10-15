@@ -379,3 +379,11 @@ closed-source active wrapper 与领取前校验的兼容复测：冻结源码运
 以及通过注入 remote host 标识得到的 UNKNOWN；分别拒绝且 ledger/HEAD/refs/index/objects/源文件不变。
 UNKNOWN 是故障夹具，不作为真实远程 IDE 验收。新测试与领取前校验编译/Ruff 通过；
 closed-source wrapper 作者的编译/Ruff 亦通过。公开 closed-next 接线尚待完成，原崩溃回归仍未判通过。
+
+### failed-derived crash 完整 CLI 路径首次通过
+
+Python 3.9 独立运行 `python -m unittest -v tests.sdd_tasks.test_failed_retry_crash`：
+1 项通过，3.907 秒，退出码 0；测试文件 Ruff 通过。真实 child owner 退出 86 后，
+CLI recover 保留原始 baseline 与源代码；CLI next 的 recovery_of 指向刚中断的 C 而不是重复消费 F；
+新 N 使用实际验证命令完成 CLI complete，Task completed、lease 清零，source commit 内容正确；
+rebuild 保留三次 run，随后 next 返回 NO_TASK。此时源码冻结；更广工具域回归与额外中断边界仍待验收。

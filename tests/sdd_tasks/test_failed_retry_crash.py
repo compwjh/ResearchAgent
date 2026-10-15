@@ -1,20 +1,22 @@
 import json
 import multiprocessing
 import os
+import subprocess
 import tempfile
 import traceback
 import unittest
 from contextlib import closing
 from pathlib import Path
 
+from scripts.sdd_tasks.catalog import rebuild
 from scripts.sdd_tasks.lease_recovery import stored_owner
 from scripts.sdd_tasks.locks import maintenance_lock
-from scripts.sdd_tasks.newcli_claim import claim_from_cli
 from scripts.sdd_tasks.newcli_recover import recover_from_cli
 from scripts.sdd_tasks.owners import OwnerStatus, observe_owner
 from scripts.sdd_tasks.store import connect
 from tests.sdd_tasks.test_completion_prepare import SOURCE
 from tests.sdd_tasks.test_failed_claim import _active_failed_claim
+from tests.sdd_tasks.test_failed_lifecycle import _active, _assert_source, _finish, _next
 
 
 def _crash_failed_source_claim(directory, ready, crash):
@@ -82,12 +84,41 @@ class FailedRetryCrashTests(unittest.TestCase):
                                   traceback.format_exc()))
                 self.assertEqual(recovered, {"run_id": dead_run, "state": "abandoned",
                                              "action": "preserved_for_recovery"})
-                next_claim, blockers = claim_from_cli(Path(root), "codex", "retry-after-crash",
-                                                       os.getpid())
-                self.assertIsNone(blockers)
-                self.assertIsNotNone(next_claim)
-                self.assertEqual((next_claim["recovery_of"], next_claim["base_commit"]),
-                                 (dead_run, original_base))
+                code, next_body = _next(Path(root))
+                self.assertEqual((code, next_body["ok"], next_body["code"]), (0, True, "OK"))
+                next_claim = next_body["data"]
+                _assert_source(self, database, next_claim, dead_run, original_base)
+                task, child_claim = _active(Path(root), Path(database), next_claim)
+                self.assertEqual((Path(canonical) / SOURCE).read_bytes(),
+                                 b"partial source change\n")
+                contents = "completed crash-recovered retry\n"
+                code, completed = _finish(Path(root), Path(canonical), task, child_claim,
+                                          "succeeded", contents)
+                self.assertEqual((code, completed["ok"], completed["code"]), (0, True, "OK"))
+                self.assertEqual(completed["data"]["outcome"], "succeeded")
+                self.assertEqual((Path(canonical) / SOURCE).read_bytes(), contents.encode())
+                self.assertEqual(subprocess.check_output(
+                    ["git", "-C", canonical, "show", "HEAD:" + SOURCE]), contents.encode())
+                baseline = subprocess.check_output(["git", "-C", canonical, "show", original_base + ":" + SOURCE])
+                self.assertEqual(baseline, b"baseline\n")
+                with closing(connect(database)) as conn:
+                    state = conn.execute("SELECT state FROM runs WHERE run_id=?", (next_claim["run_id"],)).fetchone()[0]
+                    status = conn.execute("SELECT status FROM tasks WHERE task_id=?",
+                                          (next_claim["task_id"],)).fetchone()[0]
+                    leases = conn.execute("SELECT COUNT(*) FROM leases WHERE task_id=?",
+                                          (next_claim["task_id"],)).fetchone()[0]
+                    run_count = conn.execute("SELECT COUNT(*) FROM runs WHERE task_id=?",
+                                             (next_claim["task_id"],)).fetchone()[0]
+                self.assertEqual((state, status, leases, run_count),
+                                 ("succeeded", "completed", 0, 3))
+                with self.assertWarnsRegex(RuntimeWarning, "stale_task_copies_ignored"):
+                    rebuilt = rebuild(Path(database), Path(root))
+                self.assertEqual(rebuilt.runs, 3)
+                code, no_task = _next(Path(root))
+                self.assertEqual((code, no_task["code"]), (0, "NO_TASK"))
+                with closing(connect(database)) as conn:
+                    self.assertEqual(conn.execute("SELECT COUNT(*) FROM runs WHERE task_id=?",
+                                                  (next_claim["task_id"],)).fetchone()[0], 3)
                 with closing(connect(database)) as conn:
                     after_event = conn.execute(
                         "SELECT payload_json FROM events WHERE run_id=? "
@@ -96,8 +127,6 @@ class FailedRetryCrashTests(unittest.TestCase):
                     rehydrated = json.loads(after_event[0])
                 self.assertEqual(rehydrated["source_run_id"], dead_run)
                 self.assertEqual(rehydrated["snapshot"], original_event["snapshot"])
-                self.assertEqual((Path(canonical) / SOURCE).read_bytes(),
-                                 b"partial source change\n")
             finally:
                 crash.set()
                 worker.join(timeout=5)
