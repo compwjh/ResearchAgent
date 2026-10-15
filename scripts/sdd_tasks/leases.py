@@ -164,14 +164,21 @@ def _live_task(conn: sqlite3.Connection, run, main: Path):
     return task
 
 
-def _failed_source_run_id(conn, run_id, task_id):
+def _has_failed_retry_source(conn, run_id, task, main):
     payload = _event(conn, run_id, "workspace_snapshot", True)
     source_id = payload.get("source_run_id") if isinstance(payload, dict) else None
     if not isinstance(source_id, str):
-        return None
+        return False
     source = conn.execute("SELECT state,task_id FROM runs WHERE run_id=?", (source_id,)).fetchone()
-    return source_id if source is not None and (source["state"], source["task_id"]) == (
-        "failed", task_id) else None
+    if source is None or source["task_id"] != task.metadata["task_id"]:
+        return False
+    if source["state"] == "failed":
+        return True
+    if source["state"] == "abandoned":
+        from .failed_lineage import failed_retry_origin
+
+        return failed_retry_origin(conn, source_id, task, main) is not None
+    return False
 
 
 def _verify_events(conn: sqlite3.Connection, run_id: str) -> int:
@@ -232,7 +239,7 @@ def recover_expired(
             task = _live_task(conn, row, main)
             next_sequence = _verify_events(conn, run_id)
             current = capture_snapshot(main, task)
-            if _failed_source_run_id(conn, run_id, row["task_id"]) is None:
+            if not _has_failed_retry_source(conn, run_id, task, main):
                 before = load_recovery_snapshot(conn, run_id, task, main)
                 actual = verify_recovery_decision(before, current, decision)
             else:
