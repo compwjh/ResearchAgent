@@ -216,6 +216,11 @@ Ruff 0.16.10 通过；5 个现有 focused unittest 模块共 28 项通过（9.22
 pytest 入口曾因业务全局 conftest 缺 python-dotenv 而 setup 失败，未进入测试体；
 工具测试最终使用标准库 unittest 正常执行。该增量仍未接入公开 failed 领取。
 
+活动 failed-workspace 的独立纯比较测试 3 项通过（4.07 秒），Ruff 0.16.10 通过。
+命令：`python -m pytest --confcutdir=tests/sdd_tasks -q tests/sdd_tasks/test_active_failed_workspace.py`；
+默认 pytest 入口先受全局 conftest 缺 dotenv 阻塞。测试验证原始 Git bytes 恢复至 unchanged、
+合法新改动、越界文件、伪造 head/branch/proof 与输入不变性；不构成 active-loader 领取集成验收。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
