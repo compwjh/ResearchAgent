@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from scripts.sdd_tasks.active_failed_recovery import compare_active_failed_workspace
 from scripts.sdd_tasks.failed_recovery import load_failed_recovery_source
+from scripts.sdd_tasks.failed_workspace import FailedRetryLineage
 from scripts.sdd_tasks.store import connect
 from scripts.sdd_tasks.workspace import capture_snapshot
 from tests.sdd_tasks.test_completion_prepare import SOURCE
@@ -68,3 +69,45 @@ class ActiveFailedWorkspaceTests(unittest.TestCase):
                     self.assertEqual(compare_active_failed_workspace(candidate, snapshot, task).kind,
                                      "conflict")
             self.assertEqual((task.metadata, proof, current), before)
+
+    def test_valid_retry_lineage_points_to_immediate_source_without_replacing_origin(self):
+        with tempfile.TemporaryDirectory() as temp, _active_source(temp) as data:
+            main, _, task, _, proof = data
+            current = capture_snapshot(main, task)
+            immediate = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            lineage = FailedRetryLineage(
+                proof.source_run_id, immediate,
+                (immediate, proof.source_run_id), ((immediate, proof.active_claim_tip),),
+            )
+            child_proof = replace(proof, lineage=lineage)
+            before = deepcopy((task.metadata, proof, child_proof, current))
+            decision = compare_active_failed_workspace(child_proof, current, task)
+            self.assertEqual((decision.kind, decision.changed_paths), ("partial", (SOURCE,)))
+            self.assertEqual(child_proof.recovery_source_id, immediate)
+            self.assertEqual(child_proof.source_run_id, proof.source_run_id)
+            self.assertEqual(child_proof.original_base, proof.original_base)
+            self.assertEqual((task.metadata, proof, child_proof, current), before)
+
+    def test_malformed_retry_lineages_conflict(self):
+        with tempfile.TemporaryDirectory() as temp, _active_source(temp) as data:
+            main, _, task, _, proof = data
+            current = capture_snapshot(main, task)
+            immediate = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            other = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+            valid_ids = (immediate, proof.source_run_id)
+            malformed = (
+                FailedRetryLineage(proof.source_run_id, immediate, valid_ids, ()),
+                FailedRetryLineage(proof.source_run_id, immediate,
+                                   (immediate, proof.source_run_id, proof.source_run_id),
+                                   ((immediate, proof.active_claim_tip),)),
+                FailedRetryLineage(proof.source_run_id, immediate, valid_ids,
+                                   ((immediate, "a" * 40),)),
+                FailedRetryLineage(other, immediate, valid_ids,
+                                   ((immediate, proof.active_claim_tip),)),
+            )
+            for lineage in malformed:
+                with self.subTest(lineage=lineage):
+                    decision = compare_active_failed_workspace(
+                        replace(proof, lineage=lineage), current, task)
+                    self.assertEqual((decision.kind, decision.error_code),
+                                     ("conflict", "FAILED_WORKSPACE_LINEAGE_INVALID"))

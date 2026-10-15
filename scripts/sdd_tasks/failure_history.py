@@ -23,7 +23,11 @@ from .leases import _main_root
 from .ledger_finalize import _target_task_status
 from .mirrors import render_status_update
 from .result_query import result_for_run
-from .workspace_observation import _decode_observation_event, _load_failed_run_baseline
+from .workspace_observation import (
+    _decode_abandoned_observation_event,
+    _decode_observation_event,
+    _load_failed_run_context,
+)
 
 
 class FailureHistoryError(ValueError):
@@ -87,7 +91,7 @@ def _same_owner(left, right):
             hmac.compare_digest(left["token"].encode("utf-8"), right["token"].encode("utf-8")))
 
 
-def _task_context(conn, run_id, task, repo_root):
+def _task_context_with_ancestry(conn, run_id, task, repo_root):
     if (not isinstance(conn, sqlite3.Connection) or type(task) is not TaskDefinition or not isinstance(run_id, str) or
             not isinstance(repo_root, (str, os.PathLike))):
         raise FailureHistoryError("FAILURE_HISTORY_ARGUMENT_INVALID")
@@ -105,14 +109,20 @@ def _task_context(conn, run_id, task, repo_root):
             raise FailureHistoryError("FAILURE_HISTORY_WORKTREE_INVALID")
         if Path(_text(_git(supplied, "rev-parse", "--show-toplevel"))).resolve(strict=True) != supplied:
             raise FailureHistoryError("FAILURE_HISTORY_WORKTREE_INVALID")
-        baseline = _load_failed_run_baseline(conn, run_id, task, main)
+        baseline, ancestry = _load_failed_run_context(conn, run_id, task, main)
         if baseline.worktree_path != worktree or baseline.repo_root != main:
             raise FailureHistoryError("FAILURE_HISTORY_TASK_MISMATCH")
-        return main, worktree, baseline
+        return main, worktree, baseline, ancestry
     except FailureHistoryError:
         raise
     except (OSError, TypeError, ValueError, KeyError, sqlite3.Error) as exc:
         raise FailureHistoryError("FAILURE_HISTORY_CONTEXT_INVALID") from exc
+
+
+def _task_context(conn, run_id, task, repo_root):
+    main, worktree, baseline, _ancestry = _task_context_with_ancestry(
+        conn, run_id, task, repo_root)
+    return main, worktree, baseline
 
 
 def _instant(value):
@@ -258,7 +268,8 @@ def _verify_history_runs(conn, main, worktree, selected_run_id, task, base, chai
 
 
 def _verify_failure_history_core(conn, run_id, task, repo_root):
-    main, worktree, baseline = _task_context(conn, run_id, task, repo_root)
+    main, worktree, baseline, ancestry = _task_context_with_ancestry(
+        conn, run_id, task, repo_root)
     selected = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
     if selected is None or selected["state"] != "failed" or selected["ended_at"] is None:
         raise FailureHistoryError("FAILURE_HISTORY_SELECTED_RUN_INVALID")
@@ -267,10 +278,24 @@ def _verify_failure_history_core(conn, run_id, task, repo_root):
         raise FailureHistoryError("FAILURE_HISTORY_BASE_OR_BRANCH_INVALID")
     chain = _first_parent_chain(worktree, before[0], selected["base_commit"])
     verified = _verify_history_runs(conn, main, worktree, run_id, task, selected["base_commit"], chain)
+    ancestry_failed = tuple(run["run_id"] for run in ancestry if run["state"] == "failed")
+    verified_failed = tuple(record[0]["run_id"] for record in verified)
+    if ancestry_failed != verified_failed:
+        raise FailureHistoryError("FAILURE_HISTORY_SOURCE_CHAIN_MISMATCH")
     tips = []
     for run, _result, _journal, _oid, parent, _tree, _message in verified:
         _decode_observation_event(conn, run["run_id"], task, main, expected_tip=parent)
         tips.append((run["run_id"], parent))
+    candidates = tuple((record[0]["attempt"], record[3]) for record in verified)
+    for ancestor in ancestry:
+        if ancestor["state"] != "abandoned" or not conn.execute(
+                "SELECT 1 FROM events WHERE run_id=? AND event_type='workspace_observation'",
+                (ancestor["run_id"],)).fetchone():
+            continue
+        previous = tuple(item for item in candidates if item[0] < ancestor["attempt"])
+        expected_tip = max(previous, key=lambda item: item[0])[1] if previous else baseline.head
+        _decode_abandoned_observation_event(conn, ancestor["run_id"], task, main,
+                                            expected_tip=expected_tip)
     after = _git_state(worktree)
     if after != before:
         raise FailureHistoryError("FAILURE_HISTORY_WORKTREE_CHANGED")

@@ -355,3 +355,13 @@ Ran 9 tests in 17.410s — OK
 /workspace/researchagent-cli-venv39/bin/ruff check scripts/sdd_tasks/completion_service.py tests/sdd_tasks/test_completion_service.py
 All checks passed
 ```
+
+## 2026-10-15 failed retry 祖先证明增量
+
+将 copied baseline 的结构检查与真实 failed journal/Git 文档链证明分离，
+祖先 abandoned observation 的 HEAD 只取已验证的前序 failed commit；保留循环引用错误优先级。
+独立 Luna xhigh 在冻结源码下运行 Python 3.9 unittest：
+`tests.sdd_tasks.test_failure_history tests.sdd_tasks.test_failed_recovery tests.sdd_tasks.test_workspace_observation tests.sdd_tasks.test_failed_lifecycle tests.sdd_tasks.test_active_failed_workspace`，
+27 项通过，35.569 秒，退出码 0。四个相关生产模块及 pure test 编译与 Ruff 通过。
+新增 expired failed-source 的只读 DEAD/租约证明 wrapper（46 行）尚未接入 CLI，
+因此不代表真实 failed retry 崩溃测试已修复；该回归仍保留原成功断言，当前未通过。

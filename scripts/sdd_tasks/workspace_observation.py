@@ -366,10 +366,10 @@ def _validate_snapshot_history_events(conn, run):
     return events
 
 
-def _load_failed_run_baseline(
+def _load_failed_run_context(
     conn: sqlite3.Connection, run_id: str, task: TaskDefinition, repo_root: Path,
-) -> WorkspaceSnapshot:
-    """Return copied before data only; caller must separately prove failure history."""
+) -> tuple:
+    """Return copied baseline and its ordered source ancestry for external proof."""
     try:
         main, common = repository_paths(Path(repo_root))
         if main != _main_root(conn):
@@ -402,7 +402,7 @@ def _load_failed_run_baseline(
         if _git(worktree, "rev-parse", "--abbrev-ref", "HEAD") != branch:
             raise WorkspaceObservationError("OBSERVATION_BRANCH_MISMATCH")
         expected = (task_id, task.task_hash, task.prompt_hash, relative, branch, meta["agent_role"])
-        baseline, cursor, seen = None, _uuid(run_id), set()
+        baseline, cursor, seen, ancestry = None, _uuid(run_id), set(), []
         while cursor is not None:
             if cursor in seen:
                 raise WorkspaceObservationError("OBSERVATION_HISTORY_CYCLE")
@@ -415,33 +415,45 @@ def _load_failed_run_baseline(
                       run["branch"], run["agent_role"])
             if actual != expected or not run["ended_at"]:
                 raise WorkspaceObservationError("OBSERVATION_HISTORY_BINDING_MISMATCH")
+            if type(run["attempt"]) is not int or run["attempt"] < 1:
+                raise WorkspaceObservationError("OBSERVATION_HISTORY_ATTEMPT_ORDER_INVALID")
             if stored_owner(run["owner_json"]).executor_id != run["executor_id"]:
                 raise WorkspaceObservationError("OBSERVATION_HISTORY_OWNER_INVALID")
             _validate_snapshot_history_events(conn, run)
-            if (run["state"] == "abandoned" and conn.execute(
-                    "SELECT 1 FROM events WHERE run_id=? AND event_type='workspace_observation'", (cursor,),
-            ).fetchone()):
-                _decode_abandoned_observation_event(conn, cursor, task, main,
-                                                    expected_tip=run["base_commit"])
             source, snapshot = _snapshot(
                 _event(conn, cursor, "workspace_snapshot", True), task, run, main, common, worktree)
             if baseline is not None and snapshot != baseline:
                 raise WorkspaceObservationError("OBSERVATION_HISTORY_BASELINE_MISMATCH")
             baseline = snapshot
+            ancestry.append(run)
             claim = _event(conn, cursor, "recovery_claim", source is not None)
             if source is None:
                 break
             if (not isinstance(claim, dict) or set(claim) != {"schema", "recovery_of"} or
                     claim["schema"] != "sdd-recovery-claim/v1" or _uuid(claim["recovery_of"]) != source):
                 raise WorkspaceObservationError("OBSERVATION_HISTORY_CLAIM_INVALID")
-            parent = conn.execute("SELECT state,task_id FROM runs WHERE run_id=?", (source,)).fetchone()
-            if parent is None or parent["task_id"] != task_id or parent["state"] not in {"failed", "abandoned"}:
+            parent = conn.execute("SELECT state,task_id,attempt FROM runs WHERE run_id=?",
+                                  (source,)).fetchone()
+            if (parent is None or parent["task_id"] != task_id or
+                    parent["state"] not in {"failed", "abandoned"}):
                 raise WorkspaceObservationError("OBSERVATION_HISTORY_SOURCE_INVALID")
+            if source in seen:
+                raise WorkspaceObservationError("OBSERVATION_HISTORY_CYCLE")
+            if (type(parent["attempt"]) is not int or
+                    run["attempt"] != parent["attempt"] + 1):
+                raise WorkspaceObservationError("OBSERVATION_HISTORY_ATTEMPT_ORDER_INVALID")
             cursor = source
-        return baseline
+        return baseline, tuple(reversed(ancestry))
     except WorkspaceObservationError:
         raise
     except WorkspaceError:
         raise
     except (OSError, TypeError, ValueError, KeyError, sqlite3.Error) as exc:
         raise WorkspaceObservationError("OBSERVATION_BASELINE_INVALID") from exc
+
+
+def _load_failed_run_baseline(
+    conn: sqlite3.Connection, run_id: str, task: TaskDefinition, repo_root: Path,
+) -> WorkspaceSnapshot:
+    """Return copied before data only; caller must separately prove failure history."""
+    return _load_failed_run_context(conn, run_id, task, repo_root)[0]
