@@ -106,8 +106,14 @@ def record_workspace_observation(
                       if isinstance(source_run_id, str) else None)
             failed_source = None
             expected_head = run["base_commit"]
-            if (source is not None and source["state"] == "failed" and
+            is_failed_retry = (source is not None and source["state"] == "failed" and
+                               source["task_id"] == run["task_id"])
+            if (source is not None and source["state"] == "abandoned" and
                     source["task_id"] == run["task_id"]):
+                from .failed_lineage import failed_retry_origin
+
+                is_failed_retry = failed_retry_origin(conn, source_run_id, task, main) is not None
+            if is_failed_retry:
                 from .active_failed_recovery import (
                     compare_active_failed_workspace,
                     load_active_failed_source,
