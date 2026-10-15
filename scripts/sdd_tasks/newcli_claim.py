@@ -126,20 +126,29 @@ def claim_from_cli(repo_root: Path, ide: str, executor: str, owner_pid: int,
                                for gate in task.metadata["required_gates"]):
                             continue
                 baseline, snapshot, failed_source = None, None, None
+                failed_run_id = failed.get(task_id)
                 if task_id in abandoned:
                     previous = conn.execute(
                         "SELECT run_id FROM runs WHERE task_id=? AND state='abandoned' "
                         "ORDER BY attempt DESC,run_id DESC LIMIT 1", (task_id,),
                     ).fetchone()
-                    baseline = load_recovery_snapshot(conn, previous[0], task, main)
-                    if base_commit is not None and base_commit != baseline.head:
-                        raise ClaimError("CLAIM_BASE_COMMIT_INVALID", task_id)
-                    base = baseline.head
-                elif task_id in failed:
+                    from .failed_lineage import FailedRetryLineageError, failed_retry_origin
+
+                    try:
+                        if failed_retry_origin(conn, previous[0], task, main) is not None:
+                            failed_run_id = previous[0]
+                    except FailedRetryLineageError as exc:
+                        raise ClaimError(exc.code, task_id) from exc
+                    if failed_run_id is None:
+                        baseline = load_recovery_snapshot(conn, previous[0], task, main)
+                        if base_commit is not None and base_commit != baseline.head:
+                            raise ClaimError("CLAIM_BASE_COMMIT_INVALID", task_id)
+                        base = baseline.head
+                if failed_run_id is not None:
                     from .failed_selection import FailedSelectionError, resolve_failed_source
 
                     try:
-                        failed_source = resolve_failed_source(conn, failed[task_id], task, main)
+                        failed_source = resolve_failed_source(conn, failed_run_id, task, main)
                     except FailedSelectionError as exc:
                         raise ClaimError(exc.code, task_id) from exc
                     except ValueError as exc:
@@ -147,7 +156,7 @@ def claim_from_cli(repo_root: Path, ide: str, executor: str, owner_pid: int,
                     base = failed_source.base_commit
                     if base_commit is not None and base_commit != base:
                         raise ClaimError("CLAIM_BASE_COMMIT_INVALID", task_id)
-                else:
+                elif baseline is None:
                     base_root = canonical if canonical in roots else main
                     base = base_commit or _git(base_root, "rev-parse", "HEAD")
                 if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", base):

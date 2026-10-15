@@ -132,7 +132,18 @@ def claim_next(
             if database_blockers(conn, candidate, satisfied_gates, claimed_at):
                 continue
             abandoned = _latest_abandoned(conn, task_id)
-            latest_failed = _latest_failed(conn, task_id) if abandoned is None else None
+            failed_retry = None
+            if abandoned is not None:
+                from .failed_lineage import FailedRetryLineageError, failed_retry_origin
+
+                try:
+                    if failed_retry_origin(conn, abandoned["run_id"], candidate, main) is not None:
+                        failed_retry = abandoned["run_id"]
+                        abandoned = None
+                except FailedRetryLineageError as exc:
+                    raise ClaimError(exc.code, task_id) from exc
+            latest_failed = (_latest_failed(conn, task_id)
+                             if abandoned is None and failed_retry is None else None)
             recovery_kind, recovery_of, failed_source, failed_candidate = None, None, None, None
             snapshot = workspace_snapshots.get(task_id)
             if abandoned is not None:
@@ -151,12 +162,12 @@ def claim_next(
                     if snapshot != baseline:
                         raise ClaimError("CLAIM_RECOVERY_SNAPSHOT_MISMATCH", task_id)
                     snapshot, recovery_kind, recovery_of = baseline, "partial", run_id
-            elif latest_failed is not None:
+            elif failed_retry is not None or latest_failed is not None:
                 from .failed_selection import FailedSelectionError, resolve_failed_source
 
                 try:
                     failed_candidate = resolve_failed_source(
-                        conn, latest_failed["run_id"], candidate, main,
+                        conn, failed_retry or latest_failed["run_id"], candidate, main,
                     )
                 except FailedSelectionError as exc:
                     raise ClaimError(exc.code, task_id) from exc
