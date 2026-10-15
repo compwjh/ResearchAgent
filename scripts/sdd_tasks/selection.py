@@ -7,7 +7,7 @@ from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Mapping, Optional, Sequence, Set
 
-from .claim_validation import validate_candidate
+from .claim_validation import validate_candidate, validate_failed_candidate
 from .claims import Claim, ClaimError
 from .documents import TaskDefinition, _pairs
 from .eligibility import _timestamp, database_blockers, rank_candidates
@@ -15,7 +15,7 @@ from .owners import OwnerIdentity, OwnerStatus, observe_owner
 from .recovery_snapshots import load_recovery_snapshot
 from .spec_status import is_claimable
 from .store import transaction
-from .workspace import capture_snapshot, compare_snapshot, snapshot_payload
+from .workspace import WorkspaceSnapshot, capture_snapshot, compare_snapshot, snapshot_payload
 
 
 def _main_root(conn: sqlite3.Connection) -> Path:
@@ -50,6 +50,20 @@ def _latest_abandoned(conn, task_id):
         (task_id,),
     ).fetchone()
     return row if row is not None and row["state"] == "abandoned" else None
+
+
+def _latest_failed(conn, task_id):
+    row = conn.execute(
+        "SELECT run_id,state FROM runs WHERE task_id=? ORDER BY attempt DESC,run_id DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+    return row if row is not None and row["state"] == "failed" else None
+
+
+def _semantics_same(left, right):
+    return (type(left) is WorkspaceSnapshot and type(right) is WorkspaceSnapshot and
+            all(getattr(left, name) == getattr(right, name)
+                for name in WorkspaceSnapshot.__dataclass_fields__ if name != "captured_at"))
 
 
 def _check_recovery_event(conn, run_id):
@@ -101,8 +115,8 @@ def claim_next(
     result = None
     with transaction(conn, immediate=True):
         recovery_ids = {row[0] for row in conn.execute(
-            "SELECT task_id FROM runs r WHERE state='abandoned' AND attempt=("
-            "SELECT MAX(attempt) FROM runs WHERE task_id=r.task_id)"
+            "SELECT task_id FROM runs r WHERE state IN ('abandoned','failed') AND run_id=("
+            "SELECT run_id FROM runs WHERE task_id=r.task_id ORDER BY attempt DESC,run_id DESC LIMIT 1)"
         )}
         seen = set()
         for candidate in rank_candidates(candidates, recovery_ids):
@@ -118,7 +132,8 @@ def claim_next(
             if database_blockers(conn, candidate, satisfied_gates, claimed_at):
                 continue
             abandoned = _latest_abandoned(conn, task_id)
-            recovery_kind, recovery_of = None, None
+            latest_failed = _latest_failed(conn, task_id) if abandoned is None else None
+            recovery_kind, recovery_of, failed_source, failed_candidate = None, None, None, None
             snapshot = workspace_snapshots.get(task_id)
             if abandoned is not None:
                 run_id = abandoned["run_id"]
@@ -136,11 +151,36 @@ def claim_next(
                     if snapshot != baseline:
                         raise ClaimError("CLAIM_RECOVERY_SNAPSHOT_MISMATCH", task_id)
                     snapshot, recovery_kind, recovery_of = baseline, "partial", run_id
+            elif latest_failed is not None:
+                from .failed_selection import FailedSelectionError, resolve_failed_source
+
+                try:
+                    failed_candidate = resolve_failed_source(
+                        conn, latest_failed["run_id"], candidate, main,
+                    )
+                except FailedSelectionError as exc:
+                    raise ClaimError(exc.code, task_id) from exc
+                except ValueError as exc:
+                    raise ClaimError("CLAIM_FAILED_SOURCE_INVALID", task_id) from exc
+                if failed_candidate.mode == "partial":
+                    if snapshot != failed_candidate.snapshot:
+                        raise ClaimError("CLAIM_FAILED_SOURCE_STALE", task_id)
+                    snapshot = failed_candidate.snapshot
+                    recovery_of, failed_source = failed_candidate.recovery_of, failed_candidate.proof
+                elif not _semantics_same(snapshot, failed_candidate.snapshot):
+                    raise ClaimError("CLAIM_FAILED_SOURCE_STALE", task_id)
+                else:
+                    snapshot = failed_candidate.snapshot
             if snapshot is None:
                 raise ClaimError("CLAIM_SNAPSHOT_MISSING", task_id)
-            live, gates, spec_state = validate_candidate(
-                candidate, snapshot, main, satisfied_gates, recovery_kind,
-            )
+            if failed_candidate is None:
+                live, gates, spec_state = validate_candidate(
+                    candidate, snapshot, main, satisfied_gates, recovery_kind,
+                )
+            else:
+                live, gates, spec_state = validate_failed_candidate(
+                    conn, candidate, failed_candidate, main, satisfied_gates,
+                )
             if not is_claimable(spec_state):
                 continue
             if database_blockers(conn, live, gates, claimed_at):
@@ -174,6 +214,6 @@ def claim_next(
                 raise ClaimError("CLAIM_CONFLICT", task_id) from exc
             result = Claim(live, run_id, attempt, ide, owner, claimed_at, expires_at,
                            snapshot.worktree_path, snapshot.branch, snapshot.head,
-                           live.task_hash, live.prompt_hash, "claimed", recovery_of)
+                           live.task_hash, live.prompt_hash, "claimed", recovery_of, failed_source)
             break
     return result

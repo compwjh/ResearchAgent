@@ -204,7 +204,7 @@ class RecoveryClaimTests(unittest.TestCase):
                 self.assertEqual(_ledger(conn), rows)
             self.assertEqual(target.read_bytes(), contents)
 
-    def test_terminal_failure_uses_fresh_rules_and_retains_dirty_conflict(self):
+    def test_unproven_terminal_failure_is_not_reclaimed(self):
         for dirty in (False, True):
             with self.subTest(dirty=dirty), tempfile.TemporaryDirectory() as temp:
                 root, worktree, task, before, db = _fixture(temp)
@@ -212,25 +212,21 @@ class RecoveryClaimTests(unittest.TestCase):
                     abandoned = _seed(conn, task, before, _dead_owner())
                 _recover(root, db, task, abandoned, before)
                 with closing(connect(db)) as conn:
+                    # Legacy fixture: this state flip omits verified failed-source evidence.
                     conn.execute("UPDATE runs SET state='failed',ended_at=?,error_code='TEST_FAILURE' "
                                  "WHERE run_id=?", (NOW, abandoned))
                 target = worktree / "scripts/sdd_tasks/allowed.txt"
                 if dirty:
                     target.write_text("preserve\n", encoding="utf-8")
-                    with closing(connect(db)) as conn:
-                        rows, contents = _ledger(conn), target.read_bytes()
-                    with self.assertRaises(ClaimError):
-                        _claim(root, db, task, before, fresh=True)
-                    with closing(connect(db)) as conn:
-                        self.assertEqual(_ledger(conn), rows)
-                    self.assertEqual(target.read_bytes(), contents)
-                else:
-                    claim = _claim(root, db, task, before, fresh=True)
-                    self.assertIsNone(claim.recovery_of)
-                    with closing(connect(db)) as conn:
-                        event = conn.execute("SELECT payload_json FROM events WHERE run_id=? "
-                                             "AND event_type='workspace_snapshot'", (claim.run_id,)).fetchone()[0]
-                    self.assertIsNone(json.loads(event)["source_run_id"])
+                with closing(connect(db)) as conn:
+                    rows = _ledger(conn)
+                contents = target.read_bytes()
+                with self.assertRaises(ClaimError) as error:
+                    _claim(root, db, task, before, fresh=True)
+                self.assertEqual(error.exception.code, "CLAIM_FAILED_SOURCE_INVALID")
+                with closing(connect(db)) as conn:
+                    self.assertEqual(_ledger(conn), rows)
+                self.assertEqual(target.read_bytes(), contents)
 
 
 if __name__ == "__main__":

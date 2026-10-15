@@ -221,6 +221,14 @@ pytest 入口曾因业务全局 conftest 缺 python-dotenv 而 setup 失败，�
 默认 pytest 入口先受全局 conftest 缺 dotenv 阻塞。测试验证原始 Git bytes 恢复至 unchanged、
 合法新改动、越界文件、伪造 head/branch/proof 与输入不变性；不构成 active-loader 领取集成验收。
 
+真实 failed 领取与 active-loader 独立 2 项 unittest 通过（3.525 秒），Ruff 通过。
+`python -m unittest -v tests.sdd_tasks.test_failed_claim` 使用实际 fail_run 产物、当前活进程 owner、
+真实 gates 和 claim_next，验证原始 snapshot/source 指针、上下文重建、实际验证命令、
+重复领取阻止及历史摘要篡改拒绝。尚不覆盖 child complete/fail 与 CLI next 的公开串联。
+冻结源码后原领取 5 模块共 28 项通过（10.083 秒），Ruff 通过；对应模块为
+test_claim_validation、test_selection、test_recovery_claim、test_failed_selection、test_cli_claim。
+此前并行编辑中间态造成 CLI 导入失败，冻结后复验已排除；不将中间态当最终验收结果。
+
 ## 2026-10-14 服务重放与 principal 校验增量
 
 Luna xhigh 新增真实 journal 重放和错误 executor 测试；主 agent 读回后，Python 3.9 服务套件
