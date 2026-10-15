@@ -200,8 +200,14 @@ def _active_context(task: TaskDefinition, claim: Claim, repo_root: Path) -> _Val
                                (recovery_of,)).fetchone()
                   if isinstance(recovery_of, str) else None)
         failed_source = None
-        if (source is not None and source["state"] == "failed" and
+        is_failed_retry = (source is not None and source["state"] == "failed" and
+                           source["task_id"] == run["task_id"])
+        if (source is not None and source["state"] == "abandoned" and
                 source["task_id"] == run["task_id"]):
+            from .failed_lineage import failed_retry_origin
+
+            is_failed_retry = failed_retry_origin(conn, recovery_of, canonical_task, main) is not None
+        if is_failed_retry:
             failed_source = load_active_failed_source(conn, claim.run_id, canonical_task, main)
             if (claim.failed_source is not None and claim.failed_source != failed_source):
                 raise ValidationRunnerError("VALIDATION_FAILED_SOURCE_MISMATCH")

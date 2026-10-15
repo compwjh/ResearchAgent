@@ -105,8 +105,14 @@ def load_active_claim(
                                (recovery_of,)).fetchone()
                   if isinstance(recovery_of, str) else None)
         failed_source = None
-        if (source is not None and source["state"] == "failed" and
+        is_failed_retry = (source is not None and source["state"] == "failed" and
+                           source["task_id"] == row["task_id"])
+        if (source is not None and source["state"] == "abandoned" and
                 source["task_id"] == row["task_id"]):
+            from .failed_lineage import failed_retry_origin
+
+            is_failed_retry = failed_retry_origin(conn, recovery_of, task, main) is not None
+        if is_failed_retry:
             failed_source = load_active_failed_source(conn, run_id, task, main)
             baseline = failed_source.baseline
         else:
