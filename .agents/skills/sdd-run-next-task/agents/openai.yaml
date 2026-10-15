@@ -1,0 +1,4 @@
+interface:
+  display_name: "SDD Run Next Task"
+  short_description: "Execute one eligible SDD task"
+  default_prompt: "Use $sdd-run-next-task to run one eligible task."
