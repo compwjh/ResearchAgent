@@ -3,14 +3,31 @@
 import sqlite3
 from pathlib import Path
 
-from .atomic import contained
+from .atomic import contained, read_text
 from .documents import TaskDefinition
+from .failed_workspace import (
+    FailedRetryLineage,
+    VerifiedFailedWorkspace,
+    _identity,
+    compare_verified_failed_workspace,
+)
+from .failure_history import (
+    VerifiedFailureHistory,
+    _git_state,
+    _verify_document_objects,
+    _verify_failure_history_core,
+)
 from .lease_recovery import stored_owner
 from .leases import _main_root
 from .locks import repository_paths
 from .recovery_snapshots import _event, _snapshot, _uuid
 from .workspace import WorkspaceError
-from .workspace_observation import _instant, _validate_snapshot_history_events
+from .workspace_observation import (
+    _decode_abandoned_observation_event,
+    _decode_observation_event,
+    _instant,
+    _validate_snapshot_history_events,
+)
 
 
 class FailedRetryLineageError(WorkspaceError):
@@ -131,3 +148,65 @@ def _closed_retry_context(conn, closed_source_id, task, repo_root):
         raise
     except (OSError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
         raise FailedRetryLineageError(getattr(exc, "code", "FAILED_RETRY_CONTEXT_INVALID")) from exc
+
+
+def verify_failed_retry_lineage(
+    conn, closed_source_id: str, task: TaskDefinition, repo_root,
+) -> VerifiedFailedWorkspace:
+    """Prove a closed retry chain while keeping the original failed run as anchor."""
+    try:
+        closed, origin_id, payloads = _closed_retry_context(
+            conn, closed_source_id, task, repo_root)
+        main, worktree, baseline, before, records, tips = _verify_failure_history_core(
+            conn, origin_id, task, repo_root)
+        anchor = conn.execute("SELECT * FROM runs WHERE run_id=?", (origin_id,)).fetchone()
+        if (not closed or anchor is None or len(payloads) != len(closed) + 1 or
+                payloads[-1][0] != origin_id or not records or not tips or
+                records[-1][0]["run_id"] != origin_id or tips[-1][0] != origin_id or
+                before[0] != records[-1][3] or before[1] != task.metadata["worktree"]["branch"]):
+            raise FailedRetryLineageError("FAILED_RETRY_HISTORY_MISMATCH")
+        for index, run in enumerate(tuple(closed) + (anchor,)):
+            payload = payloads[index]
+            if payload[0] != run["run_id"]:
+                raise FailedRetryLineageError("FAILED_RETRY_SOURCE_MISMATCH")
+            _source, copied = _snapshot(payload[1], task, run, main, baseline.common_dir, worktree)
+            if copied != baseline:
+                raise FailedRetryLineageError("FAILED_RETRY_BASELINE_MISMATCH")
+        excluded, latest_documents = _verify_document_objects(conn, worktree, task, records)
+        for path, content in latest_documents.items():
+            if read_text(contained(worktree, path)) != content:
+                raise FailedRetryLineageError("FAILED_RETRY_DOCUMENT_CHANGED")
+        document_tip = tips[-1][1]
+        observation = _decode_observation_event(
+            conn, origin_id, task, main, expected_tip=document_tip)
+        history = VerifiedFailureHistory(tuple(tips), excluded, before[0])
+        lineage = FailedRetryLineage(
+            origin_id, closed[0]["run_id"],
+            tuple(run["run_id"] for run in closed) + (origin_id,),
+            tuple((run["run_id"], before[0]) for run in closed),
+        )
+        proof = VerifiedFailedWorkspace(
+            origin_id, _identity(baseline), baseline, observation, history, baseline.head,
+            document_tip, before[0], tuple(task.metadata["allowed_paths"]), tuple(excluded), lineage,
+        )
+        source = compare_verified_failed_workspace(proof, task)
+        if not source.recoverable or source.kind != "partial":
+            raise FailedRetryLineageError("FAILED_RETRY_ORIGIN_NOT_PARTIAL")
+        from .active_failed_recovery import compare_active_failed_workspace
+        for index, run in enumerate(closed):
+            payload = payloads[index]
+            if payload[3] is None:
+                continue
+            captured = _decode_abandoned_observation_event(
+                conn, run["run_id"], task, main, expected_tip=before[0])
+            decision = compare_active_failed_workspace(proof, captured, task)
+            if not decision.recoverable or decision.kind not in {"partial", "unchanged"}:
+                raise FailedRetryLineageError("FAILED_RETRY_OBSERVATION_CONFLICT")
+        if _git_state(worktree) != before:
+            raise FailedRetryLineageError("FAILED_RETRY_WORKTREE_CHANGED")
+        return proof
+    except FailedRetryLineageError:
+        raise
+    except (OSError, KeyError, TypeError, ValueError, IndexError, sqlite3.Error) as exc:
+        raise FailedRetryLineageError(
+            getattr(exc, "code", str(exc) or "FAILED_RETRY_PROOF_INVALID")) from exc
