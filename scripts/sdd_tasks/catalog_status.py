@@ -119,14 +119,6 @@ def _recovery_reason(conn: sqlite3.Connection, task, main: Path):
         return _failed_recovery_reason(conn, latest["run_id"], task, main)
     if latest["state"] != "abandoned":
         return None
-    from .failed_lineage import FailedRetryLineageError, failed_retry_origin
-
-    try:
-        origin = failed_retry_origin(conn, latest["run_id"], task, main)
-    except FailedRetryLineageError as exc:
-        return "recovery_invalid:" + exc.code
-    if origin is not None:
-        return _failed_recovery_reason(conn, latest["run_id"], task, main)
     rows = conn.execute(
         "SELECT payload_json FROM events WHERE run_id=? AND event_type='recovery_decision'",
         (latest["run_id"],),
@@ -142,6 +134,14 @@ def _recovery_reason(conn: sqlite3.Connection, task, main: Path):
             event.get("schema") != "sdd-run-recovery/v1" or not isinstance(action, str) or
             action not in actions or actions[action] != event.get("decision")):
         return "recovery_invalid:RECOVERY_EVENT_INVALID"
+    from .failed_lineage import FailedRetryLineageError, failed_retry_origin
+
+    try:
+        origin = failed_retry_origin(conn, latest["run_id"], task, main)
+    except FailedRetryLineageError as exc:
+        return "recovery_invalid:" + exc.code
+    if origin is not None:
+        return _failed_recovery_reason(conn, latest["run_id"], task, main)
     try:
         before = load_recovery_snapshot(conn, latest["run_id"], task, main)
         current = capture_snapshot(main, task)

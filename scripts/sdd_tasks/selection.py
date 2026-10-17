@@ -7,7 +7,7 @@ from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Mapping, Optional, Sequence, Set
 
-from .claim_validation import validate_candidate, validate_failed_candidate
+from .claim_validation import _canonical_candidate, validate_candidate, validate_failed_candidate
 from .claims import Claim, ClaimError
 from .documents import TaskDefinition, _pairs
 from .eligibility import _timestamp, database_blockers, rank_candidates
@@ -166,9 +166,10 @@ def claim_next(
             elif failed_retry is not None or latest_failed is not None:
                 from .failed_selection import FailedSelectionError, resolve_failed_source
 
+                canonical = _canonical_candidate(candidate, main, satisfied_gates)[0]
                 try:
                     failed_candidate = resolve_failed_source(
-                        conn, failed_retry or latest_failed["run_id"], candidate, main,
+                        conn, failed_retry or latest_failed["run_id"], canonical, main,
                     )
                 except FailedSelectionError as exc:
                     raise ClaimError(exc.code, task_id) from exc
