@@ -1,10 +1,13 @@
 import json
+import os
 import tempfile
 import unittest
 import uuid
 from contextlib import closing
+from dataclasses import asdict
 
 from scripts.sdd_tasks.documents import parse_task
+from scripts.sdd_tasks.owners import current_owner
 from scripts.sdd_tasks.store import connect
 from scripts.sdd_tasks.workspace import capture_snapshot, snapshot_payload
 from tests.sdd_tasks.test_catalog_spec_status import TASK, _item, _linked, _status
@@ -13,13 +16,13 @@ from tests.sdd_tasks.test_catalog_spec_status import TASK, _item, _linked, _stat
 def _run(conn, task, attempt, state, base_commit=None):
     meta = task.metadata
     run_id = str(uuid.uuid4())
+    owner = asdict(current_owner("fixture", pid=os.getpid()))
     conn.execute(
         "INSERT INTO runs(run_id,task_id,attempt,state,ide,executor_id,owner_json,agent_role,"
         "worktree,branch,base_commit,task_hash,prompt_hash,claimed_at) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (run_id, meta["task_id"], attempt, state, "codex", "fixture",
-         json.dumps({"executor_id": "fixture", "host_id": "host", "pid": 1,
-                     "process_started_at": "fixture:start", "token": "fixture-token"}),
+         json.dumps(owner),
          meta["agent_role"], meta["worktree"]["path"], meta["worktree"]["branch"],
          base_commit or "a" * 40, task.task_hash, task.prompt_hash, "2026-10-12T00:00:00Z"),
     )
@@ -36,6 +39,8 @@ def _event(conn, run_id, sequence, kind, payload):
 def _abandoned(conn, root, task, decision="unchanged", action="requeued"):
     before = capture_snapshot(root, task)
     run_id = _run(conn, task, 1, "abandoned", before.head)
+    conn.execute("UPDATE runs SET ended_at=?,error_code=? WHERE run_id=?",
+                 ("2026-10-12T00:00:00Z", "OWNER_DEAD_LEASE_EXPIRED", run_id))
     _event(conn, run_id, 1, "workspace_snapshot", snapshot_payload(before))
     _event(conn, run_id, 2, "recovery_decision", {
         "schema": "sdd-run-recovery/v1", "action": action, "decision": decision,

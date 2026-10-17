@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from scripts.sdd_tasks.completion_journal import read_journal
 from scripts.sdd_tasks.completion_journal import write_journal as _write_journal
+from scripts.sdd_tasks.completion_service import fail_run
 from scripts.sdd_tasks.documents import parse_task
 from scripts.sdd_tasks.journal_schema import validate_journal
 from scripts.sdd_tasks.ledger_finalize import (
@@ -27,9 +28,10 @@ from scripts.sdd_tasks.run_docs import build_summary
 from scripts.sdd_tasks.selection import claim_next
 from scripts.sdd_tasks.store import connect, transaction
 from scripts.sdd_tasks.workspace import capture_snapshot
-from tests.sdd_tasks.test_catalog import _git
 from tests.sdd_tasks.test_completion_journal import _document
 from tests.sdd_tasks.test_completion_journal import _journal as _base_journal
+from tests.sdd_tasks.test_completion_prepare import _claimed_with_command
+from tests.sdd_tasks.test_completion_service import _draft
 from tests.sdd_tasks.test_run_docs import _result
 from tests.sdd_tasks.test_run_owner import _claimed, _rows
 
@@ -131,25 +133,30 @@ def _public_journal_for(state, target_status="completed", outcome="succeeded",
 
 class LedgerFinalizeBindingTests(unittest.TestCase):
     def test_complete_failed_result_stays_readable_during_new_claim_and_lease(self):
-        with tempfile.TemporaryDirectory() as temp, _claimed(temp) as state:
-            journal, journal_path, _ = _public_journal_for(
-                state, target_status="pending", outcome="failed")
-            root, canonical, task, database, _, owner, first = state
-            with closing(connect(database)) as conn:
-                old_result = finalize_ledger(conn, journal_path,
-                                             now=_stamp(first.claimed_at, 120))
+        with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
+            root, canonical, task, database, _, _, first = state
+            owner = first.owner
+            run_dir = root / ".sdd/runtime/runs" / first.run_id
+            with closing(connect(database)) as conn, maintenance_lock(root):
+                old_result = fail_run(
+                    conn, root, first.run_id, owner.executor_id, owner.pid,
+                    json.dumps(_draft(task, first, outcome="failed", changed_files=[])))
+            journal_path = run_dir / "completion.json"
+            journal = read_journal(journal_path)
             summary = journal["expected_result"]["artifacts"][0]["path"]
-            _git(canonical, "add", summary)
-            _git(canonical, "commit", "-qm", "fixture failed run summary")
             old_summary = (canonical / summary).read_bytes()
-            snapshot = capture_snapshot(root, task)
+            main_task = parse_task(root / task.path.relative_to(canonical))
+            snapshot = capture_snapshot(root, main_task)
             with closing(connect(database)) as conn, maintenance_lock(root):
                 retry = claim_next(
-                    conn, [task], {"spec-016.cloud-stage-authorized"},
-                    workspace_snapshots={task.metadata["task_id"]: snapshot}, ide="codex",
+                    conn, [main_task], {"spec-016.cloud-stage-authorized"},
+                    workspace_snapshots={main_task.metadata["task_id"]: snapshot}, ide="codex",
                     owner=owner, now=_stamp(first.claimed_at, 180), lease_minutes=120)
             self.assertIsNotNone(retry)
             self.assertEqual(retry.attempt, 2)
+            self.assertEqual(retry.base_commit, snapshot.head)
+            self.assertNotEqual(retry.base_commit, first.base_commit)
+            self.assertIsNone(retry.recovery_of)
             with closing(connect(database)) as conn:
                 old_row = tuple(conn.execute(
                     "SELECT state,attempt,result_doc,ended_at FROM runs WHERE run_id=?",
