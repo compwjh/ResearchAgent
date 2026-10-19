@@ -67,7 +67,7 @@ def _claimed_with_expected_artifact(directory):
     rebuild(database, root)
     os.chmod(database.parent, 0o700)
     before = capture_snapshot(root, task)
-    owner = current_owner("ledger-finalize-fixture")
+    owner = current_owner("ledger-finalize-fixture", pid=os.getpid())
     with closing(connect(database)) as conn, maintenance_lock(root):
         claim = claim_next(conn, [task], {GATE}, workspace_snapshots={
             task.metadata["task_id"]: before}, ide="codex", owner=owner,
