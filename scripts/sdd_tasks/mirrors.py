@@ -97,11 +97,12 @@ def _blocks(text: str, path: str):
         _bad(path, "metadata must be an object")
     return lines, mb, me, raw, metadata, "".join(lines[pb + 1:pe])
 
-def _task_status(text: str, expected: str, path: str):
+def _top_task_status(text: str, expected: str, path: str):
     lines = text.splitlines(keepends=True)
-    hits = [(i, line) for i, line in enumerate(lines) if MARKER in line]
     boundary = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
-    if len(hits) != 1 or hits[0][0] >= boundary or hits[0][1].count(MARKER) != 1:
+    hits = [(i, line) for i, line in enumerate(lines)
+            if i < boundary and MARKER in line]
+    if len(hits) != 1 or hits[0][1].count(MARKER) != 1:
         _bad(path, "expected one top-level human status line")
     index, line = hits[0]
     body = line.rstrip("\r\n")
@@ -109,6 +110,16 @@ def _task_status(text: str, expected: str, path: str):
     if not match or bool(match.group(1)) != bool(match.group(3)) or match.group(2).strip() != expected:
         _bad(path, "human status does not match metadata.status")
     return lines, index, match
+
+def _task_status(text: str, expected: str, path: str):
+    lines, index, match = _top_task_status(text, expected, path)
+    if sum(MARKER in line for line in lines) != 1:
+        _bad(path, "expected one top-level human status line")
+    return lines, index, match
+
+
+def _migration_task_status(text: str, expected: str, path: str):
+    return _top_task_status(text, expected, path)
 
 def _link(root: Path, ref_rel: Path, cell: str, source: Path, label: str) -> None:
     links = re.findall(r"\[[^\]]+\]\(([^)\s]+)\)", cell)
@@ -154,14 +165,16 @@ def _inspect(task: TaskDefinition, repo_root: Path):
     root, task_rel, source, spec_rel, spec, readme_rel, readme = _paths(task, repo_root)
     label = task_rel.as_posix()
     task_text, spec_text, readme_text = _read(source, label), _read(spec, spec_rel.as_posix()), _read(readme, readme_rel.as_posix())
-    status = task.metadata.get("status")
-    if status not in LABELS:
-        _bad(label, "invalid metadata.status")
-    task_status = _task_status(task_text, LABELS[status], label)
     task_parts = _blocks(task_text, label)
     actual_meta, actual_prompt = task_parts[4], task_parts[5]
     if actual_meta != task.metadata or actual_prompt != task.prompt:
         _bad(label, "Task source differs from TaskDefinition")
+    status = task.metadata.get("status")
+    if status not in LABELS:
+        _bad(label, "invalid metadata.status")
+    check_status = (_migration_task_status if actual_meta.get("migration_state")
+                    in {"verified", "unverified"} else _task_status)
+    task_status = check_status(task_text, LABELS[status], label)
     number = task.metadata["task_id"][-2:]
     spec_row = _row(spec_text, number, LABELS[status], root, spec_rel, source, spec_rel.as_posix())
     readme_row = _row(readme_text, number, LABELS[status], root, readme_rel, source, readme_rel.as_posix())

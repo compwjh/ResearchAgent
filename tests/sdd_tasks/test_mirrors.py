@@ -24,10 +24,13 @@ class MirrorTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_task(self, status):
+    def write_task(self, status, migration_state=None, top_status=None, extra_top="", history=""):
         metadata = {"task_id": "spec-016-task-01", "title": "Mirror fixture",
                     "depends_on": [], "status": status}
-        text = "> 当前状态：{}\n\n".format(LABELS[status]) + task_markdown(metadata)
+        if migration_state is not None:
+            metadata["migration_state"] = migration_state
+        text = "> 当前状态：{}\n\n".format(LABELS[top_status or status])
+        text += extra_top + history + task_markdown(metadata)
         (self.root / self.task_rel).write_text(text, encoding="utf-8")
         return parse_task_text(text, self.task_rel)
 
@@ -89,6 +92,35 @@ class MirrorTests(unittest.TestCase):
         path.write_text(path.read_text(encoding="utf-8") + "> 当前状态：阻塞\n", encoding="utf-8")
         with self.assertRaises(mirrors.MirrorError):
             mirrors.validate_mirrors(self.task, self.root)
+
+    def test_migration_status_ignores_history_markers_but_ordinary_status_does_not(self):
+        history = "## 迁移历史\n\n> 当前状态：完成\n\n## 更早记录\n\n> 当前状态：阻塞\n\n"
+        for state in ("verified", "unverified"):
+            with self.subTest(migration_state=state):
+                task = self.write_task("pending", migration_state=state, history=history)
+                self.assertIsNone(mirrors.validate_mirrors(task, self.root))
+        ordinary = self.write_task("pending", history=history)
+        with self.assertRaises(mirrors.MirrorError):
+            mirrors.validate_mirrors(ordinary, self.root)
+
+    def test_migration_status_still_rejects_duplicate_or_wrong_top_level(self):
+        for state in ("verified", "unverified"):
+            cases = ((None, "> 当前状态：待执行\n\n"), ("blocked", ""))
+            for top_status, extra_top in cases:
+                with self.subTest(migration_state=state, top_status=top_status):
+                    task = self.write_task("pending", migration_state=state,
+                                           top_status=top_status, extra_top=extra_top)
+                    with self.assertRaises(mirrors.MirrorError):
+                        mirrors.validate_mirrors(task, self.root)
+
+    def test_renderer_updates_only_top_level_status_when_history_is_present(self):
+        history = "## 迁移历史\n\n> 当前状态：完成\n\n"
+        task = self.write_task("pending", migration_state="verified", history=history)
+        original = (self.root / self.task_rel).read_text(encoding="utf-8")
+        rendered = mirrors.render_status_update(task, "completed", self.root)
+        expected = original.replace("> 当前状态：待执行", "> 当前状态：完成", 1).replace(
+            '"status": "pending"', '"status": "completed"', 1)
+        self.assertEqual(rendered[self.task_rel.as_posix()], expected)
 
     def test_symlink_escape_is_rejected(self):
         self.make_spec_symlink_escape()
