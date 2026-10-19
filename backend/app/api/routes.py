@@ -6,6 +6,7 @@ from backend.app.api import (
     routes_chat,
     routes_conversations,
     routes_kb,
+    routes_literature_maps,
     routes_models,
     routes_paper,
     routes_research,
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api")
 router.include_router(routes_system.router)
 router.include_router(routes_chat.router)
 router.include_router(routes_kb.router)
+router.include_router(routes_literature_maps.router)
 router.include_router(routes_paper.router)
 router.include_router(routes_article.router)
 router.include_router(routes_conversations.router)

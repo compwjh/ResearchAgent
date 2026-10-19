@@ -49,7 +49,9 @@
 - 开发可注入client/store/embedder/executor，生产只用现有S2 client和全局1RPS。使用共享执行器资源或同生命周期的受限地图队列；不在请求线程完成网络采集。
 - 每个图同时只有一个改变节点/边的活动作业；布局/筛选改动不被job覆盖。运行前/每单元写前校验map仍存在及job未停止。
 - 首批S2可能返回438条而忽略limit。保留provider_count，候选按范围、确定identity去重和相关性选取，显式截到requested_count；绝不将整页直接入图。用现有dense/lexical边界做相关性排名，向量不可用时明确lexical降级。排序同分按稳定provider ID，首批不足为partial。
+- 筛选列表内部按OR，source_ids与conference_ids同时存在按兼容交集；所有合法选项必须参与，不能只处理第一项。未知/不支持组合在创建前返回400固定INVALID_MAP_SCOPE，不得伪装存储故障。来源证明取实际目录记录/冻结身份，不用请求值自证。
 - 引用采集只在已选节点集合内建立边，不为引用邻居自动建节点。MVP每节点最多获取100条references（分页明确截断为partial）；单作业最多60次S2逻辑请求，达到预算保留成果并标记待补缺。现有有限retry内部每次attempt仍经1RPS。
+- 同一job的60次逻辑请求计数持久化且跨retry/restart累计；成功缓存命中不计外呼。达到预算返回partial/固定预算耗尽码，不能用反复retry重置预算。后续显式新作业使用自己的预算。
 - 缓存key含provider/operation/identifier或query/filters/page/fields版本，元数据与引用成功缓存TTL24h；失败不缓存为成功空页，429不跨过既有退避。只有明确refresh/retry才对过期/失败单元请求，普通打开不联网。
 - 向量通过既有embed_texts；缓存key=model_version+basis+内容sha256。200节点内余弦阈值0.75、每节点top3、无向去重；无匹配允许0边。多余候选不自动下载或写KB。
 - 重启将未完成map作业重新入队，按持久成功单元/缓存断点补齐；幂等key与参数hash持久绑定，同key不同参数409。

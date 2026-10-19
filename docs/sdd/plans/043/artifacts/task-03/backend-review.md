@@ -1,0 +1,314 @@
+# Spec043 Task03 后端独立评审
+
+## 结论
+
+**Block（P1 核心合同缺陷，暂不批准合并/部署）**。后端定向测试通过，但测试仅覆盖 10 条基础路径；真实用户主路径仍有阻塞：会议/来源筛选不会生效，主动入库生产组合根恒为不可用，作业重试会重复成功工作，且若干恢复、缓存、错误体和向量边界不满足冻结合同。
+
+前端文件不在本评审范围内。未修改业务代码、测试或 Spec，未部署、未运行全量回归、未调用真实外部 API。
+
+## 按优先级的问题
+
+### [P1] 主动入库生产路径恒为 503，且结果没有回写节点状态
+
+文件：`backend/app/literature_maps/application/runtime.py:19-24`、`backend/app/literature_maps/application/import_bridge.py:17-27`、`backend/app/literature_maps/application/service.py:233-243`
+
+问题：组合根实例化 `LiteratureMapImportBridge()` 时没有传入既有论文/知识库导入 callable；`importer` 因而始终为 `None`，每次用户点击主动入库都会抛 `IMPORT_BRIDGE_UNAVAILABLE` 并返回 503。即使测试注入 callable，`service.import_node()` 也只返回结果，不把返回的 `document_id`、下载/索引状态写回 `MapPaper`，重开地图仍显示未入库。Task03 的“点击加入知识库”主路径因此没有生产实现。
+
+最小修复：在组合根建立窄适配器，调用现有 `routes_paper`/`paper_import` 安全导入链（不复制 downloader/login/indexer），并在同一 owner/map/node 事务边界记录既有句柄和状态；导入失败只记录稳定错误。
+
+### [P1] `source_ids`/`conference_ids` 是无效筛选，没有会议官方目录优先
+
+文件：`backend/app/literature_maps/application/service.py:61-63,109-132,340-362`
+
+问题：请求中的 source/conference 仅被写入 `filters`，`_select_rows()` 只按年份过滤；发现阶段永远只调用通用 `SemanticScholarGraphClient.search_bulk()`，没有官方会议目录查询、优先合并或补缺。传入任意会议 ID 仍会把通用 S2 结果加入地图，实际违反“已支持会议官方目录优先、再聚合补缺”，也会让用户筛选得到错误节点。临时探针传入 `conference_ids=['usenix']` 后仍得到两个 `venue='Generic'` 节点。
+
+最小修复：对已支持会议先调用既有官方目录能力并保留来源 provenance，再用 S2 仅补缺；对 source/conference 进行服务端白名单与真实身份过滤，无法安全认证时返回 partial/可行动错误，不能静默忽略筛选。
+
+### [P1] 跨地图没有元数据/引用持久缓存，重复创建会重复请求 S2
+
+文件：`backend/app/literature_maps/infrastructure/store.py:179-185,332-342`、`backend/app/literature_maps/application/service.py:109-117,253-298`
+
+问题：SQLite 只有 embedding cache，没有合同要求的元数据/引用 response cache；`run_job()` 每张地图都会重新 `search_bulk()`，`_collect_references()` 每张地图都会重新抓 references。相同主题/相同论文的两张地图临时探针产生 `search_requests=2`、`reference_requests=2`，数据库 cache 表只有 `literature_map_embedding_cache`。这会浪费请求额度并放大 1 RPS 下的等待/429，且不符合跨地图复用与 24h 成功缓存合同。
+
+最小修复：增加带 provider/operation/identifier/query/filters/page/fields/schema 版本的参数化请求缓存，缓存成功元数据/引用及 provenance，失败/429 不写成空成功；普通打开只读缓存，明确 refresh/retry 才重新请求。
+
+### [P1] 创建幂等检查与写入非原子，并发相同 key 可创建多张地图
+
+文件：`backend/app/literature_maps/application/service.py:65-75`、`backend/app/literature_maps/infrastructure/store.py:171-177,201-212`
+
+问题：服务先在事务外 `find_idempotent_map()`，再分别创建 map、job、绑定 idempotency；表约束是 `(map_id,idempotency_key)`，没有 owner+key 的唯一约束。临时探针强制两个请求同时越过查找后得到两个不同 `map_id`，库中有两张地图。该行为违反“所有命令幂等、同一 key 同参数只执行一次”。
+
+最小修复：在单个 `BEGIN IMMEDIATE` 中以 `(owner_id,idempotency_key)` 唯一约束原子插入/读取 map+job+参数哈希；同 key 不同参数返回 409；不要把绑定拆成后置事务。
+
+### [P1] retry 从 discover 重跑整张图，不是只重试失败/缺失单元
+
+文件：`backend/app/literature_maps/application/service.py:208-219`
+
+问题：`retry_job()` 无论失败原因都清空 `failed_units` 并强制 `step='discover'`；`run_job()` 随后再次 `search_bulk()`，并重新遍历已成功节点的引用。临时探针第一次运行 search 次数为 1，retry 后变为 2。该行为重复成功网络请求、可能重复触发限流，并违背合同中“retry 仅 failed/missing 单元、成功单元不重复抓取”。
+
+最小修复：持久化每个发现/引用/相似单元的成功检查点；retry 只重排失败或缺失单元，恢复原 step/cursor；使用单条条件更新抢占 retry，避免同一 job 被重复入队。
+
+### [P1] 终态作业仍可写，stop 可把完成地图改成 stopped
+
+文件：`backend/app/literature_maps/infrastructure/store.py:402-405`、`backend/app/literature_maps/application/service.py:198-206`
+
+问题：`job_can_write()` 只排除 `stopped`、`failed`，`completed` 仍返回可写；`stop_job()` 没有检查 job 是否仍为 queued/running，已完成 job 也会被改为 stopped，并把 map 状态覆盖为 stopped。临时探针确认 completed job 的 `can_write=True`，随后 `stop_job()` 成功将其改为 stopped。两个重试/恢复 worker 并发时还可能重复写节点/边和追加事件。
+
+最小修复：用状态机/CAS 只允许 queued/running→终态、running→stopped；终态 stop 变为幂等 no-op 或稳定 409；worker 的每个写入都带 job 状态条件，completed/failed/stopped 绝不再写。
+
+### [P1] 运行时 ValueError 会让 job 永久停在 running/generating
+
+文件：`backend/app/literature_maps/application/service.py:158-173,325-330`
+
+问题：`run_job()` 对 `ValueError` 直接重新抛出，只在地图已删除或 stopped 时静默返回。向量包含不可转 float 的值即可触发该分支；临时探针得到异常后 `job_after=running/similarity`、`map_after=generating`，没有 failed event，也不会自动恢复。类似的领域/响应数据 ValueError 也会卡住后台任务。
+
+最小修复：将可预期的 provider/vector/store 输入错误映射为稳定 failed/partial 单元并持久化；只有已删除/已停止的资格撤销才静默退出；后台 worker 不得留下 running 无检查点的 job。
+
+### [P1] 非有限向量被接受并把相似层误标为 completed
+
+文件：`backend/app/literature_maps/application/service.py:318-331`、`backend/app/literature_maps/application/similarity.py:13-21,35-42`
+
+问题：仅检查向量是非空 list/tuple 并 `float()`，没有 `math.isfinite()`；`cosine_similarity()` 对 NaN 返回 NaN，阈值判断静默为假，作业却把相似层标为 completed，且 NaN 可写入 embedding cache。临时探针以 `[nan, 1.0]` 返回向量后得到 `similarity.status=completed`、无错误。
+
+最小修复：在写 cache 和计算前逐元素拒绝 NaN/±Inf、空范数和不一致维度，返回 `EMBEDDING_INVALID_RESPONSE`/`unavailable`；`cosine_similarity` 对非有限结果 fail-closed，不能把无效向量当作“0 条相似边”。
+
+### [P1] 删除地图没有清除专属 job 行
+
+文件：`backend/app/literature_maps/infrastructure/store.py:143-157,278-289`
+
+问题：`delete_map()` 删除 events/edges/nodes/idempotencies，却没有删除 `literature_map_jobs`；由于 jobs 外键没有级联，删除后 job 行仍残留。临时探针确认删除地图后 `literature_map_jobs` 仍有 1 行。虽然 deleted_at 阻止当前 worker 复活地图，但这不符合合同“地图删除清除其专属作业”，长期会积累不可见垃圾并增加恢复/迁移歧义。
+
+最小修复：在墓碑标记和 worker 资格撤销后事务内删除/归档该 map 的 jobs；删除期间保留明确 tombstone，确保晚回调只能得到资格失败而不能写回。
+
+### [P1] 终态事件丢失实际 error_code
+
+文件：`backend/app/literature_maps/application/service.py:245-251`、`backend/app/literature_maps/infrastructure/store.py:375-393,427-430`
+
+问题：`_finish()` 把 failed units 写入 job，但调用 `update_job()` 时没有传 `error_code`；`MapEvent.error_code` 因而始终为 `None`。实际限流/引用截断/embedding 错误的最终事件无法给前端稳定可行动错误。临时限流探针的 final event 为 `('completed','partial',None,'finished')`，尽管 failed_units 有 `SEMANTIC_SCHOLAR_RATE_LIMITED`。
+
+最小修复：终态事件传入首个稳定失败码（或固定聚合码），并在每个失败单元事件保留允许名单中的 code；禁止动态异常文本进入 payload。
+
+### [P1] 多个只读/删除端点未把 store 异常映射为稳定 503
+
+文件：`backend/app/api/routes_literature_maps.py:107-118,134-137,170-175,184-185`
+
+问题：list、map detail、delete、job detail 以及 events 的第二次 `get_map()` 直接调用 store，没有 `try/except` 调用 `_error()`。临时将 store 置为抛出 `RuntimeError('db down')`，上述 GET 均返回裸 `500 Internal Server Error`，而冻结合同要求存储不可用返回结构化 503 `{detail:{code,message,retryable}}`。
+
+最小修复：所有跨库调用都置于统一异常映射边界；正常 404/409 仍原样保留，意外异常统一 `MAP_STORAGE_UNAVAILABLE` 503，补充各端点的故障注入测试。
+
+### [P1] 导入 URL 可被客户端覆盖且没有 SSRF/主机白名单校验
+
+文件：`backend/app/api/routes_literature_maps.py:66-70,207-213`、`backend/app/literature_maps/application/service.py:233-243`
+
+问题：请求可直接提供任意 `http/https` `source_url`；服务仅拒绝凭据和非 HTTP scheme，不拒绝回环/内网地址、不解析 DNS/绑定 peer、不限制允许 host 或重定向。临时注入 bridge 后，`http://127.0.0.1:9/internal` 被原样交给 importer。当前生产 bridge 为空使该风险暂未触发，但一旦按合同接入导入链将形成 SSRF 入口，也绕过既有论文导入接口的 server-side search snapshot/allowlist 设计。
+
+最小修复：不要信任客户端 URL，优先使用服务端冻结候选；窄 bridge 复用既有 `validate_url`、allowed_hosts、DNS/peer、无任意重定向和下载链，拒绝 loopback/private/link-local/metadata 地址；必要时只接受既有候选句柄。
+
+## 正向核对
+
+- 身份归一化按 DOI→arXiv→Semantic Scholar，未把 S2 ID 写入 `catalog_paper_id`；同图 `UNIQUE(map_id, identity_key)` 保持稳定 node ID。
+- SQLite 连接启用 WAL/外键，写事务使用 `BEGIN IMMEDIATE`；owner 查询大多带 owner/deleted 条件；revision 更新使用单事务条件检查；引用边方向实现为 citing→cited，相似边端点排序去重并禁止自环。
+- 向量调用复用既有 `embed_texts` 入口，S2 调用复用既有 client/全局 limiter，未发现第二套 downloader、embedding 服务或限流器；图读取不隐式联网。
+- `positions`、事件页、地图列表、references/provider 请求均有明确上限，首批结果会二次截断且不以无关论文凑满。
+
+## 验证记录
+
+| 命令/探针 | 结果 |
+|---|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/literature_maps/test_map_identity.py tests/literature_maps/test_map_store.py tests/literature_maps/test_map_discovery.py tests/literature_maps/test_map_similarity.py tests/literature_maps/test_map_api.py` | 退出码 0；10 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 退出码 0；`test layout: ok` |
+| `ruff check`（地图后端、路由、相关测试） | 退出码 1；6 项（import 排序、B905 strict、未使用 import） |
+| 临时 SQLite/fake client/bridge 探针 | 复现筛选无效、缓存缺失、并发幂等重复、retry 重搜、NaN completed、删除 job 残留、ValueError 卡 running、终态 stop、裸 500、SSRF URL 直传 |
+
+未执行全量 pytest、真实 Semantic Scholar/Ollama API、浏览器 smoke、部署或 commit；这些未验证项不能被本报告视为通过。
+
+## Review Summary
+
+| Severity | Count | Status |
+|----------|-------|--------|
+| P0 | 0 | pass |
+| P1 | 12 | block |
+| P2 | 1 | warn（ruff） |
+| LOW | 0 | pass |
+
+Verdict: **BLOCK — 12 个 P1 后端合同/运行时缺陷必须在进入验收或部署前修复；10 条精准测试通过不构成后端门禁通过。**
+
+## Store 层复核（2026-10-19；service/import 仍待）
+
+本轮只复核 `infrastructure/store.py`、`test_map_store.py`、`test_map_job_store.py`、`test_map_identity.py` 以及 `store-fixes.md`；没有修改业务代码、生产库、环境或部署。结论不代表 Task03 整体通过：service/import/runtime/routes 仍需另一轮复核。
+
+### 已验证通过的 store 修复
+
+- 同一 owner + 同一 idempotency key 的并发 `create_map_with_job` 只有一个 `created=True`，两次返回同一 map/job；参数哈希不同稳定抛 `ValueError("idempotency conflict")`。
+- request cache key 对 filters/fields 做稳定规范化；只有 `status="success"` 可写入；失败/429、过期缓存均不会被当成成功空响应复用。
+- `claim_job` 是 queued→running CAS；`stop_job` 对 queued/running 生效、对 completed/failed/partial/stopped 幂等 no-op；`job_can_write` 和带 `job_id` 的节点/边写入拒绝 queued/terminal/stopped worker。
+- checkpoint 可在新 store 实例中恢复，按 owner/map/job 隔离；节点导入回写按 owner/node 同事务约束；删除在事务内先墓碑后清理 jobs/checkpoints/events/nodes/edges/idempotency，删除后的迟回调不能重新写入。
+- embedding 写入拒绝空向量、NaN/±Inf、空范数和维度漂移，读取也 fail-closed。
+
+### [P1] `update_job` 仍可被迟到 worker 越过终态守卫
+
+`update_job()` 先按 owner 读取 job，但最终 `UPDATE literature_map_jobs ... WHERE job_id=? AND map_id=?` 没有 `status='running'` 或 expected-state CAS；因此 queued/running 被 `stop_job()` 置为 stopped 后，迟到 worker 仍可调用 `update_job(status="completed")`，实际会把 job 改回 completed（本轮临时 SQLite 探针复现）。`set_map_status()` 同样是无 job 资格条件的自由写。service 的 `_finish()` 先检查再 `set_map_status`/`update_job`，存在 stop 与完成写交错时覆盖终态的窗口。
+
+最小修复：将普通 progress/final `update_job` 限制为当前 running（或增加 expected status/job-generation CAS）；queued→running 只走 `claim_job`，failed/partial/stopped→queued 只走 `retry_job`，终态 stop 保持 no-op；service 终态写入必须使用同一守卫。补一条“claim→stop→迟到 finish”并发回归，确保 job/map 不会被复活。
+
+### [P1] 旧库幂等重复数据会使新增唯一索引阻断启动
+
+本轮新增 `idx_literature_map_idempotency_owner_key(owner_id,idempotency_key)` 时没有迁移/冲突处理。用本轮修复前允许产生的两个同 owner/key idempotency 行构造旧 SQLite 后，重新初始化直接失败：`UNIQUE constraint failed: literature_map_idempotencies.owner_id, literature_map_idempotencies.idempotency_key`。Spec 要求保留既有库并采用增量 schema；若此前并发缺陷已经留下重复行，服务重启会在 schema 初始化阶段不可用。
+
+最小修复：新增唯一索引前执行可审计、确定性的 legacy 冲突迁移（保留 canonical idempotency 绑定、其余绑定明确标记/清理且不删除 map/job 数据），再建立唯一索引；或采用等价的向后兼容迁移策略，并增加含重复旧数据的启动测试。
+
+### service agent 必须复用的 store API（签名以实现为准）
+
+- `create_map_with_job(owner_id, *, topic, name, project_id, filters, requested_count, operation, idempotency_key, params_hash) -> (map, job, created)`；生产路径不得回退为 `create_map` + `create_job` + `bind_map_idempotency` 三段写入。
+- `request_cache_key(...)`、`get_request_cache(key)`、`put_request_cache(key, payload, ttl_seconds=86400, status="success", ...)`；失败/429 不写成功缓存。
+- `claim_job(job_id, map_id, owner_id)`、`retry_job(job_id, map_id, owner_id)`、`stop_job(job_id, map_id, owner_id)`；当前 `retry_job` 不接受 `step` 关键字，重排信息需另用受守卫的 job 更新接口。
+- `save_unit_checkpoint(job_id, map_id, owner_id, *, unit_key, status, payload, error_code)`、`completed_units(job_id, map_id, owner_id)`；`add_nodes(..., job_id=job_id)`、`add_edges(..., job_id=job_id)`。
+- `update_node_import_result(map_id, node_id, owner_id, import_result=...)`；`put_embedding(..., dimension=.../expected_dimension=...)`。
+
+### 本轮精准验证
+
+| 命令/探针 | 结果 |
+|---|---|
+| `.venv/bin/python -m pytest -q tests/literature_maps/test_map_store.py tests/literature_maps/test_map_job_store.py tests/literature_maps/test_map_identity.py` | 退出码 0；12 passed |
+| `.venv/bin/ruff check backend/app/literature_maps/infrastructure/store.py tests/literature_maps/test_map_store.py tests/literature_maps/test_map_job_store.py` | 退出码 0；All checks passed |
+| 临时 SQLite 并发/缓存/终态/迟回调/checkpoint/import-owner/vector 探针 | 基础 store 修复全部 PASS；另复现“stop 后迟到 update_job 可改回 completed” |
+| 旧库重复 owner/key 后重新初始化探针 | 复现新增唯一索引 `IntegrityError`，见上方 P1 |
+
+**Store 层结论：基础修复项通过，但仍有 2 个 P1（终态更新 CAS、旧库唯一索引迁移）未闭环。其他 service/import/runtime/routes 缺陷仍待整体复审，当前不批准 Task03。**
+
+## 整体冻结复审（2026-10-19；前端不在范围）
+
+service/import 两批已冻结，本轮补读交接报告与实际代码；没有真实下载、生产数据库、环境、部署或全量回归。测试中的 fake callable 只作为 seam 证据，不等同生产导入或官方目录 E2E。
+
+### 已核实的正向项
+
+- 官方 scope 的默认适配器确实沿既有 `CatalogSearchAdapter` → `CatalogSearchGraph`/`CatalogRagAdapter`（非地图自建 crawler）查询；S2 venue 不再作为会议证明。服务层保留 scope 见证后才接受节点。
+- map service 已接入原子创建、request cache、claim/checkpoint、job-qualified node/edge writes、向量有限性校验、retry 的持久节点恢复；删除/项目解绑和路由存储异常边界有对应精准覆盖。
+- 既有 `import_candidate` 的 S2 OA fallback 在具备 DOI/arXiv、匹配身份且返回固定 allowlist 中 OA PDF 时可成功回到同一 importer；本轮临时探针验证了这一点。
+
+### 仍存在的 P1 核心缺陷
+
+#### [P1] 生产导入把 S2 landing/page 当成 PDF，且没有官方候选 PDF resolver
+
+文件：`backend/app/literature_maps/application/runtime.py:16-39`、`backend/app/literature_maps/application/service.py:326-336`、`backend/app/literature_maps/application/catalog_adapter.py:44-60,123-162`、`backend/app/literature_maps/application/service.py:689-696`
+
+`_existing_paper_import()` 无条件执行 `candidate["pdf_url"] = node.source_url`。而地图节点的 `source_url` 来自 `SemanticScholarMetadata.url`（通常是 `semanticscholar.org/paper/...` landing），不是 PDF；`download_candidate` 看到已存在的 `pdf_url` 后不会再解析 `source_page_url`。现有 fallback 只能在首次下载失败后按 DOI/arXiv 调 Semantic Scholar 的 `openAccessPdf.url`，没有从官方目录记录取得 `official_pdf_url`/prepublication URL，也没有复用 source-specific official/arXiv resolver。无 DOI/arXiv 或无 OA 的官方候选会落到 `DOWNLOAD_BLOCKED`，不能完成用户点击入库；本轮 runtime shape 与 no-OA 临时探针均复现该边界。
+
+最小修复：让官方目录结果沿既有 candidate snapshot 保留 `catalog_paper_id`、官方页/PDF、arXiv/DOI identity 与来源类型；在进入 `import_candidate` 前只调用既有 source/DOI/OA resolver 得到可下载候选，并继续让 `import_candidate`/`download_candidate` 执行最终 allowlist、DNS/peer、redirect、PDF 校验。resolver 返回结果必须再次核对 DOI/arXiv 或标题/年份/作者，不能把 S2 landing 伪装成 PDF，也不能新建下载栈。
+
+#### [P1] 官方目录 identity 在 adapter→node 边界丢失，无法可靠复用既有候选导入链
+
+`CatalogRow` 只有 `metadata/source_id/conference_id`，`_existing_catalog_search()` 从已有目录查到 `catalog_paper_id` 后只取 S2 enrich 的 `SemanticScholarMetadata`；`_to_node()` 也没有传 `catalog_paper_id`。本轮 patched default seam probe 确认实际经过 `CatalogSearchAdapter.search`、catalog lookup、S2 enrich，但 `CatalogRow` 没有 catalog identity 字段，最终 map node 的 `catalog_paper_id` 为空。这样即使目录查询是真实官方路径，导入仍拿不到 `import_candidate` 所需 server-owned candidate ID/官方 URL，回到上一项的 S2 landing fallback。
+
+最小修复：扩展内部 `CatalogRow`/metadata envelope 以携带 catalog ID、source kind、official page/PDF/arXiv/DOI provenance，并在 `_to_node()` 保持 `catalog_paper_id` 与 S2 `external_ids.semantic_scholar` 分离；导入只按该服务端快照取候选，不接受 HTTP URL override。
+
+#### [P1] source/conference scope 没有“官方优先后聚合补缺”
+
+文件：`backend/app/literature_maps/application/service.py:338-374`
+
+只要存在 `source_ids` 或 `conference_ids`，`_discover_rows()` 就只返回目录 adapter 结果并结束；即使官方目录少于 requested limit，也不会调用通用 S2 进行未覆盖部分的补缺。临时 scope 适配器返回 1 个官方 row、requested limit=20 时，client 的 `search_bulk` 调用数为 0。官方优先方向正确，但“再聚合补缺”仍未实现，稀疏官方目录会产生不必要的 partial/漏项。
+
+最小修复：保留已认证的官方 rows 及 provenance/identity，计算缺口后仅以缺口预算调用既有 S2 search/enrich；补入候选必须经过 identity 去重和 scope/年份过滤，不能以 S2 venue 反向证明会议成员。
+
+#### [P1] importer 失败没有稳定 map import result/节点状态回写
+
+文件：`backend/app/literature_maps/application/import_bridge.py:41-59`、`backend/app/api/routes_literature_maps.py:74-96,230-236`
+
+桥接只对 importer 正常返回的 DTO 做 `_normalize_import_result` 后回写；`PaperDownloadError`/`PaperImportError` 等既有链路异常直接冒泡，桥接不会把固定 `error_code/status` 写入 node。路由 `_error()` 又把该异常归为泛化 `503/MAP_STORAGE_UNAVAILABLE`，丢失 `DOWNLOAD_BLOCKED`/`LOGIN_REQUIRED`/`KB_IMPORT_FAILED` 等稳定可行动码。本轮注入 `PaperDownloadError(DOWNLOAD_BLOCKED)` 的 route probe 得到 `503 MAP_STORAGE_UNAVAILABLE`，没有 map import failure 状态。
+
+最小修复：在 bridge 边界捕获既有稳定 import/download 异常，投影为允许的 map import result 并通过 owner/map/node 事务回写（或由 route 映射固定导入错误后保证状态可查询）；禁止原始异常文本进入响应/事件，同时保留成功 DTO 的真实 document/paper handle。
+
+### Store 层遗留 P1（仍有效）
+
+- `update_job()` 没有 running/expected-state CAS，stop 后迟到 finish 可把 stopped job 改回 completed；`set_map_status()` 也无 job 资格守卫。
+- 新增 `(owner_id,idempotency_key)` 唯一索引没有旧库重复数据迁移；本轮构造旧重复行后重新初始化复现 `sqlite3.IntegrityError`，升级已有数据库可能直接不可用。
+
+### 精准验证与静态检查
+
+| 命令/探针 | 结果 |
+|---|---|
+| `.venv/bin/python -m pytest -q tests/literature_maps` | 退出码 0；36 passed |
+| `.venv/bin/python -m pytest -q tests/conversation/test_conversations_api.py -k 'project'` | 退出码 0；2 passed，14 deselected |
+| `.venv/bin/ruff check backend/app/literature_maps backend/app/api/routes_literature_maps.py backend/app/api/routes_conversations.py tests/literature_maps tests/conversation/test_conversations_api.py` | 退出码 1；仅 `tests/literature_maps/test_map_api.py:1` import 排序 `I001` |
+| patched default catalog seam / sparse scope / runtime candidate / existing importer OA fallback / no-OA import route probes | 见上述结论；未下载真实论文、未调用真实 provider |
+
+**整体复审结论：P0=0；仍有 6 个 P1 核心缺陷（4 个 import/catalog/service 边界、2 个 store 遗留）与 1 个 P2 静态检查。当前仍 BLOCK，不批准验收/部署；最小修复顺序为：官方 candidate identity+PDF resolver → import failure durable mapping → scope 补缺 → store terminal CAS/legacy migration。**
+
+## 最终冻结复审（2026-10-19；仅 backend，前端不在范围）
+
+本轮重新读取了 `store-fixes.md`、`service-fixes.md`、`import-api-fixes.md` 及实际冻结代码；没有修改业务代码/测试，没有生产下载、网络、部署、环境或全量回归。此前“整体冻结复审”中记录的 6 个 P1（store 终态 CAS、旧库幂等迁移、CatalogRow/官方 provenance、scope 补缺、导入 resolver、导入失败持久化）均以实际代码和精准测试核实为已闭环，不再重复计数。
+
+### 已核实闭环
+
+- `finish_job()` 在同一 `BEGIN IMMEDIATE` 内以 `running` CAS 更新 job、map 和终态 event；`stop/delete` 先获资格时迟到 finish 返回 `None`。普通 `update_job()` 默认 `expected_status="running"`，终态 worker 写入和 job-qualified node/edge 写入均被拒绝。
+- 旧库 owner/key 重复绑定会在建唯一索引前确定性保留活动 canonical 绑定，写 migration log，并保留 map/job 数据；同 key 并发创建仍只有一个 map/job。request cache 仅成功写入，向量拒绝非有限、零范数和维度漂移。
+- `CatalogRow`/node 已保留 `catalog_paper_id`、source kind、官方页/正式 PDF/prepublication PDF、DOI/arXiv 和脱敏 snapshot；scoped S2 结果只作已认证官方行的 fill-only 富化，未知行不会被 venue 误认入图；`_finish()` 已走原子终态接口。
+- 生产 import bridge 只消费 server-owned snapshot，优先官方/prepublication PDF，缺失时调用既有 OA resolver；Semantic Scholar landing 不再作为 PDF，最终仍由既有 `import_candidate`/安全下载链做 allowlist、DNS/redirect/PDF 校验；已知 download/import 异常会持久化稳定失败或 waiting-login 状态并回写节点真实 document handle。
+
+### 仍存在的 P1 核心缺陷
+
+#### [P1] source/conference 组合会伪造 scope，且多选筛选静默只查第一项
+
+文件：`backend/app/literature_maps/application/catalog_adapter.py:167-190`。
+
+`_existing_catalog_search()` 把 `source_ids[0]` 或 conference 映射后的单个 source 传给既有 `CatalogSearchAdapter`，即使请求包含多个 source/conference 也只查第一项；随后直接把请求的 `conference_ids[0]` 写进每个返回 row，而不是核对被查出的 `CatalogPaper.conference_id`/source record。只读探针用真实 adapter 形状构造“目录纸是 `usenix-security`、请求 source=`usenix` + conference=`ccs`”，实际得到 `CatalogRow(source_id='usenix', conference_id='ccs')`；同时 SearchAdapter 收到的 sources 只有 `('usenix',)`。这会把官方 USENIX 行冒充 CCS，违背“官方目录身份见证”及数组筛选语义。
+
+最小修复：把 source/conference 组合先做兼容校验；查询所有请求的 canonical source（或将完整 scope 传入既有 adapter），仅依据 catalog paper/source-record 的真实归属填写 row，缺失真实归属时拒绝而不是回填请求值。补 mixed-scope 与多选回归。
+
+#### [P1] 未知 source/conference 的 HTTP 错误被错误归类为存储故障
+
+文件：`backend/app/api/routes_literature_maps.py:74-96`。
+
+service 已在创建前抛出 `UNSUPPORTED_SOURCE`/`UNSUPPORTED_CONFERENCE`，但 route `_error()` 没有把这两个固定输入错误列入 400 分支，实际 `POST /api/literature-maps` 传未知 source 或 conference 返回 `503 MAP_STORAGE_UNAVAILABLE`。这既误导用户，也使“unknown 不得创建/不得静默补入”无法成为可行动的 API 合同。
+
+最小修复：将 `UNSUPPORTED_SOURCE`、`UNSUPPORTED_CONFERENCE` 映射为固定 400（或既有 422 输入错误包），保留 `CATALOG_SOURCE_UNAVAILABLE` 等运行时来源故障的 503/partial 语义，并补 HTTP 精准测试。
+
+#### [P1] 导入 fallback 仍可仅凭标题把无 catalog identity 的 S2 节点绑定到目录论文
+
+文件：`backend/app/literature_maps/application/paper_import_adapter.py:98-116`。
+
+当节点没有 `catalog_paper_id` 且没有 DOI/arXiv 时，`_match()` 允许 normalized title 唯一匹配目录 paper；只读探针对无 DOI/arXiv 的 S2 节点返回了 `catalog_paper_id='cat'` 和官方 PDF。这违反 Spec 的确定身份边界（仅标题近似/标题本身不能自动合并），可能把通用 S2 结果错误导入到另一条官方目录记录。
+
+最小修复：无 explicit catalog ID 时仅允许确定 DOI 或 arXiv 匹配；没有 deterministic external ID 就返回 `PDF_NOT_FOUND`/`IMPORT_IDENTITY_CONFLICT`，不要使用 title-only 目录回查。保留显式 catalog snapshot 的 server-owned identity 校验。
+
+#### [P1] 60 次 S2 graph budget 只在单次 worker invocation 内生效，显式 retry 可无限超预算
+
+文件：`backend/app/literature_maps/application/service.py:179-187,700-718`。
+
+`_collect_references()` 每次调用都把 `request_count` 置零并以 `GRAPH_REQUEST_BUDGET=60` 重新计数；job 的累计 `provider_request_count` 只被展示/累加，未作为剩余预算门禁。用 20 节点、每次 references 返回可重试 429 的只读 client 探针得到：首次 job 21 次 provider request，三次显式 retry 后累计分别为 41、61、81，已超过合同“单作业最多 60 次 S2 逻辑请求”。
+
+最小修复：把持久化累计 provider request count（或明确的 graph budget cursor）作为 `_collect_references()` 的剩余预算输入；达到总预算后持久化 `MAP_GRAPH_BUDGET_EXCEEDED`，retry 只允许未超预算的失败单元，超预算返回稳定冲突/partial，不因 retry 重置计数。
+
+### 最终精准验证与门禁索引
+
+| 命令/探针 | 结果 |
+|---|---|
+| `.venv/bin/python -m pytest -q tests/literature_maps` | 退出码 0；52 passed |
+| `.venv/bin/python -m pytest -q tests/conversation/test_conversations_api.py -k 'project'` | 退出码 0；2 passed，14 deselected |
+| `.venv/bin/ruff check backend/app/literature_maps backend/app/api/routes_literature_maps.py backend/app/api/routes_conversations.py tests/literature_maps tests/conversation/test_conversations_api.py` | 退出码 0；All checks passed |
+| `.venv/bin/python -m py_compile`（literature_maps 全部 Python、`routes_literature_maps.py`、`routes_conversations.py`） | 退出码 0 |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0；`test layout: ok` |
+| 临时 SQLite / fake provider / patched catalog seam / import identity probes | 见上述 4 个 P1；未下载真实论文、未调用真实 provider |
+
+**最终结论：P0=0；历史 6 个 P1 修复已闭环，但当前仍发现 4 个真实 P1（scope 真实归属/多选、unknown HTTP 映射、title-only import identity、跨 retry graph budget）。结论仍为 BLOCK，不批准验收或部署；先按上述最小修复补齐，再重新做一次整体冻结复审。**
+
+## Task03 最后四项 P1 窄复审（2026-10-19；backend reviewer）
+
+本轮仅复核上一节列出的四项 P1，按当前工作树实际代码和精准域测试判定；未修改 backend 业务代码或测试，未部署、未调用真实 provider、未读取密钥，也未运行 backend 全量回归。
+
+### 四项复核结论：均已闭环
+
+1. **source/conference 多选真实 scope：通过。** `compatible_scope_pairs()` 先生成兼容的 canonical source/conference 对；`CatalogSourceAdapter.search()` 对每一对调用既有 `CatalogSearchAdapter`，随后按目录 `CatalogPaper.conference_id` 与 `get_catalog_source_kinds()` 的真实记录过滤，`CatalogRow`/snapshot 使用实际归属，不回填请求数组的第一项。`test_default_catalog_adapter_queries_each_scope_and_uses_recorded_identity` 证明两对请求分别为 `("usenix",)`、`("ccs",)`，并得到对应目录身份；`test_multiple_scopes_use_actual_catalog_attestations_with_or_semantics` 证明服务层只接受两个实际 scope 的节点。
+2. **`INVALID_MAP_SCOPE` HTTP 400：通过。** `routes_literature_maps._error()` 现将该服务端固定输入错误映射为 400、固定 error code/message、`retryable=false`；真实 `POST /api/literature-maps` 对未知 `source_ids` 和 `conference_ids` 均返回 400，未回显原始输入。覆盖测试为 `test_http_unknown_scope_from_real_service_is_fixed_400_without_raw_input`（两参数化例）。
+3. **禁止 title-only 目录关联：通过。** `PaperImportSourceAdapter._match()` 仅按 normalized DOI 或 arXiv 唯一确定匹配；无 `catalog_paper_id`/deterministic external ID 的同标题节点返回 `PDF_NOT_FOUND`，不同 DOI 的同标题也不会绑定。`test_catalog_adapter_does_not_bind_same_title_without_deterministic_identity` 与 `test_catalog_adapter_rejects_same_title_with_different_doi` 均通过。
+4. **每 job 60 次 graph 逻辑请求跨 retry 持久计数：通过。** `run_job()` 以持久化 `counts.provider_request_count` 计算剩余预算并传给 `_collect_references()`；重试不会将计数清零，达到 60 后不再发起 graph request，并记录 `MAP_GRAPH_BUDGET_EXCEEDED`。`test_reference_budget_is_persisted_across_retries` 验证 21 → 41 → 60、预算耗尽后调用数不再增长。
+
+### 精准验证
+
+| 命令/探针 | 结果 |
+|---|---|
+| `.venv/bin/python -m pytest -q tests/literature_maps` | 退出码 0；62 passed |
+| 四项窄回归：多 scope/目录归属、INVALID_MAP_SCOPE HTTP、title-only identity、跨 retry budget | 退出码 0；9 passed |
+| `_error(ValueError("INVALID_MAP_SCOPE"))` 只读探针 | `400`；固定 `INVALID_MAP_SCOPE` detail，未泄露输入 |
+
+**本轮结论：四项目标 P1 均已实际闭环，未发现新增 P1；就这四项可判 GO。** 这不是 Task03 整体验收或部署批准：此前报告中的其他范围、真实 API/provider E2E、全量回归及验收门禁仍由主会话继续处理。

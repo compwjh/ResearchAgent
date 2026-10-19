@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>文献地图组件契约样例（mock API）</title>
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=1">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=3">
   <style>
     :root { --ink: #25272b; --muted: #8b8e96; --muted-strong: #5a5d66; --accent: #6d5dfc; --accent-soft: #eeecff; }
     body { margin: 0; font-family: Arial, sans-serif; }
@@ -22,12 +22,30 @@
     ];
     const mockGraph = { schema_version: 'literature-map-v1', map: mockMap, nodes: mockNodes, edges: [{ edge_id: 'edge-a', map_id: 'map-fixture', kind: 'citation', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: null, basis: null, model_version: null, content_hash: null }, { edge_id: 'edge-sim', map_id: 'map-fixture', kind: 'similarity', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: 0.82, basis: 'title_only', model_version: 'fixture-v1', content_hash: 'fixture-hash' }], layers: { citation: { status: 'completed' }, similarity: { status: 'completed' } }, latest_job: { job_id: 'job-fixture', map_id: 'map-fixture', operation: 'create', status: 'completed', step: 'finished', counts: { node_count: 2, citation_edge_count: 1, similarity_edge_count: 1 } } };
     window.__lastImportBody = null;
+    window.__createBody = null;
+    const optionsFail = new URLSearchParams(window.location.search).has('options-fail');
+    const optionsDelay = new URLSearchParams(window.location.search).has('options-delay');
+    const projectsTruncated = new URLSearchParams(window.location.search).has('projects-truncated');
     window.fetch = async (input, init) => {
-      const path = String(input).replace(/^https?:\/\/[^/]+/, '');
+      const parsed = new URL(String(input), window.location.href);
+      const path = parsed.pathname + parsed.search;
+      const method = String(init?.method || 'GET').toUpperCase();
       let body = {};
       if (init && init.body) body = JSON.parse(init.body);
       let payload = { schema_version: 'literature-map-v1' };
-      if (path === '/api/literature-maps') payload.maps = [mockMap];
+      if (optionsDelay && (path.startsWith('/api/papers/sources') || path.startsWith('/api/papers/conferences') || path.startsWith('/api/projects'))) {
+        await new Promise((resolve) => window.setTimeout(resolve, 160));
+      }
+      if (optionsFail && (path.startsWith('/api/papers/sources') || path.startsWith('/api/papers/conferences') || path.startsWith('/api/projects'))) {
+        return new Response(JSON.stringify({ detail: { code: 'OPTIONS_UNAVAILABLE', message: '筛选项暂不可用' } }), { status: 503, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (path === '/api/papers/sources') payload = { sources: [{ source_id: 'usenix', source_kind: 'usenix', enabled: true }, { source_id: 'semantic_scholar', source_kind: 'semantic_scholar', enabled: true }] };
+      else if (path === '/api/papers/conferences') payload = { conferences: [{ conference_id: 'ccs', name: 'ACM CCS', short_name: 'CCS', enabled: true }] };
+      else if (path.startsWith('/api/projects')) payload = { projects: [{ project_id: 'project-fixture', name: 'Research Notes', status: 'active' }], next_cursor: projectsTruncated ? 'cursor-more' : null };
+      else if (path === '/api/literature-maps' && method === 'POST') {
+        window.__createBody = body;
+        payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, job_id: mockGraph.latest_job.job_id, status: 'generating', map: { ...mockMap, status: 'generating' }, job: { ...mockGraph.latest_job, status: 'running', step: 'discover' } };
+      } else if (path === '/api/literature-maps') payload.maps = [mockMap];
       else if (path === '/api/literature-maps/map-fixture') payload = { schema_version: 'literature-map-v1', map: mockMap, latest_job: mockGraph.latest_job };
       else if (path === '/api/literature-maps/map-fixture/graph') payload = mockGraph;
       else if (path === '/api/literature-maps/map-fixture/nodes/node-a') payload.node = mockNodes[0];
@@ -37,7 +55,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=1"></script>
+  <script src="../../../frontend/literature-maps.js?v=3"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

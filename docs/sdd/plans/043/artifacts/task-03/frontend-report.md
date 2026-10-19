@@ -46,3 +46,41 @@
 - Task02 性能 fixture 默认改为写入 pytest `tmp_path`；只有显式设置 `LITMAP_SAVE_FEASIBILITY_ARTIFACTS=1` 才更新历史 evidence/screenshots，避免普通 pytest 改写 tracked 验收证据。
 - 修复后验证：`node --check`、前端精准 pytest（5 passed、2 skipped）、`check_test_layout.py`、`check_test_naming.py`、`git diff --check` 均通过；Chromium 启动权限导致本轮 fixture skip，待可用环境复跑。
 - 后端 import bridge 仍需 backend-reviewer 修复服务端 `source_url` override 信任边界；真实 API E2E、部署和后端回归不在本端报告范围内。
+
+## 前端开发窄 UX 修复记录（2026-10-19）
+
+- 新建地图面板继续保持点击后展开；来源、会议和项目选项不再要求用户手填 ID。面板首次展开时分别读取 `/api/papers/sources`、`/api/papers/conferences` 与带 cursor/limit 的 `/api/projects`，来源/会议使用服务端名称的多选 checkbox，项目使用真实名称的单选下拉并提供“不绑定项目”。
+- 来源与会议仅接受 `catalog_adapter.py` 当前 canonical allow-list 中的 ID；`semantic_scholar` 等非地图支持项会被忽略，不会猜测或误传。选项接口失败时显示可行动降级提示，仍可按通用/不限范围提交；选项加载只更新筛选控件，不重置用户已填写的主题、名称或年份。
+- 生产地图资源版本升至 `literature-maps.js/css?v=2`；fixture 同步使用 v2。未改变冻结地图 API 对象与既有跨图异步门禁。
+- 修复验证中发现并修正一次项目选项重复规范化导致下拉为空的问题；修复后真实 Chromium 覆盖成功选择 payload 与三类选项接口失败的通用建图路径。
+
+### 本轮验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `./.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_feasibility.py`（受控权限、真实 Chromium） | 退出码 0，7 passed |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0，`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0，未发现 spec/task 编号测试名 |
+| `git diff --check` | 退出码 0 |
+
+本轮未运行后端 pytest、全量回归、服务部署或真实生产 API E2E；fixture 仍为 mock API，不能替代 Task03 验收门禁。
+
+## 前端开发窄 UX 生命周期与分页收口（2026-10-19）
+
+- 统一 `closeCreatePanel()` 处理新建面板关闭：设置 `createPanelOpen=false`、递增 `createOptionsRequest`、清理 `createOptionsLoading`，并 reset 表单。新建按钮收起、取消、创建成功和 `setActive(false)` 离开地图均复用该 helper，晚到来源/会议/项目响应不能再写入关闭或已重置的表单。
+- 项目分页达到 10 页且仍有 `next_cursor` 时返回 `truncated`，显示“项目列表未加载完；可关闭后重新打开重试，或先不绑定项目”，不再静默丢弃项目。
+- 资源版本升至 `literature-maps.js/css?v=3`，fixture 与契约断言同步；冻结 API 对象和既有地图异步门禁未改变。
+- 真实 Chromium fixture 新增 160ms 延迟选项响应，分别验证离开地图与创建成功后的晚到响应不改写表单，并验证分页截断提示；选项成功选择、失败降级路径继续覆盖。
+
+### 本轮验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `./.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_feasibility.py`（受控权限、真实 Chromium） | 退出码 0，7 passed |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0，`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0，未发现 spec/task 编号测试名 |
+| `git diff --check` | 退出码 0 |
+
+本轮未运行后端 pytest、全量回归、服务部署或真实生产 API E2E；fixture 仍为 mock API，不能替代 Task03 验收门禁。

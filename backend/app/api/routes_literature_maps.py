@@ -1,0 +1,247 @@
+"""Owner-scoped literature-map MVP HTTP routes."""
+
+from __future__ import annotations
+
+import math
+import sqlite3
+from typing import Any, Literal
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
+
+from backend.app.literature_maps.application.runtime import get_literature_map_service
+from backend.app.literature_maps.domain.models import SCHEMA_VERSION
+from backend.app.literature_maps.infrastructure.store import LiteratureMapStoreError
+from backend.app.memory.repository import OWNER_ID
+
+router = APIRouter(prefix="/literature-maps")
+
+
+class MapCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    topic: str = Field(min_length=1, max_length=500)
+    name: str | None = Field(default=None, max_length=200)
+    project_id: str | None = Field(default=None, max_length=100)
+    year_start: StrictInt | None = Field(default=None, ge=1900, le=2100)
+    year_end: StrictInt | None = Field(default=None, ge=1900, le=2100)
+    source_ids: list[str] = Field(default_factory=list, max_length=50)
+    conference_ids: list[str] = Field(default_factory=list, max_length=50)
+    limit: StrictInt = Field(default=30)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class MapPatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: StrictInt = Field(ge=0)
+    name: str | None = Field(default=None, max_length=200)
+    project_id: str | None = Field(default=None, max_length=100)
+
+
+class PositionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    node_id: str = Field(min_length=1, max_length=100)
+    x: float
+    y: float
+
+
+class ViewportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float
+    y: float
+    scale: float
+
+
+class MapViewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: StrictInt = Field(ge=0)
+    positions: list[PositionRequest] = Field(default_factory=list, max_length=200)
+    viewport: ViewportRequest | None = None
+    filters: dict[str, Any] | None = None
+    layers: dict[Literal["citation", "similarity"], bool] | None = None
+
+
+class ImportRequest(BaseModel):
+    """Empty action body; source URLs are always resolved from the node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _error(error: Exception) -> HTTPException:
+    code = str(error)
+    if isinstance(error, LookupError) or code in {"PROJECT_NOT_FOUND", "IMPORT_BRIDGE_UNAVAILABLE"}:
+        status = 404 if code != "IMPORT_BRIDGE_UNAVAILABLE" else 503
+        error_code = "MAP_NOT_FOUND" if isinstance(error, LookupError) else code
+        message = "地图或节点不存在" if isinstance(error, LookupError) else "文献导入流程暂不可用"
+    elif isinstance(error, (LiteratureMapStoreError, sqlite3.Error)) or code in {
+        "MAP_STORAGE_UNAVAILABLE", "MAP_IMPORT_STATE_UNAVAILABLE",
+    }:
+        status, error_code, message = 503, "MAP_STORAGE_UNAVAILABLE", "文献地图暂时不可用，请稍后重试"
+    elif code in {"revision conflict", "idempotency conflict", "job is not retryable", "map stopped", "MAP_JOB_INVALID_INPUT", "MAP_IDEMPOTENCY_STATE_INVALID"} or code.startswith("MAP_CONFLICT"):
+        status, error_code, message = 409, "MAP_CONFLICT", "地图版本或作业状态已变化，请重新读取后重试"
+        if code == "idempotency conflict":
+            error_code, message = "IDEMPOTENCY_CONFLICT", "相同幂等键不能用于不同参数"
+    elif code == "IMPORT_URL_UNSAFE":
+        status, error_code, message = 400, code, "导入链接必须是安全的 http/https 地址"
+    elif code == "INVALID_MAP_SCOPE":
+        status, error_code, message = 400, code, "地图来源或会议范围不受支持，请选择服务端支持的范围"
+    elif code in {"UNSUPPORTED_SOURCE", "UNSUPPORTED_CONFERENCE"}:
+        status, error_code = 400, code
+        message = {
+            "UNSUPPORTED_SOURCE": "source_id 不是服务端支持的来源",
+            "UNSUPPORTED_CONFERENCE": "conference_id 不是服务端支持的会议",
+        }[code]
+    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node"}:
+        status, error_code, message = 400, code, "地图创建参数不合法"
+    elif code == "PROJECT_NOT_FOUND":
+        status, error_code, message = 404, code, "项目不存在或不可访问"
+    else:
+        status, error_code, message = 503, "MAP_STORAGE_UNAVAILABLE", "文献地图暂时不可用，请稍后重试"
+    return HTTPException(status_code=status, detail={"code": error_code, "message": message, "retryable": status >= 500})
+
+
+def _envelope(**values: Any) -> dict[str, Any]:
+    return {"schema_version": SCHEMA_VERSION, **values}
+
+
+@router.post("", status_code=202)
+def create_literature_map(payload: MapCreateRequest):
+    try:
+        service = get_literature_map_service()
+        result = service.create_map(owner_id=OWNER_ID, topic=payload.topic, name=payload.name, project_id=payload.project_id, year_start=payload.year_start, year_end=payload.year_end, source_ids=payload.source_ids, conference_ids=payload.conference_ids, requested_count=payload.limit, idempotency_key=payload.idempotency_key)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(map_id=result.map.map_id, job_id=result.job.job_id, status=result.map.status, map=result.map.to_dict(), job=result.job.to_dict())
+
+
+@router.get("")
+def list_literature_maps(limit: int = Query(100, ge=1, le=100)):
+    try:
+        maps = get_literature_map_service().store.list_maps(OWNER_ID, limit=limit)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(maps=[item.to_dict() for item in maps])
+
+
+@router.get("/{map_id}")
+def get_literature_map(map_id: str):
+    try:
+        service = get_literature_map_service()
+        item = service.store.get_map(map_id, OWNER_ID)
+        latest_job = service.store.latest_job(map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    if item is None:
+        raise _error(LookupError("map not found"))
+    return _envelope(map=item.to_dict(), latest_job=latest_job.to_dict() if latest_job else None)
+
+
+@router.patch("/{map_id}")
+def patch_literature_map(map_id: str, payload: MapPatchRequest):
+    try:
+        service = get_literature_map_service()
+        kwargs = {"expected_revision": payload.expected_revision, "name": payload.name}
+        if "project_id" in payload.model_fields_set:
+            kwargs["project_id"] = payload.project_id
+        item = service.update_map(map_id, OWNER_ID, **kwargs)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(map=item.to_dict())
+
+
+@router.delete("/{map_id}", status_code=204)
+def delete_literature_map(map_id: str):
+    try:
+        deleted = get_literature_map_service().store.delete_map(map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    if not deleted:
+        raise _error(LookupError("map not found"))
+
+
+@router.get("/{map_id}/graph")
+def get_literature_map_graph(map_id: str):
+    try:
+        return get_literature_map_service().graph(map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.get("/{map_id}/nodes/{node_id}")
+def get_literature_map_node(map_id: str, node_id: str):
+    try:
+        return _envelope(node=get_literature_map_service().node(map_id, node_id, OWNER_ID).to_dict())
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.patch("/{map_id}/view")
+def patch_literature_map_view(map_id: str, payload: MapViewRequest):
+    if payload.viewport is not None and (not all(math.isfinite(value) for value in (payload.viewport.x, payload.viewport.y, payload.viewport.scale)) or payload.viewport.scale <= 0):
+        raise _error(ValueError("invalid viewport"))
+    if any(not all(math.isfinite(value) for value in (position.x, position.y)) for position in payload.positions):
+        raise _error(ValueError("invalid position"))
+    try:
+        service = get_literature_map_service()
+        item = service.store.update_view(map_id, OWNER_ID, expected_revision=payload.expected_revision, positions=[position.model_dump() for position in payload.positions], viewport=payload.viewport.model_dump() if payload.viewport else None, filters=payload.filters, layers=payload.layers)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(map=item.to_dict())
+
+
+@router.get("/{map_id}/jobs/{job_id}")
+def get_literature_map_job(map_id: str, job_id: str):
+    try:
+        item = get_literature_map_service().store.get_job(job_id, map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    if item is None:
+        raise _error(LookupError("job not found"))
+    return _envelope(job=item.to_dict())
+
+
+@router.get("/{map_id}/events")
+def list_literature_map_events(map_id: str, after_seq: int = Query(0, ge=0)):
+    try:
+        service = get_literature_map_service()
+        events, cursor = service.store.list_events(map_id, OWNER_ID, after_seq=after_seq)
+        map_item = service.store.get_map(map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    if map_item is None:
+        raise _error(LookupError("map not found"))
+    return _envelope(events=[event.to_dict() for event in events], next_cursor=cursor)
+
+
+@router.post("/{map_id}/jobs/{job_id}/stop")
+def stop_literature_map_job(map_id: str, job_id: str):
+    try:
+        job = get_literature_map_service().stop_job(map_id, job_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(job=job.to_dict())
+
+
+@router.post("/{map_id}/jobs/{job_id}/retry")
+def retry_literature_map_job(map_id: str, job_id: str):
+    try:
+        job = get_literature_map_service().retry_job(map_id, job_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(job=job.to_dict())
+
+
+@router.post("/{map_id}/nodes/{node_id}/imports", status_code=202)
+def import_literature_map_node(map_id: str, node_id: str, payload: ImportRequest | None = None):
+    try:
+        result = get_literature_map_service().import_node(map_id, node_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
+
+
+__all__ = ["router"]

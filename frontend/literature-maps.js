@@ -13,6 +13,10 @@
   const MAX_POLL_ATTEMPTS = 120;
   const TERMINAL_JOB_STATES = new Set(['completed', 'partial', 'failed', 'stopped']);
   const LAYER_NAMES = ['citation', 'similarity'];
+  // Keep this allow-list aligned with catalog_adapter.py's canonical IDs.  In
+  // particular, do not invent a Semantic Scholar spelling for map filters.
+  const SUPPORTED_MAP_SOURCE_IDS = new Set(['usenix', 'dblp', 'ieee_sp', 'ccs', 'ndss', 'openalex', 'crossref']);
+  const SUPPORTED_MAP_CONFERENCE_IDS = new Set(['usenix-security', 'ieee-sp', 'ccs', 'ndss']);
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
   const state = {
@@ -46,6 +50,10 @@
     layerStatus: { citation: 'waiting', similarity: 'waiting' },
     saveTimer: null,
     pointer: null,
+    createPanelOpen: false,
+    createOptionsLoaded: false,
+    createOptionsRequest: 0,
+    createOptionsLoading: false,
   };
 
   const refs = {};
@@ -144,6 +152,33 @@
     }
     if (payload?.schema_version && payload.schema_version !== SCHEMA_VERSION) {
       throw new LiteratureMapError('地图接口版本不匹配，请刷新页面后重试。', { retryable: false });
+    }
+    return payload;
+  }
+
+  async function requestCatalog(path) {
+    let response;
+    try {
+      response = await fetch(path, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+    } catch (error) {
+      throw new LiteratureMapError('筛选项服务暂时不可用。', { retryable: true, cause: error });
+    }
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (_) {
+      payload = {};
+    }
+    if (!response.ok) {
+      const detail = payload?.detail && typeof payload.detail === 'object' ? payload.detail : payload;
+      throw new LiteratureMapError(detail?.message || payload?.message || '筛选项读取失败。', {
+        status: response.status,
+        code: detail?.code || payload?.error_code || '',
+        retryable: detail?.retryable,
+      });
     }
     return payload;
   }
@@ -314,19 +349,31 @@
     });
     limitLabel.append(limitInput);
     formGrid.append(limitLabel);
-    const sourceLabel = createElement('label', '', '来源 ID（可选，逗号分隔）');
-    const sourceInput = createElement('input');
-    sourceInput.id = 'literature-map-sources';
-    sourceInput.placeholder = '例如：semantic-scholar';
-    sourceLabel.append(sourceInput);
-    const conferenceLabel = createElement('label', '', '会议 ID（可选，逗号分隔）');
-    const conferenceInput = createElement('input');
-    conferenceInput.id = 'literature-map-conferences';
-    conferenceLabel.append(conferenceInput);
-    const projectLabel = createElement('label', '', '项目 ID（可选）');
-    const projectInput = createElement('input');
+    const filterGrid = createElement('div', 'literature-map-filter-grid');
+    const sourceField = createElement('fieldset', 'literature-map-selection-field');
+    sourceField.append(createElement('legend', '', '来源（可选）'));
+    const sourceOptions = createElement('div', 'literature-map-option-list');
+    sourceOptions.id = 'literature-map-source-options';
+    const sourceNotice = createElement('p', 'literature-map-selection-notice');
+    sourceNotice.id = 'literature-map-source-notice';
+    sourceField.append(sourceOptions, sourceNotice);
+    const conferenceField = createElement('fieldset', 'literature-map-selection-field');
+    conferenceField.append(createElement('legend', '', '会议（可选）'));
+    const conferenceOptions = createElement('div', 'literature-map-option-list');
+    conferenceOptions.id = 'literature-map-conference-options';
+    const conferenceNotice = createElement('p', 'literature-map-selection-notice');
+    conferenceNotice.id = 'literature-map-conference-notice';
+    conferenceField.append(conferenceOptions, conferenceNotice);
+    const projectField = createElement('label', 'literature-map-project-field', '项目（可选）');
+    const projectInput = createElement('select');
     projectInput.id = 'literature-map-project';
-    projectLabel.append(projectInput);
+    const unboundProject = createElement('option', '', '不绑定项目');
+    unboundProject.value = '';
+    projectInput.append(unboundProject);
+    const projectNotice = createElement('p', 'literature-map-selection-notice');
+    projectNotice.id = 'literature-map-project-notice';
+    projectField.append(projectInput, projectNotice);
+    filterGrid.append(sourceField, conferenceField, projectField);
     const formActions = createElement('div', 'literature-map-form-actions');
     const cancelButton = createElement('button', 'secondary-button', '取消');
     cancelButton.type = 'button';
@@ -335,7 +382,7 @@
     submitButton.type = 'submit';
     submitButton.id = 'literature-map-create-submit';
     formActions.append(cancelButton, submitButton);
-    form.append(topicLabel, nameLabel, formGrid, sourceLabel, conferenceLabel, projectLabel, formActions);
+    form.append(topicLabel, nameLabel, formGrid, filterGrid, formActions);
     createPanel.append(createTitle, form);
     listPanel.append(createPanel);
 
@@ -418,7 +465,7 @@
     root.append(grid);
     mount.append(root);
 
-    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceInput, conferenceInput, projectInput, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, detailPanel, detail, status: notice, count: listCount });
+    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, detailPanel, detail, status: notice, count: listCount });
     bindEvents(newButton, refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
@@ -431,13 +478,17 @@
       else loadMaps();
     });
     newButton.addEventListener('click', () => {
-      refs.createPanel.hidden = !refs.createPanel.hidden;
-      if (!refs.createPanel.hidden) refs.topicInput.focus();
+      if (!refs.createPanel.hidden) {
+        closeCreatePanel();
+      } else {
+        refs.createPanel.hidden = false;
+        state.createPanelOpen = true;
+        refs.topicInput.focus();
+        loadCreateOptions();
+      }
     });
     refs.cancelButton.addEventListener('click', () => {
-      refs.createPanel.hidden = true;
-      refs.form.reset();
-      refs.limitInput.value = '30';
+      closeCreatePanel();
     });
     refs.form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -495,6 +546,17 @@
     });
   }
 
+  function closeCreatePanel() {
+    if (!refs.createPanel) return;
+    refs.createPanel.hidden = true;
+    state.createPanelOpen = false;
+    state.createOptionsRequest += 1;
+    state.createOptionsLoading = false;
+    refs.form.reset();
+    refs.limitInput.value = '30';
+    refs.projectInput.value = '';
+  }
+
   function filteredMaps() {
     return state.maps.filter((map) => {
       const haystack = `${mapTitle(map)} ${map?.topic || ''}`.toLowerCase();
@@ -502,6 +564,162 @@
       const matchesStatus = state.listStatus === 'all' || map?.status === state.listStatus;
       return matchesQuery && matchesStatus;
     });
+  }
+
+  function optionId(value) {
+    const id = String(value || '').trim();
+    return id || null;
+  }
+
+  function selectedOptionIds(container) {
+    return Array.from(container?.querySelectorAll('input[type="checkbox"][data-option-id]:checked') || [])
+      .map((input) => optionId(input.dataset.optionId))
+      .filter(Boolean);
+  }
+
+  function renderSelectionNotice(node, message, status = '') {
+    if (!node) return;
+    node.textContent = message || '';
+    node.dataset.state = status;
+  }
+
+  function renderCheckboxOptions(container, items, selectedIds, emptyMessage) {
+    if (!container) return;
+    container.replaceChildren();
+    if (!items.length) {
+      container.append(createElement('span', 'literature-map-option-empty', emptyMessage));
+      return;
+    }
+    items.forEach((item, index) => {
+      const label = createElement('label', 'literature-map-option');
+      const input = createElement('input');
+      input.type = 'checkbox';
+      input.name = item.name;
+      input.dataset.optionId = item.id;
+      input.id = `${item.name}-${index}`;
+      input.value = item.id;
+      input.disabled = item.enabled === false;
+      input.checked = !input.disabled && selectedIds.has(item.id);
+      label.append(input, createElement('span', '', item.label));
+      container.append(label);
+    });
+  }
+
+  function normalizeSourceOptions(payload) {
+    const entries = Array.isArray(payload?.sources) ? payload.sources : [];
+    return entries.map((entry) => {
+      const id = optionId(entry?.source_id);
+      if (!id || !SUPPORTED_MAP_SOURCE_IDS.has(id)) return null;
+      return {
+        id,
+        name: 'source_ids',
+        label: String(entry.source_kind || entry.source_id),
+        enabled: entry.enabled !== false,
+      };
+    }).filter(Boolean);
+  }
+
+  function normalizeConferenceOptions(payload) {
+    const entries = Array.isArray(payload?.conferences) ? payload.conferences : [];
+    return entries.map((entry) => {
+      const id = optionId(entry?.conference_id);
+      if (!id || !SUPPORTED_MAP_CONFERENCE_IDS.has(id)) return null;
+      return {
+        id,
+        name: 'conference_ids',
+        label: String(entry.name || entry.short_name || entry.conference_id),
+        enabled: entry.enabled !== false,
+      };
+    }).filter(Boolean);
+  }
+
+  function normalizeProjectOptions(payload) {
+    const entries = Array.isArray(payload?.projects) ? payload.projects : [];
+    return entries.map((entry) => {
+      const id = optionId(entry?.project_id);
+      const name = String(entry?.name || '').trim();
+      if (!id || !name) return null;
+      return { id, label: name };
+    }).filter(Boolean);
+  }
+
+  function renderProjectOptions(items) {
+    if (!refs.projectInput) return;
+    const current = refs.projectInput.value;
+    refs.projectInput.replaceChildren();
+    const unbound = createElement('option', '', '不绑定项目');
+    unbound.value = '';
+    refs.projectInput.append(unbound);
+    items.forEach((item) => {
+      const option = createElement('option', '', item.label);
+      option.value = item.id;
+      refs.projectInput.append(option);
+    });
+    if (items.some((item) => item.id === current)) refs.projectInput.value = current;
+  }
+
+  async function loadProjectsForMapForm() {
+    const projects = [];
+    let cursor = null;
+    let pageCount = 0;
+    do {
+      const params = new URLSearchParams({ limit: '100' });
+      if (cursor) params.set('cursor', cursor);
+      const payload = await requestCatalog(`/api/projects?${params.toString()}`);
+      projects.push(...normalizeProjectOptions(payload));
+      cursor = optionId(payload?.next_cursor);
+      pageCount += 1;
+    } while (cursor && pageCount < 10);
+    return { items: projects, truncated: Boolean(cursor) };
+  }
+
+  async function loadCreateOptions() {
+    if (state.createOptionsLoaded || !state.createPanelOpen || state.createOptionsLoading) return;
+    const requestId = ++state.createOptionsRequest;
+    state.createOptionsLoading = true;
+    renderSelectionNotice(refs.sourceNotice, '正在读取可用来源…');
+    renderSelectionNotice(refs.conferenceNotice, '正在读取可用会议…');
+    renderSelectionNotice(refs.projectNotice, '正在读取项目列表…');
+    const [sources, conferences, projects] = await Promise.allSettled([
+      requestCatalog('/api/papers/sources'),
+      requestCatalog('/api/papers/conferences'),
+      loadProjectsForMapForm(),
+    ]);
+    if (requestId !== state.createOptionsRequest || !state.createPanelOpen) return;
+    state.createOptionsLoading = false;
+    state.createOptionsRequest = 0;
+    state.createOptionsLoaded = true;
+
+    if (sources.status === 'fulfilled') {
+      const selected = new Set(selectedOptionIds(refs.sourceOptions));
+      const items = normalizeSourceOptions(sources.value);
+      renderCheckboxOptions(refs.sourceOptions, items, selected, '通用来源（不限）');
+      renderSelectionNotice(refs.sourceNotice, items.length ? '可多选；不选择表示不限来源。' : '暂无可用来源，仍可按通用来源建图。', items.length ? '' : 'warning');
+    } else {
+      renderCheckboxOptions(refs.sourceOptions, [], new Set(), '通用来源（不限）');
+      renderSelectionNotice(refs.sourceNotice, '来源筛选暂不可用，仍可直接建图（不限来源）。', 'warning');
+    }
+    if (conferences.status === 'fulfilled') {
+      const selected = new Set(selectedOptionIds(refs.conferenceOptions));
+      const items = normalizeConferenceOptions(conferences.value);
+      renderCheckboxOptions(refs.conferenceOptions, items, selected, '通用会议范围（不限）');
+      renderSelectionNotice(refs.conferenceNotice, items.length ? '可多选；不选择表示不限会议。' : '暂无可用会议，仍可按通用会议范围建图。', items.length ? '' : 'warning');
+    } else {
+      renderCheckboxOptions(refs.conferenceOptions, [], new Set(), '通用会议范围（不限）');
+      renderSelectionNotice(refs.conferenceNotice, '会议筛选暂不可用，仍可直接建图（不限会议）。', 'warning');
+    }
+    if (projects.status === 'fulfilled') {
+      const result = projects.value && typeof projects.value === 'object' ? projects.value : {};
+      const items = Array.isArray(result.items) ? result.items : [];
+      renderProjectOptions(items);
+      const projectMessage = result.truncated
+        ? '项目列表未加载完（已显示前 1000 项）；可关闭后重新打开重试，或先不绑定项目。'
+        : (items.length ? '只显示当前账户可用项目。' : '暂无项目，默认不绑定。');
+      renderSelectionNotice(refs.projectNotice, projectMessage, result.truncated || !items.length ? 'warning' : '');
+    } else {
+      renderProjectOptions([]);
+      renderSelectionNotice(refs.projectNotice, '项目列表暂不可用，仍可不绑定项目建图。', 'warning');
+    }
   }
 
   function renderMapList() {
@@ -560,11 +778,11 @@
     if (name) payload.name = name;
     if (yearStart !== null) payload.year_start = yearStart;
     if (yearEnd !== null) payload.year_end = yearEnd;
-    const sourceIds = parseCsv(refs.sourceInput.value);
-    const conferenceIds = parseCsv(refs.conferenceInput.value);
+    const sourceIds = selectedOptionIds(refs.sourceOptions);
+    const conferenceIds = selectedOptionIds(refs.conferenceOptions);
     if (sourceIds.length) payload.source_ids = sourceIds;
     if (conferenceIds.length) payload.conference_ids = conferenceIds;
-    const projectId = refs.projectInput.value.trim();
+    const projectId = optionId(refs.projectInput.value);
     if (projectId) payload.project_id = projectId;
     return payload;
   }
@@ -600,9 +818,7 @@
       state.selectedNode = null;
       state.positions = Object.create(null);
       state.positionsDirty = false;
-      refs.createPanel.hidden = true;
-      refs.form.reset();
-      refs.limitInput.value = '30';
+      closeCreatePanel();
       await loadMaps();
       if (requestId !== state.mapRequest || !state.active) return;
       if (state.selectedMapId) {
@@ -1151,6 +1367,7 @@
         }
       });
     } else {
+      closeCreatePanel();
       stopPolling();
       window.clearTimeout(state.saveTimer);
     }

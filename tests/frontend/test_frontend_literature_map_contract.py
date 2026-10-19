@@ -24,8 +24,8 @@ def test_navigation_view_and_version_contract_are_wired() -> None:
     assert 'data-view="literature-maps"' in INDEX
     assert 'id="literature-maps-view"' in INDEX
     assert 'id="literature-maps-mount"' in INDEX
-    assert '/assets/literature-maps.js?v=1' in INDEX
-    assert '/assets/literature-maps.css?v=1' in INDEX
+    assert '/assets/literature-maps.js?v=3' in INDEX
+    assert '/assets/literature-maps.css?v=3' in INDEX
     app_versions = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     style_versions = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
     assert app_versions and int(app_versions[-1]) >= 58
@@ -69,16 +69,25 @@ def test_map_module_uses_frozen_api_and_safe_dom_boundaries() -> None:
         "viewRequest",
         "pollGeneration",
         "nodeLabel",
+        "requestCatalog",
+        "/api/papers/sources",
+        "/api/papers/conferences",
+        "/api/projects",
+        "SUPPORTED_MAP_SOURCE_IDS",
+        "SUPPORTED_MAP_CONFERENCE_IDS",
     ):
         assert marker in MODULE
     assert "window.location.origin" in MODULE
     assert "javascript:" not in MODULE.lower()
+    assert "semantic-scholar" not in MODULE
+    assert "semantic_scholar" not in MODULE
 
 
 def test_map_styles_are_scoped_and_fixture_is_not_product_data() -> None:
     assert "#literature-maps-view" in STYLES
     assert "--accent" in STYLES
     assert "grid-template-columns: minmax(212px" in STYLES
+    assert ".literature-map-option-list" in STYLES
     assert ".literature-map-detail-panel[hidden]" in STYLES
     assert "mock API" in FIXTURE.read_text(encoding="utf-8")
     assert "synthetic" not in MODULE.lower()
@@ -99,6 +108,20 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         page.goto(FIXTURE.as_uri(), wait_until="load")
         page.wait_for_selector('[data-map-id="map-fixture"]')
+        page.get_by_role('button', name='新建地图').click()
+        page.locator('#literature-map-topic').fill('主题筛选夹具')
+        page.wait_for_selector('#literature-map-source-options input[value="usenix"]')
+        assert page.locator('#literature-map-source-options input[value="semantic_scholar"]').count() == 0
+        assert page.locator('#literature-map-topic').input_value() == '主题筛选夹具'
+        page.locator('#literature-map-source-options input[value="usenix"]').check()
+        page.locator('#literature-map-conference-options input[value="ccs"]').check()
+        page.locator('#literature-map-project').select_option('project-fixture')
+        page.get_by_role('button', name='开始建图').click()
+        page.wait_for_function("window.__createBody?.project_id === 'project-fixture'")
+        create_body = page.evaluate("window.__createBody")
+        assert create_body["source_ids"] == ["usenix"]
+        assert create_body["conference_ids"] == ["ccs"]
+        assert create_body["project_id"] == "project-fixture"
         page.locator('[data-map-id="map-fixture"]').click()
         page.wait_for_selector('[data-node-id="node-a"]')
         assert page.locator('[data-node-id]').count() == 2
@@ -122,4 +145,48 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         assert page.locator('[data-edge-kind="similarity"]').count() == 0
         page.get_by_role('button', name='关闭论文详情').click()
         assert page.locator('.literature-map-detail-panel').is_hidden()
+
+        fallback = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        fallback.goto(f'{FIXTURE.as_uri()}?options-fail', wait_until='load')
+        fallback.get_by_role('button', name='新建地图').click()
+        fallback.wait_for_function("document.querySelector('#literature-map-source-notice')?.dataset.state === 'warning'")
+        assert '仍可直接建图' in fallback.locator('#literature-map-source-notice').inner_text()
+        fallback.locator('#literature-map-topic').fill('通用范围建图')
+        fallback.get_by_role('button', name='开始建图').click()
+        fallback.wait_for_function("window.__createBody?.topic === '通用范围建图'")
+        fallback_body = fallback.evaluate("window.__createBody")
+        assert 'source_ids' not in fallback_body
+        assert 'conference_ids' not in fallback_body
+        assert 'project_id' not in fallback_body
+        fallback.close()
+
+        leave_page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        leave_page.goto(f'{FIXTURE.as_uri()}?options-delay', wait_until='load')
+        leave_page.get_by_role('button', name='新建地图').click()
+        leave_page.locator('#literature-map-topic').fill('离开后不应回写')
+        leave_page.evaluate("window.LiteratureMaps.setActive(false)")
+        leave_page.wait_for_timeout(350)
+        assert leave_page.locator('#literature-map-create-panel').is_hidden()
+        assert leave_page.locator('#literature-map-topic').input_value() == ''
+        assert leave_page.locator('#literature-map-source-options .literature-map-option').count() == 0
+        leave_page.close()
+
+        success_page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        success_page.goto(f'{FIXTURE.as_uri()}?options-delay', wait_until='load')
+        success_page.get_by_role('button', name='新建地图').click()
+        success_page.locator('#literature-map-topic').fill('创建后不应回写')
+        success_page.get_by_role('button', name='开始建图').click()
+        success_page.wait_for_function("window.__createBody?.topic === '创建后不应回写'")
+        success_page.wait_for_timeout(350)
+        assert success_page.locator('#literature-map-create-panel').is_hidden()
+        assert success_page.locator('#literature-map-topic').input_value() == ''
+        assert success_page.locator('#literature-map-source-options .literature-map-option').count() == 0
+        success_page.close()
+
+        truncated_page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        truncated_page.goto(f'{FIXTURE.as_uri()}?projects-truncated', wait_until='load')
+        truncated_page.get_by_role('button', name='新建地图').click()
+        truncated_page.wait_for_function("document.querySelector('#literature-map-project-notice')?.textContent.includes('项目列表未加载完')")
+        assert '重新打开重试' in truncated_page.locator('#literature-map-project-notice').inner_text()
+        truncated_page.close()
         browser.close()

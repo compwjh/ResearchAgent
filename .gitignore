@@ -41,6 +41,7 @@ data/memory/
 # Spec027 Research Task 独立库（与 data/memory、data/paper_search 同范式）：
 # 属运行期数据，整体删除即完成回滚，不入版本库。
 data/research/
+data/literature_maps/
 data/memory/*.md
 data/memory/projects/
 # 知识库重建会把旧库整体移入 data/.trash/kb-<时间戳>/（含 PDF 与 qdrant 快照），

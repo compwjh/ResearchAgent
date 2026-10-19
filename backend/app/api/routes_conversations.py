@@ -46,6 +46,7 @@ from backend.app.knowledge_base.application import (
     hybrid_search,
     list_documents_for_project,
 )
+from backend.app.literature_maps.application.runtime import get_literature_map_service
 from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.memory.session_search import search_sessions
@@ -565,6 +566,13 @@ def remove_project(project_id: str):
         clear_project_document_associations(project_id, owner_id=OWNER_ID)
     except Exception as error:
         raise HTTPException(status_code=503, detail={"code": "DOCUMENT_ASSOCIATION_FAILED", "message": "项目文档关联暂时无法解除", "retryable": True}) from error
+    # Literature maps are independent documents but retain an optional project
+    # binding. Detach owner-scoped maps before deleting the project; a failure
+    # fails closed so the project cannot disappear with a dangling binding.
+    try:
+        get_literature_map_service().detach_project(project_id, OWNER_ID)
+    except Exception as error:
+        raise HTTPException(status_code=503, detail={"code": "LITERATURE_MAP_ASSOCIATION_FAILED", "message": "项目文献地图关联暂时无法解除", "retryable": True}) from error
     # Spec027：项目删除时其 Research Task / 计划 / 事件 / 选集 / 报告随项目删除。
     # 级联走应用层（外键为 RESTRICT，无 DB CASCADE）；与上面同款 fail-closed：
     # 失败则保留项目并返回 503，避免删掉项目后留下无法再被清理的孤儿 research 数据。

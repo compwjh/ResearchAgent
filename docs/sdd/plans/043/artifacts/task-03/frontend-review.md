@@ -96,3 +96,63 @@
 | `.venv/bin/python scripts/check_test_naming.py` | 退出码 0，未发现 spec/task 编号测试名 |
 | `git diff --check` | 退出码 0 |
 
+## 独立 UX 复核（frontend-reviewer，2026-10-19，授权 Chromium）
+
+本节针对 `47f394d` 后新增的来源/会议/项目选择 UX 做独立复核；本轮未修改 `frontend/**`、后端或测试业务逻辑，仅追加本报告与进展日志。
+
+### 复核结论
+
+- P0：未发现。
+- P1：发现 1 项表单异步生命周期缺口，需 frontend-dev 最小修复后复审。`createMap()` 成功路径在 `frontend/literature-maps.js:813-816` 只隐藏并 reset 表单，没有将 `state.createPanelOpen` 置为 `false` 或递增 `state.createOptionsRequest`。如果用户在来源/会议/项目选项仍加载时提交，或从主导航离开，晚到的 `loadCreateOptions()` 响应仍满足当前 request/panel guard，会继续写入已经关闭或已 reset 的筛选控件。取消按钮和新建按钮主动关闭路径已有失效代次门禁；最小修复是复用统一 close helper，在成功提交及 `setActive(false)` 时同时关闭面板、失效选项请求并清理 loading 状态。
+- 非阻断 P2：`loadProjectsForMapForm()` 在第 10 页后仍有 `next_cursor` 时静默截断（`frontend/literature-maps.js:657-669`）；当前账户超过 1000 个项目时，未显示“列表过多/继续加载”提示。建议后续改为显式“已达加载上限”提示或由服务端提供明确上限，不应静默声称已列出全部项目。
+
+### 已核对通过项
+
+- 主导航只有一个 `data-view="literature-maps"`；桌面 CSS 保持左列表/中 SVG/右详情三栏，详情 `[hidden]` 强制 `display:none`。
+- `SUPPORTED_MAP_SOURCE_IDS` 与 `catalog_adapter.py` 的 `CANONICAL_SOURCE_IDS` 逐项一致：`usenix`、`dblp`、`ieee_sp`、`ccs`、`ndss`、`openalex`、`crossref`；会议集合一致为 `usenix-security`、`ieee-sp`、`ccs`、`ndss`。客户端不出现 `semantic_scholar`/`semantic-scholar`，未知服务端选项不会渲染或发送。
+- 来源/会议使用服务端 ID 的 checkbox，项目使用服务端 `project_id`/名称的 select；没有手填 ID 控件。项目请求使用 `limit=100` 与 `next_cursor`，任一页失败回退为“不绑定项目”并给出 warning，主题/名称/年份不被选项响应重置。
+- 动态名称/来源/详情文本走 `textContent`/DOM API，无 `innerHTML`；无隐式下载。引用边保留箭头，similarity 边保留虚线与独立开关；import body 保持 `{}`，不传 `source_url`/rawsource。
+- 旧地图 graph/node/import/view/job/events 的代次与 map/job/node 身份门禁未被新 UX 代码回归；选项加载只作用于创建表单。
+
+### 本轮验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_feasibility.py`（普通沙箱） | 5 passed, 2 skipped；skip 原因是 Chromium Mach port 权限，未计为通过 |
+| 同上命令（受控授权环境、真实 Chromium） | 退出码 0，7 passed |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0，`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0，无 spec/task 编号测试名 |
+| `git diff --check` | 退出码 0 |
+
+`docs/sdd/plans/043/artifacts/task-02/browser-evidence.json` 授权 Chromium 测试前后 SHA-256 均为 `7b28bcf9688cc6a35b4e9f4f5a94b625945c65736f70e131db2b8f02bc808046`，本轮未覆盖 tracked 验收证据。后端 pytest、全量回归、服务部署与真实生产 API E2E 均未运行。
+
+## 最终窄复核：创建选项生命周期与项目分页（frontend-reviewer，2026-10-19）
+
+本节复核 `frontend-report.md` 最新“前端开发窄 UX 生命周期与分页收口”及其实际差异；本轮只读业务代码与 fixture/测试，未修改 `frontend/**`、后端或测试逻辑。
+
+### 结论
+
+- 上轮 P1 已修复：`closeCreatePanel()`（`frontend/literature-maps.js:549-558`）统一设置 `createPanelOpen=false`、递增 `createOptionsRequest`、清理 loading 并 reset 表单；新建按钮收起、取消、创建成功（`~821`）和 `setActive(false)`（`~1370`）均调用该 helper。选项请求在 `~688` 的 request/panel 双门禁后才可写控件。
+- 上轮 P2 已修复：项目分页在 10 页仍有 `next_cursor` 时返回 `truncated`（`~661-674`），渲染“项目列表未加载完（已显示前 1000 项）……重新打开重试，或先不绑定项目”警告（`~711-721`），不再静默截断。
+- 普通主题输入保持：正常首开流程在选项异步完成后仍保留用户填写的主题；延迟请求在离开地图和创建成功后均不会写入已关闭/reset 表单，也不会重新生成 checkbox 选项。未发现新的 P0/P1。
+
+### 真实 Chromium 证据
+
+- fixture `tests/frontend/fixtures/literature_map_component.html` 的 `?options-delay` 对来源、会议、项目请求延迟 160ms；测试分别覆盖 `setActive(false)` 离开地图和创建成功后的迟到响应，断言面板 hidden、主题为空、选项 DOM 为空。
+- fixture `?projects-truncated` 返回持续 `next_cursor`，测试断言“项目列表未加载完”和“重新打开重试”提示。
+- 普通路径先填写主题后等待选项，断言主题仍为“主题筛选夹具”；选项接口失败仍保留通用范围建图回退。
+
+### 验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_feasibility.py`（普通沙箱） | 5 passed, 2 skipped；Chromium 权限 skip 未计为通过 |
+| 同上命令（受控授权、真实 Chromium） | 退出码 0，7 passed；包含 160ms 延迟竞态及分页提示 |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0，`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0，无 spec/task 编号测试名 |
+| `git diff --check` | 退出码 0 |
+
+tracked `browser-evidence.json` 测试前后 SHA-256 均为 `7b28bcf9688cc6a35b4e9f4f5a94b625945c65736f70e131db2b8f02bc808046`。本轮前端窄复核通过；Task03 仍不替代后端 import 信任边界审查、真实生产 API E2E 或部署验收。
+

@@ -41,6 +41,17 @@
 #literature-maps-view .literature-map-create-form label { display: grid; gap: 5px; color: var(--muted-strong); font-size: 10px; font-weight: 700; }
 #literature-maps-view .literature-map-create-form textarea { resize: vertical; }
 #literature-maps-view .literature-map-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+#literature-maps-view .literature-map-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+#literature-maps-view .literature-map-selection-field { min-width: 0; margin: 0; padding: 8px 9px 9px; border: 1px solid #e2dff0; border-radius: 8px; background: #fff; }
+#literature-maps-view .literature-map-selection-field legend { padding: 0 4px; color: var(--muted-strong); font-size: 10px; font-weight: 700; }
+#literature-maps-view .literature-map-option-list { display: grid; gap: 5px; max-height: 118px; overflow: auto; }
+#literature-maps-view .literature-map-option { display: flex; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; color: var(--ink); font-size: 10px; font-weight: 500; }
+#literature-maps-view .literature-map-option input { flex: 0 0 auto; accent-color: var(--accent); }
+#literature-maps-view .literature-map-option span, #literature-maps-view .literature-map-option-empty { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#literature-maps-view .literature-map-option-empty { color: var(--muted); font: 9px/1.5 'DM Mono', monospace; }
+#literature-maps-view .literature-map-selection-notice { min-height: 13px; margin: 6px 0 0; color: var(--muted); font: 9px/1.45 'DM Mono', monospace; }
+#literature-maps-view .literature-map-selection-notice[data-state="warning"] { color: #94621c; }
+#literature-maps-view .literature-map-project-field { grid-column: 1 / -1; }
 #literature-maps-view .literature-map-form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; padding-top: 2px; }
 #literature-maps-view .literature-map-form-actions button { padding: 7px 9px; font-size: 10px; }
 #literature-maps-view .literature-map-canvas-panel { display: flex; flex-direction: column; min-height: min(700px, calc(100vh - 160px)); }
@@ -97,6 +108,8 @@
   #literature-maps-view .literature-map-app { min-height: calc(100vh - 60px); padding: 18px 12px 24px; }
   #literature-maps-view .literature-map-header { align-items: flex-start; flex-direction: column; }
   #literature-maps-view .literature-map-grid { grid-template-columns: 1fr; }
+  #literature-maps-view .literature-map-filter-grid { grid-template-columns: 1fr; }
+  #literature-maps-view .literature-map-project-field { grid-column: auto; }
   #literature-maps-view .literature-map-list-panel, #literature-maps-view .literature-map-canvas-panel, #literature-maps-view .literature-map-detail-panel { min-height: 0; }
   #literature-maps-view .literature-map-canvas-panel { min-height: 520px; }
   #literature-maps-view .literature-map-detail-panel { grid-column: auto; max-height: none; }
