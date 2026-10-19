@@ -168,8 +168,8 @@
 | 01 | Spec与规划文档 | 本文件 | — | 已完成（仅建档） |
 | 02 | 准备与可行性门禁 | [Task02](../plans/043/task-02-validate-feasibility.md) | 01 | 已完成（Go） |
 | 03 | 桌面自动建图 MVP | [Task03](../plans/043/task-03-desktop-map-mvp.md) | 02 | 阶段已完成（PASS_WITH_LIMITATIONS） |
-| 04 | 扩展与恢复 | [Task04](../plans/043/task-04-expansion-recovery.md) | 03 | 进行中 |
-| 05 | AI分析与会话 | [Task05](../plans/043/task-05-analysis-conversations.md) | 04 | 待执行 |
+| 04 | 扩展与恢复 | [Task04](../plans/043/task-04-expansion-recovery.md) | 03 | 阶段已完成（PASS_WITH_LIMITATIONS） |
+| 05 | AI分析与会话 | [Task05](../plans/043/task-05-analysis-conversations.md) | 04 | 进行中 |
 | 06 | 整理与导出 | [Task06](../plans/043/task-06-groups-exports.md) | 04 | 待执行 |
 | 07 | 手机适配 | [Task07](../plans/043/task-07-mobile-map.md) | 05、06 | 待执行 |
 | 08 | 最终验收与收口 | [Task08](../plans/043/task-08-acceptance-deploy-retro.md) | 02–07 | 待执行 |

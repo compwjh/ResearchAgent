@@ -1,7 +1,7 @@
 # Task 04 — 扩展与恢复
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：03；被依赖：05、06；当前状态：**进行中（冻结增量合同）**。
+> 依赖：03；被依赖：05、06；当前状态：**阶段已完成（PASS_WITH_LIMITATIONS）**。
 
 ## 一句话目标
 
@@ -121,7 +121,13 @@
 
 ## 执行结果
 
-待执行后填写。
+2026-10-20 03:32 +08:00最终阶段结论：独立阶段验收PASS_WITH_LIMITATIONS，架构师接纳，允许进入Task05/06。真实API参考文献45候选→确认1篇，21节点18边；刷新空选择真实UI确认后updated_count=8、revision8→9，GAT引用数29000→29014，AASIST674→676、IoT76→77，API GET与只读SQLite重开一致；原有布局、分组及KB文档关联保留。新Chrome会话从服务器重开预览，字段from/to可见，无新provider请求。地图域108项、授权Chromium13项及旧可行性3项测试通过，均退出0。阶段报告见 `artifacts/task-04/acceptance-report.md`，准备度9/10；provider部分响应失败及未取得UI原幂等key的证据边界保留，不作为Spec最终收口。
+
+以下保留阶段过程与失败历史：
+
+进行中：已完成两端实现与独立复审修复，并在真实服务完成参考文献预览/加入、幂等重放、刷新差异、CAS409、移除/恢复与保存重开。浏览器发现并修复差异显示及持久预览发现问题，后者仍待分页修复复审与真实复验，Task未完成。
+
+2026-10-20 03:13 +08:00：主会话对当前稳定地图SQLite生成一致性备份 `data/literature_maps/backups/literature-maps-20261020T031323-before-analysis.sqlite3`，SQLite `.backup` 与备份 `PRAGMA integrity_check` 均退出0、返回ok。该备份是当前Task04状态的后续迁移前保护，不冒充首次v3迁移前快照；运行数据不提交Git。
 
 ## 变更日志
 

@@ -105,3 +105,42 @@ This backend run does not claim production browser labels or processing copy. Th
 ## Final decision
 
 **BLOCKED.** The deployed API successfully exercised the Task04 backend expansion/recovery path through real HTTP: references preview, persisted candidate GET, one-candidate apply, idempotent replay, refresh diff, stale CAS rejection, remove/restore, and reopen. It is not `READY_FOR_USER` because the reused map remains explicitly `partial`, refresh completed with real provider warnings, and the production browser processing/labels were not exercised by this backend run. No additional retry, PDF download, import, or deployment was performed. The frontend reviewer may reuse map `0baabeae7268429c9f7e4de8098ae1d0`, preview `7fda3c448a7a4274be866ade62c39b19`, and refresh preview `803a6aaefca740408d6296c23bbab8c7` for the browser handoff.
+
+## Backend-tester refresh preview handoff — r2
+
+- Run ID: `task04-api-e2e-20261020T032543+0800-r2`
+- Runtime: `http://127.0.0.1:8000`, `/api/ready` HTTP 200; no code or deployment change.
+- Reused map: `0baabeae7268429c9f7e4de8098ae1d0`; no new map was created.
+- Exactly one refresh preview create was issued, with idempotency key `task04-api-e2e-20261020-refresh-empty-r2`.
+- Create response: HTTP 202, preview `3e1c582efb704b188599e8ef805f8dda`, job `0ff677c2560e4ad5b40e4eb2371987e3`, base revision `8`, initial status `queued` / job `running`.
+- One read-only preview GET after the bounded wait returned HTTP 200, `status=completed`, 21 candidates, 8 metadata diffs, `provider_request_count=6`, warning `SEMANTIC_SCHOLAR_INVALID_RESPONSE`.
+
+The real server diff fields were:
+
+```json
+[
+  {"node_id":"21041260a5394f42891b020128fa60fa","changes":{"citation_count":{"from":29000,"to":29014}}},
+  {"node_id":"a4917994555846c79f7e1af80f398bd3","changes":{"citation_count":{"from":674,"to":676}}},
+  {"node_id":"f59c83c01b5f48dbbef04e054e1a91b0","changes":{"citation_count":{"from":76,"to":77}}},
+  {"node_id":"e2c645878ebe4bf5a06c7bd3c1ef42e0","changes":{"citation_count":{"from":758,"to":759}}},
+  {"node_id":"59a13b1f48424edfa53423989c847d9c","changes":{"citation_count":{"from":166,"to":167}}},
+  {"node_id":"0dd64965d19240c08cdddacf08777067","changes":{"citation_count":{"from":202,"to":203}}},
+  {"node_id":"5af29395e3424a2298447d44a3e09f01","changes":{"citation_count":{"from":104,"to":105}}},
+  {"node_id":"24e44e61d9d44d1b85918fa8f7362ff0","changes":{"citation_count":{"from":null,"to":605}}}
+]
+```
+
+No apply request was issued. The preview ID is handed to the frontend reviewer for the single UI confirmation with `selected_candidate_ids=[]`; backend follow-up GET of the node/graph, revision, layout/group/document preservation and idempotent replay must wait until that confirmation. This run does not claim those post-apply facts. No PDF download/import or additional retry was performed.
+
+## Backend-tester post-confirmation read-only closure — r2
+
+The frontend reviewer performed the one UI confirmation for preview `3e1c582efb704b188599e8ef805f8dda`; this backend run did not issue another POST. The apply job was `1dc9a2492fdb432491be82efefc3ce46`, completed with `added_count=0`, `updated_count=8`, and `relation_count=4`. The map moved from revision 8 to revision 9.
+
+Read-only HTTP verification returned HTTP 200 for the applied preview, apply job, GAT/AASIST/IoT nodes, and graph:
+
+- Applied preview remained `status=applied` with all 8 persisted diffs; GAT `29000 → 29014`, AASIST `674 → 676`, and IoT `76 → 77` matched the server `to` values.
+- GAT retained `document_id=55afc3b8f01445429462fe78ed0d4c98`, `download_status=indexed`, and position `(120,80)`.
+- Graph returned revision 9, 21 nodes, 18 edges, and viewport `(scale=1.1,x=10,y=20)`; no node was added by refresh.
+- The completed apply job preserved the provider warning from preview (`SEMANTIC_SCHOLAR_INVALID_RESPONSE`); no additional provider request or retry was made.
+
+The actual SQLite file was reopened read-only at `data/literature_maps/literature_maps.sqlite3`. It independently reported revision 9, 18 edges, GAT citation count 29014 with the same document/download/position fields, AASIST 676, IoT 77, and apply job counts `added=0/updated=8/relation=4`. No idempotent replay was attempted because the frontend-owned original confirmation key was not available to this backend run; no new key was invented. The previous r1 no-op/partial facts remain unchanged in the artifact, while this r2 records the successful non-empty refresh application with its real provider warning.

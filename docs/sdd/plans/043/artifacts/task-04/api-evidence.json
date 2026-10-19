@@ -334,5 +334,150 @@
     "pdf_download_requested": false,
     "additional_retry_requested": false,
     "raw_credentials_or_headers_recorded": false
-  }
+  },
+  "follow_up_runs": [
+    {
+      "run_id": "task04-api-e2e-20261020T032543+0800-r2",
+      "runtime": {
+        "base_url": "http://127.0.0.1:8000",
+        "port": 8000,
+        "ready_http_status": 200,
+        "credentials_recorded": false
+      },
+      "entities": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "preview_id": "3e1c582efb704b188599e8ef805f8dda",
+        "job_id": "0ff677c2560e4ad5b40e4eb2371987e3",
+        "base_revision": 8
+      },
+      "requests": [
+        {
+          "name": "ready",
+          "method": "GET",
+          "path": "/api/ready",
+          "response_status": 200,
+          "response": {"ready": true}
+        },
+        {
+          "name": "refresh_preview_create",
+          "method": "POST",
+          "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews",
+          "request_body": {
+            "kind": "refresh",
+            "idempotency_key": "task04-api-e2e-20261020-refresh-empty-r2"
+          },
+          "response_status": 202,
+          "response": {
+            "preview_id": "3e1c582efb704b188599e8ef805f8dda",
+            "job_id": "0ff677c2560e4ad5b40e4eb2371987e3",
+            "status": "queued",
+            "job_status": "running",
+            "base_revision": 8
+          }
+        },
+        {
+          "name": "refresh_preview_get",
+          "method": "GET",
+          "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/3e1c582efb704b188599e8ef805f8dda",
+          "response_status": 200,
+          "response": {
+            "status": "completed",
+            "candidate_count": 21,
+            "diff_count": 8,
+            "provider_request_count": 6,
+            "warnings": ["SEMANTIC_SCHOLAR_INVALID_RESPONSE"],
+            "diff": [
+              {"node_id": "21041260a5394f42891b020128fa60fa", "changes": {"citation_count": {"from": 29000, "to": 29014}}},
+              {"node_id": "a4917994555846c79f7e1af80f398bd3", "changes": {"citation_count": {"from": 674, "to": 676}}},
+              {"node_id": "f59c83c01b5f48dbbef04e054e1a91b0", "changes": {"citation_count": {"from": 76, "to": 77}}},
+              {"node_id": "e2c645878ebe4bf5a06c7bd3c1ef42e0", "changes": {"citation_count": {"from": 758, "to": 759}}},
+              {"node_id": "59a13b1f48424edfa53423989c847d9c", "changes": {"citation_count": {"from": 166, "to": 167}}},
+              {"node_id": "0dd64965d19240c08cdddacf08777067", "changes": {"citation_count": {"from": 202, "to": 203}}},
+              {"node_id": "5af29395e3424a2298447d44a3e09f01", "changes": {"citation_count": {"from": 104, "to": 105}}},
+              {"node_id": "24e44e61d9d44d1b85918fa8f7362ff0", "changes": {"citation_count": {"from": null, "to": 605}}}
+            ]
+          }
+        },
+        {
+          "name": "refresh_preview_get_after_apply",
+          "method": "GET",
+          "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/3e1c582efb704b188599e8ef805f8dda",
+          "response_status": 200,
+          "response": {
+            "status": "applied",
+            "base_revision": 8,
+            "diff_count": 8,
+            "verified_diff_values": {
+              "21041260a5394f42891b020128fa60fa": {"from": 29000, "to": 29014},
+              "a4917994555846c79f7e1af80f398bd3": {"from": 674, "to": 676},
+              "f59c83c01b5f48dbbef04e054e1a91b0": {"from": 76, "to": 77}
+            }
+          }
+        },
+        {
+          "name": "refresh_apply_job_get",
+          "method": "GET",
+          "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/1dc9a2492fdb432491be82efefc3ce46",
+          "response_status": 200,
+          "response": {
+            "status": "completed",
+            "operation": "preview_apply",
+            "counts": {"added_count": 0, "updated_count": 8, "relation_count": 4}
+          }
+        },
+        {
+          "name": "refresh_nodes_get",
+          "method": "GET",
+          "paths": [
+            "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa",
+            "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/a4917994555846c79f7e1af80f398bd3",
+            "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/f59c83c01b5f48dbbef04e054e1a91b0"
+          ],
+          "response_status": 200,
+          "response": {
+            "21041260a5394f42891b020128fa60fa": {"citation_count": 29014, "document_id": "55afc3b8f01445429462fe78ed0d4c98", "download_status": "indexed", "position": {"x": 120.0, "y": 80.0}},
+            "a4917994555846c79f7e1af80f398bd3": {"citation_count": 676},
+            "f59c83c01b5f48dbbef04e054e1a91b0": {"citation_count": 77}
+          },
+          "note": "Three separate GET requests were issued; all returned HTTP 200."
+        },
+        {
+          "name": "final_graph_get",
+          "method": "GET",
+          "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph",
+          "response_status": 200,
+          "response": {"revision": 9, "nodes": 21, "edges": 18, "viewport": {"scale": 1.1, "x": 10.0, "y": 20.0}, "latest_job_id": "1dc9a2492fdb432491be82efefc3ce46"}
+        }
+      ],
+      "state_trace": [
+        {"entity": "refresh_preview", "id": "3e1c582efb704b188599e8ef805f8dda", "from": "queued/running", "to": "completed", "wait_condition": "GET preview status completed", "provider_requests": 6},
+        {"entity": "map", "from": "partial/revision-8", "to": "partial/revision-9", "trigger": "frontend UI confirmation selected_candidate_ids=[]"},
+        {"entity": "refresh_apply_job", "id": "1dc9a2492fdb432491be82efefc3ce46", "from": "running", "to": "completed", "updated_count": 8, "relation_count": 4}
+      ],
+      "sqlite_reopen": {
+        "path": "data/literature_maps/literature_maps.sqlite3",
+        "mode": "read_only_uri",
+        "map_revision": 9,
+        "node_values": {
+          "21041260a5394f42891b020128fa60fa": {"citation_count": 29014, "document_id": "55afc3b8f01445429462fe78ed0d4c98", "download_status": "indexed", "position": {"x": 120.0, "y": 80.0}},
+          "a4917994555846c79f7e1af80f398bd3": {"citation_count": 676},
+          "f59c83c01b5f48dbbef04e054e1a91b0": {"citation_count": 77}
+        },
+        "edge_count": 18,
+        "apply_job": {"job_id": "1dc9a2492fdb432491be82efefc3ce46", "status": "completed", "counts": {"added_count": 0, "updated_count": 8, "relation_count": 4}}
+      },
+      "result": {
+        "status": "success_with_provider_warning",
+        "apply_issued_by": "frontend_ui_only",
+        "apply_job_id": "1dc9a2492fdb432491be82efefc3ce46",
+        "revision": {"from": 8, "to": 9},
+        "protected_fields_verified": true,
+        "persistence_reopen_verified": true,
+        "raw_credentials_or_headers_recorded": false,
+        "pdf_download_requested": false,
+        "additional_retry_requested": false,
+        "provider_warnings": ["SEMANTIC_SCHOLAR_INVALID_RESPONSE"]
+      }
+    }
+  ]
 }

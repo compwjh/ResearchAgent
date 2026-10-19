@@ -117,3 +117,34 @@ Therefore the following are **not independently re-verified in this run**: the e
 ### Verdict
 
 **PASS for the frontend persisted-preview reopen path.** The fresh-session UI recovered the real saved preview and displayed all eight real diffs with safe, readable values; the graph remained 21 nodes / 18 relations and the indexed document association persisted. The inherited `SEMANTIC_SCHOLAR_INVALID_RESPONSE` warning remains an explicit backend/provider degradation and is not a frontend regression in this run.
+
+## 9be1707 real refresh apply rerun (2026-10-20)
+
+- **Run:** `task04-browser-e2e-20261020-refresh-r4`
+- **Runtime:** real Google Chrome through CUA/Playwright, `http://127.0.0.1:8000/#literature-maps-view`; the deployment handoff reported `/api/ready` HTTP 200.
+- **Candidate:** local commit `9be1707`; no code, test, deploy, environment, import, download, or new-preview changes in this run.
+- **Map reused:** `0baabeae7268429c9f7e4de8098ae1d0` (`API E2E graph attention networks r2`); no second map was created.
+- **Preview supplied by backend tester:** `3e1c582efb704b188599e8ef805f8dda`, job `0ff677c2560e4ad5b40e4eb2371987e3`, `base_revision=8`; it was already completed before the browser run and was not recreated.
+
+### Browser evidence
+
+1. Selected the existing map by its real `data-map-id`; the UI showed `21 个节点 · 18 条关系 · 已完成 · 阶段：preview`, with both citation and similarity layers enabled.
+2. Clicked the visible `打开上次预览` entry. The restored production panel showed `预览状态：已完成`, the preserved `SEMANTIC_SCHOLAR_INVALID_RESPONSE` warning, all eight real diffs, and `已选择 0/20；地图容量 21/200（还可加入 179）`. The visible rows included GAT `引用数：29000 → 29014`, AASIST `674 → 676`, IoT `76 → 77`, and the remaining five real node/title/ID changes, including `null → 605` for the final node. Existing candidates remained disabled as `已在当前地图`.
+3. Captured one inline CUA screenshot after scrolling the real preview panel into view. The tool returned image bytes only; no filesystem screenshot path is invented.
+4. With zero candidates selected, clicked `确认刷新` exactly once. No `刷新预览`, `继续搜索`, import, download, stop, retry, remove, restore, pan, zoom, or layout-save action was invoked.
+5. After the apply, closed the preview and activated the real GAT SVG node with keyboard Enter. The detail panel showed citation count `29014`, `indexed`, and `已加入知识库 · 文档 ID：55afc3b8f01445429462fe78ed0d4c98`.
+
+### Read-only server verification after the browser confirmation
+
+The host-permission, read-only API checks confirmed the mutation result without replaying it:
+
+- `GET /previews/3e1c582efb704b188599e8ef805f8dda` returned `status=applied`, `base_revision=8`, and the persisted eight-item diff.
+- `GET /jobs/1dc9a2492fdb432491be82efefc3ce46` returned `operation=preview_apply`, `status=completed`, `cursor.preview_id=3e1c582efb704b188599e8ef805f8dda`, and counts `added_count=0`, `updated_count=8`, `relation_count=4`.
+- `GET /0baabeae7268429c9f7e4de8098ae1d0` returned `revision=9` and `latest_job=1dc9a2492fdb432491be82efefc3ce46`.
+- `GET /0ba.../graph` returned `revision=9`, 21 nodes, 18 edges; the persisted GAT node was `citation_count=29014`, `document_id=55afc3b8f01445429462fe78ed0d4c98`, `download_status=indexed`, and position `{x:120,y:80}`. The saved viewport remained `{x:10,y:20,scale:1.1}`.
+
+The browser-visible status remained on the transient `已提交确认，地图正在保存新增结果` copy during the short polling window, but the subsequent real node detail GET and the server job/map GETs showed the completed apply and updated citation. The apply POST body and generated idempotency key were not exposed by CUA's diagnostic surface; this report does not invent them. The empty-selection semantics are independently evidenced by `added_count=0` and `updated_count=8` in the completed server job.
+
+### Verdict
+
+**PASS.** Real Chrome restored the backend-supplied preview, displayed its actual diff values, and performed one empty-selection confirmation. The server persisted revision 9 and eight metadata updates; the GAT UI/graph now reports the real citation change `29000 → 29014`, while the indexed document and saved layout remain intact. The inherited `SEMANTIC_SCHOLAR_INVALID_RESPONSE` warning remains explicit and is not misreported as full provider success.
