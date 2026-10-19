@@ -765,8 +765,11 @@ class LiteratureMapStore:
                 self._insert_node(db, node)
             for update in updates or []:
                 db.execute(
-                    "UPDATE literature_map_nodes SET title=?,authors_json=?,year=?,venue=?,abstract=?,keywords_json=?,citation_count=?,source_url=?,provenance_json=? WHERE map_id=? AND node_id=? AND removed_at IS NULL",
-                    (update.title, _dump(list(update.authors)), update.year, update.venue, update.abstract, _dump(list(update.keywords)), update.citation_count, update.source_url, _dump(update.provenance), map_id, update.node_id),
+                    # Refreshes may update provider metadata only.  Identity,
+                    # source/import provenance, document state and layout are
+                    # server-owned and must survive a partial provider result.
+                    "UPDATE literature_map_nodes SET title=?,authors_json=?,year=?,venue=?,abstract=?,keywords_json=?,citation_count=? WHERE map_id=? AND node_id=? AND removed_at IS NULL",
+                    (update.title, _dump(list(update.authors)), update.year, update.venue, update.abstract, _dump(list(update.keywords)), update.citation_count, map_id, update.node_id),
                 )
             identity_to_node = {str(row["identity_key"]): str(row["node_id"]) for row in db.execute("SELECT identity_key,node_id FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL", (map_id,)).fetchall()}
             identity_to_node.update({node.identity_key: node.node_id for node in nodes if node.identity_key})
@@ -788,11 +791,23 @@ class LiteratureMapStore:
                     (edge.edge_id, map_id, edge.kind, edge.source_id, edge.target_id, _dump(edge.provenance), edge.score, edge.basis, edge.model_version, edge.content_hash),
                 )
             now = iso_now()
-            changed_map = bool(nodes or (updates or []))
+            changed_map = bool(nodes or (updates or []) or (relations or []))
             if changed_map:
                 db.execute("UPDATE literature_maps SET revision=revision+1,updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (now, map_id, owner_id))
             fresh_map = db.execute("SELECT * FROM literature_maps WHERE map_id=?", (map_id,)).fetchone()
-            job = MapJob(uuid.uuid4().hex, map_id, "preview_apply", "completed", "apply", {"preview_id": preview_id}, {"added_count": len(nodes)}, [], None, now, now)
+            job = MapJob(
+                uuid.uuid4().hex,
+                map_id,
+                "preview_apply",
+                "completed",
+                "apply",
+                {"preview_id": preview_id},
+                {"added_count": len(nodes), "updated_count": len(updates or []), "relation_count": len(relations or [])},
+                [],
+                None,
+                now,
+                now,
+            )
             db.execute(
                 "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), None, params_hash, now, now),

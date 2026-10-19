@@ -86,3 +86,22 @@
 | `.venv/bin/ruff check backend/app/literature_maps/application/service.py backend/app/literature_maps/infrastructure/store.py backend/app/api/routes_literature_maps.py tests/literature_maps/test_map_expansion.py tests/literature_maps/test_map_job_recovery.py tests/literature_maps/test_map_api_errors.py` | 0 | passed |
 
 验证仍限于真实 SQLite + fake provider；没有真实外部 provider、PDF、生产数据库、部署或提交。Task04 仍需独立复审与主会话验收门禁，不能据此宣称最终完成。
+
+## 2026-10-20 refresh 空选择合同修复
+
+复现并修复了独立验收报告指出的真实 SQLite/API 组合缺口：refresh apply 的合法
+`selected_candidate_ids=[]` 现在只从服务端持久 preview diff 推导全部允许的节点，实际写入 metadata 与已验证的图内新增 citation 边，并递增 revision；不会按客户端字段清空关系或扩大新节点批次。
+
+- provider 返回缺失作者、年份、venue、abstract、citation count 时，refresh 预览保留本地已有值；关系 provider 缺失/失败/空页只产生 warning，不删除已有边。
+- store refresh 更新白名单仅包含 metadata 字段，不覆盖 external identity、source URL、provenance/import diagnostics、catalog/document/download 状态、position/group；关系变更也参与 revision CAS，job 持久化 `updated_count` 与 `relation_count`。
+- refresh apply 增加节点 identity 再核对，防止冻结 preview 后节点身份漂移；空选择超过 20 个差异节点不受“新增节点批次 20”限制，但仍受 owner/revision/tombstone 守卫。
+
+本轮精准验证：
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `.venv/bin/python -m pytest tests/literature_maps/test_map_expansion.py -q` | 0 | 15 passed |
+| `.venv/bin/python -m pytest tests/literature_maps -q` | 0 | 108 passed |
+| `.venv/bin/ruff check backend/app/literature_maps/application/service.py backend/app/literature_maps/infrastructure/store.py tests/literature_maps/test_map_expansion.py` | 0 | passed |
+
+新增组合证据覆盖：HTTP POST refresh preview → 空选择 apply → GET 节点 → 关闭并重开 SQLite；幂等重放不重复递增，过期 revision 不写；metadata 非空 diff 实际落库，关系新增落库；provider 缺字段不清空本地值，已有关系不因空/失败响应删除。未发起真实 provider/PDF/API 部署调用，未提交；需主会话独立复审后再验收。

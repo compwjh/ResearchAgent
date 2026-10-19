@@ -126,3 +126,44 @@ TASK04_P1_PROBE PASS
 ### 最终集中裁定
 
 **GO（仅针对本轮四项 P1 修复）。** 未发现新的 P0/P1 阻塞；Task04 后端可进入后续 backend-tester/真实 API 门禁。此 GO 不等同于 Task04 最终验收或 Spec043 收口签字：真实 provider/API、部署 smoke、跨端验收以及前段报告明确的非本轮范围仍按主会话门禁处理。
+
+---
+
+## refresh 空选择 P1 修复窄复审（2026-10-20）
+
+本节仅复审上一阶段验收发现的 refresh 空选择 no-op：服务端持久 diff 应被应用、幂等不得重复递增、stale CAS 不得写入、metadata 白名单不得覆盖身份/来源/导入/文档/布局/分组字段；不扩大到新的 provider 或部署范围。
+
+### 实际代码核对
+
+- `service.py:598-629`：refresh 且空 `selected_candidate_ids` 时，从服务端持久 `preview.diff` 的 node IDs 推导候选，不信任客户端字段；`service.py:636-638` 再核对当前节点 identity，避免 preview 后身份漂移。
+- `service.py:519-532`：provider 缺字段时保留本地作者、年份、venue、abstract、citation count；`service.py:692-712` 候选快照保留 keywords/citation_count。
+- `store.py:764-793`：refresh update 白名单只更新 metadata；relations 也纳入 `changed_map` revision；`store.py:795-800` job 持久化 `updated_count`/`relation_count`。不覆盖 external IDs、source URL、provenance/import diagnostics、catalog/document/download、position/group。
+
+### 独立真实 SQLite + FastAPI route/API shape probe
+
+命令：
+
+```text
+PYTHONPATH=/Users/wjh/ResearchAgent .venv/bin/python /private/tmp/task04_refresh_empty_apply_fixed_probe.py
+```
+
+退出码 **0**，输出：
+
+```text
+EMPTY_REFRESH_APPLY_FIXED PASS http_create=202 http_get=200 http_apply=202 citation=10->99 revision=1 idempotent=1 stale_cas=409 protected_fields=1 relation=1
+```
+
+证据含义：实际 FastAPI/Pydantic `POST /previews`→`GET /previews/{id}`→`POST /apply` 使用空选择；真实 SQLite 重开后节点 citation count 从 10 持久变为 99，revision 从 0 到 1，新增关系存在；重复相同幂等请求返回完全相同结果且不再递增；旧 revision 请求返回 409 `MAP_CONFLICT`；source URL、provenance/import diagnostics、catalog ID、document/download、position/group、external identity、keywords 均保留。probe 仅使用确定性 fake client，未真实 provider 外呼。
+
+### 本轮窄回归
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=/Users/wjh/ResearchAgent .venv/bin/python /private/tmp/task04_refresh_empty_apply_fixed_probe.py` | 0 | PASS，HTTP 202/200/202，10→99，revision=1，idempotent=1，stale CAS=409 |
+| `.venv/bin/python -m pytest -q tests/literature_maps/test_map_expansion.py` | 0 | 15 passed |
+| `.venv/bin/python -m pytest -q tests/literature_maps` | 0 | 108 passed |
+| `.venv/bin/ruff check backend/app/literature_maps/application/service.py backend/app/literature_maps/infrastructure/store.py tests/literature_maps/test_map_expansion.py` | 0 | All checks passed |
+
+### 窄复审裁定
+
+**GO（代码/SQLite/API-shape 范围）。** 本次 P1 的服务层、持久层、幂等/CAS 和保护字段缺口均已修复并通过真实 SQLite 组合 probe；不代表当前部署版本的真实 API/browser 重验已经完成，`acceptance-report.md` 在该重验完成前继续保持 BLOCK。

@@ -519,7 +519,19 @@ class LiteratureMapService:
             row = by_provider.get(node.external_ids.get("semantic_scholar"))
             refreshed = node
             if row is not None:
-                refreshed = replace(node, title=row.title, authors=row.authors, year=row.year, venue=row.venue, abstract=row.abstract, citation_count=row.citation_count)
+                # A partial provider response is not permission to erase a
+                # value already curated or imported into the map.  Preserve
+                # the local value when the provider omits it (empty author or
+                # venue lists are treated as omitted as well).
+                refreshed = replace(
+                    node,
+                    title=row.title or node.title,
+                    authors=row.authors or node.authors,
+                    year=row.year if row.year is not None else node.year,
+                    venue=row.venue or node.venue,
+                    abstract=row.abstract if row.abstract is not None else node.abstract,
+                    citation_count=row.citation_count if row.citation_count is not None else node.citation_count,
+                )
             candidate = self._preview_candidate(refreshed, by_identity)
             candidate["relation_targets"] = []
             candidates.append(candidate)
@@ -586,14 +598,35 @@ class LiteratureMapService:
         if len(selected_candidate_ids) != len(set(selected_candidate_ids)):
             raise ValueError("INVALID_PREVIEW_CANDIDATE")
         candidate_by_id = {str(item.get("candidate_id")): item for item in preview.candidates if isinstance(item, Mapping)}
-        selected = []
-        for candidate_id in selected_candidate_ids:
-            candidate = candidate_by_id.get(candidate_id)
-            if candidate is None or (preview.kind != "refresh" and candidate.get("already_present")) or candidate.get("removed"):
-                raise ValueError("INVALID_PREVIEW_CANDIDATE")
-            selected.append(candidate)
-        if len(selected) > 20:
+        selected: list[Mapping[str, Any]] = []
+        if preview.kind == "refresh" and not selected_candidate_ids:
+            # The refresh contract uses an empty selection as confirmation of
+            # every server-computed diff.  Derive the set from the persisted
+            # preview, never from client-provided fields.  Relation additions
+            # are represented in the same node diff and are therefore applied
+            # together with metadata changes.
+            diff_node_ids = {
+                str(item.get("node_id"))
+                for item in preview.diff
+                if isinstance(item, Mapping) and item.get("node_id")
+            }
+            selected = [
+                candidate
+                for candidate in preview.candidates
+                if isinstance(candidate, Mapping)
+                and candidate.get("node_id")
+                and str(candidate.get("node_id")) in diff_node_ids
+                and not candidate.get("removed")
+            ]
+        else:
+            for candidate_id in selected_candidate_ids:
+                candidate = candidate_by_id.get(candidate_id)
+                if candidate is None or (preview.kind != "refresh" and candidate.get("already_present")) or candidate.get("removed"):
+                    raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                selected.append(candidate)
+        if preview.kind != "refresh" and len(selected) > 20:
             raise ValueError("PREVIEW_BATCH_LIMIT")
+        effective_candidate_ids = [str(candidate.get("candidate_id")) for candidate in selected]
         nodes: list[MapPaper] = []
         updates: list[MapPaper] = []
         relations: list[tuple[str, str, str]] = []
@@ -602,6 +635,8 @@ class LiteratureMapService:
             if preview.kind == "refresh":
                 current = self.store.get_node(map_id, str(candidate.get("node_id")), owner_id)
                 if current is None or current.removed:
+                    raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                if current.identity_key != node.identity_key:
                     raise ValueError("INVALID_PREVIEW_CANDIDATE")
                 node = replace(node, node_id=current.node_id, identity_key=current.identity_key, position=current.position, group_id=current.group_id, document_id=current.document_id, download_status=current.download_status, catalog_paper_id=current.catalog_paper_id)
                 updates.append(node)
@@ -623,7 +658,7 @@ class LiteratureMapService:
             owner_id,
             preview_id=preview_id,
             expected_revision=expected_revision,
-            selected_candidate_ids=selected_candidate_ids,
+            selected_candidate_ids=effective_candidate_ids,
             nodes=nodes,
             relations=relations,
             updates=updates,
@@ -657,6 +692,8 @@ class LiteratureMapService:
             "year": node.year,
             "venue": node.venue,
             "abstract": node.abstract,
+            "keywords": list(node.keywords),
+            "citation_count": node.citation_count,
             "external_ids": dict(node.external_ids),
             "source_url": node.source_url,
             "provenance": dict(node.provenance),
@@ -675,6 +712,8 @@ class LiteratureMapService:
             year=candidate.get("year"),
             venue=candidate.get("venue"),
             abstract=candidate.get("abstract"),
+            keywords=tuple(str(item) for item in candidate.get("keywords", ()) if str(item).strip()),
+            citation_count=candidate.get("citation_count"),
             source_url=candidate.get("source_url"),
             provenance=dict(candidate.get("provenance") or {}),
             catalog_paper_id=candidate.get("catalog_paper_id"),

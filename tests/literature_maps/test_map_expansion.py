@@ -2,6 +2,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_literature_maps
@@ -79,6 +80,37 @@ class RefreshBudgetClient:
         self.graph_calls += 1
         return SemanticScholarRequestResult(
             graph_page=SemanticScholarGraphPage(relation, paper_id, (), 0, None, 0)
+        )
+
+
+class RefreshApplyClient:
+    def __init__(self, *, missing_fields: bool = False, empty_graph: bool = False):
+        self.missing_fields = missing_fields
+        self.empty_graph = empty_graph
+
+    def batch(self, identifiers, *, fields=None):
+        data = []
+        for identifier in identifiers:
+            row = {
+                "paperId": identifier,
+                "title": "Source refreshed" if identifier == "s2-source" else "Target refreshed",
+                "authors": [{"name": "New Author"}],
+                "year": 2024,
+                "abstract": "New abstract",
+                "venue": "New Venue",
+                "citationCount": 99,
+            }
+            if self.missing_fields:
+                row.update({"authors": [], "year": None, "abstract": None, "venue": "", "citationCount": None})
+            data.append(row)
+        return SemanticScholarRequestResult(payload={"data": data})
+
+    def graph_edges(self, paper_id, relation, *, limit=20, offset=0, fields=None):
+        items = ()
+        if not self.empty_graph and paper_id == "s2-source":
+            items = (SemanticScholarMetadata("s2-target", "Target", ("Author",), 2023),)
+        return SemanticScholarRequestResult(
+            graph_page=SemanticScholarGraphPage(relation, paper_id, items, 0, None, len(items))
         )
 
 
@@ -249,6 +281,67 @@ def test_preview_http_contract_round_trips_persisted_job_and_cas_apply(tmp_path)
     assert applied.json()["map"]["revision"] == 1
 
 
+def test_refresh_http_empty_apply_updates_metadata_and_survives_reopen(tmp_path):
+    db_path = tmp_path / "maps.sqlite3"
+    store = LiteratureMapStore(db_path)
+    service = LiteratureMapService(store=store, client=RefreshApplyClient(), executor=None)
+    item = store.create_map(routes_literature_maps.OWNER_ID, topic="fuzzing", requested_count=20)
+    source = MapPaper.new(
+        item.map_id,
+        semantic_scholar_id="s2-source",
+        title="Source old",
+        abstract="Old abstract",
+        citation_count=10,
+        document_id="doc-source",
+        download_status="indexed",
+        position={"x": 5, "y": 6},
+        group_id="manual-group",
+        provenance={"import_diagnostics": {"error_code": "RETRYABLE"}},
+    )
+    target = MapPaper.new(item.map_id, semantic_scholar_id="s2-target", title="Target old")
+    store.add_nodes(item.map_id, routes_literature_maps.OWNER_ID, [source, target])
+
+    with patch.object(routes_literature_maps, "get_literature_map_service", return_value=service):
+        client = TestClient(app)
+        preview_response = client.post(
+            f"/api/literature-maps/{item.map_id}/previews",
+            json={"kind": "refresh", "idempotency_key": "http-refresh"},
+        )
+        assert preview_response.status_code == 202
+        preview_id = preview_response.json()["preview_id"]
+        apply_payload = {"expected_revision": 0, "selected_candidate_ids": [], "idempotency_key": "http-refresh-apply"}
+        applied = client.post(f"/api/literature-maps/{item.map_id}/previews/{preview_id}/apply", json=apply_payload)
+        assert applied.status_code == 202
+        assert applied.json()["map"]["revision"] == 1
+        repeated = client.post(f"/api/literature-maps/{item.map_id}/previews/{preview_id}/apply", json=apply_payload)
+        assert repeated.status_code == 202
+        assert repeated.json() == applied.json()
+        stale = client.post(
+            f"/api/literature-maps/{item.map_id}/previews/{preview_id}/apply",
+            json={"expected_revision": 0, "selected_candidate_ids": [], "idempotency_key": "http-refresh-stale"},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["detail"]["code"] == "MAP_CONFLICT"
+        node_response = client.get(f"/api/literature-maps/{item.map_id}/nodes/{source.node_id}")
+        assert node_response.status_code == 200
+        assert node_response.json()["node"]["title"] == "Source refreshed"
+        assert node_response.json()["node"]["abstract"] == "New abstract"
+
+    reopened = LiteratureMapStore(db_path)
+    persisted_map = reopened.get_map(item.map_id, routes_literature_maps.OWNER_ID)
+    persisted_node = reopened.get_node(item.map_id, source.node_id, routes_literature_maps.OWNER_ID)
+    assert persisted_map is not None and persisted_map.revision == 1
+    assert persisted_node is not None
+    assert persisted_node.title == "Source refreshed"
+    assert persisted_node.abstract == "New abstract"
+    assert persisted_node.document_id == "doc-source"
+    assert persisted_node.download_status == "indexed"
+    assert persisted_node.position == {"x": 5, "y": 6}
+    assert persisted_node.group_id == "manual-group"
+    assert persisted_node.provenance == source.provenance
+    assert [(edge.source_id, edge.target_id) for edge in reopened.list_edges(item.map_id, routes_literature_maps.OWNER_ID)] == [(source.node_id, target.node_id)]
+
+
 def test_refresh_preview_records_provider_metadata_diff_and_preserves_layout_and_import_state(tmp_path):
     store, service = _service(tmp_path)
     item = store.create_map("owner-a", topic="fuzzing", requested_count=20)
@@ -282,6 +375,140 @@ def test_refresh_preview_records_provider_metadata_diff_and_preserves_layout_and
     assert refreshed.group_id == "manual-group"
     assert refreshed.document_id == "doc-1"
     assert refreshed.download_status == "indexed"
+
+
+def test_empty_refresh_apply_persists_all_server_diffs_and_relations_after_reopen(tmp_path):
+    db_path = tmp_path / "maps.sqlite3"
+    store = LiteratureMapStore(db_path)
+    service = LiteratureMapService(store=store, client=RefreshApplyClient(), executor=None)
+    item = store.create_map("owner-a", topic="fuzzing", requested_count=20)
+    source = MapPaper.new(
+        item.map_id,
+        semantic_scholar_id="s2-source",
+        title="Source old",
+        authors=("Old Author",),
+        year=2020,
+        venue="Old Venue",
+        abstract="Old abstract",
+        keywords=("keep",),
+        citation_count=10,
+        source_url="https://papers.example/source",
+        provenance={"import_diagnostics": {"error_code": "RETRYABLE"}, "keep": "yes"},
+        catalog_paper_id="catalog-source",
+        document_id="doc-source",
+        download_status="indexed",
+        position={"x": 10, "y": 20},
+        group_id="manual-group",
+    )
+    target = MapPaper.new(item.map_id, semantic_scholar_id="s2-target", title="Target old")
+    store.add_nodes(item.map_id, "owner-a", [source, target])
+
+    preview = service.create_preview(item.map_id, "owner-a", kind="refresh", idempotency_key="refresh-all")
+    assert any(change["node_id"] == source.node_id for change in preview.diff)
+    assert any(change["changes"].get("relations", {}).get("added") for change in preview.diff)
+
+    applied = service.apply_preview(
+        item.map_id,
+        preview.preview_id,
+        "owner-a",
+        expected_revision=0,
+        selected_candidate_ids=[],
+        idempotency_key="refresh-all-apply",
+    )
+    assert applied["map"]["revision"] == 1
+    assert applied["job"]["counts"]["updated_count"] >= 1
+    assert applied["job"]["counts"]["relation_count"] >= 1
+    refreshed = store.get_node(item.map_id, source.node_id, "owner-a")
+    assert refreshed is not None
+    assert refreshed.title == "Source refreshed"
+    assert refreshed.abstract == "New abstract"
+    assert refreshed.citation_count == 99
+    assert refreshed.external_ids == source.external_ids
+    assert refreshed.source_url == source.source_url
+    assert refreshed.provenance == source.provenance
+    assert refreshed.catalog_paper_id == source.catalog_paper_id
+    assert refreshed.document_id == source.document_id
+    assert refreshed.download_status == source.download_status
+    assert refreshed.position == source.position
+    assert refreshed.group_id == source.group_id
+    assert [(edge.source_id, edge.target_id) for edge in store.list_edges(item.map_id, "owner-a")] == [(source.node_id, target.node_id)]
+
+    reopened = LiteratureMapStore(db_path)
+    persisted = reopened.get_node(item.map_id, source.node_id, "owner-a")
+    assert persisted is not None
+    assert persisted.title == "Source refreshed"
+    assert persisted.abstract == "New abstract"
+    assert persisted.provenance == source.provenance
+    assert [(edge.source_id, edge.target_id) for edge in reopened.list_edges(item.map_id, "owner-a")] == [(source.node_id, target.node_id)]
+
+    repeated = service.apply_preview(
+        item.map_id,
+        preview.preview_id,
+        "owner-a",
+        expected_revision=0,
+        selected_candidate_ids=[],
+        idempotency_key="refresh-all-apply",
+    )
+    assert repeated == applied
+    assert reopened.get_map(item.map_id, "owner-a").revision == 1
+
+
+def test_refresh_apply_preserves_existing_values_when_provider_omits_fields_or_edges(tmp_path):
+    store = LiteratureMapStore(tmp_path / "maps.sqlite3")
+    service = LiteratureMapService(store=store, client=RefreshApplyClient(missing_fields=True, empty_graph=True), executor=None)
+    item = store.create_map("owner-a", topic="fuzzing", requested_count=20)
+    source = MapPaper.new(
+        item.map_id,
+        semantic_scholar_id="s2-source",
+        title="Source changed",
+        authors=("Keep Author",),
+        year=2020,
+        venue="Keep Venue",
+        abstract="Keep abstract",
+        citation_count=10,
+        source_url="https://papers.example/source",
+        provenance={"import_diagnostics": {"resolver_code": "RETRYABLE"}},
+    )
+    target = MapPaper.new(item.map_id, semantic_scholar_id="s2-target", title="Target")
+    store.add_nodes(item.map_id, "owner-a", [source, target])
+    store.add_edges(item.map_id, "owner-a", [MapEdge.new(item.map_id, "citation", source.node_id, target.node_id)])
+
+    preview = service.create_preview(item.map_id, "owner-a", kind="refresh", idempotency_key="missing-fields")
+    applied = service.apply_preview(
+        item.map_id,
+        preview.preview_id,
+        "owner-a",
+        expected_revision=0,
+        selected_candidate_ids=[],
+        idempotency_key="missing-fields-apply",
+    )
+    assert applied["map"]["revision"] == 1
+    refreshed = store.get_node(item.map_id, source.node_id, "owner-a")
+    assert refreshed is not None
+    assert refreshed.title == "Source refreshed"
+    assert refreshed.authors == source.authors
+    assert refreshed.year == source.year
+    assert refreshed.venue == source.venue
+    assert refreshed.abstract == source.abstract
+    assert refreshed.citation_count == source.citation_count
+    assert [(edge.source_id, edge.target_id) for edge in store.list_edges(item.map_id, "owner-a")] == [(source.node_id, target.node_id)]
+
+
+def test_refresh_apply_rejects_stale_empty_selection_without_writing(tmp_path):
+    store = LiteratureMapStore(tmp_path / "maps.sqlite3")
+    service = LiteratureMapService(store=store, client=RefreshApplyClient(), executor=None)
+    item = store.create_map("owner-a", topic="fuzzing", requested_count=20)
+    source = MapPaper.new(item.map_id, semantic_scholar_id="s2-source", title="Source old")
+    target = MapPaper.new(item.map_id, semantic_scholar_id="s2-target", title="Target old")
+    store.add_nodes(item.map_id, "owner-a", [source, target])
+    preview = service.create_preview(item.map_id, "owner-a", kind="refresh", idempotency_key="stale-refresh")
+    service.apply_preview(item.map_id, preview.preview_id, "owner-a", expected_revision=0, selected_candidate_ids=[], idempotency_key="stale-apply")
+    current = store.get_node(item.map_id, source.node_id, "owner-a")
+    assert current is not None
+    with pytest.raises(ValueError, match="revision conflict"):
+        service.apply_preview(item.map_id, preview.preview_id, "owner-a", expected_revision=0, selected_candidate_ids=[], idempotency_key="stale-replay")
+    assert store.get_map(item.map_id, "owner-a").revision == 1
+    assert store.get_node(item.map_id, source.node_id, "owner-a").title == current.title
 
 
 def test_preview_uses_durable_queued_job_with_executor_and_can_be_recovered(tmp_path):

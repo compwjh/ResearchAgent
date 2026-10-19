@@ -91,3 +91,29 @@ Therefore the following are **not independently re-verified in this run**: the e
 ### Verdict
 
 **BLOCKED / production recheck incomplete (no new frontend defect proven).** Indexed document association/navigation, map counts, partial status, layer state, and non-mutating reopen behavior pass on `3a99d5f`. The requested real 8-diff visual check is blocked by the production UI's missing saved-preview reopen entry; no duplicate preview or external call was made. This is a product verifiability limitation, not a new backend or frontend code change in this run.
+
+## abcad3a narrow rerun: server-persisted preview restored in a fresh Chrome session (2026-10-20)
+
+- **Run:** `task04-browser-e2e-20261020-refresh-r3`
+- **Runtime:** real Google Chrome through CUA/Playwright, `http://127.0.0.1:8000/#literature-maps-view` (ready endpoint was reported 200 by the deployment handoff).
+- **Candidate:** local commit `abcad3a` (JSv7/CSSv5); no code, test, deploy, environment, provider, import, or apply changes in this run.
+- **Fresh-session guard:** opened a new Chrome tab (`325738138`) and did not write, clear, or inject `sessionStorage` or any other browser state.
+- **Map reused:** `0baabeae7268429c9f7e4de8098ae1d0` (`API E2E graph attention networks r2`); no second map was created.
+
+### Verified production UI
+
+1. Selected the map by its real `data-map-id`. The map header remained `21 个节点 · 18 条关系 · 已完成 · 阶段：apply`; the graph legend still showed solid citation arrows and dashed similarity lines. The existing provider degradation remained visibly labelled `部分完成` / `SEMANTIC_SCHOLAR_INVALID_RESPONSE`.
+2. Clicked the visible `打开上次预览` entry. The UI first showed `正在读取上次预览…`, then restored the persisted `刷新预览预览` without exposing a new create/confirm action.
+3. The restored panel rendered eight real diff rows with Chinese field labels, node titles/IDs, and concrete values. The first row was `论文《Graph Attention Networks》（21041260a5394f42891b020128fa60fa）：引用数：29000 → 29014`; the eighth was `Predicting multicellular function through multi-layer tissue networks ... 引用数：null → 605`. The other six rows likewise exposed actual title, node ID, field, and `from → to` values rather than `未提供`.
+4. Capacity and duplicate suppression remained real: `已选择 0/20；地图容量 21/200（还可加入 179）`; existing candidates showed disabled checkboxes and `已在当前地图`.
+5. Closed the read-only preview and activated the real GAT SVG node with keyboard Enter. The detail panel showed `已加入知识库 · 文档 ID：55afc3b8f01445429462fe78ed0d4c98` and the existing `在知识库中查看` button. No duplicate import/download was offered or invoked.
+
+### Mutation and evidence boundary
+
+- This run only selected the existing map, opened the persisted preview, closed that read-only panel, and opened an existing node detail. It did not click `刷新预览`, `继续搜索`, `确认刷新`, import/download, stop, retry, remove, or restore; therefore no new preview/provider call or apply was initiated by this browser run.
+- The inline CUA action restored the server-backed record in a new tab without browser storage injection. The browser diagnostic surface exposed console logs but not HTTP-method traces; the GET-only conclusion here is limited to the read-only restore path and the absence of any mutation action, rather than an invented network-log claim.
+- One key preview screenshot was captured inline by CUA after scrolling the restored panel into view. The tool returned image bytes only, so no fake filesystem screenshot path is recorded.
+
+### Verdict
+
+**PASS for the frontend persisted-preview reopen path.** The fresh-session UI recovered the real saved preview and displayed all eight real diffs with safe, readable values; the graph remained 21 nodes / 18 relations and the indexed document association persisted. The inherited `SEMANTIC_SCHOLAR_INVALID_RESPONSE` warning remains an explicit backend/provider degradation and is not a frontend regression in this run.
