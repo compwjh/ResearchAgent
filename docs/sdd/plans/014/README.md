@@ -15,7 +15,7 @@
 | 编号 | 任务 | 文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-014 | [spec-014](../../specs/014-kb-reranker.md) | — | 完成 |
-| 02 | 验证 Reranker 运行时（Go/No-Go） | [task-02](./task-02-validate-reranker-runtime.md) | 01 | 完成（Go） |
+| 02 | 验证 Reranker 运行时（Go/No-Go） | [task-02](./task-02-validate-reranker-runtime.md) | 01 | 完成 |
 | 03 | 管理 Reranker 服务生命周期 | [task-03](./task-03-reranker-service-lifecycle.md) | 02 | 完成 |
 | 04 | 实现 Reranker 客户端 | [task-04](./task-04-reranker-client.md) | 02 | 完成 |
 | 05 | 接入知识库检索链路 | [task-05](./task-05-integrate-retrieval-pipeline.md) | 04 | 完成 |

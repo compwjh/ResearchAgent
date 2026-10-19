@@ -1,7 +1,8 @@
 # 任务 07 — 执行测试与质量基准
 
 > 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 05、06；当前状态：`完成`
+> 依赖：任务 05、06
+> 当前状态：`完成`
 
 ## 一句话目标
 
@@ -67,3 +68,53 @@
 | 2026-09-02 | 架构师(自身) | 创建任务计划，状态为待执行 |
 | 2026-09-02 | 架构师(自身) | 按用户指定使用 Luna 高推理分派真实质量与性能基准 |
 | 2026-09-02 | Luna 高推理测试 Agent | 交付冻结质量集与真实 Q8_0 基准报告，MRR、性能、降级和全量回归证据齐全 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-014-task-07",
+  "spec_id": "014",
+  "title": "# 任务 07 — 执行测试与质量基准",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:13:51+00:00",
+  "depends_on": [
+    "spec-014-task-05",
+    "spec-014-task-06"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/014/task-07-reranker-tests-benchmark.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-014",
+    "branch": "feature/spec-014-kb-reranker",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/014/task-07-reranker-tests-benchmark.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/014/task-07-reranker-tests-benchmark.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

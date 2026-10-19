@@ -1,7 +1,8 @@
 # 任务 08 — 集成 spec-013 观测能力
 
 > 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 05，且 spec-013 已形成可集成 commit；当前状态：`完成（tester 验收通过，待 tech-lead 签字）`
+> 依赖：任务 05，且 spec-013 已形成可集成 commit
+> 当前状态：`完成`
 
 ## 一句话目标
 
@@ -73,3 +74,54 @@
 补充回归：全量测试 `346 passed`，Spec 014 专项测试 `100 passed`；Langfuse Web、FastAPI、KB health 与 Reranker health 均已取得 HTTP 200。修复 `think=False`/`reasoning=False` 后，四组合真实 KB ask 均完整收口，Task 08 tester 验收通过，待 tech-lead 签字。
 
 后续补测曾发现组合 1 的 `think` 参数问题；修复后同组合真实 ask 已 HTTP 200 且完整 `done` 收口。此前 qwen3.5/deepseek 失败记录保留为历史审计，不影响修复后的最终判定。
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-014-task-08",
+  "spec_id": "014",
+  "title": "# 任务 08 — 集成 spec-013 观测能力",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:13:51+00:00",
+  "depends_on": [
+    "spec-014-task-05"
+  ],
+  "required_gates": [
+    "spec-014.spec013-completed"
+  ],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/014/task-08-integrate-spec013-observability.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-014",
+    "branch": "feature/spec-014-kb-reranker",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/014/task-08-integrate-spec013-observability.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/014/task-08-integrate-spec013-observability.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

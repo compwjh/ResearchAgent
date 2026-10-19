@@ -1,7 +1,8 @@
 # 任务 09 — 评审、部署与复盘
 
 > 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 07、08；当前状态：`完成`
+> 依赖：任务 07、08
+> 当前状态：`完成`
 
 ## 一句话目标
 
@@ -107,3 +108,53 @@
 - 复盘：`docs/sdd/retro/2026-09-04-spec-014-reranker-retro.md`。
 - `docs/sdd/specs/014-kb-reranker.md` 状态转 `已完成`；`spec-status-changelog.md` 已追加。
 - 本地原子 commit（不含 `.env`、模型、日志、PID，也不含他人正在编辑的 Spec 015 文档）。
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-014-task-09",
+  "spec_id": "014",
+  "title": "# 任务 09 — 评审、部署与复盘",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:13:51+00:00",
+  "depends_on": [
+    "spec-014-task-07",
+    "spec-014-task-08"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/014/task-09-review-deploy-retro.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-014",
+    "branch": "feature/spec-014-kb-reranker",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/014/task-09-review-deploy-retro.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/014/task-09-review-deploy-retro.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

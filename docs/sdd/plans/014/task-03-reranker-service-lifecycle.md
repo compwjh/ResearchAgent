@@ -1,7 +1,8 @@
 # 任务 03 — 管理 Reranker 服务生命周期
 
 > 关联：[spec-014](../../specs/014-kb-reranker.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 02 Go；当前状态：`完成`
+> 依赖：任务 02 Go
+> 当前状态：`完成`
 
 ## 一句话目标
 
@@ -74,3 +75,52 @@ ps -p "$(cat deploy/reranker/run.pid 2>/dev/null)" -o pid,etime,command
 | 2026-09-02 | 架构师(自身) | 创建任务计划，状态为待执行 |
 | 2026-09-02 | 初级开发（协作 Agent） | 分三个小分派交付生命周期、探针和统一启停集成 |
 | 2026-09-02 | 架构师(自身) | 用真实模型完成默认/动态端口、幂等、禁用与联合启停验证，任务转完成 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-014-task-03",
+  "spec_id": "014",
+  "title": "# 任务 03 — 管理 Reranker 服务生命周期",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:13:51+00:00",
+  "depends_on": [
+    "spec-014-task-02"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/014/task-03-reranker-service-lifecycle.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-014",
+    "branch": "feature/spec-014-kb-reranker",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/014/task-03-reranker-service-lifecycle.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/014/task-03-reranker-service-lifecycle.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->
