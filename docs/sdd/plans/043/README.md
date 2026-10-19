@@ -1,7 +1,7 @@
 # Spec043 执行索引：交互式文献地图与自动主题探索
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md)  
-> 当前状态：实施中；Task02 Go，Task03/Task04阶段验收PASS_WITH_LIMITATIONS，Task05正在核实AI与会话复用接缝。当前候选`9be1707`运行于8000，ready200；真实刷新8项字段已写入并经Chrome/API/SQLite重开交叉确认，provider部分失败仍明确标注。Spec最终验收尚未通过。
+> 当前状态：实施中；Task02 Go，Task03/Task04阶段验收PASS_WITH_LIMITATIONS，Task05复用核实及合同冻结完成、正在分端实现。阶段候选`9be1707`已完成真实验收；8000实例因Task05静态前端开发暂已停止，避免暴露未复审页面，通过后重新部署。地图和已索引文档数据保留，Spec最终验收尚未通过。
 
 ## 交付主线
 
@@ -16,7 +16,7 @@
 | [02](./task-02-validate-feasibility.md) | 准备与可行性门禁 | 01（Spec与需求/技术门禁已确认后执行） | 已完成（Go） |
 | [03](./task-03-desktop-map-mvp.md) | 桌面自动建图 MVP | 02 Go；Spec明确确认且需求/技术评审通过 | 阶段已完成（PASS_WITH_LIMITATIONS） |
 | [04](./task-04-expansion-recovery.md) | 扩展与恢复 | 03 | 阶段已完成（PASS_WITH_LIMITATIONS） |
-| [05](./task-05-analysis-conversations.md) | AI 分析与会话 | 04 | 进行中（复用核实及合同冻结） |
+| [05](./task-05-analysis-conversations.md) | AI 分析与会话 | 04 | 进行中（分端实现） |
 | [06](./task-06-groups-exports.md) | 整理与导出 | 04 | 待执行 |
 | [07](./task-07-mobile-map.md) | 手机适配 | 05、06 | 待执行 |
 | [08](./task-08-acceptance-deploy-retro.md) | 最终验收与收口 | 02–07全部完成 | 待执行 |
