@@ -1,0 +1,236 @@
+{
+  "schema_version": "literature-map-feasibility-v1",
+  "recorded_at": "2026-10-19T15:16:00+08:00",
+  "probe": {
+    "topic": "fuzzing vulnerability discovery",
+    "source": "semantic_scholar_authorized_readonly_probe",
+    "client": "backend.app.paper_discovery.infrastructure.semantic_scholar_metadata.SemanticScholarGraphClient",
+    "retries": 1,
+    "shared_limiter": "get_semantic_scholar_request_limiter",
+    "min_request_interval_seconds": 1.0,
+    "logical_requests": 10,
+    "provider_attempts_observed": 11,
+    "maximum_provider_attempts": 11,
+    "within_request_budget": true,
+    "sandbox_preflight": "unavailable_without_provider_response; not treated as provider_down",
+    "key_configured": true,
+    "key_value_recorded": false
+  },
+  "search": {
+    "requests": [
+      {
+        "operation": "search_bulk",
+        "limit": 30,
+        "response_code": null,
+        "retryable": false,
+        "actual_parsed_count": 438,
+        "accepted_count": 30,
+        "selection": "map-layer-truncate-after-provider-response",
+        "observation": "provider returned more rows than requested; map ingestion must cap to the accepted limit"
+      },
+      {
+        "operation": "search_bulk",
+        "limit": 50,
+        "response_code": null,
+        "retryable": false,
+        "actual_parsed_count": 438,
+        "accepted_count": 50,
+        "selection": "map-layer-truncate-after-provider-response",
+        "observation": "provider returned more rows than requested; map ingestion must cap to the accepted limit"
+      }
+    ],
+    "sample_papers": [
+      {
+        "paper_id": "004585e48746e986f58aa68a2ea797d47a701cb3",
+        "title": "B: Reduce Vulnerability Search Space in Large Open Source Repositories by Learning Bug Symptoms",
+        "year": 2023,
+        "doi": null,
+        "arxiv_id": null,
+        "abstract_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "paper_id": "0085d37afabc73c2ac03c32b68d311ef550b5987",
+        "title": "SLIME: program-sensitive energy allocation for fuzzing",
+        "year": 2022,
+        "doi": "10.1145/3533767.3534385",
+        "arxiv_id": null,
+        "abstract_sha256": "924b052b51009b8b50c6a09ddd0110de335f624e5e82e7ae9a81c9665f7b4e8f"
+      },
+      {
+        "paper_id": "00dc32e06b02cee6561aab2a3e935f661cab2a7b",
+        "title": "Sizzler: Sequential Fuzzing in Ladder Diagrams for Vulnerability Detection and Discovery in Programmable Logic Controllers",
+        "year": 2024,
+        "doi": "10.1109/tifs.2023.3340615",
+        "arxiv_id": null,
+        "abstract_sha256": "f03882d6b0caf21900e78cd52c690131cce8272c4037189f6baafd0d67da47b1"
+      },
+      {
+        "paper_id": "0144a958fee385b3bed859e54aea7ffbf6010a30",
+        "title": "A Binary Program Vulnerability Mining Method Based on Heuris-tic Hybrid Symbolic Execution",
+        "year": 2025,
+        "doi": "10.1145/3732945.3732965",
+        "arxiv_id": null,
+        "abstract_sha256": "65b3bdd1e3d5967acbff2b73fb44afc8ababbc7988b96a6180e51089ce7baa5b"
+      },
+      {
+        "paper_id": "01c73fb27d33bc9bb970b2b978462255e95f0c4b",
+        "title": "Covert-Channel Evasion, Bit-Level Fuzzing, and ICS Command Injection: An Ethical Red-Team Playbook for Responsive Cyber Operations",
+        "year": 2026,
+        "doi": "10.1109/ccic68129.2026.11486154",
+        "arxiv_id": null,
+        "abstract_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "graph": {
+    "references": {
+      "source_paper_id": "004585e48746e986f58aa68a2ea797d47a701cb3",
+      "direction": "source->citedPaper",
+      "response_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+      "actual_parsed_count": null,
+      "items": [],
+      "observation": "direction is retained even when provider envelope is invalid; invalid is not treated as no references"
+    },
+    "citations": {
+      "source_paper_id": "004585e48746e986f58aa68a2ea797d47a701cb3",
+      "direction": "citingPaper->source",
+      "response_code": null,
+      "actual_parsed_count": 0,
+      "items": [],
+      "observation": "zero citations is a valid empty relation only after a valid provider page"
+    },
+    "follow_up": {
+      "selection_basis": "DOI-identified papers present in the original S2 search result; no ID was invented",
+      "sizzler_references": {
+        "source_paper_id": "00dc32e06b02cee6561aab2a3e935f661cab2a7b",
+        "relation": "references",
+        "direction": "source->citedPaper",
+        "response_code": null,
+        "retryable": false,
+        "actual_parsed_count": 5,
+        "total": null,
+        "offset": 0,
+        "next_offset": 5,
+        "sample_cited_paper_ids": [
+          "f4726cb6250186f38c499ab6b26532944ad0afba",
+          "609b98450ac2d892fdb97e9f9fd684908ffc37a9",
+          "2012e124acee13a6071571438fffdc638e0fb769"
+        ],
+        "safe_envelope": {
+          "http_status": "success_status_not_exposed_by_existing_client",
+          "top_level_keys": ["citingPaperInfo", "data", "next", "offset"],
+          "data_type": "list",
+          "data_count": 5,
+          "row_keys": ["citedPaper"],
+          "edge_keys": ["abstract", "authors", "citationCount", "externalIds", "fieldsOfStudy", "openAccessPdf", "paperId", "publicationTypes", "title", "url", "venue", "year"]
+        }
+      },
+      "slime_references": {
+        "source_paper_id": "0085d37afabc73c2ac03c32b68d311ef550b5987",
+        "relation": "references",
+        "direction": "source->citedPaper",
+        "response_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+        "retryable": false,
+        "actual_parsed_count": null,
+        "safe_envelope": {
+          "http_status": "success_status_not_exposed_by_existing_client",
+          "top_level_keys": ["citingPaperInfo", "data"],
+          "data_type": "NoneType"
+        },
+        "observation": "provider success envelope lacks total/next/offset and has data=null; parser must distinguish malformed shape from valid empty page"
+      },
+      "slime_citations": {
+        "source_paper_id": "0085d37afabc73c2ac03c32b68d311ef550b5987",
+        "relation": "citations",
+        "direction": "citingPaper->source",
+        "response_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "retryable": true,
+        "http_status": 429,
+        "actual_parsed_count": null,
+        "safe_envelope": {"payload_type": "NoneType"}
+      },
+      "slime_references_rate_limit_recheck": {
+        "source_paper_id": "0085d37afabc73c2ac03c32b68d311ef550b5987",
+        "relation": "references",
+        "response_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "retryable": true,
+        "http_status": 429,
+        "safe_envelope": {"payload_type": "NoneType"}
+      }
+    }
+  },
+  "identity": {
+    "external_id_kind": "doi",
+    "external_id": "10.1145/3533767.3534385",
+    "search_paper_id": "0085d37afabc73c2ac03c32b68d311ef550b5987",
+    "search_metadata_external_id_present": true,
+    "normalized_external_id_matches": true,
+    "batch_confirmation": "not_available_after_provider_rate_limit",
+    "catalog_paper_id": null,
+    "rule": "keep S2 paper_id and catalog_paper_id separate; only a deterministic DOI/arXiv match may associate them"
+  },
+  "embedding": {
+    "status": "ok",
+    "provider": "ollama",
+    "model": "bge-m3",
+    "text_count": 6,
+    "dimensions": [1024],
+    "basis": "title_abstract",
+    "threshold": 0.75,
+    "cosine": 0.523817341567123,
+    "compared_pairs": 15,
+    "accepted_pairs": [],
+    "fixture_inputs": [
+      {
+        "path": "tests/fixtures/ndss/openalex-work-10.14722-ndss.2024.23295-with-abstract-doi-pdf.json",
+        "title": "Bernoulli Honeywords",
+        "abstract_sha256": "f4992876f9c5288be2398f622cf30b13007caed4d6ff29b12883e1b75ab13f17",
+        "text_sha256": "cc7c3844b7f9d468b4a67e65d7d078b86832e322e18b01c85c9032afc439a928",
+        "abstract_chars": 1341
+      },
+      {
+        "path": "tests/fixtures/ndss/openalex-work-10.14722-ndss.2025.240418-with-abstract.json",
+        "title": "CASPR: Context-Aware Security Policy Recommendation",
+        "abstract_sha256": "6b3c3c0a1be2d108516cd25035b542829bf01326343634f8af6670cdd3dcbe98",
+        "text_sha256": "35cf772f2f08b2630d48b4e16a2e70160c0f1ad0133076ad520dfca0d676af56",
+        "abstract_chars": 2412
+      },
+      {
+        "path": "tests/fixtures/ccs/openalex-work-10.1145-3658644.3670328-no-oa-pdf.json",
+        "title": "Asynchronous Authentication",
+        "abstract_sha256": "190e6bbb662a7cc0080dcceddb0e4cc4a505ab57776bb9d2795668dc351b30e4",
+        "text_sha256": "e1bc21af759236cf0a33d5eb7e5c2b38d23e84fe148f7b0bd0ada12c41d18ed5",
+        "abstract_chars": 486
+      },
+      {
+        "path": "tests/fixtures/ccs/openalex-work-10.1145-3658644.3670374-with-oa-pdf.json",
+        "title": "Provable Security for PKI Schemes",
+        "abstract_sha256": "bed60d88911f49f8967a94014475f23bbbbabe7935a27e867fce384c785688d5",
+        "text_sha256": "f3b5a6dcfd88035a0f1e24ab5a96121f4e6241ba987d2f19c24977ab6f168003",
+        "abstract_chars": 559
+      },
+      {
+        "path": "tests/fixtures/ieee_sp/openalex-work-10.1109-sp54263.2024.00212-abstract-no-pdf.json",
+        "title": "Budget Recycling Differential Privacy",
+        "abstract_sha256": "ee785821556670aa7461ff0a0a8d4f01d45f11f7144683ef0f0672eefdd12a38",
+        "text_sha256": "d5a0f21e8a4929d8d486d3c1e74ee19b856f1e3977acfab1bad8fa9405c50ead",
+        "abstract_chars": 1404
+      },
+      {
+        "path": "tests/fixtures/ieee_sp/openalex-work-10.1109-sp61157.2025.00241-with-oa-pdf.json",
+        "title": "Understanding Users' Security and Privacy Concerns and Attitudes Towards Conversational AI Platforms",
+        "abstract_sha256": "9febd956fba4e0db22a1ab66391e7242ae1ccdf599ac52184fa9c20606ba0f80",
+        "text_sha256": "ae68c05b03c3785c3dc2c97f6b598d106fdcf56d025a02ce5b76dfcb3bd97c17",
+        "abstract_chars": 1511
+      }
+    ],
+    "observation": "six real title+abstract fixture inputs were compared pairwise; no pair reached threshold; no synthetic pair or lowered threshold was used"
+  },
+  "safety": {
+    "html_fetched": false,
+    "pdf_fetched": false,
+    "database_written": false,
+    "old_task_modified": false,
+    "secrets_emitted": false
+  }
+}

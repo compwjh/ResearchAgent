@@ -1,7 +1,7 @@
 # Task 03 — 桌面自动建图 MVP
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：02 Go；Spec明确确认且需求/技术评审通过；被依赖：04；当前状态：**待执行**。
+> 依赖：02 Go；Spec明确确认且需求/技术评审通过；被依赖：04；当前状态：**进行中**。
 
 ## 一句话目标
 
@@ -28,6 +28,7 @@
 
 ## 数据、配置与接口增量
 
+- v1合同已冻结并经Task02复核：[interface-contract.md](./artifacts/task-03/interface-contract.md)。后续两端实现以此为准，不凭聊天猜测字段。
 - 以Spec数据模型和端点章节为边界；本Task冻结v1身份/schema_version/公开接口/事件/幂等/revision和迁移契约。
 - 地图范围最多200节点；首批默认30可20/50，扩展apply每批最多20。任何测试样例不得暗中改阈值或范围。
 - 后端与前端交接固定输入输出、错误码和可观察状态，类型/版本变化先更新接口交接。

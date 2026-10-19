@@ -1,7 +1,7 @@
 # Spec043 执行索引：交互式文献地图与自动主题探索
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md)  
-> 当前状态：实施中；用户授权实现且需求/技术评审通过，正在执行Task02可行性门禁，尚未实现地图产品或部署。
+> 当前状态：实施中；Task02可行性独立复核Go，Task03桌面MVP进行中，生产地图尚未部署。
 
 ## 交付主线
 
@@ -13,8 +13,8 @@
 | Task | 目标 | 依赖 | 状态 |
 |---|---|---|---|
 | 01 | Spec与规划文档 | — | 已完成（仅建档） |
-| [02](./task-02-validate-feasibility.md) | 准备与可行性门禁 | 01（Spec与需求/技术门禁已确认后执行） | 进行中 |
-| [03](./task-03-desktop-map-mvp.md) | 桌面自动建图 MVP | 02 Go；Spec明确确认且需求/技术评审通过 | 待执行 |
+| [02](./task-02-validate-feasibility.md) | 准备与可行性门禁 | 01（Spec与需求/技术门禁已确认后执行） | 已完成（Go） |
+| [03](./task-03-desktop-map-mvp.md) | 桌面自动建图 MVP | 02 Go；Spec明确确认且需求/技术评审通过 | 进行中 |
 | [04](./task-04-expansion-recovery.md) | 扩展与恢复 | 03 | 待执行 |
 | [05](./task-05-analysis-conversations.md) | AI 分析与会话 | 04 | 待执行 |
 | [06](./task-06-groups-exports.md) | 整理与导出 | 04 | 待执行 |
