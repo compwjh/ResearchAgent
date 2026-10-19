@@ -1,8 +1,9 @@
 """Server-side source selection for literature-map imports.
 
 This module is a metadata adapter only.  It reads the existing catalog
-snapshot and, when needed, asks the existing Semantic Scholar OA adapter for
-an address.  The returned address is always handed to ``import_candidate``;
+snapshot and, when needed, asks the injected OA metadata resolver for an
+address.  The production runtime composes the existing arXiv fallback first
+and Semantic Scholar OA second.  The returned address is always handed to ``import_candidate``;
 this module never downloads, follows redirects, or expands a host allowlist.
 """
 

@@ -9,6 +9,7 @@ from backend.app.literature_maps.application.paper_import_adapter import PaperIm
 from backend.app.literature_maps.application.service import LiteratureMapService
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
+from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
 
 _service: LiteratureMapService | None = None
 _executor: ThreadPoolExecutor | None = None
@@ -50,8 +51,9 @@ def _existing_paper_import(snapshot: dict, source_url: str):
 
 
 def _existing_oa_resolver(snapshot: dict) -> dict | None:
-    """Use the existing OA metadata adapter without creating a download path."""
+    """Use the existing arXiv/S2 OA metadata adapters without downloading."""
     from backend.app.api import common
+    from backend.app.paper_discovery.infrastructure.arxiv_adapter import ArxivFallbackAdapter
     from backend.app.paper_discovery.infrastructure.semantic_scholar_adapter import (
         SemanticScholarFallbackAdapter,
     )
@@ -68,20 +70,83 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
         candidate.setdefault("conference_id", provenance.get("conference_id"))
     allowed_hosts = common._paper_candidate_hosts(candidate)
     # Match the existing import fallback's fixed arXiv source registration;
-    # never derive trust from the OA URL returned by Semantic Scholar.
+    # never derive trust from an OA URL returned by either metadata provider.
     allowed_hosts.update(builtin_allowed_hosts("arxiv"))
+
+    resolver_codes: list[str] = []
+    arxiv_id = _normalize_arxiv_id(candidate.get("arxiv_id"))
+    if arxiv_id:
+        try:
+            arxiv_result = ArxivFallbackAdapter().lookup(
+                str(candidate.get("title") or ""),
+                candidate.get("authors") or (),
+                candidate.get("year"),
+            )
+        except Exception:
+            arxiv_result = None
+            resolver_codes.append("ARXIV_UNAVAILABLE")
+        arxiv_match = getattr(arxiv_result, "match", None)
+        arxiv_pdf_url = getattr(arxiv_match, "pdf_url", None)
+        if arxiv_match is not None:
+            if _normalize_arxiv_id(getattr(arxiv_match, "arxiv_id", None)) != arxiv_id:
+                resolver_codes.append("ARXIV_IDENTITY_CONFLICT")
+            elif isinstance(arxiv_pdf_url, str) and arxiv_pdf_url.strip():
+                return {
+                    "pdf_url": arxiv_pdf_url.strip(),
+                    "arxiv_id": getattr(arxiv_match, "arxiv_id", None),
+                    "source_kind": "arxiv",
+                    "resolver": "arxiv",
+                }
+        arxiv_code = getattr(arxiv_result, "code", None)
+        if arxiv_code:
+            resolver_codes.append(str(arxiv_code))
+        elif arxiv_match is None and arxiv_result is not None:
+            resolver_codes.append("ARXIV_MATCH_UNCERTAIN")
+
     result = SemanticScholarFallbackAdapter().lookup(candidate, allowed_hosts=allowed_hosts)
     match = getattr(result, "match", None)
     pdf_url = getattr(match, "pdf_url", None)
-    if getattr(result, "code", None) or not match or not pdf_url:
-        return None
+    result_code = getattr(result, "code", None)
+    if result_code:
+        resolver_codes.append(str(result_code))
+    if not match or not pdf_url:
+        return _resolver_failure(resolver_codes)
+    if not _candidate_identity_matches(candidate, match):
+        resolver_codes.append("OA_IDENTITY_CONFLICT")
+        return _resolver_failure(resolver_codes)
     return {
-        "pdf_url": pdf_url,
+        "pdf_url": str(pdf_url).strip(),
         "doi": getattr(match, "doi", None),
         "arxiv_id": getattr(match, "arxiv_id", None),
         "semantic_scholar_id": getattr(match, "paper_id", None),
         "source_kind": "arxiv" if getattr(match, "arxiv_id", None) else candidate.get("source_kind"),
+        "resolver": "semantic_scholar",
     }
+
+
+def _resolver_failure(codes: list[str]) -> dict[str, object]:
+    stable_codes = [str(code) for code in codes if str(code).strip()]
+    return {
+        "error_code": "PDF_NOT_FOUND",
+        "resolver_code": stable_codes[-1] if stable_codes else "PDF_NOT_FOUND",
+        "resolver_codes": stable_codes,
+    }
+
+
+def _candidate_identity_matches(candidate: dict, match: object) -> bool:
+    candidate_arxiv = _normalize_arxiv_id(candidate.get("arxiv_id"))
+    if candidate_arxiv:
+        return _normalize_arxiv_id(getattr(match, "arxiv_id", None)) == candidate_arxiv
+    candidate_doi = normalize_doi(candidate.get("doi"))
+    match_doi = normalize_doi(getattr(match, "doi", None))
+    return not candidate_doi or candidate_doi == match_doi
+
+
+def _normalize_arxiv_id(value: object) -> str:
+    raw = str(value or "").strip().casefold()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        raw = raw.rstrip("/").rsplit("/", 1)[-1]
+    return raw.removeprefix("arxiv:")
 
 
 def get_literature_map_service() -> LiteratureMapService:

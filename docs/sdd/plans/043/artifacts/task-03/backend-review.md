@@ -312,3 +312,96 @@ service 已在创建前抛出 `UNSUPPORTED_SOURCE`/`UNSUPPORTED_CONFERENCE`，�
 | `_error(ValueError("INVALID_MAP_SCOPE"))` 只读探针 | `400`；固定 `INVALID_MAP_SCOPE` detail，未泄露输入 |
 
 **本轮结论：四项目标 P1 均已实际闭环，未发现新增 P1；就这四项可判 GO。** 这不是 Task03 整体验收或部署批准：此前报告中的其他范围、真实 API/provider E2E、全量回归及验收门禁仍由主会话继续处理。
+
+## Import runtime 与 S2 relevance 最终集中复审（2026-10-19；backend-reviewer）
+
+本轮按主会话通知，将已完成的 import runtime 修复与 `search_relevance` 修复一起复审。范围仅为实际 `backend/**` 代码、`tests/literature_maps` 及共享 Semantic Scholar 精准测试；未改业务代码或测试，未调用真实 provider/download、未读取 `.env`、未启动服务、未部署、未提交。
+
+### 逐项结论
+
+| 检查项 | 结论 | 实际证据 |
+|---|---|---|
+| arXiv fallback 优先与身份核对 | GO | `runtime.py:76-104` 仅在节点已有确定 arXiv identity 时调用既有 `ArxivFallbackAdapter`；返回值必须与节点 arXiv ID归一后完全相等才进入 importer；未命中/冲突后才按顺序走 S2。 |
+| S2 fallback、DOI/arXiv identity 与 source page 区分 | GO | `runtime.py:106-124,136-149` 调既有 `SemanticScholarFallbackAdapter`，再次校验节点 identity；`paper_import_adapter.py`/`import_bridge.py` 不把 Semantic Scholar landing 当 PDF，桥接只接受服务端解析出的 `pdf_url`。 |
+| allowlist 与唯一安全 importer | GO | runtime allowlist 来自 `common._paper_candidate_hosts()` 加注册表 `builtin_allowed_hosts("arxiv")`；最终调用链为 `LiteratureMapImportBridge` → `_existing_paper_import` → 既有 `import_candidate`，未新增 downloader/redirect 跟随/host 推导。桥接还拒绝凭据、fragment、localhost、保留/私网 IP 与 landing page。 |
+| owner-scoped 持久化与稳定基础错误码 | GO | `import_bridge.py:112-123,172-204,271-286` 通过 `update_node_import_result(map,node,owner,...)` 回写 document/download 状态；异常投影为固定 `PDF_NOT_FOUND`/既有安全导入码，不把 raw exception 写入响应。 |
+| resolver 诊断错误码可见/可持久化 | **BLOCK** | `runtime.py:127-133` 生成 `resolver_code`/`resolver_codes`，但 `import_bridge.py:67-70,271-286` 将其送入 `_failure_result()` 后，`_normalize_import_result()` 只保留 `error_code/status/retryable/...`（`172-204`），丢弃两字段；route 202 响应与节点持久状态因此仍只有 `PDF_NOT_FOUND`。只读探针复现：resolver 返回 `ARXIV_MATCH_UNCERTAIN` + `SEMANTIC_SCHOLAR_NO_OPEN_PDF`，返回/写回结果均无 resolver 诊断。 |
+| unscoped relevance search | GO | `semantic_scholar_metadata.py:314-329` 新增 `/paper/search` relevance 方法，复用同一限流/retry/字段/错误映射；`service.py:508-546` 生产 GraphClient 优先调用该方法，缓存 operation 为 `search_relevance`，`_select_rows()` 对 unscoped 保留 provider 顺序并继续做身份/年份/主题门禁。 |
+| scoped search 不受误改 | GO | `service.py:363-506` 的官方目录优先、多 scope 见证、gap 补缺和 fill-only 路径仍使用原 scoped 逻辑；`search_bulk` 仅用于 scoped gap。 |
+
+### 阻塞项与最小修复
+
+当前唯一新增阻塞是 resolver 诊断码在 bridge 边界丢失。应在固定 map import result 合同允许的安全字段中保留受控 `resolver_code`/`resolver_codes`（或将其映射为明确、稳定且不暴露 provider 原文的公开错误码），并由 `update_node_import_result`/API 结果以同一固定字段持久化和返回；不得保存动态异常文本或 provider envelope。补一条从 runtime resolver failure 到 bridge/store/HTTP 响应的端到端离线契约测试，证明 arXiv 未命中、S2 无 OA、S2 unavailable 可区分且不泄露凭据。
+
+### 精准验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/literature_maps` | 0 | **68 passed**（未调用真实 provider/download） |
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/paper_discovery/test_semantic_scholar_graph_api.py tests/literature_maps/test_map_discovery.py` | 0 | **20 passed**；覆盖 `/paper/search` relevance 参数/顺序、旧 bulk endpoint、429/503 映射与地图缓存/选择顺序 |
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/paper_discovery/test_semantic_scholar_adapter.py tests/paper_discovery/test_semantic_scholar_import_fallback.py` | 0 | **9 passed**；共享 S2 OA allowlist/身份/既有 importer fallback |
+| `.venv/bin/ruff check`（runtime、paper import adapter、bridge、service、metadata client 与上述精准测试） | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile`（runtime、paper import adapter、bridge、service、metadata client） | 0 | 通过 |
+| resolver failure 只读 bridge/store 探针 | 0 | 复现 resolver_code(s) 在持久结果/API 业务结果不可见；未触发网络/下载 |
+
+**本轮逐项结论：import arXiv 优先、身份、allowlist、唯一 importer、基础稳定错误码均 GO；resolver 诊断错误码 BLOCK；S2 relevance endpoint、unscoped 顺序/缓存隔离、scoped 保持均 GO。总体 backend gate：BLOCK（1 个 P1，需修复后重新复审）。** 本报告不把 68+20+9 离线测试或既有失败 E2E 当作真实 API 成功；真实 HTTP 创建→完成/partial→graph→import 与部署仍由主会话按验收门禁执行。
+
+## Resolver 诊断码真实 SQLite/HTTP 窄复审（2026-10-19；backend-reviewer）
+
+本轮只复审上一节唯一 P1。未修改业务代码/测试，未调用真实 provider/download、未读取 `.env`、未部署或提交。重点是验证 bridge 白名单字段是否从 runtime 贯通到 HTTP，并且是否真正落入生产 `LiteratureMapStore` 的节点持久状态。
+
+### 结果
+
+| 层级 | 结论 | 实际证据 |
+|---|---|---|
+| runtime → bridge | GO | resolver 返回的 `resolver_code(s)` 进入 bridge；`_safe_resolver_codes()` 只保留固定 arXiv/Semantic Scholar 诊断码，未知 code、异常文本和 `raw_url` 均被过滤。主 `error_code=PDF_NOT_FOUND` 未被覆盖。 |
+| bridge → HTTP 202 | GO | 使用真实 FastAPI route/service/bridge 组合与临时 SQLite，POST 导入返回 202，响应含 `resolver_code=SEMANTIC_SCHOLAR_NO_OPEN_PDF`、`resolver_codes=[ARXIV_UNAVAILABLE, SEMANTIC_SCHOLAR_NO_OPEN_PDF]`，不含 secret URL。 |
+| bridge → 真实 SQLite 节点 | **BLOCK** | `LiteratureMapStore.update_node_import_result()` 只从 `import_result` 写 `document_id`、`download_status`、`catalog_paper_id`；`literature_map_nodes` schema 没有 resolver 字段，`MapPaper`/`_node()` 也没有 resolver 字段。真实 SQLite node GET 读回只有 `download_status=failed` 和 `error_code`未落盘（node API 本身也不返回 import resolver 诊断）。 |
+
+真实 SQLite 临时探针（未触碰项目数据）得到：
+
+- `PRAGMA table_info(literature_map_nodes)` 仅包含原有 18 列，无 `resolver_code`/`resolver_codes`；
+- `update_node_import_result(..., import_result={error_code, resolver_code, resolver_codes})` 后，node 重读的 `to_dict()` 没有 resolver 字段；
+- 同一真实 store 的 HTTP POST 202 响应有诊断码，但随后 GET `/nodes/{node_id}` 没有诊断码。
+
+因此开发报告中“由 FakeStore 捕获完整 import_result”的测试只证明 bridge 调用参数，不等同真实持久化；本 P1 不能关闭。最小闭环方案是为地图节点增加版本化、owner-scoped 的受控诊断字段（显式列或纳入服务端 provenance，并同步 `MapPaper`、SQLite migration、`update_node_import_result()`、`_node()` 和 node GET），只写白名单 code，不写异常文本/provider envelope；同时保留 HTTP 202 当前主错误码兼容。
+
+### 窄复审验证
+
+| 命令/探针 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py` | 0 | **30 passed**；FakeStore/route 白名单和 HTTP 响应契约通过 |
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/literature_maps` | 0 | **71 passed**；仍不覆盖真实 resolver 字段 schema 持久化 |
+| `.venv/bin/ruff check`（bridge/store/routes 与两份精准测试） | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile`（bridge/store/routes） | 0 | 通过 |
+| 真实 `LiteratureMapStore` 临时 SQLite + FastAPI TestClient | 0 | HTTP 202 有 resolver 诊断；节点 GET/SQLite schema 无 resolver 诊断，复现阻塞 |
+
+**窄复审最终结论：白名单过滤与 HTTP 202：GO；真实 SQLite 节点持久化/重读可见性：BLOCK。总体 backend gate 仍 BLOCK（同一 P1 尚未闭环），不得据此进入验收收口或部署。**
+
+## Resolver 诊断码真实持久化最终窄复审（2026-10-19；backend-reviewer）
+
+本轮只复核上一节最后一个 P1 的修复，不扩大到其他地图能力，未修改 backend 业务代码/测试，未调用真实 provider 或下载，不读取 `.env`，未部署或提交。已直接读取当前 `import_bridge.py`、`store.py`、节点 API 与真实持久化回归；FakeStore 证据未被当作持久化证据。
+
+### 逐项结论：最后 P1 已闭环
+
+| 检查项 | 结论 | 实际证据 |
+|---|---|---|
+| runtime/bridge 白名单及主错误码兼容 | GO | `_safe_resolver_codes()` 只接受固定 arXiv/Semantic Scholar/OA 诊断码，未知 code、异常字段和 URL 不进入结果；`PDF_NOT_FOUND` 等主 `error_code` 保留。 |
+| 真实 SQLite 失败写入 | GO | `LiteratureMapStore.update_node_import_result()` 在 owner/map/node 事务内把受控诊断写入既有 `provenance_json.import_diagnostics`，不需要 schema migration；真实 HTTP POST 202 后 node GET 的 `provenance` 可见。 |
+| provenance 保留与重开可见性 | GO | 临时 SQLite 实例写入既有 `provider`/`keep`/catalog snapshot 后，POST→GET 和关闭/重开 `LiteratureMapStore` 均保留原 provenance 及诊断；未知 `provider_exception`/secret URL 未落库或回显。 |
+| owner 守卫 | GO | 节点更新先以 `map_id + node_id + owner_id + deleted_at IS NULL` 查询；错误 owner 得到 `LookupError`，不能写入其他 owner 的节点。 |
+| 成功重试清理旧诊断 | GO | `indexed`/`completed` 被解释为清理操作；HTTP 重试后 node GET 与再次重开的 store 均不含 `import_diagnostics`，同时保留其他 provenance 并写入 document handle。 |
+
+### 精准验证
+
+| 命令/探针 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/literature_maps/test_map_store.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_import_bridge.py` | 0 | **39 passed** |
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/literature_maps` | 0 | **73 passed** |
+| 三项真实持久化/owner/HTTP 回归（`test_http_import_round_trip_persists_diagnostics_in_sqlite_provenance`、`test_node_import_diagnostics_are_provenance_scoped_and_cleared_on_success`、`test_node_import_result_and_embedding_validation_are_scoped`） | 0 | **3 passed** |
+| `.venv/bin/ruff check`（store、bridge、route 及相关精准测试） | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile`（store、bridge、route） | 0 | 通过 |
+
+以上真实持久化用的是临时 SQLite 文件和 FastAPI TestClient，验证了 POST→GET→重开 store→成功重试→再次重开的链路；没有把 mock provider 或 FakeStore 当成真实 E2E，也未证明外部 API/download 成功。
+
+**最终集中结论：GO（最后 resolver 诊断持久化 P1 已闭环）。** 本结论仅关闭本项 backend 窄复审，不替代 Task03 的真实 provider/API E2E、全量回归、验收签字或部署门禁。

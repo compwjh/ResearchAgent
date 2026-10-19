@@ -132,7 +132,13 @@
 
 ## 执行结果
 
-待执行后填写。
+2026-10-19阶段检查点（主会话纯文档记录，非验收签字）：
+
+- 已复审候选提交 `4cb5735`，地图域测试62项通过；前端独立复审通过，后端最后四项P1窄复审通过。
+- 使用 `PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh` 启动本机候选，`http://127.0.0.1:8000/api/ready` 返回200。
+- 真实主题“graph attention networks”、limit20创建地图 `9b1e4739443e40c98400cfb69aec1e45`、作业 `b4ccc1dfe6814c36a42a1f67e7681f52`；得到20个节点，布局保存重开通过，但引用响应无效、零引用边，终态partial；一次主动导入返回PDF_NOT_FOUND。详见 `artifacts/task-03/api-e2e.md` 与 `api-evidence.json`。
+- 当前真实E2E不通过，Task保持进行中，不交人工验收。引用provider响应及主题相关性排序继续诊断；地图导入遗漏既有arXiv解析能力的接缝正在修复，需独立复审、重启后重新验证。
+- 浏览器独立验收进行中；不将可行性测试、mock、HTTP202或健康检查当成核心功能成功。
 
 ## 变更日志
 

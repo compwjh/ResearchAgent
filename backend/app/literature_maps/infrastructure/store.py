@@ -28,6 +28,22 @@ SCHEMA_VERSION = 2
 _WRITE_LOCK = threading.RLock()
 _UNSET = object()
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+_IMPORT_DIAGNOSTICS_KEY = "import_diagnostics"
+_RESOLVER_DIAGNOSTIC_CODES = frozenset({
+    "ARXIV_UNAVAILABLE",
+    "ARXIV_MATCH_UNCERTAIN",
+    "ARXIV_IDENTITY_CONFLICT",
+    "SEMANTIC_SCHOLAR_UNAVAILABLE",
+    "SEMANTIC_SCHOLAR_NO_OPEN_PDF",
+    "SEMANTIC_SCHOLAR_MATCH_UNCERTAIN",
+    "SEMANTIC_SCHOLAR_UNSUPPORTED_PDF_HOST",
+    "SEMANTIC_SCHOLAR_AUTH_FAILED",
+    "SEMANTIC_SCHOLAR_NOT_FOUND",
+    "SEMANTIC_SCHOLAR_HTTP_ERROR",
+    "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+    "OA_IDENTITY_CONFLICT",
+})
+_IMPORT_SUCCESS_STATUSES = frozenset({"indexed", "completed"})
 _TERMINAL_JOB_STATES = {"completed", "failed", "partial", "stopped"}
 
 
@@ -804,13 +820,15 @@ class LiteratureMapStore:
         download_status: str | None | object = _UNSET,
         catalog_paper_id: str | None | object = _UNSET,
     ) -> MapPaper:
-        if import_result:
+        diagnostics = _UNSET
+        if import_result is not None:
             if document_id is _UNSET:
                 document_id = import_result.get("document_id", _UNSET)
             if download_status is _UNSET:
                 download_status = import_result.get("download_status", import_result.get("status", _UNSET))
             if catalog_paper_id is _UNSET:
                 catalog_paper_id = import_result.get("catalog_paper_id", _UNSET)
+            diagnostics = _safe_import_diagnostics(import_result)
         updates: list[str] = []
         values: list[Any] = []
         for column, value in (("document_id", document_id), ("download_status", download_status), ("catalog_paper_id", catalog_paper_id)):
@@ -825,6 +843,18 @@ class LiteratureMapStore:
             ).fetchone()
             if row is None:
                 raise LookupError("node not found")
+            if diagnostics is not _UNSET:
+                provenance = _load(row["provenance_json"], {})
+                if not isinstance(provenance, dict):
+                    provenance = {}
+                next_provenance = dict(provenance)
+                if diagnostics is None:
+                    next_provenance.pop(_IMPORT_DIAGNOSTICS_KEY, None)
+                else:
+                    next_provenance[_IMPORT_DIAGNOSTICS_KEY] = diagnostics
+                if next_provenance != provenance:
+                    updates.append("provenance_json=?")
+                    values.append(_dump(next_provenance))
             if updates:
                 db.execute("UPDATE literature_map_nodes SET " + ",".join(updates) + " WHERE map_id=? AND node_id=?", (*values, map_id, node_id))
                 row = db.execute("SELECT n.* FROM literature_map_nodes n WHERE n.map_id=? AND n.node_id=?", (map_id, node_id)).fetchone()
@@ -977,6 +1007,33 @@ class LiteratureMapStore:
 
 def _dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _safe_import_diagnostics(import_result: Mapping[str, Any]) -> dict[str, Any] | None:
+    status = str(import_result.get("download_status") or import_result.get("status") or "").casefold()
+    if status in _IMPORT_SUCCESS_STATUSES:
+        return None
+
+    diagnostics: dict[str, Any] = {}
+    error_code = import_result.get("error_code")
+    if isinstance(error_code, str) and _ERROR_CODE_RE.fullmatch(error_code):
+        diagnostics["error_code"] = error_code
+
+    values: list[Any] = []
+    raw_codes = import_result.get("resolver_codes")
+    if isinstance(raw_codes, (list, tuple)):
+        values.extend(raw_codes)
+    raw_code = import_result.get("resolver_code")
+    if raw_code is not None:
+        values.append(raw_code)
+    resolver_codes = list(dict.fromkeys(
+        code for code in (str(value).strip() for value in values)
+        if code in _RESOLVER_DIAGNOSTIC_CODES
+    ))
+    if resolver_codes:
+        diagnostics["resolver_code"] = resolver_codes[-1]
+        diagnostics["resolver_codes"] = resolver_codes
+    return diagnostics or None
 
 
 def _load(value: str | None, default: Any) -> Any:

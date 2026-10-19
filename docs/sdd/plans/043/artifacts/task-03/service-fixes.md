@@ -66,3 +66,18 @@
 - `.venv/bin/ruff check backend/app/literature_maps/application/service.py backend/app/literature_maps/application/catalog_adapter.py tests/literature_maps/test_map_discovery.py tests/literature_maps/test_map_job_recovery.py tests/literature_maps/test_map_api.py`：退出码 0，All checks passed。
 - `.venv/bin/python -m py_compile backend/app/literature_maps/application/service.py backend/app/literature_maps/application/catalog_adapter.py`：退出码 0；`.venv/bin/python scripts/check_test_layout.py`：退出码 0。
 - 未修改 routes/API mapper、store、import/runtime/frontend；未运行全量 pytest、生产服务或真实 provider。
+
+## 2026-10-19 unscoped relevance endpoint 接续修复
+
+- `SemanticScholarGraphClient.search_relevance()` 新增窄方法，复用同一限流、有限 retry、fields 和错误映射，改用官方 `/paper/search` relevance-ranked endpoint；原 `search_bulk()` 保持不变。
+- unscoped 地图首批 discovery 优先调用 `search_relevance()`，缓存 operation 改为 `search_relevance`，与旧 bulk 缓存严格分离；缺少新方法的旧注入测试 client 保留有限 fallback，不改变生产路径。
+- `_select_rows()` 对 unscoped rows 保留 provider 返回顺序，仅做身份/年份/去重/主题非零 gate 和 requested limit 截取；scoped catalog 仍保留原 lexical/ID 排序与官方 scope 约束。
+- 不接受 `data=null` 为零引用；引用解析、catalog scoped 流程、provider 预算和 routes/store/runtime/frontend 均未改。
+
+### 接续验证
+
+- `.venv/bin/python -m pytest -q tests/paper_discovery/test_semantic_scholar_graph_api.py tests/literature_maps/test_map_discovery.py`：退出码 0，20 passed。
+- `.venv/bin/ruff check backend/app/paper_discovery/infrastructure/semantic_scholar_metadata.py backend/app/literature_maps/application/service.py tests/paper_discovery/test_semantic_scholar_graph_api.py tests/literature_maps/test_map_discovery.py`：退出码 0，All checks passed。
+- `.venv/bin/python -m py_compile backend/app/paper_discovery/infrastructure/semantic_scholar_metadata.py backend/app/literature_maps/application/service.py`：退出码 0；`.venv/bin/python scripts/check_test_layout.py`：退出码 0；`git diff --check`：退出码 0。
+- 新增 mock-transport 证据覆盖 relevance endpoint/参数/顺序、旧 bulk endpoint 不变、429/503 错误映射；新增地图测试覆盖 relevance 顺序与缓存 operation 隔离。
+- 本轮未发起真实 provider 请求、未部署/重启服务；已有旧 map retry 不会重搜，后续需由主会话决定是否创建新图复验。

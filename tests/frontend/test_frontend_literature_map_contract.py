@@ -24,7 +24,7 @@ def test_navigation_view_and_version_contract_are_wired() -> None:
     assert 'data-view="literature-maps"' in INDEX
     assert 'id="literature-maps-view"' in INDEX
     assert 'id="literature-maps-mount"' in INDEX
-    assert '/assets/literature-maps.js?v=3' in INDEX
+    assert '/assets/literature-maps.js?v=4' in INDEX
     assert '/assets/literature-maps.css?v=3' in INDEX
     app_versions = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     style_versions = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
@@ -145,6 +145,60 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         assert page.locator('[data-edge-kind="similarity"]').count() == 0
         page.get_by_role('button', name='关闭论文详情').click()
         assert page.locator('.literature-map-detail-panel').is_hidden()
+
+        # Blank-canvas panning is a persisted viewport change, distinct from
+        # dragging a node.  Use a fresh fixture page so the earlier locate/zoom
+        # checks cannot influence the initial viewport of this lifecycle case.
+        gesture_page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        gesture_page.goto(FIXTURE.as_uri(), wait_until='load')
+        gesture_page.locator('[data-map-id="map-fixture"]').click()
+        gesture_page.wait_for_selector('[data-node-id="node-a"]')
+        svg = gesture_page.locator('#literature-map-svg')
+        svg_box = svg.bounding_box()
+        assert svg_box
+        gesture_page.mouse.move(svg_box['x'] + 40, svg_box['y'] + 40)
+        gesture_page.mouse.down()
+        gesture_page.mouse.move(svg_box['x'] + 100, svg_box['y'] + 70, steps=4)
+        gesture_page.mouse.up()
+        gesture_page.wait_for_function("window.__viewBodies?.some((body) => body.viewport?.x === 60 && body.viewport?.y === 30)")
+        pan_body = gesture_page.evaluate("window.__viewBodies.at(-1)")
+        assert pan_body['viewport']['x'] == 60
+        assert pan_body['viewport']['y'] == 30
+
+        # Existing node-drag and zoom saves must retain the panned viewport.
+        node_box = gesture_page.locator('[data-node-id="node-a"] circle').bounding_box()
+        assert node_box
+        gesture_page.mouse.move(node_box['x'] + node_box['width'] / 2, node_box['y'] + node_box['height'] / 2)
+        gesture_page.mouse.down()
+        gesture_page.mouse.move(node_box['x'] + node_box['width'] / 2 + 20, node_box['y'] + node_box['height'] / 2 + 10, steps=3)
+        gesture_page.mouse.up()
+        gesture_page.wait_for_function("window.__viewBodies?.at(-1)?.positions?.some((position) => position.node_id === 'node-a' && position.x !== 390)")
+        node_body = gesture_page.evaluate("window.__viewBodies.at(-1)")
+        assert node_body['viewport']['x'] == 60
+        assert node_body['viewport']['y'] == 30
+        gesture_page.get_by_role('button', name='放大').click()
+        gesture_page.wait_for_function("window.__viewBodies?.at(-1)?.viewport?.scale > 1")
+        zoom_body = gesture_page.evaluate("window.__viewBodies.at(-1)")
+        assert zoom_body['viewport']['x'] == 60
+        assert zoom_body['viewport']['y'] == 30
+        assert zoom_body['viewport']['scale'] > 1
+
+        # Reopen through the public lifecycle and verify the persisted
+        # viewport and node position are restored rather than reset.
+        gesture_page.evaluate("window.LiteratureMaps.setActive(false)")
+        gesture_page.wait_for_timeout(50)
+        gesture_page.evaluate("window.LiteratureMaps.setActive(true)")
+        gesture_page.wait_for_selector('[data-map-id="map-fixture"]')
+        gesture_page.locator('[data-map-id="map-fixture"]').click()
+        gesture_page.wait_for_selector('[data-node-id="node-a"]')
+        gesture_page.wait_for_function("document.querySelector('#literature-map-viewport')?.getAttribute('transform')?.includes('translate(60 30) scale(')")
+        reopened_transform = gesture_page.locator('#literature-map-viewport').get_attribute('transform')
+        assert reopened_transform and 'translate(60 30) scale(' in reopened_transform
+        reopened_scale = float(re.search(r'scale\(([^)]+)\)', reopened_transform).group(1))
+        assert reopened_scale > 1
+        reopened_node = gesture_page.locator('[data-node-id="node-a"] circle').get_attribute('cx')
+        assert reopened_node and float(reopened_node) != 390
+        gesture_page.close()
 
         fallback = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         fallback.goto(f'{FIXTURE.as_uri()}?options-fail', wait_until='load')

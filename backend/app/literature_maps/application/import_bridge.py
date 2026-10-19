@@ -124,6 +124,20 @@ class LiteratureMapImportBridge:
 
 
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+_RESOLVER_DIAGNOSTIC_CODES = frozenset({
+    "ARXIV_UNAVAILABLE",
+    "ARXIV_MATCH_UNCERTAIN",
+    "ARXIV_IDENTITY_CONFLICT",
+    "SEMANTIC_SCHOLAR_UNAVAILABLE",
+    "SEMANTIC_SCHOLAR_NO_OPEN_PDF",
+    "SEMANTIC_SCHOLAR_MATCH_UNCERTAIN",
+    "SEMANTIC_SCHOLAR_UNSUPPORTED_PDF_HOST",
+    "SEMANTIC_SCHOLAR_AUTH_FAILED",
+    "SEMANTIC_SCHOLAR_NOT_FOUND",
+    "SEMANTIC_SCHOLAR_HTTP_ERROR",
+    "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+    "OA_IDENTITY_CONFLICT",
+})
 _SAFE_STATUS = frozenset({
     "queued", "importing", "downloading", "validating", "indexing",
     "indexed", "completed", "pending", "partial", "waiting_login",
@@ -191,7 +205,7 @@ def _normalize_import_result(result: Any, source: Mapping[str, Any] | None = Non
     catalog_paper_id = source.get("catalog_paper_id") if isinstance(source, Mapping) else None
     if catalog_paper_id is not None:
         catalog_paper_id = str(catalog_paper_id)[:200] or None
-    return {
+    normalized = {
         "paper_id": document_id,
         "document_id": document_id,
         "stored_name": str(raw.get("stored_name"))[:255] if raw.get("stored_name") else None,
@@ -202,6 +216,27 @@ def _normalize_import_result(result: Any, source: Mapping[str, Any] | None = Non
         "retryable": bool(raw.get("retryable", False)),
         "catalog_paper_id": catalog_paper_id,
     }
+    resolver_codes = _safe_resolver_codes(source)
+    if resolver_codes:
+        normalized["resolver_code"] = resolver_codes[-1]
+        normalized["resolver_codes"] = resolver_codes
+    return normalized
+
+
+def _safe_resolver_codes(source: Mapping[str, Any] | None) -> list[str]:
+    if not isinstance(source, Mapping):
+        return []
+    values: list[Any] = []
+    raw_codes = source.get("resolver_codes")
+    if isinstance(raw_codes, (list, tuple)):
+        values.extend(raw_codes)
+    raw_code = source.get("resolver_code")
+    if raw_code is not None:
+        values.append(raw_code)
+    return list(dict.fromkeys(
+        code for code in (str(value).strip() for value in values)
+        if code in _RESOLVER_DIAGNOSTIC_CODES
+    ))
 
 
 def _source_pdf_url(source: Mapping[str, Any]) -> str | None:

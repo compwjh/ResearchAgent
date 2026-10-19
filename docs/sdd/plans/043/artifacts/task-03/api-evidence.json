@@ -1,0 +1,160 @@
+{
+  "run_id": "task03-api-e2e-20261019T133632Z",
+  "spec": "043-literature-map-topic-exploration",
+  "task": "03",
+  "environment": {
+    "base_url": "http://127.0.0.1:8000",
+    "ready_http_status": 200,
+    "ready": true,
+    "service_commit": "4cb57358a50c34f487fc6bcc73d75fc01a8b009c",
+    "reranker_enabled": false,
+    "credentials_recorded": false
+  },
+  "request": {
+    "method": "POST",
+    "path": "/api/literature-maps",
+    "body": {
+      "topic": "graph attention networks",
+      "name": "API E2E graph attention networks",
+      "limit": 20,
+      "idempotency_key": "e2e-gan-20261019-backend"
+    },
+    "http_status": 202
+  },
+  "entities": {
+    "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+    "job_id": "b4ccc1dfe6814c36a42a1f67e7681f52",
+    "requested_count": 20,
+    "node_count": 20,
+    "sample_node_id": "2e35b888d3cb414090e2d8e55e5bae1a",
+    "sample_node_external_ids": {
+      "arxiv": "1809.07041",
+      "doi": "10.1007/978-3-030-01264-9_42",
+      "semantic_scholar": "0000fcfd467a19cf0e59169c2f07d730a0f3a8b9"
+    }
+  },
+  "state_trace": [
+    {
+      "observed": "2026-10-19T13:36:32.318576Z",
+      "endpoint": "POST /api/literature-maps",
+      "map_status": "generating",
+      "job_status": "queued",
+      "step": "discover",
+      "http_status": 202
+    },
+    {
+      "observed": "2026-10-19T13:36:38.813261Z",
+      "endpoint": "GET /api/literature-maps/{map_id}/jobs/{job_id}",
+      "job_status": "running",
+      "step": "references",
+      "counts": {
+        "provider_count": 1000,
+        "accepted_count": 20,
+        "node_count": 20,
+        "provider_request_count": 1,
+        "provider_truncated": 1,
+        "citation_edge_count": 0,
+        "similarity_edge_count": 0
+      },
+      "http_status": 200
+    },
+    {
+      "observed": "2026-10-19T13:37:36.982125Z",
+      "endpoint": "GET /api/literature-maps/{map_id}/events?after_seq=0",
+      "event_seq": 6,
+      "job_status": "running",
+      "step": "similarity",
+      "provider_request_count": 21,
+      "http_status": 200
+    },
+    {
+      "observed": "2026-10-19T13:37:39.402607Z",
+      "endpoint": "GET /api/literature-maps/{map_id}/events?after_seq=6",
+      "event_seq": 7,
+      "map_status": "partial",
+      "job_status": "partial",
+      "step": "finished",
+      "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+      "http_status": 200
+    }
+  ],
+  "provider_result": {
+    "provider": "semantic_scholar",
+    "provider_count": 1000,
+    "accepted_count": 20,
+    "provider_truncated": 1,
+    "provider_request_count_final": 21,
+    "provider_budget": 60,
+    "external_calls_remaining_by_counter": 39,
+    "identity_evidence": "nodes retain independent DOI/arXiv and Semantic Scholar IDs; catalog_paper_id is null for this unscoped search"
+  },
+  "relationships": {
+    "citation": {
+      "layer_status": "partial",
+      "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+      "edge_count": 0,
+      "direction_evidence": null,
+      "failed_units": 8
+    },
+    "similarity": {
+      "layer_status": "completed",
+      "edge_count": 0,
+      "threshold": 0.75,
+      "scores": [],
+      "basis": [],
+      "model": null,
+      "content_hashes": [],
+      "evidence_note": "No similarity edge was returned; no score/model/hash is asserted. Threshold was not lowered and no pair was fabricated."
+    }
+  },
+  "layout_reopen": {
+    "patch_path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/view",
+    "patch_http_status": 200,
+    "revision_before": 1,
+    "revision_after": 2,
+    "saved_position": {
+      "node_id": "bba4391fa5b84983bd339503c45850c3",
+      "x": 120.0,
+      "y": 80.0
+    },
+    "saved_viewport": {
+      "x": 10.0,
+      "y": 20.0,
+      "scale": 1.1
+    },
+    "reopen_map_http_status": 200,
+    "reopen_graph_http_status": 200,
+    "reopen_revision": 2,
+    "reopen_position": {
+      "x": 120.0,
+      "y": 80.0
+    }
+  },
+  "import_bridge_once": {
+    "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a/imports",
+    "http_status": 202,
+    "status": "failed",
+    "download_status": "failed",
+    "error_code": "PDF_NOT_FOUND",
+    "retryable": false,
+    "paper_id": null,
+    "document_id": null,
+    "catalog_paper_id": null,
+    "post_import_node_http_status": 200,
+    "post_import_node_download_status": "failed",
+    "post_import_node_document_id": null
+  },
+  "redaction": {
+    "api_keys": "not recorded",
+    "cookies": "not recorded",
+    "authorization_headers": "not recorded",
+    "abstract_bodies": "not recorded in artifact",
+    "raw_provider_envelopes": "not recorded"
+  },
+  "decision": "BLOCKED",
+  "blocking_evidence": [
+    "The real job ended partial, not success, with SEMANTIC_SCHOLAR_INVALID_RESPONSE in the citation layer.",
+    "The citation layer produced no direction-verifiable edge and the similarity layer produced no threshold-verifiable edge.",
+    "The single permitted import-bridge check returned PDF_NOT_FOUND and created no document."
+  ]
+}

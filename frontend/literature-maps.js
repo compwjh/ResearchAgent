@@ -1051,7 +1051,7 @@
     const nodeId = state.pointer.nodeId;
     state.pointer = null;
     refs.svg.releasePointerCapture?.(event.pointerId);
-    if (dragged && nodeId) scheduleViewSave();
+    if (dragged) scheduleViewSave();
     if (!dragged && nodeId) selectNode(nodeId);
   }
 

@@ -122,6 +122,60 @@ def test_node_import_result_and_embedding_validation_are_scoped(tmp_path):
         store.put_embedding(model_version="m", basis="title", content_hash="empty", vector=[])
 
 
+def test_node_import_diagnostics_are_provenance_scoped_and_cleared_on_success(tmp_path):
+    database_path = tmp_path / "maps.sqlite3"
+    store = LiteratureMapStore(database_path)
+    created = store.create_map("owner-a", topic="fuzzing")
+    node = MapPaper.new(
+        created.map_id,
+        semantic_scholar_id="s2-a",
+        title="A paper",
+        provenance={"provider": "semantic_scholar", "catalog_snapshot": {"catalog_paper_id": "catalog-1"}},
+    )
+    store.add_nodes(created.map_id, "owner-a", [node])
+
+    failed = store.update_node_import_result(
+        created.map_id,
+        node.node_id,
+        "owner-a",
+        import_result={
+            "status": "failed",
+            "error_code": "PDF_NOT_FOUND",
+            "resolver_code": "SEMANTIC_SCHOLAR_NO_OPEN_PDF",
+            "resolver_codes": ["ARXIV_UNAVAILABLE", "SEMANTIC_SCHOLAR_NO_OPEN_PDF"],
+            "provider_exception": "https://secret.example/key=bad",
+        },
+    )
+    assert failed.provenance["provider"] == "semantic_scholar"
+    assert failed.provenance["catalog_snapshot"] == {"catalog_paper_id": "catalog-1"}
+    assert failed.provenance["import_diagnostics"] == {
+        "error_code": "PDF_NOT_FOUND",
+        "resolver_code": "SEMANTIC_SCHOLAR_NO_OPEN_PDF",
+        "resolver_codes": ["ARXIV_UNAVAILABLE", "SEMANTIC_SCHOLAR_NO_OPEN_PDF"],
+    }
+    assert "secret.example" not in str(failed.provenance)
+
+    reopened = LiteratureMapStore(database_path)
+    persisted = reopened.get_node(created.map_id, node.node_id, "owner-a")
+    assert persisted is not None
+    assert persisted.provenance["import_diagnostics"]["error_code"] == "PDF_NOT_FOUND"
+
+    cleared = reopened.update_node_import_result(
+        created.map_id,
+        node.node_id,
+        "owner-a",
+        import_result={"status": "indexed", "document_id": "doc-1"},
+    )
+    assert cleared.document_id == "doc-1"
+    assert "import_diagnostics" not in cleared.provenance
+    assert cleared.provenance["catalog_snapshot"] == {"catalog_paper_id": "catalog-1"}
+
+    reopened_again = LiteratureMapStore(database_path)
+    persisted_again = reopened_again.get_node(created.map_id, node.node_id, "owner-a")
+    assert persisted_again is not None
+    assert "import_diagnostics" not in persisted_again.provenance
+
+
 def test_legacy_duplicate_idempotency_bindings_are_migrated_deterministically(tmp_path):
     database_path = tmp_path / "maps.sqlite3"
     store = LiteratureMapStore(database_path)

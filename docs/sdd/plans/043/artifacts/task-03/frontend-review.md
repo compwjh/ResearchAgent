@@ -156,3 +156,39 @@
 
 tracked `browser-evidence.json` 测试前后 SHA-256 均为 `7b28bcf9688cc6a35b4e9f4f5a94b625945c65736f70e131db2b8f02bc808046`。本轮前端窄复核通过；Task03 仍不替代后端 import 信任边界审查、真实生产 API E2E 或部署验收。
 
+## 独立画布平移窄复核（frontend-reviewer，2026-10-19）
+
+本节只复核 `frontend-report.md` 最后一次画布平移修复：
+`frontend/literature-maps.js` 的 pointer-up/view 保存路径、`frontend/index.html` 的
+资源版本，以及 `tests/frontend/test_frontend_literature_map_contract.py` 的真实手势
+夹具。本轮没有修改 `frontend/**`、测试业务逻辑或部署，也没有运行后端 pytest。
+
+### 结论
+
+- **GO（前端窄范围）**：空白画布平移已由真实 pointer 手势触发并持久化；节点拖动、缩放和关闭/重开后的已保存视图不回退。资源版本为 `literature-maps.js?v=4`，与契约断言一致。
+- **GO（代码守卫）**：`saveView()` 捕获 `viewRequest/mapId/expectedRevision`，响应写回前检查请求代次、当前地图和 `active`；切图递增 `viewRequest` 并清理保存定时器，旧响应不会覆盖另一张地图。
+- **BLOCK/PENDING（验收边界）**：本轮 fixture 没有故意挂起一个正在途中的 view PATCH 后再切图/离开并释放响应，因此“在途响应竞态”只有源码守卫证据，未被动态复现；主会话重启后的生产浏览器复测仍待执行。本节的 GO 不等同于生产 API E2E 或 Task03 总体验收通过。
+
+### 证据
+
+- `frontend/literature-maps.js:1022-1055` 在 SVG 上绑定 `pointerdown/move/up/cancel`；空白画布拖动更新 `state.view.x/y`，任意已拖动手势的 pointer-up 都调用 `scheduleViewSave()`，不再只保存节点拖动。
+- `frontend/literature-maps.js:1064-1068` 的缩放路径调用同一保存调度；`1102-1143` 的 PATCH body 包含 `expected_revision`、节点位置、viewport 和图层，并保留旧响应/错误的请求代次门禁。
+- `frontend/literature-maps.js:836-853` 切图递增 `mapRequest/nodeRequest/importRequest/viewRequest`、清理保存定时器；`1124-1142` 在 PATCH 成功/失败回写前复核 `requestId/mapId/selectedMapId/active`。`1369-1373` 离开地图停止轮询并清理保存定时器。
+- `frontend/index.html:784` 使用 `/assets/literature-maps.js?v=4`；`tests/frontend/test_frontend_literature_map_contract.py:27` 对该版本有契约断言。
+- `tests/frontend/test_frontend_literature_map_contract.py:159-166` 使用 `mouse.move/down/move/up` 在空白 SVG 上平移，观察实际 `window.__viewBodies` PATCH 的 viewport 为 `(60,30)`；不是调用 `scheduleViewSave()` 或内部方法替代手势。
+- 同文件 `171-184` 使用鼠标拖动节点并点击缩放按钮，断言节点位置确实改变、viewport 仍为 `(60,30)`、scale 大于 1；`188-200` 通过公开 `LiteratureMaps.setActive(false/true)` 关闭/重开并断言保存的 transform 和节点位置恢复。
+- fixture `tests/frontend/fixtures/literature_map_component.html:54-63` 记录并应用真实 view PATCH 的 viewport、positions 和 revision，因此上述断言不是只看本地 DOM 状态。
+
+### 精准验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_feasibility.py`（普通沙箱） | 5 passed, 2 skipped；仅 Chromium 启动权限 skip，无断言失败 |
+| 同上命令（受控 Chromium 权限） | 退出码 0，7 passed；包含平移、节点拖动、缩放、关闭/重开恢复及异步选项生命周期夹具 |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0，`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0，无 spec/task 编号测试名 |
+| `git diff --check -- frontend/literature-maps.js frontend/index.html tests/frontend/test_frontend_literature_map_contract.py` | 退出码 0 |
+
+本轮未启动服务、未访问生产 API、未运行后端 pytest、未提交或部署。待主会话重启后，应在真实产品页面复测一次空白画布平移→保存→重开，并补一个可控的在途 view PATCH 旧响应场景后再签署生产浏览器验收。
+

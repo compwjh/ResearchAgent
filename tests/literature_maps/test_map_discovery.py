@@ -5,6 +5,7 @@ from backend.app.literature_maps.application.catalog_adapter import CatalogRow, 
 from backend.app.literature_maps.application.service import LiteratureMapService
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
+    SEMANTIC_SCHOLAR_METADATA_FIELDS,
     SemanticScholarEnrichment,
     SemanticScholarMetadata,
     SemanticScholarRequestResult,
@@ -43,6 +44,17 @@ class FakeClient:
     def graph_edges(self, paper_id, relation, *, limit=20, offset=0):
         self.calls.append(("graph", paper_id, relation, limit, offset))
         return SemanticScholarRequestResult(code="SEMANTIC_SCHOLAR_RATE_LIMITED", retryable=True)
+
+
+class RelevanceClient(FakeClient):
+    def search_relevance(self, query, *, limit=20, fields=None):
+        self.calls.append(("relevance", query, limit, fields))
+        rows = [
+            {"paperId": "z-provider-first", "title": "Graph attention networks core", "abstract": "graph attention networks", "year": 2024},
+            {"paperId": "a-provider-second", "title": "Graph attention networks survey", "abstract": "graph attention networks", "year": 2023},
+            {"paperId": "b-provider-third", "title": "Graph attention networks applications", "abstract": "graph attention networks", "year": 2022},
+        ]
+        return SemanticScholarRequestResult(payload={"data": rows})
 
 
 class OfficialCatalog:
@@ -237,6 +249,47 @@ def test_discovery_truncates_provider_rows_and_persists_partial_source_failure(t
     assert graph["layers"]["citation"]["status"] == "partial"
     assert graph["layers"]["citation"]["error_code"] == "SEMANTIC_SCHOLAR_RATE_LIMITED"
     assert all(node["catalog_paper_id"] is None for node in graph["nodes"])
+
+
+def test_unscoped_discovery_preserves_relevance_order_and_separates_cache_operation(tmp_path):
+    store = LiteratureMapStore(tmp_path / "maps.sqlite3")
+    client = RelevanceClient()
+    service = LiteratureMapService(
+        store=store,
+        client=client,
+        executor=None,
+        embedder=lambda texts: [[1.0, 0.0] for _ in texts],
+    )
+    result = service.create_map(owner_id="owner-a", topic="graph attention networks", requested_count=20)
+    service.run_job(result.job.job_id)
+    graph = service.graph(result.map.map_id, "owner-a")
+
+    assert [call[0] for call in client.calls[:1]] == ["relevance"]
+    assert [node["external_ids"]["semantic_scholar"] for node in graph["nodes"]] == [
+        "z-provider-first",
+        "a-provider-second",
+        "b-provider-third",
+    ]
+    relevance_key = store.request_cache_key(
+        provider="semantic_scholar",
+        operation="search_relevance",
+        query="graph attention networks",
+        filters={"year_start": None, "year_end": None, "limit": 20},
+        page=0,
+        fields=SEMANTIC_SCHOLAR_METADATA_FIELDS,
+        version="literature-map-v1",
+    )
+    bulk_key = store.request_cache_key(
+        provider="semantic_scholar",
+        operation="search",
+        query="graph attention networks",
+        filters={"year_start": None, "year_end": None, "limit": 20},
+        page=0,
+        fields=SEMANTIC_SCHOLAR_METADATA_FIELDS,
+        version="literature-map-v1",
+    )
+    assert store.get_request_cache(relevance_key) is not None
+    assert store.get_request_cache(bulk_key) is None
 
 
 def test_create_map_idempotency_reuses_map_and_rejects_parameter_change(tmp_path):

@@ -507,7 +507,7 @@ class LiteratureMapService:
 
         cache_key = self._request_cache_key(
             provider="semantic_scholar",
-            operation="search",
+            operation="search_relevance",
             query=map_item.topic,
             identifier="",
             filters={"year_start": filters.get("year_start"), "year_end": filters.get("year_end"), "limit": map_item.requested_count},
@@ -519,11 +519,21 @@ class LiteratureMapService:
             return rows, None, 0, len(rows)
         try:
             try:
-                result = self.client.search_bulk(map_item.topic, limit=map_item.requested_count, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
+                search_relevance = getattr(self.client, "search_relevance", None)
+                if callable(search_relevance):
+                    result = search_relevance(map_item.topic, limit=map_item.requested_count, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
+                else:
+                    # Narrow compatibility for test doubles and older injected
+                    # clients; production uses the relevance-ranked endpoint.
+                    result = self.client.search_bulk(map_item.topic, limit=map_item.requested_count, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
             except TypeError as error:
                 if "fields" not in str(error):
                     raise
-                result = self.client.search_bulk(map_item.topic, limit=map_item.requested_count)
+                search_relevance = getattr(self.client, "search_relevance", None)
+                if callable(search_relevance):
+                    result = search_relevance(map_item.topic, limit=map_item.requested_count)
+                else:
+                    result = self.client.search_bulk(map_item.topic, limit=map_item.requested_count)
         except (TypeError, ValueError):
             return [], "MAP_JOB_INVALID_INPUT", 1, 0
         code = getattr(result, "code", None)
@@ -889,7 +899,9 @@ class LiteratureMapService:
         def score(row: SemanticScholarMetadata) -> tuple[int, str]:
             haystack = f"{row.title} {row.abstract or ''}".casefold()
             return (sum(1 for token in query_tokens if token and token in haystack), row.paper_id)
-        ranked = sorted(dedup.values(), key=lambda row: (-score(row)[0], score(row)[1]))
+        ranked = list(dedup.values())
+        if source_ids or conference_ids:
+            ranked.sort(key=lambda row: (-score(row)[0], score(row)[1]))
         # Do not pad a sparse result with unrelated provider rows merely to
         # reach the requested count. A semantic/dense adapter can be added at
         # this seam later; the MVP's deterministic lexical gate is fail-safe.

@@ -66,6 +66,26 @@
 
 本轮未运行后端 pytest、全量回归、服务部署或真实生产 API E2E；fixture 仍为 mock API，不能替代 Task03 验收门禁。
 
+## 前端开发 P1 修复：画布平移持久化（2026-10-19）
+
+依据真实浏览器报告 `browser-e2e.md` 的复现：空白 SVG 画布拖动只更新了本地 `state.view.x/y`，pointer-up 未调度既有 view PATCH，导致重开恢复旧平移位置。修复范围严格限定在该前端手势路径：
+
+- `frontend/literature-maps.js`：pointer-up 对任意已拖动手势调用既有 `scheduleViewSave()`；节点拖动的 `positionsDirty`、缩放的 `changeScale()`、`expected_revision` 和跨图请求守卫均保持不变。
+- `frontend/index.html` 与组件 fixture：生产 JS 资源版本升至 `?v=4`。
+- `tests/frontend/fixtures/literature_map_component.html`：保存 view PATCH 时保留 viewport、节点位置和 revision，使同一真实 Chromium fixture 可执行保存→生命周期关闭/重开→恢复断言；普通测试仍只写浏览器临时上下文，不写 tracked 验收证据。
+- `tests/frontend/test_frontend_literature_map_contract.py`：新增空白画布平移保存、节点拖动与缩放不回退、关闭/重开后 viewport 与节点位置恢复断言。
+
+### 本轮验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `./.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_feasibility.py` | 退出码 0；7 passed |
+| `./.venv/bin/python scripts/check_test_layout.py` | 退出码 0；`test layout: ok` |
+| `./.venv/bin/python scripts/check_test_naming.py` | 退出码 0；未发现 spec/task 编号测试名 |
+| `git diff --check` | 退出码 0 |
+
+独立 frontend-reviewer 复审与真实浏览器回归尚未执行；在此之前不宣称该 P1 已通过生产验收。后端、部署、提交和用户已保存布局均未改动。
 ## 前端开发窄 UX 生命周期与分页收口（2026-10-19）
 
 - 统一 `closeCreatePanel()` 处理新建面板关闭：设置 `createPanelOpen=false`、递增 `createOptionsRequest`、清理 `createOptionsLoading`，并 reset 表单。新建按钮收起、取消、创建成功和 `setActive(false)` 离开地图均复用该 helper，晚到来源/会议/项目响应不能再写入关闭或已重置的表单。

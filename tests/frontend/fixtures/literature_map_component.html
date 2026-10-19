@@ -22,6 +22,7 @@
     ];
     const mockGraph = { schema_version: 'literature-map-v1', map: mockMap, nodes: mockNodes, edges: [{ edge_id: 'edge-a', map_id: 'map-fixture', kind: 'citation', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: null, basis: null, model_version: null, content_hash: null }, { edge_id: 'edge-sim', map_id: 'map-fixture', kind: 'similarity', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: 0.82, basis: 'title_only', model_version: 'fixture-v1', content_hash: 'fixture-hash' }], layers: { citation: { status: 'completed' }, similarity: { status: 'completed' } }, latest_job: { job_id: 'job-fixture', map_id: 'map-fixture', operation: 'create', status: 'completed', step: 'finished', counts: { node_count: 2, citation_edge_count: 1, similarity_edge_count: 1 } } };
     window.__lastImportBody = null;
+    window.__viewBodies = [];
     window.__createBody = null;
     const optionsFail = new URLSearchParams(window.location.search).has('options-fail');
     const optionsDelay = new URLSearchParams(window.location.search).has('options-delay');
@@ -50,12 +51,21 @@
       else if (path === '/api/literature-maps/map-fixture/graph') payload = mockGraph;
       else if (path === '/api/literature-maps/map-fixture/nodes/node-a') payload.node = mockNodes[0];
       else if (path === '/api/literature-maps/map-fixture/nodes/node-b') payload.node = mockNodes[1];
-      else if (path.endsWith('/view')) payload.map = { ...mockMap, revision: mockMap.revision + 1, view_settings: body };
+      else if (path.endsWith('/view')) {
+        window.__viewBodies.push(body);
+        mockMap.revision += 1;
+        mockMap.view_settings = body;
+        (body.positions || []).forEach((position) => {
+          const node = mockNodes.find((item) => item.node_id === position.node_id);
+          if (node) node.position = { x: position.x, y: position.y };
+        });
+        payload.map = mockMap;
+      }
       else if (path.endsWith('/imports')) { window.__lastImportBody = body; payload = { schema_version: 'literature-map-v1', status: 'queued', import_id: 'import-fixture' }; }
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=3"></script>
+  <script src="../../../frontend/literature-maps.js?v=4"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>
