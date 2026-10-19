@@ -715,10 +715,18 @@ def _separate_synthesis_matrix(
 ) -> tuple[dict[str, Any], dict[str, Any] | None, str | None]:
     """Detach the optional matrix without changing the candidate artifact contract."""
     artifact_output = dict(output)
-    raw_matrix = artifact_output.pop("evidence_matrix", None)
-    if raw_matrix is None:
-        return artifact_output, None, None
     raw_hash = output.get("output_hash") if isinstance(output, Mapping) else None
+    raw_matrix = artifact_output.pop("evidence_matrix", None)
+    # ``work_item_id`` is a runtime-owned binding added/checked by the Agent
+    # runner.  It is intentionally not part of the public report envelope;
+    # remove only this known binding after the original model hash has been
+    # checked below.  Do not accept or strip arbitrary extra fields here.
+    artifact_output.pop("work_item_id", None)
+    if raw_matrix is None:
+        artifact_output["output_hash"] = report_output_hash(
+            {key: value for key, value in artifact_output.items() if key != "output_hash"}
+        )
+        return artifact_output, None, None
     if not isinstance(raw_hash, str) or raw_hash != report_output_hash(output):
         return artifact_output, None, "AGENT_OUTPUT_INVALID"
     try:

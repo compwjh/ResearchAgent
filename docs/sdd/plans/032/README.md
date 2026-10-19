@@ -1,7 +1,7 @@
 # Spec 032 执行计划：多来源 Worker、自动导入与人工修复
 
 > 关联：[Spec 032](../../specs/032-research-source-expansion.md)
-> 当前状态：实施中（2026-09-20 新版已确认；Task06、Task08–Task12 已完成，Task07、Task13 部分完成；Task15–Task17 已完成最小实现，待 Task14 真实环境验收与最终收口）。
+> 当前状态：暂停，待下次继续（2026-10-19 用户切换任务）。已验证成果、代码写完待验收及恢复顺序见 [暂停交接](./RESUME.md)。历史 Task 状态保留，不代表 Spec 已收口。
 
 先读 [资产与缺口审计](./asset-gap-audit.md)。旧 Task02–05 保留历史产出与真实缺口，不能把“有 Adapter/Registry”直接等同于产品可用。
 

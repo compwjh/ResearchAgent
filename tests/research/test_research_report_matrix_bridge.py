@@ -15,7 +15,11 @@ from backend.app.paper_discovery.domain.paper_discovery import CatalogPaper, Sea
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 from backend.app.research.application.agent_runtime import AgentRunOutput
 from backend.app.research.application.evidence_matrix import EvidenceMatrixService
-from backend.app.research.application.orchestrator import Orchestrator, _validate_synthesis_matrix_payload
+from backend.app.research.application.orchestrator import (
+    Orchestrator,
+    _separate_synthesis_matrix,
+    _validate_synthesis_matrix_payload,
+)
 from backend.app.research.application.report_generation import ReportGenerationService
 from backend.app.research.application.report_synthesis import ReportSynthesizer, report_output_hash
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
@@ -192,6 +196,28 @@ def test_candidate_synthesis_result_keeps_matrix_internal_only() -> None:
 
     assert result.evidence_matrix is None
     assert "evidence_matrix" not in result.output.model_dump(mode="json")
+
+
+def test_separate_synthesis_matrix_strips_runtime_work_item_binding() -> None:
+    """Runtime identity must not enter the public report envelope."""
+    result = ReportSynthesizer().synthesize(
+        report_version=1,
+        validated_candidates=[
+            {"candidate_id": "paper-a", "verified": True, "evidence_refs": ["catalog:paper-a"], "title": "A"}
+        ],
+        citation_manifest=[{"citation_ref": "catalog:paper-a", "candidate_id": "paper-a"}],
+    )
+    payload = result.output.model_dump(mode="json")
+    payload["work_item_id"] = "task:syn"
+    payload["evidence_matrix"] = _payload()
+    payload["output_hash"] = report_output_hash(payload)
+
+    artifact, matrix, error = _separate_synthesis_matrix(payload, _context(), plan_version=1)
+
+    assert error is None
+    assert matrix is not None
+    assert artifact.get("work_item_id") is None
+    assert artifact["output_hash"] == report_output_hash(artifact)
 
 
 def test_validated_matrix_reuses_existing_matrix_service(tmp_path) -> None:
