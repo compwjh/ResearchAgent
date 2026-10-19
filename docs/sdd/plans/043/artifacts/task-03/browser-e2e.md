@@ -119,3 +119,16 @@
 | 完整用户验收 | **BLOCKED** | 新图 citation 仍 `SEMANTIC_SCHOLAR_RATE_LIMITED`；不得把 partial 宣称为完整成功 |
 
 **Run 2 前端结论：画布平移 P1 已关闭，节点拖动/缩放及真实连线/详情展示通过；Task03 整体验收仍 BLOCKED，阻塞来自后端真实 provider partial/rate-limit，而非本轮发现的新前端缺陷。**
+
+## Run 3 — indexed import success-state recheck (2026-10-19 23:01 CST)
+
+- **环境**：真实 Google Chrome，`http://127.0.0.1:8000/#literature-maps-view`；当前候选 commit `1d54720`；本轮只读，不改业务/测试代码、不部署、不下载、不重复提交导入。
+- **实体**：复用真实地图 `0baabeae7268429c9f7e4de8098ae1d0`，目标节点 `21041260a5394f42891b020128fa60fa`（`Graph Attention Networks`）。未创建第二张地图，也未重新触发 provider。
+- **地图与节点成功态**：文献地图列表/中心显示 `20 个节点 · 17 条关系 · 部分完成 · 阶段：地图可用`；点击目标节点后右侧详情显示标题、作者、年份 `2017`、来源 `International Conference on Learning Representations`、摘要及 Semantic Scholar 原文入口，并显示 `indexed` 状态徽章。真实 graph API 交叉核验该节点 `download_status=indexed`、持久 `document_id=55afc3b8f01445429462fe78ed0d4c98`。
+- **知识库成功态**：通过主导航“知识库”进入真实知识库列表，看到 `2017-Conference-Graph-Attention-Networks.pdf`，显示 `已索引 · 0 页`、`v1 已索引 · 57 片段`；独立 `v2` 显示 `索引失败`，并提供“重试重建”恢复按钮。该行没有展示 document ID，但文档名称/索引状态与 graph API 的持久 ID 对应；没有发现安全的“打开已加入文档”查看入口。
+- **截图**：[indexed 节点详情与真实图谱](./screenshots/browser-v4-indexed-node.jpg)。截图来自当前部署页面，右侧 `Graph Attention Networks` 与 `indexed` 徽章可见。
+- **幂等安全边界**：目标节点详情仍渲染可点击的“加入知识库”按钮，且没有按 `indexed` 状态禁用/替换为已有文档查看入口。为避免重复下载或重复 POST，本轮明确未点击该按钮；因此没有为不存在的查看入口制造证据。
+
+### Run 3 结论
+
+`indexed` 成功态、知识库中的持久文档条目和 graph API 的 document ID **PASS**；v2 独立重建失败仍由 UI 明确标注并可重试。前端后续项：已索引节点仍暴露活动的“加入知识库”操作、且不提供已有文档查看入口，建议补充 indexed 状态下的按钮防重复/查看入口（本轮未把它作为成功点击路径，也未触发副作用）。Task03 继续按整体 `PASS_WITH_LIMITATIONS` 处理：真实地图关系仍受后端 partial/provider 限制，旧失败证据保留不覆盖。

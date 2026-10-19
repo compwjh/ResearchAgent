@@ -316,3 +316,50 @@ For user assistance, run the metadata worker in an environment with DNS/TLS egre
 ### Result
 
 **BLOCKED.** The deployed API now reports and persists a fixed, non-retryable `IMPORT_IDENTITY_CONFLICT`, rather than masking the identity failure as `PDF_NOT_FOUND`; no document was created. This is the actual production-chain result for r5, not a provider guess. No blind retry, code change, or direct PDF request was made.
+
+## Follow-up real API import verification (2026-10-19, r6)
+
+本节追加 `1d54720` 重启后的单次产品导入验证，继续复用既有图/节点，保留 r1–r5 事实；未创建新图、未重复 POST、未直接请求 PDF。证据已追加到同一份 [api-evidence.json](./api-evidence.json)，run ID 为 `task03-api-e2e-20261019T145452Z-r6`。
+
+### Request and business response
+
+- `/api/ready` 返回 HTTP 200，`ready=true`；服务提交标识为 `1d54720`。
+- 仅发送一次 `POST /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports`，请求体为 `{}`，HTTP 202，约 23 秒内终止，客户端上限为 180 秒。
+- 完整业务响应为：`status=indexed`、`download_status=indexed`、`paper_id=document_id=55afc3b8f01445429462fe78ed0d4c98`、`stored_name=2017-Conference-Graph-Attention-Networks.pdf`、`existing=false`、`error_code=null`、`retryable=false`、`catalog_paper_id=null`。
+
+### Persistence and knowledge-base readback
+
+- 节点 GET 返回 HTTP 200，持久化 `status=indexed`、`download_status=indexed` 与同一 `document_id`；`provenance.import_diagnostics` 已清除，未残留 r5 的身份错误。
+- `GET /api/kb/documents?limit=100` 返回 HTTP 200、`total=51`，匹配到同一不可变文档；文档总体 `status=indexed`，v1 chunker 为 `indexed`、57 chunks、progress 100。
+- 同一 KB 记录的 v2 chunker 为 `failed`、0 chunks、progress 0、错误 `INDEX_FINALIZE_REQUIRED`。因此本次确认了真实导入句柄和 v1 索引可见性，但不是所有 chunker 均成功的 clean PASS。
+- 没有记录 API key、cookie、authorization header 或原始 provider envelope；没有绕过导入链直接请求 PDF。
+
+### Result
+
+**PARTIAL.** 生产导入链此次真实成功并返回真实 document handle，节点与 KB v1 索引均可读回；v2 后处理仍以固定 `INDEX_FINALIZE_REQUIRED` 失败，需独立索引复核，不能把本轮标为全索引 PASS。未再重试 POST 或修改代码。
+
+## r6 v2 impact and ownership diagnosis (read-only, 2026-10-19)
+
+本节只读核实 r6 的 `INDEX_FINALIZE_REQUIRED`，未触发 inspection 自动重建、reindex、导入或下载。
+
+### Default retrieval remains usable on v1
+
+- `GET /api/kb/health` 返回 HTTP 200：`qdrant=true`、`embedding=true`、`generation.ready=true`、`generation.error_code=null`、`papers=51`、`chunks=11850`。
+- 代码契约确认 `KBAskRequest.chunker` 默认值为 `v1`（`backend/app/api/schemas.py:101-105`）；`kb_ask` 将该值直接传给 `hybrid_search`（`backend/app/api/routes_kb.py:1013-1029`）。因此未显式选择 v2 的默认问答/检索仍使用 v1。
+- r6 KB readback 已看到目标文档 v1 为 `indexed`、57 chunks；这不是仅凭顶层 `status=indexed` 推断，而是同一文档的 chunker 细分状态。
+
+### v2 is an existing asynchronous optional candidate, not an import prerequisite
+
+- `PaperImportPort._default_indexer` 先同步等待 v1，再异步提交 v2（`backend/app/knowledge_base/application.py:1168-1183`）。
+- `_submit_v2_index` 的既有契约明确写明 v2 失败不影响导入成功，失败状态带原因并可通过 reindex 补救（`backend/app/knowledge_base/application.py:1185-1190`）；既有测试 `tests/paper_discovery/test_paper_import.py:448-478` 也断言 v2 失败时导入仍返回 `STATUS_INDEXED`。
+- 因此 r6 的真实 `document_id`、节点 `indexed` 状态和 v1 57 chunks 均有效；v2 失败不能反向抹除 Map 导入成功。v2 只有在请求显式选择 `chunker=v2` 或独立重建时才是所选版本的可用性要求。
+
+### Fixed error branch and whether it is pre-existing
+
+- 生产记录中的 v2 错误为 `索引任务异常终止：INDEX_FINALIZE_REQUIRED`。该外层文案来自既有异步任务兜底 `backend/app/knowledge_base/infrastructure/tasks.py:101-112`；`INDEX_FINALIZE_REQUIRED` 是既有 generation/manifest fail-closed 代码（`backend/app/knowledge_base/infrastructure/manifest_store.py:673-685`），不是 Map import 专属错误，也不是被 route 改写的 `PDF_NOT_FOUND`。
+- 本次是**该新文档首次观察到的 v2 异步失败**，但“v2 失败不阻塞导入”的分支和错误码均为既有能力；不能仅凭 r6 证明是新引入的 Map 回归，也不能把它归咎于环境。当前只读校验显示 committed marker、对应 finalize bundle 及 live manifest digest 当前一致，`/api/kb/health` generation 也 ready，因此没有持久化 generation 损坏证据；发生失败时的瞬时 finalization/manifest 竞态无法从脱敏 API 状态反推出具体内部时序。
+- 最小后续归属是 KB index/rebuild 维护范围：针对该文档的 v2 task finalization/manifest generation gate 做独立诊断；无需修改 Literature Map import bridge，也不应重试产品导入来修复 v2。
+
+### Conclusion
+
+**Import PASS, indexing PARTIAL.** r6 已证明 Map 的真实导入句柄和默认 v1 检索路径可用；v2 是可见、可补救的异步候选版本，本次以固定 `INDEX_FINALIZE_REQUIRED` 失败。该 v2 状态应单独交给 KB 索引维护，不作为 Map 导入失败或环境故障结论。

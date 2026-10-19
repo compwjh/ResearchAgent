@@ -687,6 +687,93 @@
         "The node GET persisted the same primary error under provenance.import_diagnostics, with no document, catalog association, or indexable KB entry.",
         "The result is an actual server identity conflict and is not reclassified as PDF_NOT_FOUND; no direct PDF request or blind retry was made."
       ]
+    },
+    {
+      "run_id": "task03-api-e2e-20261019T145452Z-r6",
+      "observed": "2026-10-19T14:54:52Z",
+      "environment": {
+        "base_url": "http://127.0.0.1:8000",
+        "ready_http_status": 200,
+        "ready": true,
+        "service_commit": "1d54720",
+        "credentials_recorded": false
+      },
+      "request": {
+        "method": "POST",
+        "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports",
+        "body": {},
+        "http_status": 202,
+        "client_timeout_seconds": 180,
+        "elapsed_seconds": 23.0,
+        "response": {
+          "schema_version": "literature-map-v1",
+          "paper_id": "55afc3b8f01445429462fe78ed0d4c98",
+          "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+          "stored_name": "2017-Conference-Graph-Attention-Networks.pdf",
+          "status": "indexed",
+          "download_status": "indexed",
+          "error_code": null,
+          "existing": false,
+          "retryable": false,
+          "catalog_paper_id": null
+        }
+      },
+      "entities": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "21041260a5394f42891b020128fa60fa",
+        "external_ids": {
+          "arxiv": "1710.10903",
+          "doi": "10.17863/cam.48429",
+          "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+        }
+      },
+      "readback": {
+        "endpoint": "GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa",
+        "http_status": 200,
+        "status": "indexed",
+        "download_status": "indexed",
+        "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+        "catalog_paper_id": null,
+        "provenance_import_diagnostics": null
+      },
+      "knowledge_base": {
+        "endpoint": "GET /api/kb/documents?limit=100",
+        "http_status": 200,
+        "total_documents": 51,
+        "matched_document": {
+          "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+          "file_name": "2017-Conference-Graph-Attention-Networks.pdf",
+          "status": "indexed",
+          "source_immutable": true,
+          "page_count": 0,
+          "chunk_count": 57,
+          "chunkers": {
+            "v1": {"status": "indexed", "chunk_count": 57, "progress": 100, "error": null},
+            "v2": {"status": "failed", "chunk_count": 0, "progress": 0, "error": "INDEX_FINALIZE_REQUIRED"}
+          }
+        },
+        "indexable_match": true,
+        "note": "The imported document is present and v1 is indexed; v2 reported INDEX_FINALIZE_REQUIRED in the same readback."
+      },
+      "wait": {
+        "bounded_wait_seconds": 0,
+        "client_timeout_seconds": 180,
+        "terminal_on_post": true,
+        "additional_post_issued": false
+      },
+      "redaction": {
+        "api_keys": "not recorded",
+        "cookies": "not recorded",
+        "authorization_headers": "not recorded",
+        "raw_provider_envelopes": "not recorded",
+        "raw_urls": "not recorded"
+      },
+      "decision": "PARTIAL",
+      "blocking_evidence": [
+        "The single authorized production POST returned HTTP 202 with a real indexed document handle and no error; no second POST was issued.",
+        "The node GET persisted status= indexed and the same document_id; the KB listing contained the matching immutable document and v1 index with 57 chunks.",
+        "The KB v2 chunker reported INDEX_FINALIZE_REQUIRED, so this run verifies import and v1 indexing but is not a clean all-indexers PASS."
+      ]
     }
   ]
 }
