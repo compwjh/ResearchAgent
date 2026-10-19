@@ -270,8 +270,8 @@ Codex、CodeBuddy 或其他获准 CLI 执行器调用 status/next。SQLite 原�
 | 05 | 实现领取、worktree 与恢复 | [`task-05-claim-worktree-recovery.md`](../plans/016/task-05-claim-worktree-recovery.md) | 04 | 完成 |
 | 06 | 实现 Prompt、结果与指标闭环 | [`task-06-prompt-result-metrics.md`](../plans/016/task-06-prompt-result-metrics.md) | 04, 05 | 完成（云端 CLI） |
 | 07 | 创建 Codex/CodeBuddy 跨 IDE Skills | [`task-07-cross-ide-skills.md`](../plans/016/task-07-cross-ide-skills.md) | 06 | 云端完成；CodeBuddy 待本地 |
-| 08 | 对账并迁移 spec-013～015 | [`task-08-reconcile-legacy-tasks.md`](../plans/016/task-08-reconcile-legacy-tasks.md) | 07 云端范围 | 进行中 |
-| 09 | 评审、验收、提交与复盘 | [`task-09-review-acceptance-retro.md`](../plans/016/task-09-review-acceptance-retro.md) | 08 | 进行中 |
+| 08 | 对账并迁移 spec-013～015 | [`task-08-reconcile-legacy-tasks.md`](../plans/016/task-08-reconcile-legacy-tasks.md) | 07 云端范围 | 完成（云端迁移） |
+| 09 | 评审、验收、提交与复盘 | [`task-09-review-acceptance-retro.md`](../plans/016/task-09-review-acceptance-retro.md) | 08 | 云端完成；CodeBuddy 待本地 |
 
 ## 评审记录
 

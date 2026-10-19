@@ -159,7 +159,7 @@ git log -1 --stat --oneline
 
 - Prompt、事件、结果校验、指标、complete/fail/recover CLI、journal/CAS/精确 index 协调及终态账本全部接通。
 - 失败来源与中断重试保留原始 baseline，领取只消费紧邻来源；status 与 next 使用一致证明。独立评审发现的状态 P1 已修复，未放宽 owner/租约/路径/摘要校验。
-- 最终 Python 3.9 工具域：379 项通过（142.850 秒，退出 0）；目标集 30 项通过；Ruff、compileall 均通过。候选 `281e933`，原失败和修复记录完整保留。
+- Python 3.9 工具域原候选 `281e933` 的 379 项通过；迁移镜像兼容修复 `37bb056` 后最终 382 项通过（153.440 秒，退出 0），镜像定向 10 项通过；Ruff、compileall 均通过。原失败和修复记录完整保留。
 - 真实 Luna actor 完成隔离 Task、CLI complete、result/metrics 和删除隔离 DB 后 rebuild，重建后不再领取；另有真实进程中断和 Git journal/index 多阶段恢复测试。
 - 独立 Task06 架构复审 PASS。此结果不代替业务全量回归或真实 CodeBuddy A6 验收。
 

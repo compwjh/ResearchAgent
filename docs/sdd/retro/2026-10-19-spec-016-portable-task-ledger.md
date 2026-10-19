@@ -1,11 +1,11 @@
 # Spec 016 portable task ledger retrospective
 
 - 日期：2026-10-19
-- 状态：实施中；本复盘仅记录当前可核验的工具域和隔离 fixture 证据。
+- 状态：实施中；云端工具、迁移、回归和 HTTP smoke 已验证；真实 CodeBuddy 留本地。
 
 ## 做成的事
 
-- Python 3.9 CLI 候选 `281e933` 的工具域 QA 为 379 tests、Ruff、compileall 全部通过；此前失败与修复重试保留在 [Task06 QA 记录](../plans/016/artifacts/task06-final-tool-tests.md)。
+- Python 3.9 CLI 最终代码候选 `37bb056` 的工具域 QA 为 382 tests、Ruff、compileall 全部通过；此前失败与修复重试保留在 [Task06 QA 记录](../plans/016/artifacts/task06-final-tool-tests.md)。
 - [真实 Luna demo](../plans/016/artifacts/live-luna-demo.md) 在隔离 fixture 中完成 claim、结果提交、删除数据库后重建及查询对照。独立 review 抓到 `status` 对 failed run 错报 eligible 的 P1；修复后由候选 QA 覆盖关闭。
 - 当前证据来自真实重建验证；旧 `f8a2511`、`8a625f0` 没有恢复。CodeBuddy/A6 仍 `not_run`，handoff 保留 9 项本地场景。
 
@@ -21,5 +21,5 @@
 ## 未完成
 
 - CodeBuddy/A6 的真实本地验收尚未运行；不得伪造 actor 或结果。
-- ResearchAgent 业务全量回归、服务验收由 Luna QA 设计与判读，root 协调权限执行入口；Task08 正在分批迁移，均待最终证据链接。
+- 真实模型推理和两个需 RUN_E2E 的场景因环境条件跳过；全仓结果为 3275 passed、3 skipped、546 subtests passed，HTTP smoke 通过，详见 [业务与服务 QA](../plans/016/artifacts/final-business-runtime.md)。Task08 的 38 tasks / 0 runs 已通过 [迁移验证](../plans/016/artifacts/legacy-migration-validation.md)。
 - Spec 016 保持实施中；这些未完成项不因工具域 QA 或 Luna fixture demo 而关闭。

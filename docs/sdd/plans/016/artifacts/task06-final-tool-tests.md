@@ -69,3 +69,27 @@ The Luna xhigh implementation agent fixed the new fixture's `current_owner` call
 The first targeted attempt's single error was `TypeError: current_owner() missing 1 required keyword-only argument: 'pid'` at `tests/sdd_tasks/test_ledger_finalize.py:70`; the Luna xhigh implementation agent fixed the fixture and root committed `281e933`, and the isolated test plus the five-module rerun then passed. The first run began at `c74579b7892945eb0903fe2c36d1051c21459951` and ended at `05b78c0a8c2a188e2dfa31c7cdc0f1901e06a312`. It emitted expected `stale_task_copies_ignored` warnings; these are not test failures.
 
 Verbose outputs and command metadata are retained as regular files under `.sdd/runtime/closure-qa/`: `targeted-20261019.out/.json`, `fixture-method-20261019.out/.json`, `targeted-after-pidfix-20261019.out/.json`, `domain-20261019.out/.json`, `ruff-20261019.out/.json`, and `compileall-20261019.out/.json`. The successful fixture-only and five-module runs started and ended on `281e933` with clean status. The domain run also used HEAD `281e933`; a concurrent documentation-only edit left `docs/sdd/plans/016/task-07-cross-ide-skills.md` modified after it. That same documentation status remained before/after Ruff and compileall. No Python source or test file changed during these successful runs. No global pytest/conftest command was run.
+
+## Mirrors patch targeted QA
+
+Root read the 63-line mirrors diff and froze the working candidate at `429e82b66b0bebabb185085bee22c49ae5c3f2cc`, with only `scripts/sdd_tasks/mirrors.py` and `tests/sdd_tasks/test_mirrors.py` modified. Before commit, the authorized targeted command passed:
+
+| Command | Started / finished (UTC) | Elapsed | Exit | Result |
+|---|---|---:|---:|---|
+| `/workspace/researchagent-cli-venv39/bin/python -m unittest -v tests.sdd_tasks.test_mirrors` | 01:13:32.289 / 01:13:32.339 | 0.050 s | 0 | 10 tests passed (unittest reported 0.015 s) |
+
+HEAD remained `429e82b66b0bebabb185085bee22c49ae5c3f2cc`; status before/after still showed only the two uncommitted mirrors files. Output and command metadata are in `.sdd/runtime/closure-qa/mirrors-20261019.out` and `.json`. Full-domain verification is pending root commit, per the QA sequence.
+
+## Mirrors patch post-commit closure run
+
+After root committed the mirrors patch as `37bb056ed5f61c357cbdfba78eced21076154013`, the full domain and static checks passed. HEAD advanced during the full run to `83fadbe049b41b0d1478a071a847b20ab0b52fe8`; `git diff --name-only 37bb056ed5f61c357cbdfba78eced21076154013 83fadbe049b41b0d1478a071a847b20ab0b52fe8 -- scripts/sdd_tasks tests/sdd_tasks` returned no paths, so the Python source and test trees were unchanged across the commit movement.
+
+| Command | Started / finished (UTC) | Elapsed | Exit | Result |
+|---|---|---:|---:|---|
+| `/workspace/researchagent-cli-venv39/bin/python -m unittest discover -s tests/sdd_tasks -t .` | 01:13:56.128 / 01:16:29.666 | 153.538 s | 0 | 382 tests passed (unittest reported 153.440 s) |
+| `/workspace/researchagent-cli-venv39/bin/python -m ruff check scripts/sdd_tasks tests/sdd_tasks` | 01:16:43.759 / 01:16:43.779 | 0.020 s | 0 | `All checks passed!` |
+| `/workspace/researchagent-cli-venv39/bin/python -m compileall scripts/sdd_tasks tests/sdd_tasks` | 01:16:44.042 / 01:16:44.063 | 0.021 s | 0 | Both directories listed; no compile errors |
+
+The full run started on HEAD `37bb056ed5f61c357cbdfba78eced21076154013` and ended on `83fadbe049b41b0d1478a071a847b20ab0b52fe8`. Its before/after status showed only concurrent documentation migrations in `docs/sdd/plans/015`, `docs/sdd/plans/016`, and `docs/sdd/specs/015`; the Python trees had no changes. Ruff and compileall ran on HEAD `83fadbe` with the same documentation-only status before and after. Expected `stale_task_copies_ignored` fixture warnings appeared during unittest and were not failures.
+
+Regular-file outputs and command metadata are retained under `.sdd/runtime/closure-qa/`: `domain-after-mirrors-20261019.out/.json`, `ruff-after-mirrors-20261019.out/.json`, and `compileall-after-mirrors-20261019.out/.json`.

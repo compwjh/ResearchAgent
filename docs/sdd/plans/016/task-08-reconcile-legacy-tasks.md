@@ -1,7 +1,7 @@
 # 任务 08 — 对账并迁移 spec-013～015
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 07 ｜ 被依赖：任务 09 ｜ 当前状态：`待执行`
+> 依赖：任务 07 ｜ 被依赖：任务 09 ｜ 当前状态：`完成（云端迁移范围）`
 
 ## 一句话目标
 
@@ -139,7 +139,12 @@ tail -f .sdd/runtime/runs/<run-id>/events.jsonl
 
 ## 执行结果
 
-> 待 Task 07 完成且 legacy 写入稳定后填写。
+- Luna xhigh 完成只读审计、迁移与独立检查；root 逐批读回并提交文档。31 项 legacy 为 22 completed、7 partial、1 pending、1 migration_unverified；另建 7 项明确的剩余工作 Task，保留阻塞。
+- 迁移后共 38 个协议 Task：22 completed、15 blocked、1 pending；31 份旧正文从首个二级标题起逐字节保留。历史指标保持 null，未生成虚构 Run。
+- 013/014/015 parser、三处状态镜像及逐 Spec doctor 通过；rebuild 得到 38 tasks / 0 runs。status 无 eligible，唯一 pending 的 015 Task04 因缺少授权 gate 留在 waiting，Task10 保持 unverified、不可领取。未执行 013–015 业务。
+- 真实 015 canonical worktree 仅用于门禁检查。迁移提交：013 `ba0a429`、014 `83fadbe`、015 `4b14130`。账本未初始化提示和未迁移旧文档提示按真实诊断保留。
+- 迁移任务兼容旧正文历史状态标记的修复 `37bb056` 通过 10 项定向与 382 项全工具域测试，Ruff、compileall 通过；普通 Task 校验未放宽。
+- 证据：[审计](./artifacts/legacy-task-audit.md)、[legacy summaries](./artifacts/legacy-summaries.md)、[迁移验证](./artifacts/legacy-migration-validation.md)、[工具域 QA](./artifacts/task06-final-tool-tests.md)。真实 CodeBuddy A6 仍待本地；Spec016 整体保持实施中。
 
 ## 变更日志
 

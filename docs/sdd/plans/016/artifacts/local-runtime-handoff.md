@@ -1,13 +1,13 @@
 # Spec 016 本地运行时收尾
 
-> 状态：实施中。本文用于真实 CodeBuddy 本地验收；A6 仍为 `not_run`，不代表 Task07/08/09 或 Spec016 已验收。
+> 状态：实施中。本文用于真实 CodeBuddy 本地验收；A6 仍为 `not_run`，不代表真实跨 IDE 或完整 Spec016 已验收。
 
 ## 当前已知证据
 
 - 分支：`feature/spec-016-portable-task-ledger`。到本地执行时重新核对实际 HEAD、worktree 和 `git status`，不依赖历史提交作为验收凭证。
 - Python CLI 使用 Python 3.9 标准库。旧提交 `f8a2511`、`8a625f0` 未恢复；当前证据来自真实重建验证。
 - [Luna live demo](live-luna-demo.md) 记录隔离 fixture 中真实 claim、原样 Prompt、Luna 执行、`complete`、删除 DB 后 `rebuild`，以及 `result`/`metrics`/`NO_TASK` 对照。该 demo 不证明 CodeBuddy/A6、双 IDE 或真实 Spec015 业务通过。
-- [工具域 QA](task06-final-tool-tests.md) 记录候选 `281e933` 的 379 tests、Ruff、compileall 通过。ResearchAgent 业务全量回归、服务验收由 Luna QA 设计与判读，root 协调权限执行入口，结果待补；Task08 正在分批迁移。
+- [工具域 QA](task06-final-tool-tests.md) 记录最终代码候选 `37bb056` 的 382 tests、Ruff、compileall 通过。[业务与服务 QA](final-business-runtime.md) 记录全仓 3275 passed、3 skipped、546 subtests passed（退出 0）；真实 HTTP smoke 通过。Luna QA 设计与判读，root 仅协调权限入口；模型列表为空，未验收真实推理。[Task08 迁移验证](legacy-migration-validation.md) 已通过：38 tasks、0 runs，缺授权 gate 的任务不可领取。
 - 本地账本 `.sdd/runtime/task-ledger.sqlite3` 是私有运行时，不通过 Git 传递。相同主机、同一 repo 的 Codex 与 CodeBuddy 共用主工作树账本；独立 clone 不共享它。删除后 rebuild 只能恢复可重建的 Task 和摘要，不能补造本地 events、leases 或 owner。
 
 ## CodeBuddy 本地操作
@@ -58,4 +58,4 @@
 | 拒绝闭环 | 坏 schema、缺产物、失败验证、敏感/越界变更被拒绝 | `not_run` |
 | 跨端读取 | 获胜端完成后，另一 IDE 读取相同摘要与 Task 状态 | `not_run` |
 
-参考：[TASK-PROTOCOL.md](../../../TASK-PROTOCOL.md)、[Task 07](../task-07-cross-ide-skills.md)、[Task 09](../task-09-review-acceptance-retro.md)。全部本地证据与独立复核完成后，由 root 补充业务全量、服务和 Task08 证据链接并更新 Spec 状态。
+参考：[TASK-PROTOCOL.md](../../../TASK-PROTOCOL.md)、[Task 07](../task-07-cross-ide-skills.md)、[Task 09](../task-09-review-acceptance-retro.md)。云端证据已链接；全部本地证据与独立复核完成后，再更新 A6、Task02/07/09 和完整 Spec 状态。

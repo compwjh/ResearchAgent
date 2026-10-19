@@ -1,7 +1,7 @@
 # 任务 09 — 评审、验收、提交与复盘
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 08 ｜ 当前状态：`待执行`
+> 依赖：任务 08 ｜ 当前状态：`云端收尾完成；CodeBuddy 待本地验收`
 
 ## 一句话目标
 
@@ -129,7 +129,13 @@ curl -sS http://127.0.0.1:<port>/api/health
 
 ## 执行结果
 
-> 待 Task 08 完成后填写。
+- 云端收尾证据已齐，独立架构与主管复核均签署云端范围 PASS；真实 CodeBuddy A6 仍为本地 `not_run`，Spec016 整体保持实施中。
+- Luna xhigh 承担代码、测试设计与独立结果判读；root 逐片读回、文档整合、Git 提交/推送及测试权限入口。最终代码候选 `37bb056`，后续变更均为文档。
+- Python 3.9 工具域 382 passed，Ruff/compileall 退出 0。全仓 Python 3.11 pytest：3275 passed、3 skipped、546 subtests passed（386.52 秒，退出 0）。两个需启用 RUN_E2E 的场景和一个依赖 Ollama 的场景跳过，不宣称这些场景已通过。
+- 官方启动脚本运行服务，真实 HTTP smoke 1 passed（2.34 秒，退出 0）；首页、health、models 及 12 个静态资源返回 200，内存库 schema v8。实际模型列表为空，真实模型推理未验收。
+- 服务地址：`http://127.0.0.1:56483/`；启动命令：`PORT=56483 HOST=127.0.0.1 RERANKER_ENABLED=false PYTHONDONTWRITEBYTECODE=1 setsid ./deploy/start.sh -d`。
+- Task08 完成 31 项 legacy 对账和 7 项剩余工作建档，38 tasks / 0 runs 重建与门禁验证通过；真实 Luna fixture 完成 claim/complete/rebuild/NO_TASK，无虚构 Run 或指标。
+- 证据：[工具域 QA](./artifacts/task06-final-tool-tests.md)、[业务与服务](./artifacts/final-business-runtime.md)、[迁移](./artifacts/legacy-migration-validation.md)、[Luna fixture](./artifacts/live-luna-demo.md)、[文档自足检查](./artifacts/fresh-context-validation.md)、[最终验收矩阵](../../reviews/016-acceptance-review.md)、[复盘](../../retro/2026-10-19-spec-016-portable-task-ledger.md)、[本地交接](./artifacts/local-runtime-handoff.md)。云端主管签字见 [收尾签字](../../reviews/016-cloud-closure-signoff.md)，架构签字见矩阵；完整 Spec 不能因云端通过提前标完成。
 
 ## 变更日志
 
