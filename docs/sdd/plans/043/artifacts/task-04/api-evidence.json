@@ -1,0 +1,338 @@
+{
+  "spec": "043-literature-map-topic-exploration",
+  "task": "task-04-expansion-recovery",
+  "run_id": "task04-api-e2e-20261019T184828Z-r1",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "git_revision": "a54c119",
+    "ready": true,
+    "ready_http_status": 200,
+    "started_at": "2026-10-19T18:48:28.812286+00:00",
+    "finished_at": "2026-10-19T18:50:46Z",
+    "credentials_recorded": false
+  },
+  "entities": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "owner_id": "local-user",
+    "source_node_id": "21041260a5394f42891b020128fa60fa",
+    "source_node_identity": {
+      "arxiv": "1710.10903",
+      "doi": "10.17863/cam.48429",
+      "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+    },
+    "preview_id": "7fda3c448a7a4274be866ade62c39b19",
+    "preview_job_id": "debcc085663044c9be0755da2ab0a0da",
+    "added_node_id": "24e44e61d9d44d1b85918fa8f7362ff0",
+    "refresh_preview_id": "803a6aaefca740408d6296c23bbab8c7",
+    "refresh_job_id": "e6a3cf56ea484f94a348d172c6d83fd4",
+    "apply_job_id": "19cff1e0178c4910990ef249eb22fe56",
+    "restore_job_id": "3a887b86d37a4642b383b7e8ae106bf2"
+  },
+  "requests": [
+    {
+      "name": "ready",
+      "method": "GET",
+      "path": "/api/ready",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "ready": true,
+        "warmup_statuses": {
+          "jieba": "ready",
+          "ollama_tags": "ready",
+          "embedding": "ready",
+          "qdrant": "ready"
+        }
+      }
+    },
+    {
+      "name": "baseline_map",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "revision": 2,
+        "status": "partial",
+        "requested_count": 20,
+        "existing_nodes": 20,
+        "existing_edges": 17,
+        "viewport": {"scale": 1.1, "x": 10.0, "y": 20.0},
+        "existing_latest_job": "ba6bb4f9471b43afb8b1063cdc3a883d"
+      }
+    },
+    {
+      "name": "baseline_graph",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "nodes": 20,
+        "edges": 17,
+        "citation_edges": 12,
+        "similarity_edges": 5
+      }
+    },
+    {
+      "name": "references_preview_create",
+      "method": "POST",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews",
+      "request_body": {
+        "kind": "references",
+        "node_id": "21041260a5394f42891b020128fa60fa",
+        "idempotency_key": "task04-api-e2e-20261020-gat-references-r1"
+      },
+      "response_status": 202,
+      "response": {
+        "preview_id": "7fda3c448a7a4274be866ade62c39b19",
+        "job_id": "debcc085663044c9be0755da2ab0a0da",
+        "status": "queued",
+        "job_status_observed": "running",
+        "base_revision": 2,
+        "candidate_count_at_create": 0
+      }
+    },
+    {
+      "name": "references_preview_get",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/7fda3c448a7a4274be866ade62c39b19",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "preview_status": "completed",
+        "job_status": "completed",
+        "candidate_count": 45,
+        "diff_count": 0,
+        "warnings": [],
+        "provider_request_count": 0,
+        "sample_candidate": {
+          "candidate_id": "candidate-812a45f9239f2632d20662a0",
+          "title": "Predicting multicellular function through multi-layer tissue networks",
+          "already_present": false,
+          "relation": "citation",
+          "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+          "external_ids": {
+            "arxiv": "1707.04638",
+            "doi": "10.1093/bioinformatics/btx252",
+            "semantic_scholar": "b7c4570d7d97f327e7f82fe28100172ec5e94cac"
+          }
+        }
+      },
+      "truncation_note": "The full candidate array was returned by HTTP 200 but is summarized here by count and one real candidate."
+    },
+    {
+      "name": "references_preview_apply",
+      "method": "POST",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/7fda3c448a7a4274be866ade62c39b19/apply",
+      "request_body": {
+        "expected_revision": 2,
+        "selected_candidate_ids": ["candidate-812a45f9239f2632d20662a0"],
+        "idempotency_key": "task04-api-e2e-20261020-gat-references-apply-r1"
+      },
+      "response_status": 202,
+      "response": {
+        "revision": 3,
+        "status": "partial",
+        "job_id": "19cff1e0178c4910990ef249eb22fe56",
+        "job_status": "completed",
+        "added_node_ids": ["24e44e61d9d44d1b85918fa8f7362ff0"],
+        "added_count": 1
+      }
+    },
+    {
+      "name": "references_preview_apply_idempotent_replay",
+      "method": "POST",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/7fda3c448a7a4274be866ade62c39b19/apply",
+      "request_body": {
+        "expected_revision": 2,
+        "selected_candidate_ids": ["candidate-812a45f9239f2632d20662a0"],
+        "idempotency_key": "task04-api-e2e-20261020-gat-references-apply-r1"
+      },
+      "response_status": 202,
+      "response": {
+        "revision": 3,
+        "job_id": "19cff1e0178c4910990ef249eb22fe56",
+        "added_node_ids": ["24e44e61d9d44d1b85918fa8f7362ff0"],
+        "added_count": 1
+      }
+    },
+    {
+      "name": "refresh_preview_create",
+      "method": "POST",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews",
+      "request_body": {
+        "kind": "refresh",
+        "idempotency_key": "task04-api-e2e-20261020-refresh-r1"
+      },
+      "response_status": 202,
+      "response": {
+        "preview_id": "803a6aaefca740408d6296c23bbab8c7",
+        "job_id": "e6a3cf56ea484f94a348d172c6d83fd4",
+        "status": "queued",
+        "base_revision": 3
+      }
+    },
+    {
+      "name": "refresh_preview_get",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/803a6aaefca740408d6296c23bbab8c7",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "preview_status": "completed",
+        "job_status": "completed",
+        "candidate_count": 21,
+        "diff_count": 8,
+        "sample_diff": [
+          {"node_id": "21041260a5394f42891b020128fa60fa", "changes": {"citation_count": {"from": 29000, "to": 29014}}},
+          {"node_id": "a4917994555846c79f7e1af80f398bd3", "changes": {"citation_count": {"from": 674, "to": 676}}},
+          {"node_id": "f59c83c01b5f48dbbef04e054e1a91b0", "changes": {"citation_count": {"from": 76, "to": 77}}}
+        ],
+        "warnings": ["SEMANTIC_SCHOLAR_INVALID_RESPONSE", "SEMANTIC_SCHOLAR_RATE_LIMITED"],
+        "provider_request_count": 8
+      },
+      "truncation_note": "The full 21-candidate response is summarized by count, three real diff entries, warnings and persisted request count."
+    },
+    {
+      "name": "refresh_is_read_only",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "revision": 3,
+        "nodes": 21,
+        "edges": 18,
+        "viewport": {"scale": 1.1, "x": 10.0, "y": 20.0},
+        "source_node_position": {"x": 120.0, "y": 80.0}
+      }
+    },
+    {
+      "name": "stale_cas_apply",
+      "method": "POST",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/803a6aaefca740408d6296c23bbab8c7/apply",
+      "request_body": {
+        "expected_revision": 2,
+        "selected_candidate_ids": ["candidate-032360b6c3e3a1dc586419a6"],
+        "idempotency_key": "task04-api-e2e-20261020-refresh-stale-cas-r1"
+      },
+      "response_status": 409,
+      "response": {
+        "code": "MAP_CONFLICT",
+        "message": "地图版本或作业状态已变化，请重新读取后重试",
+        "retryable": false
+      }
+    },
+    {
+      "name": "stale_cas_no_write_check",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "revision": 3,
+        "nodes": 21,
+        "edges": 18,
+        "latest_operation": "preview:refresh",
+        "latest_status": "completed"
+      }
+    },
+    {
+      "name": "remove_added_node",
+      "method": "POST",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/24e44e61d9d44d1b85918fa8f7362ff0/remove",
+      "request_body": {
+        "expected_revision": 3,
+        "idempotency_key": "task04-api-e2e-20261020-remove-r1"
+      },
+      "response_status": 200,
+      "response": {
+        "revision": 4,
+        "removed_node_id": "24e44e61d9d44d1b85918fa8f7362ff0"
+      }
+    },
+    {
+      "name": "restore_added_node",
+      "method": "POST",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/24e44e61d9d44d1b85918fa8f7362ff0/restore",
+      "request_body": {
+        "expected_revision": 4,
+        "idempotency_key": "task04-api-e2e-20261020-restore-r1"
+      },
+      "response_status": 202,
+      "response": {
+        "revision_at_response": 5,
+        "restored_node_id": "24e44e61d9d44d1b85918fa8f7362ff0",
+        "job_id": "3a887b86d37a4642b383b7e8ae106bf2",
+        "job_operation": "restore",
+        "job_status": "completed"
+      }
+    },
+    {
+      "name": "final_reopen_graph",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "revision_observed": 6,
+        "status": "partial",
+        "nodes": 21,
+        "edges": 18,
+        "viewport": {"scale": 1.1, "x": 10.0, "y": 20.0},
+        "restored_node_removed": false,
+        "latest_job": {"operation": "restore", "status": "completed"}
+      },
+      "note": "The restore response reported revision 5; the later read observed revision 6 and an auto-positioned restored node. The run does not attribute that intervening revision to a specific actor. Existing GAT layout/document state remained intact."
+    },
+    {
+      "name": "kb_document_preserved",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+        "download_status": "indexed",
+        "removed": false,
+        "position": {"x": 120.0, "y": 80.0}
+      }
+    }
+  ],
+  "state_trace": [
+    {"entity": "map", "from": "partial/revision-2", "to": "partial/revision-3", "trigger": "one-candidate-preview-apply"},
+    {"entity": "preview", "id": "7fda3c448a7a4274be866ade62c39b19", "from": "queued/running", "to": "completed", "wait_condition": "GET preview status completed"},
+    {"entity": "refresh_preview", "id": "803a6aaefca740408d6296c23bbab8c7", "from": "queued/running", "to": "completed", "wait_condition": "GET preview status completed", "provider_requests": 8},
+    {"entity": "map", "from": "partial/revision-3", "to": "partial/revision-4", "trigger": "remove added node"},
+    {"entity": "map", "from": "partial/revision-4", "to": "partial/revision-5", "trigger": "restore response"},
+    {"entity": "map", "observed": "partial/revision-6", "trigger": "final read after restore", "nodes": 21, "edges": 18}
+  ],
+  "artifacts": {
+    "added_node": {
+      "id": "24e44e61d9d44d1b85918fa8f7362ff0",
+      "removed_then_restored": true,
+      "final_removed": false,
+      "document_id": null
+    },
+    "existing_kb_node": {
+      "id": "21041260a5394f42891b020128fa60fa",
+      "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+      "download_status": "indexed",
+      "position": {"x": 120.0, "y": 80.0}
+    }
+  },
+  "result": {
+    "status": "blocked",
+    "completed_scope": "Real references preview, persistent candidate GET, one-candidate apply, idempotent replay, refresh diff preview, stale CAS rejection, remove/restore and reopen.",
+    "blocking_reasons": [
+      "The existing map and latest job remain explicitly partial.",
+      "The real refresh preview completed with provider warnings SEMANTIC_SCHOLAR_INVALID_RESPONSE and SEMANTIC_SCHOLAR_RATE_LIMITED.",
+      "A production browser/manual acceptance path was not exercised by this backend run; frontend reviewer reuse was requested but not independently evidenced here."
+    ],
+    "pdf_download_requested": false,
+    "additional_retry_requested": false,
+    "raw_credentials_or_headers_recorded": false
+  }
+}

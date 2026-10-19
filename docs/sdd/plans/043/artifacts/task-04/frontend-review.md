@@ -26,12 +26,20 @@
 ## 已核对通过项
 
 - 预览/确认合同：`openPreview()` 使用当前服务端 `map_id`，对 map/node/preview ID 做 URL 编码；POST body 包含 `kind`、必要的 `node_id`、topic 的 `query` 和幂等键。GET 候选来自服务端；apply 使用 `expected_revision`、服务端 `candidate_id` 和幂等键，不把客户端 paper 快照当身份。
-- refresh 空选择：有差异时允许 `selected_candidate_ids: []` 并显示“确认刷新”，不会伪造新增节点；无差异时不显示确认按钮，保持空结果。无差异文案仍较通用，建议后续明确显示“无字段/关系差异”（P2，非本轮阻塞）。
+- refresh 空选择：有差异时允许 `selected_candidate_ids: []` 并显示“确认刷新”，不会伪造新增节点；无差异时不显示确认按钮，并明确显示“没有字段或关系差异；地图无需更新。”。
 - owner/间接 map ID：所有预览、apply、job、node remove/restore 请求均从当前 `state.map.map_id` 构造路径并 `encodeURIComponent`；异步回写同时校验 `selectedMapId`、map ID、active 状态与请求代次，未发现可由节点/候选字段绕过地图范围的前端路径。服务端 owner 校验不由本报告替代。
 - async 竞态：`previewRequest`、`previewPollGeneration`、`jobActionRequest`、`nodeActionRequest` 与既有 graph/map/job/view/node/import 门禁覆盖切图、离开视图和旧 preview/job 回调；409 apply 只展示冲突并提供“重新读取并预览”，没有自动重放或覆盖用户变化。
 - 容量：前端常量为每批 20、地图 200；勾选时按当前 graph 数量阻止超额，apply 按同一规则禁用。服务端事务复核仍是最终边界，不能把前端按钮当安全校验。
 - indexed 正常路径：普通 indexed 节点不渲染“加入知识库”，显示 document ID，并复用既有 `window.jumpToKnowledgeBase(documentId)` 或 `[data-view="kb"]` 导航；fixture 对重复 import 禁用和导航入口有覆盖。
-- XSS/资源：`literature-maps.js` 无 `innerHTML`/动态 HTML 拼接，动态文本使用 `textContent`/DOM API；原文 URL 仅接受 `http:`/`https:` 且拒绝凭据和 `javascript:`。`frontend/index.html` 与 fixture/契约均同步使用 `literature-maps.js?v=5`、`literature-maps.css?v=4`。
+- XSS/资源：`literature-maps.js` 无 `innerHTML`/动态 HTML 拼接，动态文本使用 `textContent`/DOM API；原文 URL 仅接受 `http:`/`https:` 且拒绝凭据和 `javascript:`。`frontend/index.html` 与 fixture/契约均同步使用 `literature-maps.js?v=6`、`literature-maps.css?v=4`。
+
+### 最新真实 refresh diff formatter 窄复审（2026-10-20）
+
+- 以交接报告、增量合同补记及 `api-evidence.json` 的真实 producer shape 为准：`preview.diff` 是数组，数组项为 `{node_id, changes}`；字段变化使用 `{from,to}`，关系变化使用 `{added,removed}`，不是 `diff.metadata`，也不是展示字符串。
+- 当前 formatter 按 `node_id` 从当前 graph 解析论文标题并保留 ID；字段映射为中文，逐项显示 `from → to`；关系分别显示新增/移除；`null`、空字符串、空列表和缺失键分别输出 `null`、`空字符串`、`空列表`、`字段缺失`。旧 object diff 仍有兼容 fallback，不影响真实数组 shape。
+- 差异值经 `createElement(...).textContent` 写入，没有 `innerHTML`/`insertAdjacentHTML`/`outerHTML`/`eval`；XSS fixture 的 `<img src=x onerror=alert(1)>` 只作为文本显示，DOM 中无 `img[onerror]`。无差异 refresh 明确显示无需更新且不渲染确认按钮。
+- 资源版本已同步为 `literature-maps.js?v=6`；fixture 使用同一真实 shape，8 项差异覆盖字段前后值、关系增减、XSS、null/empty/missing 语义。
+- 本次独立提升权限 Chromium 精准复跑 `8 passed`、无 skip；既有地图可行性复跑 `3 passed`。未发现 P0/P1/P2；GO 仍仅适用于前端 fixture 契约，不外推生产 API E2E 或部署结果。
 
 ## 验证记录
 

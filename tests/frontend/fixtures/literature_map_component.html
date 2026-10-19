@@ -26,6 +26,7 @@
     const running = query.has('running');
     const indexedTombstone = query.has('indexed-tombstone');
     const refreshDiff = query.has('refresh-diff');
+    const refreshEmpty = query.has('refresh-empty');
     const previewConflict = query.has('preview-conflict');
     if (indexedTombstone) mockNodes[1].removed = true;
     if (recovery) {
@@ -36,11 +37,21 @@
       mockMap.status = 'generating';
       mockGraph.latest_job = { ...mockGraph.latest_job, status: 'running', step: 'references', failed_units: [{ unit_id: 'references-1', retryable: true }] };
     }
+    const realDiffShape = [
+      { node_id: 'node-a', changes: { citation_count: { from: 29000, to: 29014 } } },
+      { node_id: 'node-b', changes: { abstract: { from: '<img src=x onerror=alert(1)>', to: '摘要已更新' } } },
+      { node_id: 'node-a', changes: { relations: { added: ['node-b'], removed: [] } } },
+      { node_id: 'node-a', changes: { citation_count: { from: 674, to: 676 } } },
+      { node_id: 'node-a', changes: { citation_count: { from: 76, to: 77 } } },
+      { node_id: 'node-a', changes: { citation_count: { from: 758, to: 759 } } },
+      { node_id: 'node-a', changes: { citation_count: { from: null, to: 605 } } },
+      { node_id: 'node-a', changes: { venue: { from: '', to: undefined } } },
+    ];
     const previewState = { preview_id: 'preview-fixture', map_id: mockMap.map_id, kind: 'references', status: 'completed', base_revision: mockMap.revision, candidates: [
       { candidate_id: 'candidate-existing', title: 'Existing paper', authors: ['Existing'], year: 2022, already_present: true, removed: false },
       { candidate_id: 'candidate-removed', node_id: 'node-a', title: 'Removed paper', authors: ['Removed'], year: 2021, already_present: false, removed: true },
       { candidate_id: 'candidate-new', title: 'New candidate', authors: ['New Author'], year: 2025, already_present: false, removed: false },
-    ], diff: refreshDiff ? ['摘要：旧值 → 新值'] : [] };
+    ], diff: refreshEmpty ? [] : (refreshDiff ? realDiffShape : []) };
     window.__lastImportBody = null;
     window.__viewBodies = [];
     window.__createBody = null;
@@ -130,7 +141,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=5"></script>
+  <script src="../../../frontend/literature-maps.js?v=6"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

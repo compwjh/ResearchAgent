@@ -1107,9 +1107,11 @@
       const diffTitle = createElement('p', 'literature-map-preview-diff-title', '字段变更');
       refs.previewPanel.append(diffTitle);
       const diffList = createElement('ul', 'literature-map-preview-diff');
-      const entries = Array.isArray(preview.diff) ? preview.diff : Object.entries(preview.diff).map(([key, value]) => `${key}：${metadataText(value)}`);
-      entries.slice(0, 50).forEach((entry) => diffList.append(createElement('li', '', metadataText(entry))));
+      const entries = Array.isArray(preview.diff) ? preview.diff : Object.entries(preview.diff).map(([key, value]) => ({ field: key, value }));
+      entries.slice(0, 50).forEach((entry) => diffList.append(createElement('li', '', formatPreviewDiffEntry(entry))));
       refs.previewPanel.append(diffList);
+    } else if (state.previewKind === 'refresh' && previewReady(preview)) {
+      refs.previewPanel.append(createElement('p', 'literature-map-preview-empty', '没有字段或关系差异；地图无需更新。'));
     }
     const candidates = previewCandidates();
     const nodeCount = normalizeNodes(state.graph).length;
@@ -1620,6 +1622,65 @@
     }
     if (value === null || value === undefined || String(value).trim() === '') return fallback || '未提供';
     return String(value);
+  }
+
+  const DIFF_FIELD_LABELS = {
+    title: '标题',
+    authors: '作者',
+    year: '年份',
+    venue: '来源',
+    abstract: '摘要',
+    keywords: '关键词',
+    citation_count: '引用数',
+    source_url: '来源链接',
+    relations: '关系',
+    citation_relations: '引用关系',
+    similarity_relations: '主题相似关系',
+  };
+
+  function diffValueText(value) {
+    if (value === null) return 'null';
+    if (value === undefined) return '字段缺失';
+    if (typeof value === 'string') return value === '' ? '空字符串' : value;
+    if (Array.isArray(value)) return value.length ? value.map((item) => diffValueText(item)).join('、') : '空列表';
+    if (value && typeof value === 'object') {
+      try { return JSON.stringify(value); } catch (_) { return '对象'; }
+    }
+    return String(value);
+  }
+
+  function diffFieldLabel(field) {
+    return DIFF_FIELD_LABELS[field] || String(field || '未命名字段');
+  }
+
+  function formatRelationDiff(change) {
+    if (!change || typeof change !== 'object' || Array.isArray(change)) return diffValueText(change);
+    return [
+      `新增关系：${diffValueText(change.added)}`,
+      `移除关系：${diffValueText(change.removed)}`,
+    ].join('；');
+  }
+
+  function formatPreviewDiffEntry(entry) {
+    if (typeof entry === 'string') return entry;
+    if (!entry || typeof entry !== 'object') return diffValueText(entry);
+    const nodeId = entry.node_id || entry.nodeId;
+    const node = nodeId ? normalizeNodes(state.graph).find((item) => item.node_id === nodeId) : null;
+    const title = node?.title ? metadataText(node.title, '') : '';
+    const subject = title ? `论文《${title}》${nodeId ? `（${nodeId}）` : ''}` : (nodeId ? `节点 ${nodeId}` : '地图');
+    const changes = entry.changes && typeof entry.changes === 'object' ? entry.changes : null;
+    if (!changes) {
+      if (entry.field) return `${subject}：${diffFieldLabel(entry.field)}：${diffValueText(entry.value)}`;
+      return `${subject}：${diffValueText(entry)}`;
+    }
+    const parts = Object.entries(changes).map(([field, change]) => {
+      if (field === 'relations' || field.endsWith('_relations')) return formatRelationDiff(change);
+      if (change && typeof change === 'object' && !Array.isArray(change) && ('from' in change || 'to' in change)) {
+        return `${diffFieldLabel(field)}：${diffValueText(change.from)} → ${diffValueText(change.to)}`;
+      }
+      return `${diffFieldLabel(field)}：${diffValueText(change)}`;
+    });
+    return parts.length ? `${subject}：${parts.join('；')}` : `${subject}：无可显示字段`;
   }
 
   function safeHttpUrl(value) {

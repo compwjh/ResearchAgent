@@ -25,7 +25,7 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=5" in INDEX
+    assert "/assets/literature-maps.js?v=6" in INDEX
     assert "/assets/literature-maps.css?v=4" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
@@ -111,13 +111,31 @@ def test_component_fixture_handles_refresh_diff_cas_and_recovery_actions() -> No
         refresh.get_by_role("button", name="刷新预览").click()
         refresh.wait_for_selector("#literature-map-preview-panel")
         assert refresh.evaluate("window.__previewBodies?.[0]?.kind") == "refresh"
-        assert "字段变更" in refresh.locator("#literature-map-preview-panel").inner_text()
+        refresh_text = refresh.locator("#literature-map-preview-panel").inner_text()
+        assert "字段变更" in refresh_text
+        assert "引用数：29000 → 29014" in refresh_text
+        assert "摘要：<img src=x onerror=alert(1)> → 摘要已更新" in refresh_text
+        assert "新增关系：node-b；移除关系：空列表" in refresh_text
+        assert "引用数：null → 605" in refresh_text
+        assert "来源：空字符串 → 字段缺失" in refresh_text
+        assert refresh.locator(".literature-map-preview-diff li").count() == 8
+        assert refresh.locator("img[onerror]").count() == 0
         assert refresh.evaluate("window.__applyBody") is None
         refresh.get_by_role("button", name="确认刷新").click()
         refresh.wait_for_function("window.__applyBody?.selected_candidate_ids?.length === 0")
         assert refresh.evaluate("window.__applyBody[\"expected_revision\"]") == 3
         assert refresh.locator('[data-node-id="node-new"]').count() == 0
         refresh.close()
+
+        empty = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        empty.goto(f"{FIXTURE.as_uri()}?refresh-empty", wait_until="load")
+        empty.locator('[data-map-id="map-fixture"]').click()
+        empty.get_by_role("button", name="刷新预览").click()
+        empty.wait_for_selector("#literature-map-preview-panel")
+        empty_text = empty.locator("#literature-map-preview-panel").inner_text()
+        assert "没有字段或关系差异；地图无需更新。" in empty_text
+        assert empty.get_by_role("button", name="确认刷新").count() == 0
+        empty.close()
 
         conflict = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         conflict.goto(f"{FIXTURE.as_uri()}?preview-conflict", wait_until="load")

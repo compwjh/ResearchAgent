@@ -71,3 +71,40 @@
 | `git diff --check -- frontend tests/frontend` | 退出码 0 |
 
 本追加仍只涉及前端组件、fixture、前端精准测试和交接文档；backend、部署、真实 provider 与提交均未改动。等待独立 frontend-reviewer 复核后再裁定 Task04 前端窄验收。
+
+## 真实 refresh diff formatter 修复追加（2026-10-20）
+
+### 生产者 shape 交接片段（供主会话补入 `interface-contract.md`）
+
+本轮不修改公共接口，只冻结真实 API tester 已落盘的字段形状：
+
+```json
+{
+  "diff": [
+    {"node_id": "21041260a5394f42891b020128fa60fa", "changes": {"citation_count": {"from": 29000, "to": 29014}}},
+    {"node_id": "...", "changes": {"relations": {"added": ["identity-key"], "removed": []}}}
+  ]
+}
+```
+
+`diff` 是数组；每项以服务端 `node_id` 标识论文，`changes` 的键是字段名。字段值通常是 `{from,to}`；关系差异使用 `{added,removed}` 数组。`null`、空字符串、空数组和缺失键均有不同含义，前端不能把对象整体降级为“未提供”。
+
+### 实际改动
+
+- `frontend/literature-maps.js` 新增安全 diff formatter：优先显示图中论文标题并保留 node ID；字段名映射为中文；显示 citation `from → to`；关系 added/removed 显示可读内容；`null`、空字符串、空列表、缺字段分别标记。
+- `frontend/index.html` 与组件 fixture 的地图脚本资源版本同步升至 `literature-maps.js?v=6`，避免生产浏览器继续使用旧 formatter 缓存。
+- 仍只通过 `textContent`/DOM API 写入，`<img ...>` 等差异值按纯文本显示，不生成 HTML；refresh 无差异时显示“没有字段或关系差异；地图无需更新。”。
+- `tests/frontend/fixtures/literature_map_component.html` 使用上述真实对象 shape，加入 8 项差异、citation 实值、关系增减、XSS 文本、null/空/缺失和无差异场景。
+- `tests/frontend/test_frontend_literature_map_expansion.py` 增加 8 项可见性、XSS 无执行/无 `img[onerror]`、关系与空值语义、无差异提示断言。
+
+### 定向验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py`（授权 Chromium） | 退出码 0；8 passed；无 skip |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0；`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
+| `git diff --check -- frontend tests/frontend` | 退出码 0 |
+
+本轮只改前端组件、fixture、精准测试和本交接报告；未修改 backend、公共接口、部署、环境或提交。生产浏览器报告中的 refresh P1 已有最小修复，待独立 frontend-reviewer 复审。
