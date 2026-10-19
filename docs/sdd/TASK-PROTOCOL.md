@@ -187,6 +187,8 @@ Run summary 的敏感内容检查覆盖完整 Markdown 文件，包括两个 JSO
 
 Task metadata.status 是唯一权威持久状态；人类显示映射固定为 pending=待执行、blocked=阻塞、completed=完成、cancelled=取消。Task 正文顶部人读状态行、对应 spec 表和 plans/NNN/README 表均是镜像。镜像通过 metadata.task_id 唯一定位。跨 worktree 同一 Task ID 的定义 hash（不含 status）若不同，rebuild/doctor/claim 一律失败；不能按时间或路径新旧猜测定义。相同 hash 的副本由 metadata.worktree.path 指定 canonical worktree：将该路径相对主工作树根解析，并必须在 git worktree list 注册表中精确找到。该注册 worktree 存在且包含该 Task 时，它是 status 与三处镜像的唯一权威副本；其状态/镜像须恰命中且一致，否则 doctor/claim/complete 失败。其他同 hash 副本可保留旧状态或旧镜像，只输出 stale/non-authoritative 诊断，不阻断领取、不自动修复，也不参与状态写入。若 canonical worktree 不存在或缺该 Task，但同 hash 副本的 status 不同，必须失败并要求人工处理，不能猜测最近版本；若各副本 status 相同，可按同 hash 去重用于只读 rebuild/status，但 claim 必须先按 explicit base 创建/验证 canonical worktree 并校验副本后再执行。metadata.worktree.path 的规范路径不存在时，不能把另一个副本升格为权威。状态更改只写 canonical worktree 的 Task、spec、README 镜像；journal 持久化后才写。Task08 对账后才为 legacy Task 写 migration_state=verified 并转换；migration_state=unverified 永不 claim。migration_unverified 是迁移标记，不是 Task.status。
 
+普通 Task（metadata 不含 `migration_state`）的状态标记必须在全文唯一，并位于首个 `## ` 前；缺失、重复或值不匹配均失败关闭。仅当 metadata 明确包含 `migration_state=verified` 或 `migration_state=unverified` 时，首个 `## ` 后可保留任意数量的历史状态标记；它们不参与状态判定或镜像，也不得被状态更新改写。此例外仍要求首个 `## ` 前恰有一个格式正确的顶层状态行，且其值与 metadata.status 匹配；顶层标记缺失、重复、格式错误或错值仍失败关闭。
+
 canonical Task/spec/README 定义文档及其镜像路径的每个路径组件均拒绝 symlink，即使 resolve 后仍在仓库内也拒绝；不得通过 symlink 读取或写入权威文档。该严格规则不扩大到普通 allowed artifact：普通产物继续按 safe-in-root 规则允许解析后仍位于授权根内的 symlink。
 
 ### Gate evidence

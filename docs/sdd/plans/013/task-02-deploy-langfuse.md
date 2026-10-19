@@ -1,8 +1,9 @@
 # 任务 02 — 非 Docker 部署基础设施与 Langfuse v4（Go/No-Go 关卡）
+>
+> 当前状态：`完成`
 
 > 关联：[spec-013](../../specs/013-llm-observability-platform.md) ｜ 索引：[README](./README.md)
 > **本任务是整体可行性闸门**：ClickHouse 若装不起来，后续全部工作作废，必须在此止损。
-
 ## 目标
 
 在**不使用 Docker** 的前提下，把 Langfuse v4 依赖的四个基础设施（PostgreSQL / Redis / MinIO / ClickHouse）用命令行装好并常驻，再拉起 Langfuse v4 的 web 与 worker，最终能在浏览器打开并创建项目拿到 API Key。
@@ -178,3 +179,50 @@ ls -la deploy/langfuse/ 2>/dev/null || echo "尚未产出"
 
 - 修复模型后分派极窄任务（写 `deploy/langfuse/README.md`，≤60 行）→ **成功**，220.84s。
 - 落地校验抓到两处错误并已修正：①把 `mysql -P8123` 改成 ClickHouse 的调用方式（本机无 mysql，8123 是 HTTP 接口）②curl 提交多语句被拒（`Multi-statements are not allowed`），最终改为 `clickhouse client --multiquery`，实测 74 项授权生效。
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-013-task-02",
+  "spec_id": "013",
+  "title": "# 任务 02 — 非 Docker 部署基础设施与 Langfuse v4（Go/No-Go 关卡）",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:04:27+00:00",
+  "depends_on": [],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/013/task-02-deploy-langfuse.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-013",
+    "branch": "feature/spec-013-llm-observability-platform",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/013/task-02-deploy-langfuse.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/013/task-02-deploy-langfuse.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

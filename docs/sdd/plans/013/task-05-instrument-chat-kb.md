@@ -1,7 +1,9 @@
 # 任务 05 — 接入聊天与知识库 RAG 链路埋点
 
 > 关联：[spec-013](../../specs/013-llm-observability-platform.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 02、04 ｜ 被依赖：任务 06、07 ｜ 当前状态：`待执行`
+> 依赖：任务 02、04 ｜ 被依赖：任务 06、07
+>
+> 当前状态：`完成`
 
 ## 一句话目标
 
@@ -162,3 +164,53 @@ TTFT / 总墙钟 / load / prefill / eval / tokens/s），再打印 JSON。
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-03 | 架构师（自身） | 对照现有代码确认链路尚未接入，补齐任务计划，状态保持待执行 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-013-task-05",
+  "spec_id": "013",
+  "title": "# 任务 05 — 接入聊天与知识库 RAG 链路埋点",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:04:27+00:00",
+  "depends_on": [
+    "spec-013-task-04",
+    "spec-013-task-02"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/013/task-05-instrument-chat-kb.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-013",
+    "branch": "feature/spec-013-llm-observability-platform",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/013/task-05-instrument-chat-kb.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/013/task-05-instrument-chat-kb.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

@@ -1,8 +1,9 @@
 # 任务 03 — 升级项目 Python 到 3.11 并重装依赖
+>
+> 当前状态：`完成`
 
 > 关联：[spec-013](../../specs/013-llm-observability-platform.md) ｜ 索引：[README](./README.md)
 > 依赖：任务 01（spec 已写）｜ 被依赖：任务 04（埋点需要 Python ≥3.10 的 langfuse SDK）
-
 ## 目标
 
 把项目虚拟环境从 **Python 3.9.7** 升到 **3.11**，重装全部依赖并新增 `langfuse>=4.7.0`，保证原有 **253 个测试仍全部通过**，且知识库与对话功能端到端可用。
@@ -159,3 +160,50 @@ mv .venv-py39.bak .venv
 - **已定位根因并解决**：不是任务问题，而是 27B GGUF 模型（13.8 tok/s）+ 每次 7~9 秒冷启动 + 系统内存压力（swap 86%）导致超时。
 - 解法：改用 **`qwen3.8:27b-mlx`**（24.3 tok/s，快 76%），注册进用户级 `models.json` 并改 agent 配置；随后分派窄任务实测**成功**（220.84s）。
 - 详见 `docs/sdd/retro/2026-09-02-subagent-timeout-mlx.md`。
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-013-task-03",
+  "spec_id": "013",
+  "title": "# 任务 03 — 升级项目 Python 到 3.11 并重装依赖",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:04:27+00:00",
+  "depends_on": [],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/013/task-03-upgrade-python.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-013",
+    "branch": "feature/spec-013-llm-observability-platform",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/013/task-03-upgrade-python.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/013/task-03-upgrade-python.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

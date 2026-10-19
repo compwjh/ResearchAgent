@@ -14,13 +14,14 @@
 | 编号 | 任务 | 文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-013（含回滚点） | 不单独建文档（即 spec 本体） | — | 完成 |
-| 02 | 非 Docker 部署基础设施与 Langfuse v4（Go/No-Go） | [task-02](./task-02-deploy-langfuse.md) | 01 | 完成（Go） |
+| 02 | 非 Docker 部署基础设施与 Langfuse v4（Go/No-Go） | [task-02](./task-02-deploy-langfuse.md) | 01 | 完成 |
 | 03 | 升级项目 Python 到 3.11 并重装依赖 | [task-03](./task-03-upgrade-python.md) | 01 | 完成 |
-| 04 | 实现直连 Ollama 采集器与埋点封装层 | [task-04](./task-04-ollama-direct.md) | 03 | 完成（events_only 上报已验证） |
+| 04 | 实现直连 Ollama 采集器与埋点封装层 | [task-04](./task-04-ollama-direct.md) | 03 | 完成 |
 | 05 | 接入聊天与知识库 RAG 链路埋点 | [task-05](./task-05-instrument-chat-kb.md) | 04, 02 | 完成 |
 | 06 | 统计路径 A：原生 Dashboard + numeric score | [task-06](./task-06-stats-native.md) | 05 | 完成 |
 | 07 | 导入 Langfuse 源码并实现 Ollama 专用视图 | [task-07](./task-07-stats-custom-view.md) | 05 | 完成 |
-| 08 | 评审验收与复盘 | [task-08](./task-08-review-retro.md) | 06, 07 | 完成 |
+| 08 | 评审验收与复盘 | [task-08](./task-08-review-retro.md) | 06, 07 | 阻塞 |
+| 09 | 补齐 Spec013 范围验收、签字与复盘 | [09](./task-09-legacy-remainder.md) | 06, 07 | 阻塞 |
 
 ## 2026-09-03 进度核对结论
 
