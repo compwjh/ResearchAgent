@@ -5,8 +5,10 @@ import unittest
 import uuid
 from contextlib import closing
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from scripts.sdd_tasks.documents import parse_task
+from scripts.sdd_tasks.eligibility import database_blockers
 from scripts.sdd_tasks.owners import current_owner
 from scripts.sdd_tasks.store import connect
 from scripts.sdd_tasks.workspace import capture_snapshot, snapshot_payload
@@ -67,8 +69,15 @@ class CatalogEligibilityTests(unittest.TestCase):
                 conn.execute("DELETE FROM runs WHERE task_id=?", (TASK,))
                 for attempt, state in enumerate(("failed", "failed", "succeeded", "failed"), 1):
                     _run(conn, task, attempt, state)
-                eligible = _item(_status(database)["eligible"])
-                self.assertEqual(eligible["reasons"], [])
+                blockers = database_blockers(
+                    conn, task, set(task.metadata["required_gates"]),
+                    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                )
+                self.assertNotIn("max_attempts_exhausted", blockers)
+                report = _status(database)
+                waiting = _item(report["waiting"])
+                self.assertIn("recovery_invalid:RECOVERY_VALIDATION_FAILED", waiting["reasons"])
+                self.assertFalse(any(item["task_id"] == TASK for item in report["eligible"]))
 
     def test_missing_and_extra_dependency_index_rows_are_reported_stale(self):
         for extra in (False, True):

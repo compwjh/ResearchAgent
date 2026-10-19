@@ -1,13 +1,16 @@
 import copy
+import hashlib
 import json
+import os
 import tempfile
 import unittest
 import uuid
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from scripts.sdd_tasks.catalog import rebuild
 from scripts.sdd_tasks.completion_journal import read_journal
 from scripts.sdd_tasks.completion_journal import write_journal as _write_journal
 from scripts.sdd_tasks.completion_service import fail_run
@@ -22,23 +25,56 @@ from scripts.sdd_tasks.ledger_finalize import (
 )
 from scripts.sdd_tasks.locks import maintenance_lock
 from scripts.sdd_tasks.mirrors import render_status_update, validate_mirrors
-from scripts.sdd_tasks.owners import OwnerStatus
+from scripts.sdd_tasks.owners import OwnerStatus, current_owner
 from scripts.sdd_tasks.result_query import result_for_run
 from scripts.sdd_tasks.run_docs import build_summary
 from scripts.sdd_tasks.selection import claim_next
 from scripts.sdd_tasks.store import connect, transaction
 from scripts.sdd_tasks.workspace import capture_snapshot
+from tests.sdd_tasks._fixtures import task_markdown
+from tests.sdd_tasks.test_catalog import _git
 from tests.sdd_tasks.test_completion_journal import _document
 from tests.sdd_tasks.test_completion_journal import _journal as _base_journal
-from tests.sdd_tasks.test_completion_prepare import _claimed_with_command
+from tests.sdd_tasks.test_completion_prepare import COMMAND, SOURCE
 from tests.sdd_tasks.test_completion_service import _draft
 from tests.sdd_tasks.test_run_docs import _result
 from tests.sdd_tasks.test_run_owner import _claimed, _rows
+from tests.sdd_tasks.test_selection import GATE, _fixture
 
 
 def _stamp(value, seconds):
     instant = datetime.fromisoformat(value.replace("Z", "+00:00")) + timedelta(seconds=seconds)
     return instant.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+@contextmanager
+def _claimed_with_expected_artifact(directory):
+    root, canonical, task, _, database = _fixture(directory)
+    ignore = root / ".gitignore"
+    ignore.write_text(ignore.read_text(encoding="utf-8") + "\n.sdd/runtime/\n", encoding="utf-8")
+    _git(root, "add", ".gitignore")
+    _git(root, "commit", "-qm", "ignore private runtime")
+    tip = _git(root, "rev-parse", "HEAD")
+    _git(canonical, "merge", "--ff-only", tip)
+    metadata = dict(task.metadata, validation_commands=[COMMAND], expected_artifacts=[SOURCE])
+    relative = task.path.relative_to(root)
+    contents = "# {}\n> 当前状态：`待执行`\n\n".format(metadata["title"]) + task_markdown(metadata)
+    for repository in (root, canonical):
+        (repository / relative).write_text(contents, encoding="utf-8")
+        _git(repository, "add", relative.as_posix())
+        _git(repository, "commit", "-qm", "fixture validation command and evidence artifact")
+    task = parse_task(canonical / relative)
+    rebuild(database, root)
+    os.chmod(database.parent, 0o700)
+    before = capture_snapshot(root, task)
+    owner = current_owner("ledger-finalize-fixture")
+    with closing(connect(database)) as conn, maintenance_lock(root):
+        claim = claim_next(conn, [task], {GATE}, workspace_snapshots={
+            task.metadata["task_id"]: before}, ide="codex", owner=owner,
+            now=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), lease_minutes=30)
+    if claim is None:
+        raise AssertionError("fixture Task was not claimed")
+    yield root, canonical, task, database, before, owner, claim
 
 
 def _journal_for(state, outcome="succeeded", claim_override=None):
@@ -133,17 +169,26 @@ def _public_journal_for(state, target_status="completed", outcome="succeeded",
 
 class LedgerFinalizeBindingTests(unittest.TestCase):
     def test_complete_failed_result_stays_readable_during_new_claim_and_lease(self):
-        with tempfile.TemporaryDirectory() as temp, _claimed_with_command(temp) as state:
+        with tempfile.TemporaryDirectory() as temp, _claimed_with_expected_artifact(temp) as state:
             root, canonical, task, database, _, _, first = state
             owner = first.owner
             run_dir = root / ".sdd/runtime/runs" / first.run_id
+            draft = _draft(task, first, outcome="failed", changed_files=[])
+            draft["artifacts"] = [{
+                "path": SOURCE, "kind": "evidence",
+                "sha256": hashlib.sha256((canonical / SOURCE).read_bytes()).hexdigest(),
+                "included_in_commit": False,
+            }]
             with closing(connect(database)) as conn, maintenance_lock(root):
                 old_result = fail_run(
                     conn, root, first.run_id, owner.executor_id, owner.pid,
-                    json.dumps(_draft(task, first, outcome="failed", changed_files=[])))
+                    json.dumps(draft))
             journal_path = run_dir / "completion.json"
             journal = read_journal(journal_path)
-            summary = journal["expected_result"]["artifacts"][0]["path"]
+            summaries = [path for path in journal["committed_paths"]
+                         if path.startswith("docs/sdd/runs/")]
+            self.assertEqual(len(summaries), 1)
+            summary = summaries[0]
             old_summary = (canonical / summary).read_bytes()
             main_task = parse_task(root / task.path.relative_to(canonical))
             snapshot = capture_snapshot(root, main_task)
@@ -165,7 +210,7 @@ class LedgerFinalizeBindingTests(unittest.TestCase):
                     "SELECT path,git_status,included_in_commit FROM artifacts WHERE run_id=?",
                     (first.run_id,)).fetchone())
                 self.assertEqual(old_row[0:2], ("failed", 1))
-                self.assertEqual(artifact, (summary, "committed", 1))
+                self.assertEqual(artifact, (SOURCE, "unchanged", 0))
                 self.assertEqual(result_for_run(conn, first.run_id), old_result)
                 self.assertEqual(tuple(conn.execute(
                     "SELECT state,attempt FROM runs WHERE run_id=?", (retry.run_id,)).fetchone()),
