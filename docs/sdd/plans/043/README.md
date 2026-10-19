@@ -1,7 +1,7 @@
 # Spec043 执行索引：交互式文献地图与自动主题探索
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md)  
-> 当前状态：实施中；Task02 Go、Task03桌面MVP阶段验收PASS_WITH_LIMITATIONS，进入Task04扩展与恢复。当前本机候选为`1d54720`（8000端口，`/api/ready`返回200）；Spec最终验收尚未通过。
+> 当前状态：实施中；Task02 Go、Task03桌面MVP阶段验收PASS_WITH_LIMITATIONS，进入Task04扩展与恢复。阶段代码为`1d54720`、阶段证据/合同为`500ee9a`；8000实例在Task03验收时ready200，现因Task04静态资源开发已主动暂停，避免暴露未复审页面，通过后重新启动。Spec最终验收尚未通过。
 
 ## 交付主线
 

@@ -1,3 +1,5 @@
+import pytest
+
 from backend.app.literature_maps.application.service import LiteratureMapService
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import SemanticScholarRequestResult
@@ -86,9 +88,8 @@ def test_reference_budget_is_persisted_across_retries(tmp_path):
     assert client.graph_calls == calls_at_budget
     assert any(item["error_code"] == "MAP_GRAPH_BUDGET_EXCEEDED" for item in job.failed_units)
 
-    retry = service.retry_job(created.map.map_id, created.job.job_id, "owner-a")
-    assert retry.step == "references"
-    service.run_job(created.job.job_id, "owner-a")
+    with pytest.raises(ValueError, match="MAP_NO_RETRYABLE_UNITS"):
+        service.retry_job(created.map.map_id, created.job.job_id, "owner-a")
 
     assert client.search_calls == 1
 
@@ -105,3 +106,28 @@ def test_stop_of_completed_job_is_idempotent(tmp_path):
 
     assert stopped.status == "completed"
     assert store.get_map(created.map_id, "owner-a").status == "ready"
+
+
+def test_retry_requeues_only_retryable_failed_units(tmp_path):
+    store = LiteratureMapStore(tmp_path / "maps.sqlite3")
+    service = LiteratureMapService(store=store, executor=None)
+    created = store.create_map("owner-a", topic="fuzzing")
+    job = store.create_job(created.map_id, "owner-a", operation="create")
+    assert store.claim_job(job.job_id, created.map_id, "owner-a") is not None
+    failed = store.update_job(
+        job.job_id,
+        created.map_id,
+        "owner-a",
+        status="failed",
+        failed_units=[
+            {"unit": "metadata", "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED", "retryable": True},
+            {"unit": "references:node-a", "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "retryable": False},
+        ],
+        event_type="failed",
+    )
+    assert failed is not None
+
+    retried = service.retry_job(created.map_id, job.job_id, "owner-a")
+
+    assert retried.status == "queued"
+    assert retried.failed_units == [{"unit": "metadata", "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED", "retryable": True}]

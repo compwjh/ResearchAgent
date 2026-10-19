@@ -74,6 +74,7 @@ class MapPaper:
     position: dict[str, float] | None = None
     group_id: str | None = None
     identity_key: str | None = None
+    removed: bool = False
 
     @classmethod
     def new(cls, map_id: str, *, semantic_scholar_id: str | None = None, external_ids: Mapping[str, Any] | None = None, title: str, **kwargs: Any) -> "MapPaper":
@@ -105,6 +106,7 @@ class MapPaper:
             "download_status": self.download_status,
             "position": self.position,
             "group_id": self.group_id,
+            "removed": self.removed,
         }
 
 
@@ -170,6 +172,36 @@ class MapJob:
             "cursor": self.cursor,
             "counts": self.counts,
             "failed_units": self.failed_units,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass
+class MapPreview:
+    preview_id: str
+    map_id: str
+    job_id: str
+    kind: str
+    status: str = "queued"
+    base_revision: int = 0
+    candidates: list[dict[str, Any]] = field(default_factory=list)
+    diff: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    idempotency_key: str | None = None
+    created_at: str = field(default_factory=iso_now)
+    updated_at: str = field(default_factory=iso_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "preview_id": self.preview_id,
+            "map_id": self.map_id,
+            "kind": self.kind,
+            "status": self.status,
+            "base_revision": self.base_revision,
+            "candidates": self.candidates,
+            "diff": self.diff,
+            "warnings": self.warnings,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

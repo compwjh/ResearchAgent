@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_literature_maps
 from backend.app.literature_maps.application.import_bridge import LiteratureMapImportBridge
+from backend.app.literature_maps.application.service import LiteratureMapService
 from backend.app.literature_maps.domain.models import MapPaper
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.main import app
@@ -30,6 +31,32 @@ def test_list_maps_storage_failure_is_fixed_503_without_exception_text() -> None
         "code": "MAP_STORAGE_UNAVAILABLE",
         "message": "文献地图暂时不可用，请稍后重试",
         "retryable": True,
+    }
+
+
+def test_retry_with_no_retryable_units_is_fixed_409(tmp_path) -> None:
+    store = LiteratureMapStore(tmp_path / "maps.sqlite3")
+    created = store.create_map(routes_literature_maps.OWNER_ID, topic="fuzzing")
+    job = store.create_job(created.map_id, routes_literature_maps.OWNER_ID, operation="create")
+    assert store.claim_job(job.job_id, created.map_id, routes_literature_maps.OWNER_ID) is not None
+    assert store.update_job(
+        job.job_id,
+        created.map_id,
+        routes_literature_maps.OWNER_ID,
+        status="failed",
+        failed_units=[{"unit": "metadata", "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "retryable": False}],
+        event_type="failed",
+    ) is not None
+    service = LiteratureMapService(store=store, executor=None)
+
+    with patch.object(routes_literature_maps, "get_literature_map_service", return_value=service):
+        response = TestClient(app).post(f"/api/literature-maps/{created.map_id}/jobs/{job.job_id}/retry")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "MAP_NO_RETRYABLE_UNITS",
+        "message": "当前作业没有可重试的失败单元",
+        "retryable": False,
     }
 
 

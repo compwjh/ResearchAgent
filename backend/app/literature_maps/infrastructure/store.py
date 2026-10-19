@@ -22,15 +22,24 @@ from pathlib import Path
 from typing import Any
 
 from backend.app.literature_maps.domain.import_diagnostics import normalize_import_diagnostics
-from backend.app.literature_maps.domain.models import LiteratureMap, MapEdge, MapEvent, MapJob, MapPaper, iso_now
+from backend.app.literature_maps.domain.models import (
+    LiteratureMap,
+    MapEdge,
+    MapEvent,
+    MapJob,
+    MapPaper,
+    MapPreview,
+    iso_now,
+)
 from backend.app.platform.config import BASE_DIR
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _WRITE_LOCK = threading.RLock()
 _UNSET = object()
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 _IMPORT_DIAGNOSTICS_KEY = "import_diagnostics"
 _TERMINAL_JOB_STATES = {"completed", "failed", "partial", "stopped"}
+_MAX_MAP_NODES = 200
 
 
 class LiteratureMapStoreError(RuntimeError):
@@ -132,6 +141,8 @@ class LiteratureMapStore:
                     download_status TEXT,
                     position_json TEXT,
                     group_id TEXT,
+                    removed_at TEXT,
+                    removed_edges_json TEXT,
                     UNIQUE(map_id, identity_key)
                 );
                 CREATE INDEX IF NOT EXISTS idx_literature_map_nodes_map ON literature_map_nodes(map_id);
@@ -235,8 +246,48 @@ class LiteratureMapStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_literature_map_checkpoints_map
                     ON literature_map_checkpoints(map_id, job_id, status);
+                CREATE TABLE IF NOT EXISTS literature_map_previews(
+                    preview_id TEXT PRIMARY KEY,
+                    map_id TEXT NOT NULL REFERENCES literature_maps(map_id),
+                    job_id TEXT NOT NULL REFERENCES literature_map_jobs(job_id),
+                    kind TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    base_revision INTEGER NOT NULL,
+                    candidates_json TEXT NOT NULL,
+                    diff_json TEXT NOT NULL,
+                    warnings_json TEXT NOT NULL,
+                    node_id TEXT,
+                    query_text TEXT,
+                    idempotency_key TEXT,
+                    params_hash TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(map_id, idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_literature_map_previews_map
+                    ON literature_map_previews(map_id, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS literature_map_mutation_idempotencies(
+                    map_id TEXT NOT NULL REFERENCES literature_maps(map_id),
+                    owner_id TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    params_hash TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(map_id, operation, idempotency_key)
+                );
                 """
             )
+            node_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_nodes)").fetchall()}
+            if "removed_at" not in node_columns:
+                db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_at TEXT")
+            if "removed_edges_json" not in node_columns:
+                db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_edges_json TEXT")
+            preview_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_previews)").fetchall()}
+            if "node_id" not in preview_columns:
+                db.execute("ALTER TABLE literature_map_previews ADD COLUMN node_id TEXT")
+            if "query_text" not in preview_columns:
+                db.execute("ALTER TABLE literature_map_previews ADD COLUMN query_text TEXT")
             db.execute("BEGIN IMMEDIATE")
             try:
                 self._repair_legacy_idempotency_bindings(db)
@@ -381,7 +432,7 @@ class LiteratureMapStore:
                 {},
                 {"provider_count": 0, "accepted_count": 0, "node_count": 0, "citation_edge_count": 0, "similarity_edge_count": 0, "provider_request_count": 0},
                 [],
-                idempotency_key,
+                None,
                 now,
                 now,
             )
@@ -504,6 +555,10 @@ class LiteratureMapStore:
             db.execute("UPDATE literature_maps SET deleted_at=?,status='stopped',updated_at=? WHERE map_id=? AND owner_id=?", (iso_now(), iso_now(), map_id, owner_id))
             db.execute("DELETE FROM literature_map_events WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_checkpoints WHERE map_id=?", (map_id,))
+            # Previews reference their worker job.  Remove the child rows
+            # before jobs so SQLite's foreign-key guard cannot reject a
+            # normal map deletion with an outstanding preview.
+            db.execute("DELETE FROM literature_map_previews WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_jobs WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_edges WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_nodes WHERE map_id=?", (map_id,))
@@ -531,6 +586,299 @@ class LiteratureMapStore:
         with self.connection() as db:
             row = db.execute("SELECT n.* FROM literature_map_nodes n JOIN literature_maps m ON m.map_id=n.map_id WHERE n.map_id=? AND n.node_id=? AND m.owner_id=? AND m.deleted_at IS NULL", (map_id, node_id, owner_id)).fetchone()
         return _node(row) if row else None
+
+    def create_preview(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        kind: str,
+        base_revision: int,
+        candidates: list[dict[str, Any]],
+        diff: list[dict[str, Any]] | None = None,
+        warnings: list[str] | None = None,
+        node_id: str | None = None,
+        query: str | None = None,
+        status: str = "completed",
+        idempotency_key: str | None = None,
+        params_hash: str | None = None,
+        provider_request_count: int = 0,
+    ) -> tuple[MapPreview, MapJob, bool]:
+        """Persist a preview and its completed calculation atomically.
+
+        Preview calculation happens in the application layer; this method is
+        only the owner-scoped durable boundary.  Keeping the candidate JSON
+        here makes a preview safe to re-open after a process restart.
+        """
+        if kind not in {"topic", "references", "citations", "refresh"}:
+            raise ValueError("INVALID_PREVIEW_KIND")
+        if status not in {"queued", "completed"}:
+            raise ValueError("invalid preview status")
+        now = iso_now()
+        with self.transaction() as db:
+            self._assert_writable(db, map_id, owner_id)
+            if idempotency_key:
+                prior = db.execute(
+                    "SELECT * FROM literature_map_previews WHERE map_id=? AND idempotency_key=?",
+                    (map_id, idempotency_key),
+                ).fetchone()
+                if prior:
+                    if params_hash is not None and prior["params_hash"] != params_hash:
+                        raise ValueError("idempotency conflict")
+                    job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (prior["job_id"],)).fetchone()
+                    if job_row is None:
+                        raise LiteratureMapStoreError("preview state invalid")
+                    return _preview(prior), _job(job_row), False
+            job = MapJob(
+                uuid.uuid4().hex,
+                map_id,
+                f"preview:{kind}",
+                status,
+                "preview",
+                {"preview_id": ""},
+                {"candidate_count": len(candidates), "provider_request_count": max(0, int(provider_request_count))},
+                [],
+                None,
+                now,
+                now,
+            )
+            preview_id = uuid.uuid4().hex
+            job.cursor = {"preview_id": preview_id}
+            db.execute(
+                "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), None, params_hash, now, now),
+            )
+            preview = MapPreview(
+                preview_id,
+                map_id,
+                job.job_id,
+                kind,
+                status,
+                int(base_revision),
+                list(candidates),
+                list(diff or []),
+                list(warnings or []),
+                idempotency_key,
+                now,
+                now,
+            )
+            db.execute(
+                "INSERT INTO literature_map_previews(preview_id,map_id,job_id,kind,status,base_revision,candidates_json,diff_json,warnings_json,node_id,query_text,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (preview.preview_id, map_id, job.job_id, kind, preview.status, preview.base_revision, _dump(preview.candidates), _dump(preview.diff), _dump(preview.warnings), node_id, query, idempotency_key, params_hash, now, now),
+            )
+            self._append_event(db, job, event_type="preview_completed" if preview.status == "completed" else "preview_queued")
+            return preview, job, True
+
+    def complete_preview(
+        self,
+        map_id: str,
+        preview_id: str,
+        owner_id: str,
+        *,
+        status: str,
+        candidates: list[dict[str, Any]],
+        diff: list[dict[str, Any]] | None = None,
+        warnings: list[str] | None = None,
+        provider_request_count: int = 0,
+    ) -> tuple[MapPreview, MapJob] | None:
+        if status not in {"completed", "failed"}:
+            raise ValueError("invalid preview status")
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT p.*,j.* FROM literature_map_previews p JOIN literature_map_jobs j ON j.job_id=p.job_id WHERE p.map_id=? AND p.preview_id=? AND EXISTS (SELECT 1 FROM literature_maps m WHERE m.map_id=p.map_id AND m.owner_id=? AND m.deleted_at IS NULL AND m.status != 'stopped')",
+                (map_id, preview_id, owner_id),
+            ).fetchone()
+            if row is None or row["status"] not in {"queued", "running"}:
+                return None
+            now = iso_now()
+            db.execute("UPDATE literature_map_previews SET status=?,candidates_json=?,diff_json=?,warnings_json=?,updated_at=? WHERE map_id=? AND preview_id=?", (status, _dump(candidates), _dump(diff or []), _dump(warnings or []), now, map_id, preview_id))
+            db.execute("UPDATE literature_map_jobs SET status=?,step='preview',counts_json=?,updated_at=? WHERE job_id=? AND map_id=?", ("completed" if status == "completed" else "failed", _dump({"candidate_count": len(candidates), "provider_request_count": max(0, int(provider_request_count))}), now, row["job_id"], map_id))
+            fresh_job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+            fresh_preview_row = db.execute("SELECT * FROM literature_map_previews WHERE preview_id=?", (preview_id,)).fetchone()
+            job = _job(fresh_job_row)
+            self._append_event(db, job, event_type="preview_completed" if status == "completed" else "preview_failed")
+            return _preview(fresh_preview_row), job
+
+    def get_preview_request(self, map_id: str, preview_id: str, owner_id: str) -> tuple[str | None, str | None] | None:
+        with self.connection() as db:
+            row = db.execute("SELECT node_id,query_text FROM literature_map_previews p JOIN literature_maps m ON m.map_id=p.map_id WHERE p.map_id=? AND p.preview_id=? AND m.owner_id=? AND m.deleted_at IS NULL", (map_id, preview_id, owner_id)).fetchone()
+        return (row["node_id"], row["query_text"]) if row else None
+
+    def get_preview(self, map_id: str, preview_id: str, owner_id: str) -> tuple[MapPreview, MapJob] | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT p.*,j.* FROM literature_map_previews p JOIN literature_map_jobs j ON j.job_id=p.job_id JOIN literature_maps m ON m.map_id=p.map_id WHERE p.map_id=? AND p.preview_id=? AND m.owner_id=? AND m.deleted_at IS NULL",
+                (map_id, preview_id, owner_id),
+            ).fetchone()
+        if row is None:
+            return None
+        # Duplicate column names in the join are avoided by reading the
+        # preview columns from a second narrow query for predictable mapping.
+        with self.connection() as db:
+            preview_row = db.execute("SELECT * FROM literature_map_previews WHERE map_id=? AND preview_id=?", (map_id, preview_id)).fetchone()
+            job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (preview_row["job_id"],)).fetchone() if preview_row else None
+        return (_preview(preview_row), _job(job_row)) if preview_row and job_row else None
+
+    def apply_preview(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        preview_id: str,
+        expected_revision: int,
+        selected_candidate_ids: list[str],
+        nodes: list[MapPaper],
+        relations: list[tuple[str, str, str]] | None = None,
+        updates: list[MapPaper] | None = None,
+        idempotency_key: str | None = None,
+        params_hash: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply verified preview data under one revision-CAS transaction."""
+        with self.transaction() as db:
+            self._assert_writable(db, map_id, owner_id)
+            if idempotency_key:
+                prior = db.execute(
+                    "SELECT params_hash,result_json FROM literature_map_mutation_idempotencies WHERE map_id=? AND owner_id=? AND operation='preview_apply' AND idempotency_key=?",
+                    (map_id, owner_id, idempotency_key),
+                ).fetchone()
+                if prior:
+                    if params_hash is not None and prior["params_hash"] != params_hash:
+                        raise ValueError("idempotency conflict")
+                    return _load(prior["result_json"], {})
+            preview_row = db.execute("SELECT * FROM literature_map_previews WHERE map_id=? AND preview_id=?", (map_id, preview_id)).fetchone()
+            map_row = db.execute("SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (map_id, owner_id)).fetchone()
+            if preview_row is None or map_row is None:
+                raise LookupError("preview not found")
+            if preview_row["status"] not in {"completed", "applied"}:
+                raise ValueError("PREVIEW_NOT_READY")
+            if int(map_row["revision"]) != int(expected_revision) or int(preview_row["base_revision"]) != int(expected_revision):
+                raise ValueError("revision conflict")
+            if len(nodes) > 20:
+                raise ValueError("PREVIEW_BATCH_LIMIT")
+            active_count = int(db.execute("SELECT COUNT(*) FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL", (map_id,)).fetchone()[0])
+            if active_count + len(nodes) > _MAX_MAP_NODES:
+                raise ValueError("MAP_NODE_LIMIT")
+            existing_ids = {str(item.get("candidate_id")) for item in _load(preview_row["candidates_json"], []) if isinstance(item, Mapping)}
+            if any(candidate_id not in existing_ids for candidate_id in selected_candidate_ids):
+                raise ValueError("INVALID_PREVIEW_CANDIDATE")
+            for node in nodes:
+                self._insert_node(db, node)
+            for update in updates or []:
+                db.execute(
+                    "UPDATE literature_map_nodes SET title=?,authors_json=?,year=?,venue=?,abstract=?,keywords_json=?,citation_count=?,source_url=?,provenance_json=? WHERE map_id=? AND node_id=? AND removed_at IS NULL",
+                    (update.title, _dump(list(update.authors)), update.year, update.venue, update.abstract, _dump(list(update.keywords)), update.citation_count, update.source_url, _dump(update.provenance), map_id, update.node_id),
+                )
+            identity_to_node = {str(row["identity_key"]): str(row["node_id"]) for row in db.execute("SELECT identity_key,node_id FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL", (map_id,)).fetchall()}
+            identity_to_node.update({node.identity_key: node.node_id for node in nodes if node.identity_key})
+            for update in updates or []:
+                identity_to_node[update.identity_key] = update.node_id
+            node_by_id = {node.node_id: node.node_id for node in nodes}
+            for kind, source_ref, target_ref in relations or []:
+                source_id = identity_to_node.get(source_ref, node_by_id.get(source_ref, source_ref))
+                target_id = identity_to_node.get(target_ref, node_by_id.get(target_ref, target_ref))
+                if source_id == target_id:
+                    continue
+                if db.execute("SELECT 1 FROM literature_map_nodes WHERE map_id=? AND node_id=? AND removed_at IS NULL", (map_id, source_id)).fetchone() is None:
+                    continue
+                if db.execute("SELECT 1 FROM literature_map_nodes WHERE map_id=? AND node_id=? AND removed_at IS NULL", (map_id, target_id)).fetchone() is None:
+                    continue
+                edge = MapEdge.new(map_id, kind, source_id, target_id, provenance={"source": "preview", "preview_id": preview_id})
+                db.execute(
+                    "INSERT OR IGNORE INTO literature_map_edges(edge_id,map_id,kind,source_id,target_id,provenance_json,score,basis,model_version,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (edge.edge_id, map_id, edge.kind, edge.source_id, edge.target_id, _dump(edge.provenance), edge.score, edge.basis, edge.model_version, edge.content_hash),
+                )
+            now = iso_now()
+            changed_map = bool(nodes or (updates or []))
+            if changed_map:
+                db.execute("UPDATE literature_maps SET revision=revision+1,updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (now, map_id, owner_id))
+            fresh_map = db.execute("SELECT * FROM literature_maps WHERE map_id=?", (map_id,)).fetchone()
+            job = MapJob(uuid.uuid4().hex, map_id, "preview_apply", "completed", "apply", {"preview_id": preview_id}, {"added_count": len(nodes)}, [], None, now, now)
+            db.execute(
+                "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), None, params_hash, now, now),
+            )
+            db.execute("UPDATE literature_map_previews SET status='applied',updated_at=? WHERE preview_id=? AND map_id=?", (now, preview_id, map_id))
+            added_node_ids = [node.node_id for node in nodes]
+            result = {"map": _map(fresh_map).to_dict(), "job": job.to_dict(), "preview_id": preview_id, "added_node_ids": added_node_ids}
+            if idempotency_key:
+                db.execute(
+                    "INSERT INTO literature_map_mutation_idempotencies(map_id,owner_id,operation,idempotency_key,params_hash,result_json,created_at) VALUES(?,?,?,?,?,?,?)",
+                    (map_id, owner_id, "preview_apply", idempotency_key, params_hash or "", _dump(result), now),
+                )
+            self._append_event(db, job, event_type="preview_applied")
+            return result
+
+    def remove_node(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, idempotency_key: str | None = None, params_hash: str | None = None) -> dict[str, Any]:
+        return self._mutate_node_tombstone(map_id, node_id, owner_id, expected_revision=expected_revision, restore=False, idempotency_key=idempotency_key, params_hash=params_hash)
+
+    def restore_node(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, idempotency_key: str | None = None, params_hash: str | None = None) -> dict[str, Any]:
+        return self._mutate_node_tombstone(map_id, node_id, owner_id, expected_revision=expected_revision, restore=True, idempotency_key=idempotency_key, params_hash=params_hash)
+
+    def _mutate_node_tombstone(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, restore: bool, idempotency_key: str | None, params_hash: str | None) -> dict[str, Any]:
+        operation = "restore_node" if restore else "remove_node"
+        with self.transaction() as db:
+            self._assert_writable(db, map_id, owner_id)
+            if idempotency_key:
+                prior = db.execute("SELECT params_hash,result_json FROM literature_map_mutation_idempotencies WHERE map_id=? AND owner_id=? AND operation=? AND idempotency_key=?", (map_id, owner_id, operation, idempotency_key)).fetchone()
+                if prior:
+                    if params_hash is not None and prior["params_hash"] != params_hash:
+                        raise ValueError("idempotency conflict")
+                    return _load(prior["result_json"], {})
+            map_row = db.execute("SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (map_id, owner_id)).fetchone()
+            node_row = db.execute("SELECT * FROM literature_map_nodes WHERE map_id=? AND node_id=?", (map_id, node_id)).fetchone()
+            if map_row is None or node_row is None:
+                raise LookupError("node not found")
+            if int(map_row["revision"]) != int(expected_revision):
+                raise ValueError("revision conflict")
+            removed = node_row["removed_at"] is not None
+            if restore and not removed:
+                raise ValueError("NODE_NOT_REMOVED")
+            if not restore and removed:
+                raise ValueError("NODE_ALREADY_REMOVED")
+            if restore:
+                active_count = int(db.execute("SELECT COUNT(*) FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL", (map_id,)).fetchone()[0])
+                if active_count >= _MAX_MAP_NODES:
+                    raise ValueError("MAP_NODE_LIMIT")
+                # Keep the saved edge tombstone.  If the opposite endpoint is
+                # still removed, its own tombstone (or this one) must remain
+                # available for the later explicit restore of that endpoint.
+                db.execute("UPDATE literature_map_nodes SET removed_at=NULL WHERE map_id=? AND node_id=?", (map_id, node_id))
+                saved_edges: list[Mapping[str, Any]] = []
+                for saved_row in db.execute("SELECT removed_edges_json FROM literature_map_nodes WHERE map_id=?", (map_id,)).fetchall():
+                    for saved in _load(saved_row["removed_edges_json"], []):
+                        if isinstance(saved, Mapping) and (saved.get("source_id") == node_id or saved.get("target_id") == node_id):
+                            saved_edges.append(saved)
+                active_node_ids = {str(row[0]) for row in db.execute("SELECT node_id FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL", (map_id,)).fetchall()}
+                for saved in saved_edges:
+                    source_id = str(saved.get("source_id") or "")
+                    target_id = str(saved.get("target_id") or "")
+                    if source_id not in active_node_ids or target_id not in active_node_ids or source_id == target_id:
+                        continue
+                    edge = MapEdge(str(saved.get("edge_id") or uuid.uuid4().hex), map_id, str(saved.get("kind") or "citation"), source_id, target_id, dict(saved.get("provenance") or {}), saved.get("score"), saved.get("basis"), saved.get("model_version"), saved.get("content_hash"))
+                    db.execute("INSERT OR IGNORE INTO literature_map_edges(edge_id,map_id,kind,source_id,target_id,provenance_json,score,basis,model_version,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?)", (edge.edge_id, map_id, edge.kind, edge.source_id, edge.target_id, _dump(edge.provenance), edge.score, edge.basis, edge.model_version, edge.content_hash))
+            else:
+                edges = db.execute("SELECT * FROM literature_map_edges WHERE map_id=? AND (source_id=? OR target_id=?)", (map_id, node_id, node_id)).fetchall()
+                saved_edges = [{"edge_id": row["edge_id"], "kind": row["kind"], "source_id": row["source_id"], "target_id": row["target_id"], "provenance": _load(row["provenance_json"], {}), "score": row["score"], "basis": row["basis"], "model_version": row["model_version"], "content_hash": row["content_hash"]} for row in edges]
+                db.execute("UPDATE literature_map_nodes SET removed_at=?,removed_edges_json=? WHERE map_id=? AND node_id=?", (iso_now(), _dump(saved_edges), map_id, node_id))
+                db.execute("DELETE FROM literature_map_edges WHERE map_id=? AND (source_id=? OR target_id=?)", (map_id, node_id, node_id))
+            now = iso_now()
+            db.execute("UPDATE literature_maps SET revision=revision+1,updated_at=? WHERE map_id=? AND owner_id=?", (now, map_id, owner_id))
+            fresh_map = db.execute("SELECT * FROM literature_maps WHERE map_id=?", (map_id,)).fetchone()
+            restore_job = None
+            if restore:
+                restore_job = MapJob(uuid.uuid4().hex, map_id, "restore", "completed", "restore", {"node_id": node_id}, {}, [], None, now, now)
+                db.execute(
+                    "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (restore_job.job_id, map_id, restore_job.operation, restore_job.status, restore_job.step, _dump(restore_job.cursor), _dump(restore_job.counts), _dump(restore_job.failed_units), None, None, now, now),
+                )
+            result = {"map": _map(fresh_map).to_dict(), ("restored_node_id" if restore else "removed_node_id"): node_id}
+            if restore_job is not None:
+                result["job"] = restore_job.to_dict()
+            if idempotency_key:
+                db.execute("INSERT INTO literature_map_mutation_idempotencies(map_id,owner_id,operation,idempotency_key,params_hash,result_json,created_at) VALUES(?,?,?,?,?,?,?)", (map_id, owner_id, operation, idempotency_key, params_hash or "", _dump(result), now))
+            if restore_job is not None:
+                self._append_event(db, restore_job, event_type="restored")
+            return result
 
     def add_edges(self, map_id: str, owner_id: str, edges: Iterable[MapEdge], job_id: str | None = None) -> list[MapEdge]:
         values = list(edges)
@@ -699,6 +1047,9 @@ class LiteratureMapStore:
                 (job_id, map_id, owner_id),
             ).fetchone()
             if row is None or row["status"] not in {"failed", "partial", "stopped"}:
+                return None
+            failed_units = _load(row["failed_units_json"], [])
+            if isinstance(failed_units, list) and failed_units and not any(isinstance(item, Mapping) and item.get("retryable") is True for item in failed_units):
                 return None
             now = iso_now()
             db.execute(
@@ -982,6 +1333,13 @@ class LiteratureMapStore:
         if row["status"] == "stopped":
             raise ValueError("map stopped")
 
+    @staticmethod
+    def _insert_node(db: sqlite3.Connection, node: MapPaper) -> None:
+        db.execute(
+            "INSERT INTO literature_map_nodes(node_id,map_id,identity_key,external_ids_json,title,authors_json,year,venue,abstract,keywords_json,citation_count,source_url,provenance_json,catalog_paper_id,document_id,download_status,position_json,group_id,removed_at,removed_edges_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (node.node_id, node.map_id, node.identity_key or uuid.uuid4().hex, _dump(node.external_ids), node.title, _dump(list(node.authors)), node.year, node.venue, node.abstract, _dump(list(node.keywords)), node.citation_count, node.source_url, _dump(node.provenance), node.catalog_paper_id, node.document_id, node.download_status, _dump(node.position) if node.position else None, node.group_id, None, None),
+        )
+
     def _touch(self, db: sqlite3.Connection, map_id: str, owner_id: str) -> None:
         db.execute("UPDATE literature_maps SET updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (iso_now(), map_id, owner_id))
 
@@ -1009,7 +1367,7 @@ def _map(row: sqlite3.Row) -> LiteratureMap:
 
 
 def _node(row: sqlite3.Row) -> MapPaper:
-    return MapPaper(row["node_id"], row["map_id"], _load(row["external_ids_json"], {}), row["title"], tuple(_load(row["authors_json"], [])), row["year"], row["venue"], row["abstract"], tuple(_load(row["keywords_json"], [])), row["citation_count"], row["source_url"], _load(row["provenance_json"], {}), row["catalog_paper_id"], row["document_id"], row["download_status"], _load(row["position_json"], None), row["group_id"], row["identity_key"])
+    return MapPaper(row["node_id"], row["map_id"], _load(row["external_ids_json"], {}), row["title"], tuple(_load(row["authors_json"], [])), row["year"], row["venue"], row["abstract"], tuple(_load(row["keywords_json"], [])), row["citation_count"], row["source_url"], _load(row["provenance_json"], {}), row["catalog_paper_id"], row["document_id"], row["download_status"], _load(row["position_json"], None), row["group_id"], row["identity_key"], bool(row["removed_at"]))
 
 
 def _edge(row: sqlite3.Row) -> MapEdge:
@@ -1018,6 +1376,10 @@ def _edge(row: sqlite3.Row) -> MapEdge:
 
 def _job(row: sqlite3.Row) -> MapJob:
     return MapJob(row["job_id"], row["map_id"], row["operation"], row["status"], row["step"], _load(row["cursor_json"], {}), _load(row["counts_json"], {}), _load(row["failed_units_json"], []), row["idempotency_key"], row["created_at"], row["updated_at"])
+
+
+def _preview(row: sqlite3.Row) -> MapPreview:
+    return MapPreview(row["preview_id"], row["map_id"], row["job_id"], row["kind"], row["status"], int(row["base_revision"]), _load(row["candidates_json"], []), _load(row["diff_json"], []), _load(row["warnings_json"], []), row["idempotency_key"], row["created_at"], row["updated_at"])
 
 
 def _event(row: sqlite3.Row) -> MapEvent:

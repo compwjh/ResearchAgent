@@ -71,6 +71,30 @@ class ImportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["topic", "references", "citations", "refresh"]
+    node_id: str | None = Field(default=None, min_length=1, max_length=100)
+    query: str | None = Field(default=None, max_length=500)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class PreviewApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: StrictInt = Field(ge=0)
+    selected_candidate_ids: list[str] = Field(default_factory=list, max_length=200)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class NodeMutationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: StrictInt = Field(ge=0)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+
 def _error(error: Exception) -> HTTPException:
     code = str(error)
     if isinstance(error, LookupError) or code in {"PROJECT_NOT_FOUND", "IMPORT_BRIDGE_UNAVAILABLE"}:
@@ -81,6 +105,8 @@ def _error(error: Exception) -> HTTPException:
         "MAP_STORAGE_UNAVAILABLE", "MAP_IMPORT_STATE_UNAVAILABLE",
     }:
         status, error_code, message = 503, "MAP_STORAGE_UNAVAILABLE", "文献地图暂时不可用，请稍后重试"
+    elif code == "MAP_NO_RETRYABLE_UNITS":
+        status, error_code, message = 409, code, "当前作业没有可重试的失败单元"
     elif code in {"revision conflict", "idempotency conflict", "job is not retryable", "map stopped", "MAP_JOB_INVALID_INPUT", "MAP_IDEMPOTENCY_STATE_INVALID"} or code.startswith("MAP_CONFLICT"):
         status, error_code, message = 409, "MAP_CONFLICT", "地图版本或作业状态已变化，请重新读取后重试"
         if code == "idempotency conflict":
@@ -95,7 +121,7 @@ def _error(error: Exception) -> HTTPException:
             "UNSUPPORTED_SOURCE": "source_id 不是服务端支持的来源",
             "UNSUPPORTED_CONFERENCE": "conference_id 不是服务端支持的会议",
         }[code]
-    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node"}:
+    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED"}:
         status, error_code, message = 400, code, "地图创建参数不合法"
     elif code == "PROJECT_NOT_FOUND":
         status, error_code, message = 404, code, "项目不存在或不可访问"
@@ -177,6 +203,66 @@ def get_literature_map_node(map_id: str, node_id: str):
         return _envelope(node=get_literature_map_service().node(map_id, node_id, OWNER_ID).to_dict())
     except Exception as error:
         raise _error(error) from error
+
+
+@router.post("/{map_id}/previews", status_code=202)
+def create_literature_map_preview(map_id: str, payload: PreviewRequest):
+    try:
+        preview = get_literature_map_service().create_preview(
+            map_id,
+            OWNER_ID,
+            kind=payload.kind,
+            node_id=payload.node_id,
+            query=payload.query,
+            idempotency_key=payload.idempotency_key,
+        )
+        _, job = get_literature_map_service().get_preview(map_id, preview.preview_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(preview_id=preview.preview_id, map_id=map_id, job_id=preview.job_id, status=preview.status, base_revision=preview.base_revision, preview=preview.to_dict(), job=job.to_dict())
+
+
+@router.get("/{map_id}/previews/{preview_id}")
+def get_literature_map_preview(map_id: str, preview_id: str):
+    try:
+        preview, job = get_literature_map_service().get_preview(map_id, preview_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(preview=preview.to_dict(), job=job.to_dict())
+
+
+@router.post("/{map_id}/previews/{preview_id}/apply", status_code=202)
+def apply_literature_map_preview(map_id: str, preview_id: str, payload: PreviewApplyRequest):
+    try:
+        result = get_literature_map_service().apply_preview(
+            map_id,
+            preview_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+            selected_candidate_ids=payload.selected_candidate_ids,
+            idempotency_key=payload.idempotency_key,
+        )
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
+
+
+@router.post("/{map_id}/nodes/{node_id}/remove")
+def remove_literature_map_node(map_id: str, node_id: str, payload: NodeMutationRequest):
+    try:
+        result = get_literature_map_service().remove_node(map_id, node_id, OWNER_ID, expected_revision=payload.expected_revision, idempotency_key=payload.idempotency_key)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
+
+
+@router.post("/{map_id}/nodes/{node_id}/restore", status_code=202)
+def restore_literature_map_node(map_id: str, node_id: str, payload: NodeMutationRequest):
+    try:
+        result = get_literature_map_service().restore_node(map_id, node_id, OWNER_ID, expected_revision=payload.expected_revision, idempotency_key=payload.idempotency_key)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
 
 
 @router.patch("/{map_id}/view")

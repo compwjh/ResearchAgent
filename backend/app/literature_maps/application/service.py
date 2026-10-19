@@ -21,7 +21,7 @@ from backend.app.literature_maps.application.catalog_adapter import (
 )
 from backend.app.literature_maps.application.similarity import build_similarity_edges, is_valid_vector
 from backend.app.literature_maps.domain.identity import deterministic_identity_key
-from backend.app.literature_maps.domain.models import LiteratureMap, MapEdge, MapJob, MapPaper, content_hash
+from backend.app.literature_maps.domain.models import LiteratureMap, MapEdge, MapJob, MapPaper, MapPreview, content_hash
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
     SEMANTIC_SCHOLAR_METADATA_FIELDS,
@@ -242,6 +242,13 @@ class LiteratureMapService:
         jobs = self.store.recover_jobs(owner_id)
         for job in jobs:
             owner = owner_id or self._owner_for_job(job)
+            if job.operation.startswith("preview:"):
+                preview_id = str(job.cursor.get("preview_id") or "")
+                request = self.store.get_preview_request(job.map_id, preview_id, owner) if preview_id else None
+                if request is not None and self.executor is not None:
+                    node_id, query = request
+                    self.executor.submit(self._run_preview, job.map_id, owner, preview_id, job.operation.split(":", 1)[1], node_id, query)
+                continue
             if self.executor is not None:
                 self.executor.submit(self.run_job, job.job_id, owner)
         return len(jobs)
@@ -288,7 +295,12 @@ class LiteratureMapService:
         if job.status not in {"failed", "partial", "stopped"}:
             raise ValueError("job is not retryable")
         nodes = self.store.list_nodes(map_id, owner_id)
-        failed_units = list(job.failed_units)
+        failed_units = [
+            item for item in job.failed_units
+            if isinstance(item, Mapping) and item.get("retryable") is True
+        ]
+        if job.failed_units and not failed_units:
+            raise ValueError("MAP_NO_RETRYABLE_UNITS")
         retry_step = "discover"
         if any(item.get("unit") == "similarity" for item in failed_units):
             retry_step = "similarity"
@@ -338,6 +350,350 @@ class LiteratureMapService:
         if item is None:
             raise LookupError("node not found")
         return item
+
+    def create_preview(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        kind: str,
+        node_id: str | None = None,
+        query: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> MapPreview:
+        """Calculate and persist a bounded candidate preview.
+
+        The provider is consulted only from this explicit user action.  The
+        durable candidate snapshot is then the sole input to apply, so a
+        later provider response cannot silently change what the user confirms.
+        """
+        if kind not in {"topic", "references", "citations", "refresh"}:
+            raise ValueError("INVALID_PREVIEW_KIND")
+        map_item = self.store.get_map(map_id, owner_id)
+        if map_item is None:
+            raise LookupError("map not found")
+        source_node = None
+        if kind in {"references", "citations"}:
+            if not node_id:
+                raise ValueError("PREVIEW_NODE_REQUIRED")
+            source_node = self.store.get_node(map_id, node_id, owner_id)
+            if source_node is None or source_node.removed:
+                raise LookupError("node not found")
+        params_hash = _params_hash({"kind": kind, "node_id": node_id, "query": query or map_item.topic, "base_revision": map_item.revision})
+        if self.executor is not None:
+            preview, _, created = self.store.create_preview(
+                map_id,
+                owner_id,
+                kind=kind,
+                base_revision=map_item.revision,
+                candidates=[],
+                diff=[],
+                warnings=[],
+                node_id=node_id,
+                query=query,
+                status="queued",
+                idempotency_key=idempotency_key,
+                params_hash=params_hash,
+            )
+            if created:
+                self.executor.submit(self._run_preview, map_id, owner_id, preview.preview_id, kind, node_id, query)
+            return preview
+        candidates, diff, warnings, provider_request_count = self._calculate_preview(map_item, owner_id, kind=kind, node_id=node_id, query=query)
+        preview, _, _ = self.store.create_preview(
+            map_id,
+            owner_id,
+            kind=kind,
+            base_revision=map_item.revision,
+            candidates=candidates,
+            diff=diff,
+            warnings=warnings,
+            node_id=node_id,
+            query=query,
+            idempotency_key=idempotency_key,
+            params_hash=params_hash,
+            provider_request_count=provider_request_count,
+        )
+        return preview
+
+    def _run_preview(self, map_id: str, owner_id: str, preview_id: str, kind: str, node_id: str | None, query: str | None) -> None:
+        try:
+            preview_state = self.store.get_preview(map_id, preview_id, owner_id)
+            if preview_state is None:
+                return
+            _, job = preview_state
+            claim = self.store.claim_job(job.job_id, map_id, owner_id)
+            if claim is None:
+                current = self.store.get_job(job.job_id, map_id, owner_id)
+                if current is None or current.status not in {"queued", "running"}:
+                    return
+                job = current
+            checkpoint = self.store.get_unit_checkpoint(job.job_id, map_id, owner_id, "preview:calculate")
+            if checkpoint and checkpoint.get("status") == "completed":
+                payload = checkpoint.get("payload") or {}
+                self.store.complete_preview(map_id, preview_id, owner_id, status="completed", candidates=list(payload.get("candidates") or []), diff=list(payload.get("diff") or []), warnings=list(payload.get("warnings") or []), provider_request_count=int(payload.get("provider_request_count") or 0))
+                return
+            map_item = self.store.get_map(map_id, owner_id)
+            if map_item is None:
+                return
+            candidates, diff, warnings, provider_request_count = self._calculate_preview(map_item, owner_id, kind=kind, node_id=node_id, query=query)
+            self.store.save_unit_checkpoint(job.job_id, map_id, owner_id, unit_key="preview:calculate", status="completed", payload={"candidates": candidates, "diff": diff, "warnings": warnings, "provider_request_count": provider_request_count, "provider_request_budget": max(0, GRAPH_REQUEST_BUDGET - provider_request_count)})
+            self.store.complete_preview(map_id, preview_id, owner_id, status="completed", candidates=candidates, diff=diff, warnings=warnings, provider_request_count=provider_request_count)
+        except (LookupError, ValueError) as error:
+            self.store.complete_preview(map_id, preview_id, owner_id, status="failed", candidates=[], diff=[], warnings=[str(error)], provider_request_count=0)
+        except Exception:
+            logger.exception("literature map preview failed")
+            self.store.complete_preview(map_id, preview_id, owner_id, status="failed", candidates=[], diff=[], warnings=["MAP_PREVIEW_FAILED"], provider_request_count=0)
+
+    def _calculate_preview(self, map_item: LiteratureMap, owner_id: str, *, kind: str, node_id: str | None, query: str | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], int]:
+        map_id = map_item.map_id
+        existing = self.store.list_nodes(map_id, owner_id)
+        by_identity = {node.identity_key: node for node in existing if node.identity_key}
+        candidates: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        diff: list[dict[str, Any]] = []
+        provider_request_count = 0
+        if kind == "refresh":
+            candidates, diff, warnings, provider_request_count = self._refresh_candidates(existing, by_identity, owner_id)
+        elif kind == "topic":
+            discovery_map = replace(map_item, topic=str(query).strip()) if str(query or "").strip() else map_item
+            rows, error_code, provider_request_count, _ = self._discover_rows(discovery_map)
+            if error_code:
+                warnings.append(str(error_code))
+            for row in rows[:MAX_NODES]:
+                candidate_node = self._to_node(map_id, row)
+                candidate = self._preview_candidate(candidate_node, by_identity)
+                if not any(item.get("candidate_id") == candidate.get("candidate_id") for item in candidates):
+                    candidates.append(candidate)
+        else:
+            source_node = self.store.get_node(map_id, str(node_id), owner_id) if node_id else None
+            if source_node is None or source_node.removed:
+                raise LookupError("node not found")
+            relation = "references" if kind == "references" else "citations"
+            graph_result = self._preview_graph(source_node, relation)
+            provider_request_count = 1 if graph_result.get("provider_request") else 0
+            if graph_result.get("code"):
+                warnings.append(str(graph_result["code"]))
+            for row in graph_result.get("items", ()):
+                candidate_node = self._to_node(map_id, row)
+                candidate = self._preview_candidate(candidate_node, by_identity)
+                candidate["relation"] = "citation"
+                candidate["relation_source_node_id"] = source_node.node_id
+                if not any(item.get("candidate_id") == candidate.get("candidate_id") for item in candidates):
+                    candidates.append(candidate)
+        return candidates[:MAX_NODES], diff, warnings, provider_request_count
+
+    def _refresh_candidates(self, existing: list[MapPaper], by_identity: Mapping[str | None, MapPaper], owner_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], int]:
+        active = [node for node in existing if not node.removed]
+        identifiers = [node.external_ids.get("semantic_scholar") for node in active if node.external_ids.get("semantic_scholar")]
+        rows: list[SemanticScholarMetadata] = []
+        warnings: list[str] = []
+        provider_request_count = 0
+        if identifiers:
+            key = self._request_cache_key(provider="semantic_scholar", operation="metadata_batch", identifier="|".join(identifiers), filters={}, page=0)
+            payload = self._get_request_cache(key)
+            if payload is not None:
+                rows = self._parse_search_payload(payload)
+            else:
+                batch = getattr(self.client, "batch", None)
+                if not callable(batch):
+                    warnings.append("SEMANTIC_SCHOLAR_METADATA_UNAVAILABLE")
+                else:
+                    try:
+                        provider_request_count += 1
+                        result = batch(identifiers, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
+                        code = getattr(result, "code", None)
+                        if code:
+                            warnings.append(str(code))
+                        else:
+                            payload = getattr(result, "payload", result)
+                            rows = self._parse_search_payload(payload)
+                            if rows:
+                                self._put_request_cache(key, payload)
+                    except (TypeError, ValueError, OSError):
+                        warnings.append("SEMANTIC_SCHOLAR_INVALID_RESPONSE")
+        by_provider = {row.paper_id: row for row in rows}
+        candidates: list[dict[str, Any]] = []
+        diff: list[dict[str, Any]] = []
+        candidate_by_node: dict[str, dict[str, Any]] = {}
+        for node in active:
+            row = by_provider.get(node.external_ids.get("semantic_scholar"))
+            refreshed = node
+            if row is not None:
+                refreshed = replace(node, title=row.title, authors=row.authors, year=row.year, venue=row.venue, abstract=row.abstract, citation_count=row.citation_count)
+            candidate = self._preview_candidate(refreshed, by_identity)
+            candidate["relation_targets"] = []
+            candidates.append(candidate)
+            candidate_by_node[node.node_id] = candidate
+            changes: dict[str, Any] = {}
+            for field in ("title", "authors", "year", "venue", "abstract", "citation_count"):
+                before = getattr(node, field)
+                after = getattr(refreshed, field)
+                before_value = list(before) if isinstance(before, tuple) else before
+                after_value = list(after) if isinstance(after, tuple) else after
+                if before_value != after_value:
+                    changes[field] = {"from": before_value, "to": after_value}
+            if changes:
+                diff.append({"node_id": node.node_id, "changes": changes})
+        # Refresh relation checks are bounded by the same per-job budget as
+        # initial graph construction.  A provider miss is a warning, never a
+        # deletion, so an outage cannot erase user-visible relations.
+        current_edges = {(edge.source_id, edge.target_id) for edge in self.store.list_edges(active[0].map_id, owner_id) if edge.kind == "citation"} if active else set()
+        by_provider_node = {node.external_ids.get("semantic_scholar"): node for node in active if node.external_ids.get("semantic_scholar")}
+        relation_diff: dict[str, dict[str, Any]] = {}
+        for node in active:
+            if provider_request_count >= GRAPH_REQUEST_BUDGET:
+                warnings.append("MAP_GRAPH_BUDGET_EXCEEDED")
+                break
+            result = self._preview_graph(node, "references")
+            if result.get("provider_request"):
+                provider_request_count += 1
+            if result.get("code"):
+                if str(result["code"]) not in warnings:
+                    warnings.append(str(result["code"]))
+                continue
+            target_ids: list[str] = []
+            for row in result.get("items", ()):
+                target = by_provider_node.get(row.paper_id)
+                if target is None or target.node_id == node.node_id or not target.identity_key:
+                    continue
+                target_ids.append(target.identity_key)
+                if (node.node_id, target.node_id) not in current_edges:
+                    relation_diff.setdefault(node.node_id, {"added": [], "removed": []})["added"].append(target.identity_key)
+            candidate = candidate_by_node.get(node.node_id)
+            if candidate is not None:
+                candidate["relation_targets"] = sorted(set(target_ids))
+        for node_id, changes in relation_diff.items():
+            diff.append({"node_id": node_id, "changes": {"relations": changes}})
+        return candidates, diff, warnings, provider_request_count
+
+    def get_preview(self, map_id: str, preview_id: str, owner_id: str) -> tuple[MapPreview, MapJob]:
+        result = self.store.get_preview(map_id, preview_id, owner_id)
+        if result is None:
+            raise LookupError("preview not found")
+        return result
+
+    def apply_preview(
+        self,
+        map_id: str,
+        preview_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        selected_candidate_ids: list[str],
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        preview, _ = self.get_preview(map_id, preview_id, owner_id)
+        if len(selected_candidate_ids) != len(set(selected_candidate_ids)):
+            raise ValueError("INVALID_PREVIEW_CANDIDATE")
+        candidate_by_id = {str(item.get("candidate_id")): item for item in preview.candidates if isinstance(item, Mapping)}
+        selected = []
+        for candidate_id in selected_candidate_ids:
+            candidate = candidate_by_id.get(candidate_id)
+            if candidate is None or (preview.kind != "refresh" and candidate.get("already_present")) or candidate.get("removed"):
+                raise ValueError("INVALID_PREVIEW_CANDIDATE")
+            selected.append(candidate)
+        if len(selected) > 20:
+            raise ValueError("PREVIEW_BATCH_LIMIT")
+        nodes: list[MapPaper] = []
+        updates: list[MapPaper] = []
+        relations: list[tuple[str, str, str]] = []
+        for candidate in selected:
+            node = self._candidate_node(map_id, candidate)
+            if preview.kind == "refresh":
+                current = self.store.get_node(map_id, str(candidate.get("node_id")), owner_id)
+                if current is None or current.removed:
+                    raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                node = replace(node, node_id=current.node_id, identity_key=current.identity_key, position=current.position, group_id=current.group_id, document_id=current.document_id, download_status=current.download_status, catalog_paper_id=current.catalog_paper_id)
+                updates.append(node)
+            else:
+                nodes.append(node)
+            if preview.kind in {"references", "citations"}:
+                relation_source = str(candidate.get("relation_source_node_id") or "")
+                if relation_source:
+                    if preview.kind == "references":
+                        relations.append(("citation", relation_source, node.identity_key or ""))
+                    else:
+                        relations.append(("citation", node.identity_key or "", relation_source))
+            if preview.kind == "refresh":
+                for target_identity in candidate.get("relation_targets", ()):
+                    relations.append(("citation", node.node_id, str(target_identity)))
+        params_hash = _params_hash({"preview_id": preview_id, "expected_revision": expected_revision, "selected": selected_candidate_ids})
+        result = self.store.apply_preview(
+            map_id,
+            owner_id,
+            preview_id=preview_id,
+            expected_revision=expected_revision,
+            selected_candidate_ids=selected_candidate_ids,
+            nodes=nodes,
+            relations=relations,
+            updates=updates,
+            idempotency_key=idempotency_key,
+            params_hash=params_hash,
+        )
+        if nodes and self.embedder is not None:
+            active_nodes = [item for item in self.store.list_nodes(map_id, owner_id) if not item.removed]
+            similarity_edges, _ = self._collect_similarity(active_nodes)
+            if similarity_edges:
+                self.store.add_edges(map_id, owner_id, similarity_edges)
+        return result
+
+    def remove_node(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, idempotency_key: str | None = None) -> dict[str, Any]:
+        return self.store.remove_node(map_id, node_id, owner_id, expected_revision=expected_revision, idempotency_key=idempotency_key, params_hash=_params_hash({"node_id": node_id, "expected_revision": expected_revision}))
+
+    def restore_node(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, idempotency_key: str | None = None) -> dict[str, Any]:
+        return self.store.restore_node(map_id, node_id, owner_id, expected_revision=expected_revision, idempotency_key=idempotency_key, params_hash=_params_hash({"node_id": node_id, "expected_revision": expected_revision}))
+
+    @staticmethod
+    def _preview_candidate(node: MapPaper, existing: Mapping[str | None, MapPaper]) -> dict[str, Any]:
+        identity = node.identity_key or deterministic_identity_key(node.external_ids)
+        candidate_id = "candidate-" + hashlib.sha256(identity.encode()).hexdigest()[:24]
+        prior = existing.get(identity)
+        return {
+            "candidate_id": candidate_id,
+            "identity_key": identity,
+            "node_id": prior.node_id if prior else None,
+            "title": node.title,
+            "authors": list(node.authors),
+            "year": node.year,
+            "venue": node.venue,
+            "abstract": node.abstract,
+            "external_ids": dict(node.external_ids),
+            "source_url": node.source_url,
+            "provenance": dict(node.provenance),
+            "catalog_paper_id": node.catalog_paper_id,
+            "already_present": prior is not None and not prior.removed,
+            "removed": bool(prior and prior.removed),
+        }
+
+    @staticmethod
+    def _candidate_node(map_id: str, candidate: Mapping[str, Any]) -> MapPaper:
+        return MapPaper.new(
+            map_id,
+            external_ids=dict(candidate.get("external_ids") or {}),
+            title=str(candidate.get("title") or "").strip(),
+            authors=tuple(str(item) for item in candidate.get("authors", ()) if str(item).strip()),
+            year=candidate.get("year"),
+            venue=candidate.get("venue"),
+            abstract=candidate.get("abstract"),
+            source_url=candidate.get("source_url"),
+            provenance=dict(candidate.get("provenance") or {}),
+            catalog_paper_id=candidate.get("catalog_paper_id"),
+        )
+
+    def _preview_graph(self, node: MapPaper, relation: str) -> dict[str, Any]:
+        provider_id = node.external_ids.get("semantic_scholar")
+        if not provider_id:
+            return {"code": "SEMANTIC_SCHOLAR_NO_ID", "items": (), "cache_hit": False, "provider_request": False}
+        try:
+            result = self._cached_graph_request(provider_id, 0, relation=relation)
+        except (TypeError, ValueError, OSError):
+            return {"code": "SEMANTIC_SCHOLAR_UNAVAILABLE", "items": (), "cache_hit": False, "provider_request": True}
+        if result.get("code"):
+            return {"code": str(result["code"]), "items": (), "cache_hit": bool(result.get("cache_hit")), "provider_request": not bool(result.get("cache_hit"))}
+        page = result.get("graph_page")
+        if not isinstance(page, SemanticScholarGraphPage):
+            return {"code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "items": (), "cache_hit": bool(result.get("cache_hit")), "provider_request": not bool(result.get("cache_hit"))}
+        return {"code": None, "items": page.items, "cache_hit": bool(result.get("cache_hit")), "provider_request": not bool(result.get("cache_hit"))}
 
     def detach_project(self, project_id: str, owner_id: str) -> int:
         # This method is deliberately owner scoped and transactional; callers
@@ -578,27 +934,27 @@ class LiteratureMapService:
         except (TypeError, ValueError):
             return
 
-    def _cached_graph_request(self, provider_id: str, offset: int) -> dict[str, Any]:
+    def _cached_graph_request(self, provider_id: str, offset: int, relation: str = "references") -> dict[str, Any]:
         key = self._request_cache_key(
             provider="semantic_scholar",
-            operation="references",
+            operation=relation,
             identifier=provider_id,
             filters={"limit": REFERENCES_PER_NODE},
             page=offset,
         )
         cached = self._get_request_cache(key)
         if cached is not None:
-            page = self._cached_graph_page(cached, provider_id, offset)
+            page = self._cached_graph_page(cached, provider_id, offset, relation=relation)
             if page is None:
                 return {"code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "retryable": False, "cache_hit": True}
             return {"code": None, "graph_page": page, "cache_hit": True}
         try:
             try:
-                result = self.client.graph_edges(provider_id, "references", limit=REFERENCES_PER_NODE, offset=offset, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
+                result = self.client.graph_edges(provider_id, relation, limit=REFERENCES_PER_NODE, offset=offset, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
             except TypeError as error:
                 if "fields" not in str(error):
                     raise
-                result = self.client.graph_edges(provider_id, "references", limit=REFERENCES_PER_NODE, offset=offset)
+                result = self.client.graph_edges(provider_id, relation, limit=REFERENCES_PER_NODE, offset=offset)
         except (TypeError, ValueError):
             return {"code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "retryable": False, "cache_hit": False}
         code = getattr(result, "code", None)
@@ -606,7 +962,7 @@ class LiteratureMapService:
             return {"code": str(code), "retryable": bool(getattr(result, "retryable", False)), "cache_hit": False}
         page = getattr(result, "graph_page", None)
         if page is None:
-            page = self.client.parse_graph_page(getattr(result, "payload", None), "references", provider_id, offset=offset) if hasattr(self.client, "parse_graph_page") else None
+            page = self.client.parse_graph_page(getattr(result, "payload", None), relation, provider_id, offset=offset) if hasattr(self.client, "parse_graph_page") else None
         if not isinstance(page, SemanticScholarGraphPage):
             return {"code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "retryable": False, "cache_hit": False}
         self._put_request_cache(key, self._graph_page_payload(page))
@@ -630,12 +986,12 @@ class LiteratureMapService:
         }
 
     @staticmethod
-    def _cached_graph_page(payload: Any, provider_id: str, offset: int) -> SemanticScholarGraphPage | None:
+    def _cached_graph_page(payload: Any, provider_id: str, offset: int, *, relation: str = "references") -> SemanticScholarGraphPage | None:
         if not isinstance(payload, Mapping):
             return None
-        if payload.get("relation") == "references" and isinstance(payload.get("items"), list):
+        if payload.get("relation") == relation and isinstance(payload.get("items"), list):
             items = tuple(item for item in LiteratureMapService._parse_search_payload(payload.get("items", ())))
-            return SemanticScholarGraphPage("references", str(payload.get("source_paper_id") or provider_id), items, int(payload.get("offset", offset)), payload.get("next_offset"), payload.get("total"))
+            return SemanticScholarGraphPage(relation, str(payload.get("source_paper_id") or provider_id), items, int(payload.get("offset", offset)), payload.get("next_offset"), payload.get("total"))
         return None
 
     @staticmethod
