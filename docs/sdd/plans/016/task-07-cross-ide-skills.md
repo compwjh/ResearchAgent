@@ -1,7 +1,7 @@
 # 任务 07 — 创建 Codex/CodeBuddy 跨 IDE Skills
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 06 ｜ 被依赖：任务 08 ｜ 当前状态：`待执行`
+> 依赖：任务 06 云端验收 ｜ 被依赖：任务 08 ｜ 当前状态：`云端完成；CodeBuddy 待本地验收`
 
 ## 一句话目标
 
@@ -151,11 +151,21 @@ git diff -- AGENTS.md docs/sdd/ROLE-ONBOARDING.md .agents/skills .codebuddy/skil
 
 ## 执行结果
 
-> 待 Task 06 完成后填写。
+纯文档回填：root；实现与初始化：Luna xhigh backend-dev；root 独立读回并运行官方 validator。
+
+- 两个通用 Skill 位于 `.agents/skills/sdd-plan-tasks/`、`.agents/skills/sdd-run-next-task/`，附有官方生成的 `agents/openai.yaml`。
+- 两个 CodeBuddy 薄适配器位于 `.codebuddy/skills/` 同名目录，仅引用通用协议并映射真实角色，不复制状态机。
+- 使用官方 skill-creator `init_skill.py` 初始化，四份 `quick_validate.py` 均返回 `Skill is valid!`；自然语言入口已加入 AGENTS 和角色最小入口。
+- `next` 的 JSON 不含 `agent_role`，执行 Skill 从已验证的 Prompt `Role:` 标签选择实际执行器。缺执行器、缺结果、门禁或 CLI 错误均停止，不代行。
+- 真实 Codex → Luna actor → CLI complete → 删除隔离 DB 后 rebuild → NO_TASK 的证据见 [live-luna-demo.md](./artifacts/live-luna-demo.md)。这是实际协议执行证据，不代表自动触发发现或真实 CodeBuddy 已验收。
+- CodeBuddy Task 调用及双端行为矩阵保持 `not_run`，按用户授权交本地补验。没有修改项目的默认模型配置。
+
+校验命令：`python <official-skill-creator>/scripts/quick_validate.py <skill-directory>`；四份均退出 0。官方工具检出记录及边界以交接文档为准。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-03 | 架构师（自身） | 创建 Task 07，状态置待执行 |
+| 2026-10-19 | root（纯文档回填） | 记录四份 Skill 的官方校验、真实 Codex/Luna 协议示例及 CodeBuddy 本地待验收边界 |
 

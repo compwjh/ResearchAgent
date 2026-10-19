@@ -1,7 +1,7 @@
 # 任务 06 — 实现 Prompt、结果与指标闭环
 
 > 关联：[spec-016](../../specs/016-portable-task-ledger.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 04、05 ｜ 被依赖：任务 07 ｜ 当前状态：`进行中`
+> 依赖：任务 04、05 ｜ 被依赖：任务 07 ｜ 当前状态：`完成（云端 CLI 范围）`
 
 ## 一句话目标
 
@@ -155,11 +155,20 @@ git log -1 --stat --oneline
 
 ## 执行结果
 
-> 待 Task 04、05 完成后填写。
+实现与测试：Luna xhigh 子 Agent；root 负责分派、逐片读回和纯文档回填。
+
+- Prompt、事件、结果校验、指标、complete/fail/recover CLI、journal/CAS/精确 index 协调及终态账本全部接通。
+- 失败来源与中断重试保留原始 baseline，领取只消费紧邻来源；status 与 next 使用一致证明。独立评审发现的状态 P1 已修复，未放宽 owner/租约/路径/摘要校验。
+- 最终 Python 3.9 工具域：379 项通过（142.850 秒，退出 0）；目标集 30 项通过；Ruff、compileall 均通过。候选 `281e933`，原失败和修复记录完整保留。
+- 真实 Luna actor 完成隔离 Task、CLI complete、result/metrics 和删除隔离 DB 后 rebuild，重建后不再领取；另有真实进程中断和 Git journal/index 多阶段恢复测试。
+- 独立 Task06 架构复审 PASS。此结果不代替业务全量回归或真实 CodeBuddy A6 验收。
+
+证据：[最终工具域 QA](./artifacts/task06-final-tool-tests.md)、[独立复审](../../reviews/016-task06-review.md)、[真实 Luna 示例](./artifacts/live-luna-demo.md)。
 
 ## 变更日志
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-03 | 架构师（自身） | 创建 Task 06，状态置待执行 |
+| 2026-10-19 | root（纯文档回填） | 依据 Luna 独立 QA 与架构复审回填云端完成；整体 Spec 保留 CodeBuddy 本地门禁 |
 

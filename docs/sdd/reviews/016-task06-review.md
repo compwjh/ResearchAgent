@@ -1,23 +1,23 @@
 # Spec 016 Task 06 独立评审与 Task 08 迁移格式裁决
 
-- 日期：2026-10-15
+- 日期：2026-10-19
 - 评审者：final_architect；角色：architect；模型：gpt-6-luna xhigh
 - 范围：Task06 Prompt/result/metrics、失败与中断恢复 lineage、owner/lease、journal 化 Git 提交和重建后的 terminal result 查询；另对 Task08 legacy 迁移数据形状作架构裁决。只读评审；未运行测试，未修改生产代码。
-- 结论：**FAIL — 发现 1 项 P1 状态一致性缺陷。** 其余已审的 lineage、owner/lease、journal/CAS 与 result 路径未发现 P0/P1。未运行测试；这不是 Task06 动态 QA 收口、Task09 整体验收或 CodeBuddy 本地验收。
+- 结论：**PASS — Task06 静态复审与工具域 QA 范围。** 原 P1 已由 `4388c9b` / `f620887` 修复，静态复审及候选 `281e933` 工具域 379 项全绿、目标集 30 项全绿。QA 命令、日志、运行 metadata 已回填现有 artifact，并保留先前失败与修复重试记录；此签字不替代 Task07/08/09 整体验收、ResearchAgent 业务全量回归或真实 CodeBuddy/A6 本地验收。
 
 ## 阻塞级别
 
 - P0：无。
-- P1：1 项，见下文。
+- P1：原发现 1 项，已修复并由工具域测试覆盖；见下文。
 - P2：无。
 
 ## 复核依据
 
-### P1 — status 未按 Task06 failed-source 证明计算恢复资格
+### P1（已关闭）— status 与 claim 共用 failed-source 证明
 
-[`catalog_status.py`](../../../scripts/sdd_tasks/catalog_status.py#L111) 只对最新 `abandoned` run 进入恢复校验。最新 `failed` run 直接返回无恢复原因，因此其 observation、recovery decision、owner/lease closure、source tip 与当前 workspace 未经证明时，pending Task 仍可能出现在 `eligible`。反方向上，failed run 派生的 abandoned retry child 虽由 [`newcli_claim.py`](../../../scripts/sdd_tasks/newcli_claim.py#L128) 先通过 `failed_retry_origin` 分类、再由 [`resolve_failed_source`](../../../scripts/sdd_tasks/failed_selection.py#L34) 严格证明并可由 `next` 领取，`status` 却把它送入 Task05 的泛型 [`load_recovery_snapshot`](../../../scripts/sdd_tasks/catalog_status.py#L133)，并将合法 lineage 报为 `recovery_invalid:RECOVERY_SOURCE_INVALID`、列入 `waiting`。这同时产生 failed source 假阳性与合法 failed-derived recovery 假阴性，破坏 Spec016 对 `status` 可执行/等待列表的接口含义；损坏 failed source 还可能使真实 `next` 在领取前失败。
+[初审](../../../scripts/sdd_tasks/catalog_status.py#L111) 发现两种状态偏差：latest `failed` 未做 source proof 会被报为 `eligible`；failed-derived `abandoned` child 被 Task05 generic loader 错报为 `waiting`。修复后，latest `failed` 与经 lineage 分类的 failed-derived `abandoned` 都调用同一 [`resolve_failed_source`](../../../scripts/sdd_tasks/catalog_status.py#L157)，正常 Task05 abandoned 继续走 strict generic snapshot loader；普通 malformed recovery event 在 lineage 分类前仍返回既有 `RECOVERY_EVENT_INVALID`。claim 对 failed source 先用 [`_canonical_candidate`](../../../scripts/sdd_tasks/claim_validation.py#L41) 重新解析 canonical Task，再执行同一 resolver，避免以非 canonical 候选作证明。
 
-冻结 Task06 协议要求 `claim_next` 仅消费最新未消费 run，并对 failed source 核验 observation、decision、身份和恢复 tip（[`TASK-PROTOCOL.md`](../TASK-PROTOCOL.md#L326)）。修复应局限于 `catalog_status.py`：最新 `failed` 以及由 `failed_retry_origin` 证明为 failed-derived 的最新 `abandoned` run，调用现有 `resolve_failed_source` 并映射为 `recovery_ready:<kind>`；证明失败时列入 `recovery_invalid:<stable code>` 并留在 waiting。无 failed ancestor 的普通 Task05 abandoned run 继续使用既有 generic strict loader，不放宽任一 source loader。此评审未改生产代码；修复与其动态回归等待独立工具域 QA 完成后再安排。
+代码修复位于 `4388c9b`（`status` 按 failed lineage 复用 strict proof，并恢复 legacy event 诊断顺序）及 `f620887`（`claim` proof 前先 canonicalize Task）。我只读复查这两个 Python source，未改源码、未运行测试，未发现残留 P1。独立工具域 QA 在 candidate `281e933` 上通过：全套 379 tests（142.850 秒，exit 0）、目标 30 tests、Ruff 与 compileall 均通过。确切命令、日志路径、HEAD/status 和运行 metadata 已写入 [Task06 QA artifact](../plans/016/artifacts/task06-final-tool-tests.md)，早期失败记录保留并由后续 closure QA 明确关闭。
 
 ### Lineage、消费和基线
 
@@ -54,4 +54,4 @@ Task08 §B 要求 `provenance=legacy` 摘要、保留未知指标、部分项建
 
 ## 验收边界
 
-本评审发现的 P1 必须修复并由独立工具域 QA 覆盖后，才能重新签 Task06。Task07/08/09 结果、ResearchAgent 业务全量回归与 Task09 review 尚不在本签字范围。真实 CodeBuddy 留本地进行，A6 与 Task02 不可标为通过；本评审不代表 Spec016 完成。
+Task06 范围已通过静态复审和独立工具域 QA；详细 QA 记录已在现有 artifact 留档。Task07/08/09、ResearchAgent 业务全量回归与 Task09 整体验收不在本签字范围。真实 CodeBuddy 留本地进行，A6 与 Task02 不可标为通过；本评审不代表 Spec016 整体完成。

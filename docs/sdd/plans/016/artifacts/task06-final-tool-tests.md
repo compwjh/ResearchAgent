@@ -52,3 +52,20 @@ The complete verbose output is `/tmp/spec016_task06_targeted_20261017.out`. The 
 2. `test_attempt_limit_waits_and_resets_after_nonfailed_run`, `tests/sdd_tasks/test_catalog_eligibility.py:70`: `StopIteration` because `_status(database)["eligible"]` does not contain the task.
 
 The other 28 tests passed, including both `test_failed_recovery_status` cases and `test_failed_retry_crash`. Fixture runs emitted expected `stale_task_copies_ignored` warnings. HEAD before/after was `f620887dbbdca7fd47f2431fd0cdfe72185f7524` / `8982e6eb9de2e10860957b06f616131db09d36e1`; porcelain status before/after listed the same four untracked artifacts (`legacy-task-audit.md`, `live-luna-demo.md`, this report, and `016-task06-review.md`). The targeted errors blocked the requested full-domain, Ruff, and compileall follow-up; none was run in this pass.
+
+## Closure QA after fixture correction
+
+The Luna xhigh implementation agent fixed the new fixture's `current_owner` call; root reviewed it, committed it, and froze candidate `281e93373aa328b47d289662919f991646d12773`. The run sequence below preserves the first failed attempt and its focused retry.
+
+| Command | Started / finished (UTC) | Elapsed | Exit | Result |
+|---|---|---:|---:|---|
+| Five targeted modules on `c74579b7892945eb0903fe2c36d1051c21459951` | 00:52:05.427 / 00:52:16.300 | 10.873 s | 1 | 30 tests; 1 error |
+| `... unittest -v tests.sdd_tasks.test_ledger_finalize.LedgerFinalizeBindingTests.test_complete_failed_result_stays_readable_during_new_claim_and_lease` | 00:54:41.806 / 00:54:43.570 | 1.763 s | 0 | 1 test passed (unittest reported 1.688 s) |
+| Five targeted modules on `281e93373aa328b47d289662919f991646d12773` | 00:54:53.879 / 00:55:06.606 | 12.727 s | 0 | 30 tests passed (unittest reported 12.660 s) |
+| `/workspace/researchagent-cli-venv39/bin/python -m unittest discover -s tests/sdd_tasks -t .` | 00:55:14.424 / 00:57:37.363 | 142.939 s | 0 | 379 tests passed (unittest reported 142.850 s) |
+| `/workspace/researchagent-cli-venv39/bin/python -m ruff check scripts/sdd_tasks tests/sdd_tasks` | 00:57:49.626 / 00:57:49.654 | 0.028 s | 0 | `All checks passed!` |
+| `/workspace/researchagent-cli-venv39/bin/python -m compileall scripts/sdd_tasks tests/sdd_tasks` | 00:57:49.946 / 00:57:49.971 | 0.024 s | 0 | Both directories listed; no compile errors |
+
+The first targeted attempt's single error was `TypeError: current_owner() missing 1 required keyword-only argument: 'pid'` at `tests/sdd_tasks/test_ledger_finalize.py:70`; the Luna xhigh implementation agent fixed the fixture and root committed `281e933`, and the isolated test plus the five-module rerun then passed. The first run began at `c74579b7892945eb0903fe2c36d1051c21459951` and ended at `05b78c0a8c2a188e2dfa31c7cdc0f1901e06a312`. It emitted expected `stale_task_copies_ignored` warnings; these are not test failures.
+
+Verbose outputs and command metadata are retained as regular files under `.sdd/runtime/closure-qa/`: `targeted-20261019.out/.json`, `fixture-method-20261019.out/.json`, `targeted-after-pidfix-20261019.out/.json`, `domain-20261019.out/.json`, `ruff-20261019.out/.json`, and `compileall-20261019.out/.json`. The successful fixture-only and five-module runs started and ended on `281e933` with clean status. The domain run also used HEAD `281e933`; a concurrent documentation-only edit left `docs/sdd/plans/016/task-07-cross-ide-skills.md` modified after it. That same documentation status remained before/after Ruff and compileall. No Python source or test file changed during these successful runs. No global pytest/conftest command was run.
