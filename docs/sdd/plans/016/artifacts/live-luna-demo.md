@@ -1,7 +1,8 @@
 # Spec 016 Task 09 live Luna demo
 
-**Date:** 2026-10-15 UTC  
-**Run:** `5cbcf851-add2-4558-a0ed-acdc5041332c`  
+**Date:** 2026-10-15 UTC
+
+**Run:** `5cbcf851-add2-4558-a0ed-acdc5041332c`
 **Task:** `spec-016-task-09` · **Role:** `backend-dev` · **Attempt:** 1
 
 ## Isolated claim
