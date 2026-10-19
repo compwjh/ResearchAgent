@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=56">
+    <link rel="stylesheet" href="/assets/styles.css?v=57">
+    <link rel="stylesheet" href="/assets/literature-maps.css?v=1">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -99,6 +100,7 @@
         <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count"></span></a>
         <a class="nav-item" data-view="memory" role="button" tabindex="0"><span class="nav-icon">✧</span> 记忆治理</a>
         <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
+        <a class="nav-item" data-view="literature-maps" href="#literature-maps-view" aria-controls="literature-maps-view" aria-current="false"><span class="nav-icon">⌘</span> 文献地图</a>
         <a class="nav-item" data-view="skill-tool" role="button" tabindex="0"><span class="nav-icon">❖</span> Skills 与 Tools</a>
       </nav>
       <section class="research-notifications" aria-labelledby="research-notifications-title">
@@ -661,6 +663,12 @@
         </section>
       </section>
     </section>
+    <section class="main-area" id="literature-maps-view" hidden aria-labelledby="literature-maps-title">
+      <header class="topbar">
+        <div class="breadcrumb"><span>工作区</span><span class="slash">/</span><strong id="literature-maps-title">文献地图</strong></div>
+      </header>
+      <section class="literature-maps-mount" id="literature-maps-mount" aria-label="文献地图工作区"></section>
+    </section>
     <section class="main-area" id="skill-tool-view" hidden aria-labelledby="skill-tool-title">
       <header class="topbar">
         <div class="breadcrumb"><span>Skills 与 Tools</span><span class="slash">/</span><strong>能力管理</strong></div>
@@ -773,8 +781,9 @@
   <script src="/assets/processing-tree.js?v=1"></script>
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 /assets/research-tasks.js?v=10 -->
   <script src="/assets/research-tasks.js?v=16"></script>
+  <script src="/assets/literature-maps.js?v=1"></script>
   <!-- Legacy asset-version markers: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/app.js?v=53 /assets/app.js?v=55 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 /assets/styles.css?v=55 href="/assets/styles.css?v=53" src="/assets/app.js?v=53" -->
-  <script src="/assets/app.js?v=57"></script>
+  <script src="/assets/app.js?v=58"></script>
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 -->
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 href="/assets/styles.css?v=53" -->
   <!-- Spec037 compatibility markers: /assets/research-tasks.js?v=11 /assets/app.js?v=54 href="/assets/styles.css?v=53" src="/assets/app.js?v=54" -->

@@ -9,6 +9,7 @@ application server or making network requests.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -182,31 +183,37 @@ def _exercise_interactions(page, profile: str) -> dict:
     return {"initial": initial, "after_zoom": after_zoom, "after_pan": after_pan, "final": final}
 
 
-def test_synthetic_svg_supports_sparse_graph_interactions() -> None:
+def test_synthetic_svg_supports_sparse_graph_interactions(tmp_path: Path) -> None:
     """Use a real browser to record baseline and representative-load facts."""
 
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
         browser = _open_browser_or_skip(playwright)
+        artifact_root = ARTIFACTS if os.environ.get("LITMAP_SAVE_FEASIBILITY_ARTIFACTS") == "1" else tmp_path
+        screenshot_root = artifact_root / "screenshots"
+        screenshot_paths = {
+            "baseline": screenshot_root / SCREENSHOT.name,
+            "high": screenshot_root / HIGH_SCREENSHOT.name,
+        }
         records = {}
-        for profile, screenshot in (("baseline", SCREENSHOT), ("high", HIGH_SCREENSHOT)):
+        for profile in ("baseline", "high"):
             page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
             _load_profile(page, profile)
             records[profile] = _exercise_interactions(page, profile)
-            ARTIFACTS.mkdir(parents=True, exist_ok=True)
-            screenshot.parent.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=screenshot, full_page=True)
+            screenshot_root.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=screenshot_paths[profile], full_page=True)
             page.close()
 
-        EVIDENCE.write_text(
+        evidence_path = EVIDENCE if os.environ.get("LITMAP_SAVE_FEASIBILITY_ARTIFACTS") == "1" else artifact_root / "browser-evidence.json"
+        evidence_path.write_text(
             json.dumps(
                 {
                     "fixture": str(FIXTURE.relative_to(ROOT)),
                     "synthetic": True,
                     "profiles": {
-                        "baseline": {"query": "", "edge_count": 34, "screenshot": str(SCREENSHOT.relative_to(ROOT))},
-                        "high": {"query": "?profile=high", "edge_count": 620, "screenshot": str(HIGH_SCREENSHOT.relative_to(ROOT))},
+                        "baseline": {"query": "", "edge_count": 34, "screenshot": str(screenshot_paths["baseline"])},
+                        "high": {"query": "?profile=high", "edge_count": 620, "screenshot": str(screenshot_paths["high"])},
                     },
                     "viewport": {"width": 1440, "height": 900},
                     "records": records,

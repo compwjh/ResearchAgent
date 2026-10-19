@@ -1,0 +1,1160 @@
+/* Spec043 Task03：文献地图桌面 MVP。
+ * 该模块刻意保持为无框架组件：后端返回的节点/边是唯一数据来源，
+ * 性能样例只用于边界验证，不在生产组件中注入示例数据。
+ */
+(function literatureMapsModule() {
+  'use strict';
+
+  const API_ROOT = '/api/literature-maps';
+  const SCHEMA_VERSION = 'literature-map-v1';
+  const MAP_WIDTH = 960;
+  const MAP_HEIGHT = 680;
+  const MAX_LAYOUT_FRAMES = 8;
+  const MAX_POLL_ATTEMPTS = 120;
+  const TERMINAL_JOB_STATES = new Set(['completed', 'partial', 'failed', 'stopped']);
+  const LAYER_NAMES = ['citation', 'similarity'];
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  const state = {
+    active: false,
+    mounted: false,
+    maps: [],
+    selectedMapId: null,
+    map: null,
+    graph: null,
+    selectedNodeId: null,
+    selectedNode: null,
+    listQuery: '',
+    listStatus: 'all',
+    job: null,
+    eventCursor: 0,
+    pollTimer: null,
+    pollInFlight: false,
+    pollAttempts: 0,
+    graphRequest: 0,
+    nodeRequest: 0,
+    importRequest: 0,
+    mapRequest: 0,
+    viewRequest: 0,
+    pollGeneration: 0,
+    positions: Object.create(null),
+    positionsDirty: false,
+    layoutFrames: 0,
+    layoutScheduled: false,
+    view: { x: 0, y: 0, scale: 1 },
+    layers: { citation: true, similarity: true },
+    layerStatus: { citation: 'waiting', similarity: 'waiting' },
+    saveTimer: null,
+    pointer: null,
+  };
+
+  const refs = {};
+
+  function createElement(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function createSvgElement(tag) {
+    return document.createElementNS(SVG_NS, tag);
+  }
+
+  function setAttributes(node, attributes) {
+    Object.entries(attributes || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) node.setAttribute(key, String(value));
+    });
+    return node;
+  }
+
+  function setHidden(node, hidden) {
+    if (node) node.hidden = Boolean(hidden);
+  }
+
+  function setStatus(message, status) {
+    if (!refs.status) return;
+    refs.status.textContent = message || '';
+    refs.status.dataset.state = status || '';
+  }
+
+  function makeIdempotencyKey() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return `literature-map-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function errorAction(error, fallback) {
+    const code = String(error?.code || '').toLowerCase();
+    if (error?.status === 429 || code.includes('rate') || code.includes('429')) {
+      return '来源暂时限流，请稍后点击刷新状态；已完成的地图结果会保留。';
+    }
+    if (error?.status === 409 || code.includes('revision') || code.includes('conflict')) {
+      return '地图版本已变化，请重新打开地图后再保存视图。';
+    }
+    if (code.includes('partial') || error?.partial) {
+      return '部分来源失败，已保留可用节点；可重新打开地图查看已完成阶段。';
+    }
+    return error?.message || fallback || '请求失败，请稍后重试。';
+  }
+
+  class LiteratureMapError extends Error {
+    constructor(message, details) {
+      super(message);
+      this.name = 'LiteratureMapError';
+      this.status = details?.status || 0;
+      this.code = details?.code || '';
+      this.retryable = Boolean(details?.retryable);
+      this.partial = Boolean(details?.partial);
+    }
+  }
+
+  async function request(path, init) {
+    let response;
+    try {
+      response = await fetch(`${API_ROOT}${path}`, {
+        credentials: 'same-origin',
+        ...init,
+        headers: {
+          Accept: 'application/json',
+          ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(init?.headers || {}),
+        },
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      throw new LiteratureMapError('无法连接本地服务，请确认后端已启动。', { retryable: true });
+    }
+
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (_) {
+      payload = {};
+    }
+    if (!response.ok) {
+      const detail = payload?.detail && typeof payload.detail === 'object' ? payload.detail : payload;
+      const code = detail?.code || payload?.error_code || '';
+      const message = detail?.message || payload?.message || '地图请求失败。';
+      throw new LiteratureMapError(message, {
+        status: response.status,
+        code,
+        retryable: detail?.retryable,
+        partial: response.status === 206 || code === 'partial',
+      });
+    }
+    if (payload?.schema_version && payload.schema_version !== SCHEMA_VERSION) {
+      throw new LiteratureMapError('地图接口版本不匹配，请刷新页面后重试。', { retryable: false });
+    }
+    return payload;
+  }
+
+  function parseCsv(value) {
+    return String(value || '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .slice(0, 50);
+  }
+
+  function parseYear(value) {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    const year = Number(text);
+    return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : NaN;
+  }
+
+  function normalizeMap(map) {
+    return map && typeof map === 'object' ? map : null;
+  }
+
+  function normalizeNodes(graph) {
+    return Array.isArray(graph?.nodes) ? graph.nodes.filter((node) => node && node.node_id) : [];
+  }
+
+  function normalizeEdges(graph) {
+    return Array.isArray(graph?.edges) ? graph.edges.filter((edge) => edge && edge.source_id && edge.target_id) : [];
+  }
+
+  function mapTitle(map) {
+    return map?.name || map?.topic || '未命名地图';
+  }
+
+  function mapStatusLabel(status) {
+    const labels = {
+      generating: '生成中',
+      ready: '可用',
+      partial: '部分完成',
+      failed: '失败',
+      stopped: '已停止',
+      queued: '排队中',
+      running: '运行中',
+      completed: '已完成',
+    };
+    return labels[status] || status || '未知状态';
+  }
+
+  function nodeLabel(node) {
+    const authors = Array.isArray(node?.authors)
+      ? node.authors.map((author) => String(author || '').trim()).filter(Boolean)
+      : [];
+    const author = authors[0] || (typeof node?.authors === 'string' ? node.authors.trim() : '');
+    const year = node?.year === null || node?.year === undefined || String(node.year).trim() === '' ? '' : String(node.year);
+    const shortLabel = [author, year].filter(Boolean).join(', ');
+    return (shortLabel || node?.title || node?.node_id || '').slice(0, 38);
+  }
+
+  function renderStatusBadge(status) {
+    const badge = createElement('span', 'literature-map-badge', mapStatusLabel(status));
+    badge.dataset.status = status || '';
+    return badge;
+  }
+
+  function renderShell() {
+    const mount = document.querySelector('#literature-maps-mount');
+    if (!mount || state.mounted) return;
+
+    const root = createElement('div', 'literature-map-app');
+    const header = createElement('header', 'literature-map-header');
+    const heading = createElement('div', 'literature-map-heading');
+    heading.append(createElement('p', 'literature-map-eyebrow', 'LITERATURE MAPS'));
+    heading.append(createElement('h1', '', '自动主题探索'));
+    heading.append(createElement('p', 'literature-map-subtitle', '输入主题，保存一张可继续探索的论文关系图。'));
+    const headerActions = createElement('div', 'literature-map-header-actions');
+    const refreshButton = createElement('button', 'secondary-button', '刷新状态');
+    refreshButton.type = 'button';
+    refreshButton.id = 'literature-map-refresh-button';
+    refreshButton.title = '重新读取地图和作业状态';
+    headerActions.append(refreshButton);
+    const newButton = createElement('button', 'secondary-button', '新建地图');
+    newButton.type = 'button';
+    newButton.id = 'literature-map-new-button';
+    headerActions.append(newButton);
+    header.append(heading, headerActions);
+    root.append(header);
+
+    const notice = createElement('div', 'literature-map-notice');
+    notice.id = 'literature-map-status';
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('aria-live', 'polite');
+    root.append(notice);
+
+    const grid = createElement('div', 'literature-map-grid');
+    const listPanel = createElement('aside', 'literature-map-panel literature-map-list-panel');
+    const listHead = createElement('header', 'literature-map-panel-head');
+    listHead.append(createElement('h2', '', '我的地图'));
+    const listCount = createElement('span', 'literature-map-count');
+    listCount.id = 'literature-map-count';
+    listHead.append(listCount);
+    listPanel.append(listHead);
+    const listFilters = createElement('div', 'literature-map-list-filters');
+    const listSearch = createElement('input');
+    listSearch.id = 'literature-map-list-search';
+    listSearch.type = 'search';
+    listSearch.placeholder = '筛选主题或名称';
+    listSearch.setAttribute('aria-label', '筛选地图');
+    const listStatus = createElement('select');
+    listStatus.id = 'literature-map-list-status';
+    listStatus.setAttribute('aria-label', '按地图状态筛选');
+    [['all', '全部状态'], ['generating', '生成中'], ['ready', '可用'], ['partial', '部分完成'], ['failed', '失败'], ['stopped', '已停止']].forEach(([value, label]) => {
+      const option = createElement('option', '', label);
+      option.value = value;
+      listStatus.append(option);
+    });
+    listFilters.append(listSearch, listStatus);
+    listPanel.append(listFilters);
+    const mapList = createElement('div', 'literature-map-list');
+    mapList.id = 'literature-map-list';
+    mapList.setAttribute('role', 'list');
+    listPanel.append(mapList);
+    const listEmpty = createElement('p', 'literature-map-empty', '还没有地图，请从右上角新建。');
+    listEmpty.id = 'literature-map-list-empty';
+    listPanel.append(listEmpty);
+
+    const createPanel = createElement('section', 'literature-map-create-panel');
+    createPanel.id = 'literature-map-create-panel';
+    createPanel.hidden = true;
+    const createTitle = createElement('h3', '', '新建主题地图');
+    const form = createElement('form', 'literature-map-create-form');
+    form.id = 'literature-map-create-form';
+    const topicLabel = createElement('label', '', '主题（必填）');
+    const topicInput = createElement('textarea');
+    topicInput.id = 'literature-map-topic';
+    topicInput.name = 'topic';
+    topicInput.required = true;
+    topicInput.maxLength = 500;
+    topicInput.rows = 3;
+    topicInput.placeholder = '例如：面向边缘设备的联邦学习隐私保护';
+    topicLabel.append(topicInput);
+    const nameLabel = createElement('label', '', '地图名称（可选）');
+    const nameInput = createElement('input');
+    nameInput.id = 'literature-map-name';
+    nameInput.name = 'name';
+    nameInput.maxLength = 160;
+    nameLabel.append(nameInput);
+    const formGrid = createElement('div', 'literature-map-form-grid');
+    [['literature-map-year-start', '起始年份'], ['literature-map-year-end', '结束年份']].forEach(([id, label]) => {
+      const field = createElement('label', '', label);
+      const input = createElement('input');
+      input.id = id;
+      input.type = 'number';
+      input.min = '1900';
+      input.max = '2100';
+      input.step = '1';
+      field.append(input);
+      formGrid.append(field);
+    });
+    const limitLabel = createElement('label', '', '首批数量');
+    const limitInput = createElement('select');
+    limitInput.id = 'literature-map-limit';
+    [20, 30, 50].forEach((value) => {
+      const option = createElement('option', '', String(value));
+      option.value = String(value);
+      option.selected = value === 30;
+      limitInput.append(option);
+    });
+    limitLabel.append(limitInput);
+    formGrid.append(limitLabel);
+    const sourceLabel = createElement('label', '', '来源 ID（可选，逗号分隔）');
+    const sourceInput = createElement('input');
+    sourceInput.id = 'literature-map-sources';
+    sourceInput.placeholder = '例如：semantic-scholar';
+    sourceLabel.append(sourceInput);
+    const conferenceLabel = createElement('label', '', '会议 ID（可选，逗号分隔）');
+    const conferenceInput = createElement('input');
+    conferenceInput.id = 'literature-map-conferences';
+    conferenceLabel.append(conferenceInput);
+    const projectLabel = createElement('label', '', '项目 ID（可选）');
+    const projectInput = createElement('input');
+    projectInput.id = 'literature-map-project';
+    projectLabel.append(projectInput);
+    const formActions = createElement('div', 'literature-map-form-actions');
+    const cancelButton = createElement('button', 'secondary-button', '取消');
+    cancelButton.type = 'button';
+    cancelButton.id = 'literature-map-create-cancel';
+    const submitButton = createElement('button', 'send-button', '开始建图');
+    submitButton.type = 'submit';
+    submitButton.id = 'literature-map-create-submit';
+    formActions.append(cancelButton, submitButton);
+    form.append(topicLabel, nameLabel, formGrid, sourceLabel, conferenceLabel, projectLabel, formActions);
+    createPanel.append(createTitle, form);
+    listPanel.append(createPanel);
+
+    const canvasPanel = createElement('main', 'literature-map-panel literature-map-canvas-panel');
+    const canvasHead = createElement('header', 'literature-map-panel-head literature-map-canvas-head');
+    const canvasTitle = createElement('div', 'literature-map-canvas-title');
+    const currentTitle = createElement('h2', '', '选择一张地图');
+    currentTitle.id = 'literature-map-current-title';
+    const currentMeta = createElement('p', 'literature-map-canvas-meta', '图谱会在后台分阶段生成。');
+    currentMeta.id = 'literature-map-current-meta';
+    canvasTitle.append(currentTitle, currentMeta);
+    const tools = createElement('div', 'literature-map-tools');
+    [['literature-map-zoom-out', '−', '缩小'], ['literature-map-zoom-in', '+', '放大'], ['literature-map-fit', '适应', '适应画布'], ['literature-map-locate', '定位', '定位所选论文'], ['literature-map-reset', '重置', '重置视图']].forEach(([id, label, title]) => {
+      const button = createElement('button', 'icon-button literature-map-tool', label);
+      button.type = 'button';
+      button.id = id;
+      button.title = title;
+      button.setAttribute('aria-label', title);
+      tools.append(button);
+    });
+    canvasHead.append(canvasTitle, tools);
+    canvasPanel.append(canvasHead);
+    const layerTools = createElement('div', 'literature-map-layer-tools');
+    LAYER_NAMES.forEach((kind) => {
+      const label = createElement('label', 'literature-map-layer-toggle');
+      const checkbox = createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = true;
+      checkbox.dataset.layer = kind;
+      const text = kind === 'citation' ? '引用关系' : '主题相似';
+      label.append(checkbox, createElement('span', '', text));
+      layerTools.append(label);
+    });
+    canvasPanel.append(layerTools);
+    const canvas = createElement('div', 'literature-map-canvas');
+    const svg = createSvgElement('svg');
+    setAttributes(svg, { id: 'literature-map-svg', viewBox: `0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`, role: 'img', tabindex: '0', 'aria-label': '文献关系图谱' });
+    const defs = createSvgElement('defs');
+    const marker = createSvgElement('marker');
+    setAttributes(marker, { id: 'literature-map-arrow', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '5', markerHeight: '5', orient: 'auto-start-reverse' });
+    const arrow = createSvgElement('path');
+    setAttributes(arrow, { d: 'M 0 0 L 10 5 L 0 10 z' });
+    marker.append(arrow);
+    defs.append(marker);
+    const viewport = createSvgElement('g');
+    viewport.id = 'literature-map-viewport';
+    const edgesGroup = createSvgElement('g');
+    edgesGroup.id = 'literature-map-edges';
+    const nodesGroup = createSvgElement('g');
+    nodesGroup.id = 'literature-map-nodes';
+    viewport.append(edgesGroup, nodesGroup);
+    svg.append(defs, viewport);
+    canvas.append(svg);
+    const empty = createElement('div', 'literature-map-canvas-empty', '选择左侧地图后查看图谱。');
+    empty.id = 'literature-map-canvas-empty';
+    canvas.append(empty);
+    canvasPanel.append(canvas);
+    const legend = createElement('div', 'literature-map-legend');
+    legend.append(createElement('span', 'literature-map-legend-line citation', '实线箭头：引用者 → 被引用者'));
+    legend.append(createElement('span', 'literature-map-legend-line similarity', '虚线：主题相似（无向）'));
+    legend.append(createElement('span', 'literature-map-legend-note', '来源字段由接口返回；title_only 表示仅标题依据。'));
+    canvasPanel.append(legend);
+
+    const detailPanel = createElement('aside', 'literature-map-panel literature-map-detail-panel');
+    const detailHead = createElement('header', 'literature-map-panel-head');
+    detailHead.append(createElement('h2', '', '论文详情'));
+    const closeDetail = createElement('button', 'icon-button', '×');
+    closeDetail.type = 'button';
+    closeDetail.id = 'literature-map-detail-close';
+    closeDetail.title = '关闭详情';
+    closeDetail.setAttribute('aria-label', '关闭论文详情');
+    detailHead.append(closeDetail);
+    detailPanel.append(detailHead);
+    const detail = createElement('div', 'literature-map-detail');
+    detail.id = 'literature-map-detail';
+    detail.append(createElement('p', 'literature-map-detail-empty', '点击图中的论文查看真实元数据。'));
+    detailPanel.append(detail);
+
+    grid.append(listPanel, canvasPanel, detailPanel);
+    root.append(grid);
+    mount.append(root);
+
+    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceInput, conferenceInput, projectInput, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, detailPanel, detail, status: notice, count: listCount });
+    bindEvents(newButton, refreshButton, closeDetail);
+    state.mounted = true;
+    renderMapList();
+    renderGraph();
+  }
+
+  function bindEvents(newButton, refreshButton, closeDetail) {
+    refreshButton.addEventListener('click', () => {
+      if (state.selectedMapId) selectMap(state.selectedMapId);
+      else loadMaps();
+    });
+    newButton.addEventListener('click', () => {
+      refs.createPanel.hidden = !refs.createPanel.hidden;
+      if (!refs.createPanel.hidden) refs.topicInput.focus();
+    });
+    refs.cancelButton.addEventListener('click', () => {
+      refs.createPanel.hidden = true;
+      refs.form.reset();
+      refs.limitInput.value = '30';
+    });
+    refs.form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      createMap();
+    });
+    refs.listSearch.addEventListener('input', () => {
+      state.listQuery = refs.listSearch.value.trim().toLowerCase();
+      renderMapList();
+    });
+    refs.listStatus.addEventListener('change', () => {
+      state.listStatus = refs.listStatus.value;
+      renderMapList();
+    });
+    refs.svg.addEventListener('wheel', handleWheel, { passive: false });
+    refs.svg.addEventListener('pointerdown', handleCanvasPointerDown);
+    refs.svg.addEventListener('pointermove', handleCanvasPointerMove);
+    refs.svg.addEventListener('pointerup', handleCanvasPointerUp);
+    refs.svg.addEventListener('pointercancel', handleCanvasPointerUp);
+    refs.svg.addEventListener('click', (event) => {
+      const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
+      if (nodeGroup && nodeGroup.dataset.nodeId && !state.pointer?.dragged) selectNode(nodeGroup.dataset.nodeId);
+    });
+    refs.svg.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
+      if (!nodeGroup?.dataset.nodeId) return;
+      event.preventDefault();
+      selectNode(nodeGroup.dataset.nodeId);
+    });
+    refs.root.querySelector('#literature-map-zoom-in').addEventListener('click', () => changeScale(1.2));
+    refs.root.querySelector('#literature-map-zoom-out').addEventListener('click', () => changeScale(1 / 1.2));
+    refs.root.querySelector('#literature-map-fit').addEventListener('click', () => fitView(true));
+    refs.root.querySelector('#literature-map-locate').addEventListener('click', locateSelectedNode);
+    refs.root.querySelector('#literature-map-reset').addEventListener('click', () => {
+      state.view = { x: 0, y: 0, scale: 1 };
+      renderGraph();
+      scheduleViewSave();
+    });
+    refs.root.querySelectorAll('input[data-layer]').forEach((input) => {
+      input.addEventListener('change', () => {
+        state.layers[input.dataset.layer] = input.checked;
+        renderGraph();
+        scheduleViewSave();
+      });
+    });
+    closeDetail.addEventListener('click', () => {
+      state.selectedNodeId = null;
+      state.selectedNode = null;
+      state.nodeRequest += 1;
+      state.importRequest += 1;
+      refs.detailPanel.classList.remove('is-open');
+      refs.detailPanel.hidden = true;
+      renderGraph();
+      renderNodeDetail(null);
+    });
+  }
+
+  function filteredMaps() {
+    return state.maps.filter((map) => {
+      const haystack = `${mapTitle(map)} ${map?.topic || ''}`.toLowerCase();
+      const matchesQuery = !state.listQuery || haystack.includes(state.listQuery);
+      const matchesStatus = state.listStatus === 'all' || map?.status === state.listStatus;
+      return matchesQuery && matchesStatus;
+    });
+  }
+
+  function renderMapList() {
+    if (!refs.mapList) return;
+    refs.mapList.replaceChildren();
+    const visibleMaps = filteredMaps();
+    refs.count.textContent = `${visibleMaps.length}/${state.maps.length}`;
+    setHidden(refs.listEmpty, visibleMaps.length > 0);
+    visibleMaps.forEach((map) => {
+      const item = createElement('button', 'literature-map-list-item');
+      item.type = 'button';
+      item.dataset.mapId = map.map_id || '';
+      item.setAttribute('role', 'listitem');
+      item.setAttribute('aria-pressed', String(map.map_id === state.selectedMapId));
+      const title = createElement('strong', 'literature-map-list-title', mapTitle(map));
+      const topic = createElement('span', 'literature-map-list-topic', map.topic || '主题未提供');
+      const meta = createElement('span', 'literature-map-list-meta');
+      meta.append(renderStatusBadge(map.status));
+      if (map.requested_count) meta.append(createElement('span', '', `${map.requested_count} 篇`));
+      item.append(title, topic, meta);
+      item.addEventListener('click', () => selectMap(map.map_id));
+      refs.mapList.append(item);
+    });
+  }
+
+  async function loadMaps() {
+    try {
+      const payload = await request('');
+      state.maps = Array.isArray(payload.maps) ? payload.maps.map(normalizeMap).filter(Boolean) : [];
+      renderMapList();
+      if (state.selectedMapId) {
+        const existing = state.maps.find((map) => map.map_id === state.selectedMapId);
+        if (existing && !state.map) await selectMap(existing.map_id);
+      }
+      if (!state.maps.length) {
+        setStatus('还没有地图。点击“新建地图”输入主题即可开始。');
+      } else if (!state.map) {
+        setStatus('选择一张地图查看已保存的图谱。');
+      }
+    } catch (error) {
+      setStatus(`地图列表加载失败：${errorAction(error, '请确认服务已启动后重试。')}`, 'error');
+    }
+  }
+
+  function buildCreatePayload() {
+    const topic = refs.topicInput.value.trim();
+    const name = refs.nameInput.value.trim();
+    const yearStart = parseYear(refs.yearStart.value);
+    const yearEnd = parseYear(refs.yearEnd.value);
+    if (!topic || topic.length > 500) throw new LiteratureMapError('主题不能为空且最多 500 个字符。');
+    if (Number.isNaN(yearStart) || Number.isNaN(yearEnd)) throw new LiteratureMapError('年份必须是四位数字。');
+    if (yearStart !== null && yearEnd !== null && yearStart > yearEnd) throw new LiteratureMapError('起始年份不能晚于结束年份。');
+    const limit = Number(refs.limitInput.value);
+    if (![20, 30, 50].includes(limit)) throw new LiteratureMapError('首批数量只能选择 20、30 或 50。');
+    const payload = { topic, limit, idempotency_key: makeIdempotencyKey() };
+    if (name) payload.name = name;
+    if (yearStart !== null) payload.year_start = yearStart;
+    if (yearEnd !== null) payload.year_end = yearEnd;
+    const sourceIds = parseCsv(refs.sourceInput.value);
+    const conferenceIds = parseCsv(refs.conferenceInput.value);
+    if (sourceIds.length) payload.source_ids = sourceIds;
+    if (conferenceIds.length) payload.conference_ids = conferenceIds;
+    const projectId = refs.projectInput.value.trim();
+    if (projectId) payload.project_id = projectId;
+    return payload;
+  }
+
+  async function createMap() {
+    refs.submitButton.disabled = true;
+    setStatus('正在提交主题地图任务…');
+    let payload;
+    try {
+      payload = buildCreatePayload();
+    } catch (error) {
+      refs.submitButton.disabled = false;
+      setStatus(errorAction(error), 'error');
+      return;
+    }
+    const requestId = ++state.mapRequest;
+    try {
+      const response = await request('', { method: 'POST', body: JSON.stringify(payload) });
+      if (requestId !== state.mapRequest || !state.active) return;
+      if (response?.status && response.status !== 'generating') {
+        // The server is authoritative; this branch only preserves its status text.
+        setStatus(`地图任务已提交：${mapStatusLabel(response.status)}。`);
+      } else {
+        setStatus('地图任务已提交，正在后台分阶段生成。');
+      }
+      const map = normalizeMap(response.map);
+      state.map = map;
+      state.selectedMapId = map?.map_id || response.map_id || null;
+      state.job = response.job || null;
+      state.eventCursor = 0;
+      state.graph = null;
+      state.selectedNodeId = null;
+      state.selectedNode = null;
+      state.positions = Object.create(null);
+      state.positionsDirty = false;
+      refs.createPanel.hidden = true;
+      refs.form.reset();
+      refs.limitInput.value = '30';
+      await loadMaps();
+      if (requestId !== state.mapRequest || !state.active) return;
+      if (state.selectedMapId) {
+        await loadMapGraph(state.selectedMapId);
+        startPolling();
+      }
+    } catch (error) {
+      if (requestId !== state.mapRequest || !state.active) return;
+      setStatus(`创建失败：${errorAction(error, '请检查主题和筛选条件后重试。')}`, 'error');
+    } finally {
+      refs.submitButton.disabled = false;
+    }
+  }
+
+  async function selectMap(mapId) {
+    if (!mapId) return;
+    const requestId = ++state.mapRequest;
+    state.selectedMapId = mapId;
+    state.selectedNodeId = null;
+    state.selectedNode = null;
+    state.map = null;
+    state.graph = null;
+    state.job = null;
+    state.eventCursor = 0;
+    state.positions = Object.create(null);
+    state.positionsDirty = false;
+    state.nodeRequest += 1;
+    state.importRequest += 1;
+    state.viewRequest += 1;
+    window.clearTimeout(state.saveTimer);
+    state.saveTimer = null;
+    stopPolling();
+    renderMapList();
+    renderNodeDetail(null);
+    renderGraph();
+    setStatus('正在读取已保存地图…');
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}`);
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+      state.map = normalizeMap(payload.map);
+      state.job = payload.latest_job || null;
+      applySavedView(state.map);
+      await loadMapGraph(mapId);
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+      renderMapList();
+      if (state.job && !TERMINAL_JOB_STATES.has(state.job.status)) startPolling();
+      setStatus(state.map?.status === 'partial' ? '地图部分完成；已保留可用节点并标注失败阶段。' : '地图已打开，图谱数据来自本地保存结果。', state.map?.status === 'partial' ? 'partial' : '');
+    } catch (error) {
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+      setStatus(`打开地图失败：${errorAction(error, '请重新点击地图重试。')}`, 'error');
+    }
+  }
+
+  function applySavedView(map) {
+    const settings = map?.view_settings || {};
+    const viewport = settings.viewport || {};
+    state.view = {
+      x: Number.isFinite(Number(viewport.x)) ? Number(viewport.x) : 0,
+      y: Number.isFinite(Number(viewport.y)) ? Number(viewport.y) : 0,
+      scale: Number.isFinite(Number(viewport.scale)) && Number(viewport.scale) > 0 ? Number(viewport.scale) : 1,
+    };
+    const layers = settings.layers || {};
+    state.layers = { citation: layers.citation !== false, similarity: layers.similarity !== false };
+    refs.root?.querySelectorAll('input[data-layer]').forEach((input) => { input.checked = state.layers[input.dataset.layer]; });
+  }
+
+  async function loadMapGraph(mapId) {
+    const requestId = ++state.graphRequest;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/graph`);
+      if (requestId !== state.graphRequest || mapId !== state.selectedMapId || !state.active) return;
+      state.graph = payload;
+      state.map = normalizeMap(payload.map) || state.map;
+      state.job = payload.latest_job || state.job;
+      state.layerStatus = {};
+      LAYER_NAMES.forEach((kind) => {
+        state.layerStatus[kind] = payload.layers?.[kind]?.status || 'waiting';
+      });
+      const nodes = normalizeNodes(payload);
+      nodes.forEach((node, index) => {
+        if (node.position && Number.isFinite(Number(node.position.x)) && Number.isFinite(Number(node.position.y))) {
+          state.positions[node.node_id] = { x: Number(node.position.x), y: Number(node.position.y) };
+        } else if (!state.positions[node.node_id]) {
+          state.positions[node.node_id] = initialPosition(index, nodes.length);
+        }
+      });
+      refs.currentTitle.textContent = state.map ? mapTitle(state.map) : '文献地图';
+      renderCurrentMeta();
+      renderGraph();
+      if (nodes.length && nodes.some((node) => !node.position)) scheduleLayout();
+      if (state.selectedNodeId) selectNode(state.selectedNodeId);
+    } catch (error) {
+      if (requestId !== state.graphRequest || mapId !== state.selectedMapId || !state.active) return;
+      setStatus(`图谱读取失败：${errorAction(error, '请重新打开地图重试。')}`, 'error');
+      refs.currentMeta.textContent = '图谱读取失败；原有地图数据未被修改。';
+    }
+  }
+
+  function renderCurrentMeta() {
+    if (!refs.currentMeta) return;
+    const nodes = normalizeNodes(state.graph).length;
+    const edges = normalizeEdges(state.graph).length;
+    const status = state.job?.status || state.map?.status || '';
+    const stage = state.job?.step ? ` · 阶段：${stageLabel(state.job.step)}` : '';
+    refs.currentMeta.textContent = state.map ? `${nodes} 个节点 · ${edges} 条关系 · ${mapStatusLabel(status)}${stage}` : '图谱会在后台分阶段生成。';
+  }
+
+  function stageLabel(step) {
+    const labels = { discover: '寻找论文', metadata: '补充元数据与引用', references: '补充引用', similarity: '计算主题相似关系', finished: '地图可用' };
+    return labels[step] || step;
+  }
+
+  function initialPosition(index, total) {
+    const ring = Math.max(1, Math.ceil(Math.sqrt(total / 2)));
+    const layer = Math.floor(index / (ring * 2));
+    const slot = index % (ring * 2);
+    const radius = Math.min(285, 70 + layer * 58);
+    const angle = (slot / Math.max(1, ring * 2)) * Math.PI * 2 + (layer % 2 ? 0.25 : 0);
+    return { x: MAP_WIDTH / 2 + Math.cos(angle) * radius, y: MAP_HEIGHT / 2 + Math.sin(angle) * radius * 0.78 };
+  }
+
+  function scheduleLayout() {
+    if (state.layoutScheduled || !state.graph || !normalizeNodes(state.graph).length) return;
+    state.layoutScheduled = true;
+    state.layoutFrames = 0;
+    const frame = () => {
+      state.layoutFrames += 1;
+      const nodes = normalizeNodes(state.graph);
+      nodes.forEach((node, index) => {
+        if (node.position) return;
+        const current = state.positions[node.node_id] || initialPosition(index, nodes.length);
+        // A bounded, deterministic nudge keeps the first paint stable and avoids an unbounded force loop.
+        const nudge = Math.min(12, state.layoutFrames * 1.5);
+        state.positions[node.node_id] = { x: current.x + Math.cos(index) * nudge * 0.06, y: current.y + Math.sin(index) * nudge * 0.06 };
+      });
+      renderGraph();
+      if (state.active && state.layoutFrames < MAX_LAYOUT_FRAMES) {
+        window.requestAnimationFrame(frame);
+      } else {
+        state.layoutScheduled = false;
+        state.positionsDirty = true;
+        scheduleViewSave();
+      }
+    };
+    window.requestAnimationFrame(frame);
+  }
+
+  function positionFor(node, index, total) {
+    return state.positions[node.node_id] || (node.position ? { x: Number(node.position.x), y: Number(node.position.y) } : initialPosition(index, total));
+  }
+
+  function renderGraph() {
+    if (!refs.svg) return;
+    const nodes = normalizeNodes(state.graph);
+    const edges = normalizeEdges(state.graph);
+    refs.viewport.setAttribute('transform', `translate(${state.view.x} ${state.view.y}) scale(${state.view.scale})`);
+    refs.edgesGroup.replaceChildren();
+    refs.nodesGroup.replaceChildren();
+    setHidden(refs.canvasEmpty, Boolean(state.graph && nodes.length));
+    if (!state.graph) {
+      refs.canvasEmpty.textContent = '选择左侧地图后查看图谱。';
+      refs.currentTitle.textContent = '选择一张地图';
+      refs.currentMeta.textContent = '图谱会在后台分阶段生成。';
+      return;
+    }
+    if (!nodes.length) {
+      refs.canvasEmpty.textContent = state.job && !TERMINAL_JOB_STATES.has(state.job.status) ? '正在等待首批论文；此处会显示真实节点。' : '当前地图暂无节点。';
+      return;
+    }
+    const positions = Object.create(null);
+    nodes.forEach((node, index) => { positions[node.node_id] = positionFor(node, index, nodes.length); });
+    edges.forEach((edge) => {
+      if (!state.layers[edge.kind] || !positions[edge.source_id] || !positions[edge.target_id]) return;
+      const line = createSvgElement('line');
+      const source = positions[edge.source_id];
+      const target = positions[edge.target_id];
+      setAttributes(line, { x1: source.x, y1: source.y, x2: target.x, y2: target.y, 'data-edge-id': edge.edge_id || '', 'data-edge-kind': edge.kind || '', class: `literature-map-edge ${edge.kind || ''}` });
+      if (edge.kind === 'citation') line.setAttribute('marker-end', 'url(#literature-map-arrow)');
+      refs.edgesGroup.append(line);
+    });
+    nodes.forEach((node, index) => {
+      const point = positions[node.node_id];
+      const group = createSvgElement('g');
+      const selected = node.node_id === state.selectedNodeId;
+      const provenance = typeof node.provenance === 'string' ? node.provenance : node.provenance?.basis || '';
+      setAttributes(group, { class: `literature-map-node${selected ? ' is-selected' : ''}`, 'data-node-id': node.node_id, 'data-provenance': provenance, tabindex: '0', role: 'button', 'aria-label': node.title || node.node_id });
+      const circle = createSvgElement('circle');
+      setAttributes(circle, { cx: point.x, cy: point.y, r: selected ? 11 : 8 });
+      group.append(circle);
+      if (selected || index % 25 === 0) {
+        const label = createSvgElement('text');
+        setAttributes(label, { x: point.x + 13, y: point.y + 4, class: 'literature-map-node-label' });
+        label.textContent = nodeLabel(node);
+        group.append(label);
+      }
+      refs.nodesGroup.append(group);
+    });
+    renderCurrentMeta();
+  }
+
+  function handleCanvasPointerDown(event) {
+    const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
+    state.pointer = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY, nodeId: nodeGroup?.dataset.nodeId || null, dragged: false };
+    refs.svg.setPointerCapture?.(event.pointerId);
+  }
+
+  function handleCanvasPointerMove(event) {
+    const pointer = state.pointer;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+    const dx = event.clientX - pointer.lastX;
+    const dy = event.clientY - pointer.lastY;
+    if (Math.abs(event.clientX - pointer.startX) + Math.abs(event.clientY - pointer.startY) > 3) pointer.dragged = true;
+    pointer.lastX = event.clientX;
+    pointer.lastY = event.clientY;
+    if (pointer.nodeId) {
+      const current = state.positions[pointer.nodeId];
+      if (!current) return;
+      state.positions[pointer.nodeId] = { x: current.x + dx / state.view.scale, y: current.y + dy / state.view.scale };
+      state.positionsDirty = true;
+    } else {
+      state.view.x += dx;
+      state.view.y += dy;
+    }
+    renderGraph();
+  }
+
+  function handleCanvasPointerUp(event) {
+    if (!state.pointer || state.pointer.pointerId !== event.pointerId) return;
+    const dragged = state.pointer.dragged;
+    const nodeId = state.pointer.nodeId;
+    state.pointer = null;
+    refs.svg.releasePointerCapture?.(event.pointerId);
+    if (dragged && nodeId) scheduleViewSave();
+    if (!dragged && nodeId) selectNode(nodeId);
+  }
+
+  function handleWheel(event) {
+    if (!state.graph) return;
+    event.preventDefault();
+    changeScale(event.deltaY > 0 ? 1 / 1.1 : 1.1);
+  }
+
+  function changeScale(factor) {
+    state.view.scale = Math.max(0.35, Math.min(2.8, state.view.scale * factor));
+    renderGraph();
+    scheduleViewSave();
+  }
+
+  function fitView(save) {
+    const nodes = normalizeNodes(state.graph);
+    if (!nodes.length) return;
+    const points = nodes.map((node, index) => positionFor(node, index, nodes.length));
+    const minX = Math.min(...points.map((point) => point.x));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxY = Math.max(...points.map((point) => point.y));
+    const width = Math.max(180, maxX - minX + 100);
+    const height = Math.max(150, maxY - minY + 100);
+    state.view.scale = Math.max(0.35, Math.min(1.6, Math.min(MAP_WIDTH / width, MAP_HEIGHT / height)));
+    state.view.x = (MAP_WIDTH - (minX + maxX) * state.view.scale) / 2;
+    state.view.y = (MAP_HEIGHT - (minY + maxY) * state.view.scale) / 2;
+    renderGraph();
+    if (save) scheduleViewSave();
+  }
+
+  function locateSelectedNode() {
+    if (!state.selectedNodeId || !state.graph) {
+      setStatus('请先点击图中的论文，再使用“定位”。', 'waiting');
+      return;
+    }
+    const nodes = normalizeNodes(state.graph);
+    const index = nodes.findIndex((node) => node.node_id === state.selectedNodeId);
+    if (index < 0) return;
+    const point = positionFor(nodes[index], index, nodes.length);
+    state.view.x = MAP_WIDTH / 2 - point.x * state.view.scale;
+    state.view.y = MAP_HEIGHT / 2 - point.y * state.view.scale;
+    renderGraph();
+    scheduleViewSave();
+  }
+
+  function scheduleViewSave() {
+    if (!state.map?.map_id || !state.active) return;
+    window.clearTimeout(state.saveTimer);
+    state.saveTimer = window.setTimeout(saveView, 500);
+  }
+
+  async function saveView() {
+    if (!state.map?.map_id || !state.active || (!state.positionsDirty && !state.graph)) return;
+    const requestId = ++state.viewRequest;
+    const mapId = state.map.map_id;
+    const expectedRevision = state.map.revision;
+    const positions = Object.entries(state.positions).map(([node_id, position]) => ({ node_id, x: Number(position.x), y: Number(position.y) })).filter((position) => Number.isFinite(position.x) && Number.isFinite(position.y));
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/view`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          expected_revision: expectedRevision,
+          positions,
+          viewport: state.view,
+          layers: state.layers,
+        }),
+      });
+      if (requestId !== state.viewRequest) {
+        if (mapId === state.selectedMapId && state.map?.map_id === mapId && state.active) {
+          const responseMap = normalizeMap(payload.map);
+          if (responseMap && Number.isInteger(Number(responseMap.revision))) {
+            state.map = { ...state.map, revision: Number(responseMap.revision) };
+          }
+          scheduleViewSave();
+        }
+        return;
+      }
+      if (requestId !== state.viewRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      state.map = normalizeMap(payload.map) || state.map;
+      state.positionsDirty = false;
+      setStatus('视图已保存。');
+      renderMapList();
+      renderCurrentMeta();
+    } catch (error) {
+      if (requestId !== state.viewRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      state.positionsDirty = true;
+      setStatus(`视图保存失败：${errorAction(error, '请重新打开地图后再保存。')}`, 'error');
+    }
+  }
+
+  async function selectNode(nodeId) {
+    if (!state.map?.map_id || !nodeId) return;
+    const mapId = state.map.map_id;
+    state.selectedNodeId = nodeId;
+    state.selectedNode = null;
+    state.importRequest += 1;
+    refs.detailPanel.hidden = false;
+    refs.detailPanel.classList.add('is-open');
+    renderGraph();
+    renderNodeDetail({ loading: true });
+    const requestId = ++state.nodeRequest;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(nodeId)}`);
+      if (requestId !== state.nodeRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      state.selectedNode = payload.node || null;
+      renderNodeDetail(state.selectedNode);
+    } catch (error) {
+      if (requestId !== state.nodeRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      renderNodeDetail({ error: errorAction(error, '论文详情读取失败，请稍后重试。') });
+    }
+  }
+
+  function metadataText(value, fallback) {
+    if (Array.isArray(value)) return value.length ? value.join('、') : (fallback || '未提供');
+    if (value && typeof value === 'object') {
+      const candidate = value.label || value.name || value.source || value.basis;
+      return candidate ? metadataText(candidate, fallback) : (fallback || '未提供');
+    }
+    if (value === null || value === undefined || String(value).trim() === '') return fallback || '未提供';
+    return String(value);
+  }
+
+  function safeHttpUrl(value) {
+    if (!value) return null;
+    try {
+      const url = new URL(String(value), window.location.origin);
+      return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function renderNodeDetail(node) {
+    if (!refs.detail) return;
+    refs.detail.replaceChildren();
+    if (!node) {
+      refs.detail.append(createElement('p', 'literature-map-detail-empty', '点击图中的论文查看真实元数据。'));
+      return;
+    }
+    if (node.loading) {
+      refs.detail.append(createElement('p', 'literature-map-detail-state', '正在读取论文真实元数据…'));
+      return;
+    }
+    if (node.error) {
+      const error = createElement('p', 'literature-map-detail-error', node.error);
+      error.setAttribute('role', 'alert');
+      refs.detail.append(error);
+      return;
+    }
+    const title = createElement('h3', 'literature-map-detail-title', metadataText(node.title, '标题未提供'));
+    refs.detail.append(title);
+    const status = createElement('div', 'literature-map-detail-status');
+    status.append(renderStatusBadge(node.download_status || 'not_imported'));
+    refs.detail.append(status);
+    const fields = createElement('dl', 'literature-map-detail-fields');
+    [['作者', node.authors], ['年份', node.year], ['来源', node.venue], ['关键词', node.keywords], ['引用数', node.citation_count], ['依据', node.provenance?.basis || node.provenance]].forEach(([label, value]) => {
+      const dt = createElement('dt', '', label);
+      const dd = createElement('dd', '', metadataText(value));
+      fields.append(dt, dd);
+    });
+    refs.detail.append(fields);
+    const abstract = createElement('section', 'literature-map-detail-section');
+    abstract.append(createElement('h4', '', '摘要'));
+    abstract.append(createElement('p', '', metadataText(node.abstract)));
+    refs.detail.append(abstract);
+    const provenance = createElement('p', 'literature-map-provenance', `来源依据：${metadataText(node.provenance?.source || node.provenance)}`);
+    refs.detail.append(provenance);
+    const actions = createElement('div', 'literature-map-detail-actions');
+    const url = safeHttpUrl(node.source_url);
+    if (url) {
+      const link = createElement('a', 'secondary-button', '打开原文');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      actions.append(link);
+    }
+    const importButton = createElement('button', 'send-button', '加入知识库');
+    importButton.type = 'button';
+    importButton.id = 'literature-map-import-button';
+    importButton.disabled = !state.map?.map_id || !node.node_id;
+    importButton.addEventListener('click', () => importNode(node, importButton));
+    actions.append(importButton);
+    refs.detail.append(actions);
+    const importStatus = createElement('p', 'literature-map-import-status');
+    importStatus.id = 'literature-map-import-status';
+    importStatus.setAttribute('role', 'status');
+    refs.detail.append(importStatus);
+  }
+
+  async function importNode(node, button) {
+    if (!state.map?.map_id || !node?.node_id) return;
+    const mapId = state.map.map_id;
+    const requestId = ++state.importRequest;
+    button.disabled = true;
+    const status = refs.detail.querySelector('#literature-map-import-status');
+    if (status) status.textContent = '正在提交入库请求…';
+    try {
+      // The server-side node snapshot is authoritative.  Do not let a client
+      // supplied URL replace the node's provenance during import.
+      const payload = await request(`/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(node.node_id)}/imports`, { method: 'POST', body: JSON.stringify({}) });
+      if (requestId !== state.importRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      const returnedStatus = payload?.status || payload?.import?.status || '已提交';
+      if (status) status.textContent = `入库状态：${mapStatusLabel(returnedStatus)}。`;
+      state.selectedNode = { ...node, download_status: returnedStatus };
+      renderNodeDetail(state.selectedNode);
+      const renderedStatus = refs.detail.querySelector('#literature-map-import-status');
+      if (renderedStatus) renderedStatus.textContent = `入库状态：${mapStatusLabel(returnedStatus)}。`;
+    } catch (error) {
+      if (requestId !== state.importRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      if (status) status.textContent = `入库失败：${errorAction(error, '请检查登录或来源配置后重试。')}`;
+      button.disabled = false;
+    }
+  }
+
+  function startPolling() {
+    stopPolling();
+    if (!state.active || !state.map?.map_id || !state.job?.job_id || TERMINAL_JOB_STATES.has(state.job.status)) return;
+    state.pollAttempts = 0;
+    schedulePoll(0);
+  }
+
+  function stopPolling() {
+    if (state.pollTimer) window.clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+    state.pollInFlight = false;
+    state.pollGeneration += 1;
+  }
+
+  function schedulePoll(delay) {
+    if (!state.active || !state.map?.map_id || !state.job?.job_id) return;
+    state.pollTimer = window.setTimeout(pollJob, delay);
+  }
+
+  async function pollJob() {
+    if (!state.active || state.pollInFlight || !state.map?.map_id || !state.job?.job_id) return;
+    if (state.pollAttempts >= MAX_POLL_ATTEMPTS) {
+      setStatus('任务仍在后台运行；页面已停止自动轮询，重新打开此地图可继续查看。', 'waiting');
+      return;
+    }
+    const generation = state.pollGeneration;
+    const mapId = state.map.map_id;
+    const jobId = state.job.job_id;
+    const isCurrent = () => generation === state.pollGeneration
+      && state.active
+      && state.selectedMapId === mapId
+      && state.map?.map_id === mapId
+      && state.job?.job_id === jobId;
+    state.pollInFlight = true;
+    state.pollAttempts += 1;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/jobs/${encodeURIComponent(jobId)}`);
+      if (!isCurrent()) return;
+      await readEvents(mapId, jobId, generation);
+      if (!isCurrent()) return;
+      const previousStep = state.job.step;
+      const previousStatus = state.job.status;
+      state.job = payload.job || state.job;
+      renderCurrentMeta();
+      const changed = previousStep !== state.job.step || previousStatus !== state.job.status;
+      if (changed || state.pollAttempts === 1) await loadMapGraph(mapId);
+      if (!isCurrent()) return;
+      if (state.job.status === 'partial') setStatus('地图部分完成：已保留可用论文，失败阶段可稍后重试。', 'partial');
+      else if (state.job.status === 'failed') setStatus('地图任务失败：已保留此前完成的节点，请检查来源配置后重试。', 'error');
+      else if (state.job.status === 'stopped') setStatus('地图任务已停止；已保留停止前的成果。', 'waiting');
+      else if (TERMINAL_JOB_STATES.has(state.job.status)) setStatus('地图已生成并保存，可点选节点查看详情。');
+      else setStatus(`地图生成中：${stageLabel(state.job.step)}。已完成节点会逐步显示。`);
+      if (!TERMINAL_JOB_STATES.has(state.job.status)) schedulePoll(1600);
+    } catch (error) {
+      if (!isCurrent()) return;
+      setStatus(`状态读取失败：${errorAction(error, '请重新打开地图恢复状态查看。')}`, 'error');
+      schedulePoll(3200);
+    } finally {
+      if (generation === state.pollGeneration) state.pollInFlight = false;
+    }
+  }
+
+  async function readEvents(mapId = state.map?.map_id, jobId = state.job?.job_id, generation = state.pollGeneration) {
+    if (!mapId || !jobId || generation !== state.pollGeneration || !state.active || state.selectedMapId !== mapId) return;
+    const cursor = state.eventCursor;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/events?after_seq=${encodeURIComponent(cursor)}`);
+      if (generation !== state.pollGeneration || !state.active || state.selectedMapId !== mapId || state.map?.map_id !== mapId || state.job?.job_id !== jobId) return;
+      const events = Array.isArray(payload.events) ? payload.events : [];
+      if (events.length) {
+        const latest = events[events.length - 1];
+        state.eventCursor = Number(payload.next_cursor || latest.event_seq || state.eventCursor) || state.eventCursor;
+        const actionable = [...events].reverse().find((event) => event.error_code);
+        if (actionable?.error_code === 'rate_limited' || actionable?.error_code === 'source_rate_limited') {
+          setStatus('来源暂时限流，已保留当前成果；稍后可重新打开地图查看。', 'waiting');
+        }
+      }
+    } catch (_) {
+      // Job status remains authoritative; an unavailable optional event page
+      // must not turn a usable map into a false failure.
+    }
+  }
+
+  function setActive(active) {
+    renderShell();
+    const wasActive = state.active;
+    const hadMap = Boolean(state.map);
+    state.active = Boolean(active);
+    if (state.active) {
+      loadMaps().then(() => {
+        // Re-entering the view re-reads the selected map/graph so a job that
+        // finished while the user was elsewhere is immediately visible.
+        if (!wasActive && hadMap && state.selectedMapId && state.map) {
+          selectMap(state.selectedMapId);
+        } else if (state.job && !TERMINAL_JOB_STATES.has(state.job.status)) {
+          startPolling();
+        }
+      });
+    } else {
+      stopPolling();
+      window.clearTimeout(state.saveTimer);
+    }
+  }
+
+  window.LiteratureMaps = { setActive };
+})();
