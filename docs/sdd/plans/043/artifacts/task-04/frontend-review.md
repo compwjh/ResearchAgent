@@ -9,7 +9,7 @@
 
 ## 结论
 
-**GO（前端 Task04 窄范围）**。本轮独立复审确认 indexed+tombstone 恢复缺口已修复；提升权限真实 Chromium 精准套件 `8 passed`、无 skip，既有地图可行性回归 `3 passed`。未发现 P0/P1。仍不替代生产 API E2E、后端验收或部署验证。
+**GO（服务器预览重开窄范围）**。上一轮发现的 `/events` 200 条分页缺口已按真实 `next_cursor` 契约修复；逐页、异常游标、50 页上限、跨页 preview/job、latest restore、停用与切图竞态均通过。提升权限真实 Chromium 精准套件 `13 passed`、无 skip，既有地图可行性回归 `3 passed`。仍不替代生产 API E2E、后端验收或部署验证。
 
 ### 初审结果修正（按主会话合同裁定，不计为缺陷）
 
@@ -31,7 +31,7 @@
 - async 竞态：`previewRequest`、`previewPollGeneration`、`jobActionRequest`、`nodeActionRequest` 与既有 graph/map/job/view/node/import 门禁覆盖切图、离开视图和旧 preview/job 回调；409 apply 只展示冲突并提供“重新读取并预览”，没有自动重放或覆盖用户变化。
 - 容量：前端常量为每批 20、地图 200；勾选时按当前 graph 数量阻止超额，apply 按同一规则禁用。服务端事务复核仍是最终边界，不能把前端按钮当安全校验。
 - indexed 正常路径：普通 indexed 节点不渲染“加入知识库”，显示 document ID，并复用既有 `window.jumpToKnowledgeBase(documentId)` 或 `[data-view="kb"]` 导航；fixture 对重复 import 禁用和导航入口有覆盖。
-- XSS/资源：`literature-maps.js` 无 `innerHTML`/动态 HTML 拼接，动态文本使用 `textContent`/DOM API；原文 URL 仅接受 `http:`/`https:` 且拒绝凭据和 `javascript:`。`frontend/index.html` 与 fixture/契约均同步使用 `literature-maps.js?v=6`、`literature-maps.css?v=4`。
+- XSS/资源：`literature-maps.js` 无 `innerHTML`/动态 HTML 拼接，动态文本使用 `textContent`/DOM API；原文 URL 仅接受 `http:`/`https:` 且拒绝凭据和 `javascript:`。`frontend/index.html` 与 fixture/契约均同步使用 `literature-maps.js?v=7`、`literature-maps.css?v=5`。
 
 ### 最新真实 refresh diff formatter 窄复审（2026-10-20）
 
@@ -41,12 +41,19 @@
 - 资源版本已同步为 `literature-maps.js?v=6`；fixture 使用同一真实 shape，8 项差异覆盖字段前后值、关系增减、XSS、null/empty/missing 语义。
 - 本次独立提升权限 Chromium 精准复跑 `8 passed`、无 skip；既有地图可行性复跑 `3 passed`。未发现 P0/P1/P2；GO 仍仅适用于前端 fixture 契约，不外推生产 API E2E 或部署结果。
 
+### P1-4 分页修复独立复审（2026-10-20）
+
+- 修复后 `discoverPersistedPreview()` 从 `after_seq=0` 开始，按服务端 `next_cursor` 严格递增逐页读取；真实后端单页最多 200 条，fixture 已覆盖事件 201/202 跨页、latest restore 伴随事件及后续空页终止。
+- 非整数、倒退或不前进游标立即终止并显示“游标未前进”类提示；达到 `MAX_PREVIEW_DISCOVERY_PAGES=50` 时显示“尚未读完”，不伪报没有历史预览。跨页收集的最新 `preview_*` 事件按同一 `map_id` GET job，再读取 `job.cursor.preview_id`，只 GET preview，不触发 POST/provider。
+- 每页及 job 解析均复用当前 map/request/active 守卫；停用视图、切图和迟到响应不会产生当前地图的 saved-preview 入口。资源版本为 `literature-maps.js?v=7`、`literature-maps.css?v=5`，预览 `[hidden]` scoped 样式同步。
+- 精准提升权限 Chromium 复跑 `13 passed`、无 skip；既有地图可行性复跑 `3 passed`。P1-4 修复验收通过，当前服务器预览重开窄范围 **GO**；未发现新的 P0/P1。
+
 ## 验证记录
 
 | 命令 | 结果 |
 |---|---|
 | `node --check frontend/literature-maps.js` | 退出码 0 |
-| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py`（提升权限、真实 Chromium） | 退出码 0；`8 passed`；无 skip，包含 partial/retry、running/stop/retry、先 restore 后 references、indexed+tombstone |
+| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py`（提升权限、真实 Chromium） | 退出码 0；`13 passed`；无 skip，包含 >200 事件跨页、空页/异常游标、latest restore、停用/切图竞态与 GET-only |
 | `.venv/bin/python -m pytest -q tests/frontend/test_frontend_map_feasibility.py`（提升权限、真实 Chromium） | 退出码 0；`3 passed`；既有地图交互回归通过 |
 | `.venv/bin/python scripts/check_test_layout.py` | 退出码 0；`test layout: ok` |
 | `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；未发现 spec/task 编号测试名 |
@@ -55,7 +62,7 @@
 
 ## 交接与下一步
 
-- 当前 verdict：**GO（前端窄范围）**；partial 终态 stop 与未恢复墓碑禁扩展均按冻结合同通过，indexed+tombstone 修复及回归通过。
+- 当前 verdict：**GO（服务器预览重开窄范围）**；partial 终态 stop、未恢复墓碑禁扩展、indexed+tombstone、refresh formatter 及服务器事件分页/竞态回归均通过。
 - 不得将本 fixture GO 外推为生产 API E2E；主会话仍需完成真实 preview→apply/refresh/stop-retry/remove-restore/reopen 证据及部署门禁。
 - 本报告不启动暂停中的 8000 服务。
 

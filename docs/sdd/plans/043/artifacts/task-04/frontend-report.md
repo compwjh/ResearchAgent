@@ -108,3 +108,45 @@
 | `git diff --check -- frontend tests/frontend` | 退出码 0 |
 
 本轮只改前端组件、fixture、精准测试和本交接报告；未修改 backend、公共接口、部署、环境或提交。生产浏览器报告中的 refresh P1 已有最小修复，待独立 frontend-reviewer 复审。
+
+## 服务器持久预览重开追加（2026-10-20）
+
+### 实际改动
+
+- `frontend/literature-maps.js` 增加可见的“打开上次预览”入口。地图切换后先读取现有 `sessionStorage` 快路径；无本地状态时仅通过 `GET /{map_id}/events?after_seq=0` 找到 `preview_queued/preview_completed` 事件，再 `GET /{map_id}/jobs/{job_id}` 读取服务端 `cursor.preview_id`，只显示入口，不自动创建或触发 provider。
+- 打开入口后仅 `GET /{map_id}/previews/{preview_id}` 恢复候选/差异；关闭预览会递增请求代次、停止轮询并清空当前面板，但保留入口以便再次只读打开。地图 ID、map request generation、preview request generation 和 active 状态均设守卫，迟到的旧地图/旧预览响应不会重开或写入当前面板。
+- 事件恢复只筛选 `preview_*` 事件，最新 `restore` 作业不会遮蔽此前可恢复的 preview；已应用/冲突等旧 preview 仍按服务端状态只读展示。地图资源版本同步为 `literature-maps.js?v=7`、`literature-maps.css?v=5`，确保关闭态样式不被缓存旧资源覆盖。
+- fixture 新增无 sessionStorage 的服务端事件→job cursor→preview 链路、latest restore 伴随事件、延迟关闭、切图竞态和 GET-only 请求日志；新增的差异断言仍使用真实 shape 中的 citation 值与关系字段。预览面板补充 `[hidden]` scoped 规则，避免通用 `display:grid` 覆盖关闭态。
+
+### 定向验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py`（授权 Chromium） | 退出码 0；10 passed；无 skip。覆盖无存储重开、latest restore 不遮蔽、迟到响应关闭守卫、切图竞态和无 POST 请求 |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0；`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
+| `git diff --check -- frontend/literature-maps.js frontend/literature-maps.css frontend/index.html tests/frontend` | 退出码 0 |
+
+本追加只涉及前端组件、scoped CSS、fixture、精准测试和报告；未修改 backend、公共接口、部署、环境、真实 provider 或提交。组件 fixture 不是生产 E2E 证据，仍需独立 frontend-reviewer 复核及主会话真实浏览器验收。
+
+## 持久预览事件分页 P1 修复追加（2026-10-20）
+
+### 实际改动
+
+- `discoverPersistedPreview()` 现在从 `after_seq=0` 开始，按服务端 `next_cursor` 严格递增读取既有事件页，直到收到空页；跨页汇总 `preview_*` 事件后，再按最新事件读取 `GET /{map_id}/jobs/{job_id}` 的 `cursor.preview_id`。没有新增接口或历史管理。
+- 对非整数、未前进或倒退的游标立即终止，最多读取 50 页；异常或达到上限均显示明确的中文状态，不静默宣称“没有上次预览”。空页是正常终止条件。
+- 每页以及 job 解析都复用地图 ID、map request generation 和 active 守卫；切图/停用视图时放弃迟到页，不创建 preview、不触发 provider。旧 job 解析失败会继续尝试更早的 preview 事件。
+- fixture 增加真实分页形状：首页 200 个事件、第二页在 event 201+ 才出现 preview 并伴随最新 restore 作业、第三次读取为空；另覆盖游标停滞、停用中断、切图竞态和 GET-only 请求日志。
+
+### 定向验证
+
+| 命令 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py`（授权 Chromium） | 退出码 0；13 passed；无 skip。覆盖 >200 事件分页至空页、latest restore、异常游标不循环、停用/切图中断和无 POST/provider |
+| `.venv/bin/python scripts/check_test_layout.py` | 退出码 0；`test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
+| `git diff --check -- frontend/literature-maps.js tests/frontend docs/sdd/plans/043/artifacts/task-04/frontend-report.md` | 退出码 0 |
+
+本追加仍只涉及前端组件、fixture、精准测试和交接文档；未修改 backend、公共接口、部署、环境、真实 provider 或提交。分页 fixture 不是生产 E2E 证据，需独立复审及主会话真实浏览器验收。

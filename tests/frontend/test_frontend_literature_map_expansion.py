@@ -25,8 +25,8 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=6" in INDEX
-    assert "/assets/literature-maps.css?v=4" in INDEX
+    assert "/assets/literature-maps.js?v=7" in INDEX
+    assert "/assets/literature-maps.css?v=5" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",
@@ -36,6 +36,12 @@ def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
         "重新读取并预览",
         "继续搜索",
         "刷新预览",
+        "打开上次预览",
+        "/events?after_seq=",
+        "next_cursor",
+        "MAX_PREVIEW_DISCOVERY_PAGES",
+        "游标未前进",
+        "cursor?.preview_id",
         "参考文献",
         "引用它的论文",
         "已选择",
@@ -95,6 +101,142 @@ def test_component_fixture_supports_preview_apply_cas_and_persistent_reopen() ->
         page.locator('[data-map-id="map-fixture"]').click()
         page.wait_for_selector("#literature-map-preview-panel")
         assert page.locator("#literature-map-preview-panel").is_visible()
+        page.close()
+        browser.close()
+
+
+def test_component_fixture_recovers_server_preview_without_session_storage() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?server-preview&latest-restore", wait_until="load")
+        page.evaluate("window.sessionStorage.clear()")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.locator("#literature-map-open-saved-preview").wait_for(state="visible")
+        assert page.evaluate("window.__previewBodies") == []
+        assert page.locator("#literature-map-preview-panel").is_hidden()
+        page.get_by_role("button", name="打开上次预览").click()
+        page.wait_for_selector("#literature-map-preview-panel")
+        preview_text = page.locator("#literature-map-preview-panel").inner_text()
+        assert "引用数：29000 → 29014" in preview_text
+        assert "字段变更" in preview_text
+        assert page.evaluate("window.__requestLog.filter((entry) => entry.method === 'POST')") == []
+        paths = page.evaluate("window.__requestLog.map((entry) => entry.path)")
+        assert any("/events?after_seq=0" in path for path in paths)
+        assert any("/jobs/job-server-preview" in path for path in paths)
+        assert any("/previews/preview-server" in path for path in paths)
+        page.get_by_role("button", name="关闭预览").click()
+        assert page.locator("#literature-map-preview-panel").is_hidden()
+        page.locator("#literature-map-open-saved-preview").wait_for(state="visible")
+        page.close()
+
+        delayed = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        delayed.goto(f"{FIXTURE.as_uri()}?server-preview-delay", wait_until="load")
+        delayed.evaluate("window.sessionStorage.clear()")
+        delayed.locator('[data-map-id="map-fixture"]').click()
+        delayed.locator("#literature-map-open-saved-preview").wait_for(state="visible")
+        delayed.get_by_role("button", name="打开上次预览").click()
+        delayed.get_by_role("button", name="关闭预览").click()
+        delayed.wait_for_timeout(500)
+        assert delayed.locator("#literature-map-preview-panel").is_hidden()
+        assert delayed.locator("#literature-map-open-saved-preview").is_visible()
+        assert delayed.evaluate("window.__previewBodies") == []
+        delayed.close()
+        browser.close()
+
+
+def test_component_fixture_paginates_persisted_preview_events_until_empty_page() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?paged-preview&latest-restore", wait_until="load")
+        page.evaluate("window.sessionStorage.clear()")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.locator("#literature-map-open-saved-preview").wait_for(state="visible")
+        paths = page.evaluate("window.__requestLog.map((entry) => entry.path)")
+        assert any("/events?after_seq=0" in path for path in paths)
+        assert any("/events?after_seq=200" in path for path in paths)
+        assert any("/events?after_seq=203" in path for path in paths)
+        assert any("/jobs/job-server-preview-paged" in path for path in paths)
+        assert page.evaluate("window.__requestLog.filter((entry) => entry.method === 'POST')") == []
+        page.get_by_role("button", name="打开上次预览").click()
+        page.wait_for_selector("#literature-map-preview-panel")
+        assert "引用数：29000 → 29014" in page.locator("#literature-map-preview-panel").inner_text()
+        assert any("/previews/preview-server-paged" in path for path in page.evaluate("window.__requestLog.map((entry) => entry.path)"))
+        page.close()
+        browser.close()
+
+
+def test_component_fixture_stops_persisted_event_pagination_on_bad_cursor_or_inactive_view() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        stalled = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        stalled.goto(f"{FIXTURE.as_uri()}?paged-preview-stall", wait_until="load")
+        stalled.evaluate("window.sessionStorage.clear()")
+        stalled.locator('[data-map-id="map-fixture"]').click()
+        stalled.wait_for_function("document.querySelector('#literature-map-status')?.textContent.includes('游标未前进')")
+        stalled_paths = stalled.evaluate("window.__requestLog.map((entry) => entry.path)")
+        assert len([path for path in stalled_paths if "/events?after_seq=" in path]) == 1
+        assert stalled.locator("#literature-map-open-saved-preview").is_hidden()
+        assert stalled.evaluate("window.__previewBodies") == []
+        stalled.close()
+
+        inactive = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        inactive.goto(f"{FIXTURE.as_uri()}?paged-preview-delay", wait_until="load")
+        inactive.evaluate("window.sessionStorage.clear()")
+        inactive.locator('[data-map-id="map-fixture"]').click()
+        inactive.wait_for_function("window.__requestLog?.some((entry) => entry.path.includes('/events?after_seq=0'))")
+        inactive.evaluate("window.LiteratureMaps.setActive(false)")
+        inactive.wait_for_timeout(500)
+        assert inactive.locator("#literature-map-open-saved-preview").is_hidden()
+        assert inactive.locator("#literature-map-preview-panel").is_hidden()
+        assert inactive.evaluate("window.__previewBodies") == []
+        inactive.close()
+        browser.close()
+
+
+def test_component_fixture_ignores_stale_paginated_preview_after_map_switch() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?paged-preview-race", wait_until="load")
+        page.evaluate("window.sessionStorage.clear()")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_function("window.__requestLog?.some((entry) => entry.path.includes('/events?after_seq=0'))")
+        page.locator('[data-map-id="map-fixture-b"]').click()
+        page.wait_for_timeout(600)
+        assert page.locator("#literature-map-current-title").inner_text() == "第二张地图"
+        assert page.locator("#literature-map-open-saved-preview").is_hidden()
+        assert page.locator("#literature-map-preview-panel").is_hidden()
+        assert page.evaluate("window.__previewBodies") == []
+        page.close()
+        browser.close()
+
+
+def test_component_fixture_ignores_stale_server_preview_discovery_after_map_switch() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?server-preview-race", wait_until="load")
+        page.evaluate("window.sessionStorage.clear()")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_timeout(20)
+        page.locator('[data-map-id="map-fixture-b"]').click()
+        page.wait_for_timeout(500)
+        assert page.locator("#literature-map-current-title").inner_text() == "第二张地图"
+        assert page.locator("#literature-map-open-saved-preview").is_hidden()
+        assert page.locator("#literature-map-preview-panel").is_hidden()
+        assert page.evaluate("window.__previewBodies") == []
         page.close()
         browser.close()
 

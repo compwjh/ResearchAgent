@@ -66,3 +66,28 @@ The CUA screenshot API returned inline image bytes but did not expose a writable
 ## Verdict
 
 **BLOCKED / P1.** Real Chrome verified indexed-document navigation, tombstone restore, refresh queue→completed→confirm, capacity/duplicate suppression, provider warning visibility, and layout/document preservation. Task04 frontend is not clear for user acceptance until refresh diff values are rendered instead of eight `未提供` placeholders. No code or deployment was changed by this tester.
+
+## 3a99d5f narrow rerun: persisted refresh preview / indexed document (2026-10-20)
+
+- **Run:** `task04-browser-e2e-20261020-refresh-r2`
+- **Runtime:** real Google Chrome through CUA/Playwright, `http://127.0.0.1:8000/#literature-maps-view`
+- **Candidate:** local commit `3a99d5f`; no code, test, deploy, environment, provider, import, or apply changes in this run.
+- **Map reused:** `0baabeae7268429c9f7e4de8098ae1d0` (`API E2E graph attention networks r2`); the map list exposed `2/2` maps and this exact `data-map-id` was selected.
+- **Request guard:** did not click `刷新预览`, `确认刷新`, `继续搜索`, import, download, stop, retry, remove, or restore. No new preview/provider call was initiated.
+
+### Verified in the deployed UI
+
+- The map reopened with `21 个节点 · 18 条关系 · 已完成 · 阶段：apply` and visible status `地图部分完成；已保留可用节点并标注失败阶段。` Both `引用关系` and `主题相似` layers remained enabled; the canvas legend still showed solid citation arrows and dashed similarity lines.
+- The real node `21041260a5394f42891b020128fa60fa` (`Graph Attention Networks`) was activated with keyboard Enter. The detail panel showed `indexed`, citation count `29000`, and `已加入知识库 · 文档 ID：55afc3b8f01445429462fe78ed0d4c98`.
+- The existing `在知识库中查看` action was clicked once. The knowledge-base view showed `2017-Conference-Graph-Attention-Networks.pdf`, `已索引`, `v1 已索引 · 57 片段`, and `v2 已索引 · 92 片段`; no duplicate import/download action occurred. Returning through the 文献地图 navigation preserved the same map state.
+- A real Chrome screenshot was captured inline after returning to the map with the indexed GAT detail, 21-node/18-edge header, layer controls, and graph visible. CUA returned image bytes only; no invented filesystem screenshot path is recorded.
+
+### Persisted refresh preview limitation
+
+The current production UI exposes only `刷新预览`; it has no visible saved-preview list, preview ID route, or “reopen existing preview” control. After reopening the map in a fresh Chrome tab, the preview panel was empty and no persisted preview ID was visible. Because the requested guard forbids creating another preview or injecting fake state, this run could not reach the already-completed 8-diff panel.
+
+Therefore the following are **not independently re-verified in this run**: the eight real diff rows, Chinese field labels, node titles/IDs, and concrete `from → to` values. The prior API artifact still records the real refresh preview `803a6aaefca740408d6296c23bbab8c7` with `diff_count=8`, including GAT `29000 → 29014`; the new v6 formatter remains covered by the authorized Chromium fixture suite, but this production run cannot claim that panel as visible without a supported reopen path.
+
+### Verdict
+
+**BLOCKED / production recheck incomplete (no new frontend defect proven).** Indexed document association/navigation, map counts, partial status, layer state, and non-mutating reopen behavior pass on `3a99d5f`. The requested real 8-diff visual check is blocked by the production UI's missing saved-preview reopen entry; no duplicate preview or external call was made. This is a product verifiability limitation, not a new backend or frontend code change in this run.

@@ -11,6 +11,7 @@
   const MAP_HEIGHT = 680;
   const MAX_LAYOUT_FRAMES = 8;
   const MAX_POLL_ATTEMPTS = 120;
+  const MAX_PREVIEW_DISCOVERY_PAGES = 50;
   const MAX_MAP_NODES = 200;
   const MAX_PREVIEW_SELECTION = 20;
   const TERMINAL_JOB_STATES = new Set(['completed', 'partial', 'failed', 'stopped']);
@@ -48,6 +49,8 @@
     previewId: null,
     previewKind: null,
     previewNodeId: null,
+    savedPreview: null,
+    previewDiscoveryNotice: '',
     previewRequest: 0,
     previewPollTimer: null,
     previewPollGeneration: 0,
@@ -288,6 +291,11 @@
     refreshPreviewButton.id = 'literature-map-refresh-preview';
     refreshPreviewButton.hidden = true;
     headerActions.append(refreshPreviewButton);
+    const openSavedPreviewButton = createElement('button', 'secondary-button', '打开上次预览');
+    openSavedPreviewButton.type = 'button';
+    openSavedPreviewButton.id = 'literature-map-open-saved-preview';
+    openSavedPreviewButton.hidden = true;
+    headerActions.append(openSavedPreviewButton);
     const stopJobButton = createElement('button', 'secondary-button', '停止任务');
     stopJobButton.type = 'button';
     stopJobButton.id = 'literature-map-stop-job';
@@ -504,7 +512,7 @@
     root.append(grid);
     mount.append(root);
 
-    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, detailPanel, detail, status: notice, count: listCount, continueButton, refreshPreviewButton, stopJobButton, retryJobButton, previewPanel });
+    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, detailPanel, detail, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, previewPanel });
     bindEvents(newButton, refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
@@ -518,6 +526,7 @@
     });
     refs.continueButton.addEventListener('click', () => openPreview('topic'));
     refs.refreshPreviewButton.addEventListener('click', () => openPreview('refresh'));
+    refs.openSavedPreviewButton.addEventListener('click', () => openSavedPreview());
     refs.stopJobButton.addEventListener('click', () => stopCurrentJob());
     refs.retryJobButton.addEventListener('click', () => retryCurrentJob());
     newButton.addEventListener('click', () => {
@@ -900,6 +909,8 @@
       state.previewId = null;
       state.previewKind = null;
       state.previewNodeId = null;
+      state.savedPreview = null;
+      state.previewDiscoveryNotice = '';
       state.previewSelection.clear();
       state.previewConflict = false;
     }
@@ -919,10 +930,11 @@
       applySavedView(state.map);
       await loadMapGraph(mapId);
       if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
-      await restorePreviewForMap(mapId);
+      await restorePreviewForMap(mapId, requestId);
       renderMapList();
       if (state.job && !TERMINAL_JOB_STATES.has(state.job.status)) startPolling();
-      setStatus(state.map?.status === 'partial' ? '地图部分完成；已保留可用节点并标注失败阶段。' : '地图已打开，图谱数据来自本地保存结果。', state.map?.status === 'partial' ? 'partial' : '');
+      const mapStatus = state.map?.status === 'partial' ? '地图部分完成；已保留可用节点并标注失败阶段。' : '地图已打开，图谱数据来自本地保存结果。';
+      setStatus(state.previewDiscoveryNotice || mapStatus, state.previewDiscoveryNotice ? 'waiting' : (state.map?.status === 'partial' ? 'partial' : ''));
       renderJobActions();
     } catch (error) {
       if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
@@ -997,7 +1009,7 @@
   }
 
   function renderJobActions() {
-    if (!refs.stopJobButton || !refs.retryJobButton) return;
+    if (!refs.stopJobButton || !refs.retryJobButton || !refs.openSavedPreviewButton) return;
     const job = activeJob();
     const canStop = Boolean(job?.job_id && !TERMINAL_JOB_STATES.has(job.status));
     const canRetry = Boolean(job?.job_id && TERMINAL_JOB_STATES.has(job.status) && hasRetryableUnits(job));
@@ -1007,6 +1019,7 @@
     refs.retryJobButton.disabled = false;
     refs.continueButton.hidden = !state.map?.map_id;
     refs.refreshPreviewButton.hidden = !state.map?.map_id;
+    refs.openSavedPreviewButton.hidden = !state.savedPreview || Boolean(state.preview || state.previewId);
   }
 
   function previewStorageKey(mapId) {
@@ -1070,10 +1083,17 @@
   function renderPreviewLoading(label) {
     if (!refs.previewPanel) return;
     refs.previewPanel.hidden = false;
+    const actions = createElement('div', 'literature-map-preview-actions');
+    const close = createElement('button', 'secondary-button', '关闭预览');
+    close.type = 'button';
+    close.addEventListener('click', () => closePreviewPanel());
+    actions.append(close);
     refs.previewPanel.replaceChildren(
       createElement('h3', '', `${label}预览`),
       createElement('p', 'literature-map-preview-state', '正在读取候选与作业进度…'),
+      actions,
     );
+    renderJobActions();
   }
 
   function renderPreviewPanel() {
@@ -1176,16 +1196,23 @@
     }
     const close = createElement('button', 'secondary-button', '关闭预览');
     close.type = 'button';
-    close.addEventListener('click', () => {
-      state.preview = null;
-      state.previewJob = null;
-      state.previewSelection.clear();
-      state.previewConflict = false;
-      stopPreviewPolling();
-      renderPreviewPanel();
-    });
+    close.addEventListener('click', () => closePreviewPanel());
     actions.append(close);
     refs.previewPanel.append(actions);
+    renderJobActions();
+  }
+
+  function closePreviewPanel() {
+    state.previewRequest += 1;
+    state.preview = null;
+    state.previewJob = null;
+    state.previewId = null;
+    state.previewKind = null;
+    state.previewNodeId = null;
+    state.previewSelection.clear();
+    state.previewConflict = false;
+    stopPreviewPolling();
+    renderPreviewPanel();
     renderJobActions();
   }
 
@@ -1217,6 +1244,7 @@
     state.previewId = null;
     state.preview = null;
     state.previewJob = null;
+    state.savedPreview = null;
     state.previewSelection.clear();
     state.previewConflict = false;
     stopPreviewPolling();
@@ -1231,6 +1259,7 @@
       state.previewId = response.preview_id;
       state.previewJob = response.job || null;
       state.preview = { preview_id: response.preview_id, map_id: mapId, status: response.status || response.job?.status || 'queued', base_revision: response.base_revision ?? state.map.revision, candidates: [] };
+      state.savedPreview = { preview_id: response.preview_id, map_id: mapId, kind, node_id: nodeId || null, job_id: response.job_id || response.job?.job_id || null };
       persistPreviewSession();
       renderPreviewPanel();
       await loadPreview(state.previewId, requestId);
@@ -1251,6 +1280,15 @@
       if (requestId !== state.previewRequest || previewId !== state.previewId || mapId !== state.selectedMapId || !state.active) return;
       state.preview = payload.preview || state.preview;
       state.previewJob = payload.job || state.previewJob;
+      state.previewKind = state.preview?.kind || state.previewKind || 'topic';
+      state.savedPreview = {
+        ...(state.savedPreview || {}),
+        preview_id: previewId,
+        map_id: mapId,
+        kind: state.previewKind,
+        job_id: state.previewJob?.job_id || state.savedPreview?.job_id || null,
+        job: state.previewJob,
+      };
       renderPreviewPanel();
       if (state.preview?.status === 'expired') clearPreviewSession(mapId);
     } catch (error) {
@@ -1281,20 +1319,115 @@
     if (state.active && state.selectedMapId === mapId) await openPreview(kind, nodeId);
   }
 
-  async function restorePreviewForMap(mapId) {
-    if (!mapId || !state.active || state.preview) return;
+  function isCurrentMapRequest(mapId, mapRequestId) {
+    return Boolean(mapId && state.active && state.selectedMapId === mapId && state.map?.map_id === mapId && mapRequestId === state.mapRequest);
+  }
+
+  async function discoverPersistedPreview(mapId, mapRequestId) {
+    if (!isCurrentMapRequest(mapId, mapRequestId)) return null;
+    state.previewDiscoveryNotice = '';
+    let cursor = 0;
+    let pageCount = 0;
+    let reachedEmptyPage = false;
+    const previewEvents = [];
+    try {
+      while (pageCount < MAX_PREVIEW_DISCOVERY_PAGES) {
+        const eventsPayload = await request(`/${encodeURIComponent(mapId)}/events?after_seq=${encodeURIComponent(cursor)}`);
+        if (!isCurrentMapRequest(mapId, mapRequestId)) return null;
+        pageCount += 1;
+        const events = Array.isArray(eventsPayload.events) ? eventsPayload.events : [];
+        if (!events.length) {
+          reachedEmptyPage = true;
+          break;
+        }
+        previewEvents.push(...events.filter((event) => String(event?.type || '').startsWith('preview_') && event?.job_id));
+        const nextCursor = Number(eventsPayload.next_cursor);
+        if (!Number.isSafeInteger(nextCursor) || nextCursor <= cursor) {
+          state.previewDiscoveryNotice = '上次预览事件读取中断：服务端游标未前进，请重新打开地图重试。';
+          break;
+        }
+        state.eventCursor = Math.max(state.eventCursor, nextCursor);
+        cursor = nextCursor;
+      }
+      if (!reachedEmptyPage && pageCount >= MAX_PREVIEW_DISCOVERY_PAGES && state.previewDiscoveryNotice === '') {
+        state.previewDiscoveryNotice = '上次预览事件较多，尚未读完；请重新打开地图继续读取。';
+      }
+      for (const event of previewEvents.reverse()) {
+        try {
+          const jobPayload = await request(`/${encodeURIComponent(mapId)}/jobs/${encodeURIComponent(event.job_id)}`);
+          if (!isCurrentMapRequest(mapId, mapRequestId)) return null;
+          const job = jobPayload?.job;
+          const previewId = job?.cursor?.preview_id;
+          if (!previewId) continue;
+          return {
+            preview_id: String(previewId),
+            map_id: mapId,
+            job_id: job.job_id || event.job_id,
+            kind: null,
+            node_id: null,
+            job,
+            event_type: event.type,
+          };
+        } catch (_) {
+          // A stale preview job must not hide an older persisted preview.
+        }
+      }
+    } catch (_) {
+      if (isCurrentMapRequest(mapId, mapRequestId)) state.previewDiscoveryNotice = '上次预览记录暂时无法读取，请重新打开地图重试。';
+    }
+    return null;
+  }
+
+  async function restorePreviewForMap(mapId, mapRequestId = state.mapRequest) {
+    if (!mapId || !state.active || state.preview || !isCurrentMapRequest(mapId, mapRequestId)) return;
     if (!state.previewId) {
       let saved = null;
       try { saved = JSON.parse(window.sessionStorage.getItem(previewStorageKey(mapId)) || 'null'); } catch (_) { saved = null; }
-      if (!saved?.preview_id) return;
-      state.previewId = saved.preview_id;
-      state.previewKind = saved.kind || 'topic';
-      state.previewNodeId = saved.node_id || null;
+      if (saved?.preview_id) {
+        state.previewId = saved.preview_id;
+        state.previewKind = saved.kind || 'topic';
+        state.previewNodeId = saved.node_id || null;
+        state.savedPreview = { ...saved, map_id: mapId };
+      }
     }
-    state.previewRequest += 1;
+    if (!state.previewId) {
+      state.savedPreview = await discoverPersistedPreview(mapId, mapRequestId);
+      renderJobActions();
+      return;
+    }
+    const previewRequest = ++state.previewRequest;
     state.previewSelection.clear();
     state.previewConflict = false;
-    await loadPreview(state.previewId, state.previewRequest);
+    await loadPreview(state.previewId, previewRequest);
+    if (!isCurrentMapRequest(mapId, mapRequestId)) return;
+    if (!state.preview) {
+      state.previewId = null;
+      state.previewKind = null;
+      state.previewNodeId = null;
+      state.savedPreview = await discoverPersistedPreview(mapId, mapRequestId);
+      renderJobActions();
+      return;
+    }
+    if (state.previewJob && !TERMINAL_JOB_STATES.has(state.previewJob.status) && !previewTerminal(state.preview)) schedulePreviewPoll(700);
+  }
+
+  async function openSavedPreview() {
+    const saved = state.savedPreview;
+    const mapId = state.map?.map_id;
+    if (!saved?.preview_id || !mapId || saved.map_id !== mapId || !state.active) return;
+    const requestId = ++state.previewRequest;
+    state.previewId = saved.preview_id;
+    state.previewKind = saved.kind || 'topic';
+    state.previewNodeId = saved.node_id || null;
+    state.preview = null;
+    state.previewJob = saved.job || null;
+    state.previewSelection.clear();
+    state.previewConflict = false;
+    stopPreviewPolling();
+    renderPreviewLoading('上次');
+    setStatus('正在读取上次预览…', 'waiting');
+    await loadPreview(saved.preview_id, requestId);
+    if (requestId !== state.previewRequest || !state.active || state.selectedMapId !== mapId || state.map?.map_id !== mapId) return;
     if (state.previewJob && !TERMINAL_JOB_STATES.has(state.previewJob.status) && !previewTerminal(state.preview)) schedulePreviewPoll(700);
   }
 
