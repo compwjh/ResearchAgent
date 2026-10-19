@@ -167,6 +167,80 @@ def test_http_import_round_trip_persists_diagnostics_in_sqlite_provenance(tmp_pa
     assert "import_diagnostics" not in persisted_after_retry.provenance
 
 
+def test_http_provider_failure_persists_retryable_code_and_clears_after_success(tmp_path) -> None:
+    database_path = tmp_path / "maps.sqlite3"
+    store = LiteratureMapStore(database_path)
+    created = store.create_map(routes_literature_maps.OWNER_ID, topic="fuzzing")
+    node = MapPaper.new(
+        created.map_id,
+        semantic_scholar_id="s2-a",
+        title="A paper",
+        source_url="https://www.semanticscholar.org/paper/s2-a",
+        provenance={"provider": "semantic_scholar", "keep": "yes"},
+    )
+    store.add_nodes(created.map_id, routes_literature_maps.OWNER_ID, [node])
+    source = {
+        "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "resolver_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "resolver_codes": ["SEMANTIC_SCHOLAR_RATE_LIMITED"],
+        "retryable": True,
+        "provider_exception": "https://secret.example/key=bad",
+    }
+    outcome = {"status": "failed", "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED", "retryable": True}
+    bridge = LiteratureMapImportBridge(
+        importer=lambda _snapshot, _url: outcome,
+        store=store,
+        owner_id=routes_literature_maps.OWNER_ID,
+        source_resolver=lambda _node: source,
+    )
+
+    class Service:
+        def import_node(self, map_id, node_id, owner_id):
+            current = store.get_node(map_id, node_id, owner_id)
+            assert current is not None
+            return bridge.import_node(current, current.source_url)
+
+        def node(self, map_id, node_id, owner_id):
+            current = store.get_node(map_id, node_id, owner_id)
+            assert current is not None
+            return current
+
+    with patch.object(routes_literature_maps, "get_literature_map_service", return_value=Service()):
+        posted = TestClient(app).post(f"/api/literature-maps/{created.map_id}/nodes/{node.node_id}/imports", json={})
+        fetched = TestClient(app).get(f"/api/literature-maps/{created.map_id}/nodes/{node.node_id}")
+
+    assert posted.status_code == 202
+    assert posted.json()["error_code"] == "SEMANTIC_SCHOLAR_RATE_LIMITED"
+    assert posted.json()["retryable"] is True
+    assert fetched.status_code == 200
+    diagnostics = fetched.json()["node"]["provenance"]["import_diagnostics"]
+    assert diagnostics["error_code"] == "SEMANTIC_SCHOLAR_RATE_LIMITED"
+    assert diagnostics["retryable"] is True
+    assert "secret.example" not in str(fetched.json())
+
+    reopened = LiteratureMapStore(database_path)
+    persisted = reopened.get_node(created.map_id, node.node_id, routes_literature_maps.OWNER_ID)
+    assert persisted is not None
+    assert persisted.provenance["import_diagnostics"]["resolver_code"] == "SEMANTIC_SCHOLAR_RATE_LIMITED"
+
+    source.clear()
+    source.update({"pdf_url": "https://arxiv.org/pdf/1809.07041"})
+    outcome.clear()
+    outcome.update({"status": "indexed", "paper_id": "doc-1"})
+    with patch.object(routes_literature_maps, "get_literature_map_service", return_value=Service()):
+        retried = TestClient(app).post(f"/api/literature-maps/{created.map_id}/nodes/{node.node_id}/imports", json={})
+        fetched_after_retry = TestClient(app).get(f"/api/literature-maps/{created.map_id}/nodes/{node.node_id}")
+
+    assert retried.status_code == 202
+    assert retried.json()["status"] == "indexed"
+    assert "import_diagnostics" not in fetched_after_retry.json()["node"]["provenance"]
+    reopened_again = LiteratureMapStore(database_path)
+    persisted_after_retry = reopened_again.get_node(created.map_id, node.node_id, routes_literature_maps.OWNER_ID)
+    assert persisted_after_retry is not None
+    assert persisted_after_retry.document_id == "doc-1"
+    assert "import_diagnostics" not in persisted_after_retry.provenance
+
+
 def test_http_storage_failure_has_no_raw_exception_text() -> None:
     service = SimpleNamespace(store=BrokenStore())
     with patch.object(routes_literature_maps, "get_literature_map_service", return_value=service):

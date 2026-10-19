@@ -405,3 +405,30 @@ service 已在创建前抛出 `UNSUPPORTED_SOURCE`/`UNSUPPORTED_CONFERENCE`，�
 以上真实持久化用的是临时 SQLite 文件和 FastAPI TestClient，验证了 POST→GET→重开 store→成功重试→再次重开的链路；没有把 mock provider 或 FakeStore 当成真实 E2E，也未证明外部 API/download 成功。
 
 **最终集中结论：GO（最后 resolver 诊断持久化 P1 已闭环）。** 本结论仅关闭本项 backend 窄复审，不替代 Task03 的真实 provider/API E2E、全量回归、验收签字或部署门禁。
+
+## 稳定 resolver 码白名单与 provider failure 最终窄复审（2026-10-19；backend-reviewer）
+
+本轮只复核真实 E2E 暴露的稳定码白名单修复；未修改业务代码/测试，未部署、未下载、未调用真实 provider。重点是 domain 唯一白名单/normalizer 的输入过滤、provider operational failure 的主错误码与 retryable 语义，以及临时 SQLite 节点 GET/重开一致性。
+
+### 逐项结论：GO
+
+| 检查项 | 结论 | 实际证据 |
+|---|---|---|
+| 唯一白名单贯通 | GO | `domain/import_diagnostics.py` 是 resolver 诊断码唯一列表；runtime 用 `resolver_failure()`，bridge 用 `safe_resolver_codes()`，store 用 `normalize_import_diagnostics()`，不再各自维护副本。已覆盖 arXiv rate-limit/HTTP/invalid/unavailable 与 S2 rate-limit/unavailable/HTTP/invalid 等固定码。 |
+| 任意输入不泄漏 | GO | resolver code 只按固定集合精确匹配；主 import error 只接受固定 `SAFE_IMPORT_ERROR_CODES` 或 resolver 集合；未知字符串、URL、provider exception、key 既不进入 HTTP 结果也不进入 `provenance.import_diagnostics`。独立临时 SQLite probe 以 secret URL 作为错误输入，结果只保留 `KB_IMPORT_FAILED`，持久化/重读均无 secret。 |
+| provider unavailable 语义 | GO | `resolver_failure()` 将 provider operational code 作为主 `error_code`；`ARXIV_UNAVAILABLE`、`ARXIV_RATE_LIMITED`、`SEMANTIC_SCHOLAR_UNAVAILABLE`、`SEMANTIC_SCHOLAR_RATE_LIMITED` 保留可重试语义。只有 `NO_PDF_CANDIDATE_CODES`（例如 `SEMANTIC_SCHOLAR_NO_OPEN_PDF`）且没有 provider failure 时才归为 `PDF_NOT_FOUND`。 |
+| SQLite GET 一致 | GO | provider failure 通过真实 `LiteratureMapStore` 写入既有 `provenance_json.import_diagnostics`；HTTP GET、重开 store 都能读到主错误码/resolver code/retryable，成功 `indexed` 重试继续清理旧诊断并保留其他 provenance/document。 |
+
+### 精准验证
+
+| 命令/探针 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py` | 0 | **50 passed** |
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/pytest -q tests/literature_maps` | 0 | **84 passed** |
+| `.venv/bin/ruff check`（domain/runtime/bridge/store 与相关精准测试） | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile`（domain/runtime/bridge/store） | 0 | 通过 |
+| 独立 domain + 临时 SQLite probe（未知 secret code/URL、provider unavailable 与 `PDF_NOT_FOUND` 分流、重开 store） | 0 | `diagnostic whitelist/provider semantics/SQLite persistence: OK` |
+
+本轮没有把 50/84 离线测试当作真实 provider 或下载成功；真实外部 API/download、服务重启后的 E2E 仍由主会话按验收门禁复核。
+
+**最终集中结论：GO（稳定 resolver 码、provider failure 语义及 SQLite GET 接缝均闭环）。** 本结论仅关闭本次新增稳定码 P1 窄复审，不替代 Task03 整体验收/部署结论。

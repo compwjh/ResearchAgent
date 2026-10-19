@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from backend.app.literature_maps.application.import_bridge import LiteratureMapImportBridge
 from backend.app.literature_maps.application.paper_import_adapter import PaperImportSourceAdapter
 from backend.app.literature_maps.application.service import LiteratureMapService
+from backend.app.literature_maps.domain.import_diagnostics import resolver_failure
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
@@ -74,6 +75,7 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
     allowed_hosts.update(builtin_allowed_hosts("arxiv"))
 
     resolver_codes: list[str] = []
+    resolver_retryable = False
     arxiv_id = _normalize_arxiv_id(candidate.get("arxiv_id"))
     if arxiv_id:
         try:
@@ -85,6 +87,8 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
         except Exception:
             arxiv_result = None
             resolver_codes.append("ARXIV_UNAVAILABLE")
+            resolver_retryable = True
+        resolver_retryable = resolver_retryable or bool(getattr(arxiv_result, "retryable", False))
         arxiv_match = getattr(arxiv_result, "match", None)
         arxiv_pdf_url = getattr(arxiv_match, "pdf_url", None)
         if arxiv_match is not None:
@@ -110,10 +114,16 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
     if result_code:
         resolver_codes.append(str(result_code))
     if not match or not pdf_url:
-        return _resolver_failure(resolver_codes)
+        return _resolver_failure(
+            resolver_codes,
+            retryable=resolver_retryable or bool(getattr(result, "retryable", False)),
+        )
     if not _candidate_identity_matches(candidate, match):
         resolver_codes.append("OA_IDENTITY_CONFLICT")
-        return _resolver_failure(resolver_codes)
+        return _resolver_failure(
+            resolver_codes,
+            retryable=resolver_retryable or bool(getattr(result, "retryable", False)),
+        )
     return {
         "pdf_url": str(pdf_url).strip(),
         "doi": getattr(match, "doi", None),
@@ -124,13 +134,8 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
     }
 
 
-def _resolver_failure(codes: list[str]) -> dict[str, object]:
-    stable_codes = [str(code) for code in codes if str(code).strip()]
-    return {
-        "error_code": "PDF_NOT_FOUND",
-        "resolver_code": stable_codes[-1] if stable_codes else "PDF_NOT_FOUND",
-        "resolver_codes": stable_codes,
-    }
+def _resolver_failure(codes: list[str], *, retryable: bool = False) -> dict[str, object]:
+    return resolver_failure([str(code) for code in codes if str(code).strip()], retryable=retryable)
 
 
 def _candidate_identity_matches(candidate: dict, match: object) -> bool:

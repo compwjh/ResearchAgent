@@ -152,6 +152,7 @@ def test_node_import_diagnostics_are_provenance_scoped_and_cleared_on_success(tm
         "error_code": "PDF_NOT_FOUND",
         "resolver_code": "SEMANTIC_SCHOLAR_NO_OPEN_PDF",
         "resolver_codes": ["ARXIV_UNAVAILABLE", "SEMANTIC_SCHOLAR_NO_OPEN_PDF"],
+        "retryable": True,
     }
     assert "secret.example" not in str(failed.provenance)
 

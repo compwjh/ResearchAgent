@@ -87,3 +87,35 @@
 - P1 修复后至少复跑：空白画布拖动 → 等待保存 → graph API 核验 `viewport.x/y` 变化 → 刷新/重开 → 核验位置恢复；同时复跑真实地图的 partial 与 complete 两条状态路径。
 
 **最终决定：BLOCKED；本报告不签署 READY_FOR_USER。**
+
+## Run 2 — v4 真实 feasibility 图与视图持久化复验（2026-10-19 22:09 CST）
+
+- **环境**：真实 Google Chrome，`http://127.0.0.1:8000/#literature-maps-view`；浏览器访问 `/api/ready` 返回 `200`/`ready=true`。候选代码为本地 commit `8c79860`；本轮未改业务代码、测试代码、部署或环境。
+- **范围**：不创建第二张地图、不重复触发 provider；先复用旧地图验证视图持久化，再复用后端 feasibility 新图验证真实连线、详情和 partial 展示。旧 Run 1 的 0 边失败证据与截图完整保留。
+
+### 旧地图视图回归（`9b1e4739443e40c98400cfb69aec1e45`）
+
+1. 空白画布拖动 `[1100,700] -> [1040,640]` 后读取真实 graph API：服务端 `revision=9`，`viewport={"scale":1.2,"x":-60.0,"y":-60.0}`。相比 Run 1 的 `revision=8`、`x/y=0`，平移已触发 view PATCH，**PASS**。
+2. 重新进入同一地图后，画布节点簇保持平移位置；截图：[browser-v4-pan-reopen.jpg](./screenshots/browser-v4-pan-reopen.jpg)。
+3. 拖动首个可见节点后出现“视图已保存”，API `revision=10`，其位置由 `{"x":120,"y":80}` 变为 `{"x":170,"y":105}`，且 viewport 仍为 `scale=1.2,x=-60,y=-60`，**PASS**。
+4. 点击放大后 API `revision=11`，`viewport.scale=1.44`，节点位置仍为 `170,105`；再次重开后布局保持，截图：[browser-v4-node-drag-zoom-reopen.jpg](./screenshots/browser-v4-node-drag-zoom-reopen.jpg)，**PASS**。
+
+### 新 feasibility 图真实 UI（`0baabeae7268429c9f7e4de8098ae1d0`）
+
+- 复用后端作业 `ba6bb4f9471b43afb8b1063cdc3a883d`，未新建地图。列表及中心标题均显示 `API E2E graph attention networks r2`、`20 个节点 · 16 条关系 · 部分完成 · 阶段：地图可用`，且显示“地图部分完成；已保留可用节点并标注失败阶段”。这是实际部署数据，不是 fixture/mock。
+- 真实 graph API 交叉核验：20 nodes、11 citation edges、5 similarity edges；citation layer 为 `partial`（`SEMANTIC_SCHOLAR_RATE_LIMITED`），similarity layer 为 `completed`。API 的边对象保留 Semantic Scholar citation provenance 与 `title_abstract` similarity basis/model；页面同时显示引用关系、主题相似图层复选框。
+- 中间 SVG 真实绘制了引用连线/箭头及主题相似虚线；截图：[browser-v4-real-graph.jpg](./screenshots/browser-v4-real-graph.jpg)。该截图中的 16 条关系来自服务端 graph API，非客户端合成。
+- 点击真实节点打开右侧详情，显示 `Graph Attention Networks`、完整作者、年份 `2017`、来源 `International Conference on Learning Representations`、引用数、摘要、Semantic Scholar 原文链接及失败状态；截图：[browser-v4-real-graph-detail.jpg](./screenshots/browser-v4-real-graph-detail.jpg)。详情打开与三栏布局 **PASS**；旧 Run 1 已验证详情关闭，本轮未重复修改保存状态。
+
+### 本轮结论
+
+| 检查项 | 结果 | 证据 |
+|---|---|---|
+| 空白画布平移保存并重开 | PASS | 旧图 API `revision=9`, viewport `x/y=-60/-60`；`browser-v4-pan-reopen.jpg` |
+| 节点拖动与缩放不回退 | PASS | 旧图 API `revision=10/11`，节点 `120,80 -> 170,105`，scale `1.2 -> 1.44`；`browser-v4-node-drag-zoom-reopen.jpg` |
+| 新图真实关系/箭头/虚线 | PASS（数据真实但图为 partial） | 新图 API 20/16（11 citation + 5 similarity）；`browser-v4-real-graph.jpg` |
+| 新图节点详情/来源信息 | PASS | `Graph Attention Networks` 详情与真实 Semantic Scholar 链接；`browser-v4-real-graph-detail.jpg` |
+| partial 真实提示与可用节点保留 | PASS | 列表、中心统计和 partial banner 同步显示 |
+| 完整用户验收 | **BLOCKED** | 新图 citation 仍 `SEMANTIC_SCHOLAR_RATE_LIMITED`；不得把 partial 宣称为完整成功 |
+
+**Run 2 前端结论：画布平移 P1 已关闭，节点拖动/缩放及真实连线/详情展示通过；Task03 整体验收仍 BLOCKED，阻塞来自后端真实 provider partial/rate-limit，而非本轮发现的新前端缺陷。**

@@ -14,6 +14,11 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
+from backend.app.literature_maps.domain.import_diagnostics import (
+    RESOLVER_DIAGNOSTIC_CODES,
+    resolver_retryable,
+    safe_resolver_codes,
+)
 from backend.app.literature_maps.domain.models import MapPaper
 from backend.app.paper_discovery.application.paper_import import (
     KB_IMPORT_FAILED,
@@ -64,7 +69,15 @@ class LiteratureMapImportBridge:
             source = {**source, "catalog_paper_id": node.catalog_paper_id}
         selected_url = _source_pdf_url(source)
         if not selected_url:
-            result = _failure_result(source.get("error_code") or PDF_NOT_FOUND, source)
+            resolver_codes = safe_resolver_codes(source)
+            result = _failure_result(
+                source.get("error_code") or PDF_NOT_FOUND,
+                source,
+                retryable=resolver_retryable(
+                    resolver_codes + [str(source.get("error_code") or "")],
+                    explicit=bool(source.get("retryable")),
+                ),
+            )
             return self._persist(node, result)
         if _identity_conflict(node, source):
             result = _failure_result("IMPORT_IDENTITY_CONFLICT", source)
@@ -124,20 +137,6 @@ class LiteratureMapImportBridge:
 
 
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
-_RESOLVER_DIAGNOSTIC_CODES = frozenset({
-    "ARXIV_UNAVAILABLE",
-    "ARXIV_MATCH_UNCERTAIN",
-    "ARXIV_IDENTITY_CONFLICT",
-    "SEMANTIC_SCHOLAR_UNAVAILABLE",
-    "SEMANTIC_SCHOLAR_NO_OPEN_PDF",
-    "SEMANTIC_SCHOLAR_MATCH_UNCERTAIN",
-    "SEMANTIC_SCHOLAR_UNSUPPORTED_PDF_HOST",
-    "SEMANTIC_SCHOLAR_AUTH_FAILED",
-    "SEMANTIC_SCHOLAR_NOT_FOUND",
-    "SEMANTIC_SCHOLAR_HTTP_ERROR",
-    "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
-    "OA_IDENTITY_CONFLICT",
-})
 _SAFE_STATUS = frozenset({
     "queued", "importing", "downloading", "validating", "indexing",
     "indexed", "completed", "pending", "partial", "waiting_login",
@@ -216,27 +215,11 @@ def _normalize_import_result(result: Any, source: Mapping[str, Any] | None = Non
         "retryable": bool(raw.get("retryable", False)),
         "catalog_paper_id": catalog_paper_id,
     }
-    resolver_codes = _safe_resolver_codes(source)
+    resolver_codes = safe_resolver_codes(source)
     if resolver_codes:
         normalized["resolver_code"] = resolver_codes[-1]
         normalized["resolver_codes"] = resolver_codes
     return normalized
-
-
-def _safe_resolver_codes(source: Mapping[str, Any] | None) -> list[str]:
-    if not isinstance(source, Mapping):
-        return []
-    values: list[Any] = []
-    raw_codes = source.get("resolver_codes")
-    if isinstance(raw_codes, (list, tuple)):
-        values.extend(raw_codes)
-    raw_code = source.get("resolver_code")
-    if raw_code is not None:
-        values.append(raw_code)
-    return list(dict.fromkeys(
-        code for code in (str(value).strip() for value in values)
-        if code in _RESOLVER_DIAGNOSTIC_CODES
-    ))
 
 
 def _source_pdf_url(source: Mapping[str, Any]) -> str | None:
@@ -311,7 +294,7 @@ def _failure_result(
 ) -> dict[str, Any]:
     code = str(error_code or PDF_NOT_FOUND)
     if code not in {"IMPORT_IDENTITY_CONFLICT", PDF_NOT_FOUND}:
-        code = safe_import_error_code(code, KB_IMPORT_FAILED)
+        code = code if code in RESOLVER_DIAGNOSTIC_CODES else safe_import_error_code(code, KB_IMPORT_FAILED)
     status = "waiting_login" if code in _LOGIN_ERROR_CODES else "failed"
     result = _normalize_import_result(
         {"status": status, "error_code": code, "retryable": retryable},

@@ -105,4 +105,44 @@
 
 本次未下载、未部署、未重跑真实外部 API、未提交；生产真实 API 需由主会话在服务重启后独立复审。
 
+## r2 真实导入诊断：resolver 接缝与失败码白名单（2026-10-19）
+
+### 已确认的调用链与输入
+
+- 只读打开临时/当前 SQLite 中的真实 r2 节点 `0baabeae7268429c9f7e4de8098ae1d0 / 21041260a5394f42891b020128fa60fa`：标题 `Graph Attention Networks`，6 位作者，年份 `2017`，外部身份含 arXiv/DOI/Semantic Scholar；节点 `source_url` 仍是 S2 landing，`catalog_paper_id` 与 catalog snapshot 均为空。
+- `PaperImportSourceAdapter.resolve()` 在该节点没有服务端官方 PDF 时确实调用注入的 runtime OA resolver；只读 fake-adapter trace 确认调用发生。
+- runtime 给既有 `ArxivFallbackAdapter.lookup()` 的形状是 `(title, authors, year)`，即标题、6 位作者、2017；arXiv identity 不直接作为 arXiv API 查询参数，而是在返回 metadata 后由 runtime 严格核对。S2 adapter 收到 `arxiv_id=1710.10903`、DOI、年份及完整外部身份，allowlist 含 arXiv host；没有 title-only 绑定。
+
+### 可验证的确定性缺陷
+
+runtime 可能产生的稳定 provider 失败码包括 `ARXIV_RATE_LIMITED`、`ARXIV_HTTP_ERROR`、`ARXIV_INVALID_RESPONSE`、`SEMANTIC_SCHOLAR_RATE_LIMITED`，但当前 `import_bridge` 与 SQLite store 的 resolver 白名单只覆盖 `ARXIV_UNAVAILABLE`、`ARXIV_MATCH_UNCERTAIN` 等码，遗漏上述四类。若本次 resolver 只返回其中一个遗漏码，bridge/store 会安全地丢弃它，GET 节点就只剩主错误 `PDF_NOT_FOUND`。这是代码级可复现的诊断丢失根因，不涉及客户端 URL 或异常泄露。
+
+### 一次受控公共 metadata probe
+
+仅复用既有 `ArxivFallbackAdapter` 对同一节点 metadata 做一次查询，`retries=0`，不下载 PDF、不调用导入链、不读取或输出 key。结果仅记录固定摘要：`code=ARXIV_UNAVAILABLE`、`matched=false`、`identity_matches=false`、`year_matches=false`、无安全 PDF 候选。该结果只证明本次 probe 的 provider/网络不可用，不能证明论文没有 OA，也不能反推 r2 导入当时的 provider 分支。
+
+### 当前结论与最小修复建议
+
+- 已确认 bridge source→runtime resolver 调用未断；节点身份与 resolver 输入形状正确。
+- 已确认失败码白名单存在遗漏，足以解释“provider failure 后只剩 `PDF_NOT_FOUND`”。但脱敏 r2 artifact 没有 provider envelope，不能断言 r2 实际命中 rate-limit、HTTP/invalid response，或是 resolver 成功给出 PDF 后下游安全 downloader 返回真实 `PDF_NOT_FOUND`。
+- 最小修复应仅扩展 bridge/store 两处固定白名单，加入上述四个稳定 provider code，并为每个 code 增加 bridge→SQLite→HTTP GET 回归；不放宽 URL/身份规则，不新增 downloader。修复后需重启服务并以一次新的受控真实导入复核，不得把当前 r2 的 `PDF_NOT_FOUND` 改判为无 OA。
+
+本次为只读诊断：未修改业务代码、未再次 POST 导入、未下载论文、未部署、未读取/输出密钥、未提交。
+
+## Resolver 稳定码与可重试语义修复（2026-10-19）
+
+- 新增 literature-map domain 小模块 `domain/import_diagnostics.py`，集中维护既有 arXiv/Semantic Scholar resolver 稳定码、transient retryable 码、无安全 PDF 候选码及持久化 normalizer；`import_bridge` 与 SQLite store 不再各自维护白名单。
+- 覆盖并保留：`ARXIV_RATE_LIMITED`、`ARXIV_HTTP_ERROR`、`ARXIV_INVALID_RESPONSE`、`ARXIV_UNAVAILABLE`、`SEMANTIC_SCHOLAR_RATE_LIMITED` 及既有身份/无 OA/主机校验码。未知字符串、URL、key 和 provider 原始字段仍被丢弃。
+- runtime 对 provider operational failure 返回固定 provider 主 `error_code`，并保留 adapter 的真实 retryable（另对既有明确 transient code 做受控兜底）；只有确实没有安全 PDF 候选时才返回 `PDF_NOT_FOUND`。HTTP 公共结果 shape 未新增字段，原有 `retryable` 语义被修正。
+- SQLite `import_diagnostics` 使用同一 normalizer 持久化主错误码、resolver codes、retryable；失败 POST→GET→重开 store 可见，成功 indexed 重试清除旧诊断并保留 document/provenance。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `pytest -q tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py` | 0 | 50 passed |
+| `pytest -q tests/literature_maps` | 0 | 84 passed |
+| `ruff check` 受影响 domain/runtime/bridge/store 与测试文件 | 0 | All checks passed |
+| `py_compile` 受影响 domain/runtime/bridge/store 与测试文件 | 0 | 通过 |
+
+本次仅使用 fake adapter、临时 SQLite 和 HTTP 测试；未真实下载、未真实导入、未部署、未读取/输出密钥、未提交。r2 的真实 `PDF_NOT_FOUND` 仍需主会话重启服务后独立复核，不能据此宣称无 OA。
+
 交接日志：`.codebuddy/agent-logs/spec-043/task-03/backend-dev/20261019-000000.md`

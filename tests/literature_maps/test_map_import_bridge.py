@@ -215,9 +215,67 @@ def test_runtime_oa_resolver_preserves_provider_failure_codes(monkeypatch: pytes
 
     result = runtime._existing_oa_resolver(_oa_candidate())
 
-    assert result["error_code"] == "PDF_NOT_FOUND"
+    assert result["error_code"] == "SEMANTIC_SCHOLAR_UNAVAILABLE"
     assert result["resolver_codes"] == ["ARXIV_UNAVAILABLE", "SEMANTIC_SCHOLAR_UNAVAILABLE"]
     assert result["resolver_code"] == "SEMANTIC_SCHOLAR_UNAVAILABLE"
+    assert result["retryable"] is True
+
+
+@pytest.mark.parametrize(
+    ("arxiv_code", "retryable"),
+    [
+        ("ARXIV_RATE_LIMITED", True),
+        ("ARXIV_HTTP_ERROR", False),
+        ("ARXIV_INVALID_RESPONSE", False),
+        ("ARXIV_UNAVAILABLE", True),
+    ],
+)
+def test_runtime_oa_resolver_keeps_arxiv_provider_failure_as_primary(
+    monkeypatch: pytest.MonkeyPatch,
+    arxiv_code: str,
+    retryable: bool,
+) -> None:
+    from backend.app.literature_maps.application import runtime
+    from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
+
+    class FailedArxiv:
+        def lookup(self, *_args, **_kwargs):
+            return SimpleNamespace(match=None, code=arxiv_code)
+
+    class NoPdfS2:
+        def lookup(self, *_args, **_kwargs):
+            return SimpleNamespace(match=None, code="SEMANTIC_SCHOLAR_NO_OPEN_PDF")
+
+    monkeypatch.setattr(arxiv_adapter, "ArxivFallbackAdapter", FailedArxiv)
+    monkeypatch.setattr(semantic_scholar_adapter, "SemanticScholarFallbackAdapter", NoPdfS2)
+
+    result = runtime._existing_oa_resolver(_oa_candidate())
+
+    assert result["error_code"] == arxiv_code
+    assert result["resolver_codes"] == [arxiv_code, "SEMANTIC_SCHOLAR_NO_OPEN_PDF"]
+    assert result["retryable"] is retryable
+
+
+def test_runtime_oa_resolver_keeps_semantic_scholar_rate_limit_as_primary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.literature_maps.application import runtime
+    from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
+
+    class UncertainArxiv:
+        def lookup(self, *_args, **_kwargs):
+            return SimpleNamespace(match=None, code="ARXIV_MATCH_UNCERTAIN")
+
+    class RateLimitedS2:
+        def lookup(self, *_args, **_kwargs):
+            return SimpleNamespace(match=None, code="SEMANTIC_SCHOLAR_RATE_LIMITED", retryable=True)
+
+    monkeypatch.setattr(arxiv_adapter, "ArxivFallbackAdapter", UncertainArxiv)
+    monkeypatch.setattr(semantic_scholar_adapter, "SemanticScholarFallbackAdapter", RateLimitedS2)
+
+    result = runtime._existing_oa_resolver(_oa_candidate())
+
+    assert result["error_code"] == "SEMANTIC_SCHOLAR_RATE_LIMITED"
+    assert result["resolver_codes"] == ["ARXIV_MATCH_UNCERTAIN", "SEMANTIC_SCHOLAR_RATE_LIMITED"]
+    assert result["retryable"] is True
 
 
 def test_runtime_oa_resolver_reports_no_pdf_after_both_existing_adapters(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -307,6 +365,43 @@ def test_bridge_persists_allowlisted_resolver_diagnostics_without_raw_details() 
     assert result["error_code"] == "PDF_NOT_FOUND"
     assert result["resolver_code"] == "SEMANTIC_SCHOLAR_NO_OPEN_PDF"
     assert result["resolver_codes"] == ["ARXIV_UNAVAILABLE", "SEMANTIC_SCHOLAR_NO_OPEN_PDF"]
+    assert "secret.example" not in repr(result)
+    assert store.calls[0][3] == result
+
+
+@pytest.mark.parametrize(
+    ("error_code", "retryable"),
+    [
+        ("ARXIV_RATE_LIMITED", True),
+        ("ARXIV_HTTP_ERROR", False),
+        ("ARXIV_INVALID_RESPONSE", False),
+        ("ARXIV_UNAVAILABLE", True),
+        ("SEMANTIC_SCHOLAR_RATE_LIMITED", True),
+    ],
+)
+def test_bridge_preserves_provider_failure_and_retryability(
+    error_code: str,
+    retryable: bool,
+) -> None:
+    store = FakeStore()
+    node = _node("https://www.semanticscholar.org/paper/s2-1")
+    result = LiteratureMapImportBridge(
+        importer=lambda *_args: pytest.fail("provider failure must not invoke importer"),
+        source_resolver=lambda _: {
+            "error_code": error_code,
+            "resolver_code": error_code,
+            "resolver_codes": [error_code],
+            "retryable": retryable,
+            "provider_exception": "https://secret.example/key=bad",
+        },
+        store=store,
+        owner_id="owner-1",
+    ).import_node(node, node.source_url or "")
+
+    assert result["error_code"] == error_code
+    assert result["resolver_code"] == error_code
+    assert result["resolver_codes"] == [error_code]
+    assert result["retryable"] is retryable
     assert "secret.example" not in repr(result)
     assert store.calls[0][3] == result
 

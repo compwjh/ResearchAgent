@@ -156,5 +156,289 @@
     "The real job ended partial, not success, with SEMANTIC_SCHOLAR_INVALID_RESPONSE in the citation layer.",
     "The citation layer produced no direction-verifiable edge and the similarity layer produced no threshold-verifiable edge.",
     "The single permitted import-bridge check returned PDF_NOT_FOUND and created no document."
+  ],
+  "follow_up_runs": [
+    {
+      "run_id": "task03-api-e2e-20261019T140606Z-r2",
+      "spec": "043-literature-map-topic-exploration",
+      "task": "03",
+      "runtime": {
+        "base_url": "http://127.0.0.1:8000",
+        "ready_http_status": 200,
+        "ready": true,
+        "service_commit": "8c79860377512f02ac53429795a664ae65e79969",
+        "reranker_enabled": false,
+        "credentials_recorded": false,
+        "started_at": "2026-10-19T14:06:06.042255+00:00",
+        "finished_at": "2026-10-19T14:11:14.807476+00:00"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/api/literature-maps",
+        "body": {
+          "topic": "graph attention networks",
+          "name": "API E2E graph attention networks r2",
+          "limit": 20,
+          "idempotency_key": "e2e-gan-20261019-r2-edcddee3590b4505a331979baf3f6bf1"
+        },
+        "http_status": 202,
+        "response_summary": {
+          "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+          "job_id": "ba6bb4f9471b43afb8b1063cdc3a883d",
+          "map_status": "generating",
+          "job_status": "queued",
+          "step": "discover"
+        }
+      },
+      "entities": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "job_id": "ba6bb4f9471b43afb8b1063cdc3a883d",
+        "requested_count": 20,
+        "node_count": 20,
+        "sample_node_id": "21041260a5394f42891b020128fa60fa",
+        "sample_node_external_ids": {
+          "arxiv": "1710.10903",
+          "doi": "10.17863/cam.48429",
+          "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+        }
+      },
+      "state_trace": [
+        {
+          "observed": "2026-10-19T14:06:06.045016+00:00",
+          "endpoint": "POST /api/literature-maps",
+          "map_status": "generating",
+          "job_status": "queued",
+          "step": "discover",
+          "http_status": 202
+        },
+        {
+          "observed": "2026-10-19T14:06:08.840154+00:00",
+          "endpoint": "GET /api/literature-maps/{map_id}/events?after_seq=0",
+          "job_status": "running",
+          "step": "metadata",
+          "event_seq": 4,
+          "counts": {
+            "provider_count": 20,
+            "accepted_count": 20,
+            "node_count": 20,
+            "provider_request_count": 1,
+            "citation_edge_count": 0,
+            "similarity_edge_count": 0
+          },
+          "http_status": 200
+        },
+        {
+          "observed": "2026-10-19T14:07:07.572751+00:00",
+          "endpoint": "GET /api/literature-maps/{map_id}/events?after_seq=0",
+          "job_status": "running",
+          "step": "similarity",
+          "event_seq": 6,
+          "counts": {
+            "provider_count": 20,
+            "accepted_count": 20,
+            "node_count": 20,
+            "provider_request_count": 21,
+            "citation_edge_count": 11,
+            "similarity_edge_count": 0
+          },
+          "http_status": 200
+        },
+        {
+          "observed": "2026-10-19T14:07:09.890371+00:00",
+          "endpoint": "GET /api/literature-maps/{map_id}/events?after_seq=0",
+          "map_status": "partial",
+          "job_status": "partial",
+          "step": "finished",
+          "event_seq": 7,
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "counts": {
+            "provider_count": 20,
+            "accepted_count": 20,
+            "node_count": 20,
+            "provider_request_count": 21,
+            "citation_edge_count": 11,
+            "similarity_edge_count": 5
+          },
+          "http_status": 200
+        },
+        {
+          "observed": "2026-10-19T14:10:41.136877+00:00",
+          "endpoint": "POST /api/literature-maps/{map_id}/jobs/{job_id}/retry",
+          "job_status": "queued",
+          "step": "finished",
+          "event_seq": 8,
+          "provider_request_count": 21,
+          "http_status": 200
+        },
+        {
+          "observed": "2026-10-19T14:11:14.675524+00:00",
+          "endpoint": "GET /api/literature-maps/{map_id}/events?after_seq=7",
+          "job_status": "running",
+          "step": "similarity",
+          "event_seq": 13,
+          "counts": {
+            "provider_count": 20,
+            "accepted_count": 20,
+            "node_count": 20,
+            "provider_request_count": 30,
+            "citation_edge_count": 12,
+            "similarity_edge_count": 5
+          },
+          "http_status": 200
+        },
+        {
+          "observed": "2026-10-19T14:11:14.807476+00:00",
+          "endpoint": "GET /api/literature-maps/{map_id}/events?after_seq=7",
+          "map_status": "partial",
+          "job_status": "partial",
+          "step": "finished",
+          "event_seq": 14,
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "counts": {
+            "provider_count": 20,
+            "accepted_count": 20,
+            "node_count": 20,
+            "provider_request_count": 30,
+            "citation_edge_count": 12,
+            "similarity_edge_count": 5
+          },
+          "http_status": 200
+        }
+      ],
+      "provider_result": {
+        "provider": "semantic_scholar",
+        "search_operation": "search_relevance",
+        "provider_count": 20,
+        "accepted_count": 20,
+        "provider_truncated": 0,
+        "provider_request_count_before_retry": 21,
+        "provider_request_count_final": 30,
+        "provider_budget": 60,
+        "external_calls_remaining_by_counter": 30,
+        "retry_request_count": 9,
+        "identity_evidence": "selected nodes retain independent Semantic Scholar IDs and DOI/arXiv IDs; catalog_paper_id remains null for this unscoped search"
+      },
+      "relationships": {
+        "citation": {
+          "layer_status": "partial",
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "edge_count": 12,
+          "failed_units": {
+            "retryable_rate_limited": 2,
+            "non_retryable_invalid_response": 4
+          },
+          "direction_evidence": {
+            "relation": "references",
+            "source_node_id": "28d6f9065abd47f9975875ef88634afa",
+            "source_semantic_scholar_id": "ab30672c8c5e4787f6a5985f26a8f281f0db2fb8",
+            "target_node_id": "21041260a5394f42891b020128fa60fa",
+            "target_semantic_scholar_id": "33998aff64ce51df8dee45989cdca4b6b1329ec4",
+            "direction": "citing_to_cited"
+          },
+          "evidence_note": "The 12 stored edges are real references among selected nodes; invalid/null provider envelopes were retained as partial failures, not treated as zero references."
+        },
+        "similarity": {
+          "layer_status": "completed",
+          "edge_count": 5,
+          "threshold": 0.75,
+          "scores": [0.79353524, 0.83133635, 0.79003627, 0.811645, 0.76271117],
+          "basis": "title_abstract",
+          "model": "bge-m3",
+          "content_hashes": [
+            "bf528cd88ac2b375b022f6319212ad6b122c8bebb083039c8b4d5c4aee249848",
+            "94c83c1965f73bf47f2891d8f6509d2f69d247fca658d5b6e3b66f54db14795a",
+            "0b332c4ec2239540662603d19205e5fb762eff4b8f19161dfa7383f182097aef",
+            "0f7f8f6779db5f67f956b6a4b02ead94fae91c8b5f7e22838a3f225f8fb68622",
+            "018e3cc3ace9365687f248186061755e853fb44c96b57971f8da508980e490ac"
+          ],
+          "evidence_note": "All five scores are at or above the frozen 0.75 threshold; no threshold lowering or synthetic pair was used."
+        }
+      },
+      "layout_reopen": {
+        "patch_path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/view",
+        "patch_http_status": 200,
+        "revision_before": 0,
+        "revision_after": 1,
+        "saved_position": {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "x": 120.0,
+          "y": 80.0
+        },
+        "saved_viewport": {
+          "x": 10.0,
+          "y": 20.0,
+          "scale": 1.1
+        },
+        "reopen_map_http_status": 200,
+        "reopen_graph_http_status": 200,
+        "reopen_revision": 1,
+        "reopen_position": {
+          "x": 120.0,
+          "y": 80.0
+        },
+        "reopen_viewport": {
+          "x": 10.0,
+          "y": 20.0,
+          "scale": 1.1
+        },
+        "post_retry_reopen_revision": 2,
+        "post_retry_reopen_viewport": {
+          "x": 10.0,
+          "y": 20.0,
+          "scale": 1.1
+        }
+      },
+      "import_bridge_once": {
+        "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports",
+        "request_body": {},
+        "http_status": null,
+        "http_status_note": "The single POST command completed without emitting a response body/status; no second import was issued.",
+        "post_import_node_http_status": 200,
+        "status": "failed",
+        "download_status": "failed",
+        "error_code": "PDF_NOT_FOUND",
+        "retryable": false,
+        "paper_id": null,
+        "document_id": null,
+        "catalog_paper_id": null,
+        "post_import_node_document_id": null,
+        "post_import_provenance_error": "PDF_NOT_FOUND"
+      },
+      "retry": {
+        "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/ba6bb4f9471b43afb8b1063cdc3a883d/retry",
+        "http_status": 200,
+        "same_map_id": true,
+        "same_job_id": true,
+        "retry_scope": "persisted failed/missing reference units only",
+        "provider_request_count_before": 21,
+        "provider_request_count_after": 30,
+        "budget": 60,
+        "remaining_budget": 30,
+        "citation_edge_count_before": 11,
+        "citation_edge_count_after": 12,
+        "similarity_edge_count_after": 5,
+        "final_status": "partial",
+        "final_error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "remaining_failures": {
+          "retryable_rate_limited": 2,
+          "non_retryable_invalid_response": 4
+        },
+        "additional_retry_issued": false
+      },
+      "redaction": {
+        "api_keys": "not recorded",
+        "cookies": "not recorded",
+        "authorization_headers": "not recorded",
+        "abstract_bodies": "not recorded in artifact",
+        "raw_provider_envelopes": "not recorded"
+      },
+      "decision": "BLOCKED",
+      "blocking_evidence": [
+        "The new real job remained partial/finished after one bounded retry: 2 rate-limited and 4 invalid-response reference units remain, with cumulative provider_request_count=30/60.",
+        "Similarity and citation artifacts now exist, but the citation layer is not fully complete and the frozen acceptance gate does not treat partial as success.",
+        "The one permitted arXiv-backed import check ended PDF_NOT_FOUND with no paper_id, document_id, or indexable document.",
+        "Browser/frontend processing and manual UI labels were not exercised in this backend-only run; the frontend reviewer was given this map ID for reuse."
+      ]
+    }
   ]
 }

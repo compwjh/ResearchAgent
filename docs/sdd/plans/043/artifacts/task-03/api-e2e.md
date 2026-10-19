@@ -146,3 +146,109 @@ One bounded comparison request used the official documentation's known core pape
 3. Add a client contract test in `tests/paper_discovery/test_semantic_scholar_graph_api.py` for endpoint/limit/fields and a map discovery regression in `tests/literature_maps/test_map_discovery.py` using a redacted 1,000-row fixture where a high-relevance candidate is not among the first paper IDs; assert the candidate is selected and no unrelated row is padded. No test should fabricate citation or similarity edges.
 
 Passing `sort=citationCount:desc` to bulk is a bounded fallback only if the product explicitly chooses citation prominence; it is not a substitute for topic relevance and should not be presented as one. No code change or retry was made during this diagnosis.
+
+## Follow-up real API run (2026-10-19, r2)
+
+本节追加一次新的真实产品 API E2E，保留上方旧 run 的失败事实与实体，不覆盖或复用旧幂等 key。证据已追加到同一份 [api-evidence.json](./api-evidence.json) 的 `follow_up_runs`，run ID 为 `task03-api-e2e-20261019T140606Z-r2`。
+
+### Runtime and create
+
+- Runtime: `http://127.0.0.1:8000`, service commit `8c79860377512f02ac53429795a664ae65e79969`, `RERANKER_ENABLED=false`; `/api/ready` returned HTTP 200 with embedding/qdrant ready. Credentials, cookies and authorization headers were not recorded.
+- Fresh request: `POST /api/literature-maps`, topic `graph attention networks`, `limit=20`, fresh idempotency key `e2e-gan-20261019-r2-edcddee3590b4505a331979baf3f6bf1`; HTTP 202.
+- New entities: `map_id=0baabeae7268429c9f7e4de8098ae1d0`, `job_id=ba6bb4f9471b43afb8b1063cdc3a883d`. The map ID was immediately returned to the parent handoff for `map_frontend_review` reuse; no second map was created.
+
+### State and provider evidence
+
+The bounded 20-second poll observed `queued/discover`, then `running/references`, and finally the first `partial/finished` state at event 7. Before the later bounded retry, the job counts were:
+
+```text
+provider_count=20
+accepted_count=20
+node_count=20
+provider_request_count=21 (budget 60)
+citation_edge_count=11
+similarity_edge_count=5
+```
+
+This run used the unscoped relevance search path; the provider returned exactly 20 rows, and every selected node retained a separate Semantic Scholar identity plus DOI and/or arXiv identity where available. A representative node is `21041260a5394f42891b020128fa60fa` with arXiv `1710.10903`, DOI `10.17863/cam.48429`, and Semantic Scholar ID `33998aff64ce51df8dee45989cdca4b6b1329ec4`. `catalog_paper_id` remained null, as expected for an unscoped search.
+
+The first citation pass produced real edges but remained partial: 3 units were `SEMANTIC_SCHOLAR_RATE_LIMITED` and 6 were `SEMANTIC_SCHOLAR_INVALID_RESPONSE`. The invalid/ambiguous provider envelopes were retained as failures and were not interpreted as zero references. Direction evidence is present in the graph: node `28d6f9065abd47f9975875ef88634afa` (Semantic Scholar `ab30672c8c5e4787f6a5985f26a8f281f0db2fb8`) references node `21041260a5394f42891b020128fa60fa` (Semantic Scholar `33998aff64ce51df8dee45989cdca4b6b1329ec4`), matching the frozen citing→cited contract.
+
+The similarity layer completed with five real edges. Scores were `0.79353524`, `0.83133635`, `0.79003627`, `0.811645`, and `0.76271117`, all at or above the frozen `0.75` threshold. Each edge reports basis `title_abstract`, model `bge-m3`, algorithm `dense_cosine`, and a redacted content hash. No threshold lowering or synthetic pair was used.
+
+### One permitted import check
+
+One explicit import action was made for the real arXiv-backed GAT node `21041260a5394f42891b020128fa60fa` (`arxiv=1710.10903`). The POST command did not emit a response body/status in the shell capture; no second import was issued. A subsequent node GET returned HTTP 200 and established the business outcome: `status=failed`, `download_status=failed`, fixed `error_code=PDF_NOT_FOUND`, `retryable=false`, `paper_id=null`, `document_id=null`, and no catalog association. The graph/node provenance now carries the same `PDF_NOT_FOUND` diagnostic. No document or index entry was fabricated.
+
+### Layout save and reopen
+
+`PATCH /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/view` with `expected_revision=0` saved node `21041260a5394f42891b020128fa60fa` at `(120,80)` and viewport `(10,20,1.1)`, returning HTTP 200 and revision 1. The first fresh map and graph GETs both returned HTTP 200; revision 1, the same viewport, node position, 11 citation edges, and 5 similarity edges were preserved. The map remained explicitly `partial` after reopening.
+
+### Manual acceptance handoff for the new map
+
+This backend run does not claim browser labels or processing copy. The frontend reviewer should reuse the already-created map rather than creating another provider job:
+
+1. Open `http://127.0.0.1:8000`, enter the real `文献地图` view, and open map `0baabeae7268429c9f7e4de8098ae1d0` named `API E2E graph attention networks r2`. Wait for the map list and graph GETs to return; the map must show `partial`, not success.
+2. Inspect the graph. Expected API-backed result after the bounded retry is 20 nodes, 12 citation edges, 5 similarity edges, citation layer partial with the fixed provider error, and similarity layer completed. Citation arrow direction must be citing→cited; the representative GATv2→GAT edge above is the cross-check.
+3. Reopen the same map without creating a new one. Confirm revision 1, viewport `(10,20,1.1)`, and the sample node position `(120,80)` remain visible. A refresh is the only bounded recovery; do not trigger another provider job.
+4. Inspect the sample arXiv node's explicit import status. It must remain failed with `PDF_NOT_FOUND` and no document ID. Do not retry this run; the public PDF resolution/import bridge needs a separate approved fix.
+
+If the UI shows `partial` as success, hides the citation error, invents an edge, or loses the saved layout, stop with `PARTIAL_MISREPRESENTED`, `RELATIONSHIP_MISMATCH`, or `VIEW_PERSISTENCE_MISMATCH` respectively and attach the run ID above.
+
+### Readiness matrix for r2
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| 1 | Service started and reachable | PASS | `/api/ready` HTTP 200; commit `8c79860…` |
+| 2 | Real API create entry | PASS | Fresh POST returned HTTP 202 and new map/job IDs |
+| 3 | Main-path parameter parsing | PASS | Topic and limit 20 persisted; relevance search selected 20 real nodes |
+| 4 | Job/entity state progressed | PASS | `queued/discover → running/references → running/similarity → partial/finished` |
+| 5 | Frontend processing display | FAIL | Browser was not exercised by this backend run |
+| 6 | User knows wait/click condition | FAIL | UI copy not verified here; frontend reviewer must reuse this map |
+| 7 | Core graph artifact generated | FAIL | Nodes, 12 citations and 5 similarities exist after one retry, but job/layer is partial |
+| 8 | Failure has actionable recovery | PASS | Fixed rate-limit/invalid/PDF error codes and bounded recovery are observable |
+| 9 | Page/API state consistency | FAIL | Production browser state was not exercised in this run |
+| 10 | Steps reproducible without chat context | PASS | This section and `api-evidence.json` contain IDs, requests, waits, results, and recovery limits |
+
+### Same-job bounded retry
+
+After a shared cooldown, one retry was issued against the same `map_id/job_id` via `POST /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/ba6bb4f9471b43afb8b1063cdc3a883d/retry`; it returned HTTP 200 with `queued/references`. The persisted counter stayed at 21/60 when queued, and successful nodes/edges were not re-created. No new map or idempotency key was used.
+
+Two bounded 20-second polls later, the same job returned `partial/finished` at event 14. The final counts are `provider_count=20`, `accepted_count=20`, `node_count=20`, `provider_request_count=30/60`, `citation_edge_count=12`, and `similarity_edge_count=5`. The retry added one real citation edge and consumed 9 logical provider requests. Remaining failures are 2 retryable `SEMANTIC_SCHOLAR_RATE_LIMITED` units and 4 non-retryable `SEMANTIC_SCHOLAR_INVALID_RESPONSE` units. No further retry was issued.
+
+A final read-only graph summary returned HTTP 200 with 20 nodes and 17 edges (12 citation, 5 similarity); the representative citing→cited edge and all five cosine scores remained present. The final map GET returned HTTP 200 with `revision=2`, `status=partial`, and viewport `(10,20,1.1)`, so the saved layout remained visible after the retry.
+
+### Final decision for r2
+
+**BLOCKED.** This rerun materially improved the real evidence: relevance selection, 12 direction-verifiable citation edges, 5 threshold-verifiable cosine edges, and layout persistence all work on the deployed candidate. It is still not `READY_FOR_USER`: the citation layer/job remains explicitly partial after the one allowed retry, with 2 rate-limited and 4 invalid-response units; the one permitted arXiv import has `PDF_NOT_FOUND` with no document; and frontend processing/labels remain delegated to the browser reviewer. The old failed run remains unchanged above, and no duplicate map or second retry was created.
+
+## Read-only arXiv dependency diagnosis (2026-10-19)
+
+This section diagnoses the observed `ARXIV_UNAVAILABLE` metadata probe only. No code, configuration, provider key, PDF, import, or graph was changed or requested.
+
+### Adapter contract and fixed error mapping
+
+The existing `ArxivFallbackAdapter` uses the public metadata endpoint `https://export.arxiv.org/api/query` with a title query, `start=0`, and `max_results=20`. Its owned HTTP client uses a 20-second timeout and `trust_env=False`; requests are separated by a three-second slot, with two retries by default and bounded exponential backoff. It does not download PDFs. Parsed entries must pass the existing year/title/author identity thresholds and must expose safe `https://arxiv.org/abs/...` and `https://arxiv.org/pdf/...` URLs on the allowlisted arXiv hosts.
+
+The adapter maps 429 to `ARXIV_RATE_LIMITED`, other HTTP failures to `ARXIV_HTTP_ERROR`, XML/response-shape failures to `ARXIV_INVALID_RESPONSE`, and timeout/`httpx`/OS transport failures (after the bounded attempts) to `ARXIV_UNAVAILABLE`. A valid response with no identity-safe match is `ARXIV_MATCH_UNCERTAIN`; it is not interpreted as “no OA”.
+
+The earlier controlled probe recorded in `import-api-fixes.md` used this existing adapter for the same real node with retries disabled for the probe and returned `ARXIV_UNAVAILABLE`, with no match, no identity/year match, and no PDF. That fact does not establish that arXiv lacks an OA record.
+
+### One public endpoint connectivity check
+
+To separate restricted execution from provider health, one metadata-only GET was made against the same `export.arxiv.org` endpoint using a known arXiv ID query and `max_results=1`. No response body was retained and no PDF URL was requested. The escalated check completed TLS/HTTPS negotiation and returned:
+
+- HTTP/2 `200`
+- `content-type: application/atom+xml; charset=utf-8`
+- `content-length: 2927`
+- no 4xx/5xx/429 response
+
+The normal sandbox could not resolve `export.arxiv.org` (`socket.gaierror` / curl error 6). A separate escalated DNS check resolved it to `199.232.163.42`. Therefore the sandbox failure is an execution-network restriction, not evidence of provider downtime. The externally permitted endpoint check was reachable and healthy at the time of this diagnosis. No additional adapter/provider request was made after that check.
+
+The local product process was reachable independently: `GET http://127.0.0.1:8000/api/ready` returned HTTP 200 with `ready=true` and embedding/qdrant warmup statuses ready.
+
+### Classification and bounded next step
+
+The current evidence classifies the earlier `ARXIV_UNAVAILABLE` as an environment/transport-path failure at probe time (the restricted sandbox cannot resolve the host), not server rejection and not proof of missing OA metadata. Because the adapter's owned client intentionally sets `trust_env=False`, an approved deployment that requires an HTTP proxy would need a separate, narrowly scoped client/configuration change; no such change is made here. The escalated direct endpoint check succeeded, so the present evidence does not justify calling arXiv unavailable globally or changing the resolver's fixed mappings.
+
+For user assistance, run the metadata worker in an environment with DNS/TLS egress to `export.arxiv.org` (or an approved proxy path compatible with the existing client policy), then retry only the existing bounded resolver unit. Keep the existing `PDF_NOT_FOUND` result from the permitted import check unchanged: this connectivity diagnosis neither proves an OA PDF exists for that node nor authorizes a download/import retry. The graph remains the previously recorded `partial` result.
