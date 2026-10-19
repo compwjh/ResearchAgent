@@ -1,7 +1,8 @@
 # 任务 05 — 实现安全下载、规范命名与知识库导入
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 03；当前状态：`已完成`
+> 依赖：任务 03
+> 当前状态：`完成`
 
 ## 一句话目标
 
@@ -76,3 +77,52 @@
 | 2026-09-04 | junior-dev | 完成论文身份键与规范文件名切片；开始实际 HTTP 安全下载适配，继续保持不自动跟随重定向 |
 | 2026-09-04 | junior-dev | 完成安全下载适配、PaperRecord 兼容与注入式 `import_candidate()`；启动单篇导入 API 接入 |
 | 2026-09-04 | junior-dev / tester / Tech Lead | 完成安全修复（固定 allowlist、孤儿清理、向量补偿、DBLP key、Content-Type）；150 passed，Task05 技术复核与验收均通过 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-05",
+  "spec_id": "015",
+  "title": "# 任务 05 — 实现安全下载、规范命名与知识库导入",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-03"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-05-secure-download-and-kb-import.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-05-secure-download-and-kb-import.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-05-secure-download-and-kb-import.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

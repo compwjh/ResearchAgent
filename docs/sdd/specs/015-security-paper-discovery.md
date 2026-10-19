@@ -575,22 +575,28 @@ Task16 切换前端后删除旧同步 `POST /api/papers/search` 路由，不保�
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
 | 01 | 编写 spec-015 | 本文件 | — | 完成 |
-| 02 | 验证数据源与浏览器桥接（Go/No-Go） | [`task-02-validate-baseline-and-sources.md`](../plans/015/task-02-validate-baseline-and-sources.md) | 01 | 条件放行（内置会议；Venue Search blocked） |
-| 03 | 建立会议配置与论文召回 | [`task-03-conference-registry-and-retrieval.md`](../plans/015/task-03-conference-registry-and-retrieval.md) | 02（条件放行） | 已完成（内置会议与 OpenAlex 收窄范围） |
-| 04 | 实现语义排序与 Reranker 集成 | [`task-04-semantic-ranking-and-rerank.md`](../plans/015/task-04-semantic-ranking-and-rerank.md) | 03，且 spec-014 可用 | 待执行 |
-| 05 | 实现安全下载、规范命名与知识库导入 | [`task-05-secure-download-and-kb-import.md`](../plans/015/task-05-secure-download-and-kb-import.md) | 03 | 已完成（单篇下载与导入闭环） |
-| 06 | 实现批量任务与登录续传 | [`task-06-batch-import-and-login-resume.md`](../plans/015/task-06-batch-import-and-login-resume.md) | 05 | 实施中（离线安全复核通过；真实登录环境阻塞） |
-| 07 | 新增论文检索 Tab 与完整交互 | [`task-07-paper-discovery-tab.md`](../plans/015/task-07-paper-discovery-tab.md) | 03, 04, 05, 06 | 实施中（离线通过；A3/真实环境阻塞） |
-| 08 | 执行测试、排序基准与安全回归 | [`task-08-tests-ranking-and-security.md`](../plans/015/task-08-tests-ranking-and-security.md) | 04, 05, 06, 07 | 实施中（离线安全/回归通过；排序质量与真实环境阻塞） |
-| 09 | 评审、部署与复盘 | [`task-09-review-deploy-retro.md`](../plans/015/task-09-review-deploy-retro.md) | 08 | 实施中（离线回归与本地部署通过；外部验收阻塞） |
-| 10 | 论文发现限界上下文目录重构 | [`task-10-paper-discovery-package-migration.md`](../plans/015/task-10-paper-discovery-package-migration.md) | 03, 05, 06, 07, 08 | 待确认 |
-| 11 | USENIX accepted papers 与 arXiv 兜底来源 | [`task-11-usenix-accepted-and-arxiv-fallback.md`](../plans/015/task-11-usenix-accepted-and-arxiv-fallback.md) | 03, 05, 08 | 已完成 |
-| 12 | USENIX 双 Skill 与跨 IDE 使用协议 | [`task-12-usenix-paper-skill.md`](../plans/015/task-12-usenix-paper-skill.md) | 11 | 已完成（下载版/目录版） |
-| 13 | 固化全局目录协议与复用审计 | [`task-13-catalog-contract-and-reuse-audit.md`](../plans/015/task-13-catalog-contract-and-reuse-audit.md) | 03, 05, 11, 12 | 实施中（约 60%；`search_source_progress`、`search_results` 表与 `get_search_results_page()` 已落地，见 `reviews/015-task13-store-implementation.md`；协议固化与复用审计未收口） |
-| 14 | 实现 USENIX 增量目录同步 | [`task-14-usenix-incremental-catalog.md`](../plans/015/task-14-usenix-incremental-catalog.md) | 13 | 已完成（USENIX 增量目录同步与 `/accepted` 只读端点已落地；按年份解析 slug 修复经 `reviews/015-backend-review.md` 评审，结论 WARNING） |
-| 15 | 实现 LangGraph、目录 RAG 与冻结结果 | [`task-15-langgraph-catalog-rag.md`](../plans/015/task-15-langgraph-catalog-rag.md) | 14 | 待执行 |
-| 16 | 实现来源进度与十条分页交互 | [`task-16-search-progress-and-pagination.md`](../plans/015/task-16-search-progress-and-pagination.md) | 15 | 待执行 |
-| 17 | 执行复用审计、验收、部署与复盘 | [`task-17-review-acceptance-deploy-retro.md`](../plans/015/task-17-review-acceptance-deploy-retro.md) | 13, 14, 15, 16 | 待执行 |
+| 02 | 验证数据源与浏览器桥接（Go/No-Go） | [`task-02-validate-baseline-and-sources.md`](../plans/015/task-02-validate-baseline-and-sources.md) | 01 | 阻塞 |
+| 03 | 建立会议配置与论文召回 | [`task-03-conference-registry-and-retrieval.md`](../plans/015/task-03-conference-registry-and-retrieval.md) | 02（条件放行） | 完成 |
+| 04 | 实现语义排序与 Reranker 集成 | [`task-04-semantic-ranking-and-rerank.md`](../plans/015/task-04-semantic-ranking-and-rerank.md) | 03, Spec014 Task09 | 待执行 |
+| 05 | 实现安全下载、规范命名与知识库导入 | [`task-05-secure-download-and-kb-import.md`](../plans/015/task-05-secure-download-and-kb-import.md) | 03 | 完成 |
+| 06 | 实现批量任务与登录续传 | [`task-06-batch-import-and-login-resume.md`](../plans/015/task-06-batch-import-and-login-resume.md) | 05 | 阻塞 |
+| 07 | 新增论文检索 Tab 与完整交互 | [`task-07-paper-discovery-tab.md`](../plans/015/task-07-paper-discovery-tab.md) | 03, 04, 05, 06 | 阻塞 |
+| 08 | 执行测试、排序基准与安全回归 | [`task-08-tests-ranking-and-security.md`](../plans/015/task-08-tests-ranking-and-security.md) | 04, 05, 06, 07 | 阻塞 |
+| 09 | 评审、部署与复盘 | [`task-09-review-deploy-retro.md`](../plans/015/task-09-review-deploy-retro.md) | 08 | 阻塞 |
+| 10 | 论文发现限界上下文目录重构 | [`task-10-paper-discovery-package-migration.md`](../plans/015/task-10-paper-discovery-package-migration.md) | 03, 05, 06, 07, 08 | 阻塞 |
+| 11 | USENIX accepted papers 与 arXiv 兜底来源 | [`task-11-usenix-accepted-and-arxiv-fallback.md`](../plans/015/task-11-usenix-accepted-and-arxiv-fallback.md) | 03, 05, 08 | 完成 |
+| 12 | USENIX 双 Skill 与跨 IDE 使用协议 | [`task-12-usenix-paper-skill.md`](../plans/015/task-12-usenix-paper-skill.md) | 11 | 完成 |
+| 13 | 固化全局目录协议与复用审计 | [`task-13-catalog-contract-and-reuse-audit.md`](../plans/015/task-13-catalog-contract-and-reuse-audit.md) | 03, 05, 11, 12 | 完成 |
+| 14 | 实现 USENIX 增量目录同步 | [`task-14-usenix-incremental-catalog.md`](../plans/015/task-14-usenix-incremental-catalog.md) | 13 | 完成 |
+| 15 | 实现 LangGraph、目录 RAG 与冻结结果 | [`task-15-langgraph-catalog-rag.md`](../plans/015/task-15-langgraph-catalog-rag.md) | 14 | 完成 |
+| 16 | 实现来源进度与十条分页交互 | [`task-16-search-progress-and-pagination.md`](../plans/015/task-16-search-progress-and-pagination.md) | 15 | 完成 |
+| 17 | 执行复用审计、验收、部署与复盘 | [`task-17-review-acceptance-deploy-retro.md`](../plans/015/task-17-review-acceptance-deploy-retro.md) | 13, 14, 15, 16 | 阻塞 |
+| 18 | 补齐数据源与浏览器桥接真实证据 | [`task-18-legacy-remainder.md`](../plans/015/task-18-legacy-remainder.md) | — | 阻塞 |
+| 19 | 完成隔离浏览器登录与续传闭环 | [`task-19-legacy-remainder.md`](../plans/015/task-19-legacy-remainder.md) | 05 | 阻塞 |
+| 20 | 补齐论文检索 Tab 完整交互与真实 GUI 验收 | [`task-20-legacy-remainder.md`](../plans/015/task-20-legacy-remainder.md) | 03, 04, 05, 19 | 阻塞 |
+| 21 | 完成排序质量集与全范围安全回归验收 | [`task-21-legacy-remainder.md`](../plans/015/task-21-legacy-remainder.md) | 04, 05, 19, 20 | 阻塞 |
+| 22 | 完成 Spec015 全范围验收、部署与复盘 | [`task-22-legacy-remainder.md`](../plans/015/task-22-legacy-remainder.md) | 04, 18, 19, 20, 21 | 阻塞 |
+| 23 | 补齐 USENIX-only 收口签字与复盘 | [`task-23-legacy-remainder.md`](../plans/015/task-23-legacy-remainder.md) | 13, 14, 15, 16 | 阻塞 |
 
 ## 评审记录
 

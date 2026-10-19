@@ -1,7 +1,8 @@
 # 任务 03 — 建立会议配置与论文召回
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 02 条件放行；当前状态：`已完成（内置会议与 OpenAlex 收窄范围）`
+> 依赖：任务 02 条件放行
+> 当前状态：`完成`
 
 > Task02 tech-lead 结论：先实现四个内置会议的 publication search、主会过滤、去重、OpenAlex 补全和搜索会话；DBLP Venue Search/自定义会议搜索新增保持 blocked，直到取得成功 live venue/api 样本。
 
@@ -80,3 +81,52 @@
 | 2026-09-04 | 架构师(自身) | 基于 Task02 条件放行，启动内置会议 publication search、过滤、去重、OpenAlex 补全与搜索会话；Venue Search 保持 blocked |
 | 2026-09-04 | junior-dev / tech-lead | 完成 SQLite、DBLP、OpenAlex 与搜索编排首轮切片；Tech Lead 复核发现并推动修复跨会话主键冲突和 DBLP query 未透传两个 P0，定向测试累计 19 passed，P1 复审待完成 |
 | 2026-09-04 | tester / tech-lead | Task03 API 与核心功能验收、最终技术签核通过；定向测试 41 passed。内置会议与 OpenAlex 收窄范围完成，Venue Search/custom conference blocked，导入 FK/TTL 移交 Task05 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-03",
+  "spec_id": "015",
+  "title": "# 任务 03 — 建立会议配置与论文召回",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-02"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-03-conference-registry-and-retrieval.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-03-conference-registry-and-retrieval.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-03-conference-registry-and-retrieval.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

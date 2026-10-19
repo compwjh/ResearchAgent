@@ -1,7 +1,8 @@
 # 任务 04 — 实现语义排序与 Reranker 集成
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 03，且 spec-014 运行时可用；当前状态：`待执行`
+> 依赖：任务 03，且 spec-014 运行时可用
+> 当前状态：`待执行`
 
 ## 一句话目标
 
@@ -64,3 +65,62 @@
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-03 | 架构师(自身) | 创建任务计划，状态为待执行 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-04",
+  "spec_id": "015",
+  "title": "# 任务 04 — 实现语义排序与 Reranker 集成",
+  "status": "pending",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-03",
+    "spec-014-task-09"
+  ],
+  "required_gates": [
+    "spec-015.legacy-resume-authorized"
+  ],
+  "agent_role": "backend-dev",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-04-semantic-ranking-and-rerank.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md",
+    "backend/app/paper_discovery",
+    "tests/paper_discovery",
+    "docs/sdd/plans/015",
+    "docs/sdd/reviews",
+    "docs/sdd/specs/014-kb-reranker.md",
+    "docs/sdd/specs/015-security-paper-discovery.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [
+    "python3 -m pytest tests/paper_discovery"
+  ],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-dev
+Read: ["docs/sdd/plans/015/task-04-semantic-ranking-and-rerank.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-04-semantic-ranking-and-rerank.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md", "backend/app/paper_discovery", "tests/paper_discovery", "docs/sdd/plans/015", "docs/sdd/reviews", "docs/sdd/specs/014-kb-reranker.md", "docs/sdd/specs/015-security-paper-discovery.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: ["python3 -m pytest tests/paper_discovery"]
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope. Frozen target/scope/acceptance: input is Task03 filtered, deduplicated and enriched PaperCandidate data (maximum 200); reuse bge-m3 and Spec014 batch reranking. Produce retrieval_score, optional rerank_score, final_score and stable rank; return ranking_mode, rerank_degraded and non-sensitive warnings. Freeze at least 12 direction queries and relevance labels before seeing final rankings. Keep KB ranking and Qdrant score persistence out of scope. Zero/one candidate skips reranking; all embedding/reranker errors have deterministic lexical fallback. Acceptance: stable relevant-before-irrelevant ordering; at most one bounded batch call; failures including timeout, malformed data, duplicate/out-of-range indexes and NaN degrade to initial ranking; frozen-set nDCG@10 is no worse than initial ranking and no query loses every relevant result from top 10; observability records stage/count/duration/reason without full query or abstract. Remaining work (verbatim from audit): 按 Task04 原范围实现语义排序与 Spec014 Reranker 接入；明确冻结质量集、排序指标/门槛、失败降级与定向/回归验收。Task03、Spec014 的既有完成结果作为依赖证据，不复做。 Acceptance: 原任务的全部验收标准均满足，并记录定向/回归证据；冻结质量集先于最终排序。 Release condition: Task03 与 Spec014 Task09 均完成，且 spec-015.legacy-resume-authorized 已有权威记录。
+<!-- sdd-task-prompt:v1:end -->

@@ -1,7 +1,8 @@
 # 任务 11 — USENIX accepted papers 与 arXiv 兜底来源
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03、05、08；被依赖：任务 12；当前状态：`已完成`
+> 依赖：任务 03、05、08；被依赖：任务 12
+> 当前状态：`完成`
 
 ## 一句话目标
 
@@ -114,3 +115,54 @@ tail -f deploy/run.log
 |---|---|---|
 | 2026-09-05 | 架构师（自身） | 根据用户要求创建 USENIX accepted + arXiv 第二来源任务，状态为待确认 |
 | 2026-09-05 | 架构师（自身） | 用户确认后分派 Luna high junior-dev 完成 parser、arXiv、候选字段、搜索/API 接线及安全修订；Tech Lead 复评通过，QA 验收通过，任务转已完成 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-11",
+  "spec_id": "015",
+  "title": "# 任务 11 — USENIX accepted papers 与 arXiv 兜底来源",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-03",
+    "spec-015-task-05",
+    "spec-015-task-08"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-11-usenix-accepted-and-arxiv-fallback.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-11-usenix-accepted-and-arxiv-fallback.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-11-usenix-accepted-and-arxiv-fallback.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

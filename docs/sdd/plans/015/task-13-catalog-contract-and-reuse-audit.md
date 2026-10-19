@@ -1,7 +1,8 @@
 # 任务 13 — 固化全局目录协议与复用审计
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03、05、11、12；被依赖：任务 14、17；当前状态：`已完成`
+> 依赖：任务 03、05、11、12；被依赖：任务 14、17
+> 当前状态：`完成`
 > 主 Skill：`.agents/skills/usenix-paper-catalog-search/SKILL.md`（本任务不调用下载版 Skill）
 
 ## 一句话目标
@@ -156,3 +157,55 @@ tail -f .codebuddy/agent-logs/junior-dev-spec015-task13-*.md
 | 2026-09-05 | junior-dev（qwen3.8:27b-mlx） | 子任务B：实现 v2 领域类型与 v1→v2 单事务幂等迁移；修复缩进与单例索引容错缺陷 |
 | 2026-09-05 | junior-dev（qwen3.8:27b-mlx） | 子任务C：实现原子领取/租约/冻结分页；补 5 用例；修复 upsert metadata_hash 返回缺陷 |
 | 2026-09-05 | 架构师（自身） | 创建基线 commit b76cda1（排除 017）；执行回填校验；代行撰写 store 实现文档；提交 fe17e71 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-13",
+  "spec_id": "015",
+  "title": "# 任务 13 — 固化全局目录协议与复用审计",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-03",
+    "spec-015-task-05",
+    "spec-015-task-11",
+    "spec-015-task-12"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-13-catalog-contract-and-reuse-audit.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-13-catalog-contract-and-reuse-audit.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-13-catalog-contract-and-reuse-audit.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

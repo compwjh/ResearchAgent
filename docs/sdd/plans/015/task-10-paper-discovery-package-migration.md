@@ -1,7 +1,8 @@
 # 任务 10 — 论文发现限界上下文目录重构
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03、05、06、07、08；当前状态：`待确认`
+> 依赖：任务 03、05、06、07、08
+> 当前状态：`阻塞`
 
 ## 一句话目标
 
@@ -69,3 +70,59 @@
 | 时间 | 角色 | 动作 |
 |---|---|---|
 | 2026-09-05 | 架构师(自身) | 根据用户反馈创建目录重构任务，状态为待确认；未移动或修改业务代码 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-10",
+  "spec_id": "015",
+  "title": "# 任务 10 — 论文发现限界上下文目录重构",
+  "status": "blocked",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-03",
+    "spec-015-task-05",
+    "spec-015-task-06",
+    "spec-015-task-07",
+    "spec-015-task-08"
+  ],
+  "required_gates": [
+    "spec-015.task10-scope-ownership-confirmed"
+  ],
+  "agent_role": "architect",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-10-paper-discovery-package-migration.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md",
+    "docs/sdd/specs/017-backend-bounded-context-modularization.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "unverified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: architect
+Read: ["docs/sdd/plans/015/task-10-paper-discovery-package-migration.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-10-paper-discovery-package-migration.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md", "docs/sdd/specs/017-backend-bounded-context-modularization.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope. Remaining work (verbatim from audit): CLI 不得自动领取。解除条件：只读对比 Task10 验收标准与 Spec017 commit `232d7c4`/当前目录结构，由权威维护者明确标记“被满足/被取代”或写出未满足的不同工作；在此之前不归属 Spec017 代码、不重复重构。 Acceptance:  Release condition: CLI 不得自动领取。解除条件：只读对比 Task10 验收标准与 Spec017 commit `232d7c4`/当前目录结构，由权威维护者明确标记“被满足/被取代”或写出未满足的不同工作；在此之前不归属 Spec017 代码、不重复重构。
+Never claim this Task; require authoritative ownership confirmation against Spec017 commit 232d7c4.
+<!-- sdd-task-prompt:v1:end -->

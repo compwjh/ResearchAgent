@@ -1,7 +1,8 @@
 # 任务 06 — 实现批量任务与登录续传
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 05；当前状态：`实施中（离线安全复核通过；真实登录环境阻塞）`
+> 依赖：任务 05
+> 当前状态：`阻塞`
 
 ## 一句话目标
 
@@ -95,3 +96,52 @@ lsof -nP -iTCP -sTCP:LISTEN
 | 2026-09-05 | 架构师（自身） | 修复重命名导致的 `.venv` 失效，安装 Playwright 1.52.0 与对应 Chromium；运行时浏览器健康检查恢复为 available=true。requirements.txt/lock 已同步固定版本；真实登录仍需用户合法账号参与 |
 | 2026-09-05 | 架构师（自身） | 用户 Chrome 会话已观察到 ACM Open Access 机构提示及指定 PDF 查看器、IEEE 机构认证提示（含 Sign Out）及全文 PDF 标签页；证据写入 `docs/sdd/reviews/015-real-browser-session-20260905.md`。该会话与项目 Playwright profile 隔离，项目 profile 对 ACM PDF 仍返回 `LOGIN_REQUIRED`，不复制凭证，A10/A11 继续等待项目 profile 内的用户登录续传 |
 | 2026-09-05 | 架构师（自身） | 复现前端“论文服务暂时不可用”：本地服务与浏览器健康均 HTTP 200，但 DBLP 搜索完整重试后返回 `DBLP_UNAVAILABLE`（HTTP 424），因此没有候选快照和登录队列；该问题记录为外部数据源阻塞，不把它伪造为 ACM/IEEE 登录失败 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-06",
+  "spec_id": "015",
+  "title": "# 任务 06 — 实现批量任务与登录续传",
+  "status": "blocked",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-05"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-06-batch-import-and-login-resume.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-06-batch-import-and-login-resume.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-06-batch-import-and-login-resume.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

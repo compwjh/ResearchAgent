@@ -1,7 +1,8 @@
 # 任务 12 — USENIX 论文来源 Skill 与跨 IDE 使用协议
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 11；当前状态：`已完成`
+> 依赖：任务 11
+> 当前状态：`完成`
 
 > ⚠️ **设计更正（2026-09-05）**：USENIX skill 是**产品资产**，不属于开发工具目录 `.codebuddy/skills/`。`.codebuddy/skills/usenix-*` 两份副本已移除，仅保留 `.agents/skills/usenix-*`（供 ResearchAgent 运行时加载）；开发流程规则 `AGENTS.md` 不再收录该段。开发子代理（backend-dev / frontend-dev 等）永远不需要下论文功能，不应把产品资产放进开发技能目录。
 
@@ -88,3 +89,52 @@
 | 2026-09-05 | 架构师（自身） | 创建 USENIX accepted 论文来源 Skill 任务，状态为待确认 |
 | 2026-09-05 | 架构师（自身） | 用户澄清 Skill 属于 ResearchAgent 项目级能力；创建主 Skill 与 CodeBuddy 适配器并完成静态/跨 IDE 验收，任务转已完成 |
 | 2026-09-05 | 架构师（自身） | 根据待确认的 Task13–17 文档更新主 Skill：区分元数据发现与用户导入，指向新增任务，禁止搜索阶段 PDF 探测和重复基础设施；仅更新协议文档，未执行新流程代码 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-12",
+  "spec_id": "015",
+  "title": "# 任务 12 — USENIX 论文来源 Skill 与跨 IDE 使用协议",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-11"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-12-usenix-paper-skill.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-12-usenix-paper-skill.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-12-usenix-paper-skill.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

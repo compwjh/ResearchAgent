@@ -1,7 +1,8 @@
 # 任务 02 — 验证稳定基线、数据源与浏览器桥接（Go/No-Go）
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 01；当前状态：`条件放行（内置会议召回）`
+> 依赖：任务 01
+> 当前状态：`阻塞`
 
 > 用户明确要求本轮跳过 Spec013/014 基线核对与 Reranker 模型判断；这两项记录为“跳过（用户授权）”，不作为本轮后续任务门禁。
 
@@ -107,3 +108,53 @@ tail -f deploy/run.log
 | 2026-09-03 | 架构师(自身) | 创建任务计划，状态为待执行 |
 | 2026-09-04 | tester | 完成 DBLP publication/OpenAlex 实测，记录 429/500/503/timeout、USENIX `SOUPS` 混流和 OpenAlex 标题宽召回风险 |
 | 2026-09-04 | tech-lead | 条件放行内置会议召回与 OpenAlex 补全；Venue Search 保持阻塞，要求显式 User-Agent、退避缓存、主会别名过滤和稳定 warning/error code |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-02",
+  "spec_id": "015",
+  "title": "# 任务 02 — 验证稳定基线、数据源与浏览器桥接（Go/No-Go）",
+  "status": "blocked",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [],
+  "required_gates": [
+    "spec-015.spec013-completed",
+    "spec-015.spec014-completed"
+  ],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-02-validate-baseline-and-sources.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-02-validate-baseline-and-sources.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-02-validate-baseline-and-sources.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

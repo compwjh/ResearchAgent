@@ -1,7 +1,8 @@
 # 任务 17 — 执行复用审计、验收、部署与复盘
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 13、14、15、16；被依赖：无；当前状态：`已完成（USENIX-only）`
+> 依赖：任务 13、14、15、16；被依赖：无
+> 当前状态：`阻塞`
 > 主 Skill：`.agents/skills/usenix-paper-catalog-search/SKILL.md`；公开论文导入验收的下载子步骤另按 `.agents/skills/usenix-accepted-papers/SKILL.md` 执行
 
 ## 一句话目标
@@ -136,3 +137,55 @@ USENIX-only 验收完成。见 [`015-task17-acceptance-usenix-only.md`](../../re
 |---|---|---|
 | 2026-09-05 | 架构师（自身） | 创建Task17，固定独立QA、Tech Lead复用审计、失败修复循环、提交部署与收口门禁；未执行验收 |
 | 2026-09-08 | tester / backend-reviewer | 完成 USENIX-only 跨端验收与后端复用/并发复审；将 ACM/IEEE、自定义会议、排序质量和真实导入列为后续 deferred，不作为本轮目录变更阻塞 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-17",
+  "spec_id": "015",
+  "title": "# 任务 17 — 执行复用审计、验收、部署与复盘",
+  "status": "blocked",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-13",
+    "spec-015-task-14",
+    "spec-015-task-15",
+    "spec-015-task-16"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-17-review-acceptance-deploy-retro.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-17-review-acceptance-deploy-retro.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-17-review-acceptance-deploy-retro.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

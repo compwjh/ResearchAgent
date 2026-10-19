@@ -1,7 +1,8 @@
 # 任务 15 — 实现 LangGraph、目录 RAG 与冻结结果
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 14；被依赖：任务 16、17；当前状态：`已完成（USENIX-only）`
+> 依赖：任务 14；被依赖：任务 16、17
+> 当前状态：`完成`
 > 主 Skill：`.agents/skills/usenix-paper-catalog-search/SKILL.md`（本任务只做目录、工作流和RAG）
 
 ## 一句话目标
@@ -155,3 +156,52 @@ tail -f .codebuddy/agent-logs/junior-dev-spec015-task15-*.md
 | 2026-09-05 | 架构师（自身） | 创建Task15，固定图节点、状态、独立目录RAG、API与恢复契约；未执行代码 |
 | 2026-09-08 | 架构师（自身） | 用户明确要求继续开发 Task15–17；后端与前端实现分别分派给 backend-dev/frontend-dev，模型仅本轮临时使用 Luna high，不固化模型规则 |
 | 2026-09-08 | backend-dev / backend-reviewer | 完成并复核 USENIX-only LangGraph、目录 RAG、并发租约、跨 DOI 合并、partial 状态和失败释放；最终后端复审 PASS，外部会议扩展不纳入本阶段 |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-15",
+  "spec_id": "015",
+  "title": "# 任务 15 — 实现 LangGraph、目录 RAG 与冻结结果",
+  "status": "completed",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-14"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-15-langgraph-catalog-rag.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-15-langgraph-catalog-rag.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-15-langgraph-catalog-rag.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->

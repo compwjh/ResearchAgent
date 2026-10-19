@@ -1,7 +1,8 @@
 # 任务 08 — 执行测试、排序基准与安全回归
 
 > 关联：[spec-015](../../specs/015-security-paper-discovery.md) ｜ 索引：[README](./README.md)  
-> 依赖：任务 04、05、06、07；当前状态：`实施中（离线安全/回归补测通过；排序质量与真实环境阻塞）`
+> 依赖：任务 04、05、06、07
+> 当前状态：`阻塞`
 
 ## 一句话目标
 
@@ -88,3 +89,55 @@ grep -rn "^<<<<<<<\|^>>>>>>>\|^=======" .
 | 2026-09-05 | tester / junior-dev | 完成 Task08 盘点与安全/回归补测；全量 521 passed，补齐加密 PDF、SSRF 攻击矩阵和离线稳定性；排序质量与真实外部链路继续阻塞 |
 | 2026-09-05 | junior-dev | 新增旧 KB 真实旧 JSON/PDF/FakeQdrant 集成回归，覆盖列表、检索、重建、删除、缺文件/坏元数据/同名隔离；全量 525 passed |
 | 2026-09-05 | 架构师（自身） | 记录用户 Chrome 的 ACM/IEEE 真实外站可访问观察；因 Chrome profile 与项目 Playwright profile 隔离，不能将人工观察外推为 A10/A11 导入通过，详见 `docs/sdd/reviews/015-real-browser-session-20260905.md` |
+<!-- sdd-task-meta:v1:begin -->
+{
+  "schema_version": 1,
+  "task_id": "spec-015-task-08",
+  "spec_id": "015",
+  "title": "# 任务 08 — 执行测试、排序基准与安全回归",
+  "status": "blocked",
+  "priority": 100,
+  "created_at": "2026-10-19T01:15:24+00:00",
+  "depends_on": [
+    "spec-015-task-04",
+    "spec-015-task-05",
+    "spec-015-task-06",
+    "spec-015-task-07"
+  ],
+  "required_gates": [],
+  "agent_role": "backend-tester",
+  "required_capabilities": [
+    "read",
+    "edit",
+    "shell"
+  ],
+  "allowed_paths": [
+    "docs/sdd/plans/015/task-08-tests-ranking-and-security.md",
+    "docs/sdd/plans/016/artifacts/legacy-task-audit.md",
+    "docs/sdd/TASK-PROTOCOL.md"
+  ],
+  "worktree": {
+    "path": ".worktrees/spec-015",
+    "branch": "feature/spec-015-security-paper-discovery",
+    "mode": "per_spec",
+    "base_rule": "explicit_commit"
+  },
+  "max_attempts": 3,
+  "prompt_version": 1,
+  "return_schema": "sdd-run-result/v1",
+  "expected_artifacts": [],
+  "validation_commands": [],
+  "migration_state": "verified"
+}
+<!-- sdd-task-meta:v1:end -->
+<!-- sdd-task-prompt:v1:begin -->
+Role: backend-tester
+Read: ["docs/sdd/plans/015/task-08-tests-ranking-and-security.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Allowed paths: ["docs/sdd/plans/015/task-08-tests-ranking-and-security.md", "docs/sdd/plans/016/artifacts/legacy-task-audit.md", "docs/sdd/TASK-PROTOCOL.md"]
+Forbidden: do not invent metrics, claim unsupported evidence, expand scope, edit completed/partial/unverified legacy sources, or push/merge/reset/stash/clean.
+Validation: none
+Result: write {{RESULT_PATH}} and follow the complete `sdd-run-result/v1` schema in TASK-PROTOCOL.md. Include schema, run_id, task_id, task_hash, prompt_hash, outcome, summary, changed_files, artifacts, commands, tests, decisions, risks, blockers, main_agent_actions, started_at, ended_at, duration_ms, model, token_usage, tool_call_count, and log_paths. Unknown historical metrics remain null.
+Return schema: sdd-run-result/v1
+Objective: preserve audited scope.
+Read-only audit: do not repeat business implementation.
+<!-- sdd-task-prompt:v1:end -->
