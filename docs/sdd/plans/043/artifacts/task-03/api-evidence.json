@@ -610,6 +610,83 @@
         "The node GET persisted the same primary error and resolver-code list under provenance.import_diagnostics; no paper, document, catalog association, or indexable KB entry was created.",
         "The outcome is a stable no-safe-PDF result for this run, not proof that the arXiv record is absent; no further POST or direct PDF request was issued."
       ]
+    },
+    {
+      "run_id": "task03-api-e2e-20261019T144733Z-r5",
+      "observed": "2026-10-19T14:47:33Z",
+      "environment": {
+        "base_url": "http://127.0.0.1:8000",
+        "ready_http_status": 200,
+        "ready": true,
+        "service_commit": "20ea760",
+        "credentials_recorded": false
+      },
+      "request": {
+        "method": "POST",
+        "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports",
+        "body": {},
+        "http_status": 202,
+        "response": {
+          "status": "failed",
+          "download_status": "failed",
+          "error_code": "IMPORT_IDENTITY_CONFLICT",
+          "retryable": false,
+          "paper_id": null,
+          "document_id": null,
+          "catalog_paper_id": null,
+          "resolver_code": null,
+          "resolver_codes": []
+        }
+      },
+      "entities": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "21041260a5394f42891b020128fa60fa",
+        "external_ids": {
+          "arxiv": "1710.10903",
+          "doi": "10.17863/cam.48429",
+          "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+        }
+      },
+      "readback": {
+        "endpoint": "GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa",
+        "http_status": 200,
+        "status": "failed",
+        "download_status": "failed",
+        "error_code": "IMPORT_IDENTITY_CONFLICT",
+        "retryable": false,
+        "paper_id": null,
+        "document_id": null,
+        "catalog_paper_id": null,
+        "provenance_import_diagnostics": {
+          "error_code": "IMPORT_IDENTITY_CONFLICT"
+        }
+      },
+      "knowledge_base": {
+        "endpoint": "GET /api/kb/documents?limit=1",
+        "http_status": 200,
+        "total_documents": 50,
+        "linked_document_id": null,
+        "indexable_match": false,
+        "note": "The node has no document_id because the identity conflict stopped import; no KB document was attributed to this node."
+      },
+      "wait": {
+        "bounded_wait_seconds": 0,
+        "terminal_on_post": true,
+        "additional_post_issued": false
+      },
+      "redaction": {
+        "api_keys": "not recorded",
+        "cookies": "not recorded",
+        "authorization_headers": "not recorded",
+        "raw_provider_envelopes": "not recorded",
+        "raw_urls": "not recorded"
+      },
+      "decision": "BLOCKED",
+      "blocking_evidence": [
+        "The single deployed import request returned fixed non-retryable IMPORT_IDENTITY_CONFLICT after the identity-first changes; no second POST was issued.",
+        "The node GET persisted the same primary error under provenance.import_diagnostics, with no document, catalog association, or indexable KB entry.",
+        "The result is an actual server identity conflict and is not reclassified as PDF_NOT_FOUND; no direct PDF request or blind retry was made."
+      ]
     }
   ]
 }

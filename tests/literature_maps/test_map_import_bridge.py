@@ -198,6 +198,58 @@ def test_runtime_oa_resolver_accepts_latest_arxiv_version_for_bare_identity(
     assert result["arxiv_id"] == "1809.07041v3"
 
 
+def test_runtime_source_adapter_bridge_accepts_latest_arxiv_identity_without_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The production composition must not reject a bare node ID vs Atom vN."""
+    from backend.app.literature_maps.application import runtime
+    from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
+
+    class LatestArxiv:
+        def lookup_by_id(self, arxiv_id, title, authors, year):
+            assert arxiv_id == "1710.10903"
+            assert title == "Graph Attention Networks"
+            assert year == 2017
+            return SimpleNamespace(
+                match=SimpleNamespace(
+                    arxiv_id="1710.10903v3",
+                    pdf_url="https://arxiv.org/pdf/1710.10903v3",
+                ),
+                code=None,
+            )
+
+    class UnexpectedS2:
+        def __init__(self):
+            raise AssertionError("a matching exact arXiv resolver must end the OA chain")
+
+    monkeypatch.setattr(arxiv_adapter, "ArxivFallbackAdapter", LatestArxiv)
+    monkeypatch.setattr(semantic_scholar_adapter, "SemanticScholarFallbackAdapter", UnexpectedS2)
+    node = MapPaper.new(
+        "map-1",
+        external_ids={"semantic_scholar": "s2-1", "arxiv": "1710.10903"},
+        title="Graph Attention Networks",
+        authors=("Petar Velickovic", "Guillem Cucull", "Arantxa Casanova", "Adriana Romero", "Pietro Lio", "Yoshua Bengio"),
+        year=2017,
+        source_url="https://www.semanticscholar.org/paper/s2-1",
+    )
+    adapter = PaperImportSourceAdapter(oa_resolver=runtime._existing_oa_resolver)
+    received: list[tuple[dict, str]] = []
+
+    def importer(snapshot: dict, source_url: str) -> dict:
+        received.append((snapshot, source_url))
+        return {"paper_id": "doc-v3", "status": "indexed"}
+
+    result = LiteratureMapImportBridge(
+        importer=importer,
+        source_resolver=adapter.resolve,
+    ).import_node(node, node.source_url or "")
+
+    assert result["document_id"] == "doc-v3"
+    assert received[0][1] == "https://arxiv.org/pdf/1710.10903v3"
+    assert received[0][0]["source_url"] == node.source_url
+    assert received[0][0]["pdf_url"] == received[0][1]
+
+
 def test_runtime_oa_resolver_rejects_arxiv_identity_conflict_before_s2_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.app.literature_maps.application import runtime
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
@@ -703,6 +755,32 @@ def test_catalog_adapter_uses_matching_doi_for_catalog_lookup() -> None:
     source = PaperImportSourceAdapter(catalog_store=store).resolve(node)
 
     assert source["catalog_paper_id"] == "catalog-1"
+    assert source["official_pdf_url"].endswith("matched.pdf")
+
+
+def test_catalog_adapter_matches_latest_arxiv_version_for_bare_node_identity() -> None:
+    node = MapPaper.new(
+        "map-1",
+        external_ids={"semantic_scholar": "s2-1", "arxiv": "1710.10903"},
+        title="Graph Attention Networks",
+        source_url="https://www.semanticscholar.org/paper/s2-1",
+        provenance={"source": "usenix", "conference_id": "usenix-security"},
+    )
+    store = SimpleNamespace(
+        list_catalog_papers=lambda *_args, **_kwargs: [
+            SimpleNamespace(
+                catalog_paper_id="catalog-arxiv-v3",
+                title="Graph Attention Networks",
+                arxiv_id="1710.10903v3",
+                official_pdf_url="https://www.usenix.org/system/files/conference/matched.pdf",
+            )
+        ]
+    )
+
+    source = PaperImportSourceAdapter(catalog_store=store).resolve(node)
+
+    assert source["catalog_paper_id"] == "catalog-arxiv-v3"
+    assert source["arxiv_id"] == "1710.10903v3"
     assert source["official_pdf_url"].endswith("matched.pdf")
 
 

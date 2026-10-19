@@ -14,7 +14,10 @@ from typing import Any
 
 from backend.app.literature_maps.domain.models import MapPaper
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
-from backend.app.paper_discovery.infrastructure.arxiv_adapter import normalize_arxiv_id
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import (
+    arxiv_identity_matches,
+    normalize_arxiv_id,
+)
 
 
 class PaperImportSourceAdapter:
@@ -109,14 +112,14 @@ class PaperImportSourceAdapter:
     def _match(node: MapPaper, papers: list[Any]) -> Any | None:
         ids = node.external_ids
         expected_doi = normalize_doi(ids.get("doi"))
-        expected_arxiv = str(ids.get("arxiv") or "").strip().casefold()
+        expected_arxiv = normalize_arxiv_id(ids.get("arxiv"))
         matches: list[Any] = []
         for paper in papers:
             doi = normalize_doi(_value(paper, "doi"))
-            arxiv = str(_value(paper, "arxiv_id") or "").strip().casefold()
+            arxiv = normalize_arxiv_id(_value(paper, "arxiv_id"))
             if (
                 (expected_doi and doi and expected_doi == doi)
-                or (expected_arxiv and arxiv and expected_arxiv == arxiv)
+                or (expected_arxiv and arxiv and arxiv_identity_matches(expected_arxiv, arxiv))
             ):
                 matches.append(paper)
         if len(matches) == 1:
@@ -161,7 +164,7 @@ def _matching_external_id(node: MapPaper, source: Mapping[str, Any]) -> bool:
         return True
     node_arxiv = normalize_arxiv_id(node.external_ids.get("arxiv")) or ""
     source_arxiv = normalize_arxiv_id(source.get("arxiv_id") or source.get("arxiv")) or ""
-    return bool(node_arxiv and source_arxiv and node_arxiv == source_arxiv)
+    return bool(node_arxiv and source_arxiv and arxiv_identity_matches(node_arxiv, source_arxiv))
 
 
 __all__ = ["PaperImportSourceAdapter"]

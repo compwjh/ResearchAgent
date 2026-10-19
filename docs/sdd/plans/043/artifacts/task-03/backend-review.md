@@ -519,3 +519,29 @@ service 已在创建前抛出 `UNSUPPORTED_SOURCE`/`UNSUPPORTED_CONFERENCE`，�
 本轮只证明上述 P1 的离线身份/回退组合已闭环；未把 mock probe 当作真实 provider/API E2E。
 
 **最终集中结论：GO（bare/latest metadata conflict 已固定为 ARXIV_IDENTITY_CONFLICT，成功 S2 不再绕过）。** 本结论仅关闭上一轮该窄缺陷，不替代 Task03 整体验收、真实 API E2E、全量回归、验收签字或部署门禁。
+
+## arXiv identity contract runtime→adapter→bridge→importer 窄复审（2026-10-19；backend-reviewer）
+
+本轮只复核桥接层版本比较修复及身份合同沿生产组合链的一致性，未修改代码或测试，未发起真实 provider 请求、下载、部署或读取密钥。
+
+### 逐项结论：GO
+
+| 检查项 | 结论 | 实际证据 |
+|---|---|---|
+| runtime→adapter→bridge→importer bare→latest | GO | 生产组合测试 test_runtime_source_adapter_bridge_accepts_latest_arxiv_identity_without_download 通过：节点 expected 1710.10903，Atom mock 返回 1710.10903v3，runtime→PaperImportSourceAdapter→LiteratureMapImportBridge 最终把安全 PDF 交给注入的既有 importer，S2 未被调用。 |
+| bridge identity conflict expected-left | GO | import_bridge.py:256-259 使用 arxiv_identity_matches(external_arxiv, arxiv)，节点 external ID 在左；bare expected 可接受 returned vN，显式版本不同和跨 base 均拒绝。 |
+| source adapter catalog matching | GO | paper_import_adapter.py:112-123 的 _match() 和 :160-167 的 _matching_external_id() 均以节点 expected ID 为左侧并复用同一 helper；不再存在 raw-string version 比较。 |
+| DOI conflict 不可绕过 | GO | catalog source 即使 arXiv base 匹配而 DOI 不同，bridge :252-259 仍返回 IMPORT_IDENTITY_CONFLICT，不调用 importer；不同 DOI 且无可证明身份时 adapter 返回 PDF_NOT_FOUND。 |
+
+### 组合与负向验证
+
+| 命令/探针 | 退出码 | 结果 |
+|---|---:|---|
+| 受影响地图/import/adapter 精准 pytest | 0 | **66 passed** |
+| 显式版本不同、runtime→bridge latest 组合、跨 base、S2 冲突、catalog DOI 冲突等 6 项精准测试 | 0 | **6 passed** |
+| 真实生产组合离线 probe：explicit version mismatch / cross-base / DOI conflict with matching arXiv | 0 | 三种情形均未调用 importer；前两者为 PDF_NOT_FOUND，DOI 冲突为 IMPORT_IDENTITY_CONFLICT |
+| git diff --check（本报告与日志） | 0 | 通过 |
+
+本轮证明的是本地真实对象组合与身份/导入门禁，不把 mock provider 或离线 importer 当作真实 API、下载或持久化成功。
+
+**最终集中结论：GO（arXiv base/version identity contract 已从 runtime 经 adapter、source adapter、bridge 一致贯通；显式版本不同、跨 base 与 DOI 冲突均不可绕过）。** 本结论仅关闭本次 r5 桥接身份 P1，不替代 Task03 整体验收、真实 API E2E、全量回归或部署门禁。

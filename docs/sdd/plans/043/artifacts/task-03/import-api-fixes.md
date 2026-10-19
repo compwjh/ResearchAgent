@@ -262,3 +262,26 @@ fixture 覆盖真实 Atom 结构：`http://arxiv.org/abs/<base>v3` entry、`http
 | `/opt/anaconda3/bin/python -m py_compile` 受影响 adapter/runtime 与精准测试 | 0 | 通过 |
 
 本轮仅针对该 P1 窄缺陷；真实 API 复核仍等待独立 review，不以 mock 结果替代生产证据。
+
+## Import identity composition repair (2026-10-19)
+
+### Confirmed root cause
+
+Before this repair, a composition-only reproduction using the frozen map node identity `arxiv=1710.10903` and the confirmed Atom result `1710.10903v3` produced `IMPORT_IDENTITY_CONFLICT` after the runtime resolver and source adapter had already selected the safe `https://arxiv.org/pdf/1710.10903v3` candidate. The remaining failure was in `import_bridge._identity_conflict`: it compared normalized strings with raw `!=`, so an unversioned expected ID was rejected when the existing adapter returned the latest version. The catalog adapter had the same contract gap in both `_match` and `_matching_external_id`.
+
+### Minimal repair and safety boundary
+
+- Bridge, catalog matching, and external-ID proof now reuse the existing `arxiv_identity_matches(expected, actual)` helper. The node's frozen identity is always the expected/left operand; a bare ID may match its same-base latest version, while an explicit `vN` remains exact.
+- DOI and cross-base identity checks remain independent and rejecting. Invalid source IDs do not become a match. No downloader, URL allowlist, DNS/redirect/PDF validation, service/store, or public API shape was changed.
+- The new composition regression patches the arXiv metadata adapter in memory and uses a fake importer that only records the selected PDF candidate; it performs no metadata request, PDF request, import, or production write. It covers runtime → source adapter → bridge → importer arguments and verifies the frozen S2 landing page remains metadata while the versioned arXiv PDF is the selected candidate. A catalog regression covers bare-node-ID to versioned-catalog matching.
+
+### Precise verification
+
+| Command | Exit code | Result |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_arxiv_adapter.py tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py` | 0 | 66 passed |
+| `.venv/bin/ruff check` affected bridge, source adapter, and composition tests | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile` affected bridge, source adapter, and composition tests | 0 | Passed |
+| `git diff --check` | 0 | Passed |
+
+No new real API call was made in this round; the prior r5 production evidence remains unchanged and is not reclassified by this mock composition result.

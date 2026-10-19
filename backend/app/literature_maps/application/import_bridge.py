@@ -26,6 +26,7 @@ from backend.app.paper_discovery.application.paper_import import (
     safe_import_error_code,
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import arxiv_identity_matches
 from backend.app.paper_discovery.infrastructure.paper_download import (
     DOWNLOAD_TIMEOUT,
     LOGIN_REQUIRED,
@@ -252,9 +253,9 @@ def _identity_conflict(node: MapPaper, source: Mapping[str, Any]) -> bool:
     external_doi = normalize_doi(external.get("doi")) or ""
     if doi and external_doi and doi != external_doi:
         return True
-    arxiv = _normalize_arxiv(source.get("arxiv_id"))
-    external_arxiv = _normalize_arxiv(external.get("arxiv"))
-    if arxiv and external_arxiv and arxiv != external_arxiv:
+    arxiv = source.get("arxiv_id")
+    external_arxiv = external.get("arxiv")
+    if arxiv and external_arxiv and not arxiv_identity_matches(external_arxiv, arxiv):
         return True
     semantic_id = str(source.get("semantic_scholar_id") or "").strip()
     return bool(semantic_id and external.get("semantic_scholar") and semantic_id != external["semantic_scholar"])
@@ -268,13 +269,6 @@ def _is_semantic_scholar_landing(node: MapPaper, selected_url: str) -> bool:
     except ValueError:
         return True
     return hostname in {"semanticscholar.org", "www.semanticscholar.org"}
-
-
-def _normalize_arxiv(value: object) -> str:
-    raw = str(value or "").strip().casefold()
-    if raw.startswith("http://") or raw.startswith("https://"):
-        raw = raw.rstrip("/").rsplit("/", 1)[-1]
-    return raw.removeprefix("arxiv:")
 
 
 def _retryable_error(error: PaperDownloadError | PaperImportError) -> bool:

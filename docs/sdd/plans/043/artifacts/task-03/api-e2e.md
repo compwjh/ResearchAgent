@@ -296,3 +296,23 @@ For user assistance, run the metadata worker in an environment with DNS/TLS egre
 ### Result
 
 **BLOCKED.** The identity-first deployment now reaches a stable no-safe-PDF outcome instead of the prior Semantic Scholar rate-limit failure. The result is actionable and persisted (`ARXIV_MATCH_UNCERTAIN` plus `SEMANTIC_SCHOLAR_NO_OPEN_PDF`), but it does not prove the arXiv record is absent; no blind code change, additional retry, or direct PDF request was made.
+
+## Follow-up real API import retry (2026-10-19, r5)
+
+本节追加最新 identity-conflict 修复重启后的单次真实导入验证，复用既有图/节点，保留 r1–r4 事实，不创建新图、不重复 POST。证据已追加到同一份 [api-evidence.json](./api-evidence.json)，run ID 为 `task03-api-e2e-20261019T144733Z-r5`。
+
+### Request and business response
+
+- `/api/ready` returned HTTP 200 with `ready=true` and embedding/qdrant ready；部署提交标识为 `20ea760`。
+- Exactly one request was sent: `POST /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports` with `{}`. It returned HTTP 202.
+- The terminal business response was `status=failed`, `download_status=failed`, `error_code=IMPORT_IDENTITY_CONFLICT`, `retryable=false`, `paper_id=null`, `document_id=null`, and `catalog_paper_id=null`. No resolver code was exposed in this response.
+
+### Persistence and knowledge-base readback
+
+- `GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa` returned HTTP 200 and persisted `provenance.import_diagnostics.error_code=IMPORT_IDENTITY_CONFLICT`; `document_id`, `catalog_paper_id`, and download handle remained null/failed.
+- `GET /api/kb/documents?limit=1` returned HTTP 200 (`total=50`). The target node has no `document_id`, so no KB document or indexable entry was attributed to it. No direct PDF request was made.
+- The POST was terminal immediately; no bounded wait and no second import request were issued.
+
+### Result
+
+**BLOCKED.** The deployed API now reports and persists a fixed, non-retryable `IMPORT_IDENTITY_CONFLICT`, rather than masking the identity failure as `PDF_NOT_FOUND`; no document was created. This is the actual production-chain result for r5, not a provider guess. No blind retry, code change, or direct PDF request was made.
