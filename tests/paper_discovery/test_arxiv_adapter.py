@@ -2,7 +2,11 @@ from xml.sax.saxutils import escape
 
 import httpx
 
-from backend.app.paper_discovery.infrastructure.arxiv_adapter import ARXIV_API_URL, ArxivFallbackAdapter
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import (
+    ARXIV_API_URL,
+    ArxivFallbackAdapter,
+    normalize_arxiv_id,
+)
 
 
 def atom_entry(title, authors, year=2025, arxiv_id="2501.00001", pdf="https://arxiv.org/pdf/2501.00001"):
@@ -37,6 +41,53 @@ def test_lookup_strictly_matches_and_preserves_arxiv_source_metadata():
     assert result.match.pdf_url == "https://arxiv.org/pdf/2501.00001"
     assert result.match.source_page_url == "https://arxiv.org/abs/2501.00001"
     assert seen[0].url == httpx.URL(ARXIV_API_URL, params={"search_query": 'ti:"A secure search"', "start": "0", "max_results": "20"})
+
+
+def test_lookup_by_id_uses_exact_id_list_and_normalizes_versioned_identity():
+    seen = []
+    body = feed(atom_entry("A Secure Search", ["Ada Lovelace"], arxiv_id="2501.00001v2"))
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, text=body)
+
+    result = ArxivFallbackAdapter(client=httpx.Client(transport=httpx.MockTransport(handler))).lookup_by_id(
+        "arxiv:2501.00001v2", "A secure search", ["Ada Lovelace"], 2025
+    )
+
+    assert result.matched
+    assert result.match.arxiv_id == "2501.00001v2"
+    assert seen[0].url == httpx.URL(
+        ARXIV_API_URL,
+        params={"id_list": "2501.00001v2", "start": "0", "max_results": "20"},
+    )
+    assert normalize_arxiv_id("ARXIV:hep-th/9901001v3") == "hep-th/9901001v3"
+    assert normalize_arxiv_id("https://arxiv.org/abs/2501.00001") is None
+    assert normalize_arxiv_id("2501.00001&foo=bar") is None
+
+
+def test_lookup_by_id_rejects_same_title_with_different_arxiv_id():
+    body = feed(atom_entry("A Secure Search", ["Ada Lovelace"], arxiv_id="2501.00002"))
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=body)))
+
+    result = ArxivFallbackAdapter(client=client).lookup_by_id(
+        "2501.00001", "A Secure Search", ["Ada Lovelace"], 2025
+    )
+
+    assert not result.matched
+    assert result.code == "ARXIV_IDENTITY_CONFLICT"
+
+
+def test_lookup_by_id_rejects_metadata_conflict_for_exact_arxiv_id():
+    body = feed(atom_entry("A Different Search", ["Someone Else"], arxiv_id="2501.00001"))
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=body)))
+
+    result = ArxivFallbackAdapter(client=client).lookup_by_id(
+        "2501.00001", "A Secure Search", ["Ada Lovelace"], 2025
+    )
+
+    assert not result.matched
+    assert result.code == "ARXIV_IDENTITY_CONFLICT"
 
 
 def test_lookup_rejects_title_author_year_mismatches_and_unsafe_links():

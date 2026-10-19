@@ -146,3 +146,49 @@ runtime 可能产生的稳定 provider 失败码包括 `ARXIV_RATE_LIMITED`、`A
 本次仅使用 fake adapter、临时 SQLite 和 HTTP 测试；未真实下载、未真实导入、未部署、未读取/输出密钥、未提交。r2 的真实 `PDF_NOT_FOUND` 仍需主会话重启服务后独立复核，不能据此宣称无 OA。
 
 交接日志：`.codebuddy/agent-logs/spec-043/task-03/backend-dev/20261019-000000.md`
+
+## r3 arXiv identity-only resolver诊断（2026-10-19）
+
+本轮为只读代码诊断；未发起外部请求、未调用导入/下载、未读取密钥，也未修改业务代码。目标是解释真实 r3 中已有 arXiv `1710.10903` 仍产生 `ARXIV_MATCH_UNCERTAIN` 后才进入 Semantic Scholar 限流的原因。
+
+### 现有能力核对
+
+- `backend/app/paper_discovery/infrastructure/arxiv_adapter.py` 的 `ArxivFallbackAdapter` 只有 `lookup(title, authors, year, *, usenix_pdf_available=False)`，没有按 arXiv ID 查询的公开入口。
+- `lookup()` 将标题、规范化作者集合和年份组成缓存键，并把请求固定为 `search_query=ti:"<title>"`, `start=0`, `max_results=20`；节点已有 arXiv ID 没有进入 HTTP 查询参数。
+- Atom 解析和安全地址校验已经可复用：`_arxiv_id()` 只接受 allowlisted `https://arxiv.org/abs/...` identity，`_safe_pdf()` 只接受 allowlisted `https://arxiv.org/pdf/...`、无 query/fragment 的地址；解析还要求年份相等、标题相似度至少 `0.90`、作者相似度至少 `0.80`。
+- runtime 在 `application/runtime.py` 中以 `(title, authors, year)` 调用该 adapter，拿到结果后才把返回的 `match.arxiv_id` 与节点 arXiv identity 比较。因而这是“先标题检索、后 ID 核对”，不是“按确定 ID 精确获取”。
+
+### r3 失败点
+
+r3 的 `resolver_codes=[ARXIV_MATCH_UNCERTAIN, SEMANTIC_SCHOLAR_RATE_LIMITED]` 与现有实现一致：标题查询没有产生同时通过年份/标题/作者门禁并带安全 PDF 的 Atom entry 时，adapter 返回 `match=None, code=ARXIV_MATCH_UNCERTAIN`；runtime 随后才调用 Semantic Scholar，命中其限流。即使 arXiv 已知 ID 为 `1710.10903`，当前 adapter 也不会先请求该 ID，也不会把它作为查询过滤条件。因此 `ARXIV_MATCH_UNCERTAIN` 不能解释为“该 ID 没有 OA”，而是“标题查询未得到身份安全候选”。若标题查询返回同名但不同 ID 的记录，runtime 会追加 `ARXIV_IDENTITY_CONFLICT`，同样拒绝导入。
+
+### 最小可验证建议
+
+增加一个窄的 identity-first adapter seam（例如 `lookup_by_id(arxiv_id, title, authors, year)`），内部复用现有 HTTP client、限流/重试、Atom parser、`_arxiv_id()`、`_safe_pdf()` 以及既有标题/作者/年份门禁；请求仅把已冻结、已规范化的 ID 作为 arXiv API 的 `id_list` 参数，不自行拼接 PDF URL。返回前仍必须同时满足：Atom entry ID 与节点 ID 完全相等、年份一致、标题/作者门禁通过、PDF 地址通过现有安全校验。任何冲突返回固定 `ARXIV_IDENTITY_CONFLICT`，transport/HTTP/XML 失败保留既有固定 adapter code。
+
+runtime 仅在节点具有确定 arXiv identity 时走该 identity-first seam；没有 arXiv identity 的既有 USENIX 路径继续使用 title lookup，避免破坏既有调用者。成功候选仍唯一交给现有 `import_candidate` 安全链，不新增 downloader、不放宽 host/DNS/redirect/PDF 校验；失败后才按原顺序尝试 Semantic Scholar。应以 fake HTTP transport 覆盖：精确 ID 成功、相同标题不同 ID 被拒、标题/作者冲突被拒、无 entry、provider 固定失败码；本轮不执行真实外呼。
+
+结论：**已有 Atom parser 与安全 HTTP 接缝可复用，但当前没有 arXiv ID 精确查询能力；r3 的身份不确定发生在标题查询阶段，随后 Semantic Scholar 限流是次级 provider 失败。** 这解释了为何不能把 r3 判为真实无 OA，也不授权再次限流重试或直接下载。
+
+## arXiv identity-first 精确解析修复（2026-10-19）
+
+本轮按批准范围实现并仅做离线 mock 验证；没有真实 provider 外呼、PDF 下载、导入、部署、密钥读取或 commit。
+
+### 实际改动
+
+- `ArxivFallbackAdapter` 新增 `lookup_by_id()`，复用既有 HTTP client、限流/重试、Atom 解析和安全 PDF/abs 地址校验；请求使用 `id_list`，不拼接 URL、不新增下载器。
+- 新增单一 `normalize_arxiv_id()`：接受规范的新格式、旧格式及版本后缀（含可选 `arxiv:` 前缀），拒绝 HTTP(S) URL、query、注入文本和非法版本；runtime 与 map source adapter 共用该 normalizer。
+- exact 查询仍强制年份、标题相似度和作者相似度门禁；回传 ID 不同、同标题不同 ID、或 exact ID 的 metadata 冲突均固定为 `ARXIV_IDENTITY_CONFLICT`，不会静默采纳。
+- runtime 对确定 arXiv identity 先走 `lookup_by_id()`，成功后才交既有 `import_candidate` 安全链；exact 失败再按既有顺序走 Semantic Scholar。没有 arXiv identity 时保留原 title lookup；无效 URL/注入 identity 不触发 title lookup，S2 结果也不会绕过冲突。
+- 公共地图 API shape 未改变；现有受控 resolver diagnostics 白名单已包含 `ARXIV_IDENTITY_CONFLICT`，桥接/SQLite/API 接缝继续复用同一诊断码。
+
+### 精准验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_arxiv_adapter.py tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py` | 0 | 60 passed |
+| 同上 `pytest -q tests/paper_discovery/test_usenix_publication_source.py` | 0 | 42 passed，旧 title lookup 调用链保持兼容；5 个既有 DeprecationWarning |
+| `.venv/bin/ruff check` 受影响 adapter/runtime/import-adapter 与测试文件 | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile` 受影响生产/测试文件 | 0 | 通过 |
+
+测试覆盖 exact `id_list` 参数、版本归一化、旧格式、URL/注入拒绝、错 ID、同标题不同 ID、metadata 冲突、runtime exact 调用、无 ID 的旧 title lookup、S2 fallback 和冲突不静默成功。未执行真实 API E2E；r3 的生产限流结果仍保持原证据与 BLOCKED 判定。

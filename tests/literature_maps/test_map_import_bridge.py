@@ -110,12 +110,43 @@ def _oa_candidate() -> dict:
     }
 
 
+def test_runtime_oa_resolver_uses_legacy_title_lookup_without_arxiv_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.literature_maps.application import runtime
+    from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
+
+    candidate = _oa_candidate()
+    candidate["external_ids"] = {}
+
+    class TitleLookupArxiv:
+        def lookup(self, title, authors, year):
+            assert (title, tuple(authors), year) == ("A paper", ("Ada Lovelace",), 2024)
+            return SimpleNamespace(
+                match=SimpleNamespace(arxiv_id="1809.07041", pdf_url="https://arxiv.org/pdf/1809.07041"),
+                code=None,
+            )
+
+    class UnexpectedS2:
+        def __init__(self):
+            raise AssertionError("S2 must not replace a matching title fallback")
+
+    monkeypatch.setattr(arxiv_adapter, "ArxivFallbackAdapter", TitleLookupArxiv)
+    monkeypatch.setattr(semantic_scholar_adapter, "SemanticScholarFallbackAdapter", UnexpectedS2)
+
+    result = runtime._existing_oa_resolver(candidate)
+
+    assert result["resolver"] == "arxiv"
+    assert result["arxiv_id"] == "1809.07041"
+
+
 def test_runtime_oa_resolver_prefers_matching_existing_arxiv_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.app.literature_maps.application import runtime
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
 
     class FakeArxiv:
-        def lookup(self, title, authors, year):
+        def lookup_by_id(self, arxiv_id, title, authors, year):
+            assert arxiv_id == "1809.07041"
             assert (title, tuple(authors), year) == ("A paper", ("Ada Lovelace",), 2024)
             return SimpleNamespace(
                 match=SimpleNamespace(arxiv_id="1809.07041", pdf_url="https://arxiv.org/pdf/1809.07041"),
@@ -144,7 +175,7 @@ def test_runtime_oa_resolver_rejects_arxiv_identity_conflict_before_s2_fallback(
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
 
     class ConflictingArxiv:
-        def lookup(self, *_args, **_kwargs):
+        def lookup_by_id(self, *_args, **_kwargs):
             return SimpleNamespace(
                 match=SimpleNamespace(arxiv_id="9999.00001", pdf_url="https://arxiv.org/pdf/9999.00001"),
                 code=None,
@@ -166,12 +197,44 @@ def test_runtime_oa_resolver_rejects_arxiv_identity_conflict_before_s2_fallback(
     assert result["resolver_codes"] == ["ARXIV_IDENTITY_CONFLICT", "SEMANTIC_SCHOLAR_NO_OPEN_PDF"]
 
 
+def test_runtime_oa_resolver_does_not_silently_accept_s2_after_arxiv_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.literature_maps.application import runtime
+    from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
+
+    class ConflictingArxiv:
+        def lookup_by_id(self, *_args, **_kwargs):
+            return SimpleNamespace(match=None, code="ARXIV_IDENTITY_CONFLICT")
+
+    class MatchingS2:
+        def lookup(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                match=SimpleNamespace(
+                    paper_id="s2-1",
+                    arxiv_id="1809.07041",
+                    doi=None,
+                    pdf_url="https://arxiv.org/pdf/1809.07041",
+                ),
+                code=None,
+            )
+
+    monkeypatch.setattr(arxiv_adapter, "ArxivFallbackAdapter", ConflictingArxiv)
+    monkeypatch.setattr(semantic_scholar_adapter, "SemanticScholarFallbackAdapter", MatchingS2)
+
+    result = runtime._existing_oa_resolver(_oa_candidate())
+
+    assert "pdf_url" not in result
+    assert result["error_code"] == "PDF_NOT_FOUND"
+    assert result["resolver_codes"] == ["ARXIV_IDENTITY_CONFLICT"]
+
+
 def test_runtime_oa_resolver_uses_s2_after_arxiv_fallback_misses(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.app.literature_maps.application import runtime
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
 
     class MissedArxiv:
-        def lookup(self, *_args, **_kwargs):
+        def lookup_by_id(self, *_args, **_kwargs):
             return SimpleNamespace(match=None, code="ARXIV_MATCH_UNCERTAIN")
 
     class MatchingS2:
@@ -203,7 +266,7 @@ def test_runtime_oa_resolver_preserves_provider_failure_codes(monkeypatch: pytes
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
 
     class FailedArxiv:
-        def lookup(self, *_args, **_kwargs):
+        def lookup_by_id(self, *_args, **_kwargs):
             return SimpleNamespace(match=None, code="ARXIV_UNAVAILABLE")
 
     class FailedS2:
@@ -239,7 +302,7 @@ def test_runtime_oa_resolver_keeps_arxiv_provider_failure_as_primary(
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
 
     class FailedArxiv:
-        def lookup(self, *_args, **_kwargs):
+        def lookup_by_id(self, *_args, **_kwargs):
             return SimpleNamespace(match=None, code=arxiv_code)
 
     class NoPdfS2:
@@ -261,7 +324,7 @@ def test_runtime_oa_resolver_keeps_semantic_scholar_rate_limit_as_primary(monkey
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
 
     class UncertainArxiv:
-        def lookup(self, *_args, **_kwargs):
+        def lookup_by_id(self, *_args, **_kwargs):
             return SimpleNamespace(match=None, code="ARXIV_MATCH_UNCERTAIN")
 
     class RateLimitedS2:
@@ -283,7 +346,7 @@ def test_runtime_oa_resolver_reports_no_pdf_after_both_existing_adapters(monkeyp
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
 
     class UncertainArxiv:
-        def lookup(self, *_args, **_kwargs):
+        def lookup_by_id(self, *_args, **_kwargs):
             return SimpleNamespace(match=None, code="ARXIV_MATCH_UNCERTAIN")
 
     class NoPdfS2:
@@ -301,6 +364,32 @@ def test_runtime_oa_resolver_reports_no_pdf_after_both_existing_adapters(monkeyp
     assert result["error_code"] == "PDF_NOT_FOUND"
     assert result["resolver_code"] == "SEMANTIC_SCHOLAR_NO_OPEN_PDF"
     assert result["resolver_codes"] == ["ARXIV_MATCH_UNCERTAIN", "SEMANTIC_SCHOLAR_NO_OPEN_PDF"]
+
+
+def test_runtime_oa_resolver_rejects_arxiv_url_identity_without_title_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.literature_maps.application import runtime
+    from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
+
+    candidate = _oa_candidate()
+    candidate["external_ids"] = {"arxiv": "https://arxiv.org/abs/1809.07041"}
+
+    class UnexpectedArxiv:
+        def __init__(self):
+            raise AssertionError("invalid URL identity must not query arXiv")
+
+    class NoPdfS2:
+        def lookup(self, *_args, **_kwargs):
+            return SimpleNamespace(match=None, code="SEMANTIC_SCHOLAR_NO_OPEN_PDF")
+
+    monkeypatch.setattr(arxiv_adapter, "ArxivFallbackAdapter", UnexpectedArxiv)
+    monkeypatch.setattr(semantic_scholar_adapter, "SemanticScholarFallbackAdapter", NoPdfS2)
+
+    result = runtime._existing_oa_resolver(candidate)
+
+    assert result["error_code"] == "PDF_NOT_FOUND"
+    assert result["resolver_codes"] == ["ARXIV_IDENTITY_CONFLICT", "SEMANTIC_SCHOLAR_NO_OPEN_PDF"]
 
 
 def test_bridge_preserves_login_or_queued_state_and_does_not_invent_catalog_id() -> None:

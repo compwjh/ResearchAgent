@@ -439,6 +439,91 @@
         "The one permitted arXiv-backed import check ended PDF_NOT_FOUND with no paper_id, document_id, or indexable document.",
         "Browser/frontend processing and manual UI labels were not exercised in this backend-only run; the frontend reviewer was given this map ID for reuse."
       ]
+    },
+    {
+      "run_id": "task03-api-e2e-20261019T142453Z-r3",
+      "observed": "2026-10-19T14:24:53Z",
+      "environment": {
+        "base_url": "http://127.0.0.1:8000",
+        "ready_http_status": 200,
+        "ready": true,
+        "credentials_recorded": false
+      },
+      "request": {
+        "method": "POST",
+        "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports",
+        "body": {},
+        "http_status": 202,
+        "response": {
+          "status": "failed",
+          "download_status": "failed",
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "paper_id": null,
+          "document_id": null,
+          "catalog_paper_id": null,
+          "resolver_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "resolver_codes": [
+            "ARXIV_MATCH_UNCERTAIN",
+            "SEMANTIC_SCHOLAR_RATE_LIMITED"
+          ]
+        }
+      },
+      "entities": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "21041260a5394f42891b020128fa60fa",
+        "external_ids": {
+          "arxiv": "1710.10903",
+          "doi": "10.17863/cam.48429",
+          "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+        }
+      },
+      "readback": {
+        "endpoint": "GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa",
+        "http_status": 200,
+        "status": "failed",
+        "download_status": "failed",
+        "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "retryable": true,
+        "paper_id": null,
+        "document_id": null,
+        "catalog_paper_id": null,
+        "provenance_import_diagnostics": {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "resolver_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "resolver_codes": [
+            "ARXIV_MATCH_UNCERTAIN",
+            "SEMANTIC_SCHOLAR_RATE_LIMITED"
+          ],
+          "retryable": true
+        }
+      },
+      "knowledge_base": {
+        "endpoint": "GET /api/kb/documents?limit=1",
+        "http_status": 200,
+        "total_documents": 50,
+        "linked_document_id": null,
+        "indexable_match": false,
+        "note": "The node has no document_id because import failed; no KB document was attributed to this node."
+      },
+      "wait": {
+        "bounded_wait_seconds": 0,
+        "terminal_on_post": true,
+        "additional_post_issued": false
+      },
+      "redaction": {
+        "api_keys": "not recorded",
+        "cookies": "not recorded",
+        "authorization_headers": "not recorded",
+        "raw_provider_envelopes": "not recorded",
+        "raw_urls": "not recorded"
+      },
+      "decision": "BLOCKED",
+      "blocking_evidence": [
+        "The single deployed import request returned a fixed, retryable SEMANTIC_SCHOLAR_RATE_LIMITED provider failure; no second POST was issued.",
+        "The node GET persisted the same primary error, resolver code list, and retryable=true under provenance.import_diagnostics.",
+        "No paper, document, catalog association, or indexable KB entry was created; the stable failure is not evidence that the arXiv/OA record is absent."
+      ]
     }
   ]
 }

@@ -432,3 +432,31 @@ service 已在创建前抛出 `UNSUPPORTED_SOURCE`/`UNSUPPORTED_CONFERENCE`，�
 本轮没有把 50/84 离线测试当作真实 provider 或下载成功；真实外部 API/download、服务重启后的 E2E 仍由主会话按验收门禁复核。
 
 **最终集中结论：GO（稳定 resolver 码、provider failure 语义及 SQLite GET 接缝均闭环）。** 本结论仅关闭本次新增稳定码 P1 窄复审，不替代 Task03 整体验收/部署结论。
+
+## arXiv identity-first fallback 最终窄复审（2026-10-19；backend-reviewer）
+
+本轮仅复核新增 `lookup_by_id()`、arXiv ID normalizer 与 runtime identity-first 分支；未修改业务代码/测试，未发起真实请求、下载、部署或读取密钥。
+
+### 逐项结论：GO
+
+| 检查项 | 结论 | 实际证据 |
+|---|---|---|
+| exact ID 请求与安全复用 | GO | `ArxivFallbackAdapter.lookup_by_id()` 复用既有 client、限流/重试、Atom 解析及 `_arxiv_id()`/`_safe_pdf()`，请求只使用规范化 `id_list`；缓存 key 与旧 title lookup 分离，未新增 downloader 或 URL 拼接。 |
+| ID normalizer 边界 | GO | `normalize_arxiv_id()` 接受新格式、旧格式和合法 version 后缀/可选 `arxiv:` 前缀；拒绝 HTTP(S) URL、query/injection、非法版本。`_arxiv_id()` 也经同一 normalizer，回传 identity 使用同一规范。 |
+| metadata/回传 ID 冲突 | GO | exact feed 中回传 ID 不同或 exact ID 的标题/作者/年份门禁冲突时返回固定 `ARXIV_IDENTITY_CONFLICT`；安全 PDF 候选必须同时满足 exact ID、metadata 门禁和既有 host 校验。 |
+| runtime 顺序与 S2 防绕过 | GO | 有合法 arXiv identity 时先调用 `lookup_by_id()`；无 identity 保留旧 title lookup。exact identity 冲突、无效 URL/injection identity 不会因 S2 成功而返回 PDF；exact 失败后的普通 provider miss 才按原顺序走 S2。 |
+| 既有 title 调用链兼容 | GO | 无 arXiv identity 的 runtime 路径仍调用旧 `lookup(title, authors, year)`；USENIX publication-source 旧 title 回归保持通过。 |
+
+### 精准验证
+
+| 命令/探针 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_arxiv_adapter.py tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py` | 0 | **60 passed** |
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_usenix_publication_source.py` | 0 | **42 passed**，5 个既有 DeprecationWarning |
+| `.venv/bin/ruff check`（adapter/runtime 与受影响精准测试） | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile`（adapter/runtime） | 0 | 通过 |
+| 独立 runtime probe（无效 arXiv URL identity + 成功 S2 mock） | 0 | 未触发 arXiv title 查询；S2 PDF 未绕过冲突，固定 `PDF_NOT_FOUND`/identity diagnostics |
+
+未执行真实 arXiv/S2 请求或下载；本结论证明离线调用链和安全边界，不把生产 r3 的限流结果改判为无 OA，也不替代真实 API E2E。
+
+**最终集中结论：GO（arXiv identity-first 修复及既有 title fallback 兼容通过）。** 本结论仅关闭本次 adapter/runtime 窄复审，不替代 Task03 整体验收或部署门禁。

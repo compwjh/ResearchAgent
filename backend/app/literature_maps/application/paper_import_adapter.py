@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.app.literature_maps.domain.models import MapPaper
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import normalize_arxiv_id
 
 
 class PaperImportSourceAdapter:
@@ -158,16 +159,9 @@ def _matching_external_id(node: MapPaper, source: Mapping[str, Any]) -> bool:
     source_doi = normalize_doi(source.get("doi"))
     if node_doi and source_doi and node_doi == source_doi:
         return True
-    node_arxiv = _normalize_arxiv(node.external_ids.get("arxiv"))
-    source_arxiv = _normalize_arxiv(source.get("arxiv_id") or source.get("arxiv"))
+    node_arxiv = normalize_arxiv_id(node.external_ids.get("arxiv")) or ""
+    source_arxiv = normalize_arxiv_id(source.get("arxiv_id") or source.get("arxiv")) or ""
     return bool(node_arxiv and source_arxiv and node_arxiv == source_arxiv)
-
-
-def _normalize_arxiv(value: object) -> str:
-    raw = str(value or "").strip().casefold()
-    if raw.startswith("http://") or raw.startswith("https://"):
-        raw = raw.rstrip("/").rsplit("/", 1)[-1]
-    return raw.removeprefix("arxiv:")
 
 
 __all__ = ["PaperImportSourceAdapter"]

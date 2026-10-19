@@ -252,3 +252,25 @@ The local product process was reachable independently: `GET http://127.0.0.1:800
 The current evidence classifies the earlier `ARXIV_UNAVAILABLE` as an environment/transport-path failure at probe time (the restricted sandbox cannot resolve the host), not server rejection and not proof of missing OA metadata. Because the adapter's owned client intentionally sets `trust_env=False`, an approved deployment that requires an HTTP proxy would need a separate, narrowly scoped client/configuration change; no such change is made here. The escalated direct endpoint check succeeded, so the present evidence does not justify calling arXiv unavailable globally or changing the resolver's fixed mappings.
 
 For user assistance, run the metadata worker in an environment with DNS/TLS egress to `export.arxiv.org` (or an approved proxy path compatible with the existing client policy), then retry only the existing bounded resolver unit. Keep the existing `PDF_NOT_FOUND` result from the permitted import check unchanged: this connectivity diagnosis neither proves an OA PDF exists for that node nor authorizes a download/import retry. The graph remains the previously recorded `partial` result.
+
+## Follow-up real API import retry (2026-10-19, r3)
+
+本节追加一次对既有部署、既有图和既有节点的单次主动导入复核，保留 r1/r2 证据，不创建新图、不重复 POST。证据已追加到同一份 [api-evidence.json](./api-evidence.json)，run ID 为 `task03-api-e2e-20261019T142453Z-r3`。
+
+### Request and business response
+
+- `/api/ready` returned HTTP 200 with `ready=true` and embedding/qdrant ready.
+- Exactly one request was sent: `POST /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports` with `{}`. It returned HTTP 202.
+- The business response was terminal immediately: `status=failed`, `download_status=failed`, `error_code=SEMANTIC_SCHOLAR_RATE_LIMITED`, `retryable=true`, `paper_id=null`, `document_id=null`, and `catalog_paper_id=null`.
+- The controlled resolver diagnostics were visible as `resolver_code=SEMANTIC_SCHOLAR_RATE_LIMITED` and `resolver_codes=[ARXIV_MATCH_UNCERTAIN, SEMANTIC_SCHOLAR_RATE_LIMITED]`. No raw provider exception, URL, credential, cookie, or authorization header was recorded.
+
+### Persistence and knowledge-base readback
+
+- `GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa` returned HTTP 200 and persisted the same failed state, primary error, resolver-code list, and `retryable=true` under `provenance.import_diagnostics`.
+- The node retained arXiv `1710.10903`, DOI `10.17863/cam.48429`, and Semantic Scholar ID `33998aff64ce51df8dee45989cdca4b6b1329ec4`; no S2 ID was used as a catalog ID.
+- `GET /api/kb/documents?limit=1` returned HTTP 200 (`total=50`). The target node had no `document_id`, so no KB document or indexable entry was attributed to it. No direct PDF request was made.
+- The POST was terminal; no bounded wait or second import request was needed or issued.
+
+### Result
+
+**BLOCKED.** This is a stable, retryable provider failure with diagnostics correctly exposed and persisted across HTTP readback. It is not evidence that the arXiv/OA record is absent; no blind code change or additional import retry was made. The node remains eligible for a later bounded retry after the provider rate limit clears.

@@ -11,6 +11,7 @@ from backend.app.literature_maps.domain.import_diagnostics import resolver_failu
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import normalize_arxiv_id
 
 _service: LiteratureMapService | None = None
 _executor: ThreadPoolExecutor | None = None
@@ -76,24 +77,41 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
 
     resolver_codes: list[str] = []
     resolver_retryable = False
-    arxiv_id = _normalize_arxiv_id(candidate.get("arxiv_id"))
-    if arxiv_id:
+    arxiv_identity_conflict = False
+    raw_arxiv_id = candidate.get("arxiv_id")
+    arxiv_id = normalize_arxiv_id(raw_arxiv_id)
+    invalid_arxiv_id = bool(str(raw_arxiv_id or "").strip()) and arxiv_id is None
+    if invalid_arxiv_id:
+        resolver_codes.append("ARXIV_IDENTITY_CONFLICT")
+        arxiv_identity_conflict = True
+    arxiv_result = None
+    if not invalid_arxiv_id:
         try:
-            arxiv_result = ArxivFallbackAdapter().lookup(
-                str(candidate.get("title") or ""),
-                candidate.get("authors") or (),
-                candidate.get("year"),
-            )
+            if arxiv_id:
+                arxiv_result = ArxivFallbackAdapter().lookup_by_id(
+                    arxiv_id,
+                    str(candidate.get("title") or ""),
+                    candidate.get("authors") or (),
+                    candidate.get("year"),
+                )
+            else:
+                arxiv_result = ArxivFallbackAdapter().lookup(
+                    str(candidate.get("title") or ""),
+                    candidate.get("authors") or (),
+                    candidate.get("year"),
+                )
         except Exception:
-            arxiv_result = None
             resolver_codes.append("ARXIV_UNAVAILABLE")
             resolver_retryable = True
+    if not invalid_arxiv_id:
         resolver_retryable = resolver_retryable or bool(getattr(arxiv_result, "retryable", False))
         arxiv_match = getattr(arxiv_result, "match", None)
         arxiv_pdf_url = getattr(arxiv_match, "pdf_url", None)
         if arxiv_match is not None:
-            if _normalize_arxiv_id(getattr(arxiv_match, "arxiv_id", None)) != arxiv_id:
+            match_arxiv_id = normalize_arxiv_id(getattr(arxiv_match, "arxiv_id", None))
+            if arxiv_id and match_arxiv_id != arxiv_id:
                 resolver_codes.append("ARXIV_IDENTITY_CONFLICT")
+                arxiv_identity_conflict = True
             elif isinstance(arxiv_pdf_url, str) and arxiv_pdf_url.strip():
                 return {
                     "pdf_url": arxiv_pdf_url.strip(),
@@ -104,6 +122,7 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
         arxiv_code = getattr(arxiv_result, "code", None)
         if arxiv_code:
             resolver_codes.append(str(arxiv_code))
+            arxiv_identity_conflict = arxiv_identity_conflict or arxiv_code == "ARXIV_IDENTITY_CONFLICT"
         elif arxiv_match is None and arxiv_result is not None:
             resolver_codes.append("ARXIV_MATCH_UNCERTAIN")
 
@@ -124,6 +143,11 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
             resolver_codes,
             retryable=resolver_retryable or bool(getattr(result, "retryable", False)),
         )
+    if arxiv_identity_conflict:
+        return _resolver_failure(
+            resolver_codes,
+            retryable=resolver_retryable or bool(getattr(result, "retryable", False)),
+        )
     return {
         "pdf_url": str(pdf_url).strip(),
         "doi": getattr(match, "doi", None),
@@ -139,19 +163,15 @@ def _resolver_failure(codes: list[str], *, retryable: bool = False) -> dict[str,
 
 
 def _candidate_identity_matches(candidate: dict, match: object) -> bool:
-    candidate_arxiv = _normalize_arxiv_id(candidate.get("arxiv_id"))
+    raw_arxiv = candidate.get("arxiv_id")
+    candidate_arxiv = normalize_arxiv_id(raw_arxiv)
+    if raw_arxiv and candidate_arxiv is None:
+        return False
     if candidate_arxiv:
-        return _normalize_arxiv_id(getattr(match, "arxiv_id", None)) == candidate_arxiv
+        return normalize_arxiv_id(getattr(match, "arxiv_id", None)) == candidate_arxiv
     candidate_doi = normalize_doi(candidate.get("doi"))
     match_doi = normalize_doi(getattr(match, "doi", None))
     return not candidate_doi or candidate_doi == match_doi
-
-
-def _normalize_arxiv_id(value: object) -> str:
-    raw = str(value or "").strip().casefold()
-    if raw.startswith("http://") or raw.startswith("https://"):
-        raw = raw.rstrip("/").rsplit("/", 1)[-1]
-    return raw.removeprefix("arxiv:")
 
 
 def get_literature_map_service() -> LiteratureMapService:
