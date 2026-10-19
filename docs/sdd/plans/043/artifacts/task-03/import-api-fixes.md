@@ -192,3 +192,73 @@ runtime 仅在节点具有确定 arXiv identity 时走该 identity-first seam；
 | `/opt/anaconda3/bin/python -m py_compile` 受影响生产/测试文件 | 0 | 通过 |
 
 测试覆盖 exact `id_list` 参数、版本归一化、旧格式、URL/注入拒绝、错 ID、同标题不同 ID、metadata 冲突、runtime exact 调用、无 ID 的旧 title lookup、S2 fallback 和冲突不静默成功。未执行真实 API E2E；r3 的生产限流结果仍保持原证据与 BLOCKED 判定。
+
+## r4 精确 arXiv Atom 证据诊断（2026-10-19）
+
+本节为一次授权的公共 metadata-only probe；只请求 Atom XML，不请求 PDF、不调用地图导入、不读取密钥、不修改代码。请求为 `GET https://export.arxiv.org/api/query?id_list=1710.10903&start=0&max_results=1`，UTC `2026-10-19T14:36:13Z` 返回 HTTP 200，`totalResults=1`。
+
+### 脱敏 entry 证据
+
+| 字段 | 实际 Atom 形态 | 当前门禁结果 |
+|---|---|---|
+| entry id | scheme=`http`, host=`arxiv.org`, path=`/abs/1710.10903v3` | 当前 `_arxiv_id()` 只接受 `https`，因此直接返回 `None` |
+| PDF link | scheme=`https`, host=`arxiv.org`, path=`/pdf/1710.10903v3`, `title=pdf` | 当前 `_safe_pdf()` 可接受；没有请求该地址 |
+| alternate link | scheme=`https`, host=`arxiv.org`, path=`/abs/1710.10903v3` | 可作为 canonical metadata page，不是下载入口 |
+| arXiv version | `v3` | 节点冻结 identity 是裸 `1710.10903`；当前 strict `!=` 也会拒绝 base→latest |
+| title | `Graph Attention Networks` | 与节点标题完全匹配，`title_score=1.0` |
+| published year | `2017` | 与节点年份匹配 |
+| authors | 6 位：Petar Veličković、Guillem Cucull、Arantxa Casanova、Adriana Romero、Pietro Liò、Yoshua Bengio | 规范化重音后与节点 6 位作者匹配，`author_score=1.0` |
+
+未保留摘要、API query token、响应内部 id 或任何凭据。公共 Atom 返回的 `http` abs entry 与 `https` PDF/alternate link 是本次证据中唯一需要的链接形态。
+
+### 可验证根因
+
+r4 的 `ARXIV_MATCH_UNCERTAIN` 不是论文无 OA：真实 Atom 确实有唯一 entry，标题/年份/作者门禁均通过。当前实现有两个连续的确定性断点：
+
+1. `_arxiv_id()` 要求 entry id scheme 为 `https`，而真实 Atom entry id 为 `http://arxiv.org/abs/1710.10903v3`，所以解析成 `None`。
+2. 即使仅修正 metadata entry 的 scheme，expected 裸 ID `1710.10903` 与真实最新版 `1710.10903v3` 的严格字符串比较仍会失败。当前 `_safe_pdf()` 使用的是独立 `https` PDF link，本次不构成 HTTP PDF 放宽问题。
+
+### 最小修复方案（待实施）
+
+- 仅对已认证 `arxiv.org` / `export.arxiv.org` 的 metadata `abs` entry 接受 `http` 或 `https`，拒绝 credentials、非默认 port、query、fragment 和其他 host，并立即 canonicalize 为 `https://<allowlisted-host>/abs/<normalized-id>`；绝不因此允许 HTTP PDF 下载。
+- 保留单一 arXiv ID normalizer，并增加明确的 base/version 比较：expected 裸 ID可匹配同 base 的 Atom latest version（本例 `1710.10903`→`1710.10903v3`）；expected 显式 `vN` 时必须 exact `vN`，不接受其他版本。`id_list` 仍只发送规范裸/显式 ID，不接受 URL 或注入文本。
+- Atom 的返回 ID、标题/作者/年份和安全 `https` PDF link 仍需全部通过；错 base、显式版本冲突或 metadata 冲突继续固定 `ARXIV_IDENTITY_CONFLICT`。runtime 的返回 identity 比较也必须使用同一 base/version 规则，避免 adapter 成功后又被 runtime 的字符串 `!=` 二次误拒。
+- 实际 PDF 地址仍只交给既有 `import_candidate` 下载安全链；不拼接新 URL、不请求 HTTP PDF、不放宽 DNS/redirect/host/PDF 校验。应新增 mock 断言覆盖真实 Atom 的 `http` abs + `https` PDF、bare→latest、explicit-version mismatch 和 metadata conflict，再由主会话重启后单次真实 API 复核。
+
+结论：**已取得真实 Atom 证据，r4 的身份不确定根因是 metadata abs scheme 与 arXiv version 语义，而不是缺少 OA。当前不应继续把该节点判为稳定 `PDF_NOT_FOUND`，待上述窄修复后再按既有一次性 E2E 门禁复核。**
+
+## arXiv metadata scheme/version 最小修复（2026-10-19）
+
+本轮按真实 Atom 证据实施；只修改 metadata identity 解析与 runtime 比较接缝及精准测试。未修改 `_safe_pdf`、下载器、import_candidate、安全 host/DNS/redirect 链；未真实外呼、下载、导入、部署或提交。
+
+### 实际改动
+
+- `_arxiv_id()` 现在仅对固定可信 `arxiv.org`/`export.arxiv.org` metadata abs 链接接受 HTTP 或 HTTPS，拒绝凭据、非法 port、query、fragment 和其他 host，并只提取规范 arXiv identity；`ArxivMatch.source_page_url` 仍输出 canonical HTTPS。HTTP 仅限 metadata identity，实际 PDF 仍由原 HTTPS `_safe_pdf()` 校验。
+- 新增共享 `arxiv_identity_matches()`：裸 expected ID 可匹配同 base 的返回版本（如 `1710.10903`→`1710.10903v3`）；显式 `vN` 必须 exact，版本不同返回 `ARXIV_IDENTITY_CONFLICT`。adapter、runtime 的 exact match 和 S2 回退 identity gate 共用该 helper，不再二次 raw string `!=`。
+- 保留 `id_list` 只发送规范裸/显式 ID；URL、host 注入和 query 文本仍在请求前拒绝。题名/作者/年份门禁保持不变；`_safe_pdf` 未改。
+
+### 精准验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_arxiv_adapter.py tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py` | 0 | 63 passed |
+| 同上 `pytest -q tests/paper_discovery/test_usenix_publication_source.py` | 0 | 42 passed；旧 title lookup 保持兼容；5 个既有 DeprecationWarning |
+| `.venv/bin/ruff check` 受影响 adapter/runtime/import-adapter 与测试文件 | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile` 受影响生产/测试文件 | 0 | 通过 |
+
+fixture 覆盖真实 Atom 结构：`http://arxiv.org/abs/<base>v3` entry、`https://arxiv.org/pdf/<base>v3` link、bare→latest、explicit-version mismatch、错误 host/凭据/query、metadata 冲突，以及 runtime 不回退旧 title lookup。等待独立 review 后再决定是否进行新的单次真实 API 复核。
+
+## 最终窄审冲突归类修复（2026-10-19）
+
+独立 review 指出 exact parser 在 expected 裸 ID、返回带版本且 metadata 不匹配时，仍有一处旧 raw-string 比较，可能把冲突误归类为 `ARXIV_MATCH_UNCERTAIN`；runtime 的 S2 成功组合也必须继续被冲突门禁拒绝。本轮仅修正该比较并补精准回归，未部署、未真实外呼/下载/导入、未提交。
+
+- Atom parser 的 metadata conflict 判定现在复用同一 `arxiv_identity_matches()`；expected `2501.00001` 与返回 `2501.00001v3` 先按同 base 识别，再在标题/作者/年份不符时固定返回 `ARXIV_IDENTITY_CONFLICT`。
+- 既有 runtime 组合门禁回归确认：当 arXiv resolver 返回 `ARXIV_IDENTITY_CONFLICT` 时，即使 S2 返回同 arXiv identity 的安全 PDF，也不会静默成功，结果仍为无 PDF 失败并保留冲突诊断。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_arxiv_adapter.py tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py` | 0 | 64 passed |
+| `.venv/bin/ruff check` 受影响 adapter/runtime 与精准测试 | 0 | All checks passed |
+| `/opt/anaconda3/bin/python -m py_compile` 受影响 adapter/runtime 与精准测试 | 0 | 通过 |
+
+本轮仅针对该 P1 窄缺陷；真实 API 复核仍等待独立 review，不以 mock 结果替代生产证据。

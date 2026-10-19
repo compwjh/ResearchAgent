@@ -460,3 +460,62 @@ service 已在创建前抛出 `UNSUPPORTED_SOURCE`/`UNSUPPORTED_CONFERENCE`，�
 未执行真实 arXiv/S2 请求或下载；本结论证明离线调用链和安全边界，不把生产 r3 的限流结果改判为无 OA，也不替代真实 API E2E。
 
 **最终集中结论：GO（arXiv identity-first 修复及既有 title fallback 兼容通过）。** 本结论仅关闭本次 adapter/runtime 窄复审，不替代 Task03 整体验收或部署门禁。
+
+## arXiv Atom scheme/version 兼容最终窄复审（2026-10-19；backend-reviewer）
+
+本轮只复核最新 Atom 兼容改动及其身份安全边界，未修改业务代码或测试，未发起真实 provider 请求、下载、部署，也未读取密钥。既有上一轮 identity-first 的 GO 不能覆盖本轮发现；本段以当前实际代码和独立探针为准。
+
+### 逐项结论
+
+| 检查项 | 结论 | 实际证据 |
+|---|---|---|
+| Atom entry scheme 与 canonical source URL | GO | arxiv_adapter.py:65-76 的 _arxiv_id() 仅接受固定 arxiv.org/export.arxiv.org host、无凭据/端口/query/fragment 的 HTTP(S) /abs/；ArxivMatch.source_page_url 仍固定输出 HTTPS。最新 fixture 覆盖 http://arxiv.org/abs/1710.10903v3 与 HTTPS PDF，title/author/year 解析一致。 |
+| bare ID 与 returned latest version | GO | arxiv_identity_matches() 对无版本 expected 允许同 base 的 returned vN，显式 vN 仍精确匹配；URL、非法版本和注入文本先被 normalize_arxiv_id() 拒绝。runtime exact-ID gate 与 S2 candidate gate 已复用该 helper。 |
+| exact returned ID 的 metadata conflict 固定码 | BLOCK | arxiv_adapter.py:272-274 在 title/author/year 门禁失败时仍使用原始 arxiv_id == expected_arxiv_id。当 expected 为 bare 2501.00001、Atom 返回合法 2501.00001v3 但 metadata 冲突时，helper 判定身份相同，却因裸字符串不等而不置 metadata_conflict，结果为 ARXIV_MATCH_UNCERTAIN，不是契约要求的 ARXIV_IDENTITY_CONFLICT。 |
+| identity conflict 不被 S2 成功覆盖 | BLOCK | runtime 只有收到 ARXIV_IDENTITY_CONFLICT 才设置 arxiv_identity_conflict（runtime.py:125-150）。上述 bare→latest metadata-conflict 返回 ARXIV_MATCH_UNCERTAIN 后，成功的 S2 mock 会被返回，实际结果含 semantic_scholar_id 和 PDF URL；因此该冲突可绕过。 |
+| safe PDF 边界 | GO | 本轮 diff 未放宽 _safe_pdf()；PDF 仍要求 HTTPS、固定 arXiv host、无凭据/端口/query/fragment 且 /pdf/ 路径。 |
+
+### 独立窄探针
+
+以下探针使用本地 Atom fixture 与 mock transport，不访问外部网络：
+
+1. HTTP Atom entry http://arxiv.org/abs/2501.00001v3，expected bare ID 2501.00001，故意提供冲突 title/author/year；lookup_by_id() 返回 ARXIV_MATCH_UNCERTAIN。探针期望 ARXIV_IDENTITY_CONFLICT，退出码 1。
+2. runtime 注入同一 ARXIV_MATCH_UNCERTAIN，再注入匹配 arXiv ID 的成功 S2 PDF；_existing_oa_resolver() 实际返回 S2 PDF，探针期望无 PDF/identity failure，退出码 1。
+
+最小修复边界：arxiv_adapter.py:273 应改为使用 arxiv_identity_matches(expected_arxiv_id, arxiv_id)，并补一条 bare expected + returned vN metadata-conflict 测试及 runtime S2-success 不绕过测试；不需要改变 _safe_pdf() 或扩大 importer。
+
+### 精准验证
+
+| 命令/探针 | 退出码 | 结果 |
+|---|---:|---|
+| PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_arxiv_adapter.py tests/literature_maps/test_map_import_bridge.py tests/literature_maps/test_map_api_errors.py tests/literature_maps/test_map_store.py | 0 | 63 passed |
+| PYTHONPATH=.venv/lib/python3.11/site-packages:/tmp/researchagent-test-stubs /opt/anaconda3/bin/python -m pytest -q tests/paper_discovery/test_usenix_publication_source.py | 0 | 42 passed，5 个既有 DeprecationWarning |
+| .venv/bin/ruff check（adapter/runtime 与受影响精准测试） | 0 | All checks passed |
+| /opt/anaconda3/bin/python -m py_compile（adapter/runtime） | 0 | 通过 |
+| bare→latest metadata conflict adapter probe | 1 | 当前返回 ARXIV_MATCH_UNCERTAIN，未固定为 ARXIV_IDENTITY_CONFLICT |
+| runtime metadata conflict + successful S2 probe | 1 | 当前错误返回 S2 PDF，identity conflict 可被绕过 |
+
+**最终集中结论：BLOCK（Atom HTTP scheme、canonical URL、bare/version normalizer 及 safe PDF 边界为 GO；但 bare expected → returned latest version 的 metadata conflict 未固定为 ARXIV_IDENTITY_CONFLICT，且可被成功 S2 fallback 覆盖）。** 在开发补齐 helper 比较和两条回归前，不得关闭本 P1 或宣称该窄项整体通过。本结论不扩大到其他已通过项，也不替代 Task03 整体验收/部署门禁。
+
+## arXiv bare/latest metadata conflict 修复最终窄复审（2026-10-19；backend-reviewer）
+
+本轮仅复核上一轮 BLOCK 的两处修复：adapter metadata conflict 使用共享身份 helper，以及 runtime 在成功 S2 返回时仍拒绝 arXiv identity conflict。未修改代码或测试，未调用真实 provider、下载、部署或读取密钥。
+
+### 逐项结论：GO
+
+| 检查项 | 结论 | 实际证据 |
+|---|---|---|
+| adapter bare→latest metadata conflict | GO | arxiv_adapter.py:273 现在使用 arxiv_identity_matches(expected_arxiv_id, arxiv_id)。expected 2501.00001 与 Atom 返回 2501.00001v3 且 title/author/year 冲突时，实际返回 ARXIV_IDENTITY_CONFLICT。 |
+| runtime S2 不绕过 | GO | runtime.py:125-153 保留 ARXIV_IDENTITY_CONFLICT 状态；即使 S2 mock 返回匹配 arXiv identity 的 PDF，实际结果无 pdf_url，主 error_code 为 PDF_NOT_FOUND，resolver_codes 仅保留 ARXIV_IDENTITY_CONFLICT。 |
+| 相关分支回归 | GO | 新增 adapter bare/latest metadata-conflict 测试，并保留 runtime 成功 S2 不静默接受测试；当前交接报告记录 64 passed。 |
+
+### 两条独立 probe
+
+| probe | 退出码 | 实际结果 |
+|---|---:|---|
+| 本地 Atom fixture：HTTP abs entry 返回 2501.00001v3，expected bare 2501.00001，metadata 冲突 | 0 | adapter_code=ARXIV_IDENTITY_CONFLICT |
+| runtime 注入 arXiv ARXIV_IDENTITY_CONFLICT，再注入成功匹配 S2 PDF | 0 | 无 pdf_url；error_code=PDF_NOT_FOUND；resolver_codes=[ARXIV_IDENTITY_CONFLICT] |
+
+本轮只证明上述 P1 的离线身份/回退组合已闭环；未把 mock probe 当作真实 provider/API E2E。
+
+**最终集中结论：GO（bare/latest metadata conflict 已固定为 ARXIV_IDENTITY_CONFLICT，成功 S2 不再绕过）。** 本结论仅关闭上一轮该窄缺陷，不替代 Task03 整体验收、真实 API E2E、全量回归、验收签字或部署门禁。

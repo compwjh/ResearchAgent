@@ -62,9 +62,13 @@ def _safe_pdf(value: str) -> Optional[str]:
 
 def _arxiv_id(value: str) -> Optional[str]:
     parsed = urlsplit(value)
-    if parsed.scheme != "https":
+    if parsed.scheme not in {"http", "https"}:
         return None
-    if (parsed.hostname not in ARXIV_HOSTS or parsed.username or parsed.password or parsed.port
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if (parsed.hostname not in ARXIV_HOSTS or parsed.username or parsed.password or port
             or parsed.query or parsed.fragment or not parsed.path.startswith("/abs/")):
         return None
     return normalize_arxiv_id(parsed.path.removeprefix("/abs/").strip("/"))
@@ -79,6 +83,24 @@ def normalize_arxiv_id(value: object) -> Optional[str]:
     if not (_NEW_ARXIV_ID.fullmatch(normalized) or _OLD_ARXIV_ID.fullmatch(normalized)):
         return None
     return normalized
+
+
+def arxiv_identity_matches(expected: object, actual: object) -> bool:
+    """Compare IDs, allowing an unversioned ID to match its returned latest version."""
+    expected_id = normalize_arxiv_id(expected)
+    actual_id = normalize_arxiv_id(actual)
+    if expected_id is None or actual_id is None:
+        return False
+    expected_base, expected_version = _split_arxiv_version(expected_id)
+    actual_base, actual_version = _split_arxiv_version(actual_id)
+    return expected_base == actual_base and (expected_version is None or expected_version == actual_version)
+
+
+def _split_arxiv_version(value: str) -> tuple[str, str | None]:
+    base, separator, version = value.rpartition("v")
+    if separator and version.isdigit():
+        return base, version
+    return value, None
 
 
 def _author_key(value: str) -> str:
@@ -240,7 +262,7 @@ class ArxivFallbackAdapter:
             except ValueError:
                 continue
             arxiv_id = _arxiv_id(_text(entry.find("a:id", ns)))
-            if expected_arxiv_id is not None and arxiv_id != expected_arxiv_id:
+            if expected_arxiv_id is not None and not arxiv_identity_matches(expected_arxiv_id, arxiv_id):
                 if arxiv_id is not None:
                     identity_conflict = True
                 continue
@@ -248,7 +270,7 @@ class ArxivFallbackAdapter:
             candidate_authors = {_author_key(value) for value in entry_authors}
             author_score = len(set(authors) & candidate_authors) / max(len(authors), len(candidate_authors))
             if entry_year != year or title_score < TITLE_THRESHOLD or author_score < AUTHOR_THRESHOLD:
-                if expected_arxiv_id is not None and arxiv_id == expected_arxiv_id:
+                if expected_arxiv_id is not None and arxiv_identity_matches(expected_arxiv_id, arxiv_id):
                     metadata_conflict = True
                 continue
             pdf_url = next((_safe_pdf(link.attrib.get("href", "")) for link in entry.findall("a:link", ns)
@@ -281,5 +303,6 @@ __all__ = [
     "ArxivFallbackAdapter",
     "ArxivFallbackResult",
     "ArxivMatch",
+    "arxiv_identity_matches",
     "normalize_arxiv_id",
 ]

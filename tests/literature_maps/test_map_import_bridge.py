@@ -170,6 +170,34 @@ def test_runtime_oa_resolver_prefers_matching_existing_arxiv_fallback(monkeypatc
     }
 
 
+def test_runtime_oa_resolver_accepts_latest_arxiv_version_for_bare_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.literature_maps.application import runtime
+    from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter
+
+    class LatestArxiv:
+        def lookup_by_id(self, arxiv_id, title, authors, year):
+            assert arxiv_id == "1809.07041"
+            assert (title, tuple(authors), year) == ("A paper", ("Ada Lovelace",), 2024)
+            return SimpleNamespace(
+                match=SimpleNamespace(arxiv_id="1809.07041v3", pdf_url="https://arxiv.org/pdf/1809.07041v3"),
+                code=None,
+            )
+
+    class UnexpectedS2:
+        def __init__(self):
+            raise AssertionError("a matching latest arXiv version must end the resolver")
+
+    monkeypatch.setattr(arxiv_adapter, "ArxivFallbackAdapter", LatestArxiv)
+    monkeypatch.setattr(semantic_scholar_adapter, "SemanticScholarFallbackAdapter", UnexpectedS2)
+
+    result = runtime._existing_oa_resolver(_oa_candidate())
+
+    assert result["resolver"] == "arxiv"
+    assert result["arxiv_id"] == "1809.07041v3"
+
+
 def test_runtime_oa_resolver_rejects_arxiv_identity_conflict_before_s2_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.app.literature_maps.application import runtime
     from backend.app.paper_discovery.infrastructure import arxiv_adapter, semantic_scholar_adapter

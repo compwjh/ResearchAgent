@@ -274,3 +274,25 @@ For user assistance, run the metadata worker in an environment with DNS/TLS egre
 ### Result
 
 **BLOCKED.** This is a stable, retryable provider failure with diagnostics correctly exposed and persisted across HTTP readback. It is not evidence that the arXiv/OA record is absent; no blind code change or additional import retry was made. The node remains eligible for a later bounded retry after the provider rate limit clears.
+
+## Follow-up real API import retry (2026-10-19, r4)
+
+本节追加 identity-first 修复重启后的单次真实导入复核，复用既有图/节点，保留 r1/r2/r3 事实，不创建新图、不重复 POST。证据已追加到同一份 [api-evidence.json](./api-evidence.json)，run ID 为 `task03-api-e2e-20261019T143501Z-r4`。
+
+### Request and business response
+
+- `/api/ready` returned HTTP 200 with `ready=true` and embedding/qdrant ready；部署提交标识为 `1e1fddb`。
+- Exactly one request was sent: `POST /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/imports` with `{}`. It returned HTTP 202.
+- The terminal business response was `status=failed`, `download_status=failed`, `error_code=PDF_NOT_FOUND`, `retryable=false`, `paper_id=null`, `document_id=null`, and `catalog_paper_id=null`.
+- Resolver diagnostics were visible as `resolver_code=SEMANTIC_SCHOLAR_NO_OPEN_PDF` and `resolver_codes=[ARXIV_MATCH_UNCERTAIN, SEMANTIC_SCHOLAR_NO_OPEN_PDF]`. No raw provider exception, credential, cookie, authorization header, or direct PDF response was recorded.
+
+### Persistence and knowledge-base readback
+
+- `GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa` returned HTTP 200 and persisted the same failed state, primary error, resolver-code list, and `retryable=false` under `provenance.import_diagnostics`.
+- The node retained arXiv `1710.10903`, DOI `10.17863/cam.48429`, and Semantic Scholar ID `33998aff64ce51df8dee45989cdca4b6b1329ec4`; `catalog_paper_id` and `document_id` remained null.
+- `GET /api/kb/documents?limit=1` returned HTTP 200 (`total=50`). Because this node has no `document_id`, no KB document or indexable entry was attributed to it. No direct PDF request was made.
+- The POST was terminal immediately; no bounded wait and no second import request were issued.
+
+### Result
+
+**BLOCKED.** The identity-first deployment now reaches a stable no-safe-PDF outcome instead of the prior Semantic Scholar rate-limit failure. The result is actionable and persisted (`ARXIV_MATCH_UNCERTAIN` plus `SEMANTIC_SCHOLAR_NO_OPEN_PDF`), but it does not prove the arXiv record is absent; no blind code change, additional retry, or direct PDF request was made.

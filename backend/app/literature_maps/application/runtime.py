@@ -11,7 +11,10 @@ from backend.app.literature_maps.domain.import_diagnostics import resolver_failu
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
-from backend.app.paper_discovery.infrastructure.arxiv_adapter import normalize_arxiv_id
+from backend.app.paper_discovery.infrastructure.arxiv_adapter import (
+    arxiv_identity_matches,
+    normalize_arxiv_id,
+)
 
 _service: LiteratureMapService | None = None
 _executor: ThreadPoolExecutor | None = None
@@ -109,7 +112,7 @@ def _existing_oa_resolver(snapshot: dict) -> dict | None:
         arxiv_pdf_url = getattr(arxiv_match, "pdf_url", None)
         if arxiv_match is not None:
             match_arxiv_id = normalize_arxiv_id(getattr(arxiv_match, "arxiv_id", None))
-            if arxiv_id and match_arxiv_id != arxiv_id:
+            if arxiv_id and not arxiv_identity_matches(arxiv_id, match_arxiv_id):
                 resolver_codes.append("ARXIV_IDENTITY_CONFLICT")
                 arxiv_identity_conflict = True
             elif isinstance(arxiv_pdf_url, str) and arxiv_pdf_url.strip():
@@ -168,7 +171,7 @@ def _candidate_identity_matches(candidate: dict, match: object) -> bool:
     if raw_arxiv and candidate_arxiv is None:
         return False
     if candidate_arxiv:
-        return normalize_arxiv_id(getattr(match, "arxiv_id", None)) == candidate_arxiv
+        return arxiv_identity_matches(candidate_arxiv, getattr(match, "arxiv_id", None))
     candidate_doi = normalize_doi(candidate.get("doi"))
     match_doi = normalize_doi(getattr(match, "doi", None))
     return not candidate_doi or candidate_doi == match_doi
