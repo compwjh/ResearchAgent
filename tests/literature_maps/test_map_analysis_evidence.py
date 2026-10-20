@@ -7,6 +7,7 @@ from backend.app.chat.application.chat_runner import ChatRun
 from backend.app.knowledge_base.infrastructure.inspection import build_inspection_manifest
 from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.manifest_store import FinalizeBundleStore
+from backend.app.knowledge_base.infrastructure.migration import publish_index_state
 from backend.app.knowledge_base.infrastructure.provenance import build_source_provenance_bundle
 from backend.app.platform.ollama_direct import OllamaChatResult, OllamaTimings
 from backend.app.literature_maps.application import analysis as analysis_module
@@ -133,15 +134,46 @@ def _real_manifest_fixture(
     manifests = {} if manifest_mode == "missing" else {("doc-real", "v1"): manifest}
     if manifest_mode == "mismatch":
         manifest["indexed_source_sha256"] = "b" * 64
+    canonical_record = {
+        "schema_version": "knowledge-document-v1",
+        "migration_version": "018-document-v1",
+        "document_id": "doc-real",
+        "file_name": "paper.md",
+        "media_type": "text/markdown",
+        "source_sha256": source_hash,
+        "indexed_source_sha256": source_hash,
+        "source_hash_state": "verified",
+        "stored_name": "doc-real.md",
+        "source_immutable": True,
+        "status": "indexed",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "page_count": None,
+        "chunk_count": len(payloads),
+        "chunkers": {
+            "v1": {
+                "status": "indexed",
+                "chunk_count": len(payloads),
+                "progress": 100,
+                "error": None,
+            },
+            "v2": {
+                "status": "pending",
+                "chunk_count": 0,
+                "progress": 0,
+                "error": None,
+            },
+        },
+        "error": None,
+    }
     FinalizeBundleStore(root).stage(
         "map-generation",
         candidate_collection="papers_rebuild_map-generation",
-        metadata=[{"document_id": "doc-real", "source_sha256": source_hash, "schema_version": "knowledge-document-v1"}],
+        metadata=[canonical_record],
         manifests=manifests,
         collection_fingerprint="a" * 64,
     )
     FinalizeBundleStore(root).commit("map-generation")
-    return kb_dir, {"document_id": "doc-real", "source_sha256": source_hash, "project_id": record_project_id}
+    return kb_dir, {**canonical_record, "project_id": record_project_id}
 
 
 @pytest.mark.parametrize(
@@ -180,6 +212,37 @@ def test_full_source_gate_rejects_changed_generation_marker(tmp_path, monkeypatc
     store = LiteratureMapStore(tmp_path / "maps.sqlite3")
     item = store.create_map("owner-a", topic="fuzzing", project_id="project-a")
     node = MapPaper.new(item.map_id, semantic_scholar_id="s2-generation", title="Generation", document_id="doc-real")
+    store.add_nodes(item.map_id, "owner-a", [node])
+    service = MapAnalysisService(store=store, executor=None)
+    assert service.source_status(item.map_id, node.node_id, "owner-a")["fulltext_ready"] is False
+
+
+def test_full_source_gate_rejects_persistent_mismatch_after_legal_marker_refresh(tmp_path, monkeypatch):
+    kb_dir, record = _real_manifest_fixture(tmp_path)
+    meta_path = kb_dir / "papers.json"
+    publish_index_state(
+        meta_path,
+        "doc-real",
+        "v1",
+        status="failed",
+        progress=0,
+        chunk_count=0,
+        error="SOURCE_HASH_MISMATCH",
+        indexed_source_sha256=record["source_sha256"],
+        source_hash_state="mismatch",
+    )
+    # A later legal refresh of the shared marker must not revive this
+    # document's old ready manifest; the read gate must consult canonical
+    # document state as well as the generation and manifest.
+    FinalizeBundleStore(kb_dir.parents[1]).refresh_live_digests()
+    FinalizeBundleStore(kb_dir.parents[1]).require_generation()
+    refreshed = json.loads(meta_path.read_text(encoding="utf-8"))[0]
+    refreshed["project_id"] = record["project_id"]
+    monkeypatch.setattr(analysis_module, "KB_DIR", kb_dir)
+    monkeypatch.setattr(analysis_module, "list_documents_for_project", lambda *_args, **_kwargs: [refreshed])
+    store = LiteratureMapStore(tmp_path / "maps.sqlite3")
+    item = store.create_map("owner-a", topic="mismatch", project_id="project-a")
+    node = MapPaper.new(item.map_id, semantic_scholar_id="s2-mismatch", title="Mismatch", document_id="doc-real")
     store.add_nodes(item.map_id, "owner-a", [node])
     service = MapAnalysisService(store=store, executor=None)
     assert service.source_status(item.map_id, node.node_id, "owner-a")["fulltext_ready"] is False

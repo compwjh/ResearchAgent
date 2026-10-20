@@ -132,6 +132,25 @@ class MapAnalysisService:
         source_hash = str((record or {}).get("source_sha256") or "").strip()
         if record is None or not source_hash:
             return None
+        # The generation marker is shared by every document.  A later valid
+        # refresh must not make an older ready manifest usable after this
+        # document was durably marked mismatched or otherwise unpublished.
+        # Read the canonical v1 state as part of this narrow 043 gate.
+        chunkers = (record or {}).get("chunkers")
+        v1_state = chunkers.get("v1") if isinstance(chunkers, dict) else None
+        try:
+            v1_progress = int((v1_state or {}).get("progress", -1))
+        except (TypeError, ValueError):
+            v1_progress = -1
+        if (
+            (record or {}).get("source_hash_state") != "verified"
+            or (record or {}).get("indexed_source_sha256") != source_hash
+            or not isinstance(v1_state, dict)
+            or v1_state.get("status") != "indexed"
+            or v1_progress != 100
+            or v1_state.get("error") not in (None, "")
+        ):
+            return None
         try:
             generation = FinalizeBundleStore(KB_DIR.parents[1]).require_generation()
             manifest = InspectionManifestStore(KB_DIR).read(document_id, "v1").to_dict()

@@ -15,7 +15,7 @@ import re
 import tempfile
 import threading
 import uuid
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import wraps
@@ -45,6 +45,18 @@ def _with_manifest_lock(function):
             return function(*args, **kwargs)
 
     return locked
+
+
+@contextmanager
+def publication_mutation_lock():
+    """Expose the existing process lock for one manifest publication.
+
+    Direct document indexing uses this same lock as finalize/tombstone
+    mutations so manifest, strict metadata, and generation marker updates are
+    serialized without introducing a second publication protocol.
+    """
+    with _lock:
+        yield
 
 # JSON Schema carries these as ``x-*`` annotations; the runtime must enforce
 # them on both publish and read because Draft 2020-12 has no byte-length rule.
