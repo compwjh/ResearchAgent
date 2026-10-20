@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from backend.app.literature_maps.application.runtime import get_literature_map_service
+from backend.app.literature_maps.application.analysis import MapAnalysisError
 from backend.app.literature_maps.domain.models import SCHEMA_VERSION
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStoreError
 from backend.app.memory.repository import OWNER_ID
@@ -95,8 +96,27 @@ class NodeMutationRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class MapAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    evidence_level: Literal["abstract", "full"]
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class MapConversationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    evidence_level: Literal["abstract", "full"]
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
 def _error(error: Exception) -> HTTPException:
     code = str(error)
+    if isinstance(error, MapAnalysisError):
+        return HTTPException(status_code=error.status, detail={"code": error.code, "message": error.message, "retryable": error.retryable})
+    if code in {"MAP_ABSTRACT_UNAVAILABLE", "MAP_FULLTEXT_UNAVAILABLE", "MAP_EVIDENCE_UNAVAILABLE", "MAP_ANALYSIS_SOURCE_CHANGED", "MAP_NODE_REMOVED", "MAP_CONVERSATION_PROJECT_MISMATCH"}:
+        return HTTPException(status_code=409, detail={"code": code, "message": "当前论文依据或会话状态已变化，请重新读取后重试", "retryable": False})
     if isinstance(error, LookupError) or code in {"PROJECT_NOT_FOUND", "IMPORT_BRIDGE_UNAVAILABLE"}:
         status = 404 if code != "IMPORT_BRIDGE_UNAVAILABLE" else 503
         error_code = "MAP_NOT_FOUND" if isinstance(error, LookupError) else code
@@ -203,6 +223,85 @@ def get_literature_map_node(map_id: str, node_id: str):
         return _envelope(node=get_literature_map_service().node(map_id, node_id, OWNER_ID).to_dict())
     except Exception as error:
         raise _error(error) from error
+
+
+def _analysis_service():
+    service = get_literature_map_service()
+    analysis = getattr(service, "analysis_service", None)
+    if analysis is None:
+        raise MapAnalysisError("MAP_ANALYSIS_UNAVAILABLE", "地图分析暂不可用", retryable=True, status=503)
+    return analysis
+
+
+@router.get("/{map_id}/nodes/{node_id}/analyses")
+def list_literature_map_analyses(map_id: str, node_id: str):
+    try:
+        analysis = _analysis_service()
+        source_status = analysis.source_status(map_id, node_id, OWNER_ID)
+        items = analysis.store.list_analyses(map_id, node_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(analyses=[item.to_dict() for item in items], source_status=source_status)
+
+
+@router.post("/{map_id}/nodes/{node_id}/analyses", status_code=202)
+def create_literature_map_analysis(map_id: str, node_id: str, payload: MapAnalysisRequest):
+    try:
+        if payload.model:
+            # Keep model existence/capability validation on the existing
+            # conversation boundary; the map endpoint only carries the
+            # validated selection into its durable job.
+            from backend.app.api.routes_conversations import _validate_model
+
+            _validate_model(payload.model)
+        analysis, job, _created = _analysis_service().request_analysis(
+            map_id,
+            node_id,
+            OWNER_ID,
+            evidence_level=payload.evidence_level,
+            model=payload.model,
+            idempotency_key=payload.idempotency_key,
+        )
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(map_id=map_id, node_id=node_id, analysis_id=analysis.analysis_id, job_id=job.job_id, status=job.status, analysis=analysis.to_dict(), job=job.to_dict())
+
+
+@router.get("/{map_id}/analyses/{analysis_id}")
+def get_literature_map_analysis(map_id: str, analysis_id: str):
+    try:
+        analysis_service = _analysis_service()
+        analysis = analysis_service.store.get_analysis(analysis_id, map_id, OWNER_ID)
+        if analysis is None:
+            raise LookupError("analysis not found")
+        job = analysis_service.store.get_analysis_job(analysis_id, map_id, OWNER_ID)
+        if job is None:
+            raise LookupError("analysis job not found")
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(analysis=analysis.to_dict(), job=job.to_dict())
+
+
+@router.post("/{map_id}/nodes/{node_id}/conversation")
+def create_literature_map_conversation(map_id: str, node_id: str, payload: MapConversationRequest):
+    try:
+        result = _analysis_service().create_conversation(
+            map_id,
+            node_id,
+            OWNER_ID,
+            evidence_level=payload.evidence_level,
+            idempotency_key=payload.idempotency_key,
+        )
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
+
+
+# Keep the plural spelling as a harmless compatibility alias while the
+# frozen contract uses the singular resource name.
+@router.post("/{map_id}/nodes/{node_id}/conversations")
+def create_literature_map_conversation_plural(map_id: str, node_id: str, payload: MapConversationRequest):
+    return create_literature_map_conversation(map_id, node_id, payload)
 
 
 @router.post("/{map_id}/previews", status_code=202)

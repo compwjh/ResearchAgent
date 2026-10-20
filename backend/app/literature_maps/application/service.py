@@ -249,6 +249,11 @@ class LiteratureMapService:
                     node_id, query = request
                     self.executor.submit(self._run_preview, job.map_id, owner, preview_id, job.operation.split(":", 1)[1], node_id, query)
                 continue
+            if job.operation == "analysis":
+                # MapAnalysisService owns its own CAS/terminal transition;
+                # the graph worker must never interpret an analysis row as a
+                # discovery job or mutate map.status.
+                continue
             if self.executor is not None:
                 self.executor.submit(self.run_job, job.job_id, owner)
         return len(jobs)
@@ -294,6 +299,14 @@ class LiteratureMapService:
             raise LookupError("job not found")
         if job.status not in {"failed", "partial", "stopped"}:
             raise ValueError("job is not retryable")
+        if job.operation == "analysis":
+            retry = self.store.retry_job(job_id, map_id, owner_id)
+            if retry is None:
+                raise ValueError("job is not retryable")
+            analysis = getattr(self, "analysis_service", None)
+            if analysis is not None and analysis.executor is not None:
+                analysis.executor.submit(analysis.run_analysis_job, job_id, owner_id)
+            return retry
         nodes = self.store.list_nodes(map_id, owner_id)
         failed_units = [
             item for item in job.failed_units

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.app.literature_maps.domain.import_diagnostics import normalize_import_diagnostics
+from backend.app.literature_maps.domain.analysis import MapAnalysis, MapConversationBinding
 from backend.app.literature_maps.domain.models import (
     LiteratureMap,
     MapEdge,
@@ -33,7 +34,7 @@ from backend.app.literature_maps.domain.models import (
 )
 from backend.app.platform.config import BASE_DIR
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _WRITE_LOCK = threading.RLock()
 _UNSET = object()
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
@@ -276,6 +277,44 @@ class LiteratureMapStore:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(map_id, operation, idempotency_key)
                 );
+                CREATE TABLE IF NOT EXISTS literature_map_analyses(
+                    analysis_id TEXT PRIMARY KEY,
+                    map_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    evidence_level TEXT NOT NULL,
+                    source_version TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    job_id TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    result_json TEXT,
+                    error_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(map_id, node_id, version),
+                    UNIQUE(map_id, node_id, idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_literature_map_analyses_node
+                    ON literature_map_analyses(map_id, node_id, version DESC);
+                CREATE TABLE IF NOT EXISTS literature_map_conversation_bindings(
+                    binding_id TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    map_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    project_id_snapshot TEXT,
+                    evidence_level TEXT NOT NULL,
+                    source_version TEXT NOT NULL,
+                    context_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(map_id, node_id, idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_literature_map_bindings_conversation
+                    ON literature_map_conversation_bindings(owner_id, conversation_id, status);
                 """
             )
             node_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_nodes)").fetchall()}
@@ -559,6 +598,7 @@ class LiteratureMapStore:
             # before jobs so SQLite's foreign-key guard cannot reject a
             # normal map deletion with an outstanding preview.
             db.execute("DELETE FROM literature_map_previews WHERE map_id=?", (map_id,))
+            db.execute("DELETE FROM literature_map_analyses WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_jobs WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_edges WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_nodes WHERE map_id=?", (map_id,))
@@ -586,6 +626,261 @@ class LiteratureMapStore:
         with self.connection() as db:
             row = db.execute("SELECT n.* FROM literature_map_nodes n JOIN literature_maps m ON m.map_id=n.map_id WHERE n.map_id=? AND n.node_id=? AND m.owner_id=? AND m.deleted_at IS NULL", (map_id, node_id, owner_id)).fetchone()
         return _node(row) if row else None
+
+    # ------------------------------------------------------------------
+    # Map analysis and conversation bridge.  These rows intentionally live
+    # beside map jobs but never update ``literature_maps.status``: an
+    # analysis is an auxiliary user action, not a graph-building job.
+    def create_analysis(
+        self,
+        map_id: str,
+        node_id: str,
+        owner_id: str,
+        *,
+        evidence_level: str,
+        source_version: str,
+        model_id: str,
+        idempotency_key: str,
+        params_hash: str | None = None,
+    ) -> tuple[MapAnalysis, MapJob, bool]:
+        if evidence_level not in {"abstract", "full"}:
+            raise ValueError("INVALID_EVIDENCE_LEVEL")
+        if not str(idempotency_key or "").strip():
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        now = iso_now()
+        with self.transaction() as db:
+            map_row = db.execute(
+                "SELECT map_id FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            node_row = db.execute(
+                "SELECT node_id FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                (map_id, node_id),
+            ).fetchone()
+            if map_row is None or node_row is None:
+                raise LookupError("map or node not found")
+            prior = db.execute(
+                "SELECT * FROM literature_map_analyses WHERE map_id=? AND node_id=? AND idempotency_key=?",
+                (map_id, node_id, idempotency_key),
+            ).fetchone()
+            if prior is not None:
+                if (
+                    prior["evidence_level"] != evidence_level
+                    or prior["source_version"] != source_version
+                    or prior["model_id"] != model_id
+                ):
+                    raise ValueError("idempotency conflict")
+                job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (prior["job_id"],)).fetchone()
+                if job_row is None:
+                    raise LiteratureMapStoreError("MAP_ANALYSIS_STATE_INVALID")
+                return _analysis(prior), _job(job_row), False
+            version_row = db.execute(
+                "SELECT COALESCE(MAX(version), 0) AS latest FROM literature_map_analyses WHERE map_id=? AND node_id=?",
+                (map_id, node_id),
+            ).fetchone()
+            version = int(version_row["latest"] or 0) + 1
+            analysis_id = uuid.uuid4().hex
+            # Prefix the key so an analysis cannot accidentally reuse a map
+            # creation key in the shared legacy jobs table.
+            job_key = f"analysis:{idempotency_key}"
+            job = MapJob(
+                uuid.uuid4().hex,
+                map_id,
+                "analysis",
+                "queued",
+                "analysis",
+                {"analysis_id": analysis_id, "node_id": node_id, "evidence_level": evidence_level},
+                {"analysis_version": version},
+                [],
+                job_key,
+                now,
+                now,
+            )
+            db.execute(
+                "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), job_key, params_hash, now, now),
+            )
+            db.execute(
+                "INSERT INTO literature_map_analyses(analysis_id,map_id,node_id,version,status,evidence_level,source_version,model_id,job_id,idempotency_key,result_json,error_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (analysis_id, map_id, node_id, version, "pending", evidence_level, source_version, model_id, job.job_id, idempotency_key, None, None, now, now),
+            )
+            self._append_event(db, job)
+            analysis = MapAnalysis(analysis_id, map_id, node_id, version, "pending", evidence_level, source_version, model_id, job.job_id, None, None, idempotency_key, now, now)
+            return analysis, job, True
+
+    def get_analysis(self, analysis_id: str, map_id: str, owner_id: str) -> MapAnalysis | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT a.* FROM literature_map_analyses a JOIN literature_maps m ON m.map_id=a.map_id WHERE a.analysis_id=? AND a.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL",
+                (analysis_id, map_id, owner_id),
+            ).fetchone()
+        return _analysis(row) if row else None
+
+    def list_analyses(self, map_id: str, node_id: str, owner_id: str) -> list[MapAnalysis]:
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT a.* FROM literature_map_analyses a JOIN literature_maps m ON m.map_id=a.map_id WHERE a.map_id=? AND a.node_id=? AND m.owner_id=? AND m.deleted_at IS NULL ORDER BY a.version DESC",
+                (map_id, node_id, owner_id),
+            ).fetchall()
+        return [_analysis(row) for row in rows]
+
+    def get_analysis_job(self, analysis_id: str, map_id: str, owner_id: str) -> MapJob | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT j.* FROM literature_map_jobs j JOIN literature_map_analyses a ON a.job_id=j.job_id JOIN literature_maps m ON m.map_id=a.map_id WHERE a.analysis_id=? AND a.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL",
+                (analysis_id, map_id, owner_id),
+            ).fetchone()
+        return _job(row) if row else None
+
+    def claim_analysis_job(self, job_id: str, map_id: str, owner_id: str) -> MapJob | None:
+        with self.transaction() as db:
+            current = db.execute(
+                "SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='analysis' AND status='running' AND EXISTS (SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL)",
+                (job_id, map_id, map_id, owner_id),
+            ).fetchone()
+            if current is not None:
+                db.execute("UPDATE literature_map_analyses SET status='running',updated_at=? WHERE job_id=? AND status='pending'", (iso_now(), job_id))
+                return _job(current)
+            changed = db.execute(
+                "UPDATE literature_map_jobs SET status='running',updated_at=? WHERE job_id=? AND map_id=? AND operation='analysis' AND status='queued' AND EXISTS (SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL)",
+                (iso_now(), job_id, map_id, map_id, owner_id),
+            )
+            if changed.rowcount != 1:
+                return None
+            db.execute("UPDATE literature_map_analyses SET status='running',updated_at=? WHERE job_id=? AND status='pending'", (iso_now(), job_id))
+            row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (job_id,)).fetchone()
+            if row is None:
+                return None
+            job = _job(row)
+            self._append_event(db, job, event_type="started")
+            return job
+
+    def finish_analysis(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        status: str,
+        result: Mapping[str, Any] | None = None,
+        error: Mapping[str, Any] | None = None,
+    ) -> MapAnalysis | None:
+        if status not in {"completed", "failed"}:
+            raise ValueError("invalid analysis status")
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT a.*,j.status AS job_status,j.step,j.counts_json,j.failed_units_json,j.cursor_json,j.operation,j.idempotency_key,j.created_at AS job_created_at FROM literature_map_analyses a JOIN literature_map_jobs j ON j.job_id=a.job_id JOIN literature_maps m ON m.map_id=a.map_id WHERE a.job_id=? AND a.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL",
+                (job_id, map_id, owner_id),
+            ).fetchone()
+            if row is None or row["job_status"] != "running":
+                return None
+            now = iso_now()
+            safe_error = _safe_analysis_error(error)
+            db.execute(
+                "UPDATE literature_map_analyses SET status=?,result_json=?,error_json=?,updated_at=? WHERE job_id=? AND status='running'",
+                (status, _dump(result) if status == "completed" else None, _dump(safe_error) if safe_error else None, now, job_id),
+            )
+            db.execute(
+                "UPDATE literature_map_jobs SET status=?,step='finished',updated_at=? WHERE job_id=? AND status='running'",
+                (status, now, job_id),
+            )
+            job = MapJob(job_id, map_id, "analysis", status, "finished", _load(row["cursor_json"], {}), _load(row["counts_json"], {}), _load(row["failed_units_json"], []), row["idempotency_key"], row["job_created_at"], now)
+            self._append_event(db, job, event_type="completed" if status == "completed" else "failed", error_code=(safe_error or {}).get("code"))
+            fresh = db.execute("SELECT * FROM literature_map_analyses WHERE job_id=?", (job_id,)).fetchone()
+        return _analysis(fresh) if fresh else None
+
+    def reserve_conversation_binding(
+        self,
+        map_id: str,
+        node_id: str,
+        owner_id: str,
+        *,
+        project_id_snapshot: str | None,
+        evidence_level: str,
+        source_version: str,
+        context: Mapping[str, Any],
+        idempotency_key: str,
+        params_hash: str | None = None,
+    ) -> tuple[MapConversationBinding, bool]:
+        if not str(idempotency_key or "").strip():
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        now = iso_now()
+        with self.transaction() as db:
+            valid = db.execute(
+                "SELECT m.map_id,n.node_id FROM literature_maps m JOIN literature_map_nodes n ON n.map_id=m.map_id WHERE m.map_id=? AND n.node_id=? AND m.owner_id=? AND m.deleted_at IS NULL",
+                (map_id, node_id, owner_id),
+            ).fetchone()
+            if valid is None:
+                raise LookupError("map or node not found")
+            prior = db.execute(
+                "SELECT * FROM literature_map_conversation_bindings WHERE map_id=? AND node_id=? AND idempotency_key=?",
+                (map_id, node_id, idempotency_key),
+            ).fetchone()
+            if prior is not None:
+                if prior["evidence_level"] != evidence_level or prior["source_version"] != source_version or prior["project_id_snapshot"] != project_id_snapshot:
+                    raise ValueError("idempotency conflict")
+                return _binding(prior), False
+            conversation_id = uuid.uuid4().hex
+            binding_id = uuid.uuid4().hex
+            db.execute(
+                "INSERT INTO literature_map_conversation_bindings(binding_id,owner_id,map_id,node_id,conversation_id,project_id_snapshot,evidence_level,source_version,context_json,status,idempotency_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (binding_id, owner_id, map_id, node_id, conversation_id, project_id_snapshot, evidence_level, source_version, _dump(dict(context)), "reserved", idempotency_key, now, now),
+            )
+            return MapConversationBinding(binding_id, owner_id, map_id, node_id, conversation_id, project_id_snapshot, evidence_level, source_version, dict(context), "reserved", idempotency_key, now, now), True
+
+    def get_conversation_binding_for_request(
+        self, map_id: str, node_id: str, owner_id: str, idempotency_key: str
+    ) -> MapConversationBinding | None:
+        """Return any historical reservation for stale-session recovery.
+
+        Unlike ``get_conversation_binding`` this includes reserved and
+        superseded rows, but remains owner-scoped and never exposes another
+        user's idempotency history.
+        """
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM literature_map_conversation_bindings WHERE map_id=? AND node_id=? AND owner_id=? AND idempotency_key=? ORDER BY updated_at DESC LIMIT 1",
+                (map_id, node_id, owner_id, idempotency_key),
+            ).fetchone()
+        return _binding(row) if row else None
+
+    def retire_conversation_binding(self, binding_id: str, owner_id: str) -> bool:
+        """Preserve an archived/deleted binding while freeing its request key."""
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT idempotency_key,status FROM literature_map_conversation_bindings WHERE binding_id=? AND owner_id=?",
+                (binding_id, owner_id),
+            ).fetchone()
+            if row is None or row["status"] == "superseded":
+                return False
+            old_key = str(row["idempotency_key"] or "")
+            retired_key = f"{old_key}:superseded:{binding_id}"
+            db.execute(
+                "UPDATE literature_map_conversation_bindings SET status='superseded',idempotency_key=?,updated_at=? WHERE binding_id=? AND owner_id=?",
+                (retired_key, iso_now(), binding_id, owner_id),
+            )
+            return True
+
+    def confirm_conversation_binding(self, binding_id: str, owner_id: str, *, conversation_id: str, context: Mapping[str, Any] | None = None) -> MapConversationBinding | None:
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM literature_map_conversation_bindings WHERE binding_id=? AND owner_id=?", (binding_id, owner_id)).fetchone()
+            if row is None:
+                return None
+            if row["conversation_id"] != conversation_id:
+                raise ValueError("conversation binding conflict")
+            db.execute("UPDATE literature_map_conversation_bindings SET status='confirmed',context_json=?,updated_at=? WHERE binding_id=? AND owner_id=?", (_dump(dict(context or _load(row["context_json"], {}))), iso_now(), binding_id, owner_id))
+            fresh = db.execute("SELECT * FROM literature_map_conversation_bindings WHERE binding_id=?", (binding_id,)).fetchone()
+        return _binding(fresh) if fresh else None
+
+    def get_conversation_binding(self, conversation_id: str, owner_id: str) -> MapConversationBinding | None:
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM literature_map_conversation_bindings WHERE conversation_id=? AND owner_id=? AND status='confirmed' ORDER BY updated_at DESC LIMIT 1", (conversation_id, owner_id)).fetchone()
+        return _binding(row) if row else None
+
+    def clear_conversation_bindings(self, conversation_id: str, owner_id: str) -> int:
+        with self.transaction() as db:
+            changed = db.execute("DELETE FROM literature_map_conversation_bindings WHERE conversation_id=? AND owner_id=?", (conversation_id, owner_id))
+            return changed.rowcount
 
     def create_preview(
         self,
@@ -1063,6 +1358,19 @@ class LiteratureMapStore:
             ).fetchone()
             if row is None or row["status"] not in {"failed", "partial", "stopped"}:
                 return None
+            if row["operation"] == "analysis":
+                now = iso_now()
+                db.execute(
+                    "UPDATE literature_map_jobs SET status='queued',step='analysis',updated_at=? WHERE job_id=? AND map_id=? AND status IN ('failed','partial','stopped')",
+                    (now, job_id, map_id),
+                )
+                if db.execute("SELECT changes()").fetchone()[0] != 1:
+                    return None
+                db.execute("UPDATE literature_map_analyses SET status='pending',result_json=NULL,error_json=NULL,updated_at=? WHERE job_id=?", (now, job_id))
+                fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (job_id,)).fetchone()
+                job = _job(fresh)
+                self._append_event(db, job, event_type="retry")
+                return job
             failed_units = _load(row["failed_units_json"], [])
             if isinstance(failed_units, list) and failed_units and not any(isinstance(item, Mapping) and item.get("retryable") is True for item in failed_units):
                 return None
@@ -1095,7 +1403,10 @@ class LiteratureMapStore:
                 return job
             now = iso_now()
             db.execute("UPDATE literature_map_jobs SET status='stopped',updated_at=? WHERE job_id=? AND map_id=? AND status IN ('queued','running')", (now, job_id, map_id))
-            db.execute("UPDATE literature_maps SET status='stopped',updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (now, map_id, owner_id))
+            if job.operation == "analysis":
+                db.execute("UPDATE literature_map_analyses SET status='failed',error_json=?,updated_at=? WHERE job_id=? AND status IN ('pending','running')", (_dump({"code": "MAP_ANALYSIS_STOPPED", "message": "分析任务已停止", "retryable": True}), now, job_id))
+            else:
+                db.execute("UPDATE literature_maps SET status='stopped',updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (now, map_id, owner_id))
             fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=?", (job_id, map_id)).fetchone()
             stopped = _job(fresh)
             self._append_event(db, stopped, event_type="stopped")
@@ -1441,6 +1752,59 @@ def _safe_failed_units(failed_units: Iterable[Mapping[str, Any]]) -> list[dict[s
             }
         )
     return safe
+
+
+def _analysis(row: sqlite3.Row) -> MapAnalysis:
+    result = _load(row["result_json"], None)
+    error = _load(row["error_json"], None)
+    return MapAnalysis(
+        str(row["analysis_id"]),
+        str(row["map_id"]),
+        str(row["node_id"]),
+        int(row["version"]),
+        str(row["status"]),
+        str(row["evidence_level"]),
+        str(row["source_version"]),
+        str(row["model_id"]),
+        str(row["job_id"]),
+        result if isinstance(result, dict) else None,
+        error if isinstance(error, dict) else None,
+        row["idempotency_key"],
+        str(row["created_at"]),
+        str(row["updated_at"]),
+    )
+
+
+def _binding(row: sqlite3.Row) -> MapConversationBinding:
+    context = _load(row["context_json"], {})
+    return MapConversationBinding(
+        str(row["binding_id"]),
+        str(row["owner_id"]),
+        str(row["map_id"]),
+        str(row["node_id"]),
+        str(row["conversation_id"]),
+        row["project_id_snapshot"],
+        str(row["evidence_level"]),
+        str(row["source_version"]),
+        context if isinstance(context, dict) else {},
+        str(row["status"]),
+        row["idempotency_key"],
+        str(row["created_at"]),
+        str(row["updated_at"]),
+    )
+
+
+def _safe_analysis_error(value: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    code = str(value.get("code") or "MAP_ANALYSIS_FAILED")
+    if not _ERROR_CODE_RE.fullmatch(code):
+        code = "MAP_ANALYSIS_FAILED"
+    return {
+        "code": code,
+        "message": str(value.get("message") or "分析未完成")[:300],
+        "retryable": bool(value.get("retryable", False)),
+    }
 
 
 __all__ = ["LiteratureMapStore", "LiteratureMapStoreError", "default_database_path"]

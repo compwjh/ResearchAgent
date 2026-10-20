@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 
 from backend.app.literature_maps.application.import_bridge import LiteratureMapImportBridge
+from backend.app.literature_maps.application.analysis import MapAnalysisService
 from backend.app.literature_maps.application.paper_import_adapter import PaperImportSourceAdapter
 from backend.app.literature_maps.application.service import LiteratureMapService
 from backend.app.literature_maps.domain.import_diagnostics import resolver_failure
@@ -200,11 +201,21 @@ def get_literature_map_service() -> LiteratureMapService:
             project_lookup=lambda project_id, owner_id: MemoryRepository().get_project(project_id, owner_id),
             import_bridge=bridge.import_node,
         )
+        _service.analysis_service = MapAnalysisService(
+            store=store,
+            executor=_executor,
+            memory_repository=MemoryRepository(),
+        )
     return _service
 
 
 def recover_literature_map_jobs() -> int:
-    return get_literature_map_service().recover()
+    service = get_literature_map_service()
+    recovered = service.recover()
+    analysis = getattr(service, "analysis_service", None)
+    if analysis is not None:
+        recovered += analysis.recover()
+    return recovered
 
 
 def reset_literature_map_runtime() -> None:

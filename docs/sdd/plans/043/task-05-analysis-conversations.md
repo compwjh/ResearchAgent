@@ -1,7 +1,7 @@
 # Task 05 — AI 分析与会话
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：04；被依赖：07；当前状态：**进行中（分端实现）**。
+> 依赖：04；被依赖：07；当前状态：**进行中（独立评审与修复，未部署）**。
 
 ## 一句话目标
 
@@ -9,7 +9,7 @@
 
 ## 当前证据与前置条件
 
-- Task03/04真实阶段门禁已通过且保留provider限制。本Task实际复用核实已完成，见 `artifacts/task-05/reuse-contract.md`；精确合同见 `interface-contract.md`，正在分端实现，尚未验收或部署，不将已有地图能力冒充AI分析能力。
+- Task03/04真实阶段门禁已通过且保留provider限制。本Task分端实现已交接，见 `artifacts/task-05/backend-report.md`、`frontend-report.md`；前端已修复缓存版本、DOM样式契约、轮询截止反馈并补旧结果查看，正在独立复审。后端独立评审重试成功，确认六项证据/会话边界P1，已交回开发集中修复，见 `backend-review.md`。精确合同见 `artifacts/task-05/interface-contract.md`；尚未真实模型/API验收或部署，不将已有地图能力冒充AI分析能力。
 - 复用代码位置是调研入口，未来实现时需对照实际提交核实，不复制过期实现。后续新增模块/前端文件按前置Task固定报告定位，不猜文件名。
 - Spec处于待确认时禁止实现。需求/技术门禁通过及用户明确确认后，先核对工作区/实现分支，保护Spec032暂停快照及其他任务修改。
 - 前置Task真实通过后才能执行；若预生成接口尚未冻结，应标阻塞而非自行发明第二套合同。

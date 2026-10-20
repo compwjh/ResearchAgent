@@ -14,6 +14,7 @@
   const MAX_PREVIEW_DISCOVERY_PAGES = 50;
   const MAX_MAP_NODES = 200;
   const MAX_PREVIEW_SELECTION = 20;
+  const MAX_ANALYSIS_POLL_ATTEMPTS = 120;
   const TERMINAL_JOB_STATES = new Set(['completed', 'partial', 'failed', 'stopped']);
   const LAYER_NAMES = ['citation', 'similarity'];
   // Keep this allow-list aligned with catalog_adapter.py's canonical IDs.  In
@@ -71,6 +72,19 @@
     createOptionsLoading: false,
     jobActionRequest: 0,
     nodeActionRequest: 0,
+    analysisRequest: 0,
+    analysisPollTimer: null,
+    analysisPollGeneration: 0,
+    analysisPollInFlight: false,
+    analysisPollAttempts: 0,
+    analysis: null,
+    analysisJob: null,
+    analysisHistory: [],
+    analysisSourceStatus: null,
+    analysisNodeId: null,
+    analysisViewedId: null,
+    analysisPollExhausted: false,
+    conversationRequest: 0,
   };
 
   const refs = {};
@@ -590,6 +604,16 @@
       state.selectedNodeId = null;
       state.selectedNode = null;
       state.nodeRequest += 1;
+      state.analysisRequest += 1;
+      state.analysisNodeId = null;
+      stopAnalysisPolling();
+      state.analysis = null;
+      state.analysisJob = null;
+      state.analysisHistory = [];
+      state.analysisSourceStatus = null;
+      state.analysisViewedId = null;
+      state.analysisPollExhausted = false;
+      state.conversationRequest += 1;
       state.importRequest += 1;
       refs.detailPanel.classList.remove('is-open');
       refs.detailPanel.hidden = true;
@@ -900,6 +924,16 @@
     state.positions = Object.create(null);
     state.positionsDirty = false;
     state.nodeRequest += 1;
+    state.analysisRequest += 1;
+    state.analysisNodeId = null;
+    stopAnalysisPolling();
+    state.analysis = null;
+    state.analysisJob = null;
+    state.analysisHistory = [];
+    state.analysisSourceStatus = null;
+    state.analysisViewedId = null;
+    state.analysisPollExhausted = false;
+    state.conversationRequest = 0;
     state.importRequest += 1;
     state.viewRequest += 1;
     if (previousMapId !== mapId) {
@@ -1730,6 +1764,16 @@
     const mapId = state.map.map_id;
     state.selectedNodeId = nodeId;
     state.selectedNode = null;
+    state.analysisNodeId = nodeId;
+    state.analysis = null;
+    state.analysisJob = null;
+    state.analysisHistory = [];
+    state.analysisSourceStatus = null;
+    state.analysisViewedId = null;
+    state.analysisPollExhausted = false;
+    stopAnalysisPolling();
+    state.analysisRequest += 1;
+    state.conversationRequest = 0;
     state.importRequest += 1;
     refs.detailPanel.hidden = false;
     refs.detailPanel.classList.add('is-open');
@@ -1741,6 +1785,7 @@
       if (requestId !== state.nodeRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
       state.selectedNode = payload.node || null;
       renderNodeDetail(state.selectedNode);
+      await loadNodeAnalyses(mapId, nodeId, requestId);
     } catch (error) {
       if (requestId !== state.nodeRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
       renderNodeDetail({ error: errorAction(error, '论文详情读取失败，请稍后重试。') });
@@ -1823,6 +1868,182 @@
       return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
     } catch (_) {
       return null;
+    }
+  }
+
+  function stopAnalysisPolling() {
+    if (state.analysisPollTimer) window.clearTimeout(state.analysisPollTimer);
+    state.analysisPollTimer = null;
+    state.analysisPollInFlight = false;
+    state.analysisPollAttempts = 0;
+    state.analysisPollGeneration += 1;
+  }
+
+  function analysisStatusLabel(status) {
+    const labels = { queued: '排队中', running: '生成中', completed: '已完成', failed: '失败', stopped: '已停止' };
+    return labels[status] || status || '未生成';
+  }
+
+  function analysisEvidenceLabel(level) {
+    return level === 'full' ? '全文索引片段依据' : '摘要级';
+  }
+
+  function analysisSourceVersion(status, level) {
+    const versions = status?.source_versions && typeof status.source_versions === 'object' ? status.source_versions : {};
+    return versions[level] || '';
+  }
+
+  function analysisAvailable(level) {
+    const status = state.analysisSourceStatus || {};
+    if (Array.isArray(status.available_evidence_levels)) return status.available_evidence_levels.includes(level);
+    return level === 'full' ? Boolean(status.fulltext_ready) : Boolean(status.abstract_available);
+  }
+
+  function analysisUnavailableMessage(level) {
+    if (level === 'abstract') return '缺少摘要，不能生成摘要级分析；请先获取摘要。';
+    return state.analysisSourceStatus?.unavailable_reason || '全文索引尚未就绪；请先主动入库并等待索引完成。';
+  }
+
+  function analysisErrorMessage(error) {
+    const code = String(error?.code || '').toUpperCase();
+    if (code === 'MAP_ABSTRACT_UNAVAILABLE') return '缺少摘要，不能生成摘要级分析；请先获取摘要。';
+    if (code === 'MAP_FULLTEXT_UNAVAILABLE') return '全文索引尚未就绪；请先主动入库并等待索引完成。';
+    if (code === 'MAP_EVIDENCE_UNAVAILABLE') return '没有可引用的有效证据片段，暂不生成分析。';
+    return error?.message || '分析失败，请稍后重试。';
+  }
+
+  function analysisRecords() {
+    const records = Array.isArray(state.analysisHistory) ? state.analysisHistory.slice() : [];
+    if (state.analysis?.analysis_id && !records.some((record) => record.analysis_id === state.analysis.analysis_id)) records.unshift(state.analysis);
+    return records;
+  }
+
+  function analysisResultNode(record) {
+    const result = record?.result;
+    if (!result || typeof result !== 'object' || !String(result.summary || '').trim()) return null;
+    const section = createElement('section', 'literature-map-analysis-result');
+    const heading = createElement('h4', '', record.evidence_level === 'abstract' ? '摘要级分析结果（仅基于摘要）' : '全文分析结果（全文索引片段依据）');
+    const meta = createElement('p', 'literature-map-analysis-result-meta', `依据：${analysisEvidenceLabel(record.evidence_level)} · 版本：${metadataText(record.source_version, '未提供')}`);
+    const summary = createElement('p', 'literature-map-analysis-summary', String(result.summary));
+    section.append(heading, meta, summary);
+    const citations = Array.isArray(result.citations) ? result.citations : [];
+    const refs = Array.isArray(result.source_refs) ? result.source_refs : [];
+    if (citations.length || refs.length) {
+      const evidence = createElement('p', 'literature-map-analysis-evidence', `受控来源引用：${citations.length + refs.length} 条`);
+      section.append(evidence);
+      const evidenceList = createElement('ul', 'literature-map-analysis-citations');
+      [...citations, ...refs].forEach((citation) => {
+        const value = citation && typeof citation === 'object'
+          ? (citation.text || citation.quote || citation.chunk_id || citation.document_id || citation.locator || citation.source)
+          : citation;
+        evidenceList.append(createElement('li', '', metadataText(value, '受控来源引用')));
+      });
+      section.append(evidenceList);
+    }
+    return section;
+  }
+
+  function selectedAnalysisRecord(records) {
+    if (state.analysisViewedId) {
+      const selected = records.find((record) => record?.analysis_id === state.analysisViewedId);
+      if (selected) return selected;
+    }
+    return state.analysis?.status === 'completed' ? state.analysis : records.find((record) => record?.status === 'completed');
+  }
+
+  function renderAnalysisPanel() {
+    const panel = createElement('section', 'literature-map-analysis');
+    panel.setAttribute('aria-live', 'polite');
+    panel.append(createElement('h4', 'literature-map-analysis-title', 'AI 分析与会话'));
+    const sourceStatus = state.analysisSourceStatus || {};
+    const available = Array.isArray(sourceStatus.available_evidence_levels) ? sourceStatus.available_evidence_levels : [];
+    const sourceText = available.length ? `可用依据：${available.map(analysisEvidenceLabel).join('、')}` : '当前没有可用分析依据。';
+    panel.append(createElement('p', 'literature-map-analysis-source', sourceText));
+    if (sourceStatus.unavailable_reason) panel.append(createElement('p', 'literature-map-analysis-unavailable', String(sourceStatus.unavailable_reason)));
+    const versions = sourceStatus.source_versions && typeof sourceStatus.source_versions === 'object' ? sourceStatus.source_versions : {};
+    Object.entries(versions).forEach(([level, version]) => {
+      panel.append(createElement('p', 'literature-map-analysis-version', `${analysisEvidenceLabel(level)}来源版本：${metadataText(version, '未提供')}`));
+    });
+
+    const actions = createElement('div', 'literature-map-analysis-actions');
+    const abstractButton = createElement('button', 'send-button', '基于摘要分析');
+    abstractButton.type = 'button';
+    abstractButton.disabled = !analysisAvailable('abstract') || state.analysis?.status === 'queued' || state.analysis?.status === 'running';
+    abstractButton.addEventListener('click', () => startAnalysis('abstract'));
+    const fullButton = createElement('button', 'secondary-button', '基于全文分析');
+    fullButton.type = 'button';
+    fullButton.disabled = !analysisAvailable('full') || state.analysis?.status === 'queued' || state.analysis?.status === 'running';
+    fullButton.addEventListener('click', () => startAnalysis('full'));
+    actions.append(abstractButton, fullButton);
+
+    const preferredLevel = state.analysis?.evidence_level || analysisRecords().find((record) => record?.status === 'completed')?.evidence_level || (analysisAvailable('abstract') ? 'abstract' : 'full');
+    const conversationButton = createElement('button', 'secondary-button', '关于本篇提问');
+    conversationButton.type = 'button';
+    conversationButton.disabled = !analysisAvailable(preferredLevel) || state.conversationRequest > 0;
+    conversationButton.addEventListener('click', () => createNodeConversation(preferredLevel, conversationButton));
+    actions.append(conversationButton);
+    panel.append(actions);
+
+    const records = analysisRecords();
+    if (records.length) {
+      const history = createElement('ul', 'literature-map-analysis-history');
+      records.forEach((record) => {
+        const item = createElement('li', 'literature-map-analysis-history-item');
+        const historyButton = createElement('button', 'literature-map-analysis-history-button', `v${metadataText(record.version, '—')} · ${analysisEvidenceLabel(record.evidence_level)} · ${analysisStatusLabel(record.status)} · ${metadataText(record.source_version, '无来源版本')}`);
+        historyButton.type = 'button';
+        historyButton.setAttribute('aria-pressed', state.analysisViewedId === record.analysis_id ? 'true' : 'false');
+        historyButton.addEventListener('click', () => {
+          state.analysisViewedId = record.analysis_id || null;
+          renderNodeDetail(state.selectedNode);
+        });
+        item.append(historyButton);
+        history.append(item);
+      });
+      panel.append(createElement('p', 'literature-map-analysis-history-title', '历史版本（可点击查看旧摘要）'), history);
+    }
+
+    if (state.analysis?.status === 'queued' || state.analysis?.status === 'running') {
+      if (state.analysisPollExhausted) {
+        panel.append(createElement('p', 'literature-map-analysis-state', '后台分析仍在运行；已暂停自动查询，任务不会被标记失败。'));
+        const refresh = createElement('button', 'secondary-button', '重新查询');
+        refresh.type = 'button';
+        refresh.addEventListener('click', () => resumeAnalysisPolling());
+        panel.append(refresh);
+      } else {
+        panel.append(createElement('p', 'literature-map-analysis-state', `分析${analysisStatusLabel(state.analysis.status)}…`));
+      }
+    }
+    if (state.analysis?.status === 'failed') {
+      const error = createElement('p', 'literature-map-analysis-error', analysisErrorMessage(state.analysis.error));
+      error.setAttribute('role', 'alert');
+      panel.append(error);
+      if (state.analysis.error?.retryable) {
+        const retry = createElement('button', 'secondary-button', '重新分析');
+        retry.type = 'button';
+        retry.addEventListener('click', () => startAnalysis(state.analysis.evidence_level || preferredLevel));
+        panel.append(retry);
+      }
+    }
+    const resultRecord = selectedAnalysisRecord(records);
+    const result = analysisResultNode(resultRecord);
+    if (result) panel.append(result);
+    return panel;
+  }
+
+  async function loadNodeAnalyses(mapId, nodeId, nodeRequestId) {
+    const analysisRequestId = state.analysisRequest;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(nodeId)}/analyses`);
+      if (nodeRequestId !== state.nodeRequest || analysisRequestId !== state.analysisRequest || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      state.analysisHistory = Array.isArray(payload.analyses) ? payload.analyses : [];
+      state.analysisSourceStatus = payload.source_status && typeof payload.source_status === 'object' ? payload.source_status : {};
+      state.analysisNodeId = nodeId;
+      renderNodeDetail(state.selectedNode);
+    } catch (error) {
+      if (nodeRequestId !== state.nodeRequest || analysisRequestId !== state.analysisRequest || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      state.analysisSourceStatus = { available_evidence_levels: [], unavailable_reason: analysisErrorMessage(error) };
+      state.analysisHistory = [];
+      renderNodeDetail(state.selectedNode);
     }
   }
 
@@ -1912,6 +2133,123 @@
     importStatus.id = 'literature-map-import-status';
     importStatus.setAttribute('role', 'status');
     refs.detail.append(importStatus);
+    if (state.analysisNodeId === node.node_id) refs.detail.append(renderAnalysisPanel());
+  }
+
+  function scheduleAnalysisPoll(delay, mapId, nodeId, analysisId, requestId, generation) {
+    if (!state.active || state.analysisPollGeneration !== generation) return;
+    state.analysisPollTimer = window.setTimeout(() => pollAnalysis(mapId, nodeId, analysisId, requestId, generation), delay);
+  }
+
+  function resumeAnalysisPolling() {
+    if (!state.active || !state.map?.map_id || !state.selectedNodeId || !state.analysis?.analysis_id || !['queued', 'running'].includes(state.analysis.status)) return;
+    const mapId = state.map.map_id;
+    const nodeId = state.selectedNodeId;
+    const analysisId = state.analysis.analysis_id;
+    stopAnalysisPolling();
+    state.analysisPollExhausted = false;
+    const generation = state.analysisPollGeneration;
+    renderNodeDetail(state.selectedNode);
+    scheduleAnalysisPoll(0, mapId, nodeId, analysisId, state.analysisRequest, generation);
+  }
+
+  async function pollAnalysis(mapId, nodeId, analysisId, requestId, generation) {
+    if (!state.active || state.analysisPollInFlight || state.analysisPollGeneration !== generation) return;
+    if (state.analysisPollAttempts >= MAX_ANALYSIS_POLL_ATTEMPTS) {
+      if (requestId !== state.analysisRequest || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId) return;
+      state.analysisPollTimer = null;
+      state.analysisPollExhausted = true;
+      renderNodeDetail(state.selectedNode);
+      return;
+    }
+    state.analysisPollInFlight = true;
+    state.analysisPollAttempts += 1;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/analyses/${encodeURIComponent(analysisId)}`);
+      if (requestId !== state.analysisRequest || generation !== state.analysisPollGeneration || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      state.analysis = payload.analysis || (payload.error ? { ...(state.analysis || {}), status: 'failed', error: payload.error } : state.analysis);
+      state.analysisJob = payload.job || state.analysisJob;
+      if (state.analysis?.status === 'completed' || state.analysis?.status === 'failed' || state.analysis?.status === 'stopped') {
+        stopAnalysisPolling();
+      } else {
+        scheduleAnalysisPoll(1000, mapId, nodeId, analysisId, requestId, generation);
+      }
+      renderNodeDetail(state.selectedNode);
+    } catch (error) {
+      if (requestId !== state.analysisRequest || generation !== state.analysisPollGeneration || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      state.analysis = { ...(state.analysis || {}), status: 'failed', error: { code: error.code || 'MAP_ANALYSIS_READ_FAILED', message: analysisErrorMessage(error), retryable: true } };
+      stopAnalysisPolling();
+      renderNodeDetail(state.selectedNode);
+    } finally {
+      state.analysisPollInFlight = false;
+    }
+  }
+
+  async function startAnalysis(evidenceLevel) {
+    if (!state.map?.map_id || !state.selectedNodeId || !analysisAvailable(evidenceLevel)) return;
+    const mapId = state.map.map_id;
+    const nodeId = state.selectedNodeId;
+    const requestId = ++state.analysisRequest;
+    const generation = state.analysisPollGeneration + 1;
+    stopAnalysisPolling();
+    state.analysisPollGeneration = generation;
+    state.analysisNodeId = nodeId;
+    state.analysisViewedId = null;
+    state.analysisPollExhausted = false;
+    state.analysis = { analysis_id: null, map_id: mapId, node_id: nodeId, version: null, status: 'queued', evidence_level: evidenceLevel, source_version: analysisSourceVersion(state.analysisSourceStatus, evidenceLevel), result: null, error: null };
+    state.analysisJob = null;
+    renderNodeDetail(state.selectedNode);
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(nodeId)}/analyses`, {
+        method: 'POST',
+        body: JSON.stringify({ evidence_level: evidenceLevel, idempotency_key: makeIdempotencyKey() }),
+      });
+      if (requestId !== state.analysisRequest || generation !== state.analysisPollGeneration || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      state.analysis = payload.analysis || { ...(state.analysis || {}), analysis_id: payload.analysis_id, status: payload.status || 'queued', evidence_level: evidenceLevel, job_id: payload.job_id };
+      state.analysisJob = payload.job || null;
+      renderNodeDetail(state.selectedNode);
+      const analysisId = payload.analysis_id || state.analysis?.analysis_id;
+      if (analysisId && !['completed', 'failed', 'stopped'].includes(state.analysis?.status)) scheduleAnalysisPoll(0, mapId, nodeId, analysisId, requestId, generation);
+    } catch (error) {
+      if (requestId !== state.analysisRequest || generation !== state.analysisPollGeneration || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      state.analysis = { ...(state.analysis || {}), status: 'failed', error: { code: error.code || 'MAP_ANALYSIS_REQUEST_FAILED', message: analysisErrorMessage(error), retryable: Boolean(error.retryable || error.status >= 500) } };
+      renderNodeDetail(state.selectedNode);
+    }
+  }
+
+  function navigateToConversation(conversationId) {
+    if (!conversationId) return;
+    if (typeof window.openConversationFromWorkspace === 'function') {
+      window.openConversationFromWorkspace(conversationId);
+      return;
+    }
+    if (typeof window.openExistingConversation === 'function') {
+      window.openExistingConversation(conversationId);
+      return;
+    }
+    const path = `/c/${encodeURIComponent(conversationId)}`;
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
+  async function createNodeConversation(evidenceLevel, button) {
+    if (!state.map?.map_id || !state.selectedNodeId || !analysisAvailable(evidenceLevel)) return;
+    const mapId = state.map.map_id;
+    const nodeId = state.selectedNodeId;
+    const requestId = ++state.conversationRequest;
+    if (button) button.disabled = true;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(nodeId)}/conversation`, {
+        method: 'POST',
+        body: JSON.stringify({ evidence_level: evidenceLevel, idempotency_key: makeIdempotencyKey() }),
+      });
+      if (requestId !== state.conversationRequest || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      navigateToConversation(payload.conversation_id);
+    } catch (error) {
+      if (requestId !== state.conversationRequest || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
+      if (button) button.disabled = false;
+      setStatus(`打开论文会话失败：${analysisErrorMessage(error)}`, 'error');
+    }
   }
 
   function openKnowledgeBaseDocument(documentId) {

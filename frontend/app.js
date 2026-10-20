@@ -6248,3 +6248,7 @@ if (kbQuestion && kbForm) {
     kbForm.requestSubmit();
   });
 }
+
+// Literature-map analysis bridges into the existing conversation navigator;
+// the map module never creates a second chat UI or invents conversation IDs.
+window.openConversationFromWorkspace = openConversationFromWorkspace;

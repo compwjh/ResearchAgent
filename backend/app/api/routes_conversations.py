@@ -47,6 +47,8 @@ from backend.app.knowledge_base.application import (
     list_documents_for_project,
 )
 from backend.app.literature_maps.application.runtime import get_literature_map_service
+from backend.app.literature_maps.application.analysis import MapAnalysisError, MapAnalysisService
+from backend.app.literature_maps.infrastructure.store import LiteratureMapStore, default_database_path
 from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.memory.session_search import search_sessions
@@ -98,6 +100,26 @@ def get_skill_registry():
 def get_tool_registry():
     """Conversation seam for the product Tool registry (not IDE tools)."""
     return _tool_routes.get_tool_registry()
+
+
+def _read_map_conversation_binding(conversation_id: str, owner_id: str):
+    """Read only the persisted binding without booting the map runtime.
+
+    The map runtime also wires discovery/import workers and may be unavailable
+    while ordinary chat is still healthy.  A direct store read lets us
+    distinguish a successful ``None`` (ordinary conversation) from a binding
+    storage error (fail closed).  The returned analysis service is the narrow,
+    read-only context gate used only after a binding is found.
+    """
+    database_path = default_database_path()
+    # A fresh installation has no map database and therefore no persisted
+    # binding.  Avoid creating one as a side effect of ordinary chat; once a
+    # database exists, all read/lock/schema errors remain fail-closed below.
+    if not database_path.exists():
+        return None, None
+    store = LiteratureMapStore(database_path)
+    binding = store.get_conversation_binding(conversation_id, owner_id)
+    return binding, MapAnalysisService(store=store) if binding is not None else None
 
 
 def detect_skill(message, available_skills):
@@ -1014,32 +1036,129 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 project = repo.get_project(conversation.project_id, OWNER_ID)
                 project_instructions = project.instructions if project else None
             rag_hits = []
-            # Retrieval is opt-in for a project with at least one visible
-            # document.  Unbound conversations never query project documents.
-            if conversation.project_id:
-                try:
+            # A map-created conversation carries a server-side immutable
+            # paper context.  Narrow only that conversation's RAG scope;
+            # ordinary project conversations retain the established
+            # project-wide allowlist behavior, and ordinary unbound chats
+            # still do not query the shared document pool.
+            binding = None
+            binding_service = None
+            binding_lookup_failed = False
+            try:
+                binding, binding_service = _read_map_conversation_binding(
+                    conversation.conversation_id,
+                    OWNER_ID,
+                )
+            except Exception:
+                # A binding lookup failure is not equivalent to "no binding".
+                # Falling back to project-wide retrieval here could expose
+                # unrelated papers to a map-created conversation.
+                binding_lookup_failed = True
+            if binding_lookup_failed:
+                safe_message = "论文证据上下文暂不可用，请稍后重试"
+                with contextlib.suppress(Exception):
+                    repo.update_message(assistant_message.message_id, OWNER_ID, content=safe_message, status="failed")
+                    repo.finalize_processing_steps(
+                        assistant_message.message_id,
+                        status="failed",
+                        summary="论文证据上下文不可用，已阻止检索",
+                    )
+                yield frame(
+                    "error",
+                    code="MAP_CONVERSATION_CONTEXT_UNAVAILABLE",
+                    message=safe_message,
+                    retryable=True,
+                )
+                finished = True
+                yield frame(
+                    "done",
+                    conversation_id=conversation.conversation_id,
+                    message_id=assistant_message.message_id,
+                    status="failed",
+                )
+                return
+            try:
+                if binding is not None:
+                    context = binding_service.conversation_context(
+                        binding,
+                        OWNER_ID,
+                        conversation.project_id,
+                    )
+                    visible_document_ids = context["visible_document_ids"]
+                    retrieval_chunker = context.get("chunker")
+                    visible_documents = (
+                        [
+                            {"document_id": document_id}
+                            for document_id in visible_document_ids
+                        ]
+                        if visible_document_ids
+                        else []
+                    )
+                elif conversation.project_id:
+                    retrieval_chunker = None
                     visible_documents = list_documents_for_project(conversation.project_id, owner_id=OWNER_ID)
-                except Exception:
+                else:
+                    retrieval_chunker = None
                     visible_documents = []
-                if visible_documents:
-                    rag_running = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "running", label="知识库检索")
-                    yield frame("progress", step_id=rag_running.step_id, kind=rag_running.kind, label=rag_running.label, status="running", summary=None)
-                    try:
-                        # Reuse the canonical dense+sparse/RRF/reranker facade.
-                        # The same canonical allowlist reaches both dense and
-                        # sparse query legs before RRF/reranking/top-k.
-                        document_ids = [record["document_id"] for record in visible_documents]
-                        rag_hits = hybrid_search(
-                            user_message.content,
-                            top_k=10,
-                            document_ids=document_ids,
-                        )[:5]
-                        rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索")
-                        yield frame("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
-                    except Exception:
-                        rag_hits = []
-                        rag_failed = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "failed", "知识库检索失败，已跳过", label="知识库检索")
-                        yield frame("progress", step_id=rag_failed.step_id, kind=rag_failed.kind, label=rag_failed.label, status="failed", summary=rag_failed.summary)
+            except MapAnalysisError as error:
+                safe_message = error.message
+                with contextlib.suppress(Exception):
+                    repo.update_message(assistant_message.message_id, OWNER_ID, content=safe_message, status="failed")
+                    repo.finalize_processing_steps(
+                        assistant_message.message_id,
+                        status="failed",
+                        summary="论文证据上下文校验失败，已阻止检索",
+                    )
+                yield frame("error", code=error.code, message=safe_message, retryable=error.retryable)
+                finished = True
+                yield frame(
+                    "done",
+                    conversation_id=conversation.conversation_id,
+                    message_id=assistant_message.message_id,
+                    status="failed",
+                )
+                return
+            except Exception:
+                # Binding validation and allowlist reads fail closed.  Only an
+                # explicitly absent binding is allowed to use the existing
+                # ordinary project scope below.
+                safe_message = "论文证据上下文暂不可用，请稍后重试"
+                with contextlib.suppress(Exception):
+                    repo.update_message(assistant_message.message_id, OWNER_ID, content=safe_message, status="failed")
+                    repo.finalize_processing_steps(
+                        assistant_message.message_id,
+                        status="failed",
+                        summary="论文证据上下文读取失败，已阻止检索",
+                    )
+                yield frame("error", code="MAP_CONVERSATION_CONTEXT_UNAVAILABLE", message=safe_message, retryable=True)
+                finished = True
+                yield frame(
+                    "done",
+                    conversation_id=conversation.conversation_id,
+                    message_id=assistant_message.message_id,
+                    status="failed",
+                )
+                return
+            if visible_documents:
+                rag_running = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "running", label="知识库检索")
+                yield frame("progress", step_id=rag_running.step_id, kind=rag_running.kind, label=rag_running.label, status="running", summary=None)
+                try:
+                    # Reuse the canonical dense+sparse/RRF/reranker facade.
+                    # The same canonical allowlist reaches both dense and
+                    # sparse query legs before RRF/reranking/top-k.
+                    document_ids = [record["document_id"] for record in visible_documents]
+                    rag_hits = hybrid_search(
+                        user_message.content,
+                        top_k=10,
+                        chunker=retrieval_chunker,
+                        document_ids=document_ids,
+                    )[:5]
+                    rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索")
+                    yield frame("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
+                except Exception:
+                    rag_hits = []
+                    rag_failed = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "failed", "知识库检索失败，已跳过", label="知识库检索")
+                    yield frame("progress", step_id=rag_failed.step_id, kind=rag_failed.kind, label=rag_failed.label, status="failed", summary=rag_failed.summary)
             history = [message for message in repo.list_context_messages(conversation.conversation_id, OWNER_ID) if message.message_id != user_message.message_id]
             if sum(len(message.content or "") for message in history) > 12000:
                 with contextlib.suppress(Exception):
@@ -1051,6 +1170,14 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 repo, conversation.conversation_id, exclude_message_id=assistant_message.message_id
             )
             messages = compose_chat_messages(user_message.content, history, memories, project_instructions, summaries, rag_hits=rag_hits, system_rule=user_memory or None, segments=segments, project_id=conversation.project_id, tool_outputs=tool_outputs, recall_hits=recall_hits)
+            if binding is not None and binding.evidence_level == "abstract":
+                frozen = dict(binding.context or {})
+                abstract_context = (
+                    "论文上下文（仅使用冻结的摘要，不进行全文检索）：\n"
+                    f"标题：{frozen.get('title', '')}\n"
+                    f"摘要：{frozen.get('abstract', '')}"
+                )
+                messages.insert(0, {"role": "system", "content": abstract_context})
             # Skill recognition is conversation-scoped only.  The product
             # registry is the source of truth; `.codebuddy/skills/` remains an
             # IDE-only directory and is never scanned here.
