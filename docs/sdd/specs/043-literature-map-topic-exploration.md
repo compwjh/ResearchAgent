@@ -169,9 +169,9 @@
 | 02 | 准备与可行性门禁 | [Task02](../plans/043/task-02-validate-feasibility.md) | 01 | 已完成（Go） |
 | 03 | 桌面自动建图 MVP | [Task03](../plans/043/task-03-desktop-map-mvp.md) | 02 | 阶段已完成（PASS_WITH_LIMITATIONS） |
 | 04 | 扩展与恢复 | [Task04](../plans/043/task-04-expansion-recovery.md) | 03 | 阶段已完成（PASS_WITH_LIMITATIONS） |
-| 05 | AI分析与会话 | [Task05](../plans/043/task-05-analysis-conversations.md) | 04 | 进行中 |
-| 06 | 整理与导出 | [Task06](../plans/043/task-06-groups-exports.md) | 04 | 待执行 |
-| 07 | 手机适配 | [Task07](../plans/043/task-07-mobile-map.md) | 05、06 | 待执行 |
+| 05 | AI分析与会话 | [Task05](../plans/043/task-05-analysis-conversations.md) | 04 | 摘要/会话真实通过；全文KB partial阻塞 |
+| 06 | 整理与导出 | [Task06](../plans/043/task-06-groups-exports.md) | 04 | 阶段已完成（真实API/PNG/JSON PASS） |
+| 07 | 手机适配 | [Task07](../plans/043/task-07-mobile-map.md) | 05、06 | 实施中；全文KB阻塞独立保留 |
 | 08 | 最终验收与收口 | [Task08](../plans/043/task-08-acceptance-deploy-retro.md) | 02–07 | 待执行 |
 
 ## 评审记录

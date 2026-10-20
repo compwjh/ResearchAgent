@@ -1,7 +1,7 @@
 # Task 05 — AI 分析与会话
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：04；被依赖：07；当前状态：**进行中（独立评审与修复，未部署）**。
+> 依赖：04；被依赖：07；当前状态：**进行中（已部署，真实全文验收受索引状态阻塞）**。
 
 ## 一句话目标
 
@@ -9,7 +9,7 @@
 
 ## 当前证据与前置条件
 
-- Task03/04真实阶段门禁已通过且保留provider限制。本Task分端实现已交接，见 `artifacts/task-05/backend-report.md`、`frontend-report.md`；前端已修复缓存版本、DOM样式契约、轮询截止反馈并补旧结果查看，正在独立复审。后端独立评审重试成功，确认六项证据/会话边界P1，已交回开发集中修复，见 `backend-review.md`。精确合同见 `artifacts/task-05/interface-contract.md`；尚未真实模型/API验收或部署，不将已有地图能力冒充AI分析能力。
+- Task03/04真实阶段门禁已通过且保留provider限制。本Task双端独立复审GO，候选 `b94717c` 已部署8000，ready=true。真实摘要分析及问答成功，前端真实Chrome smoke通过；全文返回409 `MAP_FULLTEXT_UNAVAILABLE`，真实v1 manifest缺失，v2为partial，不能宣称全文通过。已授权通过现有API对这一篇验收论文执行一次v1重建恢复；原失败证据保留于 `artifacts/task-05/api-e2e.md` 及其run目录。尚未Task05阶段验收签字，不运行Spec全量、不push。
 - 复用代码位置是调研入口，未来实现时需对照实际提交核实，不复制过期实现。后续新增模块/前端文件按前置Task固定报告定位，不猜文件名。
 - Spec处于待确认时禁止实现。需求/技术门禁通过及用户明确确认后，先核对工作区/实现分支，保护Spec032暂停快照及其他任务修改。
 - 前置Task真实通过后才能执行；若预生成接口尚未冻结，应标阻塞而非自行发明第二套合同。
