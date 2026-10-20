@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+date: Tue, 20 Oct 2026 16:28:48 GMT
+server: uvicorn
+etag: "sha256:269d7be710cc008ed325284a6ee98163cf0885ab500ebafd508773ba3fa3659a"
+content-length: 571
+content-type: application/json

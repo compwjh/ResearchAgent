@@ -1,0 +1,1 @@
+{"status":"ok","model":"qwen3.8:27b","models":["qwen3.8:27b-q4_K_M","qwen3.8:27b-mlx","qwen3.8-27b-q4:latest","qwen3.8:27b","oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU","qwen3.8:27b-q4","dengcao/Qwen3-Reranker-0.6B:Q8_0","bge-m3:latest","deepseek-coder-v2:16b","qwen3.5:9b","deepseek-coder:33b"],"paper_discovery_enabled":true}

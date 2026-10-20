@@ -84,3 +84,62 @@
 | `.venv/bin/python -m py_compile backend/app/literature_maps/application/analysis.py backend/app/api/routes_conversations.py backend/app/memory/repository.py backend/app/literature_maps/infrastructure/store.py` | 0 | 通过 |
 
 仍未部署、未调用真实 provider、未执行全量回归或提交。临时测试 DB 均位于 `/tmp`，未读取或修改生产地图 DB。
+
+## 2026-10-21 真实 GAT 全文 409 只读诊断
+
+针对候选 `b94717c` 部署后 `55afc3b8f01445429462fe78ed0d4c98` 的 `source_status.fulltext_ready=false` / `MAP_FULLTEXT_UNAVAILABLE`，本轮只读取 KB canonical 元数据、generation marker、manifest 与本地 canonical collection 元数据；未读取 `.env`、PDF 正文，未写数据库、索引或 manifest。
+
+### 结论
+
+这是当前真实 KB 发布物不满足全文证据门禁，不是 generation 路径漂移或 source hash 比对 bug：
+
+1. canonical `data/kb/papers.json` 中存在目标 `document_id`，`source_sha256=a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284`，记录状态为 `indexed`。该旧 metadata 记录的 `indexed_source_sha256=null`、`source_hash_state=legacy_unknown` 不能单独证明全文 readiness；当前分析 gate 使用 owner-scoped canonical record 的 `source_sha256`，再核验 manifest。
+2. generation 只读校验通过：`FinalizeBundleStore.require_generation()` 返回 `run_id=38efa91a33154fd097c61d1c745d408f`；实时 manifests digest 与 marker 的 `a0aaaba228854109707e0b56432d3816831e139fa86cccd41d3b8812f8cf8ad3` 一致，canonical alias 为 `papers -> papers_rebuild_38efa91a33154fd097c61d1c745d408f`。因此不是全局 generation/alias 门禁拒绝。
+3. 目标 `v1` manifest 不存在：`InspectionManifestStore.read(document_id, "v1")` 返回 `MANIFEST_NOT_FOUND (404)`。`analysis.py:136-138` 会将该异常安全转换为 `None`，随后 `source_status` 返回 `MAP_FULLTEXT_UNAVAILABLE`。
+4. 现有目标 `v2` manifest 虽有 `source_hash_state=verified`、source/index hash 均为上述 canonical hash、`progress=100` 和 fingerprint，但状态是 `partial`，`mapped_count=81`、`unmapped_count=11`、`error=HOSTILE_FEATURES_NOT_EXECUTED`；即便切换 chunker 也不满足当前严格 `status=ready` 门禁。Task05 合同明确默认目标 chunker 为既有 `v1`，代码 `analysis.py:140-148` 还要求 `ready`、100%、verified、双 hash 一致、document/chunker 一致和 fingerprint。
+5. 只读 canonical collection 存在目标文档的 `paper_id` 记录，但缺失匹配的 v1 manifest 意味着该物理索引不能被本功能当作可证明的全文依据；不能用已有 `papers.json` 的 `chunkers.v1.status=indexed` 或手工把 v2 `partial` 改成 `ready` 绕过证据门禁。
+
+### 最小恢复方向
+
+由有权限的 KB rebuild/finalize 流程重新为该 document 发布与当前 canonical source hash 一致、`chunker=v1`、`status=ready`、`progress=100`、`source_hash_state=verified`、`indexed_source_sha256` 一致且带有效 fingerprint 的 manifest，并在真实 candidate alias/topology 校验后刷新/提交 generation marker。若 v2 仍作为目标，也必须先处理 11 个 unresolved mapping/`HOSTILE_FEATURES_NOT_EXECUTED`，不能只改状态字段。当前无需修改 Task05 代码。
+
+### 只读诊断命令结果
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `git rev-parse --short HEAD` | 0 | `b94717c` |
+| `.venv/bin/python -c 'FinalizeBundleStore(Path.cwd()).require_generation()'` | 0 | generation marker/metadata/manifests digest 校验通过 |
+| `.venv/bin/python` 只读 `InspectionManifestStore.read(..., "v1")` / `read(..., "v2")` | 0 | v1=`MANIFEST_NOT_FOUND`; v2=可读但 `partial` |
+| `jq` 读取目标 canonical record/manifest/marker 顶层字段 | 0 | 仅输出元数据计数/哈希/状态，未输出论文正文 |
+
+## 2026-10-21 scoped v1 reindex 后续只读诊断
+
+读取 `runs/20261021-003209-b94717c-v1-reindex/reindex-e2e.json` 及对应只读 KB 状态，未再次提交 reindex，未读 `.env`/PDF，未修改代码、数据库或索引。
+
+### 准确状态与根因
+
+1. artifact 记录的 POST `/reindex` 于 `00:32:38` 返回 202，`task_id=b41b7c83c071448d8fc2630d4988b093`，三次 metadata poll 都只看到 `v1 indexed/100/error=null`，最终明确记为 `blocked`；它没有声称 reindex 已达到全文 ready。
+2. 该任务不是“仍缺 manifest”或仅旧 metadata：当前 `data/kb/manifests/55afc3b8f01445429462fe78ed0d4c98/v1.json` 的 mtime 为 `00:32:43`，晚于提交时间；只读读取结果为 `progress=100`、`source_hash_state=verified`、source/index hash 均为 `a7d811...f284`、fingerprint 存在、`mapped_count=57`、`unmapped_count=0`，但 `status=partial`、`error=HOSTILE_FEATURES_NOT_EXECUTED`。同时 generation marker 在同一时间刷新，`FinalizeBundleStore.require_generation()` 通过。
+3. 受控 worker 确实发布了 manifest：`index.py:414-435` 构造并 `InspectionManifestStore.write()`，随后刷新 generation digest；`index.py:549-562` 在索引点写入后调用该发布路径。v1 的 `partial` 来自真实 PDF provenance：`parse.py:500-501` 在 active feature 状态为 hostile 时固定产出 `partial/HOSTILE_FEATURES_NOT_EXECUTED`，不是 map analysis 虚构的错误。
+4. 因而 `source_status.fulltext_ready=false` 的直接原因是 map gate `analysis.py:140-148` 要求目标 v1 manifest `status=ready`；当前 v1 manifest 已存在但为 partial。不能把 metadata 的 `v1 indexed/100/error=null` 当成全文 ready 证据，也不能手工把 manifest partial 改成 ready。
+
+### 两个 KB 底层边界缺陷
+
+- `submit_document_reindex()` (`application.py:801-849`) 生成的 `task_id` 只用于 202 响应，实际 worker 使用进程内 `_running`/Future，没有可按该 ID 查询的持久终态。因此 artifact 能证明提交被接受、manifest 在提交后生成并达到 partial 终态，但不能从 task ID 查询一个正式的 completed/partial 任务状态。
+- reindex worker 的 `update_chunker_state()` (`index.py:469-471,549-557` → `store.py:744-781`) 只同步 `papers.json` 的 chunker/top-level indexed 状态，不同步顶层 `indexed_source_sha256`/`source_hash_state`；所以当前 canonical record 仍是 `legacy_unknown`/`indexed_source_sha256=null`。这解释了 tester 的 metadata 观察，但不是本次 map gate 的直接拒绝条件：Task05 gate 使用 canonical `source_sha256` 加 manifest 的 verified source/index hash。
+
+### 最小同范围修复建议（不在本角色实施）
+
+1. KB reindex worker 应在 manifest 发布结果确定后，将 chunker 状态与 manifest 状态保持一致：`partial/HOSTILE_FEATURES_NOT_EXECUTED` 不得对外显示为 `indexed/error=null`；只有 ready manifest 才可显示 indexed/ready。对顶层 source hash 字段的同步应与既有 canonical metadata 契约一起冻结，不能以 map 代码绕过。
+2. 若产品需要按 `task_id` 证明终态，应为 scoped reindex 增加持久任务状态或复用已有可查询任务记录；当前 202 task_id 不是可恢复的终态凭据。
+3. GAT 要达到全文分析，仍需授权 KB 流程处理 hostile PDF provenance 并发布 `v1 status=ready` manifest；Task05 map analysis 不应放宽 gate 或把 partial 当 ready。当前不建议再次 reindex。
+
+### 本轮只读核对结果
+
+| 核对 | 结果 |
+|---|---|
+| `reindex-e2e.json` | `accepted=202`，三次 poll 后 `blocked`，未宣称 ready |
+| `v1` manifest | 已存在且由本次提交后生成，但 `partial/HOSTILE_FEATURES_NOT_EXECUTED` |
+| `v2` manifest | 仍为 `partial`，`unmapped_count=11`、同一 hostile error |
+| generation | marker 与 manifests digest 一致，`require_generation()` 退出码 0 |
+| canonical `papers.json` | `v1 indexed/100/error=null`，但顶层仍 `legacy_unknown`/indexed hash null；属于 worker metadata 同步缺口 |

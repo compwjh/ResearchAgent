@@ -1,0 +1,1 @@
+{"ready":true,"warmup":{"jieba":{"status":"ready","elapsed_ms":295.0,"error":null},"ollama_tags":{"status":"ready","elapsed_ms":26.1,"error":null},"embedding":{"status":"ready","elapsed_ms":6966.3,"error":null},"qdrant":{"status":"ready","elapsed_ms":1563.4,"error":null}}}

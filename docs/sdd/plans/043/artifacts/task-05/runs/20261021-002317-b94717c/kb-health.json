@@ -1,0 +1,1 @@
+{"qdrant":true,"embedding":true,"reranker":false,"reranker_detail":{"enabled":false,"available":false,"backend":"llama.cpp","model":"ggml-org/Qwen3-reranker-0.6B-Q8_0-GGUF:Q8_0","reason":"disabled"},"papers":51,"chunks":11942,"v2_llm":{"model":"qwen3.8-27b-q4","available":true},"generation":{"ready":true,"error_code":null}}

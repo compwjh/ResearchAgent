@@ -1,0 +1,21 @@
+{
+  "schema_version": "literature-map-v1",
+  "map": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "name": "API E2E graph attention networks r2",
+    "revision": 9,
+    "status": "partial",
+    "project_id": null
+  },
+  "latest_job": {
+    "job_id": "95d900a561664e8b9db4300189abf336",
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "operation": "analysis",
+    "status": "completed",
+    "step": "finished"
+  },
+  "redaction": {
+    "removed_fields": ["owner_id", "timestamps", "filters", "topic", "view_settings", "requested_count"],
+    "reason": "Only GAT map identity and state needed by the acceptance evidence were retained."
+  }
+}
