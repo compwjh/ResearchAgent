@@ -9,6 +9,8 @@
   const SCHEMA_VERSION = 'literature-map-v1';
   const MAP_WIDTH = 960;
   const MAP_HEIGHT = 680;
+  const MIN_MAP_SCALE = 0.35;
+  const MAX_MAP_SCALE = 2.8;
   const MAX_LAYOUT_FRAMES = 8;
   const MAX_POLL_ATTEMPTS = 120;
   const MAX_PREVIEW_DISCOVERY_PAGES = 50;
@@ -92,6 +94,10 @@
     conversationRequest: 0,
     groupRequest: 0,
     exportRequest: 0,
+    pointers: new Map(),
+    pinch: null,
+    suppressTap: false,
+    mobile: { listOpen: false, detailOpen: false, listRestoreFocus: null, detailRestoreFocus: null },
   };
 
   const refs = {};
@@ -416,6 +422,12 @@
     const listCount = createElement('span', 'literature-map-count');
     listCount.id = 'literature-map-count';
     listHead.append(listCount);
+    const listClose = createElement('button', 'icon-button literature-map-mobile-close', '×');
+    listClose.type = 'button';
+    listClose.id = 'literature-map-list-close';
+    listClose.title = '关闭地图列表';
+    listClose.setAttribute('aria-label', '关闭地图列表');
+    listHead.append(listClose);
     listPanel.append(listHead);
     const listFilters = createElement('div', 'literature-map-list-filters');
     const listSearch = createElement('input');
@@ -561,6 +573,12 @@
     currentMeta.id = 'literature-map-current-meta';
     canvasTitle.append(currentTitle, currentMeta);
     const tools = createElement('div', 'literature-map-tools');
+    const mobileListButton = createElement('button', 'secondary-button literature-map-mobile-list-open', '地图列表');
+    mobileListButton.type = 'button';
+    mobileListButton.id = 'literature-map-mobile-list-open';
+    mobileListButton.title = '打开地图列表和筛选';
+    mobileListButton.setAttribute('aria-label', '打开地图列表和筛选');
+    tools.append(mobileListButton);
     [['literature-map-zoom-out', '−', '缩小'], ['literature-map-zoom-in', '+', '放大'], ['literature-map-fit', '适应', '适应画布'], ['literature-map-locate', '定位', '定位所选论文'], ['literature-map-reset', '重置', '重置视图']].forEach(([id, label, title]) => {
       const button = createElement('button', 'icon-button literature-map-tool', label);
       button.type = 'button';
@@ -648,13 +666,91 @@
 
     grid.append(listPanel, canvasPanel, detailPanel);
     root.append(grid);
+    const mobileBackdrop = createElement('button', 'literature-map-mobile-backdrop');
+    mobileBackdrop.type = 'button';
+    mobileBackdrop.id = 'literature-map-mobile-backdrop';
+    mobileBackdrop.hidden = true;
+    mobileBackdrop.setAttribute('aria-label', '关闭地图面板');
+    mobileBackdrop.tabIndex = -1;
+    root.append(mobileBackdrop);
     mount.append(root);
 
-    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, detailPanel, detail, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, previewPanel });
+    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, previewPanel });
+    if (isMobileViewport()) {
+      refs.listPanel.setAttribute('aria-hidden', 'true');
+      refs.detailPanel.setAttribute('aria-hidden', 'true');
+    }
     bindEvents(newButton, refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
     renderGraph();
+  }
+
+  function isMobileViewport() {
+    return Boolean(window.matchMedia?.('(max-width: 760px)').matches);
+  }
+
+  function restoreMobileFocus(target) {
+    if (!isMobileViewport()) return;
+    let focusTarget = target;
+    if (!focusTarget?.isConnected && focusTarget?.dataset?.nodeId) {
+      focusTarget = [...(refs.nodesGroup?.querySelectorAll('[data-node-id]') || [])]
+        .find((node) => node.dataset.nodeId === focusTarget.dataset.nodeId);
+    }
+    if (!focusTarget?.isConnected) return;
+    try { focusTarget.focus({ preventScroll: true }); } catch (_) { focusTarget.focus(); }
+  }
+
+  function closeMobilePanel(panel, restoreFocus = true) {
+    if (!isMobileViewport()) return;
+    const isList = panel === 'list';
+    const target = isList ? refs.listPanel : refs.detailPanel;
+    if (!target) return;
+    target.classList.remove('is-open');
+    target.setAttribute('aria-hidden', 'true');
+    if (isList) {
+      state.mobile.listOpen = false;
+      if (restoreFocus) {
+        const focusTarget = state.mobile.listRestoreFocus || refs.mobileListButton;
+        window.setTimeout(() => restoreMobileFocus(focusTarget), 0);
+      }
+      state.mobile.listRestoreFocus = null;
+    } else {
+      state.mobile.detailOpen = false;
+      if (restoreFocus) {
+        const focusTarget = state.mobile.detailRestoreFocus || refs.svg;
+        window.setTimeout(() => restoreMobileFocus(focusTarget), 0);
+      }
+      state.mobile.detailRestoreFocus = null;
+    }
+    if (!state.mobile.listOpen && !state.mobile.detailOpen) setHidden(refs.mobileBackdrop, true);
+  }
+
+  function openMobilePanel(panel, trigger) {
+    if (!isMobileViewport()) return;
+    const isList = panel === 'list';
+    const target = isList ? refs.listPanel : refs.detailPanel;
+    if (!target) return;
+    const other = isList ? 'detail' : 'list';
+    if (isList && state.mobile.detailOpen) closeMobilePanel(other, false);
+    if (!isList && state.mobile.listOpen) closeMobilePanel(other, false);
+    target.classList.add('is-open');
+    target.setAttribute('aria-hidden', 'false');
+    setHidden(refs.mobileBackdrop, false);
+    if (isList) {
+      state.mobile.listOpen = true;
+      state.mobile.listRestoreFocus = trigger || document.activeElement;
+    } else {
+      state.mobile.detailOpen = true;
+      state.mobile.detailRestoreFocus = trigger || document.activeElement;
+    }
+  }
+
+  function closeAllMobilePanels(restoreFocus = false) {
+    if (!isMobileViewport()) return;
+    closeMobilePanel('list', restoreFocus);
+    closeMobilePanel('detail', restoreFocus);
+    setHidden(refs.mobileBackdrop, true);
   }
 
   function bindEvents(newButton, refreshButton, closeDetail) {
@@ -668,6 +764,7 @@
     refs.stopJobButton.addEventListener('click', () => stopCurrentJob());
     refs.retryJobButton.addEventListener('click', () => retryCurrentJob());
     newButton.addEventListener('click', () => {
+      if (isMobileViewport() && !state.mobile.listOpen) openMobilePanel('list', newButton);
       if (!refs.createPanel.hidden) {
         closeCreatePanel();
       } else {
@@ -702,17 +799,24 @@
     refs.svg.addEventListener('pointerdown', handleCanvasPointerDown);
     refs.svg.addEventListener('pointermove', handleCanvasPointerMove);
     refs.svg.addEventListener('pointerup', handleCanvasPointerUp);
-    refs.svg.addEventListener('pointercancel', handleCanvasPointerUp);
+    refs.svg.addEventListener('pointercancel', handleCanvasPointerCancel);
     refs.svg.addEventListener('click', (event) => {
+      if (state.suppressTap) {
+        state.suppressTap = false;
+        return;
+      }
       const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
-      if (nodeGroup && nodeGroup.dataset.nodeId && !state.pointer?.dragged) selectNode(nodeGroup.dataset.nodeId);
+      if (nodeGroup && nodeGroup.dataset.nodeId && !state.pointer?.dragged) {
+        try { nodeGroup.focus({ preventScroll: true }); } catch (_) { nodeGroup.focus(); }
+        selectNode(nodeGroup.dataset.nodeId, nodeGroup);
+      }
     });
     refs.svg.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
       if (!nodeGroup?.dataset.nodeId) return;
       event.preventDefault();
-      selectNode(nodeGroup.dataset.nodeId);
+      selectNode(nodeGroup.dataset.nodeId, nodeGroup);
     });
     refs.root.querySelector('#literature-map-zoom-in').addEventListener('click', () => changeScale(1.2));
     refs.root.querySelector('#literature-map-zoom-out').addEventListener('click', () => changeScale(1 / 1.2));
@@ -747,8 +851,21 @@
       state.importRequest += 1;
       refs.detailPanel.classList.remove('is-open');
       refs.detailPanel.hidden = true;
+      closeMobilePanel('detail');
       renderGraph();
       renderNodeDetail(null);
+    });
+    refs.listClose.addEventListener('click', () => closeMobilePanel('list'));
+    refs.mobileListButton.addEventListener('click', () => {
+      if (state.mobile.listOpen) closeMobilePanel('list');
+      else openMobilePanel('list', refs.mobileListButton);
+    });
+    refs.mobileBackdrop.addEventListener('click', () => closeAllMobilePanels(true));
+    window.addEventListener('pointerup', handleCanvasPointerUp);
+    window.addEventListener('pointercancel', handleCanvasPointerCancel);
+    window.addEventListener('blur', () => resetCanvasGesture(true));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') resetCanvasGesture(true);
     });
   }
 
@@ -946,7 +1063,10 @@
       meta.append(renderStatusBadge(map.status));
       if (map.requested_count) meta.append(createElement('span', '', `${map.requested_count} 篇`));
       item.append(title, topic, meta);
-      item.addEventListener('click', () => selectMap(map.map_id));
+      item.addEventListener('click', () => {
+        selectMap(map.map_id);
+        if (isMobileViewport()) closeMobilePanel('list');
+      });
       refs.mapList.append(item);
     });
   }
@@ -1920,13 +2040,101 @@
     renderCurrentMeta();
   }
 
+  function eventPoint(event) {
+    return { pointerId: event.pointerId, pointerType: event.pointerType, x: event.clientX, y: event.clientY };
+  }
+
+  function safeCapturePointer(pointerId) {
+    try { refs.svg.setPointerCapture?.(pointerId); } catch (_) { /* cancelled pointers may not be capturable */ }
+  }
+
+  function safeReleasePointer(pointerId) {
+    try {
+      if (refs.svg.hasPointerCapture?.(pointerId)) refs.svg.releasePointerCapture(pointerId);
+    } catch (_) { /* pointer capture may already be gone after a cancel */ }
+  }
+
+  function svgPointFromClient(point) {
+    const rect = refs.svg.getBoundingClientRect();
+    return {
+      x: rect.width ? (point.x - rect.left) * MAP_WIDTH / rect.width : MAP_WIDTH / 2,
+      y: rect.height ? (point.y - rect.top) * MAP_HEIGHT / rect.height : MAP_HEIGHT / 2,
+    };
+  }
+
+  function pinchSnapshot() {
+    const points = [...state.pointers.values()];
+    if (points.length < 2) return null;
+    const [first, second] = points;
+    const dx = second.x - first.x;
+    const dy = second.y - first.y;
+    const distance = Math.max(1, Math.hypot(dx, dy));
+    return {
+      center: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+      distance,
+    };
+  }
+
+  function startPinch() {
+    const snapshot = pinchSnapshot();
+    if (!snapshot) return;
+    const center = svgPointFromClient(snapshot.center);
+    state.pinch = {
+      initialDistance: snapshot.distance,
+      initialScale: state.view.scale,
+      initialView: { ...state.view },
+      worldCenter: {
+        x: (center.x - state.view.x) / state.view.scale,
+        y: (center.y - state.view.y) / state.view.scale,
+      },
+    };
+    state.pointer = null;
+    state.suppressTap = true;
+  }
+
+  function updatePinch() {
+    const pinch = state.pinch;
+    const snapshot = pinchSnapshot();
+    if (!pinch || !snapshot) return;
+    const center = svgPointFromClient(snapshot.center);
+    const scale = Math.max(MIN_MAP_SCALE, Math.min(MAX_MAP_SCALE, pinch.initialScale * snapshot.distance / pinch.initialDistance));
+    state.view.scale = scale;
+    state.view.x = center.x - pinch.worldCenter.x * scale;
+    state.view.y = center.y - pinch.worldCenter.y * scale;
+    renderGraph();
+  }
+
+  function resetCanvasGesture(suppressTap = false) {
+    state.pointers.forEach((point) => safeReleasePointer(point.pointerId));
+    state.pointers.clear();
+    state.pointer = null;
+    state.pinch = null;
+    if (suppressTap) state.suppressTap = true;
+  }
+
   function handleCanvasPointerDown(event) {
+    if (event.pointerType === 'touch' && !state.graph) return;
+    if (!state.pointers.size && !state.pinch) state.suppressTap = false;
     const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
+    state.pointers.set(event.pointerId, eventPoint(event));
+    safeCapturePointer(event.pointerId);
+    if (event.pointerType === 'touch' && state.pointers.size >= 2) {
+      startPinch();
+      return;
+    }
     state.pointer = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY, nodeId: nodeGroup?.dataset.nodeId || null, dragged: false };
-    refs.svg.setPointerCapture?.(event.pointerId);
   }
 
   function handleCanvasPointerMove(event) {
+    const point = state.pointers.get(event.pointerId);
+    if (point) {
+      point.x = event.clientX;
+      point.y = event.clientY;
+    }
+    if (state.pinch) {
+      updatePinch();
+      return;
+    }
     const pointer = state.pointer;
     if (!pointer || pointer.pointerId !== event.pointerId) return;
     const dx = event.clientX - pointer.lastX;
@@ -1934,8 +2142,11 @@
     if (Math.abs(event.clientX - pointer.startX) + Math.abs(event.clientY - pointer.startY) > 3) pointer.dragged = true;
     pointer.lastX = event.clientX;
     pointer.lastY = event.clientY;
-    if (pointer.nodeId) {
-      const current = state.positions[pointer.nodeId];
+    const dragNode = pointer.nodeId && !(isMobileViewport() && event.pointerType === 'touch');
+    if (dragNode) {
+      const nodes = normalizeNodes(state.graph);
+      const nodeIndex = nodes.findIndex((node) => node.node_id === pointer.nodeId);
+      const current = state.positions[pointer.nodeId] || (nodeIndex >= 0 ? positionFor(nodes[nodeIndex], nodeIndex, nodes.length) : null);
       if (!current) return;
       state.positions[pointer.nodeId] = { x: current.x + dx / state.view.scale, y: current.y + dy / state.view.scale };
       state.positionsDirty = true;
@@ -1947,13 +2158,41 @@
   }
 
   function handleCanvasPointerUp(event) {
+    if (state.pointers.has(event.pointerId)) state.pointers.delete(event.pointerId);
+    safeReleasePointer(event.pointerId);
+    if (state.pinch) {
+      // The first pointerup ends a pinch even when its partner is still down.
+      // Save the latest transform exactly once; leave no single-pointer drag
+      // baseline behind, so a two-to-one transition cannot jump the viewport.
+      const pinchEnded = state.pointers.size < 2;
+      if (pinchEnded) {
+        state.pinch = null;
+        state.pointer = null;
+        state.suppressTap = true;
+        scheduleViewSave();
+      }
+      state.pointer = null;
+      return;
+    }
     if (!state.pointer || state.pointer.pointerId !== event.pointerId) return;
     const dragged = state.pointer.dragged;
     const nodeId = state.pointer.nodeId;
     state.pointer = null;
-    refs.svg.releasePointerCapture?.(event.pointerId);
-    if (dragged) scheduleViewSave();
-    if (!dragged && nodeId) selectNode(nodeId);
+    if (dragged) {
+      state.suppressTap = true;
+      scheduleViewSave();
+    }
+    if (!dragged && nodeId && event.pointerType !== 'touch') {
+      const nodeGroup = refs.nodesGroup.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`);
+      try { nodeGroup?.focus({ preventScroll: true }); } catch (_) { nodeGroup?.focus(); }
+      selectNode(nodeId, nodeGroup);
+    }
+  }
+
+  function handleCanvasPointerCancel(event) {
+    if (state.pointers.has(event.pointerId)) state.pointers.delete(event.pointerId);
+    safeReleasePointer(event.pointerId);
+    resetCanvasGesture(true);
   }
 
   function handleWheel(event) {
@@ -1963,7 +2202,7 @@
   }
 
   function changeScale(factor) {
-    state.view.scale = Math.max(0.35, Math.min(2.8, state.view.scale * factor));
+    state.view.scale = Math.max(MIN_MAP_SCALE, Math.min(MAX_MAP_SCALE, state.view.scale * factor));
     renderGraph();
     scheduleViewSave();
   }
@@ -1978,7 +2217,7 @@
     const maxY = Math.max(...points.map((point) => point.y));
     const width = Math.max(180, maxX - minX + 100);
     const height = Math.max(150, maxY - minY + 100);
-    state.view.scale = Math.max(0.35, Math.min(1.6, Math.min(MAP_WIDTH / width, MAP_HEIGHT / height)));
+    state.view.scale = Math.max(MIN_MAP_SCALE, Math.min(1.6, Math.min(MAP_WIDTH / width, MAP_HEIGHT / height)));
     state.view.x = (MAP_WIDTH - (minX + maxX) * state.view.scale) / 2;
     state.view.y = (MAP_HEIGHT - (minY + maxY) * state.view.scale) / 2;
     renderGraph();
@@ -2193,7 +2432,7 @@
     }
   }
 
-  async function selectNode(nodeId) {
+  async function selectNode(nodeId, trigger = null) {
     if (!state.map?.map_id || !nodeId) return;
     const mapId = state.map.map_id;
     state.selectedNodeId = nodeId;
@@ -2209,6 +2448,7 @@
     state.analysisRequest += 1;
     state.conversationRequest = 0;
     state.importRequest += 1;
+    if (isMobileViewport()) openMobilePanel('detail', trigger || document.activeElement);
     refs.detailPanel.hidden = false;
     refs.detailPanel.classList.add('is-open');
     renderGraph();

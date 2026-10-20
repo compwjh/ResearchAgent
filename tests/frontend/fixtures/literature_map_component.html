@@ -2,8 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=7">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=8">
   <style>
     :root { --ink: #25272b; --muted: #8b8e96; --muted-strong: #5a5d66; --accent: #6d5dfc; --accent-soft: #eeecff; }
     body { margin: 0; font-family: Arial, sans-serif; }
@@ -38,6 +39,18 @@
     const serverPreview = query.has('server-preview') || query.has('server-preview-delay') || query.has('server-preview-race') || pagedPreview;
     const serverPreviewDelay = query.has('server-preview-delay') || query.has('server-preview-race') || query.has('paged-preview-delay') || query.has('paged-preview-race');
     const latestRestore = query.has('latest-restore');
+    const mobileLong = query.has('mobile-long');
+    if (mobileLong) {
+      mockMap.name = `移动端长内容地图：${'边界 '.repeat(12)}`;
+      mockMap.topic = `移动端长主题：${'联邦学习 '.repeat(10)}`;
+      mockNodes[0].title = `移动端可滚动论文标题：${'多指交互 '.repeat(10)}`;
+      mockNodes[0].abstract = `移动端详情抽屉滚动夹具。${'该段摘要用于验证真实触摸滚动不会被地图手势劫持。'.repeat(80)}`;
+      mockGroups.push(...Array.from({ length: 36 }, (_, index) => ({
+        group_id: `group-mobile-${index + 1}`,
+        name: `移动端分组 ${index + 1}：${'长内容 '.repeat(8)}`,
+        color: '#3366cc',
+      })));
+    }
     const serverPreviewRace = query.has('server-preview-race') || query.has('paged-preview-race');
     if (indexedTombstone) mockNodes[1].removed = true;
     if (recovery) {
@@ -295,7 +308,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=10"></script>
+  <script src="../../../frontend/literature-maps.js?v=12"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>
