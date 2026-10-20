@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 from concurrent.futures import Executor
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -21,7 +22,18 @@ from backend.app.literature_maps.application.catalog_adapter import (
 )
 from backend.app.literature_maps.application.similarity import build_similarity_edges, is_valid_vector
 from backend.app.literature_maps.domain.identity import deterministic_identity_key
-from backend.app.literature_maps.domain.models import LiteratureMap, MapEdge, MapJob, MapPaper, MapPreview, content_hash
+from backend.app.literature_maps.domain.models import (
+    LiteratureMap,
+    MapEdge,
+    MapJob,
+    MapPaper,
+    MapPreview,
+    content_hash,
+    iso_now,
+    safe_edge_basis,
+    safe_edge_content_hash,
+    safe_edge_model_version,
+)
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import (
     SEMANTIC_SCHOLAR_METADATA_FIELDS,
@@ -267,6 +279,87 @@ class LiteratureMapService:
         if job and isinstance(job.cursor.get("layers"), dict):
             layers.update(job.cursor["layers"])
         return {"schema_version": "literature-map-v1", "map": item.to_dict(), "nodes": [node.to_dict() for node in self.store.list_nodes(map_id, owner_id)], "edges": [edge.to_dict() for edge in self.store.list_edges(map_id, owner_id)], "layers": layers, "latest_job": job.to_dict() if job else None}
+
+    def groups(self, map_id: str, owner_id: str) -> dict[str, Any]:
+        item = self.store.get_map(map_id, owner_id)
+        if item is None:
+            raise LookupError("map not found")
+        return _groups_envelope(item, self.store.list_groups(map_id, owner_id))
+
+    def create_group(self, map_id: str, owner_id: str, *, expected_revision: int, name: str, color: str) -> dict[str, Any]:
+        self.store.create_group(map_id, owner_id, expected_revision=expected_revision, name=name, color=color)
+        return self.groups(map_id, owner_id)
+
+    def update_group(
+        self,
+        map_id: str,
+        group_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        name: str | None = None,
+        color: str | None = None,
+    ) -> dict[str, Any]:
+        self.store.update_group(map_id, group_id, owner_id, expected_revision=expected_revision, name=name, color=color)
+        return self.groups(map_id, owner_id)
+
+    def delete_group(self, map_id: str, group_id: str, owner_id: str, *, expected_revision: int) -> dict[str, Any]:
+        self.store.delete_group(map_id, group_id, owner_id, expected_revision=expected_revision)
+        return self.groups(map_id, owner_id)
+
+    def assign_node_group(
+        self,
+        map_id: str,
+        node_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        group_id: str | None,
+    ) -> dict[str, Any]:
+        node = self.store.assign_node_group(
+            map_id,
+            owner_id,
+            node_id=node_id,
+            expected_revision=expected_revision,
+            group_id=group_id,
+        )
+        item = self.store.get_map(map_id, owner_id)
+        if item is None:
+            raise LookupError("map not found")
+        return {"schema_version": "literature-map-v1", "map_id": map_id, "revision": item.revision, "node": node.to_dict()}
+
+    def export_map(self, map_id: str, owner_id: str) -> dict[str, Any]:
+        """Return a portable, read-only export assembled from active map rows.
+
+        Export deliberately does not reuse ``to_dict`` because that projection
+        is an internal API and carries owner IDs and unrestricted provenance.
+        """
+
+        item = self.store.get_map(map_id, owner_id)
+        if item is None:
+            raise LookupError("map not found")
+        groups = self.store.list_groups(map_id, owner_id)
+        all_nodes = self.store.list_nodes(map_id, owner_id)
+        active_nodes = [node for node in all_nodes if not node.removed]
+        active_ids = {node.node_id for node in active_nodes}
+        edges = [edge for edge in self.store.list_edges(map_id, owner_id) if edge.source_id in active_ids and edge.target_id in active_ids]
+        return {
+            "schema_version": "literature-map-export-v1",
+            "exported_at": iso_now(),
+            "map": {
+                "map_id": item.map_id,
+                "name": item.name,
+                "topic": item.topic,
+                "project_id": item.project_id,
+                "filters": _export_filters(item.filters),
+                "requested_count": item.requested_count,
+                "revision": item.revision,
+                "view_settings": _export_view_settings(item.view_settings),
+            },
+            "groups": [group.to_dict() for group in groups],
+            "nodes": [_export_node(node) for node in active_nodes],
+            "edges": [_export_edge(edge) for edge in edges],
+        }
 
     def update_map(self, map_id: str, owner_id: str, *, expected_revision: int, name: str | None = None, project_id: str | None | object = _UNSET) -> LiteratureMap:
         if project_id is not _UNSET and project_id:
@@ -1398,6 +1491,245 @@ class LiteratureMapService:
 
 def _params_hash(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _groups_envelope(item: LiteratureMap, groups: Iterable[Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "literature-map-v1",
+        "map_id": item.map_id,
+        "revision": item.revision,
+        "groups": [group.to_dict() for group in groups],
+    }
+
+
+_EXPORT_EXTERNAL_ID_KEYS = {"semantic_scholar", "doi", "arxiv", "pmid", "pmc", "openalex"}
+_EXPORT_NODE_PROVENANCE_KEYS = {
+    "provider",
+    "source",
+    "source_kind",
+    "conference_id",
+    "catalog_paper_id",
+    "official_page_url",
+    "official_pdf_url",
+    "prepublication_pdf_url",
+    "doi",
+    "arxiv_id",
+    "basis",
+    "collected_at",
+    "catalog_snapshot",
+}
+_EXPORT_EDGE_PROVENANCE_KEYS = {
+    "provider",
+    "relation",
+    "source_paper_id",
+    "source_url",
+    "source_page_url",
+    "algorithm",
+    "threshold",
+    "top_k",
+    "basis",
+    "model_version",
+    "content_hash",
+    "collected_at",
+}
+_EXPORT_CATALOG_KEYS = {
+    "catalog_paper_id",
+    "title",
+    "authors",
+    "year",
+    "venue",
+    "abstract",
+    "keywords",
+    "doi",
+    "arxiv_id",
+    "source",
+    "source_kind",
+    "conference_id",
+    "official_page_url",
+    "official_pdf_url",
+    "prepublication_pdf_url",
+    "collected_at",
+}
+_EXPORT_FILTER_KEYS = {"year_start", "year_end", "source_ids", "conference_ids"}
+
+
+def _export_filters(filters: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(filters, Mapping):
+        return {}
+    exported: dict[str, Any] = {}
+    for key in _EXPORT_FILTER_KEYS:
+        value = filters.get(key)
+        if key in {"year_start", "year_end"}:
+            if value is None:
+                continue
+            try:
+                exported[key] = int(value)
+            except (TypeError, ValueError):
+                continue
+        elif isinstance(value, (list, tuple)):
+            exported[key] = [str(item)[:100] for item in value if isinstance(item, (str, int))]
+    return exported
+
+
+def _export_view_settings(settings: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(settings, Mapping):
+        return {}
+    exported: dict[str, Any] = {"filters": _export_filters(settings.get("filters"))}
+    viewport = settings.get("viewport")
+    if isinstance(viewport, Mapping):
+        candidate: dict[str, float] = {}
+        for key in ("x", "y", "scale"):
+            try:
+                value = float(viewport[key])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(value) and (key != "scale" or value > 0):
+                candidate[key] = value
+        if candidate:
+            exported["viewport"] = candidate
+    layers = settings.get("layers")
+    if isinstance(layers, Mapping):
+        exported["layers"] = {key: bool(layers[key]) for key in ("citation", "similarity") if key in layers}
+    return exported
+
+
+def _export_external_ids(external_ids: Mapping[str, Any] | None) -> dict[str, str]:
+    if not isinstance(external_ids, Mapping):
+        return {}
+    return {
+        key: str(value)[:500]
+        for key, value in external_ids.items()
+        if key in _EXPORT_EXTERNAL_ID_KEYS and isinstance(value, (str, int)) and str(value).strip()
+    }
+
+
+def _safe_export_url(value: Any) -> str | None:
+    candidate = str(value or "").strip()
+    parsed = urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+        return None
+    if any(token in parsed.query.casefold() for token in ("token", "secret", "api_key", "apikey", "password", "authorization", "credential")):
+        return None
+    return candidate[:2000]
+
+
+def _export_scalar(value: Any) -> Any:
+    if isinstance(value, str):
+        return value[:2000]
+    if value is None or isinstance(value, (int, bool)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    return None
+
+
+def _export_text_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item)[:500] for item in value if isinstance(item, (str, int))]
+
+
+def _export_position(value: Mapping[str, Any] | None) -> dict[str, float] | None:
+    if not isinstance(value, Mapping):
+        return None
+    result: dict[str, float] = {}
+    for key in ("x", "y"):
+        try:
+            number = float(value[key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            result[key] = number
+    return result if len(result) == 2 else None
+
+
+def _export_catalog_snapshot(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    exported: dict[str, Any] = {}
+    for key in _EXPORT_CATALOG_KEYS:
+        if key not in value:
+            continue
+        item = value[key]
+        if key.endswith("url") or key in {"url", "official_page_url", "official_pdf_url", "prepublication_pdf_url"}:
+            item = _safe_export_url(item)
+        elif key in {"authors", "keywords"} and isinstance(item, (list, tuple)):
+            item = [str(child)[:500] for child in item if isinstance(child, (str, int))]
+        else:
+            item = _export_scalar(item)
+        if item is not None:
+            exported[key] = item
+    return exported
+
+
+def _export_provenance(value: Mapping[str, Any] | None, *, edge: bool = False) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    allowed = _EXPORT_EDGE_PROVENANCE_KEYS if edge else _EXPORT_NODE_PROVENANCE_KEYS
+    exported: dict[str, Any] = {}
+    for key in allowed:
+        if key not in value:
+            continue
+        item = value[key]
+        if key == "catalog_snapshot":
+            item = _export_catalog_snapshot(item)
+        elif edge and key == "basis":
+            item = safe_edge_basis(item)
+        elif edge and key == "model_version":
+            item = safe_edge_model_version(item)
+        elif edge and key == "content_hash":
+            item = safe_edge_content_hash(item)
+        elif key.endswith("url") or key in {"url", "source_url", "source_page_url", "official_page_url", "official_pdf_url", "prepublication_pdf_url"}:
+            item = _safe_export_url(item)
+        else:
+            item = _export_scalar(item)
+        if item is not None:
+            exported[key] = item
+    return exported
+
+
+def _export_node(node: MapPaper) -> dict[str, Any]:
+    return {
+        "node_id": node.node_id,
+        "identity_key": node.identity_key,
+        "external_ids": _export_external_ids(node.external_ids),
+        "title": node.title,
+        "authors": _export_text_list(node.authors),
+        "year": node.year,
+        "venue": node.venue,
+        "abstract": node.abstract,
+        "keywords": _export_text_list(node.keywords),
+        "citation_count": node.citation_count,
+        "source_url": _safe_export_url(node.source_url),
+        "provenance": _export_provenance(node.provenance),
+        "catalog_paper_id": node.catalog_paper_id,
+        "document_id": node.document_id,
+        "download_status": node.download_status,
+        "position": _export_position(node.position),
+        "group_id": node.group_id,
+    }
+
+
+def _export_edge(edge: MapEdge) -> dict[str, Any]:
+    score: float | None = None
+    if edge.score is not None:
+        try:
+            candidate_score = float(edge.score)
+        except (TypeError, ValueError):
+            candidate_score = float("nan")
+        if math.isfinite(candidate_score):
+            score = candidate_score
+    return {
+        "edge_id": edge.edge_id,
+        "kind": edge.kind,
+        "source_id": edge.source_id,
+        "target_id": edge.target_id,
+        "provenance": _export_provenance(edge.provenance, edge=True),
+        "score": score,
+        "basis": safe_edge_basis(edge.basis),
+        "model_version": safe_edge_model_version(edge.model_version),
+        "content_hash": safe_edge_content_hash(edge.content_hash),
+    }
 
 
 

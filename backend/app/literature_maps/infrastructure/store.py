@@ -21,20 +21,22 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
-from backend.app.literature_maps.domain.import_diagnostics import normalize_import_diagnostics
 from backend.app.literature_maps.domain.analysis import MapAnalysis, MapConversationBinding
+from backend.app.literature_maps.domain.import_diagnostics import normalize_import_diagnostics
 from backend.app.literature_maps.domain.models import (
     LiteratureMap,
     MapEdge,
     MapEvent,
+    MapGroup,
     MapJob,
     MapPaper,
     MapPreview,
     iso_now,
+    validate_edge_metadata,
 )
 from backend.app.platform.config import BASE_DIR
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _WRITE_LOCK = threading.RLock()
 _UNSET = object()
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
@@ -123,6 +125,16 @@ class LiteratureMapStore:
                     ON literature_maps(owner_id, deleted_at, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_literature_maps_project_owner
                     ON literature_maps(owner_id, project_id, deleted_at);
+                CREATE TABLE IF NOT EXISTS literature_map_groups(
+                    group_id TEXT PRIMARY KEY,
+                    map_id TEXT NOT NULL REFERENCES literature_maps(map_id),
+                    name TEXT NOT NULL,
+                    color TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_literature_map_groups_map
+                    ON literature_map_groups(map_id, created_at, group_id);
                 CREATE TABLE IF NOT EXISTS literature_map_nodes(
                     node_id TEXT PRIMARY KEY,
                     map_id TEXT NOT NULL REFERENCES literature_maps(map_id),
@@ -322,6 +334,15 @@ class LiteratureMapStore:
                 db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_at TEXT")
             if "removed_edges_json" not in node_columns:
                 db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_edges_json TEXT")
+            # Normalize legacy references that cannot resolve to a group in
+            # the same map. The paper rows themselves remain intact.
+            db.execute(
+                "UPDATE literature_map_nodes SET group_id=NULL "
+                "WHERE group_id IS NOT NULL AND NOT EXISTS ("
+                "SELECT 1 FROM literature_map_groups g "
+                "WHERE g.map_id=literature_map_nodes.map_id AND g.group_id=literature_map_nodes.group_id"
+                ")"
+            )
             preview_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_previews)").fetchall()}
             if "node_id" not in preview_columns:
                 db.execute("ALTER TABLE literature_map_previews ADD COLUMN node_id TEXT")
@@ -601,6 +622,7 @@ class LiteratureMapStore:
             db.execute("DELETE FROM literature_map_analyses WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_jobs WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_edges WHERE map_id=?", (map_id,))
+            db.execute("DELETE FROM literature_map_groups WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_nodes WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_idempotencies WHERE map_id=?", (map_id,))
             return True
@@ -610,6 +632,7 @@ class LiteratureMapStore:
         with self.transaction() as db:
             self._assert_writable(db, map_id, owner_id, job_id=job_id)
             for node in values:
+                self._assert_group_reference(db, map_id, node.group_id)
                 db.execute(
                     "INSERT INTO literature_map_nodes(node_id,map_id,identity_key,external_ids_json,title,authors_json,year,venue,abstract,keywords_json,citation_count,source_url,provenance_json,catalog_paper_id,document_id,download_status,position_json,group_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(map_id,identity_key) DO UPDATE SET title=excluded.title,authors_json=excluded.authors_json,year=excluded.year,venue=excluded.venue,abstract=excluded.abstract,keywords_json=excluded.keywords_json,citation_count=excluded.citation_count,source_url=excluded.source_url,provenance_json=excluded.provenance_json,catalog_paper_id=excluded.catalog_paper_id,document_id=excluded.document_id,download_status=excluded.download_status",
                     (node.node_id, map_id, node.identity_key or uuid.uuid4().hex, _dump(node.external_ids), node.title, _dump(list(node.authors)), node.year, node.venue, node.abstract, _dump(list(node.keywords)), node.citation_count, node.source_url, _dump(node.provenance), node.catalog_paper_id, node.document_id, node.download_status, _dump(node.position) if node.position else None, node.group_id),
@@ -626,6 +649,168 @@ class LiteratureMapStore:
         with self.connection() as db:
             row = db.execute("SELECT n.* FROM literature_map_nodes n JOIN literature_maps m ON m.map_id=n.map_id WHERE n.map_id=? AND n.node_id=? AND m.owner_id=? AND m.deleted_at IS NULL", (map_id, node_id, owner_id)).fetchone()
         return _node(row) if row else None
+
+    # ------------------------------------------------------------------
+    # Map groups and node presentation membership
+
+    def list_groups(self, map_id: str, owner_id: str) -> list[MapGroup]:
+        with self.connection() as db:
+            map_row = db.execute(
+                "SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            rows = db.execute(
+                "SELECT * FROM literature_map_groups WHERE map_id=? ORDER BY created_at,group_id",
+                (map_id,),
+            ).fetchall()
+        return [_group(row) for row in rows]
+
+    def create_group(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        name: str,
+        color: str,
+    ) -> MapGroup:
+        group_name = _validate_group_name(name)
+        group_color = _validate_group_color(color)
+        with self.transaction() as db:
+            map_row = db.execute(
+                "SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            _assert_revision(map_row, expected_revision)
+            group_count = int(
+                db.execute("SELECT COUNT(*) FROM literature_map_groups WHERE map_id=?", (map_id,)).fetchone()[0]
+            )
+            if group_count >= 200:
+                raise ValueError("GROUP_LIMIT")
+            now = iso_now()
+            group = MapGroup(uuid.uuid4().hex, map_id, group_name, group_color, now, now)
+            db.execute(
+                "INSERT INTO literature_map_groups(group_id,map_id,name,color,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (group.group_id, map_id, group.name, group.color, now, now),
+            )
+            _increment_map_revision(db, map_id, owner_id, now)
+            return group
+
+    def update_group(
+        self,
+        map_id: str,
+        group_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        name: str | None = None,
+        color: str | None = None,
+    ) -> MapGroup:
+        group_key = _validate_group_id(group_id)
+        next_name = _validate_group_name(name) if name is not None else None
+        next_color = _validate_group_color(color) if color is not None else None
+        with self.transaction() as db:
+            map_row = db.execute(
+                "SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            _assert_revision(map_row, expected_revision)
+            row = db.execute(
+                "SELECT * FROM literature_map_groups WHERE map_id=? AND group_id=?",
+                (map_id, group_key),
+            ).fetchone()
+            if row is None:
+                raise LookupError("group not found")
+            current_name = str(row["name"])
+            current_color = str(row["color"])
+            if (next_name is None or next_name == current_name) and (next_color is None or next_color == current_color):
+                return _group(row)
+            updated_name = next_name if next_name is not None else current_name
+            updated_color = next_color if next_color is not None else current_color
+            now = iso_now()
+            db.execute(
+                "UPDATE literature_map_groups SET name=?,color=?,updated_at=? WHERE map_id=? AND group_id=?",
+                (updated_name, updated_color, now, map_id, group_key),
+            )
+            _increment_map_revision(db, map_id, owner_id, now)
+            fresh = db.execute(
+                "SELECT * FROM literature_map_groups WHERE map_id=? AND group_id=?",
+                (map_id, group_key),
+            ).fetchone()
+            return _group(fresh)
+
+    def delete_group(self, map_id: str, group_id: str, owner_id: str, *, expected_revision: int) -> None:
+        group_key = _validate_group_id(group_id)
+        with self.transaction() as db:
+            map_row = db.execute(
+                "SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            _assert_revision(map_row, expected_revision)
+            group_row = db.execute(
+                "SELECT 1 FROM literature_map_groups WHERE map_id=? AND group_id=?",
+                (map_id, group_key),
+            ).fetchone()
+            if group_row is None:
+                raise LookupError("group not found")
+            db.execute("UPDATE literature_map_nodes SET group_id=NULL WHERE map_id=? AND group_id=?", (map_id, group_key))
+            db.execute("DELETE FROM literature_map_groups WHERE map_id=? AND group_id=?", (map_id, group_key))
+            _increment_map_revision(db, map_id, owner_id, iso_now())
+
+    def assign_node_group(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        node_id: str,
+        expected_revision: int,
+        group_id: str | None,
+    ) -> MapPaper:
+        group_key = _validate_group_id(group_id) if group_id is not None else None
+        with self.transaction() as db:
+            map_row = db.execute(
+                "SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            _assert_revision(map_row, expected_revision)
+            node_row = db.execute(
+                "SELECT * FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                (map_id, node_id),
+            ).fetchone()
+            if node_row is None:
+                raise LookupError("node not found")
+            if node_row["removed_at"] is not None:
+                raise ValueError("MAP_NODE_REMOVED")
+            if group_key is not None:
+                group_row = db.execute(
+                    "SELECT 1 FROM literature_map_groups WHERE map_id=? AND group_id=?",
+                    (map_id, group_key),
+                ).fetchone()
+                if group_row is None:
+                    raise LookupError("group not found")
+            if node_row["group_id"] == group_key:
+                return _node(node_row)
+            now = iso_now()
+            db.execute(
+                "UPDATE literature_map_nodes SET group_id=? WHERE map_id=? AND node_id=? AND removed_at IS NULL",
+                (group_key, map_id, node_id),
+            )
+            _increment_map_revision(db, map_id, owner_id, now)
+            fresh = db.execute(
+                "SELECT * FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                (map_id, node_id),
+            ).fetchone()
+            return _node(fresh)
 
     # ------------------------------------------------------------------
     # Map analysis and conversation bridge.  These rows intentionally live
@@ -1165,6 +1350,16 @@ class LiteratureMapStore:
                     if source_id not in active_node_ids or target_id not in active_node_ids or source_id == target_id:
                         continue
                     edge = MapEdge(str(saved.get("edge_id") or uuid.uuid4().hex), map_id, str(saved.get("kind") or "citation"), source_id, target_id, dict(saved.get("provenance") or {}), saved.get("score"), saved.get("basis"), saved.get("model_version"), saved.get("content_hash"))
+                    try:
+                        validate_edge_metadata(
+                            basis=edge.basis,
+                            model_version=edge.model_version,
+                            content_hash=edge.content_hash,
+                        )
+                    except ValueError:
+                        # Do not resurrect a legacy polluted edge while
+                        # restoring its endpoint.
+                        continue
                     db.execute("INSERT OR IGNORE INTO literature_map_edges(edge_id,map_id,kind,source_id,target_id,provenance_json,score,basis,model_version,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?)", (edge.edge_id, map_id, edge.kind, edge.source_id, edge.target_id, _dump(edge.provenance), edge.score, edge.basis, edge.model_version, edge.content_hash))
             else:
                 edges = db.execute("SELECT * FROM literature_map_edges WHERE map_id=? AND (source_id=? OR target_id=?)", (map_id, node_id, node_id)).fetchall()
@@ -1198,6 +1393,11 @@ class LiteratureMapStore:
             for edge in values:
                 if edge.source_id == edge.target_id:
                     raise ValueError("self edge is not allowed")
+                validate_edge_metadata(
+                    basis=edge.basis,
+                    model_version=edge.model_version,
+                    content_hash=edge.content_hash,
+                )
                 if edge.source_id not in node_ids or edge.target_id not in node_ids:
                     continue
                 db.execute("INSERT INTO literature_map_edges(edge_id,map_id,kind,source_id,target_id,provenance_json,score,basis,model_version,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(map_id,kind,source_id,target_id) DO UPDATE SET provenance_json=excluded.provenance_json,score=excluded.score,basis=excluded.basis,model_version=excluded.model_version,content_hash=excluded.content_hash", (edge.edge_id, map_id, edge.kind, edge.source_id, edge.target_id, _dump(edge.provenance), edge.score, edge.basis, edge.model_version, edge.content_hash))
@@ -1661,10 +1861,23 @@ class LiteratureMapStore:
 
     @staticmethod
     def _insert_node(db: sqlite3.Connection, node: MapPaper) -> None:
+        LiteratureMapStore._assert_group_reference(db, node.map_id, node.group_id)
         db.execute(
             "INSERT INTO literature_map_nodes(node_id,map_id,identity_key,external_ids_json,title,authors_json,year,venue,abstract,keywords_json,citation_count,source_url,provenance_json,catalog_paper_id,document_id,download_status,position_json,group_id,removed_at,removed_edges_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (node.node_id, node.map_id, node.identity_key or uuid.uuid4().hex, _dump(node.external_ids), node.title, _dump(list(node.authors)), node.year, node.venue, node.abstract, _dump(list(node.keywords)), node.citation_count, node.source_url, _dump(node.provenance), node.catalog_paper_id, node.document_id, node.download_status, _dump(node.position) if node.position else None, node.group_id, None, None),
         )
+
+    @staticmethod
+    def _assert_group_reference(db: sqlite3.Connection, map_id: str, group_id: str | None) -> None:
+        if group_id is None:
+            return
+        group_key = _validate_group_id(group_id)
+        row = db.execute(
+            "SELECT 1 FROM literature_map_groups WHERE map_id=? AND group_id=?",
+            (map_id, group_key),
+        ).fetchone()
+        if row is None:
+            raise LookupError("group not found")
 
     def _touch(self, db: sqlite3.Connection, map_id: str, owner_id: str) -> None:
         db.execute("UPDATE literature_maps SET updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (iso_now(), map_id, owner_id))
@@ -1677,6 +1890,39 @@ class LiteratureMapStore:
 
 def _dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+def _validate_group_name(value: object) -> str:
+    name = str(value or "").strip()
+    if not name or len(name) > 80:
+        raise ValueError("INVALID_GROUP_NAME")
+    return name
+
+
+def _validate_group_color(value: object) -> str:
+    color = str(value or "").strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        raise ValueError("INVALID_GROUP_COLOR")
+    return color.upper()
+
+
+def _validate_group_id(value: object) -> str:
+    group_id = str(value or "").strip()
+    if not group_id or len(group_id) > 100:
+        raise ValueError("INVALID_GROUP_ID")
+    return group_id
+
+
+def _assert_revision(map_row: sqlite3.Row, expected_revision: int) -> None:
+    if int(map_row["revision"]) != int(expected_revision):
+        raise ValueError("revision conflict")
+
+
+def _increment_map_revision(db: sqlite3.Connection, map_id: str, owner_id: str, now: str) -> None:
+    changed = db.execute(
+        "UPDATE literature_maps SET revision=revision+1,updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+        (now, map_id, owner_id),
+    )
+    if changed.rowcount != 1:
+        raise LookupError("map not found")
 
 
 def _load(value: str | None, default: Any) -> Any:
@@ -1694,6 +1940,10 @@ def _map(row: sqlite3.Row) -> LiteratureMap:
 
 def _node(row: sqlite3.Row) -> MapPaper:
     return MapPaper(row["node_id"], row["map_id"], _load(row["external_ids_json"], {}), row["title"], tuple(_load(row["authors_json"], [])), row["year"], row["venue"], row["abstract"], tuple(_load(row["keywords_json"], [])), row["citation_count"], row["source_url"], _load(row["provenance_json"], {}), row["catalog_paper_id"], row["document_id"], row["download_status"], _load(row["position_json"], None), row["group_id"], row["identity_key"], bool(row["removed_at"]))
+
+
+def _group(row: sqlite3.Row) -> MapGroup:
+    return MapGroup(row["group_id"], row["map_id"], row["name"], row["color"], row["created_at"], row["updated_at"])
 
 
 def _edge(row: sqlite3.Row) -> MapEdge:

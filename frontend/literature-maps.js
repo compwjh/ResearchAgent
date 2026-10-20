@@ -15,6 +15,10 @@
   const MAX_MAP_NODES = 200;
   const MAX_PREVIEW_SELECTION = 20;
   const MAX_ANALYSIS_POLL_ATTEMPTS = 120;
+  const MAX_GROUPS = 200;
+  const GROUP_NAME_MAX_LENGTH = 80;
+  const GROUP_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+  const EXPORT_SCHEMA_VERSION = 'literature-map-export-v1';
   const TERMINAL_JOB_STATES = new Set(['completed', 'partial', 'failed', 'stopped']);
   const LAYER_NAMES = ['citation', 'similarity'];
   // Keep this allow-list aligned with catalog_adapter.py's canonical IDs.  In
@@ -27,6 +31,7 @@
     active: false,
     mounted: false,
     maps: [],
+    groups: [],
     selectedMapId: null,
     map: null,
     graph: null,
@@ -85,6 +90,8 @@
     analysisViewedId: null,
     analysisPollExhausted: false,
     conversationRequest: 0,
+    groupRequest: 0,
+    exportRequest: 0,
   };
 
   const refs = {};
@@ -214,6 +221,31 @@
     return payload;
   }
 
+  async function requestExport(path) {
+    let response;
+    try {
+      response = await fetch(`${API_ROOT}${path}`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+    } catch (error) {
+      throw new LiteratureMapError('无法连接本地服务，请确认后端已启动。', { retryable: true });
+    }
+    if (!response.ok) {
+      let payload = {};
+      try { payload = await response.json(); } catch (_) { payload = {}; }
+      const detail = payload?.detail && typeof payload.detail === 'object' ? payload.detail : payload;
+      throw new LiteratureMapError(detail?.message || payload?.message || '导出失败，请稍后重试。', {
+        status: response.status,
+        code: detail?.code || payload?.error_code || '',
+        retryable: detail?.retryable,
+      });
+    }
+    const blob = await response.blob();
+    if (!blob || !blob.size) throw new LiteratureMapError('导出结果为空，未生成文件。');
+    return { blob, disposition: response.headers.get('Content-Disposition') || '' };
+  }
+
   function parseCsv(value) {
     return String(value || '')
       .split(',')
@@ -267,6 +299,54 @@
     const year = node?.year === null || node?.year === undefined || String(node.year).trim() === '' ? '' : String(node.year);
     const shortLabel = [author, year].filter(Boolean).join(', ');
     return (shortLabel || node?.title || node?.node_id || '').slice(0, 38);
+  }
+
+  function normalizeGroups(payload) {
+    const groups = Array.isArray(payload?.groups) ? payload.groups : [];
+    return groups.filter((group) => group && String(group.group_id || '').trim())
+      .slice(0, MAX_GROUPS)
+      .map((group) => ({
+        group_id: String(group.group_id).trim(),
+        name: String(group.name || '').trim().slice(0, GROUP_NAME_MAX_LENGTH),
+        color: GROUP_COLOR_PATTERN.test(String(group.color || '')) ? String(group.color).toLowerCase() : '#8d80e6',
+      }));
+  }
+
+  function groupById(groupId) {
+    return state.groups.find((group) => group.group_id === groupId) || null;
+  }
+
+  function validateGroupForm(name, color) {
+    const normalizedName = String(name || '').trim();
+    const normalizedColor = String(color || '').trim().toLowerCase();
+    if (!normalizedName || normalizedName.length > GROUP_NAME_MAX_LENGTH) {
+      throw new LiteratureMapError(`分组名称不能为空且最多 ${GROUP_NAME_MAX_LENGTH} 个字符。`);
+    }
+    if (!GROUP_COLOR_PATTERN.test(normalizedColor)) {
+      throw new LiteratureMapError('分组颜色必须是 #RRGGBB 格式。');
+    }
+    return { name: normalizedName, color: normalizedColor };
+  }
+
+  function exportFilenameFromDisposition(disposition, fallback) {
+    const match = String(disposition || '').match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+    if (match) {
+      try { return decodeURIComponent(match[1] || match[2]); } catch (_) { return match[1] || match[2]; }
+    }
+    return fallback;
+  }
+
+  function safeDownload(blob, filename) {
+    if (!blob || !blob.size) throw new LiteratureMapError('导出结果为空，未生成文件。');
+    const url = URL.createObjectURL(blob);
+    const anchor = createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.hidden = true;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   function renderStatusBadge(status) {
@@ -360,6 +440,36 @@
     const listEmpty = createElement('p', 'literature-map-empty', '还没有地图，请从右上角新建。');
     listEmpty.id = 'literature-map-list-empty';
     listPanel.append(listEmpty);
+
+    const groupsPanel = createElement('section', 'literature-map-groups');
+    groupsPanel.id = 'literature-map-groups';
+    groupsPanel.hidden = true;
+    const groupsHeading = createElement('div', 'literature-map-groups-heading');
+    groupsHeading.append(createElement('h3', '', '人工分组'), createElement('span', 'literature-map-groups-note', '颜色仅表示你的整理'));
+    const groupForm = createElement('form', 'literature-map-group-form');
+    groupForm.id = 'literature-map-group-form';
+    const groupNameInput = createElement('input');
+    groupNameInput.id = 'literature-map-group-name';
+    groupNameInput.name = 'name';
+    groupNameInput.maxLength = String(GROUP_NAME_MAX_LENGTH);
+    groupNameInput.placeholder = '新分组名称';
+    groupNameInput.setAttribute('aria-label', '分组名称');
+    const groupColorInput = createElement('input');
+    groupColorInput.id = 'literature-map-group-color';
+    groupColorInput.name = 'color';
+    groupColorInput.type = 'color';
+    groupColorInput.value = '#8d80e6';
+    groupColorInput.setAttribute('aria-label', '分组颜色');
+    const groupCreateButton = createElement('button', 'secondary-button', '创建分组');
+    groupCreateButton.type = 'submit';
+    groupCreateButton.id = 'literature-map-group-create';
+    groupForm.append(groupNameInput, groupColorInput, groupCreateButton);
+    const groupList = createElement('div', 'literature-map-group-list');
+    groupList.id = 'literature-map-group-list';
+    const groupEmpty = createElement('p', 'literature-map-group-empty', '还没有人工分组。');
+    groupEmpty.id = 'literature-map-group-empty';
+    groupsPanel.append(groupsHeading, groupForm, groupList, groupEmpty);
+    listPanel.append(groupsPanel);
 
     const createPanel = createElement('section', 'literature-map-create-panel');
     createPanel.id = 'literature-map-create-panel';
@@ -459,6 +569,17 @@
       button.setAttribute('aria-label', title);
       tools.append(button);
     });
+    const exportJsonButton = createElement('button', 'secondary-button literature-map-export-button', 'JSON');
+    exportJsonButton.type = 'button';
+    exportJsonButton.id = 'literature-map-export-json';
+    exportJsonButton.title = '导出当前地图 JSON';
+    exportJsonButton.setAttribute('aria-label', '导出 JSON');
+    const exportPngButton = createElement('button', 'secondary-button literature-map-export-button', 'PNG');
+    exportPngButton.type = 'button';
+    exportPngButton.id = 'literature-map-export-png';
+    exportPngButton.title = '导出当前图谱 PNG';
+    exportPngButton.setAttribute('aria-label', '导出 PNG');
+    tools.append(exportJsonButton, exportPngButton);
     canvasHead.append(canvasTitle, tools);
     canvasPanel.append(canvasHead);
     const layerTools = createElement('div', 'literature-map-layer-tools');
@@ -500,6 +621,9 @@
     legend.append(createElement('span', 'literature-map-legend-line citation', '实线箭头：引用者 → 被引用者'));
     legend.append(createElement('span', 'literature-map-legend-line similarity', '虚线：主题相似（无向）'));
     legend.append(createElement('span', 'literature-map-legend-note', '来源字段由接口返回；title_only 表示仅标题依据。'));
+    const groupLegend = createElement('span', 'literature-map-group-legend');
+    groupLegend.id = 'literature-map-group-legend';
+    legend.append(groupLegend);
     canvasPanel.append(legend);
     const previewPanel = createElement('section', 'literature-map-preview-panel');
     previewPanel.id = 'literature-map-preview-panel';
@@ -526,7 +650,7 @@
     root.append(grid);
     mount.append(root);
 
-    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, detailPanel, detail, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, previewPanel });
+    Object.assign(refs, { root, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, detailPanel, detail, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, previewPanel });
     bindEvents(newButton, refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
@@ -560,6 +684,12 @@
       event.preventDefault();
       createMap();
     });
+    refs.groupForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      createGroup();
+    });
+    refs.exportJsonButton.addEventListener('click', () => exportJson());
+    refs.exportPngButton.addEventListener('click', () => exportPng());
     refs.listSearch.addEventListener('input', () => {
       state.listQuery = refs.listSearch.value.trim().toLowerCase();
       renderMapList();
@@ -821,6 +951,150 @@
     });
   }
 
+  function renderGroupLegend() {
+    if (!refs.groupLegend) return;
+    refs.groupLegend.replaceChildren();
+    if (!state.groups.length) {
+      refs.groupLegend.hidden = true;
+      return;
+    }
+    refs.groupLegend.hidden = false;
+    state.groups.forEach((group) => {
+      const item = createElement('span', 'literature-map-group-legend-item');
+      const swatch = createElement('span', 'literature-map-group-swatch');
+      swatch.style.backgroundColor = group.color;
+      swatch.setAttribute('aria-hidden', 'true');
+      item.append(swatch, createElement('span', '', group.name));
+      refs.groupLegend.append(item);
+    });
+    const ungrouped = createElement('span', 'literature-map-group-legend-item');
+    const ungroupedSwatch = createElement('span', 'literature-map-group-swatch is-ungrouped');
+    ungroupedSwatch.setAttribute('aria-hidden', 'true');
+    ungrouped.append(ungroupedSwatch, createElement('span', '', '未分组'));
+    refs.groupLegend.append(ungrouped);
+  }
+
+  function renderGroups() {
+    if (!refs.groupsPanel) return;
+    refs.groupsPanel.hidden = !state.map?.map_id;
+    refs.groupList.replaceChildren();
+    setHidden(refs.groupEmpty, state.groups.length > 0);
+    state.groups.forEach((group) => {
+      const row = createElement('div', 'literature-map-group-row');
+      row.dataset.groupId = group.group_id;
+      const swatch = createElement('span', 'literature-map-group-swatch');
+      swatch.style.backgroundColor = group.color;
+      swatch.setAttribute('aria-label', `分组颜色 ${group.color}`);
+      const name = createElement('span', 'literature-map-group-name', group.name);
+      name.title = group.name;
+      const rename = createElement('button', 'secondary-button literature-map-group-rename', '重命名');
+      rename.type = 'button';
+      rename.dataset.groupId = group.group_id;
+      rename.addEventListener('click', () => renameGroup(group, rename));
+      const color = createElement('input', 'literature-map-group-color-input');
+      color.type = 'color';
+      color.value = group.color;
+      color.dataset.groupId = group.group_id;
+      color.setAttribute('aria-label', `修改分组颜色：${group.name}`);
+      color.addEventListener('change', () => updateGroup(group, { color: color.value }, color));
+      const remove = createElement('button', 'secondary-button literature-map-group-delete', '删除');
+      remove.type = 'button';
+      remove.dataset.groupId = group.group_id;
+      remove.addEventListener('click', () => deleteGroup(group, remove));
+      row.append(swatch, name, rename, color, remove);
+      refs.groupList.append(row);
+    });
+    renderGroupLegend();
+  }
+
+  function updateGroupState(payload) {
+    const revision = Number(payload?.revision);
+    if (Number.isInteger(revision) && state.map) state.map = { ...state.map, revision };
+    state.groups = normalizeGroups(payload);
+    renderGroups();
+    renderGraph();
+    if (state.selectedNode) renderNodeDetail(state.selectedNode);
+    renderMapList();
+  }
+
+  async function loadGroups(mapId, requestId = state.mapRequest) {
+    if (!mapId) return;
+    const groupRequestId = ++state.groupRequest;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/groups`);
+      if (groupRequestId !== state.groupRequest || requestId !== state.mapRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      updateGroupState(payload);
+    } catch (error) {
+      if (groupRequestId !== state.groupRequest || requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+      state.groups = [];
+      renderGroups();
+      setStatus(`分组读取失败：${errorAction(error, '请重新打开地图后重试。')}`, 'error');
+    }
+  }
+
+  async function runGroupMutation(path, method, body, button, onSuccess) {
+    if (!state.map?.map_id || !state.active) return;
+    const mapId = state.map.map_id;
+    const requestId = ++state.groupRequest;
+    if (button) button.disabled = true;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}${path}`, { method, body: JSON.stringify({ expected_revision: state.map.revision, ...body }) });
+      if (requestId !== state.groupRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      updateGroupState(payload);
+      if (typeof onSuccess === 'function') onSuccess(payload);
+      setStatus('分组已保存；颜色仅表示人工整理，不表示学术立场。', 'waiting');
+    } catch (error) {
+      if (requestId !== state.groupRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      if (button) button.disabled = false;
+      if (error.status === 409 || String(error.code || '').toUpperCase() === 'MAP_REVISION_CONFLICT' || String(error.code || '').toLowerCase().includes('revision')) {
+        setStatus('地图版本已变化，正在重新读取；未覆盖其他操作。', 'error');
+        await selectMap(mapId);
+        return;
+      }
+      setStatus(`分组保存失败：${errorAction(error, '请检查分组名称和颜色后重试。')}`, 'error');
+    }
+  }
+
+  function createGroup() {
+    let group;
+    try { group = validateGroupForm(refs.groupNameInput.value, refs.groupColorInput.value); } catch (error) {
+      setStatus(errorAction(error), 'error');
+      return;
+    }
+    runGroupMutation('/groups', 'POST', group, refs.groupCreateButton, () => {
+      refs.groupNameInput.value = '';
+      refs.groupColorInput.value = '#8d80e6';
+    });
+  }
+
+  function renameGroup(group, button) {
+    if (!group) return;
+    const nextName = window.prompt('请输入新的分组名称', group.name);
+    if (nextName === null) return;
+    let values;
+    try { values = validateGroupForm(nextName, group.color); } catch (error) {
+      setStatus(errorAction(error), 'error');
+      return;
+    }
+    runGroupMutation(`/groups/${encodeURIComponent(group.group_id)}`, 'PATCH', { name: values.name }, button);
+  }
+
+  function updateGroup(group, values, input) {
+    if (!group) return;
+    let normalized;
+    try { normalized = validateGroupForm(group.name, values.color || group.color); } catch (error) {
+      if (input) input.value = group.color;
+      setStatus(errorAction(error), 'error');
+      return;
+    }
+    runGroupMutation(`/groups/${encodeURIComponent(group.group_id)}`, 'PATCH', { color: normalized.color }, input);
+  }
+
+  function deleteGroup(group, button) {
+    if (!group) return;
+    runGroupMutation(`/groups/${encodeURIComponent(group.group_id)}`, 'DELETE', {}, button);
+  }
+
   async function loadMaps() {
     try {
       const payload = await request('');
@@ -890,6 +1164,8 @@
       state.job = response.job || null;
       state.eventCursor = 0;
       state.graph = null;
+      state.groups = [];
+      renderGroups();
       state.selectedNodeId = null;
       state.selectedNode = null;
       state.positions = Object.create(null);
@@ -899,6 +1175,7 @@
       if (requestId !== state.mapRequest || !state.active) return;
       if (state.selectedMapId) {
         await loadMapGraph(state.selectedMapId);
+        await loadGroups(state.selectedMapId, requestId);
         renderJobActions();
         startPolling();
       }
@@ -917,6 +1194,7 @@
     state.selectedMapId = mapId;
     state.selectedNodeId = null;
     state.selectedNode = null;
+    state.groups = [];
     state.map = null;
     state.graph = null;
     state.job = null;
@@ -953,6 +1231,7 @@
     state.saveTimer = null;
     stopPolling();
     renderMapList();
+    renderGroups();
     renderNodeDetail(null);
     renderGraph();
     setStatus('正在读取已保存地图…');
@@ -963,6 +1242,8 @@
       state.job = payload.latest_job || null;
       applySavedView(state.map);
       await loadMapGraph(mapId);
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+      await loadGroups(mapId, requestId);
       if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
       await restorePreviewForMap(mapId, requestId);
       renderMapList();
@@ -1618,10 +1899,15 @@
       const point = positions[node.node_id];
       const group = createSvgElement('g');
       const selected = node.node_id === state.selectedNodeId;
+      const mapGroup = groupById(node.group_id);
       const provenance = typeof node.provenance === 'string' ? node.provenance : node.provenance?.basis || '';
-      setAttributes(group, { class: `literature-map-node${selected ? ' is-selected' : ''}`, 'data-node-id': node.node_id, 'data-provenance': provenance, tabindex: '0', role: 'button', 'aria-label': node.title || node.node_id });
+      setAttributes(group, { class: `literature-map-node${selected ? ' is-selected' : ''}${mapGroup ? ' is-grouped' : ''}`, 'data-node-id': node.node_id, 'data-group-id': mapGroup?.group_id || '', 'data-group-color': mapGroup?.color || '', 'data-provenance': provenance, tabindex: '0', role: 'button', 'aria-label': node.title || node.node_id });
       const circle = createSvgElement('circle');
-      setAttributes(circle, { cx: point.x, cy: point.y, r: selected ? 11 : 8 });
+      setAttributes(circle, { cx: point.x, cy: point.y, r: selected ? 11 : 8, 'data-group-color': mapGroup?.color || '' });
+      if (mapGroup) {
+        circle.setAttribute('fill', mapGroup.color);
+        circle.setAttribute('style', `fill:${mapGroup.color};`);
+      }
       group.append(circle);
       if (selected || index % 25 === 0) {
         const label = createSvgElement('text');
@@ -1756,6 +2042,154 @@
       if (requestId !== state.viewRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
       state.positionsDirty = true;
       setStatus(`视图保存失败：${errorAction(error, '请重新打开地图后再保存。')}`, 'error');
+    }
+  }
+
+  function exportFileStem() {
+    const raw = mapTitle(state.map).replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    return raw || 'literature-map';
+  }
+
+  async function exportJson() {
+    if (!state.map?.map_id || !state.active) return;
+    const requestId = ++state.exportRequest;
+    refs.exportJsonButton.disabled = true;
+    setStatus('正在准备 JSON 导出…', 'waiting');
+    try {
+      const result = await requestExport(`/${encodeURIComponent(state.map.map_id)}/export?format=json`);
+      if (requestId !== state.exportRequest || !state.active) return;
+      safeDownload(result.blob, exportFilenameFromDisposition(result.disposition, `${exportFileStem()}.json`));
+      setStatus('JSON 已下载；导出只包含服务端授权的公开地图字段。');
+    } catch (error) {
+      if (requestId !== state.exportRequest || !state.active) return;
+      setStatus(`JSON 导出失败：${errorAction(error, '请稍后重试。')}`, 'error');
+    } finally {
+      if (requestId === state.exportRequest) refs.exportJsonButton.disabled = false;
+    }
+  }
+
+  function addExportSvgText(svg, text, x, y, attributes = {}) {
+    const label = createSvgElement('text');
+    setAttributes(label, { x, y, ...attributes });
+    label.textContent = String(text || '');
+    svg.append(label);
+    return label;
+  }
+
+  function buildExportSvg() {
+    if (!refs.svg || !state.graph || !normalizeNodes(state.graph).length) {
+      throw new LiteratureMapError('当前图谱没有可导出的节点。');
+    }
+    const sourceRect = refs.svg.getBoundingClientRect();
+    if (!Number.isFinite(sourceRect.width) || !Number.isFinite(sourceRect.height) || sourceRect.width <= 0 || sourceRect.height <= 0) {
+      throw new LiteratureMapError('图谱当前没有有效尺寸，请先点击“适应”后重试。');
+    }
+    const exportHeight = MAP_HEIGHT + 92;
+    const svg = refs.svg.cloneNode(true);
+    setAttributes(svg, {
+      xmlns: SVG_NS,
+      width: MAP_WIDTH,
+      height: exportHeight,
+      viewBox: `0 0 ${MAP_WIDTH} ${exportHeight}`,
+    });
+    const background = createSvgElement('rect');
+    setAttributes(background, { x: 0, y: 0, width: MAP_WIDTH, height: exportHeight, fill: '#ffffff' });
+    svg.insertBefore(background, svg.firstChild);
+    const style = createSvgElement('style');
+    style.textContent = [
+      'svg{background:#fff}',
+      '.literature-map-edge{fill:none;stroke-width:1.15;opacity:.56}',
+      '.literature-map-edge.citation{stroke:#8478d8}',
+      '.literature-map-edge.similarity{stroke:#b7a9db;stroke-dasharray:5 4}',
+      'marker path{fill:#8478d8}',
+      '.literature-map-node circle{stroke:#8d80e6;stroke-width:2;fill:#fff}',
+      '.literature-map-node.is-selected circle{stroke:#fff;stroke-width:2.5}',
+      '.literature-map-node-label{fill:#5a5d66;font:9px monospace}',
+      '.literature-map-export-title{fill:#25272b;font:700 18px Arial,sans-serif}',
+      '.literature-map-export-meta{fill:#5a5d66;font:10px monospace}',
+      '.literature-map-export-legend{fill:#5a5d66;font:10px monospace}',
+    ].join('');
+    svg.insertBefore(style, svg.firstChild);
+    const viewport = svg.querySelector('#literature-map-viewport');
+    const currentTransform = viewport?.getAttribute('transform') || 'translate(0 0) scale(1)';
+    if (viewport) viewport.setAttribute('transform', `translate(0 36) ${currentTransform}`);
+    addExportSvgText(svg, mapTitle(state.map), 16, 23, { class: 'literature-map-export-title' });
+    addExportSvgText(svg, `${normalizeNodes(state.graph).length} 个节点 · ${normalizeEdges(state.graph).length} 条关系 · 颜色仅表示人工分组`, 16, 38, { class: 'literature-map-export-meta' });
+    addExportSvgText(svg, '实线箭头：引用者 → 被引用者    虚线：主题相似（无向）', 16, MAP_HEIGHT + 57, { class: 'literature-map-export-legend' });
+    let legendX = 16;
+    state.groups.forEach((group) => {
+      const swatch = createSvgElement('rect');
+      setAttributes(swatch, { x: legendX, y: MAP_HEIGHT + 69, width: 10, height: 10, rx: 2, fill: group.color });
+      svg.append(swatch);
+      addExportSvgText(svg, group.name, legendX + 14, MAP_HEIGHT + 78, { class: 'literature-map-export-legend' });
+      legendX += 22 + Math.max(30, group.name.length * 10);
+    });
+    const ungrouped = createSvgElement('rect');
+    setAttributes(ungrouped, { x: legendX, y: MAP_HEIGHT + 69, width: 10, height: 10, rx: 2, fill: '#ffffff', stroke: '#8d80e6' });
+    svg.append(ungrouped);
+    addExportSvgText(svg, '未分组', legendX + 14, MAP_HEIGHT + 78, { class: 'literature-map-export-legend' });
+    return svg;
+  }
+
+  function svgToPngBlob(svg) {
+    return new Promise((resolve, reject) => {
+      const xml = new XMLSerializer().serializeToString(svg);
+      if (!xml || !xml.includes('<svg')) {
+        reject(new LiteratureMapError('图谱快照为空，未生成 PNG。'));
+        return;
+      }
+      const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+      const imageUrl = URL.createObjectURL(svgBlob);
+      const image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(imageUrl);
+        const width = Number(svg.getAttribute('width'));
+        const height = Number(svg.getAttribute('height'));
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+          reject(new LiteratureMapError('图谱尺寸无效，未生成 PNG。'));
+          return;
+        }
+        const ratio = Math.min(3, Math.max(1, Number(window.devicePixelRatio) || 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(width * ratio));
+        canvas.height = Math.max(1, Math.round(height * ratio));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new LiteratureMapError('浏览器无法创建图像画布，请先适应画布后重试。'));
+          return;
+        }
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (!blob || !blob.size) reject(new LiteratureMapError('PNG 为空，未生成文件。'));
+          else resolve(blob);
+        }, 'image/png');
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(imageUrl);
+        reject(new LiteratureMapError('图谱快照无法转换为 PNG，请先适应画布后重试。'));
+      };
+      image.src = imageUrl;
+    });
+  }
+
+  async function exportPng() {
+    if (!state.map?.map_id || !state.active) return;
+    const requestId = ++state.exportRequest;
+    refs.exportPngButton.disabled = true;
+    setStatus('正在准备 PNG 图谱快照…', 'waiting');
+    try {
+      const svg = buildExportSvg();
+      const blob = await svgToPngBlob(svg);
+      if (requestId !== state.exportRequest || !state.active) return;
+      safeDownload(blob, `${exportFileStem()}.png`);
+      setStatus('PNG 已下载；快照只包含当前图谱、标题和图例。');
+    } catch (error) {
+      if (requestId !== state.exportRequest || !state.active) return;
+      setStatus(`PNG 导出失败：${errorAction(error, '请先点击“适应”后重试。')}`, 'error');
+    } finally {
+      if (requestId === state.exportRequest) refs.exportPngButton.disabled = false;
     }
   }
 
@@ -2047,6 +2481,70 @@
     }
   }
 
+  function renderNodeGroupSelector(node) {
+    const section = createElement('section', 'literature-map-node-group-section');
+    section.append(createElement('h4', '', '人工分组'));
+    const label = createElement('label', 'literature-map-node-group-label', '将此论文归入');
+    const select = createElement('select');
+    select.id = 'literature-map-node-group';
+    select.setAttribute('aria-label', '论文人工分组');
+    const none = createElement('option', '', '未分组');
+    none.value = '';
+    select.append(none);
+    state.groups.forEach((group) => {
+      const option = createElement('option', '', group.name);
+      option.value = group.group_id;
+      option.selected = group.group_id === node.group_id;
+      option.dataset.color = group.color;
+      select.append(option);
+    });
+    select.value = node.group_id || '';
+    select.addEventListener('change', () => assignNodeGroup(node, select.value || null, select));
+    label.append(select);
+    section.append(label, createElement('p', 'literature-map-group-helper', '颜色只表示人工整理，不表示学术立场。'));
+    return section;
+  }
+
+  async function assignNodeGroup(node, groupId, select) {
+    if (!state.map?.map_id || !node?.node_id || !state.active) return;
+    if (groupId && !groupById(groupId)) {
+      setStatus('该分组不属于当前地图；请重新读取分组列表。', 'error');
+      if (select) select.value = node.group_id || '';
+      return;
+    }
+    const mapId = state.map.map_id;
+    const requestId = ++state.groupRequest;
+    const previousGroupId = node.group_id || null;
+    if (select) select.disabled = true;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(node.node_id)}/group`, {
+        method: 'PUT',
+        body: JSON.stringify({ expected_revision: state.map.revision, group_id: groupId }),
+      });
+      if (requestId !== state.groupRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || state.selectedNodeId !== node.node_id || !state.active) return;
+      const revision = Number(payload?.revision);
+      if (Number.isInteger(revision)) state.map = { ...state.map, revision };
+      const returnedNode = payload?.node && typeof payload.node === 'object' ? payload.node : null;
+      state.selectedNode = returnedNode ? { ...state.selectedNode, ...returnedNode } : { ...state.selectedNode, group_id: groupId };
+      const graphNode = normalizeNodes(state.graph).find((item) => item.node_id === node.node_id);
+      if (graphNode) graphNode.group_id = groupId;
+      renderGraph();
+      renderNodeDetail(state.selectedNode);
+      setStatus('论文分组已保存；颜色仅表示人工整理，不表示学术立场。', 'waiting');
+    } catch (error) {
+      if (requestId !== state.groupRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || state.selectedNodeId !== node.node_id || !state.active) return;
+      if (select) select.disabled = false;
+      if (error.status === 409 || String(error.code || '').toUpperCase() === 'MAP_REVISION_CONFLICT' || String(error.code || '').toLowerCase().includes('revision')) {
+        if (select) select.value = previousGroupId || '';
+        setStatus('地图版本已变化，正在重新读取；未覆盖其他操作。', 'error');
+        await selectMap(mapId);
+        return;
+      }
+      if (select) select.value = previousGroupId || '';
+      setStatus(`论文分组保存失败：${errorAction(error, '请重新打开地图后重试。')}`, 'error');
+    }
+  }
+
   function renderNodeDetail(node) {
     if (!refs.detail) return;
     refs.detail.replaceChildren();
@@ -2080,6 +2578,7 @@
     abstract.append(createElement('h4', '', '摘要'));
     abstract.append(createElement('p', '', metadataText(node.abstract)));
     refs.detail.append(abstract);
+    refs.detail.append(renderNodeGroupSelector(node));
     const provenance = createElement('p', 'literature-map-provenance', `来源依据：${metadataText(node.provenance?.source || node.provenance)}`);
     refs.detail.append(provenance);
     const actions = createElement('div', 'literature-map-detail-actions');

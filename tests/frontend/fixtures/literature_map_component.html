@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>文献地图组件契约样例（mock API）</title>
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=6">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=7">
   <style>
     :root { --ink: #25272b; --muted: #8b8e96; --muted-strong: #5a5d66; --accent: #6d5dfc; --accent-soft: #eeecff; }
     body { margin: 0; font-family: Arial, sans-serif; }
@@ -16,9 +16,10 @@
   </section>
   <script>
     const mockMap = { map_id: 'map-fixture', name: '边缘学习地图', topic: '联邦学习', status: 'ready', revision: 3, requested_count: 20, view_settings: { viewport: { x: 0, y: 0, scale: 1 }, layers: { citation: true, similarity: true } } };
+    const mockGroups = [{ group_id: 'group-fixture', name: '人工分组', color: '#3366cc' }];
     const mockNodes = [
-      { node_id: 'node-a', title: 'Federated learning paper', authors: ['Author A'], year: 2024, venue: 'Fixture Venue', abstract: 'Fixture abstract', keywords: ['federated'], citation_count: 12, source_url: 'https://example.org/paper', provenance: { source: 'fixture', basis: 'metadata' }, download_status: 'not_imported', position: { x: 390, y: 300 } },
-      { node_id: 'node-b', title: 'Private aggregation paper', authors: ['Author B'], year: 2023, venue: 'Fixture Venue', abstract: null, keywords: [], citation_count: 4, source_url: 'javascript:alert(1)', provenance: { source: 'fixture', basis: 'title_only' }, download_status: 'indexed', document_id: 'document-fixture', position: { x: 590, y: 360 } },
+      { node_id: 'node-a', title: 'Federated learning paper', authors: ['Author A'], year: 2024, venue: 'Fixture Venue', abstract: 'Fixture abstract', keywords: ['federated'], citation_count: 12, source_url: 'https://example.org/paper', provenance: { source: 'fixture', basis: 'metadata' }, download_status: 'not_imported', group_id: null, position: { x: 390, y: 300 } },
+      { node_id: 'node-b', title: 'Private aggregation paper', authors: ['Author B'], year: 2023, venue: 'Fixture Venue', abstract: null, keywords: [], citation_count: 4, source_url: 'javascript:alert(1)', provenance: { source: 'fixture', basis: 'title_only' }, download_status: 'indexed', document_id: 'document-fixture', group_id: null, position: { x: 590, y: 360 } },
     ];
     const mockGraph = { schema_version: 'literature-map-v1', map: mockMap, nodes: mockNodes, edges: [{ edge_id: 'edge-a', map_id: 'map-fixture', kind: 'citation', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: null, basis: null, model_version: null, content_hash: null }, { edge_id: 'edge-sim', map_id: 'map-fixture', kind: 'similarity', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: 0.82, basis: 'title_only', model_version: 'fixture-v1', content_hash: 'fixture-hash' }], layers: { citation: { status: 'completed' }, similarity: { status: 'completed' } }, latest_job: { job_id: 'job-fixture', map_id: 'map-fixture', operation: 'create', status: 'completed', step: 'finished', counts: { node_count: 2, citation_edge_count: 1, similarity_edge_count: 1 } } };
     const query = new URLSearchParams(window.location.search);
@@ -67,6 +68,8 @@
     if (latestRestore) mockGraph.latest_job = { ...mockGraph.latest_job, job_id: 'job-restore', operation: 'restore', status: 'completed', step: 'restore' };
     window.__lastImportBody = null;
     window.__viewBodies = [];
+    window.__groupBodies = [];
+    window.__nodeGroupBodies = [];
     window.__createBody = null;
     window.__applyBody = null;
     window.__applyCount = 0;
@@ -128,6 +131,43 @@
       else if (path === '/api/literature-maps/map-fixture') payload = { schema_version: 'literature-map-v1', map: mockMap, latest_job: mockGraph.latest_job };
       else if (path === '/api/literature-maps/map-fixture-b') payload = { schema_version: 'literature-map-v1', map: secondMap, latest_job: { ...mockGraph.latest_job, map_id: secondMap.map_id, job_id: 'job-fixture-b' } };
       else if (path === '/api/literature-maps/map-fixture/graph') payload = mockGraph;
+      else if (path === '/api/literature-maps/map-fixture/groups' && method === 'GET') payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, groups: mockGroups.map((group) => ({ ...group })) };
+      else if (path === '/api/literature-maps/map-fixture/groups' && method === 'POST') {
+        window.__groupBodies.push(body);
+        const group = { group_id: `group-${mockGroups.length + 1}`, name: body.name, color: body.color };
+        mockGroups.push(group);
+        mockMap.revision += 1;
+        payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, groups: mockGroups.map((item) => ({ ...item })) };
+      }
+      else if (path.match(/\/api\/literature-maps\/map-fixture\/groups\/[^/]+$/) && method === 'PATCH') {
+        window.__groupBodies.push(body);
+        const groupId = path.split('/').pop();
+        const group = mockGroups.find((item) => item.group_id === groupId);
+        if (group) Object.assign(group, { name: body.name || group.name, color: body.color || group.color });
+        mockMap.revision += 1;
+        payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, groups: mockGroups.map((item) => ({ ...item })) };
+      }
+      else if (path.match(/\/api\/literature-maps\/map-fixture\/groups\/[^/]+$/) && method === 'DELETE') {
+        window.__groupBodies.push(body);
+        const groupId = path.split('/').pop();
+        const index = mockGroups.findIndex((item) => item.group_id === groupId);
+        if (index >= 0) mockGroups.splice(index, 1);
+        mockNodes.forEach((node) => { if (node.group_id === groupId) node.group_id = null; });
+        mockMap.revision += 1;
+        payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, groups: mockGroups.map((item) => ({ ...item })) };
+      }
+      else if (path.match(/\/api\/literature-maps\/map-fixture\/nodes\/[^/]+\/group$/) && method === 'PUT') {
+        window.__nodeGroupBodies.push(body);
+        const nodeId = path.split('/').slice(-2, -1)[0];
+        const node = mockNodes.find((item) => item.node_id === nodeId);
+        if (node) node.group_id = body.group_id || null;
+        mockMap.revision += 1;
+        payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, node: node ? { ...node } : null };
+      }
+      else if (path === '/api/literature-maps/map-fixture/export?format=json' && method === 'GET') {
+        payload = { schema_version: 'literature-map-export-v1', exported_at: '2026-10-21T00:00:00Z', map: { ...mockMap }, groups: mockGroups.map((item) => ({ ...item })), nodes: mockNodes.map((item) => ({ ...item })), edges: mockGraph.edges.map((item) => ({ ...item })) };
+        return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="map-fixture.json"' } });
+      }
       else if (path === '/api/literature-maps/map-fixture-b/graph') payload = { ...mockGraph, map: secondMap, latest_job: { ...mockGraph.latest_job, map_id: secondMap.map_id, job_id: 'job-fixture-b' } };
       else if (analysisMode && path === '/api/literature-maps/map-fixture/nodes/node-a/analyses' && method === 'GET') {
         if (analysisRace) await new Promise((resolve) => window.setTimeout(resolve, 180));
@@ -255,7 +295,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=8"></script>
+  <script src="../../../frontend/literature-maps.js?v=10"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -12,6 +13,9 @@ from typing import Any, Mapping
 from .identity import canonical_external_ids, deterministic_identity_key
 
 SCHEMA_VERSION = "literature-map-v1"
+EDGE_BASES = frozenset({"title_abstract", "title_only"})
+_SAFE_MODEL_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+\-]{0,127}$")
+_CONTENT_HASH_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def utc_now() -> datetime:
@@ -20,6 +24,38 @@ def utc_now() -> datetime:
 
 def iso_now() -> str:
     return utc_now().isoformat()
+
+
+def validate_edge_metadata(*, basis: object, model_version: object, content_hash: object) -> None:
+    """Validate the public evidence fields persisted on a map edge.
+
+    Citation edges may leave all three values empty.  When present, the
+    fields are deliberately narrow so an internal path, prompt or credential
+    cannot become a portable graph artifact through a direct edge column.
+    """
+
+    if basis is not None and (not isinstance(basis, str) or basis not in EDGE_BASES):
+        raise ValueError("INVALID_EDGE_BASIS")
+    if model_version is not None and (
+        not isinstance(model_version, str) or not _SAFE_MODEL_VERSION_RE.fullmatch(model_version)
+    ):
+        raise ValueError("INVALID_EDGE_MODEL_VERSION")
+    if content_hash is not None and (
+        not isinstance(content_hash, str) or not _CONTENT_HASH_RE.fullmatch(content_hash)
+    ):
+        raise ValueError("INVALID_EDGE_CONTENT_HASH")
+
+
+def safe_edge_basis(value: object) -> str | None:
+    return value if isinstance(value, str) and value in EDGE_BASES else None
+
+
+def safe_edge_model_version(value: object) -> str | None:
+    return value if isinstance(value, str) and _SAFE_MODEL_VERSION_RE.fullmatch(value) else None
+
+
+def safe_edge_content_hash(value: object) -> str | None:
+    return value if isinstance(value, str) and _CONTENT_HASH_RE.fullmatch(value) else None
 
 
 @dataclass
@@ -107,6 +143,25 @@ class MapPaper:
             "position": self.position,
             "group_id": self.group_id,
             "removed": self.removed,
+        }
+
+
+@dataclass
+class MapGroup:
+    """A user-owned presentation group inside one literature map."""
+
+    group_id: str
+    map_id: str
+    name: str
+    color: str
+    created_at: str = field(default_factory=iso_now)
+    updated_at: str = field(default_factory=iso_now)
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "group_id": self.group_id,
+            "name": self.name,
+            "color": self.color,
         }
 
 

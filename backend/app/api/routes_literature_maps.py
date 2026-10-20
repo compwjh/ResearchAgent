@@ -7,10 +7,11 @@ import sqlite3
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from backend.app.literature_maps.application.runtime import get_literature_map_service
 from backend.app.literature_maps.application.analysis import MapAnalysisError
+from backend.app.literature_maps.application.runtime import get_literature_map_service
 from backend.app.literature_maps.domain.models import SCHEMA_VERSION
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStoreError
 from backend.app.memory.repository import OWNER_ID
@@ -96,6 +97,35 @@ class NodeMutationRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class GroupCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: StrictInt = Field(ge=0)
+    name: str = Field(min_length=1, max_length=80)
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class GroupPatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: StrictInt = Field(ge=0)
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class GroupDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: StrictInt = Field(ge=0)
+
+
+class NodeGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: StrictInt = Field(ge=0)
+    group_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
 class MapAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -141,7 +171,7 @@ def _error(error: Exception) -> HTTPException:
             "UNSUPPORTED_SOURCE": "source_id 不是服务端支持的来源",
             "UNSUPPORTED_CONFERENCE": "conference_id 不是服务端支持的会议",
         }[code]
-    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED"}:
+    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED"}:
         status, error_code, message = 400, code, "地图创建参数不合法"
     elif code == "PROJECT_NOT_FOUND":
         status, error_code, message = 404, code, "项目不存在或不可访问"
@@ -215,6 +245,83 @@ def get_literature_map_graph(map_id: str):
         return get_literature_map_service().graph(map_id, OWNER_ID)
     except Exception as error:
         raise _error(error) from error
+
+
+@router.get("/{map_id}/groups")
+def get_literature_map_groups(map_id: str):
+    try:
+        return get_literature_map_service().groups(map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.post("/{map_id}/groups")
+def create_literature_map_group(map_id: str, payload: GroupCreateRequest):
+    try:
+        return get_literature_map_service().create_group(
+            map_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+            name=payload.name,
+            color=payload.color,
+        )
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.patch("/{map_id}/groups/{group_id}")
+def patch_literature_map_group(map_id: str, group_id: str, payload: GroupPatchRequest):
+    try:
+        return get_literature_map_service().update_group(
+            map_id,
+            group_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+            name=payload.name,
+            color=payload.color,
+        )
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.delete("/{map_id}/groups/{group_id}")
+def delete_literature_map_group(map_id: str, group_id: str, payload: GroupDeleteRequest):
+    try:
+        return get_literature_map_service().delete_group(
+            map_id,
+            group_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+        )
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.put("/{map_id}/nodes/{node_id}/group")
+def put_literature_map_node_group(map_id: str, node_id: str, payload: NodeGroupRequest):
+    try:
+        return get_literature_map_service().assign_node_group(
+            map_id,
+            node_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+            group_id=payload.group_id,
+        )
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.get("/{map_id}/export")
+def export_literature_map(map_id: str):
+    try:
+        payload = get_literature_map_service().export_map(map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    response = JSONResponse(content=payload, media_type="application/json")
+    # Keep the filename constant so map names or path-like identifiers cannot
+    # influence a response header.  The map_id remains in the JSON payload.
+    response.headers["Content-Disposition"] = 'attachment; filename="literature-map.json"'
+    return response
 
 
 @router.get("/{map_id}/nodes/{node_id}")

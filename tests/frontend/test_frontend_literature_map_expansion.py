@@ -25,8 +25,8 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=8" in INDEX
-    assert "/assets/literature-maps.css?v=6" in INDEX
+    assert "/assets/literature-maps.js?v=10" in INDEX
+    assert "/assets/literature-maps.css?v=7" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",

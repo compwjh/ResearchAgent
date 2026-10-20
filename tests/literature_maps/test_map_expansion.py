@@ -286,6 +286,7 @@ def test_refresh_http_empty_apply_updates_metadata_and_survives_reopen(tmp_path)
     store = LiteratureMapStore(db_path)
     service = LiteratureMapService(store=store, client=RefreshApplyClient(), executor=None)
     item = store.create_map(routes_literature_maps.OWNER_ID, topic="fuzzing", requested_count=20)
+    group = store.create_group(item.map_id, routes_literature_maps.OWNER_ID, expected_revision=0, name="Manual", color="#123456")
     source = MapPaper.new(
         item.map_id,
         semantic_scholar_id="s2-source",
@@ -295,7 +296,7 @@ def test_refresh_http_empty_apply_updates_metadata_and_survives_reopen(tmp_path)
         document_id="doc-source",
         download_status="indexed",
         position={"x": 5, "y": 6},
-        group_id="manual-group",
+        group_id=group.group_id,
         provenance={"import_diagnostics": {"error_code": "RETRYABLE"}},
     )
     target = MapPaper.new(item.map_id, semantic_scholar_id="s2-target", title="Target old")
@@ -309,16 +310,16 @@ def test_refresh_http_empty_apply_updates_metadata_and_survives_reopen(tmp_path)
         )
         assert preview_response.status_code == 202
         preview_id = preview_response.json()["preview_id"]
-        apply_payload = {"expected_revision": 0, "selected_candidate_ids": [], "idempotency_key": "http-refresh-apply"}
+        apply_payload = {"expected_revision": 1, "selected_candidate_ids": [], "idempotency_key": "http-refresh-apply"}
         applied = client.post(f"/api/literature-maps/{item.map_id}/previews/{preview_id}/apply", json=apply_payload)
         assert applied.status_code == 202
-        assert applied.json()["map"]["revision"] == 1
+        assert applied.json()["map"]["revision"] == 2
         repeated = client.post(f"/api/literature-maps/{item.map_id}/previews/{preview_id}/apply", json=apply_payload)
         assert repeated.status_code == 202
         assert repeated.json() == applied.json()
         stale = client.post(
             f"/api/literature-maps/{item.map_id}/previews/{preview_id}/apply",
-            json={"expected_revision": 0, "selected_candidate_ids": [], "idempotency_key": "http-refresh-stale"},
+            json={"expected_revision": 1, "selected_candidate_ids": [], "idempotency_key": "http-refresh-stale"},
         )
         assert stale.status_code == 409
         assert stale.json()["detail"]["code"] == "MAP_CONFLICT"
@@ -330,14 +331,14 @@ def test_refresh_http_empty_apply_updates_metadata_and_survives_reopen(tmp_path)
     reopened = LiteratureMapStore(db_path)
     persisted_map = reopened.get_map(item.map_id, routes_literature_maps.OWNER_ID)
     persisted_node = reopened.get_node(item.map_id, source.node_id, routes_literature_maps.OWNER_ID)
-    assert persisted_map is not None and persisted_map.revision == 1
+    assert persisted_map is not None and persisted_map.revision == 2
     assert persisted_node is not None
     assert persisted_node.title == "Source refreshed"
     assert persisted_node.abstract == "New abstract"
     assert persisted_node.document_id == "doc-source"
     assert persisted_node.download_status == "indexed"
     assert persisted_node.position == {"x": 5, "y": 6}
-    assert persisted_node.group_id == "manual-group"
+    assert persisted_node.group_id == group.group_id
     assert persisted_node.provenance == source.provenance
     assert [(edge.source_id, edge.target_id) for edge in reopened.list_edges(item.map_id, routes_literature_maps.OWNER_ID)] == [(source.node_id, target.node_id)]
 
@@ -345,6 +346,7 @@ def test_refresh_http_empty_apply_updates_metadata_and_survives_reopen(tmp_path)
 def test_refresh_preview_records_provider_metadata_diff_and_preserves_layout_and_import_state(tmp_path):
     store, service = _service(tmp_path)
     item = store.create_map("owner-a", topic="fuzzing", requested_count=20)
+    group = store.create_group(item.map_id, "owner-a", expected_revision=0, name="Manual", color="#123456")
     node = MapPaper.new(
         item.map_id,
         semantic_scholar_id="s2-refresh",
@@ -352,7 +354,7 @@ def test_refresh_preview_records_provider_metadata_diff_and_preserves_layout_and
         authors=("Author",),
         year=2020,
         position={"x": 10, "y": 20},
-        group_id="manual-group",
+        group_id=group.group_id,
         document_id="doc-1",
         download_status="indexed",
     )
@@ -363,16 +365,16 @@ def test_refresh_preview_records_provider_metadata_diff_and_preserves_layout_and
         item.map_id,
         preview.preview_id,
         "owner-a",
-        expected_revision=0,
+        expected_revision=1,
         selected_candidate_ids=[preview.candidates[0]["candidate_id"]],
         idempotency_key="refresh-apply",
     )
-    assert result["map"]["revision"] == 1
+    assert result["map"]["revision"] == 2
     refreshed = store.get_node(item.map_id, node.node_id, "owner-a")
     assert refreshed is not None
     assert refreshed.title == "A refreshed paper"
     assert refreshed.position == {"x": 10, "y": 20}
-    assert refreshed.group_id == "manual-group"
+    assert refreshed.group_id == group.group_id
     assert refreshed.document_id == "doc-1"
     assert refreshed.download_status == "indexed"
 
@@ -382,6 +384,7 @@ def test_empty_refresh_apply_persists_all_server_diffs_and_relations_after_reope
     store = LiteratureMapStore(db_path)
     service = LiteratureMapService(store=store, client=RefreshApplyClient(), executor=None)
     item = store.create_map("owner-a", topic="fuzzing", requested_count=20)
+    group = store.create_group(item.map_id, "owner-a", expected_revision=0, name="Manual", color="#123456")
     source = MapPaper.new(
         item.map_id,
         semantic_scholar_id="s2-source",
@@ -398,7 +401,7 @@ def test_empty_refresh_apply_persists_all_server_diffs_and_relations_after_reope
         document_id="doc-source",
         download_status="indexed",
         position={"x": 10, "y": 20},
-        group_id="manual-group",
+        group_id=group.group_id,
     )
     target = MapPaper.new(item.map_id, semantic_scholar_id="s2-target", title="Target old")
     store.add_nodes(item.map_id, "owner-a", [source, target])
@@ -411,11 +414,11 @@ def test_empty_refresh_apply_persists_all_server_diffs_and_relations_after_reope
         item.map_id,
         preview.preview_id,
         "owner-a",
-        expected_revision=0,
+        expected_revision=1,
         selected_candidate_ids=[],
         idempotency_key="refresh-all-apply",
     )
-    assert applied["map"]["revision"] == 1
+    assert applied["map"]["revision"] == 2
     assert applied["job"]["counts"]["updated_count"] >= 1
     assert applied["job"]["counts"]["relation_count"] >= 1
     refreshed = store.get_node(item.map_id, source.node_id, "owner-a")
@@ -445,12 +448,12 @@ def test_empty_refresh_apply_persists_all_server_diffs_and_relations_after_reope
         item.map_id,
         preview.preview_id,
         "owner-a",
-        expected_revision=0,
+        expected_revision=1,
         selected_candidate_ids=[],
         idempotency_key="refresh-all-apply",
     )
     assert repeated == applied
-    assert reopened.get_map(item.map_id, "owner-a").revision == 1
+    assert reopened.get_map(item.map_id, "owner-a").revision == 2
 
 
 def test_refresh_apply_preserves_existing_values_when_provider_omits_fields_or_edges(tmp_path):

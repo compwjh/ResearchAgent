@@ -24,8 +24,8 @@ def test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes() -> N
     assert "innerHTML" not in MODULE
     assert ".literature-map-analysis" in STYLES
     assert ".literature-map-analysis-history-item" in STYLES
-    assert "/assets/literature-maps.js?v=8" in INDEX
-    assert "/assets/literature-maps.css?v=6" in INDEX
+    assert "/assets/literature-maps.js?v=10" in INDEX
+    assert "/assets/literature-maps.css?v=7" in INDEX
     assert "/assets/app.js?v=59" in INDEX
 
 

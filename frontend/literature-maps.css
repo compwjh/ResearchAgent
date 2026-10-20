@@ -133,6 +133,33 @@
 #literature-maps-view .literature-map-preview-empty { margin: 0; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; }
 #literature-maps-view .literature-map-preview-actions, #literature-maps-view .literature-map-job-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 #literature-maps-view .literature-map-preview-actions button, #literature-maps-view .literature-map-job-actions button { padding: 7px 9px; font-size: 10px; }
+#literature-maps-view .literature-map-groups { display: grid; gap: 8px; margin: 10px; padding: 10px; border: 1px solid #e2dcff; border-radius: 9px; background: #faf9ff; }
+#literature-maps-view .literature-map-groups[hidden] { display: none !important; }
+#literature-maps-view .literature-map-groups-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#literature-maps-view .literature-map-groups-heading h3 { margin: 0; font-size: 12px; }
+#literature-maps-view .literature-map-groups-note, #literature-maps-view .literature-map-group-helper { color: var(--muted); font: 9px/1.45 'DM Mono', monospace; }
+#literature-maps-view .literature-map-group-form { display: grid; grid-template-columns: minmax(0, 1fr) 28px auto; gap: 5px; align-items: center; }
+#literature-maps-view .literature-map-group-form input[type="text"], #literature-maps-view .literature-map-group-form input:not([type]) { min-width: 0; border: 1px solid #dfdced; border-radius: 6px; padding: 6px 7px; background: #fff; color: var(--ink); font: 10px Manrope, "Helvetica Neue", Arial, sans-serif; }
+#literature-maps-view .literature-map-group-form input:focus { border-color: var(--accent); outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
+#literature-maps-view .literature-map-group-form input[type="color"], #literature-maps-view .literature-map-group-color-input { width: 25px; height: 25px; padding: 1px; border: 1px solid #dfdced; border-radius: 5px; background: #fff; }
+#literature-maps-view .literature-map-group-form button, #literature-maps-view .literature-map-group-row button { padding: 6px 7px; font-size: 9px; white-space: nowrap; }
+#literature-maps-view .literature-map-group-list { display: grid; gap: 5px; }
+#literature-maps-view .literature-map-group-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 25px auto; gap: 5px; align-items: center; min-width: 0; }
+#literature-maps-view .literature-map-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 10px; }
+#literature-maps-view .literature-map-group-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: #fff; border: 1px solid #8d80e6; vertical-align: middle; }
+#literature-maps-view .literature-map-group-swatch.is-ungrouped { background: #fff; }
+#literature-maps-view .literature-map-group-empty { margin: 0; color: var(--muted); font: 9px/1.45 'DM Mono', monospace; }
+#literature-maps-view .literature-map-group-empty[hidden] { display: none !important; }
+#literature-maps-view .literature-map-group-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px 9px; }
+#literature-maps-view .literature-map-group-legend[hidden] { display: none !important; }
+#literature-maps-view .literature-map-group-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+#literature-maps-view .literature-map-node.is-grouped circle { stroke-width: 2.5; }
+#literature-maps-view .literature-map-node-group-section { display: grid; gap: 6px; padding-top: 11px; border-top: 1px solid #ece9f7; }
+#literature-maps-view .literature-map-node-group-section h4 { margin: 0; font-size: 11px; }
+#literature-maps-view .literature-map-node-group-label { display: grid; gap: 5px; color: var(--muted-strong); font-size: 10px; font-weight: 700; }
+#literature-maps-view .literature-map-node-group-label select { width: 100%; min-width: 0; border: 1px solid #dfdced; border-radius: 7px; padding: 7px 8px; background: #fff; color: var(--ink); font: 10px/1.45 Manrope, "Helvetica Neue", Arial, sans-serif; }
+#literature-maps-view .literature-map-group-helper { margin: 0; }
+#literature-maps-view .literature-map-export-button { padding: 5px 7px; font: 10px 'DM Mono', monospace; }
 @media (max-width: 1180px) {
   #literature-maps-view .literature-map-grid { grid-template-columns: minmax(190px, .74fr) minmax(390px, 1.6fr); }
   #literature-maps-view .literature-map-detail-panel { grid-column: 1 / -1; min-height: 0; max-height: 300px; }
