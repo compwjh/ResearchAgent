@@ -1,0 +1,49 @@
+{
+  "schema_version": "task05-api-e2e-run-v2",
+  "run_id": "20261021-171101-dd616d5-continued",
+  "parent_run_id": "20261021-015442-dd616d5-v1-reindex",
+  "candidate": {
+    "commit": "dd616d5",
+    "base_url": "http://127.0.0.1:8000/"
+  },
+  "entities": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "node_id": "21041260a5394f42891b020128fa60fa",
+    "document_id": "55afc3b8f01445429462fe78ed0d4c98"
+  },
+  "continuation": {
+    "reindex": "not_repeated",
+    "read_only_checks": [
+      {
+        "method": "GET",
+        "path": "/api/kb/documents?limit=100",
+        "transport_result": "connection_refused",
+        "http_status": null
+      },
+      {
+        "method": "GET",
+        "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses",
+        "transport_result": "connection_refused",
+        "http_status": null
+      }
+    ],
+    "full_analysis": "not_run",
+    "full_analysis_replay": "not_run",
+    "full_conversation": "not_run",
+    "full_qa_sse": "not_run"
+  },
+  "result": {
+    "status": "BLOCKED_SERVICE_UNAVAILABLE",
+    "reason": "The already-deployed service was unreachable during the continuation read-only checks; no restart was attempted and no POST was issued."
+  },
+  "redaction": {
+    "retained_document_ids": ["55afc3b8f01445429462fe78ed0d4c98"],
+    "omitted_record_count": 0,
+    "omitted_fields": [
+      "headers",
+      "credentials and tokens",
+      "absolute filesystem paths",
+      "model content and hidden reasoning"
+    ]
+  }
+}

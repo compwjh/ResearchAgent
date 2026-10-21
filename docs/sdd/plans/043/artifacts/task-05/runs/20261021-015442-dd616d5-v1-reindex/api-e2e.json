@@ -1,0 +1,137 @@
+{
+  "schema_version": "task05-api-e2e-run-v2",
+  "run_id": "20261021-015442-dd616d5-v1-reindex",
+  "parent_run_id": "20261021-002317-b94717c",
+  "candidate": {
+    "commit": "dd616d5",
+    "base_url": "http://127.0.0.1:8000/",
+    "ready_http_status": 200,
+    "ready": true
+  },
+  "entities": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "node_id": "21041260a5394f42891b020128fa60fa",
+    "document_id": "55afc3b8f01445429462fe78ed0d4c98"
+  },
+  "scoped_reindex": {
+    "request": {
+      "method": "POST",
+      "path": "/api/kb/documents/{document_id}/reindex",
+      "body": {"chunker": "v1"}
+    },
+    "submit_http_status": 202,
+    "task_id": "46266f04e0e445b6ab0dfbb2998f842b",
+    "initial_status": "queued",
+    "polls": {
+      "count": 1,
+      "http_statuses": [200],
+      "document_status": "indexed",
+      "v1_status": "indexed",
+      "v1_progress": 100,
+      "v1_error": null
+    },
+    "attempts": 1
+  },
+  "canonical_verification": {
+    "api_kb_papers_http_status": 200,
+    "node_document_match": true,
+    "map_project_id": null,
+    "document_project_id": null,
+    "source_sha256": "a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284",
+    "indexed_source_sha256": "a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284",
+    "source_hash_state": "verified",
+    "v1_manifest": {
+      "status": "ready",
+      "progress": 100,
+      "source_hash_state": "verified",
+      "source_and_index_hash_equal": true,
+      "index_fingerprint_present": true,
+      "mapped_count": 57,
+      "unmapped_count": 0
+    },
+    "generation": {
+      "requirement_observed": true,
+      "run_id": "38efa91a33154fd097c61d1c745d408f"
+    },
+    "source_version": null,
+    "source_version_reason": "The owner-scoped association set contains no entry for this document, so the deployed service cannot resolve the full source version for the unbound map."
+  },
+  "source_gate": {
+    "request": {
+      "method": "GET",
+      "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses"
+    },
+    "http_status": 200,
+    "fulltext_ready": false,
+    "available_evidence_levels": ["abstract"],
+    "source_versions": {
+      "abstract": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+      "full": null
+    },
+    "unavailable_reason": null,
+    "result": "BLOCKED_BEFORE_FULL_SUBMIT"
+  },
+  "full_analysis": {
+    "status": "not_run",
+    "reason": "MAP_FULLTEXT_UNAVAILABLE",
+    "submit_http_status": null,
+    "replay_http_status": null,
+    "analysis_id": null,
+    "job_id": null
+  },
+  "full_conversation": {
+    "status": "not_run",
+    "reason": "MAP_FULLTEXT_UNAVAILABLE",
+    "conversation_id": null,
+    "qa_sse": "not_run"
+  },
+  "retained_prior_success": {
+    "abstract_run_id": "20261021-002317-b94717c",
+    "status": "passed",
+    "analysis_id": "7c63cba835c044859c571dbc87f6a48a",
+    "conversation_id": "5e530508d5b9433297bf1be0f27b2352"
+  },
+  "graph_invariant": {
+    "before": {
+      "revision": 17,
+      "status": "partial",
+      "node_count": 21,
+      "edge_count": 18,
+      "target_position": {"x": 120.0, "y": 80.0},
+      "target_group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7"
+    },
+    "after": {
+      "revision": 17,
+      "status": "partial",
+      "node_count": 21,
+      "edge_count": 18,
+      "target_position": {"x": 120.0, "y": 80.0},
+      "target_group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+      "groups_http_status": 200,
+      "group_count": 1
+    },
+    "layout_group_hash_before": "e88b7d51b1753bb9114c2b90f927fd140d66d726499fe32408119610d58bb3e1",
+    "layout_group_hash_after": "e88b7d51b1753bb9114c2b90f927fd140d66d726499fe32408119610d58bb3e1",
+    "unchanged": true
+  },
+  "redaction": {
+    "retained_document_ids": ["55afc3b8f01445429462fe78ed0d4c98"],
+    "omitted_record_count": 0,
+    "omitted_fields": [
+      "unrelated document and node details",
+      "request/response headers",
+      "absolute filesystem paths",
+      "cookies, authorization, tokens and credentials",
+      "model prompt, response content and hidden reasoning",
+      "raw SSE and raw export payloads"
+    ],
+    "reason": "Evidence keeps only the target IDs, aggregate graph counts, source gate fields, statuses and stable hashes needed to reproduce this scoped acceptance result."
+  },
+  "final_result": {
+    "status": "BLOCKED",
+    "blocking_code": "MAP_FULLTEXT_UNAVAILABLE",
+    "blocking_detail": "The repaired canonical record and v1 manifest are verified/ready, but the unbound map's owner-scoped document association is absent; the deployed source gate therefore returns no full source_version.",
+    "provider_called": false,
+    "additional_reindex_attempted": false
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "schema_version": "task05-api-e2e-run-v2",
+  "run_id": "20261021-172344-82c816f-full",
+  "parent_run_id": "20261021-015442-dd616d5-v1-reindex",
+  "candidate": {
+    "commit": "82c816f",
+    "base_url": "http://127.0.0.1:8000/",
+    "ready_http_status": 200,
+    "ready": true,
+    "health_http_status": 200,
+    "model": "qwen3.8:27b"
+  },
+  "entities": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "node_id": "21041260a5394f42891b020128fa60fa",
+    "document_id": "55afc3b8f01445429462fe78ed0d4c98"
+  },
+  "canonical_verification": {
+    "reindex": "not_repeated",
+    "kb_papers_http_status": 200,
+    "node_document_match": true,
+    "source_sha256": "a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284",
+    "indexed_source_sha256": "a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284",
+    "source_hash_state": "verified",
+    "v1_status": "indexed",
+    "v1_progress": 100,
+    "v1_error": null,
+    "project_id": null
+  },
+  "source_gate": {
+    "http_status": 200,
+    "abstract_available": true,
+    "fulltext_ready": true,
+    "available_evidence_levels": ["abstract", "full"],
+    "source_versions": {
+      "abstract": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+      "full": "a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c"
+    },
+    "unavailable_reason": null
+  },
+  "abstract_retained": {
+    "run_id": "20261021-002317-b94717c",
+    "analysis_id": "7c63cba835c044859c571dbc87f6a48a",
+    "job_id": "95d900a561664e8b9db4300189abf336",
+    "version": 1,
+    "status": "completed",
+    "summary_len": 490
+  },
+  "full_analysis": {
+    "submit_http_status": 202,
+    "analysis_id": "3bb20a9a794d4104b13fc1fe5f581c66",
+    "job_id": "1655a96b6f054c66931260204caaefa4",
+    "version": 2,
+    "status": "completed",
+    "evidence_level": "full",
+    "source_version": "a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c",
+    "model": "qwen3.8:27b",
+    "summary_len": 627,
+    "source_refs": {
+      "count": 1,
+      "document_ids": ["55afc3b8f01445429462fe78ed0d4c98"],
+      "chunker": "v1"
+    },
+    "citations": {
+      "count": 5,
+      "document_ids": ["55afc3b8f01445429462fe78ed0d4c98"]
+    },
+    "terminal_poll_count": 6
+  },
+  "full_analysis_replay": {
+    "http_status": 202,
+    "status": "completed",
+    "same_analysis_id": true,
+    "same_job_id": true,
+    "same_version": true,
+    "same_source_version": true
+  },
+  "full_conversation": {
+    "submit_http_status": 200,
+    "conversation_id": "cc9f02f3d8184943bee35b4a23aa9481",
+    "created": true,
+    "project_id": null,
+    "evidence_level": "full",
+    "source_version": "a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c",
+    "context_document_id": "55afc3b8f01445429462fe78ed0d4c98",
+    "replay_http_status": 200,
+    "replay_created": false,
+    "replay_same_conversation_id": true,
+    "replay_same_source_version": true
+  },
+  "full_qa": {
+    "message_post_http_status": 200,
+    "content_type": "text/event-stream",
+    "sse": {
+      "event_count": 718,
+      "first_event_seq": 1,
+      "last_event_seq": 718,
+      "strictly_increasing": true,
+      "event_types": {
+        "meta": 1,
+        "progress": 7,
+        "token": 708,
+        "sources": 1,
+        "done": 1
+      },
+      "done": {
+        "event_seq": 718,
+        "status": "completed",
+        "duration_ms": 84575.08229091763
+      },
+      "sources_event_seq": 717,
+      "source_count": 5,
+      "source_document_ids": ["55afc3b8f01445429462fe78ed0d4c98"]
+    },
+    "messages_get_http_status": 200,
+    "user_status": "completed",
+    "assistant_status": "completed",
+    "assistant_message_id": "a602deb9b4a340edae557a85bfc089ea",
+    "assistant_content_len": 1473,
+    "assistant_last_event_seq": 718
+  },
+  "graph_invariant": {
+    "before": {
+      "revision": 17,
+      "status": "partial",
+      "node_count": 21,
+      "edge_count": 18,
+      "target_position": {"x": 120.0, "y": 80.0},
+      "target_group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7"
+    },
+    "after": {
+      "revision": 17,
+      "status": "partial",
+      "node_count": 21,
+      "edge_count": 18,
+      "target_position": {"x": 120.0, "y": 80.0},
+      "target_group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+      "groups_http_status": 200,
+      "group_count": 1
+    },
+    "layout_group_hash_before": "e88b7d51b1753bb9114c2b90f927fd140d66d726499fe32408119610d58bb3e1",
+    "layout_group_hash_after": "e88b7d51b1753bb9114c2b90f927fd140d66d726499fe32408119610d58bb3e1",
+    "unchanged": true
+  },
+  "redaction": {
+    "retained_document_ids": ["55afc3b8f01445429462fe78ed0d4c98"],
+    "omitted_record_count": 50,
+    "omitted_fields": [
+      "unrelated document/node/map records",
+      "request/response headers",
+      "absolute filesystem paths",
+      "cookies, authorization, tokens and credentials",
+      "model prompt, response content, token text and hidden reasoning"
+    ],
+    "reason": "Only target IDs, statuses, counts, source-version hashes, event sequence metadata and aggregate graph invariants are retained."
+  },
+  "final_result": {
+    "status": "PASS",
+    "full_analysis": "PASS",
+    "full_analysis_idempotency": "PASS",
+    "full_conversation_idempotency": "PASS",
+    "full_qa_sse": "PASS",
+    "single_document_citations": true,
+    "graph_unchanged": true,
+    "provider_called_only_through_application_api": true
+  }
+}

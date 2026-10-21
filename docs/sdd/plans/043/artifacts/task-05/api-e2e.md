@@ -129,3 +129,73 @@ retryable: false
 恢复后的 map source-status 只读轮询（3 次 HTTP 200）仍为：`fulltext_ready=false`、`available_evidence_levels=["abstract"]`、full source version 为 null。`/api/kb/papers` 仍显示 `source_hash_state=legacy_unknown`、`indexed_source_sha256=null`，而 v1 状态仍仅为 indexed 100%，不能证明当前全文 evidence manifest 已 ready。因此本次没有重跑全文分析、全文幂等、全文会话或全文 QA，也没有追加第二次 reindex。
 
 恢复证据和最终状态摘要：[`reindex-e2e.json`](runs/20261021-003209-b94717c-v1-reindex/reindex-e2e.json)。恢复后结论仍为 **BLOCKED**；原摘要成功和原全文 409 证据保持不变。
+
+## 2026-10-21 修复候选 scoped v1 恢复（追加 run）
+
+本节是修复候选 `dd616d5` 上的独立真实 HTTP 运行；保留前两轮失败证据，不覆盖原 run，也没有再次调用 provider、inspection GET 或其他 reindex。
+
+- run：`20261021-015442-dd616d5-v1-reindex`
+- 地址：`http://127.0.0.1:8000/`，`/api/ready` HTTP 200，`ready=true`
+- 目标：map `0baabeae7268429c9f7e4de8098ae1d0`、node `21041260a5394f42891b020128fa60fa`、document `55afc3b8f01445429462fe78ed0d4c98`
+- 证据摘要：[`runs/20261021-015442-dd616d5-v1-reindex/api-e2e.json`](runs/20261021-015442-dd616d5-v1-reindex/api-e2e.json)
+
+### 唯一一次 v1 reindex：HTTP PASS，但全文门禁仍 BLOCKED
+
+按授权请求 `POST /api/kb/documents/{document_id}/reindex`，body `{"chunker":"v1"}`，返回 HTTP 202，task `46266f04e0e445b6ab0dfbb2998f842b`，状态 `queued`。一次只读轮询 HTTP 200 后，目标文档与 v1 均为 `indexed`、progress `100`、error null。没有第二次重试。
+
+修复后的只读 canonical 证据为：目标 `source_hash_state=verified`，`source_sha256` 与 `indexed_source_sha256` 相等；v1 manifest 为 `status=ready`、progress `100`、verified、mapped `57`、unmapped `0`、index fingerprint 存在；generation requirement 通过。node 的 `document_id` 与目标文档精确匹配，map/document `project_id` 均为 null。
+
+随后 GET `/api/literature-maps/{map_id}/nodes/{node_id}/analyses` 返回 HTTP 200，但仍为 `fulltext_ready=false`、`available_evidence_levels=["abstract"]`、`source_versions.full=null`。该未绑定地图的 owner-scoped association 集合没有目标文档条目，服务无法计算全文 `source_version`，因此返回全文不可用门禁。
+
+### 全文分析与会话：未提交，保留真实阻塞
+
+因 source gate 仍未满足，本轮没有提交全文分析、幂等回放、全文会话、消息或 SSE；不存在可声称的全文 analysis/job/conversation ID，也没有把摘要结果冒充全文结果。既有摘要真实成功记录仍引用首轮 run `20261021-002317-b94717c`，未重跑或覆盖。
+
+### 图谱不变量：PASS
+
+scoped reindex 前后只读 graph 均为 revision `17`、status `partial`、`21` nodes、`18` edges；GAT 节点位置保持 `(120.0, 80.0)`，目标 group ID 保持 `8c8f20f7a4c04e0e92f9cdd78fc01ce7`，groups GET 为 HTTP 200 且保留 `1` 个组。脱敏后的布局/分组哈希前后均为 `e88b7d51b1753bb9114c2b90f927fd140d66d726499fe32408119610d58bb3e1`。
+
+### 本轮裁决
+
+**BLOCKED。** 唯一一次 v1 reindex 真实返回并完成，canonical hash 与 manifest 门禁已达到 verified/ready；但当前 unbound map 没有 owner-scoped document association，部署候选仍无法产生全文 source version，故没有绕过门禁发起全文模型或会话。原始全文失败、摘要成功和此前恢复 run 均保留；下一步需由后端处理合法的 shared-pool association/来源解析后，再在新候选上重新执行全文验收。
+
+## 继续验收：服务不可达（追加 run）
+
+继续指令到达后，未重复此前已提交的 v1 reindex。对同一候选 `dd616d5` 只做两项只读核验：GET `/api/kb/documents?limit=100` 与 GET `/api/literature-maps/{map_id}/nodes/{node_id}/analyses` 均在 TCP 层 connection refused，未取得 HTTP 响应（无状态码）。本次不将无状态连接失败解释为业务失败，也没有重启服务。
+
+- continuation run：`20261021-171101-dd616d5-continued`
+- 脱敏摘要：[`runs/20261021-171101-dd616d5-continued/api-e2e.json`](runs/20261021-171101-dd616d5-continued/api-e2e.json)
+- 由于服务不可达，不能重新确认 reindex 终态或 source gate，也未提交全文分析/幂等、全文会话、QA 或 SSE；此前 `20261021-015442-dd616d5-v1-reindex` 的 verified/ready 与 `MAP_FULLTEXT_UNAVAILABLE` 证据保持不变。
+
+本轮裁决：**BLOCKED（服务不可达，等待已部署候选恢复后再继续只读核验）**。
+
+## 2026-10-21 候选 `82c816f` 全文真实验收（追加 run）
+
+本轮在新的已部署候选上继续验收；不重复已完成的 v1 reindex，不修改图谱、分组或 viewport，不调用 inspection API。运行摘要：[`runs/20261021-172344-82c816f-full/api-e2e.json`](runs/20261021-172344-82c816f-full/api-e2e.json)。
+
+### 来源门禁与实体核验：PASS
+
+- `/api/ready`：HTTP 200，`ready=true`；`/api/health`：HTTP 200，模型为 `qwen3.8:27b`。
+- map `0baabeae7268429c9f7e4de8098ae1d0`、node `21041260a5394f42891b020128fa60fa`、document `55afc3b8f01445429462fe78ed0d4c98` 保持既有目标关系。
+- `/api/kb/papers`：HTTP 200；目标 source/index hash 相等，`source_hash_state=verified`，v1 `indexed`、progress `100`、error null。
+- analyses GET：HTTP 200；`fulltext_ready=true`、`available_evidence_levels=["abstract","full"]`；full source version 为 `a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c`。既有摘要 version 1 保留。
+
+### 全文分析与幂等：PASS
+
+全文分析 POST HTTP 202，得到 analysis `3bb20a9a794d4104b13fc1fe5f581c66`、job `1655a96b6f054c66931260204caaefa4`、version `2`；终态为 `completed`，模型 `qwen3.8:27b`，summary 非空（627 字符），source version 与门禁一致。`source_refs` 仅包含目标 document、chunker `v1`；5 个 citations 的 document ID 也全部为目标 document。
+
+同一 JSON 同 key 重放 HTTP 202，复用同一 analysis/job/version/source_version，未创建第二个分析版本。
+
+### 全文会话与 QA/SSE：PASS
+
+全文 conversation POST HTTP 200，conversation `cc9f02f3d8184943bee35b4a23aa9481`，`created=true`、`evidence_level=full`、source version 与全文分析一致，context 的 document ID 精确为目标文档。相同 key 重放 HTTP 200、`created=false`、conversation ID/source version 不变。
+
+通过既有 `/api/conversations/{conversation_id}/messages` 发送一次全文事实问题，HTTP 200、`text/event-stream`。脱敏事件统计为 718 个事件，seq 严格 `1..718`：meta 1、progress 7、token 708、sources 1、done 1；done seq 718、status `completed`。sources seq 717 含 5 个来源，document ID 全部为目标 document。随后 GET messages HTTP 200，user/assistant 均 `completed`，assistant 非空（1473 字符）。报告不保存 prompt 全文、token、回答正文或 hidden reasoning。
+
+### 图谱不变量：PASS
+
+全文分析和会话前后只读 graph 均为 revision `17`、status `partial`、21 nodes、18 edges；GAT 节点位置 `(120.0, 80.0)`、目标 group ID `8c8f20f7a4c04e0e92f9cdd78fc01ce7` 保持不变。groups GET HTTP 200，仍为 1 个组；布局/分组哈希前后均为 `e88b7d51b1753bb9114c2b90f927fd140d66d726499fe32408119610d58bb3e1`。
+
+### 本轮裁决
+
+**PASS（Task05 backend API 全文链路）。** 新候选真实通过全文来源门禁、全文分析、分析幂等、全文会话幂等、单文档引用和全文 QA/SSE；既有摘要 version 1 保留，图谱结构/布局/分组未被分析链路改写。此前失败 run 未删除或覆盖。

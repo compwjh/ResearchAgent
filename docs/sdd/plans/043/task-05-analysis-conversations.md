@@ -1,7 +1,7 @@
 # Task 05 — AI 分析与会话
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：04；被依赖：07；当前状态：**进行中（已部署，真实全文验收受索引状态阻塞）**。
+> 依赖：04；被依赖：07；当前状态：**进行中（API 摘要/全文链路真实 PASS；移动真实验收仍待 390/桌面 live 复验）**。
 
 ## 一句话目标
 
@@ -9,7 +9,8 @@
 
 ## 当前证据与前置条件
 
-- Task03/04真实阶段门禁已通过且保留provider限制。本Task双端独立复审GO，候选 `b94717c` 已部署8000，ready=true。真实摘要分析及问答成功，前端真实Chrome smoke通过；全文返回409 `MAP_FULLTEXT_UNAVAILABLE`，真实v1 manifest缺失，v2为partial，不能宣称全文通过。已授权通过现有API对这一篇验收论文执行一次v1重建恢复；原失败证据保留于 `artifacts/task-05/api-e2e.md` 及其run目录。尚未Task05阶段验收签字，不运行Spec全量、不push。
+- Task03/04真实阶段门禁已通过且保留provider限制。本Task早期候选 `b94717c` 的摘要分析、摘要会话和前端 Chrome smoke 成功；全文 `409 MAP_FULLTEXT_UNAVAILABLE`、`dd616d5` scoped v1 恢复仍被 gate 阻塞、续跑服务不可达等历史证据均保留于 [`api-e2e.md`](artifacts/task-05/api-e2e.md) 及其 run 目录。后续候选 `82c816f` 已真实通过摘要保留、全文来源门禁、全文分析/幂等、全文会话/幂等和全文 QA/SSE；本 Task API 证据现为 PASS，但尚未 Task05 阶段验收签字，不运行 Spec 全量、不 push。
+- Spec018 修复集成记录已同步到 [`runtime-e2e.md`](../018/artifacts/2026-10-21-pdf-safety-repair/runtime-e2e.md)：单文档来源安全状态与全文集成 PASS；这不改变 Spec043 仍处于实施中的状态。Task07 最新 375px 详情滚动窄复验已 PASS，390px/桌面完整 live 仍待完成；最终全量回归和最终验收尚未执行。
 - 复用代码位置是调研入口，未来实现时需对照实际提交核实，不复制过期实现。后续新增模块/前端文件按前置Task固定报告定位，不猜文件名。
 - Spec处于待确认时禁止实现。需求/技术门禁通过及用户明确确认后，先核对工作区/实现分支，保护Spec032暂停快照及其他任务修改。
 - 前置Task真实通过后才能执行；若预生成接口尚未冻结，应标阻塞而非自行发明第二套合同。
@@ -126,6 +127,18 @@
 2026-10-20 03:32 +08:00：Task04阶段门禁通过后开始只读复用核实。本Task迁移前已对包含最新刷新结果的地图SQLite生成一致性备份 `data/literature_maps/backups/literature-maps-20261020T0332-task04-passed.sqlite3`；SQLite `.backup` 和备份 `PRAGMA integrity_check` 退出0、结果ok。未将运行数据提交Git；本Task代码尚未开始。
 
 随后复用接缝核实完成，主会话冻结公开JSON/证据/跨库绑定合同，并将前后端分别交由独立开发Agent实现。当前服务暂止以防未复审静态资源暴露；未宣称本Task完成。
+
+### 2026-10-21 最新真实 API 验收与 Spec018 修复集成
+
+候选 `82c816f` 的真实 HTTP 运行已补齐此前缺失的全文链路；完整脱敏证据见 [`api-e2e.md`](artifacts/task-05/api-e2e.md) 末尾及 [`api-e2e.json`](artifacts/task-05/runs/20261021-172344-82c816f-full/api-e2e.json)。Spec018 修复链路的交接说明见 [`runtime-e2e.md`](../018/artifacts/2026-10-21-pdf-safety-repair/runtime-e2e.md)。此前 `b94717c` 全文 409、`dd616d5` source gate BLOCKED 及服务不可达 continuation 记录均未删除或覆盖。
+
+- `/api/ready` 与 `/api/health` 均 HTTP 200，ready=true，模型为 `qwen3.8:27b`；目标 map/node/document ID 与既有验收一致。
+- `/api/kb/papers` 的目标 source/index hash 相等、`source_hash_state=verified`，v1 为 `indexed`/100；analyses GET 返回 `fulltext_ready=true`、`available_evidence_levels=["abstract", "full"]`，全文 source version 为 `a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c`。
+- 既有摘要分析 version 1（analysis `7c63cba835c044859c571dbc87f6a48a`，summary 490 字符）保留。全文分析 POST HTTP 202，analysis `3bb20a9a794d4104b13fc1fe5f581c66`、job `1655a96b6f054c66931260204caaefa4`、version 2，终态 completed、summary 627 字符；source refs 1 条、5 个 citations 均仅指向目标 document。相同幂等请求复用同一 analysis/job/version/source version。
+- 全文会话 POST HTTP 200，conversation `cc9f02f3d8184943bee35b4a23aa9481`，evidence_level=full；重放返回 created=false 且 conversation/source version 不变。消息 SSE HTTP 200、`text/event-stream`，718 个事件严格 seq 1..718（meta 1、progress 7、token 708、sources 1、done 1），done=completed；sources 的 5 条引用均为目标 document，随后 messages GET 的 user/assistant 均 completed，assistant 非空（1473 字符）。
+- 全文分析与会话前后 graph 均为 revision 17、partial、21 nodes/18 edges；目标节点位置、group ID、布局/分组哈希保持不变。
+
+本节裁决：**PASS（Task05 backend/API 摘要与全文链路）**。这只确认当前候选的真实 API 集成证据，不是 Task05 总体验收签字，也不是 Spec043 完成。Task07 最新真实 375×820 详情触控窄复验已记录 `scrollTop` 0→75→175；此前零间隔触控得到的 P1/BLOCK 属于时序假阴性，历史诊断证据仍保留。390px/桌面完整 live 仍待执行，最终全量回归、Task08 最终验收和部署收口均未执行。
 
 ## 变更日志
 
