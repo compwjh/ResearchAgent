@@ -119,9 +119,10 @@ class MapAnalysisService:
         version.  Every call re-reads the owner-scoped document association,
         the committed generation marker, and the inspection manifest.
         """
-        # ``project_id=None`` is the owner-scoped shared pool.  It is a
-        # legitimate canonical-document scope and must not be confused with
-        # an omitted document identity.
+        # ``project_id=None`` is the owner-scoped shared pool of canonical
+        # records with no sidecar association.  Associated records remain
+        # excluded even when their relation belongs to another owner/project.
+        # It must not be confused with an omitted document identity.
         if not document_id:
             return None
         try:

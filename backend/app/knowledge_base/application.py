@@ -736,25 +736,34 @@ def list_documents_for_project(
 ) -> list[dict[str, Any]]:
     """List canonical records in one explicit scope.
 
-    ``None`` means the unbound/shared pool; a project ID means only that
-    project's documents.  Project chat must not silently absorb unrelated
-    global documents merely because they are unbound.
+    ``None`` means the unbound/shared pool: only canonical records with no
+    sidecar association are visible.  Any association, including one owned
+    by another owner or pointing at another project, excludes that record
+    from this pool.  A project ID means only that project's owner-scoped
+    documents.  Project chat must not silently absorb unrelated documents.
     """
     meta = Path(meta_path or KB_META_PATH)
     records = load_papers_strict(meta)
     associations = _load_associations(_association_path(meta))
-    return [
-        {
-            **dict(item),
-            "project_id": associations[record_id(item)]["project_id"],
-        }
-        for item in records
-        if isinstance(item, dict)
-        and item.get("schema_version") == "knowledge-document-v1"
-        and record_id(item) in associations
-        and associations[record_id(item)].get("project_id") == project_id
-        and _relation_owner_ok(associations[record_id(item)], owner_id)
-    ]
+    visible: list[dict[str, Any]] = []
+    for item in records:
+        if not isinstance(item, dict) or item.get("schema_version") != "knowledge-document-v1":
+            continue
+        document_id = record_id(item)
+        relation = associations.get(document_id)
+        if project_id is None:
+            if relation is not None:
+                continue
+            visible.append({**dict(item), "project_id": None})
+            continue
+        if (
+            relation is None
+            or relation.get("project_id") != project_id
+            or not _relation_owner_ok(relation, owner_id)
+        ):
+            continue
+        visible.append({**dict(item), "project_id": relation["project_id"]})
+    return visible
 
 
 def get_document_project(

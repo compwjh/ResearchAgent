@@ -164,3 +164,34 @@ backend-dev 报告中的 `tests/literature_maps` **113 passed** 未在本轮独�
 ### 最终裁定
 
 **GO（Task05 backend 窄复审）。** 本轮未发现仍存在的 P0/P1：shared-pool `None` 语义、full chunker 单文档隔离、生成后来源复核、真实 manifest 门禁、binding 直接读取/fail-closed、跨连接幂等 `created`、删除会话 404 与新 reservation 均有实现证据和精准测试支撑。该 GO 仅表示后端窄复审通过，不替代真实 API/provider smoke、部署验证或 Spec 收口验收。
+
+## 2026-10-21 Task05 共享池 helper 最终窄复审
+
+本节只复核 Spec043 Task05 新增的共享池来源解析修复；不修改业务代码、不写生产关联、不调用 provider、不部署、不跑全量回归。评审依据为 Spec043 共享池补充合同（`docs/sdd/specs/043-literature-map-topic-exploration.md:166-168`）及实际 diff。
+
+### 合同逐项核对
+
+| 检查项 | 结果 | 实际证据 |
+|---|---|---|
+| `project_id=None` 共享池只收无关联 canonical | **PASS** | `backend/app/knowledge_base/application.py:739-757` 先读取严格 `knowledge-document-v1` canonical records，再按 document ID 查 sidecar；只要存在任何 relation（无论 owner/project）即排除，只有 `relation is None` 才返回并显式投影 `project_id=None`。没有从 map node/document ID 推导授权。 |
+| 指定 project 的 owner/project 隔离 | **PASS（owner_id 已提供的服务端路径）** | `application.py:759-765` 要求 relation 存在、`project_id` 精确相等且 `_relation_owner_ok` 通过；`application.py:577-598` 对 sidecar schema、owner/project 类型也做 fail-closed 校验。分析链在 `backend/app/literature_maps/application/analysis.py:122-130` 以 owner_id 调用 helper。 |
+| 不改 canonical/sidecar schema 或生产关系 | **PASS** | diff 只改变 `list_documents_for_project` 的读取分支并新增能力测试；`set_document_project` 的 sidecar schema/写入路径未改，测试 `tests/system/test_project_document_context.py:52-61` 仍证明 canonical 不落 `project_id`。 |
+
+显式临时元数据探针使用真实 `create_uploaded_document`/`set_document_project`/`list_documents_for_project`，未 patch `source_checker`、未使用假记录：创建 1 个无关联文档、同一 project 下的 owner-a/owner-b 文档及 owner-a 的另一 project 文档。结果为：`None/owner-a` 和 `None/owner-b` 均只返回无关联文档；`project-a/owner-a` 只返回 owner-a 文档；`project-a/owner-b` 只返回 owner-b 文档；`project-b/owner-a` 只返回另一 project 文档。任何已有关联记录均未落入 `None` 共享池。
+
+### 精准验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `.venv/bin/python -m pytest -q tests/system/test_project_document_context.py tests/literature_maps/test_map_analysis_evidence.py tests/literature_maps/test_map_conversation_binding.py` | 0 | **26 passed in 7.05s**；包含 `test_unbound_visibility_includes_only_unassociated_documents`（`tests/system/test_project_document_context.py:76-88`）及既有 map analysis evidence/context 链。 |
+| 真实临时 `papers.json`/sidecar helper 探针（见上） | 0 | 通过跨 owner、跨 project、无关联三类返回集核对；没有 provider 或 source checker fake。 |
+| `git diff --check --` 相关 backend/测试文件 | 0 | 通过。 |
+
+### 边界与未覆盖
+
+- `owner_id=None` 仍是既有 helper 的未限定读取语义；本轮所有服务端 map/API 路径均传入可信 owner_id，因此指定 project 的实际访问路径为精确 owner/project 匹配。若未来要把该内部 helper 改成“缺 owner 必拒绝”，应另行变更契约并更新现有兼容调用，不在本 Task 范围内。
+- 未启动服务、未执行真实 FastAPI/API E2E、未调用 Ollama/真实 provider、未执行真实 Qdrant 检索；未读取或修改生产 KB/sidecar 数据，也未验证部署后全文 smoke。此前 backend-review 的运行验证限制仍然有效。
+
+### 最终裁定
+
+**GO（共享池 helper 窄复审）。** 新实现满足 `None` 仅无任何 sidecar association 的 canonical 共享池语义，已关联其他 owner/project 的记录不会泄露，指定 project 在 owner_id 服务端门禁下精确匹配；真实临时元数据探针和 26 项精准后端测试通过。该 GO 仅覆盖本次 helper 修复，不替代真实 API/provider smoke、部署验证或 Spec 收口验收。
