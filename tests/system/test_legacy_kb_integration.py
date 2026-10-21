@@ -48,7 +48,11 @@ class FakeQdrant:
 def _write_pdf(path: Path, text: str = "Legacy KB retrieval compatibility. ") -> None:
     document = pymupdf.open()
     page = document.new_page()
-    page.insert_text((72, 72), text * 12)
+    page.insert_textbox((72, 72, 540, 200), "\n".join([text * 3] * 4))
+    # Canonical publication now requires a proven-safe active-feature scan;
+    # make this generated PDF use the same passive local destination shape as
+    # the Spec018 safety fixtures instead of relying on parser fallback.
+    document.xref_set_key(document.pdf_catalog(), "OpenAction", "[4 0 R /Fit]")
     document.save(str(path))
     document.close()
 
@@ -80,15 +84,24 @@ def _canonical_record(paper_id="legacy-001", stored_name="legacy-001.pdf"):
     """Build the minimum v1 document record needed by canonical APIs."""
     return {
         "schema_version": "knowledge-document-v1",
+        "migration_version": "018-document-v1",
         "document_id": paper_id,
-        "paper_id": paper_id,
         "file_name": "shared.pdf",
         "stored_name": stored_name,
         "media_type": "application/pdf",
         "source_immutable": True,
         "source_sha256": None,
+        "indexed_source_sha256": None,
+        "source_hash_state": "legacy_unknown",
         "status": "indexed",
-        "chunkers": {},
+        "created_at": "2026-09-01T10:00:00+00:00",
+        "page_count": 1,
+        "chunk_count": 0,
+        "chunkers": {
+            "v1": {"status": "indexed", "chunk_count": 0, "progress": 100, "error": None},
+            "v2": {"status": "pending", "chunk_count": 0, "progress": 0, "error": None},
+        },
+        "error": None,
     }
 
 
@@ -108,6 +121,16 @@ def _configure_store(tmp_path, records):
     papers_dir = tmp_path / "papers"
     papers_dir.mkdir()
     meta_path = tmp_path / "papers.json"
+    meta_path.write_text(json.dumps(records), encoding="utf-8")
+    return papers_dir, meta_path
+
+
+def _configure_canonical_store(tmp_path, records):
+    """Build the same ``data/kb`` layout used by generation-bound storage."""
+    live_root = tmp_path / "data" / "kb"
+    papers_dir = live_root / "papers"
+    papers_dir.mkdir(parents=True)
+    meta_path = live_root / "papers.json"
     meta_path.write_text(json.dumps(records), encoding="utf-8")
     return papers_dir, meta_path
 
@@ -198,7 +221,7 @@ def test_legacy_record_is_listed_and_ask_reads_legacy_qdrant_hit(tmp_path):
 
 def test_reindex_uses_canonical_application_and_route_with_fake_qdrant(tmp_path):
     record = _canonical_record()
-    papers_dir, meta_path = _configure_store(tmp_path, [record])
+    papers_dir, meta_path = _configure_canonical_store(tmp_path, [record])
     legacy_path = papers_dir / "legacy-001.pdf"
     _write_pdf(legacy_path)
     record["source_sha256"] = hashlib.sha256(legacy_path.read_bytes()).hexdigest()
@@ -222,7 +245,7 @@ def test_reindex_uses_canonical_application_and_route_with_fake_qdrant(tmp_path)
                 meta_path=meta_path,
                 destination_collection="papers_rebuild_live",
             )
-        assert result["paper_id"] == "legacy-001"
+        assert result["document_id"] == "legacy-001"
         assert result["chunkers"]["v1"]["status"] == "indexed", result["chunkers"]["v1"].get("error")
         assert fake_qdrant.upserted
         assert all(point.payload["paper_id"] == "legacy-001" for point in fake_qdrant.upserted)

@@ -1,12 +1,12 @@
 {
   "schema_version": "upload-closure-matrix-v1",
-  "inventory_git_revision": "06c3412",
-  "inventory_digest": "b3f2c7a2006f802695a080e50c4d23dff2bb2ce541481e97f15dfbb09876782a",
+  "inventory_git_revision": "8b0cde1",
+  "inventory_digest": "af7b65c4ad1ce78790e5e8e527c84ac612d7d8618a83939f0331ae511f760d0d",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {
       "path": "backend/app/main.py",
-      "sha256": "43a41025609611fb959c3305c6ef6af8743883d7947f8c397c16a5925d7f0fff"
+      "sha256": "efdf81a23b77646edebd1f61af717c23116d2a2535cfbde0fc53c220d5bf4a47"
     },
     {
       "path": "backend/app/api/routes_kb.py",
@@ -14,11 +14,11 @@
     },
     {
       "path": "backend/app/api/routes_paper.py",
-      "sha256": "20232f5358dcd6318b18b3b7f705966891ea8698c7ffc5fae9de45172aea25f6"
+      "sha256": "44f344f8ced34f0dbfd310ffd9189ddc0ee3a4c8c8fcdb3d1ccb4bb0607508af"
     },
     {
       "path": "backend/app/knowledge_base/application.py",
-      "sha256": "574112e82b5140d41bf6e572e1bdecae5881e5ec09c7818cb12c1bdff5e93ae5"
+      "sha256": "3edeb07ab77b4d9db3f55535b35175bde45fff0b55ed9bb398f5ffa12ccb0368"
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/store.py",
@@ -26,7 +26,7 @@
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/index.py",
-      "sha256": "ee0b6295c1e78ae4f528623dd5f6a760fd860778a05d022276756ba521228404"
+      "sha256": "066dcbc027aa04f7d3a192d2a07f0d7466108d0e867d0987e3903e2faa1db952"
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/tasks.py",
@@ -88,6 +88,7 @@
         "routes_kb._submit_index_task"
       ],
       "required_test_ids": [
+        "T-API-DOCUMENT-ROUTES",
         "T-OLD-ROUTES",
         "T-IMMUTABLE-CREATE"
       ],
@@ -389,6 +390,18 @@
       "required_status": "closed"
     },
     {
+      "entry_id": "index-failure-publication",
+      "entry_kind": "index",
+      "route_or_symbol": "index._mark_index_failed",
+      "current_behavior": "Publishes controlled failed chunker metadata and hash state, then refreshes the generation marker when permitted.",
+      "target_behavior": "Keep canonical publication fail-closed without a compatibility-writer fallback or an indexed success state on failure.",
+      "allowed_callers": ["index.index_paper_chunker", "index._publish_manifest_and_state"],
+      "forbidden_calls": ["source write/delete", "compatibility writer fallback", "uncontrolled indexed status"],
+      "required_test_ids": ["T-INDEX-FAILURE-PUBLICATION"],
+      "current_status": "closed",
+      "required_status": "closed"
+    },
+    {
       "entry_id": "index-task-entrypoints",
       "entry_kind": "task",
       "route_or_symbol": "tasks.submit_index_task, tasks.run_index_task_sync, tasks._guarded_run and tasks.mark_interrupted_on_startup",
@@ -475,7 +488,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_document_routes.py",
+        "tests/kb/test_kb_document_routes.py",
         "docs/sdd/plans/018/artifacts/task-04/api-fixture-index.json"
       ]
     },
@@ -494,7 +507,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_document_routes.py",
+        "tests/kb/test_kb_document_routes.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
@@ -518,9 +531,9 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_immutable_create.py",
-        "tests/test_kb_document_routes.py",
-        "tests/test_paper_import.py",
+        "tests/kb/test_kb_immutable_create.py",
+        "tests/kb/test_kb_document_routes.py",
+        "tests/paper_discovery/test_paper_import.py",
         "docs/sdd/plans/018/artifacts/task-06/batch-compensation-test-report.md"
       ]
     },
@@ -542,9 +555,9 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_paper_import.py",
-        "tests/test_paper_import_batch.py",
-        "tests/test_paper_import_batch_integration.py",
+        "tests/paper_discovery/test_paper_import.py",
+        "tests/paper_discovery/test_paper_import_batch.py",
+        "tests/paper_discovery/test_paper_import_batch_integration.py",
         "docs/sdd/plans/018/artifacts/task-06/batch-compensation-test-report.md"
       ]
     },
@@ -565,9 +578,9 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_import_compensation.py",
-        "tests/test_paper_import_batch.py",
-        "tests/test_paper_import_batch_integration.py",
+        "tests/paper_discovery/test_import_compensation.py",
+        "tests/paper_discovery/test_paper_import_batch.py",
+        "tests/paper_discovery/test_paper_import_batch_integration.py",
         "docs/sdd/plans/018/artifacts/task-06/batch-compensation-test-report.md"
       ]
     },
@@ -585,7 +598,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_paper_browser.py",
+        "tests/paper_discovery/test_paper_browser.py",
         "docs/sdd/plans/018/artifacts/task-06/browser-boundary-implementation-report.md"
       ]
     },
@@ -602,7 +615,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_document_delete.py",
+        "tests/kb/test_kb_document_delete.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
@@ -622,7 +635,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_document_boundary.py",
+        "tests/kb/test_kb_document_boundary.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
@@ -641,7 +654,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_candidate_rebuild.py",
+        "tests/kb/test_kb_candidate_rebuild.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
@@ -662,7 +675,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_document_reindex.py",
+        "tests/kb/test_kb_document_reindex.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
@@ -684,7 +697,7 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_upload_closure_matrix.py",
+        "tests/kb/test_kb_upload_closure_matrix.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
@@ -704,10 +717,25 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_startup_generation_gate.py",
+        "tests/kb/test_kb_startup_generation_gate.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
+      ]
+    },
+    {
+      "test_id": "T-INDEX-FAILURE-PUBLICATION",
+      "entry_ids": ["index-failure-publication"],
+      "assertions": [
+        "Manifest, metadata and generation publication failures remain fail-closed",
+        "Source hash mismatch is durably recorded and cannot become an indexed success"
+      ],
+      "command": "PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest -q tests/kb/test_kb_pdf_safety_publication.py tests/kb/test_kb_document_reindex.py tests/kb/test_kb_tasks.py tests/kb/test_kb_pdf_provenance.py tests/system/test_legacy_kb_integration.py -o cache_dir=/private/tmp/spec018-kb-regression-cache --basetemp=/private/tmp/spec018-kb-regression-tmp",
+      "exit_code": 0,
+      "status": "passed",
+      "evidence_paths": [
+        "tests/kb/test_kb_pdf_safety_publication.py",
+        "docs/sdd/plans/018/artifacts/2026-10-21-pdf-safety-repair/regression-repair-report.md"
       ]
     },
     {
@@ -725,13 +753,13 @@
       "exit_code": 0,
       "status": "passed",
       "evidence_paths": [
-        "tests/test_kb_candidate_rebuild.py",
-        "tests/test_kb_rebuild_cli.py",
+        "tests/kb/test_kb_candidate_rebuild.py",
+        "tests/kb/test_kb_rebuild_cli.py",
         "docs/sdd/plans/018/artifacts/task-06/closure-core-implementation-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-retest-report.md",
         "docs/sdd/plans/018/artifacts/task-06/core-final-review-report.md"
       ]
     }
   ],
-  "review_status": "implementation_ready"
+  "review_status": "verified"
 }

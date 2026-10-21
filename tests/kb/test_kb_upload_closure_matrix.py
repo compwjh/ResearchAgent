@@ -56,6 +56,9 @@ def test_inventory_hashes_are_stable_and_write_entrypoints_are_registered():
         "kb_component_status", "kb_health", "list_kb_papers", "kb_ask", "generate", "lifespan", "index",
         "handle_request_validation_error", "_fsync_directory", "_write_source_exclusive", "_snapshot_value",
         "_identity_parts", "_same_identity", "_port_status", "_index_succeeded", "_index_error_detail", "_call_supported",
+        # Pure index-state helpers: field normalization/checking only; no IO,
+        # metadata writes, manifest writes, or generation-marker publication.
+        "_normalize_index_error", "_canonical_index_record",
         "create_paper_import_port", "create_source_reader", "read_document_source", "create_manifest_store",
         "record_id", "default_chunkers", "default_chunker_state", "ensure_dirs", "load_papers", "load_papers_strict",
         "get_paper", "resolve_paper_path", "copy_source_exclusive", "new_record", "ensure_chunkers", "get_chunker_state",
