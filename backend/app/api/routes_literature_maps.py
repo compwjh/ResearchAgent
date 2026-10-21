@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from backend.app.literature_maps.application.analysis import MapAnalysisError
 from backend.app.literature_maps.application.runtime import get_literature_map_service
+from backend.app.literature_maps.domain.errors import LiteratureMapStoreError
 from backend.app.literature_maps.domain.models import SCHEMA_VERSION
-from backend.app.literature_maps.infrastructure.store import LiteratureMapStoreError
 from backend.app.memory.repository import OWNER_ID
 
 router = APIRouter(prefix="/literature-maps")

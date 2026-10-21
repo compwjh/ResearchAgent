@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.app.literature_maps.domain.analysis import MapAnalysis, MapConversationBinding
+from backend.app.literature_maps.domain.errors import LiteratureMapStoreError
 from backend.app.literature_maps.domain.import_diagnostics import normalize_import_diagnostics
 from backend.app.literature_maps.domain.models import (
     LiteratureMap,
@@ -43,10 +44,6 @@ _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 _IMPORT_DIAGNOSTICS_KEY = "import_diagnostics"
 _TERMINAL_JOB_STATES = {"completed", "failed", "partial", "stopped"}
 _MAX_MAP_NODES = 200
-
-
-class LiteratureMapStoreError(RuntimeError):
-    """Stable store error that routes can map to a 503."""
 
 
 def default_database_path() -> Path:

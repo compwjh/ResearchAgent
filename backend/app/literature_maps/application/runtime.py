@@ -8,8 +8,9 @@ from backend.app.literature_maps.application.import_bridge import LiteratureMapI
 from backend.app.literature_maps.application.analysis import MapAnalysisService
 from backend.app.literature_maps.application.paper_import_adapter import PaperImportSourceAdapter
 from backend.app.literature_maps.application.service import LiteratureMapService
+from backend.app.literature_maps.domain.analysis import MapConversationBinding
 from backend.app.literature_maps.domain.import_diagnostics import resolver_failure
-from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
+from backend.app.literature_maps.infrastructure.store import LiteratureMapStore, default_database_path
 from backend.app.memory.repository import OWNER_ID, MemoryRepository
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi
 from backend.app.paper_discovery.infrastructure.arxiv_adapter import (
@@ -209,6 +210,25 @@ def get_literature_map_service() -> LiteratureMapService:
     return _service
 
 
+def read_map_conversation_binding(
+    conversation_id: str,
+    owner_id: str,
+) -> tuple[MapConversationBinding | None, MapAnalysisService | None]:
+    """Read a conversation binding without booting the map runtime.
+
+    The API layer needs a narrow read-only seam for ordinary chat.  Keeping
+    store construction here preserves the application boundary and avoids
+    creating the map database as a side effect when no map has been persisted.
+    """
+    database_path = default_database_path()
+    if not database_path.exists():
+        return None, None
+    store = LiteratureMapStore(database_path)
+    binding = store.get_conversation_binding(conversation_id, owner_id)
+    analysis = MapAnalysisService(store=store) if binding is not None else None
+    return binding, analysis
+
+
 def recover_literature_map_jobs() -> int:
     service = get_literature_map_service()
     recovered = service.recover()
@@ -226,4 +246,9 @@ def reset_literature_map_runtime() -> None:
     _executor = None
 
 
-__all__ = ["get_literature_map_service", "recover_literature_map_jobs", "reset_literature_map_runtime"]
+__all__ = [
+    "get_literature_map_service",
+    "read_map_conversation_binding",
+    "recover_literature_map_jobs",
+    "reset_literature_map_runtime",
+]

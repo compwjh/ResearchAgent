@@ -46,9 +46,11 @@ from backend.app.knowledge_base.application import (
     hybrid_search,
     list_documents_for_project,
 )
-from backend.app.literature_maps.application.runtime import get_literature_map_service
-from backend.app.literature_maps.application.analysis import MapAnalysisError, MapAnalysisService
-from backend.app.literature_maps.infrastructure.store import LiteratureMapStore, default_database_path
+from backend.app.literature_maps.application.runtime import (
+    get_literature_map_service,
+    read_map_conversation_binding,
+)
+from backend.app.literature_maps.application.analysis import MapAnalysisError
 from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.memory.session_search import search_sessions
@@ -111,15 +113,7 @@ def _read_map_conversation_binding(conversation_id: str, owner_id: str):
     storage error (fail closed).  The returned analysis service is the narrow,
     read-only context gate used only after a binding is found.
     """
-    database_path = default_database_path()
-    # A fresh installation has no map database and therefore no persisted
-    # binding.  Avoid creating one as a side effect of ordinary chat; once a
-    # database exists, all read/lock/schema errors remain fail-closed below.
-    if not database_path.exists():
-        return None, None
-    store = LiteratureMapStore(database_path)
-    binding = store.get_conversation_binding(conversation_id, owner_id)
-    return binding, MapAnalysisService(store=store) if binding is not None else None
+    return read_map_conversation_binding(conversation_id, owner_id)
 
 
 def detect_skill(message, available_skills):

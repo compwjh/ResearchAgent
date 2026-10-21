@@ -4,11 +4,70 @@ from threading import Barrier
 from unittest.mock import patch
 
 from backend.app.literature_maps.application.analysis import MapAnalysisService
+from backend.app.literature_maps.application.runtime import read_map_conversation_binding
 from backend.app.literature_maps.domain.analysis import MapConversationBinding
 from backend.app.literature_maps.domain.models import MapPaper
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
 from backend.app.memory.repository import MemoryRepository
-from backend.app.api.routes_conversations import _message_stream
+from backend.app.api.routes_conversations import _message_stream, _read_map_conversation_binding
+
+
+def test_read_map_conversation_binding_does_not_create_missing_database(tmp_path, monkeypatch):
+    database_path = tmp_path / "missing-maps.sqlite3"
+    monkeypatch.setenv("LITERATURE_MAP_DB_PATH", str(database_path))
+
+    assert read_map_conversation_binding("conversation-1", "owner-a") == (None, None)
+    assert not database_path.exists()
+
+
+def test_api_map_conversation_binding_read_is_owner_scoped(tmp_path, monkeypatch):
+    database_path = tmp_path / "maps.sqlite3"
+    monkeypatch.setenv("LITERATURE_MAP_DB_PATH", str(database_path))
+    map_store = LiteratureMapStore(database_path)
+    memory = MemoryRepository(tmp_path / "memory.sqlite3")
+    item = map_store.create_map("owner-a", topic="fuzzing")
+    node = MapPaper.new(item.map_id, semantic_scholar_id="s2-runtime", title="Runtime seam", abstract="Abstract")
+    map_store.add_nodes(item.map_id, "owner-a", [node])
+    created = MapAnalysisService(store=map_store, executor=None, memory_repository=memory).create_conversation(
+        item.map_id,
+        node.node_id,
+        "owner-a",
+        evidence_level="abstract",
+        idempotency_key="runtime-seam",
+    )
+
+    binding, analysis = _read_map_conversation_binding(created["conversation_id"], "owner-a")
+    assert binding is not None
+    assert analysis is not None
+    assert binding.owner_id == "owner-a"
+    assert _read_map_conversation_binding(created["conversation_id"], "owner-b") == (None, None)
+
+
+def test_api_map_binding_storage_error_fails_closed_without_rag_fallback(tmp_path, monkeypatch):
+    database_path = tmp_path / "maps.sqlite3"
+    database_path.mkdir()
+    monkeypatch.setenv("LITERATURE_MAP_DB_PATH", str(database_path))
+    memory = MemoryRepository(tmp_path / "memory.sqlite3")
+    conversation = memory.create_conversation("local-user")
+    user = memory.create_message(conversation.conversation_id, "local-user", "user", "find evidence", status="completed")
+    assistant = memory.create_message(
+        conversation.conversation_id,
+        "local-user",
+        "assistant",
+        "",
+        status="pending",
+        parent_message_id=user.message_id,
+    )
+
+    events = [
+        json.loads(frame[6:])
+        for frame in _message_stream(memory, conversation, user, assistant, "model", "normal")
+        if frame.startswith("data: ")
+    ]
+
+    assert any(event.get("code") == "MAP_CONVERSATION_CONTEXT_UNAVAILABLE" for event in events)
+    assert events[-1]["status"] == "failed"
+    assert memory.get_message(assistant.message_id, "local-user").status == "failed"
 
 
 def test_conversation_binding_is_idempotent_and_preserves_project_snapshot(tmp_path):
