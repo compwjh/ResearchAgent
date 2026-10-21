@@ -98,6 +98,7 @@
     pinch: null,
     suppressTap: false,
     mobile: { listOpen: false, detailOpen: false, listRestoreFocus: null, detailRestoreFocus: null },
+    mobileViewport: null,
   };
 
   const refs = {};
@@ -680,6 +681,7 @@
       refs.listPanel.setAttribute('aria-hidden', 'true');
       refs.detailPanel.setAttribute('aria-hidden', 'true');
     }
+    state.mobileViewport = isMobileViewport();
     bindEvents(newButton, refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
@@ -701,29 +703,42 @@
     try { focusTarget.focus({ preventScroll: true }); } catch (_) { focusTarget.focus(); }
   }
 
-  function closeMobilePanel(panel, restoreFocus = true) {
-    if (!isMobileViewport()) return;
+  function setMobileDrawerBodyState(open) {
+    document.body?.classList.toggle('literature-map-drawer-open', Boolean(open));
+  }
+
+  function closeMobilePanel(panel, restoreFocus = true, preserveDesktopDetail = false) {
     const isList = panel === 'list';
     const target = isList ? refs.listPanel : refs.detailPanel;
-    if (!target) return;
-    target.classList.remove('is-open');
-    target.setAttribute('aria-hidden', 'true');
+    const shouldRestoreFocus = restoreFocus && isMobileViewport();
+    if (target) {
+      target.classList.remove('is-open');
+      if (preserveDesktopDetail) {
+        target.removeAttribute('aria-hidden');
+      } else {
+        target.setAttribute('aria-hidden', 'true');
+        if (!isList) target.hidden = true;
+      }
+    }
     if (isList) {
       state.mobile.listOpen = false;
-      if (restoreFocus) {
+      if (shouldRestoreFocus) {
         const focusTarget = state.mobile.listRestoreFocus || refs.mobileListButton;
         window.setTimeout(() => restoreMobileFocus(focusTarget), 0);
       }
       state.mobile.listRestoreFocus = null;
     } else {
       state.mobile.detailOpen = false;
-      if (restoreFocus) {
+      if (shouldRestoreFocus) {
         const focusTarget = state.mobile.detailRestoreFocus || refs.svg;
         window.setTimeout(() => restoreMobileFocus(focusTarget), 0);
       }
       state.mobile.detailRestoreFocus = null;
     }
-    if (!state.mobile.listOpen && !state.mobile.detailOpen) setHidden(refs.mobileBackdrop, true);
+    if (!state.mobile.listOpen && !state.mobile.detailOpen) {
+      setHidden(refs.mobileBackdrop, true);
+      setMobileDrawerBodyState(false);
+    }
   }
 
   function openMobilePanel(panel, trigger) {
@@ -737,6 +752,7 @@
     target.classList.add('is-open');
     target.setAttribute('aria-hidden', 'false');
     setHidden(refs.mobileBackdrop, false);
+    setMobileDrawerBodyState(true);
     if (isList) {
       state.mobile.listOpen = true;
       state.mobile.listRestoreFocus = trigger || document.activeElement;
@@ -746,11 +762,26 @@
     }
   }
 
-  function closeAllMobilePanels(restoreFocus = false) {
-    if (!isMobileViewport()) return;
-    closeMobilePanel('list', restoreFocus);
-    closeMobilePanel('detail', restoreFocus);
+  function closeAllMobilePanels(restoreFocus = false, preserveDesktopDetail = false) {
+    closeMobilePanel('list', restoreFocus, preserveDesktopDetail);
+    closeMobilePanel('detail', restoreFocus, preserveDesktopDetail);
     setHidden(refs.mobileBackdrop, true);
+    setMobileDrawerBodyState(false);
+  }
+
+  function handleMobileViewportResize() {
+    const currentMobileViewport = isMobileViewport();
+    const previousMobileViewport = state.mobileViewport;
+    state.mobileViewport = currentMobileViewport;
+    if (previousMobileViewport === currentMobileViewport) return;
+    const preserveDesktopDetail = state.active && previousMobileViewport === true && !currentMobileViewport;
+    closeAllMobilePanels(false, preserveDesktopDetail);
+  }
+
+  function restoreDesktopPanelAccessibility() {
+    if (isMobileViewport()) return;
+    refs.listPanel?.removeAttribute('aria-hidden');
+    refs.detailPanel?.removeAttribute('aria-hidden');
   }
 
   function bindEvents(newButton, refreshButton, closeDetail) {
@@ -864,6 +895,7 @@
     window.addEventListener('pointerup', handleCanvasPointerUp);
     window.addEventListener('pointercancel', handleCanvasPointerCancel);
     window.addEventListener('blur', () => resetCanvasGesture(true));
+    window.addEventListener('resize', handleMobileViewportResize);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') resetCanvasGesture(true);
     });
@@ -2449,6 +2481,7 @@
     state.conversationRequest = 0;
     state.importRequest += 1;
     if (isMobileViewport()) openMobilePanel('detail', trigger || document.activeElement);
+    else refs.detailPanel.removeAttribute('aria-hidden');
     refs.detailPanel.hidden = false;
     refs.detailPanel.classList.add('is-open');
     renderGraph();
@@ -3141,6 +3174,7 @@
     const hadMap = Boolean(state.map);
     state.active = Boolean(active);
     if (state.active) {
+      restoreDesktopPanelAccessibility();
       loadMaps().then(() => {
         // Re-entering the view re-reads the selected map/graph so a job that
         // finished while the user was elsewhere is immediately visible.
@@ -3152,6 +3186,7 @@
         renderJobActions();
       });
     } else {
+      closeAllMobilePanels(false);
       closeCreatePanel();
       stopPolling();
       stopPreviewPolling();

@@ -2135,6 +2135,12 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
     font-size: 11px;
     font-weight: 700;
   }
+  /* A map drawer owns the mobile viewport while open. Its 1060/1070 tier is
+   * above the nav backdrop/sidebar; restore this 1100 control when closed. */
+  body.literature-map-drawer-open .mobile-nav-toggle {
+    visibility: hidden;
+    pointer-events: none;
+  }
   .mobile-nav-toggle:focus-visible, .mobile-nav-close:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
   .mobile-nav-backdrop {
     position: fixed;

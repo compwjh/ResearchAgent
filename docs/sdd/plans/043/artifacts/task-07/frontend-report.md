@@ -72,3 +72,68 @@ Task05 的全文 KB partial 限制保持原状；本适配没有新增分析调�
 | `git diff --check -- frontend tests/frontend` | 退出码 0（与上方回归命令串联执行） |
 
 复审限制仍保持：Chromium 触控是精准事件模拟夹具，不是真机；fixture 使用合成 API，不替代真实 API E2E；未运行后端 pytest、全量回归、部署或提交。Task05 全文 KB partial 既有阻塞未改门禁。
+
+## P1 修复追加：详情关闭按钮被全局移动导航遮挡（2026-10-21）
+
+主会话授权后，仅处理真实 375/390px 地图详情抽屉的关闭可达性；未修改滚动逻辑。先将真实全局 `#mobile-nav-toggle`（含 `项目与会话` 子节点）及生产 `styles.css` 接入现有 Chromium fixture，并执行无 `force` 的红灯回归：退出码 1，Playwright 明确报告 `<span>项目与会话</span>` 拦截 `#literature-map-detail-close` 的 pointer events。
+
+最小修复如下：
+
+- `frontend/literature-maps.js`：地图移动抽屉打开时设置 `body.literature-map-drawer-open`；列表/详情均关闭、离开地图视图或非移动视口时清除，避免全局导航永久失活。
+- `frontend/literature-maps.css`：地图 backdrop 使用 z-index 1060、列表/详情抽屉使用 1070，明确高于全局导航 backdrop/sidebar 的 1040/1050。
+- `frontend/styles.css`：仅在该 body 状态下隐藏并禁用 z-index 1100 的全局导航按钮；地图抽屉关闭后按钮恢复可见、可交互，未改变全局导航默认层级。
+- `frontend/index.html`、fixture 与既有地图契约：实际资源版本升至 `styles.css?v=58`、`literature-maps.js?v=13`、`literature-maps.css?v=9`。DOM/XSS 自查仍通过：地图模块无 `innerHTML`。
+
+修复后同一无 `force` 回归在 375px 通过；随后 375/390px 抽屉、pinch、滚动、桌面边界及受影响地图契约共 27 项通过。该修复不涉及 backend/provider/服务启停，也未修改旧的详情滚动诊断结论（零间隔 CDP 触控为 harness 假阴性）。
+
+| 命令 | 结果 |
+|---|---|
+| 授权 Chromium：`pytest tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_detail_close_is_not_blocked_by_global_navigation -q`（修复前） | 退出码 1；真实全局导航子节点拦截关闭按钮 |
+| 授权 Chromium：同一测试（修复后） | 退出码 0；1 passed |
+| 授权 Chromium：`pytest tests/frontend/test_frontend_map_mobile_contract.py tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py tests/frontend/test_frontend_map_analysis_contract.py tests/frontend/test_frontend_map_groups_exports.py -q` | 退出码 0；27 passed |
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
+| `git diff --check -- frontend tests/frontend` | 退出码 0 |
+
+## P1-01/P2 修复追加：视口切换清理与移动抽屉不透明背景（2026-10-21）
+
+独立 frontend-reviewer 复现了上一轮 P1：详情抽屉打开后切到桌面并 `setActive(false)`，旧实现因 `!isMobileViewport()` 提前返回，只清 body class，留下 `.is-open`、`aria-hidden="false"`、`hidden=false`、backdrop 和 `state.mobile`；仅跨 760px resize 也会复现。新增两条无 `force` Chromium 回归先以退出码 1 红灯确认该残留。
+
+本轮修复：
+
+- `frontend/literature-maps.js`：`closeMobilePanel`/`closeAllMobilePanels` 不再依赖当前 viewport；无论桌面或移动都移除 panel open class、恢复 `aria-hidden`、隐藏详情 panel/backdrop、清零列表/详情状态与 body class。仅在仍为移动视口时恢复焦点，避免桌面切换异步抢焦点。
+- `frontend/literature-maps.js`：增加 resize 监听；跨到桌面断点时统一调用 `closeAllMobilePanels(false)`，返回移动端后必须重新点开抽屉。
+- `frontend/literature-maps.css`：移动列表/详情抽屉覆盖为不透明 `#fff`，桌面主题未改变；资源版本升至 `literature-maps.css?v=10`（JS13、styles58 保持）。
+- `tests/frontend/test_frontend_map_mobile_contract.py`：新增“375→desktop→inactive→375→active”和“仅 resize 往返”回归，均用正常 click/tap；增加移动详情抽屉不透明背景断言。
+
+验证结果：新增切换/关闭/背景窄回归 3 passed；同范围地图前端集合共 29 passed。未运行 backend/full、未启动或停止服务、未提交。
+
+| 命令 | 结果 |
+|---|---|
+| 授权 Chromium：两条新增视口清理测试（修复前） | 退出码 1；2 failed，确认 desktop 分支残留 panel/state/backdrop |
+| 授权 Chromium：新增两条清理测试 + 全局导航关闭测试（修复后） | 退出码 0；3 passed |
+| 授权 Chromium：地图 mobile + literature-map 相关五个前端测试文件 | 退出码 0；29 passed |
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
+| `git diff --check -- frontend tests/frontend docs/sdd/plans/043/artifacts/task-07/frontend-report.md` | 退出码 0 |
+
+## P1-02 修复追加：桌面 resize 保留详情、移动生命周期分流（2026-10-21）
+
+最新独立 review 发现上一轮 resize handler 对所有非移动 viewport 都调用完整 `closeAllMobilePanels(false)`，因此普通 1440→1280 resize 也把已选桌面详情设为 `hidden=true`、`aria-hidden=true`。该路径与移动抽屉清理语义混用，违反桌面三栏原有详情合同。
+
+本轮集中修复：
+
+- `frontend/literature-maps.js`：增加 `state.mobileViewport`，resize 只在断点状态真正变化时处理；desktop→desktop 不再关闭任何详情。
+- 移动→桌面且 view 仍 active 时，仅移除移动 drawer class、backdrop、mobile state 与移动 `aria-hidden`，保留已选桌面详情的 `hidden`/可见性；desktop→mobile 会重新收口移动 panel，避免旧 drawer 自动弹出。
+- `setActive(false)` 仍走完整清理；resize 事件若在 inactive view 后到达也走完整清理，避免异步事件把 `aria-hidden` 恢复成桌面语义。重新 `setActive(true)` 和桌面 `selectNode` 会恢复桌面 panel 的可访问性。
+- `tests/frontend/test_frontend_map_mobile_contract.py`：新增 1440→1280 详情仍可见且 `aria-hidden` 非 true 的回归；更新 mobile→desktop→inactive→mobile 残留清理断言，并保留普通 mobile close/globalnav 回归。
+
+根因修复后，关键生命周期测试 3 passed；同范围地图前端回归 30 passed。此前第一次整组运行暴露了一个 inactive resize 事件顺序竞态（1 failed、29 passed），已通过 `state.active` 分流修正后重新验证。未运行 backend/full、未启动或停止服务、未提交。
+
+| 命令 | 结果 |
+|---|---|
+| 授权 Chromium：desktop detail、mobile→desktop→inactive→mobile、desktop resize round-trip | 退出码 0；3 passed |
+| 授权 Chromium：地图 mobile + literature-map 相关五个前端测试文件 | 退出码 0；30 passed |
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
+| `git diff --check -- frontend tests/frontend docs/sdd/plans/043/artifacts/task-07/frontend-report.md` | 退出码 0 |

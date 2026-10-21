@@ -50,10 +50,10 @@ def _select_map(page: Page) -> None:
 
 
 def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
-    assert "/assets/literature-maps.js?v=12" in INDEX
-    assert "/assets/literature-maps.css?v=8" in INDEX
-    assert "/literature-maps.js?v=12" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=8" in FIXTURE.read_text(encoding="utf-8")
+    assert "/assets/literature-maps.js?v=13" in INDEX
+    assert "/assets/literature-maps.css?v=10" in INDEX
+    assert "/literature-maps.js?v=13" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.css?v=10" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
         "literature-map-mobile-list-open",
         "literature-map-mobile-backdrop",
@@ -68,12 +68,13 @@ def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
         "pointers",
         "literature-map-detail",
         "literature-map-list-panel.is-open",
+        "literature-map-drawer-open",
     ):
         assert marker in MODULE or marker in STYLES
     assert "innerHTML" not in MODULE
     assert "touch-action: none" in STYLES
     assert "touch-action: pan-y" in STYLES
-    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "12"
+    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "13"
 
 
 @pytest.mark.parametrize("width", [375, 390])
@@ -271,6 +272,122 @@ def test_mobile_drawer_and_detail_scroll_use_real_touch_gestures() -> None:
         _touch(cdp, "touchMove", [(11, x, detail_box["y"] + detail_box["height"] - 220)])
         _touch(cdp, "touchEnd", [])
         assert detail_mid_scroll > detail_before
+        browser.close()
+
+
+def test_mobile_detail_close_is_not_blocked_by_global_navigation() -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 375, "height": 820}, has_touch=True, is_mobile=True)
+        page.goto(FIXTURE.as_uri(), wait_until="load")
+        page.locator("#literature-map-mobile-list-open").click()
+        _select_map(page)
+        node = page.locator('[data-node-id="node-a"] circle')
+        node_box = node.bounding_box()
+        assert node_box is not None
+        assert page.locator("#mobile-nav-toggle").is_visible()
+        page.touchscreen.tap(node_box["x"] + node_box["width"] / 2, node_box["y"] + node_box["height"] / 2)
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.classList.contains('is-open')")
+        assert page.locator("#mobile-nav-toggle").is_hidden()
+        assert page.locator(".literature-map-detail-panel").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(255, 255, 255)"
+        page.locator("#literature-map-detail-close").click()
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.hidden === true")
+        assert page.locator("#mobile-nav-toggle").is_visible()
+        browser.close()
+
+
+def test_mobile_drawer_state_resets_after_desktop_view_exit() -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 375, "height": 820}, has_touch=True, is_mobile=True)
+        page.goto(FIXTURE.as_uri(), wait_until="load")
+        page.locator("#literature-map-mobile-list-open").click()
+        _select_map(page)
+        node_box = page.locator('[data-node-id="node-a"] circle').bounding_box()
+        assert node_box is not None
+        page.touchscreen.tap(node_box["x"] + node_box["width"] / 2, node_box["y"] + node_box["height"] / 2)
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.classList.contains('is-open')")
+
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.evaluate("window.LiteratureMaps.setActive(false)")
+        page.wait_for_function(
+            """() => {
+                const panel = document.querySelector('.literature-map-detail-panel');
+                const backdrop = document.querySelector('.literature-map-mobile-backdrop');
+                return panel?.hidden === true
+                    && !panel.classList.contains('is-open')
+                    && panel.getAttribute('aria-hidden') === 'true'
+                    && backdrop?.hidden === true
+                    && !document.body.classList.contains('literature-map-drawer-open');
+            }"""
+        )
+        page.set_viewport_size({"width": 375, "height": 820})
+        page.evaluate("window.LiteratureMaps.setActive(true)")
+        assert page.locator("#mobile-nav-toggle").is_visible()
+        page.locator("#literature-map-mobile-list-open").click()
+        page.wait_for_function("document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        page.locator("#literature-map-list-close").click()
+        page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        assert page.locator("#mobile-nav-toggle").is_visible()
+        browser.close()
+
+
+def test_desktop_detail_survives_desktop_resize() -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.goto(FIXTURE.as_uri(), wait_until="load")
+        _select_map(page)
+        page.locator('[data-node-id="node-a"] circle').click()
+        detail = page.locator(".literature-map-detail-panel")
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.hidden === false")
+
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.wait_for_function(
+            """() => {
+                const panel = document.querySelector('.literature-map-detail-panel');
+                return panel?.hidden === false
+                    && getComputedStyle(panel).display !== 'none'
+                    && panel.getAttribute('aria-hidden') !== 'true';
+            }"""
+        )
+        assert detail.is_visible()
+        page.locator("#literature-map-detail-close").click()
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.hidden === true")
+        browser.close()
+
+
+def test_mobile_drawer_state_resets_on_desktop_resize_round_trip() -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 375, "height": 820}, has_touch=True, is_mobile=True)
+        page.goto(FIXTURE.as_uri(), wait_until="load")
+        page.locator("#literature-map-mobile-list-open").click()
+        _select_map(page)
+        node_box = page.locator('[data-node-id="node-a"] circle').bounding_box()
+        assert node_box is not None
+        page.touchscreen.tap(node_box["x"] + node_box["width"] / 2, node_box["y"] + node_box["height"] / 2)
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.classList.contains('is-open')")
+
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_function(
+            """() => {
+                const panel = document.querySelector('.literature-map-detail-panel');
+                const backdrop = document.querySelector('.literature-map-mobile-backdrop');
+                return panel?.hidden === false
+                    && !panel.classList.contains('is-open')
+                    && panel.getAttribute('aria-hidden') !== 'true'
+                    && backdrop?.hidden === true
+                    && !document.body.classList.contains('literature-map-drawer-open');
+            }"""
+        )
+        page.set_viewport_size({"width": 375, "height": 820})
+        assert page.locator("#mobile-nav-toggle").is_visible()
+        page.locator("#literature-map-mobile-list-open").click()
+        page.wait_for_function("document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        page.locator("#literature-map-list-close").click()
+        page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        assert page.locator("#mobile-nav-toggle").is_visible()
         browser.close()
 
 
