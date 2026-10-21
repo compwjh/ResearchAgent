@@ -205,3 +205,32 @@ Chromium CDP 触控是浏览器输入管线的模拟，不是真实 iOS/Android 
 | 5 | 授权 Chromium inactive 竞态探针：mobile `setActive(false)`→desktop resize→desktop `setActive(true)`→mobile resize | 0 / `aria-hidden`、hidden、backdrop、body 状态均符合预期 |
 
 开发交接报告已记录生命周期窄测 **3 passed**、同范围地图前端集合 **30 passed**；本轮独立验证未重复该全集合。未运行后端 pytest、全量回归、服务或真实 API；未修改实现/测试，未提交。**Verdict: GO（仅 Task07 frontend 独立复审，不代表 Spec043 收口或部署授权）。**
+
+## 最终复审台账（2026-10-21，P1-03 全局导航 close/toggle 修复）
+
+### 结论
+
+**GO（P0=0，P1=0，P2=0）**。本轮只复核 styles59 与生产级 global-nav DOM/状态夹具；原地图生命周期 GO 保留。未发现 close/toggle 触控、长标题/safe-area 横溢、地图抽屉优先级或导航恢复路径的新阻塞。
+
+### 核验结果
+
+- **375/390 正常 close/toggle：通过。** 授权 Chromium 两个宽度均使用普通 `.tap()` 验证 sidebar close、固定 toggle 二次关闭、Escape、backdrop；最终 `aria-expanded=false`、无 `mobile-nav-open`/`mobile-nav-is-open`、backdrop hidden，地图入口可再次打开并正常关闭。窄回归 **2 passed**。
+- **长标题与横溢：通过。** `?mobile-long` 在 375/390 打开详情并等待过渡完成后，`documentElement.scrollWidth` 分别为 375/390；详情 panel right 与 viewport 一致，详情内容/title 的 `scrollWidth` 不超过 clientWidth。地图详情标题使用 `overflow-wrap:anywhere`，未被本次导航 CSS 破坏。
+- **safe-area/close 命中区：通过（Chromium 默认 inset=0；CSS safe-area 路径静态核对）。** 375/390 稳定打开 nav 后，toggle bottom=52、close top=56，二者无重叠；close 的打开态 `margin-top=44px`，sidebar 仍无横向溢出。生产 CSS 仍以 `max(..., env(safe-area-inset-top/right/bottom))` 处理安全区；真实设备 inset 未在 headless Chromium 中宣称通过。
+- **地图 drawer 优先级与恢复：通过。** 地图详情打开时 body 为 `literature-map-drawer-open`，global toggle computed `visibility:hidden/pointer-events:none`；panel/backdrop z-index 为 1070/1060，nav toggle 虽为 1100 但已被状态锁禁用，`elementFromPoint` 命中详情 close。详情普通关闭后 nav toggle 恢复；再打开并关闭 global nav，地图列表入口可重新打开，nav expanded=false/backdrop hidden/body 状态一致。
+- **真实 app.js 状态契约：通过静态对照。** fixture 的 `mobileDrawerState`、open/close、focus restore、Escape/backdrop/sidebar 事件与生产 `frontend/app.js` 对应实现一致；生产 sidebar 的菜单例外（新建项目/菜单按钮）保持未改。styles59 只增加 `body.mobile-nav-is-open .mobile-nav-close { margin-top:44px; }`，未改 nav z-index 或地图 1060/1070 层级。
+
+### 非阻塞限制（P2=0）
+
+Headless Chromium 无法注入真实 iOS/Android safe-area inset，本轮仅核对 CSS `env()` 路径与默认 inset 几何；真实服务/live 页面仍由 root 后续部署验证。本限制不扩大为 P2，且不影响当前 frontend review GO。
+
+### 本轮独立命令与结果（4 条；未重复原生命周期/全地图回归）
+
+| # | 命令/探针 | 退出码 / 结果 |
+|---:|---|---|
+| 1 | `.venv/bin/python -m pytest -q tests/frontend/test_frontend_map_mobile_contract.py -k global_mobile_navigation_close_paths_keep_map_entry_reachable`（授权 Chromium） | 0 / **2 passed**，10 deselected，4.06s |
+| 2 | 授权 Chromium `?mobile-long` 375/390 几何探针：详情稳定边界、title/detail scrollWidth、nav close/toggle safe-area 命中区 | 0 / 两宽度均无横溢；详情 right=viewport；close top=56、toggle bottom=52 |
+| 3 | 授权 Chromium 地图 drawer 优先级/恢复探针：panel hit、普通 detail close、nav close、map list reopen/close | 0 / z1070/1060、toggle hidden/pointer-none、恢复状态一致 |
+| 4 | `node --check frontend/app.js && node --check frontend/literature-maps.js && .venv/bin/python scripts/check_test_naming.py && git diff --check -- frontend tests/frontend docs/sdd/plans/043/artifacts/task-07/frontend-report.md` | 0 / 全部通过；无编号测试名、无 diff whitespace 错误 |
+
+开发交接报告记录本次相关前端集合 **32 passed**；本轮独立复核只运行上述最小范围。未运行后端 pytest、全量回归、服务或真实 API；未修改实现/测试，未提交。**Verdict: GO（仅 Task07 frontend 独立复审，不代表 Spec043 收口或部署授权）。**

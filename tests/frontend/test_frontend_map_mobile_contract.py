@@ -50,8 +50,10 @@ def _select_map(page: Page) -> None:
 
 
 def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
+    assert "/assets/styles.css?v=59" in INDEX
     assert "/assets/literature-maps.js?v=13" in INDEX
     assert "/assets/literature-maps.css?v=10" in INDEX
+    assert "/styles.css?v=59" in FIXTURE.read_text(encoding="utf-8")
     assert "/literature-maps.js?v=13" in FIXTURE.read_text(encoding="utf-8")
     assert "/literature-maps.css?v=10" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
@@ -293,6 +295,55 @@ def test_mobile_detail_close_is_not_blocked_by_global_navigation() -> None:
         page.locator("#literature-map-detail-close").click()
         page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.hidden === true")
         assert page.locator("#mobile-nav-toggle").is_visible()
+        browser.close()
+
+
+@pytest.mark.parametrize("width", [375, 390])
+def test_global_mobile_navigation_close_paths_keep_map_entry_reachable(width: int) -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": width, "height": 820}, has_touch=True, is_mobile=True)
+        page.goto(FIXTURE.as_uri(), wait_until="load")
+        toggle = page.locator("#mobile-nav-toggle")
+        nav_close = page.locator("#mobile-nav-close")
+        nav_backdrop = page.locator("#mobile-nav-backdrop")
+
+        def assert_nav_closed() -> None:
+            page.wait_for_function(
+                """() => document.querySelector('#mobile-nav-toggle')?.getAttribute('aria-expanded') === 'false'
+                    && !document.querySelector('#mobile-sidebar')?.classList.contains('mobile-nav-open')
+                    && document.querySelector('#mobile-nav-backdrop')?.hidden === true
+                    && !document.body.classList.contains('mobile-nav-is-open')"""
+            )
+
+        toggle.tap()
+        page.wait_for_function("document.querySelector('#mobile-nav-toggle')?.getAttribute('aria-expanded') === 'true'")
+        assert nav_close.is_visible()
+        nav_close.tap()
+        assert_nav_closed()
+
+        # The fixed toggle remains a valid second close path while the nav is open.
+        toggle.tap()
+        page.wait_for_function("document.querySelector('#mobile-nav-toggle')?.getAttribute('aria-expanded') === 'true'")
+        toggle.tap()
+        assert_nav_closed()
+
+        toggle.tap()
+        page.keyboard.press("Escape")
+        assert_nav_closed()
+
+        toggle.tap()
+        nav_backdrop.tap(position={"x": width - 8, "y": 812})
+        assert_nav_closed()
+
+        # Closing the global nav restores the map entry and lets the map drawer
+        # own the mobile viewport again without a forced click.
+        page.locator("#literature-map-mobile-list-open").tap()
+        page.wait_for_function("document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        page.locator("#literature-map-list-close").tap()
+        page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        assert toggle.is_visible()
+        assert page.evaluate("document.querySelector('#mobile-nav-toggle')?.getAttribute('aria-expanded')") == "false"
         browser.close()
 
 

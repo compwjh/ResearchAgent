@@ -4,21 +4,124 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
-  <link rel="stylesheet" href="../../../frontend/styles.css?v=58">
+  <link rel="stylesheet" href="../../../frontend/styles.css?v=59">
   <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=10">
   <style>
     :root { --ink: #25272b; --muted: #8b8e96; --muted-strong: #5a5d66; --accent: #6d5dfc; --accent-soft: #eeecff; }
     body { margin: 0; font-family: Arial, sans-serif; }
     #literature-maps-view { min-height: 100vh; }
+    /* Keep the component fixture's desktop geometry focused on the map while
+     * retaining the production mobile navigation DOM and styles below. */
+    #mobile-sidebar { display: none; }
+    @media (max-width: 760px) { #mobile-sidebar { display: flex; } }
   </style>
 </head>
 <body>
-  <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话">
-    <span>项目与会话</span>
+  <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="打开项目与会话" aria-controls="mobile-sidebar" aria-expanded="false">
+    ☰ <span>项目与会话</span>
   </button>
+  <div class="mobile-nav-backdrop" id="mobile-nav-backdrop" hidden></div>
+  <aside class="sidebar" id="mobile-sidebar" aria-label="项目与会话导航">
+    <button class="mobile-nav-close" id="mobile-nav-close" type="button" aria-label="关闭项目与会话">×</button>
+    <div class="brand"><span class="brand-mark">R</span><span>ResearchAgent</span></div>
+    <button class="new-chat" type="button"><span class="plus">+</span> 新建对话</button>
+    <section class="conversation-memory" aria-label="项目与会话">
+      <div class="project-tree" aria-label="项目树">
+        <div class="project-tree-head" id="project-tree-head">
+          <button class="project-tree-toggle" id="project-tree-toggle" type="button" aria-expanded="true" aria-controls="project-list"><span class="section-label">项目</span><span aria-hidden="true">⌄</span></button>
+          <div class="project-tree-actions">
+            <button class="icon-button project-tree-menu-trigger" id="project-tree-menu-button" type="button" aria-label="项目视图选项" aria-haspopup="menu" aria-expanded="false">⋯</button>
+            <button class="icon-button" id="new-project-button" type="button" aria-label="新建项目" title="新建项目">＋</button>
+          </div>
+        </div>
+        <div class="project-list" id="project-list" role="list" aria-label="项目列表"></div>
+      </div>
+      <p class="conversation-status" id="conversation-status" role="status" aria-live="polite"></p>
+      <div class="conversation-list-head" id="recent-conversations-head"><span>最近会话</span><button class="icon-button conversation-list-menu-trigger" id="conversation-archived-button" type="button" aria-label="最近会话选项" aria-haspopup="menu" aria-expanded="false">⋯</button></div>
+      <div class="conversation-list" id="conversation-list" role="listbox" aria-label="项目会话列表"></div>
+      <button class="load-older-messages" id="load-older-messages" type="button" hidden>加载更早消息</button>
+      <p class="conversation-memory-status" id="conversation-memory-status" role="status" aria-live="polite"></p>
+    </section>
+    <nav class="side-nav" aria-label="主导航">
+      <p class="nav-label">工作区</p>
+      <a class="nav-item active" data-view="chat" role="button" tabindex="0"><span class="nav-icon">◌</span> 对话</a>
+      <a class="nav-item" data-view="research" href="#research-view" aria-controls="research-view" aria-current="false"><span class="nav-icon">✦</span> 深度研究</a>
+      <a class="nav-item" data-view="models" role="button" tabindex="0"><span class="nav-icon">◈</span> 模型库 <span class="nav-count" id="model-count">0</span></a>
+      <a class="nav-item" data-view="kb" role="button" tabindex="0"><span class="nav-icon">▤</span> 知识库 <span class="nav-count" id="kb-nav-count"></span></a>
+      <a class="nav-item" data-view="memory" role="button" tabindex="0"><span class="nav-icon">✧</span> 记忆治理</a>
+      <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
+      <a class="nav-item" data-view="literature-maps" href="#literature-maps-view" aria-controls="literature-maps-view" aria-current="false"><span class="nav-icon">⌘</span> 文献地图</a>
+      <a class="nav-item" data-view="skill-tool" role="button" tabindex="0"><span class="nav-icon">❖</span> Skills 与 Tools</a>
+    </nav>
+    <section class="research-notifications" aria-labelledby="research-notifications-title">
+      <header class="research-notifications-head">
+        <h2 id="research-notifications-title">研究通知</h2>
+        <span class="research-notifications-unread" id="research-notifications-unread" aria-label="未读通知数" hidden>0</span>
+        <button class="icon-button" id="research-notifications-refresh" type="button" aria-label="刷新研究通知" title="刷新研究通知">↻</button>
+      </header>
+      <p class="research-notifications-status" id="research-notifications-status" role="status" aria-live="polite">正在加载…</p>
+      <ol class="research-notifications-list" id="research-notifications-list" aria-label="研究通知列表"></ol>
+      <p class="research-notifications-empty" id="research-notifications-empty" hidden>暂无研究通知。</p>
+    </section>
+    <div class="sidebar-bottom">
+      <div class="local-card"><span class="status-dot"></span><div><strong>本地服务</strong><small id="model-label">连接中</small></div></div>
+      <div class="profile"><span class="profile-mark">W</span><div><strong>本地工作区</strong><small>Ollama</small></div><button type="button" class="icon-button more" id="profile-menu-button" aria-haspopup="menu" aria-expanded="false" aria-label="本地工作区选项">···</button></div>
+    </div>
+  </aside>
   <section id="literature-maps-view">
     <div id="literature-maps-mount"></div>
   </section>
+  <script>
+    // Mirror the production global-nav event contract without loading the
+    // full application shell into this component-only fixture.
+    (() => {
+      const mobileNavToggle = document.querySelector('#mobile-nav-toggle');
+      const mobileNavClose = document.querySelector('#mobile-nav-close');
+      const mobileNavBackdrop = document.querySelector('#mobile-nav-backdrop');
+      const mobileSidebar = document.querySelector('#mobile-sidebar');
+      const mobileDrawerState = { open: false, restoreFocus: null };
+      const mobileTriggerIsVisible = () => {
+        if (!mobileNavToggle?.isConnected || mobileNavToggle.hidden) return false;
+        return window.getComputedStyle(mobileNavToggle).display !== 'none';
+      };
+      const closeMobileDrawer = (restoreFocus = false) => {
+        if (!mobileSidebar || !mobileDrawerState.open) return;
+        mobileSidebar.classList.remove('mobile-nav-open');
+        if (mobileNavBackdrop) mobileNavBackdrop.hidden = true;
+        mobileNavToggle?.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('mobile-nav-is-open');
+        const target = mobileTriggerIsVisible() ? (mobileDrawerState.restoreFocus || mobileNavToggle) : null;
+        mobileDrawerState.restoreFocus = null;
+        mobileDrawerState.open = false;
+        if (restoreFocus && target?.isConnected) target.focus();
+      };
+      const openMobileDrawer = () => {
+        if (!mobileSidebar) return;
+        mobileDrawerState.restoreFocus = document.activeElement;
+        mobileDrawerState.open = true;
+        mobileSidebar.classList.add('mobile-nav-open');
+        if (mobileNavBackdrop) mobileNavBackdrop.hidden = false;
+        mobileNavToggle?.setAttribute('aria-expanded', 'true');
+        document.body.classList.add('mobile-nav-is-open');
+        mobileNavClose?.focus();
+      };
+      mobileNavToggle?.addEventListener('click', () => {
+        if (mobileSidebar?.classList.contains('mobile-nav-open')) closeMobileDrawer(true);
+        else openMobileDrawer();
+      });
+      mobileNavClose?.addEventListener('click', () => closeMobileDrawer(true));
+      mobileNavBackdrop?.addEventListener('click', () => closeMobileDrawer(true));
+      mobileSidebar?.addEventListener('click', (event) => {
+        if (!mobileSidebar.classList.contains('mobile-nav-open')) return;
+        if (event.target.closest('.mobile-nav-close')) return;
+        if (event.target.closest('button, .nav-item')) closeMobileDrawer(true);
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (mobileSidebar?.classList.contains('mobile-nav-open')) closeMobileDrawer(true);
+      });
+    })();
+  </script>
   <script>
     const mockMap = { map_id: 'map-fixture', name: '边缘学习地图', topic: '联邦学习', status: 'ready', revision: 3, requested_count: 20, view_settings: { viewport: { x: 0, y: 0, scale: 1 }, layers: { citation: true, similarity: true } } };
     const mockGroups = [{ group_id: 'group-fixture', name: '人工分组', color: '#3366cc' }];

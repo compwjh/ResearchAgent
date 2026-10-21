@@ -2162,6 +2162,12 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
     color: var(--accent);
     font-size: 23px;
   }
+  /* The fixed toggle stays available as a second close path. Keep the
+   * sidebar close target below its hit area while the nav is open so both
+   * controls remain normally tappable without changing their stacking tiers. */
+  body.mobile-nav-is-open .mobile-nav-close {
+    margin-top: 44px;
+  }
   .sidebar {
     position: fixed;
     z-index: 1050;

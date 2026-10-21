@@ -137,3 +137,26 @@ Task05 的全文 KB partial 限制保持原状；本适配没有新增分析调�
 | `node --check frontend/literature-maps.js` | 退出码 0 |
 | `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
 | `git diff --check -- frontend tests/frontend docs/sdd/plans/043/artifacts/task-07/frontend-report.md` | 退出码 0 |
+
+## P1-03 修复追加：全局导航打开态 close/toggle 触控可达性（2026-10-21）
+
+最新 frontend review 在真实 375px 复现了第二个全局导航遮挡：打开 `#mobile-nav-toggle` 后，固定的 z1100 toggle 覆盖 sidebar 内的 `#mobile-nav-close`；450ms 后仍无法正常 `tap()`，Playwright 明确报告 toggle 拦截 pointer events。地图详情滚动诊断保持原结论，不在本轮改动。
+
+本轮仅在 `frontend/**` 与对应前端契约测试内修复：
+
+- `frontend/styles.css`：增加 `body.mobile-nav-is-open .mobile-nav-close` 打开态规则，将 close 控件在 sidebar 内下移 44px，避开固定 toggle 的命中区域；toggle 保持原 z1100 和位置，因此 close 与 toggle 二次关闭两条正常触控路径均保留，Escape/backdrop 逻辑及地图 drawer 的 1060/1070 优先层级不变。
+- `frontend/index.html`、`tests/frontend/fixtures/literature_map_component.html`：静态资源版本升至 `styles.css?v=59`。fixture 补齐生产导航的 toggle、`aria-controls/aria-expanded`、close、sidebar、backdrop DOM，并按 `app.js` 的 `mobileDrawerState`、open/close、焦点恢复、Escape/backdrop/sidebar 事件契约复用最小夹具逻辑；桌面 fixture 仅隐藏导航 sidebar，不改变移动生产样式。
+- `tests/frontend/test_frontend_map_mobile_contract.py`：新增按能力命名的 375/390 回归，使用正常 `.tap()`（无 `force`）覆盖 close button、toggle 二次关闭、Escape、backdrop，以及关闭后地图列表入口再次打开/关闭；断言 body lock、sidebar class、backdrop hidden、toggle `aria-expanded` 和地图入口可达性。
+
+先红后绿证据：未修复时 375/390 两项均失败，`#mobile-nav-close.tap()` 被 `#mobile-nav-toggle` 拦截；修复后两项通过。服务当前由主会话暂停，未启动 live 8000、未改滚动/后端/provider/full、未提交。
+
+| 命令 | 结果 |
+|---|---|
+| `.venv/bin/python -m pytest tests/frontend/test_frontend_map_mobile_contract.py -k global_mobile_navigation_close_paths_keep_map_entry_reachable -q`（修复前） | 退出码 1；2 failed，375/390 均为 toggle 拦截 close |
+| 同一窄回归（修复后） | 退出码 0；2 passed（375/390，正常 tap，无 force） |
+| `.venv/bin/python -m pytest tests/frontend/test_frontend_map_mobile_contract.py tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py tests/frontend/test_frontend_map_analysis_contract.py tests/frontend/test_frontend_map_groups_exports.py -q` | 退出码 0；32 passed |
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+| `.venv/bin/python scripts/check_test_naming.py` | 退出码 0；无 spec/task 编号测试名 |
+| `git diff --check -- frontend tests/frontend docs/sdd/plans/043/artifacts/task-07/frontend-report.md` | 退出码 0 |
+
+前端三项自查：DOM 契约通过（生产导航完整 DOM 与 fixture 同步）；CSS 层级通过（只增加移动打开态命中避让，不改地图/桌面层级）；XSS 通过（本轮未新增 `innerHTML`，地图模块仍无 `innerHTML`）。待 frontend-reviewer 在服务恢复后复核真实 live 375/390 普通 close/toggle 路径。
