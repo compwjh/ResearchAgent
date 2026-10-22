@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中**（2026-10-19）。
+**当前状态：已完成**（2026-10-22；最终候选a328932，独立tester与architect验收通过）。
 需求与技术独立评审均通过，用户明确授权实现；先执行Task02可行性门禁，通过后Task03冻结v1合同并实现桌面MVP。Spec032保持暂停。
 
 ## 一句话目标
@@ -173,19 +173,21 @@
 | 02 | 准备与可行性门禁 | [Task02](../plans/043/task-02-validate-feasibility.md) | 01 | 已完成（Go） |
 | 03 | 桌面自动建图 MVP | [Task03](../plans/043/task-03-desktop-map-mvp.md) | 02 | 阶段已完成（PASS_WITH_LIMITATIONS） |
 | 04 | 扩展与恢复 | [Task04](../plans/043/task-04-expansion-recovery.md) | 03 | 阶段已完成（PASS_WITH_LIMITATIONS） |
-| 05 | AI分析与会话 | [Task05](../plans/043/task-05-analysis-conversations.md) | 04 | 摘要/会话真实通过；全文KB partial阻塞 |
+| 05 | AI分析与会话 | [Task05](../plans/043/task-05-analysis-conversations.md) | 04 | 阶段已完成（摘要/全文API与真实界面PASS） |
 | 06 | 整理与导出 | [Task06](../plans/043/task-06-groups-exports.md) | 04 | 阶段已完成（真实API/PNG/JSON PASS） |
-| 07 | 手机适配 | [Task07](../plans/043/task-07-mobile-map.md) | 05、06 | 实施中；全文KB阻塞独立保留 |
-| 08 | 最终验收与收口 | [Task08](../plans/043/task-08-acceptance-deploy-retro.md) | 02–07 | 待执行 |
+| 07 | 手机适配 | [Task07](../plans/043/task-07-mobile-map.md) | 05、06 | 阶段已完成（真实375/390/桌面PASS，非真机） |
+| 08 | 最终验收与收口 | [Task08](../plans/043/task-08-acceptance-deploy-retro.md) | 02–07 | 已完成；全量3224通过，真实API/浏览器/独立验收签字通过 |
 
 ## 评审记录
 
 - 需求评审：[043-requirement-review.md](../reviews/043-requirement-review.md)（独立评审通过，2026-10-19）。
 - 技术评审：[043-tech-review.md](../reviews/043-tech-review.md)（独立评审通过，2026-10-19）。
-- 验收评审：`docs/sdd/reviews/043-acceptance-review.md`（待评审（未执行）；测试报告与架构师签字均未产生）。
-- 建档为主会话纯文档代行；随后需求/技术评审已真实独立执行，验收尚未执行。
+- 验收评审：[043-acceptance-review.md](../reviews/043-acceptance-review.md)（独立tester与architect通过，2026-10-22；READY_FOR_USER，签字后准备度10/10）。
+- 建档为主会话纯文档代行；需求、技术、实施和最终验收分工真实执行。部署地址 http://127.0.0.1:8000/ ，启动命令 `PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh`。保留provider partial、非物理真机及RRF降级限制；Spec032仍暂停，不push或合main。
 
 ## 变更日志
+
+- 2026-10-22：分端开发/复审与独立tester/architect完成Task03–08，修复KB安全发布接缝、移动导航遮挡、API分层及测试竞态；最终a328932全量退出0（3224 passed、2合法skip、67 subtests、5 warnings），真实建图/扩展/stop/restart、全文问答、导出及浏览器通过。主会话纯文档同步状态与复盘，Spec已完成，仅本地提交。
 
 - 2026-10-19：Grilling Q1–Q27与截图布局确认，选择自动有界主题图谱、独立项目绑定、分层引用/相似与阶段交付。
 - 2026-10-19：只读复用核对确认现有S2客户端/目录RAG/作业/会话资产；明确身份不可混用、引用方向、持久缓存缺口。

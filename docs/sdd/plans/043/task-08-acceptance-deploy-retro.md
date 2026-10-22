@@ -1,7 +1,7 @@
 # Task 08 — 最终验收与收口
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：02–07全部完成；被依赖：无；当前状态：**待执行**。
+> 依赖：02–07阶段已完成；被依赖：无；当前状态：**已完成（2026-10-22；候选 `a328932` 的 runtime、browser、全量回归与部署验证通过，tester 与 architect 双签；用户人工验收尚未实际执行）**。
 
 ## 一句话目标
 
@@ -9,7 +9,9 @@
 
 ## 当前证据与前置条件
 
-- 当前只有已确认的产品讨论与本轮规划文档；本Task未实施、未测试、未部署。既有API资产不等于地图功能已存在。
+- 历史候选 `1a3ff26` 的真实 Task08 API E2E 已归档：服务 `http://127.0.0.1:8000/` ready，fresh map `35a56c6f2da84fca85fc3c21dfa0055c` 从 limit=20 受控恢复到 20 nodes/11 citation/5 similarity，references preview 45 候选确认 1 后最终 21 nodes/17 edges/revision 3；幂等/CAS409、项目解绑旧 conversation snapshot、项目删除仅解绑及 map 删除保护共享 KB/旧会话均通过。该历史资产与最终候选证据分开标注。
+- Task07 最终候选 `1a3ff26` 已有真实 Chromium/CDP 375/390/1440 PASS：global-nav/详情普通 close、列表/详情抽屉、滚动、pan/pinch 保存重开、桌面拖动/1280 resize 与无横溢通过；摘要/历史 v1/v2 和全文按钮可用，未重复触发全文分析 POST。Task05 `82c816f` 的全文 API PASS 继续作为完整全文分析/会话证据。
+- Task08 全量回归首轮 `map_regression_preflight` 的 `3191 passed / 18 failed / 14 skipped / 67 subtests / 5 warnings` BLOCK 继续作为历史证据保留；a328932 最终重跑已 exit 0（`3224 passed / 0 failed / 2 skipped / 67 subtests / 5 warnings`），两个 skip 是未设置 `RUN_E2E` 的合法 guard。运行中 job 的 stop 保留成果与进程重启恢复、最终 runtime/browser smoke 和列表关闭延迟复核均已有独立证据，不能把首轮失败覆盖为成功。
 - 复用代码位置是调研入口，未来实现时需对照实际提交核实，不复制过期实现。后续新增模块/前端文件按前置Task固定报告定位，不猜文件名。
 - Spec处于待确认时禁止实现。需求/技术门禁通过及用户明确确认后，先核对工作区/实现分支，保护Spec032暂停快照及其他任务修改。
 - 前置Task真实通过后才能执行；若预生成接口尚未冻结，应标阻塞而非自行发明第二套合同。
@@ -143,8 +145,20 @@
 
 ## 执行结果
 
-待执行后填写。
+### 2026-10-21 当前阶段同步
+
+- Task08 live API 候选：`1a3ff26`，URL `http://127.0.0.1:8000/`；fresh map `35a56c6f2da84fca85fc3c21dfa0055c`。真实初始 limit=20，受控 retry 后 20 nodes / 11 citation / 5 similarity；references preview 45 candidates，确认 1 后最终 21 nodes / 17 edges / revision 3，partial warning 保留。
+- 已真实通过：apply 同键幂等、旧 revision CAS409、project unbind 后旧 conversation snapshot、临时 project 删除仅解绑 map、临时 map 删除后旧 conversation 与共享 KB 保留。
+- Task07 候选 `1a3ff26` 真实 375/390/1440 浏览器 PASS；Task05 API 全文 PASS，当前浏览器页面已显示摘要/历史 v1/v2 与全文按钮可用。本阶段未重复全文 POST，沿用既有 API 证据。
+- `map_regression_preflight` 首轮隔离全量已 BLOCK（3191 passed / 18 failed / 14 skipped / 67 subtests / 5 warnings），root 正在分派同范围修复与重跑；运行中 job 的 stop 保留成果与进程重启恢复已真实 PASS。最终全量通过结果、最终部署、tester/architect 签字尚未产生，因此本 Task 仍为 **进行中 / BLOCKED_NOT_READY**，不得标记 Spec 完成。
+
+### 2026-10-22 最终候选收口
+
+- 候选 `a328932` 的最终全量回归在 `09:19:28Z–09:31:55Z` 完成，真实 `exit 0`，结果为 `3224 passed / 0 failed / 2 skipped / 67 subtests / 5 warnings`；2 个 skip 均为未设置 `RUN_E2E` 的既有 guard。首轮 2026-10-21 `3191/18/14/67/5` BLOCK 保留为历史，不改写。
+- 当前部署命令为 `PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh`，入口 `http://127.0.0.1:8000/`；runtime 已验证 ready/health/home、fresh `35a56...` 21/17 rev5、GAT `0baabe...` 21/18 rev124、全文 document/application binding；browser 已验证桌面/375、全文历史、两图以及列表关闭动画完成后的 hidden 状态。
+- tester 与 architect 已完成最终双签，coverage/manual/review/部署证据均已绑定 a328932；Task08 当前状态为 **已完成**。`READY_FOR_USER` 表示人工验收材料已可交给用户执行，用户尚未实际执行本文步骤，不宣称用户已通过。
 
 ## 变更日志
 
 - 2026-10-19：主会话依据已确认讨论纯文档代行建档，非独立评审；Task保持待执行，未改业务代码。
+- 2026-10-22：同步 a328932 最终全量/runtime/browser/deployment 证据、tester/architect 双签与用户人工验收边界；保留 2026-10-21 首轮 BLOCK 及所有历史限制，Task08/Spec043 收口为已完成。

@@ -1,0 +1,3593 @@
+{
+  "result": "success",
+  "blocking_code": null,
+  "before": {
+    "create.json": {
+      "schema_version": "literature-map-v1",
+      "map_id": "e567077ddacc495dad8773c8018bc13c",
+      "job_id": "ef5723506184480687a84495d334caff",
+      "status": "generating",
+      "map": {
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "name": "Task08 restart recovery 1a3ff26",
+        "topic": "graph attention architectures",
+        "project_id": null,
+        "filters": {
+          "year_start": null,
+          "year_end": null,
+          "source_ids": [],
+          "conference_ids": []
+        },
+        "requested_count": 20,
+        "revision": 0,
+        "status": "generating",
+        "view_settings": {
+          "viewport": {
+            "x": 0,
+            "y": 0,
+            "scale": 1
+          },
+          "layers": {
+            "citation": true,
+            "similarity": true
+          }
+        },
+        "created_at": "2026-10-21T15:52:16.546582+00:00",
+        "updated_at": "2026-10-21T15:52:16.546582+00:00"
+      },
+      "job": {
+        "job_id": "ef5723506184480687a84495d334caff",
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "operation": "create",
+        "status": "queued",
+        "step": "discover",
+        "cursor": {},
+        "counts": {
+          "provider_count": 0,
+          "accepted_count": 0,
+          "node_count": 0,
+          "citation_edge_count": 0,
+          "similarity_edge_count": 0,
+          "provider_request_count": 0
+        },
+        "failed_units": [],
+        "created_at": "2026-10-21T15:52:16.546582+00:00",
+        "updated_at": "2026-10-21T15:52:16.546582+00:00"
+      }
+    },
+    "job-before.json": {
+      "schema_version": "literature-map-v1",
+      "job": {
+        "job_id": "ef5723506184480687a84495d334caff",
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "operation": "create",
+        "status": "running",
+        "step": "discover",
+        "cursor": {},
+        "counts": {
+          "accepted_count": 0,
+          "citation_edge_count": 0,
+          "node_count": 0,
+          "provider_count": 0,
+          "provider_request_count": 0,
+          "similarity_edge_count": 0
+        },
+        "failed_units": [],
+        "created_at": "2026-10-21T15:52:16.546582+00:00",
+        "updated_at": "2026-10-21T15:52:16.551569+00:00"
+      }
+    },
+    "events-before.json": {
+      "schema_version": "literature-map-v1",
+      "events": [
+        {
+          "event_seq": 1,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "queued",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.547748+00:00"
+        },
+        {
+          "event_seq": 2,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.550582+00:00"
+        },
+        {
+          "event_seq": 3,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.551654+00:00"
+        }
+      ],
+      "next_cursor": 3
+    }
+  },
+  "initial": {
+    "map": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "name": "Task08 restart recovery 1a3ff26",
+        "topic": "graph attention architectures",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 0,
+        "status": "partial",
+        "view_settings": {
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "viewport": {
+            "scale": 1,
+            "x": 0,
+            "y": 0
+          }
+        },
+        "created_at": "2026-10-21T15:52:16.546582+00:00",
+        "updated_at": "2026-10-21T15:53:57.648280+00:00"
+      },
+      "latest_job": {
+        "job_id": "ef5723506184480687a84495d334caff",
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "operation": "create",
+        "status": "partial",
+        "step": "finished",
+        "cursor": {
+          "layers": {
+            "citation": {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "status": "partial"
+            },
+            "similarity": {
+              "error_code": null,
+              "status": "completed"
+            }
+          },
+          "resume_step": "finished"
+        },
+        "counts": {
+          "accepted_count": 20,
+          "citation_edge_count": 10,
+          "node_count": 20,
+          "provider_count": 20,
+          "provider_request_count": 17,
+          "provider_truncated": 0,
+          "similarity_edge_count": 13
+        },
+        "failed_units": [
+          {
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "retryable": false,
+            "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "dcd234c2f2574da59ae2704915ee6c26"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "a1f871117eec423fafee63d72f8de87a"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "retryable": false,
+            "unit": "9e218b1a3a344865810f9da577dfc5ed"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "814613f38b4c4535aa952f9b40b8fae5"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "25155eb132e9448ea958723d132cc7e9"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "retryable": false,
+            "unit": "7f1a37391e0b48b694cd869cd516e58c"
+          }
+        ],
+        "created_at": "2026-10-21T15:52:16.546582+00:00",
+        "updated_at": "2026-10-21T15:53:57.648280+00:00"
+      }
+    },
+    "job": {
+      "job_id": "ef5723506184480687a84495d334caff",
+      "map_id": "e567077ddacc495dad8773c8018bc13c",
+      "operation": "create",
+      "status": "partial",
+      "step": "finished",
+      "counts": {
+        "accepted_count": 20,
+        "citation_edge_count": 10,
+        "node_count": 20,
+        "provider_count": 20,
+        "provider_request_count": 17,
+        "provider_truncated": 0,
+        "similarity_edge_count": 13
+      },
+      "failed_units": [
+        {
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "retryable": false,
+          "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "dcd234c2f2574da59ae2704915ee6c26"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "a1f871117eec423fafee63d72f8de87a"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "retryable": false,
+          "unit": "9e218b1a3a344865810f9da577dfc5ed"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "814613f38b4c4535aa952f9b40b8fae5"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "25155eb132e9448ea958723d132cc7e9"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "retryable": false,
+          "unit": "7f1a37391e0b48b694cd869cd516e58c"
+        }
+      ],
+      "updated_at": "2026-10-21T15:53:57.648280+00:00"
+    },
+    "events": {
+      "schema_version": "literature-map-v1",
+      "events": [
+        {
+          "event_seq": 1,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "queued",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.547748+00:00"
+        },
+        {
+          "event_seq": 2,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.550582+00:00"
+        },
+        {
+          "event_seq": 3,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.551654+00:00"
+        },
+        {
+          "event_seq": 4,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:51.091816+00:00"
+        },
+        {
+          "event_seq": 5,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "running",
+          "step": "metadata",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 0,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 1,
+            "provider_truncated": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:55.244759+00:00"
+        },
+        {
+          "event_seq": 6,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "running",
+          "step": "references",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 0,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 1,
+            "provider_truncated": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:55.246570+00:00"
+        },
+        {
+          "event_seq": 7,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "running",
+          "step": "similarity",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:53:53.831943+00:00"
+        },
+        {
+          "event_seq": 8,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "completed",
+          "status": "partial",
+          "step": "finished",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 13
+          },
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "created_at": "2026-10-21T15:53:57.648366+00:00"
+        }
+      ],
+      "next_cursor": 8
+    }
+  },
+  "poll": null,
+  "final": {
+    "map": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "name": "Task08 restart recovery 1a3ff26",
+        "topic": "graph attention architectures",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 0,
+        "status": "partial",
+        "view_settings": {
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "viewport": {
+            "scale": 1,
+            "x": 0,
+            "y": 0
+          }
+        },
+        "created_at": "2026-10-21T15:52:16.546582+00:00",
+        "updated_at": "2026-10-21T15:53:57.648280+00:00"
+      },
+      "latest_job": {
+        "job_id": "ef5723506184480687a84495d334caff",
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "operation": "create",
+        "status": "partial",
+        "step": "finished",
+        "cursor": {
+          "layers": {
+            "citation": {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "status": "partial"
+            },
+            "similarity": {
+              "error_code": null,
+              "status": "completed"
+            }
+          },
+          "resume_step": "finished"
+        },
+        "counts": {
+          "accepted_count": 20,
+          "citation_edge_count": 10,
+          "node_count": 20,
+          "provider_count": 20,
+          "provider_request_count": 17,
+          "provider_truncated": 0,
+          "similarity_edge_count": 13
+        },
+        "failed_units": [
+          {
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "retryable": false,
+            "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "dcd234c2f2574da59ae2704915ee6c26"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "a1f871117eec423fafee63d72f8de87a"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "retryable": false,
+            "unit": "9e218b1a3a344865810f9da577dfc5ed"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "814613f38b4c4535aa952f9b40b8fae5"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "retryable": true,
+            "unit": "25155eb132e9448ea958723d132cc7e9"
+          },
+          {
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "retryable": false,
+            "unit": "7f1a37391e0b48b694cd869cd516e58c"
+          }
+        ],
+        "created_at": "2026-10-21T15:52:16.546582+00:00",
+        "updated_at": "2026-10-21T15:53:57.648280+00:00"
+      }
+    },
+    "job": {
+      "job_id": "ef5723506184480687a84495d334caff",
+      "map_id": "e567077ddacc495dad8773c8018bc13c",
+      "operation": "create",
+      "status": "partial",
+      "step": "finished",
+      "counts": {
+        "accepted_count": 20,
+        "citation_edge_count": 10,
+        "node_count": 20,
+        "provider_count": 20,
+        "provider_request_count": 17,
+        "provider_truncated": 0,
+        "similarity_edge_count": 13
+      },
+      "failed_units": [
+        {
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "retryable": false,
+          "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "dcd234c2f2574da59ae2704915ee6c26"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "a1f871117eec423fafee63d72f8de87a"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "retryable": false,
+          "unit": "9e218b1a3a344865810f9da577dfc5ed"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "814613f38b4c4535aa952f9b40b8fae5"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "25155eb132e9448ea958723d132cc7e9"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "retryable": false,
+          "unit": "7f1a37391e0b48b694cd869cd516e58c"
+        }
+      ],
+      "updated_at": "2026-10-21T15:53:57.648280+00:00"
+    },
+    "events": {
+      "schema_version": "literature-map-v1",
+      "events": [
+        {
+          "event_seq": 1,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "queued",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.547748+00:00"
+        },
+        {
+          "event_seq": 2,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.550582+00:00"
+        },
+        {
+          "event_seq": 3,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:16.551654+00:00"
+        },
+        {
+          "event_seq": 4,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "started",
+          "status": "running",
+          "step": "discover",
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:51.091816+00:00"
+        },
+        {
+          "event_seq": 5,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "running",
+          "step": "metadata",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 0,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 1,
+            "provider_truncated": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:55.244759+00:00"
+        },
+        {
+          "event_seq": 6,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "running",
+          "step": "references",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 0,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 1,
+            "provider_truncated": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:52:55.246570+00:00"
+        },
+        {
+          "event_seq": 7,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "progress",
+          "status": "running",
+          "step": "similarity",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 0
+          },
+          "error_code": null,
+          "created_at": "2026-10-21T15:53:53.831943+00:00"
+        },
+        {
+          "event_seq": 8,
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "job_id": "ef5723506184480687a84495d334caff",
+          "type": "completed",
+          "status": "partial",
+          "step": "finished",
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 13
+          },
+          "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+          "created_at": "2026-10-21T15:53:57.648366+00:00"
+        }
+      ],
+      "next_cursor": 8
+    },
+    "graph": {
+      "schema_version": "literature-map-v1",
+      "map_id": "e567077ddacc495dad8773c8018bc13c",
+      "revision": 0,
+      "status": "partial",
+      "node_count": 20,
+      "edge_count": 23,
+      "papers": [
+        {
+          "node_id": "2d1d4de0ee5843d1a93d50c9972d2ee3",
+          "title": "Combining Spatio-Temporal Networks and Graph Attention Architectures for EEG-Based Workload Classification",
+          "authors": [
+            "Nikhil Panwar",
+            "Vishal Pandey",
+            "Rownak Tiwari",
+            "Partha Pratim Roy"
+          ],
+          "year": 2025,
+          "venue": "IEEE International Conference on Acoustics, Speech, and Signal Processing",
+          "external_ids": {
+            "doi": "10.1109/icassp49660.2025.10890032",
+            "semantic_scholar": "f7f8dcb0645a6400c5a3f2e45482ccd48febd97c"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "6758a64de3384672b3759bcd478b00c7",
+          "title": "Graph Attention Networks",
+          "authors": [
+            "Petar Velickovic",
+            "Guillem Cucurull",
+            "Arantxa Casanova",
+            "Adriana Romero",
+            "Pietro Lió",
+            "Yoshua Bengio"
+          ],
+          "year": 2017,
+          "venue": "International Conference on Learning Representations",
+          "external_ids": {
+            "arxiv": "1710.10903",
+            "doi": "10.17863/cam.48429",
+            "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "dcd234c2f2574da59ae2704915ee6c26",
+          "title": "A Bird's-Eye Tutorial of Graph Attention Architectures",
+          "authors": [
+            "Kaustubh D. Dhole",
+            "Carl Yang"
+          ],
+          "year": 2022,
+          "venue": "arXiv.org",
+          "external_ids": {
+            "arxiv": "2206.02849",
+            "doi": "10.48550/arxiv.2206.02849",
+            "semantic_scholar": "d8cf111e857055039239add466a3d3f52ca3c278"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "title": "How Attentive are Graph Attention Networks?",
+          "authors": [
+            "Shaked Brody",
+            "Uri Alon",
+            "Eran Yahav"
+          ],
+          "year": 2021,
+          "venue": "International Conference on Learning Representations",
+          "external_ids": {
+            "arxiv": "2105.14491",
+            "semantic_scholar": "ab30672c8c5e4787f6a5985f26a8f281f0db2fb8"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "d5e3de448e7749669840e105dba0d252",
+          "title": "Artificial intelligence-powered prediction of AIM-2 inflammasome sequences using transformers and graph attention networks in periodontal inflammation",
+          "authors": [
+            "P. Yadalam",
+            "Deepavalli Arumuganainar",
+            "P. Natarajan",
+            "C. M. Ardila"
+          ],
+          "year": 2025,
+          "venue": "Scientific Reports",
+          "external_ids": {
+            "doi": "10.1038/s41598-025-93409-3",
+            "semantic_scholar": "7f859c600c41a058b521eaf7f273d4c27f22a014"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "7247729924fa4228bcdc24ecfe184b0b",
+          "title": "Graph Attention Networks: A Comprehensive Review of Methods and Applications",
+          "authors": [
+            "Aris Vrahatis",
+            "Konstantinos Lazaros",
+            "S. Kotsiantis"
+          ],
+          "year": 2024,
+          "venue": "Future Internet",
+          "external_ids": {
+            "doi": "10.3390/fi16090318",
+            "semantic_scholar": "398e842415fdfa15ad45d1d7f175080aa1eb7870"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "a1f871117eec423fafee63d72f8de87a",
+          "title": "GAL-MAD: Towards Explainable Anomaly Detection in Microservice Applications Using Graph Attention Networks",
+          "authors": [
+            "Lahiru Akmeemana",
+            "Chamodya Attanayake",
+            "Husni Faiz",
+            "Sandareka Wickramanayake"
+          ],
+          "year": 2025,
+          "venue": "Australasian Computer Science Week",
+          "external_ids": {
+            "arxiv": "2504.00058",
+            "doi": "10.1145/3793811.3793819",
+            "semantic_scholar": "842718f1683005e3a101e68571622c4053801933"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "44932d50c592473089dda48c3409a78f",
+          "title": "Equiformer: Equivariant Graph Attention Transformer for 3D Atomistic Graphs",
+          "authors": [
+            "Yi Liao",
+            "T. Smidt"
+          ],
+          "year": 2022,
+          "venue": "International Conference on Learning Representations",
+          "external_ids": {
+            "arxiv": "2206.11990",
+            "doi": "10.48550/arxiv.2206.11990",
+            "semantic_scholar": "1ede15a0aa5204de1f3013d7616a93dbd46fd849"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+          "title": "Can Classic GNNs Be Strong Baselines for Graph-level Tasks? Simple Architectures Meet Excellence",
+          "authors": [
+            "Yuankai Luo",
+            "Lei Shi",
+            "Xiao-Ming Wu"
+          ],
+          "year": 2025,
+          "venue": "International Conference on Machine Learning",
+          "external_ids": {
+            "arxiv": "2502.09263",
+            "semantic_scholar": "f450a053b0f87152a9bd32f59f03141d93852b71"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "f80b0a3a252f48c79b9b5ae5d35e7ac3",
+          "title": "A Survey of Graph Transformers: Architectures, Theories and Applications",
+          "authors": [
+            "Chaohao Yuan",
+            "Kangfei Zhao",
+            "E. Kuruoğlu",
+            "Liang Wang",
+            "Tingyang Xu",
+            "Wenbing Huang",
+            "De-Li Zhao",
+            "Hong Cheng",
+            "Yu Rong"
+          ],
+          "year": 2025,
+          "venue": "ACM Computing Surveys",
+          "external_ids": {
+            "arxiv": "2502.16533",
+            "doi": "10.1145/3834764",
+            "semantic_scholar": "6bfe4a32dbf4c58af83745e2fcf68217217a03ea"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "9e218b1a3a344865810f9da577dfc5ed",
+          "title": "Semi-supervised medical image classification via distance correlation minimization and graph attention regularization",
+          "authors": [
+            "Abel Díaz Berenguer",
+            "Maryna Kvasnytsia",
+            "M. N. Bossa",
+            "Tanmoy Mukherjee",
+            "Nikos Deligiannis",
+            "Hichem Sahli"
+          ],
+          "year": 2024,
+          "venue": "Medical Image Anal.",
+          "external_ids": {
+            "doi": "10.1016/j.media.2024.103107",
+            "semantic_scholar": "c503f5a034c42866ac44185091bb2a6e2a315707"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "fc4d7bebbffc40f28bc7c6d6cbcbe783",
+          "title": "ResGAT: Residual Graph Attention Networks for molecular property prediction",
+          "authors": [
+            "T. Nguyen-Vo",
+            "Trang T. T. Do",
+            "Binh P. Nguyen"
+          ],
+          "year": 2024,
+          "venue": "Memetic Computing",
+          "external_ids": {
+            "doi": "10.1007/s12293-024-00423-5",
+            "semantic_scholar": "f12aeb898be497a1d6f8576ae5e2f1e8d9469cc7"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "4a20959fef48469882fc53e63a662c5a",
+          "title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+          "authors": [
+            "B. Khemani",
+            "S. Patil",
+            "K. Kotecha",
+            "Sudeep Tanwar"
+          ],
+          "year": 2024,
+          "venue": "Journal of Big Data",
+          "external_ids": {
+            "doi": "10.1186/s40537-023-00876-4",
+            "semantic_scholar": "1fad14bcfc2b75797c686a5a05779076437a683e"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "eb17926de9ad4267b84bec54f085271b",
+          "title": "GATGPT: A Pre-trained Large Language Model with Graph Attention Network for Spatiotemporal Imputation",
+          "authors": [
+            "Yakun Chen",
+            "Xianzhi Wang",
+            "Guandong Xu"
+          ],
+          "year": 2023,
+          "venue": "arXiv.org",
+          "external_ids": {
+            "arxiv": "2311.14332",
+            "doi": "10.48550/arxiv.2311.14332",
+            "semantic_scholar": "4a89f69277735d3254ea9d734256637ebccbe2ce"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "3be04459fa2341cebb4bb3a45a804b36",
+          "title": "Incorporating Graph Attention and Recurrent Architectures for City-Wide Taxi Demand Prediction",
+          "authors": [
+            "Ying Xu",
+            "Dong-Sheng Li"
+          ],
+          "year": 2019,
+          "venue": "ISPRS Int. J. Geo Inf.",
+          "external_ids": {
+            "doi": "10.3390/ijgi8090414",
+            "semantic_scholar": "a34b6a4c968335c304e661fff03ba5fedde28567"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "3af019d97cd6472db73937ebedd3c4b4",
+          "title": "Fusing multiplex heterogeneous networks using graph attention-aware fusion networks",
+          "authors": [
+            "Ziynet Nesibe Kesimoglu",
+            "S. Bozdag"
+          ],
+          "year": 2023,
+          "venue": "Scientific Reports",
+          "external_ids": {
+            "arxiv": "2303.16781",
+            "doi": "10.1038/s41598-024-78555-4",
+            "semantic_scholar": "9a1102eb2dad9993a91cdbbfc182de78bd8a8081"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "814613f38b4c4535aa952f9b40b8fae5",
+          "title": "Federated learning for network attack detection using attention-based graph neural networks",
+          "authors": [
+            "Jianping Wu",
+            "Guang-Qi Qiu",
+            "Chunming Wu",
+            "Wei-Wei Jiang",
+            "Jia-He Jin"
+          ],
+          "year": 2024,
+          "venue": "Scientific Reports",
+          "external_ids": {
+            "doi": "10.1038/s41598-024-70032-2",
+            "semantic_scholar": "627f07b49f9a68cfb26561f83758f5b788041580"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "25155eb132e9448ea958723d132cc7e9",
+          "title": "Graph-Aware Isomorphic Attention for Adaptive Dynamics in Transformers",
+          "authors": [
+            "Markus J. Buehler"
+          ],
+          "year": 2025,
+          "venue": "APL Machine Learning",
+          "external_ids": {
+            "arxiv": "2501.02393",
+            "doi": "10.48550/arxiv.2501.02393",
+            "semantic_scholar": "64dfd7e67297044b32ec262f6612a6910cb13905"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "7f1a37391e0b48b694cd869cd516e58c",
+          "title": "Transfer Learning with Graph Attention Networks for Team Recommendation",
+          "authors": [
+            "Sagar Kaw",
+            "Ziad Kobti",
+            "Kalyani Selvarajah"
+          ],
+          "year": 2023,
+          "venue": "IEEE International Joint Conference on Neural Network",
+          "external_ids": {
+            "doi": "10.1109/ijcnn54540.2023.10191717",
+            "semantic_scholar": "fb724e6bebad776f079675de3fe84a7258ed00aa"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        },
+        {
+          "node_id": "793ec2f3800f46af9ac75b66e9934bfd",
+          "title": "Latent Graph Attention for Enhanced Spatial Context",
+          "authors": [
+            "Ayush Singh",
+            "Yash Bhambhu",
+            "Himanshu Buckchash",
+            "D. Gupta",
+            "D. Prasad"
+          ],
+          "year": 2023,
+          "venue": "arXiv.org",
+          "external_ids": {
+            "arxiv": "2307.04149",
+            "doi": "10.48550/arxiv.2307.04149",
+            "semantic_scholar": "4aedce826ecf3b7e34e6422c3176c1cd65bd9a3c"
+          },
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "document_id": null,
+          "download_status": null,
+          "position": null,
+          "group_id": null,
+          "removed": false
+        }
+      ],
+      "relationships": [
+        {
+          "edge_id": "0164f4e897d34ec59a0129e91563056c",
+          "kind": "citation",
+          "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+          "target_id": "6758a64de3384672b3759bcd478b00c7",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "9a1102eb2dad9993a91cdbbfc182de78bd8a8081"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "Fusing multiplex heterogeneous networks using graph attention-aware fusion networks",
+          "target_title": "Graph Attention Networks"
+        },
+        {
+          "edge_id": "02d6feb42d7e41908677eca107169bad",
+          "kind": "citation",
+          "source_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "target_id": "6758a64de3384672b3759bcd478b00c7",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "ab30672c8c5e4787f6a5985f26a8f281f0db2fb8"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "How Attentive are Graph Attention Networks?",
+          "target_title": "Graph Attention Networks"
+        },
+        {
+          "edge_id": "049be20503d642e5ae2a58381ef6f70f",
+          "kind": "citation",
+          "source_id": "44932d50c592473089dda48c3409a78f",
+          "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "1ede15a0aa5204de1f3013d7616a93dbd46fd849"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "Equiformer: Equivariant Graph Attention Transformer for 3D Atomistic Graphs",
+          "target_title": "How Attentive are Graph Attention Networks?"
+        },
+        {
+          "edge_id": "14f3722b0aa9475ba202399501fbd7a8",
+          "kind": "citation",
+          "source_id": "3be04459fa2341cebb4bb3a45a804b36",
+          "target_id": "6758a64de3384672b3759bcd478b00c7",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "a34b6a4c968335c304e661fff03ba5fedde28567"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "Incorporating Graph Attention and Recurrent Architectures for City-Wide Taxi Demand Prediction",
+          "target_title": "Graph Attention Networks"
+        },
+        {
+          "edge_id": "24131041ab4e4926bb3b4c22e619dcb4",
+          "kind": "citation",
+          "source_id": "4a20959fef48469882fc53e63a662c5a",
+          "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "1fad14bcfc2b75797c686a5a05779076437a683e"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+          "target_title": "How Attentive are Graph Attention Networks?"
+        },
+        {
+          "edge_id": "2571393a0cc1459fa89995751595eb22",
+          "kind": "citation",
+          "source_id": "fc4d7bebbffc40f28bc7c6d6cbcbe783",
+          "target_id": "6758a64de3384672b3759bcd478b00c7",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "f12aeb898be497a1d6f8576ae5e2f1e8d9469cc7"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "ResGAT: Residual Graph Attention Networks for molecular property prediction",
+          "target_title": "Graph Attention Networks"
+        },
+        {
+          "edge_id": "28f15737741d4408991b4791e72e30a4",
+          "kind": "citation",
+          "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+          "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "9a1102eb2dad9993a91cdbbfc182de78bd8a8081"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "Fusing multiplex heterogeneous networks using graph attention-aware fusion networks",
+          "target_title": "How Attentive are Graph Attention Networks?"
+        },
+        {
+          "edge_id": "8483807fbe974fac871c3208f0144ac8",
+          "kind": "citation",
+          "source_id": "44932d50c592473089dda48c3409a78f",
+          "target_id": "6758a64de3384672b3759bcd478b00c7",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "1ede15a0aa5204de1f3013d7616a93dbd46fd849"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "Equiformer: Equivariant Graph Attention Transformer for 3D Atomistic Graphs",
+          "target_title": "Graph Attention Networks"
+        },
+        {
+          "edge_id": "8ee63e726c624b678dd6648cf085f807",
+          "kind": "citation",
+          "source_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+          "target_id": "6758a64de3384672b3759bcd478b00c7",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "f450a053b0f87152a9bd32f59f03141d93852b71"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "Can Classic GNNs Be Strong Baselines for Graph-level Tasks? Simple Architectures Meet Excellence",
+          "target_title": "Graph Attention Networks"
+        },
+        {
+          "edge_id": "b4ea63fd0c894b80be60165e144d5435",
+          "kind": "citation",
+          "source_id": "4a20959fef48469882fc53e63a662c5a",
+          "target_id": "6758a64de3384672b3759bcd478b00c7",
+          "provenance": {
+            "provider": "semantic_scholar",
+            "relation": "references",
+            "source_paper_id": "1fad14bcfc2b75797c686a5a05779076437a683e"
+          },
+          "score": null,
+          "basis": null,
+          "model_version": null,
+          "content_hash": null,
+          "source_title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+          "target_title": "Graph Attention Networks"
+        },
+        {
+          "edge_id": "0ba1fdb90e4b4cf9b78cc1fee00e468b",
+          "kind": "similarity",
+          "source_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+          "target_id": "f80b0a3a252f48c79b9b5ae5d35e7ac3",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.77270745,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "84ecb2faf82c058308e0a553b573465fd254d69a68ecfdf757f927f8f35aa058",
+          "source_title": "Can Classic GNNs Be Strong Baselines for Graph-level Tasks? Simple Architectures Meet Excellence",
+          "target_title": "A Survey of Graph Transformers: Architectures, Theories and Applications"
+        },
+        {
+          "edge_id": "18083030d25647ef960009a4e88c5d7a",
+          "kind": "similarity",
+          "source_id": "7247729924fa4228bcdc24ecfe184b0b",
+          "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.75851469,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "124c13e0cc0d42808ea36f1f241508ef5895df8352c2810ed4eb4d30a0d52de1",
+          "source_title": "Graph Attention Networks: A Comprehensive Review of Methods and Applications",
+          "target_title": "A Bird's-Eye Tutorial of Graph Attention Architectures"
+        },
+        {
+          "edge_id": "3022cf7ef5f242708dae08382cbeecf9",
+          "kind": "similarity",
+          "source_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.77003065,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "083f0043a499e1f3234c34b991de675fe72b754adcbeb6f2ddd8eb4293ba1135",
+          "source_title": "How Attentive are Graph Attention Networks?",
+          "target_title": "A Bird's-Eye Tutorial of Graph Attention Architectures"
+        },
+        {
+          "edge_id": "4801fcc8dcdc472e8c17809c350f8d99",
+          "kind": "similarity",
+          "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+          "target_id": "814613f38b4c4535aa952f9b40b8fae5",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.75315355,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "fbe0909f16f552a05bab6cc749d552a5ff23343d7049704b7edcf0d332eeaf3b",
+          "source_title": "Fusing multiplex heterogeneous networks using graph attention-aware fusion networks",
+          "target_title": "Federated learning for network attack detection using attention-based graph neural networks"
+        },
+        {
+          "edge_id": "57e206d97cc6426c8584b27d318f0508",
+          "kind": "similarity",
+          "source_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "target_id": "7247729924fa4228bcdc24ecfe184b0b",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.79003627,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "075b52181da19b788e854214aa69d709f8395404953f6a17418cd8e0b786c228",
+          "source_title": "How Attentive are Graph Attention Networks?",
+          "target_title": "Graph Attention Networks: A Comprehensive Review of Methods and Applications"
+        },
+        {
+          "edge_id": "62c93fb711394d7d94a877cff5e5862e",
+          "kind": "similarity",
+          "source_id": "4a20959fef48469882fc53e63a662c5a",
+          "target_id": "f80b0a3a252f48c79b9b5ae5d35e7ac3",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.7756873,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "795fc87b40aeccfe497c6fdd4c547d741695c3640b947170e0c7833e4dc17fa4",
+          "source_title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+          "target_title": "A Survey of Graph Transformers: Architectures, Theories and Applications"
+        },
+        {
+          "edge_id": "86f997b81cd8442a95967bb9e9aa9242",
+          "kind": "similarity",
+          "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+          "target_id": "4a20959fef48469882fc53e63a662c5a",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.77914757,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "ed47f7865896a67e40dc6272ef28e50cba527f621fc5539a3e2319a088c6dc13",
+          "source_title": "Fusing multiplex heterogeneous networks using graph attention-aware fusion networks",
+          "target_title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions"
+        },
+        {
+          "edge_id": "cfff903562e446db8a269a181c2ffd43",
+          "kind": "similarity",
+          "source_id": "6758a64de3384672b3759bcd478b00c7",
+          "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.811645,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "0f7f8f6779db5f67f956b6a4b02ead94fae91c8b5f7e22838a3f225f8fb68622",
+          "source_title": "Graph Attention Networks",
+          "target_title": "How Attentive are Graph Attention Networks?"
+        },
+        {
+          "edge_id": "d24a0e24409b47ab9e98cf8c0520d53b",
+          "kind": "similarity",
+          "source_id": "4a20959fef48469882fc53e63a662c5a",
+          "target_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.77336393,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "b4a96ae5478f645d4cfdbdac5dc21a9a88988358b4e79ff9ca4866e29e4d339f",
+          "source_title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+          "target_title": "Can Classic GNNs Be Strong Baselines for Graph-level Tasks? Simple Architectures Meet Excellence"
+        },
+        {
+          "edge_id": "d9eca635035e4db58881d5c540ad4b4c",
+          "kind": "similarity",
+          "source_id": "4a20959fef48469882fc53e63a662c5a",
+          "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.77023641,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "926846af9ae6d1a1a358e33c56b42780c7b0e2dfc18314dedb20aa44a2d5052f",
+          "source_title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+          "target_title": "A Bird's-Eye Tutorial of Graph Attention Architectures"
+        },
+        {
+          "edge_id": "de11e73b96a94c0cb3526317ed7dce04",
+          "kind": "similarity",
+          "source_id": "6758a64de3384672b3759bcd478b00c7",
+          "target_id": "7247729924fa4228bcdc24ecfe184b0b",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.83133635,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "7353ba25d6b352856e06e0dc3f04d70be80b9bf9d03e85761d9169c544f3e2d6",
+          "source_title": "Graph Attention Networks",
+          "target_title": "Graph Attention Networks: A Comprehensive Review of Methods and Applications"
+        },
+        {
+          "edge_id": "e8ec0b0dd1db497594252ceb9580c432",
+          "kind": "similarity",
+          "source_id": "4a20959fef48469882fc53e63a662c5a",
+          "target_id": "7247729924fa4228bcdc24ecfe184b0b",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.78895369,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "8ecafcf750124b6c0a8a7507aaee3fda38cfd26e4744de8fd39ead5033d95948",
+          "source_title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+          "target_title": "Graph Attention Networks: A Comprehensive Review of Methods and Applications"
+        },
+        {
+          "edge_id": "f1a8beeabe514a7899d4be7b60075ec1",
+          "kind": "similarity",
+          "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+          "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+          "provenance": {
+            "algorithm": "dense_cosine",
+            "threshold": 0.75,
+            "top_k": 3
+          },
+          "score": 0.75325052,
+          "basis": "title_abstract",
+          "model_version": "bge-m3",
+          "content_hash": "ef36c3bc717fef848bff465fb71c00f213a33d52aeab93e175ecf12c6dbb5063",
+          "source_title": "Fusing multiplex heterogeneous networks using graph attention-aware fusion networks",
+          "target_title": "A Bird's-Eye Tutorial of Graph Attention Architectures"
+        }
+      ],
+      "viewport": {
+        "scale": 1,
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "assertions": [
+    {
+      "name": "restart_ids_stable",
+      "status": "PASS",
+      "observed": {
+        "map_id": "e567077ddacc495dad8773c8018bc13c",
+        "job_id": "ef5723506184480687a84495d334caff"
+      },
+      "expected": "same persisted IDs"
+    },
+    {
+      "name": "restart_http_reads",
+      "status": "PASS",
+      "observed": {
+        "map": 200,
+        "job": 200,
+        "events": 200,
+        "graph": 200
+      },
+      "expected": 200
+    },
+    {
+      "name": "restart_event_sequence_monotonic",
+      "status": "PASS",
+      "observed": {
+        "event_seqs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "expected": "strictly increasing, preserves before cursor"
+    },
+    {
+      "name": "restart_counts_non_decreasing",
+      "status": "PASS",
+      "observed": {
+        "before": {
+          "accepted_count": 0,
+          "citation_edge_count": 0,
+          "node_count": 0,
+          "provider_count": 0,
+          "provider_request_count": 0,
+          "similarity_edge_count": 0
+        },
+        "after": {
+          "accepted_count": 20,
+          "citation_edge_count": 10,
+          "node_count": 20,
+          "provider_count": 20,
+          "provider_request_count": 17,
+          "provider_truncated": 0,
+          "similarity_edge_count": 13
+        }
+      },
+      "expected": "no durable count regression"
+    },
+    {
+      "name": "restart_no_duplicate_node_ids",
+      "status": "PASS",
+      "observed": 20,
+      "expected": "unique node IDs"
+    },
+    {
+      "name": "restart_no_duplicate_identities",
+      "status": "PASS",
+      "observed": 20,
+      "expected": "unique external identities"
+    },
+    {
+      "name": "restart_terminal",
+      "status": "PASS",
+      "observed": "partial",
+      "expected": [
+        "completed",
+        "partial"
+      ]
+    }
+  ],
+  "note": "read-only continuation; process TERM/restart was coordinated by the main agent",
+  "spec": "043-literature-map-topic-exploration",
+  "task": "08-backend-live-api",
+  "run_id": "20261021-155409-1a3ff26-restart-recovery",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "candidate": "1a3ff26",
+    "started_at": "2026-10-21T15:54:09.517181+00:00",
+    "finished_at": "2026-10-21T15:54:09.586457+00:00",
+    "dry_run": false
+  },
+  "requests": [
+    {
+      "name": "restart_map_read",
+      "observed": "2026-10-21T15:54:09.517989+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/e567077ddacc495dad8773c8018bc13c",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "name": "Task08 restart recovery 1a3ff26",
+          "topic": "graph attention architectures",
+          "project_id": null,
+          "filters": {
+            "conference_ids": [],
+            "source_ids": [],
+            "year_end": null,
+            "year_start": null
+          },
+          "requested_count": 20,
+          "revision": 0,
+          "status": "partial",
+          "view_settings": {
+            "layers": {
+              "citation": true,
+              "similarity": true
+            },
+            "viewport": {
+              "scale": 1,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        },
+        "latest_job": {
+          "job_id": "ef5723506184480687a84495d334caff",
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "completed"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 13
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "dcd234c2f2574da59ae2704915ee6c26"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "a1f871117eec423fafee63d72f8de87a"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "9e218b1a3a344865810f9da577dfc5ed"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "814613f38b4c4535aa952f9b40b8fae5"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "25155eb132e9448ea958723d132cc7e9"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "7f1a37391e0b48b694cd869cd516e58c"
+            }
+          ],
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        }
+      }
+    },
+    {
+      "name": "restart_job_read",
+      "observed": "2026-10-21T15:54:09.563618+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/e567077ddacc495dad8773c8018bc13c/jobs/ef5723506184480687a84495d334caff",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "job": {
+          "job_id": "ef5723506184480687a84495d334caff",
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "completed"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 13
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "dcd234c2f2574da59ae2704915ee6c26"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "a1f871117eec423fafee63d72f8de87a"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "9e218b1a3a344865810f9da577dfc5ed"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "814613f38b4c4535aa952f9b40b8fae5"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "25155eb132e9448ea958723d132cc7e9"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "7f1a37391e0b48b694cd869cd516e58c"
+            }
+          ],
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        }
+      }
+    },
+    {
+      "name": "restart_events_read",
+      "observed": "2026-10-21T15:54:09.566558+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/e567077ddacc495dad8773c8018bc13c/events?after_seq=0",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "events": [
+          {
+            "event_seq": 1,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "queued",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:16.547748+00:00"
+          },
+          {
+            "event_seq": 2,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:16.550582+00:00"
+          },
+          {
+            "event_seq": 3,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:16.551654+00:00"
+          },
+          {
+            "event_seq": 4,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:51.091816+00:00"
+          },
+          {
+            "event_seq": 5,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "running",
+            "step": "metadata",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 0,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 1,
+              "provider_truncated": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:55.244759+00:00"
+          },
+          {
+            "event_seq": 6,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "running",
+            "step": "references",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 0,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 1,
+              "provider_truncated": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:55.246570+00:00"
+          },
+          {
+            "event_seq": 7,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "running",
+            "step": "similarity",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 10,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 17,
+              "provider_truncated": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:53:53.831943+00:00"
+          },
+          {
+            "event_seq": 8,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "completed",
+            "status": "partial",
+            "step": "finished",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 10,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 17,
+              "provider_truncated": 0,
+              "similarity_edge_count": 13
+            },
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "created_at": "2026-10-21T15:53:57.648366+00:00"
+          }
+        ],
+        "next_cursor": 8
+      }
+    },
+    {
+      "name": "restart_final_map",
+      "observed": "2026-10-21T15:54:09.569998+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/e567077ddacc495dad8773c8018bc13c",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "name": "Task08 restart recovery 1a3ff26",
+          "topic": "graph attention architectures",
+          "project_id": null,
+          "filters": {
+            "conference_ids": [],
+            "source_ids": [],
+            "year_end": null,
+            "year_start": null
+          },
+          "requested_count": 20,
+          "revision": 0,
+          "status": "partial",
+          "view_settings": {
+            "layers": {
+              "citation": true,
+              "similarity": true
+            },
+            "viewport": {
+              "scale": 1,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        },
+        "latest_job": {
+          "job_id": "ef5723506184480687a84495d334caff",
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "completed"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 13
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "dcd234c2f2574da59ae2704915ee6c26"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "a1f871117eec423fafee63d72f8de87a"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "9e218b1a3a344865810f9da577dfc5ed"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "814613f38b4c4535aa952f9b40b8fae5"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "25155eb132e9448ea958723d132cc7e9"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "7f1a37391e0b48b694cd869cd516e58c"
+            }
+          ],
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        }
+      }
+    },
+    {
+      "name": "restart_final_job",
+      "observed": "2026-10-21T15:54:09.572443+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/e567077ddacc495dad8773c8018bc13c/jobs/ef5723506184480687a84495d334caff",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "job": {
+          "job_id": "ef5723506184480687a84495d334caff",
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "completed"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 13
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "dcd234c2f2574da59ae2704915ee6c26"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "a1f871117eec423fafee63d72f8de87a"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "9e218b1a3a344865810f9da577dfc5ed"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "814613f38b4c4535aa952f9b40b8fae5"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "25155eb132e9448ea958723d132cc7e9"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "7f1a37391e0b48b694cd869cd516e58c"
+            }
+          ],
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        }
+      }
+    },
+    {
+      "name": "restart_final_events",
+      "observed": "2026-10-21T15:54:09.574128+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/e567077ddacc495dad8773c8018bc13c/events?after_seq=0",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "events": [
+          {
+            "event_seq": 1,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "queued",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:16.547748+00:00"
+          },
+          {
+            "event_seq": 2,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:16.550582+00:00"
+          },
+          {
+            "event_seq": 3,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:16.551654+00:00"
+          },
+          {
+            "event_seq": 4,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:51.091816+00:00"
+          },
+          {
+            "event_seq": 5,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "running",
+            "step": "metadata",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 0,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 1,
+              "provider_truncated": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:55.244759+00:00"
+          },
+          {
+            "event_seq": 6,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "running",
+            "step": "references",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 0,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 1,
+              "provider_truncated": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:52:55.246570+00:00"
+          },
+          {
+            "event_seq": 7,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "progress",
+            "status": "running",
+            "step": "similarity",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 10,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 17,
+              "provider_truncated": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:53:53.831943+00:00"
+          },
+          {
+            "event_seq": 8,
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "job_id": "ef5723506184480687a84495d334caff",
+            "type": "completed",
+            "status": "partial",
+            "step": "finished",
+            "counts": {
+              "accepted_count": 20,
+              "citation_edge_count": 10,
+              "node_count": 20,
+              "provider_count": 20,
+              "provider_request_count": 17,
+              "provider_truncated": 0,
+              "similarity_edge_count": 13
+            },
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "created_at": "2026-10-21T15:53:57.648366+00:00"
+          }
+        ],
+        "next_cursor": 8
+      }
+    },
+    {
+      "name": "restart_final_graph",
+      "observed": "2026-10-21T15:54:09.577223+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/e567077ddacc495dad8773c8018bc13c/graph",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "name": "Task08 restart recovery 1a3ff26",
+          "topic": "graph attention architectures",
+          "project_id": null,
+          "filters": {
+            "conference_ids": [],
+            "source_ids": [],
+            "year_end": null,
+            "year_start": null
+          },
+          "requested_count": 20,
+          "revision": 0,
+          "status": "partial",
+          "view_settings": {
+            "layers": {
+              "citation": true,
+              "similarity": true
+            },
+            "viewport": {
+              "scale": 1,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        },
+        "nodes": [
+          {
+            "node_id": "2d1d4de0ee5843d1a93d50c9972d2ee3",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.1109/icassp49660.2025.10890032",
+              "semantic_scholar": "f7f8dcb0645a6400c5a3f2e45482ccd48febd97c"
+            },
+            "title": "Combining Spatio-Temporal Networks and Graph Attention Architectures for EEG-Based Workload Classification",
+            "authors": [
+              "Nikhil Panwar",
+              "Vishal Pandey",
+              "Rownak Tiwari",
+              "Partha Pratim Roy"
+            ],
+            "year": 2025,
+            "venue": "IEEE International Conference on Acoustics, Speech, and Signal Processing",
+            "abstract": "Estimation of cognitive workload from EEG signals is a key challenge in advancing neuroergonomic systems and brain-computer interfaces (BCIs). A hybrid approach is presented, combining EEGNet and Graph Attention Networks (GATs) to effectively capture the intricate spatial and temporal dynamics within EEG data. Leveraging the COG-BCI dataset, which includes cognitively demanding tasks such as N-Back and Multi-Attribute Task Battery-II (MATB-II), the model employs GAT’s multi-head attention mechanism to enhance feature extraction and improve classification performance. A dynamic graph, constructed by integrating spatial distances between electrodes and signal correlations, provides a comprehensive framework for neural activity modeling. The hybrid EEGNet-GAT model demonstrates substantial performance improvements, achieving classification accuracies of 92.13% on the N-Back task and 96.08% on MATB-II, significantly surpassing the results from standalone EEGNet. These findings underscore the potential of the EEGNet-GAT architecture for real-time cognitive workload estimation, offering strong applications in BCIs and neuroergonomic environments.",
+            "keywords": [],
+            "citation_count": 3,
+            "source_url": "https://www.semanticscholar.org/paper/f7f8dcb0645a6400c5a3f2e45482ccd48febd97c",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "6758a64de3384672b3759bcd478b00c7",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "1710.10903",
+              "doi": "10.17863/cam.48429",
+              "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+            },
+            "title": "Graph Attention Networks",
+            "authors": [
+              "Petar Velickovic",
+              "Guillem Cucurull",
+              "Arantxa Casanova",
+              "Adriana Romero",
+              "Pietro Lió",
+              "Yoshua Bengio"
+            ],
+            "year": 2017,
+            "venue": "International Conference on Learning Representations",
+            "abstract": "We present graph attention networks (GATs), novel neural network architectures that operate on graph-structured data, leveraging masked self-attentional layers to address the shortcomings of prior methods based on graph convolutions or their approximations. By stacking layers in which nodes are able to attend over their neighborhoods' features, we enable (implicitly) specifying different weights to different nodes in a neighborhood, without requiring any kind of costly matrix operation (such as inversion) or depending on knowing the graph structure upfront. In this way, we address several key challenges of spectral-based graph neural networks simultaneously, and make our model readily applicable to inductive as well as transductive problems. Our GAT models have achieved or matched state-of-the-art results across four established transductive and inductive graph benchmarks: the Cora, Citeseer and Pubmed citation network datasets, as well as a protein-protein interaction dataset (wherein test graphs remain unseen during training).",
+            "keywords": [],
+            "citation_count": 29050,
+            "source_url": "https://www.semanticscholar.org/paper/33998aff64ce51df8dee45989cdca4b6b1329ec4",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "dcd234c2f2574da59ae2704915ee6c26",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2206.02849",
+              "doi": "10.48550/arxiv.2206.02849",
+              "semantic_scholar": "d8cf111e857055039239add466a3d3f52ca3c278"
+            },
+            "title": "A Bird's-Eye Tutorial of Graph Attention Architectures",
+            "authors": [
+              "Kaustubh D. Dhole",
+              "Carl Yang"
+            ],
+            "year": 2022,
+            "venue": "arXiv.org",
+            "abstract": "Graph Neural Networks (GNNs) have shown tremendous strides in performance for graph-structured problems especially in the domains of natural language processing, computer vision and recommender systems. Inspired by the success of the transformer architecture, there has been an ever-growing body of work on attention variants of GNNs attempting to advance the state of the art in many of these problems. Incorporating\"attention\"into graph mining has been viewed as a way to overcome the noisiness, heterogenity and complexity associated with graph-structured data as well as to encode soft-inductive bias. It is hence crucial and advantageous to study these variants from a bird's-eye view to assess their strengths and weaknesses. We provide a systematic and focused tutorial centered around attention based GNNs in a hope to benefit researchers dealing with graph-structured problems. Our tutorial looks at GNN variants from the point of view of the attention function and iteratively builds the reader's understanding of different graph attention variants.",
+            "keywords": [],
+            "citation_count": 1,
+            "source_url": "https://www.semanticscholar.org/paper/d8cf111e857055039239add466a3d3f52ca3c278",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2105.14491",
+              "semantic_scholar": "ab30672c8c5e4787f6a5985f26a8f281f0db2fb8"
+            },
+            "title": "How Attentive are Graph Attention Networks?",
+            "authors": [
+              "Shaked Brody",
+              "Uri Alon",
+              "Eran Yahav"
+            ],
+            "year": 2021,
+            "venue": "International Conference on Learning Representations",
+            "abstract": "Graph Attention Networks (GATs) are one of the most popular GNN architectures and are considered as the state-of-the-art architecture for representation learning with graphs. In GAT, every node attends to its neighbors given its own representation as the query. However, in this paper we show that GAT computes a very limited kind of attention: the ranking of the attention scores is unconditioned on the query node. We formally define this restricted kind of attention as static attention and distinguish it from a strictly more expressive dynamic attention. Because GATs use a static attention mechanism, there are simple graph problems that GAT cannot express: in a controlled problem, we show that static attention hinders GAT from even fitting the training data. To remove this limitation, we introduce a simple fix by modifying the order of operations and propose GATv2: a dynamic graph attention variant that is strictly more expressive than GAT. We perform an extensive evaluation and show that GATv2 outperforms GAT across 11 OGB and other benchmarks while we match their parametric costs. Our code is available at https://github.com/tech-srl/how_attentive_are_gats . GATv2 is available as part of the PyTorch Geometric library, the Deep Graph Library, and the TensorFlow GNN library.",
+            "keywords": [],
+            "citation_count": 2171,
+            "source_url": "https://www.semanticscholar.org/paper/ab30672c8c5e4787f6a5985f26a8f281f0db2fb8",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "d5e3de448e7749669840e105dba0d252",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.1038/s41598-025-93409-3",
+              "semantic_scholar": "7f859c600c41a058b521eaf7f273d4c27f22a014"
+            },
+            "title": "Artificial intelligence-powered prediction of AIM-2 inflammasome sequences using transformers and graph attention networks in periodontal inflammation",
+            "authors": [
+              "P. Yadalam",
+              "Deepavalli Arumuganainar",
+              "P. Natarajan",
+              "C. M. Ardila"
+            ],
+            "year": 2025,
+            "venue": "Scientific Reports",
+            "abstract": "Periodontal inflammation is a chronic condition affecting the tissues surrounding teeth. Initiated by dental plaque, it triggers an immune response leading to tissue destruction. The AIM-2 inflammasome regulates this response, and understanding its peptide sequences could aid in developing targeted therapeutics. This study explores using transformers and graph attention networks (GAT) to treat periodontal inflammation. UniProt was used to download AIM-2 inflammasome proteins and FASTA sequences with 100%, 90%, and 50% similarity. DeepBio, a web service for developing deep-learning architectures, analyzed these sequences. Peptide sequence prediction methods were evaluated using a transformer, RNN-CNN, and GAT models. The transformer model achieved 84% accuracy, the GAT model 86%, and the RNN-CNN 64%. Both transformer and GAT models predicted peptide sequences more effectively than the RNN-CNN model, with the Transformer showing the highest class accuracy at 85%, followed by the GAT model at 80%. Models exhibited varying sensitivity and specificity, with the Transformer demonstrating superior performance in overall and class-specific peptide sequence prediction. AI-based peptide sequence prediction using transformers, GAT, and RNN-CNN shows promise for accurately predicting AIM-2 peptide sequences, with transformers and GAT outperforming RNN-CNN in accuracy and class accuracy.",
+            "keywords": [],
+            "citation_count": 19,
+            "source_url": "https://www.semanticscholar.org/paper/7f859c600c41a058b521eaf7f273d4c27f22a014",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "7247729924fa4228bcdc24ecfe184b0b",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.3390/fi16090318",
+              "semantic_scholar": "398e842415fdfa15ad45d1d7f175080aa1eb7870"
+            },
+            "title": "Graph Attention Networks: A Comprehensive Review of Methods and Applications",
+            "authors": [
+              "Aris Vrahatis",
+              "Konstantinos Lazaros",
+              "S. Kotsiantis"
+            ],
+            "year": 2024,
+            "venue": "Future Internet",
+            "abstract": "Real-world problems often exhibit complex relationships and dependencies, which can be effectively captured by graph learning systems. Graph attention networks (GATs) have emerged as a powerful and versatile framework in this direction, inspiring numerous extensions and applications in several areas. In this review, we present a thorough examination of GATs, covering both diverse approaches and a wide range of applications. We examine the principal GAT-based categories, including Global Attention Networks, Multi-Layer Architectures, graph-embedding techniques, Spatial Approaches, and Variational Models. Furthermore, we delve into the diverse applications of GATs in various systems such as recommendation systems, image analysis, medical domain, sentiment analysis, and anomaly detection. This review seeks to act as a navigational reference for researchers and practitioners aiming to emphasize the capabilities and prospects of GATs.",
+            "keywords": [],
+            "citation_count": 279,
+            "source_url": "https://www.semanticscholar.org/paper/398e842415fdfa15ad45d1d7f175080aa1eb7870",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "a1f871117eec423fafee63d72f8de87a",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2504.00058",
+              "doi": "10.1145/3793811.3793819",
+              "semantic_scholar": "842718f1683005e3a101e68571622c4053801933"
+            },
+            "title": "GAL-MAD: Towards Explainable Anomaly Detection in Microservice Applications Using Graph Attention Networks",
+            "authors": [
+              "Lahiru Akmeemana",
+              "Chamodya Attanayake",
+              "Husni Faiz",
+              "Sandareka Wickramanayake"
+            ],
+            "year": 2025,
+            "venue": "Australasian Computer Science Week",
+            "abstract": "The distributed and dynamic nature of microservices poses significant challenges to maintaining system reliability, highlighting the need for effective anomaly detection. Existing statistical and classical machine learning methods often fail to capture the high-dimensional dependencies and complex interactions found in these architectures. Public datasets are also limited, with few offering the multivariate performance metrics needed for realistic evaluation. This work introduces the RS-Anomic dataset generated using the open-source RobotShop microservice application. The dataset captures multivariate performance metrics and response times under normal conditions and anomalous conditions, encompassing ten types of anomalies. We propose a novel anomaly detection model called Graph Attention and LSTM-based Microservice Anomaly Detection (GAL-MAD), leveraging Graph Attention and Long Short-Term Memory architectures to capture spatial and temporal dependencies in microservices. Using SHAP, we explore anomaly localization to enhance explainability. Experimental results demonstrate that GAL-MAD outperforms state-of-the-art models on the RS-Anomic dataset, achieving higher accuracy and recall across varying anomaly rates.",
+            "keywords": [],
+            "citation_count": 10,
+            "source_url": "https://www.semanticscholar.org/paper/842718f1683005e3a101e68571622c4053801933",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "44932d50c592473089dda48c3409a78f",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2206.11990",
+              "doi": "10.48550/arxiv.2206.11990",
+              "semantic_scholar": "1ede15a0aa5204de1f3013d7616a93dbd46fd849"
+            },
+            "title": "Equiformer: Equivariant Graph Attention Transformer for 3D Atomistic Graphs",
+            "authors": [
+              "Yi Liao",
+              "T. Smidt"
+            ],
+            "year": 2022,
+            "venue": "International Conference on Learning Representations",
+            "abstract": "Despite their widespread success in various domains, Transformer networks have yet to perform well across datasets in the domain of 3D atomistic graphs such as molecules even when 3D-related inductive biases like translational invariance and rotational equivariance are considered. In this paper, we demonstrate that Transformers can generalize well to 3D atomistic graphs and present Equiformer, a graph neural network leveraging the strength of Transformer architectures and incorporating SE(3)/E(3)-equivariant features based on irreducible representations (irreps). First, we propose a simple and effective architecture by only replacing original operations in Transformers with their equivariant counterparts and including tensor products. Using equivariant operations enables encoding equivariant information in channels of irreps features without complicating graph structures. With minimal modifications to Transformers, this architecture has already achieved strong empirical results. Second, we propose a novel attention mechanism called equivariant graph attention, which improves upon typical attention in Transformers through replacing dot product attention with multi-layer perceptron attention and including non-linear message passing. With these two innovations, Equiformer achieves competitive results to previous models on QM9, MD17 and OC20 datasets.",
+            "keywords": [],
+            "citation_count": 453,
+            "source_url": "https://www.semanticscholar.org/paper/1ede15a0aa5204de1f3013d7616a93dbd46fd849",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2502.09263",
+              "semantic_scholar": "f450a053b0f87152a9bd32f59f03141d93852b71"
+            },
+            "title": "Can Classic GNNs Be Strong Baselines for Graph-level Tasks? Simple Architectures Meet Excellence",
+            "authors": [
+              "Yuankai Luo",
+              "Lei Shi",
+              "Xiao-Ming Wu"
+            ],
+            "year": 2025,
+            "venue": "International Conference on Machine Learning",
+            "abstract": "Message-passing Graph Neural Networks (GNNs) are often criticized for their limited expressiveness, issues like over-smoothing and over-squashing, and challenges in capturing long-range dependencies. Conversely, Graph Transformers (GTs) are regarded as superior due to their employment of global attention mechanisms, which potentially mitigate these challenges. Literature frequently suggests that GTs outperform GNNs in graph-level tasks, especially for graph classification and regression on small molecular graphs. In this study, we explore the untapped potential of GNNs through an enhanced framework, GNN+, which integrates six widely used techniques: edge feature integration, normalization, dropout, residual connections, feed-forward networks, and positional encoding, to effectively tackle graph-level tasks. We conduct a systematic re-evaluation of three classic GNNs (GCN, GIN, and GatedGCN) enhanced by the GNN+ framework across 14 well-known graph-level datasets. Our results reveal that, contrary to prevailing beliefs, these classic GNNs consistently match or surpass the performance of GTs, securing top-three rankings across all datasets and achieving first place in eight. Furthermore, they demonstrate greater efficiency, running several times faster than GTs on many datasets. This highlights the potential of simple GNN architectures, challenging the notion that complex mechanisms in GTs are essential for superior graph-level performance. Our source code is available at https://github.com/LUOyk1999/GNNPlus.",
+            "keywords": [],
+            "citation_count": 39,
+            "source_url": "https://www.semanticscholar.org/paper/f450a053b0f87152a9bd32f59f03141d93852b71",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "f80b0a3a252f48c79b9b5ae5d35e7ac3",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2502.16533",
+              "doi": "10.1145/3834764",
+              "semantic_scholar": "6bfe4a32dbf4c58af83745e2fcf68217217a03ea"
+            },
+            "title": "A Survey of Graph Transformers: Architectures, Theories and Applications",
+            "authors": [
+              "Chaohao Yuan",
+              "Kangfei Zhao",
+              "E. Kuruoğlu",
+              "Liang Wang",
+              "Tingyang Xu",
+              "Wenbing Huang",
+              "De-Li Zhao",
+              "Hong Cheng",
+              "Yu Rong"
+            ],
+            "year": 2025,
+            "venue": "ACM Computing Surveys",
+            "abstract": "Graph Transformers (GTs) have demonstrated a strong capability in modeling graph structures by addressing the intrinsic limitations of graph neural networks (GNNs), such as over-smoothing and over-squashing. Recent studies have proposed diverse architectures, enhanced explainability, and practical applications for Graph Transformers. In light of these rapid developments, we conduct a comprehensive review of Graph Transformers, covering aspects such as their architectures, theoretical foundations, and applications. In this survey, we first categorize the architecture of Graph Transformers according to their strategies for processing structural information, including graph tokenization, positional encoding, structure-aware attention, and model ensemble. Then, from the theoretical perspective, we examine the expressivity of Graph Transformers in various discussed architectures and contrast them with other advanced graph learning algorithms to discover their connections. For applications, we organize the literature around four graph organization forms, from relational, geometric, dynamic to heterogeneous. A Practical Guidance table then maps architectural components to these graph forms by adoption frequency, so practitioners can narrow down which design families to consider for a given input structure. Lastly, we will discuss the current challenges and prospective directions in Graph Transformers for potential future research.",
+            "keywords": [],
+            "citation_count": 36,
+            "source_url": "https://www.semanticscholar.org/paper/6bfe4a32dbf4c58af83745e2fcf68217217a03ea",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "9e218b1a3a344865810f9da577dfc5ed",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.1016/j.media.2024.103107",
+              "semantic_scholar": "c503f5a034c42866ac44185091bb2a6e2a315707"
+            },
+            "title": "Semi-supervised medical image classification via distance correlation minimization and graph attention regularization",
+            "authors": [
+              "Abel Díaz Berenguer",
+              "Maryna Kvasnytsia",
+              "M. N. Bossa",
+              "Tanmoy Mukherjee",
+              "Nikos Deligiannis",
+              "Hichem Sahli"
+            ],
+            "year": 2024,
+            "venue": "Medical Image Anal.",
+            "abstract": "We propose a novel semi-supervised learning method to leverage unlabeled data alongside minimal annotated data and improve medical imaging classification performance in realistic scenarios with limited labeling budgets to afford data annotations. Our method introduces distance correlation to minimize correlations between feature representations from different views of the same image encoded with non-coupled deep neural networks architectures. In addition, it incorporates a data-driven graph-attention based regularization strategy to model affinities among images within the unlabeled data by exploiting their inherent relational information in the feature space. We conduct extensive experiments on four medical imaging benchmark data sets involving X-ray, dermoscopic, magnetic resonance, and computer tomography imaging on single and multi-label medical imaging classification scenarios. Our experiments demonstrate the effectiveness of our method in achieving very competitive performance and outperforming several state-of-the-art semi-supervised learning methods. Furthermore, they confirm the suitability of distance correlation as a versatile dependence measure and the benefits of the proposed graph-attention based regularization for semi-supervised learning in medical imaging analysis.",
+            "keywords": [],
+            "citation_count": 22,
+            "source_url": "https://www.semanticscholar.org/paper/c503f5a034c42866ac44185091bb2a6e2a315707",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "fc4d7bebbffc40f28bc7c6d6cbcbe783",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.1007/s12293-024-00423-5",
+              "semantic_scholar": "f12aeb898be497a1d6f8576ae5e2f1e8d9469cc7"
+            },
+            "title": "ResGAT: Residual Graph Attention Networks for molecular property prediction",
+            "authors": [
+              "T. Nguyen-Vo",
+              "Trang T. T. Do",
+              "Binh P. Nguyen"
+            ],
+            "year": 2024,
+            "venue": "Memetic Computing",
+            "abstract": "Molecular property prediction is an important step in the drug discovery pipeline. Numerous computational methods have been developed to predict a wide range of molecular properties. While recent approaches have shown promising results, no single architecture can comprehensively address all tasks, making this area persistently challenging and requiring substantial time and effort. Beyond traditional machine learning and deep learning architectures for regular data, several deep learning architectures have been designed for graph-structured data to overcome the limitations of conventional methods. Utilizing graph-structured data in quantitative structure–activity relationship (QSAR) modeling allows models to effectively extract unique features, especially where connectivity information is crucial. In our study, we developed residual graph attention networks (ResGAT), a deep learning architecture for molecular graph-structured data. This architecture is a combination of graph attention networks and shortcut connections to address both regression and classification problems. It is also customizable to adapt to various dataset sizes, enhancing the learning process based on molecular patterns. When tested multiple times with both random and scaffold sampling strategies on nine benchmark molecular datasets, QSAR models developed using ResGAT demonstrated stability and competitive performance compared to state-of-the-art methods.",
+            "keywords": [],
+            "citation_count": 15,
+            "source_url": "https://www.semanticscholar.org/paper/f12aeb898be497a1d6f8576ae5e2f1e8d9469cc7",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "4a20959fef48469882fc53e63a662c5a",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.1186/s40537-023-00876-4",
+              "semantic_scholar": "1fad14bcfc2b75797c686a5a05779076437a683e"
+            },
+            "title": "A review of graph neural networks: concepts, architectures, techniques, challenges, datasets, applications, and future directions",
+            "authors": [
+              "B. Khemani",
+              "S. Patil",
+              "K. Kotecha",
+              "Sudeep Tanwar"
+            ],
+            "year": 2024,
+            "venue": "Journal of Big Data",
+            "abstract": "Deep learning has seen significant growth recently and is now applied to a wide range of conventional use cases, including graphs. Graph data provides relational information between elements and is a standard data format for various machine learning and deep learning tasks. Models that can learn from such inputs are essential for working with graph data effectively. This paper identifies nodes and edges within specific applications, such as text, entities, and relations, to create graph structures. Different applications may require various graph neural network (GNN) models. GNNs facilitate the exchange of information between nodes in a graph, enabling them to understand dependencies within the nodes and edges. The paper delves into specific GNN models like graph convolution networks (GCNs), GraphSAGE, and graph attention networks (GATs), which are widely used in various applications today. It also discusses the message-passing mechanism employed by GNN models and examines the strengths and limitations of these models in different domains. Furthermore, the paper explores the diverse applications of GNNs, the datasets commonly used with them, and the Python libraries that support GNN models. It offers an extensive overview of the landscape of GNN research and its practical implementations.",
+            "keywords": [],
+            "citation_count": 609,
+            "source_url": "https://www.semanticscholar.org/paper/1fad14bcfc2b75797c686a5a05779076437a683e",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "eb17926de9ad4267b84bec54f085271b",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2311.14332",
+              "doi": "10.48550/arxiv.2311.14332",
+              "semantic_scholar": "4a89f69277735d3254ea9d734256637ebccbe2ce"
+            },
+            "title": "GATGPT: A Pre-trained Large Language Model with Graph Attention Network for Spatiotemporal Imputation",
+            "authors": [
+              "Yakun Chen",
+              "Xianzhi Wang",
+              "Guandong Xu"
+            ],
+            "year": 2023,
+            "venue": "arXiv.org",
+            "abstract": "The analysis of spatiotemporal data is increasingly utilized across diverse domains, including transportation, healthcare, and meteorology. In real-world settings, such data often contain missing elements due to issues like sensor malfunctions and data transmission errors. The objective of spatiotemporal imputation is to estimate these missing values by understanding the inherent spatial and temporal relationships in the observed multivariate time series. Traditionally, spatiotemporal imputation has relied on specific, intricate architectures designed for this purpose, which suffer from limited applicability and high computational complexity. In contrast, our approach integrates pre-trained large language models (LLMs) into spatiotemporal imputation, introducing a groundbreaking framework, GATGPT. This framework merges a graph attention mechanism with LLMs. We maintain most of the LLM parameters unchanged to leverage existing knowledge for learning temporal patterns, while fine-tuning the upper layers tailored to various applications. The graph attention component enhances the LLM's ability to understand spatial relationships. Through tests on three distinct real-world datasets, our innovative approach demonstrates comparable results to established deep learning benchmarks.",
+            "keywords": [],
+            "citation_count": 75,
+            "source_url": "https://www.semanticscholar.org/paper/4a89f69277735d3254ea9d734256637ebccbe2ce",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "3be04459fa2341cebb4bb3a45a804b36",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.3390/ijgi8090414",
+              "semantic_scholar": "a34b6a4c968335c304e661fff03ba5fedde28567"
+            },
+            "title": "Incorporating Graph Attention and Recurrent Architectures for City-Wide Taxi Demand Prediction",
+            "authors": [
+              "Ying Xu",
+              "Dong-Sheng Li"
+            ],
+            "year": 2019,
+            "venue": "ISPRS Int. J. Geo Inf.",
+            "abstract": "Taxi demand prediction is one of the key factors in making online taxi hailing services more successful and more popular. Accurate taxi demand prediction can bring various advantages including, but not limited to, enhancing user experience, increasing taxi utilization, and optimizing traffic efficiency. However, the task is challenging because of complex spatial and temporal dependencies of taxi demand. In addition, relationships between non-adjacent regions are also critical for accurate taxi demand prediction, whereas they are largely ignored by existing approaches. To this end, we propose a novel graph and time-series learning model for city-wide taxi demand prediction in this paper. It has two main building blocks, the first one utilize a graph network with attention mechanism to effectively learn spatial dependencies of taxi demand in a broader perspective of the entire city, and the output at each time interval is then transferred to the second block. In the graph network, the edge is defined by an Origin–Destination relation to capture non-adjacent impacts. The second one uses a neural network which is adept with processing sequence data to capture the temporal correlations of city-wide taxi demand. Using a large, real-world dataset and three metrics, we conduct an extensive experimental study and find that our model outperforms state-of-the-art baselines by 9.3% in terms of the root-mean-square error.",
+            "keywords": [],
+            "citation_count": 36,
+            "source_url": "https://www.semanticscholar.org/paper/a34b6a4c968335c304e661fff03ba5fedde28567",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "3af019d97cd6472db73937ebedd3c4b4",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2303.16781",
+              "doi": "10.1038/s41598-024-78555-4",
+              "semantic_scholar": "9a1102eb2dad9993a91cdbbfc182de78bd8a8081"
+            },
+            "title": "Fusing multiplex heterogeneous networks using graph attention-aware fusion networks",
+            "authors": [
+              "Ziynet Nesibe Kesimoglu",
+              "S. Bozdag"
+            ],
+            "year": 2023,
+            "venue": "Scientific Reports",
+            "abstract": "Graph Neural Networks (GNN) emerged as a deep learning framework to generate node and graph embeddings for downstream machine learning tasks. Popular GNN-based architectures operate on networks of single node and edge type. However, a large number of real-world networks include multiple types of nodes and edges. Enabling these architectures to work on networks with multiple node and edge types brings additional challenges due to the heterogeneity of the networks and the multiplicity of the existing associations. In this study, we present a framework, named GRAF (Graph Attention-aware Fusion Networks), to convert multiplex heterogeneous networks to homogeneous networks to make them more suitable for graph representation learning. Using attention-based neighborhood aggregation, GRAF learns the importance of each neighbor per node (called node-level attention) followed by the importance of each network layer (called network layer-level attention). Then, GRAF processes a network fusion step weighing each edge according to the learned attentions. After an edge elimination step based on edge weights, GRAF utilizes Graph Convolutional Networks (GCN) on the fused network and incorporates node features on graph-structured data for a node classification or a similar downstream task. To demonstrate GRAF’s generalizability, we applied it to four datasets from different domains and observed that GRAF outperformed or was on par with the baselines and state-of-the-art (SOTA) methods. We were able to interpret GRAF’s findings utilizing the attention weights. Source code for GRAF is publicly available at https://github.com/bozdaglab/GRAF.",
+            "keywords": [],
+            "citation_count": 14,
+            "source_url": "https://www.semanticscholar.org/paper/9a1102eb2dad9993a91cdbbfc182de78bd8a8081",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "814613f38b4c4535aa952f9b40b8fae5",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.1038/s41598-024-70032-2",
+              "semantic_scholar": "627f07b49f9a68cfb26561f83758f5b788041580"
+            },
+            "title": "Federated learning for network attack detection using attention-based graph neural networks",
+            "authors": [
+              "Jianping Wu",
+              "Guang-Qi Qiu",
+              "Chunming Wu",
+              "Wei-Wei Jiang",
+              "Jia-He Jin"
+            ],
+            "year": 2024,
+            "venue": "Scientific Reports",
+            "abstract": "Federated Learning is an effective solution to address the issues of data isolation and privacy leakage in machine learning. However, ensuring the security of network devices and architectures deploying federated learning remains a challenge due to network attacks. This paper proposes an attention-based Graph Neural Network for detecting cross-level and cross-department network attacks. This method enables collaborative model training while protecting data privacy on distributed devices. By organizing network traffic information in chronological order and constructing a graph structure based on log density, enhances the accuracy of network attack detection. The introduction of an attention mechanism and the construction of a Federated Graph Attention Network (FedGAT) model are used to evaluate the interactivity between nodes in the graph, thereby improving the precision of internal network interactions. Experimental results demonstrate that our method achieves comparable accuracy and robustness to traditional detection methods while prioritizing privacy protection and data security.",
+            "keywords": [],
+            "citation_count": 97,
+            "source_url": "https://www.semanticscholar.org/paper/627f07b49f9a68cfb26561f83758f5b788041580",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "25155eb132e9448ea958723d132cc7e9",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2501.02393",
+              "doi": "10.48550/arxiv.2501.02393",
+              "semantic_scholar": "64dfd7e67297044b32ec262f6612a6910cb13905"
+            },
+            "title": "Graph-Aware Isomorphic Attention for Adaptive Dynamics in Transformers",
+            "authors": [
+              "Markus J. Buehler"
+            ],
+            "year": 2025,
+            "venue": "APL Machine Learning",
+            "abstract": "We present an approach for modifying transformer architectures by integrating graph-aware relational reasoning into the attention mechanism, merging concepts from graph neural networks and language modeling. Building on the inherent connection between attention and graph theory, we reformulate the transformer’s attention mechanism as a graph operation and propose graph-aware isomorphic attention. This method leverages advanced graph modeling strategies, including Graph Isomorphism Networks (GINs), to enrich the representation of relational structures. Our approach improves the model’s ability to capture complex dependencies and generalize across tasks, as evidenced by a reduced generalization gap and improved learning performance. We expand the concept of graph-aware attention to introduce sparse-GIN-attention, a fine-tuning approach that enhances the adaptability of pre-trained foundational models with minimal computational overhead, endowing them with graph-aware capabilities. We show that the sparse-GIN-attention framework leverages compositional principles from category theory to align relational reasoning with sparsified graph structures while modeling hierarchical representation learning that bridges local interactions and global task objectives across diverse domains. Our results demonstrate that graph-aware attention mechanisms outperform traditional attention in both training efficiency and validation performance. These insights bridge graph theory and transformer architectures and uncover latent graph-like structures within traditional attention mechanisms, offering a new lens through which transformers can be optimized. By evolving transformers as hierarchical GIN models, we reveal their implicit capacity for graph-level relational reasoning with profound implications for foundational model development and applications in bioinformatics, materials science, language modeling, and beyond, setting the stage for interpretable and generalizable modeling strategies.",
+            "keywords": [],
+            "citation_count": 12,
+            "source_url": "https://www.semanticscholar.org/paper/64dfd7e67297044b32ec262f6612a6910cb13905",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "7f1a37391e0b48b694cd869cd516e58c",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "doi": "10.1109/ijcnn54540.2023.10191717",
+              "semantic_scholar": "fb724e6bebad776f079675de3fe84a7258ed00aa"
+            },
+            "title": "Transfer Learning with Graph Attention Networks for Team Recommendation",
+            "authors": [
+              "Sagar Kaw",
+              "Ziad Kobti",
+              "Kalyani Selvarajah"
+            ],
+            "year": 2023,
+            "venue": "IEEE International Joint Conference on Neural Network",
+            "abstract": "In order to complete a common goal, team recommendation problems identify an efficient group of experts who can collectively satisfy a set of required skills. A significant number of studies address this problem through graph-based approaches. Recently, researchers have started to see this problem as a social information retrieval and examine it through neural architectures that recommend the team of experts by learning a relationship between the skills and experts space. However, this learning process faces several challenges including (1) being unable to handle the modification of a network if the training process is over, (2) the time complexity of the learning process being high and proportional to the size of the network. In this paper, we propose a new architecture, LANT, which comprises transfer learning and neural team recommendation, to address these challenges based on graph neural networks and variational inference. Since the transfer learning of team recommendation is an unsupervised task, therefore, to learn node embedding in a self-supervised manner, we use Deep Graph Infomax with Graph Attention Networks as an encoder. We empirically demonstrate how LANT overcomes the challenges in the existing approaches and compare them against the state-of-the-art approaches in terms of effectiveness using the DBLP dataset.",
+            "keywords": [],
+            "citation_count": 8,
+            "source_url": "https://www.semanticscholar.org/paper/fb724e6bebad776f079675de3fe84a7258ed00aa",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          },
+          {
+            "node_id": "793ec2f3800f46af9ac75b66e9934bfd",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "external_ids": {
+              "arxiv": "2307.04149",
+              "doi": "10.48550/arxiv.2307.04149",
+              "semantic_scholar": "4aedce826ecf3b7e34e6422c3176c1cd65bd9a3c"
+            },
+            "title": "Latent Graph Attention for Enhanced Spatial Context",
+            "authors": [
+              "Ayush Singh",
+              "Yash Bhambhu",
+              "Himanshu Buckchash",
+              "D. Gupta",
+              "D. Prasad"
+            ],
+            "year": 2023,
+            "venue": "arXiv.org",
+            "abstract": "Global contexts in images are quite valuable in image-to-image translation problems. Conventional attention-based and graph-based models capture the global context to a large extent, however, these are computationally expensive. Moreover, the existing approaches are limited to only learning the pairwise semantic relation between any two points on the image. In this paper, we present Latent Graph Attention (LGA) a computationally inexpensive (linear to the number of nodes) and stable, modular framework for incorporating the global context in the existing architectures, especially empowering small-scale architectures to give performance closer to large size architectures, thus making the light-weight architectures more useful for edge devices with lower compute power and lower energy needs. LGA propagates information spatially using a network of locally connected graphs, thereby facilitating to construct a semantically coherent relation between any two spatially distant points that also takes into account the influence of the intermediate pixels. Moreover, the depth of the graph network can be used to adapt the extent of contextual spread to the target dataset, thereby being able to explicitly control the added computational cost. To enhance the learning mechanism of LGA, we also introduce a novel contrastive loss term that helps our LGA module to couple well with the original architecture at the expense of minimal additional computational load. We show that incorporating LGA improves the performance on three challenging applications, namely transparent object segmentation, image restoration for dehazing and optical flow estimation.",
+            "keywords": [],
+            "citation_count": 5,
+            "source_url": "https://www.semanticscholar.org/paper/4aedce826ecf3b7e34e6422c3176c1cd65bd9a3c",
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "catalog_paper_id": null,
+            "document_id": null,
+            "download_status": null,
+            "position": null,
+            "group_id": null,
+            "removed": false
+          }
+        ],
+        "edges": [
+          {
+            "edge_id": "0164f4e897d34ec59a0129e91563056c",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+            "target_id": "6758a64de3384672b3759bcd478b00c7",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "9a1102eb2dad9993a91cdbbfc182de78bd8a8081"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "02d6feb42d7e41908677eca107169bad",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "target_id": "6758a64de3384672b3759bcd478b00c7",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "ab30672c8c5e4787f6a5985f26a8f281f0db2fb8"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "049be20503d642e5ae2a58381ef6f70f",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "44932d50c592473089dda48c3409a78f",
+            "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "1ede15a0aa5204de1f3013d7616a93dbd46fd849"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "14f3722b0aa9475ba202399501fbd7a8",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "3be04459fa2341cebb4bb3a45a804b36",
+            "target_id": "6758a64de3384672b3759bcd478b00c7",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "a34b6a4c968335c304e661fff03ba5fedde28567"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "24131041ab4e4926bb3b4c22e619dcb4",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "4a20959fef48469882fc53e63a662c5a",
+            "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "1fad14bcfc2b75797c686a5a05779076437a683e"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "2571393a0cc1459fa89995751595eb22",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "fc4d7bebbffc40f28bc7c6d6cbcbe783",
+            "target_id": "6758a64de3384672b3759bcd478b00c7",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "f12aeb898be497a1d6f8576ae5e2f1e8d9469cc7"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "28f15737741d4408991b4791e72e30a4",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+            "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "9a1102eb2dad9993a91cdbbfc182de78bd8a8081"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "8483807fbe974fac871c3208f0144ac8",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "44932d50c592473089dda48c3409a78f",
+            "target_id": "6758a64de3384672b3759bcd478b00c7",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "1ede15a0aa5204de1f3013d7616a93dbd46fd849"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "8ee63e726c624b678dd6648cf085f807",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+            "target_id": "6758a64de3384672b3759bcd478b00c7",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "f450a053b0f87152a9bd32f59f03141d93852b71"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "b4ea63fd0c894b80be60165e144d5435",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "citation",
+            "source_id": "4a20959fef48469882fc53e63a662c5a",
+            "target_id": "6758a64de3384672b3759bcd478b00c7",
+            "provenance": {
+              "provider": "semantic_scholar",
+              "relation": "references",
+              "source_paper_id": "1fad14bcfc2b75797c686a5a05779076437a683e"
+            },
+            "score": null,
+            "basis": null,
+            "model_version": null,
+            "content_hash": null
+          },
+          {
+            "edge_id": "0ba1fdb90e4b4cf9b78cc1fee00e468b",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+            "target_id": "f80b0a3a252f48c79b9b5ae5d35e7ac3",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.77270745,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "84ecb2faf82c058308e0a553b573465fd254d69a68ecfdf757f927f8f35aa058"
+          },
+          {
+            "edge_id": "18083030d25647ef960009a4e88c5d7a",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "7247729924fa4228bcdc24ecfe184b0b",
+            "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.75851469,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "124c13e0cc0d42808ea36f1f241508ef5895df8352c2810ed4eb4d30a0d52de1"
+          },
+          {
+            "edge_id": "3022cf7ef5f242708dae08382cbeecf9",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.77003065,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "083f0043a499e1f3234c34b991de675fe72b754adcbeb6f2ddd8eb4293ba1135"
+          },
+          {
+            "edge_id": "4801fcc8dcdc472e8c17809c350f8d99",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+            "target_id": "814613f38b4c4535aa952f9b40b8fae5",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.75315355,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "fbe0909f16f552a05bab6cc749d552a5ff23343d7049704b7edcf0d332eeaf3b"
+          },
+          {
+            "edge_id": "57e206d97cc6426c8584b27d318f0508",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "target_id": "7247729924fa4228bcdc24ecfe184b0b",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.79003627,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "075b52181da19b788e854214aa69d709f8395404953f6a17418cd8e0b786c228"
+          },
+          {
+            "edge_id": "62c93fb711394d7d94a877cff5e5862e",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "4a20959fef48469882fc53e63a662c5a",
+            "target_id": "f80b0a3a252f48c79b9b5ae5d35e7ac3",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.7756873,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "795fc87b40aeccfe497c6fdd4c547d741695c3640b947170e0c7833e4dc17fa4"
+          },
+          {
+            "edge_id": "86f997b81cd8442a95967bb9e9aa9242",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+            "target_id": "4a20959fef48469882fc53e63a662c5a",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.77914757,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "ed47f7865896a67e40dc6272ef28e50cba527f621fc5539a3e2319a088c6dc13"
+          },
+          {
+            "edge_id": "cfff903562e446db8a269a181c2ffd43",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "6758a64de3384672b3759bcd478b00c7",
+            "target_id": "6afff7913f174f109d3913b7ef7a2b2a",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.811645,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "0f7f8f6779db5f67f956b6a4b02ead94fae91c8b5f7e22838a3f225f8fb68622"
+          },
+          {
+            "edge_id": "d24a0e24409b47ab9e98cf8c0520d53b",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "4a20959fef48469882fc53e63a662c5a",
+            "target_id": "ed37a0fb2a5746bb92789b6c7a871f49",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.77336393,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "b4a96ae5478f645d4cfdbdac5dc21a9a88988358b4e79ff9ca4866e29e4d339f"
+          },
+          {
+            "edge_id": "d9eca635035e4db58881d5c540ad4b4c",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "4a20959fef48469882fc53e63a662c5a",
+            "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.77023641,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "926846af9ae6d1a1a358e33c56b42780c7b0e2dfc18314dedb20aa44a2d5052f"
+          },
+          {
+            "edge_id": "de11e73b96a94c0cb3526317ed7dce04",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "6758a64de3384672b3759bcd478b00c7",
+            "target_id": "7247729924fa4228bcdc24ecfe184b0b",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.83133635,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "7353ba25d6b352856e06e0dc3f04d70be80b9bf9d03e85761d9169c544f3e2d6"
+          },
+          {
+            "edge_id": "e8ec0b0dd1db497594252ceb9580c432",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "4a20959fef48469882fc53e63a662c5a",
+            "target_id": "7247729924fa4228bcdc24ecfe184b0b",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.78895369,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "8ecafcf750124b6c0a8a7507aaee3fda38cfd26e4744de8fd39ead5033d95948"
+          },
+          {
+            "edge_id": "f1a8beeabe514a7899d4be7b60075ec1",
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "kind": "similarity",
+            "source_id": "3af019d97cd6472db73937ebedd3c4b4",
+            "target_id": "dcd234c2f2574da59ae2704915ee6c26",
+            "provenance": {
+              "algorithm": "dense_cosine",
+              "threshold": 0.75,
+              "top_k": 3
+            },
+            "score": 0.75325052,
+            "basis": "title_abstract",
+            "model_version": "bge-m3",
+            "content_hash": "ef36c3bc717fef848bff465fb71c00f213a33d52aeab93e175ecf12c6dbb5063"
+          }
+        ],
+        "layers": {
+          "citation": {
+            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+            "status": "partial"
+          },
+          "similarity": {
+            "error_code": null,
+            "status": "completed"
+          }
+        },
+        "latest_job": {
+          "job_id": "ef5723506184480687a84495d334caff",
+          "map_id": "e567077ddacc495dad8773c8018bc13c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "completed"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 20,
+            "citation_edge_count": 10,
+            "node_count": 20,
+            "provider_count": 20,
+            "provider_request_count": 17,
+            "provider_truncated": 0,
+            "similarity_edge_count": 13
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "2d1d4de0ee5843d1a93d50c9972d2ee3"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "dcd234c2f2574da59ae2704915ee6c26"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "a1f871117eec423fafee63d72f8de87a"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "9e218b1a3a344865810f9da577dfc5ed"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "814613f38b4c4535aa952f9b40b8fae5"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "25155eb132e9448ea958723d132cc7e9"
+            },
+            {
+              "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+              "retryable": false,
+              "unit": "7f1a37391e0b48b694cd869cd516e58c"
+            }
+          ],
+          "created_at": "2026-10-21T15:52:16.546582+00:00",
+          "updated_at": "2026-10-21T15:53:57.648280+00:00"
+        }
+      }
+    }
+  ],
+  "state_trace": [],
+  "entities": {},
+  "redaction": {
+    "removed_keys": [
+      "api_key",
+      "apikey",
+      "authorization",
+      "cookie",
+      "owner_id",
+      "password",
+      "secret",
+      "set-cookie",
+      "token"
+    ],
+    "credentials_saved": false
+  }
+}

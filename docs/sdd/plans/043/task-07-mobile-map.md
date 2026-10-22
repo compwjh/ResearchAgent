@@ -1,7 +1,7 @@
 # Task 07 — 手机适配
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：05、06；被依赖：08；当前状态：**进行中（手机适配，全文KB阻塞独立保留）**。
+> 依赖：05、06；被依赖：08；当前状态：**阶段已完成（候选 1a3ff26 真实浏览器 PASS；非物理真机）**。
 
 ## 一句话目标
 
@@ -9,7 +9,7 @@
 
 ## 当前证据与前置条件
 
-- Task06真实分组/导出阶段PASS；Task05界面与摘要/会话路径已真实验证，全文受现有KB partial阻塞。本Task仅适配相同界面，不修改全文门禁或宣称其通过；合同见 `artifacts/task-07/interface-contract.md`。手机实现与真实触控验证尚未通过。
+- Task06真实分组/导出阶段PASS；Task05 在候选 `82c816f` 上的摘要/全文 API 链路已真实 PASS，历史全文 BLOCK 证据保留。本Task仅适配相同界面，不修改全文门禁或扩大 API 范围；合同见 `artifacts/task-07/interface-contract.md`。最终候选 `1a3ff26` 已由授权 Chromium/CDP 完成真实 375/390/1440 浏览器复验：global-nav 与详情普通 close 无 force、列表抽屉、详情 scrollTop 0→175、390 pan/pinch 保存重开、详情关闭、1440 拖动、1280 resize 与无横溢均通过；详情摘要、历史 v1/v2 与全文按钮可用，未重复发送 analysis POST。旧零间隔触控和旧候选遮挡记录仅保留为历史证据。
 - 复用代码位置是调研入口，未来实现时需对照实际提交核实，不复制过期实现。后续新增模块/前端文件按前置Task固定报告定位，不猜文件名。
 - Spec处于待确认时禁止实现。需求/技术门禁通过及用户明确确认后，先核对工作区/实现分支，保护Spec032暂停快照及其他任务修改。
 - 前置Task真实通过后才能执行；若预生成接口尚未冻结，应标阻塞而非自行发明第二套合同。
@@ -77,7 +77,7 @@
 ## 验证命令与验收
 
 下列新测试路径为本Task计划创建的能力命名测试，不表示文件已存在或已执行；实施时先补红灯测试并落盘真实命令结果。
-- `.venv/bin/python -m pytest -q tests/frontend/test_frontend_literature_map_mobile_contract.py`
+- `.venv/bin/python -m pytest -q tests/frontend/test_frontend_map_mobile_contract.py`
 
 - 375/390px宽度无主体横向溢出，抽屉可关且不会遮住不可恢复的操作。
 - 触控缩放/平移、节点点选/搜索/扩展可完成；桌面原功能保留。
@@ -100,7 +100,7 @@
 
 ## 执行结果
 
-待执行后填写。
+最终业务候选为 `1a3ff26`。独立前端复审 GO（P0/P1/P2 均 0），开发精准集合和真实 Chromium/CDP 复验通过；最终真实报告见 [`browser-e2e.md`](artifacts/task-07/browser-e2e.md) 末段，包含 375/390/1440 路径、普通 close、焦点/抽屉、触控滚动、pan/pinch 保存重开、桌面拖动与 1280 resize。生产资源为`literature-maps.js?v=13` / `literature-maps.css?v=10`，所有点击未使用 force，非物理真机不外推为 iOS/Android 真机验收。Task05 全文 API 既有 PASS 保留；当前页面显示摘要/历史 v1/v2 与全文按钮可用，本轮未重复分析 POST。Spec018同范围安全修复已完成交接；Task08 已有运行中 job stop/restart 的真实 API PASS；Task08 全量首轮为 3191 passed / 18 failed / 14 skipped / 67 subtests / 5 warnings 的 BLOCK，root 正在分派同范围修复与重跑；最终 Task08 验收/部署仍未完成。
 
 ## 变更日志
 

@@ -1,7 +1,7 @@
 # Task 05 — AI 分析与会话
 
 > 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
-> 依赖：04；被依赖：07；当前状态：**进行中（API 摘要/全文链路真实 PASS；移动真实验收仍待 390/桌面 live 复验）**。
+> 依赖：04；被依赖：07；当前状态：**阶段已完成（PASS_WITH_LIMITATIONS；API 摘要/全文链路真实 PASS，最终浏览器已观察全文 v1/v2 与全文入口）**。
 
 ## 一句话目标
 
@@ -10,7 +10,7 @@
 ## 当前证据与前置条件
 
 - Task03/04真实阶段门禁已通过且保留provider限制。本Task早期候选 `b94717c` 的摘要分析、摘要会话和前端 Chrome smoke 成功；全文 `409 MAP_FULLTEXT_UNAVAILABLE`、`dd616d5` scoped v1 恢复仍被 gate 阻塞、续跑服务不可达等历史证据均保留于 [`api-e2e.md`](artifacts/task-05/api-e2e.md) 及其 run 目录。后续候选 `82c816f` 已真实通过摘要保留、全文来源门禁、全文分析/幂等、全文会话/幂等和全文 QA/SSE；本 Task API 证据现为 PASS，但尚未 Task05 阶段验收签字，不运行 Spec 全量、不 push。
-- Spec018 修复集成记录已同步到 [`runtime-e2e.md`](../018/artifacts/2026-10-21-pdf-safety-repair/runtime-e2e.md)：单文档来源安全状态与全文集成 PASS；这不改变 Spec043 仍处于实施中的状态。Task07 最新 375px 详情滚动窄复验已 PASS，390px/桌面完整 live 仍待完成；最终全量回归和最终验收尚未执行。
+- Spec018 修复集成记录已同步到 [`runtime-e2e.md`](../018/artifacts/2026-10-21-pdf-safety-repair/runtime-e2e.md)：单文档来源安全状态与全文集成 PASS；这不改变 Spec043 仍处于实施中的状态。Task07 最终候选 `1a3ff26` 已在真实 Chromium/CDP 完成 375/390/1440 浏览器路径，详情摘要、历史 v1/v2、全文按钮、滚动/关闭、pan/pinch 保存重开及桌面 resize 均通过；本轮未重复 POST 全文分析，沿用既有 `82c816f` 全文 API PASS。Task08 的运行中 job stop 保留成果与进程重启恢复已有真实 PASS；最终全量回归、部署和 Spec 最终签字仍留 Task08。
 - 复用代码位置是调研入口，未来实现时需对照实际提交核实，不复制过期实现。后续新增模块/前端文件按前置Task固定报告定位，不猜文件名。
 - Spec处于待确认时禁止实现。需求/技术门禁通过及用户明确确认后，先核对工作区/实现分支，保护Spec032暂停快照及其他任务修改。
 - 前置Task真实通过后才能执行；若预生成接口尚未冻结，应标阻塞而非自行发明第二套合同。
@@ -138,7 +138,7 @@
 - 全文会话 POST HTTP 200，conversation `cc9f02f3d8184943bee35b4a23aa9481`，evidence_level=full；重放返回 created=false 且 conversation/source version 不变。消息 SSE HTTP 200、`text/event-stream`，718 个事件严格 seq 1..718（meta 1、progress 7、token 708、sources 1、done 1），done=completed；sources 的 5 条引用均为目标 document，随后 messages GET 的 user/assistant 均 completed，assistant 非空（1473 字符）。
 - 全文分析与会话前后 graph 均为 revision 17、partial、21 nodes/18 edges；目标节点位置、group ID、布局/分组哈希保持不变。
 
-本节裁决：**PASS（Task05 backend/API 摘要与全文链路）**。这只确认当前候选的真实 API 集成证据，不是 Task05 总体验收签字，也不是 Spec043 完成。Task07 最新真实 375×820 详情触控窄复验已记录 `scrollTop` 0→75→175；此前零间隔触控得到的 P1/BLOCK 属于时序假阴性，历史诊断证据仍保留。390px/桌面完整 live 仍待执行，最终全量回归、Task08 最终验收和部署收口均未执行。
+本节裁决：**PASS（Task05 backend/API 摘要与全文链路）**。阶段汇总见 [`task-07/acceptance-report.md`](artifacts/task-07/acceptance-report.md)：Task05 以 PASS_WITH_LIMITATIONS 进入 Task08，不是 Spec043 完成。Task07 最终候选 `1a3ff26` 的真实浏览器已显示摘要/历史 v1/v2 与可用全文入口；由于既有全文 API PASS 已有完整证据，本轮未重复点击/POST 全文分析，不把“不重复消耗”写成缺口。运行中 job stop/restart 已由 Task08 live API 真实闭环；Task08 全量首轮为 3191 passed / 18 failed / 14 skipped / 67 subtests / 5 warnings 的 BLOCK，root 正在分派同范围修复与重跑；Task08 最终验收和部署签字仍未完成。
 
 ## 变更日志
 
