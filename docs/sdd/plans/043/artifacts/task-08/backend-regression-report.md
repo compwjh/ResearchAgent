@@ -122,5 +122,99 @@ LANGFUSE_ENABLED=false \
 - `backend/app/api/routes_conversations.py`
 - `backend/app/api/routes_literature_maps.py`
 - `tests/literature_maps/test_map_conversation_binding.py`
+- `tests/conversation/test_conversation_context_usage_api.py`（仅异步后台 worker 测试隔离）
 
 进展日志：`.codebuddy/agent-logs/spec-043/task-08/backend-dev/20261021-235900.md`
+
+## 3. Compaction threshold regression: test-only isolation fix
+
+按 root 授权，本轮只用显式项目解释器、`PYTHON_DOTENV_DISABLED=1`、`COMPACTION_SUMMARY_MODE=rule` 和隔离临时目录复测 conversation context-usage；未修改 production compaction/memory 逻辑，新增改动仅限目标边界测试，未启动服务、未运行 Git。
+
+- 单测一次真实复现了原始低阈值失败：`tests/conversation/test_conversation_context_usage_api.py::test_auto_compaction_threshold_boundary`，退出码 `1`，`1 failed in 13.34s`。失败断言记录：`recorded_low=[(('61f5e1bebd2a44ffafe8c85b442ce16b', 'local-user', None, 'auto'), {'est_tokens_before': 3804})]`。
+- 同一单测随后在全新隔离进程中通过：`1 passed in 25.94s`（临时目录 `/private/tmp/spec043-compaction-diagnosis-pdb-I86nju`）；完整文件随后通过：`13 passed in 38.45s`，退出码 `0`（临时目录 `/private/tmp/spec043-compaction-diagnosis-full-OhOkzA`）。这表明失败是时序性而非稳定的地图接缝回归。
+- 只读临时探针将真实 `MemoryAnalysisWorker` 的 `enqueue` 暂时同步执行以固定竞态（不改仓库文件）：GET 在 POST 前读到 `used=3754`，因此 `budget_low=4752`，比例 `0.789983`；分析 worker 随后按测试 patched classifier 写入隔离 `MEMORY.md`（内容为 `- 简洁\\n`），POST 内的 `compute_context_usage` 读到 `est_tokens_before=3804`，于是 `3804 / 4752 >= 0.8` 并记录 auto 入队，POST 仍返回 `200`。这与失败断言中的 `3804` 完全一致。
+
+根因是测试窗口假设/异步记忆副作用：`_start_message()` 先 enqueue `MemoryAnalysisWorker`，worker 可能在 `_message_stream()` 的自动压缩检查前完成；`compute_context_usage()` 会读取该 worker 新写入的文件记忆，所以 GET 基线（3754）和 POST 检查（3804）不是同一上下文快照。地图 application seam 不参与 `compute_context_usage()`，且隔离的 `LITERATURE_MAP_DB_PATH` 不存在时仅返回无绑定；因此没有证据表明本轮 map seam 导致该差异。
+
+### 3.1 测试隔离修复（仅 tests/）
+
+- 在目标测试文件新增 `_StableBackgroundWorker`，只记录 `enqueue`/`enqueue_session`、不启动线程、不写 `MEMORY.md`；低阈值和高阈值两个 POST 均 patch conversation route 的 analysis/evolution worker seam，避免后台副作用改变 GET 基线。
+- 保留真实 `_message_stream()`、真实 route-side `compute_context_usage()` 和原有 0.79/0.80 断言；新增断言确认低侧无 auto、高侧恰有一个 auto 且 `est_tokens_before == used`，并确认隔离 memory 目录没有被写入。未 mock 被测 `compute_context_usage`。
+- 根级现有 `_stop_cached_conversation_workers` fixture 继续在用例前后停止并清空真实 worker cache；本测试的受控 worker 不进入 production cache，避免跨 case 污染。
+- 这是测试可靠性修复，不改变产品请求行为、0.8 阈值、CAS/owner/API 合同，也未删断言或使用 xfail。
+
+### Compaction 精确验证命令与证据
+
+上述 pytest 使用相同环境变量集合（`KB_DIR`、`QDRANT_PATH`、`KB_META_PATH`、`MEMORY_DB_PATH`、`LITERATURE_MAP_DB_PATH`、`RESEARCH_DB_PATH`、`AGENT_TASKS_DB`、`PAPER_DISCOVERY_DB_PATH`、`ARTICLE_DOWNLOAD_DIR`、`PAPER_DISCOVERY_BROWSER_PROFILE_DIR`、`LANGFUSE_ENABLED=false` 均指向各自 `/private/tmp/spec043-compaction-diagnosis-*` 目录），且未使用 `--confcutdir`/禁插件。真实复现的边界命令为：
+
+```text
+PYTHON_DOTENV_DISABLED=1 \
+COMPACTION_SUMMARY_MODE=rule \
+KB_DIR=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/kb \
+QDRANT_PATH=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/kb/qdrant \
+KB_META_PATH=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/kb/metadata.json \
+MEMORY_DB_PATH=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/memory/memory.sqlite3 \
+LITERATURE_MAP_DB_PATH=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/literature_maps/maps.sqlite3 \
+RESEARCH_DB_PATH=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/research/research.sqlite3 \
+AGENT_TASKS_DB=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/agent_tasks/tasks.sqlite3 \
+PAPER_DISCOVERY_DB_PATH=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/paper-search/papers.sqlite3 \
+ARTICLE_DOWNLOAD_DIR=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/articles \
+PAPER_DISCOVERY_BROWSER_PROFILE_DIR=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/data/browser-profile \
+LANGFUSE_ENABLED=false \
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q \
+  --basetemp=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/pytest-tmp \
+  -o cache_dir=/private/tmp/spec043-compaction-diagnosis-boundary-6sfuDW/pytest-cache \
+  tests/conversation/test_conversation_context_usage_api.py::test_auto_compaction_threshold_boundary
+```
+
+结果：`1 failed in 13.34s`，退出码 `1`。同一边界命令在 fresh process `/private/tmp/spec043-compaction-diagnosis-pdb-I86nju` 下为 `1 passed in 25.94s`；完整文件的复测命令（仅替换临时目录与目标）为：
+
+```text
+PYTHON_DOTENV_DISABLED=1 \
+COMPACTION_SUMMARY_MODE=rule \
+KB_DIR=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/kb \
+QDRANT_PATH=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/kb/qdrant \
+KB_META_PATH=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/kb/metadata.json \
+MEMORY_DB_PATH=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/memory/memory.sqlite3 \
+LITERATURE_MAP_DB_PATH=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/literature_maps/maps.sqlite3 \
+RESEARCH_DB_PATH=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/research/research.sqlite3 \
+AGENT_TASKS_DB=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/agent_tasks/tasks.sqlite3 \
+PAPER_DISCOVERY_DB_PATH=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/paper-search/papers.sqlite3 \
+ARTICLE_DOWNLOAD_DIR=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/articles \
+PAPER_DISCOVERY_BROWSER_PROFILE_DIR=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/data/browser-profile \
+LANGFUSE_ENABLED=false \
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q \
+  --basetemp=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/pytest-tmp \
+  -o cache_dir=/private/tmp/spec043-compaction-diagnosis-full-OhOkzA/pytest-cache \
+  tests/conversation/test_conversation_context_usage_api.py
+```
+
+结果：`13 passed in 38.45s`，退出码 `0`；固定竞态探针给出上述 `3754 → 3804` 证据。未跑 full suite。
+
+修复后最终验证（均显式 `/Users/wjh/ResearchAgent/.venv/bin/python`、完整 conftest、临时路径、dotenv 禁用）：
+
+- 目标文件最终命令（3 次边界重复仅替换 `regression_root`，未改变环境/解释器/pytest 选项）：
+
+```text
+PYTHON_DOTENV_DISABLED=1 COMPACTION_SUMMARY_MODE=rule \
+KB_DIR=/private/tmp/spec043-compaction-final-file-rdMEvb/data/kb \
+QDRANT_PATH=/private/tmp/spec043-compaction-final-file-rdMEvb/data/kb/qdrant \
+KB_META_PATH=/private/tmp/spec043-compaction-final-file-rdMEvb/data/kb/metadata.json \
+MEMORY_DB_PATH=/private/tmp/spec043-compaction-final-file-rdMEvb/data/memory/memory.sqlite3 \
+LITERATURE_MAP_DB_PATH=/private/tmp/spec043-compaction-final-file-rdMEvb/data/literature_maps/maps.sqlite3 \
+RESEARCH_DB_PATH=/private/tmp/spec043-compaction-final-file-rdMEvb/data/research/research.sqlite3 \
+AGENT_TASKS_DB=/private/tmp/spec043-compaction-final-file-rdMEvb/data/agent_tasks/tasks.sqlite3 \
+PAPER_DISCOVERY_DB_PATH=/private/tmp/spec043-compaction-final-file-rdMEvb/data/paper-search/papers.sqlite3 \
+ARTICLE_DOWNLOAD_DIR=/private/tmp/spec043-compaction-final-file-rdMEvb/data/articles \
+PAPER_DISCOVERY_BROWSER_PROFILE_DIR=/private/tmp/spec043-compaction-final-file-rdMEvb/data/browser-profile \
+LANGFUSE_ENABLED=false \
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q \
+  --basetemp=/private/tmp/spec043-compaction-final-file-rdMEvb/pytest-tmp \
+  -o cache_dir=/private/tmp/spec043-compaction-final-file-rdMEvb/pytest-cache \
+  tests/conversation/test_conversation_context_usage_api.py
+```
+
+- 边界单测重复 3 次：分别为 `1 passed in 25.80s`、`1 passed in 25.71s`、`1 passed in 25.79s`，退出码均为 `0`；临时目录依次为 `/private/tmp/spec043-compaction-final-repeat-V9REHX`、`/private/tmp/spec043-compaction-final-repeat-nIPbNr`、`/private/tmp/spec043-compaction-final-repeat-wcf6X4`。
+- 目标文件全体：`13 passed in 38.26s`，退出码 `0`；临时目录 `/private/tmp/spec043-compaction-final-file-rdMEvb`。
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile tests/conversation/test_conversation_context_usage_api.py` 与 `scripts/check_test_naming.py`：退出码 `0`，命名检查通过。
+- 未跑 full suite、未启动/重启服务、未运行 Git。

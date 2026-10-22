@@ -1,7 +1,8 @@
 # Spec043 Task08 后端独立复审
 
-日期：2026-10-22（Asia/Shanghai）  
-角色：`backend-reviewer`（只读）  
+日期：2026-10-22（Asia/Shanghai）
+
+角色：`backend-reviewer`（只读）
 范围：Task08 当前未提交 diff 中的 `domain/errors.py`、`infrastructure/store.py`、`application/runtime.py`、`api/routes_conversations.py`、`api/routes_literature_maps.py`，以及 `artifacts/task-08/backend-regression-report.md`。
 
 明确不做：不修改业务代码、测试、服务、KB inventory/矩阵或 Git；不读取 `.env`/生产数据；不调用 provider/model；不跑全量回归。
@@ -100,3 +101,29 @@
 - 未运行服务、真实部署 API、KB inventory/full regression 或其他端职责验证。
 
 窄复审结论：**GO（P1 修复范围）**。复审进展日志仍为：`.codebuddy/agent-logs/spec-043/task-08/backend-reviewer/20261022-000000.md`。
+
+## Compaction threshold 测试隔离增量复审（2026-10-22）
+
+### 范围与结论
+
+本轮仅复审 `tests/conversation/test_conversation_context_usage_api.py` 的未提交测试隔离 diff，以及 `backend-regression-report.md` 中关于 `GET used=3754 → POST est_tokens_before=3804` 异步 memory worker 竞态的最新记录。未修改 production compaction/memory 逻辑、服务、Git 或其他测试。
+
+**GO（测试隔离增量）。** 原失败由异步 `MemoryAnalysisWorker` 在阈值检查前写入隔离 `MEMORY.md` 导致，不是地图 API 或生产阈值逻辑回归。新增 `_StableBackgroundWorker` 只记录 `enqueue`/`enqueue_session`，不启动线程、不写 memory 文件；真实 route-side `compute_context_usage`、真实 `_message_stream`、0.79/0.80 阈值和 auto 入队断言均保留。根级 `stop_all_workers` autouse fixture 仍在每个 case 前后清理并清空 production worker cache；受控 stub 不进入该 cache。
+
+### 独立验证
+
+环境均为显式 `.venv/bin/python`、`PYTHON_DOTENV_DISABLED=1`、`COMPACTION_SUMMARY_MODE=rule`，所有 `KB_DIR`、`MEMORY_DB_PATH`、`LITERATURE_MAP_DB_PATH`、`RESEARCH_DB_PATH`、`AGENT_TASKS_DB`、`PAPER_DISCOVERY_DB_PATH`、下载目录和 browser profile 指向独立 `/private/tmp/spec043-compaction-review-r2/{repeat1,repeat2,full,probe}`；未读取 `.env`，未启动服务或运行 full suite。
+
+1. `PYTHON_DOTENV_DISABLED=1 COMPACTION_SUMMARY_MODE=rule ... .venv/bin/python -m pytest -q tests/conversation/test_conversation_context_usage_api.py::test_auto_compaction_threshold_boundary --basetemp=/private/tmp/spec043-compaction-review-r2/repeat1/pytest-tmp -o cache_dir=/private/tmp/spec043-compaction-review-r2/repeat1/pytest-cache`：**1 passed in 25.50s**，退出码 0。
+2. 同一边界命令，仅替换为 `repeat2` 隔离根：**1 passed in 26.13s**，退出码 0。
+3. `PYTHON_DOTENV_DISABLED=1 COMPACTION_SUMMARY_MODE=rule ... .venv/bin/python -m pytest -q tests/conversation/test_conversation_context_usage_api.py --basetemp=/private/tmp/spec043-compaction-review-r2/full/pytest-tmp -o cache_dir=/private/tmp/spec043-compaction-review-r2/full/pytest-cache`：**13 passed in 38.56s**，退出码 0。
+4. 独立请求级 SSE 探针（同一 `.venv/bin/python` 与 `probe` 隔离根）对低/高阈值各发起真实 `TestClient` POST，patch 两个 worker factory 为 `_StableBackgroundWorker`，不 patch `compute_context_usage`、`_message_stream` 或模型 stream：退出码 0。低侧 `HTTP 200`，事件序列以 `done(status=completed)` 结束，无 `error/tool_error`，auto=0；高侧同样 `done(status=completed)`、无错误，auto=1 且 `est_tokens_before=3754 == used_tokens=3754`；两 worker 分别记录 2 次入队，`MEMORY.md` 不存在。
+
+### 边界裁定
+
+- 两个 worker 接口 stub 只控制后台副作用，不替换被测阈值计算或生产 memory 写逻辑；高侧 auto 仍由真实 route-side `compute_context_usage` 触发。
+- 低/高请求均完成完整 SSE terminal `done`，未出现仅 HTTP 200 的隐藏失败；无 error/tool_error 事件。
+- 0.79 不自动压缩、0.80 恰好一次自动入队、`est_tokens_before == used_tokens` 与 memory 文件不落盘均通过。
+- 本次仅关闭测试隔离竞态，不改变 API/阈值/worker 生产合同；地图 P1 修复与 KB verified 状态不在本节重复裁定。
+
+本轮最终结论：**GO（conversation context usage 测试隔离范围）**。完整 Task08 是否收口仍由 root 依据全量、服务和其他验收门禁裁定。
