@@ -1,5 +1,13 @@
 # Spec 状态变更记录
 
+## 2026-10-23
+
+- **Spec042 Task04**：`本地领域124项通过` → `集成复审打回，同范围集中修复`。独立runner/report复审发现审计字段、来源异常脱敏、嵌套人工真值声明及双报告替换失败一致性四组P1；已分别分派runner/report修复与独立红绿测试。暂停真实score回写，Spec保持实施中；Spec043现有8000服务无改动。
+
+- **Spec042 Task04**：`续作审查` → `分组实现与精确验证`。需求/技术独立评审通过后分派04-A/B/D；统一离线传输和上下文数据契约已实现，新44项与原28项合计72项领域测试通过，独立复审中。报告模块完成实现，运行器接续；Langfuse使用既有组件恢复且仅loopback监听，无安装/迁移/真实trace读取或score写回。尚未完成Task/Spec验收，不跑全量、不push或合main。
+
+- **Spec042 OpenEval接入：本地离线Agent评测闭环**：`已确认/Task02、03已完成` → `实施中（续作）`。用户明确要求继续；核对历史可行性与记忆探针资产，先独立审查正式运行入口、JSON/Markdown报告、离线及错误退出合同，沿原已确认范围补齐，不新增业务API或在线评测。独立分支codex/spec042-offline-evaluation，不push或合main。
+
 ## 2026-10-22
 
 - **Spec043 交互式文献地图与自动主题探索**：`实施中` → `已完成`。最终候选a328932完整回归退出0（3224 passed/0 failed/2合法skip/67 subtests/5 warnings），真实建图与扩展、stop/restart、全文问答、PNG/JSON、桌面/手机视口及当前部署均有证据；独立tester与architect签READY_FOR_USER，准备度10/10。服务8000，文档与复盘同步，仅本地提交，不push或合main。

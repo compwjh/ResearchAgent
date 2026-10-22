@@ -8,11 +8,32 @@ from __future__ import annotations
 
 import base64
 import json
-import urllib.request
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from typing import Any
+from urllib.parse import urlencode
 
 from .config import INTAKE_MARKERS, LANGFUSE_BASE, LANGFUSE_PK, LANGFUSE_SK
-from .offline_guard import assert_loopback
+from .offline_guard import http_get_json, http_post_json
+
+
+class EmptyTraceExportError(RuntimeError):
+    """Langfuse 成功返回但没有任何真实 trace。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        real_trace_count: int = 0,
+        real_item_count: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.real_trace_count = real_trace_count
+        self.real_item_count = real_item_count
+
+
+class ScoreResponseError(ValueError):
+    """Langfuse score 写回响应缺少可用于精确回查的 id。"""
 
 
 def _auth_header() -> dict:
@@ -21,23 +42,23 @@ def _auth_header() -> dict:
 
 
 def _get(url: str) -> dict:
-    assert_loopback(url)
-    req = urllib.request.Request(url, headers=_auth_header())
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())
+    payload = http_get_json(url, headers=_auth_header(), timeout=30)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Langfuse GET returned non-object JSON: {type(payload).__name__}")
+    return payload
 
 
 def _post(url: str, body: dict) -> dict:
     """POST JSON 到本机 Langfuse public API（loopback 守卫）。返回解析后的 JSON。"""
-    assert_loopback(url)
-    req = urllib.request.Request(
+    payload = http_post_json(
         url,
-        data=json.dumps(body).encode(),
-        headers={**_auth_header(), "Content-Type": "application/json"},
-        method="POST",
+        body,
+        headers=_auth_header(),
+        timeout=30,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())
+    if not isinstance(payload, dict):
+        raise ValueError(f"Langfuse POST returned non-object JSON: {type(payload).__name__}")
+    return payload
 
 
 def post_score(name: str, value: float, trace_id: str, comment: str,
@@ -49,7 +70,11 @@ def post_score(name: str, value: float, trace_id: str, comment: str,
     body = {"name": name, "value": value, "traceId": trace_id, "comment": comment}
     if observation_id:
         body["observationId"] = observation_id
-    return _post(f"{LANGFUSE_BASE}/api/public/scores", body)
+    payload = _post(f"{LANGFUSE_BASE}/api/public/scores", body)
+    score_id = payload.get("id")
+    if not isinstance(score_id, str) or not score_id.strip():
+        raise ScoreResponseError("Langfuse score response missing non-empty id")
+    return payload
 
 
 def list_scores(trace_id: str, limit: int = 100) -> list[dict]:
@@ -58,12 +83,24 @@ def list_scores(trace_id: str, limit: int = 100) -> list[dict]:
     注意：Langfuse public scores API 的 limit 上限为 100，超出返回 400；
     故分页直到 meta.totalPages，避免单次大 limit 报错。
     """
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid score list limit: {limit!r}") from exc
+    if limit < 1:
+        raise ValueError("score list limit must be positive")
+    # Langfuse public API rejects values above 100.  Clamp for compatibility
+    # with old callers rather than allowing a bad request to reach the service.
+    limit = min(limit, 100)
     out: list[dict] = []
     page = 1
     while True:
-        d = _get(f"{LANGFUSE_BASE}/api/public/scores?traceId={trace_id}"
-                 f"&limit={limit}&page={page}")
-        out.extend(d.get("data", []))
+        query = urlencode({"traceId": trace_id, "limit": limit, "page": page})
+        d = _get(f"{LANGFUSE_BASE}/api/public/scores?{query}")
+        data = d.get("data")
+        if not isinstance(data, list):
+            raise ValueError("Langfuse scores response missing list data")
+        out.extend(item for item in data if isinstance(item, dict))
         meta = d.get("meta", {}) or {}
         total = meta.get("totalPages") or 1
         if page >= total:
@@ -72,8 +109,47 @@ def list_scores(trace_id: str, limit: int = 100) -> list[dict]:
     return out
 
 
+def find_score_by_id(score_id: str, trace_id: str, limit: int = 100) -> dict | None:
+    """在指定 trace 的 score 列表中按精确 ``id`` 查找一条 score。"""
+    if not isinstance(score_id, str) or not score_id.strip():
+        raise ValueError("score_id must be a non-empty string")
+    for score in list_scores(trace_id, limit=limit):
+        if score.get("id") == score_id:
+            return score
+    return None
+
+
 # ---------- 纯函数：分类（便于单测，无网络） ----------
-def classify_output(output_text, intake_markers=INTAKE_MARKERS, min_answer_chars=1):
+def _normalize_prior_context(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value
+
+
+def extract_prior_context(trace: Mapping[str, Any]) -> str | None:
+    """只从 trace 或其显式 ``metadata.prior_context`` 字段读取上下文。
+
+    不从 input/output、observation 文本或其它相似字段推测记忆上下文。
+    """
+    if not isinstance(trace, Mapping):
+        return None
+    direct = _normalize_prior_context(trace.get("prior_context"))
+    if direct is not None:
+        return direct
+    metadata = trace.get("metadata")
+    if isinstance(metadata, Mapping):
+        return _normalize_prior_context(metadata.get("prior_context"))
+    return None
+
+
+def classify_output(
+    output_text,
+    intake_markers=INTAKE_MARKERS,
+    min_answer_chars=1,
+    *,
+    task: str = "chat_quality",
+    prior_context: str | None = None,
+):
     """返回 (status, reason)。
 
     - 空/空白 -> ('skipped','empty_output')
@@ -90,6 +166,8 @@ def classify_output(output_text, intake_markers=INTAKE_MARKERS, min_answer_chars
     for mk in intake_markers:
         if mk.lower() in low:
             return "skipped", "intake_text"
+    if task == "memory_correctness" and _normalize_prior_context(prior_context) is None:
+        return "skipped", "no_prior_context"
     return "scored", None
 
 
@@ -104,6 +182,7 @@ class EvalItem:
     status: str
     skip_reason: object = None
     synthetic: bool = False
+    prior_context: str | None = None
 
 
 def extract_io(trace: dict):
@@ -129,8 +208,13 @@ def extract_io(trace: dict):
 
 
 def build_eval_item(trace_id: str, input_text: str, output_text: str,
-                    task: str = "chat_quality", synthetic: bool = False) -> EvalItem:
-    status, reason = classify_output(output_text)
+                    task: str = "chat_quality", synthetic: bool = False,
+                    prior_context: str | None = None) -> EvalItem:
+    status, reason = classify_output(
+        output_text,
+        task=task,
+        prior_context=prior_context,
+    )
     return EvalItem(
         trace_id=trace_id,
         task=task,
@@ -141,7 +225,22 @@ def build_eval_item(trace_id: str, input_text: str, output_text: str,
         status=status,
         skip_reason=reason,
         synthetic=synthetic,
+        prior_context=_normalize_prior_context(prior_context),
     )
+
+
+def count_item_sources(
+    items: list[EvalItem | Mapping[str, Any]],
+) -> dict[str, int]:
+    """返回真实与 synthetic item 数量，供报告层区分两类来源。"""
+    synthetic_count = sum(
+        bool(item.synthetic if isinstance(item, EvalItem) else item.get("synthetic", False))
+        for item in items
+    )
+    return {
+        "real_trace_count": len(items) - synthetic_count,
+        "synthetic_count": synthetic_count,
+    }
 
 
 # ---------- 网络：拉取 ----------
@@ -165,19 +264,34 @@ def fetch_trace(trace_id: str) -> dict:
     return _get(f"{LANGFUSE_BASE}/api/public/traces/{trace_id}")
 
 
-def collect_eval_items(n_scoreable: int = 20, n_intake_fixtures: int = 2,
+def collect_eval_items(n_scoreable: int = 20, n_intake_fixtures: int = 0,
                        n_blank_samples: int = 2,
-                       task: str = "chat_quality") -> list[EvalItem]:
-    """导出数据集：真实 ollama-chat trace + 合成 Intake fixture。
+                       task: str = "chat_quality",
+                       include_synthetic: bool = False) -> list[EvalItem]:
+    """导出数据集：真实 ollama-chat trace，可显式附加 Intake fixture。
 
     - 优先纳入长回答（output 长）当作 scored 样本；
     - 补齐短回答直到达到 n_scoreable；
     - 同时纳入最多 n_blank_samples 条**真实**空 output trace（skipped/empty_output），
       实证「失败/空 trace 不记 0 分」；
-    - 注入 n_intake_fixtures 条合成 Intake 文案（明确标记 synthetic），验证 skipped(intake_text)。
+    - 只有 ``include_synthetic=True`` 时才注入 n_intake_fixtures 条合成 Intake
+      文案；真实 trace 为空时始终失败，不能用 fixture 冒充成功。
     """
+    if n_intake_fixtures and not include_synthetic:
+        raise ValueError(
+            "synthetic fixtures require include_synthetic=True; "
+            "they are only for explicit classification tests"
+        )
     ids = list_ollama_chat_trace_ids(limit=200)
+    if not ids:
+        raise EmptyTraceExportError(
+            "Langfuse returned zero real ollama-chat traces; refusing synthetic-only export",
+            real_trace_count=0,
+            real_item_count=0,
+        )
     items: list[EvalItem] = []
+    real_trace_count = len(ids)
+    real_item_count = 0
     scored = 0
     blanks = 0
     # 先按 output 长度排序，长回答优先（更有评分价值）
@@ -185,24 +299,45 @@ def collect_eval_items(n_scoreable: int = 20, n_intake_fixtures: int = 2,
     for tid in ids:
         tr = fetch_trace(tid)
         inp, out = extract_io(tr)
-        ranked.append((tid, inp, out, len(out)))
+        ranked.append((tid, inp, out, len(out), extract_prior_context(tr)))
     ranked.sort(key=lambda x: x[3], reverse=True)
 
-    for tid, inp, out, _ in ranked:
-        it = build_eval_item(tid, inp, out, task=task)
+    for tid, inp, out, _, prior_context in ranked:
+        it = build_eval_item(
+            tid,
+            inp,
+            out,
+            task=task,
+            prior_context=prior_context,
+        )
         if it.status == "scored":
             if scored >= n_scoreable:
                 continue
             items.append(it)
+            real_item_count += 1
             scored += 1
+        elif it.skip_reason == "no_prior_context":
+            # Missing memory context is a first-class skipped item.  Keep it
+            # visible to the runner instead of silently dropping the trace.
+            items.append(it)
+            real_item_count += 1
         elif it.skip_reason == "empty_output":
             if blanks >= n_blank_samples:
                 continue
             items.append(it)
+            real_item_count += 1
             blanks += 1
 
+    if real_item_count == 0:
+        raise EmptyTraceExportError(
+            "real traces were found but no real evaluation items were selected; "
+            "refusing synthetic-only export",
+            real_trace_count=real_trace_count,
+            real_item_count=real_item_count,
+        )
+
     # 合成 Intake 文案 fixture（不冒充真实数据，明确标记）
-    for i in range(n_intake_fixtures):
+    for i in range(n_intake_fixtures if include_synthetic else 0):
         fixture = (
             "研究 Intake 已保存：已为你创建研究任务「本地 Agent 评测综述」，"
             "后续将进入多轮调研流程，本消息由技能路由生成，未调用模型生成答案。"
@@ -225,15 +360,21 @@ def main():
     ap = argparse.ArgumentParser(description="导出 Langfuse ollama-chat -> EvalItem 数据集")
     ap.add_argument("--out", default="docs/sdd/plans/042/task-02-eval-dataset.json")
     ap.add_argument("--n-scoreable", type=int, default=20)
-    ap.add_argument("--n-intake-fixtures", type=int, default=2)
+    ap.add_argument("--n-intake-fixtures", type=int, default=0)
     ap.add_argument("--n-blank-samples", type=int, default=2)
     ap.add_argument("--task", default="chat_quality")
+    ap.add_argument(
+        "--include-synthetic",
+        action="store_true",
+        help="仅在明确的分类测试中追加 synthetic Intake fixture",
+    )
     args = ap.parse_args()
     items = collect_eval_items(
         n_scoreable=args.n_scoreable,
         n_intake_fixtures=args.n_intake_fixtures,
         n_blank_samples=args.n_blank_samples,
         task=args.task,
+        include_synthetic=args.include_synthetic,
     )
     save_dataset(items, args.out)
     from collections import Counter
