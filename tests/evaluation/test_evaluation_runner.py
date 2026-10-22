@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 
 import pytest
 
@@ -137,6 +138,146 @@ def test_runner_success_posts_once_and_verifies_exact_score_fields(
     assert "trace-1" in markdown
     assert "score-new" in markdown
     assert "judge-9b" in markdown
+
+
+def test_runner_waits_for_delayed_exact_score_visibility_with_bounded_backoff(
+    tmp_path, monkeypatch
+):
+    _fake_scored_judge(monkeypatch)
+    post_calls = []
+    verify_calls = []
+    sleeps = []
+
+    def post_score(**kwargs):
+        post_calls.append(kwargs)
+        return {"id": "score-delayed"}
+
+    def find_score_by_id(score_id, trace_id, *, limit):
+        verify_calls.append((score_id, trace_id, limit))
+        if len(verify_calls) < 3:
+            return None
+        return {
+            "id": "score-delayed",
+            "traceId": "trace-1",
+            "name": "chat_quality",
+            "value": 1.0,
+        }
+
+    monkeypatch.setattr(runner.time, "sleep", sleeps.append)
+    monkeypatch.setattr(runner.langfuse_export, "post_score", post_score)
+    monkeypatch.setattr(runner.langfuse_export, "find_score_by_id", find_score_by_id)
+
+    result = runner.run(output_dir=tmp_path, items=[_item()])
+
+    assert result["exit_code"] == 0
+    assert result["status"] == "completed"
+    assert len(post_calls) == 1
+    assert verify_calls == [
+        ("score-delayed", "trace-1", 100),
+        ("score-delayed", "trace-1", 100),
+        ("score-delayed", "trace-1", 100),
+    ]
+    assert sleeps == [1, 2]
+
+
+def test_runner_permanent_exact_score_404_is_nonzero_after_finite_visibility_window(
+    tmp_path, monkeypatch
+):
+    _fake_scored_judge(monkeypatch)
+    post_calls = []
+    verify_calls = []
+    sleeps = []
+
+    def post_score(**kwargs):
+        post_calls.append(kwargs)
+        return {"id": "score-never-visible"}
+
+    def find_score_by_id(score_id, trace_id, *, limit):
+        verify_calls.append((score_id, trace_id, limit))
+        return None
+
+    monkeypatch.setattr(runner.time, "sleep", sleeps.append)
+    monkeypatch.setattr(runner.langfuse_export, "post_score", post_score)
+    monkeypatch.setattr(runner.langfuse_export, "find_score_by_id", find_score_by_id)
+
+    result = runner.run(output_dir=tmp_path, items=[_item()])
+    document, markdown = _artifacts(tmp_path)
+
+    assert runner._VERIFY_ATTEMPTS == 6
+    assert runner._VERIFY_BACKOFF_SECONDS == (1, 2, 3, 4, 5)
+    assert result["exit_code"] == 1
+    assert result["status"] == "failed"
+    assert len(post_calls) == 1
+    assert len(verify_calls) == 6
+    assert sleeps == [1, 2, 3, 4, 5]
+    item = document["items"][0]
+    assert item["score_id"] == "score-never-visible"
+    assert item["written"] is True
+    assert item["verified"] is False
+    assert item["verification_status"] == "not_found"
+    assert "score id not found on trace" in json.dumps(document)
+    assert "score id not found on trace" in markdown
+
+
+@pytest.mark.parametrize("failure", ["unauthorized", "forbidden", "bad_json", "mismatch"])
+def test_runner_score_verification_fails_fast_for_non_visibility_failures(
+    failure, tmp_path, monkeypatch
+):
+    _fake_scored_judge(monkeypatch)
+    post_calls = []
+    verify_calls = []
+    sleeps = []
+
+    def post_score(**kwargs):
+        post_calls.append(kwargs)
+        return {"id": "score-fail-fast"}
+
+    def find_score_by_id(score_id, trace_id, *, limit):
+        verify_calls.append((score_id, trace_id, limit))
+        if failure == "unauthorized":
+            raise urllib.error.HTTPError(
+                "http://127.0.0.1:3000/api/public/scores/score-fail-fast",
+                401,
+                "unauthorized",
+                {},
+                None,
+            )
+        if failure == "forbidden":
+            raise urllib.error.HTTPError(
+                "http://127.0.0.1:3000/api/public/scores/score-fail-fast",
+                403,
+                "forbidden",
+                {},
+                None,
+            )
+        if failure == "bad_json":
+            raise ValueError("bad score JSON")
+        return {
+            "id": "old-score",
+            "traceId": "trace-1",
+            "name": "chat_quality",
+            "value": 1.0,
+        }
+
+    monkeypatch.setattr(runner.time, "sleep", sleeps.append)
+    monkeypatch.setattr(runner.langfuse_export, "post_score", post_score)
+    monkeypatch.setattr(runner.langfuse_export, "find_score_by_id", find_score_by_id)
+
+    result = runner.run(output_dir=tmp_path, items=[_item()])
+    document, markdown = _artifacts(tmp_path)
+
+    assert result["exit_code"] == 1
+    assert result["status"] == "failed"
+    assert len(post_calls) == 1
+    assert len(verify_calls) == 1
+    assert sleeps == []
+    item = document["items"][0]
+    assert item["score_id"] == "score-fail-fast"
+    assert item["written"] is True
+    assert item["verified"] is False
+    assert item["verification_status"] in {"error", "mismatch"}
+    assert "score" in json.dumps(document)
+    assert "score" in markdown
 
 
 def test_runner_passes_memory_context_to_judge_and_does_not_guess_it(

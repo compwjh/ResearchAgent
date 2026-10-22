@@ -261,3 +261,24 @@ _translate_legacy_args(["--out", "--dataset", "/tmp/missing.json"])
 ```
 
 结果：编译通过，runner 定向测试 **25 passed**；随后 evaluation 定向回归 **129 passed**。未调用真实 API、未访问外网或读取凭据。
+
+## Task 04 真实 E2E P1 最小修复记录
+
+依据 `docs/sdd/plans/042/runtime-failure-diagnosis.md` 与已保存的失败 API E2E artifact，本轮只修改 `backend/eval_042/langfuse_export.py` 与 `backend/eval_042/runner.py`，未触发真实 HTTP、POST、Ollama 或 Langfuse 请求：
+
+- `find_score_by_id()` 改为调用已验证的 `GET /api/public/scores/{score_id}` exact-ID endpoint；score ID 经过非空/control-character 校验和 URL path-segment 编码，历史 `trace_id`/`limit` 参数保持兼容但不再依赖 v1 list 的未定义 `traceId` 过滤。HTTP 404 只转换为“尚未可见”的 `None`；401/403、解析、参数及 transport guard 错误继续直接抛出。
+- runner 的生产回查窗口改为最多 6 次，间隔 `1,2,3,4,5` 秒（sleep 总计 15 秒）；仅对 exact GET 的 not-found 和有界 HTTP/连接瞬态重试。收到具体 score 但四字段 mismatch 时立即失败，不等待、不换 score ID、不使用旧同名 score，也不重复 POST。
+- 保留 runner 对 `id`、`traceId`、`name`、`value` 的精确核验和失败报告语义；score POST 仍只发生一次。已有失败 artifact 不覆盖，后续 E2E 必须使用新 run 目录。
+
+先行无网络复现确认：旧实现请求 `/api/public/scores?traceId=...&limit=100&page=1` 并在 3 次、`0.05/0.10` 秒窗口内结束；fake list 响应无法证明 exact score 可见。修复后 fake exact GET 路径、404 not-visible、6 次可见性等待、瞬态重试和 mismatch fail-fast 均符合契约。
+
+验证：
+
+```text
+.venv/bin/python -m py_compile backend/eval_042/runner.py backend/eval_042/langfuse_export.py
+.venv/bin/python -m pytest tests/evaluation/test_evaluation_runner.py -q
+.venv/bin/python -m pytest tests/evaluation/test_offline_transport.py -q
+.venv/bin/python -m pytest tests/evaluation -q
+```
+
+结果：编译通过；runner **25 passed**，offline transport **52 passed**，evaluation **133 passed**。未调用真实 API，失败 E2E artifact 仍保持 BLOCKED，等待独立复审后才可启动新候选 E2E。

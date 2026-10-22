@@ -291,3 +291,34 @@ C 评审记录中的两个 P1（legacy `--out` 缺值吞参数并回退默认 da
 - 注入第二次 `os.replace` 失败时，旧 JSON/Markdown 成对恢复且临时文件清理，错误如实抛出。
 
 所有网络均为 fake opener/内存 handler，报告写入临时路径；未启动 HTTP 服务、未读取 `.env`、未写生产 DB/Langfuse score。上述是四组 P1 的独立本地回归 **GO**，不改写原 `task-04-integration-review.md` 的 reviewer NO-GO 结论；仍不替代真实 API E2E、Spec-042 收口或最终验收签字。
+
+---
+
+## 真实 E2E score 可见性诊断后的精确回归追加
+
+> 执行角色：`backend-tester`
+> 执行日期：2026-10-23（Asia/Shanghai）
+> 范围：仅 `tests/evaluation/test_offline_transport.py` 与 `tests/evaluation/test_evaluation_runner.py`；本轮未修改生产代码。
+
+### 红证据（真实运行诊断）
+
+真实 E2E 失败 artifact `docs/sdd/plans/042/runs/20261023-0431-real-e2e/` 记录：score POST 返回非空 `score_id` 且 `post_status=written`，但 canonical verifier 在旧的约 0.15 秒窗口内返回 `not_found`，CLI 退出码 **1**。随后对同一已写入 score 的只读 exact GET 返回四字段匹配，见 `docs/sdd/plans/042/runtime-failure-diagnosis.md` 与该 run 的 `api-e2e.md`。这是真实 E2E 红证据，不被改写为“score 未写入”。
+
+开发修复在本轮 pytest 首次执行前已进入共享工作树，因此没有在本轮再次执行旧实现的 pytest 红测；不伪造 `pytest` 红结果、不删除原失败 artifact。
+
+### 新增/收紧能力断言
+
+- `find_score_by_id` 必须请求精确 `/api/public/scores/{score_id}`，不得使用 v1 未定义的 `traceId` 列表过滤；测试断言 exact URL 无 query，不接受首 100 条中同名旧 score；
+- exact GET 的 404 只表示尚未可见并返回 `None`；401、403、坏 JSON 立即失败且不在该函数层重试；
+- runner 在 score POST 后对稍后可见的精确 ID 使用 6 次有界验证窗口，退避为 `1,2,3,4,5` 秒；永久 404 最终非零、报告保留 score ID，且 POST 仍恰好一次；
+- 具体响应字段 mismatch、认证错误和解析错误均立即失败，不因等待而接受旧同名 score；四字段 `id`、`traceId`、`name`、`value` 精确核验保持不变。
+
+### 绿测证据
+
+| 检查 | 命令 | 退出码 | 实际结果 |
+|---|---|---:|---|
+| 本轮新增契约用例 | `.venv/bin/python -m pytest tests/evaluation/test_offline_transport.py tests/evaluation/test_evaluation_runner.py -q -k 'exact_score_endpoint or exact_404 or find_score_by_id_fails_fast or delayed_exact or permanent_exact or verification_fails_fast'` | 0 | **11 passed, 72 deselected in 0.20s** |
+| 两个受影响测试文件 | `.venv/bin/python -m pytest tests/evaluation/test_offline_transport.py tests/evaluation/test_evaluation_runner.py -q` | 0 | **83 passed in 0.33s** |
+| 测试编译与空白 | `.venv/bin/python -m py_compile tests/evaluation/test_offline_transport.py tests/evaluation/test_evaluation_runner.py`; `git diff --check -- tests/evaluation/test_offline_transport.py tests/evaluation/test_evaluation_runner.py` | 0 | 均通过 |
+
+本轮只新增/调整按能力命名的测试，使用 fake `_get`、内存 score handler、fake clock/sleep 和临时报告目录；没有真实 score POST、真实 HTTP 服务、`.env` 读取、数据库写入或全量回归。生产修复由开发侧完成，本测试结论仅表示 exact-ID 与有限可见性回查契约在本地 fake 范围通过；真实 E2E 需使用新 run ID 重新执行后才能解除 BLOCKED。

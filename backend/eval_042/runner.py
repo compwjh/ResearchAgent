@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import time
+import urllib.error
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, is_dataclass
@@ -23,8 +25,8 @@ from .report import ReportWriter
 
 KNOWN_TASKS = frozenset(("chat_quality", "memory_correctness"))
 _VALID_INPUT_STATUSES = frozenset(("scored", "skipped"))
-_VERIFY_ATTEMPTS = 3
-_VERIFY_BACKOFF_SECONDS = (0.05, 0.1)
+_VERIFY_ATTEMPTS = 6
+_VERIFY_BACKOFF_SECONDS = (1, 2, 3, 4, 5)
 _URL_USERINFO_RE = re.compile(r"(?P<prefix>https?://)(?P<userinfo>[^/\s@]+)@", re.IGNORECASE)
 _SECRET_ASSIGNMENT_RE = re.compile(
     r"(?P<key>authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|"
@@ -341,6 +343,24 @@ def _safe_verified_value(value: object) -> object:
     return None
 
 
+def _is_retryable_verification_error(exc: BaseException) -> bool:
+    """Retry only GET transport transients; auth/parse/policy errors fail fast."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code == 429 or 500 <= exc.code <= 599
+    transient_types = (
+        TimeoutError,
+        socket.timeout,
+        ConnectionAbortedError,
+        ConnectionError,
+        BrokenPipeError,
+    )
+    if isinstance(exc, transient_types):
+        return True
+    if isinstance(exc, urllib.error.URLError):
+        return isinstance(exc.reason, transient_types)
+    return False
+
+
 def _verify_score_details(
     score_id: str,
     trace_id: str,
@@ -381,6 +401,10 @@ def _verify_score_details(
                     "type": "ScoreVerificationError",
                     "message": f"score field mismatch: {','.join(mismatches)}",
                 }
+                # A concrete response with mismatched fields is authoritative
+                # evidence of failure; never wait and risk accepting an old or
+                # unrelated score on a later list/read.
+                return False, last_error, actual_value, verification_status
         except Exception as exc:
             verification_status = "error"
             last_error = _error_record(
@@ -390,6 +414,8 @@ def _verify_score_details(
                 answer=answer,
                 context=context,
             )
+            if not _is_retryable_verification_error(exc):
+                return False, last_error, actual_value, verification_status
         if attempt + 1 < _VERIFY_ATTEMPTS:
             time.sleep(_VERIFY_BACKOFF_SECONDS[min(attempt, len(_VERIFY_BACKOFF_SECONDS) - 1)])
     return (

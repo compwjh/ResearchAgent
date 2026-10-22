@@ -379,24 +379,62 @@ def test_list_scores_rejects_non_positive_or_invalid_limit(monkeypatch, limit):
         langfuse_export.list_scores("trace-1", limit=limit)
 
 
-def test_find_score_by_id_requires_exact_id_not_same_name_old_score(monkeypatch):
+def test_find_score_by_id_uses_exact_score_endpoint_not_trace_score_list(monkeypatch):
     urls = []
 
     def fake_get(url):
         urls.append(url)
         return {
-            "data": [
-                {"id": "old-score", "name": "chat_quality", "traceId": "trace-1"},
-                {"id": "other-score", "name": "chat_quality", "traceId": "trace-1"},
-            ],
-            "meta": {"totalPages": 1},
+            "id": "new-score",
+            "name": "chat_quality",
+            "traceId": "trace-1",
+            "value": 1.0,
         }
 
     monkeypatch.setattr(langfuse_export, "_get", fake_get)
 
+    assert langfuse_export.find_score_by_id("new-score", "trace-1") == {
+        "id": "new-score",
+        "name": "chat_quality",
+        "traceId": "trace-1",
+        "value": 1.0,
+    }
+    assert urls == [f"{langfuse_export.LANGFUSE_BASE}/api/public/scores/new-score"]
+    assert parse_qs(urlsplit(urls[0]).query) == {}
+
+
+def test_find_score_by_id_treats_exact_404_as_not_visible_yet(monkeypatch):
+    urls = []
+
+    def fake_get(url):
+        urls.append(url)
+        raise _http_error(404)
+
+    monkeypatch.setattr(langfuse_export, "_get", fake_get)
+
     assert langfuse_export.find_score_by_id("new-score", "trace-1") is None
-    query = parse_qs(urlsplit(urls[0]).query)
-    assert query["traceId"] == ["trace-1"]
+    assert urls == [f"{langfuse_export.LANGFUSE_BASE}/api/public/scores/new-score"]
+
+
+@pytest.mark.parametrize("failure", ["unauthorized", "forbidden", "bad_json"])
+def test_find_score_by_id_fails_fast_for_non_visibility_errors(monkeypatch, failure):
+    urls = []
+
+    def fake_get(url):
+        urls.append(url)
+        if failure == "unauthorized":
+            raise _http_error(401)
+        if failure == "forbidden":
+            raise _http_error(403)
+        raise ValueError("bad score JSON")
+
+    monkeypatch.setattr(langfuse_export, "_get", fake_get)
+
+    with pytest.raises((urllib.error.HTTPError, ValueError)):
+        langfuse_export.find_score_by_id("new-score", "trace-1")
+
+    assert len(urls) == 1
+    assert urls[0] == f"{langfuse_export.LANGFUSE_BASE}/api/public/scores/new-score"
 
 
 def test_collect_keeps_real_memory_trace_without_context_as_skipped(monkeypatch):

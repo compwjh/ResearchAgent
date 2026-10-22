@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import base64
 import json
+import urllib.error
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from .config import INTAKE_MARKERS, LANGFUSE_BASE, LANGFUSE_PK, LANGFUSE_SK
 from .offline_guard import http_get_json, http_post_json
@@ -110,13 +111,28 @@ def list_scores(trace_id: str, limit: int = 100) -> list[dict]:
 
 
 def find_score_by_id(score_id: str, trace_id: str, limit: int = 100) -> dict | None:
-    """在指定 trace 的 score 列表中按精确 ``id`` 查找一条 score。"""
+    """通过服务端 exact-ID GET 读取 score；404 表示尚未可见。"""
     if not isinstance(score_id, str) or not score_id.strip():
         raise ValueError("score_id must be a non-empty string")
-    for score in list_scores(trace_id, limit=limit):
-        if score.get("id") == score_id:
-            return score
-    return None
+    if any(ord(char) < 32 or ord(char) == 127 for char in score_id):
+        raise ValueError("score_id contains control characters")
+    try:
+        parsed_limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid score lookup limit: {limit!r}") from exc
+    if parsed_limit < 1:
+        raise ValueError("score lookup limit must be positive")
+    # Keep the historical argument for callers, while exact-ID GET has no
+    # list limit or trace filter to send.  The public API limit remains capped
+    # for compatibility with list callers and future adapters.
+    _ = min(parsed_limit, 100)
+    encoded_id = quote(score_id, safe="")
+    try:
+        return _get(f"{LANGFUSE_BASE}/api/public/scores/{encoded_id}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
 
 
 # ---------- 纯函数：分类（便于单测，无网络） ----------
