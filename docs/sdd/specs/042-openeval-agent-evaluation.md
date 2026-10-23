@@ -2,16 +2,18 @@
 
 ## 状态
 
-**当前状态：实施中（2026-10-23 用户要求继续；2026-09-22 的明确确认继续有效）**
+**当前状态：已完成（2026-10-23；最终实现候选145f9d6，独立tester与architect验收通过）**
 
-> 当前执行口径：Task02可行性Go、Task03专用记忆探针已完成；继续补齐原范围的可复用离线评测入口、本地JSON/Markdown报告、真实score回写验收和收口门禁，不改业务会话或新增业务接口。实现复用`backend/eval_042`及原实验脚本。下方Grilling中的待确认语句与Q9早期路径属于历史决策；最终执行为自建本地判官、Langfuse作为trace来源与score落点。旁路token缺陷及真实人工标注仍按既有后续边界保留。临时子Agent型号遵循当次用户指派，不写成长期模型规则。
+> 当前执行结果：Task02–04已完成。最终145f9d6真实CLI/API评分、exact-ID校验、Langfuse只读页面核对通过；完整回归3335 passed/0 failed/2合法skip/67 subtests/5 warnings，退出0。独立tester签READY_FOR_USER、architect签GO，准备度9/10+1明确N/A。复用backend/eval_042，无新增业务API或前端；主会话持有的本机Langfuse及Spec043服务保持在线。下方Grilling待确认语句、Q8及Q9早期路径为历史，不是当前决策。旁路token与真实人工标注仍属已声明后续边界，human_agree_rate未评估；不push或合main。
+
+### 历史决策记录（不作为当前指令）
 
 > 经 **grill with docs** 分析：事实已由文档与实测取到（见「背景与依据」）。
 > **Q1–Q8 已于 2026-09-22 全部裁决完成**（裁决结果见文末 grill 记录），grill 设计树**前沿已空**。
 > 其中 **Q3 由用户改判为 B**（判官主用 `qwen3.5:9b`，非原推荐的 `qwen3.8:27b`），
 > **Q8 裁决为 A**（9b 未过一致性门禁则回退 27B；27B 亦不达标则按 C 判 No-Go）。
 > spec 正文已按全部裁决结果修订，**内容冻结**。
-> **待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
+> **历史状态文字（不再适用）：待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
 >
 > **2026-09-22 追加（已闭环）**：查实 Langfuse **自带 evaluation**（23 个 managed evaluators，
 > 引擎为 Vercel AI SDK + `@ai-sdk/openai-compatible`，本地 Ollama 提供 `/v1`），见 F10–F15。
@@ -19,8 +21,8 @@
 > 零成本），**记忆正确性**走外部自定义判官；Q1 保留 `openeval-cli` 但**范围收窄**为仅服务记忆正确性。
 > 参考实践 R1–R8 已并入。**Q1–Q9 全部裁决完毕，grill 前沿重新为空，spec 内容重新冻结。**
 >
-> **待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
-> 本 spec 在确认前不含任何代码改动。
+> **历史状态文字（不再适用）：待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
+> 本 spec 在确认前不含任何代码改动；该确认已于 2026-09-22 完成。
 
 ## 一句话目标
 
@@ -103,7 +105,7 @@ chat_quality 上 9b/27b 自一致率均 **1.0**、跨判官一致率 **1.0**（n
 
 > **Q1–Q7 已裁决**（2026-09-22），正文已按裁决结果修订：Q1=B、Q2=A、Q3=**B（用户改判）**、
 > Q4=A、Q5=A+B、Q6=A、Q7=是。详见文末 grill 记录「裁决结果」。
-> **第 2 轮 Q8（由 Q3=B 派生）待裁决**：`qwen3.5:9b` 判官未通过一致性门禁时的回退策略。
+> **历史状态（不再作为当前指令）**：第 2 轮 Q8（由 Q3=B 派生）曾待裁决：`qwen3.5:9b` 判官未通过一致性门禁时的回退策略。该问题已于 2026-09-22 裁决为 A，见下方裁决表。
 
 ## 数据模型
 
@@ -258,28 +260,29 @@ JSON 是权威模型，Markdown 是同一模型的可读投影；两者应有相
 
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
-| 01 | 编写 spec-042（含 grill with docs 分析） | 本文件 | — | 完成（待确认） |
+| 01 | 编写 spec-042（含 grill with docs 分析） | 本文件 | — | 已完成（2026-09-22确认） |
 | 02 | Go/No-Go：验证最高风险前提（判官质量 + 数据桥接 + F5 路由矛盾） | [`task-02-validate-feasibility.md`](../plans/042/task-02-validate-feasibility.md) | 01 | 已完成（**Go**） |
 | 03 | 专用记忆探针重测 `memory_correctness`（收敛遗留 L2） | [`task-03-memory-probe.md`](../plans/042/task-03-memory-probe.md) | 02 | 已完成（`adopt:qwen3.5:9b`，[报告](../plans/042/task-03-memory-probe-report.md)） |
-| 04 | 原范围离线评测交付与错误门禁 | [task-04-offline-evaluation-delivery.md](../plans/042/task-04-offline-evaluation-delivery.md) | 02、03 | 实施中（04-A已分派） |
+| 04 | 原范围离线评测交付与错误门禁 | [task-04-offline-evaluation-delivery.md](../plans/042/task-04-offline-evaluation-delivery.md) | 02、03 | 已完成（真实API/UI、最终全量及独立双签通过） |
 
 ## 评审记录
 
 - 需求评审：[042-requirement-review.md](../reviews/042-requirement-review.md)（2026-10-23独立评审通过，附同范围实现前提）。
 - 技术评审：[042-tech-review.md](../reviews/042-tech-review.md)（2026-10-23独立评审有条件通过，Task04的T1–T8需验证后才可验收）。
-- 验收评审：`docs/sdd/reviews/042-acceptance-review.md`（待评审（未执行））
+- 验收评审：[042-acceptance-review.md](../reviews/042-acceptance-review.md)（2026-10-23独立tester与architect通过；READY_FOR_USER/GO）。
 
 ## 变更日志（Changelog）
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
+| 2026-10-23 | 分端开发/独立tester与architect；主会话（自身）纯文档收口 | 完成原范围离线CLI、guarded transport、上下文/失败语义、双报告及真实score验证。首次真实回写失败后对齐提供方exact-ID接口及有界异步可见性等待，保留失败，不重复POST。最终145f9d6真实API/UI、3335 passed完整回归、双签和复盘均通过；主会话同步已完成状态，仅本地提交。 |
 | 2026-10-23 | 架构师（自身） | 用户明确继续Spec042；创建独立本地分支codex/spec042-offline-evaluation，核对Task02/03已完成资产，开始同范围缺口审查和交付门禁补齐；未运行旧实验脚本写score，未修改业务代码，不push或合main。 |
 | 2026-09-22 | 架构师(自身) | 编写本 spec：基于 Langfuse 实测数据与 OpenEval 调研，用 grill with docs 梳理 Q1–Q7 决策点，按推荐默认值起草，状态「待确认」 |
 | 2026-09-23 | 架构师(自身) | Task 03 完成后回写：新增边界 9（`memory_correctness` 须带 `prior_context`，缺失即 `SKIPPED`），数据模型补 `prior_context` / `gold` 两字段；任务计划补 Task 03 并置为已完成。依据 `plans/042/task-03-memory-probe-report.md`：G1=1.0 / G2=0.975 / G3=0.95，`adopt:qwen3.5:9b`。**未新增决策点、范围不变** |
 
 ---
 
-## 附：grill with docs 分析记录（2026-09-22）
+## 附：grill with docs 分析记录（2026-09-22，历史记录，不作为当前执行指令）
 
 ### 设计树与第 1 轮前沿问题（frontier）
 
@@ -364,7 +367,7 @@ JSON 是权威模型，Markdown 是同一模型的可读投影；两者应有相
 - 数据模型 `judge_model` 默认改为 `qwen3.5:9b`，并预留回退位；
 - 由此派生第 2 轮问题 **Q8**。
 
-### 第 2 轮前沿问题（由 Q3=B 派生）
+### 第 2 轮前沿问题（由 Q3=B 派生；历史问题，已裁决）
 
 **Q8 — 若 `qwen3.5:9b` 未通过一致性门禁，怎么办？**
 - A **回退到 `qwen3.8:27b`** 重跑一致性，通过则用 27B（牺牲速度换质量）
@@ -377,7 +380,7 @@ JSON 是权威模型，Markdown 是同一模型的可读投影；两者应有相
 若 27B 也不达标再走 C。**不建议 D**（放宽阈值等于自我欺骗，评分不可用还不如不评）。
 B 可作为 A 与 C 之间的折中保留。
 
-### 第 3 轮前沿问题（由 F10–F15 派生，需重新裁决 Q1/Q4）
+### 第 3 轮前沿问题（由 F10–F15 派生；历史问题，已裁决）
 
 **Q9 — 评测**执行层**用谁？（Langfuse 内置已可用，Q1 需重裁）**
 - **A 改用 Langfuse 内置 evaluators**：把 LLM connection 指向本机 Ollama `/v1`（F14），
@@ -390,5 +393,5 @@ B 可作为 A 与 C 之间的折中保留。
 ➡️ **推荐 C**：内置模板解决 80% 通用维度且零集成成本，把自建精力集中在本项目特有的**记忆正确性**上。
 无论选哪个，**Q3/Q8（本地判官质量与回退链）不变**，仍是 Go/No-Go 的核心风险。
 
-> **Q9 裁决后**（并同步更新 Q1/Q4）本 spec 方可转「已确认」，并按 Task 02 启动 Go/No-Go 验证。
+> **历史状态文字（不再适用）**：Q9 裁决后（并同步更新 Q1/Q4）本 spec 方可转「已确认」，并按 Task 02 启动 Go/No-Go 验证。Q9 已裁决，且 Spec 已于 2026-09-22 确认。
 > 若选 A/C，Task 02 需追加一步：为 Langfuse 配置指向 `http://localhost:11434/v1` 的 LLM connection 并跑通一次内置评测。

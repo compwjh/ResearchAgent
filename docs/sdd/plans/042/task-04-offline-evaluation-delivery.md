@@ -1,6 +1,7 @@
 > 关联：[spec-042](../../specs/042-openeval-agent-evaluation.md) ｜ [计划索引](./README.md) ｜ [需求评审](../../reviews/042-requirement-review.md) ｜ [技术评审](../../reviews/042-tech-review.md)
 > 依赖：Task 02（Go，`chat_quality` 闭环）与 Task 03（记忆探针，`adopt:qwen3.5:9b`）
-> 当前状态：**进行中（待实现）**（2026-10-23 用户明确继续；本文件只冻结交付范围与实现契约）
+> 当前状态：**已完成（04-A–E、真实 E2E、验收双签与最终回归均已完成）**（候选 `145f9d6`；2026-10-23 收口）
+> 当前收口说明：真实成功报告在 `/Users/wjh/ResearchAgent/docs/sdd/plans/042/runs/20261023-0442-real-e2e-145f9d6/`，手工验收步骤在 `/Users/wjh/ResearchAgent/docs/sdd/plans/042/manual-acceptance.md`。tester 结论为 `READY_FOR_USER`、architect 结论为 `GO`；这代表交付证据和人工验收准备度完成，不代表用户已经实际完成手工验收。原始 UI 锁屏/不可交互记录仅保留为历史，当前 UI 证据来自 headless 只读核对。
 
 # Task 04 — 可复用本地离线评测交付
 
@@ -41,15 +42,17 @@
 
 ## 编码子任务（每项最多 2 个文件）
 
-> 以下编码任务按顺序执行，避免多个 agent 同时改同一文件。所有生产代码任务派 `backend-dev`；测试任务单独派 `backend-tester`，不得由同一分派同时改代码和测试。模型采用本次用户临时指定的 Luna xhigh，不写入长期 agent 配置。
+> 以下编码任务按文件边界执行，避免多个 agent 同时改同一文件。所有生产代码任务派 `backend-dev`；测试任务单独派 `backend-tester`，不得由同一分派同时改代码和测试。模型采用本次用户临时指定的 Luna xhigh，不写入长期 agent 配置。
+
+当前候选：`145f9d6`，代码/定向测试/独立复审、真实 API E2E、headless 只读核对与 Spec 最终完整回归均已通过。旧候选 `6f644bc` 的失败报告与下方初始任务描述保留为历史，不能用历史失败覆盖当前成功证据。
 
 | 子任务 | 文件（最多 2 个） | 依赖 | 分派 | 状态 |
 |---|---|---|---|---|
 | 04-A 传输与数据契约 | `backend/eval_042/offline_guard.py`；`backend/eval_042/langfuse_export.py` | 无 | `Task(backend-dev)` | 已完成（独立GO；48项专项通过，POST不自动重试） |
-| 04-B 判官与 runner 编排 | `backend/eval_042/judge_client.py`；`backend/eval_042/runner.py` | 04-A | `Task(backend-dev)` | 实现完成，独立复审及失败路径测试中 |
-| 04-C CLI 迁移包装 | `backend/eval_042/cli.py`；`docs/sdd/plans/042/task-02-run-eval.py` | 04-B | `Task(backend-dev)` | 实现完成，独立复审中 |
-| 04-D 报告投影 | `backend/eval_042/report.py`；`backend/eval_042/config.py` | 04-B | `Task(backend-dev)` | report模块已实现（无需修改config）；独立定向测试中 |
-| 04-E 契约与失败回归测试 | `tests/evaluation/test_offline_transport.py`；`tests/evaluation/test_evaluation_runner.py` | 04-A–D | `Task(backend-tester)` | 进行中（传输48、报告14、原有28共90项通过；runner测试在编写） |
+| 04-B 判官与 runner 编排 | `backend/eval_042/judge_client.py`；`backend/eval_042/runner.py` | 04-A | `Task(backend-dev)` | 已完成（本地GO；独立复审/定向测试通过） |
+| 04-C CLI 迁移包装 | `backend/eval_042/cli.py`；`docs/sdd/plans/042/task-02-run-eval.py` | 04-B | `Task(backend-dev)` | 已完成（本地GO；独立12项专项通过） |
+| 04-D 报告投影 | `backend/eval_042/report.py`；`backend/eval_042/config.py` | 04-B | `Task(backend-dev)` | 已完成（本地GO；独立14项专项通过；无需修改config） |
+| 04-E 契约与失败回归测试 | `tests/evaluation/test_offline_transport.py`；`tests/evaluation/test_evaluation_runner.py` | 04-A–D | `Task(backend-tester)` | 已完成（失败路径与定向回归通过；最终全量 `3335 passed / 0 failed / 2 skipped / 67 subtests / 5 warnings`） |
 
 ### 04-A 传输与数据契约
 
@@ -106,9 +109,16 @@
 
 - 风险：Langfuse score 最终一致、Ollama 慢或限流、memory trace 缺 ctx、报告失败。统一以有限重试、明确状态和非零退出暴露，不扩大到业务链路。
 - 回滚：删除/恢复 Task04 新增的 package CLI、runner、report、统一离线 transport 与测试；不触碰业务代码、Langfuse 数据或部署配置。真实 score 回写的清理仅按已授权的验收步骤执行，不在本 Task 自动删除业务数据。
-- Task04 完成后回填本文件、plans README 和 Spec042 任务计划的状态与证据；Spec042 的最终全量回归、真实 API E2E、验收签字、部署和 `已完成` 状态留 Spec 收口阶段处理。
+- Task04 已回填本文件、plans README 和 Spec042 任务计划的状态与证据；Spec042 的最终全量回归、真实 API E2E、验收双签、部署与 `已完成` 状态已由 root 完成收口。
+
+## 变更日志与最终结果
+
+- 04-A–E 已完成：传输与数据契约、judge/runner、canonical CLI/历史包装、JSON+Markdown 报告投影，以及失败路径/契约回归测试均已通过；任务边界未扩展到 UI、业务 API、CI 或人工标注平台。
+- 当前候选 `145f9d6` 的真实 API 主链路为 loopback `export → judge → score POST 一次 → exact GET 验证`，报告 `scored=1/written=1/verified=1/failed=0`；真实产物目录为 `/Users/wjh/ResearchAgent/docs/sdd/plans/042/runs/20261023-0442-real-e2e-145f9d6/`，包含 `report.json`、`report.md` 与请求/响应阶段记录。
+- 最终全量回归为 `3335 passed / 0 failed / 2 skipped / 67 subtests / 5 warnings`；验收准备度为 `9/10 + 1 N/A`，tester `READY_FOR_USER`、architect `GO`。完整评审见 `docs/sdd/reviews/042-acceptance-review.md`。
+- 人工验收手工 case 位于 `/Users/wjh/ResearchAgent/docs/sdd/plans/042/manual-acceptance.md`；其完成表示步骤和证据已准备，不表示用户已经实际执行验收。原始 UI 锁屏记录只作历史，当前 UI 观察以 headless 只读成功记录为准。
 
 ## 产出物与执行结果
 
 - 计划产出：`backend/eval_042` canonical CLI/runner/report/统一离线 transport、迁移后的历史脚本包装、后端定向测试、JSON+Markdown 报告和真实 smoke 证据。
-- 当前执行结果：尚未实现；本文件仅完成范围冻结与子任务拆分。不得将 Task02/03 的历史产物直接标记为 Task04 完成。
+- 当前执行结果：候选 `145f9d6` 已完成 04-A–E、本地定向测试、真实 API E2E、headless 只读核对、最终全量回归和验收双签；Task04 已完成。用户实际人工验收仍按手工 case 执行，不能由 `READY_FOR_USER` 文字替代。

@@ -1,0 +1,66 @@
+{
+  "spec": "042",
+  "run_id": "20261023-000644-145f9d6",
+  "candidate_commit": "145f9d6",
+  "branch": "codex/spec042-offline-evaluation",
+  "started_at_utc": "2026-10-23T00:06:44Z",
+  "ended_at_utc": "2026-10-23T01:20:05Z",
+  "pytest_reported_duration_seconds": 679.33,
+  "regression_exit_code": 0,
+  "result": "PASS",
+  "counts": {
+    "passed": 3335,
+    "failed": 0,
+    "skipped": 2,
+    "warnings": 5,
+    "subtests": 67
+  },
+  "command": ".venv/bin/python -m pytest tests -q -o cache_dir=/private/tmp/spec042-final-regression-GGaB59/pytest-cache --basetemp=/private/tmp/spec042-final-regression-GGaB59/pytest-tmp",
+  "environment": {
+    "PYTHON_DOTENV_DISABLED": "1",
+    "COMPACTION_SUMMARY_MODE": "rule",
+    "LANGFUSE_ENABLED": "false",
+    "KB_DIR": "/private/tmp/spec042-final-regression-GGaB59/data/kb",
+    "QDRANT_PATH": "/private/tmp/spec042-final-regression-GGaB59/data/kb/qdrant",
+    "KB_META_PATH": "/private/tmp/spec042-final-regression-GGaB59/data/kb/papers.json",
+    "MEMORY_DB_PATH": "/private/tmp/spec042-final-regression-GGaB59/data/memory/memory.sqlite3",
+    "LITERATURE_MAP_DB_PATH": "/private/tmp/spec042-final-regression-GGaB59/data/literature_maps/literature_maps.sqlite3",
+    "RESEARCH_DB_PATH": "/private/tmp/spec042-final-regression-GGaB59/data/research/research.sqlite3",
+    "AGENT_TASKS_DB": "/private/tmp/spec042-final-regression-GGaB59/data/agent_tasks/agent_tasks.sqlite3",
+    "PAPER_DISCOVERY_DB_PATH": "/private/tmp/spec042-final-regression-GGaB59/data/paper-search/state.sqlite3",
+    "ARTICLE_DOWNLOAD_DIR": "/private/tmp/spec042-final-regression-GGaB59/data/articles",
+    "PAPER_DISCOVERY_BROWSER_PROFILE_DIR": "/private/tmp/spec042-final-regression-GGaB59/data/browser-profile",
+    "unset": [
+      "MEMORY_DIR",
+      "RUN_E2E",
+      "RERANKER_ENABLED",
+      "OLLAMA_ROUTE",
+      "OLLAMA_MODEL",
+      "EMBED_MODEL",
+      "EMBED_DIM",
+      "SEMANTIC_SCHOLAR_API_KEY"
+    ]
+  },
+  "skip_reasons": [
+    {
+      "nodeid": "tests/e2e/test_research_lifecycle_e2e.py::test_research_task_create_shows_in_list",
+      "reason": "浏览器端到端需设置 RUN_E2E=1 并先启动后端服务(:8000)"
+    },
+    {
+      "nodeid": "tests/e2e/test_research_lifecycle_e2e.py::test_research_lifecycle_follow_through",
+      "reason": "浏览器端到端需设置 RUN_E2E=1 并先启动后端服务(:8000)"
+    }
+  ],
+  "warnings_summary": [
+    "2x DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute",
+    "2x DeprecationWarning: builtin type SwigPyObject has no __module__ attribute",
+    "1x DeprecationWarning: builtin type swigvarlink has no __module__ attribute"
+  ],
+  "raw_log": "docs/sdd/plans/042/runs/20261023-000644-145f9d6/full-regression.log",
+  "temporary_evidence_root": "/private/tmp/spec042-final-regression-GGaB59",
+  "services": {
+    "service_8000": "not stopped or reused for writes",
+    "langfuse_3000": "not stopped or reused for writes",
+    "external_network": "not intentionally used"
+  }
+}

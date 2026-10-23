@@ -2,6 +2,12 @@
 
 ## 2026-10-23
 
+- **Spec042 OpenEval接入：本地离线Agent评测闭环**：`实施中` → `已完成`。最终实现候选145f9d6的真实评分一次POST、canonical exact验证、JSON/Markdown及既有Langfuse页面核对通过；完整回归3335 passed/0 failed/2合法skip/67 subtests/5 warnings，退出0。独立tester与architect签READY_FOR_USER/GO，准备度9/10+1明确N/A；主会话持有loopback依赖，8000 Spec043未改。旧API/390px失败保留，人工一致率未评估；仅本地提交，不push或合main。
+
+- **Spec042最终候选145f9d6**：`真实回写/完整回归待验证` → `真实API成功、最终完整回归通过，UI核对与双签待完成`。新run的score只POST一次，canonical exact验证通过；完整回归3335 passed/0 failed/2合法skip/67 subtests/5 warnings，退出0。旧候选真实失败与同候选一次390px超时均保留，未改断言；主会话持有Langfuse进程，Spec043继续在线。尚不标已完成，不push或合main。
+
+- **Spec042 Task04**：`集成复审打回` → `修复独立GO，候选6f644bc真实验收/最终全量中`。四组P1新增测试红测复现后修复，runner/report集成独立复审41项通过；领域回归129项通过。仅本地保存实现/测试/评审交接，真实Langfuse评分与隔离全量由不同tester执行，尚未宣称Spec完成，不push或合main。
+
 - **Spec042 Task04**：`本地领域124项通过` → `集成复审打回，同范围集中修复`。独立runner/report复审发现审计字段、来源异常脱敏、嵌套人工真值声明及双报告替换失败一致性四组P1；已分别分派runner/report修复与独立红绿测试。暂停真实score回写，Spec保持实施中；Spec043现有8000服务无改动。
 
 - **Spec042 Task04**：`续作审查` → `分组实现与精确验证`。需求/技术独立评审通过后分派04-A/B/D；统一离线传输和上下文数据契约已实现，新44项与原28项合计72项领域测试通过，独立复审中。报告模块完成实现，运行器接续；Langfuse使用既有组件恢复且仅loopback监听，无安装/迁移/真实trace读取或score写回。尚未完成Task/Spec验收，不跑全量、不push或合main。

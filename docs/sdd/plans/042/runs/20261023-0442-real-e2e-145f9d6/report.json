@@ -1,0 +1,47 @@
+{
+  "constructed_gold_note": "Task-03 gold is constructed gold only; human annotation was not run.",
+  "constructed_gold_only": true,
+  "errors": [],
+  "finished_at": "2026-10-22T22:20:14.847053+00:00",
+  "human_agree_rate": null,
+  "items": [
+    {
+      "expected_value": 1.0,
+      "explanation": "reason_code=judge_explanation_source_echo_redacted",
+      "judge_model": "qwen3.5:9b",
+      "label": "good",
+      "post_status": "written",
+      "requested": true,
+      "score": 1.0,
+      "score_id": "cf95289f-8ef0-4d08-a0a6-81759a6f359e",
+      "status": "scored",
+      "synthetic": false,
+      "task": "chat_quality",
+      "trace_id": "9a93fe5d085320fdd3a39f3101327a1e",
+      "verification_status": "verified",
+      "verified": true,
+      "verified_value": 1.0,
+      "written": true
+    }
+  ],
+  "metadata": {
+    "fallback_judge": "qwen3.8:27b",
+    "judge_model": "qwen3.5:9b",
+    "max_items": 1,
+    "repeats": 3,
+    "source": "export",
+    "task": "chat_quality"
+  },
+  "schema_version": "agent-evaluation-report-v1",
+  "started_at": "2026-10-22T22:19:50.903592+00:00",
+  "status": "completed",
+  "summary": {
+    "failed": 0,
+    "no_prior_context": 0,
+    "scored": 1,
+    "skipped": 0,
+    "unavailable": 0,
+    "verified": 1,
+    "written": 1
+  }
+}

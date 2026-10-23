@@ -1,5 +1,20 @@
 # Langfuse 运行时预检与 loopback 恢复方案
 
+## 当前运行状态：主会话持有（2026-10-23）
+
+子任务曾启动的前台会话停止后，3000/8123实际返回HTTP000；旧PID和历史健康不能代表当前部署。主会话重新启动并持有进程，所有命令均复用既有组件、数据和配置，无安装、迁移、数据库清理或凭据修改：
+
+- ClickHouse：工作目录`/Users/wjh/opt/clickhouse`，显式`--config-file=/Users/wjh/opt/clickhouse/config.xml -- --path=/Users/wjh/opt/clickhouse/data/ --listen_host=127.0.0.1`；session20709/PID83740，ping为Ok.。
+- PostgreSQL：保留既有PID79169，未重启；监听127.0.0.1:5432。
+- Redis：显式`--bind 127.0.0.1 --port 6379 --protected-mode yes --dir /tmp`；session84985/PID83764，PONG。
+- MinIO：显式`--address 127.0.0.1:9002 --console-address 127.0.0.1:9003`及既有数据目录；session61216/PID83782。环境值仅从已有部署脚本安全注入，无输出或落盘；IPv4与IPv6监听均loopback，health成功。
+- Worker：Node24路径及`HOSTNAME=127.0.0.1 PORT=3030 pnpm --filter worker run dev`；session49556/PID83835，health HTTP200。
+- Web：在`vendor/langfuse/web`下使用Node24和已有dotenv/Next，`dotenv -e ../.env -- next dev --hostname 127.0.0.1`；session71694/PID83862，public health及ready均HTTP200。
+
+已明确交接：子Agent不再启动、停止或清理上述主会话会话。Spec043的8000服务独立保持ready，不受本次恢复影响。旧错误工作目录生成的仓库根`access/`、`preprocessed_configs/`经确认无活动进程使用后，可恢复归档到`/private/tmp/spec042-startup-leftovers-6Y1edd/`，未提交、未删除既有ClickHouse专用目录或业务数据。
+
+以下保留历史预检与恢复证据，PID/session不再作为当前在线证明。
+
 > 执行角色：`backend-tester` / 部署诊断
 > 执行日期：2026-10-23（Asia/Shanghai）
 > 分支：`codex/spec042-offline-evaluation`
@@ -171,3 +186,59 @@ web 首次尝试因多传一个 pnpm 分隔符而退出（`next dev -- --hostnam
 - 9002/9003 → PID 70434，IPv4 为 `127.0.0.1`，另有 `[::1]:9002` IPv6 loopback。
 
 最终本地健康：web=200、worker=200、ClickHouse=`Ok.`/200、PostgreSQL=accepting、Redis=`PONG`、MinIO=200。未访问真实用户 trace，未运行评测或 score 写回，未启动 ResearchAgent、Qdrant、Ollama 或 8000 端口服务。
+
+## 8. Spec-042 真实验收授权后的追加记录（2026-10-23 04:27–04:30 Asia/Shanghai）
+
+本节覆盖第 7 节之后、根会话明确授权的同一分支运行。第 7 节是历史预检/恢复记录；本节的最新 PID、session 和 HTTP 结果以实际验收时刻为准。命令未包含凭据值，既有 `vendor/langfuse/.env` 只在子进程内存中映射需要的环境变量。
+
+### 8.1 实际启动与监听
+
+| 组件 | 实际命令（去敏） | session / PID | 最终监听 |
+|---|---|---|---|
+| ClickHouse | `/Users/wjh/opt/clickhouse/clickhouse server --config-file=/Users/wjh/opt/clickhouse/config.xml -- --path=/Users/wjh/opt/clickhouse/data/ --listen_host=127.0.0.1`，工作目录 `/Users/wjh/opt/clickhouse` | foreground session `84204` / PID `79822` | `127.0.0.1:8123`（另有 native/兼容协议 loopback 端口） |
+| PostgreSQL | `LC_ALL=C LANG=C pg_ctl -D /Users/wjh/opt/pgdata -l /tmp/langfuse-postgres.log -o '-p 5432 -k /tmp -h 127.0.0.1' -w start` | command exit 0 / PID `79169` | `127.0.0.1:5432` |
+| Redis | `/opt/homebrew/bin/redis-server --bind 127.0.0.1 --port 6379 --protected-mode yes --dir /tmp --logfile /tmp/langfuse-redis.log` | foreground session `84659` / PID `79184` | `127.0.0.1:6379` |
+| MinIO | `MINIO_ROOT_USER=<existing> MINIO_ROOT_PASSWORD=<existing> minio server --address 127.0.0.1:9002 --console-address 127.0.0.1:9003 /Users/wjh/opt/minio-data` | foreground session `22494` / PID `79197` | IPv4 `127.0.0.1:9002/9003`，IPv6 `[::1]:9002`（loopback） |
+| Langfuse worker | `HOSTNAME=127.0.0.1 PORT=3030 pnpm --filter worker run dev`，Node 24.20.0 | foreground session `87762` / PID `79363` | `127.0.0.1:3030` |
+| Langfuse web | `dotenv -e ../.env -- next dev --hostname 127.0.0.1`，Node 24.20.0 | foreground session `16179` / PID `80339` | `127.0.0.1:3000` |
+| Ollama | pre-existing process, not started/changed | PID `2882` | existing `11434` listener; accessed only via `127.0.0.1` |
+
+初次 ClickHouse 启动时因工作目录不匹配相对 `access/` 路径，既有用户认证返回 403；仅停止本次启动的 PID `79491`，未改配置或数据，随后从现有配置目录重启并认证成功。Web 初次默认绑定通配地址，已停止本次 PID 并以 `--hostname 127.0.0.1` 重启；当前 `lsof` 仅显示上述 loopback 地址。没有运行 `start-infra.sh`，没有安装、下载、迁移、清理数据或停止无关进程。
+
+### 8.2 实际健康与认证结果
+
+| 请求/检查 | 真实结果 |
+|---|---|
+| `GET http://127.0.0.1:8123/ping` | HTTP 200，body `Ok.` |
+| ClickHouse existing `.env` account auth | HTTP 200；仅打印状态，未打印凭据 |
+| `GET http://127.0.0.1:9002/minio/health/live` | HTTP 200 |
+| `GET http://127.0.0.1:3030/api/health` | HTTP 200，`status=ok` |
+| `GET http://127.0.0.1:3000/` | HTTP 200，7373 bytes（正文只写入临时私有路径用于字节数核对） |
+| `GET http://127.0.0.1:3000/api/public/health` | HTTP 200 |
+| `GET http://127.0.0.1:3000/api/public/ready` | HTTP 200 |
+| authenticated `GET http://127.0.0.1:3000/api/public/traces?limit=1` | HTTP 200，真实 trace 列表元数据可读 |
+| `GET http://127.0.0.1:11434/api/tags` | HTTP 200；qwen3.5:9b 与 qwen3.8:27b 已存在 |
+
+### 8.3 真实验收 session 产物
+
+- chat-quality run：`docs/sdd/plans/042/runs/20261023-0431-real-e2e/`；canonical CLI exit `1`，score POST 已写入但 bounded exact verify 失败，终态报告为 `failed`。
+- memory skip run：`docs/sdd/plans/042/runs/20261023-0435-memory-skip/`；canonical CLI exit `0`，真实 `no_prior_context` 被 `SKIPPED`，`written=0`，无 score POST。
+- 详细 API artifact：[20261023-0431-real-e2e/api-e2e.md](runs/20261023-0431-real-e2e/api-e2e.md)。
+- 本追加仅记录命令、PID、监听地址、session 和健康/认证状态；没有写入凭据、trace 正文或隐藏模型输出。
+
+## 9. Root-owned acceptance runtime handoff (2026-10-23 04:42 Asia/Shanghai)
+
+本节是根会话重新持有服务后的最新运行时记录。当前验收任务未启动、停止或清理这些进程；仅读取健康状态并使用其 loopback API。
+
+| 组件 | root-owned session / PID | 监听与健康 |
+|---|---|---|
+| ClickHouse | session `20709` / PID `83740` | 既有 config/data，`127.0.0.1:8123`，HTTP `/ping` 200 |
+| PostgreSQL | existing PID `79169` | `127.0.0.1:5432` |
+| Redis | session `84985` / PID `83764` | `127.0.0.1:6379` |
+| MinIO | session `61216` / PID `83782` | `127.0.0.1:9002/9003`，loopback live health 200 |
+| Langfuse worker | session `49556` / PID `83835` | `127.0.0.1:3030`，`/api/health` 200 |
+| Langfuse web | session `71694` / PID `83862` | `127.0.0.1:3000`，`/`, `/api/public/health`, `/api/public/ready` 200 |
+
+启动命令边界仍为：ClickHouse 从 `/Users/wjh/opt/clickhouse` 使用既有 config/data；worker 使用 `HOSTNAME=127.0.0.1 PORT=3030 pnpm --filter worker run dev`；web 使用 `dotenv -e ../.env -- next dev --hostname 127.0.0.1`。项目密钥只从既有 `vendor/langfuse/.env` 的 `LANGFUSE_INIT_PROJECT_PUBLIC_KEY` / `LANGFUSE_INIT_PROJECT_SECRET_KEY` 在子进程内存中映射，未打印或写入报告。
+
+本次新 run：`docs/sdd/plans/042/runs/20261023-0442-real-e2e-145f9d6/`。CLI exit `0`，一条真实 `chat_quality` score 写入并 canonical verified；同一 score 的六次 exact GET 均 HTTP 200。UI 回看因 macOS 锁屏未完成，详见 run 内 `api-e2e.md`；不把 API 成功冒充 UI 可见。
