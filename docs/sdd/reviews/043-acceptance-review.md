@@ -156,3 +156,14 @@ tester 在架构师签字前报告准备度为 **9/10+**；本次 architect 签�
 - **增量结论：GO / READY_FOR_USER（仅限 ANALYSIS-MARKDOWN 展示修复，无阻塞项）**。历史 `3384 passed / 0 failed / 2 合法 skip` 属 2026-10-24 Spec043 收口证据，本轮未重跑全量回归；本轮仅覆盖前端 Markdown 展示，不以历史计数冒充本轮验证。
 
 **Architect：独立增量签字通过（2026-10-25）。** 本签字不改变此前 INITIAL-FIT 通过结论或已完成 Spec043 的历史证据分类，仅确认该 Markdown 展示修复可交给用户验收。
+
+## 2026-10-25 论文提问输入区布局增量架构签字
+
+范围仅为 COMPOSER-LAYOUT 的 CSS/资源版本增量：输入框从与 footer 横向挤压改为整行置顶、footer 独立下行并保持响应式换行；`app.js` 与发送逻辑未改。本节保留前述 INITIAL-FIT 与 ANALYSIS-MARKDOWN 签字，不合并其计数。
+
+- 最新前端评审为 **GO（P0=0，P1=0，P2=0）**；5 文件前端定向回归为 **47 passed / 0 failed / 0 skipped，exit 0，29.24s**。styles v61、语法、布局/命名/收集和差异格式门禁通过。
+- 真实运行时在 639px 窄窗口打开 DualGATs 论文提问：174 字草稿完整保留；form 宽 605、textarea 宽 567（93.7%），footer 顶部 578.195 严格位于 textarea 底部 566.195 之后，整页无横向溢出。1440/639/375/320 的生产组件覆盖、176px 内部滚动、草稿保护和无自动发送均有定向证据；截图见 `../plans/043/task-09-runs/20261025-composer-layout/after.png`。
+- 新会话 `72933c77339445369bd9994cd06adaa1` 的 messages GET 返回 HTTP 200 且 `messages=[]`；未点击发送，未触发模型。首页、health、会话接口均 HTTP 200，既有长度限制保持不变。
+- **增量结论：GO / READY_FOR_USER（仅限 COMPOSER-LAYOUT 展示修复，无阻塞项）**。此前 INITIAL-FIT `40 passed`、ANALYSIS-MARKDOWN `50 passed` 与历史 `3384 passed / 0 failed / 2 合法 skip` 均为独立记录；本轮不聚合计数、不重跑后端或全量回归，也不以历史数字冒充本轮验证。
+
+**Architect：独立增量签字通过（2026-10-25）。** 本签字不改变前两项前端增量结论或已完成 Spec043 的历史证据分类，仅确认该 composer 布局修复可交给用户验收。

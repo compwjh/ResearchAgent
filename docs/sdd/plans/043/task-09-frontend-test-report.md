@@ -333,3 +333,47 @@ env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
 Syntax **PASS**；DOM/API Contract **PASS**；Version(`literature-maps.js?v=20`, `literature-maps.css?v=13`, `app.js?v=60`) **PASS**；XSS/安全 DOM 边界 **PASS**。`renderAnalysisMarkdown()` 只消费现有 `window.renderMarkdown`，地图模块未复制 marked/DOMPurify、未使用 `innerHTML`；缺失或异常 renderer 使用 `textContent` fallback。新增 `.md-body` 复用既有 Markdown 样式，地图摘要容器保留 `.literature-map-analysis-summary` 作用域。
 
 本轮最终前端定向回归结论：**PASS（50/50）**。此前初始 fit 基线 `40 passed` 继续作为独立历史记录；本轮日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261025-030802.md`。
+
+## 2026-10-25 COMPOSER-LAYOUT styles v61 最终前端回归
+
+本节为论文提问 composer 布局窄修的最新 frontend-tester 结果，独立于此前 initial-fit `40 passed` 与 Markdown `50 passed` 记录；不合并历史计数。本轮范围仅为 `frontend/index.html`、`frontend/styles.css`、相关前端 fixture/contract，未运行后端 pytest、全仓回归、服务/部署、模型或远端调用。
+
+### 精确集合与授权浏览器结果
+
+实际运行 5 个前端测试文件：
+
+```text
+env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
+  .venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_composer_layout.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_context_meter.py \
+  tests/frontend/test_frontend_literature_map_contract.py
+```
+
+授权 Chromium 下退出码 `0`：`47 passed in 29.24s`，`0 failed`、`0 skipped`。覆盖：
+
+- 1440、639、375、320 viewport 下 textarea 独占顶部整行且宽度充分，footer 在下方整行，context/reasoning/model/send 控件均保持在 viewport 内，页面无横向溢出。
+- 长 DualGATs 草稿 value/长度完整保留，textarea 高度不超过 176px，`scrollHeight > clientHeight` 且 `overflow-y: auto`；表单提交计数为 0。
+- `#question` 无 `maxlength`；`applyConversationDraft` 只在空输入时执行 `input.value = draft`、聚焦并 auto-grow；预填函数不调用 `sendConversationMessage`，已有草稿走插入建议，不覆盖原值或自动发送。
+- context meter、地图 conversation bridge、移动端交互及地图 fixture 核对继续通过；KB 业务代码未改动且不在本轮写入范围。
+
+### 静态与收集门禁
+
+| 命令 | 退出码 | 实际结果 |
+|---|---:|---|
+| `node --check frontend/app.js` | `0` | 语法通过（app.js 未改动） |
+| `node --check frontend/literature-maps.js` | `0` | 受影响地图桥接语法通过 |
+| `.venv/bin/python scripts/check_test_layout.py` | `0` | `test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | `0` | 无 spec/task 数字违规 |
+| 同一 5 文件集合 `pytest --collect-only -q` | `0` | `47 tests collected`，无 collecting error |
+| `git diff --check -- frontend/index.html frontend/styles.css tests/frontend` | `0` | 差异格式通过 |
+
+### 版本、布局与安全结论
+
+Version **PASS**：生产页/fixture 的 `styles.css?v=61` 已同步，地图 `literature-maps.js?v=20`、`literature-maps.css?v=13` 与 `app.js?v=60` 保持既有合同。布局 **PASS**：`.composer` 使用纵向布局，textarea/footer 均 `width: 100%`、`min-width: 0`；textarea 保留 66px 起步、176px 上限和内部滚动。Draft safety **PASS**：未增加 maxlength、未改变预填逻辑、未自动发送或覆盖已有草稿。XSS/DOM boundary **PASS（本轮范围）**：composer 改动仅为 CSS/HTML 资源版本，未新增动态 HTML 写入；context/map 合同继续确认安全 DOM 边界。
+
+只读授权 Chromium 几何探针进一步确认 1440/639/375/320 宽度下 textarea 均为 composer 宽度的 100%，footer `y` 严格大于 textarea 底部，且 `document.documentElement.scrollWidth` 分别为 1440/639/375/320，无横向溢出。实际 textarea/footer 宽度分别为 `978/978`、`577/577`、`313/313`、`258/258` CSS px。
+
+本轮最终前端定向回归结论：**PASS（47/47）**。author 预检 `7 + 47 passed`、reviewer 窄检 `6 + 24 passed` 均由本轮独立集合复核；日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261025-032231.md`。

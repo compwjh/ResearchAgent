@@ -319,3 +319,43 @@ env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
 | `git diff --check -- frontend tests/frontend` | 0 | 通过 |
 
 未运行 backend pytest、全量回归、真实 API/生产写入、模型调用、下载、服务或部署；root 负责当前候选的真实双 GAT 节点截图复核。
+
+## 论文提问桥接 composer 布局修复追记（2026-10-25）
+
+本轮修复承接“关于本篇提问”预填 DualGATs 草稿在宽屏仅占约三分之一宽度的问题，范围仅为
+`frontend/index.html`、`frontend/styles.css`、`tests/frontend/**` 与本报告；未修改
+`frontend/app.js`、后端、Normal 模式 2,000 字行为、API、预填逻辑或自动发送行为。
+
+### 实现与契约
+
+- composer 采用纵向两行布局：`#question` 独占顶部整行并使用 `width: 100%`/`min-width: 0`；`.composer-footer` 独占底部行，保留 flex-wrap，窄屏继续换行。
+- 保留现有 textarea 66px 起步、176px 上限和 `overflow-y: auto`；没有新增 `maxlength`，没有截断草稿。
+- styles live 资源由 v60 升为 v61；地图组件 fixture 与直接依赖该 live 版本的移动端断言同步。`app.js` 版本和内容保持不变。
+- 新增 `tests/frontend/test_frontend_composer_layout.py`：抽取生产 index 的真实 composer DOM 注入生产 CSS，在 1440/639/375/320 宽度检查 textarea 宽度、footer 控件边界和页面无横向溢出；长 DualGATs 草稿检查值/长度完整、176px 后内部滚动以及未触发表单提交；静态检查预填仍为 `input.value = draft`，且预填函数不调用 `sendConversationMessage`。
+
+### TDD 与定向验证
+
+修复前新增能力测试先以退出码 1 暴露 5 项布局失败（横向 flex 挤压 textarea、缺少 full-width 规则）；实现后同一能力测试退出码 0：`7 passed in 1.89s`。
+
+受影响的地图桥接、移动端版本、上下文 composer 和地图导航回归集合：
+
+```text
+.venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_composer_layout.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_context_meter.py \
+  tests/frontend/test_frontend_literature_map_contract.py
+```
+
+退出码 `0`：`47 passed in 29.07s`，`0 failed`，`0 skipped`。
+
+| 命令 | 退出码 | 实际结果 |
+|---|---:|---|
+| `node --check frontend/app.js` | 0 | 通过；app.js 未改动 |
+| `.venv/bin/python scripts/check_test_naming.py` | 0 | `test naming check passed: no spec/task numbers under tests` |
+| `.venv/bin/python scripts/check_test_layout.py` | 0 | `test layout: ok` |
+| `.venv/bin/python -m pytest --confcutdir=tests/frontend --collect-only -q tests/frontend/test_frontend_composer_layout.py` | 0 | `7 tests collected`，无 collecting error |
+| `git diff --check -- frontend tests/frontend` | 0 | 通过 |
+
+本轮未运行 backend pytest、全量回归、真实 API/生产写入、模型调用、下载、服务或部署；默认 pytest 的仓库根 fixture 仍受环境缺失 `langchain_ollama` 影响，前端定向测试使用 `.venv` 与 `--confcutdir=tests/frontend` 隔离该无关依赖。

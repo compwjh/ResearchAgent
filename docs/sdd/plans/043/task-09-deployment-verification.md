@@ -55,3 +55,15 @@
 - 只读GET `/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/nodes/b90f727be35744afbfdfadcc349463e5/analyses` 前后均只有原1条completed/abstract记录；没有按“重新生成”、下载或调用模型。全文/历史与恶意HTML/URL、缺失/异常renderer回退由真实vendor组件浏览器测试覆盖，不冒称此论文已具备全文。
 - 截图：[修复前](task-09-runs/20261025-analysis-markdown/before.png)、[修复后](task-09-runs/20261025-analysis-markdown/after.png)。用户刷新页面、打开地图并点选论文，滚动至分析结果即可，不需重新生成。
 - 仅前端修改，无后端全量重跑、不push或合main。该论文原有入库失败状态不属于本次展示修复，不将其冒称已恢复。
+
+## 2026-10-25 论文提问输入区布局：前端增量运行时验证
+
+主会话记录实际页面/API，不代替独立前端验收与架构签字。仅CSS和缓存版本变更；不重跑后端全量。
+
+- 独立前端复审GO，无P0/P1/P2。最终5文件集合47 passed / 0 failed / 0 skipped，exit0，29.24s。1440/639/375/320px实际组件几何、长草稿176px内部滚动、已有草稿保护与无自动提交通过；Node、布局/命名、收集与diff检查通过。
+- 现有8000服务提供styles v61（map JSv20/CSSv13、app JSv60不变），无需重启后端。首页、health和会话messages接口均HTTP200。
+- 实际入口：文献地图 → 地图858b78f0d9e047efa6d8d1559d83a6de → DualGATs节点b90f727be35744afbfdfadcc349463e5 → “关于本篇提问”。生成会话72933c77339445369bd9994cd06adaa1，显示完整174字建议草稿，末尾“证据等级：摘要级”。textarea.maxLength=-1，未截断内容。
+- 实际窄窗口639px：form宽605，textarea宽567（93.7%）、高161，底部566.195；footer顶部578.195，在输入区下方。整页无横向溢出。桌面1440与320/375窄屏由独立生产组件浏览器测试补充覆盖，不冒称已取得真实桌面截图。
+- 未点发送；只读GET `/api/conversations/72933c77339445369bd9994cd06adaa1/messages` 返回messages=[]，没有触发模型。保留Normal 2000字/Developer 20000字已有发送限制，本次只纠正显示宽度；超长输入继续框内滚动。
+- [真实修复后截图](task-09-runs/20261025-composer-layout/after.png)。人工复现：刷新页面→文献地图→点论文→“关于本篇提问”，无需额外等待生成；确认内容完整后可编辑，再由用户决定是否发送。
+- 本地提交，不push/合main；截图中的历史分析/入库状态不属于本次修复。

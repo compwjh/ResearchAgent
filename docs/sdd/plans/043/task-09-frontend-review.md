@@ -389,3 +389,27 @@ applySavedView 的 tiny/default 判定、一次性异步触发和 usable saved v
 退出码 0：19 passed in 22.62s。另 node --check frontend/literature-maps.js、.venv/bin/python scripts/check_test_layout.py（test layout: ok）和目标 git diff --check 均退出码 0。test_frontend_map_graphics.py --durations=20 中 200 节点首次 fit 用例耗时 0.45s，完整 200 节点位置/切换用例 1.09s。
 
 资源版本 v19、DOM/XSS 静态合同通过；本轮未运行 backend pytest、真实 API、部署或 Task-09 全量回归。评审过程日志：.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-025047.md。
+
+## 第八阶段 COMPOSER-LAYOUT 窄复审（2026-10-25）
+
+本节只复核相对基线 `cce55b70eb5ab03cd5bb781b3576dc4cf7d196df` 的 composer 纸笔问题修复：输入框整行、发送控件下移、窄屏边界、长草稿保留与资源版本；不评审 Markdown、地图逻辑、API、长度限制或后端。
+
+### 窄范围结论
+
+**GO（仅限 COMPOSER-LAYOUT 与 styles v61 范围；P0=0，P1=0，P2=0）**。
+
+### 实际 diff 复核
+
+- `frontend/styles.css` 的增量只改上下文 composer 规则：`.composer` 改为纵向、`align-items: stretch`、`min-width: 0`；`.composer textarea` 增加 `width: 100%`/`min-width: 0`，保留 `min-height: 66px`、`max-height: 176px`、`overflow-y: auto`；`.composer-footer` 增加 `width: 100%`/`min-width: 0` 并继续允许控件换行。输入框位于顶部整行，footer 位于下方独立行。
+- 未改 `frontend/app.js`、表单字段或请求路径；`#question` 仍无 `maxlength`，auto-grow 的 176px 上限与内部滚动实现保持不变。`frontend/styles.css` 的全局 `textarea { ... }`、KB 规则及其它工作区未被本轮 diff 改动；新增选择器均限定在 `.composer`。
+- `frontend/index.html` 与地图测试夹具的 live stylesheet 版本由 v60 同步至 v61；未引入 API/模型/下载依赖，也未改变地图 JS/CSS 版本契约。
+
+### 响应式与草稿行为
+
+- 新增受控浏览器合同 `tests/frontend/test_frontend_composer_layout.py` 覆盖桌面 1440px 与 639/375/320px：textarea 宽度至少占 composer 90%，footer 中的 context/model/send 控件均在 viewport 内，页面无横向溢出；`6 passed`。
+- 长 DualGATs 草稿在 639px 下 value 与长度完全保留，渲染高度不超过 176px，`scrollHeight > clientHeight` 且 `overflow-y: auto`；浏览器提交计数保持 0。
+- 相关上下文/移动端版本合同 `24 passed`；`node --check frontend/app.js`、测试命名/布局检查与 `git diff --check -- frontend/index.html frontend/styles.css tests/frontend` 均通过。
+
+### 交接
+
+本窄复审可将当前 composer 增量交给 root 做最终真实页面/部署验收；本节 GO 不扩展为 Task-09 或 Spec043 的全局收口签字，且未运行后端 pytest。评审过程日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-031929.md`。
