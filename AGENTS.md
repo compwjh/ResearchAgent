@@ -2,10 +2,7 @@
 
 本项目采用 SDD（Specification-Driven Development，规范驱动开发）流程。
 
-> **渐进式加载**：本文只保留每次任务都要遵守的**流程主干**。低频细节一律外链，按需加载：
-> 子代理编排与模型 → `docs/sdd/SUBAGENT-ORCHESTRATION.md`；模型档位 → `docs/sdd/MODEL_REGISTRY.md`；
-> Skill 编写 → `docs/sdd/SKILL-AUTHORING.md`；门禁清单 → `docs/sdd/SDD-GATE-CHECKLIST.md`；
-> 角色上手 → `docs/sdd/ROLE-ONBOARDING.md`；GitHub 协作 → `docs/github.md`；部署 → `deploy/README.md`。
+> **渐进式加载**：本文保留流程主干，低频细节按下表触发加载。
 
 ### 渐进式加载协议（怎么加载外链文档）
 
@@ -14,21 +11,21 @@
 
 | 触发条件（出现任一情况才加载） | 加载 |
 |---|---|
-| 要分派子代理 / 改子代理配置 / 排查子代理报错 | `docs/sdd/SUBAGENT-ORCHESTRATION.md` |
+| 要分派子代理 / 改子代理配置 / 排查子代理报错 | `docs/sdd/SUBAGENT-ORCHESTRATION.md`：正常分派只读编排流程；配置异常或调用失败时再读相应排查章节 |
 | 要改 `model` 字段、或填 spec 执行配置的模型列 | `docs/sdd/MODEL_REGISTRY.md` |
 | 要编写或修改 `.agents/skills/*/SKILL.md` | `docs/sdd/SKILL-AUTHORING.md` |
-| 走到任一评审门禁、需要逐条自检 | `docs/sdd/SDD-GATE-CHECKLIST.md` |
+| 到达门禁、需要逐条自检 | `docs/sdd/SDD-GATE-CHECKLIST.md`：只读当前 Gate 完整章节；Spec 收尾再读 DoD，当前阶段要求不得省略 |
 | 子代理启动、或分派前要定最小上下文 | `docs/sdd/ROLE-ONBOARDING.md`（**只读该角色那一段**） |
 | 要开 PR / 远端协作 / 动受保护分支 | `docs/github.md` |
 | 要启动、停止或部署服务 | `deploy/README.md` |
 
-1. **只加载命中那一篇**，不要因为读了 A 就顺带读 A 引用的 B；最多再深一层，且必须重新命中触发条件。
+1. **只加载命中的文档或指定章节**，不要因为读了 A 就顺带读 A 引用的 B；最多再深一层，且必须重新命中触发条件。Skill 的读取另遵循当前运行环境要求，不以章节加载替代其必读内容。
 2. **同一会话内读过的不再整篇重读**；需要其中某处细节时用 Grep 定位到行，不要重读全文。
 3. **子代理由主会话喂上下文**：按 `ROLE-ONBOARDING.md` 该角色段挑最小上下文塞进 prompt，
    **不要让子代理自己去读 `AGENTS.md` 全文**（它拿不到分派工具，且会重复消耗上下文）。
 4. **外链文档不是第二落点**：要改规则就改它对应的唯一落点文件，禁止在本文中再复述一遍
    （模型型号即因此被固化过，见「模型档位」）。
-5. 新增外链文档时，同步更新上方清单**和**本触发表，只加一处会让加载协议失效。
+5. 新增外链文档时，在触发表登记加载条件与路径。
 
 ## 强制流程
 
@@ -37,11 +34,10 @@
 3. Spec 初始状态必须是 `待确认`。生成 spec 后停止执行，不修改业务代码、不运行会改变项目状态的命令，并等待用户明确确认。
 4. 只有用户明确表示"确认 spec""按这个执行"或等价意思后，才可以将状态改为 `已确认` 并开始实现。
 5. 实现必须严格限制在已确认 spec 的范围内。发现需求变化或范围扩大时，先暂停实现，更新 spec 并再次请求确认。
-6. 完成实现后，更新 spec 状态为 `已完成`，记录实际改动和验证结果；若无法完成，保留真实状态并记录阻塞原因。
-7. Spec 标记为 `已完成` 且验证通过后，必须由 Agent 直接执行部署或启动本地服务，并完成运行时验证；不能只向用户推荐启动命令。
-8. 服务成功启动后，必须在最终回复中提示用户如何打开服务，包括可点击访问地址、实际端口和启动命令。
-9. 如果默认端口被占用，必须选择可用端口并直接启动，随后明确告知用户；如果因依赖、配置或环境问题无法启动，必须说明具体阻塞原因和用户可执行的解决命令，不得声称服务已部署。
-10. 所有 spec 的状态变化（如 `待确认` / `已确认` / `实施中` / `已完成` / 阻塞等）必须在单一文件 `docs/sdd/spec-status-changelog.md` 中记录：每条包含 spec 编号与标题、变更前后的状态、变更时间，以及一两句话说明本次变动的原因或内容。
+6. 实现与验收通过后，由 Agent 实际部署或启动服务并完成运行时验证，成功才标记 spec 为 `已完成`；失败则保持 `实施中` 并记录阻塞，不得只推荐启动命令。
+7. 服务成功启动后，必须在最终回复中提示用户如何打开服务，包括可点击访问地址、实际端口和启动命令。
+8. 如果默认端口被占用，必须选择可用端口并直接启动，随后明确告知用户；如果因依赖、配置或环境问题无法启动，必须说明具体阻塞原因和用户可执行的解决命令，不得声称服务已部署。
+9. 所有 spec 的状态变化（如 `待确认` / `已确认` / `实施中` / `已完成` / 阻塞等）必须在单一文件 `docs/sdd/spec-status-changelog.md` 中记录：每条包含 spec 编号与标题、变更前后的状态、变更时间，以及一两句话说明本次变动的原因或内容。
 
 ## 执行边界
 
@@ -103,23 +99,7 @@
 - **角色上手**：每个角色启动时应先读 `docs/sdd/ROLE-ONBOARDING.md` 中自己那一段，只加载该段指向的少数文件，**不要全项目扫描**。
 - **Spec 由架构师编写**：spec 统一由架构师编写或修订；编写时须填"执行配置"段（涉及哪些角色、各自上下文上限）。架构师模型记为**「自身」**，**不写死模型代号**。
 
-### Agent ↔ Skill 绑定矩阵（分派前查此表）
-
-> 设计原则：**skills 是主要工作流面**，规则集中放在 skill 里共享，不重复写进每个 agent 的 system prompt。
-> 所有 agent 启动时**必读** `progress-logging` 与 `strategic-compact`；其余按职责绑定。
-
-| Agent | 主 skill（front matter `skills:`） | 启动必读（正文要求 Read，按顺序） | 只改 / 只评范围 |
-|---|---|---|---|
-| `backend-dev` | `tdd-workflow` | `progress-logging` → `backend-patterns` → `python-testing` → `regression-guard` | `backend/**` + 后端测试（Django 代码另读 `django-patterns`/`django-tdd`/`django-verification`） |
-| `frontend-dev` | `tdd-workflow` | `progress-logging` → `frontend-patterns` → `regression-guard` | `frontend/**` |
-| `backend-reviewer` | `coding-standards` | `progress-logging` → `backend-patterns` → `regression-guard` | `backend/**` |
-| `frontend-reviewer` | `coding-standards` | `progress-logging` → `frontend-patterns` → `regression-guard` | `frontend/**` |
-| `backend-tester` | `verification-loop` | `progress-logging` | 后端 pytest |
-| `frontend-tester` | `verification-loop` | `progress-logging` | 前端静态核对 |
-| `tester` | `verification-loop` | `progress-logging` → `regression-guard` | 跨端验收总控（汇总单端 + 集成验收） |
-| `doc-updater` | （`strategic-compact` + `progress-logging`） | `progress-logging` | spec 的"产品使用步骤"段 |
-| `architect` | `coding-standards` + `regression-guard` | `progress-logging` → `backend-patterns` / `frontend-patterns` | 评审/架构文档 |
-| `planner` | （`strategic-compact` + `progress-logging`） | `progress-logging` | 编排/分派计划 |
+Skill 绑定与启动加载要求只维护在 `.codebuddy/agents/<role>.md`，分派时读取对应角色配置。
 
 ### 子代理三条致命约束（细节见 `docs/sdd/SUBAGENT-ORCHESTRATION.md`）
 
@@ -129,14 +109,14 @@
 
 ## 三道评审门禁（未过门禁不得进入下一阶段）
 
-所有评审文档落盘到 `docs/sdd/reviews/`，编号 `NNN` 与对应 spec 一致；任一审评打回则 spec 退回 `待确认`，由架构师修订后重新评审。
+所有评审文档落盘到 `docs/sdd/reviews/`，编号 `NNN` 与对应 spec 一致。已确认范围内的实现缺陷或测试失败，留在当前 Task 修复并复审，不退回 `待确认`，不重复请求用户确认；只有目标、数据模型、公开接口或用户行为超出已确认范围时，才暂停实现、修订 spec 并退回 `待确认`。初始需求与技术评审未通过时，仍保持 `待确认`，不得开始实现。
 
 > **执行细则与逐项自检**：`docs/sdd/SDD-GATE-CHECKLIST.md`（含角色—模型—产出对照表、Gate 1–5 清单、失败处置、收口清单、机械化校验命令）。
 
 1. **需求评审（Requirement Review）** — 开发主管：确认目标清晰、范围可测、边界与"明确不做"完整、产品使用步骤可操作。写入 `NNN-requirement-review.md`，结论通过/打回。
 2. **技术评审（Tech Review）** — 开发主管：确认数据模型、接口、模块拆分、模型与上下文预算合理。写入 `NNN-tech-review.md`，结论通过/打回。
 3. 需求与技术评审均通过后，待**用户明确确认** spec 才转 `已确认`，进入实现。
-4. **验收评审（Acceptance Review）** — 测试（`tester` 为跨端验收总控）出报告 + 架构师签字：出具 `NNN-acceptance-review.md`（含通过/不通过结论）；架构师签字确认后 spec 转 `已完成` 并进入部署。验收不通过则退回实现阶段。
+4. **验收评审（Acceptance Review）** — 测试（`tester` 为跨端验收总控）出具 `NNN-acceptance-review.md`（含通过/不通过结论），架构师签字后进入部署验证，成功才转 `已完成`；验收不通过则退回实现阶段。
 
 ## 门禁执行硬规则
 
@@ -158,19 +138,6 @@
 - **提交与推送纪律（Agent 职责边界）**：每个 spec / Bug **闭环后**自行 `git commit`，不等用户提醒；提交前先 `git status` 确认范围；**Agent 只做本地 commit，不主动 `git push`、不主动合到 `main`、不 force push**，涉及远端或强操作必须经用户确认。
 - **⚠️ 合并冲突清除**：`git add` 不等于已解决冲突，必须**手动删除 `<<<<<<<`/`=======`/`>>>>>>>` 标记并读回确认**再 `git add`；检查须覆盖所有文件含 `.gitignore`，统一用
   `grep -rn "^<<<<<<<\|^>>>>>>>\|^=======" . | grep -v "/.venv/" | grep -v "/.git/"`；验收/子代理产出须与实现在同一分支同一提交。
-- **起始基线**：仓库早期（spec-006/007）改动已直接合入 `main`（`ff8a911`、`12f0ee8`），属已合入基线；此后所有新 spec / Bug 必须走分支开发，闭环后经 PR 合入 `main`。
-
-## 部署（简单形式）
-
-前端为纯静态资源，由 FastAPI 直接挂载，无需独立构建。详见 **`deploy/README.md`**，核心命令：
-
-```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：建环境与装依赖
-./deploy/start.sh            # 前台启动（Ctrl+C 停止）；-d 为后台，日志见 deploy/run.log
-./deploy/stop.sh             # 停止后台进程
-```
-
-启动后访问 `http://127.0.0.1:8000`；聊天/模型能力依赖本机 Ollama（`localhost:11434`）。
 
 ## Bug 处理规则
 
@@ -186,15 +153,10 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：�
 
 ### 测试文件命名（2026-09-12 约定）
 
-- **测试文件名按被测功能命名，禁止带 spec / task 编号**（如 `test_spec025_*`、`test_task05_*`）。
-- 理由：编号来自某一次交付的临时切分，功能会演进、会跨 spec 改动，编号会长期误导；按功能命名才能在 `ls tests/` 时直接看出"这块是测什么的"。
-- 示例：`test_spec025_token_budget.py` → `test_token_budget_estimation.py`；`test_task09_project_activity.py` → `test_project_activity.py`。
-- 前端契约测试同理：`test_frontend_task10_system_rule_contract.py` → `test_frontend_system_rule_contract.py`。
-- **测试函数名同样不带编号**；唯一例外是被测生产符号本身带编号时（如 `_is_task025_schema`），测试名与之保持一致。
-- 测试源码按被测领域放在 `tests/<domain>/` 子目录；`tests/` 根目录只保留目录，不直接放测试文件。
-- 全局 pytest fixture 放在仓库根目录 `conftest.py`；新增测试优先复用现有领域目录，跨领域场景放入 `tests/integration/`。
-- 整理后可运行 `.venv/bin/python scripts/check_test_layout.py` 校验根目录和编号命名约束。
-- `docs/sdd/plans/` 下历史报告里对旧文件名的引用属归档文本，不随重命名改写。
+- 测试文件及函数按被测能力命名，禁止包含 Spec/Task 编号；被测生产符号本身带编号时，测试函数可保留对应名称。
+- 测试放在 `tests/<domain>/`，优先复用现有领域目录；根目录只保留目录。全局 fixture 放仓库根 `conftest.py`，跨领域测试放 `tests/integration/`。
+- 新增或整理测试后，运行 `.venv/bin/python scripts/check_test_layout.py` 校验根目录和编号命名约束。
+- 历史归档报告中的旧路径不随改名重写。
 
 ## Skill 编写边界（分层归属）
 
@@ -212,7 +174,4 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次：�
 
 ## 模型档位
 
-- **唯一真源是 `.codebuddy/agents/<role>.md` 的 `model` 字段本身**，清单与选型见 `docs/sdd/MODEL_REGISTRY.md`。**本文不复述具体型号**，也不要求与任何表格"逐字一致"——任何两处同步的要求都会导致临时改动被误固化为规范。
-- 硬约束：`model` 只接受**已注册**名（填自定义 ID 报 `Subagent model config is invalid`）；不能含 `/` 的命名空间 ID；本地 Ollama 名须经 `ollama list` 核实。
-- **⚠️ 429 限流时的临时改档不得固化**：撞账号级频率限制可临时换档继续，但只改 agent 文件的 `model` 字段、任务结束后还原，**不得**写进本文或当作正式配置提交。
-- 编码任务选型：简单独立小函数 9b 与 27B 质量相当（9b 快 3 倍）；复杂/并发/边界要求高的**必须 27B 级**；判断不准按复杂处理。详见 `docs/sdd/TOOLCALL_BENCHMARK.md`。
+角色默认模型以 `.codebuddy/agents/<role>.md` 的 `model` 字段为准；选型及配置限制见 `docs/sdd/MODEL_REGISTRY.md`，仅在选择或调整模型时加载。用户当次指定的临时型号不固化为长期配置。
