@@ -1,0 +1,35 @@
+{
+  "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+  "mode": "all",
+  "node_count": 20,
+  "label_count": 20,
+  "labels": [
+    {"node_id":"3ddd16f157414d3c81b31171107e317b","text":"Petar Velickovic et al. et al., 2017"},
+    {"node_id":"55447f8311d24d38b99b0a56a3e704b4","text":"Shaked Brody et al. et al., 2021"},
+    {"node_id":"fade0df075b7459096a6dc174688c64a","text":"Jee-weon Jung et al. et al., 2021"},
+    {"node_id":"8ccc5fd89ecc4fd0adbdf8f91a329b4b","text":"Aamir S. Ahanger et al. et al., 2025"},
+    {"node_id":"34be4d08d0ec49979ba57e25f130b37f","text":"V. Kosaraju et al. et al., 2019"},
+    {"node_id":"2c730b77c230484c8f0d961a7a1b9760","text":"Aris Vrahatis et al. et al., 2024"},
+    {"node_id":"3a12132c95914d1ba8f989d7e9ba23d1","text":"Chien-Liang Liu et al. et al., 2024"},
+    {"node_id":"8908dfc77ef345fc94cd3966aa4067ec","text":"Raihanul Bari Tanvir et… et al., 2024"},
+    {"node_id":"58d55f34502748a596f793720b6a3e89","text":"Hemlata Tak et al. et al., 2021"},
+    {"node_id":"e184b94677a74db386413539942aa5aa","text":"Zhe Liu et al. et al., 2024"},
+    {"node_id":"4155ba1e2b874a3dbc29d0858ebbb4bd","text":"Xiao-Jie Li et al. et al., 2024"},
+    {"node_id":"c9a69657552f466abad904dd28ff59a0","text":"Driss Elalaoui et al. et al., 2024"},
+    {"node_id":"3590f82e68cd4d129cb68b00274d86d4","text":"Driss Elalaoui et al. et al., 2024"},
+    {"node_id":"b3e157a1a3ba4f87a6c787dd23177e87","text":"Yuchen Fang et al. et al., 2023"},
+    {"node_id":"b90f727be35744afbfdfadcc349463e5","text":"Duzhen Zhang et al. et al., 2023"},
+    {"node_id":"6bb52d0ac6c440a299139acd14e54eb8","text":"Ling-Yu Liang et al. et al., 2024"},
+    {"node_id":"8464a2f033624db8857a3669d2d971ca","text":"Jie Ben et al. et al., 2024"},
+    {"node_id":"4806b409083d4290a6856a494259181d","text":"Tian-Chi Yang et al. et al., 2021"},
+    {"node_id":"a901bd059fe8400cafd59abb83ecc522","text":"Qiu-Jie Lv et al. et al., 2023"},
+    {"node_id":"9bf83093ce284a8788a77a9760e5d24d","text":"T. Nguyen-Vo et al. et al., 2024"}
+  ],
+  "checks": {
+    "all_have_year": true,
+    "all_have_first_author_text": true,
+    "undefined_or_null_or_empty": 0,
+    "repeated_et_al_examples": 20,
+    "result": "FAIL: visible short labels duplicate et al."
+  }
+}

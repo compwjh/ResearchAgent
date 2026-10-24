@@ -251,7 +251,7 @@ class LiteratureMapService:
             return self._finish(job, owner, counts, failed, layers, status="failed", step="finished")
 
     def recover(self, owner_id: str | None = None) -> int:
-        jobs = self.store.recover_jobs(owner_id)
+        jobs = [job for job in self.store.recover_jobs(owner_id) if job.operation != "analysis_queue"]
         for job in jobs:
             owner = owner_id or self._owner_for_job(job)
             if job.operation.startswith("preview:"):
@@ -265,6 +265,11 @@ class LiteratureMapService:
                 # MapAnalysisService owns its own CAS/terminal transition;
                 # the graph worker must never interpret an analysis row as a
                 # discovery job or mutate map.status.
+                continue
+            if job.operation == "analysis_queue":
+                # The analysis service owns the map-level aggregate and its
+                # serial child scheduler; graph recovery must not execute it
+                # as a discovery job.
                 continue
             if self.executor is not None:
                 self.executor.submit(self.run_job, job.job_id, owner)
@@ -776,13 +781,17 @@ class LiteratureMapService:
             similarity_edges, _ = self._collect_similarity(active_nodes)
             if similarity_edges:
                 self.store.add_edges(map_id, owner_id, similarity_edges)
+        if nodes or updates:
+            self._enqueue_abstract_summaries(map_id, owner_id)
         return result
 
     def remove_node(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, idempotency_key: str | None = None) -> dict[str, Any]:
         return self.store.remove_node(map_id, node_id, owner_id, expected_revision=expected_revision, idempotency_key=idempotency_key, params_hash=_params_hash({"node_id": node_id, "expected_revision": expected_revision}))
 
     def restore_node(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, idempotency_key: str | None = None) -> dict[str, Any]:
-        return self.store.restore_node(map_id, node_id, owner_id, expected_revision=expected_revision, idempotency_key=idempotency_key, params_hash=_params_hash({"node_id": node_id, "expected_revision": expected_revision}))
+        result = self.store.restore_node(map_id, node_id, owner_id, expected_revision=expected_revision, idempotency_key=idempotency_key, params_hash=_params_hash({"node_id": node_id, "expected_revision": expected_revision}))
+        self._enqueue_abstract_summaries(map_id, owner_id)
+        return result
 
     @staticmethod
     def _preview_candidate(node: MapPaper, existing: Mapping[str | None, MapPaper]) -> dict[str, Any]:
@@ -1173,6 +1182,44 @@ class LiteratureMapService:
             if "job_id" not in str(error):
                 raise
             self.store.add_nodes(map_id, owner, nodes)
+        self._enqueue_abstract_summaries(map_id, owner)
+
+    def _enqueue_abstract_summaries(self, map_id: str, owner_id: str) -> None:
+        """Schedule the explicit queue reconciliation after graph mutations.
+
+        The composition root attaches ``analysis_service`` after creating this
+        service.  Narrow unit-test services without that bridge keep their
+        existing synchronous graph behavior.
+        """
+
+        analysis = getattr(self, "analysis_service", None)
+        ensure = getattr(analysis, "ensure_analysis_queue", None)
+        if not callable(ensure):
+            return
+        try:
+            active = [node for node in self.store.list_nodes(map_id, owner_id) if not node.removed]
+            key_material = [
+                (node.node_id, node.title, node.abstract or "", sorted((node.external_ids or {}).items()))
+                for node in active
+            ]
+            config_fingerprint = ""
+            fingerprint = getattr(analysis, "analysis_config_fingerprint", None)
+            if callable(fingerprint):
+                config_fingerprint = str(fingerprint())
+            key = "auto-sync:" + hashlib.sha256(
+                json.dumps(
+                    {"nodes": key_material, "config_fingerprint": config_fingerprint},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest()[:32]
+            ensure(map_id, owner_id, idempotency_key=key)
+        except LookupError:
+            # A concurrent map delete revokes the enqueue; it must never turn
+            # a successful graph write into a raw error. Configuration/key
+            # conflicts remain visible instead of being mistaken for a race.
+            return
 
     def _add_edges(self, map_id: str, owner: str, edges: list[MapEdge], job_id: str) -> None:
         try:
@@ -1590,6 +1637,9 @@ def _export_view_settings(settings: Mapping[str, Any] | None) -> dict[str, Any]:
     layers = settings.get("layers")
     if isinstance(layers, Mapping):
         exported["layers"] = {key: bool(layers[key]) for key in ("citation", "similarity") if key in layers}
+    label_mode = settings.get("label_mode")
+    if label_mode in {"all", "neighbors", "hidden"}:
+        exported["label_mode"] = label_mode
     return exported
 
 

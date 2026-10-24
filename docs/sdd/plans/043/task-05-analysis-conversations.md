@@ -1,6 +1,8 @@
 # Task 05 — AI 分析与会话
 
-> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
+> 2026-10-24修订入口：[Task09](task-09-map-interaction-analysis.md)。下文为旧交付方案与历史证据；其中“只允许点击触发摘要分析”已被用户确认的全图自动摘要队列替代，全文仍手动。新版以Spec043及Task09为准，未实现，不能沿用旧验收声称通过。
+
+> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)
 > 依赖：04；被依赖：07；当前状态：**阶段已完成（PASS_WITH_LIMITATIONS；API 摘要/全文链路真实 PASS，最终浏览器已观察全文 v1/v2 与全文入口）**。
 
 ## 一句话目标

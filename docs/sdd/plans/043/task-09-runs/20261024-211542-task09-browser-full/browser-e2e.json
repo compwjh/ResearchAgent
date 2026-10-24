@@ -1,0 +1,97 @@
+{
+  "spec": "043",
+  "task": "09",
+  "run_id": "20261024-211542-task09-browser-full",
+  "recorded_at": "2026-10-24T13:19:00Z",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "browser": "Chromium 156.0.8078.47",
+    "viewport_css_px": [1440, 1000],
+    "assets": {
+      "literature_maps_js": "literature-maps.js?v=18",
+      "literature_maps_css": "literature-maps.css?v=12",
+      "app_js": "app.js?v=60"
+    },
+    "service_health": "GET /api/health = 200"
+  },
+  "entities": {
+    "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+    "map_name": "API E2E graph attention networks",
+    "node_id": "2e35b888d3cb414090e2d8e55e5bae1a",
+    "node_title": "Exploring Visual Relationship for Image Captioning",
+    "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+    "full_analysis_id": "04ff00a37f8247379878ecaf7fc6703e",
+    "full_job_id": "ca2e1852b8cc49cab80300c84347c89c"
+  },
+  "browser_observation": {
+    "entry": "主导航 → 文献地图 → 既有地图卡片 → 目标节点焦点 + Enter",
+    "node_dom": {
+      "title": "Exploring Visual Relationship for Image Captioning",
+      "author_year_label": "Ting Yao et al., 2018",
+      "citation_count": 934,
+      "pageerrors": 0
+    },
+    "document_panel": [
+      "已加入知识库 · 文档 ID：ae3a1c3f7ee746bba031b06306ff3230",
+      "在知识库中查看",
+      "入库状态：indexed。"
+    ],
+    "source_gate": {
+      "available_evidence": "摘要级、全文索引片段依据",
+      "abstract_source_version": "de788f55ac4bf0fa28bb823fbc2adf27f1be389b6ea329e742ac5eca970b30aa",
+      "full_source_version": "70ed7281386eae343d39c479e8dec6962c8cd3954659db1e3d26b33c53aba862"
+    },
+    "full_tab": {
+      "label": "全文",
+      "enabled": true,
+      "selected": true,
+      "action_label_after_completion": "重新生成全文（会调用模型）",
+      "result_heading": "全文分析结果（全文索引片段依据）",
+      "history_entry": "v2 · 全文索引片段依据 · 已完成",
+      "result_nonempty": true,
+      "ui_source_label": "依据：全文索引片段依据",
+      "ui_controlled_source_text": "受控来源引用：6 条"
+    },
+    "abstract_history": {
+      "tab_read_back": true,
+      "history_entry": "v1 · 摘要级 · 已完成",
+      "result_heading": "摘要级分析结果（仅基于摘要）",
+      "source_version": "de788f55ac4bf0fa28bb823fbc2adf27f1be389b6ea329e742ac5eca970b30aa"
+    }
+  },
+  "browser_requests": {
+    "allowed_analysis_queue_ensure_posts": 1,
+    "analysis_posts": 0,
+    "reindex_posts": 0,
+    "import_posts": 0,
+    "download_or_provider_posts": 0,
+    "regen_posts": 0,
+    "message_posts": 0,
+    "sse_message_streams": 0,
+    "note": "每个新页面 context 只产生既有地图允许的 analysis-queue/ensure；没有点击全文重新生成、导入、下载、重索引或发送。"
+  },
+  "api_artifact_cross_check": {
+    "path": "../20261024-210815-task09-full-analysis-v1/evidence.json",
+    "document_status": "indexed",
+    "manifest_status": "ready",
+    "source_hash_state": "verified",
+    "fulltext_ready": true,
+    "full_analysis_status": "completed",
+    "summary_length": 592,
+    "api_citations_count": 5,
+    "citation_document_ids": ["ae3a1c3f7ee746bba031b06306ff3230"],
+    "source_ref_chunker": "v1",
+    "note": "API artifact 的 5 条 citation records 均绑定目标 document；页面以“受控来源引用：6 条”展示可审计片段，两者均为真实非空证据，不将其强行改写为同一计数。"
+  },
+  "artifacts": {
+    "screenshot": "screenshots/01-full-analysis-ready.png",
+    "api_e2e": "../20261024-210815-task09-full-analysis-v1/evidence.json",
+    "manual_acceptance": "../task-09-manual-acceptance.md"
+  },
+  "result": {
+    "browser_scope": "PASS_BROWSER_FULL_RESULT_READ",
+    "full_spec_decision": "BLOCKED_PENDING_ROOT_FINAL_GATES",
+    "error": null
+  }
+}

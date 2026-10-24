@@ -1,0 +1,164 @@
+{
+  "spec": "043",
+  "task": "09",
+  "run_id": "20261024-204558-task09-import-api-final",
+  "runtime": {
+    "service_url": "http://127.0.0.1:8000/",
+    "port": 8000,
+    "deployment": "final-fix-ready-js-v18",
+    "observed_date": "2026-10-24",
+    "direct_model_calls_by_agent": 0,
+    "external_metadata_calls_by_agent": 0,
+    "existing_import_embedding_side_effect": "allowed_existing_chain"
+  },
+  "target": {
+    "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+    "node_id": "2e35b888d3cb414090e2d8e55e5bae1a",
+    "source_url": "https://www.semanticscholar.org/paper/0000fcfd467a19cf0e59169c2f07d730a0f3a8b9",
+    "external_ids": {
+      "arxiv": "1809.07041",
+      "doi": "10.1007/978-3-030-01264-9_42",
+      "semantic_scholar": "0000fcfd467a19cf0e59169c2f07d730a0f3a8b9"
+    }
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a",
+      "http_status": 200,
+      "purpose": "preflight",
+      "selected_response": {
+        "title": "Exploring Visual Relationship for Image Captioning",
+        "year": 2018,
+        "download_status": "failed",
+        "document_id": null,
+        "paper_id": null,
+        "catalog_paper_id": null,
+        "identity_verified": true,
+        "prior_import_diagnostics": {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "resolver_codes": [
+            "ARXIV_IDENTITY_CONFLICT",
+            "SEMANTIC_SCHOLAR_RATE_LIMITED"
+          ],
+          "retryable": true
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a/imports",
+      "http_status": 202,
+      "request_body": {},
+      "authorized_post_ordinal_for_final_run": 1,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "status": "indexed",
+        "download_status": "indexed",
+        "error_code": null,
+        "resolver_code": null,
+        "resolver_codes": null,
+        "retryable": false,
+        "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+        "paper_id": "ae3a1c3f7ee746bba031b06306ff3230",
+        "catalog_paper_id": null
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a",
+      "http_status": 200,
+      "purpose": "postflight_node_readback",
+      "selected_response": {
+        "download_status": "indexed",
+        "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+        "paper_id": null,
+        "catalog_paper_id": null,
+        "source_url_unchanged": true,
+        "external_ids_unchanged": true,
+        "import_diagnostics": null
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/kb/documents?limit=100",
+      "http_status": 200,
+      "purpose": "postflight_knowledge_document_summary",
+      "selected_response": {
+        "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+        "file_name": "2018-Conference-Exploring-Visual-Relationship-for-Image-Captioning.pdf",
+        "media_type": "application/pdf",
+        "source_sha256": "d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644",
+        "source_immutable": true,
+        "status": "indexed",
+        "page_count": 0,
+        "chunk_count": 66,
+        "chunkers": {
+          "v1": {
+            "status": "indexed",
+            "chunk_count": 66,
+            "progress": 100,
+            "error": null
+          },
+          "v2": {
+            "status": "pending",
+            "chunk_count": 0,
+            "progress": 16,
+            "error": null
+          }
+        },
+        "error": null
+      }
+    },
+    {
+      "method": "HEAD",
+      "path": "/api/kb/documents/ae3a1c3f7ee746bba031b06306ff3230/source",
+      "http_status": 200,
+      "purpose": "source_safety_readback_without_pdf_body",
+      "headers": {
+        "content_type": "application/pdf",
+        "content_length": 3088287,
+        "etag": "sha256:d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644",
+        "accept_ranges": "bytes",
+        "content_disposition": "inline"
+      },
+      "pdf_body_read": false,
+      "local_file_type": "PDF document, version 1.5"
+    }
+  ],
+  "stage_result": {
+    "stage": "knowledge_base_import_and_index",
+    "status": "indexed",
+    "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+    "pdf_media_type_verified": true,
+    "pdf_file_signature_verified": true,
+    "source_immutable_verified": true,
+    "v1_index_verified": true,
+    "v1_chunk_count": 66,
+    "v2_status": "pending",
+    "artifact_path": "data/kb/papers/2018-Conference-Exploring-Visual-Relationship-for-Image-Captioning.pdf",
+    "failure_diagnostics_cleared": true
+  },
+  "security": {
+    "resolver_order_contract": [
+      "official_pdf_or_prepublication_pdf",
+      "strict_arxiv_fallback",
+      "semantic_scholar_oa_fallback"
+    ],
+    "source_url_treated_as_pdf": false,
+    "reader_or_search_page_scraped": false,
+    "login_or_paywall_bypassed": false,
+    "allowlist_changed": false,
+    "credentials_logged": false,
+    "pdf_body_downloaded_by_agent": false,
+    "production_database_written_directly": false
+  },
+  "result": {
+    "final_status": "PASS_INDEXED_V1",
+    "post_count_in_final_run": 1,
+    "additional_retry_sent": false,
+    "identity_unchanged": true,
+    "success_claimed": true,
+    "qualification": "v1 indexed; existing v2 async work remains pending and is not required for this import success"
+  }
+}

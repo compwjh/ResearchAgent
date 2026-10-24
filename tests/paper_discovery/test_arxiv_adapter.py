@@ -1,6 +1,7 @@
 from xml.sax.saxutils import escape
 
 import httpx
+import pytest
 
 from backend.app.paper_discovery.infrastructure.arxiv_adapter import (
     ARXIV_API_URL,
@@ -83,6 +84,182 @@ def test_lookup_by_id_accepts_http_abs_and_bare_id_latest_version():
     assert normalize_arxiv_id("2501.00001&foo=bar") is None
     assert arxiv_identity_matches("2501.00001", "2501.00001v2")
     assert not arxiv_identity_matches("2501.00001v1", "2501.00001v2")
+
+
+def test_lookup_by_id_accepts_official_metadata_with_author_initial_abbreviation():
+    # Public arXiv metadata for 1809.07041v1: the catalog snapshot carries
+    # the fourth author as ``T.Mei`` while the official Atom entry spells
+    # the same author as ``Tao Mei``.
+    body = feed(
+        atom_entry(
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            year=2018,
+            arxiv_id="1809.07041v1",
+            pdf="https://arxiv.org/pdf/1809.07041v1",
+        )
+    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=body)))
+
+    result = ArxivFallbackAdapter(client=client).lookup_by_id(
+        "1809.07041",
+        "Exploring Visual Relationship for Image Captioning",
+        ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "T.Mei"],
+        2018,
+    )
+
+    assert result.matched
+    assert result.code is None
+    assert result.match.arxiv_id == "1809.07041v1"
+    assert result.match.title == "Exploring Visual Relationship for Image Captioning"
+    assert result.match.year == 2018
+
+
+@pytest.mark.parametrize(
+    ("case", "title", "authors", "year", "entry_title", "entry_authors", "entry_year"),
+    [
+        (
+            "wrong-title",
+            "A Different Paper",
+            ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "T.Mei"],
+            2018,
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            2018,
+        ),
+        (
+            "wrong-year",
+            "Exploring Visual Relationship for Image Captioning",
+            ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "T.Mei"],
+            2017,
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            2018,
+        ),
+        (
+            "wrong-initial",
+            "Exploring Visual Relationship for Image Captioning",
+            ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "X.Mei"],
+            2018,
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            2018,
+        ),
+        (
+            "wrong-surname",
+            "Exploring Visual Relationship for Image Captioning",
+            ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "T.Wang"],
+            2018,
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            2018,
+        ),
+        (
+            "ambiguous-full-names",
+            "Exploring Visual Relationship for Image Captioning",
+            ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "T.Mei"],
+            2018,
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei", "Tim Mei"],
+            2018,
+        ),
+        (
+            "full-name-is-not-abbreviation",
+            "Exploring Visual Relationship for Image Captioning",
+            ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "Tmei"],
+            2018,
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            2018,
+        ),
+    ],
+    ids=[
+        "wrong-title",
+        "wrong-year",
+        "wrong-initial",
+        "wrong-surname",
+        "ambiguous-full-names",
+        "full-name-is-not-abbreviation",
+    ],
+)
+def test_lookup_by_id_rejects_unsafe_author_initial_variants(
+    case, title, authors, year, entry_title, entry_authors, entry_year
+):
+    body = feed(
+        atom_entry(
+            entry_title,
+            entry_authors,
+            year=entry_year,
+            arxiv_id="1809.07041v1",
+            pdf="https://arxiv.org/pdf/1809.07041v1",
+        )
+    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=body)))
+
+    result = ArxivFallbackAdapter(client=client).lookup_by_id(
+        "1809.07041", title, authors, year
+    )
+
+    assert not result.matched, case
+    assert result.code == "ARXIV_IDENTITY_CONFLICT"
+
+
+def test_title_lookup_does_not_relax_author_matching_for_initial_abbreviation():
+    body = feed(
+        atom_entry(
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            year=2018,
+            arxiv_id="1809.07041v1",
+            pdf="https://arxiv.org/pdf/1809.07041v1",
+        )
+    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, text=body)))
+
+    result = ArxivFallbackAdapter(client=client).lookup(
+        "Exploring Visual Relationship for Image Captioning",
+        ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "T.Mei"],
+        2018,
+    )
+
+    assert not result.matched
+    assert result.code == "ARXIV_MATCH_UNCERTAIN"
+
+
+def test_exact_id_cache_keeps_abbreviation_shape_distinct():
+    body = feed(
+        atom_entry(
+            "Exploring Visual Relationship for Image Captioning",
+            ["Ting Yao", "Yingwei Pan", "Yehao Li", "Tao Mei"],
+            year=2018,
+            arxiv_id="1809.07041v1",
+            pdf="https://arxiv.org/pdf/1809.07041v1",
+        )
+    )
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, text=body)
+
+    adapter = ArxivFallbackAdapter(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    accepted = adapter.lookup_by_id(
+        "1809.07041",
+        "Exploring Visual Relationship for Image Captioning",
+        ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "T.Mei"],
+        2018,
+    )
+    rejected = adapter.lookup_by_id(
+        "1809.07041",
+        "Exploring Visual Relationship for Image Captioning",
+        ["TingYao", "Ying-WeiPan", "Ye-HaoLi", "Tmei"],
+        2018,
+    )
+
+    assert accepted.matched
+    assert not rejected.matched
+    assert rejected.code == "ARXIV_IDENTITY_CONFLICT"
+    assert len(calls) == 2
 
 
 def test_lookup_by_id_rejects_same_title_with_different_arxiv_id():

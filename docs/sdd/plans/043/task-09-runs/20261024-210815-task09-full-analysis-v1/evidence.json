@@ -1,0 +1,317 @@
+{
+  "spec": "043",
+  "task": "09",
+  "run_id": "20261024-210815-task09-full-analysis-v1",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "branch": "codex/spec043-map-interaction",
+    "deployed_pid": 2252,
+    "deployment_version": "JS v18",
+    "deployment_diff_hash": "6fda3d07731f9bd820653faac22ddb9fb615fe22c393ac69e0560fe968feb059",
+    "started_at": "2026-10-24T13:08:15Z",
+    "ended_at": "2026-10-24T13:09:53Z"
+  },
+  "scope": {
+    "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+    "node_id": "2e35b888d3cb414090e2d8e55e5bae1a",
+    "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+    "reindex_post_count": 1,
+    "import_post_count": 0,
+    "analysis_post_count": 1,
+    "download_or_provider_calls": 0,
+    "direct_database_or_manifest_writes": 0,
+    "pdf_body_read": false,
+    "full_result_body_read": false
+  },
+  "requests": [
+    {
+      "sequence": 1,
+      "method": "GET",
+      "path": "/api/health",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "paper_discovery_enabled": true
+      }
+    },
+    {
+      "sequence": 2,
+      "method": "GET",
+      "path": "/api/kb/documents?limit=100",
+      "http_status": 200,
+      "response": {
+        "target_document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+        "status": "indexed",
+        "source_sha256": "d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644",
+        "v1": {
+          "status": "indexed",
+          "progress": 100,
+          "chunk_count": 66,
+          "error": null
+        },
+        "v2": {
+          "status": "indexed",
+          "progress": 100,
+          "chunk_count": 51,
+          "error": null
+        }
+      }
+    },
+    {
+      "sequence": 3,
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a/analyses",
+      "http_status": 200,
+      "response": {
+        "source_status": {
+          "abstract_available": true,
+          "fulltext_ready": false,
+          "available_evidence_levels": ["abstract"],
+          "source_versions": {
+            "abstract": "de788f55ac4bf0fa28bb823fbc2adf27f1be389b6ea329e742ac5eca970b30aa",
+            "full": null
+          },
+          "unavailable_reason": null
+        },
+        "existing_analysis_ids": ["6979b54169044b5ab5339215495782d5"]
+      }
+    },
+    {
+      "sequence": 4,
+      "method": "POST",
+      "path": "/api/kb/documents/ae3a1c3f7ee746bba031b06306ff3230/reindex",
+      "request_body": {
+        "chunker": "v1"
+      },
+      "http_status": 202,
+      "response": {
+        "task_id": "d9bea649bb634c46a140b8894b8b03db",
+        "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+        "chunker": "v1",
+        "status": "queued",
+        "progress": 0,
+        "location": "/api/kb/documents/ae3a1c3f7ee746bba031b06306ff3230/inspection",
+        "retry_after_seconds": 2
+      }
+    },
+    {
+      "sequence": 5,
+      "method": "GET",
+      "path": "/api/kb/documents?limit=100",
+      "http_status": 200,
+      "response": {
+        "target_document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+        "status": "indexed",
+        "v1": {
+          "status": "indexed",
+          "progress": 100,
+          "chunk_count": 66,
+          "error": null
+        }
+      }
+    },
+    {
+      "sequence": 6,
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a/analyses",
+      "http_status": 200,
+      "response": {
+        "source_status": {
+          "abstract_available": true,
+          "fulltext_ready": true,
+          "available_evidence_levels": ["abstract", "full"],
+          "source_versions": {
+            "abstract": "de788f55ac4bf0fa28bb823fbc2adf27f1be389b6ea329e742ac5eca970b30aa",
+            "full": "70ed7281386eae343d39c479e8dec6962c8cd3954659db1e3d26b33c53aba862"
+          },
+          "unavailable_reason": null
+        }
+      }
+    },
+    {
+      "sequence": 7,
+      "method": "POST",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a/analyses",
+      "request_body": {
+        "evidence_level": "full",
+        "idempotency_key": "task09-full-analysis-20261024-210815-v1"
+      },
+      "http_status": 202,
+      "response": {
+        "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+        "node_id": "2e35b888d3cb414090e2d8e55e5bae1a",
+        "analysis_id": "04ff00a37f8247379878ecaf7fc6703e",
+        "job_id": "ca2e1852b8cc49cab80300c84347c89c",
+        "status": "queued",
+        "analysis": {
+          "version": 2,
+          "status": "pending",
+          "evidence_level": "full",
+          "source_version": "70ed7281386eae343d39c479e8dec6962c8cd3954659db1e3d26b33c53aba862",
+          "model_id": "qwen3.8:27b"
+        }
+      }
+    },
+    {
+      "sequence": 8,
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/analyses/04ff00a37f8247379878ecaf7fc6703e",
+      "http_status": 200,
+      "response": {
+        "analysis_status": "running",
+        "job_status": "running",
+        "job_step": "analysis",
+        "failed_units": [],
+        "result_present": false
+      }
+    },
+    {
+      "sequence": 9,
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/analyses/04ff00a37f8247379878ecaf7fc6703e",
+      "http_status": 200,
+      "response": {
+        "analysis_status": "completed",
+        "job_status": "completed",
+        "job_step": "finished",
+        "failed_units": [],
+        "evidence_level": "full",
+        "source_version": "70ed7281386eae343d39c479e8dec6962c8cd3954659db1e3d26b33c53aba862",
+        "result_present": true,
+        "summary_length": 592,
+        "citations_count": 5,
+        "result_keys": ["citations", "source_refs", "summary"],
+        "source_refs": [
+          {
+            "kind": "fulltext",
+            "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+            "chunker": "v1"
+          }
+        ],
+        "citation_document_ids": ["ae3a1c3f7ee746bba031b06306ff3230"],
+        "citation_paper_ids": ["ae3a1c3f7ee746bba031b06306ff3230"]
+      }
+    },
+    {
+      "sequence": 10,
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a/analyses",
+      "http_status": 200,
+      "response": {
+        "source_status": {
+          "abstract_available": true,
+          "fulltext_ready": true,
+          "available_evidence_levels": ["abstract", "full"],
+          "source_versions": {
+            "abstract": "de788f55ac4bf0fa28bb823fbc2adf27f1be389b6ea329e742ac5eca970b30aa",
+            "full": "70ed7281386eae343d39c479e8dec6962c8cd3954659db1e3d26b33c53aba862"
+          },
+          "unavailable_reason": null
+        },
+        "full_analysis": {
+          "analysis_id": "04ff00a37f8247379878ecaf7fc6703e",
+          "status": "completed",
+          "evidence_level": "full",
+          "result_present": true,
+          "summary_length": 592,
+          "citations_count": 5
+        }
+      }
+    }
+  ],
+  "artifacts": {
+    "source": {
+      "path": "data/kb/papers/2018-Conference-Exploring-Visual-Relationship-for-Image-Captioning.pdf",
+      "media_type": "application/pdf",
+      "size_bytes": 3088287,
+      "sha256": "d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644"
+    },
+    "canonical_document": {
+      "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+      "schema_version": "knowledge-document-v1",
+      "status": "indexed",
+      "source_hash_state": "verified",
+      "source_sha256": "d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644",
+      "indexed_source_sha256": "d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644",
+      "v1": {
+        "status": "indexed",
+        "progress": 100,
+        "chunk_count": 66,
+        "error": null
+      }
+    },
+    "inspection_manifest": {
+      "path": "data/kb/manifests/ae3a1c3f7ee746bba031b06306ff3230/v1.json",
+      "schema_version": "inspection-manifest-v1",
+      "mapping_algorithm_version": "source-anchor-v2",
+      "status": "ready",
+      "progress": 100,
+      "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+      "chunker": "v1",
+      "source_hash_state": "verified",
+      "source_sha256": "d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644",
+      "indexed_source_sha256": "d923185e9e7a8887b2a10f7f6f9041cd7182fb63a6cd6b603aefc78d07394644",
+      "index_fingerprint": "840c4989f88c1f9b53f3a7ac74069fb24eed82560c56b4c1835111699d2daf2f",
+      "chunk_count": 66,
+      "error": null
+    },
+    "generation": {
+      "path": "data/kb/index-generation.json",
+      "schema_version": "index-generation-v1",
+      "run_id": "38efa91a33154fd097c61d1c745d408f",
+      "alias_name": "papers",
+      "alias_target": "papers_rebuild_38efa91a33154fd097c61d1c745d408f",
+      "manifests_digest": "9dbf118a02846366f6af91a4f70c96e8ec737d69d8c6c24ebbcc62e7890a1b56"
+    },
+    "full_analysis": {
+      "analysis_id": "04ff00a37f8247379878ecaf7fc6703e",
+      "job_id": "ca2e1852b8cc49cab80300c84347c89c",
+      "status": "completed",
+      "evidence_level": "full",
+      "source_version": "70ed7281386eae343d39c479e8dec6962c8cd3954659db1e3d26b33c53aba862",
+      "summary_length": 592,
+      "citations_count": 5,
+      "citation_document_ids": ["ae3a1c3f7ee746bba031b06306ff3230"],
+      "citation_paper_ids": ["ae3a1c3f7ee746bba031b06306ff3230"],
+      "full_text_body_in_artifact": false
+    }
+  },
+  "state_trace": [
+    {
+      "entity": "document",
+      "id": "ae3a1c3f7ee746bba031b06306ff3230",
+      "before": "indexed/v1-indexed-but-legacy_unknown",
+      "action": "single-authorized-v1-reindex",
+      "after": "indexed/v1-indexed-source-hash-verified-manifest-ready"
+    },
+    {
+      "entity": "source_gate",
+      "id": "2e35b888d3cb414090e2d8e55e5bae1a",
+      "before": "fulltext_ready=false",
+      "after": "fulltext_ready=true"
+    },
+    {
+      "entity": "analysis",
+      "id": "04ff00a37f8247379878ecaf7fc6703e",
+      "before": "queued/running",
+      "after": "completed/full/nonempty-summary/5-citations"
+    }
+  ],
+  "result": {
+    "status": "success",
+    "code": "PASS_FULL_ANALYSIS",
+    "reindex_task_id": "d9bea649bb634c46a140b8894b8b03db",
+    "analysis_id": "04ff00a37f8247379878ecaf7fc6703e",
+    "job_id": "ca2e1852b8cc49cab80300c84347c89c",
+    "document_id": "ae3a1c3f7ee746bba031b06306ff3230",
+    "evidence_level": "full",
+    "citation_count": 5,
+    "source_refs_document_binding": true,
+    "reindex_post_count": 1,
+    "analysis_post_count": 1,
+    "import_post_count": 0,
+    "retry_count": 0,
+    "error": null
+  }
+}

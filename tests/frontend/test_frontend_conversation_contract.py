@@ -149,6 +149,21 @@ def test_open_conversation_guards_delayed_a_b_switch_results() -> None:
     assert "if (!isCurrent()) return;" in catch_fn
 
 
+def test_map_conversation_prefill_preserves_existing_drafts() -> None:
+    assert "function applyConversationDraft" in APP
+    assert "插入建议问题" in APP
+    assert "conversation-draft-suggestion" in APP
+    assert "draftNavigationGeneration" in APP
+    assert "input.value = draft" in APP
+    assert "sendConversationMessage" not in APP[APP.index("function applyConversationDraft"):APP.index("function applyConversationDraft") + 2000]
+    open_start = APP.index("function openConversationFromWorkspace")
+    open_end = APP.index("function renderMemoryProjectOptions", open_start)
+    open_fn = APP[open_start:open_end]
+    assert "options = {}" in open_fn
+    assert "conversationState.draftNavigationGeneration === draftNavigationGeneration" in open_fn
+    assert "applyConversationDraft(options)" in open_fn
+
+
 def test_stream_eof_without_done_is_interrupted_but_abort_is_silent() -> None:
     assert "doneReceived" in APP
     assert "!doneReceived" in APP

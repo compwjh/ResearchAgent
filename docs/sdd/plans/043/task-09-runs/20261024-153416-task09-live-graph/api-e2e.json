@@ -1,0 +1,93 @@
+{
+  "spec": "043",
+  "task": "09",
+  "run_id": "20261024-153416-task09-live-graph",
+  "runtime": {
+    "service_url": "http://127.0.0.1:8000/",
+    "port": 8000,
+    "candidate_git_sha": "458da1b35238691cbe9447c71bf7a1afbb08728f",
+    "browser": "Chromium 136.0.7103.25",
+    "resources": {
+      "literature-maps.js": "v16",
+      "literature-maps.css": "v12",
+      "app.js": "v60"
+    },
+    "started_at": "2026-10-24T15:33:31+08:00",
+    "ended_at": "2026-10-24T15:45:33+08:00"
+  },
+  "fresh_entities": {
+    "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+    "map_name": "Task09 live graph attention networks 20261024-153416",
+    "owner_id": "local-user",
+    "project_id": null,
+    "node_id": "3ddd16f157414d3c81b31171107e317b",
+    "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+    "manual_regeneration": {
+      "analysis_id": "42cf77712d7c430fb4b4311a3d573931",
+      "job_id": "3264b0f9e3cf4e5f9183c9e4a6faf95c",
+      "request_time": "2026-10-24T15:41:17+08:00",
+      "request_status": 202,
+      "request_state": "queued/pending",
+      "evidence_level": "abstract",
+      "note": "唯一一次手动再生成；点击时旧 v1 已完成结果仍可读。后续未重复触发。"
+    },
+    "conversations": [
+      {
+        "conversation_id": "b8bca6e24a6c4145b119cec3c532d6a3",
+        "project_id": null,
+        "evidence_level": "abstract",
+        "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+        "scenario": "已有草稿保持不覆盖、不发送"
+      },
+      {
+        "conversation_id": "291f001105df42e6ac37d009dd0654ae",
+        "project_id": null,
+        "evidence_level": "abstract",
+        "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+        "scenario": "空草稿预填、不发送"
+      }
+    ]
+  },
+  "requests": [
+    {"method": "GET", "path": "/api/health", "status": 200},
+    {"method": "GET", "path": "/api/literature-maps", "status": 200},
+    {"method": "GET", "path": "/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/graph", "status": 200},
+    {"method": "POST", "path": "/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/analysis-queue/ensure", "status": 202, "note": "打开已有地图的批准 ensure 行为"},
+    {"method": "GET", "path": "/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/analysis-queue", "status": 200, "final": {"state": "completed", "total": 20, "completed": 18, "queued": 0, "running": 0, "failed": 0, "skipped": 2}},
+    {"method": "POST", "path": "/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/nodes/3ddd16f157414d3c81b31171107e317b/analyses", "status": 202, "body": {"evidence_level": "abstract", "result_observed_at_click": "queued/pending"}},
+    {"method": "POST", "path": "/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/nodes/3ddd16f157414d3c81b31171107e317b/conversation", "status": 200, "note": "分别在已有草稿和空草稿真实页面各一次；未发送消息"}
+  ],
+  "state_trace": [
+    {"state": "generating", "evidence": "fresh map list/API"},
+    {"state": "graph_available", "evidence": "20 nodes, 11 relations"},
+    {"state": "queue_paused", "evidence": "3/20 completed, 15 queued, 2 skipped; user guidance visible"},
+    {"state": "queue_running", "evidence": "13/20 completed, 4 queued, 1 running"},
+    {"state": "queue_completed", "evidence": "18/20 completed, 2 skipped; API state completed"},
+    {"state": "manual_v2_at_click", "evidence": "analysis 42cf... returned 202 queued/pending; v1 retained"}
+  ],
+  "historical_full_ready_replay": {
+    "historical_replay": true,
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "node_id": "21041260a5394f42891b020128fa60fa",
+    "api_source_status": "fulltext_ready",
+    "api_available_evidence_levels": ["abstract", "full"],
+    "api_full_source_version": "a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c",
+    "browser_result": "PASS_READ_ONLY: keyboard focus + Enter activated the specified overlapping node; Full tab showed ready source/version and enabled manual full-analysis button. No analysis POST was triggered. Historical replay is not counted as a fresh Task09 entity gate."
+  },
+  "artifacts": [
+    "screenshots/01-task09-map-overview.png",
+    "screenshots/02-task09-node-detail-and-labels.png",
+    "label-audit.json",
+    "stage-result.md",
+    "task-09-browser-e2e.md"
+  ],
+  "result": {
+    "status": "blocked",
+    "blockers": [
+      "真实多作者短标签出现重复 et al.（例如 Petar Velickovic et al. et al., 2017）",
+      "fresh map 没有全文 ready 资源；历史全文 ready 页面已只读验证，但不能替代当前候选门禁"
+    ],
+    "mock_or_fixture_used": false,
+    "knowledge_base_import_or_download_triggered": false
+  }
+}

@@ -1,0 +1,272 @@
+{
+  "spec": "043",
+  "task": "09",
+  "result": "BLOCKED",
+  "run_id": "20261024-153416-task09-graph-attention",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "ready_http_status": 200,
+    "ready": true,
+    "worktree_uncommitted": "reported_by_root; not independently checked because this run did not invoke git",
+    "resource_versions": {
+      "literature_maps_js": "16",
+      "literature_maps_css": "12",
+      "styles_css": "60",
+      "app_js": "60"
+    },
+    "observed_analysis_model_id": "qwen3.8:27b",
+    "model_configuration_changed": false
+  },
+  "fresh_map_request": {
+    "method": "POST",
+    "path": "/api/literature-maps",
+    "http_status": 202,
+    "body": {
+      "topic": "graph attention networks",
+      "name": "Task09 live graph attention networks 20261024-153416",
+      "limit": 20,
+      "idempotency_key": "task09-20261024-153416-map-create"
+    },
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+      "job_id": "f98611b16e23478d94a3035add7e6861",
+      "status": "generating",
+      "requested_count": 20,
+      "initial_job_status": "queued",
+      "initial_job_step": "discover"
+    }
+  },
+  "entities": {
+    "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+    "map_job_id": "f98611b16e23478d94a3035add7e6861",
+    "analysis_queue_job_id": "a73b6881b56a41a78fc8d48abbc30f54",
+    "ensure_idempotency_key": "task09-20261024-153416-queue-ensure",
+    "pause_idempotency_key": "task09-20261024-153416-queue-pause",
+    "resume_idempotency_key": "task09-20261024-153416-queue-resume"
+  },
+  "state_trace": [
+    {
+      "request": "GET /api/literature-maps/{map_id}/jobs/{map_job_id}",
+      "http_status": 200,
+      "observed": "running/references; provider_count=20; accepted_count=20; node_count=20"
+    },
+    {
+      "request": "GET /api/literature-maps/{map_id}/analysis-queue",
+      "http_status": 200,
+      "observed": "active; total=20; completed=2; queued=15; running=1; failed=0; skipped=2"
+    },
+    {
+      "request": "POST /api/literature-maps/{map_id}/analysis-queue/pause",
+      "http_status": 200,
+      "observed": "paused/user; same queue_job_id; current running child retained"
+    },
+    {
+      "request": "GET /api/literature-maps/{map_id}/analysis-queue after pause",
+      "http_status": 200,
+      "observed": "paused; completed=3; queued=15; running=0; no follow-on claim"
+    },
+    {
+      "request": "POST /api/literature-maps/{map_id}/analysis-queue/resume",
+      "http_status": 200,
+      "observed": "active; same queue_job_id"
+    },
+    {
+      "request": "GET /api/literature-maps/{map_id}/analysis-queue after resume",
+      "http_status": 200,
+      "observed": "active; completed=4; queued=13; running=1"
+    },
+    {
+      "request": "POST /api/literature-maps/{map_id}/analysis-queue/ensure (same request twice)",
+      "http_statuses": [202, 202],
+      "observed": "immediate responses had same queue_job_id and same active counters; later settled readback exposed a second analysis version for one node"
+    },
+    {
+      "request": "GET /api/literature-maps/{map_id}/analysis-queue final",
+      "http_status": 200,
+      "observed": "completed; total=20; completed=18; queued=0; running=0; failed=0; skipped=2"
+    },
+    {
+      "request": "GET /api/literature-maps/{map_id}/jobs/{map_job_id} final",
+      "http_status": 200,
+      "observed": "partial/finished; provider_count=20; accepted_count=20; node_count=20; citation_edge_count=6; similarity_edge_count=5; error_code=SEMANTIC_SCHOLAR_RATE_LIMITED"
+    }
+  ],
+  "fresh_map_result": {
+    "graph_http_status": 200,
+    "schema_version": "literature-map-v1",
+    "node_count": 20,
+    "edge_count": 11,
+    "final_map_readback": {
+      "http_status": 200,
+      "status": "partial",
+      "revision": 6,
+      "latest_job_id": "3264b0f9e3cf4e5f9183c9e4a6faf95c",
+      "latest_job_status": "completed",
+      "latest_analysis_version": 2
+    },
+    "abstract_nodes": 18,
+    "skipped_nodes": 2,
+    "analysis_rows_at_final_readback": 19,
+    "analysis_status_counts": {
+      "completed": 19
+    },
+    "analysis_versions": "18 version-1 rows plus one legal manual-regeneration version-2 row for the same source_version",
+    "duplicate_analysis_nodes": [
+      {
+        "node_id": "3ddd16f157414d3c81b31171107e317b",
+        "title": "Graph Attention Networks",
+        "versions": [2, 1],
+        "analysis_ids": [
+          "42cf77712d7c430fb4b4311a3d573931",
+          "b636bd98d5d94608811abda4e4a413dd"
+        ],
+        "job_ids": [
+          "3264b0f9e3cf4e5f9183c9e4a6faf95c",
+          "dcc6708197f246bda990dd6cf52e1e56"
+        ],
+        "source_version_same": true,
+        "event_sequence": [65, 66, 67],
+        "classification": "same-node-multiple-versions; browser evidence confirms legal manual regeneration, not ensure duplicate"
+      }
+    ],
+    "empty_abstract_node_ids": [
+      "3590f82e68cd4d129cb68b00274d86d4",
+      "8464a2f033624db8857a3669d2d971ca"
+    ],
+    "empty_abstract_analysis_readback": {
+      "http_status": 200,
+      "analysis_count": 0,
+      "unavailable_reason": "MAP_ABSTRACT_UNAVAILABLE"
+    },
+    "sample_nonempty_analysis": {
+      "node_id": "3ddd16f157414d3c81b31171107e317b",
+      "analysis_id": "b636bd98d5d94608811abda4e4a413dd",
+      "job_id": "dcc6708197f246bda990dd6cf52e1e56",
+      "status": "completed",
+      "version": 1,
+      "evidence_level": "abstract",
+      "result_nonempty": true,
+      "result_serialized_length": 454,
+      "result_sha256": "79222fdee28f746e9446d15773aab4ea04b11091d9a36ee66f52623c0d8f1084",
+      "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c"
+    },
+    "late_version_analysis": {
+      "node_id": "3ddd16f157414d3c81b31171107e317b",
+      "analysis_id": "42cf77712d7c430fb4b4311a3d573931",
+      "job_id": "3264b0f9e3cf4e5f9183c9e4a6faf95c",
+      "status": "completed",
+      "version": 2,
+      "evidence_level": "abstract",
+      "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+      "result_nonempty": true,
+      "result_serialized_length": 514,
+      "result_sha256": "7b8f2586d6687a93263a83ec6b982c2a318c02cf55301da42334d2ee780ea282",
+      "event_sequence": [65, 66, 67],
+      "interpretation": "late version observed after queue reached completed; browser evidence confirms legal manual regeneration"
+    },
+    "papers": [
+      {"node_id":"3ddd16f157414d3c81b31171107e317b","title":"Graph Attention Networks","year":2017,"external_ids":{"arxiv":"1710.10903","doi":"10.17863/cam.48429","semantic_scholar":"33998aff64ce51df8dee45989cdca4b6b1329ec4"},"abstract_nonempty":true,"abstract_length":1044,"citation_count":29148,"analysis_id":"b636bd98d5d94608811abda4e4a413dd"},
+      {"node_id":"55447f8311d24d38b99b0a56a3e704b4","title":"How Attentive are Graph Attention Networks?","year":2021,"external_ids":{"arxiv":"2105.14491","semantic_scholar":"ab30672c8c5e4787f6a5985f26a8f281f0db2fb8"},"abstract_nonempty":true,"abstract_length":1293,"citation_count":2183,"analysis_id":"7ae79d4c701f45cda2712e7bfed39e8f"},
+      {"node_id":"fade0df075b7459096a6dc174688c64a","title":"AASIST: Audio Anti-Spoofing Using Integrated Spectro-Temporal Graph Attention Networks","year":2021,"external_ids":{"arxiv":"2110.01200","doi":"10.1109/icassp43922.2022.9747766","semantic_scholar":"83ed100306b892da76a7468e6eca6f99074fbd02"},"abstract_nonempty":true,"abstract_length":882,"citation_count":681,"analysis_id":"48552827d7324a88985ef0fb7dc7ee11"},
+      {"node_id":"8ccc5fd89ecc4fd0adbdf8f91a329b4b","title":"Advanced intrusion detection in internet of things using graph attention networks","year":2025,"external_ids":{"doi":"10.1038/s41598-025-94624-8","semantic_scholar":"3a6aae7c423b05c44a70351602c2a07cb1e8c534"},"abstract_nonempty":true,"abstract_length":1291,"citation_count":77,"analysis_id":"0c88d80a6b324b1382e9fe3d65411383"},
+      {"node_id":"34be4d08d0ec49979ba57e25f130b37f","title":"Social-BiGAT: Multimodal Trajectory Forecasting using Bicycle-GAN and Graph Attention Networks","year":2019,"external_ids":{"arxiv":"1907.03395","semantic_scholar":"e154205a6f3178ae513a1120fe415181fa565640"},"abstract_nonempty":true,"abstract_length":1350,"citation_count":761,"analysis_id":"b024fe3fc1c04a658bfc087bce7e94d4"},
+      {"node_id":"2c730b77c230484c8f0d961a7a1b9760","title":"Graph Attention Networks: A Comprehensive Review of Methods and Applications","year":2024,"external_ids":{"doi":"10.3390/fi16090318","semantic_scholar":"398e842415fdfa15ad45d1d7f175080aa1eb7870"},"abstract_nonempty":true,"abstract_length":943,"citation_count":281,"analysis_id":"da7a61bcd7224ffca506853dbe91e248"},
+      {"node_id":"3a12132c95914d1ba8f989d7e9ba23d1","title":"Dynamic Job-Shop Scheduling via Graph Attention Networks and Deep Reinforcement Learning","year":2024,"external_ids":{"doi":"10.1109/tii.2024.3371489","semantic_scholar":"27fac6147325b49638ff08a93cabf176c95e1b08"},"abstract_nonempty":true,"abstract_length":1239,"citation_count":71,"analysis_id":"4783b2865b374f888fcff2b144037950"},
+      {"node_id":"8908dfc77ef345fc94cd3966aa4067ec","title":"MOGAT: A Multi-Omics Integration Framework Using Graph Attention Networks for Cancer Subtype Prediction","year":2024,"external_ids":{"doi":"10.3390/ijms25052788","semantic_scholar":"0893740ebc7685f69bce92b4019297ffd154019f"},"abstract_nonempty":true,"abstract_length":2168,"citation_count":75,"analysis_id":"4e367cafc97f4f68b31f0321a457d9d9"},
+      {"node_id":"58d55f34502748a596f793720b6a3e89","title":"End-to-End Spectro-Temporal Graph Attention Networks for Speaker Verification Anti-Spoofing and Speech Deepfake Detection","year":2021,"external_ids":{"arxiv":"2107.12710","doi":"10.21437/asvspoof.2021-1","semantic_scholar":"1806b9acb524a6655e68e17a1605fbe383151c83"},"abstract_nonempty":true,"abstract_length":1144,"citation_count":265,"analysis_id":"f93f22c48f164e888508a3b08579d889"},
+      {"node_id":"e184b94677a74db386413539942aa5aa","title":"Multivariate Time-Series Anomaly Detection based on Enhancing Graph Attention Networks with Topological Analysis","year":2024,"external_ids":{"arxiv":"2408.13082","doi":"10.1145/3627673.3679614","semantic_scholar":"478b3a1d62ae2f60978475852b4ed8e9e6ca9aa2"},"abstract_nonempty":true,"abstract_length":1436,"citation_count":65,"analysis_id":"e72c4b1136a640cca22df5ffe9d88501"},
+      {"node_id":"4155ba1e2b874a3dbc29d0858ebbb4bd","title":"RadioGAT: A Joint Model-Based and Data-Driven Framework for Multi-Band Radiomap Reconstruction via Graph Attention Networks","year":2024,"external_ids":{"arxiv":"2403.16397","doi":"10.1109/twc.2024.3457157","semantic_scholar":"54cc3d2165b03598e9458c6052dd1806b6d42903"},"abstract_nonempty":true,"abstract_length":1697,"citation_count":66,"analysis_id":"98f42bdd15cc4586aae60d0db641e917"},
+      {"node_id":"c9a69657552f466abad904dd28ff59a0","title":"Contextual Recommendations: Dynamic Graph Attention Networks With Edge Adaptation","year":2024,"external_ids":{"doi":"10.1109/access.2024.3477956","semantic_scholar":"5e2c1d12084597257c357d248c4c4f76044e97f9"},"abstract_nonempty":true,"abstract_length":1111,"citation_count":38,"analysis_id":"5c7a7abd597845bab423a90fdaa93cae"},
+      {"node_id":"3590f82e68cd4d129cb68b00274d86d4","title":"Social recommendation system based on heterogeneous graph attention networks","year":2024,"external_ids":{"doi":"10.1007/s41060-024-00698-4","semantic_scholar":"78f08ebd6686a628d63b9dfd0fc4c588ad1b1095"},"abstract_nonempty":false,"abstract_length":0,"citation_count":36,"analysis_id":null},
+      {"node_id":"b3e157a1a3ba4f87a6c787dd23177e87","title":"When Spatio-Temporal Meet Wavelets: Disentangled Traffic Forecasting via Efficient Spectral Graph Attention Networks","year":2023,"external_ids":{"doi":"10.1109/icde55515.2023.00046","semantic_scholar":"3deb95d8dc4bd543eb61acde418fdcc5e88c9eec"},"abstract_nonempty":true,"abstract_length":1574,"citation_count":171,"analysis_id":"1863b31ad8024293b3d9274e271d3ec2"},
+      {"node_id":"b90f727be35744afbfdfadcc349463e5","title":"DualGATs: Dual Graph Attention Networks for Emotion Recognition in Conversations","year":2023,"external_ids":{"doi":"10.18653/v1/2023.acl-long.408","semantic_scholar":"9aecb9a89d2267f6194e5dae0dcdd5c50d3b79b5"},"abstract_nonempty":true,"abstract_length":1166,"citation_count":101,"analysis_id":"98a7e339705244388411cad3b26d8554"},
+      {"node_id":"6bb52d0ac6c440a299139acd14e54eb8","title":"Fault location method for distribution networks based on multi-head graph attention networks","year":2024,"external_ids":{"doi":"10.3389/fenrg.2024.1395737","semantic_scholar":"9235f9b31a28b71e8e67aad186f3f2fed99e28ee"},"abstract_nonempty":true,"abstract_length":1223,"citation_count":28,"analysis_id":"ab120cbdca3044e282ca2293181526f9"},
+      {"node_id":"8464a2f033624db8857a3669d2d971ca","title":"Multi-head multi-order graph attention networks","year":2024,"external_ids":{"doi":"10.1007/s10489-024-05601-z","semantic_scholar":"76a1765675d80061e5f9ee85c377be37a286302f"},"abstract_nonempty":false,"abstract_length":0,"citation_count":23,"analysis_id":null},
+      {"node_id":"4806b409083d4290a6856a494259181d","title":"HGAT: Heterogeneous Graph Attention Networks for Semi-supervised Short Text Classification","year":2021,"external_ids":{"doi":"10.1145/3450352","semantic_scholar":"448b7069a85690e6afa83acf9165a0916f6cd296"},"abstract_nonempty":true,"abstract_length":1476,"citation_count":203,"analysis_id":"e0e84faa6d1e4a04a6d502ccd69e55a9"},
+      {"node_id":"a901bd059fe8400cafd59abb83ecc522","title":"Meta Learning With Graph Attention Networks for Low-Data Drug Discovery","year":2023,"external_ids":{"doi":"10.1109/tnnls.2023.3250324","semantic_scholar":"99d16c8e737eb37ec770ba1f68bf5c775db1ce1c"},"abstract_nonempty":true,"abstract_length":1602,"citation_count":105,"analysis_id":"f88a3c7def8248bb852447facfbda347"},
+      {"node_id":"9bf83093ce284a8788a77a9760e5d24d","title":"ResGAT: Residual Graph Attention Networks for molecular property prediction","year":2024,"external_ids":{"doi":"10.1007/s12293-024-00423-5","semantic_scholar":"f12aeb898be497a1d6f8576ae5e2f1e8d9469cc7"},"abstract_nonempty":true,"abstract_length":1446,"citation_count":15,"analysis_id":"1be6db21fcb94bc5a3d93cf4ad6430f7"}
+    ]
+  },
+  "historical_old_map_readback": {
+    "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+    "source": "Task08 historical artifact; not counted as fresh Task09 proof",
+    "map_get_http_status": 200,
+    "map_status": "partial",
+    "revision": 11,
+    "graph_get_http_status": 200,
+    "graph_node_count": 21,
+    "graph_edge_count": 17,
+    "analysis_queue_get_http_status": 200,
+    "analysis_queue_state": "completed",
+    "analysis_queue_id": null,
+    "analysis_queue_total": 0
+  },
+  "negative_scope": {
+    "node_analysis_post_called_by_this_run": false,
+    "node_analysis_post_count_this_run": 0,
+    "fulltext_analysis_requested": false,
+    "download_called": false,
+    "knowledge_base_import_called": false,
+    "abstract_or_analysis_bodies_recorded": false,
+    "credentials_cookies_and_owner_fields_recorded": false,
+    "duplicate_fresh_map_created": false
+  },
+  "blocking_condition": {
+    "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+    "where": "fresh map references/similarity provider phase",
+    "effect": "map job ended partial/finished; citation/similarity is not a complete provider success",
+    "acceptance_decision": "BLOCKED per real-API gate: external metadata 429 must be reported, not masked; v2 is separately corroborated as legal manual regeneration and is not an ensure duplicate"
+  },
+  "additional_blocking_observation": {
+    "error_code": "LATE_VERSION_UNATTRIBUTED",
+    "node_id": "3ddd16f157414d3c81b31171107e317b",
+    "version_1_analysis_id": "b636bd98d5d94608811abda4e4a413dd",
+    "version_2_analysis_id": "42cf77712d7c430fb4b4311a3d573931",
+    "version_2_job_id": "3264b0f9e3cf4e5f9183c9e4a6faf95c",
+    "same_source_version": true,
+    "public_config_fields_same": {
+      "evidence_level": "abstract",
+      "model_id": "qwen3.8:27b",
+      "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c"
+    },
+    "config_fingerprint_exposed_by_get": false,
+    "stable_key_or_idempotency_exposed_by_get": false,
+    "v1_cursor_queue_job_id": "a73b6881b56a41a78fc8d48abbc30f54",
+    "v2_cursor_queue_job_id": null,
+    "v1_created_at": "2026-10-24T07:34:48.163507+00:00",
+    "v1_completed_at": "2026-10-24T07:36:13.985012+00:00",
+    "v2_created_at": "2026-10-24T07:41:17.745335+00:00",
+    "v2_completed_at": "2026-10-24T07:41:35.500212+00:00",
+    "observed_after_queue_final_state": true,
+    "event_sequence": [65, 66, 67],
+    "trigger_attribution": "confirmed by browser artifact as the sole legal manual regeneration; no further write request was issued by this run"
+  },
+  "request_sequence_appendix": {
+    "node_analysis_post_count": 0,
+    "writes_by_this_run": [
+      {"method":"POST","path":"/api/literature-maps","idempotency_key":"task09-20261024-153416-map-create","http_status":202},
+      {"method":"POST","path":"/api/literature-maps/{map_id}/analysis-queue/pause","idempotency_key":"task09-20261024-153416-queue-pause","http_status":200},
+      {"method":"POST","path":"/api/literature-maps/{map_id}/analysis-queue/resume","idempotency_key":"task09-20261024-153416-queue-resume","http_status":200},
+      {"method":"POST","path":"/api/literature-maps/{map_id}/analysis-queue/ensure","idempotency_key":"task09-20261024-153416-queue-ensure","http_status":202,"ordinal":1},
+      {"method":"POST","path":"/api/literature-maps/{map_id}/analysis-queue/ensure","idempotency_key":"task09-20261024-153416-queue-ensure","http_status":202,"ordinal":2}
+    ],
+    "after_v2_discovery": "GET only"
+  },
+  "browser_cross_attribution": {
+    "evidence_path": "docs/sdd/plans/043/task-09-runs/20261024-153416-task09-live-graph/task-09-browser-e2e.md",
+    "api_artifact_path": "docs/sdd/plans/043/task-09-runs/20261024-153416-task09-live-graph/api-e2e.json",
+    "manual_regeneration": {
+      "request_time": "2026-10-24T15:41:17+08:00",
+      "path": "/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/nodes/3ddd16f157414d3c81b31171107e317b/analyses",
+      "http_status": 202,
+      "analysis_id": "42cf77712d7c430fb4b4311a3d573931",
+      "job_id": "3264b0f9e3cf4e5f9183c9e4a6faf95c",
+      "evidence_level": "abstract",
+      "trigger_count": 1,
+      "old_version_retained_at_click": true,
+      "classification": "legal manual regeneration; not generated by this run ensure sequence"
+    },
+    "correction": "same source_version v1/v2 is expected versioning for the explicit manual regeneration; queue completed=18 and skipped=2 remains valid, while the full map is still provider-partial"
+  }
+}

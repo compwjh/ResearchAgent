@@ -25,8 +25,8 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=13" in INDEX
-    assert "/assets/literature-maps.css?v=10" in INDEX
+    assert "/assets/literature-maps.js?v=18" in INDEX
+    assert "/assets/literature-maps.css?v=12" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",
@@ -122,8 +122,27 @@ def test_component_fixture_recovers_server_preview_without_session_storage() -> 
         preview_text = page.locator("#literature-map-preview-panel").inner_text()
         assert "引用数：29000 → 29014" in preview_text
         assert "字段变更" in preview_text
-        assert page.evaluate("window.__requestLog.filter((entry) => entry.method === 'POST')") == []
-        paths = page.evaluate("window.__requestLog.map((entry) => entry.path)")
+        request_log = page.evaluate("window.__requestLog")
+        ensure_posts = [
+            entry
+            for entry in request_log
+            if entry["method"] == "POST"
+            and entry["path"] == "/api/literature-maps/map-fixture/analysis-queue/ensure"
+        ]
+        assert len(ensure_posts) == 1
+        assert [
+            entry
+            for entry in request_log
+            if entry["method"] == "POST"
+            and entry["path"] != "/api/literature-maps/map-fixture/analysis-queue/ensure"
+        ] == []
+        assert [
+            entry
+            for entry in request_log
+            if entry["method"] == "POST"
+            and ("/previews" in entry["path"] or entry["path"].endswith("/apply"))
+        ] == []
+        paths = [entry["path"] for entry in request_log]
         assert any("/events?after_seq=0" in path for path in paths)
         assert any("/jobs/job-server-preview" in path for path in paths)
         assert any("/previews/preview-server" in path for path in paths)
@@ -162,7 +181,26 @@ def test_component_fixture_paginates_persisted_preview_events_until_empty_page()
         assert any("/events?after_seq=200" in path for path in paths)
         assert any("/events?after_seq=203" in path for path in paths)
         assert any("/jobs/job-server-preview-paged" in path for path in paths)
-        assert page.evaluate("window.__requestLog.filter((entry) => entry.method === 'POST')") == []
+        request_log = page.evaluate("window.__requestLog")
+        ensure_posts = [
+            entry
+            for entry in request_log
+            if entry["method"] == "POST"
+            and entry["path"] == "/api/literature-maps/map-fixture/analysis-queue/ensure"
+        ]
+        assert len(ensure_posts) == 1
+        assert [
+            entry
+            for entry in request_log
+            if entry["method"] == "POST"
+            and entry["path"] != "/api/literature-maps/map-fixture/analysis-queue/ensure"
+        ] == []
+        assert [
+            entry
+            for entry in request_log
+            if entry["method"] == "POST"
+            and ("/previews" in entry["path"] or entry["path"].endswith("/apply"))
+        ] == []
         page.get_by_role("button", name="打开上次预览").click()
         page.wait_for_selector("#literature-map-preview-panel")
         assert "引用数：29000 → 29014" in page.locator("#literature-map-preview-panel").inner_text()

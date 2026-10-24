@@ -1,5 +1,15 @@
 # Spec 状态变更记录
 
+## 2026-10-24
+
+- **Spec043 Task09 图谱交互与自动摘要修订**：`实施中（最终回归/签字待完成）` → `已完成`。矩阵快照最小维护后最终全量3384 passed/0 failed/2合法skip/67 subtests/5 warnings、exit0、覆盖率82.38%；原失败论文真实下载入库、合法严格来源/manifest恢复、全文分析及浏览器通过。tester与architect双签READY_FOR_USER、10/10；8000JSv18已部署，保留来源限流partial、首轮失败及误判纠正，主会话完成纯文档台账同步与复盘，仅本地提交不自动push/合main。
+
+- **Spec043 Task09**：`实施中` → `实施中（代码独立GO，真实入库与全文链通过，最终回归/签字待完成）`。JSv18已部署；原失败论文修复作者缩写误拒与canonical来源字段丢失后真实入库、合法reindex和全文分析通过。保留外部S2限流partial、原失败证据及手动regenerate误判纠正；全量与覆盖率未出结果，不宣称Spec完成，不push或合main。
+
+- **Spec043本轮修订**：`已确认` → `实施中`。独立architect增量需求/技术评审均GO，最小接口合同与前端测试方案落盘；backend-dev与frontend-dev真实分端分派（用户本轮临时Luna max）。自动队列原子claim、同地图版本复用及GET只读为实现门槛；知识库导入失败按用户要求最后修。尚无本轮测试/验收通过结论。
+
+- **Spec043 交互式文献地图与自动主题探索**：`已完成（旧候选a328932）` → `已确认（本轮修订，待增量评审/实现）`。用户确认Q1–Q15及鼠标中心缩放：默认标签、log引用尺寸、全图自动摘要持久队列、全文状态引导和论文提问草稿。新增Task09承接旧Task03/05/07及增量最终验收，保留历史完成证据；主会话纯文档代行，非独立评审，未修改业务代码。
+
 ## 2026-10-23
 
 - **Spec042 OpenEval接入：本地离线Agent评测闭环**：`实施中` → `已完成`。最终实现候选145f9d6的真实评分一次POST、canonical exact验证、JSON/Markdown及既有Langfuse页面核对通过；完整回归3335 passed/0 failed/2合法skip/67 subtests/5 warnings，退出0。独立tester与architect签READY_FOR_USER/GO，准备度9/10+1明确N/A；主会话持有loopback依赖，8000 Spec043未改。旧API/390px失败保留，人工一致率未评估；仅本地提交，不push或合main。

@@ -1,6 +1,8 @@
 # Task 03 — 桌面自动建图 MVP
 
-> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
+> 2026-10-24标签、引用尺寸及鼠标缩放增量见[Task09](task-09-map-interaction-analysis.md)；本文保留旧版交付证据，不代表增量已实现。
+
+> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)
 > 依赖：02 Go；Spec明确确认且需求/技术评审通过；被依赖：04；当前状态：**阶段已完成（PASS_WITH_LIMITATIONS）**。
 
 ## 一句话目标

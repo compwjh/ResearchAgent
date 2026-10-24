@@ -22,11 +22,14 @@ def test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes() -> N
     assert "idempotency_key" in MODULE
     assert "document_ids" not in MODULE
     assert "innerHTML" not in MODULE
+    assert "conversationDraft" in MODULE
+    assert "研究问题、方法、主要结论和局限" in MODULE
+    assert "openConversationFromWorkspace(conversationId, options)" in MODULE
     assert ".literature-map-analysis" in STYLES
     assert ".literature-map-analysis-history-item" in STYLES
-    assert "/assets/literature-maps.js?v=13" in INDEX
-    assert "/assets/literature-maps.css?v=10" in INDEX
-    assert "/assets/app.js?v=59" in INDEX
+    assert "/assets/literature-maps.js?v=18" in INDEX
+    assert "/assets/literature-maps.css?v=12" in INDEX
+    assert "/assets/app.js?v=60" in INDEX
 
 
 def test_component_fixture_supports_analysis_history_failure_and_conversation_bridge() -> None:
@@ -67,6 +70,14 @@ def test_component_fixture_supports_analysis_history_failure_and_conversation_br
         assert page.evaluate("window.__conversationBodies[0].evidence_level") == "abstract"
         assert page.evaluate("window.__conversationBodies[0].idempotency_key")
         assert page.evaluate("window.__openedConversation") == "conversation-fixture"
+        draft_options = page.evaluate("window.__openedConversationOptions")
+        assert draft_options["evidence_level"] == "abstract"
+        assert "Federated learning paper" in draft_options["draft"]
+        assert "研究问题" in draft_options["draft"]
+        assert "方法" in draft_options["draft"]
+        assert "主要结论" in draft_options["draft"]
+        assert "局限" in draft_options["draft"]
+        assert "摘要级" in draft_options["draft"]
         assert page.locator(".literature-map-analysis").is_visible()
         page.close()
         browser.close()

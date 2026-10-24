@@ -117,6 +117,7 @@ const conversationState = {
   messageLoadToken: null,
   processingHydrationQueue: Promise.resolve(),
   openToken: null,
+  draftNavigationGeneration: 0,
   memoryAnalysis: new Map(),
 };
 const mobileDrawerState = { open: false, restoreFocus: null };
@@ -2982,6 +2983,7 @@ function abortConversationStream() {
 
 async function openConversation(conversationId, { replace = false } = {}) {
   if (!conversationId) return;
+  conversationState.draftNavigationGeneration += 1;
   showView('chat');
   abortConversationStream();
   const openToken = Symbol('conversation-open');
@@ -3031,6 +3033,8 @@ async function openConversation(conversationId, { replace = false } = {}) {
 }
 
 function beginDraft() {
+  clearConversationDraftSuggestion();
+  conversationState.draftNavigationGeneration += 1;
   showView('chat'); abortConversationStream(); conversationState.conversationId = null; conversationState.conversation = null; conversationState.projectId = conversationState.draftProjectId || null; conversationState.messageCursor = null; workspace.classList.remove('has-started');
   setReasoningEffort(reasoningOptionsState.defaultEffort || reasoningOptionsState.lastEffort || 'off', { remember: false });
   if (window.location.pathname.startsWith('/c/')) window.history.replaceState({}, '', '/');
@@ -3269,11 +3273,52 @@ function attachSystemRuleSuggestion(message, text) {
   bubble.append(hint, button);
 }
 
-function openConversationFromWorkspace(conversationId) {
+function clearConversationDraftSuggestion() {
+  document.querySelector('#conversation-draft-suggestion')?.remove();
+}
+
+function applyConversationDraft(options = {}) {
+  const draft = String(options?.draft || '').trim();
+  if (!input || !draft) return;
+  clearConversationDraftSuggestion();
+  if (!input.value.trim()) {
+    input.value = draft;
+    input.focus();
+    autoGrowInput();
+    return;
+  }
+  const host = document.createElement('div');
+  host.id = 'conversation-draft-suggestion';
+  host.className = 'conversation-draft-suggestion';
+  const notice = document.createElement('span');
+  notice.textContent = `已有草稿未覆盖（${options.evidence_level === 'full' ? '全文索引片段依据' : '摘要级'}）。`;
+  const insert = document.createElement('button');
+  insert.type = 'button';
+  insert.className = 'secondary-button';
+  insert.textContent = '插入建议问题';
+  insert.addEventListener('click', () => {
+    const existing = input.value.trimEnd();
+    input.value = existing ? `${existing}\n\n${draft}` : draft;
+    host.remove();
+    input.focus();
+    autoGrowInput();
+  });
+  host.append(notice, insert);
+  const composer = form?.parentElement;
+  if (composer && form) composer.insertBefore(host, form);
+  else form?.append(host);
+}
+
+function openConversationFromWorkspace(conversationId, options = {}) {
   if (!conversationId) return;
+  clearConversationDraftSuggestion();
   captureMemoryViewState();
   showView('chat');
-  openConversation(conversationId);
+  const openPromise = openConversation(conversationId);
+  const draftNavigationGeneration = conversationState.draftNavigationGeneration;
+  openPromise.finally(() => {
+    if (options?.draft && conversationState.draftNavigationGeneration === draftNavigationGeneration && conversationState.conversationId === conversationId) applyConversationDraft(options);
+  });
 }
 
 function renderMemoryProjectOptions(projects) {

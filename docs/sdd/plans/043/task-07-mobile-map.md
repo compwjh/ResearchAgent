@@ -1,6 +1,8 @@
 # Task 07 — 手机适配
 
-> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
+> 2026-10-24增量见[Task09](task-09-map-interaction-analysis.md)：保留双指中点缩放，复核标签可读性、全文状态入口及提问草稿；本文旧验收不替代本轮验证。
+
+> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)
 > 依赖：05、06；被依赖：08；当前状态：**阶段已完成（候选 1a3ff26 真实浏览器 PASS；非物理真机）**。
 
 ## 一句话目标

@@ -255,6 +255,11 @@ def test_analysis_recovery_after_service_rebuild_runs_once_without_graph_mutatio
     claimed = first_store.claim_analysis_job(job.job_id, item.map_id, "owner-a")
     assert claimed is not None
     assert first_store.get_analysis(analysis.analysis_id, item.map_id, "owner-a").status == "running"
+    with first_store.transaction() as db:
+        db.execute(
+            "UPDATE literature_map_jobs SET lease_expires_at=? WHERE job_id=?",
+            ("1970-01-01T00:00:00+00:00", job.job_id),
+        )
 
     rebuilt_store = LiteratureMapStore(database_path)
     map_before = rebuilt_store.get_map(item.map_id, "owner-a").to_dict()

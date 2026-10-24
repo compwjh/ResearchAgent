@@ -1,5 +1,66 @@
 # Spec043 验收评审（tester 最终验收）
 
+> **2026-10-24 Task09 本轮 tester 与 architect 结果：`READY_FOR_USER`。** Architect 已独立签字（2026-10-24，当前候选源指纹 `6fda3d07731f9bd820653faac22ddb9fb615fe22c393ac69e0560fe968feb059`）。当前候选为分支 `codex/spec043-map-interaction` 的基线 `HEAD=458da1b35238691cbe9447c71bf7a1afbb08728f` 加未提交工作树改动；不得把基线 SHA 冒充已提交候选。最终全量第二轮为 `3384 passed / 0 failed / 2 合法 skip / 67 subtests / 5 warnings`，exit 0，coverage `82.38%`。首轮失败、旧 `a328932` 双签和早期 BLOCK 均保留在下文历史章节，不作为当前结论；本轮不修改 Spec 状态，待 root 统一收口台账。
+
+## 2026-10-24 Task09 当前 tester 验收区段
+
+> **本轮判定：`READY_FOR_USER`（tester + architect）。** 当前候选已满足真实运行与人工验收交付准备度；Gate 5 的 architect 独立签字已完成，Spec 状态仍保持原台账状态，待 root 统一完成状态收口。
+
+### 候选绑定与证据范围
+
+- 候选身份：分支 `codex/spec043-map-interaction`，基线提交 `458da1b35238691cbe9447c71bf7a1afbb08728f`；未提交 worktree diff/source hash `6fda3d07731f9bd820653faac22ddb9fb615fe22c393ac69e0560fe968feb059`。本报告不声称存在新的候选提交。
+- 矩阵绑定：最终回归报告记录矩阵文件 SHA-256 `9af817a5231a44ff25bc5096efdfd4c8c4ca712c56450e013875ee17b5134e24`、矩阵二进制 diff SHA-256 `edd627a45000fee17b6b87f1d589b3adf780d107cfd1cd834c9948a3aad180f3`；它们与当前 worktree 候选一起构成本轮回归绑定。
+- 部署：`http://127.0.0.1:8000/#literature-maps-view`，JS v18/CSS v12/app v60，健康检查 200，当前服务 PID 2252；部署记录明确标注工作树未提交（`docs/sdd/plans/043/task-09-deployment-verification.md:28-34`）。
+- 真实全文闭环：目标 map/node/document/analysis 及 source gate、manifest、hash、引用绑定详见 [`task-09-import-api-e2e.md`](../plans/043/task-09-import-api-e2e.md) 与 [`evidence.json`](../plans/043/task-09-runs/20261024-210815-task09-full-analysis-v1/evidence.json)。
+- 浏览器闭环：最新 Chromium 156 记录真实主导航、目标节点、full-ready 页面、摘要历史、提问草稿不发送及失败/限流路径；机器证据见 [`browser-e2e.json`](../plans/043/task-09-runs/20261024-211542-task09-browser-full/browser-e2e.json)。该浏览器 artifact 自身的旧 `BLOCKED_PENDING_ROOT_FINAL_GATES` 字段是在第二轮全量回归之前记录的历史裁决；本轮使用其中的事实观察，并以当前回归报告更新总裁决。
+
+### 按稳定人工入口的主路径判定
+
+稳定人工案例已覆盖产品主导航、fresh partial 地图、标签/半径/锚点、摘要历史、知识库状态、全文结果、草稿保留和失败恢复；每一步都有点击/输入、点击后提示、等待条件、等待中显示、下一步和失败恢复（[`task-09-manual-acceptance.md`](../plans/043/task-09-manual-acceptance.md)）。
+
+| 主路径 | 当前判定 | 真实依据与边界 |
+|---|---|---|
+| A0–A1：主导航、fresh 图和摘要队列 | PASS（partial 合同） | 入口与等待条件见 `task-09-manual-acceptance.md:30-77`；真实结果为 20 节点/11 边、18 篇非空摘要、2 篇无摘要安全跳过、队列完成。`partial` 是来源覆盖结果，不伪造为全绿。 |
+| A2：标签三档 | PASS | `task-09-manual-acceptance.md:79-105` 明确全部/选中及相邻/隐藏为 20/7/0，标签无 `undefined`/重复后缀；JS v18 窄复审为 GO（`task-09-frontend-review.md:262-293`）。 |
+| A3–A4：选中、引用半径、缩放锚点、页面滚动 | PASS | `task-09-manual-acceptance.md:107-154`；最新浏览器证据记录节点选择、非中心滚轮、工具栏中心锚点和详情滚动后的真实观察。 |
+| A5：摘要历史 | PASS | `task-09-manual-acceptance.md:156-177`；目标节点 v1 摘要历史保留，未用重新生成冒充本次证据。 |
+| B1–B2：既有地图、KB document 与 source 状态 | PASS | `task-09-manual-acceptance.md:180-230`；document `ae3a1c3f7ee746bba031b06306ff3230` 显示 indexed，source gate 已 full-ready。 |
+| B3：全文结果与摘要历史共存 | PASS | `task-09-manual-acceptance.md:232-261`；页面全文页签可用/已完成，摘要 v1 仍可读；API 结果非空、5 条 citation 均绑定目标 document，UI 保留真实 6 条受控片段计数。 |
+| B4：提问草稿 | PASS | `task-09-manual-acceptance.md:263-287`；真实会话打开/草稿保留，不发送 `/messages`、SSE 或助手消息。 |
+| 失败/限流恢复路径 | PASS（诚实降级） | 稳定案例保留失败码、人工重试入口与停止条件；不自动下载/导入/分析。来源 partial、无摘要 skip 和 provider 限流均按合同呈现。 |
+
+### 真实回归与运行时门禁
+
+最终回归第二轮完整 `tests` 集合退出 0，结果为 `3384 passed / 0 failed / 2 合法 skip / 67 subtests / 5 warnings`，coverage `82.37974239901867%`（终端 `82.38%`），超过 80% 门槛（[`task-09-final-regression.md`](../plans/043/task-09-final-regression.md)）。两个skip来自未设置`RUN_E2E=1`的既有生命周期guard，不是产品失败，也未被新增或伪造；fresh地图的2个无摘要skip是另一项产品来源覆盖合同，二者不混同。
+
+真实 API 证据同时闭环：唯一 v1 reindex 后 canonical/indexed/manifest/实际原件 hash 一致、manifest ready/100%、generation 可读，节点 `fulltext_ready=true`；唯一 full analysis `completed/full`，结果非空、5 citations 绑定目标 document（[`task-09-import-api-e2e.md`](../plans/043/task-09-import-api-e2e.md)）。最新浏览器实际显示 indexed 文档、全文页签完成、摘要历史和受控来源引用（[`task-09-runs/20261024-211542-task09-browser-full/task-09-manual-acceptance.md`](../plans/043/task-09-runs/20261024-211542-task09-browser-full/task-09-manual-acceptance.md)）。
+
+### 十项准备度矩阵（本轮 tester）
+
+| # | 检查项 | 判定 | 证据 |
+|---:|---|---|---|
+| 1 | 服务已启动并可访问 | PASS | deployment verification `:28-34`；browser JSON `:8-20` health 200、资源 v18/v12/v60。 |
+| 2 | 真实 API 入口与实体成功 | PASS | fresh/目标地图真实实体见 manual `:15-28`；目标 full API 入口与 document/analysis IDs 见 import E2E `:148-187`。 |
+| 3 | 主路径参数正确解析 | PASS | 人工步骤 A0–B4 `task-09-manual-acceptance.md:30-287`；full 请求 evidence level、唯一 key、source version 与 API schema 均真实读回。自然语言聊天发送不在本 Task09 验收范围，且案例明确不发送消息。 |
+| 4 | 实体状态从初始态推进 | PASS | queue partial/completed、document indexed→verified/manifest ready、source gate full-ready、analysis queued→running→completed，见 import E2E `:148-187` 与 regression `:188-208`。 |
+| 5 | 前端显示处理中/完成提示 | PASS | browser manual `:46-126`、`:21-44`；fresh 队列完成计数与全文页签完成均有真实观察。 |
+| 6 | 用户知道何时等待或点击 | PASS | 稳定 manual 每步六项字段 `:30-287`；明确等待队列终态、source gate、分析 completed 和失败恢复。 |
+| 7 | 核心产物真实生成 | PASS（partial 如实保留） | 20 节点图、18 篇摘要、KB PDF、ready manifest、full analysis 非空结果与引用均有证据；2 篇无摘要节点不伪造摘要，fresh map 仍标 partial。 |
+| 8 | 失败状态有可操作恢复 | PASS | `import-failure-diagnosis.md` 与稳定 manual 的失败/限流路径；full gate 通过既有 v1 reindex 恢复，未手写状态。 |
+| 9 | 页面状态与 API 状态一致 | PASS | browser JSON `:21-92` 与 API evidence：document ID、source versions、full tab、分析 completed/citations 一致；UI 6 条受控片段与 API 5 条 citation records 分层保留，不强行改数。 |
+| 10 | 无上下文用户可复现步骤 | PASS | 稳定 manual `:30-287` 已给出入口、真实文案、等待、下一步、失败恢复和产物路径；原始 evidence 索引见 `:306-326`。 |
+
+**准备度：10/10 PASS。** 当前未发现可复现 P0/P1；backend 最新窄复审对 executor/lease/final-finish、arXiv 缩写和 KB canonical 接缝均 GO（`task-09-backend-review.md:320-424`），frontend JSv18/KB202 窄复审 GO 且 P0=0/P1=0（`task-09-frontend-review.md:262-293`）。早期 review 的 BLOCK、P1 红测、首轮全量失败和旧候选签字全部保留为历史，不被本轮结果抹除。
+
+### 本轮签字状态
+
+- Tester：**READY_FOR_USER**（2026-10-24；本区段）。
+- Architect：**READY_FOR_USER / GO（独立签字）**（2026-10-24；当前候选绑定 `HEAD=458da1b35238691cbe9447c71bf7a1afbb08728f` + source fingerprint `6fda3d07731f9bd820653faac22ddb9fb615fe22c393ac69e0560fe968feb059`；矩阵文件 SHA-256 `9af817a5231a44ff25bc5096efdfd4c8c4ca712c56450e013875ee17b5134e24`、矩阵 diff SHA-256 `edd627a45000fee17b6b87f1d589b3adf780d107cfd1cd834c9948a3aad180f3`）。依据：当前 tester 10/10、P0/P1=0，第二轮全量 exit 0/coverage 82.38%，真实 API/full gate/browser/manual 证据均可追溯；`partial` 来源结果与无摘要 skip 按合同保留，不伪造为全来源 complete。
+- Spec：本区段不修改 Spec 状态、不宣称已完成；architect 已签字，待 root 完成最终台账收口。
+- P0/P1：当前证据为 `0/0`；来源 `partial` 与无摘要 skip 是合同内真实结果，不是 P1，也不伪造为 complete。
+
+## 2026-10-22 历史交付验收
+
 > **状态：READY_FOR_USER（tester 与 architect 已签；Spec 状态已由主会话同步为已完成）**
 >
 > 候选 `a328932` 的真实 API、runtime、最终全量回归与浏览器复核均已通过；列表关闭在等待 180–600ms 后 hidden、移出视口、`pointer-events=none` 且 `wait_for(hidden)` 通过。本文为 tester 与 architect 最终验收结论；Spec 状态已由主会话同步为已完成。用户尚未实际执行人工验收。

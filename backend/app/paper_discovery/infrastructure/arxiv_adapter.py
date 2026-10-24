@@ -22,6 +22,10 @@ TITLE_THRESHOLD = 0.90
 AUTHOR_THRESHOLD = 0.80
 _NEW_ARXIV_ID = re.compile(r"^[0-9]{4}\.[0-9]{4,5}(?:v[1-9][0-9]*)?$", re.IGNORECASE)
 _OLD_ARXIV_ID = re.compile(r"^[a-z0-9][a-z0-9.-]*/[0-9]{7}(?:v[1-9][0-9]*)?$", re.IGNORECASE)
+_ABBREVIATED_AUTHOR = re.compile(
+    r"^\s*(?P<initial>[A-Za-z])\.\s*(?P<surname>[A-Za-z][A-Za-z'’-]*)\s*$"
+)
+_AUTHOR_WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 @dataclass(frozen=True)
@@ -107,6 +111,102 @@ def _author_key(value: str) -> str:
     return normalize_title(value)
 
 
+def _author_name_parts(value: str) -> tuple[str, str, str] | None:
+    """Return conservative author-shape parts for exact-ID reconciliation.
+
+    Only a visibly dotted one-letter form (``T.Mei``/``T. Mei``) is treated
+    as abbreviated.  A full name must have a multi-letter given-name token;
+    this deliberately rejects undelimited values such as ``Tmei`` and
+    one-letter names so they cannot be mistaken for abbreviations.
+    """
+
+    text = str(value or "").strip()
+    abbreviated = _ABBREVIATED_AUTHOR.fullmatch(text)
+    if abbreviated:
+        surname = _author_key(abbreviated.group("surname"))
+        if surname:
+            return "abbreviated", abbreviated.group("initial").casefold(), surname
+        return None
+    if "." in text:
+        return None
+    words = _AUTHOR_WORD.findall(text)
+    if len(words) < 2:
+        return None
+    given = _author_key(words[0])
+    surname = _author_key(words[-1])
+    if len(given) < 2 or not surname:
+        return None
+    return "full", given[0], surname
+
+
+def _abbreviated_author_pair(left: str, right: str) -> bool:
+    left_parts = _author_name_parts(left)
+    right_parts = _author_name_parts(right)
+    if left_parts is None or right_parts is None or left_parts[0] == right_parts[0]:
+        return False
+    return left_parts[1:] == right_parts[1:]
+
+
+def _author_score(
+    expected: Iterable[str],
+    candidate: Iterable[str],
+    *,
+    allow_abbreviations: bool = False,
+) -> float:
+    """Score unique, one-to-one author identities.
+
+    Exact normalized names are matched first.  For exact-ID lookups only,
+    an abbreviation may contribute one match when it has exactly one
+    compatible full-name counterpart and that counterpart has no other
+    compatible abbreviation.  This prevents ambiguous or duplicate entries
+    from inflating the score through one-to-many matching.
+    """
+
+    def grouped(values: Iterable[str]) -> dict[str, set[str]]:
+        result: dict[str, set[str]] = {}
+        for value in values:
+            raw = str(value or "").strip()
+            key = _author_key(raw)
+            if key:
+                result.setdefault(key, set()).add(raw)
+        return result
+
+    expected_by_key = grouped(expected)
+    candidate_by_key = grouped(candidate)
+    matched = set(expected_by_key) & set(candidate_by_key)
+    if allow_abbreviations:
+        remaining_expected = {
+            key: values for key, values in expected_by_key.items() if key not in matched
+        }
+        remaining_candidate = {
+            key: values for key, values in candidate_by_key.items() if key not in matched
+        }
+        edges: dict[str, set[str]] = {}
+        for expected_key, expected_values in remaining_expected.items():
+            compatible = {
+                candidate_key
+                for candidate_key, candidate_values in remaining_candidate.items()
+                if any(
+                    _abbreviated_author_pair(expected_value, candidate_value)
+                    for expected_value in expected_values
+                    for candidate_value in candidate_values
+                )
+            }
+            if compatible:
+                edges[expected_key] = compatible
+        inverse: dict[str, set[str]] = {}
+        for expected_key, candidate_keys in edges.items():
+            for candidate_key in candidate_keys:
+                inverse.setdefault(candidate_key, set()).add(expected_key)
+        for expected_key, candidate_keys in edges.items():
+            if len(candidate_keys) == 1:
+                candidate_key = next(iter(candidate_keys))
+                if inverse.get(candidate_key) == {expected_key}:
+                    matched.add(expected_key)
+    denominator = max(len(expected_by_key), len(candidate_by_key))
+    return len(matched) / denominator if denominator else 0.0
+
+
 class ArxivFallbackAdapter:
     """Query arXiv only after official USENIX media is unavailable."""
 
@@ -150,17 +250,22 @@ class ArxivFallbackAdapter:
             return ArxivFallbackResult(code="USENIX_PDF_AVAILABLE")
         normalized_id = normalize_arxiv_id(arxiv_id)
         title_key = normalize_title(title)
-        author_keys = tuple(sorted({_author_key(str(value)) for value in authors if _author_key(str(value))}))
+        author_values = tuple(str(value).strip() for value in authors if str(value).strip())
+        author_keys = tuple(sorted({_author_key(value) for value in author_values if _author_key(value)}))
         if normalized_id is None:
             return ArxivFallbackResult(code="ARXIV_IDENTITY_CONFLICT")
         if not title_key or not author_keys or not isinstance(year, int) or isinstance(year, bool):
             return ArxivFallbackResult(code="ARXIV_MATCH_UNCERTAIN")
-        key = ("id", normalized_id, title_key, author_keys, year)
+        # Preserve punctuation in this cache key: ``T.Mei`` and ``Tmei``
+        # normalize to the same exact-name key but have different abbreviation
+        # semantics in the exact-ID reconciliation below.
+        author_shape_key = tuple(sorted(value.casefold() for value in author_values))
+        key = ("id", normalized_id, title_key, author_shape_key, year)
         with self._lock:
             cached = self._cache.get(key)
             if cached and self.now() - cached[0] <= self.cache_ttl:
                 return cached[1]
-        result = self._query_by_id(normalized_id, title, author_keys, year)
+        result = self._query_by_id(normalized_id, title, author_values, year)
         with self._lock:
             self._cache[key] = (self.now(), result)
         return result
@@ -267,8 +372,11 @@ class ArxivFallbackAdapter:
                     identity_conflict = True
                 continue
             title_score = SequenceMatcher(None, title_key, normalize_title(entry_title)).ratio()
-            candidate_authors = {_author_key(value) for value in entry_authors}
-            author_score = len(set(authors) & candidate_authors) / max(len(authors), len(candidate_authors))
+            author_score = _author_score(
+                authors,
+                entry_authors,
+                allow_abbreviations=expected_arxiv_id is not None,
+            )
             if entry_year != year or title_score < TITLE_THRESHOLD or author_score < AUTHOR_THRESHOLD:
                 if expected_arxiv_id is not None and arxiv_identity_matches(expected_arxiv_id, arxiv_id):
                     metadata_conflict = True

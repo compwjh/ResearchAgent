@@ -1160,7 +1160,7 @@ class KnowledgeBasePaperImportAdapter:
 
     def _default_indexer(
         self,
-        record: PaperRecord,
+        record: Any,
         path: Path,
         *,
         capability: ImportResourceCapability | None = None,
@@ -1176,7 +1176,7 @@ class KnowledgeBasePaperImportAdapter:
         index_port = GenerationBoundIndexPort(destination, client=self.client)
         # v1 同步建索引：完成后导入即可返回；v2 随后异步提交，不阻塞导入响应。
         result = run_index_task_sync(
-            record.paper_id,
+            record_id(record),
             CHUNKER_V1,
             lambda progress: index_port.index_document(
                 record,
@@ -1191,16 +1191,17 @@ class KnowledgeBasePaperImportAdapter:
         self._submit_v2_index(record, path, destination)
         return result
 
-    def _submit_v2_index(self, record: PaperRecord, path: Path, destination: str) -> None:
+    def _submit_v2_index(self, record: Any, path: Path, destination: str) -> None:
         """v1 索引成功后异步提交 v2（语义对齐上传路径 `_submit_index_task`）。
 
         先置 v2 为 ``indexing`` 再入单线程池，使 v2 在池中排队时前端即可看到
         「索引中 0%」而非停留在 pending。v2 失败不影响导入成功（状态置 ``failed``
         并带原因，可由 reindex 补救）；提交异常同样不得把导入判定为失败。
         """
+        paper_id = record_id(record)
         try:
             update_chunker_state(
-                record.paper_id,
+                paper_id,
                 CHUNKER_V2,
                 status=STATUS_INDEXING,
                 progress=0,
@@ -1221,12 +1222,12 @@ class KnowledgeBasePaperImportAdapter:
             )
 
         try:
-            submit_index_task(record.paper_id, CHUNKER_V2, _runner)
+            submit_index_task(paper_id, CHUNKER_V2, _runner)
         except Exception:
             # 提交失败同样不得判定导入失败；把 v2 状态置 failed 以便可见与补救。
             with contextlib.suppress(Exception):
                 update_chunker_state(
-                    record.paper_id,
+                    paper_id,
                     CHUNKER_V2,
                     status=STATUS_FAILED,
                     progress=0,
@@ -1340,7 +1341,7 @@ class KnowledgeBasePaperImportAdapter:
                     existing=True,
                     source_sha256=document.get("source_sha256"),
                 )
-            record = PaperRecord(
+            legacy_record = PaperRecord(
                 paper_id=record_id(document),
                 file_name=str(document["file_name"]),
                 status=STATUS_INDEXING,
@@ -1356,6 +1357,11 @@ class KnowledgeBasePaperImportAdapter:
                 import_source=document.get("import_source"),
                 stored_name=safe_name,
             )
+            # The production/default indexer must receive the canonical
+            # document mapping so the strict bundle/manifest publication path
+            # sees its document id, source hash and media type.  Keep the
+            # legacy PaperRecord for injected test/compatibility indexers.
+            record: Any = document if self.indexer is None else legacy_record
 
         # 区分两段失败：索引本身失败（KB_INDEX_FAILED，文件已落盘、可重建索引）
         # 与索引成功后的收尾失败（generation 漂移 / 元数据写回失败，KB_IMPORT_FAILED）。
@@ -1398,7 +1404,8 @@ class KnowledgeBasePaperImportAdapter:
                 generation_collection,
                 allow_stale_metadata=True,
             )
-            patch_knowledge_document(self.meta_path, record.paper_id, **updates)
+            paper_id = record_id(record)
+            patch_knowledge_document(self.meta_path, paper_id, **updates)
             _assert_generation_binding(self.meta_path, generation_collection, allow_stale_metadata=True)
             # Re-check and refresh atomically with generation publication.
             _refresh_generation_digests(
@@ -1406,7 +1413,7 @@ class KnowledgeBasePaperImportAdapter:
                 expected_destination_collection=generation_collection,
             )
             return PortImportResult(
-                paper_id=record.paper_id,
+                paper_id=paper_id,
                 index_status=ImportIndexStatus.INDEXED,
                 error_code=None,
                 stored_name=safe_name,
@@ -1420,7 +1427,7 @@ class KnowledgeBasePaperImportAdapter:
                 "论文导入失败：%s paper_id=%s stored_name=%s collection=%s"
                 " 索引返回=%s 异常=%s: %s",
                 "向量索引未成功" if not index_ok else "索引成功但收尾失败（代次漂移/元数据写回）",
-                getattr(record, "paper_id", None), safe_name, generation_collection,
+                record_id(record), safe_name, generation_collection,
                 _index_error_detail(locals().get("index_result")) or "<索引器抛异常>",
                 type(error).__name__, error,
             )
@@ -1432,13 +1439,13 @@ class KnowledgeBasePaperImportAdapter:
                 if self.deleter is not None:
                     delete_result = _call_supported(
                         self.deleter,
-                        (record.paper_id, CHUNKER_V1),
+                        (record_id(record), CHUNKER_V1),
                         {"client": self.client, "capability": capability},
                     )
                 elif self.client is not None:
                     delete_result = _call_supported(
                         self._default_deleter,
-                        (record.paper_id, CHUNKER_V1),
+                        (record_id(record), CHUNKER_V1),
                         {"client": self.client, "capability": capability},
                     )
                 else:
@@ -1455,7 +1462,7 @@ class KnowledgeBasePaperImportAdapter:
                 # storage contention to its stable, retryable error code.
                 raise
             return PortImportResult(
-                paper_id=record.paper_id if cleanup_status != "completed" else None,
+                paper_id=record_id(record) if cleanup_status != "completed" else None,
                 index_status=ImportIndexStatus.FAILED,
                 # index_ok 为假说明索引本身没建起来：源文件与元数据已落盘，
                 # 用专门错误码让调用方区分"根本没入库"和"已入库待重建索引"。

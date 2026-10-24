@@ -216,6 +216,12 @@ class MapJob:
     idempotency_key: str | None = None
     created_at: str = field(default_factory=iso_now)
     updated_at: str = field(default_factory=iso_now)
+    # Internal lease credential.  It is intentionally omitted from the public
+    # projection below; workers pass it back to the store for finish CAS.
+    worker_token: str | None = None
+    # Internal deadline used by the in-process lease reaper.  It is likewise
+    # omitted from the public projection so queue API fields remain stable.
+    lease_expires_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {

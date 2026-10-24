@@ -71,3 +71,68 @@ Spec 的数据模型、端点边界和任务拆分能够支撑独立的 `literat
 - 评审人：architect（独立技术评审）
 - 日期：2026-10-19
 - 结论：**通过（GO）**
+
+---
+
+## 本轮 Task09 增量技术评审（2026-10-24）
+
+### 评审元数据
+
+- 评审对象：已确认 Spec043 本轮增量、`docs/sdd/plans/043/task-09-map-interaction-analysis.md` 及 [Task09 最小接口合同](../plans/043/task-09-interface-contract.md)
+- 独立评审角色：architect（独立增量技术评审）
+- 评审者模型与分派方式：Luna max（用户本轮临时指定）；由主会话 `/root` 独立分派，未分派编码、测试、模型调用、下载或服务操作
+- 评审时间：2026-10-24（Asia/Shanghai）
+- 实现事实：本轮未实现 Task09，未修改业务代码/测试，未运行 pytest、模型、下载、全量回归或服务，未调用网络；只追加本评审区段与接口合同
+- 评审依据：`map-change-audit.md`、Task03 view 合同、Task05 analysis/conversation 合同，以及当前 `backend/app/literature_maps` 和 `frontend/literature-maps.js`/`app.js` 的最小相关实现
+
+### 结论
+
+**通过（GO）。**
+
+现有分析、视图和会话接缝足以承接本轮增量；没有需要退回 Spec 的 P1 架构阻塞。可在合同落盘后立即分端实现：后端围绕既有 `MapAnalysis`/`MapJob`/`MapEvent`/executor 增加地图级摘要队列控制，前端纯图形部分可并行。
+
+有一个必须在代码与验收前封住的 P1 实现风险：当前 `claim_analysis_job` 对已处于 `running` 的 job 会返回该 job，重复调用者仍可继续执行模型；这会破坏“逐篇、幂等、重启不重复”。它是现有实现缺口，不是本轮需求阻塞；按接口合同增加持久 worker token/等价租约、原子 claim 和 finish 校验即可在 Task09 范围内修复。若开发不封住该风险，应在验收判定 P1，不得以进程内锁或前端去重代替。
+
+### 现有实现事实与接缝
+
+| 接缝 | 已核对事实 | Task09 技术判定 |
+|---|---|---|
+| 分析 API 与版本 | `backend/app/api/routes_literature_maps.py:129-142,343-389` 已有分析请求/历史/详情；`analysis.py:223-315` 按来源版本创建 job 并在完成前复核来源；`store.py:816-891` 按 map/node/version/idempotency 保存。 | 复用现有显式分析 API；自动队列只调用同一 service/store 原语，不改变 `evidence_level`、source gate 或历史读取。 |
+| 幂等与重试 | `store.py:816-891` 同 key 同参数返回同分析；`1547-1610` 的 child retry 可重置同一分析；显式新 key 才是新版本。 | 自动 ensure 使用稳定 key；retry 不新版本，手动 regenerate 才新版本，旧结果不可清空。 |
+| 并发缺口 | `store.py:917-938` 的 `claim_analysis_job` 对已有 running job 仍返回 current，两个调用者都可进入 `run_analysis_job`；`runtime.py:182-210` 的共享执行器为有限 worker，不能替代持久 claim。 | 必须补原子 queued→running、持久 token/lease、finish token 校验；同一 map 只允许一个 running 摘要子 job。 |
+| 停止与暂停 | `store.py:1587-1610`/现有 job stop 会停止 child 并将分析标为失败；它不等于“当前完成、后续等待”。 | 新增地图级 pause 状态；暂停只阻止下一次 claim，不调用 child stop。建图/聊天 job 不受影响。 |
+| 恢复 | `analysis.py:460-465` 和 store recovery 会恢复 queued/running analysis；没有 map-level paused 状态。 | 聚合 MapJob 持久保存 active/paused；paused 重启仍暂停，active 只恢复孤儿未完成项，且不能重复提交。 |
+| owner/迟到回调 | `analysis.py:76-102,115-180` 的来源状态和全文 gate 是 owner-scoped 本地读取；`finish_analysis` 仅接受 running 且未删除 map，删除/stop 后迟到结果不应成功写入。 | 队列读写沿 map owner join；移除节点、删除地图和旧 worker 回调均 fail-closed，不复活节点。 |
+| GET 与下载边界 | `GET analyses` 只读取 source status/list；full source helper 读取本地文档/manifest，不执行下载；显式 import 是独立 POST。 | GET queue/analyses/graph/view 不能创建缺失项或提交模型；旧图补入队由显式 idempotent POST 完成。 |
+| 当前图形实现 | `frontend/literature-maps.js:301-309` 只有首作者/年份及抽样标签；`:2021-2073` 半径硬编码 8/11；`:2230-2240` wheel 只改 scale 无锚点平移；现有 pinch `:2110-2137` 已保留中点。 | 标签、半径、wheel/toolbar/pinch helper 和 view 保存可独立实现；保留现有坐标系和 PATCH revision，不重写布局/分组。 |
+| View 合同 | 当前 `PATCH /{map_id}/view` 接收 positions/viewport/filters/layers/expected_revision；前端 `state.view` 为 x/y/scale，旧图没有 label mode。 | 只在既有 `view_settings` 增加可选 `label_mode`，缺失默认 all；不新增第二个保存接口、不覆盖 positions/group。 |
+| 全文 UI | `renderAnalysisPanel` (`frontend/literature-maps.js:2661-2737`) 已读 `available_evidence_levels`，但把 `unavailable_reason` 直接显示且 full 不 ready 时按钮禁用；没有可行动分支映射。 | 前端增加安全状态映射和现有导入/登录/上传/索引入口；full ready 前不发 POST，后端 gate 保持不变。 |
+| 会话桥接 | `routes_literature_maps.py:392-415` 的 conversation POST 只接收 evidence/idempotency；`literature-maps.js:3007-3025` 只导航 conversation ID；`app.js:3272-3277`/`2983-3031` 现有导航与草稿加载没有预填参数。 | 保持后端 body/消息合同；增加可选 UI prefill 参数，非空草稿不覆盖，不调用 `/messages`。 |
+
+### 技术门槛（直接交开发）
+
+1. **持久队列形态**：使用一个 `MapJob(operation="analysis_queue")` 或同等的已版本化 MapJob 聚合记录，子项仍是既有 analysis jobs；聚合只存状态/计数/游标/失败 ID/幂等信息。不得新建第二个 scheduler、analysis store、chat 或 downloader。
+2. **稳定复用**：以同地图规范化论文身份、现有 abstract `source_version`、服务端分析配置指纹和稳定幂等键命中同一分析版本。摘要/配置改变才新版本；无摘要 `skipped`，不调用模型；GET 不补入队。Task09 不新增跨 owner 全局结果缓存。
+3. **claim/finish 原子性**：running job 不能被第二 worker 当作可执行返回；必须有持久 worker token/等价租约，finish/recovery 校验 token。服务重启后 active 恢复一次，paused 保持 paused；迟到 callback、移除/删除必须无写入效果。
+4. **地图级串行**：同一 map 同时最多一个摘要 child running；不同 map 可复用当前有限 executor。429/瞬时错误使用持久有限退避；配置/鉴权错误置队列 paused 并输出安全行动码。pause 不停止当前 child，不影响建图/聊天；resume 才允许后续 claim。
+5. **API 兼容**：保留 Task03 `schema_version="literature-map-v1"`、view `expected_revision`、Task05 分析/会话请求体、owner/project/full gate。队列读/控制接口只能是地图级增量读模型/控制，不得用新同义接口复制现有 node analysis 或 conversation。
+6. **图形数学**：半径 helper 对有限非负 citation count 使用 `min(28,8+2*Math.log1p(n))`，未知为 base 8 并显示“未知”；selected 只描边。wheel 以 SVG pointer world coordinate 保持锚点，toolbar 以 viewport center，pinch 复用已有 midpoint；PNG 与当前显示共用渲染状态。
+7. **全文与 Prompt**：状态码映射必须处理“无摘要/全文未入库/登录/上传/索引等待/重试”等实际分支；full ready 前只引导。Prompt 由前端预填标题/作者/年份、研究问题/方法/结论/局限/证据等级；不写入 conversation POST、不自动发消息、不覆盖旧 draft。
+
+### 可并行的前端纯图形边界
+
+后端队列实现尚未完成时，`frontend-dev` 可独立完成并自测以下范围：
+
+- 默认 all / neighbors / hidden 标签模式及缺作者、缺年份、多作者回退；
+- 引用数 radius helper、未知态、选中描边和现有 SVG/PNG 一致渲染；
+- wheel pointer anchor、toolbar viewport-center anchor、已有 pinch midpoint；
+- 现有 `PATCH /view` 的可选 `label_mode` 向后兼容读取/保存，保持 revision/positions/group/filters/layers；
+- 全状态安全文案映射和 conversation prefill 的 UI-only seam（不增加服务器消息，不自动发送）。
+
+以下不能由前端猜测或先行定制：队列总数/状态字段、pause/resume/retry 请求、自动摘要触发时机、source version、owner 错误、全文 ready 判定。队列面板只在后端读模型字段稳定后接入；前端不得用旧 `GET analyses` 的列表长度冒充队列进度。
+
+### 技术评审签字
+
+- 评审人：architect（独立增量技术评审）
+- 日期：2026-10-24
+- 结论：**通过（GO）**；无设计 P1 阻塞；现有 running-claim 竞态为必须在实现/验收前关闭的 P1 实现门槛。

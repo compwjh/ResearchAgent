@@ -1,9 +1,11 @@
 # Spec043 执行索引：交互式文献地图与自动主题探索
 
-> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md)  
-> 当前状态：已完成（2026-10-22，候选 `a328932`）；Task02–Task07阶段证据与限制均已归档。Task08 最终 runtime、浏览器 smoke、全量回归和部署验证均通过：全量 `exit 0`、`3224 passed / 0 failed / 2 skipped / 67 subtests / 5 warnings`，tester 与 architect 已完成双签，Spec 状态及台账已由主会话同步为已完成。旧首轮失败、provider partial、非物理真机与未执行故障注入仍保留为历史/范围限制；`http://127.0.0.1:8000/` 是当前可复核入口。用户尚未实际执行本文人工验收，不将 READY_FOR_USER 写成用户已通过；仅本地提交，无push或合main。
+> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md)
+> 历史交付状态（非本轮当前状态）：2026-10-22候选 `a328932` 的Task02–08已完成，全量 `exit 0`、`3224 passed / 0 failed / 2 skipped / 67 subtests / 5 warnings`，tester与architect双签；本轮Task09状态见下文。保留旧失败、provider partial、非物理真机及未执行故障注入限制，不将READY_FOR_USER等同用户已人工通过。
 
 ## 交付主线
+
+2026-10-24修订：当前**已完成**；Task09独立复核、真实入库/全文/浏览器、最终全量3384通过与覆盖率82.38%均通过，tester与architect双签READY_FOR_USER（10/10），已部署8000JSv18。本轮[Task09](task-09-map-interaction-analysis.md)承接图谱交互、自动摘要、全文指引、提问草稿及最后导入接缝修复；[人工步骤](task-09-manual-acceptance.md)、[最终回归](task-09-final-regression.md)、[复盘](../../retro/2026-10-24-spec043-map-interaction.md)。主会话仅同步文档，不替代独立签字；来源partial保留，不等同用户已实际验收。
 
 输入主题自动建图 → 真实引用与稀疏相似 → 点击论文详情/主动入库 → 保存重开 → 预览扩展/刷新/恢复 → 有依据的AI与会话 → 分组导出 → 手机 → 最终验收。
 不依赖Spec032正式报告生成，不恢复其暂停工作；不把图谱改为只能手动选论文。
@@ -20,8 +22,11 @@
 | [06](./task-06-groups-exports.md) | 整理与导出 | 04 | 阶段已完成（真实API/PNG/JSON PASS） |
 | [07](./task-07-mobile-map.md) | 手机适配 | 05、06 | 阶段已完成（候选`1a3ff26`真实375/390/1440浏览器PASS；非物理真机） |
 | [08](./task-08-acceptance-deploy-retro.md) | 最终验收与收口 | 02–07全部完成 | 已完成（a328932 runtime/browser/full regression/deployment PASS；tester 与 architect 双签） |
+| [09](./task-09-map-interaction-analysis.md) | 图谱交互与自动摘要修订 | 03、05、07旧版资产 | 已完成；3384通过、覆盖率82.38%、真实链与独立双签通过 |
 
 ## 执行约定
+
+- Task09依赖旧版03/05/07已交付资产，当前增量评审GO、前后端实施中；最终由本轮增量API/浏览器、独立签字及全量证据重新收口，不冒用旧Task08报告。
 
 - Spec为“做什么”的权威来源，Task为“怎么做”的实施交接；后续不得依赖聊天猜测需求。
 - Task03首个桌面纵向MVP，Task04补扩展/恢复；05和06可在04后按互不冲突范围执行，07依赖两者，08最后统一收口。

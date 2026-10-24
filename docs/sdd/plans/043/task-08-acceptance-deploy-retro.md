@@ -1,6 +1,8 @@
 # Task 08 — 最终验收与收口
 
-> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)  
+> 2026-10-24新增[Task09](task-09-map-interaction-analysis.md)需重新执行增量真实API/浏览器及最终候选回归与签字；本文旧版完成记录保留，不作本轮通过证明。
+
+> 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md) ｜ 索引：[README](./README.md)
 > 依赖：02–07阶段已完成；被依赖：无；当前状态：**已完成（2026-10-22；候选 `a328932` 的 runtime、browser、全量回归与部署验证通过，tester 与 architect 双签；用户人工验收尚未实际执行）**。
 
 ## 一句话目标

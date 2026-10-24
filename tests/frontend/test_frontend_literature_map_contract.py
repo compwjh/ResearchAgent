@@ -8,6 +8,7 @@ acceptance gate.
 from __future__ import annotations
 
 import re
+import math
 from pathlib import Path
 
 import pytest
@@ -24,8 +25,8 @@ def test_navigation_view_and_version_contract_are_wired() -> None:
     assert 'data-view="literature-maps"' in INDEX
     assert 'id="literature-maps-view"' in INDEX
     assert 'id="literature-maps-mount"' in INDEX
-    assert '/assets/literature-maps.js?v=13' in INDEX
-    assert '/assets/literature-maps.css?v=10' in INDEX
+    assert '/assets/literature-maps.js?v=18' in INDEX
+    assert '/assets/literature-maps.css?v=12' in INDEX
     app_versions = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     style_versions = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
     assert app_versions and int(app_versions[-1]) >= 59
@@ -69,6 +70,20 @@ def test_map_module_uses_frozen_api_and_safe_dom_boundaries() -> None:
         "viewRequest",
         "pollGeneration",
         "nodeLabel",
+        "label_mode",
+        "LABEL_MODES",
+        "citationRadius",
+        "Math.log1p",
+        "labelScreenScale",
+        "labelFontSizeSvgUnits",
+        "LABEL_MIN_CSS_PX",
+        "LABEL_LINE_HEIGHT_FACTOR",
+        "IMPORT_DIAGNOSTIC_LABELS",
+        "normalizeImportDiagnostics",
+        "mergeImportResponse",
+        "svgPointFromClient",
+        "getScreenCTM",
+        "literature-map-label-mode",
         "requestCatalog",
         "/api/papers/sources",
         "/api/papers/conferences",
@@ -165,7 +180,8 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         assert pan_body['viewport']['x'] == 60
         assert pan_body['viewport']['y'] == 30
 
-        # Existing node-drag and zoom saves must retain the panned viewport.
+        # Existing node-drag keeps the pan; toolbar zoom anchors at the canvas
+        # center, so it intentionally updates x/y to keep that world point.
         node_box = gesture_page.locator('[data-node-id="node-a"] circle').bounding_box()
         assert node_box
         gesture_page.mouse.move(node_box['x'] + node_box['width'] / 2, node_box['y'] + node_box['height'] / 2)
@@ -179,8 +195,8 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         gesture_page.get_by_role('button', name='放大').click()
         gesture_page.wait_for_function("window.__viewBodies?.at(-1)?.viewport?.scale > 1")
         zoom_body = gesture_page.evaluate("window.__viewBodies.at(-1)")
-        assert zoom_body['viewport']['x'] == 60
-        assert zoom_body['viewport']['y'] == 30
+        assert zoom_body['viewport']['x'] == pytest.approx(-24)
+        assert zoom_body['viewport']['y'] == pytest.approx(-32)
         assert zoom_body['viewport']['scale'] > 1
 
         # Reopen through the public lifecycle and verify the persisted
@@ -191,9 +207,9 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         gesture_page.wait_for_selector('[data-map-id="map-fixture"]')
         gesture_page.locator('[data-map-id="map-fixture"]').click()
         gesture_page.wait_for_selector('[data-node-id="node-a"]')
-        gesture_page.wait_for_function("document.querySelector('#literature-map-viewport')?.getAttribute('transform')?.includes('translate(60 30) scale(')")
+        gesture_page.wait_for_function("document.querySelector('#literature-map-viewport')?.getAttribute('transform')?.includes('translate(-24 -32) scale(')")
         reopened_transform = gesture_page.locator('#literature-map-viewport').get_attribute('transform')
-        assert reopened_transform and 'translate(60 30) scale(' in reopened_transform
+        assert reopened_transform and 'translate(-24 -32) scale(' in reopened_transform
         reopened_scale = float(re.search(r'scale\(([^)]+)\)', reopened_transform).group(1))
         assert reopened_scale > 1
         reopened_node = gesture_page.locator('[data-node-id="node-a"] circle').get_attribute('cx')
@@ -243,4 +259,98 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         truncated_page.wait_for_function("document.querySelector('#literature-map-project-notice')?.textContent.includes('项目列表未加载完')")
         assert '重新打开重试' in truncated_page.locator('#literature-map-project-notice').inner_text()
         truncated_page.close()
+        browser.close()
+
+
+def test_graph_labels_citation_radius_and_zoom_anchors_are_contractual() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?graphics", wait_until="load")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_selector('[data-node-id="node-c"]')
+
+        # Old maps have no label_mode and must render every node by default.
+        assert page.locator('#literature-map-label-mode').input_value() == 'all'
+        assert page.locator('.literature-map-node-label').count() == 8
+        assert page.locator('[data-node-id="node-c"] .literature-map-node-label').text_content().find('年份未知') >= 0
+        node_c_label = page.locator('[data-node-id="node-c"] .literature-map-node-label').text_content() or ''
+        assert 'et al.' in node_c_label
+        assert 'et al. et al.' not in node_c_label
+        assert page.locator('[data-node-id="node-c"] b').count() == 0
+        assert '引用数未知' in page.locator('[data-node-id="node-c"]').get_attribute('aria-label')
+
+        expected = {
+            'node-a': 8 + 2 * math.log1p(12),
+            'node-b': 8 + 2 * math.log1p(4),
+            'node-c': 8,
+            'node-d': 28,
+            'node-e': 8,
+            'node-f': 8,
+            'node-g': 8,
+            'node-h': 8,
+        }
+        for node_id, radius in expected.items():
+            actual = float(page.locator(f'[data-node-id="{node_id}"] circle').get_attribute('r'))
+            assert actual == pytest.approx(radius, abs=0.01)
+            if node_id in {'node-c', 'node-f', 'node-g', 'node-h'}:
+                group = page.locator(f'[data-node-id="{node_id}"]')
+                assert group.get_attribute('data-citation-known') == 'false'
+                assert '引用数未知' in (group.get_attribute('aria-label') or '')
+        selected_before = float(page.locator('[data-node-id="node-a"] circle').get_attribute('r'))
+        page.locator('[data-node-id="node-a"] circle').click()
+        page.wait_for_selector('.literature-map-detail-title')
+        selected_after = float(page.locator('[data-node-id="node-a"] circle').get_attribute('r'))
+        assert selected_after == pytest.approx(selected_before, abs=0.001)
+        page.locator('[data-node-id="node-c"] circle').click()
+        page.wait_for_function("document.querySelector('.literature-map-detail-title')?.textContent.includes('<img')")
+        assert page.locator('.literature-map-detail-fields dd').filter(has_text='未知').count() >= 1
+
+        positions_before = page.locator('[data-node-id] circle').evaluate_all(
+            "nodes => Object.fromEntries(nodes.map(node => [node.parentElement.dataset.nodeId, [node.getAttribute('cx'), node.getAttribute('cy')]]))"
+        )
+        page.locator('[data-node-id="node-a"] circle').click()
+        page.locator('#literature-map-label-mode').select_option('neighbors')
+        page.wait_for_function("window.__viewBodies?.some(body => body.label_mode === 'neighbors')")
+        assert page.locator('.literature-map-node-label').count() == 3
+        assert page.locator('[data-node-id="node-d"] .literature-map-node-label').count() == 0
+        positions_after_neighbors = page.locator('[data-node-id] circle').evaluate_all(
+            "nodes => Object.fromEntries(nodes.map(node => [node.parentElement.dataset.nodeId, [node.getAttribute('cx'), node.getAttribute('cy')]]))"
+        )
+        assert positions_after_neighbors == positions_before
+
+        page.locator('#literature-map-label-mode').select_option('hidden')
+        assert page.locator('.literature-map-node-label').count() == 0
+        assert page.locator('[data-node-id="node-c"]').get_attribute('aria-label').startswith('<img')
+
+        def world_at(client_x: float, client_y: float) -> tuple[float, float]:
+            return tuple(page.evaluate(
+                """({x, y}) => {
+                    const svg = document.querySelector('#literature-map-svg');
+                    const point = svg.createSVGPoint(); point.x = x; point.y = y;
+                    const local = point.matrixTransform(svg.getScreenCTM().inverse());
+                    const match = (document.querySelector('#literature-map-viewport').getAttribute('transform') || '').match(/translate\\(([-+0-9.e]+)\\s+([-+0-9.e]+)\\)\\s+scale\\(([-+0-9.e]+)\\)/);
+                    const tx = Number(match[1]); const ty = Number(match[2]); const scale = Number(match[3]);
+                    return [(local.x - tx) / scale, (local.y - ty) / scale];
+                }""",
+                {"x": client_x, "y": client_y},
+            ))
+
+        box = page.locator('#literature-map-svg').bounding_box()
+        assert box
+        wheel_point = (box['x'] + box['width'] * 0.23, box['y'] + box['height'] * 0.66)
+        before_world = world_at(*wheel_point)
+        page.mouse.move(*wheel_point)
+        page.mouse.wheel(0, -120)
+        after_world = world_at(*wheel_point)
+        assert after_world == pytest.approx(before_world, abs=1.0)
+
+        center = (box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+        before_center_world = world_at(*center)
+        page.get_by_role('button', name='放大').click()
+        after_center_world = world_at(*center)
+        assert after_center_world == pytest.approx(before_center_world, abs=1.0)
+        page.close()
         browser.close()

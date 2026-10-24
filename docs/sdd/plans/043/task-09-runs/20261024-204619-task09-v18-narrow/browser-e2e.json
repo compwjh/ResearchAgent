@@ -1,0 +1,92 @@
+{
+  "spec": "043",
+  "task": "09",
+  "run_id": "20261024-204619-task09-v18-narrow",
+  "runtime": {
+    "service_url": "http://127.0.0.1:8000/",
+    "port": 8000,
+    "browser": "Chromium 136.0.7103.25",
+    "viewport": {"width": 900, "height": 800, "device_scale_factor": 1},
+    "resources": {
+      "literature-maps.js": "v18",
+      "literature-maps.css": "v12",
+      "app.js": "v60"
+    }
+  },
+  "fresh_map": {
+    "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+    "node_id": "3ddd16f157414d3c81b31171107e317b",
+    "canvas_rect": {"x": 467, "y": 334, "width": 405.984375, "height": 460},
+    "nodes": 20,
+    "relations": 11,
+    "label_counts": {"baseline": 20, "detail_open": 20, "zoom_min": 20},
+    "detail_open": true,
+    "detail_label_world_position_max_delta": 0.0,
+    "zoom_min": {
+      "transform": "translate(312 221) scale(0.35)",
+      "scale": 0.35,
+      "label_screen_height_min_css_px": 9.99993896484375,
+      "label_screen_height_max_css_px": 10.00006103515625,
+      "all_labels_height_at_least_9_css_px": true,
+      "label_to_node_world_offset_max_delta_vs_baseline": 0.0,
+      "clamped_repeat_position_max_delta_css_or_svg": 0.0,
+      "positions_stable_at_clamp": true
+    },
+    "all_labels_single_et_al": true,
+    "all_labels_have_year": true,
+    "pageerror_count": 0,
+    "console_error_count": 4,
+    "console_note": "4 generic failed-resource 404 messages were observed; no JavaScript pageerror/exception occurred.",
+    "analysis_versions_before": [
+      {"analysis_id": "42cf77712d7c430fb4b4311a3d573931", "version": 2, "status": "completed"},
+      {"analysis_id": "b636bd98d5d94608811abda4e4a413dd", "version": 1, "status": "completed"}
+    ],
+    "analysis_versions_after": [
+      {"analysis_id": "42cf77712d7c430fb4b4311a3d573931", "version": 2, "status": "completed"},
+      {"analysis_id": "b636bd98d5d94608811abda4e4a413dd", "version": 1, "status": "completed"}
+    ],
+    "analysis_versions_unchanged": true
+  },
+  "failure_map_diagnostic": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "node_id": "56c7189f4f9343c98be3f9a95563cfd6",
+    "api_status": 200,
+    "document_id": null,
+    "download_status": "failed",
+    "diagnostic_codes": ["SEMANTIC_SCHOLAR_RATE_LIMITED", "ARXIV_MATCH_UNCERTAIN"],
+    "retryable": true,
+    "actual_ui_text": [
+      "失败原因：Semantic Scholar 提供方暂时限流；arXiv 身份匹配不确定。",
+      "当前可人工重试；不会自动重试。",
+      "人工重试入库",
+      "入库状态：失败。",
+      "全文索引片段依据来源版本：未提供"
+    ],
+    "after_read_diagnostics_unchanged": true,
+    "retry_or_download_clicked": false
+  },
+  "requests": {
+    "approved_posts": [
+      {"method": "POST", "path": "/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/analysis-queue/ensure", "note": "打开既有 fresh 地图"},
+      {"method": "POST", "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue/ensure", "note": "打开既有失败地图"}
+    ],
+    "forbidden_posts": [],
+    "model_or_regenerate_posts": 0,
+    "import_posts": 0,
+    "download_posts": 0
+  },
+  "artifacts": [
+    "screenshots/01-fresh-narrow-zoommin.png",
+    "screenshots/02-failed-node-diagnostics.png",
+    "browser-e2e.json",
+    "task-09-browser-e2e.md"
+  ],
+  "result": {
+    "status": "PASS_NARROW_V18_LABEL_DETAIL_ZOOM_AND_DIAGNOSTIC_READ",
+    "partial_preserved": true,
+    "full_ready_not_required_for_this_narrow_check": true,
+    "mock_or_fixture_used": false,
+    "import_or_download_triggered": false,
+    "regen_triggered": false
+  }
+}

@@ -65,6 +65,7 @@ class MapViewRequest(BaseModel):
     viewport: ViewportRequest | None = None
     filters: dict[str, Any] | None = None
     layers: dict[Literal["citation", "similarity"], bool] | None = None
+    label_mode: Literal["all", "neighbors", "hidden"] | None = None
 
 
 class ImportRequest(BaseModel):
@@ -134,6 +135,16 @@ class MapAnalysisRequest(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
 
 
+class AnalysisQueueCommandRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class AnalysisQueueRetryRequest(AnalysisQueueCommandRequest):
+    analysis_ids: list[str] | None = Field(default=None, max_length=200)
+
+
 class MapConversationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -171,7 +182,7 @@ def _error(error: Exception) -> HTTPException:
             "UNSUPPORTED_SOURCE": "source_id 不是服务端支持的来源",
             "UNSUPPORTED_CONFERENCE": "conference_id 不是服务端支持的会议",
         }[code]
-    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED"}:
+    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_LABEL_MODE", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED"}:
         status, error_code, message = 400, code, "地图创建参数不合法"
     elif code == "PROJECT_NOT_FOUND":
         status, error_code, message = 404, code, "项目不存在或不可访问"
@@ -351,6 +362,56 @@ def list_literature_map_analyses(map_id: str, node_id: str):
     return _envelope(analyses=[item.to_dict() for item in items], source_status=source_status)
 
 
+@router.get("/{map_id}/analysis-queue")
+def get_literature_map_analysis_queue(map_id: str):
+    try:
+        queue = _analysis_service().get_analysis_queue(map_id, OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**queue)
+
+
+@router.post("/{map_id}/analysis-queue/ensure", status_code=202)
+def ensure_literature_map_analysis_queue(map_id: str, payload: AnalysisQueueCommandRequest):
+    try:
+        queue = _analysis_service().ensure_analysis_queue(map_id, OWNER_ID, idempotency_key=payload.idempotency_key)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**queue)
+
+
+@router.post("/{map_id}/analysis-queue/pause")
+def pause_literature_map_analysis_queue(map_id: str, payload: AnalysisQueueCommandRequest):
+    try:
+        queue = _analysis_service().pause_analysis_queue(map_id, OWNER_ID, idempotency_key=payload.idempotency_key)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**queue)
+
+
+@router.post("/{map_id}/analysis-queue/resume")
+def resume_literature_map_analysis_queue(map_id: str, payload: AnalysisQueueCommandRequest):
+    try:
+        queue = _analysis_service().resume_analysis_queue(map_id, OWNER_ID, idempotency_key=payload.idempotency_key)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**queue)
+
+
+@router.post("/{map_id}/analysis-queue/retry")
+def retry_literature_map_analysis_queue(map_id: str, payload: AnalysisQueueRetryRequest):
+    try:
+        queue = _analysis_service().retry_analysis_queue(
+            map_id,
+            OWNER_ID,
+            idempotency_key=payload.idempotency_key,
+            analysis_ids=payload.analysis_ids,
+        )
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**queue)
+
+
 @router.post("/{map_id}/nodes/{node_id}/analyses", status_code=202)
 def create_literature_map_analysis(map_id: str, node_id: str, payload: MapAnalysisRequest):
     try:
@@ -479,7 +540,7 @@ def patch_literature_map_view(map_id: str, payload: MapViewRequest):
         raise _error(ValueError("invalid position"))
     try:
         service = get_literature_map_service()
-        item = service.store.update_view(map_id, OWNER_ID, expected_revision=payload.expected_revision, positions=[position.model_dump() for position in payload.positions], viewport=payload.viewport.model_dump() if payload.viewport else None, filters=payload.filters, layers=payload.layers)
+        item = service.store.update_view(map_id, OWNER_ID, expected_revision=payload.expected_revision, positions=[position.model_dump() for position in payload.positions], viewport=payload.viewport.model_dump() if payload.viewport else None, filters=payload.filters, layers=payload.layers, label_mode=payload.label_mode)
     except Exception as error:
         raise _error(error) from error
     return _envelope(map=item.to_dict())

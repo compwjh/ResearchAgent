@@ -1,0 +1,175 @@
+{
+  "spec": "043",
+  "task": "09",
+  "run_id": "20261024-160056-task09-import-api",
+  "runtime": {
+    "service_url": "http://127.0.0.1:8000/",
+    "port": 8000,
+    "observed_date": "2026-10-24",
+    "execution": "deployed service HTTP API",
+    "model_calls": 0,
+    "external_direct_provider_calls_during_import": 0,
+    "official_arxiv_metadata_gets": 1
+  },
+  "target": {
+    "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+    "node_id": "2e35b888d3cb414090e2d8e55e5bae1a",
+    "source_url": "https://www.semanticscholar.org/paper/0000fcfd467a19cf0e59169c2f07d730a0f3a8b9",
+    "external_ids": {
+      "arxiv": "1809.07041",
+      "doi": "10.1007/978-3-030-01264-9_42",
+      "semantic_scholar": "0000fcfd467a19cf0e59169c2f07d730a0f3a8b9"
+    }
+  },
+  "arxiv_metadata_probe": {
+    "method": "GET",
+    "url": "https://export.arxiv.org/api/query?id_list=1809.07041&start=0&max_results=1",
+    "http_status": 200,
+    "pdf_requested": false,
+    "semantic_scholar_called": false,
+    "entry": {
+      "id": "http://arxiv.org/abs/1809.07041v1",
+      "title": "Exploring Visual Relationship for Image Captioning",
+      "published_year": 2018,
+      "authors": [
+        "Ting Yao",
+        "Yingwei Pan",
+        "Yehao Li",
+        "Tao Mei"
+      ]
+    },
+    "comparison": {
+      "id": {
+        "node": "1809.07041",
+        "arxiv": "1809.07041v1",
+        "normalized_match": true,
+        "reason": "unversioned node identity accepts returned version"
+      },
+      "title": {
+        "node": "Exploring Visual Relationship for Image Captioning",
+        "arxiv": "Exploring Visual Relationship for Image Captioning",
+        "normalized_match": true,
+        "similarity": 1.0
+      },
+      "year": {
+        "node": 2018,
+        "arxiv": 2018,
+        "match": true
+      },
+      "authors": {
+        "node": [
+          "TingYao",
+          "Ying-WeiPan",
+          "Ye-HaoLi",
+          "T.Mei"
+        ],
+        "arxiv": [
+          "Ting Yao",
+          "Yingwei Pan",
+          "Yehao Li",
+          "Tao Mei"
+        ],
+        "normalized_intersection_count": 3,
+        "normalized_denominator": 4,
+        "score": 0.75,
+        "threshold": 0.8,
+        "unmatched_pair": {
+          "node": "T.Mei",
+          "arxiv": "Tao Mei",
+          "normalized_node": "tmei",
+          "normalized_arxiv": "taomei"
+        }
+      },
+      "diagnosis": "same arXiv identity/title/year; author-initial abbreviation causes the strict metadata gate to emit ARXIV_IDENTITY_CONFLICT"
+    }
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a",
+      "http_status": 200,
+      "purpose": "preflight",
+      "selected_response": {
+        "download_status": "failed",
+        "document_id": null,
+        "catalog_paper_id": null,
+        "import_diagnostics": null,
+        "identity_verified": true
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a/imports",
+      "http_status": 202,
+      "request_body": {},
+      "response": {
+        "schema_version": "literature-map-v1",
+        "status": "failed",
+        "download_status": "failed",
+        "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "resolver_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "resolver_codes": [
+          "ARXIV_IDENTITY_CONFLICT",
+          "SEMANTIC_SCHOLAR_RATE_LIMITED"
+        ],
+        "retryable": true,
+        "document_id": null,
+        "catalog_paper_id": null
+      },
+      "authorized_post_ordinal": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps/9b1e4739443e40c98400cfb69aec1e45/nodes/2e35b888d3cb414090e2d8e55e5bae1a",
+      "http_status": 200,
+      "purpose": "postflight_readback",
+      "selected_response": {
+        "download_status": "failed",
+        "document_id": null,
+        "catalog_paper_id": null,
+        "source_url_unchanged": true,
+        "external_ids_unchanged": true,
+        "import_diagnostics": {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "resolver_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "resolver_codes": [
+            "ARXIV_IDENTITY_CONFLICT",
+            "SEMANTIC_SCHOLAR_RATE_LIMITED"
+          ],
+          "retryable": true
+        }
+      }
+    }
+  ],
+  "stage_result": {
+    "stage": "oa_resolution",
+    "status": "failed_retryable",
+    "reason": "strict arXiv identity conflict followed by Semantic Scholar rate limiting",
+    "pdf_candidate_observed": false,
+    "download_started": false,
+    "pdf_validation_completed": false,
+    "knowledge_base_indexed": false,
+    "document_id": null,
+    "artifact_paths": []
+  },
+  "security": {
+    "resolver_order_contract": [
+      "official_pdf_or_prepublication_pdf",
+      "strict_arxiv_fallback",
+      "semantic_scholar_oa_fallback"
+    ],
+    "flow_owner": "existing server-side import chain",
+    "reader_or_search_page_scraped": false,
+    "login_or_paywall_bypassed": false,
+    "allowlist_changed": false,
+    "credentials_logged": false,
+    "production_database_written_directly": false
+  },
+  "result": {
+    "final_status": "blocked_retryable_failure",
+    "post_count": 1,
+    "additional_retry_sent": false,
+    "identity_unchanged": true,
+    "success_claimed": false
+  }
+}

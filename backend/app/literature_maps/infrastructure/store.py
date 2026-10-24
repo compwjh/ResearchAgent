@@ -37,13 +37,17 @@ from backend.app.literature_maps.domain.models import (
 )
 from backend.app.platform.config import BASE_DIR
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 _WRITE_LOCK = threading.RLock()
 _UNSET = object()
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 _IMPORT_DIAGNOSTICS_KEY = "import_diagnostics"
 _TERMINAL_JOB_STATES = {"completed", "failed", "partial", "stopped"}
 _MAX_MAP_NODES = 200
+_ANALYSIS_QUEUE_OPERATION = "analysis_queue"
+_ANALYSIS_QUEUE_IDEMPOTENCY = "__analysis_queue__"
+_ANALYSIS_LEASE_SECONDS = 300
+_ANALYSIS_MAX_ATTEMPTS = 3
 
 
 def default_database_path() -> Path:
@@ -94,8 +98,10 @@ class LiteratureMapStore:
 
     def initialize(self) -> None:
         # ``executescript`` commits any active sqlite transaction before it
-        # runs; keep schema DDL outside ``transaction()`` and make the version
-        # marker idempotent. Runtime writes still use BEGIN IMMEDIATE.
+        # runs.  It is used only for the idempotent base bootstrap below;
+        # every schema-6 incremental DDL, repair, index, and version marker is
+        # applied by the explicit transaction that follows. Runtime writes
+        # also use BEGIN IMMEDIATE.
         with _WRITE_LOCK, self.connection() as db:
             db.executescript(
                 """
@@ -180,6 +186,10 @@ class LiteratureMapStore:
                     failed_units_json TEXT NOT NULL,
                     idempotency_key TEXT,
                     params_hash TEXT,
+                    worker_token TEXT,
+                    lease_expires_at TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(map_id, idempotency_key)
@@ -326,38 +336,51 @@ class LiteratureMapStore:
                     ON literature_map_conversation_bindings(owner_id, conversation_id, status);
                 """
             )
-            node_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_nodes)").fetchall()}
-            if "removed_at" not in node_columns:
-                db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_at TEXT")
-            if "removed_edges_json" not in node_columns:
-                db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_edges_json TEXT")
-            # Normalize legacy references that cannot resolve to a group in
-            # the same map. The paper rows themselves remain intact.
-            db.execute(
-                "UPDATE literature_map_nodes SET group_id=NULL "
-                "WHERE group_id IS NOT NULL AND NOT EXISTS ("
-                "SELECT 1 FROM literature_map_groups g "
-                "WHERE g.map_id=literature_map_nodes.map_id AND g.group_id=literature_map_nodes.group_id"
-                ")"
-            )
-            preview_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_previews)").fetchall()}
-            if "node_id" not in preview_columns:
-                db.execute("ALTER TABLE literature_map_previews ADD COLUMN node_id TEXT")
-            if "query_text" not in preview_columns:
-                db.execute("ALTER TABLE literature_map_previews ADD COLUMN query_text TEXT")
             db.execute("BEGIN IMMEDIATE")
             try:
+                node_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_nodes)").fetchall()}
+                if "removed_at" not in node_columns:
+                    db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_at TEXT")
+                if "removed_edges_json" not in node_columns:
+                    db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_edges_json TEXT")
+                # Normalize legacy references that cannot resolve to a group in
+                # the same map. The paper rows themselves remain intact.
+                db.execute(
+                    "UPDATE literature_map_nodes SET group_id=NULL "
+                    "WHERE group_id IS NOT NULL AND NOT EXISTS ("
+                    "SELECT 1 FROM literature_map_groups g "
+                    "WHERE g.map_id=literature_map_nodes.map_id AND g.group_id=literature_map_nodes.group_id"
+                    ")"
+                )
+                preview_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_previews)").fetchall()}
+                if "node_id" not in preview_columns:
+                    db.execute("ALTER TABLE literature_map_previews ADD COLUMN node_id TEXT")
+                if "query_text" not in preview_columns:
+                    db.execute("ALTER TABLE literature_map_previews ADD COLUMN query_text TEXT")
+                job_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_jobs)").fetchall()}
+                if "worker_token" not in job_columns:
+                    db.execute("ALTER TABLE literature_map_jobs ADD COLUMN worker_token TEXT")
+                if "lease_expires_at" not in job_columns:
+                    db.execute("ALTER TABLE literature_map_jobs ADD COLUMN lease_expires_at TEXT")
+                if "attempts" not in job_columns:
+                    db.execute("ALTER TABLE literature_map_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+                if "next_retry_at" not in job_columns:
+                    db.execute("ALTER TABLE literature_map_jobs ADD COLUMN next_retry_at TEXT")
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_literature_map_jobs_analysis_claim "
+                    "ON literature_map_jobs(map_id, operation, status, next_retry_at)"
+                )
                 self._repair_legacy_idempotency_bindings(db)
                 db.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_literature_map_idempotency_owner_key "
                     "ON literature_map_idempotencies(owner_id, idempotency_key)"
                 )
+                db.execute("INSERT OR IGNORE INTO literature_map_schema(version, applied_at) VALUES (?, ?)", (SCHEMA_VERSION, iso_now()))
                 db.execute("COMMIT")
             except Exception:
                 with contextlib.suppress(sqlite3.Error):
                     db.execute("ROLLBACK")
                 raise
-            db.execute("INSERT OR IGNORE INTO literature_map_schema(version, applied_at) VALUES (?, ?)", (SCHEMA_VERSION, iso_now()))
 
     @staticmethod
     def _repair_legacy_idempotency_bindings(db: sqlite3.Connection) -> None:
@@ -403,7 +426,7 @@ class LiteratureMapStore:
 
     def create_map(self, owner_id: str, *, topic: str, name: str | None = None, project_id: str | None = None, filters: dict[str, Any] | None = None, requested_count: int = 30, idempotency_key: str | None = None, params_hash: str | None = None) -> LiteratureMap:
         now = iso_now()
-        item = LiteratureMap(uuid.uuid4().hex, owner_id, (name or topic).strip()[:200], topic.strip(), project_id, filters or {}, int(requested_count), 0, "generating", {"viewport": {"x": 0, "y": 0, "scale": 1}, "layers": {"citation": True, "similarity": True}}, now, now)
+        item = LiteratureMap(uuid.uuid4().hex, owner_id, (name or topic).strip()[:200], topic.strip(), project_id, filters or {}, int(requested_count), 0, "generating", {"viewport": {"x": 0, "y": 0, "scale": 1}, "layers": {"citation": True, "similarity": True}, "label_mode": "all"}, now, now)
         with self.transaction() as db:
             db.execute(
                 "INSERT INTO literature_maps(map_id,owner_id,name,topic,project_id,filters_json,requested_count,revision,status,view_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -472,7 +495,7 @@ class LiteratureMapStore:
                 int(requested_count),
                 0,
                 "generating",
-                {"viewport": {"x": 0, "y": 0, "scale": 1}, "layers": {"citation": True, "similarity": True}},
+                {"viewport": {"x": 0, "y": 0, "scale": 1}, "layers": {"citation": True, "similarity": True}, "label_mode": "all"},
                 now,
                 now,
             )
@@ -572,7 +595,9 @@ class LiteratureMapStore:
             raise LookupError("map not found")
         return result
 
-    def update_view(self, map_id: str, owner_id: str, *, expected_revision: int, positions: list[dict[str, Any]], viewport: dict[str, Any] | None, filters: dict[str, Any] | None, layers: dict[str, Any] | None) -> LiteratureMap:
+    def update_view(self, map_id: str, owner_id: str, *, expected_revision: int, positions: list[dict[str, Any]], viewport: dict[str, Any] | None, filters: dict[str, Any] | None, layers: dict[str, Any] | None, label_mode: str | None = None) -> LiteratureMap:
+        if label_mode is not None and label_mode not in {"all", "neighbors", "hidden"}:
+            raise ValueError("INVALID_LABEL_MODE")
         with self.transaction() as db:
             row = db.execute("SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (map_id, owner_id)).fetchone()
             if not row:
@@ -589,6 +614,8 @@ class LiteratureMapStore:
                 view["filters"] = filters
             if layers is not None:
                 view["layers"] = layers
+            if label_mode is not None:
+                view["label_mode"] = label_mode
             for position in positions:
                 db.execute("UPDATE literature_map_nodes SET position_json=? WHERE map_id=? AND node_id=?", (_dump({"x": float(position["x"]), "y": float(position["y"])}), map_id, position["node_id"]))
             now = iso_now()
@@ -824,71 +851,102 @@ class LiteratureMapStore:
         model_id: str,
         idempotency_key: str,
         params_hash: str | None = None,
+        queue_job_id: str | None = None,
     ) -> tuple[MapAnalysis, MapJob, bool]:
         if evidence_level not in {"abstract", "full"}:
             raise ValueError("INVALID_EVIDENCE_LEVEL")
         if not str(idempotency_key or "").strip():
             raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
-        now = iso_now()
         with self.transaction() as db:
-            map_row = db.execute(
-                "SELECT map_id FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
-                (map_id, owner_id),
-            ).fetchone()
-            node_row = db.execute(
-                "SELECT node_id FROM literature_map_nodes WHERE map_id=? AND node_id=?",
-                (map_id, node_id),
-            ).fetchone()
-            if map_row is None or node_row is None:
-                raise LookupError("map or node not found")
-            prior = db.execute(
-                "SELECT * FROM literature_map_analyses WHERE map_id=? AND node_id=? AND idempotency_key=?",
-                (map_id, node_id, idempotency_key),
-            ).fetchone()
-            if prior is not None:
-                if (
-                    prior["evidence_level"] != evidence_level
-                    or prior["source_version"] != source_version
-                    or prior["model_id"] != model_id
-                ):
-                    raise ValueError("idempotency conflict")
-                job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (prior["job_id"],)).fetchone()
-                if job_row is None:
-                    raise LiteratureMapStoreError("MAP_ANALYSIS_STATE_INVALID")
-                return _analysis(prior), _job(job_row), False
-            version_row = db.execute(
-                "SELECT COALESCE(MAX(version), 0) AS latest FROM literature_map_analyses WHERE map_id=? AND node_id=?",
-                (map_id, node_id),
-            ).fetchone()
-            version = int(version_row["latest"] or 0) + 1
-            analysis_id = uuid.uuid4().hex
-            # Prefix the key so an analysis cannot accidentally reuse a map
-            # creation key in the shared legacy jobs table.
-            job_key = f"analysis:{idempotency_key}"
-            job = MapJob(
-                uuid.uuid4().hex,
+            return self._create_analysis_tx(
+                db,
                 map_id,
-                "analysis",
-                "queued",
-                "analysis",
-                {"analysis_id": analysis_id, "node_id": node_id, "evidence_level": evidence_level},
-                {"analysis_version": version},
-                [],
-                job_key,
-                now,
-                now,
+                node_id,
+                owner_id,
+                evidence_level=evidence_level,
+                source_version=source_version,
+                model_id=model_id,
+                idempotency_key=idempotency_key,
+                params_hash=params_hash,
+                queue_job_id=queue_job_id,
             )
-            db.execute(
-                "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), job_key, params_hash, now, now),
-            )
-            db.execute(
-                "INSERT INTO literature_map_analyses(analysis_id,map_id,node_id,version,status,evidence_level,source_version,model_id,job_id,idempotency_key,result_json,error_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (analysis_id, map_id, node_id, version, "pending", evidence_level, source_version, model_id, job.job_id, idempotency_key, None, None, now, now),
-            )
-            self._append_event(db, job)
-            analysis = MapAnalysis(analysis_id, map_id, node_id, version, "pending", evidence_level, source_version, model_id, job.job_id, None, None, idempotency_key, now, now)
-            return analysis, job, True
+
+    def _create_analysis_tx(
+        self,
+        db: sqlite3.Connection,
+        map_id: str,
+        node_id: str,
+        owner_id: str,
+        *,
+        evidence_level: str,
+        source_version: str,
+        model_id: str,
+        idempotency_key: str,
+        params_hash: str | None = None,
+        queue_job_id: str | None = None,
+    ) -> tuple[MapAnalysis, MapJob, bool]:
+        map_row = db.execute(
+            "SELECT map_id FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+            (map_id, owner_id),
+        ).fetchone()
+        node_row = db.execute(
+            "SELECT node_id FROM literature_map_nodes WHERE map_id=? AND node_id=? AND removed_at IS NULL",
+            (map_id, node_id),
+        ).fetchone()
+        if map_row is None or node_row is None:
+            raise LookupError("map or node not found")
+        prior = db.execute(
+            "SELECT * FROM literature_map_analyses WHERE map_id=? AND node_id=? AND idempotency_key=?",
+            (map_id, node_id, idempotency_key),
+        ).fetchone()
+        if prior is not None:
+            if (
+                prior["evidence_level"] != evidence_level
+                or prior["source_version"] != source_version
+                or prior["model_id"] != model_id
+            ):
+                raise ValueError("idempotency conflict")
+            job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (prior["job_id"],)).fetchone()
+            if job_row is None:
+                raise LiteratureMapStoreError("MAP_ANALYSIS_STATE_INVALID")
+            return _analysis(prior), _job(job_row), False
+        now = iso_now()
+        version_row = db.execute(
+            "SELECT COALESCE(MAX(version), 0) AS latest FROM literature_map_analyses WHERE map_id=? AND node_id=?",
+            (map_id, node_id),
+        ).fetchone()
+        version = int(version_row["latest"] or 0) + 1
+        analysis_id = uuid.uuid4().hex
+        # Prefix the key so an analysis cannot accidentally reuse a map
+        # creation key in the shared legacy jobs table.
+        job_key = f"analysis:{idempotency_key}"
+        cursor = {"analysis_id": analysis_id, "node_id": node_id, "evidence_level": evidence_level}
+        if queue_job_id:
+            cursor["queue_job_id"] = queue_job_id
+        job = MapJob(
+            uuid.uuid4().hex,
+            map_id,
+            "analysis",
+            "queued",
+            "analysis",
+            cursor,
+            {"analysis_version": version},
+            [],
+            job_key,
+            now,
+            now,
+        )
+        db.execute(
+            "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), job_key, params_hash, now, now),
+        )
+        db.execute(
+            "INSERT INTO literature_map_analyses(analysis_id,map_id,node_id,version,status,evidence_level,source_version,model_id,job_id,idempotency_key,result_json,error_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (analysis_id, map_id, node_id, version, "pending", evidence_level, source_version, model_id, job.job_id, idempotency_key, None, None, now, now),
+        )
+        self._append_event(db, job)
+        analysis = MapAnalysis(analysis_id, map_id, node_id, version, "pending", evidence_level, source_version, model_id, job.job_id, None, None, idempotency_key, now, now)
+        return analysis, job, True
 
     def get_analysis(self, analysis_id: str, map_id: str, owner_id: str) -> MapAnalysis | None:
         with self.connection() as db:
@@ -914,22 +972,719 @@ class LiteratureMapStore:
             ).fetchone()
         return _job(row) if row else None
 
-    def claim_analysis_job(self, job_id: str, map_id: str, owner_id: str) -> MapJob | None:
+    # ------------------------------------------------------------------
+    # Persistent abstract-analysis queue.  The aggregate is one ordinary
+    # MapJob row; child rows remain the existing analysis jobs.  Queue state
+    # and item metadata live in the aggregate cursor so no second scheduler
+    # or result table is introduced.
+    def ensure_analysis_queue(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        idempotency_key: str,
+        candidates: Iterable[Mapping[str, Any]] = (),
+        params_hash: str | None = None,
+    ) -> dict[str, Any]:
+        if not str(idempotency_key or "").strip():
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        candidate_values = [dict(item) for item in candidates]
+        effective_hash = params_hash or hashlib.sha256(_dump(candidate_values).encode("utf-8")).hexdigest()
         with self.transaction() as db:
-            current = db.execute(
-                "SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='analysis' AND status='running' AND EXISTS (SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL)",
-                (job_id, map_id, map_id, owner_id),
+            self._assert_map_exists(db, map_id, owner_id)
+            replay = self._queue_command_replay(db, map_id, owner_id, "analysis_queue:ensure", idempotency_key, effective_hash)
+            if replay is not None:
+                queue_id = str(replay.get("queue_job_id") or "")
+            else:
+                row = self._queue_row(db, map_id, owner_id)
+                now = iso_now()
+                if row is None:
+                    queue_id = uuid.uuid4().hex
+                    job = MapJob(
+                        queue_id,
+                        map_id,
+                        _ANALYSIS_QUEUE_OPERATION,
+                        "active",
+                        "analysis_queue",
+                        {"queue_version": 1, "pause_reason": None, "items": {}},
+                        {"total": 0, "completed": 0, "queued": 0, "running": 0, "failed": 0, "skipped": 0},
+                        [],
+                        _ANALYSIS_QUEUE_IDEMPOTENCY,
+                        now,
+                        now,
+                    )
+                    db.execute(
+                        "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), job.idempotency_key, effective_hash, now, now),
+                    )
+                    self._append_event(db, job, event_type="queued")
+                    row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (queue_id,)).fetchone()
+                else:
+                    queue_id = str(row["job_id"])
+                if candidate_values:
+                    self._update_queue_items_tx(db, row, owner_id, candidate_values)
+                elif row is not None and not candidate_values:
+                    # An explicit ensure with an empty candidate set is still
+                    # a durable no-op; do not erase a previously populated
+                    # queue when a caller is only replaying the handle.
+                    pass
+                self._remember_queue_command(db, map_id, owner_id, "analysis_queue:ensure", idempotency_key, effective_hash, {"queue_job_id": queue_id})
+        return self.get_analysis_queue(map_id, owner_id)
+
+    def get_analysis_queue(self, map_id: str, owner_id: str) -> dict[str, Any]:
+        with self.connection() as db:
+            self._assert_map_exists_readonly(db, map_id, owner_id)
+            row = self._queue_row(db, map_id, owner_id)
+            if row is None:
+                return {
+                    "map_id": map_id,
+                    "queue_job_id": None,
+                    "state": "completed",
+                    "pause_reason": None,
+                    "counts": {"total": 0, "completed": 0, "queued": 0, "running": 0, "failed": 0, "skipped": 0},
+                    "current": None,
+                    "failed_items": [],
+                }
+            return self._queue_projection_tx(db, row)
+
+    def pause_analysis_queue(self, map_id: str, owner_id: str, *, idempotency_key: str) -> dict[str, Any]:
+        return self._set_analysis_queue_state(map_id, owner_id, state="paused", pause_reason="user", idempotency_key=idempotency_key)
+
+    def resume_analysis_queue(self, map_id: str, owner_id: str, *, idempotency_key: str) -> dict[str, Any]:
+        return self._set_analysis_queue_state(map_id, owner_id, state="active", pause_reason=None, idempotency_key=idempotency_key)
+
+    def retry_analysis_queue(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        idempotency_key: str,
+        analysis_ids: Iterable[str] | None = None,
+    ) -> dict[str, Any]:
+        requested = sorted({str(item) for item in (analysis_ids or ()) if str(item).strip()})
+        params_hash = hashlib.sha256(_dump({"analysis_ids": requested}).encode("utf-8")).hexdigest()
+        with self.transaction() as db:
+            row = self._queue_row(db, map_id, owner_id)
+            if row is None:
+                raise LookupError("analysis queue not found")
+            replay = self._queue_command_replay(db, map_id, owner_id, "analysis_queue:retry", idempotency_key, params_hash)
+            if replay is None:
+                cursor = _load(row["cursor_json"], {})
+                items = cursor.get("items", {}) if isinstance(cursor, Mapping) else {}
+                if not isinstance(items, dict):
+                    items = {}
+                selected = set(requested)
+                retryable = []
+                for item in items.values():
+                    if not isinstance(item, Mapping):
+                        continue
+                    if selected and str(item.get("analysis_id")) not in selected:
+                        continue
+                    job_id = str(item.get("job_id") or "")
+                    child = db.execute(
+                        "SELECT status FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='analysis'",
+                        (job_id, map_id),
+                    ).fetchone()
+                    analysis_row = db.execute(
+                        "SELECT error_json FROM literature_map_analyses WHERE analysis_id=? AND map_id=?",
+                        (str(item.get("analysis_id") or ""), map_id),
+                    ).fetchone()
+                    error = _safe_analysis_error(_load(analysis_row["error_json"], None) if analysis_row else None) or {}
+                    if child is None or child["status"] != "failed":
+                        continue
+                    if bool(error.get("retryable", item.get("retryable", False))) is not True:
+                        continue
+                    retryable.append(item)
+                if not retryable:
+                    raise ValueError("MAP_NO_RETRYABLE_UNITS")
+                now = iso_now()
+                for item in retryable:
+                    job_id = str(item.get("job_id") or "")
+                    changed = db.execute(
+                        "UPDATE literature_map_jobs SET status='queued',worker_token=NULL,lease_expires_at=NULL,attempts=0,next_retry_at=NULL,updated_at=? WHERE job_id=? AND map_id=? AND operation='analysis' AND status='failed'",
+                        (now, job_id, map_id),
+                    )
+                    if changed.rowcount != 1:
+                        continue
+                    db.execute(
+                        "UPDATE literature_map_analyses SET status='pending',error_json=NULL,updated_at=? WHERE job_id=? AND map_id=? AND status='failed'",
+                        (now, job_id, map_id),
+                    )
+                    refreshed = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (job_id,)).fetchone()
+                    if refreshed is not None:
+                        self._append_event(db, _job(refreshed), event_type="retry")
+                queue_state = str(row["status"])
+                if queue_state != "paused":
+                    queue_state = "active"
+                cursor["pause_reason"] = cursor.get("pause_reason") if queue_state == "paused" else None
+                counts = self._queue_counts_tx(db, map_id, cursor)
+                db.execute(
+                    "UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND map_id=? AND operation=?",
+                    (queue_state, _dump(cursor), _dump(counts), now, row["job_id"], map_id, _ANALYSIS_QUEUE_OPERATION),
+                )
+                self._remember_queue_command(db, map_id, owner_id, "analysis_queue:retry", idempotency_key, params_hash, {"queue_job_id": row["job_id"]})
+        return self.get_analysis_queue(map_id, owner_id)
+
+    def pause_analysis_queue_for_failure(self, map_id: str, owner_id: str, *, pause_reason: str) -> dict[str, Any]:
+        """Persist a safe configuration/auth pause caused by a child worker."""
+
+        with self.transaction() as db:
+            row = self._queue_row(db, map_id, owner_id)
+            if row is None:
+                pass
+            else:
+                cursor = _load(row["cursor_json"], {})
+                if not isinstance(cursor, dict):
+                    cursor = {}
+                cursor["pause_reason"] = str(pause_reason)[:80]
+                counts = self._queue_counts_tx(db, map_id, cursor)
+                now = iso_now()
+                changed = db.execute(
+                    "UPDATE literature_map_jobs SET status='paused',cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND map_id=? AND operation=? AND status IN ('active','partial','completed')",
+                    (_dump(cursor), _dump(counts), now, row["job_id"], map_id, _ANALYSIS_QUEUE_OPERATION),
+                )
+                fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+                if changed.rowcount == 1 and fresh is not None:
+                    self._append_event(db, _job(fresh), event_type="paused", error_code="MAP_ANALYSIS_CONFIG_REQUIRED")
+        return self.get_analysis_queue(map_id, owner_id)
+
+    def requeue_due_analysis_jobs(self, map_id: str, owner_id: str) -> list[MapJob]:
+        """Atomically promote due retryable queue children back to ``queued``.
+
+        The retry timestamp and attempt cap are durable, so a scheduler can
+        call this method repeatedly without creating duplicate attempts. A
+        user-paused queue is never promoted; a partial queue becomes active
+        only when at least one child was actually promoted.
+        """
+
+        promoted: list[MapJob] = []
+        with self.transaction() as db:
+            queue_row = self._queue_row(db, map_id, owner_id)
+            if queue_row is None or str(queue_row["status"]) == "paused":
+                return promoted
+            now = iso_now()
+            rows = db.execute(
+                "SELECT j.* FROM literature_map_jobs j "
+                "JOIN literature_maps m ON m.map_id=j.map_id "
+                "WHERE j.map_id=? AND j.operation='analysis' AND j.status='failed' "
+                "AND j.next_retry_at IS NOT NULL AND j.next_retry_at<=? "
+                "AND j.attempts < ? AND m.owner_id=? AND m.deleted_at IS NULL "
+                "ORDER BY j.next_retry_at,j.updated_at,j.created_at",
+                (map_id, now, _ANALYSIS_MAX_ATTEMPTS, owner_id),
+            ).fetchall()
+            queue_job_id = str(queue_row["job_id"])
+            for row in rows:
+                cursor = _load(row["cursor_json"], {})
+                if not isinstance(cursor, Mapping) or str(cursor.get("queue_job_id") or "") != queue_job_id:
+                    continue
+                changed = db.execute(
+                    "UPDATE literature_map_jobs SET status='queued',worker_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=? "
+                    "WHERE job_id=? AND map_id=? AND operation='analysis' AND status='failed' "
+                    "AND next_retry_at IS NOT NULL AND next_retry_at<=? AND attempts < ?",
+                    (now, row["job_id"], map_id, now, _ANALYSIS_MAX_ATTEMPTS),
+                )
+                if changed.rowcount != 1:
+                    continue
+                db.execute(
+                    "UPDATE literature_map_analyses SET status='pending',error_json=NULL,updated_at=? "
+                    "WHERE job_id=? AND map_id=? AND status='failed'",
+                    (now, row["job_id"], map_id),
+                )
+                fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+                if fresh is not None:
+                    child = _job(fresh)
+                    self._append_event(db, child, event_type="retry")
+                    promoted.append(child)
+            if promoted:
+                queue_cursor = _load(queue_row["cursor_json"], {})
+                if not isinstance(queue_cursor, dict):
+                    queue_cursor = {}
+                counts = self._queue_counts_tx(db, map_id, queue_cursor)
+                db.execute(
+                    "UPDATE literature_map_jobs SET status='active',counts_json=?,updated_at=? "
+                    "WHERE job_id=? AND map_id=? AND operation=? AND status!='paused'",
+                    (_dump(counts), now, queue_job_id, map_id, _ANALYSIS_QUEUE_OPERATION),
+                )
+        return promoted
+
+    def next_queued_analysis_job(self, map_id: str, owner_id: str) -> str | None:
+        """Return one due child id; its claim remains a separate atomic CAS."""
+
+        with self.connection() as db:
+            row = self._queue_row(db, map_id, owner_id)
+            if row is None or row["status"] != "active":
+                return None
+            running = db.execute(
+                "SELECT 1 FROM literature_map_jobs WHERE map_id=? AND operation='analysis' AND status='running' LIMIT 1",
+                (map_id,),
             ).fetchone()
-            if current is not None:
-                db.execute("UPDATE literature_map_analyses SET status='running',updated_at=? WHERE job_id=? AND status='pending'", (iso_now(), job_id))
-                return _job(current)
+            if running is not None:
+                return None
+            cursor = _load(row["cursor_json"], {})
+            items = cursor.get("items", {}) if isinstance(cursor, Mapping) else {}
+            if not isinstance(items, Mapping):
+                return None
+            now = iso_now()
+            for item in items.values():
+                if not isinstance(item, Mapping) or item.get("status") not in {"queued", "pending"}:
+                    continue
+                job_id = str(item.get("job_id") or "")
+                child = db.execute(
+                    "SELECT job_id,next_retry_at FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='analysis' AND status='queued'",
+                    (job_id, map_id),
+                ).fetchone()
+                if child is not None and (child["next_retry_at"] is None or str(child["next_retry_at"]) <= now):
+                    return job_id
+        return None
+
+    def has_running_analysis_job(self, map_id: str, owner_id: str) -> bool:
+        """Return whether any owner-scoped analysis currently holds the map slot."""
+
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT 1 FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id "
+                "WHERE j.map_id=? AND j.operation='analysis' AND j.status='running' "
+                "AND m.owner_id=? AND m.deleted_at IS NULL LIMIT 1",
+                (map_id, owner_id),
+            ).fetchone()
+        return row is not None
+
+    def running_analysis_jobs(self, owner_id: str | None = None) -> list[tuple[str, str, str | None]]:
+        """Return running analysis leases for in-process deadline wakeups.
+
+        The lease deadline is internal scheduler state; callers use the owner
+        and map identifiers only to dispatch a bounded recovery callback.
+        Deleted maps are excluded so an old worker cannot resurrect removed
+        work during a runtime reset.
+        """
+
+        with self.connection() as db:
+            clause = [
+                "j.operation='analysis'",
+                "j.status='running'",
+                "m.deleted_at IS NULL",
+            ]
+            params: list[Any] = []
+            if owner_id is not None:
+                clause.append("m.owner_id=?")
+                params.append(owner_id)
+            rows = db.execute(
+                "SELECT j.map_id,m.owner_id,j.lease_expires_at "
+                "FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id "
+                "WHERE " + " AND ".join(clause) + " ORDER BY j.updated_at",
+                tuple(params),
+            ).fetchall()
+        return [
+            (str(row["map_id"]), str(row["owner_id"]), row["lease_expires_at"])
+            for row in rows
+        ]
+
+    def recover_analysis_jobs(self, owner_id: str | None = None) -> list[MapJob]:
+        """Requeue orphan analysis workers once; paused queues remain paused."""
+
+        recovered: list[MapJob] = []
+        with self.transaction() as db:
+            now = iso_now()
+            clause = "j.operation='analysis' AND j.status='running' AND m.deleted_at IS NULL AND (j.lease_expires_at IS NULL OR j.lease_expires_at<=?)"
+            params: list[Any] = [now]
+            if owner_id is not None:
+                clause += " AND m.owner_id=?"
+                params.append(owner_id)
+            rows = db.execute(
+                "SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id WHERE " + clause,
+                tuple(params),
+            ).fetchall()
+            for row in rows:
+                queue_id = _load(row["cursor_json"], {}).get("queue_job_id")
+                # Owner is already constrained by the join; a narrow owner
+                # lookup keeps recovery fail-closed without exposing it in the
+                # child job projection.
+                owner_row = db.execute("SELECT owner_id FROM literature_maps WHERE map_id=?", (row["map_id"],)).fetchone()
+                resolved_owner = str(owner_row["owner_id"]) if owner_row else owner_id
+                queue_row = self._queue_row(db, row["map_id"], resolved_owner) if resolved_owner else None
+                if int(row["attempts"] or 0) >= _ANALYSIS_MAX_ATTEMPTS:
+                    changed = db.execute(
+                        "UPDATE literature_map_jobs SET status='failed',step='finished',worker_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=? "
+                        "WHERE job_id=? AND status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?)",
+                        (now, row["job_id"], now),
+                    )
+                    if changed.rowcount != 1:
+                        continue
+                    safe_error = {
+                        "code": "MAP_ANALYSIS_LEASE_EXPIRED",
+                        "message": "分析租约已过期，已停止自动重试",
+                        "retryable": False,
+                    }
+                    db.execute(
+                        "UPDATE literature_map_analyses SET status='failed',result_json=NULL,error_json=?,updated_at=? WHERE job_id=? AND status='running'",
+                        (_dump(safe_error), now, row["job_id"]),
+                    )
+                    fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+                    if fresh is not None:
+                        terminal = _job(fresh)
+                        self._append_event(db, terminal, event_type="failed", error_code=safe_error["code"])
+                    if queue_row is not None:
+                        queue_cursor = _load(queue_row["cursor_json"], {})
+                        if not isinstance(queue_cursor, dict):
+                            queue_cursor = {}
+                        queue_counts = self._queue_counts_tx(db, row["map_id"], queue_cursor)
+                        queue_state = str(queue_row["status"])
+                        if queue_state != "paused":
+                            queue_state = "active" if queue_counts["queued"] or queue_counts["running"] else ("partial" if queue_counts["failed"] else "completed")
+                        db.execute(
+                            "UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND operation=?",
+                            (queue_state, _dump(queue_cursor), _dump(queue_counts), now, queue_row["job_id"], _ANALYSIS_QUEUE_OPERATION),
+                        )
+                    continue
+                changed = db.execute(
+                    "UPDATE literature_map_jobs SET status='queued',worker_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=? "
+                    "WHERE job_id=? AND status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?)",
+                    (now, row["job_id"], now),
+                )
+                if changed.rowcount != 1:
+                    continue
+                db.execute(
+                    "UPDATE literature_map_analyses SET status='pending',updated_at=? WHERE job_id=? AND status='running'",
+                    (now, row["job_id"]),
+                )
+                fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+                if fresh is not None:
+                    child = _job(fresh)
+                    recovered.append(child)
+                    if queue_row is not None:
+                        queue_cursor = _load(queue_row["cursor_json"], {})
+                        if not isinstance(queue_cursor, dict):
+                            queue_cursor = {}
+                        queue_counts = self._queue_counts_tx(db, row["map_id"], queue_cursor)
+                        queue_state = str(queue_row["status"])
+                        if queue_state != "paused":
+                            queue_state = "active" if queue_counts["queued"] or queue_counts["running"] else ("partial" if queue_counts["failed"] else "completed")
+                        db.execute(
+                            "UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND operation=?",
+                            (queue_state, _dump(queue_cursor), _dump(queue_counts), now, queue_row["job_id"], _ANALYSIS_QUEUE_OPERATION),
+                        )
+        return recovered
+
+    def active_analysis_queues(self, owner_id: str | None = None) -> list[tuple[str, str]]:
+        """List active queues with unfinished children for restart scheduling."""
+
+        with self.connection() as db:
+            clause = [
+                "q.operation=?",
+                "q.status='active'",
+                "m.deleted_at IS NULL",
+                "EXISTS (SELECT 1 FROM literature_map_jobs c WHERE c.map_id=q.map_id AND c.operation='analysis' AND c.status IN ('queued','running'))",
+            ]
+            params: list[Any] = [_ANALYSIS_QUEUE_OPERATION]
+            if owner_id is not None:
+                clause.append("m.owner_id=?")
+                params.append(owner_id)
+            rows = db.execute(
+                "SELECT q.map_id,m.owner_id FROM literature_map_jobs q JOIN literature_maps m ON m.map_id=q.map_id WHERE "
+                + " AND ".join(clause)
+                + " ORDER BY q.updated_at",
+                tuple(params),
+            ).fetchall()
+        return [(str(row["map_id"]), str(row["owner_id"])) for row in rows]
+
+    def retryable_analysis_queues(self, owner_id: str | None = None) -> list[tuple[str, str]]:
+        """List non-paused queues with a persisted, bounded retry deadline."""
+
+        with self.connection() as db:
+            clause = [
+                "q.operation=?",
+                "q.status!='paused'",
+                "m.deleted_at IS NULL",
+                "c.operation='analysis'",
+                "c.status='failed'",
+                "c.next_retry_at IS NOT NULL",
+                "c.attempts < ?",
+            ]
+            params: list[Any] = [_ANALYSIS_QUEUE_OPERATION, _ANALYSIS_MAX_ATTEMPTS]
+            if owner_id is not None:
+                clause.append("m.owner_id=?")
+                params.append(owner_id)
+            rows = db.execute(
+                "SELECT DISTINCT q.map_id,m.owner_id FROM literature_map_jobs q "
+                "JOIN literature_maps m ON m.map_id=q.map_id "
+                "JOIN literature_map_jobs c ON c.map_id=q.map_id "
+                "WHERE " + " AND ".join(clause) + " ORDER BY q.updated_at",
+                tuple(params),
+            ).fetchall()
+        return [(str(row["map_id"]), str(row["owner_id"])) for row in rows]
+
+    def queued_analysis_jobs(self, owner_id: str | None = None) -> list[MapJob]:
+        """List durable queued analysis children for restart scheduling."""
+
+        with self.connection() as db:
+            clause = [
+                "j.operation='analysis'",
+                "j.status='queued'",
+                "m.deleted_at IS NULL",
+            ]
+            params: list[Any] = []
+            if owner_id is not None:
+                clause.append("m.owner_id=?")
+                params.append(owner_id)
+            rows = db.execute(
+                "SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id WHERE "
+                + " AND ".join(clause)
+                + " ORDER BY j.updated_at,j.created_at",
+                tuple(params),
+            ).fetchall()
+        return [_job(row) for row in rows]
+
+    def refresh_analysis_queue(self, map_id: str, owner_id: str) -> dict[str, Any]:
+        with self.transaction() as db:
+            row = self._queue_row(db, map_id, owner_id)
+            if row is None:
+                return self.get_analysis_queue(map_id, owner_id)
+            cursor = _load(row["cursor_json"], {})
+            counts = self._queue_counts_tx(db, map_id, cursor)
+            current_state = str(row["status"])
+            if current_state != "paused":
+                current_state = "active" if counts["queued"] or counts["running"] else ("partial" if counts["failed"] else "completed")
+            db.execute(
+                "UPDATE literature_map_jobs SET status=?,counts_json=?,updated_at=? WHERE job_id=? AND map_id=? AND operation=?",
+                (current_state, _dump(counts), iso_now(), row["job_id"], map_id, _ANALYSIS_QUEUE_OPERATION),
+            )
+        return self.get_analysis_queue(map_id, owner_id)
+
+    def _set_analysis_queue_state(self, map_id: str, owner_id: str, *, state: str, pause_reason: str | None, idempotency_key: str) -> dict[str, Any]:
+        if not str(idempotency_key or "").strip():
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        params_hash = hashlib.sha256(_dump({"state": state, "pause_reason": pause_reason}).encode("utf-8")).hexdigest()
+        with self.transaction() as db:
+            row = self._queue_row(db, map_id, owner_id)
+            if row is None:
+                raise LookupError("analysis queue not found")
+            replay = self._queue_command_replay(db, map_id, owner_id, f"analysis_queue:{state}", idempotency_key, params_hash)
+            if replay is None:
+                cursor = _load(row["cursor_json"], {})
+                if not isinstance(cursor, dict):
+                    cursor = {}
+                cursor["pause_reason"] = pause_reason
+                counts = self._queue_counts_tx(db, map_id, cursor)
+                next_state = state
+                if state == "active" and not counts["queued"] and not counts["running"]:
+                    next_state = "partial" if counts["failed"] else "completed"
+                now = iso_now()
+                db.execute(
+                    "UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND map_id=? AND operation=?",
+                    (next_state, _dump(cursor), _dump(counts), now, row["job_id"], map_id, _ANALYSIS_QUEUE_OPERATION),
+                )
+                fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+                if fresh is not None:
+                    self._append_event(db, _job(fresh), event_type="paused" if state == "paused" else "resumed")
+                self._remember_queue_command(db, map_id, owner_id, f"analysis_queue:{state}", idempotency_key, params_hash, {"queue_job_id": row["job_id"]})
+        return self.get_analysis_queue(map_id, owner_id)
+
+    def _update_queue_items_tx(self, db: sqlite3.Connection, queue_row: sqlite3.Row, owner_id: str, candidates: list[dict[str, Any]]) -> None:
+        cursor = _load(queue_row["cursor_json"], {})
+        if not isinstance(cursor, dict):
+            cursor = {}
+        old_items = cursor.get("items", {})
+        if not isinstance(old_items, Mapping):
+            old_items = {}
+        next_items: dict[str, Any] = {}
+        for candidate in candidates:
+            node_id = str(candidate.get("node_id") or "")
+            if not node_id:
+                continue
+            if not bool(candidate.get("abstract_available", bool(str(candidate.get("source_version") or "").strip()))):
+                next_items[node_id] = {
+                    "node_id": node_id,
+                    "status": "skipped",
+                    "skip_reason": "MAP_ABSTRACT_UNAVAILABLE",
+                    "retryable": False,
+                }
+                continue
+            source_version = str(candidate.get("source_version") or "")
+            model_id = str(candidate.get("model_id") or "")
+            stable_key = str(candidate.get("idempotency_key") or f"auto:{node_id}:{source_version}:{model_id}")
+            analysis, child, _created = self._create_analysis_tx(
+                db,
+                str(queue_row["map_id"]),
+                node_id,
+                owner_id,
+                evidence_level="abstract",
+                source_version=source_version,
+                model_id=model_id,
+                idempotency_key=stable_key,
+                params_hash=str(candidate.get("params_hash") or ""),
+                queue_job_id=str(queue_row["job_id"]),
+            )
+            error = analysis.error or {}
+            next_items[node_id] = {
+                "node_id": node_id,
+                "analysis_id": analysis.analysis_id,
+                "job_id": child.job_id,
+                "source_version": source_version,
+                "model_id": model_id,
+                "status": _queue_item_status(analysis.status),
+                "retryable": bool(error.get("retryable", False)),
+                "error_code": error.get("code"),
+                "next_retry_at": _job_retry_at(db, child.job_id),
+            }
+        cursor["items"] = next_items
+        counts = self._queue_counts_tx(db, str(queue_row["map_id"]), cursor)
+        current_state = str(queue_row["status"])
+        if current_state != "paused":
+            current_state = "active" if counts["queued"] or counts["running"] else ("partial" if counts["failed"] else "completed")
+        cursor.setdefault("pause_reason", None)
+        db.execute(
+            "UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND map_id=? AND operation=?",
+            (current_state, _dump(cursor), _dump(counts), iso_now(), queue_row["job_id"], queue_row["map_id"], _ANALYSIS_QUEUE_OPERATION),
+        )
+
+    def _queue_counts_tx(self, db: sqlite3.Connection, map_id: str, cursor: Mapping[str, Any]) -> dict[str, int]:
+        items = cursor.get("items", {}) if isinstance(cursor, Mapping) else {}
+        counts = {"total": 0, "completed": 0, "queued": 0, "running": 0, "failed": 0, "skipped": 0}
+        if not isinstance(items, Mapping):
+            return counts
+        for item in items.values():
+            if not isinstance(item, Mapping):
+                continue
+            counts["total"] += 1
+            status = str(item.get("status") or "queued")
+            if status == "skipped":
+                counts["skipped"] += 1
+                continue
+            job_id = str(item.get("job_id") or "")
+            child = db.execute("SELECT status FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='analysis'", (job_id, map_id)).fetchone()
+            analysis_status = str(child["status"] if child else status)
+            if analysis_status == "stopped":
+                analysis_status = "failed"
+            if analysis_status == "completed":
+                counts["completed"] += 1
+            elif analysis_status == "running":
+                counts["running"] += 1
+            elif analysis_status == "failed":
+                counts["failed"] += 1
+            else:
+                counts["queued"] += 1
+        return counts
+
+    def _queue_projection_tx(self, db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+        cursor = _load(row["cursor_json"], {})
+        if not isinstance(cursor, dict):
+            cursor = {}
+        items = cursor.get("items", {})
+        if not isinstance(items, Mapping):
+            items = {}
+        counts = self._queue_counts_tx(db, str(row["map_id"]), cursor)
+        current: dict[str, Any] | None = None
+        failed_items: list[dict[str, Any]] = []
+        for item in items.values():
+            if not isinstance(item, Mapping):
+                continue
+            job_id = str(item.get("job_id") or "")
+            analysis_id = str(item.get("analysis_id") or "")
+            child = db.execute("SELECT status,next_retry_at FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='analysis'", (job_id, row["map_id"])).fetchone() if job_id else None
+            status = str(child["status"] if child else item.get("status") or "queued")
+            if status == "running":
+                current = {"node_id": str(item.get("node_id") or ""), "analysis_id": analysis_id, "job_id": job_id, "status": status}
+            if status in {"failed", "stopped"}:
+                analysis_row = db.execute("SELECT error_json FROM literature_map_analyses WHERE analysis_id=? AND map_id=?", (analysis_id, row["map_id"])).fetchone() if analysis_id else None
+                error = _safe_analysis_error(_load(analysis_row["error_json"], None) if analysis_row else None) or {}
+                failed_items.append({
+                    "node_id": str(item.get("node_id") or ""),
+                    "analysis_id": analysis_id,
+                    "job_id": job_id,
+                    "error_code": error.get("code") or item.get("error_code") or ("MAP_ANALYSIS_STOPPED" if status == "stopped" else "MAP_ANALYSIS_FAILED"),
+                    "retryable": bool(error.get("retryable", item.get("retryable", False))) if status != "stopped" else False,
+                    "next_retry_at": child["next_retry_at"] if child else item.get("next_retry_at"),
+                })
+        state = str(row["status"])
+        if state not in {"paused", "active", "completed", "partial"}:
+            state = "active"
+        if state == "active" and not counts["queued"] and not counts["running"]:
+            state = "partial" if counts["failed"] else "completed"
+        return {
+            "map_id": str(row["map_id"]),
+            "queue_job_id": str(row["job_id"]),
+            "state": state,
+            "pause_reason": cursor.get("pause_reason"),
+            "counts": counts,
+            "current": current,
+            "failed_items": failed_items,
+        }
+
+    @staticmethod
+    def _assert_map_exists(db: sqlite3.Connection, map_id: str, owner_id: str) -> None:
+        row = db.execute("SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (map_id, owner_id)).fetchone()
+        if row is None:
+            raise LookupError("map not found")
+
+    @staticmethod
+    def _assert_map_exists_readonly(db: sqlite3.Connection, map_id: str, owner_id: str) -> None:
+        LiteratureMapStore._assert_map_exists(db, map_id, owner_id)
+
+    @staticmethod
+    def _queue_row(db: sqlite3.Connection, map_id: str, owner_id: str) -> sqlite3.Row | None:
+        return db.execute(
+            "SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id WHERE j.map_id=? AND j.operation=? AND m.owner_id=? AND m.deleted_at IS NULL ORDER BY j.created_at LIMIT 1",
+            (map_id, _ANALYSIS_QUEUE_OPERATION, owner_id),
+        ).fetchone()
+
+    @staticmethod
+    def _queue_command_replay(db: sqlite3.Connection, map_id: str, owner_id: str, operation: str, key: str, params_hash: str) -> dict[str, Any] | None:
+        row = db.execute(
+            "SELECT params_hash,result_json FROM literature_map_mutation_idempotencies WHERE map_id=? AND owner_id=? AND operation=? AND idempotency_key=?",
+            (map_id, owner_id, operation, key),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["params_hash"] != params_hash:
+            raise ValueError("idempotency conflict")
+        value = _load(row["result_json"], {})
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _remember_queue_command(db: sqlite3.Connection, map_id: str, owner_id: str, operation: str, key: str, params_hash: str, result: Mapping[str, Any]) -> None:
+        db.execute(
+            "INSERT INTO literature_map_mutation_idempotencies(map_id,owner_id,operation,idempotency_key,params_hash,result_json,created_at) VALUES(?,?,?,?,?,?,?)",
+            (map_id, owner_id, operation, key, params_hash, _dump(dict(result)), iso_now()),
+        )
+
+    def claim_analysis_job(self, job_id: str, map_id: str, owner_id: str) -> MapJob | None:
+        """Atomically claim one queued analysis with a durable lease token.
+
+        A running child is never returned to a second caller.  The map-wide
+        running guard keeps explicit and automatic analysis jobs from
+        occupying the same map concurrently.
+        """
+
+        with self.transaction() as db:
+            now = iso_now()
+            worker_token = uuid.uuid4().hex
+            lease_expires_at = _iso_after_seconds(_ANALYSIS_LEASE_SECONDS)
+            queued_row = db.execute(
+                "SELECT j.cursor_json,j.attempts,j.next_retry_at FROM literature_map_jobs j "
+                "JOIN literature_maps m ON m.map_id=j.map_id "
+                "WHERE j.job_id=? AND j.map_id=? AND j.operation='analysis' AND j.status='queued' "
+                "AND m.owner_id=? AND m.deleted_at IS NULL",
+                (job_id, map_id, owner_id),
+            ).fetchone()
+            if queued_row is None or int(queued_row["attempts"] or 0) >= _ANALYSIS_MAX_ATTEMPTS:
+                return None
+            retry_at = queued_row["next_retry_at"]
+            if retry_at is not None and str(retry_at) > now:
+                return None
             changed = db.execute(
-                "UPDATE literature_map_jobs SET status='running',updated_at=? WHERE job_id=? AND map_id=? AND operation='analysis' AND status='queued' AND EXISTS (SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL)",
-                (iso_now(), job_id, map_id, map_id, owner_id),
+                "UPDATE literature_map_jobs SET status='running',worker_token=?,lease_expires_at=?,attempts=attempts+1,updated_at=? "
+                "WHERE job_id=? AND map_id=? AND operation='analysis' AND status='queued' "
+                "AND (next_retry_at IS NULL OR next_retry_at<=?) AND attempts < ? "
+                "AND EXISTS (SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL) "
+                "AND NOT EXISTS (SELECT 1 FROM literature_map_jobs other WHERE other.map_id=? AND other.operation='analysis' AND other.status='running')",
+                (worker_token, lease_expires_at, now, job_id, map_id, now, _ANALYSIS_MAX_ATTEMPTS, map_id, owner_id, map_id),
             )
             if changed.rowcount != 1:
                 return None
-            db.execute("UPDATE literature_map_analyses SET status='running',updated_at=? WHERE job_id=? AND status='pending'", (iso_now(), job_id))
+            analysis_changed = db.execute("UPDATE literature_map_analyses SET status='running',updated_at=? WHERE job_id=? AND status='pending'", (now, job_id))
+            if analysis_changed.rowcount != 1:
+                db.execute("UPDATE literature_map_jobs SET status='queued',worker_token=NULL,lease_expires_at=NULL,attempts=MAX(0,attempts-1),updated_at=? WHERE job_id=?", (now, job_id))
+                return None
             row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (job_id,)).fetchone()
             if row is None:
                 return None
@@ -946,28 +1701,69 @@ class LiteratureMapStore:
         status: str,
         result: Mapping[str, Any] | None = None,
         error: Mapping[str, Any] | None = None,
+        worker_token: str | None = None,
+        queue_pause_reason: str | None = None,
     ) -> MapAnalysis | None:
         if status not in {"completed", "failed"}:
             raise ValueError("invalid analysis status")
         with self.transaction() as db:
+            now = iso_now()
             row = db.execute(
-                "SELECT a.*,j.status AS job_status,j.step,j.counts_json,j.failed_units_json,j.cursor_json,j.operation,j.idempotency_key,j.created_at AS job_created_at FROM literature_map_analyses a JOIN literature_map_jobs j ON j.job_id=a.job_id JOIN literature_maps m ON m.map_id=a.map_id WHERE a.job_id=? AND a.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL",
+                "SELECT a.*,n.removed_at,j.status AS job_status,j.step,j.counts_json,j.failed_units_json,j.cursor_json,j.operation,j.idempotency_key,j.created_at AS job_created_at,j.worker_token,j.lease_expires_at,j.attempts FROM literature_map_analyses a JOIN literature_map_jobs j ON j.job_id=a.job_id JOIN literature_maps m ON m.map_id=a.map_id JOIN literature_map_nodes n ON n.map_id=a.map_id AND n.node_id=a.node_id WHERE a.job_id=? AND a.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL",
                 (job_id, map_id, owner_id),
             ).fetchone()
-            if row is None or row["job_status"] != "running":
+            if (
+                row is None
+                or row["job_status"] != "running"
+                or row["removed_at"] is not None
+                or not worker_token
+                or row["worker_token"] != worker_token
+                or not _lease_is_active(row["lease_expires_at"], now)
+            ):
                 return None
-            now = iso_now()
             safe_error = _safe_analysis_error(error)
-            db.execute(
+            retryable = status == "failed" and bool((safe_error or {}).get("retryable"))
+            retry_at = (
+                _iso_after_seconds(_retry_delay_seconds(int(row["attempts"])))
+                if retryable and int(row["attempts"]) < _ANALYSIS_MAX_ATTEMPTS
+                else None
+            )
+            job_changed = db.execute(
+                "UPDATE literature_map_jobs SET status=?,step='finished',worker_token=NULL,lease_expires_at=NULL,next_retry_at=?,updated_at=? WHERE job_id=? AND status='running' AND worker_token=? AND lease_expires_at>?",
+                (status, retry_at, now, job_id, worker_token, now),
+            )
+            if job_changed.rowcount != 1:
+                return None
+            analysis_changed = db.execute(
                 "UPDATE literature_map_analyses SET status=?,result_json=?,error_json=?,updated_at=? WHERE job_id=? AND status='running'",
                 (status, _dump(result) if status == "completed" else None, _dump(safe_error) if safe_error else None, now, job_id),
             )
-            db.execute(
-                "UPDATE literature_map_jobs SET status=?,step='finished',updated_at=? WHERE job_id=? AND status='running'",
-                (status, now, job_id),
-            )
+            if analysis_changed.rowcount != 1:
+                raise LiteratureMapStoreError("analysis finish CAS failed")
             job = MapJob(job_id, map_id, "analysis", status, "finished", _load(row["cursor_json"], {}), _load(row["counts_json"], {}), _load(row["failed_units_json"], []), row["idempotency_key"], row["job_created_at"], now)
             self._append_event(db, job, event_type="completed" if status == "completed" else "failed", error_code=(safe_error or {}).get("code"))
+            queue_id = _load(row["cursor_json"], {}).get("queue_job_id")
+            if queue_id:
+                queue_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation=?", (queue_id, map_id, _ANALYSIS_QUEUE_OPERATION)).fetchone()
+                if queue_row is not None:
+                    queue_cursor = _load(queue_row["cursor_json"], {})
+                    queue_counts = self._queue_counts_tx(db, map_id, queue_cursor)
+                    queue_state = str(queue_row["status"])
+                    if queue_pause_reason and queue_state != "paused":
+                        queue_state = "paused"
+                        if not isinstance(queue_cursor, dict):
+                            queue_cursor = {}
+                        queue_cursor["pause_reason"] = str(queue_pause_reason)[:80]
+                    elif queue_state != "paused":
+                        queue_state = "active" if queue_counts["queued"] or queue_counts["running"] else ("partial" if queue_counts["failed"] else "completed")
+                    db.execute(
+                        "UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND status != 'paused'",
+                        (queue_state, _dump(queue_cursor), _dump(queue_counts), now, queue_id),
+                    )
+                    if queue_pause_reason and queue_state == "paused":
+                        fresh_queue = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (queue_id,)).fetchone()
+                        if fresh_queue is not None and str(queue_row["status"]) != "paused":
+                            self._append_event(db, _job(fresh_queue), event_type="paused", error_code=str(queue_pause_reason))
             fresh = db.execute("SELECT * FROM literature_map_analyses WHERE job_id=?", (job_id,)).fetchone()
         return _analysis(fresh) if fresh else None
 
@@ -1363,6 +2159,24 @@ class LiteratureMapStore:
                 saved_edges = [{"edge_id": row["edge_id"], "kind": row["kind"], "source_id": row["source_id"], "target_id": row["target_id"], "provenance": _load(row["provenance_json"], {}), "score": row["score"], "basis": row["basis"], "model_version": row["model_version"], "content_hash": row["content_hash"]} for row in edges]
                 db.execute("UPDATE literature_map_nodes SET removed_at=?,removed_edges_json=? WHERE map_id=? AND node_id=?", (iso_now(), _dump(saved_edges), map_id, node_id))
                 db.execute("DELETE FROM literature_map_edges WHERE map_id=? AND (source_id=? OR target_id=?)", (map_id, node_id, node_id))
+                removed_error = _dump({"code": "MAP_NODE_REMOVED", "message": "论文节点已移除", "retryable": False})
+                child_rows = db.execute(
+                    "SELECT j.job_id FROM literature_map_jobs j JOIN literature_map_analyses a ON a.job_id=j.job_id WHERE j.map_id=? AND a.node_id=? AND j.operation='analysis' AND j.status IN ('queued','running')",
+                    (map_id, node_id),
+                ).fetchall()
+                for child in child_rows:
+                    db.execute("UPDATE literature_map_jobs SET status='failed',step='finished',worker_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=? WHERE job_id=? AND status IN ('queued','running')", (iso_now(), child["job_id"]))
+                    db.execute("UPDATE literature_map_analyses SET status='failed',error_json=?,updated_at=? WHERE job_id=? AND status IN ('pending','running')", (removed_error, iso_now(), child["job_id"]))
+                queue_row = self._queue_row(db, map_id, owner_id)
+                if queue_row is not None:
+                    queue_cursor = _load(queue_row["cursor_json"], {})
+                    if isinstance(queue_cursor, dict) and isinstance(queue_cursor.get("items"), dict):
+                        queue_cursor["items"].pop(node_id, None)
+                        queue_counts = self._queue_counts_tx(db, map_id, queue_cursor)
+                        queue_state = str(queue_row["status"])
+                        if queue_state != "paused":
+                            queue_state = "active" if queue_counts["queued"] or queue_counts["running"] else ("partial" if queue_counts["failed"] else "completed")
+                        db.execute("UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND map_id=? AND operation=?", (queue_state, _dump(queue_cursor), _dump(queue_counts), iso_now(), queue_row["job_id"], map_id, _ANALYSIS_QUEUE_OPERATION))
             now = iso_now()
             db.execute("UPDATE literature_maps SET revision=revision+1,updated_at=? WHERE map_id=? AND owner_id=?", (now, map_id, owner_id))
             fresh_map = db.execute("SELECT * FROM literature_maps WHERE map_id=?", (map_id,)).fetchone()
@@ -1558,7 +2372,7 @@ class LiteratureMapStore:
             if row["operation"] == "analysis":
                 now = iso_now()
                 db.execute(
-                    "UPDATE literature_map_jobs SET status='queued',step='analysis',updated_at=? WHERE job_id=? AND map_id=? AND status IN ('failed','partial','stopped')",
+                    "UPDATE literature_map_jobs SET status='queued',step='analysis',worker_token=NULL,lease_expires_at=NULL,attempts=0,next_retry_at=NULL,updated_at=? WHERE job_id=? AND map_id=? AND status IN ('failed','partial','stopped')",
                     (now, job_id, map_id),
                 )
                 if db.execute("SELECT changes()").fetchone()[0] != 1:
@@ -1732,7 +2546,7 @@ class LiteratureMapStore:
 
     def latest_job(self, map_id: str, owner_id: str) -> MapJob | None:
         with self.connection() as db:
-            row = db.execute("SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id WHERE j.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL ORDER BY j.updated_at DESC LIMIT 1", (map_id, owner_id)).fetchone()
+            row = db.execute("SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id WHERE j.map_id=? AND j.operation != ? AND m.owner_id=? AND m.deleted_at IS NULL ORDER BY j.updated_at DESC LIMIT 1", (map_id, _ANALYSIS_QUEUE_OPERATION, owner_id)).fetchone()
         return _job(row) if row else None
 
     def finish_job(
@@ -1932,7 +2746,11 @@ def _load(value: str | None, default: Any) -> Any:
 
 
 def _map(row: sqlite3.Row) -> LiteratureMap:
-    return LiteratureMap(row["map_id"], row["owner_id"], row["name"], row["topic"], row["project_id"], _load(row["filters_json"], {}), int(row["requested_count"]), int(row["revision"]), row["status"], _load(row["view_json"], {}), row["created_at"], row["updated_at"])
+    view = _load(row["view_json"], {})
+    if not isinstance(view, dict):
+        view = {}
+    view.setdefault("label_mode", "all")
+    return LiteratureMap(row["map_id"], row["owner_id"], row["name"], row["topic"], row["project_id"], _load(row["filters_json"], {}), int(row["requested_count"]), int(row["revision"]), row["status"], view, row["created_at"], row["updated_at"])
 
 
 def _node(row: sqlite3.Row) -> MapPaper:
@@ -1948,7 +2766,23 @@ def _edge(row: sqlite3.Row) -> MapEdge:
 
 
 def _job(row: sqlite3.Row) -> MapJob:
-    return MapJob(row["job_id"], row["map_id"], row["operation"], row["status"], row["step"], _load(row["cursor_json"], {}), _load(row["counts_json"], {}), _load(row["failed_units_json"], []), row["idempotency_key"], row["created_at"], row["updated_at"])
+    worker_token = row["worker_token"] if "worker_token" in row.keys() else None
+    lease_expires_at = row["lease_expires_at"] if "lease_expires_at" in row.keys() else None
+    return MapJob(
+        row["job_id"],
+        row["map_id"],
+        row["operation"],
+        row["status"],
+        row["step"],
+        _load(row["cursor_json"], {}),
+        _load(row["counts_json"], {}),
+        _load(row["failed_units_json"], []),
+        row["idempotency_key"],
+        row["created_at"],
+        row["updated_at"],
+        worker_token,
+        lease_expires_at,
+    )
 
 
 def _preview(row: sqlite3.Row) -> MapPreview:
@@ -2052,6 +2886,38 @@ def _safe_analysis_error(value: Mapping[str, Any] | None) -> dict[str, Any] | No
         "message": str(value.get("message") or "分析未完成")[:300],
         "retryable": bool(value.get("retryable", False)),
     }
+
+
+def _queue_item_status(status: str) -> str:
+    return {"pending": "queued", "running": "running", "completed": "completed", "failed": "failed"}.get(str(status), "queued")
+
+
+def _job_retry_at(db: sqlite3.Connection, job_id: str) -> str | None:
+    row = db.execute("SELECT next_retry_at FROM literature_map_jobs WHERE job_id=?", (job_id,)).fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
+def _retry_delay_seconds(attempts: int) -> int:
+    # Persist a bounded backoff marker.  User-triggered retry may clear it;
+    # no worker sleeps or spins in-process.
+    return min(60, 2 ** max(0, min(int(attempts) - 1, 6)))
+
+
+def _iso_after_seconds(seconds: int | float) -> str:
+    from datetime import datetime, timedelta, timezone
+
+    return (datetime.now(timezone.utc) + timedelta(seconds=max(0, float(seconds)))).isoformat()
+
+
+def _lease_is_active(value: Any, now: str) -> bool:
+    if not value:
+        return False
+    try:
+        from datetime import datetime
+
+        return datetime.fromisoformat(str(value)) > datetime.fromisoformat(str(now))
+    except (TypeError, ValueError):
+        return False
 
 
 __all__ = ["LiteratureMapStore", "LiteratureMapStoreError", "default_database_path"]

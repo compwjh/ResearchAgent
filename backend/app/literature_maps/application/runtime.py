@@ -20,6 +20,7 @@ from backend.app.paper_discovery.infrastructure.arxiv_adapter import (
 
 _service: LiteratureMapService | None = None
 _executor: ThreadPoolExecutor | None = None
+_analysis_executor: ThreadPoolExecutor | None = None
 
 
 def _existing_paper_import(snapshot: dict, source_url: str):
@@ -180,9 +181,13 @@ def _candidate_identity_matches(candidate: dict, match: object) -> bool:
 
 
 def get_literature_map_service() -> LiteratureMapService:
-    global _service, _executor
+    global _service, _executor, _analysis_executor
     if _service is None:
         _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="literature-map")
+        # Queue children have their own single-slot executor. Graph/preview
+        # work therefore keeps the two general-purpose slots even when two
+        # maps are each waiting on a provider response.
+        _analysis_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="literature-map-analysis")
         store = LiteratureMapStore()
         from backend.app.api import common
 
@@ -204,7 +209,11 @@ def get_literature_map_service() -> LiteratureMapService:
         )
         _service.analysis_service = MapAnalysisService(
             store=store,
+            # Explicit abstract/full requests use the general bounded pool;
+            # automatic queue children retain their own single-slot drain so
+            # a long summary cannot starve another map's explicit analysis.
             executor=_executor,
+            queue_executor=_analysis_executor,
             memory_repository=MemoryRepository(),
         )
     return _service
@@ -239,11 +248,20 @@ def recover_literature_map_jobs() -> int:
 
 
 def reset_literature_map_runtime() -> None:
-    global _service, _executor
+    global _service, _executor, _analysis_executor
+    if _service is not None:
+        analysis = getattr(_service, "analysis_service", None)
+        if analysis is not None:
+            shutdown = getattr(analysis, "shutdown", None)
+            if callable(shutdown):
+                shutdown()
     if _executor is not None:
         _executor.shutdown(wait=False, cancel_futures=True)
+    if _analysis_executor is not None:
+        _analysis_executor.shutdown(wait=False, cancel_futures=True)
     _service = None
     _executor = None
+    _analysis_executor = None
 
 
 __all__ = [
