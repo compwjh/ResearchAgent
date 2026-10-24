@@ -27,3 +27,10 @@
 - 新应用PID2252，主会话会话94551，8000仅loopback，ready=true；生产源差异SHA256为`6fda3d07731f9bd820653faac22ddb9fb615fe22c393ac69e0560fe968feb059`，仍为未提交工作树候选。
 - 真实入库成功后，通过原reindex接口唯一一次恢复v1，未手写来源哈希/manifest或放宽门禁；doc `ae3a1c3f7ee746bba031b06306ff3230` verified、实际PDF与indexed SHA256一致、manifest ready/100%，fullready=true。
 - 唯一全文分析 `04ff00a37f8247379878ecaf7fc6703e` 完成，非空592字符、5条引用均绑定目标doc。证据见 `task-09-runs/20261024-210815-task09-full-analysis-v1/evidence.json`。这不替代最终全量、覆盖率或验收签字。
+
+## 本地提交与最终交付绑定
+
+- 实现与证据已本地提交为`58ab86f`（Refs: spec-043）；验证时的基线458da1b加工作树身份作为历史保留，不回写成当时已提交。
+- `git diff 58ab86f -- backend frontend`为空；`git diff 458da1b 58ab86f -- backend frontend`的SHA256仍为`6fda3d07731f9bd820653faac22ddb9fb615fe22c393ac69e0560fe968feb059`，与独立双签、最终回归和已部署源一致；提交未改变运行源码，不重复重启。
+- 交付前再次实测ready=true、首页200。最终全量3384 passed/0 failed/2合法skip/67 subtests/5 warnings，exit0、覆盖率82.38%；tester与architect双签READY_FOR_USER，10/10。Spec/Task/README/状态台账已同步完成，人工步骤见`task-09-manual-acceptance.md`。
+- 仅本地提交，未push/合main；来源限流partial、无摘要跳过、RRF降级及Langfuse既有未运行限制均保留，不承诺所有外部论文随时可下载。
