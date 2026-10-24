@@ -311,6 +311,23 @@ class SemanticScholarGraphClient:
             params["year"] = str(int(year))
         return self._request("GET", "/paper/search/bulk", params=params)
 
+    def search_relevance(self, query: str, *, limit: int = 20, year: Optional[int] = None,
+                         fields: str = SEMANTIC_SCHOLAR_METADATA_FIELDS) -> SemanticScholarRequestResult:
+        """Search the relevance-ranked paper endpoint for topic discovery.
+
+        ``/paper/search/bulk`` is intentionally kept separate: it is a bulk
+        matching endpoint whose default ordering is paper ID, not search
+        relevance. Map topic discovery needs the provider's relevance order
+        before applying its own bounded deduplication and filters.
+        """
+        query = str(query or "").strip()
+        if not query:
+            return SemanticScholarRequestResult(code="SEMANTIC_SCHOLAR_QUERY_REQUIRED")
+        params: dict[str, Any] = {"query": query[:500], "limit": max(1, min(int(limit), 100)), "fields": fields}
+        if year is not None:
+            params["year"] = str(int(year))
+        return self._request("GET", "/paper/search", params=params)
+
     @staticmethod
     def parse_search_results(payload: Any) -> tuple[SemanticScholarMetadata, ...]:
         """Parse bulk-search data without treating venue as conference proof."""

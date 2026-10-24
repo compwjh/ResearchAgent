@@ -1,0 +1,296 @@
+{
+  "schema": "spec032-task14-real-api-e2e-contract-feedback-v1",
+  "spec": "032",
+  "task": "14",
+  "run_id": "spec032-task14-contract-feedback-live-20261011T114437Z",
+  "result": "blocked",
+  "decision": "BLOCKED",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "branch": "codex/spec032-final-acceptance",
+    "commit": "4070323a5fcb277a03f34912b57a62d80267bbea",
+    "service_session": "67497",
+    "requested_model": "qwen3.5:9b",
+    "requested_reasoning_effort": "xhigh",
+    "actual_request_reasoning_effort": "xhigh",
+    "reasoning_options_refresh_called": false,
+    "started_at": "2026-10-11T11:44:37Z",
+    "ended_at": "2026-10-11T11:55:34Z",
+    "deployment": {
+      "existing_service_reused": true,
+      "second_deploy_started": false,
+      "business_code_changed": false,
+      "environment_changed": false,
+      "global_model_changed": false,
+      "threshold_changed": false,
+      "schema_changed": false,
+      "old_task_retried": false,
+      "manual_supplement": false,
+      "sixth_download": false
+    },
+    "service_checks": {
+      "ready": {
+        "method": "GET",
+        "path": "/api/ready",
+        "http_status": 200,
+        "ready": true,
+        "warmup": ["jieba", "ollama_tags", "embedding", "qdrant"]
+      },
+      "home": {
+        "method": "GET",
+        "path": "/",
+        "http_status": 200,
+        "bytes": 62488
+      },
+      "reasoning_options": {
+        "method": "GET",
+        "path": "/api/chat/reasoning-options?model=qwen3.5:9b",
+        "http_status": 200,
+        "supported_efforts": ["off", "low", "medium", "high", "xhigh"],
+        "default_effort": "xhigh",
+        "source": "cache",
+        "refresh_called": false
+      }
+    }
+  },
+  "scope": {
+    "topic": "USENIX Security 2024 模糊测试与漏洞发现",
+    "objective": "比较至少5篇研究的方法与局限",
+    "min_paper_count": 5,
+    "max_paper_count": 5,
+    "target_paper_count": 5,
+    "source": "usenix",
+    "time_range": {"from": 2024, "to": 2024},
+    "language": "zh",
+    "format": "markdown",
+    "citations": "inline",
+    "plan_after_intake": "等待批准"
+  },
+  "api_evidence": {
+    "natural_language_post": {
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "http_status": 200,
+      "response_type": "SSE",
+      "request": {
+        "content": "请进行一次新的深度研究。研究主题限定为 USENIX Security 2024 的模糊测试与漏洞发现。研究目标是比较至少5篇研究的方法与局限。请最少选择5篇论文，最多选择5篇论文，目标论文数为5；来源限定为 USENIX Security，时间范围为2024-2024；输出中文 Markdown 报告并使用行内引用；生成计划后等待我批准。",
+        "model": "qwen3.5:9b",
+        "reasoning_effort": "xhigh"
+      },
+      "entities": {
+        "conversation_id": "05836dd31b78495481eab3fa757c3038",
+        "user_message_id": "c2d40dbdb9a84698b1a72d08134bd2a2",
+        "assistant_message_id": "542ab48d264a44c6a97cc2e87b382a3c",
+        "research_session_id": "abc7f5d019cc4d7ca8d269d1d1fc041b",
+        "intake_draft_id": "c6b611d962394dba9c3e7578ac6583ae",
+        "approval_request_id": "b89115a24c5546aca2c299f2cf1dc22b",
+        "last_event_seq": 7,
+        "persisted_message_status": "completed"
+      },
+      "plan": {
+        "status": "plan_pending_approval",
+        "missing": [],
+        "plan_version": 1,
+        "subject_version": 1,
+        "output_hash": "869643dc5f85dff50c41d83aad948d03709e3a69d02ec316e3f62118a1bc1f7a",
+        "constraints": ["min_paper_count:5", "max_paper_count:5", "target_paper_count:5"],
+        "work_item_search_max_results": 5
+      }
+    },
+    "plan_approval": {
+      "method": "POST",
+      "path": "/api/research-sessions/abc7f5d019cc4d7ca8d269d1d1fc041b/commands",
+      "http_status": 200,
+      "request": {
+        "command": "approve_plan",
+        "subject_version": 1,
+        "scope_json": {
+          "plan_version": 1,
+          "output_hash": "869643dc5f85dff50c41d83aad948d03709e3a69d02ec316e3f62118a1bc1f7a"
+        },
+        "idempotency_key": "plan-approval:abc7f5d019cc4d7ca8d269d1d1fc041b:1"
+      },
+      "response": {
+        "status": "queued",
+        "approval_status": "approved",
+        "research_task_id": "6184c29c7f32577e8c44e4eeb4a3b4c4",
+        "task_status": "planning"
+      }
+    },
+    "task_final": {
+      "method": "GET",
+      "path": "/api/research-tasks/6184c29c7f32577e8c44e4eeb4a3b4c4",
+      "http_status": 200,
+      "research_task_id": "6184c29c7f32577e8c44e4eeb4a3b4c4",
+      "status": "partial",
+      "current_plan_version": 1,
+      "target_paper_count": 5,
+      "updated_at": "2026-10-11T11:54:47Z",
+      "completed_at": "2026-10-11T11:54:47Z",
+      "last_error_code": null,
+      "terminal_error_code": "REPORT_NOT_READY"
+    },
+    "searches": [
+      {
+        "work_item_id": "6184c29c7f32577e8c44e4eeb4a3b4c4:s1",
+        "role": "search-worker",
+        "resolved_model": "qwen3.5:9b",
+        "search_id": "1d9a4397682548d68cdf74e9274cd9a8",
+        "status_http": 200,
+        "results_http": 200,
+        "results_total": 5,
+        "results_items": 5,
+        "source": "usenix",
+        "year": 2024
+      },
+      {
+        "work_item_id": "6184c29c7f32577e8c44e4eeb4a3b4c4:s2",
+        "role": "search-worker",
+        "resolved_model": "qwen3.5:9b",
+        "search_id": "d218150e8f3e47f4be041faeeaf849b6",
+        "status_http": 200,
+        "results_http": 200,
+        "results_total": 8,
+        "results_items": 8,
+        "source": "usenix",
+        "year": 2024
+      }
+    ],
+    "selection": {
+      "terminal_event_seq": 33,
+      "terminal_status": "partial",
+      "terminal_error_code": "REPORT_NOT_READY",
+      "selected_count": 5,
+      "selection_version": 3,
+      "selected_candidate_ids": [
+        "4e6322a23b92a271dbec9906c51fe0ab",
+        "57e0402f82fe2ce354bea423b201fde3",
+        "9793a4a35caad52ee99f926ae7c90810",
+        "bb826cac3486a295d93eb9b6cea0a6f8",
+        "ef9e0846844e5b02834163586ea6ddc9"
+      ],
+      "manual_supplement": false,
+      "sixth_download": false
+    },
+    "acquisitions": {
+      "path": "/api/research-tasks/6184c29c7f32577e8c44e4eeb4a3b4c4/acquisitions",
+      "http_status": 200,
+      "batch_id": "faa15b89-e375-4f26-830d-1656bbffa99f",
+      "selection_version": 3,
+      "status": "completed",
+      "completed_count": 5,
+      "total_count": 5,
+      "items": [
+        {"candidate_id":"4e6322a23b92a271dbec9906c51fe0ab","paper_id":"a151fcff09944e7cbd1f4086376ae914","state":"completed"},
+        {"candidate_id":"57e0402f82fe2ce354bea423b201fde3","paper_id":"527fe0c1515d48c78adec8f4eb7f4979","state":"completed"},
+        {"candidate_id":"9793a4a35caad52ee99f926ae7c90810","paper_id":"929a342c0b8d4c8283198751cae9b327","state":"completed"},
+        {"candidate_id":"bb826cac3486a295d93eb9b6cea0a6f8","paper_id":"fa82faf63802431da803e1a99ce1411b","state":"completed"},
+        {"candidate_id":"ef9e0846844e5b02834163586ea6ddc9","paper_id":"56fc315e952342158e5ae2f5ef6f01a0","state":"completed"}
+      ],
+      "links": [
+        {"document_id":"a151fcff09944e7cbd1f4086376ae914","import_item_id":"d833b098-4206-4057-afec-798a0f8c179e","status":"completed"},
+        {"document_id":"527fe0c1515d48c78adec8f4eb7f4979","import_item_id":"bb56ca11-e6da-4f5e-a8b0-b4b24810992c","status":"completed"},
+        {"document_id":"929a342c0b8d4c8283198751cae9b327","import_item_id":"41bb1914-c982-461b-b330-91089112e550","status":"completed"},
+        {"document_id":"fa82faf63802431da803e1a99ce1411b","import_item_id":"0b440051-92ba-4fa9-918f-357b4939f25a","status":"completed"},
+        {"document_id":"56fc315e952342158e5ae2f5ef6f01a0","import_item_id":"11b034bd-badf-46ab-ac4d-1183b6353ef5","status":"completed"}
+      ]
+    },
+    "kb_verification": {
+      "documents_http_status": 200,
+      "indexed_document_count": 5,
+      "source_immutable": true,
+      "source_head": [
+        {"document_id":"a151fcff09944e7cbd1f4086376ae914","http_status":200,"content_type":"application/pdf","content_length":2172524},
+        {"document_id":"527fe0c1515d48c78adec8f4eb7f4979","http_status":200,"content_type":"application/pdf","content_length":2818784},
+        {"document_id":"929a342c0b8d4c8283198751cae9b327","http_status":200,"content_type":"application/pdf","content_length":1078847},
+        {"document_id":"fa82faf63802431da803e1a99ce1411b","http_status":200,"content_type":"application/pdf","content_length":1524684},
+        {"document_id":"56fc315e952342158e5ae2f5ef6f01a0","http_status":200,"content_type":"application/pdf","content_length":676785}
+      ]
+    },
+    "matrix": {
+      "path": "/api/research-tasks/6184c29c7f32577e8c44e4eeb4a3b4c4/evidence-matrix?plan_version=1",
+      "http_status": 409,
+      "error_code": "MATRIX_NOT_READY",
+      "non_empty_body": true
+    },
+    "legacy_report": {
+      "path": "/api/research-tasks/6184c29c7f32577e8c44e4eeb4a3b4c4/report?plan_version=1",
+      "http_status": 200,
+      "status": "partial",
+      "report_id": "artifact:a8a1bd03f12c4ad1a3fa5ea20fc00586",
+      "markdown_chars": 9433,
+      "artifact_backed": true,
+      "canonical_substitute": false
+    },
+    "canonical_reports": {
+      "json": {"path":"/api/research-tasks/6184c29c7f32577e8c44e4eeb4a3b4c4/reports/1?format=json","http_status":404,"error_code":"REPORT_NOT_READY","non_empty_body":true,"non_empty_canonical_content":false},
+      "markdown": {"path":"/api/research-tasks/6184c29c7f32577e8c44e4eeb4a3b4c4/reports/1?format=markdown","http_status":404,"error_code":"REPORT_NOT_READY","non_empty_body":true,"non_empty_canonical_content":false},
+      "html": {"path":"/api/research-tasks/6184c29c7f32577e8c44e4eeb4a3b4c4/reports/1?format=html","http_status":404,"error_code":"REPORT_NOT_READY","non_empty_body":true,"non_empty_canonical_content":false}
+    },
+    "artifacts": {
+      "path": "/api/research-sessions/abc7f5d019cc4d7ca8d269d1d1fc041b/artifacts?report_version=1",
+      "http_status": 200,
+      "artifact_substituted_for_canonical": false,
+      "artifacts": [
+        {"artifact_id":"bc53e8bb5ee1409cb8aada53d485aa73","artifact_type":"citation_manifest","content_hash":"53da76af26c6164470c7c425e80559332ccc02c7ca1042f1ba90d5c0f001a631"},
+        {"artifact_id":"c9be4e3b49ab4a139a2f6653924598c8","artifact_type":"html","content_hash":"d9e74a557e958519f5ddb1ef4201a88cb28f244e09e7354b4d42af86cf410270"},
+        {"artifact_id":"a8a1bd03f12c4ad1a3fa5ea20fc00586","artifact_type":"markdown","content_hash":"44cbd8feeefd782da25493e3e12d26bc9243056b1116cf5982eecf9a592b5406"}
+      ]
+    }
+  },
+  "diagnostics": {
+    "safe_payload_boundary": "仅保留固定诊断字段；模型正文、prompt、hidden reasoning、动态 locator、凭据和 secrets 均省略。",
+    "validation": [
+      {"event_seq":17,"stage":"evaluator","attempt":1,"error_code":"AGENT_OUTPUT_INVALID","rule_id":"agent.output.safety","field_paths":["output"],"feedback_sent":false,"feedback_classification":"not_sent"},
+      {"event_seq":18,"stage":"evaluator","attempt":1,"error_code":"AGENT_OUTPUT_INVALID","rule_id":"agent.output.safety","field_paths":["output"],"feedback_sent":true,"feedback_classification":"output_contract"},
+      {"event_seq":19,"stage":"evaluator","attempt":2,"error_code":"AGENT_OUTPUT_INVALID","rule_id":"agent.output.safety","field_paths":["output"],"feedback_sent":false,"feedback_classification":"not_sent"},
+      {"event_seq":20,"stage":"evaluator","attempt":2,"error_code":"AGENT_OUTPUT_INVALID","rule_id":"agent.output.safety","field_paths":["output"],"feedback_sent":true,"feedback_classification":"output_contract"},
+      {"event_seq":29,"stage":"synthesizer","attempt":1,"error_code":"MATRIX_NOT_READY","rule_id":"matrix.evidence_matrix.required","field_paths":["evidence_matrix"],"feedback_sent":false,"feedback_classification":"not_sent"},
+      {"event_seq":30,"stage":"synthesizer","attempt":1,"error_code":"MATRIX_NOT_READY","rule_id":"matrix.evidence_matrix.required","field_paths":["evidence_matrix"],"feedback_sent":true,"feedback_classification":"matrix_validation"}
+    ]
+  },
+  "state_trace": [
+    {"event_seq":1,"entity":"phase:research","status":"running"},
+    {"event_seq":2,"entity":"phase:plan","status":"running","plan_version":1},
+    {"event_seq":8,"entity":"work_item:s1","status":"completed","search_id":"1d9a4397682548d68cdf74e9274cd9a8"},
+    {"event_seq":14,"entity":"work_item:s2","status":"completed","search_id":"d218150e8f3e47f4be041faeeaf849b6"},
+    {"event_seq":17,"entity":"work_item:e1","status":"failed","error_code":"AGENT_OUTPUT_INVALID","attempt":1},
+    {"event_seq":19,"entity":"work_item:e1","status":"failed","error_code":"AGENT_OUTPUT_INVALID","attempt":2},
+    {"event_seq":22,"entity":"work_item:e1","status":"completed"},
+    {"event_seq":26,"entity":"work_item:c1","status":"completed"},
+    {"event_seq":27,"entity":"work_item:syn","status":"running"},
+    {"event_seq":29,"entity":"work_item:syn","status":"failed","error_code":"MATRIX_NOT_READY","attempt":1},
+    {"event_seq":30,"entity":"work_item:syn.validation_feedback","status":"completed","feedback_sent":true},
+    {"event_seq":32,"entity":"work_item:syn","status":"completed"},
+    {"event_seq":33,"entity":"phase:research","status":"partial","error_code":"REPORT_NOT_READY","selected_count":5}
+  ],
+  "failure": {
+    "stage": "syn/research-report-synthesis",
+    "error_code": "REPORT_NOT_READY",
+    "matrix_read_error_code": "MATRIX_NOT_READY",
+    "canonical_report_read_error_code": "REPORT_NOT_READY",
+    "terminal_status": "partial",
+    "selected_count": 5,
+    "retryable_in_this_run": false,
+    "cause_claim_boundary": "仅记录 API/SSE 可见失败；未臆测隐藏实现原因，未人工 POST 矩阵或报告。"
+  },
+  "readiness": [
+    {"item":1,"name":"service_accessible","status":"PASS","evidence":["GET /api/ready","GET /"]},
+    {"item":2,"name":"real_natural_language_creation","status":"PASS","evidence":["POST /api/conversations/messages","conversation_id=05836dd31b78495481eab3fa757c3038"]},
+    {"item":3,"name":"natural_language_parameters","status":"PASS","evidence":["min=max=target=5","USENIX/2024","zh/markdown/inline"]},
+    {"item":4,"name":"state_progression","status":"PASS","evidence":["s1/s2/evaluator feedback/critic/syn/terminal","5 PDF imports"]},
+    {"item":5,"name":"frontend_processing_prompt","status":"FAIL","note":"本轮 backend-only，UI 文案未验证"},
+    {"item":6,"name":"wait_guidance","status":"FAIL","note":"UI 文案未验证，canonical report 不可用"},
+    {"item":7,"name":"core_artifacts","status":"FAIL","note":"PDF imports 成功；matrix/canonical report 缺失"},
+    {"item":8,"name":"actionable_recovery","status":"FAIL","note":"固定 server feedback 已验证，但用户恢复入口未验证"},
+    {"item":9,"name":"page_api_consistency","status":"FAIL","note":"未执行 UI"},
+    {"item":10,"name":"context_free_manual_steps","status":"FAIL","note":"canonical JSON/Markdown/HTML 不可查看"}
+  ],
+  "readiness_score": "4/10",
+  "evidence_files": {
+    "report": "/Users/wjh/ResearchAgent/docs/sdd/plans/032/artifacts/task-14/current-research-e2e-contract-feedback-report.md",
+    "evidence": "/Users/wjh/ResearchAgent/docs/sdd/plans/032/artifacts/task-14/current-research-e2e-contract-feedback-evidence.json",
+    "progress_log": "/Users/wjh/ResearchAgent/.codebuddy/agent-logs/spec-032/task-14/backend-tester/20261011-contract-feedback-live-e2e.md"
+  }
+}

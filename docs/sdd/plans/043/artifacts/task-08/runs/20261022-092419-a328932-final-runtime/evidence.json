@@ -1,0 +1,200 @@
+{
+  "schema_version": "task08-final-candidate-runtime-v1",
+  "run_id": "20261022-092419-a328932-final-runtime",
+  "spec": "043-literature-map-topic-exploration",
+  "task": "08",
+  "runtime": {
+    "candidate_commit": "a328932",
+    "branch": "codex/spec043-literature-map",
+    "base_url": "http://127.0.0.1:8000/",
+    "port": 8000,
+    "service_session": "3216",
+    "started_at": "2026-10-22T09:20:02Z",
+    "finished_at": "2026-10-22T09:25:14Z"
+  },
+  "request_policy": {
+    "network": "localhost via approved elevated execution",
+    "deployment_performed": false,
+    "code_or_database_modified": false,
+    "provider_direct_calls": false,
+    "s2_download_or_index": false,
+    "ollama_lan_changed": false
+  },
+  "service_checks": {
+    "ready": {
+      "method": "GET",
+      "path": "/api/ready",
+      "http_status": 200,
+      "ready": true,
+      "warmup_statuses": {
+        "jieba": "ready",
+        "ollama_tags": "ready",
+        "embedding": "ready",
+        "qdrant": "ready"
+      }
+    },
+    "health": {
+      "method": "GET",
+      "path": "/api/health",
+      "http_status": 200,
+      "status": "ok",
+      "model": "qwen3.8:27b"
+    },
+    "home": {
+      "method": "GET",
+      "path": "/",
+      "http_status": 200,
+      "asset_tags": [
+        "/assets/styles.css?v=59",
+        "/assets/literature-maps.css?v=10",
+        "/assets/literature-maps.js?v=13"
+      ]
+    },
+    "assets": [
+      {"method": "HEAD", "path": "/assets/styles.css?v=59", "http_status": 200, "content_type": "text/css"},
+      {"method": "HEAD", "path": "/assets/literature-maps.css?v=10", "http_status": 200, "content_type": "text/css"},
+      {"method": "HEAD", "path": "/assets/literature-maps.js?v=13", "http_status": 200, "content_type": "text/javascript"}
+    ]
+  },
+  "map_checks": {
+    "export_map_35a56c6f2da84fca85fc3c21dfa0055c": {
+      "map_get_http_status": 200,
+      "map_status": "partial",
+      "revision": 5,
+      "project_id": null,
+      "graph_get_http_status": 200,
+      "graph_node_count": 21,
+      "graph_edge_count": 17,
+      "latest_job": {
+        "job_id": "bc9fc2724e1f4f11a4b309fc644df393",
+        "operation": "preview_apply",
+        "status": "completed",
+        "step": "apply"
+      },
+      "identity_note": "This is the Task08 export/recovered map. The fulltext GAT node below is not asserted to belong to this map."
+    },
+    "fulltext_map_0baabeae7268429c9f7e4de8098ae1d0": {
+      "map_get_http_status": 200,
+      "map_status": "partial",
+      "revision": 124,
+      "project_id": null,
+      "graph_get_http_status": 200,
+      "graph_node_count": 21,
+      "graph_edge_count": 18,
+      "gat_node_id": "21041260a5394f42891b020128fa60fa",
+      "gat_document_id": "55afc3b8f01445429462fe78ed0d4c98",
+      "latest_job": {
+        "job_id": "1655a96b6f054c66931260204caaefa4",
+        "operation": "analysis",
+        "status": "completed",
+        "step": "finished"
+      },
+      "identity_note": "This is the separate saved fulltext map containing the GAT node/document used by the binding smoke."
+    }
+  },
+  "fulltext_and_document_checks": {
+    "source_gate": {
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/analyses",
+      "http_status": 200,
+      "abstract_available": true,
+      "fulltext_ready": true,
+      "available_evidence_levels": ["abstract", "full"],
+      "source_versions": {
+        "abstract": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+        "full": "a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c"
+      },
+      "unavailable_reason": null
+    },
+    "analyses": [
+      {
+        "analysis_id": "3bb20a9a794d4104b13fc1fe5f581c66",
+        "version": 2,
+        "evidence_level": "full",
+        "status": "completed",
+        "source_version": "a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c",
+        "summary_length": 627
+      },
+      {
+        "analysis_id": "7c63cba835c044859c571dbc87f6a48a",
+        "version": 1,
+        "evidence_level": "abstract",
+        "status": "completed",
+        "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+        "summary_length": 490
+      }
+    ],
+    "document": {
+      "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+      "documents_get_http_status": 200,
+      "papers_get_http_status": 200,
+      "status": "indexed",
+      "source_hash_state": "verified",
+      "source_sha256": "a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284",
+      "indexed_source_sha256": "a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284",
+      "project_id": null,
+      "chunkers": {
+        "v1": {"status": "indexed", "chunk_count": 57, "progress": 100, "error": null},
+        "v2": {"status": "indexed", "chunk_count": 92, "progress": 100, "error": null}
+      }
+    }
+  },
+  "application_binding_smoke": {
+    "conversation_id": "cc9f02f3d8184943bee35b4a23aa9481",
+    "request": {
+      "method": "POST",
+      "path": "/api/conversations/cc9f02f3d8184943bee35b4a23aa9481/messages",
+      "content": "请用一句话给出本文标题",
+      "model": "qwen3.8:27b",
+      "reasoning_effort": "off",
+      "mode": "normal"
+    },
+    "captured_attempt": {
+      "http_status": 200,
+      "user_message_id": "1becc9f25263436e8efde6f88b3f500c",
+      "assistant_message_id": "5f4bc7db81504e6b96d5f61caad0ae55",
+      "event_count": 13,
+      "event_types": {"meta": 1, "progress": 7, "token": 3, "sources": 1, "done": 1},
+      "first_event_seq": 1,
+      "last_event_seq": 13,
+      "strictly_increasing": true,
+      "done": {"event_seq": 13, "status": "completed"},
+      "sources": {"count": 1, "document_ids": ["55afc3b8f01445429462fe78ed0d4c98"]}
+    },
+    "meta_observed": {
+      "conversation_id": "cc9f02f3d8184943bee35b4a23aa9481",
+      "model": "qwen3.8:27b",
+      "reasoning_effort": "off",
+      "mode": "normal"
+    },
+    "postcheck": {
+      "messages_get_http_status": 200,
+      "captured_assistant_status": "completed",
+      "captured_assistant_last_event_seq": 13,
+      "captured_assistant_content_length": 24
+    },
+    "duplicate_probe_note": "The first identical POST also persisted a completed user/assistant turn while its streaming summarizer produced no console output; a second identical POST was issued only to obtain a captured SSE summary. Both turns completed. No token text, answer text, hidden reasoning, credentials, or user history was saved."
+  },
+  "readiness_matrix": {
+    "service_accessible": "PASS",
+    "existing_map_and_analysis_reads": "PASS",
+    "current_candidate_new_map_creation": "NOT_RUN",
+    "application_binding_natural_language_question": "PASS",
+    "frontend_processing_and_wait_ui": "NOT_VERIFIED",
+    "frontend_page_api_consistency": "NOT_VERIFIED",
+    "current_candidate_failure_recovery": "NOT_RUN",
+    "core_artifacts_present": "PASS",
+    "p0_p1_assessment": "NOT_ASSESSED_BY_THIS_SMOKE",
+    "overall": "BLOCKED"
+  },
+  "redaction": {
+    "omitted": ["SSE token text", "assistant answer text", "hidden reasoning", "authorization headers", "cookies", "credentials", "absolute filesystem paths", "unrelated user history"],
+    "retained": ["HTTP status codes", "paths", "schema-relevant request fields", "entity IDs", "source/version hashes", "state/status/count summaries", "SSE event metadata"],
+    "raw_sse_saved": false
+  },
+  "final_result": {
+    "runtime_smoke": "PASS",
+    "task08_final_candidate_decision": "BLOCKED",
+    "reason": "The current candidate service, existing map/document state, full analysis state, and real application binding SSE completed successfully. Browser evidence, current-candidate new-map/failure-recovery paths, full regression, and final acceptance sign-off are outside this runtime-only smoke and remain unverified.",
+    "spec_completion_claimed": false
+  }
+}

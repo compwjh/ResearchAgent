@@ -1,0 +1,36 @@
+{
+  "constructed_gold_note": "Task-03 gold is constructed gold only; human annotation was not run.",
+  "constructed_gold_only": true,
+  "errors": [],
+  "finished_at": "2026-10-22T20:30:33.536957+00:00",
+  "human_agree_rate": null,
+  "items": [
+    {
+      "skip_reason": "no_prior_context",
+      "status": "skipped",
+      "synthetic": false,
+      "task": "memory_correctness",
+      "trace_id": "9a93fe5d085320fdd3a39f3101327a1e"
+    }
+  ],
+  "metadata": {
+    "fallback_judge": "qwen3.8:27b",
+    "judge_model": "qwen3.5:9b",
+    "max_items": 1,
+    "repeats": 3,
+    "source": "export",
+    "task": "memory_correctness"
+  },
+  "schema_version": "agent-evaluation-report-v1",
+  "started_at": "2026-10-22T20:30:31.624370+00:00",
+  "status": "completed",
+  "summary": {
+    "failed": 0,
+    "no_prior_context": 1,
+    "scored": 0,
+    "skipped": 1,
+    "unavailable": 0,
+    "verified": 0,
+    "written": 0
+  }
+}

@@ -1,0 +1,130 @@
+....................................................................ss.. [  2%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+......................F................................................. [ 10%]
+........................................................................ [ 12%]
+........................................................................ [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+............................................... [ 25%]
+.................................................................... [ 27%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+............................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 69%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 76%]
+........................................................................ [ 78%]
+........................................................................................................................................... [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+..................................................................... [ 91%]
+...................................................... [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+....................                                                     [100%]
+=================================== FAILURES ===================================
+_________ test_mobile_map_drawers_single_pan_and_desktop_boundary[390] _________
+
+width = 390
+
+    @pytest.mark.parametrize("width", [375, 390])
+    def test_mobile_map_drawers_single_pan_and_desktop_boundary(width: int) -> None:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": width, "height": 820}, has_touch=True, is_mobile=True)
+            page.goto(FIXTURE.as_uri(), wait_until="load")
+    
+            list_open = page.locator("#literature-map-mobile-list-open")
+            list_close = page.locator("#literature-map-list-close")
+            list_panel = page.locator(".literature-map-list-panel")
+            list_open.click()
+            page.wait_for_function("document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+            assert list_panel.get_attribute("aria-hidden") == "false"
+            list_close.click()
+            page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+            assert page.evaluate("document.activeElement?.id") == "literature-map-mobile-list-open"
+    
+            list_open.click()
+>           page.locator('[data-map-id="map-fixture"]').click()
+
+tests/frontend/test_frontend_map_mobile_contract.py:100: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.11/site-packages/playwright/sync_api/_generated.py:15512: in click
+    self._sync(
+.venv/lib/python3.11/site-packages/playwright/_impl/_locator.py:160: in click
+    return await self._frame.click(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/playwright/_impl/_frame.py:488: in click
+    await self._channel.send("click", locals_to_params(locals()))
+.venv/lib/python3.11/site-packages/playwright/_impl/_connection.py:61: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <playwright._impl._connection.Connection object at 0x16b9ce490>
+cb = <function Channel.send.<locals>.<lambda> at 0x16b76ab60>
+is_internal = False
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        st: List[inspect.FrameInfo] = getattr(task, "__pw_stack__", inspect.stack())
+        parsed_st = _extract_stack_trace_information_from_stack(st, is_internal)
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+E           Call log:
+E             - waiting for locator("[data-map-id=\"map-fixture\"]")
+E               - locator resolved to <button type="button" role="listitem" aria-pressed="false" data-map-id="map-fixture" class="literature-map-list-item">…</button>
+E             - attempting click action
+E               - waiting for element to be visible, enabled and stable
+E               - element is not stable
+E             - retrying click action
+E               - waiting for element to be visible, enabled and stable
+
+.venv/lib/python3.11/site-packages/playwright/_impl/_connection.py:528: TimeoutError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_map_drawers_single_pan_and_desktop_boundary[390]
+1 failed, 3334 passed, 2 skipped, 5 warnings, 67 subtests passed in 648.27s (0:10:48)
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

@@ -5,7 +5,9 @@
 2. 非空库**绝不**自动重建——marker 缺失时一律 fail-closed 返回 INDEX_REBUILD_REQUIRED。
 """
 
+import hashlib
 import inspect
+import json
 
 import pytest
 
@@ -67,6 +69,24 @@ def test_finalize_pending_still_reports_503(tmp_path):
 
     assert error.value.code == "INDEX_FINALIZE_REQUIRED"
     assert error.value.status == 503
+
+
+def test_bootstrap_rejects_paired_target_and_fingerprint_tampering(tmp_path):
+    """The bootstrap target is fixed; a paired forged fingerprint is not valid."""
+    store = FinalizeBundleStore(tmp_path)
+    store.require_generation(allow_bootstrap=True)
+    marker_path = tmp_path / "data" / "kb" / "index-generation.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    forged_target = "papers_rebuild_forged"
+    marker["alias_target"] = forged_target
+    marker["collection_fingerprint"] = hashlib.sha256(forged_target.encode("utf-8")).hexdigest()
+    marker_path.write_text(json.dumps(marker, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "data" / "kb" / "papers.json").write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(ManifestStoreError) as error:
+        store.require_generation(allow_stale_metadata=True)
+
+    assert error.value.code == "INDEX_FINALIZE_REQUIRED"
 
 
 def test_startup_gate_does_not_opt_in_to_bootstrap():

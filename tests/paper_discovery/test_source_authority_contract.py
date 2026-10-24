@@ -51,7 +51,10 @@ def test_registry_exposes_canonical_entries_and_protects_required_sources():
     registry = SourceRegistry()
     assert registry.get("ieee-sp").source_id == "ieee_sp"
     assert registry.get("ieee_sp").authority_rank == AUTHORITY_OFFICIAL_DOI
-    assert registry.get("ndss").verified_years == (2024,)
+    assert registry.get("usenix").verified_years == (2024,)
+    assert registry.get("ieee_sp").verified_years == ()
+    assert registry.get("ccs").verified_years == ()
+    assert registry.get("ndss").verified_years == ()
     assert registry.get("openalex").authority_rank == AUTHORITY_AGGREGATE
     try:
         registry.set_enabled("usenix", False, via_external=True)

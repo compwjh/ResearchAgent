@@ -26,6 +26,7 @@ from backend.app.paper_discovery.infrastructure.aggregate_source_adapters import
 from backend.app.paper_discovery.infrastructure.ccs_publication_source import CcsPublicationSource
 from backend.app.paper_discovery.infrastructure.dblp_publication_source import DBLPPublicationSource
 from backend.app.paper_discovery.infrastructure.ieee_sp_publication_source import IeeeSpPublicationSource
+from backend.app.paper_discovery.infrastructure.ndss_paper_parser import NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS
 from backend.app.paper_discovery.infrastructure.ndss_publication_source import NdssPublicationSource
 from backend.app.paper_discovery.infrastructure.paper_discovery_store import PaperDiscoveryStore
 from backend.app.paper_discovery.infrastructure.source_registry import SourceRegistry
@@ -38,7 +39,9 @@ from backend.app.research.application.search_catalog_adapter import (
 )
 
 NDSS_OFFICIAL_FIXTURE = Path(__file__).parents[1] / "fixtures" / "ndss" / "official-accepted-papers-2024.html"
+NDSS_OFFICIAL_FIXTURE_2025 = Path(__file__).parents[1] / "fixtures" / "ndss" / "official-accepted-papers-2025.html"
 NDSS_OFFICIAL_URL = "https://www.ndss-symposium.org/ndss2024/accepted-papers/"
+NDSS_OFFICIAL_URL_2025 = NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS[2025]
 
 
 def test_source_registry_adapter_factory_covers_all_seven_sources(tmp_path):
@@ -201,10 +204,10 @@ def test_source_sync_progress_reports_cached_unit_id(tmp_path):
     assert [item["unit_id"] for item in progress.completed_units] == ["openalex|2024"]
 
 
-def test_catalog_runtime_uses_ndss_official_2024_route_and_keeps_other_years_fallback(tmp_path):
+def test_catalog_runtime_routes_mapped_ndss_official_years_and_keeps_unmapped_fallback(tmp_path):
     store = PaperDiscoveryStore(tmp_path / "ndss-runtime.sqlite3")
     store.create_search_job(SearchJob(
-        "ndss-runtime", "ndss official", ["ndss"], [2024, 2025],
+        "ndss-runtime", "ndss official", ["ndss"], [2023, 2024, 2025],
         expires_at="2099-01-01T00:00:00Z", created_at="2026-09-20T00:00:00Z",
     ))
     calls: list[str] = []
@@ -214,8 +217,10 @@ def test_catalog_runtime_uses_ndss_official_2024_route_and_keeps_other_years_fal
         assert not request.url.path.endswith(".pdf")
         if str(request.url) == NDSS_OFFICIAL_URL:
             return httpx.Response(200, content=NDSS_OFFICIAL_FIXTURE.read_bytes())
+        if str(request.url) == NDSS_OFFICIAL_URL_2025:
+            return httpx.Response(200, content=NDSS_OFFICIAL_FIXTURE_2025.read_bytes())
         assert request.url.host == "api.crossref.org"
-        assert "2025-01-01" in str(request.url)
+        assert "2023-01-01" in str(request.url)
         return httpx.Response(200, json={"message": {"items": [], "total-results": 0}})
 
     source = NdssPublicationSource(
@@ -227,15 +232,23 @@ def test_catalog_runtime_uses_ndss_official_2024_route_and_keeps_other_years_fal
     registry = SourceRegistry(store=store)
     with patch.object(registry, "adapter", return_value=source):
         result = CatalogSourceRuntime(store=store, registry=registry).run(
-            "ndss-runtime", "ndss", [2024, 2025]
+            "ndss-runtime", "ndss", [2023, 2024, 2025]
         )
 
     assert result.status == "completed"
-    assert calls[0] == NDSS_OFFICIAL_URL
-    assert len(calls) == 2
+    assert result.total_results == 6
+    assert calls[:2] == [NDSS_OFFICIAL_URL, NDSS_OFFICIAL_URL_2025]
+    assert len(calls) == 3
+    assert "2023-01-01" in calls[2]
     unit = store.get_fetch_unit("ndss|ndss|2024|official")
     assert unit is not None
     assert unit.unit_key == "ndss:2024:official"
+    unit_2025 = store.get_fetch_unit("ndss|ndss|2025|official")
+    assert unit_2025 is not None
+    assert unit_2025.unit_key == "ndss:2025:official"
+    fallback_unit = store.get_fetch_unit("ndss|ndss|2023")
+    assert fallback_unit is not None
+    assert fallback_unit.unit_key == "ndss:2023"
     assert unit.paper_count == 3
 
 

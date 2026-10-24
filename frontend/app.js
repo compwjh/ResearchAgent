@@ -4994,11 +4994,13 @@ function showView(view) {
   const nextView = view === 'papers' && !paperState.enabled ? 'chat' : view;
   if (nextView !== 'papers' && !paperView?.hidden) cancelPaperSearchPolling();
   const isChat = nextView === 'chat';
+  const literatureMapsView = document.querySelector('#literature-maps-view');
   document.querySelector('#chat').hidden = !isChat;
   document.querySelector('#models-view').hidden = nextView !== 'models';
   if (memoryView) memoryView.hidden = nextView !== 'memory';
   document.querySelector('#kb-view').hidden = nextView !== 'kb';
   if (paperView) paperView.hidden = nextView !== 'papers' || !paperState.enabled;
+  if (literatureMapsView) literatureMapsView.hidden = nextView !== 'literature-maps';
   if (stView) stView.hidden = nextView !== 'skill-tool';
   document.querySelectorAll('.nav-item').forEach((item) => {
     const isCurrent = item.dataset.view === nextView;
@@ -5029,6 +5031,9 @@ function showView(view) {
   if (nextView === 'skill-tool') {
     loadSkills();
     loadTools();
+  }
+  if (window.LiteratureMaps && typeof window.LiteratureMaps.setActive === 'function') {
+    window.LiteratureMaps.setActive(nextView === 'literature-maps');
   }
 }
 
@@ -6243,3 +6248,7 @@ if (kbQuestion && kbForm) {
     kbForm.requestSubmit();
   });
 }
+
+// Literature-map analysis bridges into the existing conversation navigator;
+// the map module never creates a second chat UI or invents conversation IDs.
+window.openConversationFromWorkspace = openConversationFromWorkspace;

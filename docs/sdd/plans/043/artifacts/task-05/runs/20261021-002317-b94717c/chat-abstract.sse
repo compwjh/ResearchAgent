@@ -1,0 +1,20 @@
+{
+  "redaction": {
+    "content_removed": true,
+    "reasoning_content_removed": true,
+    "preserved": "event type, event sequence ranges, terminal status, and duration only"
+  },
+  "http_status": 200,
+  "content_type": "text/event-stream",
+  "conversation_id": "5e530508d5b9433297bf1be0f27b2352",
+  "assistant_message_id": "5f405c6e3d9746b4b6bc453cd5aa8de8",
+  "event_count": 350,
+  "event_seq_first": 1,
+  "event_seq_last": 350,
+  "event_ranges": [
+    {"type":"meta","seq_start":1,"seq_end":1,"count":1},
+    {"type":"progress","seq_start":2,"seq_end":6,"count":5},
+    {"type":"token","seq_start":7,"seq_end":349,"count":343},
+    {"type":"done","seq_start":350,"seq_end":350,"count":1,"status":"completed","duration_ms":102863.81700006314,"answer_duration_ms":102863.81700006314}
+  ]
+}

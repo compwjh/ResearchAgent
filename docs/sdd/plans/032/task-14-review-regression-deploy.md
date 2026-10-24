@@ -25,6 +25,8 @@
 
 ## 变更日志
 
+- 2026-10-06：当前版本真实自然语言 E2E 创建会话和计划成功，但“最多5篇/目标论文数5”约束未保留，计划预算静默回落为12。记录 P1 并在批准前停止，未触发超额下载；证据见 `artifacts/task-14/current-research-e2e-report.md`。修复复用现有 Intake constraints 与计划预算，不新增来源或第二套编排。Semantic Scholar autocomplete/citations/references 当前真实 API 已通过，见 `current-semantic-live-report.md`；不以 API slice 代替全流程验收。
+
 - 2026-09-12：原 Task06 创建最终收口要求。
 - 2026-09-20：随新版 Spec032 顺延为 Task14，保留原评审/回归/部署目的并增加多来源自动导入与人工修复验收。
 - 2026-09-20：Task08 P1 多来源 Worker bridge 已完成离线修复；Task07 补齐 NDSS 2024 固定样本与 CCS 2021–2025 bounded NO-GO 审计；相关回归 760 passed。18080 服务已由真实浏览器加载，API health/外部来源/导入与重启 smoke 仍待可用网络环境复验，Task14 保持实施中。

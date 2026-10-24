@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Literature map SVG feasibility fixture</title>
+  <style>
+    :root { color-scheme: light; font: 14px/1.4 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: #f8f8fc; color: #262536; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #e5e3ef; }
+    h1 { margin: 0; font-size: 16px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+    button { min-width: 40px; min-height: 36px; border: 1px solid #d9d6e8; border-radius: 7px; background: #fff; color: #4d4387; cursor: pointer; }
+    button:hover, button:focus-visible { border-color: #7666ed; outline: 2px solid #ddd9ff; outline-offset: 1px; }
+    #status { flex-basis: 100%; margin: 0; color: #6e6b7c; font-size: 12px; }
+    #map-stage { height: min(78vh, 760px); min-height: 480px; padding: 12px; }
+    #literature-map { display: block; width: 100%; height: 100%; overflow: hidden; border: 1px solid #dedbea; border-radius: 10px; background: #fff; touch-action: none; user-select: none; }
+    #viewport { transform-origin: 0 0; }
+    .edge { fill: none; stroke-width: 1.2; opacity: .42; pointer-events: none; }
+    .edge[data-edge-kind="citation"] { stroke: #7666ed; marker-end: url(#citation-arrow); }
+    .edge[data-edge-kind="similarity"] { stroke: #8b879b; stroke-dasharray: 4 4; opacity: .34; }
+    .node { fill: #7666ed; stroke: #fff; stroke-width: 1.5; cursor: grab; outline: none; }
+    .node:hover, .node:focus-visible { stroke: #30257c; stroke-width: 2.5; }
+    .node[data-selected="true"] { fill: #30257c; stroke: #f4bb55; stroke-width: 3; }
+    .node.is-dragging { cursor: grabbing; }
+    .node-label { fill: #5e5a70; font-size: 10px; pointer-events: none; }
+    .legend { display: inline-flex; align-items: center; gap: 10px; color: #777386; font-size: 11px; }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .legend i { display: inline-block; width: 18px; border-top: 2px solid #7666ed; }
+    .legend i.similarity { border-top-color: #8b879b; border-top-style: dashed; }
+    @media (max-width: 760px) {
+      header { align-items: flex-start; }
+      .toolbar { width: 100%; margin-left: 0; }
+      #map-stage { height: 64vh; min-height: 360px; padding: 8px; }
+      .legend { flex-basis: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>合成 200 节点文献地图（SVG 隔离可行性样例）</h1>
+    <div class="toolbar" aria-label="地图视图操作">
+      <button id="zoom-out" type="button" aria-label="缩小">−</button>
+      <button id="zoom-in" type="button" aria-label="放大">＋</button>
+      <button id="fit-map" type="button" aria-label="适应画布">适应</button>
+    </div>
+    <div class="legend" aria-label="关系图例">
+      <span><i></i>引用</span><span><i class="similarity"></i>相似</span>
+    </div>
+    <p id="status" role="status" aria-live="polite">正在准备合成节点…</p>
+  </header>
+  <main id="map-stage">
+    <svg id="literature-map" viewBox="0 0 1200 680" tabindex="0" aria-label="文献地图图谱">
+      <defs>
+        <marker id="citation-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <path d="M0,0 L8,4 L0,8 z" fill="#7666ed"></path>
+        </marker>
+      </defs>
+      <g id="viewport">
+        <g id="edges" aria-hidden="true"></g>
+        <g id="nodes"></g>
+      </g>
+    </svg>
+  </main>
+  <!-- Rendered edge contracts: data-edge-kind="citation" and data-edge-kind="similarity". -->
+  <script>
+    "use strict";
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const VIEWBOX_WIDTH = 1200;
+    const VIEWBOX_HEIGHT = 680;
+    const NODE_COUNT = 200;
+    const MAX_LAYOUT_ITERATIONS = 8;
+    const LABEL_EVERY = 25;
+    const HIGH_PROFILE_EDGE_COUNT = 620;
+    const profile = new URLSearchParams(window.location.search).get("profile") === "high" ? "high" : "baseline";
+    const svg = document.getElementById("literature-map");
+    const viewport = document.getElementById("viewport");
+    const edgeLayer = document.getElementById("edges");
+    const nodeLayer = document.getElementById("nodes");
+    const status = document.getElementById("status");
+    const nodeElements = new Map();
+    const labelElements = new Map();
+    const graph = { nodes: [], edges: [] };
+    const view = { zoom: 1, panX: 0, panY: 0 };
+    const layout = { iterations: 0, layoutRafCount: 0, frameDurations: [] };
+    const metrics = {
+      maxLayoutIterations: MAX_LAYOUT_ITERATIONS,
+      renderRafCount: 0,
+      layoutRafCount: 0,
+      interactionDurations: [],
+      gestureWallDurations: [],
+      renderWallDurations: [],
+      frameDurations: [],
+      layoutFrameDurations: [],
+      longTaskDurations: [],
+      longTaskSupported: false,
+      labelsRendered: 0,
+      selectedNodeId: null,
+      resetInteractionDurations() { this.interactionDurations = []; },
+      snapshot() {
+        const durations = this.interactionDurations;
+        return {
+          zoom: view.zoom,
+          panX: view.panX,
+          panY: view.panY,
+          profile,
+          nodeCount: graph.nodes.length,
+          edgeCount: graph.edges.length,
+          layoutIterations: layout.iterations,
+          maxLayoutIterations: MAX_LAYOUT_ITERATIONS,
+          layoutRafCount: this.layoutRafCount,
+          renderRafCount: this.renderRafCount,
+          labelsRendered: this.labelsRendered,
+          selectedNodeId: this.selectedNodeId,
+          interactionCount: durations.length,
+          maxInteractionDurationMs: durations.length ? Math.max(...durations) : 0,
+          maxGestureWallMs: this.gestureWallDurations.length ? Math.max(...this.gestureWallDurations) : 0,
+          maxRenderWallMs: this.renderWallDurations.length ? Math.max(...this.renderWallDurations) : 0,
+          maxFrameDurationMs: this.frameDurations.length ? Math.max(...this.frameDurations) : 0,
+          totalFrameWorkMs: this.frameDurations.reduce((sum, duration) => sum + duration, 0),
+          maxLayoutFrameDurationMs: this.layoutFrameDurations.length ? Math.max(...this.layoutFrameDurations) : 0,
+          totalLayoutFrameWorkMs: this.layoutFrameDurations.reduce((sum, duration) => sum + duration, 0),
+          gestureWallDurations: [...this.gestureWallDurations],
+          renderWallDurations: [...this.renderWallDurations],
+          frameDurations: [...this.frameDurations],
+          longTaskSupported: this.longTaskSupported,
+          longTaskCount: this.longTaskDurations.length,
+          longTaskDurations: [...this.longTaskDurations],
+        };
+      },
+    };
+    window.__mapMetrics = metrics;
+    window.__mapReady = false;
+
+    function createGraph() {
+      for (let i = 0; i < NODE_COUNT; i += 1) {
+        const column = i % 20;
+        const row = Math.floor(i / 20);
+        graph.nodes.push({
+          id: `node-${i}`,
+          title: `Synthetic paper ${String(i + 1).padStart(3, "0")}`,
+          authorYear: `Author ${i % 17}, ${2010 + (i % 15)}`,
+          x: 48 + column * 58,
+          y: 38 + row * 67,
+        });
+      }
+      const edgeKeys = new Set();
+      function pushEdge(source, target, kind) {
+        if (source === target) return false;
+        const endpoints = kind === "similarity" && source > target ? `${target}:${source}` : `${source}:${target}`;
+        const key = `${kind}:${endpoints}`;
+        if (edgeKeys.has(key)) return false;
+        edgeKeys.add(key);
+        graph.edges.push({ source, target, kind });
+        return true;
+      }
+      // A sparse, deterministic mixture of directed citations and undirected-like similarities.
+      for (let i = 1; i < NODE_COUNT; i += 13) {
+        pushEdge(`node-${i}`, `node-${i - 1}`, "citation");
+      }
+      for (let i = 0; i < NODE_COUNT - 7; i += 11) {
+        pushEdge(`node-${i}`, `node-${i + 7}`, "similarity");
+      }
+      if (profile === "high") {
+        // Representative synthetic load: retain the 34-edge baseline and add
+        // 294 citation + 292 similarity edges for 620 total edges.
+        let citationAdded = 0;
+        for (let source = 0; source < NODE_COUNT && citationAdded < 294; source += 1) {
+          for (let offset = 1; offset < NODE_COUNT && citationAdded < 294; offset += 1) {
+            if (pushEdge(`node-${source}`, `node-${(source + offset) % NODE_COUNT}`, "citation")) citationAdded += 1;
+          }
+        }
+        let similarityAdded = 0;
+        for (let source = 0; source < NODE_COUNT && similarityAdded < 292; source += 1) {
+          for (let offset = 1; offset < NODE_COUNT && similarityAdded < 292; offset += 1) {
+            if (pushEdge(`node-${source}`, `node-${(source + offset) % NODE_COUNT}`, "similarity")) similarityAdded += 1;
+          }
+        }
+        if (graph.edges.length !== HIGH_PROFILE_EDGE_COUNT) {
+          throw new Error(`high profile edge count mismatch: ${graph.edges.length}`);
+        }
+      }
+    }
+
+    function createSvgElement(name, attributes) {
+      const element = document.createElementNS(SVG_NS, name);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+      return element;
+    }
+
+    function nodeById(id) {
+      return graph.nodes.find((node) => node.id === id);
+    }
+
+    function paintNode(node) {
+      const circle = nodeElements.get(node.id);
+      if (circle) {
+        circle.setAttribute("cx", String(node.x));
+        circle.setAttribute("cy", String(node.y));
+      }
+      const label = labelElements.get(node.id);
+      if (label) {
+        label.setAttribute("x", String(node.x + 8));
+        label.setAttribute("y", String(node.y - 8));
+      }
+    }
+
+    function renderEdges() {
+      const positions = new Map(graph.nodes.map((node) => [node.id, node]));
+      graph.edges.forEach((edge) => {
+        const source = positions.get(edge.source);
+        const target = positions.get(edge.target);
+        const line = createSvgElement("line", {
+          class: "edge",
+          "data-edge-kind": edge.kind,
+          "data-source-id": edge.source,
+          "data-target-id": edge.target,
+          x1: source.x,
+          y1: source.y,
+          x2: target.x,
+          y2: target.y,
+        });
+        edgeLayer.appendChild(line);
+        edge.line = line;
+      });
+    }
+
+    function renderNodes() {
+      graph.nodes.forEach((node, index) => {
+        const circle = createSvgElement("circle", {
+          class: "node",
+          "data-node-id": node.id,
+          "aria-label": `${node.title} — ${node.authorYear}`,
+          tabindex: 0,
+          r: 5.5,
+        });
+        circle.addEventListener("pointerdown", (event) => beginNodePointer(event, node));
+        circle.addEventListener("click", () => {
+          if (!node.dragMoved) selectNode(node);
+        });
+        circle.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectNode(node);
+          }
+        });
+        nodeElements.set(node.id, circle);
+        nodeLayer.appendChild(circle);
+        if (index % LABEL_EVERY === 0) {
+          const label = createSvgElement("text", { class: "node-label", "data-label-for": node.id });
+          label.textContent = node.authorYear;
+          labelElements.set(node.id, label);
+          nodeLayer.appendChild(label);
+          metrics.labelsRendered += 1;
+        }
+        paintNode(node);
+      });
+    }
+
+    function updateEdgePosition(edge) {
+      const source = nodeById(edge.source);
+      const target = nodeById(edge.target);
+      edge.line.setAttribute("x1", String(source.x));
+      edge.line.setAttribute("y1", String(source.y));
+      edge.line.setAttribute("x2", String(target.x));
+      edge.line.setAttribute("y2", String(target.y));
+    }
+
+    let viewFramePending = false;
+    function scheduleViewRender(wallStart = performance.now()) {
+      if (viewFramePending) return;
+      viewFramePending = true;
+      requestAnimationFrame(() => {
+        const frameStart = performance.now();
+        viewFramePending = false;
+        viewport.setAttribute("transform", `translate(${view.panX} ${view.panY}) scale(${view.zoom})`);
+        metrics.renderWallDurations.push(performance.now() - wallStart);
+        metrics.frameDurations.push(performance.now() - frameStart);
+        metrics.renderRafCount += 1;
+      });
+    }
+
+    const pendingNodes = new Set();
+    let nodeFramePending = false;
+    function scheduleNodeRender(node, wallStart = performance.now()) {
+      pendingNodes.add(node);
+      if (nodeFramePending) return;
+      nodeFramePending = true;
+      requestAnimationFrame(() => {
+        const frameStart = performance.now();
+        nodeFramePending = false;
+        pendingNodes.forEach((pendingNode) => {
+          paintNode(pendingNode);
+          graph.edges.filter((edge) => edge.source === pendingNode.id || edge.target === pendingNode.id).forEach(updateEdgePosition);
+        });
+        pendingNodes.clear();
+        metrics.renderWallDurations.push(performance.now() - wallStart);
+        metrics.frameDurations.push(performance.now() - frameStart);
+        metrics.renderRafCount += 1;
+      });
+    }
+
+    function recordInteraction(start) {
+      metrics.interactionDurations.push(performance.now() - start);
+    }
+
+    function selectNode(node) {
+      graph.nodes.forEach((candidate) => {
+        const element = nodeElements.get(candidate.id);
+        element.setAttribute("data-selected", candidate.id === node.id ? "true" : "false");
+      });
+      metrics.selectedNodeId = node.id;
+      status.textContent = `${node.title} · ${node.authorYear} · 已选择`;
+    }
+
+    let activePointer = null;
+    function beginNodePointer(event, node) {
+      event.stopPropagation();
+      const start = performance.now();
+      node.dragMoved = false;
+      activePointer = {
+        type: "node",
+        node,
+        pointerId: event.pointerId,
+        startedAt: performance.now(),
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: node.x,
+        originY: node.y,
+      };
+      event.currentTarget.classList.add("is-dragging");
+      event.currentTarget.setPointerCapture(event.pointerId);
+      recordInteraction(start);
+    }
+
+    function beginBackgroundPointer(event) {
+      if (event.target !== svg) return;
+      const start = performance.now();
+      activePointer = {
+        type: "view",
+        pointerId: event.pointerId,
+        startedAt: performance.now(),
+        startX: event.clientX,
+        startY: event.clientY,
+        originPanX: view.panX,
+        originPanY: view.panY,
+      };
+      svg.setPointerCapture(event.pointerId);
+      recordInteraction(start);
+    }
+
+    function movePointer(event) {
+      if (!activePointer || event.pointerId !== activePointer.pointerId) return;
+      const start = performance.now();
+      const scaleX = VIEWBOX_WIDTH / svg.getBoundingClientRect().width;
+      if (activePointer.type === "node") {
+        const node = activePointer.node;
+        const dx = (event.clientX - activePointer.startX) * scaleX / view.zoom;
+        const dy = (event.clientY - activePointer.startY) * scaleX / view.zoom;
+        node.x = activePointer.originX + dx;
+        node.y = activePointer.originY + dy;
+        node.dragMoved = Math.abs(dx) + Math.abs(dy) > 2;
+        scheduleNodeRender(node, performance.now());
+      } else {
+        view.panX = activePointer.originPanX + (event.clientX - activePointer.startX) * scaleX;
+        view.panY = activePointer.originPanY + (event.clientY - activePointer.startY) * scaleX;
+        scheduleViewRender(performance.now());
+      }
+      recordInteraction(start);
+    }
+
+    function endPointer(event) {
+      if (!activePointer || event.pointerId !== activePointer.pointerId) return;
+      const start = performance.now();
+      if (activePointer.type === "node") {
+        nodeElements.get(activePointer.node.id).classList.remove("is-dragging");
+      }
+      const gestureStartedAt = activePointer.startedAt;
+      requestAnimationFrame(() => {
+        metrics.gestureWallDurations.push(performance.now() - gestureStartedAt);
+      });
+      activePointer = null;
+      recordInteraction(start);
+    }
+
+    function resetView() {
+      view.zoom = 1;
+      view.panX = 0;
+      view.panY = 0;
+      scheduleViewRender();
+    }
+
+    document.getElementById("zoom-in").addEventListener("click", () => {
+      view.zoom = Math.min(2.5, view.zoom * 1.2);
+      scheduleViewRender();
+    });
+    document.getElementById("zoom-out").addEventListener("click", () => {
+      view.zoom = Math.max(.5, view.zoom / 1.2);
+      scheduleViewRender();
+    });
+    document.getElementById("fit-map").addEventListener("click", resetView);
+    svg.addEventListener("pointerdown", beginBackgroundPointer);
+    svg.addEventListener("pointermove", movePointer);
+    svg.addEventListener("pointerup", endPointer);
+    svg.addEventListener("pointercancel", endPointer);
+    svg.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      view.zoom = Math.max(.5, Math.min(2.5, view.zoom * (event.deltaY < 0 ? 1.08 : .92)));
+      scheduleViewRender();
+    }, { passive: false });
+
+    if ("PerformanceObserver" in window) {
+      try {
+        const observer = new PerformanceObserver((list) => {
+          list.getEntries().forEach((entry) => metrics.longTaskDurations.push(entry.duration));
+        });
+        observer.observe({ entryTypes: ["longtask"] });
+        metrics.longTaskSupported = true;
+      } catch (error) {
+        status.textContent = "浏览器未提供 longtask 观察器；仍保留交互耗时记录。";
+      }
+    }
+
+    function runBoundedLayout() {
+      if (layout.iterations >= MAX_LAYOUT_ITERATIONS) return;
+      const frameStart = performance.now();
+      layout.iterations += 1;
+      metrics.layoutRafCount += 1;
+      for (let index = layout.iterations % 5; index < graph.nodes.length; index += 5) {
+        const node = graph.nodes[index];
+        node.x += Math.sin(index + layout.iterations) * 0.02;
+        node.y += Math.cos(index + layout.iterations) * 0.02;
+        paintNode(node);
+      }
+      graph.edges.forEach(updateEdgePosition);
+      const frameDuration = performance.now() - frameStart;
+      layout.frameDurations.push(frameDuration);
+      metrics.layoutFrameDurations.push(frameDuration);
+      if (layout.iterations < MAX_LAYOUT_ITERATIONS) requestAnimationFrame(runBoundedLayout);
+    }
+
+    createGraph();
+    renderEdges();
+    renderNodes();
+    status.textContent = `已准备 ${graph.nodes.length} 个节点、${graph.edges.length} 条稀疏关系；可缩放、平移、拖动和选择。`;
+    requestAnimationFrame(runBoundedLayout);
+    window.__mapReady = true;
+  </script>
+</body>
+</html>

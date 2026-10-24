@@ -1,0 +1,239 @@
+{
+  "run_id": "spec032-task14-converged-20261008T195755Z",
+  "deployment": {
+    "head": "00cdb6b",
+    "port": 8000,
+    "restart_session": "51534",
+    "ready_request": "GET /api/ready",
+    "ready_http_status": 200,
+    "ready_response": {
+      "ready": true,
+      "warmup_status": {
+        "jieba": "ready",
+        "ollama_tags": "ready",
+        "embedding": "ready",
+        "qdrant": "ready"
+      }
+    },
+    "network_mode": "local HTTP via require_escalated",
+    "s2_manual_calls": 0,
+    "s2_rate_limit_observation": "No manual Semantic Scholar calls were made in this USENIX-only run; catalog workers used the deployed controlled source client."
+  },
+  "entities": {
+    "conversation_id": "9810466c33e0403c8515026818f00af2",
+    "research_session_id": "fd2b95c359da4923a876a026cb4c5b9c",
+    "intake_draft_id": "4b70af6819694b90942d297560439a14",
+    "approval_request_id": "bda6ab15f57847cf82356bfbd4b03114",
+    "research_task_id": "bf474433be705e479bca55c4b2dbe9c2",
+    "search_ids": {
+      "s1": "5a747b4604a04e01a6b3e228212d92d6",
+      "s2": "8ed93aa8639a4c8f92a9be9ec82dafb0"
+    },
+    "paper_ids": [],
+    "document_ids": [],
+    "artifact_ids": [],
+    "canonical_report_version": null
+  },
+  "model": {
+    "conversation_request_model": "qwen3.5:9b",
+    "conversation_request_reasoning_effort": "off",
+    "observed_worker_resolution": {
+      "s1": "qwen3.5:9b",
+      "s2": "qwen3.5:9b",
+      "e1": "qwen3.5:9b",
+      "c1_start": "qwen3.8:27b-q4_K_M",
+      "c1_complete_event": "qwen3.5:9b",
+      "syn_start": "qwen3.8:27b-q4_K_M",
+      "syn_complete_event": "qwen3.5:9b"
+    },
+    "note": "Values are copied from safe worker events; the strong-role start/completion discrepancy is preserved rather than normalized."
+  },
+  "requests": [
+    {
+      "name": "natural_language_initial",
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "http_status": 200,
+      "payload": {
+        "content": "请围绕 USENIX Security 2024 的 security/privacy 研究主题，比较至少5篇论文的方法与局限，最多5篇，目标论文数5；只使用 USENIX Security 2024 公开论文，生成中文 Markdown 研究报告并保留逐篇引用。先生成研究计划，等待我批准后再评估候选、自动导入论文并生成最终报告。",
+        "model": "qwen3.5:9b",
+        "reasoning_effort": "off",
+        "mode": "normal"
+      },
+      "response_summary": {
+        "message_id": "9ab4e4f220de47f381aee001c10f0214",
+        "user_message_id": "c36978a0194f4f7b8322df4d707f3e58",
+        "conversation_id": "9810466c33e0403c8515026818f00af2",
+        "intake_status": "intake",
+        "parsed_constraints": [
+          "min_paper_count:5",
+          "max_paper_count:5",
+          "target_paper_count:5"
+        ],
+        "missing": ["topic", "objective", "time_range"]
+      }
+    },
+    {
+      "name": "natural_language_conflict_clarification",
+      "method": "POST",
+      "path": "/api/conversations/9810466c33e0403c8515026818f00af2/messages",
+      "http_status": 200,
+      "response_summary": {
+        "message_id": "d937f0fa300b4fef85efd89c384ecb14",
+        "intake_status": "active_conflict",
+        "choices": ["modify_current", "cancel_then_new", "new_conversation"],
+        "research_task_id": null
+      }
+    },
+    {
+      "name": "natural_language_field_answer",
+      "method": "POST",
+      "path": "/api/conversations/9810466c33e0403c8515026818f00af2/messages",
+      "http_status": 200,
+      "payload": {
+        "content": "主题是 security/privacy；目标是比较至少5篇 USENIX Security 2024 论文的方法与局限；时间范围是2024-2024；至少5篇、最多5篇、目标论文数5。",
+        "model": "qwen3.5:9b",
+        "reasoning_effort": "off",
+        "mode": "normal"
+      },
+      "response_summary": {
+        "message_id": "1da2a2ecc11241af92ce243eecec8505",
+        "user_message_id": "63bccc74c3494b6d9b312a0d2c24484a",
+        "intake_status": "intake",
+        "plan_status": "plan_pending_approval",
+        "plan_version": 1,
+        "subject_version": 1,
+        "output_hash": "7deaa0a57c53cefd00c69eb5f862a187c9767157b2414f6b2f5f264d80cd3e35",
+        "topic": "security/privacy",
+        "objective": "比较至少5篇 USENIX Security 2024 论文的方法与局限",
+        "time_range": {"from": 2024, "to": 2024},
+        "constraints": [
+          "min_paper_count:5",
+          "max_paper_count:5",
+          "target_paper_count:5"
+        ],
+        "budget_target_paper_count": 5,
+        "work_item_max_results": {"s1": 5, "s2": 5},
+        "source": "usenix"
+      }
+    },
+    {
+      "name": "plan_approval",
+      "method": "POST",
+      "path": "/api/research-sessions/fd2b95c359da4923a876a026cb4c5b9c/commands",
+      "http_status": 200,
+      "payload_summary": {
+        "command": "approve_plan",
+        "subject_version": 1,
+        "scope_json": {
+          "plan_version": 1,
+          "output_hash": "7deaa0a57c53cefd00c69eb5f862a187c9767157b2414f6b2f5f264d80cd3e35"
+        },
+        "idempotency_key": "plan-approval:fd2b95c359da4923a876a026cb4c5b9c:1"
+      },
+      "response_summary": {
+        "session_status": "queued",
+        "approval_status": "approved",
+        "research_task_id": "bf474433be705e479bca55c4b2dbe9c2",
+        "task_initial_status": "planning"
+      }
+    }
+  ],
+  "polls": [
+    {
+      "observed_at": "2026-10-08T19:58:57Z",
+      "task_status": "running",
+      "search_id": null,
+      "target_paper_count": 5,
+      "runtime_error": null,
+      "acquisition": {"http_status": 404, "code": "BATCH_NOT_FOUND"},
+      "matrix": {"http_status": 409, "code": "MATRIX_NOT_READY"}
+    },
+    {
+      "observed_at": "2026-10-08T19:59:39Z",
+      "task_status": "running",
+      "search_id": "5a747b4604a04e01a6b3e228212d92d6",
+      "target_paper_count": 5,
+      "runtime_error": null,
+      "acquisition": {"http_status": 404, "code": "BATCH_NOT_FOUND"},
+      "matrix": {"http_status": 409, "code": "MATRIX_NOT_READY"}
+    },
+    {
+      "observed_at": "2026-10-08T20:00:59Z",
+      "task_status": "running",
+      "search_id": "5a747b4604a04e01a6b3e228212d92d6",
+      "target_paper_count": 5,
+      "runtime_error": null,
+      "acquisition": {"http_status": 404, "code": "BATCH_NOT_FOUND"},
+      "matrix": {"http_status": 409, "code": "MATRIX_NOT_READY"}
+    },
+    {
+      "observed_at": "2026-10-08T20:02:13Z",
+      "task_status": "running",
+      "search_id": "5a747b4604a04e01a6b3e228212d92d6",
+      "target_paper_count": 5,
+      "runtime_error": null,
+      "acquisition": {"http_status": 404, "code": "BATCH_NOT_FOUND"},
+      "matrix": {"http_status": 409, "code": "MATRIX_NOT_READY"}
+    },
+    {
+      "observed_at": "2026-10-08T20:03:48Z",
+      "task_status": "partial",
+      "search_id": "5a747b4604a04e01a6b3e228212d92d6",
+      "completed_at": "2026-10-08T20:03:48Z",
+      "target_paper_count": 5,
+      "terminal_error_code": "AGENT_OUTPUT_INVALID",
+      "terminal_selected_count": 5,
+      "acquisition": {"http_status": 200, "status": "failed", "approval_status": "failed", "selection_version": 3, "batch_id": null, "items": [], "paper_ids": [], "document_ids": []},
+      "matrix": {"http_status": 409, "code": "MATRIX_NOT_READY"}
+    }
+  ],
+  "safe_event_summary": {
+    "last_event_seq": 27,
+    "stages": {
+      "s1_search_catalog": "completed",
+      "s2_search_catalog": "completed",
+      "e1_evaluate_papers": "completed",
+      "c1_check_coverage": "completed",
+      "syn_synthesize_preliminary_report": "completed_with_invalid_agent_output"
+    },
+    "s2_candidate_count": 5,
+    "terminal_event": {
+      "event_seq": 27,
+      "status": "partial",
+      "error_code": "AGENT_OUTPUT_INVALID",
+      "selected_count": 5
+    },
+    "projection_warnings": {
+      "code": "TRACE_PROJECTION_FAILED",
+      "retryable": true,
+      "note": "Warnings appeared in safe processing_step projections; raw safe events remained available and were not treated as the terminal error."
+    }
+  },
+  "report_and_artifact_checks": {
+    "legacy_report": {"method": "GET", "path": "/api/research-tasks/bf474433be705e479bca55c4b2dbe9c2/report", "http_status": 409, "code": "REPORT_NOT_READY"},
+    "canonical_json": {"method": "GET", "path": "/api/research-tasks/bf474433be705e479bca55c4b2dbe9c2/reports/1?format=json", "http_status": 404, "code": "REPORT_NOT_READY"},
+    "canonical_markdown": {"method": "GET", "path": "/api/research-tasks/bf474433be705e479bca55c4b2dbe9c2/reports/1?format=markdown", "http_status": 404, "code": "REPORT_NOT_READY"},
+    "canonical_html": {"method": "GET", "path": "/api/research-tasks/bf474433be705e479bca55c4b2dbe9c2/reports/1?format=html", "http_status": 404, "code": "REPORT_NOT_READY"},
+    "session_artifacts": {"method": "GET", "path": "/api/research-sessions/fd2b95c359da4923a876a026cb4c5b9c/artifacts", "http_status": 200, "artifacts": []},
+    "canonical_report_path": null,
+    "canonical_report_title": null,
+    "canonical_report_word_count": null,
+    "canonical_report_citation_count": 0,
+    "canonical_report_content_bytes": 0
+  },
+  "acceptance": {
+    "plan_budget_gate": "PASS",
+    "natural_language_entry": "PASS_TO_PLAN",
+    "approval": "PASS",
+    "catalog_search": "PASS",
+    "evaluation_terminal_selected_count": 5,
+    "five_paper_import": "BLOCKED",
+    "non_empty_matrix": "BLOCKED",
+    "canonical_json_markdown_html": "BLOCKED",
+    "overall": "BLOCKED",
+    "blocking_stage": "synthesizer agent-output validation",
+    "blocking_code": "AGENT_OUTPUT_INVALID",
+    "not_a_full_spec_e2e": true
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "run_id": "spec032-task14-research-e2e-reviewed-20261008T000748Z",
+  "result": "BLOCKED",
+  "blocked_stage": "automatic_import_and_canonical_report",
+  "blocked_reason": "Automatic import remained non-terminal with two KB_IMPORT_FAILED items and three downloading items; the evidence matrix and versioned ResearchReport were not ready.",
+  "scope": {
+    "natural_language": true,
+    "conference": "USENIX Security",
+    "year": 2024,
+    "topic": "security/privacy",
+    "minimum_methods": 5,
+    "maximum_papers": 5,
+    "target_papers": 5,
+    "time_limit_minutes": 20,
+    "download_import_limit": 5,
+    "no_pdf_or_source_mutation": true
+  },
+  "runtime": {
+    "commit": "4e0cec9",
+    "branch": "codex/spec032-final-acceptance",
+    "base_url": "http://127.0.0.1:8000",
+    "process_session": "26208",
+    "ready_http_status": 200,
+    "ready": true,
+    "health_http_status": 200,
+    "health_default_model": "qwen3.8:27b",
+    "requested_model": "qwen3.5:9b",
+    "requested_reasoning_effort": "off",
+    "observed_at_utc": "2026-10-08T15:18:32Z"
+  },
+  "entities": {
+    "conversation_id": "439062c163f949cb8a8f1718e4763a59",
+    "user_message_id": "14e6ab3bf31241e6970861dabf16da7d",
+    "assistant_message_id": "98af4c2205de4214852dcca9e5be2e4a",
+    "research_session_id": "da70204dd1eb46f7a48652dd2a1118b1",
+    "intake_draft_id": "776540fdb3534165899605a985ecb88a",
+    "research_task_id": "fc83662fd8f15748b57ed7f49ad32445",
+    "search_id": "53961c1b4cf94b96a5d4c531e78c91e5",
+    "import_batch_id": "5ab07fc9-b1ef-4a13-925e-5596997b889f"
+  },
+  "requests": [
+    {
+      "step": "natural_language_intake",
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "http_status": 200,
+      "body_summary": "Chinese natural-language request naming USENIX Security 2024, security/privacy, at least 5 methods and limitations, at most 5 papers, target 5, Chinese Markdown with inline citations; model qwen3.5:9b and reasoning off.",
+      "response_summary": "Real SSE created conversation, session, intake draft, and plan version 1 pending approval."
+    },
+    {
+      "step": "approve_plan",
+      "method": "POST",
+      "path": "/api/research-sessions/da70204dd1eb46f7a48652dd2a1118b1/commands",
+      "http_status": 200,
+      "body_summary": {
+        "command": "approve_plan",
+        "subject_version": 1,
+        "scope_json": {
+          "plan_version": 1,
+          "output_hash": "90d76ed9b03b2873f66253426bf825b68f8eff9c8c1cbaf8d59accde0d94e43d"
+        },
+        "idempotency_key": "plan-approval:da70204dd1eb46f7a48652dd2a1118b1:1"
+      },
+      "response_summary": "Approval approved; task fc83662fd8f15748b57ed7f49ad32445 entered running."
+    },
+    {
+      "step": "task_final_state",
+      "method": "GET",
+      "path": "/api/research-tasks/fc83662fd8f15748b57ed7f49ad32445",
+      "http_status": 200,
+      "response_summary": {
+        "status": "completed",
+        "target_paper_count": 5,
+        "search_id": "53961c1b4cf94b96a5d4c531e78c91e5",
+        "completed_at": "2026-10-08T00:17:51Z",
+        "plan_version": 1,
+        "output_hash": "90d76ed9b03b2873f66253426bf825b68f8eff9c8c1cbaf8d59accde0d94e43d"
+      }
+    },
+    {
+      "step": "automatic_import_state",
+      "method": "GET",
+      "path": "/api/research-tasks/fc83662fd8f15748b57ed7f49ad32445/acquisitions",
+      "http_status": 200,
+      "observed_at_utc": "2026-10-08T15:17:01Z",
+      "response_summary": "Batch contains exactly five selected items; two failed with KB_IMPORT_FAILED and three remain downloading."
+    },
+    {
+      "step": "task_report",
+      "method": "GET",
+      "path": "/api/research-tasks/fc83662fd8f15748b57ed7f49ad32445/report",
+      "http_status": 200,
+      "response_summary": {
+        "report_id": "artifact:8e1e792c014a442ca23a0c37925ba6fb",
+        "status": "completed",
+        "limitations": {"artifact_backed": true},
+        "title": "深度研究报告",
+        "markdown_chars": 7649,
+        "inline_catalog_citation_count": 5,
+        "selection_count": 5
+      }
+    },
+    {
+      "step": "evidence_matrix",
+      "method": "GET",
+      "path": "/api/research-tasks/fc83662fd8f15748b57ed7f49ad32445/evidence-matrix?plan_version=1",
+      "http_status": 409,
+      "error_code": "MATRIX_NOT_READY"
+    },
+    {
+      "step": "canonical_report_version",
+      "method": "GET",
+      "path": "/api/research-tasks/fc83662fd8f15748b57ed7f49ad32445/reports/1?format=json",
+      "http_status": 404,
+      "error_code": "REPORT_NOT_READY"
+    },
+    {
+      "step": "artifact_download",
+      "method": "GET",
+      "path": "/api/research-sessions/da70204dd1eb46f7a48652dd2a1118b1/artifacts/8e1e792c014a442ca23a0c37925ba6fb/download?mode=attachment",
+      "http_status": 200,
+      "content_type": "text/markdown; charset=utf-8",
+      "bytes": 8197
+    }
+  ],
+  "plan": {
+    "plan_version": 1,
+    "output_hash": "90d76ed9b03b2873f66253426bf825b68f8eff9c8c1cbaf8d59accde0d94e43d",
+    "constraints": {
+      "min_paper_count": 5,
+      "max_paper_count": 5,
+      "target_paper_count": 5,
+      "source": "USENIX Security",
+      "time_range": "2024-2024"
+    },
+    "budget": {
+      "target_paper_count": 5,
+      "within_requested_maximum": true
+    },
+    "approval": {
+      "status": "approved",
+      "subject_version": 1,
+      "idempotency_key": "plan-approval:da70204dd1eb46f7a48652dd2a1118b1:1"
+    }
+  },
+  "selection": {
+    "count": 5,
+    "candidate_ids": [
+      "4e6322a23b92a271dbec9906c51fe0ab",
+      "57e0402f82fe2ce354bea423b201fde3",
+      "9793a4a35caad52ee99f926ae7c90810",
+      "bb826cac3486a295d93eb9b6cea0a6f8",
+      "ef9e0846844e5b02834163586ea6ddc9"
+    ],
+    "evaluation_completed": true,
+    "automatic_import_started": true
+  },
+  "acquisition": {
+    "status": "running",
+    "selection_version": 3,
+    "item_count": 5,
+    "items": [
+      {
+        "candidate_id": "4e6322a23b92a271dbec9906c51fe0ab",
+        "normalized_title": "ghostraceexploitingandmitigatingspeculativeraceconditions",
+        "state": "failed",
+        "status": "failed",
+        "error_code": "KB_IMPORT_FAILED",
+        "attempt_count": 1,
+        "paper_id": null,
+        "document_id": null
+      },
+      {
+        "candidate_id": "57e0402f82fe2ce354bea423b201fde3",
+        "normalized_title": "dnngpdiagnosingandmitigatingmodelsfaultsusinglatentconcepts",
+        "state": "downloading",
+        "status": "downloading",
+        "error_code": null,
+        "attempt_count": 1,
+        "paper_id": null,
+        "document_id": null
+      },
+      {
+        "candidate_id": "9793a4a35caad52ee99f926ae7c90810",
+        "normalized_title": "cascadecpufuzzingviaintricateprogramgeneration",
+        "state": "failed",
+        "status": "failed",
+        "error_code": "KB_IMPORT_FAILED",
+        "attempt_count": 1,
+        "paper_id": null,
+        "document_id": null
+      },
+      {
+        "candidate_id": "bb826cac3486a295d93eb9b6cea0a6f8",
+        "normalized_title": "darkfleeceprobingthedarksideofandroidsubscriptionapps",
+        "state": "downloading",
+        "status": "downloading",
+        "error_code": null,
+        "attempt_count": 1,
+        "paper_id": null,
+        "document_id": null
+      },
+      {
+        "candidate_id": "ef9e0846844e5b02834163586ea6ddc9",
+        "normalized_title": "stopdontclickhereanymoreboostingwebsitefingerprintingbyconsideringsetsofsubpages",
+        "state": "downloading",
+        "status": "downloading",
+        "error_code": null,
+        "attempt_count": 1,
+        "paper_id": null,
+        "document_id": null
+      }
+    ],
+    "open_issue_count": 2,
+    "open_issue_error_codes": ["KB_IMPORT_FAILED"]
+  },
+  "artifacts": {
+    "session_artifacts_http_status": 200,
+    "report_version": 1,
+    "markdown": {
+      "artifact_id": "8e1e792c014a442ca23a0c37925ba6fb",
+      "artifact_type": "markdown",
+      "content_hash": "02492f9698f2900a0f147e8693dbcdc56fc29f3b6fe5aeaea12a21823a72d219",
+      "download_http_status": 200,
+      "bytes": 8197
+    },
+    "html_artifact_id": "d02b12ae66bd4ada943e9f4374c2a69f",
+    "citation_manifest_artifact_id": "8d57f8abe7294e9892e5aac6a3392122"
+  },
+  "safety": {
+    "semantic_scholar_rate_limit_respected": true,
+    "no_env_or_api_key_read": true,
+    "no_business_code_changed": true,
+    "no_reindex_or_delete": true,
+    "no_retry_or_upload_after_failure": true,
+    "hidden_reasoning_saved": false
+  }
+}

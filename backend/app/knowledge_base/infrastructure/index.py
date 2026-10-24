@@ -3,6 +3,7 @@
 并发约束（011-tech-review R5）：模块级单例 client + 单 worker + 写锁。
 """
 
+import hashlib
 import re
 import threading
 import uuid
@@ -23,6 +24,11 @@ from backend.app.knowledge_base.infrastructure.manifest_store import (
     FinalizeBundleStore,
     InspectionManifestStore,
     ManifestStoreError,
+    publication_mutation_lock,
+)
+from backend.app.knowledge_base.infrastructure.migration import (
+    KnowledgeDocumentMigrationError,
+    publish_index_state,
 )
 from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.normalize import detect_citation, locate_reference_start
@@ -342,6 +348,14 @@ def _record_value(record: Any, name: str, default: Any = None) -> Any:
     return getattr(record, name, default)
 
 
+def _normalize_index_error(message: Any) -> str:
+    """Collapse parser hash failures into the canonical publication error."""
+    value = str(message)
+    if value in {"PDF_SOURCE_HASH_MISMATCH", "SOURCE_HASH_MISMATCH"}:
+        return "SOURCE_HASH_MISMATCH"
+    return value
+
+
 def _source_pages(provenance: Any) -> List[tuple[Optional[int], str]]:
     """Project parser provenance into the page text needed by citation detection."""
     if getattr(provenance, "media_type", "") == "text/markdown":
@@ -401,13 +415,24 @@ def _build_index_bundle(record: Any, file_path: Any, chunker: str, llm: Optional
     return provenance, bundle, _bundle_chunks(bundle)
 
 
+def _source_digest(path: Any) -> str | None:
+    digest = hashlib.sha256()
+    try:
+        with Path(path).open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+    except (OSError, ValueError):
+        return None
+    return digest.hexdigest()
+
+
 def _publish_inspection_manifest(
     record: Any,
     bundle: Any,
     chunks: List[Chunk],
     *,
     meta_path: Optional[Path],
-) -> None:
+) -> Any:
     """Publish the manifest from the exact payloads sent to Qdrant."""
     document = record.to_dict() if hasattr(record, "to_dict") else dict(record)
     document_id = str(document.get("document_id") or record_id(document))
@@ -427,12 +452,146 @@ def _publish_inspection_manifest(
     ]
     manifest = build_inspection_manifest(document, bundle, payloads)
     root = Path(meta_path or KB_META_PATH).resolve().parent
-    InspectionManifestStore(root).write(manifest)
-    # Direct document indexing publishes a live derived manifest outside of
-    # the full-candidate finalizer.  Refresh the generation digest so the
-    # existing generation gate does not treat this legitimate publication as
-    # metadata corruption.
-    FinalizeBundleStore(root.parents[1]).refresh_live_digests()
+    return InspectionManifestStore(root).write(manifest)
+
+
+def _canonical_index_record(record: Any) -> bool:
+    return bool(
+        _record_value(record, "document_id")
+        and isinstance(_record_value(record, "source_sha256"), str)
+        and _record_value(record, "source_sha256")
+    )
+
+
+def _mark_index_failed(
+    record: Any,
+    paper_id: str,
+    chunker: str,
+    *,
+    error: str,
+    meta_path: Optional[Path],
+    refresh_marker: bool = True,
+) -> None:
+    """Best-effort strict failed-state publication with no path leakage."""
+    if not _canonical_index_record(record):
+        update_chunker_state(
+            paper_id, chunker, status=STATUS_FAILED, progress=0, error=error, meta_path=meta_path
+        )
+        return
+    try:
+        with publication_mutation_lock():
+            hash_kwargs = {}
+            if error == "SOURCE_HASH_MISMATCH":
+                hash_kwargs = {
+                    "indexed_source_sha256": str(_record_value(record, "source_sha256")),
+                    "source_hash_state": "mismatch",
+                }
+            publish_index_state(
+                Path(meta_path or KB_META_PATH),
+                paper_id,
+                chunker,
+                status=STATUS_FAILED,
+                progress=0,
+                chunk_count=0,
+                error=error,
+                **hash_kwargs,
+            )
+            if refresh_marker:
+                FinalizeBundleStore(Path(meta_path or KB_META_PATH).resolve().parent.parents[1]).refresh_live_digests()
+    except Exception:
+        # Failure to persist the controlled failure is itself fail-closed.  In
+        # particular, do not call the compatibility writer as a fallback.
+        return
+
+
+def _manifest_status(manifest: Mapping[str, Any]) -> str:
+    status = manifest.get("status")
+    return {
+        "ready": STATUS_INDEXED,
+        "partial": STATUS_PARTIAL,
+        "failed": STATUS_FAILED,
+    }.get(str(status), STATUS_FAILED)
+
+
+def _publish_manifest_and_state(
+    record: Any,
+    bundle: Any,
+    chunks: List[Chunk],
+    *,
+    paper_id: str,
+    chunker: str,
+    file_path: Any,
+    count: int,
+    meta_path: Optional[Path],
+) -> Mapping[str, Any]:
+    """Publish manifest, strict metadata, and live generation marker in order."""
+    source_sha256 = str(bundle.source_sha256)
+    meta = Path(meta_path or KB_META_PATH)
+    finalizer = FinalizeBundleStore(meta.resolve().parent.parents[1])
+    with publication_mutation_lock():
+        try:
+            manifest = _publish_inspection_manifest(record, bundle, chunks, meta_path=meta)
+        except (InspectionError, ManifestStoreError, OSError, ValueError) as error:
+            _mark_index_failed(
+                record,
+                paper_id,
+                chunker,
+                error="MANIFEST_PUBLISH_FAILED",
+                meta_path=meta,
+                refresh_marker=False,
+            )
+            raise ManifestStoreError("MANIFEST_PUBLISH_FAILED", status=503) from error
+        manifest_value = manifest.to_dict() if hasattr(manifest, "to_dict") else dict(manifest)
+        try:
+            publish_index_state(
+                meta,
+                paper_id,
+                chunker,
+                status=_manifest_status(manifest_value),
+                progress=int(manifest_value.get("progress", 100)),
+                chunk_count=count,
+                error=manifest_value.get("error"),
+                indexed_source_sha256=source_sha256,
+                source_hash_state="verified",
+            )
+        except KnowledgeDocumentMigrationError as error:
+            _mark_index_failed(
+                record,
+                paper_id,
+                chunker,
+                error="INDEX_FINALIZE_REQUIRED",
+                meta_path=meta,
+                refresh_marker=False,
+            )
+            raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503) from error
+        try:
+            finalizer.refresh_live_digests()
+            finalizer.require_generation()
+            live_manifest = InspectionManifestStore(meta.resolve().parent).read(paper_id, chunker).to_dict()
+            if (
+                live_manifest.get("index_fingerprint") != manifest_value.get("index_fingerprint")
+                or live_manifest.get("source_sha256") != source_sha256
+                or live_manifest.get("indexed_source_sha256") != source_sha256
+                or _source_digest(file_path) != source_sha256
+            ):
+                raise ManifestStoreError("SOURCE_HASH_MISMATCH", status=409)
+            return live_manifest
+        except Exception as error:
+            _mark_index_failed(
+                record,
+                paper_id,
+                chunker,
+                error="SOURCE_HASH_MISMATCH" if getattr(error, "code", "") == "SOURCE_HASH_MISMATCH" else "INDEX_FINALIZE_REQUIRED",
+                meta_path=meta,
+                # The manifest may already be ready while marker verification
+                # failed; leave marker/live deliberately mismatched so every
+                # reader gate rejects this intermediate publication.
+                refresh_marker=False,
+            )
+            raise ManifestStoreError(
+                "SOURCE_HASH_MISMATCH" if getattr(error, "code", "") == "SOURCE_HASH_MISMATCH" else "INDEX_FINALIZE_REQUIRED",
+                status=409 if getattr(error, "code", "") == "SOURCE_HASH_MISMATCH" else 503,
+            ) from error
 
 
 def index_paper_chunker(
@@ -458,8 +617,14 @@ def index_paper_chunker(
     paper_id = record_id(record)
 
     def _fail(message: str) -> dict:
-        update_chunker_state(
-            paper_id, chunker, status=STATUS_FAILED, progress=0, error=message, meta_path=meta_path
+        normalized_message = _normalize_index_error(message)
+        _mark_index_failed(
+            record,
+            paper_id,
+            chunker,
+            error=normalized_message,
+            meta_path=meta_path,
+            refresh_marker=normalized_message != "SOURCE_HASH_MISMATCH",
         )
         _report(progress, 100)
         return get_paper(paper_id, meta_path) or (
@@ -545,21 +710,45 @@ def index_paper_chunker(
     except Exception as error:
         return _fail(f"索引失败：{error}")
 
+    # The parser verifies the immutable hash before chunking.  Re-check after
+    # the vector write as well: a source mutation during embedding must never
+    # reach manifest or verified metadata publication.
+    if bundle is not None:
+        expected_source_sha256 = str(bundle.source_sha256)
+        if _source_digest(file_path) != expected_source_sha256:
+            return _fail("SOURCE_HASH_MISMATCH")
+
     _report(progress, 95)
-    update_chunker_state(
-        paper_id,
-        chunker,
-        status=STATUS_INDEXED,
-        progress=100,
-        chunk_count=count,
-        error=None,
-        meta_path=meta_path,
-    )
     if bundle is not None:
         try:
-            _publish_inspection_manifest(record, bundle, chunks, meta_path=meta_path)
-        except (InspectionError, ManifestStoreError, OSError, ValueError) as error:
-            return _fail(f"检查清单写入失败：{error}")
+            _publish_manifest_and_state(
+                record,
+                bundle,
+                chunks,
+                paper_id=paper_id,
+                chunker=chunker,
+                file_path=file_path,
+                count=count,
+                meta_path=meta_path,
+            )
+        except ManifestStoreError as error:
+            _report(progress, 100)
+            return get_paper(paper_id, meta_path) or (
+                record.to_dict() if hasattr(record, "to_dict") else dict(record)
+            )
+    else:
+        # Legacy records have no canonical source hash/manifest.  Keep their
+        # compatibility state path unchanged; canonical documents always use
+        # the strict manifest+metadata publication above.
+        update_chunker_state(
+            paper_id,
+            chunker,
+            status=STATUS_INDEXED,
+            progress=100,
+            chunk_count=count,
+            error=None,
+            meta_path=meta_path,
+        )
     _report(progress, 100)
     return get_paper(paper_id, meta_path) or (
         record.to_dict() if hasattr(record, "to_dict") else dict(record)

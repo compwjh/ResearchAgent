@@ -660,7 +660,7 @@ class MemoryRepository:
             db.execute("INSERT INTO user_chat_preferences(owner_id, last_reasoning_effort, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_id) DO UPDATE SET last_reasoning_effort=excluded.last_reasoning_effort, updated_at=excluded.updated_at", (owner_id, effort, now))
         return effort
 
-    def create_conversation(self, owner_id: str, project_id: Optional[str] = None, title: str = "", memory_history_policy: str = "from_binding", reasoning_effort: Optional[str] = None) -> Conversation:
+    def create_conversation(self, owner_id: str, project_id: Optional[str] = None, title: str = "", memory_history_policy: str = "from_binding", reasoning_effort: Optional[str] = None, *, conversation_id: Optional[str] = None) -> Conversation:
         if memory_history_policy not in MEMORY_HISTORY_POLICIES:
             raise ValueError("invalid memory history policy")
         if project_id:
@@ -669,7 +669,7 @@ class MemoryRepository:
                 raise LookupError("project not found")
             if project.status != "active":
                 raise ValueError("project is not active")
-        now, conversation_id = _now(), uuid.uuid4().hex
+        now, conversation_id = _now(), conversation_id or uuid.uuid4().hex
         with self.transaction() as db:
             preference = db.execute("SELECT last_reasoning_effort FROM user_chat_preferences WHERE owner_id=?", (owner_id,)).fetchone()
             selected_effort = reasoning_effort or (str(preference["last_reasoning_effort"]) if preference else "xhigh")
@@ -776,6 +776,20 @@ class MemoryRepository:
     def get_conversation(self, conversation_id: str, owner_id: str) -> Optional[Conversation]:
         with self.connection() as db:
             row = db.execute("SELECT * FROM conversations WHERE conversation_id=? AND owner_id=? AND status!='deleted'", (conversation_id, owner_id)).fetchone()
+        return self._conversation(row) if row else None
+
+    def get_conversation_including_deleted(self, conversation_id: str, owner_id: str) -> Optional[Conversation]:
+        """Read binding state for idempotent server-side session recovery.
+
+        Ordinary callers keep using ``get_conversation`` so deleted sessions
+        remain invisible.  The map binding bridge needs the tombstone to
+        avoid silently reusing a historical request key for a new conversation.
+        """
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM conversations WHERE conversation_id=? AND owner_id=?",
+                (conversation_id, owner_id),
+            ).fetchone()
         return self._conversation(row) if row else None
 
     def update_conversation(self, conversation_id: str, owner_id: str, **changes) -> Optional[Conversation]:

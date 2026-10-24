@@ -1,0 +1,31 @@
+{
+  "spec": "043",
+  "task": "08",
+  "run_id": "20261022-a328932-full-regression",
+  "candidate_commit": "a328932",
+  "result": "PASS",
+  "started_at": "2026-10-22T09:19:28Z",
+  "ended_at": "2026-10-22T09:31:55Z",
+  "regression_exit_code": 0,
+  "counts": {
+    "passed": 3224,
+    "failed": 0,
+    "skipped": 2,
+    "subtests_passed": 67,
+    "warnings": 5
+  },
+  "duration_seconds": 745.06,
+  "pytest_command": ".venv/bin/python -m pytest tests -q -o cache_dir=<regression_root>/pytest-cache --basetemp=<regression_root>/pytest-tmp",
+  "regression_root": "/private/tmp/spec043-task08-GywaN2",
+  "original_log": "/private/tmp/spec043-task08-GywaN2/full-regression.log",
+  "stable_log": "docs/sdd/plans/043/artifacts/task-08/runs/20261022-a328932-full-regression/full-regression.log",
+  "source_log_sha256": "654577a3127305b0e54014f276f0c65e0604ff1e23204fb1b939167866676556",
+  "skip_reason": "tests/e2e/test_research_lifecycle_e2e.py 的两个生命周期用例由模块级 skipif 保护，因 RUN_E2E 未设置而合法跳过；未人工 skip。",
+  "warning_summary": "5 个依赖二进制类型 DeprecationWarning：SwigPyPacked 2、SwigPyObject 2、swigvarlink 1。",
+  "environment": {
+    "PYTHON_DOTENV_DISABLED": "1",
+    "COMPACTION_SUMMARY_MODE": "rule",
+    "RUN_E2E": "unset",
+    "service_8000": "既有监听被观察到但未触碰"
+  }
+}

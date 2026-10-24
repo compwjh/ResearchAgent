@@ -2,14 +2,18 @@
 
 ## 状态
 
-**当前状态：已确认（2026-09-22 用户确认：主 agent 为架构师自身，子 agent 用 `hy3`）**
+**当前状态：已完成（2026-10-23；最终实现候选145f9d6，独立tester与architect验收通过）**
+
+> 当前执行结果：Task02–04已完成。最终145f9d6真实CLI/API评分、exact-ID校验、Langfuse只读页面核对通过；完整回归3335 passed/0 failed/2合法skip/67 subtests/5 warnings，退出0。独立tester签READY_FOR_USER、architect签GO，准备度9/10+1明确N/A。复用backend/eval_042，无新增业务API或前端；主会话持有的本机Langfuse及Spec043服务保持在线。下方Grilling待确认语句、Q8及Q9早期路径为历史，不是当前决策。旁路token与真实人工标注仍属已声明后续边界，human_agree_rate未评估；不push或合main。
+
+### 历史决策记录（不作为当前指令）
 
 > 经 **grill with docs** 分析：事实已由文档与实测取到（见「背景与依据」）。
 > **Q1–Q8 已于 2026-09-22 全部裁决完成**（裁决结果见文末 grill 记录），grill 设计树**前沿已空**。
 > 其中 **Q3 由用户改判为 B**（判官主用 `qwen3.5:9b`，非原推荐的 `qwen3.8:27b`），
 > **Q8 裁决为 A**（9b 未过一致性门禁则回退 27B；27B 亦不达标则按 C 判 No-Go）。
 > spec 正文已按全部裁决结果修订，**内容冻结**。
-> **待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
+> **历史状态文字（不再适用）：待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
 >
 > **2026-09-22 追加（已闭环）**：查实 Langfuse **自带 evaluation**（23 个 managed evaluators，
 > 引擎为 Vercel AI SDK + `@ai-sdk/openai-compatible`，本地 Ollama 提供 `/v1`），见 F10–F15。
@@ -17,8 +21,8 @@
 > 零成本），**记忆正确性**走外部自定义判官；Q1 保留 `openeval-cli` 但**范围收窄**为仅服务记忆正确性。
 > 参考实践 R1–R8 已并入。**Q1–Q9 全部裁决完毕，grill 前沿重新为空，spec 内容重新冻结。**
 >
-> **待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
-> 本 spec 在确认前不含任何代码改动。
+> **历史状态文字（不再适用）：待用户明确确认本 spec 后转「已确认」，并从 Task 02（Go/No-Go）开始实施。**
+> 本 spec 在确认前不含任何代码改动；该确认已于 2026-09-22 完成。
 
 ## 一句话目标
 
@@ -101,7 +105,7 @@ chat_quality 上 9b/27b 自一致率均 **1.0**、跨判官一致率 **1.0**（n
 
 > **Q1–Q7 已裁决**（2026-09-22），正文已按裁决结果修订：Q1=B、Q2=A、Q3=**B（用户改判）**、
 > Q4=A、Q5=A+B、Q6=A、Q7=是。详见文末 grill 记录「裁决结果」。
-> **第 2 轮 Q8（由 Q3=B 派生）待裁决**：`qwen3.5:9b` 判官未通过一致性门禁时的回退策略。
+> **历史状态（不再作为当前指令）**：第 2 轮 Q8（由 Q3=B 派生）曾待裁决：`qwen3.5:9b` 判官未通过一致性门禁时的回退策略。该问题已于 2026-09-22 裁决为 A，见下方裁决表。
 
 ## 数据模型
 
@@ -161,50 +165,124 @@ chat_quality 上 9b/27b 自一致率均 **1.0**、跨判官一致率 **1.0**（n
 - 不追求与云端评测体系的**绝对分数**对齐，只建立**相对回归基线**。
 - 不新增主服务业务端点。
 
-## 产品使用步骤（由产品经理在 spec 确认后填写）
+## 产品使用步骤（本地 CLI 旁路评测）
 
-> 待 spec 转「已确认」后由 `doc-updater` 补写。
+> 当前交付形态是命令行旁路工具，不新增前端页面、自然语言 Intake 入口或主服务业务 API。
+> 真实 Langfuse/Ollama E2E 尚未执行；在 B3 P1 修复与测试、运行时前置检查完成前，人工验收保持 **BLOCKED**，不要求用户执行真实评分。
+> 所有命令使用绝对解释器路径，不需要 `source activate`；报告目录示例均在仓库内，实际运行可替换为另一个绝对本地目录。
 
-- 步骤 1：待补
-- 步骤 2：待补
-- 验收场景：待补
+### 步骤 1：确认 CLI 入口与参数
+
+在任意工作目录执行：
+
+```bash
+PYTHONPATH=/Users/wjh/ResearchAgent \
+/Users/wjh/ResearchAgent/.venv/bin/python -m backend.eval_042.cli --help
+```
+
+预期：退出码为 `0`，stdout 展示 `--dataset PATH` 与 `--export` 的互斥输入源、必填 `--output-dir`、task/model/repeats/max-items 参数；不访问 Langfuse/Ollama，不创建评测 score。
+
+### 步骤 2：使用已有本地数据集运行旁路评测
+
+```bash
+PYTHONPATH=/Users/wjh/ResearchAgent \
+/Users/wjh/ResearchAgent/.venv/bin/python -m backend.eval_042.cli \
+  --dataset /Users/wjh/ResearchAgent/docs/sdd/plans/042/task-02-eval-dataset.json \
+  --output-dir /Users/wjh/ResearchAgent/docs/sdd/plans/042/manual-runs/20261023-chat-quality \
+  --task chat_quality \
+  --primary qwen3.5:9b \
+  --fallback qwen3.8:27b \
+  --repeats 3 \
+  --max-items 20
+```
+
+预期 stdout 为一行 JSON，包含 `exit_code`、`status`、`report_json`、`report_markdown` 和安全汇总；成功时为 `exit_code=0/status=completed`，失败时为非零/`failed`。两个报告文件都应位于上述绝对 `--output-dir` 下。`SKIPPED`（包括空 output、Intake、`no_prior_context`）不写 score；`UNAVAILABLE`、写回失败或精确验证失败必须使退出码非零。
+
+### 步骤 3：从本机 Langfuse 导出真实 trace
+
+真实 E2E 解除 BLOCKED 后，使用同一 CLI 的 export 模式：
+
+```bash
+PYTHONPATH=/Users/wjh/ResearchAgent \
+/Users/wjh/ResearchAgent/.venv/bin/python -m backend.eval_042.cli \
+  --export \
+  --output-dir /Users/wjh/ResearchAgent/docs/sdd/plans/042/manual-runs/20261023-langfuse-export \
+  --task chat_quality \
+  --primary qwen3.5:9b \
+  --fallback qwen3.8:27b \
+  --repeats 3 \
+  --max-items 20
+```
+
+仅允许本机 loopback HTTP；proxy、redirect、非 HTTP scheme 和非 loopback host 都应失败并返回非零。无真实 trace 或仅 synthetic fixture 不得生成成功空数据集。当前不执行此步骤，也不把历史 score 或 Task03 synthetic gold 当作本次 E2E 证据。
+
+### 步骤 4：等待、超时与失败恢复
+
+CLI 当前没有额外进度 UI；以终端进程退出和 stdout 的最终 JSON 为完成信号。评测期间等待本地 judge、Langfuse score 写回和精确回查完成；若在约定运行窗口内没有退出，按失败处理，不将“仍在运行”当作成功。
+
+- 先读取 stdout 给出的 `report_json`/`report_markdown`，确认 `status`、每条 item 的 `score_id`、`written`、`verified` 与 errors；报告是本地复核依据。
+- 坏 dataset、参数或配置错误：修正绝对路径/参数后使用新的报告目录重跑。
+- judge `UNAVAILABLE`、score POST/精确验证失败或 guard 拒绝：保留失败报告，不补写 0 分；修复本机服务或输入后使用新的报告目录重跑。
+- 若 score 写入结果未知，先在 Langfuse 中按报告里的 `trace_id`/`score_id` 核对，再决定是否重跑，避免重复写入。
+- `report.json` 与 `report.md` 都不存在时，记录报告初始化错误与 stderr；这不构成成功，应保持非零并等待实现修复。
+
+### 步骤 5：查看报告与 Langfuse score
+
+打开 stdout 中的绝对路径：
+
+- `/Users/wjh/ResearchAgent/docs/sdd/plans/042/manual-runs/20261023-chat-quality/report.json`
+- `/Users/wjh/ResearchAgent/docs/sdd/plans/042/manual-runs/20261023-chat-quality/report.md`
+
+JSON 是权威模型，Markdown 是同一模型的可读投影；两者应有相同汇总。报告中的 `human_agree_rate` 必须保持 `null`/未评估，`constructed_gold_only` 只能表示构造 gold，不得表述为人工达标。默认不保存 trace 原文、q/a、prompt、raw completion、hidden reasoning 或 credentials。
+
+真实 E2E 成功后，在浏览器打开 `http://127.0.0.1:3000`，使用 Langfuse 的 Traces/trace 搜索界面按报告中的精确 `trace_id` 定位该 trace，再在该 trace 的 scores 区域按精确 `score_id` 查看 `name`、`traceId`、`value`。**当前未实测 Langfuse UI 的具体 selector、菜单文字或搜索交互，以上 UI 步骤在人工验收前仍标记“待验证”，不得把未验证的 selector 当作已交付证据。**
+
+### 验收场景
+
+1. CLI help：零网络、退出码 0、参数互斥契约可见。
+2. 本地 dataset：成功/失败均有 JSON+Markdown；失败非零；skip 不写 score。
+3. 真实 export：本地 Langfuse/Ollama 主链路完成后，报告中的 score ID 可在 UI 按 trace 精确回看；当前 BLOCKED，未执行。
+4. 人工真值：本阶段不建立人工标注平台；`human_agree_rate=null`，constructed gold 不冒充人工结果。
 
 ## 执行配置（由架构师填写，落盘可查）
 
-> 按 `AGENTS.md`：角色 agent 的 `model` 均为 `hy3`（用户临时决策），须与 `.codebuddy/agents/*.md` 一致；架构师填「自身」。
+> 长期角色模型以 `.codebuddy/agents/<role>.md` 为唯一真源；历史临时型号不固化为本Spec约束。本次续作子Agent采用当次用户指派的临时档位，不修改长期配置；架构师记「自身」。
 
 | 角色 | 选用模型 | 上下文上限 | 分派方式 | 职责 |
 |---|---|---|---|---|
 | 架构师 | 自身（不写死模型代号） | 200k | 主会话 | 编写/修订本 spec、grill 决策、落地校验 |
-| 产品经理 | `hy3` | 32k | `Task(doc-updater)` | 产品使用步骤与验收场景 |
-| 开发主管 | `hy3` | 32k | `Task(architect)` | 需求/技术评审、任务拆分、合并裁决 |
-| 初级开发 | `hy3` | 32k | `Task(backend-dev)` | 导出器与评测脚本实现 |
-| 测试 | `hy3` | 32k | `Task(backend-tester)` / `Task(tester)` | 回归、判官一致性实测、验收 |
+| 文档更新（doc-updater） | 角色配置；临时覆盖见执行记录 | 32k | `Task(doc-updater)` | 产品使用步骤与验收场景 |
+| 架构评审（architect） | 角色配置；临时覆盖见执行记录 | 32k | `Task(architect)` | 需求/技术评审、任务拆分、合并裁决 |
+| 后端开发（backend-dev） | 角色配置；临时覆盖见执行记录 | 32k | `Task(backend-dev)` | 导出器与评测脚本实现 |
+| 测试（backend-tester/tester） | 角色配置；临时覆盖见执行记录 | 32k | `Task(backend-tester)` / `Task(tester)` | 定向回归、真实API验证和最终验收 |
 
 ## 任务计划
 
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
-| 01 | 编写 spec-042（含 grill with docs 分析） | 本文件 | — | 完成（待确认） |
+| 01 | 编写 spec-042（含 grill with docs 分析） | 本文件 | — | 已完成（2026-09-22确认） |
 | 02 | Go/No-Go：验证最高风险前提（判官质量 + 数据桥接 + F5 路由矛盾） | [`task-02-validate-feasibility.md`](../plans/042/task-02-validate-feasibility.md) | 01 | 已完成（**Go**） |
 | 03 | 专用记忆探针重测 `memory_correctness`（收敛遗留 L2） | [`task-03-memory-probe.md`](../plans/042/task-03-memory-probe.md) | 02 | 已完成（`adopt:qwen3.5:9b`，[报告](../plans/042/task-03-memory-probe-report.md)） |
+| 04 | 原范围离线评测交付与错误门禁 | [task-04-offline-evaluation-delivery.md](../plans/042/task-04-offline-evaluation-delivery.md) | 02、03 | 已完成（真实API/UI、最终全量及独立双签通过） |
 
 ## 评审记录
 
-- 需求评审：`docs/sdd/reviews/042-requirement-review.md`（待评审（未执行））
-- 技术评审：`docs/sdd/reviews/042-tech-review.md`（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/042-acceptance-review.md`（待评审（未执行））
+- 需求评审：[042-requirement-review.md](../reviews/042-requirement-review.md)（2026-10-23独立评审通过，附同范围实现前提）。
+- 技术评审：[042-tech-review.md](../reviews/042-tech-review.md)（2026-10-23独立评审有条件通过，Task04的T1–T8需验证后才可验收）。
+- 验收评审：[042-acceptance-review.md](../reviews/042-acceptance-review.md)（2026-10-23独立tester与architect通过；READY_FOR_USER/GO）。
 
 ## 变更日志（Changelog）
 
 | 时间 | 角色 | 动作 |
 |---|---|---|
+| 2026-10-23 | 分端开发/独立tester与architect；主会话（自身）纯文档收口 | 完成原范围离线CLI、guarded transport、上下文/失败语义、双报告及真实score验证。首次真实回写失败后对齐提供方exact-ID接口及有界异步可见性等待，保留失败，不重复POST。最终145f9d6真实API/UI、3335 passed完整回归、双签和复盘均通过；主会话同步已完成状态，仅本地提交。 |
+| 2026-10-23 | 架构师（自身） | 用户明确继续Spec042；创建独立本地分支codex/spec042-offline-evaluation，核对Task02/03已完成资产，开始同范围缺口审查和交付门禁补齐；未运行旧实验脚本写score，未修改业务代码，不push或合main。 |
 | 2026-09-22 | 架构师(自身) | 编写本 spec：基于 Langfuse 实测数据与 OpenEval 调研，用 grill with docs 梳理 Q1–Q7 决策点，按推荐默认值起草，状态「待确认」 |
 | 2026-09-23 | 架构师(自身) | Task 03 完成后回写：新增边界 9（`memory_correctness` 须带 `prior_context`，缺失即 `SKIPPED`），数据模型补 `prior_context` / `gold` 两字段；任务计划补 Task 03 并置为已完成。依据 `plans/042/task-03-memory-probe-report.md`：G1=1.0 / G2=0.975 / G3=0.95，`adopt:qwen3.5:9b`。**未新增决策点、范围不变** |
 
 ---
 
-## 附：grill with docs 分析记录（2026-09-22）
+## 附：grill with docs 分析记录（2026-09-22，历史记录，不作为当前执行指令）
 
 ### 设计树与第 1 轮前沿问题（frontier）
 
@@ -289,7 +367,7 @@ chat_quality 上 9b/27b 自一致率均 **1.0**、跨判官一致率 **1.0**（n
 - 数据模型 `judge_model` 默认改为 `qwen3.5:9b`，并预留回退位；
 - 由此派生第 2 轮问题 **Q8**。
 
-### 第 2 轮前沿问题（由 Q3=B 派生）
+### 第 2 轮前沿问题（由 Q3=B 派生；历史问题，已裁决）
 
 **Q8 — 若 `qwen3.5:9b` 未通过一致性门禁，怎么办？**
 - A **回退到 `qwen3.8:27b`** 重跑一致性，通过则用 27B（牺牲速度换质量）
@@ -302,7 +380,7 @@ chat_quality 上 9b/27b 自一致率均 **1.0**、跨判官一致率 **1.0**（n
 若 27B 也不达标再走 C。**不建议 D**（放宽阈值等于自我欺骗，评分不可用还不如不评）。
 B 可作为 A 与 C 之间的折中保留。
 
-### 第 3 轮前沿问题（由 F10–F15 派生，需重新裁决 Q1/Q4）
+### 第 3 轮前沿问题（由 F10–F15 派生；历史问题，已裁决）
 
 **Q9 — 评测**执行层**用谁？（Langfuse 内置已可用，Q1 需重裁）**
 - **A 改用 Langfuse 内置 evaluators**：把 LLM connection 指向本机 Ollama `/v1`（F14），
@@ -315,5 +393,5 @@ B 可作为 A 与 C 之间的折中保留。
 ➡️ **推荐 C**：内置模板解决 80% 通用维度且零集成成本，把自建精力集中在本项目特有的**记忆正确性**上。
 无论选哪个，**Q3/Q8（本地判官质量与回退链）不变**，仍是 Go/No-Go 的核心风险。
 
-> **Q9 裁决后**（并同步更新 Q1/Q4）本 spec 方可转「已确认」，并按 Task 02 启动 Go/No-Go 验证。
+> **历史状态文字（不再适用）**：Q9 裁决后（并同步更新 Q1/Q4）本 spec 方可转「已确认」，并按 Task 02 启动 Go/No-Go 验证。Q9 已裁决，且 Spec 已于 2026-09-22 确认。
 > 若选 A/C，Task 02 需追加一步：为 Langfuse 配置指向 `http://localhost:11434/v1` 的 LLM connection 并跑通一次内置评测。

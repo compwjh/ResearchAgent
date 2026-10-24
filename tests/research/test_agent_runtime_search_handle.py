@@ -5,6 +5,8 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
+import pytest
+
 from backend.app.memory.repository import MemoryRepository
 from backend.app.research.application.agent_runtime import (
     AgentRunInput,
@@ -80,6 +82,64 @@ def test_runtime_preserves_structured_catalog_handle_through_summary_and_output(
     assert result.tool_results[0]["source_refs"] == [f"search:{handle}"]
     assert result.output_json["search_id"] == handle
     assert result.output_json["source_refs"] == [f"search:{handle}"]
+
+
+def test_runtime_binds_search_source_to_approved_work_item_scope():
+    output = _output()
+    output["source"] = "usenix-catalog-orchestration"
+    skill = _skill([])
+
+    result = ResearchAgentRunner(
+        model=FakeModel({"output_json": output}),
+        capability_registry=RoleCapabilityRegistry(skills=[skill]),
+    ).run(AgentRunInput(
+        "search-source-binding", "session-1", "search_worker",
+        research_task_id="task-1", work_item_id="search-1",
+        work_item_input={"query": "supply chain", "source_ids": ["usenix"], "sources": ["usenix"]},
+        skill_snapshot=skill,
+    ))
+
+    assert result.status == "completed"
+    assert result.output_json["source"] == "usenix"
+
+
+def test_runtime_keeps_source_unbound_when_work_item_scope_conflicts():
+    output = _output()
+    output["source"] = "usenix-catalog-orchestration"
+    skill = _skill([])
+
+    result = ResearchAgentRunner(
+        model=FakeModel({"output_json": output}),
+        capability_registry=RoleCapabilityRegistry(skills=[skill]),
+    ).run(AgentRunInput(
+        "search-source-conflict", "session-1", "search_worker",
+        research_task_id="task-1", work_item_id="search-1",
+        work_item_input={"query": "supply chain", "source_ids": ["usenix"], "sources": ["dblp"]},
+        skill_snapshot=skill,
+    ))
+
+    assert result.status == "failed"
+    assert result.error_code == "AGENT_OUTPUT_INVALID"
+
+
+@pytest.mark.parametrize("model_source", ["dblp", "unknown"])
+def test_runtime_rejects_unbound_search_source(model_source):
+    output = _output()
+    output["source"] = model_source
+    skill = _skill([])
+
+    result = ResearchAgentRunner(
+        model=FakeModel({"output_json": output}),
+        capability_registry=RoleCapabilityRegistry(skills=[skill]),
+    ).run(AgentRunInput(
+        f"search-source-{model_source}", "session-1", "search_worker",
+        research_task_id="task-1", work_item_id="search-1",
+        work_item_input={"query": "supply chain", "source_ids": ["usenix"], "sources": ["usenix"]},
+        skill_snapshot=skill,
+    ))
+
+    assert result.status == "failed"
+    assert result.error_code == "AGENT_OUTPUT_INVALID"
 
 
 def test_runtime_recovery_keeps_catalog_handle_and_rejects_url_handle():

@@ -1,0 +1,633 @@
+{
+  "result": "blocked",
+  "blocking_code": "MAP_NO_NODES",
+  "job_terminal": {
+    "job": {
+      "job_id": "270f948e1e924656a6d75371dc262759",
+      "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+      "operation": "create",
+      "status": "partial",
+      "step": "finished",
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 1,
+        "similarity_edge_count": 0
+      },
+      "failed_units": [
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "discover"
+        }
+      ],
+      "updated_at": "2026-10-21T15:27:27.324742+00:00"
+    },
+    "last_event_cursor": 4,
+    "polls": 2
+  },
+  "graph_http_status": 200,
+  "graph": {
+    "schema_version": "literature-map-v1",
+    "map_id": null,
+    "revision": null,
+    "status": null,
+    "node_count": 0,
+    "edge_count": 0,
+    "papers": [],
+    "relationships": [],
+    "viewport": null
+  },
+  "spec": "043-literature-map-topic-exploration",
+  "task": "08-backend-live-api",
+  "run_id": "20261021-152724-134dce4-api",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "candidate": "134dce4",
+    "started_at": "2026-10-21T15:27:24.144385+00:00",
+    "finished_at": "2026-10-21T15:27:34.197203+00:00",
+    "dry_run": false
+  },
+  "requests": [
+    {
+      "name": "create_project",
+      "observed": "2026-10-21T15:27:24.144390+00:00",
+      "method": "POST",
+      "path": "/api/projects",
+      "request_body": {
+        "name": "Task08 live project 24134dce4api",
+        "instructions": "temporary Spec043 acceptance scope"
+      },
+      "response_status": 201,
+      "response": {
+        "project_id": "5c89771c08bc4aa39f8ff84b406cc837",
+        "name": "Task08 live project 24134dce4api",
+        "instructions": "temporary Spec043 acceptance scope",
+        "status": "active",
+        "created_at": "2026-10-21T15:27:24.156717+00:00",
+        "updated_at": "2026-10-21T15:27:24.156717+00:00",
+        "last_activity_at": "2026-10-21T15:27:24.156717+00:00"
+      }
+    },
+    {
+      "name": "create_map",
+      "observed": "2026-10-21T15:27:24.158949+00:00",
+      "method": "POST",
+      "path": "/api/literature-maps",
+      "request_body": {
+        "topic": "graph attention networks",
+        "name": "Task08 live graph attention networks 24134dce4api",
+        "project_id": "5c89771c08bc4aa39f8ff84b406cc837",
+        "limit": 20,
+        "idempotency_key": "task08-134dce4-24134dce4api-map-create"
+      },
+      "response_status": 202,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+        "job_id": "270f948e1e924656a6d75371dc262759",
+        "status": "generating",
+        "map": {
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "name": "Task08 live graph attention networks 24134dce4api",
+          "topic": "graph attention networks",
+          "project_id": "5c89771c08bc4aa39f8ff84b406cc837",
+          "filters": {
+            "year_start": null,
+            "year_end": null,
+            "source_ids": [],
+            "conference_ids": []
+          },
+          "requested_count": 20,
+          "revision": 0,
+          "status": "generating",
+          "view_settings": {
+            "viewport": {
+              "x": 0,
+              "y": 0,
+              "scale": 1
+            },
+            "layers": {
+              "citation": true,
+              "similarity": true
+            }
+          },
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:24.162911+00:00"
+        },
+        "job": {
+          "job_id": "270f948e1e924656a6d75371dc262759",
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "operation": "create",
+          "status": "queued",
+          "step": "discover",
+          "cursor": {},
+          "counts": {
+            "provider_count": 0,
+            "accepted_count": 0,
+            "node_count": 0,
+            "citation_edge_count": 0,
+            "similarity_edge_count": 0,
+            "provider_request_count": 0
+          },
+          "failed_units": [],
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:24.162911+00:00"
+        }
+      }
+    },
+    {
+      "name": "create_job_poll_01",
+      "observed": "2026-10-21T15:27:24.164989+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/35a56c6f2da84fca85fc3c21dfa0055c/jobs/270f948e1e924656a6d75371dc262759",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "job": {
+          "job_id": "270f948e1e924656a6d75371dc262759",
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "operation": "create",
+          "status": "running",
+          "step": "discover",
+          "cursor": {},
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 0,
+            "similarity_edge_count": 0
+          },
+          "failed_units": [],
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:24.166508+00:00"
+        }
+      }
+    },
+    {
+      "name": "create_events_poll_01",
+      "observed": "2026-10-21T15:27:24.167737+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/35a56c6f2da84fca85fc3c21dfa0055c/events?after_seq=0",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "events": [
+          {
+            "event_seq": 1,
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "job_id": "270f948e1e924656a6d75371dc262759",
+            "type": "progress",
+            "status": "queued",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:27:24.163927+00:00"
+          },
+          {
+            "event_seq": 2,
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "job_id": "270f948e1e924656a6d75371dc262759",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:27:24.166159+00:00"
+          },
+          {
+            "event_seq": 3,
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "job_id": "270f948e1e924656a6d75371dc262759",
+            "type": "started",
+            "status": "running",
+            "step": "discover",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 0,
+              "similarity_edge_count": 0
+            },
+            "error_code": null,
+            "created_at": "2026-10-21T15:27:24.166540+00:00"
+          }
+        ],
+        "next_cursor": 3
+      }
+    },
+    {
+      "name": "create_job_poll_02",
+      "observed": "2026-10-21T15:27:34.179716+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/35a56c6f2da84fca85fc3c21dfa0055c/jobs/270f948e1e924656a6d75371dc262759",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "job": {
+          "job_id": "270f948e1e924656a6d75371dc262759",
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "waiting"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 1,
+            "similarity_edge_count": 0
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "discover"
+            }
+          ],
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:27.324742+00:00"
+        }
+      }
+    },
+    {
+      "name": "create_events_poll_02",
+      "observed": "2026-10-21T15:27:34.184035+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/35a56c6f2da84fca85fc3c21dfa0055c/events?after_seq=3",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "events": [
+          {
+            "event_seq": 4,
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "job_id": "270f948e1e924656a6d75371dc262759",
+            "type": "completed",
+            "status": "partial",
+            "step": "finished",
+            "counts": {
+              "accepted_count": 0,
+              "citation_edge_count": 0,
+              "node_count": 0,
+              "provider_count": 0,
+              "provider_request_count": 1,
+              "similarity_edge_count": 0
+            },
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "created_at": "2026-10-21T15:27:27.324960+00:00"
+          }
+        ],
+        "next_cursor": 4
+      }
+    },
+    {
+      "name": "map_after_create",
+      "observed": "2026-10-21T15:27:34.188256+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/35a56c6f2da84fca85fc3c21dfa0055c",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "name": "Task08 live graph attention networks 24134dce4api",
+          "topic": "graph attention networks",
+          "project_id": "5c89771c08bc4aa39f8ff84b406cc837",
+          "filters": {
+            "conference_ids": [],
+            "source_ids": [],
+            "year_end": null,
+            "year_start": null
+          },
+          "requested_count": 20,
+          "revision": 0,
+          "status": "partial",
+          "view_settings": {
+            "layers": {
+              "citation": true,
+              "similarity": true
+            },
+            "viewport": {
+              "scale": 1,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:27.324742+00:00"
+        },
+        "latest_job": {
+          "job_id": "270f948e1e924656a6d75371dc262759",
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "waiting"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 1,
+            "similarity_edge_count": 0
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "discover"
+            }
+          ],
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:27.324742+00:00"
+        }
+      }
+    },
+    {
+      "name": "graph_after_create",
+      "observed": "2026-10-21T15:27:34.191844+00:00",
+      "method": "GET",
+      "path": "/api/literature-maps/35a56c6f2da84fca85fc3c21dfa0055c/graph",
+      "request_body": null,
+      "response_status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "name": "Task08 live graph attention networks 24134dce4api",
+          "topic": "graph attention networks",
+          "project_id": "5c89771c08bc4aa39f8ff84b406cc837",
+          "filters": {
+            "conference_ids": [],
+            "source_ids": [],
+            "year_end": null,
+            "year_start": null
+          },
+          "requested_count": 20,
+          "revision": 0,
+          "status": "partial",
+          "view_settings": {
+            "layers": {
+              "citation": true,
+              "similarity": true
+            },
+            "viewport": {
+              "scale": 1,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:27.324742+00:00"
+        },
+        "nodes": [],
+        "edges": [],
+        "layers": {
+          "citation": {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "status": "partial"
+          },
+          "similarity": {
+            "error_code": null,
+            "status": "waiting"
+          }
+        },
+        "latest_job": {
+          "job_id": "270f948e1e924656a6d75371dc262759",
+          "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+          "operation": "create",
+          "status": "partial",
+          "step": "finished",
+          "cursor": {
+            "layers": {
+              "citation": {
+                "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+                "status": "partial"
+              },
+              "similarity": {
+                "error_code": null,
+                "status": "waiting"
+              }
+            },
+            "resume_step": "finished"
+          },
+          "counts": {
+            "accepted_count": 0,
+            "citation_edge_count": 0,
+            "node_count": 0,
+            "provider_count": 0,
+            "provider_request_count": 1,
+            "similarity_edge_count": 0
+          },
+          "failed_units": [
+            {
+              "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+              "retryable": true,
+              "unit": "discover"
+            }
+          ],
+          "created_at": "2026-10-21T15:27:24.162911+00:00",
+          "updated_at": "2026-10-21T15:27:27.324742+00:00"
+        }
+      }
+    }
+  ],
+  "state_trace": [
+    {
+      "observed": "2026-10-21T15:27:24.167732+00:00",
+      "entity": "job",
+      "label": "create",
+      "poll": 1,
+      "http_status": 200,
+      "job_id": "270f948e1e924656a6d75371dc262759",
+      "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+      "operation": "create",
+      "status": "running",
+      "step": "discover",
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 0,
+        "similarity_edge_count": 0
+      },
+      "failed_units": [],
+      "updated_at": "2026-10-21T15:27:24.166508+00:00"
+    },
+    {
+      "observed": "2026-10-21T15:27:24.163927+00:00",
+      "entity": "event",
+      "label": "create",
+      "http_status": 200,
+      "event_seq": 1,
+      "type": "progress",
+      "status": "queued",
+      "step": "discover",
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 0,
+        "similarity_edge_count": 0
+      },
+      "error_code": null
+    },
+    {
+      "observed": "2026-10-21T15:27:24.166159+00:00",
+      "entity": "event",
+      "label": "create",
+      "http_status": 200,
+      "event_seq": 2,
+      "type": "started",
+      "status": "running",
+      "step": "discover",
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 0,
+        "similarity_edge_count": 0
+      },
+      "error_code": null
+    },
+    {
+      "observed": "2026-10-21T15:27:24.166540+00:00",
+      "entity": "event",
+      "label": "create",
+      "http_status": 200,
+      "event_seq": 3,
+      "type": "started",
+      "status": "running",
+      "step": "discover",
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 0,
+        "similarity_edge_count": 0
+      },
+      "error_code": null
+    },
+    {
+      "observed": "2026-10-21T15:27:34.184025+00:00",
+      "entity": "job",
+      "label": "create",
+      "poll": 2,
+      "http_status": 200,
+      "job_id": "270f948e1e924656a6d75371dc262759",
+      "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+      "operation": "create",
+      "status": "partial",
+      "step": "finished",
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 1,
+        "similarity_edge_count": 0
+      },
+      "failed_units": [
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "discover"
+        }
+      ],
+      "updated_at": "2026-10-21T15:27:27.324742+00:00"
+    },
+    {
+      "observed": "2026-10-21T15:27:27.324960+00:00",
+      "entity": "event",
+      "label": "create",
+      "http_status": 200,
+      "event_seq": 4,
+      "type": "completed",
+      "status": "partial",
+      "step": "finished",
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 1,
+        "similarity_edge_count": 0
+      },
+      "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED"
+    }
+  ],
+  "entities": {
+    "project_id": "5c89771c08bc4aa39f8ff84b406cc837",
+    "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+    "job_id": "270f948e1e924656a6d75371dc262759",
+    "requested_count": 20
+  },
+  "redaction": {
+    "removed_keys": [
+      "api_key",
+      "apikey",
+      "authorization",
+      "cookie",
+      "owner_id",
+      "password",
+      "secret",
+      "set-cookie",
+      "token"
+    ],
+    "credentials_saved": false
+  }
+}

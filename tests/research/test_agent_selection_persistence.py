@@ -14,6 +14,8 @@ from backend.app.memory.repository import MemoryRepository
 from backend.app.research.application.agent_runtime import AgentRunOutput
 from backend.app.research.application.orchestrator import Orchestrator
 from backend.app.research.application.planner import Planner
+from backend.app.research.application.report_synthesis import ReportSynthesizer
+from backend.app.research.domain.contracts import BUDGET_CAPS
 from backend.app.research.domain.models import ResearchSession, ResearchTask
 from backend.app.research.infrastructure.research_store import ResearchStore
 
@@ -22,7 +24,7 @@ def _id():
     return uuid.uuid4().hex
 
 
-def _make_repo_and_store(tmp_path):
+def _make_repo_and_store(tmp_path, target_paper_count=3):
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     conversation, user, assistant = memory.create_conversation_messages(
         "owner", "research goal", None, "model", "normal"
@@ -30,7 +32,7 @@ def _make_repo_and_store(tmp_path):
     store = ResearchStore(tmp_path / "research.sqlite3")
     task = ResearchTask(
         _id(), "owner", conversation.conversation_id, "research goal", "en",
-        "balanced", False, 3, 60, "draft", 1, "2026-01-01T00:00:00Z",
+        "balanced", False, target_paper_count, 60, "draft", 1, "2026-01-01T00:00:00Z",
         "2026-01-01T00:00:00Z",
     )
     store.create_task(task)
@@ -364,3 +366,120 @@ def test_agent_path_run_survives_replace_selections_failure(tmp_path):
     assert result.status != "failed"
     # 选集确实没写进去（落库被故意搞挂），但不影响流水线收尾。
     assert store.list_selections(task.research_task_id) == []
+
+
+def test_persist_agent_selections_enforces_global_selection_cap(tmp_path):
+    _memory, store, task = _make_repo_and_store(tmp_path, target_paper_count=20)
+    orchestrator = Orchestrator(store=store, planner=Planner(), probe=_FakeProbe())
+    candidate_ids = [f"paper-{index}" for index in range(25)]
+    kept = [
+        {
+            "candidate_id": candidate_id,
+            "relevance_score": 0.9,
+            "keep": True,
+            "evidence_refs": [f"catalog:{candidate_id}"],
+        }
+        for candidate_id in candidate_ids
+    ]
+    kept.append(dict(kept[0]))
+
+    orchestrator._persist_agent_selections(
+        task.research_task_id,
+        _evaluator_output(kept),
+        set(candidate_ids),
+        target_paper_count=task.target_paper_count,
+    )
+
+    ids = [item.catalog_paper_id for item in store.list_selections(task.research_task_id)]
+    assert len(ids) == BUDGET_CAPS["max_selected"]
+    assert set(ids) == set(candidate_ids[: BUDGET_CAPS["max_selected"]])
+    assert len(ids) == len(set(ids))
+
+
+def test_agent_selection_budget_is_shared_by_persistence_report_matrix_and_terminal(tmp_path, monkeypatch):
+    memory, store, task = _make_repo_and_store(tmp_path, target_paper_count=5)
+    candidate_ids = [f"paper-{index}" for index in range(25)]
+    kept = [
+        {
+            "candidate_id": candidate_id,
+            "relevance_score": 0.9,
+            "keep": True,
+            "evidence_refs": [f"catalog:{candidate_id}"],
+        }
+        for candidate_id in candidate_ids
+    ]
+    kept.append(dict(kept[0]))
+    candidates = [
+        {"candidate_id": candidate_id, "verified": True, "evidence_refs": [f"catalog:{candidate_id}"]}
+        for candidate_id in candidate_ids[:5]
+    ]
+    synthesis = ReportSynthesizer().synthesize(
+        report_version=1,
+        validated_candidates=candidates,
+        citation_manifest=[
+            {"citation_ref": f"catalog:{candidate_id}", "candidate_id": candidate_id}
+            for candidate_id in candidate_ids[:5]
+        ],
+    ).output.model_dump(mode="json")
+
+    class Runner:
+        event_sink = None
+
+        def run(self, run_input):
+            if run_input.role == "search_worker":
+                output = {
+                    "schema_version": "runtime-v1",
+                    "work_item_id": run_input.work_item_id,
+                    "source": "usenix",
+                    "queries": ["research goal"],
+                    "candidates": candidate_ids + [candidate_ids[0]],
+                    "evidence_refs": [],
+                    "source_refs": [],
+                }
+            elif run_input.role == "paper_evaluator":
+                output = _evaluator_output(kept)
+            else:
+                output = synthesis
+            if run_input.role != "synthesizer":
+                output["work_item_id"] = run_input.work_item_id
+            return AgentRunOutput(
+                "completed", output_json=output, output_hash="hash", agent_run_id=run_input.agent_run_id,
+            )
+
+    seen_matrix = {}
+
+    def capture_matrix_context(_self, *, validated_candidates, **_kwargs):
+        bounded_ids = [item["candidate_id"] for item in validated_candidates]
+        seen_matrix["ids"] = bounded_ids
+        return {"allowed_paper_ids": bounded_ids}
+
+    monkeypatch.setattr(Orchestrator, "_build_synthesis_matrix_context", capture_matrix_context)
+    orchestrator = Orchestrator(
+        store=store,
+        planner=_planner_with_search_evaluator_synth(),
+        agent_runner=Runner(),
+        probe=_FakeProbe(),
+        memory_repository=memory,
+    )
+
+    result = orchestrator.run(task.research_task_id, "owner")
+
+    selections = store.list_selections(task.research_task_id)
+    assert len(selections) == task.target_paper_count
+    assert len({item.catalog_paper_id for item in selections}) == task.target_paper_count
+    synthesizer = next(
+        item for item in store.list_work_items(task.research_task_id, plan_version=1)
+        if item.role == "synthesizer"
+    )
+    synthesizer_input = json.loads(synthesizer.input_json)
+    assert len(synthesizer_input["validated_candidates"]) == task.target_paper_count
+    assert len(synthesizer_input["citation_allowlist"]) == task.target_paper_count
+    assert len(seen_matrix["ids"]) == task.target_paper_count
+    selection_ids = {item.catalog_paper_id for item in selections}
+    synthesizer_ids = {item["candidate_id"] for item in synthesizer_input["validated_candidates"]}
+    assert selection_ids == synthesizer_ids == set(seen_matrix["ids"])
+    terminal = [item for item in store.list_events(task.research_task_id) if item.event_type == "terminal"]
+    assert terminal
+    assert json.loads(terminal[-1].safe_payload_json)["selected_count"] == task.target_paper_count
+    assert result.selected_count == task.target_paper_count
+    assert result.selected_count <= BUDGET_CAPS["max_selected"]

@@ -1,5 +1,6 @@
+import sqlite3
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Event, Lock
 
 import pytest
@@ -33,9 +34,9 @@ from backend.app.paper_discovery.domain.paper_import_batch import (
 from backend.app.paper_discovery.infrastructure.paper_download import DownloadResult
 from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
     DATABASE_LOCKED,
+    SNAPSHOT_REBUILD_REQUIRED,
     PaperImportBatchStore,
     PaperImportBatchStoreError,
-    SNAPSHOT_REBUILD_REQUIRED,
 )
 from backend.app.platform.settings.settings_repository import ArticleSettings
 
@@ -807,6 +808,80 @@ def test_missing_search_expires_with_durable_snapshots_succeeds(tmp_path):
 
     result = service.run_batch(batch.batch_id)
     assert result.status == "completed"
+
+
+def test_restarted_service_recovers_queued_batch_from_durable_snapshot(tmp_path):
+    """新进程应使用 SQLite 快照重新提交 queued 批次，而不是依赖进程缓存。"""
+    initial = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        importer=lambda *_args: PaperImportResult("paper-1", "document.pdf", "indexed"),
+    )
+    candidate = _candidate("restart")
+    batch = initial.create_batch(
+        "search-1", [candidate.candidate_id],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+        auto_run=False,
+    )
+    assert batch.status == "queued"
+
+    restarted = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        importer=lambda candidate, *_args: PaperImportResult(
+            candidate["candidate_id"], "document.pdf", "indexed"
+        ),
+    )
+    captured: dict[str, Future] = {}
+    original_submit = restarted.submit_batch
+
+    def capture_submit(batch_id, *, candidates=None):
+        future = original_submit(batch_id, candidates=candidates)
+        captured["future"] = future
+        return future
+
+    restarted.submit_batch = capture_submit
+    restarted.maybe_recover_batch(batch.batch_id)
+
+    assert captured["future"].result(timeout=5) is not None
+    recovered = restarted.store.get_batch(batch.batch_id)
+    assert recovered is not None
+    assert recovered.status == "completed"
+    assert restarted.store.get_items(batch.batch_id)[0].status == ITEM_COMPLETED
+
+
+def test_recovery_with_corrupted_snapshot_becomes_retryable_failure(tmp_path):
+    """缺损持久快照不得让 queued 批次永久停留。"""
+    initial = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("broken-recovery")
+    batch = initial.create_batch(
+        "search-1", [candidate.candidate_id],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+        auto_run=False,
+    )
+    item = initial.store.get_items(batch.batch_id)[0]
+    with sqlite3.connect(str(initial.store.database_path)) as connection:
+        connection.execute(
+            "UPDATE paper_import_items SET snapshot_json=? WHERE item_id=?",
+            ("not-valid-json", item.item_id),
+        )
+        connection.commit()
+
+    restarted = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    restarted.maybe_recover_batch(batch.batch_id)
+
+    failed = restarted.store.get_items(batch.batch_id)[0]
+    assert failed.status == ITEM_FAILED
+    assert failed.error_code == "IMPORT_INTERRUPTED"
+    assert restarted.store.get_batch(batch.batch_id).status == "failed"
+    assert restarted.store.retry_batch(batch.batch_id) == 1
+    assert restarted.store.get_items(batch.batch_id)[0].status == "queued"
 
 
 def test_corrupted_durable_snapshot_still_requires_rebuild(tmp_path):

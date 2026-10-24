@@ -10,15 +10,16 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterable
 
+from backend.app.research.application.evidence_matrix import EvidenceMatrixService
+from backend.app.research.application.evidence_upgrade import EvidenceUpgradeService
 from backend.app.research.application.report_synthesis import (
     ReportSynthesisError,
     ReportSynthesizer,
     _safe_text_input,
     render_markdown_html,
 )
-from backend.app.research.application.evidence_matrix import EvidenceMatrixService
 from backend.app.research.domain.models import ResearchReport
 
 
@@ -216,11 +217,32 @@ class ReportGenerationService:
     def generate(
         self, research_task_id: str, owner_id: str, *, plan_version: int | None = None,
         report_version: int | None = None, title: str = "深度研究报告",
+        additional_limitations: Iterable[str] | None = None,
     ) -> dict[str, Any]:
         task = self.store.get_task(research_task_id, owner_id)
         if task is None:
             raise EvidenceReportError("research task not found", code="TASK_NOT_FOUND")
+        # An explicit report action must re-check any previously upgraded
+        # full-text locator against the current KB manifest/generation.  This
+        # only projects existing EvidenceUpgrade state; it does not reopen a
+        # task, create an AgentRun, or introduce a second report path.
+        if callable(getattr(self.store, "list_evidence_upgrades", None)):
+            try:
+                EvidenceUpgradeService(self.store).revalidate(research_task_id)
+            except Exception as error:
+                raise EvidenceReportError("full-text evidence validation failed", code="REPORT_NOT_READY") from error
         matrix = EvidenceMatrixService(self.store).read_matrix(research_task_id, owner_id, plan_version=plan_version)
+        extra_limitations = [
+            item.strip()
+            for item in (additional_limitations or ())
+            if isinstance(item, str) and item.strip()
+        ]
+        if extra_limitations:
+            matrix = dict(matrix)
+            matrix["limitations"] = list(dict.fromkeys([
+                *(matrix.get("limitations") or []),
+                *extra_limitations,
+            ]))
         version = int(report_version or self.store.next_report_version(research_task_id, owner_id))
         if version < 1:
             raise EvidenceReportError("report_version must be positive")

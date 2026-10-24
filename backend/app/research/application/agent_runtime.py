@@ -19,6 +19,11 @@ from dataclasses import dataclass, field, replace
 from threading import Event
 from typing import Any, Callable, Mapping, Sequence
 
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError
+from backend.app.research.application.matrix_contract import (
+    matrix_validation_diagnostic,
+    validate_synthesis_matrix_payload,
+)
 from backend.app.research.application.plan_authoring import PlanOutputInvalid, validate_safe_scope
 from backend.app.research.domain.contracts import AGENT_ROLES
 from backend.app.research.domain.models import AgentCheckpoint, AgentRun, ResearchEvent
@@ -89,6 +94,13 @@ ROLE_SKILL_DEFAULTS = {
     "synthesizer": "research-report-synthesis",
 }
 
+# A provider may echo the approved orchestration skill name instead of the
+# stable source ID.  Only explicitly registered aliases may be normalized;
+# arbitrary source labels must remain invalid at the runtime boundary.
+_SEARCH_SKILL_SOURCE_ALIASES = {
+    "usenix-catalog-orchestration": "usenix",
+}
+
 ROLE_OUTPUT_FIELDS = {
     "planner": ("plan_version", "objective", "scope", "work_items", "capabilities", "budget", "report_structure"),
     "search_worker": ("work_item_id", "queries", "source", "candidates", "refresh_diagnostics"),
@@ -100,9 +112,203 @@ ROLE_OUTPUT_FIELDS = {
 ROLE_GENERIC_OUTPUT_FIELDS = ("schema_version", "safe_summary", "source_refs")
 
 
-def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
+_SYNTHESIS_MATRIX_EXAMPLE: dict[str, Any] = {
+    "schema_version": "evidence-report-v1",
+    "plan_version": 1,
+    "dimensions": [{
+        "dimension_id": "<server-dimension-id>",
+        "label": "<server-label>",
+        "definition": "<server-definition>",
+        "display_order": 0,
+    }],
+    "claims": [{
+        "claim_id": "claim-1",
+        "topic": "<supported-topic>",
+        "statement": "<supported-by-snapshot-fact>",
+        "confidence": "medium",
+        "status": "supported",
+        "evidence_ids": ["evidence-1"],
+    }],
+    "evidence": [{
+        "evidence_id": "evidence-1",
+        "claim_id": "claim-1",
+        "paper_id": "<allowlisted-paper-id>",
+        "evidence_level": "abstract",
+        "stance": "supports",
+        "status": "available",
+        "quote_digest": "<snapshot-abstract-sha256>",
+        "locator": {
+            "catalog_snapshot_id": "<server-snapshot-id>",
+            "abstract_ref": "catalog:<allowlisted-paper-id>",
+            "abstract_digest": "<snapshot-abstract-sha256>",
+        },
+    }],
+    "cells": [{
+        "claim_id": "claim-1",
+        "paper_id": "<allowlisted-paper-id>",
+        "dimension_id": "<server-dimension-id>",
+        "relation": "supports",
+        "summary": "<bounded comparison of the supplied snapshot>",
+        "evidence_ids": ["evidence-1"],
+    }],
+}
+
+
+def _synthesis_matrix_required(work_item_input: Mapping[str, Any] | None) -> bool:
+    """Require the internal matrix extension only for a non-empty server context."""
+    if not isinstance(work_item_input, Mapping):
+        return False
+    context = work_item_input.get("matrix_context")
+    return isinstance(context, Mapping) and bool(context)
+
+
+def _matrix_validation_feedback(validation_error: Any = None) -> dict[str, Any]:
+    """Return bounded, provider-safe feedback for a matrix contract retry."""
+    message = (
+        "evidence_matrix is required when matrix_context is supplied; emit an object grounded in that context. "
+        "Each cell evidence_ids entry must reference evidence with the same claim_id as the cell and the same paper_id "
+        "as the cell "
+        "and a stance equal to the cell relation; do not copy all claim evidence into every paper cell."
+    )
+    feedback = {
+        "code": "MATRIX_NOT_READY",
+        "message": message,
+        "required_fields": ["evidence_matrix"],
+        "shape": {
+            "schema_version": "evidence-report-v1",
+            "plan_version": "approved plan version",
+            "dimensions": "exactly the server-provided dimensions",
+            "claims": "bounded claims supported by supplied snapshot facts",
+            "evidence": "abstract-level evidence with server snapshot locators",
+            "cells": "bounded claim/paper/dimension relations",
+        },
+    }
+    if validation_error is not None:
+        matrix_error_code = getattr(validation_error, "matrix_error_code", None)
+        if isinstance(matrix_error_code, str) and matrix_error_code:
+            feedback["matrix_error_code"] = matrix_error_code
+        detail = str(validation_error).strip()
+        if detail and detail != "MATRIX_NOT_READY":
+            feedback["message"] = f"{message} Contract detail: {detail}"
+    return feedback
+
+
+_OUTPUT_CONTRACT_DIAGNOSTICS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "json_parse": ("agent.output.json_parse", ("provider.content",)),
+    "provider_content": ("agent.output.provider_content", ("provider.content",)),
+    "required_fields": ("agent.output.required_fields", ("output",)),
+    "safety": ("agent.output.safety", ("output",)),
+    "identity": ("agent.output.identity", ("output.identity",)),
+    "source_binding": ("agent.output.source_binding", ("output.source",)),
+    "structure": ("agent.output.structure", ("output",)),
+}
+_OUTPUT_CONTRACT_PATHS = frozenset({
+    "provider.content", "output", "output.identity", "output.source", "source_refs",
+    "schema_version", "safe_summary", "plan_version", "objective", "scope",
+    "work_items", "capabilities", "budget", "report_structure", "queries", "source",
+    "candidates", "refresh_diagnostics", "candidate_id", "relevance_score", "keep",
+    "reason", "evidence_refs", "coverage", "gaps", "recommendations", "bounded_replan",
+    "report_version", "sections", "citation_manifest", "artifact_ids", "evidence_matrix",
+    "research_task_id", "research_session_id", "owner_id",
+})
+
+
+def _output_contract_error(
+    stage: str,
+    *,
+    field_paths: tuple[str, ...] = (),
+    message: str = "",
+) -> AgentRuntimeError:
+    """Create a stable output-contract error without retaining provider text."""
+    error = AgentRuntimeError("AGENT_OUTPUT_INVALID", message)
+    if stage in _OUTPUT_CONTRACT_DIAGNOSTICS:
+        error.output_contract_stage = stage
+    # ``field_paths`` is intentionally accepted only for fixed call-site
+    # constants.  The diagnostic builder applies a second fixed allowlist, so
+    # model-derived values cannot be persisted.
+    safe_paths = tuple(path for path in field_paths if path in _OUTPUT_CONTRACT_PATHS)
+    if safe_paths:
+        error.output_contract_field_paths = safe_paths
+    return error
+
+
+def _output_contract_feedback(
+    role: str,
+    *,
+    require_synthesis_matrix: bool,
+    validation_error: Any = None,
+) -> dict[str, Any]:
+    """Return bounded correction instructions for any output-contract retry."""
+    required = tuple(dict.fromkeys((*ROLE_GENERIC_OUTPUT_FIELDS, *ROLE_OUTPUT_FIELDS.get(role, ()))))
+    if role == "synthesizer" and require_synthesis_matrix:
+        required = tuple(dict.fromkeys((*required, "evidence_matrix")))
+    stage = getattr(validation_error, "output_contract_stage", None)
+    safe = _OUTPUT_CONTRACT_DIAGNOSTICS.get(stage)
+    feedback: dict[str, Any] = {
+        "code": "AGENT_OUTPUT_INVALID",
+        "message": "Emit exactly one JSON object with the required fields; do not emit prose, markdown, code fences, URLs, prompts, credentials, or hidden reasoning.",
+        "required_fields": list(required),
+        "shape": {
+            "schema_version": "non-empty string",
+            "safe_summary": "object",
+            "source_refs": "array of stable IDs",
+            "role_fields": "all role-specific required fields",
+        },
+    }
+    if safe is not None:
+        observed_paths = getattr(validation_error, "output_contract_field_paths", ())
+        feedback["failure"] = {
+            "rule_id": safe[0],
+            "field_paths": list(observed_paths) if observed_paths else list(safe[1]),
+        }
+    return feedback
+
+
+def _validation_diagnostic(
+    validation_error: Any,
+    *,
+    attempt: int,
+    feedback_sent: bool,
+) -> dict[str, Any]:
+    """Build bounded metadata; ``feedback_sent`` means the next invoke returned."""
+    raw_code = getattr(validation_error, "code", "AGENT_OUTPUT_INVALID")
+    code = raw_code if isinstance(raw_code, str) and raw_code in {
+        "AGENT_OUTPUT_INVALID", "MATRIX_NOT_READY",
+    } else "AGENT_OUTPUT_INVALID"
+    diagnostic = {
+        "attempt": max(1, min(4, int(attempt))),
+        "error_code": code,
+        "rule_id": "agent.output_contract",
+        "field_paths": [],
+        "feedback_classification": "matrix_validation" if feedback_sent else "not_sent",
+        "feedback_sent": bool(feedback_sent),
+    }
+    if code == "MATRIX_NOT_READY":
+        diagnostic.update(matrix_validation_diagnostic(validation_error))
+    else:
+        # Only copy values from the fixed internal map attached by
+        # ``_validate_output``.  Provider text and exception messages never
+        # cross the persistence boundary.
+        stage = getattr(validation_error, "output_contract_stage", None)
+        safe = _OUTPUT_CONTRACT_DIAGNOSTICS.get(stage)
+        if safe is not None:
+            diagnostic["rule_id"], paths = safe
+            observed_paths = getattr(validation_error, "output_contract_field_paths", ())
+            diagnostic["field_paths"] = list(observed_paths) if observed_paths else list(paths)
+    return diagnostic
+
+
+def _role_contract_prompt(
+    role: str,
+    *,
+    has_tool_results: bool,
+    require_synthesis_matrix: bool = False,
+    server_work_item_id: str | None = None,
+) -> str:
     """Build the small, stable system contract used by the isolated adapter."""
     role_fields = ROLE_OUTPUT_FIELDS.get(role, ())
+    if role == "synthesizer" and require_synthesis_matrix:
+        role_fields = (*role_fields, "evidence_matrix")
     required = tuple(dict.fromkeys((*ROLE_GENERIC_OUTPUT_FIELDS, *role_fields)))
     fields = ", ".join(required)
     finish = (
@@ -113,9 +319,10 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
     search_boundary = " For search_worker, candidates must come from catalog tool results; never download or import PDFs."
     evaluator_boundary = (
         " For paper_evaluator, use work_item_input.catalog_paper_ids and the bounded "
-        "work_item_input.catalog_evidence summaries; candidate_id must be one of those IDs "
-        "(or null only when the list is empty), keep must be boolean, and evidence_refs must "
-        "only cite supplied catalog:<candidate_id> evidence. Catalog-level relevance may be "
+        "work_item_input.catalog_evidence summaries; candidate_id may be null as the aggregate "
+        "container even when evidence_refs is non-empty; otherwise candidate_id must be one "
+        "of those supplied IDs for a per-candidate decision. Keep must be boolean, and "
+        "evidence_refs must only cite supplied catalog:<candidate_id> evidence. Catalog-level relevance may be "
         "decided from a directly matching title even when the abstract is missing: keep the "
         "candidate, set relevance_score from the title-only match, and explain that the "
         "decision is metadata-only. Do not invent abstract/content claims or reject every "
@@ -130,7 +337,30 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
         "safe catalog title/abstract/keywords/summary fields for the fixed renderer; do not rewrite or augment them. "
         "section summary must only compare the supplied catalog metadata and must not claim full-text findings; do not include "
         "paper findings, artifact IDs, or citations that are not present in "
-        "validated_candidates."
+        "validated_candidates. "
+        + (
+            "When work_item_input.matrix_context is present, evidence_matrix is required as an internal-only top-level field. "
+            "Use this exact bounded shape as a guide (replace placeholders only with supplied facts): "
+            f"{{\"evidence_matrix\":{json.dumps(_SYNTHESIS_MATRIX_EXAMPLE, ensure_ascii=False, sort_keys=True, separators=(',', ':'))}}}. "
+            "Set schema_version to evidence-report-v1, plan_version to the approved plan version, and dimensions to exactly "
+            "the server-provided dimensions; claims, evidence and cells must use only allowlisted paper_id values and the "
+            "supplied catalog_snapshot_id/abstract_digest locators. Use only catalog or abstract evidence, never fulltext, "
+            "URLs, document IDs, chunks or invented dimensions. Keep every evidence_matrix claims, evidence and cells array "
+            "at most 64 items, matching the runtime safety limit. Each cell is scoped to one claim_id, paper_id and dimension_id: "
+            "its evidence_ids may contain only evidence rows with the same claim_id and paper_id and a matching stance; "
+            "emit separate cells per paper/dimension and never copy all claim evidence IDs into every cell. If no supported claim can be grounded in the supplied snapshot "
+            "facts, the runtime will return MATRIX_NOT_READY; do not invent a claim or locator."
+            if require_synthesis_matrix
+            else
+            "When work_item_input.matrix_context is absent, evidence_matrix is optional and must not be invented."
+        )
+    )
+    identity_boundary = (
+        " The server-provided work_item_id is "
+        f"{json.dumps(str(server_work_item_id), ensure_ascii=False)}; return that exact value unchanged. "
+        "The model has no authority to choose or rewrite this identity."
+        if server_work_item_id
+        else ""
     )
     return (
         f"You are the {role} worker in a bounded research runtime. "
@@ -139,6 +369,7 @@ def _role_contract_prompt(role: str, *, has_tool_results: bool) -> str:
         "The final response must be exactly one JSON object: no prose, markdown, or code fences. "
         f"It must contain these fields: {fields}. "
         "Keep safe_summary as an object and source_refs as an array of stable strings."
+        f"{identity_boundary}"
         f"{search_boundary if role == 'search_worker' else evaluator_boundary if role == 'paper_evaluator' else synthesis_boundary if role == 'synthesizer' else ''}"
     )
 
@@ -156,7 +387,7 @@ _ONLINE_FALLBACK_ERROR_CODES = frozenset({
 })
 _ONLINE_FALLBACK_BLOCKED_CODES = frozenset({
     "CAPABILITY_NOT_AUTHORIZED", "SKILL_DISABLED", "CANCELLED", "EVIDENCE_OUT_OF_SCOPE",
-    "AGENT_OUTPUT_INVALID", "TOOL_EXECUTION_FAILED",
+    "AGENT_OUTPUT_INVALID", "MATRIX_NOT_READY", "TOOL_EXECUTION_FAILED",
 })
 
 
@@ -537,6 +768,30 @@ def _safe_search_id(value: Any) -> str | None:
     return value if _SEARCH_ID_RE.fullmatch(value) else None
 
 
+def _approved_search_source(work_item_input: Mapping[str, Any] | None) -> str | None:
+    """Return the single server-approved source bound to a search WorkItem."""
+    if not isinstance(work_item_input, Mapping):
+        return None
+    sources: list[str] = []
+    for source_field in ("source_ids", "sources", "source"):
+        if source_field not in work_item_input or work_item_input[source_field] is None:
+            continue
+        raw_sources = work_item_input[source_field]
+        if isinstance(raw_sources, str):
+            raw_sources = [raw_sources]
+        if not isinstance(raw_sources, (list, tuple)):
+            return None
+        for raw_source in raw_sources:
+            if not isinstance(raw_source, str):
+                return None
+            source = raw_source.strip()
+            if source not in {"usenix", "dblp", "all"}:
+                return None
+            if source not in sources:
+                sources.append(source)
+    return sources[0] if len(sources) == 1 else None
+
+
 def _trusted_catalog_search_id(summaries: Sequence[Mapping[str, Any]]) -> str | None:
     """Return one valid handle from successful structured catalog results."""
     handles: list[str] = []
@@ -630,6 +885,11 @@ class _OllamaRunnerAdapter:
                 "content": _role_contract_prompt(
                     str(context.get("role") or "worker"),
                     has_tool_results=bool(context.get("tool_results")),
+                    server_work_item_id=context.get("server_work_item_id"),
+                    require_synthesis_matrix=(
+                        str(context.get("role") or "") == "synthesizer"
+                        and _synthesis_matrix_required(context.get("work_item_input"))
+                    ),
                 ),
             },
             {"role": "user", "content": json.dumps(dict(context), ensure_ascii=False, sort_keys=True)},
@@ -647,7 +907,11 @@ class _OllamaRunnerAdapter:
         content = getattr(response, "content", response if isinstance(response, str) else "")
         parsed_content = _parse_json_mapping(content)
         output_json = dict(parsed_content) if parsed_content is not None else None
-        return {"output_json": output_json, "tool_calls": calls}
+        return {
+            "output_json": output_json,
+            "tool_calls": calls,
+            "output_observation": _classify_output_observation(content, parsed_content),
+        }
 
 
 class RoleCapabilityRegistry:
@@ -880,16 +1144,39 @@ class FakeTool:
         return self.handler(arguments)
 
 
-def _response_parts(response: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+def _classify_output_observation(raw: Any, parsed: Mapping[str, Any] | None) -> str | None:
+    """Classify parse failures using provider-shape metadata only."""
+    if parsed is not None:
+        return None
+    if isinstance(raw, (list, tuple)):
+        # LangChain providers may expose content blocks instead of a string;
+        # retain only the shape, never the block text.
+        return "provider_content"
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return "provider_content"
+    if isinstance(raw, str):
+        return "json_parse"
+    return "provider_content"
+
+
+def _response_parts(response: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str | None]:
     if isinstance(response, Mapping):
         raw = response.get("output_json", response.get("output", response.get("content")))
         calls = response.get("tool_calls", ())
+        observation = response.get("output_observation")
     else:
         raw = getattr(response, "output_json", getattr(response, "output", getattr(response, "content", None)))
         calls = getattr(response, "tool_calls", ())
-    raw = _parse_json_mapping(raw)
+        observation = getattr(response, "output_observation", None)
+    parsed = _parse_json_mapping(raw)
     calls = list(calls or ()) if isinstance(calls, (list, tuple)) else []
-    return (dict(raw) if isinstance(raw, Mapping) else None), [dict(item) for item in calls if isinstance(item, Mapping)]
+    if observation not in _OUTPUT_CONTRACT_DIAGNOSTICS:
+        observation = _classify_output_observation(raw, parsed)
+    return (
+        dict(parsed) if isinstance(parsed, Mapping) else None,
+        [dict(item) for item in calls if isinstance(item, Mapping)],
+        observation,
+    )
 
 
 def _parse_json_mapping(raw: Any) -> Mapping[str, Any] | None:
@@ -1090,7 +1377,12 @@ class ResearchAgentRunner:
         if self.store is not None:
             with suppress(InvalidStateTransition, Exception):
                 self.store.update_agent_run_status(run.agent_run_id, owner, status, error_code=error_code)
-                if status != "running":
+                if status not in {"running", "completed"}:
+                    # The orchestrator owns WorkItem terminal completion.  It
+                    # must first apply semantic/provenance checks and persist
+                    # the AgentRun envelope in one store transaction; marking
+                    # the WorkItem completed here would create completed+NULL
+                    # when that later handoff is rejected.
                     self._set_work_item_status(
                         run,
                         "cancelled" if status == "cancelled" else ("failed" if status in {"failed", "limit_reached"} else status),
@@ -1115,9 +1407,14 @@ class ResearchAgentRunner:
         owner: str,
         attempts_used: int,
         summaries: Sequence[Mapping[str, Any]],
+        *,
+        error_code: str = "AGENT_OUTPUT_INVALID",
+        validation_diagnostic: Mapping[str, Any] | None = None,
     ) -> tuple[AgentRun, str, str]:
         """Close an invalid attempt and persist the next independent Run link."""
         handoff = {"schema_version": "runtime-v1", "output": None, "tool_results": list(summaries)}
+        if isinstance(validation_diagnostic, Mapping):
+            handoff["validation_diagnostic"] = dict(validation_diagnostic)
         handoff_hash = _hash(handoff)
         handoff_ref = f"checkpoint:{run.agent_run_id}:{handoff_hash[:16]}"
         self._checkpoints[handoff_ref] = handoff
@@ -1150,7 +1447,7 @@ class ResearchAgentRunner:
                 run.agent_run_id,
                 owner,
                 "limit_reached",
-                error_code="AGENT_OUTPUT_INVALID",
+                error_code=error_code,
             )
             next_run = replace(
                 run,
@@ -1442,25 +1739,92 @@ class ResearchAgentRunner:
         result["safe_summary"] = safe_summary
         return result
 
-    def _validate_output(self, role: str, output: Mapping[str, Any]) -> dict[str, Any]:
+    def _validate_output(
+        self,
+        role: str,
+        output: Mapping[str, Any] | None,
+        *,
+        require_synthesis_matrix: bool = False,
+        synthesis_matrix_context: Mapping[str, Any] | None = None,
+        output_observation: str | None = None,
+        search_source_scope: Mapping[str, Any] | None = None,
+        search_skill_name: str | None = None,
+        expected_work_item_id: str | None = None,
+        expected_research_task_id: str | None = None,
+        expected_research_session_id: str | None = None,
+        expected_owner_id: str | None = None,
+    ) -> dict[str, Any]:
         if not isinstance(output, Mapping):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+            raise _output_contract_error(output_observation or "provider_content")
         try:
             validate_safe_scope(dict(output))
         except PlanOutputInvalid:
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID") from None
+            raise _output_contract_error("safety") from None
         source_refs = output.get("source_refs", [])
         if not isinstance(source_refs, list) or any(not isinstance(ref, str) or not ref.strip() or not all(char.isalnum() or char in ":_-" for char in ref) for ref in source_refs):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+            raise _output_contract_error("structure", field_paths=("source_refs",))
         result = dict(output)
         if not isinstance(result.get("schema_version"), str) or not result.get("schema_version"):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+            raise _output_contract_error("required_fields", field_paths=("schema_version",))
         if not isinstance(result.get("safe_summary"), Mapping):
-            raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
-        result.setdefault("output_hash", _hash({key: value for key, value in result.items() if key != "output_hash"}))
+            raise _output_contract_error("required_fields", field_paths=("safe_summary",))
+        if expected_work_item_id:
+            # WorkItem identity is server-owned.  Bind the model's presentation
+            # field before hashing/checkpointing; the model cannot select a
+            # different WorkItem or omit the binding for non-planner roles.
+            result["work_item_id"] = expected_work_item_id
+        for field_name, expected_value in (
+            ("research_task_id", expected_research_task_id),
+            ("research_session_id", expected_research_session_id),
+            ("owner_id", expected_owner_id),
+        ):
+            if expected_value is not None and field_name in result and result[field_name] != expected_value:
+                # Unlike WorkItem's presentation field, real task/session/owner
+                # references are provenance claims.  A conflicting claim must
+                # fail closed rather than be rewritten by the runtime.
+                raise _output_contract_error("identity", field_paths=(field_name,), message=f"{field_name} binding is not approved")
+        if role == "search_worker" and isinstance(search_source_scope, Mapping) and any(
+            field in search_source_scope for field in ("source_ids", "sources", "source")
+        ):
+            approved_source = _approved_search_source(search_source_scope)
+            model_source = result.get("source")
+            if approved_source is None:
+                raise _output_contract_error("source_binding", message="search source scope is ambiguous")
+            if model_source == approved_source:
+                pass
+            elif (
+                isinstance(model_source, str)
+                and model_source == search_skill_name
+                and _SEARCH_SKILL_SOURCE_ALIASES.get(search_skill_name) == approved_source
+            ):
+                # Source scope is server-owned WorkItem input.  A bound
+                # orchestration skill may echo its registered alias instead
+                # of the stable source ID; bind that one explicit alias back
+                # without changing IDs or evidence references.
+                result["source"] = approved_source
+            else:
+                raise _output_contract_error("source_binding", message="search source binding is not approved")
         for key in ROLE_OUTPUT_FIELDS[role]:
             if key not in result:
-                raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+                raise _output_contract_error("required_fields", field_paths=(key,))
+        if role == "synthesizer" and require_synthesis_matrix and not isinstance(result.get("evidence_matrix"), Mapping):
+            raise AgentRuntimeError(
+                "MATRIX_NOT_READY",
+                "synthesizer output must include an evidence_matrix object when matrix_context is supplied",
+            )
+        if role == "synthesizer" and require_synthesis_matrix:
+            try:
+                validate_synthesis_matrix_payload(
+                    result.get("evidence_matrix"),
+                    synthesis_matrix_context or {},
+                )
+            except EvidenceMatrixError as exc:
+                runtime_error = AgentRuntimeError(
+                    "MATRIX_NOT_READY",
+                    f"{exc.code}: {exc.message}",
+                )
+                runtime_error.matrix_error_code = exc.code
+                raise runtime_error from None
         if role == "search_worker":
             # The downstream evaluator consumes stable catalog IDs, while a
             # provider may return rich candidate objects.  Normalize at the
@@ -1468,13 +1832,17 @@ class ResearchAgentRunner:
             # silently become an empty evaluator input.
             candidates = result.get("candidates")
             if not isinstance(candidates, list):
-                raise AgentRuntimeError("AGENT_OUTPUT_INVALID")
+                raise _output_contract_error("structure", field_paths=("candidates",))
             normalized_candidates: list[str] = []
             for candidate in candidates:
                 value = candidate.get("catalog_paper_id") if isinstance(candidate, Mapping) else candidate
                 if isinstance(value, str) and value.strip() and value not in normalized_candidates:
                     normalized_candidates.append(value.strip())
             result["candidates"] = normalized_candidates
+        # Compute the digest only after all server identity and role-specific
+        # normalization so the AgentRun, checkpoint, and WorkItem envelope
+        # describe exactly the same output bytes.
+        result["output_hash"] = _hash({key: value for key, value in result.items() if key != "output_hash"})
         return result
 
     def run(self, input: AgentRunInput) -> AgentRunOutput:
@@ -1605,6 +1973,9 @@ class ResearchAgentRunner:
         fallback_attempted = False
         original_error_code: str | None = None
         fallback_error_code: str | None = None
+        validation_diagnostics: list[dict[str, Any]] = []
+        pending_feedback_index: int | None = None
+        pending_feedback_classification: str | None = None
 
         def fallback_metadata() -> dict[str, Any]:
             values: dict[str, Any] = {}
@@ -1615,6 +1986,32 @@ class ResearchAgentRunner:
             if fallback_attempted:
                 values["fallback_attempted"] = True
             return values
+
+        def validation_metadata() -> dict[str, Any]:
+            if not validation_diagnostics:
+                return {}
+            return {"validation_diagnostics": [dict(item) for item in validation_diagnostics]}
+
+        def mark_feedback_invocation_completed() -> None:
+            """Confirm only a returned provider call that carried retry feedback."""
+            nonlocal pending_feedback_index, pending_feedback_classification
+            if pending_feedback_index is None:
+                return
+            diagnostic = dict(validation_diagnostics[pending_feedback_index])
+            diagnostic["feedback_sent"] = True
+            diagnostic["feedback_classification"] = pending_feedback_classification or "output_contract"
+            validation_diagnostics[pending_feedback_index] = diagnostic
+            self._runtime_event(
+                input,
+                node_type="skill",
+                node_key=f"skill:{input.work_item_id}:validation-feedback:{diagnostic['attempt']}",
+                status="completed",
+                event_type="validation_feedback",
+                error_code=diagnostic["error_code"],
+                validation_diagnostic=diagnostic,
+            )
+            pending_feedback_index = None
+            pending_feedback_classification = None
         if self.model_factory and self.model_router is None:
             try:
                 model = self.model_factory(input.resolved_model, input.reasoning_effort)
@@ -1661,7 +2058,17 @@ class ResearchAgentRunner:
                 self._cancel(run, owner, status="failed", error_code=exc.code)
                 lease_held = self._release_lease(input.research_task_id, lease_held)
                 return AgentRunOutput("failed", error_code=exc.code)
-        context = {"role": input.role, "work_item_input": dict(input.work_item_input or {}), "checkpoint_ref": input.checkpoint_ref, "skill": dict(capability.skill)}
+        work_item_input = dict(input.work_item_input or {})
+        require_synthesis_matrix = (
+            input.role == "synthesizer" and _synthesis_matrix_required(work_item_input)
+        )
+        context = {
+            "role": input.role,
+            "server_work_item_id": input.work_item_id,
+            "work_item_input": work_item_input,
+            "checkpoint_ref": input.checkpoint_ref,
+            "skill": dict(capability.skill),
+        }
         if isinstance(saved, Mapping):
             # Resume only the verified minimum handoff, never hidden history.
             context["checkpoint"] = {"output": saved.get("output"), "tool_results": saved.get("tool_results", ())}
@@ -1671,18 +2078,18 @@ class ResearchAgentRunner:
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if self.clock() - start + budget.elapsed_seconds >= budget.max_seconds:
                     code = "TASK_TIME_LIMIT_REACHED"
                     self._cancel(run, owner, status="limit_reached")
                     lease_held = self._release_lease(input.research_task_id, lease_held)
                     signal = {"kind": "resource_extension", "reason": code, "increment_seconds": 90 * 60}
-                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal=signal, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal=signal, model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if loops >= budget.max_model_loops or task_loops >= budget.task_max_model_loops:
                     code = "MODEL_LOOP_LIMIT_REACHED" if loops >= budget.max_model_loops else "TASK_MODEL_LIMIT_REACHED"
                     self._cancel(run, owner, status="limit_reached")
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_model_loops": 40, "increment_task_model_loops": 160}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_model_loops": 40, "increment_task_model_loops": 160}, model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 loops += 1
                 task_loops += 1
                 run_loops += 1
@@ -1778,11 +2185,12 @@ class ResearchAgentRunner:
                         if fallback_error_code:
                             raise AgentRuntimeError(fallback_error_code) from exc
                     raise
+                mark_feedback_invocation_completed()
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
-                output, raw_calls = _response_parts(response)
+                    return AgentRunOutput("cancelled", error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                output, raw_calls, output_observation = _response_parts(response)
                 if detail_tool_disabled and raw_calls:
                     # A provider may ignore the reduced schema and repeat the
                     # optional detail call.  Do not execute it again; the
@@ -1813,7 +2221,7 @@ class ResearchAgentRunner:
                         code = "TOOL_CALL_LIMIT_REACHED" if calls + len(raw_calls) > budget.max_tool_calls else "TASK_TOOL_CALL_LIMIT_REACHED"
                         self._cancel(run, owner, status="limit_reached")
                         lease_held = self._release_lease(input.research_task_id, lease_held)
-                        return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_tool_calls": 160, "increment_task_tool_calls": 640}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                        return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal={"kind": "resource_extension", "reason": code, "increment_tool_calls": 160, "increment_task_tool_calls": 640}, model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                     # Atomic validation: no dispatch happens until every call passes.
                     validated = self._validate_calls(capability, raw_calls)
                     calls += len(validated)
@@ -1872,7 +2280,7 @@ class ResearchAgentRunner:
                     if _is_cancelled(input.cancellation_token):
                         self._cancel(run, owner)
                         lease_held = self._release_lease(input.research_task_id, lease_held)
-                        return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                        return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                     batch_summaries = summaries[-len(validated):]
                     successful_catalog_search = any(
                         item.get("name") == "search_paper_catalog" and item.get("status") == "ok"
@@ -1905,7 +2313,7 @@ class ResearchAgentRunner:
                     if non_optional_failures:
                         self._cancel(run, owner, status="failed", error_code="TOOL_EXECUTION_FAILED")
                         lease_held = self._release_lease(input.research_task_id, lease_held)
-                        return AgentRunOutput("failed", error_code="TOOL_EXECUTION_FAILED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                        return AgentRunOutput("failed", error_code="TOOL_EXECUTION_FAILED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                     checkpoint = {"schema_version": "runtime-v1", "output": None, "tool_results": summaries}
                     checkpoint_hash = _hash(checkpoint)
                     checkpoint_ref = f"checkpoint:{input.agent_run_id}:{checkpoint_hash[:16]}"
@@ -1925,31 +2333,97 @@ class ResearchAgentRunner:
                     context = {**context, "tool_results": summaries[-len(validated):]}
                     continue
                 try:
-                    validated_output = self._validate_output(input.role, output or {})
-                except AgentRuntimeError:
+                    validated_output = self._validate_output(
+                        input.role,
+                        output,
+                        require_synthesis_matrix=require_synthesis_matrix,
+                        synthesis_matrix_context=work_item_input.get("matrix_context")
+                        if require_synthesis_matrix else None,
+                        output_observation=output_observation,
+                        search_source_scope=work_item_input,
+                        search_skill_name=str(capability.skill.get("name") or ""),
+                        expected_work_item_id=input.work_item_id,
+                        expected_research_task_id=input.research_task_id,
+                        expected_research_session_id=input.research_session_id,
+                        expected_owner_id=input.owner_id,
+                    )
+                except AgentRuntimeError as validation_error:
                     recovered = (
                         self._recover_search_output_from_catalog(input, summaries)
                         if input.role == "search_worker"
                         else None
                     )
                     if recovered is not None:
-                        validated_output = self._validate_output(input.role, recovered)
+                        validated_output = self._validate_output(
+                            input.role,
+                            recovered,
+                            require_synthesis_matrix=require_synthesis_matrix,
+                            synthesis_matrix_context=work_item_input.get("matrix_context")
+                            if require_synthesis_matrix else None,
+                            output_observation=output_observation,
+                            search_source_scope=work_item_input,
+                            search_skill_name=str(capability.skill.get("name") or ""),
+                            expected_work_item_id=input.work_item_id,
+                            expected_research_task_id=input.research_task_id,
+                            expected_research_session_id=input.research_session_id,
+                            expected_owner_id=input.owner_id,
+                        )
                         output = recovered
-                    elif input.attempt + attempts_used <= 4:
+                    else:
+                        diagnostic = _validation_diagnostic(
+                            validation_error,
+                            # ``input.attempt`` may start at a resumed chain
+                            # attempt; keep telemetry aligned with the
+                            # durable AgentRun attempt rather than the local
+                            # loop counter.
+                            attempt=input.attempt + attempts_used - 1,
+                            feedback_sent=False,
+                        )
+                        validation_diagnostics.append(diagnostic)
+                        self._runtime_event(
+                            input,
+                            node_type="skill",
+                            node_key=f"skill:{input.work_item_id}:validation:{attempts_used}",
+                            status="failed",
+                            error_code=validation_error.code,
+                            validation_diagnostic=diagnostic,
+                        )
+                    if recovered is None and input.attempt + attempts_used <= 4:
                         # The contract permits three fast attempts followed by one
                         # strong attempt.  Fake models can therefore deterministically
                         # return invalid → invalid → valid without a provider/router.
                         run, last_checkpoint_ref, last_checkpoint_hash = self._start_retry_attempt(
-                            run, input, owner, attempts_used, summaries
+                            run,
+                            input,
+                            owner,
+                            attempts_used,
+                            summaries,
+                            error_code=validation_error.code,
+                            validation_diagnostic=validation_diagnostics[-1],
                         )
                         run_loops, run_calls = 0, 0
-                        context = {
+                        retry_context = {
                             **context,
                             "checkpoint_ref": last_checkpoint_ref,
                             "checkpoint": {"output": None, "tool_results": list(summaries)},
                         }
+                        if validation_error.code == "MATRIX_NOT_READY":
+                            retry_context["validation_feedback"] = _matrix_validation_feedback(validation_error)
+                            pending_feedback_classification = "matrix_validation"
+                        elif validation_error.code == "AGENT_OUTPUT_INVALID":
+                            retry_context["validation_feedback"] = _output_contract_feedback(
+                                input.role,
+                                require_synthesis_matrix=require_synthesis_matrix,
+                                validation_error=validation_error,
+                            )
+                            pending_feedback_classification = "output_contract"
+                        context = retry_context
+                        if validation_error.code in {"MATRIX_NOT_READY", "AGENT_OUTPUT_INVALID"}:
+                            pending_feedback_index = len(validation_diagnostics) - 1
                         continue
-                    else:
+                    elif recovered is None:
+                        if validation_error.code == "MATRIX_NOT_READY":
+                            raise validation_error
                         if not fallback_attempted:
                             original_error_code = "AGENT_OUTPUT_INVALID"
                             fallback_model, fallback_error_code = self._build_online_fallback(
@@ -2003,6 +2477,11 @@ class ResearchAgentRunner:
                         validated_output, detail_degraded_errors
                     )
                 output_hash = _hash({key: value for key, value in validated_output.items() if key != "output_hash"})
+                # Search provenance binding and degradation markers may run
+                # after _validate_output().  Refresh the inner digest after
+                # those server-owned mutations so the model output, checkpoint
+                # and AgentRun row share one exact hash.
+                validated_output["output_hash"] = output_hash
                 checkpoint = {"schema_version": validated_output.get("schema_version", "runtime-v1"), "output": validated_output, "tool_results": summaries}
                 checkpoint_hash = _hash(checkpoint)
                 checkpoint_ref = f"checkpoint:{input.agent_run_id}:{checkpoint_hash[:16]}"
@@ -2010,7 +2489,7 @@ class ResearchAgentRunner:
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
-                    return AgentRunOutput("cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("cancelled", error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if self.store is not None:
                     self.store.create_agent_checkpoint(AgentCheckpoint(
                         checkpoint_ref=checkpoint_ref, owner_id=owner,
@@ -2024,15 +2503,15 @@ class ResearchAgentRunner:
                 self._save_counters(run.agent_run_id, owner, model_loop_count=run_loops, tool_call_count=run_calls, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, expected_generation=run.generation)
                 if not self._cancel(run, owner, status="completed"):
                     current = self.store.get_agent_run(run.agent_run_id, owner) if self.store is not None else None
-                    return AgentRunOutput(current.status if current else "cancelled", error_code="CANCELLED", usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput(current.status if current else "cancelled", error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 lease_held = self._release_lease(input.research_task_id, lease_held)
                 self._runtime_event(input, node_type="skill", node_key=skill_key, status="completed", skill_name=skill_name)
-                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries), agent_run_id=run.agent_run_id)
+                return AgentRunOutput("completed", output_json=validated_output, output_hash=output_hash, checkpoint_ref=checkpoint_ref, checkpoint_hash=checkpoint_hash, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempt": input.attempt, "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata, **validation_metadata()}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries), agent_run_id=run.agent_run_id)
         except AgentRuntimeError as exc:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code=exc.code)
             self._cancel(run, owner, status="failed", error_code=exc.code)
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput("failed", error_code=exc.code, model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata, **validation_metadata()}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
         except Exception:
             self._runtime_event(input, node_type="skill", node_key=skill_key, status="failed", skill_name=skill_name, error_code="MODEL_UNAVAILABLE")
             # A failing Store read must not bypass the lease release barrier.
@@ -2043,7 +2522,7 @@ class ResearchAgentRunner:
             if current is None or current.status == "running":
                 self._cancel(run, owner, status="failed", error_code="MODEL_UNAVAILABLE")
             lease_held = self._release_lease(input.research_task_id, lease_held)
-            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+            return AgentRunOutput(current.status if current and current.status != "running" else "failed", error_code=current.error_code if current and current.status != "running" and current.error_code else ("CANCELLED" if current and current.status != "running" else "MODEL_UNAVAILABLE"), model_metadata={"provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"), "model": getattr(model, "model_name", resolved_model), "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort), "attempts_used": attempts_used, **fallback_metadata(), **resource_metadata, **validation_metadata()}, usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
 
 
 __all__ = ["AgentRunInput", "AgentRunOutput", "AgentRuntimeError", "BudgetSnapshot", "FakeModel", "FakeTool", "RetryPolicy", "compute_retry_delay", "RoleCapability", "RoleCapabilityRegistry", "ResearchAgentRunner"]

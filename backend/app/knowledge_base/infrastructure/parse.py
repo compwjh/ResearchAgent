@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import ClassVar, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
 from backend.app.knowledge_base.infrastructure.chunkers import (
     Chunk,
@@ -61,11 +61,336 @@ _PDF_ENCRYPTED = "PDF_ENCRYPTED"
 _PDF_EMPTY = "PDF_EMPTY"
 _PDF_PROVENANCE_UNAVAILABLE = "PDF_PROVENANCE_UNAVAILABLE"
 _BBOX_NORMALIZED_TOLERANCE = 0.005
+_MAX_ACTIVE_OBJECT_BYTES = 16 * 1024
+_MAX_ACTIVE_REFERENCE_DEPTH = 4
+_MAX_ACTIVE_DESTINATION_ITEMS = 8
 _ACTIVE_ACTION_RE = re.compile(
-    r"/(?:JavaScript|JS|EmbeddedFiles|XFA|RichMedia|OpenAction|AA)\b"
+    r"/(?:JavaScript|JS|EmbeddedFiles|XFA|RichMedia|AA|AcroForm)\b"
     r"|/S\s*/(?:JavaScript|Launch|SubmitForm|ImportData|GoToR|RichMedia)\b",
     re.IGNORECASE,
 )
+_CATALOG_ACTIVE_ACTION_RE = re.compile(
+    r"/(?:JavaScript|JS|EmbeddedFiles|XFA|RichMedia)\b"
+    r"|/S\s*/(?:JavaScript|Launch|SubmitForm|ImportData|GoToR|RichMedia)\b",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class _PdfObjectValue:
+    kind: str
+    value: Any
+
+
+_PDF_DELIMITERS = set("()<>[]{}/%")
+
+
+def _pdf_skip_space(value: str, position: int) -> int:
+    while position < len(value):
+        if value[position].isspace() or value[position] == "\x00":
+            position += 1
+            continue
+        if value[position] == "%":
+            newline = value.find("\n", position + 1)
+            position = len(value) if newline < 0 else newline + 1
+            continue
+        break
+    return position
+
+
+def _decode_pdf_name_token(token: str) -> str:
+    return re.sub(
+        r"#([0-9A-Fa-f]{2})",
+        lambda escaped: chr(int(escaped.group(1), 16)),
+        token,
+    )
+
+
+def _pdf_parse_name(value: str, position: int) -> tuple[_PdfObjectValue, int]:
+    if position >= len(value) or value[position] != "/":
+        raise ValueError("pdf name expected")
+    position += 1
+    start = position
+    while position < len(value):
+        character = value[position]
+        if character.isspace() or character in _PDF_DELIMITERS:
+            break
+        position += 1
+    return _PdfObjectValue("name", _decode_pdf_name_token(value[start:position])), position
+
+
+def _pdf_parse_literal_string(value: str, position: int) -> tuple[_PdfObjectValue, int]:
+    if position >= len(value) or value[position] != "(":
+        raise ValueError("pdf string expected")
+    position += 1
+    depth = 1
+    output: list[str] = []
+    while position < len(value):
+        character = value[position]
+        if character == "\\":
+            if position + 1 >= len(value):
+                raise ValueError("unterminated pdf string")
+            next_character = value[position + 1]
+            if next_character in "\n\r":
+                position += 2
+                if next_character == "\r" and position < len(value) and value[position] == "\n":
+                    position += 1
+                continue
+            output.append(next_character)
+            position += 2
+            continue
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                return _PdfObjectValue("string", "".join(output)), position + 1
+        output.append(character)
+        position += 1
+    raise ValueError("unterminated pdf string")
+
+
+def _pdf_parse_number_or_reference(value: str, position: int) -> tuple[_PdfObjectValue, int]:
+    match = re.match(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", value[position:])
+    if match is None:
+        raise ValueError("pdf number expected")
+    raw = match.group(0)
+    position += len(raw)
+    first = float(raw) if any(character in raw for character in ".") else int(raw)
+    after_first = _pdf_skip_space(value, position)
+    second_match = re.match(r"\d+", value[after_first:])
+    if second_match is not None:
+        after_second = _pdf_skip_space(value, after_first + len(second_match.group(0)))
+        if raw.isdigit() and after_second < len(value) and value[after_second] == "R":
+            return (
+                _PdfObjectValue(
+                    "ref",
+                    (int(first), int(second_match.group(0))),
+                ),
+                after_second + 1,
+            )
+    return _PdfObjectValue("number", first), position
+
+
+def _pdf_parse_value(value: str, position: int, nesting: int = 0) -> tuple[_PdfObjectValue, int]:
+    if nesting > _MAX_ACTIVE_REFERENCE_DEPTH * 8:
+        raise ValueError("pdf object nesting limit")
+    position = _pdf_skip_space(value, position)
+    if position >= len(value):
+        raise ValueError("pdf object missing")
+    if value.startswith("<<", position):
+        position += 2
+        result: dict[str, _PdfObjectValue] = {}
+        while True:
+            position = _pdf_skip_space(value, position)
+            if value.startswith(">>", position):
+                return _PdfObjectValue("dict", result), position + 2
+            key, position = _pdf_parse_name(value, position)
+            item, position = _pdf_parse_value(value, position, nesting + 1)
+            # PDF dictionaries use the final value for duplicate keys; make
+            # that normalization explicit instead of accepting first-match
+            # regex captures.
+            result[str(key.value)] = item
+    if value[position] == "[":
+        position += 1
+        items: list[_PdfObjectValue] = []
+        while True:
+            position = _pdf_skip_space(value, position)
+            if position >= len(value):
+                raise ValueError("unterminated pdf array")
+            if value[position] == "]":
+                if len(items) > _MAX_ACTIVE_DESTINATION_ITEMS:
+                    raise ValueError("active destination item limit")
+                return _PdfObjectValue("array", tuple(items)), position + 1
+            item, position = _pdf_parse_value(value, position, nesting + 1)
+            items.append(item)
+            if len(items) > _MAX_ACTIVE_DESTINATION_ITEMS:
+                raise ValueError("active destination item limit")
+    if value[position] == "(":
+        return _pdf_parse_literal_string(value, position)
+    if value[position] == "/":
+        return _pdf_parse_name(value, position)
+    if value[position] == "<" and not value.startswith("<<", position):
+        end = value.find(">", position + 1)
+        if end < 0:
+            raise ValueError("unterminated hex string")
+        return _PdfObjectValue("string", value[position + 1 : end]), end + 1
+    return _pdf_parse_number_or_reference(value, position)
+
+
+def _parse_pdf_object(value: str) -> _PdfObjectValue:
+    if len(str(value).encode("utf-8")) > _MAX_ACTIVE_OBJECT_BYTES:
+        raise ValueError("active object too large")
+    parsed, position = _pdf_parse_value(str(value), 0)
+    if _pdf_skip_space(str(value), position) != len(str(value)):
+        raise ValueError("trailing pdf object data")
+    return parsed
+_ACTIVE_NAME_RE = re.compile(r"/[A-Za-z0-9#]+")
+def _decode_pdf_names(value: str) -> str:
+    """Decode only PDF-name hex escapes for passive feature inspection."""
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)[1:]
+        try:
+            decoded = re.sub(
+                r"#([0-9A-Fa-f]{2})",
+                lambda escaped: chr(int(escaped.group(1), 16)),
+                token,
+            )
+        except (TypeError, ValueError):
+            return match.group(0)
+        return "/" + decoded
+
+    return _ACTIVE_NAME_RE.sub(replace, value)
+
+
+def _active_name_tokens(value: str) -> set[str]:
+    return {match.group(0)[1:].lower() for match in _ACTIVE_NAME_RE.finditer(_decode_pdf_names(value))}
+
+
+def _is_non_empty_xref_value(kind: str, value: str) -> bool:
+    return kind not in {"null", "none"} and str(value or "").strip() not in {"", "null"}
+
+
+def _indirect_reference(value: str) -> tuple[int, int] | None:
+    match = re.fullmatch(r"\s*(\d+)\s+(\d+)\s+R\s*", str(value or ""))
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def _read_active_object(document, xref: int, *, depth: int, visited: set[int]) -> tuple[str, str] | None:
+    """Read one bounded indirect object without resolving/executing it."""
+    if depth > _MAX_ACTIVE_REFERENCE_DEPTH or xref in visited:
+        raise ValueError("active object reference cycle or depth")
+    if xref <= 0 or xref >= int(document.xref_length()):
+        raise ValueError("active object reference out of range")
+    visited.add(xref)
+    try:
+        value = document.xref_object(xref, compressed=False)
+        if not isinstance(value, str) or len(value.encode("utf-8")) > _MAX_ACTIVE_OBJECT_BYTES:
+            raise ValueError("active object too large")
+        return value, "xref"
+    except Exception:
+        raise
+
+
+def _page_xrefs(document) -> set[int]:
+    page_xrefs: set[int] = set()
+    for page in document:
+        xref = int(getattr(page, "xref", 0) or 0)
+        if xref <= 0:
+            raise ValueError("page reference unavailable")
+        page_xrefs.add(xref)
+    return page_xrefs
+
+
+def _resolve_destination_array(
+    document,
+    value: _PdfObjectValue,
+    *,
+    depth: int,
+    visited: set[int],
+    page_xrefs: set[int],
+) -> str:
+    if value.kind == "ref":
+        xref, generation = value.value
+        if generation != 0:
+            return "hostile"
+        object_value, _ = _read_active_object(document, xref, depth=depth + 1, visited=visited)
+        value = _parse_pdf_object(object_value)
+    if value.kind != "array":
+        return "hostile"
+    items = value.value
+    if len(items) != 2:
+        return "hostile"
+    page_ref, destination = items
+    if (
+        page_ref.kind != "ref"
+        or destination.kind != "name"
+        or destination.value != "Fit"
+    ):
+        return "hostile"
+    page_xref, page_generation = page_ref.value
+    # The minimal contract permits the normal generation only.  A generation
+    # mismatch is not the same page reference, even when its xref integer is
+    # otherwise valid.
+    if page_generation != 0 or page_xref not in page_xrefs:
+        return "hostile"
+    page_kind, page_type = document.xref_get_key(page_xref, "Type")
+    if page_kind != "name" or page_type != "/Page":
+        return "hostile"
+    return "safe"
+
+
+def _resolve_action_dictionary(
+    document,
+    value: _PdfObjectValue,
+    *,
+    depth: int,
+    visited: set[int],
+    page_xrefs: set[int],
+) -> str:
+    if value.kind != "dict":
+        return "hostile"
+    dictionary = value.value
+    if set(dictionary) - {"Type", "S", "D"}:
+        return "hostile"
+    type_value = dictionary.get("Type")
+    if type_value is not None and (type_value.kind != "name" or type_value.value != "Action"):
+        return "hostile"
+    action_value = dictionary.get("S")
+    if action_value is None or action_value.kind != "name":
+        return "hostile"
+    if action_value.value != "GoTo":
+        return "hostile"
+    destination = dictionary.get("D")
+    if destination is None:
+        return "hostile"
+    return _resolve_destination_array(
+        document,
+        destination,
+        depth=depth,
+        visited=visited,
+        page_xrefs=page_xrefs,
+    )
+
+
+def _resolve_open_action(document, kind: str, value: str, *, page_xrefs: set[int]) -> str:
+    """Resolve the tiny, non-executing OpenAction whitelist."""
+    visited: set[int] = set()
+    depth = 0
+    if kind == "xref":
+        reference = _parse_pdf_object(str(value))
+        if reference.kind != "ref":
+            return "hostile"
+        xref, generation = reference.value
+        if generation != 0:
+            return "hostile"
+        object_value, _ = _read_active_object(document, xref, depth=depth + 1, visited=visited)
+        parsed = _parse_pdf_object(object_value)
+        depth += 1
+    else:
+        parsed = _parse_pdf_object(str(value))
+    if parsed.kind == "array":
+        return _resolve_destination_array(
+            document,
+            parsed,
+            depth=depth,
+            visited=visited,
+            page_xrefs=page_xrefs,
+        )
+    if parsed.kind == "dict":
+        return _resolve_action_dictionary(
+            document,
+            parsed,
+            depth=depth,
+            visited=visited,
+            page_xrefs=page_xrefs,
+        )
+    # Named/string destinations and all other direct values are not in the
+    # whitelist, even when they happen to point at a local page.
+    return "hostile"
 
 
 def _as_bbox(value) -> _BBox:
@@ -336,13 +661,37 @@ def _inspect_active_features(document) -> str:
         catalog = int(document.pdf_catalog())
         if catalog <= 0:
             return "unavailable"
-        for key in ("OpenAction", "AA", "AcroForm"):
+        page_xrefs = _page_xrefs(document)
+        open_action_kind, open_action_value = document.xref_get_key(catalog, "OpenAction")
+        if _is_non_empty_xref_value(open_action_kind, open_action_value):
+            try:
+                open_action_state = _resolve_open_action(
+                    document,
+                    open_action_kind,
+                    open_action_value,
+                    page_xrefs=page_xrefs,
+                )
+            except Exception:
+                return "unavailable"
+            if open_action_state != "safe":
+                return "hostile"
+        for key in ("AA", "AcroForm"):
             kind, value = document.xref_get_key(catalog, key)
-            if kind not in ("null", "none") and value not in ("null", ""):
+            if _is_non_empty_xref_value(kind, value):
                 return "hostile"
         for xref in range(1, document.xref_length()):
             obj = document.xref_object(xref, compressed=False)
-            if _ACTIVE_ACTION_RE.search(obj):
+            # The bounded resolver enforces the 16 KiB limit for every
+            # object it follows.  Raw feature-name scanning still examines
+            # the complete dictionary so a hostile name cannot hide beyond
+            # an arbitrary prefix of an unrelated large object.
+            obj_for_scan = obj
+            normalized = _decode_pdf_names(obj_for_scan)
+            tokens = _active_name_tokens(obj_for_scan)
+            if xref != catalog and "openaction" in tokens:
+                return "hostile"
+            active_pattern = _CATALOG_ACTIVE_ACTION_RE if xref == catalog else _ACTIVE_ACTION_RE
+            if active_pattern.search(normalized):
                 return "hostile"
         return "safe"
     except Exception:

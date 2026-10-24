@@ -8,7 +8,6 @@ their existing services.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -233,12 +232,20 @@ class EvidenceMatrixService:
                     if cell.relation == "missing":
                         limitations.append(f"{claim.claim_id}/{paper_id}/{dimension.dimension_id}: {cell.missing_reason}")
         # All validation has completed before any matrix rows are replaced.
-        for item in parsed_claims:
-            self.store.save_claim(item)
-        for item in parsed_evidence:
-            self.store.save_claim_evidence(item)
-        self.store.replace_comparison_dimensions(task_id, version, parsed_dimensions)
-        self.store.replace_comparison_cells(task_id, version, output_cells)
+        # ResearchStore owns one transaction for all four projections.  Do not
+        # fall back to four independent writes: that would make an error after
+        # the first table observable as an orphaned matrix.
+        persist = getattr(self.store, "persist_evidence_matrix", None)
+        if not callable(persist):
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix store transaction unavailable")
+        persist(
+            task_id,
+            version,
+            parsed_claims,
+            parsed_evidence,
+            parsed_dimensions,
+            output_cells,
+        )
         return self._projection(task_id, version, parsed_claims, parsed_evidence, parsed_dimensions, output_cells, limitations)
 
     def read_matrix(self, task_id: str, owner_id: str, *, plan_version: int | None = None) -> dict:
@@ -252,10 +259,38 @@ class EvidenceMatrixService:
             raise EvidenceMatrixError("MATRIX_NOT_READY", "证据矩阵尚未准备完成")
         limitations = [f"{c.claim_id}/{c.paper_id}/{c.dimension_id}: {c.missing_reason}" for c in cells if c.relation == "missing" and c.missing_reason]
         unavailable = {item.evidence_id for item in evidence if item.status != "available"}
+        stale_fulltext = {
+            item.evidence_id
+            for item in evidence
+            if item.status == "available" and item.evidence_level == "fulltext" and not self._fulltext_upgrade_matches(item)
+        }
+        if stale_fulltext:
+            limitations.append("当前存在未经当前 EvidenceUpgrade 证明的全文 Evidence，相关单元格已降级。")
+            evidence = [
+                type(item)(**{**item.__dict__, "status": "revalidation_required"})
+                if item.evidence_id in stale_fulltext else item
+                for item in evidence
+            ]
+            unavailable.update(stale_fulltext)
         if unavailable:
             limitations.append("当前存在不可用或需复核的 Evidence，相关单元格已降级。")
             cells = [PaperComparisonCell(**{**item.__dict__, "relation": "missing", "evidence_ids": [], "missing_reason": "Evidence is unavailable or requires revalidation."}) if set(item.evidence_ids or []) & unavailable else item for item in cells]
         return self._projection(task_id, version, claims, evidence, dimensions, cells, limitations)
+
+    def _fulltext_upgrade_matches(self, evidence: ClaimEvidence) -> bool:
+        """Keep report projections fail-closed after an upgrade is revalidated."""
+        upgrade = self.store.get_evidence_upgrade(evidence.claim_id)
+        locator = evidence.locator or {}
+        if upgrade is None or upgrade.status != "upgraded" or upgrade.document_id != locator.get("document_id"):
+            return False
+        if (
+            upgrade.source_sha256 != locator.get("source_sha256")
+            or upgrade.manifest_generation != locator.get("manifest_generation")
+            or upgrade.manifest_fingerprint != locator.get("manifest_fingerprint")
+            or upgrade.chunker != locator.get("chunker")
+        ):
+            return False
+        return set(map(str, locator.get("chunk_ids", []))).issubset(set(map(str, upgrade.chunk_ids)))
 
     @staticmethod
     def _projection(task_id, version, claims, evidence, dimensions, cells, limitations):

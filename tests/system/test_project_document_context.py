@@ -13,6 +13,7 @@ from backend.app.knowledge_base.application import (
     clear_project_document_associations,
     create_uploaded_document,
     filter_hits_for_project,
+    list_documents_for_project,
     set_document_project,
 )
 from backend.app.knowledge_base.infrastructure import retrieve as retrieve_module
@@ -70,6 +71,21 @@ def test_project_visibility_excludes_other_project_documents(tmp_path: Path):
     hits = [Hit(first["document_id"], "a.md", None, 0, "a", .9), Hit(second["document_id"], "b.md", None, 0, "b", .8)]
     assert [hit.paper_id for hit in filter_hits_for_project(hits, "project-a", meta_path=meta)] == [first["document_id"]]
     assert [hit.paper_id for hit in filter_hits_for_project(hits, None, meta_path=meta)] == []
+
+
+def test_unbound_visibility_includes_only_unassociated_documents(tmp_path: Path):
+    meta = tmp_path / "papers.json"
+    papers = tmp_path / "papers"
+    unbound = create_uploaded_document("unbound.md", "text/markdown", b"unbound", meta_path=meta, papers_dir=papers)["document"]
+    project_a = create_uploaded_document("a.md", "text/markdown", b"a", meta_path=meta, papers_dir=papers)["document"]
+    project_b = create_uploaded_document("b.md", "text/markdown", b"b", meta_path=meta, papers_dir=papers)["document"]
+    set_document_project(project_a["document_id"], "project-a", meta_path=meta, papers_dir=papers, owner_id="owner-a")
+    set_document_project(project_b["document_id"], "project-b", meta_path=meta, papers_dir=papers, owner_id="owner-b")
+
+    visible = list_documents_for_project(None, meta_path=meta, owner_id="owner-a")
+    assert [item["document_id"] for item in visible] == [unbound["document_id"]]
+    assert list_documents_for_project("project-a", meta_path=meta, owner_id="owner-a")[0]["document_id"] == project_a["document_id"]
+    assert list_documents_for_project("project-a", meta_path=meta, owner_id="owner-b") == []
 
 
 def test_compose_chat_prompt_keeps_current_question_and_rag_budget():

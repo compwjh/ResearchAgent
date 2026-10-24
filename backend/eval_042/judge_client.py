@@ -7,13 +7,11 @@
 """
 from __future__ import annotations
 
-import json
 import re
 import string
-import urllib.request
 
 from .config import ENUM_MAPS, OLLAMA_BASE, PROMPTS
-from .offline_guard import assert_loopback
+from .offline_guard import http_post_json
 
 _ANSWER_RE = re.compile(r"answer\s*:\s*([a-z_]+)", re.IGNORECASE)
 
@@ -60,7 +58,6 @@ def enum_to_score(task: str, label: str | None) -> float | None:
 
 
 def call_ollama(model: str, messages: list[dict], timeout: int = 180) -> str:
-    assert_loopback(OLLAMA_BASE)
     body = {
         "model": model,
         "think": False,
@@ -68,13 +65,14 @@ def call_ollama(model: str, messages: list[dict], timeout: int = 180) -> str:
         "options": {"temperature": 0, "num_predict": 160},
         "stream": False,
     }
-    req = urllib.request.Request(
+    data = http_post_json(
         f"{OLLAMA_BASE}/api/chat",
-        data=json.dumps(body).encode(),
+        body,
         headers={"Content-Type": "application/json"},
+        timeout=timeout,
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode())
+    if not isinstance(data, dict):
+        raise ValueError(f"Ollama response must be a JSON object, got {type(data).__name__}")
     return (data.get("message", {}) or {}).get("content", "") or ""
 
 

@@ -160,6 +160,21 @@ def _recording_worker():
     return fake, recorded
 
 
+class _StableBackgroundWorker:
+    """受控后台 worker：记录入队但不异步写入测试记忆目录。"""
+
+    def __init__(self):
+        self.enqueued = []
+
+    def enqueue(self, *args, **kwargs):
+        self.enqueued.append((args, kwargs))
+        return None
+
+    def enqueue_session(self, *args, **kwargs):
+        self.enqueued.append((args, kwargs))
+        return None
+
+
 def test_auto_compaction_below_threshold_does_not_enqueue(tmp_path):
     db_path = tmp_path / "memory.sqlite3"
     with client_for(tmp_path) as client:
@@ -191,26 +206,39 @@ def test_auto_compaction_threshold_boundary(tmp_path):
         # 0.79 不触发：budget = ceil(used/0.79) -> ratio_auto < 0.8
         budget_low = math.ceil(used / 0.79)
         fake_low, recorded_low = _recording_worker()
+        stable_analysis_worker = _StableBackgroundWorker()
+        stable_evolution_worker = _StableBackgroundWorker()
         with patch("backend.app.api.routes_conversations.CHAT_TOTAL_TOKEN_BUDGET", budget_low), \
              patch("backend.app.api.routes_conversations.get_compaction_worker", return_value=fake_low), \
+             patch("backend.app.api.routes_conversations.get_memory_analysis_worker", return_value=stable_analysis_worker), \
+             patch("backend.app.api.routes_conversations.get_memory_evolution_worker", return_value=stable_evolution_worker), \
              patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), \
              patch("backend.app.api.routes_conversations.run_chat", return_value=_FakeRun()), \
              patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=_explicit("简洁")):
             resp_low = client.post(f"/api/conversations/{conv.conversation_id}/messages", json={"content": new_content, "model": "model"})
         assert resp_low.status_code == 200
         assert not any(a[3] == "auto" for a, k in recorded_low), recorded_low
+        assert not (tmp_path / "memory" / "MEMORY.md").exists()
 
         # 0.80 触发：budget = floor(used/0.80) -> ratio_auto >= 0.8
         budget_high = max(1, math.floor(used / 0.80))
         fake_high, recorded_high = _recording_worker()
         with patch("backend.app.api.routes_conversations.CHAT_TOTAL_TOKEN_BUDGET", budget_high), \
              patch("backend.app.api.routes_conversations.get_compaction_worker", return_value=fake_high), \
+             patch("backend.app.api.routes_conversations.get_memory_analysis_worker", return_value=stable_analysis_worker), \
+             patch("backend.app.api.routes_conversations.get_memory_evolution_worker", return_value=stable_evolution_worker), \
              patch("backend.app.api.routes_conversations.get_available_models", return_value=["model"]), \
              patch("backend.app.api.routes_conversations.run_chat", return_value=_FakeRun()), \
              patch("backend.app.chat.application.conversation_service.classify_memory_intent", return_value=_explicit("简洁")):
             resp_high = client.post(f"/api/conversations/{conv.conversation_id}/messages", json={"content": new_content, "model": "model"})
         assert resp_high.status_code == 200
-        assert any(a[3] == "auto" for a, k in recorded_high), recorded_high
+        auto_high = [(a, k) for a, k in recorded_high if a[3] == "auto"]
+        assert len(auto_high) == 1, recorded_high
+        # The real route-side compute_context_usage must observe the same
+        # stable history baseline used to derive the threshold.
+        assert auto_high[0][1]["est_tokens_before"] == used
+        assert len(stable_analysis_worker.enqueued) == 2
+        assert not (tmp_path / "memory" / "MEMORY.md").exists()
 
 
 def test_auto_compaction_enqueue_failure_does_not_block(tmp_path):

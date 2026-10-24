@@ -1,0 +1,147 @@
+{
+  "spec": "043",
+  "task": "05",
+  "run_id": "20261021-002317-b94717c",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "branch": "codex/spec043-literature-map",
+    "commit": "b94717c",
+    "model": "qwen3.8:27b",
+    "ready": true,
+    "warmup": {
+      "jieba": "ready",
+      "ollama_tags": "ready",
+      "embedding": "ready",
+      "qdrant": "ready"
+    },
+    "langfuse": "not assessed; no observation claim",
+    "started_at": "2026-10-21T00:23:17+08:00",
+    "ended_at": "2026-10-21T00:29:24+08:00"
+  },
+  "entities": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "node_id": "21041260a5394f42891b020128fa60fa",
+    "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+    "map_project_id": null,
+    "node_document_id_matches_candidate": true,
+    "map_revision_before": 9,
+    "map_status_before": "partial"
+  },
+  "requests": [
+    {"name": "ready", "method": "GET", "path": "/api/ready", "http_status": 200, "artifact": "ready.escalated.json"},
+    {"name": "health", "method": "GET", "path": "/api/health", "http_status": 200, "artifact": "health.escalated.json"},
+    {"name": "map", "method": "GET", "path": "/api/literature-maps/{map_id}", "http_status": 200, "artifact": "map.escalated.json"},
+    {"name": "node", "method": "GET", "path": "/api/literature-maps/{map_id}/nodes/{node_id}", "http_status": 200, "artifact": "node.escalated.json"},
+    {"name": "analyses_before", "method": "GET", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses", "http_status": 200, "artifact": "analyses-before.escalated.json"},
+    {"name": "abstract_submit", "method": "POST", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses", "http_status": 202, "artifact": "abstract-submit.json"},
+    {"name": "abstract_poll_01", "method": "GET", "path": "/api/literature-maps/{map_id}/analyses/{analysis_id}", "http_status": 200, "artifact": "abstract-poll-01.json"},
+    {"name": "abstract_poll_02", "method": "GET", "path": "/api/literature-maps/{map_id}/analyses/{analysis_id}", "http_status": 200, "artifact": "abstract-poll-02.json"},
+    {"name": "abstract_poll_03", "method": "GET", "path": "/api/literature-maps/{map_id}/analyses/{analysis_id}", "http_status": 200, "artifact": "abstract-poll-03.json"},
+    {"name": "abstract_replay", "method": "POST", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses", "http_status": 202, "artifact": "abstract-replay.json"},
+    {"name": "full_submit_gate", "method": "POST", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses", "http_status": 409, "artifact": "full-submit.json"},
+    {"name": "full_replay_gate", "method": "POST", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses", "http_status": 409, "artifact": "full-replay.json"},
+    {"name": "conversation_abstract_submit", "method": "POST", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/conversation", "http_status": 200, "artifact": "conversation-abstract-submit.json"},
+    {"name": "conversation_abstract_replay", "method": "POST", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/conversation", "http_status": 200, "artifact": "conversation-abstract-replay.json"},
+    {"name": "chat_abstract", "method": "POST", "path": "/api/conversations/{conversation_id}/messages", "http_status": 200, "artifact": "chat-abstract.sse"},
+    {"name": "chat_abstract_messages", "method": "GET", "path": "/api/conversations/{conversation_id}/messages", "http_status": 200, "artifact": "chat-abstract-messages.json"},
+    {"name": "kb_documents_page_2", "method": "GET", "path": "/api/kb/documents?cursor=NTA", "http_status": 200, "artifact": "kb-documents-page2.json"},
+    {"name": "kb_papers", "method": "GET", "path": "/api/kb/papers", "http_status": 200, "artifact": "kb-papers.json"},
+    {"name": "kb_health", "method": "GET", "path": "/api/kb/health", "http_status": 200, "artifact": "kb-health.json"},
+    {"name": "map_after", "method": "GET", "path": "/api/literature-maps/{map_id}", "http_status": 200, "artifact": "map-after.json"},
+    {"name": "graph_after", "method": "GET", "path": "/api/literature-maps/{map_id}/graph", "http_status": 200, "artifact": "graph-after.json"},
+    {"name": "analyses_after", "method": "GET", "path": "/api/literature-maps/{map_id}/nodes/{node_id}/analyses", "http_status": 200, "artifact": "analyses-after.json"}
+  ],
+  "analysis": {
+    "abstract": {
+      "analysis_id": "7c63cba835c044859c571dbc87f6a48a",
+      "job_id": "95d900a561664e8b9db4300189abf336",
+      "version": 1,
+      "status_trace": ["pending", "running", "completed"],
+      "evidence_level": "abstract",
+      "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+      "model_id": "qwen3.8:27b",
+      "summary_nonempty": true,
+      "summary_chars": 490,
+      "source_refs": [{"kind": "abstract", "node_id": "21041260a5394f42891b020128fa60fa"}],
+      "replay": {"http_status": 202, "same_analysis_id": true, "same_job_id": true, "same_version": true, "same_source_version": true}
+    },
+    "full": {
+      "source_status_fulltext_ready": false,
+      "available_evidence_levels": ["abstract"],
+      "source_version_full": null,
+      "submit_http_status": 409,
+      "submit_error_code": "MAP_FULLTEXT_UNAVAILABLE",
+      "replay_http_status": 409,
+      "model_started": false,
+      "result": "blocked by current source gate; no full analysis job was created"
+    }
+  },
+  "source_gate_evidence": {
+    "map_project_id": null,
+    "node_document_id": "55afc3b8f01445429462fe78ed0d4c98",
+    "kb_document_status": "indexed",
+    "kb_v1_status": "indexed",
+    "kb_v1_progress": 100,
+    "kb_v2_status": "indexed",
+    "kb_v2_progress": 100,
+    "source_hash_state": "legacy_unknown",
+    "indexed_source_sha256": null,
+    "source_sha256": "a7d811a44e1c65bf27da3a01859f23a8edbe33b8f96114b4b5066aedb078f284",
+    "project_id_on_document": null,
+    "inspection_get_not_called": true,
+    "reindex_not_called": true
+  },
+  "conversation": {
+    "abstract": {
+      "conversation_id": "5e530508d5b9433297bf1be0f27b2352",
+      "project_id": null,
+      "evidence_level": "abstract",
+      "source_version": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+      "replay_http_status": 200,
+      "replay_same_conversation_id": true,
+      "qa": {
+        "http_status": 200,
+        "content_type": "text/event-stream",
+        "event_count": 350,
+        "event_seq_first": 1,
+        "event_seq_last": 350,
+        "terminal_status": "completed",
+        "assistant_message_id": "5f405c6e3d9746b4b6bc453cd5aa8de8",
+        "user_message_id": "44fad2a56ab14c9fa523a4b002c0003b",
+        "assistant_status": "completed",
+        "assistant_answer_chars": 695,
+        "visible_document_ids": []
+      }
+    },
+    "full": {"status": "not_run", "reason": "MAP_FULLTEXT_UNAVAILABLE"}
+  },
+  "graph_state": {
+    "before": {"revision": 9, "status": "partial", "node_count": 21, "edge_count": 18},
+    "after": {"revision": 9, "status": "partial", "node_count": 21, "edge_count": 18},
+    "layout_and_group_fields_unchanged": true,
+    "latest_job_pointer_changed_to_analysis": true
+  },
+  "result": {
+    "status": "blocked",
+    "blocking_reason": "Full-text evidence is unavailable on the deployed candidate: the map and canonical document have no project association, and the document is legacy_unknown with indexed_source_sha256=null; API correctly returned MAP_FULLTEXT_UNAVAILABLE.",
+    "abstract_branch": "passed",
+    "full_branch": "blocked",
+    "evidence_root": "docs/sdd/plans/043/artifacts/task-05/runs/20261021-002317-b94717c",
+    "sandbox_http000_preserved": true
+  },
+  "redaction": {
+    "removed_unrelated_document_records": 50,
+    "unrelated_document_record_occurrences": 50,
+    "removed_unrelated_paper_records": 50,
+    "unrelated_paper_record_occurrences": 50,
+    "removed_non_target_graph_nodes": 20,
+    "removed_non_target_graph_edges": 18,
+    "removed_map_owner_and_nonessential_fields": true,
+    "removed_sse_content": true,
+    "removed_hidden_reasoning_fields": true,
+    "credential_cookie_token_fields_found": 0,
+    "absolute_internal_paths_found": 0,
+    "preserved": "GAT entity IDs, HTTP statuses, error codes, source versions, final summary status/length, and SSE sequence/type/duration metadata"
+  }
+}

@@ -5,13 +5,19 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_research
 from backend.app.main import app
-from backend.app.research.application.evidence_matrix import EvidenceMatrixError
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
 from backend.app.research.application.report_generation import (
     EvidenceReportError,
     ReportGenerationService,
     render_evidence_report,
 )
-from backend.app.research.domain.models import ResearchReport, ResearchTask
+from backend.app.research.domain.models import (
+    EvidenceUpgrade,
+    ResearchDocumentLink,
+    ResearchPaperSelection,
+    ResearchReport,
+    ResearchTask,
+)
 from backend.app.research.infrastructure.research_store import ResearchReportConflict, ResearchStore
 
 
@@ -101,6 +107,61 @@ def test_generation_persists_one_immutable_projection(monkeypatch):
     assert result["report"]["report_version"] == 2
     assert len(store.saved) == 1
     assert json.loads(store.saved[0].report_json)["report_id"] == result["report"]["report_id"]
+
+
+def test_report_generation_downgrades_stale_fulltext_after_revalidation(tmp_path, monkeypatch):
+    from backend.app.research.application import report_generation
+
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    store.create_task(ResearchTask(
+        "task-fulltext-report", "owner-1", "conversation-1", "goal", "en", "balanced", False,
+        1, 60, "completed", 1, "", "",
+    ))
+    store.replace_selections("task-fulltext-report", [
+        ResearchPaperSelection("task-fulltext-report", "paper-a", 1.0, "[]", "abstract", ""),
+    ])
+    store.upsert_document_link(ResearchDocumentLink(
+        "task-fulltext-report", "paper-a", "document-a", "item-a", "completed",
+    ))
+    store.save_evidence_upgrade(EvidenceUpgrade(
+        claim_id="claim-fulltext", task_id="task-fulltext-report", document_id="document-a",
+        from_level="abstract", to_level="fulltext", chunk_ids=["chunk-a"], page=2, page_end=2,
+        status="upgraded", source_sha256="a" * 64, manifest_generation="generation-1",
+        manifest_fingerprint="b" * 64, chunker="v1",
+    ))
+    EvidenceMatrixService(store).build_matrix(
+        "task-fulltext-report", "owner-1",
+        dimensions=[{"id": "d", "label": "D", "definition": "definition"}],
+        claims=[{"claim_id": "claim-fulltext", "topic": "result", "statement": "A result", "confidence": "high", "status": "supported", "evidence_ids": ["e-fulltext"]}],
+        evidence=[{
+            "evidence_id": "e-fulltext", "claim_id": "claim-fulltext", "paper_id": "paper-a",
+            "evidence_level": "fulltext", "stance": "supports", "status": "available",
+            "quote_digest": "c" * 64,
+            "locator": {
+                "document_id": "document-a", "chunk_ids": ["chunk-a"], "page": 2, "page_end": 2,
+                "source_sha256": "a" * 64, "manifest_generation": "generation-1",
+                "manifest_fingerprint": "b" * 64, "chunker": "v1",
+            },
+        }],
+    )
+
+    class _Revalidator:
+        def __init__(self, current_store):
+            self.store = current_store
+
+        def revalidate(self, task_id):
+            current = self.store.get_evidence_upgrade("claim-fulltext")
+            stale = EvidenceUpgrade(**{**current.__dict__, "status": "revalidation_required"})
+            return [self.store.save_evidence_upgrade(stale)]
+
+    monkeypatch.setattr(report_generation, "EvidenceUpgradeService", _Revalidator)
+
+    result = ReportGenerationService(store).generate("task-fulltext-report", "owner-1")
+
+    assert result["report"]["status"] == "partial"
+    assert result["report"]["evidence"][0]["status"] == "revalidation_required"
+    assert result["report"]["citation_manifest"]["citations"] == []
+    assert result["report"]["cells"][0]["relation"] == "missing"
 
 
 def test_store_rejects_overwriting_a_report_version(tmp_path):

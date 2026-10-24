@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -30,16 +31,24 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Mapping
 
+from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
+from backend.app.research.application.matrix_contract import MATRIX_ID_RE
+from backend.app.research.application.matrix_contract import (
+    validate_synthesis_matrix_payload as _validate_synthesis_matrix_payload,
+)
 from backend.app.research.application.planner import Planner
+from backend.app.research.application.report_generation import ReportGenerationService
 from backend.app.research.application.report_synthesis import (
     ReportDeliveryService,
     ReportSynthesisError,
     ReportSynthesizer,
     ResearchNotificationService,
+    render_markdown_html,
     report_output_hash,
     validate_report_synthesis_output,
 )
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
+from backend.app.research.application.session_plan_generation import resolve_paper_count_constraints
 from backend.app.research.domain.contracts import BUDGET_CAPS, EVENT_TYPES, TASK_TERMINAL
 from backend.app.research.domain.models import (
     PreliminaryReport,
@@ -66,7 +75,6 @@ _REPORT_STATUS = "preliminary"
 # it only raises the deterministic selection cap within the existing pool.
 _MIN_REPORT_CANDIDATES = 5
 
-
 def _utcnow() -> str:
     """当前 UTC 时间戳，格式与 research_store._utcnow 一致：`YYYY-MM-DDTHH:MM:SSZ`。"""
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -83,6 +91,36 @@ def _work_item_output(value) -> dict:
     if isinstance(raw, dict) and isinstance(raw.get("output_json"), dict):
         return dict(raw["output_json"])
     return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _completed_output_envelope(value) -> tuple[dict, dict, list[dict]] | None:
+    """Read a completed AgentRun envelope without treating failure as output.
+
+    WorkItem ``output_json`` stores the whole ``AgentRunOutput.to_dict()``
+    envelope.  Recovery must distinguish that durable wrapper from the inner
+    model output: a failed/null/malformed wrapper is not evidence and must not
+    be promoted into ``completed_outputs``.  Tool results are returned only as
+    bounded mappings for the existing catalog-evidence projection.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        envelope = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(envelope, dict) or envelope.get("status") != "completed":
+        return None
+    if envelope.get("schema_version") not in (None, "runtime-v1"):
+        return None
+    if envelope.get("error_code") not in (None, ""):
+        return None
+    output = envelope.get("output_json")
+    if not isinstance(output, dict):
+        return None
+    raw_tool_results = envelope.get("tool_results", [])
+    if not isinstance(raw_tool_results, list) or any(not isinstance(item, dict) for item in raw_tool_results):
+        return None
+    return dict(envelope), dict(output), [dict(item) for item in raw_tool_results]
 
 
 def _recall_allowlist_from_search_outputs(search_outputs: Iterable[Mapping[str, Any]]) -> set[str]:
@@ -365,12 +403,27 @@ def _promote_catalog_floor(
     """
     records = [dict(item) for item in validated if isinstance(item, Mapping)]
     existing = {item.get("candidate_id") for item in records if isinstance(item.get("candidate_id"), str)}
-    ordered_ids = [item for item in recall_ids if isinstance(item, str) and item and item not in existing]
+    existing_order = [
+        item["candidate_id"]
+        for item in records
+        if isinstance(item.get("candidate_id"), str)
+    ]
+    ordered_ids: list[str] = []
+    seen_recall = set(existing_order)
+    for item in recall_ids:
+        if isinstance(item, str) and item and item not in seen_recall:
+            ordered_ids.append(item)
+            seen_recall.add(item)
     if len(existing) >= _MIN_REPORT_CANDIDATES or len(existing) + len(ordered_ids) < _MIN_REPORT_CANDIDATES:
         return records
+    # Evaluate the complete already-recalled pool, not only the rows missing
+    # from ``validated``.  PaperEvaluator's existing minimum floor is defined
+    # over the supplied pool; passing only one remaining row would make a
+    # five-row recalled pool look too small and leave a valid report at four.
+    pool_ids = existing_order + ordered_ids
     metadata_rows: list[dict[str, Any]] = []
     metadata_lookup: dict[str, Mapping[str, Any]] = {}
-    for candidate_id in ordered_ids:
+    for candidate_id in pool_ids:
         metadata = metadata_by_id.get(candidate_id)
         if not isinstance(metadata, Mapping) and metadata_resolver is not None:
             with suppress(Exception):
@@ -407,6 +460,86 @@ def _promote_catalog_floor(
     return records
 
 
+def _agent_selection_limit(target_paper_count: int | None) -> int:
+    """Return the one final selection cap shared by agent-path consumers."""
+    if target_paper_count is None:
+        requested = BUDGET_CAPS["max_selected"]
+    else:
+        try:
+            requested = max(0, int(target_paper_count))
+        except (TypeError, ValueError):
+            requested = BUDGET_CAPS["max_selected"]
+    return min(max(requested, _MIN_REPORT_CANDIDATES), BUDGET_CAPS["max_selected"])
+
+
+def _approved_minimum_paper_count(session_plan: Any) -> int:
+    """Read only the explicit approved minimum; a target is not a minimum."""
+    if session_plan is None:
+        return 1
+    try:
+        raw_scope = json.loads(getattr(session_plan, "scope_json", "[]") or "[]")
+    except (TypeError, ValueError):
+        return 1
+    constraints = raw_scope.get("constraints", ()) if isinstance(raw_scope, Mapping) else raw_scope
+    resolved = resolve_paper_count_constraints(constraints, default=1)
+    minimum = resolved.get("min_count") if resolved.get("valid") else None
+    if isinstance(minimum, bool) or not isinstance(minimum, int):
+        return 1
+    return max(1, min(minimum, BUDGET_CAPS["max_selected"]))
+
+
+def _selection_shortfall_reason(selected_count: int, minimum_paper_count: int) -> str | None:
+    if selected_count >= minimum_paper_count:
+        return None
+    return (
+        "approved minimum paper count not met: "
+        f"selected {selected_count} of {minimum_paper_count}"
+    )
+
+
+def _add_synthesis_limitation(result, limitation: str):
+    """Keep the same safe count limitation in every candidate artifact view."""
+    payload = result.output.model_dump(mode="json")
+    safe_summary = dict(payload.get("safe_summary") or {})
+    limitations = safe_summary.get("limitations")
+    if not isinstance(limitations, list):
+        limitations = []
+    if limitation not in limitations:
+        limitations.append(limitation)
+    safe_summary["limitations"] = limitations
+    payload["safe_summary"] = safe_summary
+    payload["output_hash"] = report_output_hash(
+        {key: value for key, value in payload.items() if key != "output_hash"}
+    )
+    output = type(result.output).model_validate(payload)
+    markdown = result.markdown.rstrip() + f"\n\n## 局限\n\n- {limitation}\n"
+    return replace(
+        result,
+        output=output,
+        markdown=markdown,
+        html=render_markdown_html(markdown),
+    )
+
+
+def _bound_agent_selection(
+    candidates: Iterable[Mapping[str, Any]], target_paper_count: int | None,
+) -> list[dict[str, Any]]:
+    """Deduplicate and stably cap the final agent selection before fan-out."""
+    bounded: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not isinstance(item, Mapping):
+            continue
+        candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+        if not isinstance(candidate_id, str) or not candidate_id or candidate_id in seen:
+            continue
+        bounded.append(dict(item))
+        seen.add(candidate_id)
+        if len(bounded) >= _agent_selection_limit(target_paper_count):
+            break
+    return bounded
+
+
 def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str]) -> dict:
     """Drop evaluator provenance labels that are outside Search evidence.
 
@@ -417,6 +550,12 @@ def _sanitize_evaluator_binding(output: Mapping[str, Any], allowed_refs: set[str
     aggregate record omitted that field.
     """
     normalized = dict(output)
+    # JSON-capable models sometimes serialize the aggregate marker ``null`` as
+    # the literal string ``"null"``.  Treat it as the aggregate container only
+    # when the server did not actually recall the candidate ID ``null``; a real
+    # allowlisted ``catalog:null`` remains a per-candidate decision.
+    if normalized.get("candidate_id") == "null" and "catalog:null" not in allowed_refs:
+        normalized["candidate_id"] = None
 
     def valid_refs(value: Any) -> list[str]:
         if not isinstance(value, list):
@@ -568,6 +707,43 @@ def _bind_synthesis_report_version(output: Mapping[str, Any], expected_version: 
     return normalized
 
 
+def _separate_synthesis_matrix(
+    output: Mapping[str, Any],
+    context: Mapping[str, Any] | None,
+    *,
+    plan_version: int,
+) -> tuple[dict[str, Any], dict[str, Any] | None, str | None]:
+    """Detach the optional matrix without changing the candidate artifact contract."""
+    artifact_output = dict(output)
+    raw_hash = output.get("output_hash") if isinstance(output, Mapping) else None
+    raw_matrix = artifact_output.pop("evidence_matrix", None)
+    # ``work_item_id`` is a runtime-owned binding added/checked by the Agent
+    # runner.  It is intentionally not part of the public report envelope;
+    # remove only this known binding after the original model hash has been
+    # checked below.  Do not accept or strip arbitrary extra fields here.
+    artifact_output.pop("work_item_id", None)
+    if raw_matrix is None:
+        artifact_output["output_hash"] = report_output_hash(
+            {key: value for key, value in artifact_output.items() if key != "output_hash"}
+        )
+        return artifact_output, None, None
+    if not isinstance(raw_hash, str) or raw_hash != report_output_hash(output):
+        return artifact_output, None, "AGENT_OUTPUT_INVALID"
+    try:
+        if context is None:
+            raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix snapshot context unavailable")
+        matrix = _validate_synthesis_matrix_payload(raw_matrix, context, plan_version=plan_version)
+    except Exception as exc:  # noqa: BLE001 - invalid optional extension degrades only the matrix path
+        artifact_output["output_hash"] = report_output_hash(
+            {key: value for key, value in artifact_output.items() if key != "output_hash"}
+        )
+        return artifact_output, None, getattr(exc, "code", "MATRIX_NOT_READY")
+    artifact_output["output_hash"] = report_output_hash(
+        {key: value for key, value in artifact_output.items() if key != "output_hash"}
+    )
+    return artifact_output, matrix, None
+
+
 def _validate_evaluator_scope(
     output: dict,
     allowed_candidates: set[str],
@@ -579,6 +755,12 @@ def _validate_evaluator_scope(
         allowed_sources = {"usenix", "dblp", "all"}
     if allowed_source_refs is None:
         allowed_source_refs = set()
+    candidate_id = output.get("candidate_id")
+    if "candidate_id" in output and candidate_id is not None and not isinstance(candidate_id, str):
+        # Only None (the aggregate container) or a string candidate ID may
+        # reach scope validation.  False/0/[]/{} must not be mistaken for the
+        # aggregate marker and allowed evidence must never persist for them.
+        return False
     def source_ref_allowed(ref: object) -> bool:
         if not isinstance(ref, str):
             return False
@@ -1175,7 +1357,15 @@ class Orchestrator:
 
     def _run_agent_work_items(self, *, task, owner_id: str, plan_version: int) -> OrchestratorResult:
         """Create and dispatch one complete AgentRunInput per WorkItem."""
-        from backend.app.research.application.agent_runtime import ROLE_SKILL_DEFAULTS, AgentRunInput
+        from backend.app.research.application.agent_runtime import (
+            ROLE_SKILL_DEFAULTS,
+            AgentRunInput,
+            AgentRuntimeError,
+            ResearchAgentRunner,
+            _hash,
+            _safe_search_id,
+            _trusted_catalog_search_id,
+        )
 
         session = self._store.get_session_by_task(task.research_task_id, owner_id)
         if session is None:
@@ -1185,6 +1375,7 @@ class Orchestrator:
         approved_capabilities: dict[str, dict] = {}
         budget_snapshot: dict = {}
         session_plan = self._store.get_session_plan(session.research_session_id, owner_id, plan_version)
+        minimum_paper_count = _approved_minimum_paper_count(session_plan)
         if session_plan is not None:
             try:
                 raw_capabilities = json.loads(session_plan.capabilities_json or "[]")
@@ -1208,11 +1399,22 @@ class Orchestrator:
         failure_error_code: str | None = None
         synthesis_run_id = None
         synthesis_output: dict | None = None
+        synthesis_matrix_context: dict[str, Any] | None = None
+        synthesis_matrix_payload: dict[str, Any] | None = None
+        synthesis_matrix_error: str | None = None
+        # Freeze the exact candidate set handed to the synthesizer.  The
+        # report consumer must not independently re-run the evaluator floor
+        # after the model has produced citations: a different bounded prefix
+        # would make a valid citation look out of scope and can also invalidate
+        # the server-owned snapshot context.
+        synthesis_validated_candidates: list[dict[str, Any]] | None = None
+        synthesis_candidate_sources: dict[str, str] = {}
         synthesis_attempts = 1
         synthesis_error: str | None = None
         evaluator_outputs: list[dict] = []
         evaluator_outputs_by_id: dict[str, dict] = {}
         selected_count = 0
+        selection_shortfall_reason: str | None = None
         items = self._store.list_work_items(task.research_task_id, plan_version=plan_version)
         # Store order is not a scheduling contract.  Topologically order the
         # existing WorkItems so a producer always runs before its consumer;
@@ -1240,6 +1442,267 @@ class Orchestrator:
         completed_outputs: dict[str, dict] = {}
         completed_search_evidence: dict[str, list[dict]] = {}
         item_by_id = {item.work_item_id: item for item in items}
+        hydration_invalid_ids: set[str] = set()
+
+        def dependencies_for(work_item) -> list[str]:
+            try:
+                raw_dependencies = json.loads(work_item.depends_on_json or "[]")
+            except (TypeError, ValueError):
+                raw_dependencies = []
+            return [str(dep) for dep in raw_dependencies] if isinstance(raw_dependencies, list) else []
+
+        def valid_runtime_binding(output: Mapping[str, Any], work_item) -> bool:
+            """Check only durable WorkItem identity before the shared validator."""
+            if output.get("work_item_id") != work_item.work_item_id:
+                return False
+            task_id = output.get("research_task_id")
+            return task_id is None or task_id == task.research_task_id
+
+        runtime_validator = ResearchAgentRunner(store=self._store)
+
+        def checkpoint_binds_envelope(
+            envelope: Mapping[str, Any],
+            output: Mapping[str, Any],
+            tool_results: list[dict],
+            agent_run,
+            work_item,
+        ) -> bool:
+            """Require the immutable runtime checkpoint to back the envelope."""
+            checkpoint_ref = envelope.get("checkpoint_ref")
+            checkpoint_hash = envelope.get("checkpoint_hash")
+            if (
+                not isinstance(checkpoint_ref, str)
+                or not checkpoint_ref.strip()
+                or not isinstance(checkpoint_hash, str)
+                or not checkpoint_hash.strip()
+                or agent_run.checkpoint_ref != checkpoint_ref
+                or agent_run.checkpoint_hash != checkpoint_hash
+            ):
+                return False
+            try:
+                checkpoint = self._store.get_agent_checkpoint(checkpoint_ref, owner_id)
+            except Exception:
+                return False
+            if checkpoint is None or not isinstance(checkpoint.content, str):
+                return False
+            if (
+                checkpoint.owner_id != owner_id
+                or checkpoint.research_session_id != session.research_session_id
+                or checkpoint.research_task_id != task.research_task_id
+                or checkpoint.work_item_id != work_item.work_item_id
+                or checkpoint.agent_run_id != envelope.get("agent_run_id")
+                or checkpoint.continued_from_agent_run_id != agent_run.continued_from_agent_run_id
+                or checkpoint.schema_version != output.get("schema_version")
+                or checkpoint.content_hash != checkpoint_hash
+                or hashlib.sha256(checkpoint.content.encode("utf-8")).hexdigest() != checkpoint.content_hash
+            ):
+                return False
+            try:
+                checkpoint_payload = json.loads(checkpoint.content)
+            except (TypeError, ValueError):
+                return False
+            return (
+                isinstance(checkpoint_payload, Mapping)
+                and _hash(checkpoint_payload) == checkpoint_hash
+                and checkpoint_payload.get("schema_version") == checkpoint.schema_version
+                and checkpoint_payload.get("output") == dict(output)
+                and checkpoint_payload.get("tool_results") == tool_results
+                and isinstance(checkpoint_payload.get("tool_results"), list)
+                and all(isinstance(item, Mapping) for item in checkpoint_payload["tool_results"])
+            )
+
+        # A restart loads terminal WorkItems from the store before dispatching
+        # any queued consumer.  Re-project only valid, runtime-owned output
+        # envelopes into this pass's context; do not reopen or re-run terminal
+        # rows.  The topological order makes Search output available for the
+        # persisted Evaluator allowlist check below.
+        for item in items:
+            persisted_item = self._store.get_work_item(item.work_item_id) or item
+            if persisted_item.status != "completed":
+                continue
+            envelope_data = _completed_output_envelope(persisted_item.output_json)
+            envelope = envelope_data[0] if envelope_data is not None else None
+            output = envelope_data[1] if envelope_data is not None else None
+            tool_results = envelope_data[2] if envelope_data is not None else []
+            role = role_map.get(persisted_item.role, persisted_item.role)
+            valid = output is not None and valid_runtime_binding(output, persisted_item)
+            validated_output: dict[str, Any] | None = None
+            try:
+                persisted_input = json.loads(persisted_item.input_json or "{}")
+            except (TypeError, ValueError):
+                persisted_input = {}
+            if not isinstance(persisted_input, Mapping):
+                persisted_input = {}
+            if valid:
+                # The WorkItem row stores a complete AgentRun envelope.  The
+                # inner digest, wrapper digest, and the immutable AgentRun
+                # row must all agree before any output can re-enter context.
+                expected_hash = _hash({key: value for key, value in output.items() if key != "output_hash"})
+                agent_run_id = envelope.get("agent_run_id") if envelope else None
+                agent_run = None
+                if (
+                    envelope is None
+                    or envelope.get("schema_version") != "runtime-v1"
+                    or envelope.get("error_code") not in (None, "")
+                    or not isinstance(agent_run_id, str)
+                    or not agent_run_id.strip()
+                    or envelope.get("output_hash") != expected_hash
+                    or output.get("output_hash") != expected_hash
+                ):
+                    valid = False
+                else:
+                    with suppress(Exception):
+                        agent_run = self._store.get_agent_run(agent_run_id, owner_id)
+                    valid = (
+                        agent_run is not None
+                        and agent_run.status == "completed"
+                        and agent_run.research_session_id == session.research_session_id
+                        and agent_run.research_task_id == task.research_task_id
+                        and agent_run.work_item_id == persisted_item.work_item_id
+                        and agent_run.role == role
+                        and agent_run.skill_name == ROLE_SKILL_DEFAULTS.get(role)
+                        and agent_run.output_hash == expected_hash
+                    )
+                    if valid:
+                        valid = checkpoint_binds_envelope(
+                            envelope,
+                            output,
+                            tool_results,
+                            agent_run,
+                            persisted_item,
+                        )
+            if valid and role not in ROLE_SKILL_DEFAULTS:
+                valid = False
+            if valid:
+                try:
+                    validated_output = runtime_validator._validate_output(
+                        role,
+                        output,
+                        require_synthesis_matrix=(
+                            role == "synthesizer"
+                            and isinstance(persisted_input.get("matrix_context"), Mapping)
+                            and bool(persisted_input.get("matrix_context"))
+                        ),
+                        synthesis_matrix_context=(
+                            persisted_input.get("matrix_context")
+                            if role == "synthesizer" else None
+                        ),
+                        search_source_scope=persisted_input if role == "search_worker" else None,
+                        search_skill_name=ROLE_SKILL_DEFAULTS.get(role),
+                        expected_work_item_id=persisted_item.work_item_id,
+                        expected_research_task_id=task.research_task_id,
+                        expected_research_session_id=session.research_session_id,
+                        expected_owner_id=owner_id,
+                    )
+                except (AgentRuntimeError, KeyError, TypeError, ValueError):
+                    valid = False
+            if valid and role == "search_worker":
+                candidates = validated_output.get("candidates") if validated_output else None
+                successful_catalog = [
+                    result for result in tool_results
+                    if result.get("name") == "search_paper_catalog" and result.get("status") == "ok"
+                ]
+                trusted_handle = _trusted_catalog_search_id(tool_results)
+                output_handle = _safe_search_id(validated_output.get("search_id")) if validated_output else None
+                expected_source_ref = f"search:{trusted_handle}" if trusted_handle else None
+                catalog_ids: set[str] = set()
+                catalog_results_valid = bool(successful_catalog)
+                for result in successful_catalog:
+                    result_ids = result.get("catalog_paper_ids", [])
+                    result_refs = result.get("source_refs")
+                    if (
+                        not isinstance(result_ids, list)
+                        or any(not isinstance(candidate, str) or not candidate.strip() for candidate in result_ids)
+                        or not isinstance(result_refs, list)
+                        or result_refs != [expected_source_ref]
+                    ):
+                        catalog_results_valid = False
+                        continue
+                    catalog_ids.update(candidate.strip() for candidate in result_ids)
+                safe_summary = validated_output.get("safe_summary") if validated_output else None
+                valid = (
+                    catalog_results_valid
+                    and trusted_handle is not None
+                    and output_handle == trusted_handle
+                    and isinstance(candidates, list)
+                    and all(isinstance(candidate, str) and candidate.strip() for candidate in candidates)
+                    and set(candidates).issubset(catalog_ids)
+                    and validated_output.get("source_refs") == [expected_source_ref]
+                    and isinstance(safe_summary, Mapping)
+                    and safe_summary.get("search_id") == trusted_handle
+                    and safe_summary.get("source_refs") == [expected_source_ref]
+                )
+                if valid:
+                    completed_ids.add(persisted_item.work_item_id)
+                    completed_outputs[persisted_item.work_item_id] = dict(validated_output)
+                    completed_search_evidence[persisted_item.work_item_id] = _catalog_evidence_view(
+                        validated_output, tool_results
+                    )
+                    continue
+            elif valid and role == "paper_evaluator":
+                output = validated_output
+                dependencies = dependencies_for(persisted_item)
+                allowed_candidates: set[str] = set()
+                allowed_refs: set[str] = set()
+                allowed_sources: set[str] = set()
+                allowed_source_refs: set[str] = set()
+                binding_invalid = any(
+                    dependency_id not in completed_ids
+                    or item_by_id.get(dependency_id) is None
+                    or item_by_id[dependency_id].role != "search-worker"
+                    for dependency_id in dependencies
+                )
+                for dependency_id in dependencies:
+                    search_output = completed_outputs.get(dependency_id)
+                    if binding_invalid or not isinstance(search_output, Mapping):
+                        continue
+                    if (
+                        (search_output.get("work_item_id") is not None and search_output.get("work_item_id") != dependency_id)
+                        or (search_output.get("research_task_id") is not None and search_output.get("research_task_id") != task.research_task_id)
+                        or search_output.get("source") not in {"usenix", "dblp", "all"}
+                    ):
+                        binding_invalid = True
+                        continue
+                    allowed_candidates.update(
+                        candidate
+                        for candidate in search_output.get("candidates", ())
+                        if isinstance(candidate, str) and candidate.strip()
+                    )
+                    allowed_sources.add(search_output["source"])
+                    for ref in search_output.get("evidence_refs", ()) if isinstance(search_output.get("evidence_refs"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_refs.add(ref)
+                    for ref in search_output.get("citation_allowlist", ()) if isinstance(search_output.get("citation_allowlist"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_refs.add(ref)
+                    allowed_refs.update(f"catalog:{candidate}" for candidate in allowed_candidates)
+                    for ref in search_output.get("source_refs", ()) if isinstance(search_output.get("source_refs"), list) else ():
+                        if isinstance(ref, str):
+                            allowed_source_refs.add(ref)
+                if valid and isinstance(output.get("evidence_refs"), list) and isinstance(output.get("reason"), str):
+                    normalized_output = _sanitize_evaluator_binding(output, allowed_refs)
+                    valid = not binding_invalid and _validate_evaluator_scope(
+                        normalized_output,
+                        allowed_candidates,
+                        allowed_refs,
+                        allowed_sources,
+                        allowed_source_refs,
+                    )
+                    if valid:
+                        completed_ids.add(persisted_item.work_item_id)
+                        completed_outputs[persisted_item.work_item_id] = normalized_output
+                        evaluator_outputs.append(dict(normalized_output))
+                        evaluator_outputs_by_id[persisted_item.work_item_id] = dict(normalized_output)
+                        continue
+            elif valid:
+                # Critic/synthesizer outputs passed the shared role contract;
+                # preserve them without reopening or re-running terminal rows.
+                completed_ids.add(persisted_item.work_item_id)
+                completed_outputs[persisted_item.work_item_id] = dict(validated_output)
+                continue
+            hydration_invalid_ids.add(persisted_item.work_item_id)
+            failed_ids.add(persisted_item.work_item_id)
+            failures += 1
         for item in items:
             # A restart or a second orchestration trigger may hold a stale
             # snapshot.  Requeue only due retries and never execute a row that
@@ -1430,27 +1893,49 @@ class Orchestrator:
                         metadata_resolver,
                         task.goal,
                     )
-                    if len(validated) >= _MIN_REPORT_CANDIDATES:
-                        self._persist_agent_selections(
-                            task.research_task_id,
-                            {
-                                "kept": [
-                                    {
-                                        "candidate_id": item["candidate_id"],
-                                        "keep": True,
-                                        "evidence_refs": list(item["evidence_refs"]),
-                                    }
-                                    for item in validated
-                                ]
-                            },
-                            set(recall_allowlist),
-                        )
+                # This is the single final selection set for all agent-path
+                # consumers: persistence, synthesizer input, matrix context,
+                # acquisition and terminal accounting must not each apply a
+                # different budget or duplicate policy.
+                validated = _bound_agent_selection(validated, task.target_paper_count)
                 if not validated:
                     failures += 1
                     synthesis_error = "NO_VALIDATED_EVIDENCE"
                     failed_ids.add(item.work_item_id)
                     self._fail_work_item(task.research_task_id, item, synthesis_error)
                     continue
+                synthesis_validated_candidates = [dict(candidate) for candidate in validated]
+                for dependency_id, dependency_output in completed_outputs.items():
+                    dependency_item = item_by_id.get(dependency_id)
+                    if dependency_item is None or dependency_item.role != "search-worker":
+                        continue
+                    search_id = dependency_output.get("search_id")
+                    if not isinstance(search_id, str) or not search_id.strip():
+                        continue
+                    for candidate_id in dependency_output.get("candidates", ()) if isinstance(dependency_output.get("candidates"), list) else ():
+                        if isinstance(candidate_id, str) and candidate_id.strip():
+                            synthesis_candidate_sources.setdefault(candidate_id.strip(), search_id.strip())
+                # Reconcile the durable selection projection with the exact
+                # frozen set sent to the model before resolving matrix
+                # snapshots.  This preserves per-candidate source_search_id
+                # provenance and prevents a later floor pass from replacing a
+                # cited candidate with a different recalled row.
+                self._persist_agent_selections(
+                    task.research_task_id,
+                    {
+                        "kept": [
+                            {
+                                "candidate_id": candidate["candidate_id"],
+                                "keep": True,
+                                "evidence_refs": list(candidate["evidence_refs"]),
+                            }
+                            for candidate in synthesis_validated_candidates
+                        ]
+                    },
+                    {candidate["candidate_id"] for candidate in synthesis_validated_candidates},
+                    candidate_sources=synthesis_candidate_sources,
+                    target_paper_count=task.target_paper_count,
+                )
                 work_item_input["validated_candidates"] = validated
                 work_item_input["citation_allowlist"] = [
                     {"citation_ref": ref, "candidate_id": candidate["candidate_id"]}
@@ -1460,6 +1945,17 @@ class Orchestrator:
                 # The report version belongs to the approved plan subject; the
                 # model may not derive it from publication years or timestamps.
                 work_item_input["report_version"] = plan_version
+                # Matrix evidence is opt-in and server-bounded.  Never let a
+                # stale/request-provided context authorize a producer; only
+                # the current frozen selections and plan facets can do so.
+                work_item_input.pop("matrix_context", None)
+                synthesis_matrix_context = self._build_synthesis_matrix_context(
+                    task=task,
+                    plan_version=plan_version,
+                    validated_candidates=validated,
+                )
+                if synthesis_matrix_context is not None:
+                    work_item_input["matrix_context"] = synthesis_matrix_context
             with suppress(Exception):
                 self._store.update_work_item_input(
                     item.work_item_id,
@@ -1550,13 +2046,12 @@ class Orchestrator:
             terminal = result.status if result.status in {"completed", "failed", "cancelled", "limit_reached"} else "failed"
             semantic_error = None
             normalized_output = result.output_json
-            if terminal == "completed" and role == "search_worker" and isinstance(normalized_output, dict):
-                # The runtime, rather than the model, owns the durable
-                # WorkItem binding; the model's presentation value is ignored.
-                normalized_output = _canonicalize_search_worker_binding(
-                    normalized_output,
-                    work_item_id=item.work_item_id,
-                )
+            if terminal == "completed" and not isinstance(normalized_output, dict):
+                # A completed AgentRun without a structured output cannot
+                # become a completed WorkItem.  Keep the row open until this
+                # branch writes a failed envelope below.
+                semantic_error = "AGENT_OUTPUT_INVALID"
+                terminal = "failed"
             if terminal == "completed" and role == "paper_evaluator" and isinstance(normalized_output, dict):
                 raw_output = dict(normalized_output)
                 # The evaluator model is not trusted to choose provenance
@@ -1573,11 +2068,15 @@ class Orchestrator:
                     semantic_error = "EVALUATOR_EVIDENCE_OUT_OF_SCOPE"
                     terminal = "failed"
             if terminal != "completed" and role == "search_worker":
-                recovered = self._recover_search_worker_output(work_item_input, item.work_item_id)
-                if recovered is not None:
-                    normalized_output = recovered
-                    terminal = "completed"
-                    semantic_error = None
+                # Search recovery is owned by ResearchAgentRunner, where the
+                # controlled tool result is validated, hashed, checkpointed,
+                # and bound to the real AgentRun before that run can complete.
+                # The orchestrator only has the returned AgentRunOutput here;
+                # promoting a separate adapter result would create a
+                # completed WorkItem whose envelope/hash no longer describes
+                # the real AgentRun (especially when output_json is None).
+                # Keep the failure instead of fabricating a terminal success.
+                semantic_error = semantic_error or "AGENT_OUTPUT_INVALID"
             if terminal != "completed":
                 failures += 1
                 failed_ids.add(item.work_item_id)
@@ -1611,37 +2110,55 @@ class Orchestrator:
                 # 后立即把真实候选持久化；只接受 allowed_candidates 白名单内的召回 ID，
                 # 落库失败不阻断后续 WorkItem（选集写不进去不该把任务打成 failed）。
                 self._persist_agent_selections(
-                    task.research_task_id, normalized_output, allowed_candidates, candidate_sources
+                    task.research_task_id,
+                    normalized_output,
+                    allowed_candidates,
+                    candidate_sources,
+                    target_paper_count=task.target_paper_count,
                 )
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
-                synthesis_output = (
+                normalized_synthesis_output = (
                     _bind_synthesis_report_version(normalized_output, plan_version)
                     if isinstance(normalized_output, dict)
                     else None
                 )
+                if isinstance(normalized_synthesis_output, dict):
+                    synthesis_output, synthesis_matrix_payload, synthesis_matrix_error = _separate_synthesis_matrix(
+                        normalized_synthesis_output,
+                        synthesis_matrix_context,
+                        plan_version=plan_version,
+                    )
+                else:
+                    synthesis_output = None
+                    synthesis_matrix_payload = None
+                    synthesis_matrix_error = None
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
             elif role == "synthesizer" and terminal != "completed":
                 synthesis_error = result.error_code or "AGENT_OUTPUT_INVALID"
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
-            output_json = json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)[:100000]
-            with suppress(Exception):
-                updated = self._store.update_work_item_status(
-                    item.work_item_id,
-                    "completed" if terminal == "completed" else ("cancelled" if terminal == "cancelled" else "failed"),
-                    output_json=output_json,
-                    error_code=error_code,
-                    last_error_code=error_code,
-                    resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
-                )
-                event_extra = {"error_code": error_code} if error_code else {}
-                if search_id is not None:
-                    event_extra["search_id"] = search_id
-                self._emit(
-                    task.research_task_id,
-                    "worker",
-                    self._worker_event_payload(updated, terminal, **event_extra),
-                )
+            output_json = json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)
+            if len(output_json) > 100000:
+                raise ValueError("AGENT_OUTPUT_INVALID: work item output exceeds bounded envelope")
+            # The store transaction is the WorkItem terminal commit.  Do not
+            # suppress a failed write: until this succeeds a completed result
+            # has no durable payload and must not be reported as completed.
+            updated = self._store.update_work_item_status(
+                item.work_item_id,
+                "completed" if terminal == "completed" else ("cancelled" if terminal == "cancelled" else "failed"),
+                output_json=output_json,
+                error_code=error_code,
+                last_error_code=error_code,
+                resolved_model=result.model_metadata.get("model") if result.model_metadata else None,
+            )
+            event_extra = {"error_code": error_code} if error_code else {}
+            if search_id is not None:
+                event_extra["search_id"] = search_id
+            self._emit(
+                task.research_task_id,
+                "worker",
+                self._worker_event_payload(updated, terminal, **event_extra),
+            )
         waiting_items = [
             current for current in self._store.list_work_items(task.research_task_id, plan_version=plan_version)
             if current.status == "waiting_retry"
@@ -1768,34 +2285,136 @@ class Orchestrator:
                                 ]
                             },
                             set(recall_ids),
+                            target_paper_count=task.target_paper_count,
                         )
+                if synthesis_validated_candidates is not None:
+                    # The synthesizer output and its citation allowlist are
+                    # authoritative for this run.  Reuse the same validated
+                    # records rather than the independent post-run floor
+                    # calculation above, which may choose a different
+                    # recalled candidate due to ordering/metadata drift.
+                    validated_candidates = [
+                        dict(candidate) for candidate in synthesis_validated_candidates
+                    ]
+                    self._persist_agent_selections(
+                        task.research_task_id,
+                        {
+                            "kept": [
+                                {
+                                    "candidate_id": candidate["candidate_id"],
+                                    "keep": True,
+                                    "evidence_refs": list(candidate["evidence_refs"]),
+                                }
+                                for candidate in validated_candidates
+                            ]
+                        },
+                        {candidate["candidate_id"] for candidate in validated_candidates},
+                        candidate_sources=synthesis_candidate_sources,
+                        target_paper_count=task.target_paper_count,
+                    )
+                validated_candidates = _bound_agent_selection(
+                    validated_candidates, task.target_paper_count
+                )
                 selected_count = len(validated_candidates)
+                selection_shortfall_reason = _selection_shortfall_reason(
+                    selected_count, minimum_paper_count
+                )
+                if selection_shortfall_reason and synthesis_error is None:
+                    synthesis_error = "EVIDENCE_INSUFFICIENT"
+                matrix_built = False
                 try:
                     if synthesis_run_id is None or synthesis_output is None:
                         raise ReportSynthesisError(
                             "synthesizer run did not complete", code=synthesis_error or "AGENT_OUTPUT_INVALID"
                         )
-                    # Validate and consume the actual model output.  The
-                    # delivery service is deliberately downstream of this
-                    # semantic boundary; it never re-composes a replacement
-                    # report from evaluator data.
+                    # Validate and consume the candidate-level envelope before
+                    # touching any matrix row.  A malformed artifact must not
+                    # leave a durable Claim/Evidence/Dimension/Cell set
+                    # behind for a later report read.
                     validate_report_synthesis_output(synthesis_output, expected_version=plan_version)
                     synthesis = ReportSynthesizer().consume_validated_output(
                         output=synthesis_output,
                         validated_candidates=validated_candidates,
                         title="深度研究报告",
                     )
+                    if selection_shortfall_reason:
+                        synthesis = _add_synthesis_limitation(synthesis, selection_shortfall_reason)
+
+                    matrix_failure = "MATRIX_NOT_READY" if synthesis_matrix_error else None
+                    if matrix_failure:
+                        logger.warning(
+                            "synthesizer matrix extension degraded for task %s: %s",
+                            task.research_task_id,
+                            matrix_failure,
+                        )
+                    elif synthesis_matrix_payload is None and self._memory_repository is not None:
+                        # With the Task08 delivery seam enabled, a candidate
+                        # artifact alone is not a canonical research report.
+                        # Missing optional output therefore remains an
+                        # explicit degraded terminal condition.
+                        matrix_failure = "MATRIX_NOT_READY"
+                    if matrix_failure is None and synthesis_matrix_payload is not None:
+                        try:
+                            EvidenceMatrixService(self._store).build_matrix(
+                                task.research_task_id,
+                                owner_id,
+                                plan_version=plan_version,
+                                dimensions=synthesis_matrix_payload["dimensions"],
+                                claims=synthesis_matrix_payload["claims"],
+                                evidence=synthesis_matrix_payload["evidence"],
+                                cells=synthesis_matrix_payload["cells"],
+                            )
+                            matrix_built = True
+                        except Exception:  # noqa: BLE001 - preserve candidate artifact on optional failure
+                            matrix_failure = "MATRIX_NOT_READY"
+                            logger.warning(
+                                "synthesizer matrix build degraded for task %s: %s",
+                                task.research_task_id,
+                                matrix_failure,
+                            )
+                            synthesis_matrix_payload = None
+                    if matrix_failure:
+                        synthesis_error = synthesis_error or matrix_failure
+                    if matrix_built:
+                        try:
+                            # The canonical report is the success gate for a
+                            # completed user-visible delivery.  Generate it
+                            # before activity/notification writes so a
+                            # failure cannot leave a completed fact behind.
+                            ReportGenerationService(self._store).generate(
+                                task.research_task_id,
+                                owner_id,
+                                plan_version=plan_version,
+                                report_version=None,
+                                title="深度研究报告",
+                                additional_limitations=(selection_shortfall_reason,)
+                                if selection_shortfall_reason else (),
+                            )
+                        except Exception:  # noqa: BLE001 - candidate artifact remains the durable fallback
+                            synthesis_error = synthesis_error or "REPORT_NOT_READY"
+                            logger.warning(
+                                "synthesizer canonical report degraded for task %s: %s",
+                                task.research_task_id,
+                                "REPORT_NOT_READY",
+                            )
                     delivered = ReportDeliveryService(
                         store=self._store, memory_repository=self._memory_repository,
                     ).deliver(
                         session=session, owner_id=owner_id,
                         generated_by_agent_run_id=synthesis_run_id,
                         result=synthesis,
-                        notification_kind="partial" if failures else "completed",
+                        notification_kind="partial" if (failures or synthesis_error) else "completed",
                     )
                     synthesis_artifact_id = delivered["artifacts"][0]["artifact_id"]
                 except Exception as exc:
+                    prior_error = synthesis_error
+                    if prior_error is None and self._memory_repository is not None:
+                        prior_error = "MATRIX_NOT_READY" if synthesis_matrix_payload is None else "REPORT_NOT_READY"
+                    if prior_error is None and matrix_built:
+                        prior_error = "REPORT_NOT_READY"
                     synthesis_error = getattr(exc, "code", "AGENT_OUTPUT_INVALID")
+                    if prior_error:
+                        synthesis_error = prior_error
                     # The model is not the delivery authority.  If it emits
                     # an empty/partial-but-safe structure, reuse the already
                     # validated catalog candidates with the fixed renderer so
@@ -1820,16 +2439,23 @@ class Orchestrator:
                             citation_manifest=fallback_citations,
                             title="深度研究报告",
                         )
+                        if selection_shortfall_reason:
+                            fallback_result = _add_synthesis_limitation(
+                                fallback_result, selection_shortfall_reason
+                            )
                         delivered = ReportDeliveryService(
                             store=self._store, memory_repository=self._memory_repository,
                         ).deliver(
                             session=session, owner_id=owner_id,
                             generated_by_agent_run_id=synthesis_run_id,
                             result=fallback_result,
-                            notification_kind="completed",
+                            notification_kind="partial" if prior_error else "completed",
                         )
                         synthesis_artifact_id = delivered["artifacts"][0]["artifact_id"]
-                        synthesis_error = None
+                        # A deterministic candidate artifact is a safe
+                        # fallback, not proof that matrix/canonical report
+                        # generation succeeded.
+                        synthesis_error = prior_error
                     except Exception as fallback_exc:
                         logger.exception(
                             "deterministic report fallback failed for task %s",
@@ -1871,11 +2497,26 @@ class Orchestrator:
         if synthesis_error:
             failures += 1
             failure_error_code = synthesis_error
+            self._emit_synthesis_failure_notification(
+                task=task, session=session, owner_id=owner_id,
+                version=plan_version, code=synthesis_error,
+                reason=selection_shortfall_reason,
+                retry_attempt=synthesis_attempts if synthesis_attempts > 1 else None,
+            )
+        if failures and failure_error_code is None and hydration_invalid_ids:
+            failure_error_code = "AGENT_OUTPUT_INVALID"
         final_status = "completed" if items and failures == 0 else "partial"
         with suppress(InvalidStateTransition):
             self._store.update_task_status(task.research_task_id, owner_id, final_status)
         final_error_code = None if failures == 0 else (synthesis_error or failure_error_code or "AGENT_RUN_FAILED")
-        self._emit(task.research_task_id, "terminal", {"status": final_status, "selected_count": selected_count, "error_code": final_error_code})
+        terminal_payload = {
+            "status": final_status,
+            "selected_count": selected_count,
+            "error_code": final_error_code,
+        }
+        if selection_shortfall_reason:
+            terminal_payload["reason"] = selection_shortfall_reason
+        self._emit(task.research_task_id, "terminal", terminal_payload)
         return self._result(task.research_task_id, final_status, plan_version, selected_count, synthesis_artifact_id, (), failures > 0, final_error_code)
 
     def _plan_is_approved(self, task, owner_id: str) -> bool:
@@ -2049,6 +2690,7 @@ class Orchestrator:
         evaluator_output: dict,
         allowed_candidates: set[str],
         candidate_sources: dict[str, str] | None = None,
+        target_paper_count: int | None = None,
     ) -> None:
         """把 agent 路径 evaluator 产出的真实候选落库为 research_paper_selections。
 
@@ -2131,6 +2773,11 @@ class Orchestrator:
                 ))
         if not selections:
             return
+        # The durable projection is one of the consumers of the final agent
+        # selection set. Keep it on the same stable, deduplicated prefix as
+        # the synthesizer/matrix/terminal path; acquisition must not be the
+        # first place where an over-budget evaluator output is truncated.
+        selections = selections[:_agent_selection_limit(target_paper_count)]
         try:
             self._store.replace_selections(research_task_id, selections)
         except Exception as exc:  # noqa: BLE001 - 选集写不进去不应把任务打成 failed
@@ -2849,19 +3496,22 @@ class Orchestrator:
 
     def _emit_synthesis_failure_notification(
         self, *, task, session, owner_id: str, version: int, code: str,
-        retry_attempt: int | None = None,
+        retry_attempt: int | None = None, reason: str | None = None,
     ) -> None:
         if not session or not self._store:
             return
         try:
             service = ResearchNotificationService(store=self._store)
+            payload = {"report_version": version, "error_code": code}
+            if reason:
+                payload["reason"] = reason
             service.emit(
                 owner_id=owner_id,
                 research_session_id=session.research_session_id,
                 research_task_id=task.research_task_id,
                 notification_kind="failed",
                 subject_version=version,
-                payload={"report_version": version, "error_code": code},
+                payload=payload,
                 idempotency_key=f"research-report:{task.research_task_id}:{version}:failed",
             )
             # Failure and degraded completion are separate durable facts.  A
@@ -2873,7 +3523,7 @@ class Orchestrator:
                 research_task_id=task.research_task_id,
                 notification_kind="partial",
                 subject_version=version,
-                payload={"report_version": version, "error_code": code},
+                payload=payload,
                 idempotency_key=f"research-report:{task.research_task_id}:{version}:partial",
             )
             if retry_attempt is not None and retry_attempt > 1:
@@ -2883,7 +3533,7 @@ class Orchestrator:
                     research_task_id=task.research_task_id,
                     notification_kind="failed",
                     subject_version=version,
-                    payload={"report_version": version, "error_code": code, "retry_attempt": retry_attempt},
+                    payload={**payload, "retry_attempt": retry_attempt},
                     idempotency_key=f"research-report:{task.research_task_id}:{version}:retry:{retry_attempt}",
                 )
         except Exception:
@@ -2921,6 +3571,182 @@ class Orchestrator:
         if not isinstance(value, list):
             return ()
         return tuple(str(item) for item in value)
+
+    def _matrix_dimensions(self, research_task_id: str, plan_version: int) -> list[dict[str, Any]] | None:
+        """Derive comparison dimensions only from the approved plan facets."""
+        getter = getattr(self._store, "get_plan", None)
+        if not callable(getter):
+            return None
+        plan = getter(research_task_id, int(plan_version))
+        if plan is None:
+            return None
+        try:
+            raw_facets = json.loads(plan.facets_json or "[]")
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(raw_facets, list) or not raw_facets or len(raw_facets) > 16:
+            return None
+        dimensions: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for index, raw_facet in enumerate(raw_facets):
+            if not isinstance(raw_facet, str):
+                return None
+            facet = raw_facet.strip()
+            if not facet or len(facet) > 500 or facet in seen:
+                return None
+            seen.add(facet)
+            dimensions.append({
+                "dimension_id": f"facet-{index + 1}",
+                "label": facet,
+                "definition": f"已批准研究范围维度：{facet}",
+                "display_order": index,
+            })
+        return dimensions
+
+    def _build_synthesis_matrix_context(
+        self,
+        *,
+        task,
+        plan_version: int,
+        validated_candidates: Iterable[Mapping[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Build a bounded synthesizer context from real frozen search rows.
+
+        The research store contains only candidate references.  Every matrix
+        candidate therefore has to resolve through its persisted per-selection
+        ``source_search_id`` (or an old task-level handle whose frozen result
+        explicitly contains that candidate).  No global catalog row is used
+        as evidence provenance.
+        """
+        dimensions = self._matrix_dimensions(task.research_task_id, plan_version)
+        if not dimensions:
+            return None
+        catalog_store = getattr(self._adapter, "_store", None)
+        if catalog_store is None:
+            # The production adapter is intentionally lazy and may still have
+            # no private store reference when the model/tool path created the
+            # frozen search snapshot.  Reuse the configured paper-discovery
+            # provider, exactly as the candidate metadata resolver does; do
+            # not construct another catalog/cache or use global rows.
+            with suppress(Exception):
+                from backend.app.api.common import _paper_store
+
+                catalog_store = _paper_store()
+        get_job = getattr(catalog_store, "get_search_job", None)
+        get_results = getattr(catalog_store, "get_search_results", None)
+        if not callable(get_job) or not callable(get_results):
+            return None
+        list_selections = getattr(self._store, "list_selections", None)
+        if not callable(list_selections):
+            return None
+        try:
+            selections = list(list_selections(task.research_task_id) or ())
+        except Exception:
+            return None
+        selection_by_id = {
+            str(getattr(item, "catalog_paper_id", "")): item
+            for item in selections
+            if getattr(item, "catalog_paper_id", None)
+        }
+        fallback_search_id = getattr(task, "search_id", None)
+        if not isinstance(fallback_search_id, str) or not fallback_search_id.strip():
+            getter = getattr(self._store, "get_task_search_id", None)
+            if callable(getter):
+                with suppress(Exception):
+                    fallback_search_id = getter(task.research_task_id)
+        fallback_search_id = fallback_search_id.strip() or None if isinstance(fallback_search_id, str) else None
+
+        validated_candidates = list(validated_candidates)
+        validated_ids = {
+            str(item.get("candidate_id", item.get("catalog_paper_id"))).strip()
+            for item in validated_candidates
+            if isinstance(item, Mapping)
+            and isinstance(item.get("candidate_id", item.get("catalog_paper_id")), str)
+            and str(item.get("candidate_id", item.get("catalog_paper_id"))).strip()
+        }
+        if not validated_ids or len(validated_ids) != len(validated_candidates):
+            return None
+        # EvidenceMatrixService expands durable selections when deriving
+        # missing cells.  Refuse a context whose candidate allowlist differs
+        # from that durable projection; otherwise a canonical report could
+        # silently include a Paper outside the evaluator-approved set.
+        if set(selection_by_id) != validated_ids:
+            return None
+
+        now = datetime.now(timezone.utc)
+        context_candidates: list[dict[str, Any]] = []
+        for candidate in validated_candidates:
+            if not isinstance(candidate, Mapping):
+                return None
+            raw_id = candidate.get("candidate_id", candidate.get("catalog_paper_id"))
+            if not isinstance(raw_id, str) or not raw_id.strip():
+                return None
+            paper_id = raw_id.strip()
+            selection = selection_by_id.get(paper_id)
+            search_id = getattr(selection, "source_search_id", None) if selection is not None else None
+            if not isinstance(search_id, str) or not search_id.strip():
+                search_id = fallback_search_id
+            if not isinstance(search_id, str) or MATRIX_ID_RE.fullmatch(search_id.strip()) is None:
+                return None
+            search_id = search_id.strip()
+            try:
+                job = get_job(search_id)
+                if job is None or str(getattr(job, "status", "")) not in {"completed", "partial"}:
+                    return None
+                expires_at = getattr(job, "expires_at", None)
+                expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=timezone.utc)
+                if expiry.astimezone(timezone.utc) <= now:
+                    return None
+                results = list(get_results(search_id) or ())
+            except Exception:
+                return None
+            matched = next(
+                (
+                    row for row in results
+                    if str(getattr(row, "search_id", "")) == search_id
+                    and str(getattr(row, "catalog_paper_id", "")) == paper_id
+                ),
+                None,
+            )
+            if matched is None or not isinstance(getattr(matched, "snapshot", None), Mapping):
+                return None
+            snapshot = dict(matched.snapshot)
+            snapshot_id = snapshot.get("catalog_paper_id", snapshot.get("candidate_id"))
+            if snapshot_id != paper_id:
+                return None
+            title = snapshot.get("title")
+            if not isinstance(title, str) or not title.strip() or len(title) > 8000:
+                return None
+            raw_abstract = snapshot.get("abstract")
+            if raw_abstract is None:
+                raw_abstract = ""
+            if not isinstance(raw_abstract, str) or len(raw_abstract) > 8000:
+                return None
+            # The frozen catalog snapshot is the evidence object.  Hash its
+            # exact UTF-8 bytes; presentation trimming would create a digest
+            # that no longer identifies the persisted snapshot content.
+            digest = hashlib.sha256(raw_abstract.encode("utf-8")).hexdigest() if raw_abstract else None
+            context_candidates.append({
+                "paper_id": paper_id,
+                "catalog_snapshot_id": search_id,
+                "title": title.strip(),
+                "abstract": raw_abstract,
+                "abstract_digest": digest,
+                "abstract_ref": f"catalog:{paper_id}",
+            })
+        if not context_candidates:
+            return None
+        if len(context_candidates) > 64:
+            return None
+        return {
+            "schema_version": "evidence-report-v1",
+            "plan_version": int(plan_version),
+            "dimensions": dimensions,
+            "candidates": context_candidates,
+            "allowed_paper_ids": [item["paper_id"] for item in context_candidates],
+        }
 
     @staticmethod
     def _facet_of(item: ResearchWorkItem) -> str:

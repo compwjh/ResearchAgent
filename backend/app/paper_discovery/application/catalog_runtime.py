@@ -25,6 +25,7 @@ from backend.app.paper_discovery.domain.paper_discovery import (
 )
 from backend.app.paper_discovery.domain.paper_discovery_normalization import normalize_doi, normalize_title
 from backend.app.paper_discovery.domain.source_authority import canonical_source_id, route_source_id
+from backend.app.paper_discovery.infrastructure.ndss_paper_parser import NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS
 from backend.app.paper_discovery.infrastructure.source_registry import SourceRegistry
 
 SOURCE_SYNC_GRAPH_VERSION = "catalog-source-sync-v1"
@@ -344,9 +345,17 @@ class CatalogSourceRuntime:
                 )
             elif source_id in {"ieee_sp", "ccs", "ndss"}:
                 scopes: list[dict[str, Any]] = []
-                if source_id in {"ieee_sp", "ndss"} and 2024 in selected:
-                    scopes.append({"years": [2024], "route": "official"})
-                    selected = [year for year in selected if year != 2024]
+                official_years: set[int] = set()
+                if source_id == "ieee_sp":
+                    official_years.add(2024)
+                elif source_id == "ndss":
+                    # The parser's fixed URL map is the sole official-route allowlist;
+                    # registry verified_years remains a separate coverage gate.
+                    official_years.update(NDSS_OFFICIAL_ACCEPTED_PAPERS_URLS)
+                official_selected = [year for year in selected if year in official_years]
+                if official_selected:
+                    scopes.append({"years": official_selected, "route": "official"})
+                    selected = [year for year in selected if year not in official_years]
                 if selected:
                     scopes.append({"years": selected})
                 class _Combined:

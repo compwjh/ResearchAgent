@@ -19,7 +19,6 @@ Planner 只产出五种注册任务类型（contracts.TASK_TYPE_WHITELIST）与�
 
 from __future__ import annotations
 
-import math
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -196,7 +195,13 @@ class Planner:
         - check_coverage：依赖 e1；synthesize_preliminary_report：依赖 c1（本批跳过 replan）。
         """
         search_count = min(max(len(facets), self.min_fanout), self.max_fanout)
-        per_search = math.ceil(target_paper_count / search_count) if search_count else target_paper_count
+        # The target is a global selected-candidate floor, while facet searches
+        # commonly overlap.  Splitting it across workers (for example 3 + 3
+        # for a target of 5) can leave the union at four even when the catalog
+        # has more legal candidates.  Keep the existing bounded fan-out but let
+        # each worker request the full target so the evaluator can apply its
+        # deterministic floor; the contract cap remains 3 workers × 20 rows.
+        per_search = target_paper_count
         items: list[dict] = []
         search_ids: list[str] = []
         for index in range(search_count):

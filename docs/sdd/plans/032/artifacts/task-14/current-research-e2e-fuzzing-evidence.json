@@ -1,0 +1,119 @@
+{
+  "schema": "spec032-task14-real-api-e2e-evidence-v1",
+  "spec": "032",
+  "task": "14",
+  "run_id": "spec032-task14-fuzzing-20261011T034710Z",
+  "result": "blocked",
+  "decision": "BLOCKED",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "branch": "codex/spec032-final-acceptance",
+    "commit": "e83fdd6f8a43484f42e06d69a0d57f29f408bf51",
+    "model": "qwen3.5:9b",
+    "reasoning_effort": "low",
+    "started_at": "2026-10-11T03:47:10Z",
+    "ended_at": "2026-10-11T03:47:10Z",
+    "service_checks": {
+      "ready": {"http_status": 200, "ready": true},
+      "home": {"http_status": 200, "bytes": 62488},
+      "health": {"not_requeried_in_this_run": true},
+      "static_assets": {"styles": "styles.css?v=56", "app": "app.js?v=57"},
+      "model_projection": {"http_status": 200, "id": "qwen3.5:9b", "status": "ready", "supports": ["off", "low", "medium", "high", "xhigh"]},
+      "memory_schema_version": 8
+    }
+  },
+  "scope": {
+    "topic": "USENIX Security 2024 模糊测试与漏洞发现",
+    "objective": "比较至少5篇研究的方法与局限",
+    "min_paper_count": 5,
+    "max_paper_count": 5,
+    "target_paper_count": 5,
+    "source": "usenix",
+    "time_range": {"from": 2024, "to": 2024},
+    "language": "zh",
+    "format": "markdown",
+    "citations": "inline",
+    "plan_after_intake": "等待批准"
+  },
+  "api_evidence": {
+    "natural_language_post": {
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "http_status": 200,
+      "body": {
+        "content": "请进行一次新的深度研究。研究主题限定为 USENIX Security 2024 的模糊测试与漏洞发现。研究目标是比较至少5篇研究的方法与局限。请最少选择5篇论文，最多选择5篇论文，目标论文数为5；来源限定为 USENIX Security，时间范围为 2024-2024；输出中文 Markdown 报告并使用行内引用；生成计划后等待我批准。",
+        "model": "qwen3.5:9b",
+        "reasoning_effort": "low"
+      },
+      "sse": {
+        "event_types": ["meta", "error", "done"],
+        "conversation_id": "604007cfb6cb4e7494b26d741ed59a98",
+        "user_message_id": "f98a2492eef040148f3986d54c0f8d0b",
+        "assistant_message_id": "66b53a70988347b4bc8f8088c66576c5",
+        "error": {"event_seq": 2, "code": "REASONING_EFFORT_UNSUPPORTED", "message": "当前模型不支持该推理档位", "retryable": false},
+        "done": {"event_seq": 3, "conversation_id": "604007cfb6cb4e7494b26d741ed59a98", "status": "failed"}
+      }
+    }
+  },
+  "entities": {
+    "conversation_id": "604007cfb6cb4e7494b26d741ed59a98",
+    "user_message_id": "f98a2492eef040148f3986d54c0f8d0b",
+    "assistant_message_id": "66b53a70988347b4bc8f8088c66576c5",
+    "research_session_id": null,
+    "research_task_id": null,
+    "plan_version": null,
+    "plan_output_hash": null,
+    "approval_request_id": null,
+    "search_ids": []
+  },
+  "state_trace": [
+    {"at": "2026-10-11T03:47:10.587Z", "entity": "conversation", "status": "created", "id": "604007cfb6cb4e7494b26d741ed59a98"},
+    {"at": "2026-10-11T03:47:10.588Z", "entity": "message", "status": "failed", "code": "REASONING_EFFORT_UNSUPPORTED", "retryable": false},
+    {"at": "2026-10-11T03:47:10.589Z", "entity": "turn", "status": "failed"}
+  ],
+  "downstream": {
+    "intake": {"status": "not_reached"},
+    "plan": {"status": "not_created"},
+    "approval": {"status": "not_created"},
+    "work_items": {"status": "not_created", "ids": []},
+    "acquisition": {"status": "not_reached", "paper_ids": [], "document_ids": [], "import_item_ids": []},
+    "matrix": {"status": "not_reached"},
+    "reports": {"status": "not_reached", "formats": {"json": null, "markdown": null, "html": null}},
+    "artifacts": {"status": "not_reached", "paths": []}
+  },
+  "readiness": [
+    {"item": 1, "name": "service_accessible", "status": "PASS", "evidence": ["/api/ready", "/"]},
+    {"item": 2, "name": "real_api_creation", "status": "FAIL", "note": "durable message pair was created, but the product turn failed before Intake"},
+    {"item": 3, "name": "natural_language_parameters", "status": "FAIL", "note": "model effort preflight stopped before parsing"},
+    {"item": 4, "name": "state_progression", "status": "FAIL", "note": "no research session/plan/task"},
+    {"item": 5, "name": "frontend_processing_prompt", "status": "FAIL", "note": "UI not executed"},
+    {"item": 6, "name": "wait_guidance", "status": "FAIL", "note": "entry is non-retryable failed"},
+    {"item": 7, "name": "core_artifacts", "status": "FAIL", "note": "no downstream artifacts"},
+    {"item": 8, "name": "actionable_recovery", "status": "FAIL", "note": "error is retryable=false; recovery not verified"},
+    {"item": 9, "name": "page_api_consistency", "status": "FAIL", "note": "UI not executed"},
+    {"item": 10, "name": "context_free_manual_steps", "status": "FAIL", "note": "main path did not reach Intake"}
+  ],
+  "unverified": [
+    "计划 hash 与批准",
+    "raw tool 候选与 Search Worker 交接数量",
+    "evaluator 选择与 5 篇导入 IDs",
+    "Evidence Matrix 200",
+    "canonical JSON/Markdown/HTML 正文与 citations",
+    "artifact 下载、终态和前端人工验收"
+  ],
+  "failure": {
+    "stage": "POST /api/conversations/messages model/reasoning capability preflight",
+    "error_code": "REASONING_EFFORT_UNSUPPORTED",
+    "message": "当前模型不支持该推理档位",
+    "retryable": false,
+    "model_projection_conflict": "GET /api/models 列出 qwen3.5:9b supports low，但实际 POST low 被拒绝",
+    "retry_performed": false,
+    "old_task_retried": false,
+    "fallback_effort_used": false
+  },
+  "evidence_files": {
+    "report": "/Users/wjh/ResearchAgent/docs/sdd/plans/032/artifacts/task-14/current-research-e2e-fuzzing-report.md",
+    "evidence": "/Users/wjh/ResearchAgent/docs/sdd/plans/032/artifacts/task-14/current-research-e2e-fuzzing-evidence.json",
+    "progress_log": "/Users/wjh/ResearchAgent/.codebuddy/agent-logs/spec-032/task-14/backend-tester/20261011-fuzzing-e2e.md"
+  }
+}

@@ -1,6 +1,7 @@
 """Task05 Fake Runtime contracts; no Ollama/network dependency."""
 
 import hashlib
+import json
 import uuid
 from threading import Event
 from types import SimpleNamespace
@@ -16,10 +17,14 @@ from backend.app.research.application.agent_runtime import (
     FakeTool,
     ResearchAgentRunner,
     RoleCapabilityRegistry,
+    _hash,
+    _OllamaRunnerAdapter,
+    _role_contract_prompt,
 )
 from backend.app.research.application.approval_service import PlanApprovalService
 from backend.app.research.application.orchestrator import Orchestrator
-from backend.app.research.domain.models import AgentCheckpoint, ResearchSession, ResearchTask
+from backend.app.research.application.report_synthesis import report_output_hash
+from backend.app.research.domain.models import AgentCheckpoint, ResearchSession, ResearchTask, ResearchWorkItem
 from backend.app.research.infrastructure.research_store import AgentRunWriteDiscarded, ResearchStore
 from backend.app.skills.models import ToolEntry
 from backend.app.skills.tool_executor import DispatchResult
@@ -54,6 +59,108 @@ def _runner(role="planner", model=None, tools=()):
     return ResearchAgentRunner(model=model, capability_registry=registry)
 
 
+def _matrix_context() -> dict:
+    abstract = "A bounded catalog abstract for a supported comparison claim."
+    digest = hashlib.sha256(abstract.encode("utf-8")).hexdigest()
+    return {
+        "schema_version": "evidence-report-v1",
+        "plan_version": 1,
+        "dimensions": [{
+            "dimension_id": "facet-1",
+            "label": "Privacy",
+            "definition": "Approved research-scope comparison dimension.",
+            "display_order": 0,
+        }],
+        "candidates": [{
+            "paper_id": "paper-a",
+            "catalog_snapshot_id": "search-a",
+            "title": "Paper A",
+            "abstract": abstract,
+            "abstract_digest": digest,
+        }],
+        "allowed_paper_ids": ["paper-a"],
+    }
+
+
+def _synthesizer_output(*, evidence_matrix: dict | None = None) -> dict:
+    output = _output("synthesizer")
+    output.update({
+        "sections": [{
+            "heading": "Bounded comparison",
+            "candidate_ids": ["paper-a"],
+            "summary": "The supplied catalog abstract supports the comparison.",
+        }],
+        "citation_manifest": [{"citation_ref": "catalog:paper-a", "candidate_id": "paper-a"}],
+        "source_refs": ["catalog:paper-a"],
+    })
+    if evidence_matrix is not None:
+        output["evidence_matrix"] = evidence_matrix
+    output["output_hash"] = report_output_hash(output)
+    return output
+
+
+def _matrix_output() -> dict:
+    context = _matrix_context()
+    digest = context["candidates"][0]["abstract_digest"]
+    return {
+        "schema_version": "evidence-report-v1",
+        "plan_version": 1,
+        "dimensions": context["dimensions"],
+        "claims": [{
+            "claim_id": "claim-1",
+            "topic": "Privacy",
+            "statement": "The supplied abstract supports a privacy boundary.",
+            "confidence": "medium",
+            "status": "supported",
+            "evidence_ids": ["evidence-1"],
+        }],
+        "evidence": [{
+            "evidence_id": "evidence-1",
+            "claim_id": "claim-1",
+            "paper_id": "paper-a",
+            "evidence_level": "abstract",
+            "stance": "supports",
+            "status": "available",
+            "quote_digest": digest,
+            "locator": {
+                "catalog_snapshot_id": "search-a",
+                "abstract_ref": "catalog:paper-a",
+                "abstract_digest": digest,
+            },
+        }],
+        "cells": [{
+            "claim_id": "claim-1",
+            "paper_id": "paper-a",
+            "dimension_id": "facet-1",
+            "relation": "supports",
+            "summary": "The supplied abstract supports the claim.",
+            "evidence_ids": ["evidence-1"],
+        }],
+    }
+
+
+def _synthesizer_input(
+    *,
+    matrix_context: dict | None,
+    cancellation_token=None,
+    budget_snapshot=None,
+) -> AgentRunInput:
+    work_item_input = {"validated_candidates": [{"candidate_id": "paper-a"}]}
+    if matrix_context is not None:
+        work_item_input["matrix_context"] = matrix_context
+    return AgentRunInput(
+        "matrix-run",
+        "session-1",
+        "synthesizer",
+        work_item_input=work_item_input,
+        skill_snapshot=_skill("synthesizer"),
+        research_task_id="task-1",
+        work_item_id="work-1",
+        cancellation_token=cancellation_token,
+        budget_snapshot=budget_snapshot,
+    )
+
+
 def test_fake_output_is_structured_and_checkpointed():
     result = _runner().run(AgentRunInput("run-1", "session-1", "planner", skill_snapshot=_skill("planner")))
     assert result.status == "completed"
@@ -64,6 +171,48 @@ def test_fake_output_is_structured_and_checkpointed():
     assert result.usage == {"model_loops": 1, "tool_calls": 0}
 
 
+@pytest.mark.parametrize("role", ["search_worker", "paper_evaluator", "research_critic", "synthesizer"])
+def test_runtime_binds_server_work_item_id_before_hash_and_checkpoint(role):
+    output = _output(role)
+    output["work_item_id"] = "model-owned"
+    runner = _runner(role=role, model=FakeModel({"output_json": output}))
+
+    result = runner.run(AgentRunInput(
+        f"identity-{role}", "session-1", role,
+        skill_snapshot=_skill(role), research_task_id="task-1", work_item_id="server-work-item",
+    ))
+
+    assert result.status == "completed", result.to_dict()
+    assert result.output_json["work_item_id"] == "server-work-item"
+    expected_hash = _hash({key: value for key, value in result.output_json.items() if key != "output_hash"})
+    assert result.output_hash == expected_hash
+    assert result.output_json["output_hash"] == expected_hash
+    checkpoint = runner._checkpoints[result.checkpoint_ref]
+    assert checkpoint["output"]["work_item_id"] == "server-work-item"
+    assert checkpoint["output"]["output_hash"] == expected_hash
+
+
+@pytest.mark.parametrize(
+    ("field_name", "conflicting_value"),
+    [
+        ("research_task_id", "other-task"),
+        ("research_session_id", "other-session"),
+        ("owner_id", "other-owner"),
+    ],
+)
+def test_runtime_rejects_conflicting_identity_reference(field_name, conflicting_value):
+    output = _output("research_critic")
+    output[field_name] = conflicting_value
+    result = _runner(role="research_critic", model=FakeModel({"output_json": output})).run(AgentRunInput(
+        "identity-conflict", "session-1", "research_critic",
+        skill_snapshot=_skill("research_critic"), research_task_id="task-1", work_item_id="server-work-item",
+        owner_id="owner",
+    ))
+
+    assert result.status == "failed"
+    assert result.error_code == "AGENT_OUTPUT_INVALID"
+
+
 def test_invalid_output_retries_at_most_four_attempts():
     model = FakeModel([{"output_json": {}}] * 4)
     result = _runner(model=model).run(AgentRunInput("run-2", "session-1", "planner", skill_snapshot=_skill("planner")))
@@ -71,6 +220,461 @@ def test_invalid_output_retries_at_most_four_attempts():
     assert result.error_code == "AGENT_OUTPUT_INVALID"
     assert result.usage["model_loops"] == 4
     assert len(model.calls) == 4
+
+
+@pytest.mark.parametrize(
+    ("first_response", "rule_id", "field_path"),
+    [
+        ({"content": "not-json"}, "agent.output.json_parse", "provider.content"),
+        ({"output_json": {"schema_version": "runtime-v1", "safe_summary": {}, "source_refs": []}}, "agent.output.required_fields", "plan_version"),
+        ({"output_json": {**_output("research_critic"), "research_task_id": "other-task"}}, "agent.output.identity", "research_task_id"),
+    ],
+)
+def test_generic_output_contract_failures_record_stage_and_send_bounded_feedback(first_response, rule_id, field_path):
+    role = "research_critic" if field_path == "research_task_id" else "planner"
+    model = FakeModel([first_response, {"output_json": _output(role)}])
+    input_value = AgentRunInput(
+        "generic-contract-retry", "session-1", role,
+        skill_snapshot=_skill(role), research_task_id="task-1", work_item_id="work-1"
+        if role != "planner" else None,
+    )
+
+    result = _runner(role=role, model=model).run(input_value)
+
+    assert result.status == "completed", result.to_dict()
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["rule_id"] == rule_id
+    assert diagnostic["field_paths"] == [field_path]
+    assert diagnostic["feedback_sent"] is True
+    assert diagnostic["feedback_classification"] == "output_contract"
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "AGENT_OUTPUT_INVALID"
+    assert "required_fields" in feedback
+    assert set(feedback["failure"]) == {"rule_id", "field_paths"}
+    assert "not-json" not in json.dumps(feedback)
+
+
+def test_provider_content_block_shape_is_diagnosed_without_persisting_content():
+    model = FakeModel([
+        SimpleNamespace(content=[{"type": "text", "text": "{\"unsafe\":true}"}], tool_calls=[]),
+        {"output_json": _output("planner")},
+    ])
+
+    result = _runner(model=model).run(AgentRunInput("provider-shape", "session-1", "planner", skill_snapshot=_skill("planner")))
+
+    assert result.status == "completed", result.to_dict()
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["rule_id"] == "agent.output.provider_content"
+    assert diagnostic["field_paths"] == ["provider.content"]
+    assert "unsafe" not in json.dumps(result.model_metadata)
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert "provider.content" in json.dumps(feedback)
+
+
+def test_synthesizer_requires_matrix_when_context_is_present_and_retries_with_feedback():
+    missing_matrix = {"output_json": _synthesizer_output()}
+    legal_matrix = {"output_json": _synthesizer_output(evidence_matrix=_matrix_output())}
+    model = FakeModel([missing_matrix, legal_matrix])
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=_matrix_context())
+    )
+
+    assert result.status == "completed"
+    assert result.output_json is not None
+    assert result.output_json["evidence_matrix"]["schema_version"] == "evidence-report-v1"
+    assert len(model.calls) == 2
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "MATRIX_NOT_READY"
+    assert "evidence_matrix" in feedback["required_fields"]
+    assert "claims" in feedback["shape"]
+    assert result.model_metadata["validation_diagnostics"][0]["feedback_sent"] is True
+
+
+def test_synthesizer_retries_when_cell_reuses_other_paper_evidence():
+    context = _matrix_context()
+    second_abstract = "A bounded catalog abstract for paper B."
+    context["candidates"].append({
+        "paper_id": "paper-b",
+        "catalog_snapshot_id": "search-b",
+        "title": "Paper B",
+        "abstract": second_abstract,
+        "abstract_digest": hashlib.sha256(second_abstract.encode("utf-8")).hexdigest(),
+    })
+    context["allowed_paper_ids"].append("paper-b")
+    legal_matrix = _matrix_output()
+    legal_matrix["evidence"].append({
+        "evidence_id": "evidence-2",
+        "claim_id": "claim-1",
+        "paper_id": "paper-b",
+        "evidence_level": "abstract",
+        "stance": "supports",
+        "status": "available",
+        "quote_digest": context["candidates"][1]["abstract_digest"],
+        "locator": {
+            "catalog_snapshot_id": "search-b",
+            "abstract_ref": "catalog:paper-b",
+            "abstract_digest": context["candidates"][1]["abstract_digest"],
+        },
+    })
+    legal_matrix["claims"][0]["evidence_ids"].append("evidence-2")
+    legal_matrix["cells"].append({
+        "claim_id": "claim-1",
+        "paper_id": "paper-b",
+        "dimension_id": "facet-1",
+        "relation": "supports",
+        "summary": "The supplied abstract supports the claim.",
+        "evidence_ids": ["evidence-2"],
+    })
+    malformed_matrix = json.loads(json.dumps(legal_matrix))
+    malformed_matrix["cells"][0]["evidence_ids"] = ["evidence-1", "evidence-2"]
+    model = FakeModel([
+        {"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)},
+        {"output_json": _synthesizer_output(evidence_matrix=legal_matrix)},
+    ])
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=context)
+    )
+
+    assert result.status == "completed"
+    assert result.output_json["evidence_matrix"]["cells"][0]["evidence_ids"] == ["evidence-1"]
+    assert len(model.calls) == 2
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "MATRIX_NOT_READY"
+    assert "same paper_id" in feedback["message"]
+
+
+@pytest.mark.parametrize(
+    ("violation", "expected_matrix_code", "expected_detail"),
+    [
+        ("dimension", "REPORT_SCHEMA_INVALID", "matrix cell 归属无效"),
+        ("locator", "EVIDENCE_LOCATOR_INVALID", "matrix evidence snapshot 不匹配"),
+        ("digest", "EVIDENCE_LOCATOR_INVALID", "abstract locator 不匹配"),
+        ("missing_reason", "REPORT_SCHEMA_INVALID", "missing cell 必须说明原因且无 evidence"),
+        ("cell_evidence_type", "REPORT_SCHEMA_INVALID", "matrix cell evidence_ids 无效"),
+        ("claim_enum_type", "REPORT_SCHEMA_INVALID", "matrix claim 枚举无效"),
+        ("evidence_enum_type", "EVIDENCE_LOCATOR_INVALID", "matrix evidence level/stance/status 无效"),
+        ("cell_relation_type", "REPORT_SCHEMA_INVALID", "matrix cell relation/evidence_ids 无效"),
+    ],
+)
+def test_synthesizer_retries_before_completion_for_full_matrix_contract_failures(
+    violation, expected_matrix_code, expected_detail
+):
+    context = _matrix_context()
+    malformed_matrix = _matrix_output()
+    if violation == "dimension":
+        malformed_matrix["cells"][0]["dimension_id"] = "facet-forged"
+    elif violation == "locator":
+        malformed_matrix["evidence"][0]["locator"]["catalog_snapshot_id"] = "search-forged"
+    elif violation == "digest":
+        malformed_matrix["evidence"][0]["locator"]["abstract_digest"] = "0" * 64
+    elif violation == "missing_reason":
+        malformed_matrix["cells"][0]["relation"] = "missing"
+        malformed_matrix["cells"][0]["evidence_ids"] = []
+        malformed_matrix["cells"][0].pop("missing_reason", None)
+    else:
+        if violation == "cell_evidence_type":
+            malformed_matrix["cells"][0]["evidence_ids"] = [{"evidence_id": "evidence-1"}]
+        elif violation == "claim_enum_type":
+            malformed_matrix["claims"][0]["confidence"] = []
+        elif violation == "evidence_enum_type":
+            malformed_matrix["evidence"][0]["stance"] = []
+        else:
+            malformed_matrix["cells"][0]["relation"] = []
+    legal_matrix = _matrix_output()
+    model = FakeModel([
+        {"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)},
+        {"output_json": _synthesizer_output(evidence_matrix=legal_matrix)},
+    ])
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=context)
+    )
+
+    assert result.status == "completed", result.to_dict()
+    assert len(model.calls) == 2
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "MATRIX_NOT_READY"
+    assert feedback["matrix_error_code"] == expected_matrix_code
+    assert expected_detail in feedback["message"]
+
+
+def test_orchestrator_matrix_export_is_the_shared_contract_validator():
+    from backend.app.research.application.matrix_contract import validate_synthesis_matrix_payload
+    from backend.app.research.application.orchestrator import _validate_synthesis_matrix_payload
+
+    assert _validate_synthesis_matrix_payload is validate_synthesis_matrix_payload
+
+
+def test_synthesizer_matrix_requirement_exhausts_as_bounded_failure():
+    model = FakeModel([{"output_json": _synthesizer_output()}] * 4)
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=_matrix_context())
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "MATRIX_NOT_READY"
+    assert result.usage["model_loops"] == 4
+    assert len(model.calls) == 4
+    assert all(call[0]["validation_feedback"]["code"] == "MATRIX_NOT_READY" for call in model.calls[1:])
+    diagnostics = result.model_metadata["validation_diagnostics"]
+    assert all(item["rule_id"] == "matrix.evidence_matrix.required" for item in diagnostics)
+    assert all(item["field_paths"] == ["evidence_matrix"] for item in diagnostics)
+
+
+def test_matrix_validation_diagnostics_survive_retry_chain_and_persist_safely(tmp_path):
+    memory = MemoryRepository(tmp_path / "memory.sqlite3")
+    conversation, user, _ = memory.create_conversation_messages("owner-a", "q", None, "m", "normal")
+    session = ResearchSession(uuid.uuid4().hex, "owner-a", conversation.conversation_id, user.message_id, uuid.uuid4().hex, "intake_pending")
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    store.create_session(session, memory_repository=memory)
+    task_id = "task-matrix-diagnostics"
+    store.create_task(ResearchTask(
+        research_task_id=task_id,
+        owner_id="owner-a",
+        conversation_id=conversation.conversation_id,
+        goal="q",
+        language="zh",
+        quality_profile="balanced",
+        review_plan_first=False,
+        target_paper_count=1,
+        soft_budget_seconds=900,
+        status="draft",
+        current_plan_version=1,
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    ))
+    store.update_session_links(session.research_session_id, "owner-a", research_task_id=task_id)
+    assert store.get_session(session.research_session_id, "owner-a").research_task_id == task_id
+    store.create_work_items(task_id, [ResearchWorkItem(
+        work_item_id="work-matrix-diagnostics",
+        research_task_id=task_id,
+        plan_version=1,
+        task_type="synthesize_preliminary_report",
+        role="synthesizer",
+        depends_on_json="[]",
+        input_json="{}",
+        status="queued",
+        attempt=1,
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )])
+
+    malformed_matrix = _matrix_output()
+    malformed_matrix["cells"][0]["dimension_id"] = "facet-forged"
+    model = FakeModel([{"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)}] * 4)
+    runner = ResearchAgentRunner(
+        store=store,
+        model=model,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("synthesizer")]),
+    )
+    root_id = uuid.uuid4().hex
+    result = runner.run(AgentRunInput(
+        root_id,
+        session.research_session_id,
+        "synthesizer",
+        work_item_input={"matrix_context": _matrix_context()},
+        skill_snapshot=_skill("synthesizer"),
+        owner_id="owner-a",
+        research_task_id=task_id,
+        work_item_id="work-matrix-diagnostics",
+    ))
+
+    assert result.status == "failed"
+    assert result.error_code == "MATRIX_NOT_READY"
+    diagnostics = result.model_metadata["validation_diagnostics"]
+    assert [item["attempt"] for item in diagnostics] == [1, 2, 3, 4]
+    assert all(item["error_code"] == "MATRIX_NOT_READY" for item in diagnostics)
+    assert all(item["matrix_error_code"] == "REPORT_SCHEMA_INVALID" for item in diagnostics)
+    assert all(item["rule_id"] == "matrix.cell.ownership" for item in diagnostics)
+    assert all(item["field_paths"] == [
+        "evidence_matrix.cells[].claim_id",
+        "evidence_matrix.cells[].paper_id",
+        "evidence_matrix.cells[].dimension_id",
+    ] for item in diagnostics)
+    assert [item["feedback_sent"] for item in diagnostics] == [True, True, True, False]
+    assert [item["feedback_classification"] for item in diagnostics] == [
+        "matrix_validation", "matrix_validation", "matrix_validation", "not_sent",
+    ]
+    serialized_diagnostics = json.dumps(diagnostics, ensure_ascii=False, sort_keys=True)
+    assert len(serialized_diagnostics) < 2000
+    assert all(marker not in serialized_diagnostics.casefold() for marker in (
+        "abstract", "prompt", "reasoning", "secret", "token", "api_key",
+    ))
+
+    persisted = []
+    persisted_runs = [store.get_agent_run(root_id, "owner-a")] + [
+        store.get_agent_run(f"{root_id}:attempt-{attempt}", "owner-a") for attempt in range(2, 5)
+    ]
+    assert [run.status for run in persisted_runs if run is not None] == [
+        "limit_reached", "limit_reached", "limit_reached", "failed",
+    ]
+    assert [run.error_code for run in persisted_runs if run is not None] == [
+        "MATRIX_NOT_READY", "MATRIX_NOT_READY", "MATRIX_NOT_READY", "MATRIX_NOT_READY",
+    ]
+    for run in persisted_runs:
+        assert run is not None
+        if run.checkpoint_ref:
+            checkpoint = store.get_agent_checkpoint(run.checkpoint_ref, "owner-a")
+            assert checkpoint is not None
+            content = json.loads(checkpoint.content)
+            if "validation_diagnostic" in content:
+                persisted.append(content["validation_diagnostic"])
+    assert sorted({item["attempt"] for item in persisted}) == [1, 2, 3]
+    assert all(item["feedback_sent"] is False for item in persisted)
+    event_payloads = [event.safe_payload_json for event in store.list_events("task-matrix-diagnostics")]
+    event_diagnostics = [
+        json.loads(payload)["validation_diagnostic"]
+        for payload in event_payloads
+        if "validation_diagnostic" in json.loads(payload)
+    ]
+    latest_event_diagnostics = {
+        item["attempt"]: item for item in event_diagnostics
+    }
+    assert sorted(latest_event_diagnostics) == [1, 2, 3, 4]
+    assert [latest_event_diagnostics[attempt]["feedback_sent"] for attempt in range(1, 5)] == [
+        True, True, True, False,
+    ]
+    assert sum(item["feedback_sent"] for item in event_diagnostics) == 3
+    assert all(len(payload) < 1200 for payload in event_payloads if "validation_diagnostic" in payload)
+    assert all(marker not in payload.casefold() for payload in event_payloads for marker in (
+        "prompt", "reasoning", "secret", "token", "api_key",
+    ))
+
+
+def test_feedback_sent_stays_false_when_cancelled_before_retry_invoke():
+    class CancelOnThirdCheck:
+        def __init__(self):
+            self.checks = 0
+
+        def is_cancelled(self):
+            self.checks += 1
+            return self.checks >= 3
+
+    malformed_matrix = _matrix_output()
+    malformed_matrix["cells"][0]["dimension_id"] = "facet-forged"
+    model = FakeModel([
+        {"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)},
+        {"output_json": _synthesizer_output(evidence_matrix=_matrix_output())},
+    ])
+    runner = _runner(role="synthesizer", model=model)
+    events = []
+    runner._runtime_event = lambda _input, **payload: events.append(payload)
+    result = runner.run(
+        _synthesizer_input(matrix_context=_matrix_context(), cancellation_token=CancelOnThirdCheck())
+    )
+
+    assert result.status == "cancelled"
+    assert len(model.calls) == 1
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["feedback_sent"] is False
+    assert diagnostic["feedback_classification"] == "not_sent"
+    assert not any(event.get("event_type") == "validation_feedback" for event in events)
+
+
+def test_feedback_sent_stays_false_when_budget_blocks_retry_invoke():
+    malformed_matrix = _matrix_output()
+    malformed_matrix["cells"][0]["dimension_id"] = "facet-forged"
+    model = FakeModel([
+        {"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)},
+        {"output_json": _synthesizer_output(evidence_matrix=_matrix_output())},
+    ])
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(
+            matrix_context=_matrix_context(),
+            budget_snapshot=BudgetSnapshot(max_model_loops=1),
+        )
+    )
+
+    assert result.status == "limit_reached"
+    assert len(model.calls) == 1
+    assert result.model_metadata["validation_diagnostics"][0]["feedback_sent"] is False
+
+
+def test_feedback_sent_stays_false_when_retry_checkpoint_fails(monkeypatch):
+    malformed_matrix = _matrix_output()
+    malformed_matrix["cells"][0]["dimension_id"] = "facet-forged"
+    model = FakeModel({"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)})
+    runner = _runner(role="synthesizer", model=model)
+
+    def fail_retry(*_args, **_kwargs):
+        raise AgentRuntimeError("CAPABILITY_NOT_AUTHORIZED", "checkpoint unavailable")
+
+    monkeypatch.setattr(runner, "_start_retry_attempt", fail_retry)
+    result = runner.run(_synthesizer_input(matrix_context=_matrix_context()))
+
+    assert result.status == "failed"
+    assert result.error_code == "CAPABILITY_NOT_AUTHORIZED"
+    assert len(model.calls) == 1
+    assert result.model_metadata["validation_diagnostics"][0]["feedback_sent"] is False
+
+
+def test_feedback_sent_stays_false_when_retry_provider_call_fails():
+    malformed_matrix = _matrix_output()
+    malformed_matrix["cells"][0]["dimension_id"] = "facet-forged"
+
+    class ProviderFailure:
+        def __init__(self):
+            self.calls = []
+
+        def invoke(self, context, tools=()):
+            self.calls.append((dict(context), tuple(tools)))
+            if len(self.calls) == 1:
+                return {"output_json": _synthesizer_output(evidence_matrix=malformed_matrix)}
+            raise AgentRuntimeError("MODEL_TIMEOUT")
+
+    model = ProviderFailure()
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=_matrix_context())
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "MODEL_TIMEOUT"
+    assert len(model.calls) == 2
+    assert model.calls[1][0]["validation_feedback"]["code"] == "MATRIX_NOT_READY"
+    assert result.model_metadata["validation_diagnostics"][0]["feedback_sent"] is False
+
+
+def test_synthesizer_without_matrix_context_keeps_optional_extension_compatibility():
+    model = FakeModel({"output_json": _synthesizer_output()})
+
+    result = _runner(role="synthesizer", model=model).run(
+        _synthesizer_input(matrix_context=None)
+    )
+
+    assert result.status == "completed"
+    assert len(model.calls) == 1
+    assert "validation_feedback" not in model.calls[0][0]
+
+
+def test_ollama_synthesizer_prompt_exposes_internal_matrix_shape_only_with_context():
+    captured = {}
+
+    class Chat:
+        def invoke(self, messages):
+            captured["messages"] = messages
+            return SimpleNamespace(content="{}", tool_calls=[])
+
+    adapter = _OllamaRunnerAdapter(Chat(), model_name="test-model", effort="off")
+    adapter.invoke({
+        "role": "synthesizer",
+        "work_item_input": {"matrix_context": _matrix_context()},
+    })
+
+    contract = captured["messages"][0]["content"]
+    assert '"evidence_matrix"' in contract
+    assert '"schema_version":"evidence-report-v1"' in contract
+    assert '"claims"' in contract and '"evidence"' in contract and '"cells"' in contract
+
+
+def test_evaluator_prompt_matches_non_empty_aggregate_contract():
+    prompt = _role_contract_prompt("paper_evaluator", has_tool_results=False)
+
+    assert "candidate_id may be null as the aggregate container" in prompt
+    assert "even when evidence_refs is non-empty" in prompt
+    assert "otherwise candidate_id must be one of those supplied IDs" in prompt
 
 
 def test_invalid_tool_batch_executes_nothing():

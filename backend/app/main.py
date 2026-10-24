@@ -22,6 +22,7 @@ from backend.app.platform.capability_scheduler import (
 )
 from backend.app.platform.config import FRONTEND_DIR, KB_DIR
 from backend.app.platform.warmup import start_warmup
+from backend.app.literature_maps.application.runtime import recover_literature_map_jobs
 
 
 @asynccontextmanager
@@ -63,6 +64,13 @@ async def lifespan(_app: FastAPI):
             print(f"[kb] 启动自愈：已将 {recovered} 个陈旧失败重建任务重排队")
     except Exception as error:
         print(f"[kb] 启动自愈失败（已忽略）：{error}")
+
+    try:
+        recovered = recover_literature_map_jobs()
+        if recovered:
+            print(f"[literature-map] 已将 {recovered} 个中断作业重新入队")
+    except Exception as error:
+        print(f"[literature-map] 启动恢复失败（已忽略）：{error}")
 
     # 首屏就绪优化：在既有索引代次收尾之后，后台（非阻塞 daemon 线程）做预热编排。
     # 任一预热项失败只记日志标 failed，绝不阻塞启动、绝不抛异常。

@@ -1384,12 +1384,18 @@ async def upload_paper_acquisition_issue(
             evidence={"file_name": uploaded.get("file_name"), "source_sha256": uploaded.get("source_sha256")},
         )
         store.add_manual_resolution(resolution)
+        # The canonical KB route returns ``indexing`` until its manifest is
+        # ready.  Preserve that state on the existing Research link instead
+        # of claiming that upload already produced verified full text.
+        link_status = str(uploaded.get("status") or "pending").strip().casefold()
+        if link_status not in {"pending", "indexing", "indexed", "indexed_partial", "completed", "available", "failed"}:
+            link_status = "pending"
         for task_id in issue.task_ids or []:
             store.upsert_document_link(
                 ResearchDocumentLink(
                     task_id=task_id, catalog_paper_id=issue.candidate_id,
                     document_id=document_id, import_item_id=issue.import_item_id,
-                    status="completed", error_code=None,
+                    status=link_status, error_code=uploaded.get("error_code"),
                 )
             )
             store.append_acquisition_event(

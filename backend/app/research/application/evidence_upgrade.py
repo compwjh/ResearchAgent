@@ -57,7 +57,13 @@ def _hit_value(hit: Any, name: str, default: Any = None) -> Any:
 
 
 class EvidenceUpgradeService:
-    """Upgrade claims using only approved, currently indexed KB documents."""
+    """Upgrade claims using approved KB links and a verified current manifest."""
+
+    # A manual upload is durably linked before the canonical KB reindex has
+    # finished.  Keep that candidate link usable for the existing upgrade
+    # flow, while leaving the manifest checks below as the authoritative
+    # full-text gate.  Pending/queued/failed links never enter the flow.
+    _FULLTEXT_LINK_STATUSES = {"completed", "indexed", "indexed_partial", "available", "indexing"}
 
     def __init__(
         self,
@@ -96,7 +102,7 @@ class EvidenceUpgradeService:
             value = _as_mapping(link)
             document_id = value.get("document_id", getattr(link, "document_id", None))
             status = value.get("status", getattr(link, "status", ""))
-            if document_id and str(status) in {"completed", "indexed", "available"}:
+            if document_id and str(status) in self._FULLTEXT_LINK_STATUSES:
                 approved.add(str(document_id))
         requested = self._document_ids(document_ids)
         if not requested:

@@ -176,9 +176,10 @@ class PaperImportBatchService:
         self.max_workers = max(1, min(int(max_workers), 3))
         self.lease_seconds = int(lease_seconds)
         self.compensator = compensator
-        # Candidate snapshots are intentionally process-local.  A restarted
-        # worker must be given the server snapshot again; it cannot reconstruct
-        # an import from client-provided IDs or URLs.
+        # Candidate snapshots are a process-local execution convenience.  Each
+        # item also stores the server snapshot and its digest durably; restart
+        # recovery must validate and use that durable copy instead of requiring
+        # this cache to be warm.
         self._snapshots: dict[str, dict[str, Any]] = {}
         # In-flight background runners, keyed by batch_id, for single-flight
         # submission (spec-021): at most one runner per batch at a time.
@@ -774,15 +775,21 @@ class PaperImportBatchService:
         """Re-submit a queued batch whose background runner is missing.
 
         Used on first access / startup recovery (spec-021).  Relies on
-        process-local server snapshots; without them a queued batch cannot be
-        resumed and is left queued for the caller to surface (a user retry
-        re-supplies the snapshots).  Never starts a second runner if one is
-        already in flight (single-flight via ``submit_batch``).
+        the hash-validated durable server snapshots, with the process-local
+        cache used only as an execution convenience.  If a snapshot is
+        missing or corrupt, use the existing stable interrupted/retryable
+        failure transition instead of leaving the batch queued forever.  Never
+        starts a second runner if one is already in flight (single-flight via
+        ``submit_batch``).
         """
         batch = self.store.get_batch(batch_id)
         if batch is None or batch.status != "queued":
             return
-        if batch_id not in self._snapshots:
+        try:
+            self._snapshots_for(batch_id, None)
+        except PaperImportBatchServiceError as error:
+            logger.warning("批次恢复快照不可用：%s (%s)", batch_id, error.code)
+            self._fail_remaining_queued(batch_id)
             return
         self.submit_batch(batch_id)
 

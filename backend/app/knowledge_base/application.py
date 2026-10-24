@@ -228,16 +228,16 @@ def _active_generation_collection(meta_path: Path, *, allow_stale_metadata: bool
 
     ``allow_stale_metadata`` 只放宽「摘要过期」这一种情况：并发的导入/索引正在写
     ``papers.json`` 时，marker 里记的 ``metadata_sha256`` 会短暂对不上，这是瞬时竞态，
-    稍后写方会 ``_refresh_generation_digests`` 修正。此时仍然校验 marker 结构并读取
-    当前的 ``alias_target``，所以**真正的代次切换（集合换掉了）照样会被
+    稍后写方会 ``_refresh_generation_digests`` 修正。此时仍然校验 marker 结构、已提交
+    bundle 身份和当前的 ``alias_target``，所以**真正的代次切换（集合换掉了）照样会被
     ``INDEX_GENERATION_DRIFT`` 拦下**。读取路径（启动闸门、状态、检索）一律保持
     fail-closed，不传这个参数。
     """
     try:
-        marker = FinalizeBundleStore(_generation_root(meta_path)).require_generation()
+        marker = FinalizeBundleStore(_generation_root(meta_path)).require_generation(
+            allow_stale_metadata=allow_stale_metadata,
+        )
     except ManifestStoreError as error:
-        if allow_stale_metadata and getattr(error, "code", "") == "INDEX_FINALIZE_REQUIRED":
-            return _read_marker_collection_after_state_write(meta_path)
         raise KnowledgeDocumentMigrationError(getattr(error, "code", "INDEX_REBUILD_REQUIRED")) from error
     destination = marker.get("alias_target") if isinstance(marker, Mapping) else None
     if not isinstance(destination, str) or not destination:
@@ -274,29 +274,6 @@ def _capability_collection(capability: ImportResourceCapability | None) -> str |
         raise KnowledgeDocumentMigrationError("COMPENSATION_CAPABILITY_INVALID") from error
 
 
-def _read_marker_collection_after_state_write(meta_path: Path) -> str:
-    """Read the marker binding when metadata digests are intentionally stale.
-
-    A canonical metadata write makes the marker's old digest stale until the
-    following refresh.  ``require_generation`` therefore cannot be used in
-    that narrow pre-refresh window.  We still validate the marker shape and
-    collection name, and all ordinary reads remain fail-closed through
-    ``require_generation``.
-    """
-    marker_path = FinalizeBundleStore(_generation_root(meta_path)).live_root / "index-generation.json"
-    try:
-        marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise KnowledgeDocumentMigrationError("INDEX_FINALIZE_REQUIRED") from error
-    if not isinstance(marker, Mapping) or marker.get("schema_version") != "index-generation-v1":
-        raise KnowledgeDocumentMigrationError("GENERATION_MARKER_INVALID")
-    destination = marker.get("alias_target")
-    try:
-        return GenerationBoundIndexPort(destination).destination_collection
-    except Exception as error:
-        raise KnowledgeDocumentMigrationError("GENERATION_MARKER_INVALID") from error
-
-
 def _assert_generation_binding(
     meta_path: Path,
     destination_collection: str | None,
@@ -325,7 +302,7 @@ def _capture_import_generation(meta_path: Path, *, required: bool) -> str | None
     metadata, so an import can never be created without a generation binding.
 
     放宽摘要过期：并发导入/索引写 ``papers.json`` 期间 marker 摘要会瞬时对不上，
-    这里仍然要从**当前** marker 取到 binding（结构校验 + alias_target），
+    这里仍然要从**当前** marker 取到 binding（结构校验 + immutable bundle identity + alias_target），
     真正的代次切换由后续 ``_assert_generation_binding`` 拦下。
     """
     generation_store = FinalizeBundleStore(_generation_root(meta_path))
@@ -759,25 +736,34 @@ def list_documents_for_project(
 ) -> list[dict[str, Any]]:
     """List canonical records in one explicit scope.
 
-    ``None`` means the unbound/shared pool; a project ID means only that
-    project's documents.  Project chat must not silently absorb unrelated
-    global documents merely because they are unbound.
+    ``None`` means the unbound/shared pool: only canonical records with no
+    sidecar association are visible.  Any association, including one owned
+    by another owner or pointing at another project, excludes that record
+    from this pool.  A project ID means only that project's owner-scoped
+    documents.  Project chat must not silently absorb unrelated documents.
     """
     meta = Path(meta_path or KB_META_PATH)
     records = load_papers_strict(meta)
     associations = _load_associations(_association_path(meta))
-    return [
-        {
-            **dict(item),
-            "project_id": associations[record_id(item)]["project_id"],
-        }
-        for item in records
-        if isinstance(item, dict)
-        and item.get("schema_version") == "knowledge-document-v1"
-        and record_id(item) in associations
-        and associations[record_id(item)].get("project_id") == project_id
-        and _relation_owner_ok(associations[record_id(item)], owner_id)
-    ]
+    visible: list[dict[str, Any]] = []
+    for item in records:
+        if not isinstance(item, dict) or item.get("schema_version") != "knowledge-document-v1":
+            continue
+        document_id = record_id(item)
+        relation = associations.get(document_id)
+        if project_id is None:
+            if relation is not None:
+                continue
+            visible.append({**dict(item), "project_id": None})
+            continue
+        if (
+            relation is None
+            or relation.get("project_id") != project_id
+            or not _relation_owner_ok(relation, owner_id)
+        ):
+            continue
+        visible.append({**dict(item), "project_id": relation["project_id"]})
+    return visible
 
 
 def get_document_project(
@@ -1403,7 +1389,15 @@ class KnowledgeBasePaperImportAdapter:
                 for field in ("page_count", "chunk_count", "error"):
                     if field in index_result:
                         updates[field] = index_result[field]
-            _assert_generation_binding(self.meta_path, generation_collection)
+            # The indexer may have just published a legitimate metadata or
+            # chunker-state update.  Between that write and its digest refresh
+            # the marker can briefly be stale; tolerate that narrow window but
+            # still reject a real alias/generation switch below.
+            _assert_generation_binding(
+                self.meta_path,
+                generation_collection,
+                allow_stale_metadata=True,
+            )
             patch_knowledge_document(self.meta_path, record.paper_id, **updates)
             _assert_generation_binding(self.meta_path, generation_collection, allow_stale_metadata=True)
             # Re-check and refresh atomically with generation publication.

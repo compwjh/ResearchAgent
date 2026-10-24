@@ -417,6 +417,90 @@ def patch_knowledge_document(meta_path: Path, document_id: str, **updates: Any) 
     return target
 
 
+def publish_index_state(
+    meta_path: Path,
+    document_id: str,
+    chunker: str,
+    *,
+    status: str,
+    progress: int,
+    chunk_count: int,
+    error: str | None,
+    indexed_source_sha256: str | None = None,
+    source_hash_state: str | None = None,
+) -> dict[str, Any]:
+    """Atomically publish one controlled index state and optional source hash.
+
+    This is intentionally narrower than ``patch_knowledge_document``: the
+    index coordinator can update only the state-machine fields and the two
+    existing hash fields in one schema-validated metadata replacement.  It
+    never accepts arbitrary document keys and never refreshes a generation
+    marker; the caller owns the manifest/metadata/marker publication lock.
+    """
+    if chunker not in CHUNKERS or status not in _STATUSES:
+        raise KnowledgeDocumentMigrationError(METADATA_INVALID)
+    try:
+        normalized_progress = max(0, min(100, int(progress)))
+        normalized_count = max(0, int(chunk_count))
+    except (TypeError, ValueError):
+        raise KnowledgeDocumentMigrationError(METADATA_INVALID) from None
+    if error is not None and (not isinstance(error, str) or len(error) > 256):
+        raise KnowledgeDocumentMigrationError(METADATA_INVALID)
+    hash_update = indexed_source_sha256 is not None or source_hash_state is not None
+    if hash_update:
+        if source_hash_state == "verified":
+            if (
+                not isinstance(indexed_source_sha256, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", indexed_source_sha256)
+            ):
+                raise KnowledgeDocumentMigrationError(METADATA_INVALID)
+        elif source_hash_state == "mismatch":
+            if (
+                not isinstance(indexed_source_sha256, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", indexed_source_sha256)
+            ):
+                raise KnowledgeDocumentMigrationError(METADATA_INVALID)
+        else:
+            raise KnowledgeDocumentMigrationError(METADATA_INVALID)
+
+    meta = Path(meta_path)
+    raw, records, existed = _read_metadata_for_write(meta)
+    target = next((item for item in records if item.get("document_id") == document_id), None)
+    if target is None:
+        raise KnowledgeDocumentMigrationError(METADATA_INVALID)
+
+    states: dict[str, dict[str, Any]] = {}
+    current_states = target.get("chunkers")
+    for name in CHUNKERS:
+        current = current_states.get(name) if isinstance(current_states, Mapping) else None
+        state = default_chunker_state()
+        if isinstance(current, Mapping):
+            state.update({key: current[key] for key in state if key in current})
+        states[name] = state
+    states[chunker].update(
+        status=status,
+        progress=normalized_progress,
+        chunk_count=normalized_count,
+        error=error,
+    )
+    target["chunkers"] = states
+    primary = states.get("v1") or {}
+    target["status"] = primary.get("status", target.get("status"))
+    target["chunk_count"] = primary.get("chunk_count", target.get("chunk_count", 0))
+    if chunker == "v1":
+        target["error"] = error
+    if hash_update:
+        if source_hash_state in {"verified", "mismatch"} and target.get("source_sha256") != indexed_source_sha256:
+            raise KnowledgeDocumentMigrationError(METADATA_INVALID)
+        target["indexed_source_sha256"] = indexed_source_sha256
+        target["source_hash_state"] = source_hash_state
+
+    _validate(records, _schema_path())
+    encoded = json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+    _atomic_bytes(meta, encoded, rollback_payload=raw, rollback_exists=existed)
+    return target
+
+
 def _fsync_directory(directory: Path) -> None:
     flags = os.O_RDONLY
     if hasattr(os, "O_DIRECTORY"):

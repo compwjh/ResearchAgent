@@ -44,6 +44,11 @@ def test_get_sources_returns_registered_sources(client):
     ids = {item["source_id"] for item in payload["sources"]}
     assert {"usenix", "dblp", "ieee_sp", "ccs", "ndss", "openalex", "crossref"} <= ids
     assert payload["count"] == len(payload["sources"])
+    verified_years = {item["source_id"]: item["verified_years"] for item in payload["sources"]}
+    assert verified_years["usenix"] == [2024]
+    assert verified_years["ieee_sp"] == []
+    assert verified_years["ccs"] == []
+    assert verified_years["ndss"] == []
 
 
 def test_get_sources_health_is_configuration_level_and_sanitized(client):

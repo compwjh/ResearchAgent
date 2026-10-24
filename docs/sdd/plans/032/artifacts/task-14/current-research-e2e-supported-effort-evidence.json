@@ -1,0 +1,245 @@
+{
+  "schema": "spec032-task14-research-e2e-supported-effort-v1",
+  "run_id": "spec032-task14-supported-effort-20261008T211709Z",
+  "result": "BLOCKED",
+  "blockers": [
+    {
+      "stage": "research_terminal",
+      "http_status": 200,
+      "task_status": "partial",
+      "error_code": "AGENT_OUTPUT_INVALID",
+      "runtime_last_error_code": "UPSTREAM_WORK_ITEM_FAILED",
+      "selected_count": 5,
+      "message": "c1 and syn ended with UPSTREAM_WORK_ITEM_FAILED; terminal event was AGENT_OUTPUT_INVALID"
+    },
+    {
+      "stage": "evidence_matrix",
+      "http_status": 409,
+      "error_code": "MATRIX_NOT_READY"
+    },
+    {
+      "stage": "canonical_report",
+      "formats": ["json", "markdown", "html"],
+      "http_status": 404,
+      "error_code": "REPORT_NOT_READY"
+    }
+  ],
+  "runtime": {
+    "service_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "head": "6bacc29",
+    "restart_session": "2077",
+    "ready": true,
+    "ready_http_status": 200,
+    "ready_warmup": {
+      "jieba": "ready",
+      "ollama_tags": "ready",
+      "embedding": "ready",
+      "qdrant": "ready"
+    },
+    "global_model": "qwen3.8:27b",
+    "request_model": "qwen3.5:9b",
+    "request_reasoning_effort": "low",
+    "global_model_changed": false,
+    "environment_changed": false,
+    "thresholds_changed": false,
+    "start_at": "2026-10-08T21:17:09.860800Z",
+    "task_created_at": "2026-10-08T21:17:19Z",
+    "task_completed_at": "2026-10-08T21:18:37Z",
+    "elapsed_to_terminal_seconds": 77.14
+  },
+  "model_advertisement_probe": {
+    "method": "GET",
+    "path": "/api/models",
+    "http_status": 200,
+    "model": "qwen3.5:9b",
+    "status": "ready",
+    "advertised_reasoning_efforts": ["off", "low", "medium", "high", "xhigh"],
+    "selected_request_effort": "low",
+    "global_current_remained": "qwen3.8:27b"
+  },
+  "request": {
+    "method": "POST",
+    "path": "/api/conversations/messages",
+    "http_status": 200,
+    "headers": {"content-type": "application/json"},
+    "body": {
+      "content": "请进行一次深度研究。主题是USENIX Security 2024中的security/privacy方法，目标是比较至少5篇方法与局限，并且最少选择5篇论文，最多选择5篇论文，目标论文数: 5，来源限定为USENIX Security，输出中文Markdown报告并使用行内引用。时间范围是2024-2024。",
+      "model": "qwen3.5:9b",
+      "reasoning_effort": "low"
+    },
+    "conversation_id": "8373721f37b7426a94ee318e835a6e42",
+    "user_message_id": "6de6e9c920434165a25644f502a05784",
+    "assistant_message_id": "92aaad2928e74bbcae1e0ec52d0be3d1",
+    "sse_summary": [
+      {"type": "meta", "event_seq": 1, "model": "qwen3.5:9b", "reasoning_effort": "low"},
+      {"type": "skill_activation", "event_seq": 2, "skill": "deep-research-orchestration", "status": "completed"},
+      {"type": "processing_step", "event_seq": 3, "kind": "research_plan", "status": "running"},
+      {"type": "processing_step", "event_seq": 4, "kind": "research_plan", "status": "completed"},
+      {"type": "plan", "event_seq": 5, "research_session_id": "85c550c81f1a4d97bd44d0242b9f6c34", "version": 1, "status": "plan_pending_approval"},
+      {"type": "intake", "event_seq": 6, "status": "intake", "missing": []},
+      {"type": "done", "event_seq": 7, "status": "completed"}
+    ]
+  },
+  "entities": {
+    "conversation_id": "8373721f37b7426a94ee318e835a6e42",
+    "user_message_id": "6de6e9c920434165a25644f502a05784",
+    "assistant_message_id": "92aaad2928e74bbcae1e0ec52d0be3d1",
+    "research_session_id": "85c550c81f1a4d97bd44d0242b9f6c34",
+    "intake_draft_id": "ab94b6c61f244f809bc291627ae9a2fb",
+    "approval_request_id": "ba29f40a0fc04f7fbb7d44fbbb6b4499",
+    "research_task_id": "2761a22515d5509d8e846debd7a05df5",
+    "search_ids": {
+      "s1": "dd9fb8065b854903924ccf8b9f2cffb9",
+      "s2": "3f2ddaa5379f4948a4feb60506061b01"
+    },
+    "batch_id": "2a9d69bb-0811-45d0-a02b-2a5639022cd1",
+    "selection_version": 1
+  },
+  "intake_and_plan": {
+    "status": "intake",
+    "missing": [],
+    "plan_version": 1,
+    "output_hash": "f7cdc582002b1c9ddbf086fe029a00bf55652d80168a218e2e39e3c7d28adcb8",
+    "objective": "比较至少5篇方法与局限",
+    "constraints": {
+      "min_paper_count": 5,
+      "max_paper_count": 5,
+      "target_paper_count": 5
+    },
+    "budget_target_paper_count": 5,
+    "sources": ["usenix"],
+    "time_range": {"from": 2024, "to": 2024},
+    "search_work_items": {
+      "s1": {"max_results": 5, "source": "usenix", "year": 2024},
+      "s2": {"max_results": 5, "source": "usenix", "year": 2024}
+    },
+    "approval": {
+      "method": "POST",
+      "path": "/api/research-sessions/85c550c81f1a4d97bd44d0242b9f6c34/commands",
+      "http_status": 200,
+      "command": "approve_plan",
+      "subject_version": 1,
+      "scope_json": {
+        "plan_version": 1,
+        "output_hash": "f7cdc582002b1c9ddbf086fe029a00bf55652d80168a218e2e39e3c7d28adcb8"
+      },
+      "idempotency_key": "plan-approval:85c550c81f1a4d97bd44d0242b9f6c34:1",
+      "approval_status": "approved",
+      "created_task_id": "2761a22515d5509d8e846debd7a05df5",
+      "initial_status": "planning"
+    }
+  },
+  "state_trace": [
+    {"at": "2026-10-08T21:17:09.893917Z", "entity": "plan", "status": "plan_pending_approval", "version": 1},
+    {"at": "2026-10-08T21:17:19Z", "entity": "research_task", "status": "planning", "task_id": "2761a22515d5509d8e846debd7a05df5"},
+    {"at": "2026-10-08T21:17:25Z", "entity": "research_task", "status": "running", "search_id": "dd9fb8065b854903924ccf8b9f2cffb9"},
+    {"at": "2026-10-08T21:18:12Z", "entity": "s1/s2", "status": "search_completed"},
+    {"at": "2026-10-08T21:18:37Z", "entity": "research_task", "status": "partial", "selected_count": 5, "error_code": "AGENT_OUTPUT_INVALID"},
+    {"at": "2026-10-08T21:18:37Z", "entity": "research_session", "status": "partial"}
+  ],
+  "worker_events": [
+    {"event_seq": 8, "work_item": "s1", "task_type": "search_catalog", "status": "completed", "resolved_model": "qwen3.5:9b", "search_id": "dd9fb8065b854903924ccf8b9f2cffb9"},
+    {"event_seq": 14, "work_item": "s2", "task_type": "search_catalog", "status": "completed", "resolved_model": "qwen3.5:9b", "search_id": "3f2ddaa5379f4948a4feb60506061b01"},
+    {"event_seq": 15, "work_item": "e1", "task_type": "evaluate_papers", "status": "running", "resolved_model": "qwen3.5:9b"},
+    {"event_seq": 18, "work_item": "c1", "task_type": "check_coverage", "status": "failed", "error_code": "UPSTREAM_WORK_ITEM_FAILED"},
+    {"event_seq": 19, "work_item": "syn", "task_type": "synthesize_preliminary_report", "status": "failed", "error_code": "UPSTREAM_WORK_ITEM_FAILED"},
+    {"event_seq": 20, "work_item": "phase:research", "status": "partial", "selected_count": 5, "error_code": "AGENT_OUTPUT_INVALID"}
+  ],
+  "search_observations": {
+    "s1_reported_candidate_count": 5,
+    "s2_reported_candidate_count": 8,
+    "selected_count": 5,
+    "note": "s2 event summary reported 8 candidates despite plan max_results=5; final selection/import remained 5. This is recorded as observed, not reinterpreted."
+  },
+  "internal_runtime_diagnostics": {
+    "source": "data/research/research.sqlite3 opened read-only",
+    "agent_runs": [
+      {"work_item": "s1", "status": "completed", "resolved_model": "qwen3.5:9b", "reasoning_effort": "off", "provider": "ollama"},
+      {"work_item": "s2", "status": "completed", "resolved_model": "qwen3.5:9b", "reasoning_effort": "off", "provider": "ollama"},
+      {"work_item": "e1", "status": "completed", "resolved_model": "qwen3.5:9b", "reasoning_effort": "off", "provider": "ollama"}
+    ],
+    "work_items": [
+      {"work_item": "s1", "status": "completed", "output_json_present": true},
+      {"work_item": "s2", "status": "completed", "output_json_present": true},
+      {"work_item": "e1", "status": "completed", "output_json_present": false, "checkpoint_present": true, "checkpoint_output_keys":["candidate_id","evidence_refs","keep","output_hash","reason","relevance_score","safe_summary","schema_version","source_refs"]},
+      {"work_item": "c1", "status": "failed", "error_code": "UPSTREAM_WORK_ITEM_FAILED"},
+      {"work_item": "syn", "status": "failed", "error_code": "UPSTREAM_WORK_ITEM_FAILED"}
+    ],
+    "synth_input_output": "synthesizer did not reach a completed model output; no matrix_context/synth output was saved for this run"
+  },
+  "acquisition": {
+    "http_status": 200,
+    "status": "completed",
+    "batch_id": "2a9d69bb-0811-45d0-a02b-2a5639022cd1",
+    "selection_version": 1,
+    "item_count": 5,
+    "completed_item_count": 5,
+    "items": [
+      {"candidate_id":"4e6322a23b92a271dbec9906c51fe0ab","paper_id":"a151fcff09944e7cbd1f4086376ae914","document_id":"a151fcff09944e7cbd1f4086376ae914","import_item_id":"36ae8411-935c-4b00-813c-5f6eca6b614b","title":"GhostRace: Exploiting and Mitigating Speculative Race Conditions","status":"completed"},
+      {"candidate_id":"57e0402f82fe2ce354bea423b201fde3","paper_id":"527fe0c1515d48c78adec8f4eb7f4979","document_id":"527fe0c1515d48c78adec8f4eb7f4979","import_item_id":"873aee35-3038-4c0d-88b7-0ec75e44fed1","title":"DNN-GP: Diagnosing and Mitigating Model's Faults Using Latent Concepts","status":"completed"},
+      {"candidate_id":"9793a4a35caad52ee99f926ae7c90810","paper_id":"929a342c0b8d4c8283198751cae9b327","document_id":"929a342c0b8d4c8283198751cae9b327","import_item_id":"ffdfc6ea-94bb-42ad-bb74-13d7223d1b7c","title":"Cascade: CPU Fuzzing via Intricate Program Generation","status":"completed"},
+      {"candidate_id":"bb826cac3486a295d93eb9b6cea0a6f8","paper_id":"fa82faf63802431da803e1a99ce1411b","document_id":"fa82faf63802431da803e1a99ce1411b","import_item_id":"7e5bdbb1-627a-4c20-986e-23d7d95828d4","title":"DARKFLEECE: Probing the Dark Side of Android Subscription Apps","status":"completed"},
+      {"candidate_id":"ef9e0846844e5b02834163586ea6ddc9","paper_id":"56fc315e952342158e5ae2f5ef6f01a0","document_id":"56fc315e952342158e5ae2f5ef6f01a0","import_item_id":"ed700701-a3ef-4304-928a-3968f21d9b7a","title":"Stop, Don't Click Here Anymore: Boosting Website Fingerprinting By Considering Sets of Subpages","status":"completed"}
+    ],
+    "public_pdf_download_limit": 5,
+    "downloaded_or_imported_count": 5
+  },
+  "artifacts": {
+    "candidate_report": {"http_status": 409, "error_code": "REPORT_NOT_READY", "path":"/api/research-tasks/2761a22515d5509d8e846debd7a05df5/report"},
+    "evidence_matrix": {"http_status": 409, "error_code": "MATRIX_NOT_READY", "path":"/api/research-tasks/2761a22515d5509d8e846debd7a05df5/evidence-matrix"},
+    "canonical_reports": [
+      {"format":"json","http_status":404,"error_code":"REPORT_NOT_READY","path":"/api/research-tasks/2761a22515d5509d8e846debd7a05df5/reports/1?format=json"},
+      {"format":"markdown","http_status":404,"error_code":"REPORT_NOT_READY","path":"/api/research-tasks/2761a22515d5509d8e846debd7a05df5/reports/1?format=markdown"},
+      {"format":"html","http_status":404,"error_code":"REPORT_NOT_READY","path":"/api/research-tasks/2761a22515d5509d8e846debd7a05df5/reports/1?format=html"}
+    ],
+    "session_artifacts": {"http_status":200,"count":0,"path":"/api/research-sessions/85c550c81f1a4d97bd44d0242b9f6c34/artifacts"},
+    "canonical_title": null,
+    "canonical_markdown_length": 0,
+    "canonical_html_length": 0,
+    "citation_count": null,
+    "artifact_metadata_not_used_as_fulltext": true
+  },
+  "auxiliary_attempts": [
+    {
+      "run_type": "client_interrupted_low_request",
+      "conversation_id": "5c8e071a4cf744bfa7f5ee97c41e7f07",
+      "research_session_id": "ccc9f168f6404a30b236e7a2109e9d58",
+      "intake_draft_id": "fef3ea42e32745fb910a5bc5eaf28a23",
+      "assistant_message_id": "6c3fa5139a574686a07acc25353b0aa7",
+      "status": "interrupted",
+      "reason": "本地 SSE 过滤器语法错误造成客户端断开；未批准、未创建 task、未用于本结论",
+      "preserved_as_non_success": true
+    }
+  ],
+  "retry_policy": {
+    "same_task_retried": false,
+    "approval_sent_once": true,
+    "async_polling_interval_seconds": 20,
+    "total_window_seconds": 77.14,
+    "reason": "任务已到明确 partial 终态，不重复启动旧 task"
+  },
+  "readiness": [
+    {"item":1,"name":"service_ready","status":"PASS","evidence":"/api/ready HTTP 200 ready=true"},
+    {"item":2,"name":"real_natural_language_entry","status":"PASS","evidence":"new conversation/message and complete Intake SSE"},
+    {"item":3,"name":"natural_language_parameters_parsed","status":"PASS","evidence":"Intake missing=[]; constraints min/max/target=5; plan hash/version recorded"},
+    {"item":4,"name":"research_state_progressed","status":"PASS","evidence":"plan approved; task planning→running→partial; s1/s2/e1 observed"},
+    {"item":5,"name":"frontend_processing_prompt","status":"FAIL","evidence":"not verified in API-only run"},
+    {"item":6,"name":"user_wait_instruction","status":"FAIL","evidence":"not verified in UI; task did not reach successful report wait condition"},
+    {"item":7,"name":"core_report_artifact","status":"FAIL","evidence":"matrix not ready; canonical report absent"},
+    {"item":8,"name":"actionable_failure_recovery","status":"FAIL","evidence":"partial terminal has error code but no tested user recovery to canonical report"},
+    {"item":9,"name":"page_api_state_consistency","status":"FAIL","evidence":"frontend state not exercised; session/task partial only"},
+    {"item":10,"name":"reproducible_manual_case","status":"FAIL","evidence":"successful artifact viewing path unavailable"}
+  ],
+  "prior_evidence_preserved": [
+    "docs/sdd/plans/032/artifacts/task-14/current-research-e2e-required-matrix-report.md",
+    "docs/sdd/plans/032/artifacts/task-14/current-research-e2e-required-matrix-evidence.json",
+    "docs/sdd/plans/032/artifacts/task-14/current-research-e2e-frozen-report.md",
+    "docs/sdd/plans/032/artifacts/task-14/current-research-e2e-frozen-evidence.json"
+  ],
+  "minimal_followup": {
+    "owner": "backend-dev / research evaluator-orchestrator",
+    "evidence": ["AGENT_OUTPUT_INVALID", "e1 output_json absent despite completed status/checkpoint", "c1/syn UPSTREAM_WORK_ITEM_FAILED", "MATRIX_NOT_READY"],
+    "action": "核对 evaluator 输出持久化/契约与 c1/syn 上游错误传播，修复后重新部署；保持预算 5、严格 matrix validator 和 source scope，不用 artifact 元数据或放宽校验冒充成功"
+  }
+}
