@@ -22,7 +22,7 @@
 | [06](./task-06-groups-exports.md) | 整理与导出 | 04 | 阶段已完成（真实API/PNG/JSON PASS） |
 | [07](./task-07-mobile-map.md) | 手机适配 | 05、06 | 阶段已完成（候选`1a3ff26`真实375/390/1440浏览器PASS；非物理真机） |
 | [08](./task-08-acceptance-deploy-retro.md) | 最终验收与收口 | 02–07全部完成 | 已完成（a328932 runtime/browser/full regression/deployment PASS；tester 与 architect 双签） |
-| [09](./task-09-map-interaction-analysis.md) | 图谱交互与自动摘要修订 | 03、05、07旧版资产 | 已完成；3384通过、覆盖率82.38%、真实链与独立双签通过 |
+| [09](./task-09-map-interaction-analysis.md) | 图谱交互与自动摘要修订 | 03、05、07旧版资产 | 已完成：初始缩放修复；40项前端测试、独立复审/签字与真实浏览器通过 |
 
 ## 执行约定
 

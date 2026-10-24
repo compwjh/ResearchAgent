@@ -251,3 +251,44 @@ KB TDD：先暂时移除诊断 section 挂载执行最小真实浏览器红测�
 - `.venv/bin/python scripts/check_test_layout.py`：退出码 `0`，`test layout: ok`。
 - `git diff --check -- frontend tests/frontend`：退出码 `0`。
 - 未运行 backend pytest、全量回归、生产 API 写入、下载、模型调用、服务或部署。真实生产页面需由 root 在 v18 候选部署后重新验证；KB 导入链后端保持原样。
+
+## 首屏地图缩放修复追记（2026-10-25）
+
+本轮承接用户反馈的“打开文献地图只有很小节点簇、标签相互遮挡”问题，范围严格限定为 `frontend/**`、`tests/frontend/**` 与本报告；未修改后端、未写入生产地图、未启动或部署服务。根因是 `selectMap()` 恢复持久化 viewport 后，桌面 `loadMapGraph()` 从不执行首屏 fit；移动端只在默认 `{x: 0, y: 0, scale: 1}` 时适配。线上复现的保存 viewport 为 `scale=0.35`（当前最小缩放），因此节点簇和标签在首屏仅占画布很小区域。
+
+### 实现与兼容行为
+
+- `applySavedView()` 对缺失、精确后端默认 `{x:0,y:0,scale:1}` 或接近最小缩放（`<= 0.36`）的保存 viewport 设置一次性 `initialFitPending`；图谱首批节点到达后调用 `fitView(false)`，空图时保留 pending 供后续轮询使用。
+- fit 在候选 transform 下实际渲染并读取 SVG `getBBox()`，将节点圆、标签与关系 bounds 一起纳入；以 SVG client bounds/viewBox 推导可用世界尺寸，使用 48px 安全 padding（保证最终至少约 44px CSS 边距），并遵守 fit 上限 2.4 与现有用户缩放边界 0.35–2.8。
+- 首屏自动 fit 不触发 `PATCH /{map_id}/view`；只有用户后续缩放、平移、拖拽节点或点击“适应”才保存 viewport。scale `1.25` 等可用的 intentional saved view 原样恢复，不被首屏 fit 覆盖；fit 不会在轮询、resize 或手动交互中重复触发。
+- `frontend/index.html`、组件夹具和静态契约的地图脚本缓存版本由 v18 同步升至 v19；CSS 仍为 v12。地图模块未新增 class，未引入 `innerHTML`。
+
+### TDD 与验证
+
+先新增 `tiny-saved-view`/`usable-saved-view` 浏览器夹具与量化断言，红测结果为 `1 failed, 1 passed`（首屏仍为 `scale=0.35`）。针对复审指出的真实 bounds 缺口，新增 tiny/default 与 200 节点窄画布边距断言，旧实现复现到 `15.1px` 与 `-123.7px`，修复后通过。
+
+最终目标集合实际命令：
+
+```text
+env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
+  .venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_map_graphics.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py
+```
+
+结果：退出码 `0`，`40 passed in 40.05s`，`0 failed`，`0 skipped`。其中 tiny/default 首屏占比与可见边距、200 节点窄画布全部标签/圆 bounds、usable saved view 无写回，以及既有 anchor zoom、平移、节点位置不变、移动端 touch/pinch 和扩展生命周期契约均通过。
+
+| 命令 | 退出码 | 实际结果 |
+|---|---:|---|
+| `node --check frontend/literature-maps.js` | 0 | 通过 |
+| `node --check frontend/app.js` | 0 | 通过 |
+| `.venv/bin/python scripts/check_test_naming.py` | 0 | `test naming check passed: no spec/task numbers under tests` |
+| `.venv/bin/python scripts/check_test_layout.py` | 0 | `test layout: ok` |
+| 目标集合 `pytest --collect-only -q` | 0 | `40 tests collected`，无 collecting error |
+| `git diff --check -- frontend tests/frontend` | 0 | 通过 |
+
+本轮未运行 backend pytest、全量回归、服务/部署或真实生产写入；生产候选需由 root 在部署验收时复核当前 live map 的首屏截图与保存状态。

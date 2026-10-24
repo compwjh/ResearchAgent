@@ -131,6 +131,8 @@
     ];
     const mockGraph = { schema_version: 'literature-map-v1', map: mockMap, nodes: mockNodes, edges: [{ edge_id: 'edge-a', map_id: 'map-fixture', kind: 'citation', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: null, basis: null, model_version: null, content_hash: null }, { edge_id: 'edge-sim', map_id: 'map-fixture', kind: 'similarity', source_id: 'node-a', target_id: 'node-b', provenance: 'fixture', score: 0.82, basis: 'title_only', model_version: 'fixture-v1', content_hash: 'fixture-hash' }], layers: { citation: { status: 'completed' }, similarity: { status: 'completed' } }, latest_job: { job_id: 'job-fixture', map_id: 'map-fixture', operation: 'create', status: 'completed', step: 'finished', counts: { node_count: 2, citation_edge_count: 1, similarity_edge_count: 1 } } };
     const query = new URLSearchParams(window.location.search);
+    if (query.has('tiny-saved-view')) mockMap.view_settings.viewport = { x: 218.19159296052774, y: 185.0037455589592, scale: 0.35 };
+    if (query.has('usable-saved-view')) mockMap.view_settings.viewport = { x: -24, y: -32, scale: 1.25 };
     const graphics = query.has('graphics');
     const longLabel = query.has('long-label');
     const largeGraph = query.has('large-graph');
@@ -572,7 +574,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=18"></script>
+  <script src="../../../frontend/literature-maps.js?v=19"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

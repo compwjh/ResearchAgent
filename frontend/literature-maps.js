@@ -11,6 +11,9 @@
   const MAP_HEIGHT = 680;
   const MIN_MAP_SCALE = 0.35;
   const MAX_MAP_SCALE = 2.8;
+  const FIT_MAX_SCALE = 2.4;
+  const INITIAL_FIT_SCALE_EPSILON = 0.01;
+  const FIT_PADDING_CSS_PX = 48;
   const MAX_LAYOUT_FRAMES = 8;
   const MAX_POLL_ATTEMPTS = 120;
   const MAX_PREVIEW_DISCOVERY_PAGES = 50;
@@ -64,6 +67,7 @@
     importInFlightNodeId: null,
     mapRequest: 0,
     viewRequest: 0,
+    initialFitPending: false,
     pollGeneration: 0,
     preview: null,
     previewJob: null,
@@ -1622,6 +1626,7 @@
     state.conversationRequest = 0;
     state.importRequest += 1;
     state.viewRequest += 1;
+    state.initialFitPending = false;
     if (previousMapId !== mapId) {
       stopPreviewPolling();
       state.preview = null;
@@ -1678,11 +1683,21 @@
   function applySavedView(map) {
     const settings = map?.view_settings || {};
     const viewport = settings.viewport || {};
+    const savedX = Number(viewport.x);
+    const savedY = Number(viewport.y);
+    const savedScale = Number(viewport.scale);
     state.view = {
-      x: Number.isFinite(Number(viewport.x)) ? Number(viewport.x) : 0,
-      y: Number.isFinite(Number(viewport.y)) ? Number(viewport.y) : 0,
-      scale: Number.isFinite(Number(viewport.scale)) && Number(viewport.scale) > 0 ? Number(viewport.scale) : 1,
+      x: Number.isFinite(savedX) ? savedX : 0,
+      y: Number.isFinite(savedY) ? savedY : 0,
+      scale: Number.isFinite(savedScale) && savedScale > 0 ? savedScale : 1,
     };
+    // A viewport persisted at the minimum zoom is not useful as an opening
+    // view for a graph. The exact backend default is also an uninitialized
+    // view for a newly created map. Fit it once after the graph arrives,
+    // but leave ordinary saved views (including intentional zoom/pan) alone.
+    state.initialFitPending = !Number.isFinite(savedScale)
+      || savedScale <= MIN_MAP_SCALE + INITIAL_FIT_SCALE_EPSILON
+      || (savedX === 0 && savedY === 0 && savedScale === 1);
     const layers = settings.layers || {};
     state.layers = { citation: layers.citation !== false, similarity: layers.similarity !== false };
     state.labelMode = normalizeLabelMode(settings.label_mode);
@@ -1710,7 +1725,7 @@
           state.positions[node.node_id] = initialPosition(index, nodes.length);
         }
       });
-      if (isMobileViewport() && state.view.x === 0 && state.view.y === 0 && state.view.scale === 1) fitView(false);
+      if (state.initialFitPending && fitView(false)) state.initialFitPending = false;
       refs.currentTitle.textContent = state.map ? mapTitle(state.map) : '文献地图';
       renderCurrentMeta();
       renderGraph();
@@ -2552,21 +2567,84 @@
     scheduleViewSave();
   }
 
+  function mapViewportWorldSize() {
+    const rect = refs.svg?.getBoundingClientRect?.();
+    const viewBox = refs.svg?.viewBox?.baseVal;
+    const viewBoxX = Number(viewBox?.x) || 0;
+    const viewBoxY = Number(viewBox?.y) || 0;
+    const viewBoxWidth = Number(viewBox?.width) || MAP_WIDTH;
+    const viewBoxHeight = Number(viewBox?.height) || MAP_HEIGHT;
+    if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) {
+      return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale: 1 };
+    }
+    const cssScale = Math.min(rect.width / viewBoxWidth, rect.height / viewBoxHeight);
+    if (!Number.isFinite(cssScale) || cssScale <= 0) {
+      return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale: 1 };
+    }
+    return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale };
+  }
+
+  function elementBounds(element) {
+    if (!element || typeof element.getBBox !== 'function') return null;
+    try {
+      const box = element.getBBox();
+      if (![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width < 0 || box.height < 0) return null;
+      return { left: box.x, right: box.x + box.width, top: box.y, bottom: box.y + box.height };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function unionBounds(...bounds) {
+    const available = bounds.filter(Boolean);
+    if (!available.length) return null;
+    return {
+      left: Math.min(...available.map((bound) => bound.left)),
+      right: Math.max(...available.map((bound) => bound.right)),
+      top: Math.min(...available.map((bound) => bound.top)),
+      bottom: Math.max(...available.map((bound) => bound.bottom)),
+    };
+  }
+
+  function renderedFitBounds(fallback) {
+    return unionBounds(elementBounds(refs.nodesGroup), elementBounds(refs.edgesGroup)) || fallback;
+  }
+
   function fitView(save) {
     const nodes = normalizeNodes(state.graph);
-    if (!nodes.length) return;
+    if (!nodes.length) return false;
     const points = nodes.map((node, index) => positionFor(node, index, nodes.length));
     const minX = Math.min(...points.map((point) => point.x));
     const maxX = Math.max(...points.map((point) => point.x));
     const minY = Math.min(...points.map((point) => point.y));
     const maxY = Math.max(...points.map((point) => point.y));
-    const width = Math.max(180, maxX - minX + 100);
-    const height = Math.max(150, maxY - minY + 100);
-    state.view.scale = Math.max(MIN_MAP_SCALE, Math.min(1.6, Math.min(MAP_WIDTH / width, MAP_HEIGHT / height)));
-    state.view.x = (MAP_WIDTH - (minX + maxX) * state.view.scale) / 2;
-    state.view.y = (MAP_HEIGHT - (minY + maxY) * state.view.scale) / 2;
-    renderGraph();
+    const viewport = mapViewportWorldSize();
+    const padding = FIT_PADDING_CSS_PX / viewport.cssScale;
+    const availableWidth = Math.max(1, viewport.width - padding * 2);
+    const availableHeight = Math.max(1, viewport.height - padding * 2);
+    let bounds = { left: minX - MAX_NODE_RADIUS, right: maxX + MAX_NODE_RADIUS, top: minY - MAX_NODE_RADIUS, bottom: maxY + MAX_NODE_RADIUS };
+    let scale = Math.max(MIN_MAP_SCALE, Math.min(FIT_MAX_SCALE, availableWidth / Math.max(1, bounds.right - bounds.left), availableHeight / Math.max(1, bounds.bottom - bounds.top)));
+    const applyTransform = () => {
+      state.view.scale = scale;
+      state.view.x = viewport.x + viewport.width / 2 - ((bounds.left + bounds.right) / 2) * scale;
+      state.view.y = viewport.y + viewport.height / 2 - ((bounds.top + bounds.bottom) / 2) * scale;
+      renderGraph();
+    };
+    // Label font sizes are recomputed from the candidate transform, so use a
+    // bounded render/measure loop to fit actual circles and text, not centers.
+    for (let iteration = 0; iteration < 6; iteration += 1) {
+      applyTransform();
+      bounds = renderedFitBounds(bounds);
+      const nextScale = Math.max(MIN_MAP_SCALE, Math.min(FIT_MAX_SCALE, availableWidth / Math.max(1, bounds.right - bounds.left), availableHeight / Math.max(1, bounds.bottom - bounds.top)));
+      if (Math.abs(nextScale - scale) < 0.002) {
+        scale = nextScale;
+        break;
+      }
+      scale = nextScale;
+    }
+    applyTransform();
     if (save) scheduleViewSave();
+    return true;
   }
 
   function locateSelectedNode() {

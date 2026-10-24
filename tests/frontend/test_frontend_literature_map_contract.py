@@ -25,7 +25,7 @@ def test_navigation_view_and_version_contract_are_wired() -> None:
     assert 'data-view="literature-maps"' in INDEX
     assert 'id="literature-maps-view"' in INDEX
     assert 'id="literature-maps-mount"' in INDEX
-    assert '/assets/literature-maps.js?v=18' in INDEX
+    assert '/assets/literature-maps.js?v=19' in INDEX
     assert '/assets/literature-maps.css?v=12' in INDEX
     app_versions = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     style_versions = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
@@ -168,6 +168,10 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         gesture_page.goto(FIXTURE.as_uri(), wait_until='load')
         gesture_page.locator('[data-map-id="map-fixture"]').click()
         gesture_page.wait_for_selector('[data-node-id="node-a"]')
+        initial_transform = gesture_page.locator('#literature-map-viewport').get_attribute('transform') or ''
+        initial_match = re.search(r'translate\(([-+0-9.e]+)\s+([-+0-9.e]+)\)\s+scale\(([-+0-9.e]+)\)', initial_transform)
+        assert initial_match
+        initial_x, initial_y, initial_scale = (float(value) for value in initial_match.groups())
         svg = gesture_page.locator('#literature-map-svg')
         svg_box = svg.bounding_box()
         assert svg_box
@@ -175,10 +179,10 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         gesture_page.mouse.down()
         gesture_page.mouse.move(svg_box['x'] + 100, svg_box['y'] + 70, steps=4)
         gesture_page.mouse.up()
-        gesture_page.wait_for_function("window.__viewBodies?.some((body) => body.viewport?.x === 60 && body.viewport?.y === 30)")
+        gesture_page.wait_for_function("window.__viewBodies?.length >= 1")
         pan_body = gesture_page.evaluate("window.__viewBodies.at(-1)")
-        assert pan_body['viewport']['x'] == 60
-        assert pan_body['viewport']['y'] == 30
+        assert pan_body['viewport']['x'] == pytest.approx(initial_x + 60)
+        assert pan_body['viewport']['y'] == pytest.approx(initial_y + 30)
 
         # Existing node-drag keeps the pan; toolbar zoom anchors at the canvas
         # center, so it intentionally updates x/y to keep that world point.
@@ -190,13 +194,20 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         gesture_page.mouse.up()
         gesture_page.wait_for_function("window.__viewBodies?.at(-1)?.positions?.some((position) => position.node_id === 'node-a' && position.x !== 390)")
         node_body = gesture_page.evaluate("window.__viewBodies.at(-1)")
-        assert node_body['viewport']['x'] == 60
-        assert node_body['viewport']['y'] == 30
+        assert node_body['viewport']['x'] == pytest.approx(initial_x + 60)
+        assert node_body['viewport']['y'] == pytest.approx(initial_y + 30)
         gesture_page.get_by_role('button', name='放大').click()
-        gesture_page.wait_for_function("window.__viewBodies?.at(-1)?.viewport?.scale > 1")
+        gesture_page.wait_for_function("window.__viewBodies?.at(-1)?.viewport?.scale >= 2.79")
         zoom_body = gesture_page.evaluate("window.__viewBodies.at(-1)")
-        assert zoom_body['viewport']['x'] == pytest.approx(-24)
-        assert zoom_body['viewport']['y'] == pytest.approx(-32)
+        zoom_center_x = 480
+        zoom_center_y = 340
+        expected_zoom_scale = min(2.8, initial_scale * 1.2)
+        zoom_factor = expected_zoom_scale / initial_scale
+        expected_zoom_x = zoom_center_x - (zoom_center_x - initial_x - 60) * zoom_factor
+        expected_zoom_y = zoom_center_y - (zoom_center_y - initial_y - 30) * zoom_factor
+        assert zoom_body['viewport']['x'] == pytest.approx(expected_zoom_x)
+        assert zoom_body['viewport']['y'] == pytest.approx(expected_zoom_y)
+        assert zoom_body['viewport']['scale'] == pytest.approx(expected_zoom_scale)
         assert zoom_body['viewport']['scale'] > 1
 
         # Reopen through the public lifecycle and verify the persisted
@@ -207,11 +218,14 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         gesture_page.wait_for_selector('[data-map-id="map-fixture"]')
         gesture_page.locator('[data-map-id="map-fixture"]').click()
         gesture_page.wait_for_selector('[data-node-id="node-a"]')
-        gesture_page.wait_for_function("document.querySelector('#literature-map-viewport')?.getAttribute('transform')?.includes('translate(-24 -32) scale(')")
         reopened_transform = gesture_page.locator('#literature-map-viewport').get_attribute('transform')
-        assert reopened_transform and 'translate(-24 -32) scale(' in reopened_transform
-        reopened_scale = float(re.search(r'scale\(([^)]+)\)', reopened_transform).group(1))
-        assert reopened_scale > 1
+        assert reopened_transform
+        reopened_match = re.search(r'translate\(([-+0-9.e]+)\s+([-+0-9.e]+)\)\s+scale\(([-+0-9.e]+)\)', reopened_transform)
+        assert reopened_match
+        reopened_x, reopened_y, reopened_scale = (float(value) for value in reopened_match.groups())
+        assert reopened_x == pytest.approx(zoom_body['viewport']['x'])
+        assert reopened_y == pytest.approx(zoom_body['viewport']['y'])
+        assert reopened_scale == pytest.approx(zoom_body['viewport']['scale'])
         reopened_node = gesture_page.locator('[data-node-id="node-a"] circle').get_attribute('cx')
         assert reopened_node and float(reopened_node) != 390
         gesture_page.close()

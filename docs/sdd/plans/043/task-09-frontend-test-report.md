@@ -206,3 +206,82 @@ git diff --check -- frontend tests/frontend
 ```
 
 未运行 backend pytest、全量回归、服务/部署、下载、模型调用或生产 API 写入。真实生产 v18 页面与 KB 持久化状态仍需 root 在候选部署后按其验收门禁复核。
+
+## 2026-10-25 初始缩放缺陷跟进：前端定向回归
+
+本轮仅核对用户报告的“打开保存缩放 `0.35` 的地图显示过小”前端修复；未修改业务代码、未启动服务、未调用模型/下载、未运行后端 pytest 或全量回归。新增覆盖 tiny saved view 初次打开适配、usable saved view 原样恢复且不写回，并复跑受影响图形/契约/移动端/分组导出/分析/扩展集合。
+
+### 受影响集合
+
+实际命令：
+
+```text
+.venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_map_graphics.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py
+```
+
+结果：退出码 `0`，`38 passed in 38.66s`，`0 failed`，`0 skipped`。浏览器 fixture 用例均实际执行，没有以权限失败或未执行冒充通过。
+
+关键覆盖：
+
+- `test_first_open_fits_a_tiny_saved_view_to_the_real_canvas`：保存 `scale=0.35` 时初开按真实 SVG 画布适配，节点可见且标签无重叠，不触发 view 写回。
+- `test_usable_saved_view_is_restored_without_initial_refit_or_save`：可用保存视图保留 `translate(-24 -32) scale(1.25)`，不初始重排、不写回。
+- `test_production_component_handles_two_hundred_nodes_without_position_mutation`：200 节点生产组件位置不变。
+- 扩展持久重开、图形锚点/可读性、分析/移动端/分组导出等既有契约均在同一集合通过。
+
+### 静态与收集门禁
+
+| 命令 | 退出码 | 实际结果 |
+|---|---:|---|
+| `node --check frontend/literature-maps.js` | `0` | 通过 |
+| `node --check frontend/app.js` | `0` | 通过 |
+| `.venv/bin/python scripts/check_test_layout.py` | `0` | `test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | `0` | `test naming check passed: no spec/task numbers under tests` |
+| 目标集合 `pytest --collect-only -q` | `0` | 收集 `38 tests`，无 `ERROR collecting` |
+
+静态契约结论：Syntax **PASS**；DOM/API Contract **PASS**；`literature-maps.js` 资源版本同步为 `v19` **PASS**；地图模块未使用 `innerHTML`，动态内容沿安全 DOM 边界 **PASS**。本轮无 skip、无失败；报告进展日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261025-025146.md`。
+
+## 2026-10-25 author fit-bounds 修复后的最终前端回归
+
+root 已确认 author 修复稳定后，独立 frontend-tester 重跑同一六文件集合；本节为最新证据，保留上节 `38 passed` 历史记录，不覆盖或合并计数。
+
+### 最终受影响集合
+
+实际命令：
+
+```text
+.venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_map_graphics.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py
+```
+
+结果：退出码 `0`，`40 passed in 39.59s`，`0 failed`，`0 skipped`。所有浏览器 fixture 用例均实际执行。
+
+新增/重点覆盖全部通过：
+
+- `48px` CSS fit padding 纳入节点半径与标签实际 bounds，tiny saved view 初开边距满足断言。
+- backend default view 初开按真实画布适配，不写回 view。
+- 200 节点窄画布 fit：节点/标签各 `200`，内容保持在画布边距内。
+- ordinary saved view 保留原始 `translate(-24 -32) scale(1.25)`，不触发初始 fit 或保存。
+- 既有 200 节点位置不变、扩展持久重开、图形/移动端/分析/分组导出契约继续通过。
+
+### 最终静态与收集门禁
+
+| 命令 | 退出码 | 实际结果 |
+|---|---:|---|
+| `node --check frontend/literature-maps.js` | `0` | 通过 |
+| `node --check frontend/app.js` | `0` | 通过 |
+| `.venv/bin/python scripts/check_test_layout.py` | `0` | `test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | `0` | 无 spec/task 数字违规 |
+| 目标集合 `pytest --collect-only -q` | `0` | 收集 `40 tests`，无 `ERROR collecting` |
+
+最终前端结论：Syntax / DOM-API Contract / Version(`literature-maps.js?v=19`) / XSS 均 **PASS**；本轮 `0 skip`、`0 fail`。本角色未运行后端测试、服务/部署或真实 API E2E。进展日志仍为 `.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261025-025146.md`。

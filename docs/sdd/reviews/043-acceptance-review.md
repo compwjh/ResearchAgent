@@ -135,3 +135,13 @@ tester 在架构师签字前报告准备度为 **9/10+**；本次 architect 签�
 - Spec 状态：**已完成**（主会话已按双签验收、部署验证与状态台账同步）；历史 Task PASS/失败仍按各自证据分类保留。
 
 依据索引：[`coverage-audit.md`](../plans/043/artifacts/task-08/coverage-audit.md)、[`regression-report.md`](../plans/043/artifacts/task-08/regression-report.md)、[`live-api-e2e.md`](../plans/043/artifacts/task-08/live-api-e2e.md)、[`final-candidate-runtime.md`](../plans/043/artifacts/task-08/final-candidate-runtime.md)、[`final-candidate-browser.md`](../plans/043/artifacts/task-08/final-candidate-browser.md)、[`final-browser-export.md`](../plans/043/artifacts/task-08/final-browser-export.md)、Task03–Task07 `acceptance-report.md`/`api-e2e.md`/`browser-e2e.md`、[`Spec018 repair runtime`](../plans/018/artifacts/2026-10-21-pdf-safety-repair/runtime-e2e.md)。
+
+## 2026-10-25 初始缩放缺陷增量架构签字
+
+范围仅为用户报告的保存视图 `scale=0.35` 首次打开过小问题；这是 Spec043 已完成基线上的单一前端增量复核，不重新评审其它能力。
+
+- 独立前端评审最新 INITIAL-FIT 结论为 **GO（P0=0，P1=0）**；定向回归为 **40 passed / 0 failed / 0 skipped，exit 0**，资源版本、语法、DOM/API 合同及测试布局门禁通过。
+- 真实窄窗口复核打开 20 节点/11 关系地图时由保存 `scale=0.35` 适配到 `1.7916059505875652`；画布为 `617×458` CSS px，节点 bounds 约占 **63%×68%**。保存 viewport、节点坐标/边界未被写回；`/api/health`、首页和 graph 均 HTTP 200，页面加载 `literature-maps.js?v=19`。修复前后截图见 `../plans/043/task-09-runs/20261025-opening-fit/before.png` 与 `after.png`。
+- **增量结论：GO / READY_FOR_USER（仅限本初始缩放修复，无阻塞项）**。历史 `3384 passed / 0 failed / 2 合法 skip` 为 2026-10-24 Spec043 收口证据，本轮没有重跑全量回归；本轮也未新增后端范围，不以该历史计数冒充本轮验证。
+
+**Architect：独立增量签字通过（2026-10-25）。** 本签字不改变已完成 Spec043 的历史证据分类，仅确认该前端初始视图修复可交给用户验收。

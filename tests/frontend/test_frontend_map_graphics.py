@@ -25,6 +25,56 @@ def _positions(page):
     )
 
 
+def _viewport_metrics(page):
+    return page.evaluate(
+        """() => {
+            const svg = document.querySelector('#literature-map-svg');
+            const svgRect = svg.getBoundingClientRect();
+            const circles = [...document.querySelectorAll('[data-node-id] circle')]
+                .map((node) => node.getBoundingClientRect());
+            const labels = [...document.querySelectorAll('.literature-map-node-label')]
+                .map((node) => node.getBoundingClientRect());
+            const bounds = (rects) => rects.length ? {
+                left: Math.min(...rects.map((rect) => rect.left)),
+                right: Math.max(...rects.map((rect) => rect.right)),
+                top: Math.min(...rects.map((rect) => rect.top)),
+                bottom: Math.max(...rects.map((rect) => rect.bottom)),
+            } : null;
+            const nodeBounds = bounds(circles);
+            const contentBounds = bounds([...circles, ...labels]);
+            const viewBox = svg.viewBox.baseVal;
+            const baseScale = Math.min(svgRect.width / viewBox.width, svgRect.height / viewBox.height);
+            const visibleBounds = {
+                left: svgRect.left + (svgRect.width - viewBox.width * baseScale) / 2,
+                right: svgRect.right - (svgRect.width - viewBox.width * baseScale) / 2,
+                top: svgRect.top + (svgRect.height - viewBox.height * baseScale) / 2,
+                bottom: svgRect.bottom - (svgRect.height - viewBox.height * baseScale) / 2,
+            };
+            let labelOverlaps = 0;
+            for (let index = 0; index < labels.length; index += 1) {
+                for (let other = index + 1; other < labels.length; other += 1) {
+                    if (labels[index].left < labels[other].right && labels[index].right > labels[other].left
+                        && labels[index].top < labels[other].bottom && labels[index].bottom > labels[other].top) labelOverlaps += 1;
+                }
+            }
+            const transform = document.querySelector('#literature-map-viewport')?.getAttribute('transform') || '';
+            const scale = Number(transform.match(/scale\\(([-+0-9.e]+)\\)/)?.[1] || 0);
+            return {
+                svg: { width: svgRect.width, height: svgRect.height },
+                nodes: nodeBounds ? { width: nodeBounds.right - nodeBounds.left, height: nodeBounds.bottom - nodeBounds.top } : null,
+                margins: contentBounds ? {
+                    left: contentBounds.left - visibleBounds.left,
+                    right: visibleBounds.right - contentBounds.right,
+                    top: contentBounds.top - visibleBounds.top,
+                    bottom: visibleBounds.bottom - contentBounds.bottom,
+                } : null,
+                scale,
+                labelOverlaps,
+            };
+        }"""
+    )
+
+
 def test_long_labels_keep_contract_markers_visible() -> None:
     with sync_playwright() as playwright:
         browser = _launch(playwright)
@@ -76,6 +126,72 @@ def test_labels_keep_a_css_readability_floor_when_canvas_scales() -> None:
         assert metrics
         assert min(item["height"] for item in metrics) >= 9, metrics
         assert min(item["screenScale"] for item in metrics) > 0
+        page.close()
+        browser.close()
+
+
+def test_first_open_fits_a_tiny_saved_view_to_the_real_canvas() -> None:
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?tiny-saved-view", wait_until="load")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_selector('[data-node-id="node-b"]')
+        metrics = _viewport_metrics(page)
+        assert metrics["scale"] > 1
+        assert metrics["nodes"]["width"] / metrics["svg"]["width"] >= 0.25, metrics
+        assert metrics["nodes"]["height"] / metrics["svg"]["height"] >= 0.1, metrics
+        assert min(metrics["margins"].values()) >= 43, metrics
+        assert metrics["labelOverlaps"] == 0, metrics
+        assert page.evaluate("window.__viewBodies") == []
+        page.close()
+        browser.close()
+
+
+def test_first_open_fit_keeps_large_graph_labels_inside_a_narrow_canvas() -> None:
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 900, "height": 720}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?large-graph", wait_until="load")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_selector('[data-node-id="node-large-200"]')
+        assert page.locator('[data-node-id] circle').count() == 200
+        assert page.locator('.literature-map-node-label').count() == 200
+        metrics = _viewport_metrics(page)
+        assert metrics["margins"]
+        assert min(metrics["margins"].values()) >= 43, metrics
+        page.close()
+        browser.close()
+
+
+def test_first_open_fits_the_backend_default_view_to_the_real_canvas() -> None:
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(FIXTURE.as_uri(), wait_until="load")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_selector('[data-node-id="node-b"]')
+        metrics = _viewport_metrics(page)
+        assert metrics["scale"] > 1
+        assert metrics["nodes"]["width"] / metrics["svg"]["width"] >= 0.25, metrics
+        assert metrics["nodes"]["height"] / metrics["svg"]["height"] >= 0.1, metrics
+        assert min(metrics["margins"].values()) >= 43, metrics
+        assert metrics["labelOverlaps"] == 0, metrics
+        assert page.evaluate("window.__viewBodies") == []
+        page.close()
+        browser.close()
+
+
+def test_usable_saved_view_is_restored_without_initial_refit_or_save() -> None:
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?usable-saved-view", wait_until="load")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_selector('[data-node-id="node-b"]')
+        transform = page.locator('#literature-map-viewport').get_attribute('transform') or ''
+        assert 'translate(-24 -32) scale(1.25)' in transform
+        assert page.evaluate("window.__viewBodies") == []
         page.close()
         browser.close()
 

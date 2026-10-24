@@ -27,7 +27,7 @@ def test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes() -> N
     assert "openConversationFromWorkspace(conversationId, options)" in MODULE
     assert ".literature-map-analysis" in STYLES
     assert ".literature-map-analysis-history-item" in STYLES
-    assert "/assets/literature-maps.js?v=18" in INDEX
+    assert "/assets/literature-maps.js?v=19" in INDEX
     assert "/assets/literature-maps.css?v=12" in INDEX
     assert "/assets/app.js?v=60" in INDEX
 

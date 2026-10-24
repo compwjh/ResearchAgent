@@ -291,3 +291,67 @@ AAAAAAAAAAAAAAAAAAAAAAAA… et al., 年份未知
 2. 独立 PNG 导出浏览器路径：`test_group_management_and_exports_in_browser`，退出码 `0`：`1 passed in 0.66s`；下载路径实际生成 `.png`，与当前克隆 SVG 导出实现一致。
 
 本轮未运行完整 60 项、backend pytest、服务/部署、网络、模型或生产 API；GO 只适用于上述 JSv18 与 KB202 前端窄范围，不扩展为 Task09/Spec043 收口签字。评审日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261024-112146.md`。
+
+## 第六阶段 INITIAL-FIT 窄复审（2026-10-25）
+
+本节只复核当前 fitView / applySavedView / loadMapGraph 首次打开增量、资源版本及对应 graphics/mobile 浏览器合同；不宣称原 Task-09 其余范围已复审，也不评审 backend。
+
+### 窄范围结论
+
+**BLOCK（P0=0，P1=2）**。
+
+applySavedView 的 tiny/default 判定、一次性异步触发和 usable saved view 保留方向正确；但当前 fit 仍不能满足“实际 SVG visible bounds + 44 CSS px padding”的合同，且新增浏览器断言没有捕获该问题。
+
+### 必须修复的问题
+
+#### P1-05：padding 在最终 transform 后不是 44 CSS px
+
+- 位置：frontend/literature-maps.js:2594-2599，尤其 2595。
+- 实际：padding = 44 / viewport.cssScale 先按 SVG 根的 CSS 比例换算，随后 width/height 计算出的 state.view.scale 再乘一次。最终屏幕间距为 44 * fitScale CSS px，而不是固定 44；当图需要缩小且 fitScale < 1 时低于合同（最小缩放 .35 时约 15.4px）。
+- 预期：首次 fit 后，节点/标签 visible bounds 到 SVG 可视边界的屏幕间距至少为 44 CSS px（desktop 与窄画布均成立）。
+- 修复建议：用最终拟合 scale 参与 padding 求解，或先渲染后读取真实 getBBox()/屏幕 bounds，再按 CSS 像素 padding 重新计算 transform；新增窄画布与大跨度图的 44px 断言。
+
+#### P1-06：fit 只包围 node center，长标签/半径未纳入 visible bounds
+
+- 位置：frontend/literature-maps.js:2589-2597；标签尺寸由 labelPosition 在 :418-430 计算。
+- 实际：minX/maxX/minY/maxY 只来自 positionFor() 的中心坐标，fitView 的固定 padding 未加节点半径或文本框。当前 tiny fixture 的两节点会取 scale=2.8（上限），node-b 的 “Author B, 2023” 标签按现有宽度估算右界约 1020.62，超出 SVG viewBox 右界 960 约 60.62 SVG 单位；标签可在 SVG/画布边界被截断。现有 test_first_open_fits_a_tiny_saved_view_to_the_real_canvas（tests/frontend/test_frontend_map_graphics.py:118-132）只测圆 bounds、比例和标签相互重叠，不测标签是否在 SVG 内。
+- 预期：首次 fit 的实际节点圆、marker 与所有当前可见文本均位于 SVG visible bounds 内并保留指定 padding；不能用“圆占比”替代文本可见性。
+- 修复建议：把当前 label 文本框/节点半径纳入 bounds（最好用渲染后的真实屏幕 getBoundingClientRect()/getBBox()），再以 CSS px padding 拟合；补充 long-label、tiny 两节点及真实 20 节点 desktop/narrow bounds 断言。
+
+### 已通过的窄检查
+
+- applySavedView：scale=.35 或 default (0,0,1) 才设置 initialFitPending；usable (-24,-32,1.25) 不 fit。loadMapGraph 只在首次 graph 到达且有节点时调用 fitView(false)，不 PATCH 保存；当前 tiny/usable 用例均通过。
+- 位置/分组/轮询守卫：fit 只写 state.view 并调用 render，不写 state.positions 或 state.groups；initialFitPending 清零后后续 loadMapGraph 不再 silent refit。当前已有 200 节点位置稳定测试，但没有专门的 polling/manual reload 不重置断言。
+- DOM/XSS 与版本：目标模块无新增 innerHTML/eval；生产页、fixture、版本合同均为 literature-maps.js?v=19。
+
+### 本轮验证
+
+验证命令：.venv/bin/python -m pytest tests/frontend/test_frontend_map_graphics.py tests/frontend/test_frontend_map_mobile_contract.py -q
+
+退出码 0：17 passed in 22.12s。另 node --check frontend/literature-maps.js 与目标 diff git diff --check 均退出码 0。上述结果只证明现有断言通过，不能抵消 P1-05/P1-06 的可复核 bounds 数学问题。
+
+评审过程日志：.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-025047.md。
+
+## 第七阶段 INITIAL-FIT 修复复审（2026-10-25）
+
+本节只复核 frontend-dev 针对 P1-05/P1-06 的最终增量与新增 graphics contracts；不改写历史 BLOCK，也不宣称原 Task-09/Spec043 其余范围已验收。
+
+### 窄范围结论
+
+**GO（仅限 INITIAL-FIT 增量；P0=0，P1=0）**。
+
+### 修复复核
+
+- P1-05 通过：FIT_PADDING_CSS_PX=48（frontend/literature-maps.js:14-16），fitView 以 SVG 实际 viewport 的 CSS 比例换算可用宽高，并通过 elementBounds/unionBounds/renderedFitBounds 在渲染后测量内容（:2570-2647）。tiny、backend default、200 节点 narrow 三个场景的实际 circles+labels screen margins 均满足测试阈值 >=43px（padding 48 的容差合同）。
+- P1-06 通过：最终 bounds 不再只依赖 node center；节点组的 SVG getBBox() 包含当前可见文本，节点半径也有初始 fallback，最多 6 次 render/measure loop 后再应用最终 transform；tiny/default/large narrow 测试均确认 labels 不越过 letterboxed SVG visible bounds。
+- 默认/最小一次 fit 通过：applySavedView 在 invalid、scale <= .35 + .01 或 backend default (0,0,1) 时设置 initialFitPending；loadMapGraph 只在首个有节点 graph 到达时 fit 并清零。tiny/default 测试均确认不产生 PATCH /view。
+- usable saved view 通过：(-24,-32,1.25) 原样恢复，无 initial refit、无保存请求；fit 只写 state.view，不改 state.positions 或 state.groups。
+- CSS readability/200 performance 通过：窄画布 + zoom-out 的标签高度保持 >=9px；200 节点生产组件的 label-mode 切换保持 <500ms、positions 前后一致、无 page errors；200 节点窄画布首次 fit 的实际 screen margins 也通过 >=43px。
+
+### 本轮独立验证
+
+验证命令：.venv/bin/python -m pytest tests/frontend/test_frontend_map_graphics.py tests/frontend/test_frontend_map_mobile_contract.py -q
+
+退出码 0：19 passed in 22.62s。另 node --check frontend/literature-maps.js、.venv/bin/python scripts/check_test_layout.py（test layout: ok）和目标 git diff --check 均退出码 0。test_frontend_map_graphics.py --durations=20 中 200 节点首次 fit 用例耗时 0.45s，完整 200 节点位置/切换用例 1.09s。
+
+资源版本 v19、DOM/XSS 静态合同通过；本轮未运行 backend pytest、真实 API、部署或 Task-09 全量回归。评审过程日志：.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-025047.md。

@@ -34,3 +34,13 @@
 - `git diff 58ab86f -- backend frontend`为空；`git diff 458da1b 58ab86f -- backend frontend`的SHA256仍为`6fda3d07731f9bd820653faac22ddb9fb615fe22c393ac69e0560fe968feb059`，与独立双签、最终回归和已部署源一致；提交未改变运行源码，不重复重启。
 - 交付前再次实测ready=true、首页200。最终全量3384 passed/0 failed/2合法skip/67 subtests/5 warnings，exit0、覆盖率82.38%；tester与architect双签READY_FOR_USER，10/10。Spec/Task/README/状态台账已同步完成，人工步骤见`task-09-manual-acceptance.md`。
 - 仅本地提交，未push/合main；来源限流partial、无摘要跳过、RRF降级及Langfuse既有未运行限制均保留，不承诺所有外部论文随时可下载。
+# 2026-10-25 初始缩放缺陷：前端增量运行时验证
+
+主会话记录真实操作和最小校验，非独立测试签字；独立结论见同目录 frontend-review / frontend-test-report 的 INITIAL-FIT 最新记录。只涉及前端，不以2026-10-24全量结果冒充本次重新执行。
+
+- 独立复审 GO，P0/P1=0；独立定向前端回归40 passed / 0 failed / 0 skipped，exit0；复审另跑19 passed。语法、测试布局/命名、资源版本均通过。
+- 服务现有8000进程直接提供静态文件，无需重启后端。真实GET `/api/health`、`/`、`/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/graph` 均HTTP200；首页引用 `literature-maps.js?v=19`。
+- 实际在应用浏览器刷新，进入“文献地图”，打开“Task09 live graph attention networks 20261024-153416”。20节点/11关系正常显示；原保存scale=0.35，初始显示自动变为1.7916059505875652，SVG画布617×458 CSS px，节点bounds390.486×311.763，约占宽63%、高68%。本次真实浏览器为窄窗口；桌面1440及200节点窄画布由组件浏览器测试另行覆盖，不冒称真实桌面截图。
+- 只读GET复核，保存viewport仍为scale0.35/x218.19159296052774/y185.0037455589592；节点坐标范围仍x351.68154166222695..662.8971832837523、y246.47335164886059..482.6468013204598。打开适配未自动写回视图。
+- 截图：[修复前](task-09-runs/20261025-opening-fit/before.png)、[修复后](task-09-runs/20261025-opening-fit/after.png)。用户刷新页面后重新选择地图即可看到合理大小；手动调整后不因轮询自动重置，亦可点击“适应”。
+- 原地图的来源partial与18完成/2缺摘要跳过保持真实状态，本轮没有重新检索、下载或生成分析。无后端改动，不重复后端全量；不push/合main。
