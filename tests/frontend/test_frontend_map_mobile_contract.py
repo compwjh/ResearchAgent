@@ -51,11 +51,11 @@ def _select_map(page: Page) -> None:
 
 def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "/assets/styles.css?v=60" in INDEX
-    assert "/assets/literature-maps.js?v=19" in INDEX
-    assert "/assets/literature-maps.css?v=12" in INDEX
+    assert "/assets/literature-maps.js?v=20" in INDEX
+    assert "/assets/literature-maps.css?v=13" in INDEX
     assert "/styles.css?v=60" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.js?v=19" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=12" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.js?v=20" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.css?v=13" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
         "literature-map-mobile-list-open",
         "literature-map-mobile-backdrop",
@@ -76,7 +76,7 @@ def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "innerHTML" not in MODULE
     assert "touch-action: none" in STYLES
     assert "touch-action: pan-y" in STYLES
-    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "19"
+    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "20"
 
 
 @pytest.mark.parametrize("width", [375, 390])

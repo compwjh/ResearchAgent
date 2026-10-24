@@ -44,3 +44,14 @@
 - 只读GET复核，保存viewport仍为scale0.35/x218.19159296052774/y185.0037455589592；节点坐标范围仍x351.68154166222695..662.8971832837523、y246.47335164886059..482.6468013204598。打开适配未自动写回视图。
 - 截图：[修复前](task-09-runs/20261025-opening-fit/before.png)、[修复后](task-09-runs/20261025-opening-fit/after.png)。用户刷新页面后重新选择地图即可看到合理大小；手动调整后不因轮询自动重置，亦可点击“适应”。
 - 原地图的来源partial与18完成/2缺摘要跳过保持真实状态，本轮没有重新检索、下载或生成分析。无后端改动，不重复后端全量；不push/合main。
+
+## 2026-10-25 分析 Markdown 展示：前端增量运行时验证
+
+主会话记录实际页面与API，独立结论见frontend-review/test-report的ANALYSIS-MARKDOWN记录；不代替历史整Spec全量。
+
+- 独立前端复审GO，无P0/P1/P2；最终独立9文件定向集合50 passed / 0 failed / 0 skipped，exit0，46.42s。首次受限环境Chromium权限失败与授权重跑结果在测试报告分别保留；Node、命名/布局/收集和diff检查均通过。
+- 现有8000服务直接提供静态JSv20、CSSv13，无需后端重启。实际GET首页、健康接口及下述analyses接口均HTTP200，首页版本匹配。
+- 从“文献地图”打开地图858b78f0d9e047efa6d8d1559d83a6de，点选DualGATs节点b90f727be35744afbfdfadcc349463e5，向下滚动论文详情到“摘要级分析结果”。已有analysis_id=98a7e339705244388411cad3b26d8554，原来纯文本`**`/列表符号，更新后实际DOM为8个strong、1个ul、1个ol，无裸露`**`，无script/img/iframe。版本与依据/受控引用仍可见。
+- 只读GET `/api/literature-maps/858b78f0d9e047efa6d8d1559d83a6de/nodes/b90f727be35744afbfdfadcc349463e5/analyses` 前后均只有原1条completed/abstract记录；没有按“重新生成”、下载或调用模型。全文/历史与恶意HTML/URL、缺失/异常renderer回退由真实vendor组件浏览器测试覆盖，不冒称此论文已具备全文。
+- 截图：[修复前](task-09-runs/20261025-analysis-markdown/before.png)、[修复后](task-09-runs/20261025-analysis-markdown/after.png)。用户刷新页面、打开地图并点选论文，滚动至分析结果即可，不需重新生成。
+- 仅前端修改，无后端全量重跑、不push或合main。该论文原有入库失败状态不属于本次展示修复，不将其冒称已恢复。

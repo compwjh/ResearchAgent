@@ -285,3 +285,51 @@ root 已确认 author 修复稳定后，独立 frontend-tester 重跑同一六�
 | 目标集合 `pytest --collect-only -q` | `0` | 收集 `40 tests`，无 `ERROR collecting` |
 
 最终前端结论：Syntax / DOM-API Contract / Version(`literature-maps.js?v=19`) / XSS 均 **PASS**；本轮 `0 skip`、`0 fail`。本角色未运行后端测试、服务/部署或真实 API E2E。进展日志仍为 `.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261025-025146.md`。
+
+## 2026-10-25 map analysis Markdown v20/v13 最终前端回归
+
+本节为 Markdown 富文本修复后的最新前端验收结果，独立于此前初始 fit 修复的 `40 passed` 基线；未覆盖、合并或替换此前计数。本轮只核对 `frontend/**`、`tests/frontend/**` 的地图前端范围，未运行后端 pytest、全仓回归、服务/部署或真实 API E2E。
+
+### 精确受影响集合与授权浏览器结果
+
+实际运行 9 个前端文件：
+
+```text
+env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
+  .venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_analysis_markdown.py \
+  tests/frontend/test_frontend_map_analysis_queue.py \
+  tests/frontend/test_frontend_map_graphics.py \
+  tests/frontend/test_frontend_map_groups_exports.py \
+  tests/frontend/test_frontend_map_import_diagnostics.py \
+  tests/frontend/test_frontend_map_mobile_contract.py
+```
+
+首轮普通受限环境执行退出码 `1`，`20 failed, 8 passed, 22 skipped`；失败均为 Chromium 启动阶段 `MachPortRendezvousServer ... Permission denied (1100)`，未进入断言。经授权浏览器入口使用完全相同命令重跑后退出码 `0`：`50 passed in 46.42s`，`0 failed`、`0 skipped`。
+
+新增 Markdown 覆盖已实际通过：
+
+- 使用 fixture 中真实 `vendor/marked.min.js` 与 `vendor/purify.min.js`，验证 abstract/full/history 三类结果的标题、粗体、列表、行内/围栏代码和 HTTPS 链接 DOM。
+- 验证 `<script>`、`<img onerror>`、`javascript:` URL 被净化；元数据与 citations 中的 HTML 仅作为文本显示，不生成元素。
+- 验证 `window.renderMarkdown` 缺失时保留原始 Markdown 纯文本，且不存在标题、粗体、列表、代码、链接、script 或 img 元素。
+- 验证 renderer 抛出异常时进入同一 `textContent` fallback（由 author 的 helper/fixture contract 覆盖）。
+
+### 静态与收集门禁
+
+| 命令 | 退出码 | 实际结果 |
+|---|---:|---|
+| `node --check frontend/literature-maps.js` | `0` | 语法通过 |
+| `node --check frontend/app.js` | `0` | 既有 Markdown helper 语法通过 |
+| `.venv/bin/python scripts/check_test_layout.py` | `0` | `test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | `0` | 无 spec/task 数字违规 |
+| 同一 9 文件集合 `pytest --collect-only -q` | `0` | `50 tests collected`，无 collecting error |
+| `git diff --check -- frontend tests/frontend` | `0` | 差异格式通过 |
+
+### 前端契约结论
+
+Syntax **PASS**；DOM/API Contract **PASS**；Version(`literature-maps.js?v=20`, `literature-maps.css?v=13`, `app.js?v=60`) **PASS**；XSS/安全 DOM 边界 **PASS**。`renderAnalysisMarkdown()` 只消费现有 `window.renderMarkdown`，地图模块未复制 marked/DOMPurify、未使用 `innerHTML`；缺失或异常 renderer 使用 `textContent` fallback。新增 `.md-body` 复用既有 Markdown 样式，地图摘要容器保留 `.literature-map-analysis-summary` 作用域。
+
+本轮最终前端定向回归结论：**PASS（50/50）**。此前初始 fit 基线 `40 passed` 继续作为独立历史记录；本轮日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261025-030802.md`。

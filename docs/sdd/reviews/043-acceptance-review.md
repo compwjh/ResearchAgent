@@ -145,3 +145,14 @@ tester 在架构师签字前报告准备度为 **9/10+**；本次 architect 签�
 - **增量结论：GO / READY_FOR_USER（仅限本初始缩放修复，无阻塞项）**。历史 `3384 passed / 0 failed / 2 合法 skip` 为 2026-10-24 Spec043 收口证据，本轮没有重跑全量回归；本轮也未新增后端范围，不以该历史计数冒充本轮验证。
 
 **Architect：独立增量签字通过（2026-10-25）。** 本签字不改变已完成 Spec043 的历史证据分类，仅确认该前端初始视图修复可交给用户验收。
+
+## 2026-10-25 分析 Markdown 展示增量架构签字
+
+范围仅为分析正文中的 Markdown 符号未渲染问题；本次是同一 Task09 的独立前端增量复核，保留并不改写前述 INITIAL-FIT 签字。
+
+- 最新前端评审为 **GO（P0=0，P1=0，P2=0）**；9 文件前端定向回归为 **50 passed / 0 failed / 0 skipped，exit 0，46.42s**。JSv20/CSSv13、语法、DOM/API 合同和 XSS 边界均通过。
+- 实现沿用现有全局 `renderMarkdown` 的净化链，使用 `DOMParser` 提取节点；缺失或异常 renderer 回退纯文本。真实 DualGATs 既有记录 `98a7e339705244388411cad3b26d8554` 展示为 **8 个 `strong`、1 个 `ul`、1 个 `ol`**，无裸露 `**`、无 `script/img/iframe`；版本、依据和受控引用仍可见。
+- 真实运行时首页、health、index/graph 与 analysis API 均 HTTP 200；只读复核确认仍为原 1 条 completed/abstract 记录，未重生成、下载或调用模型。修复前后截图见 `../plans/043/task-09-runs/20261025-analysis-markdown/before.png` 与 `after.png`。
+- **增量结论：GO / READY_FOR_USER（仅限 ANALYSIS-MARKDOWN 展示修复，无阻塞项）**。历史 `3384 passed / 0 failed / 2 合法 skip` 属 2026-10-24 Spec043 收口证据，本轮未重跑全量回归；本轮仅覆盖前端 Markdown 展示，不以历史计数冒充本轮验证。
+
+**Architect：独立增量签字通过（2026-10-25）。** 本签字不改变此前 INITIAL-FIT 通过结论或已完成 Spec043 的历史证据分类，仅确认该 Markdown 展示修复可交给用户验收。

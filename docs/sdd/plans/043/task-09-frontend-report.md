@@ -292,3 +292,30 @@ env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
 | `git diff --check -- frontend tests/frontend` | 0 | 通过 |
 
 本轮未运行 backend pytest、全量回归、服务/部署或真实生产写入；生产候选需由 root 在部署验收时复核当前 live map 的首屏截图与保存状态。
+
+## AI 分析 Markdown 展示修复追记（2026-10-25）
+
+本次窄修承接用户反馈的地图 AI 分析结果把 `**`、标题、列表和代码原样显示问题，范围仅为 `frontend/**`、`tests/frontend/**` 与本报告；未修改后端、未调用模型/下载、未启动或部署服务，未提交或推送 Git。
+
+### 实现与安全边界
+
+- `literature-maps.js` 的分析结果内容统一复用既有全局 `window.renderMarkdown(source)`；通过 inert `DOMParser` 挂入已由 `marked` + `DOMPurify` 净化的 HTML，不在地图模块复制 Markdown parser。
+- 组件单独运行或 helper 缺失/异常时，结果容器使用 `textContent` 回退，保留原 Markdown 字符串但不创建 HTML 节点。
+- 摘要、全文、历史版本均走同一内容渲染路径；标题、依据/版本元数据、受控来源引用继续使用文本节点，未放宽其安全边界。摘要容器改为正常 HTML whitespace，并复用既有 `.md-body` 样式。
+- 地图资源版本同步为 `literature-maps.js?v=20`、`literature-maps.css?v=13`；生产页、组件夹具和既有静态契约同步。
+
+### TDD 与定向验证
+
+新增 `tests/frontend/test_frontend_map_analysis_markdown.py`，组件夹具加载真实 `vendor/marked.min.js`/`vendor/purify.min.js`，并覆盖 helper wiring 与缺失 helper fallback。修复前 RED 为 `1 failed, 1 passed`（旧 `textContent` 路径没有 `h1`）；修复后目标集合退出码 `0`：`46 passed in 43.93s`，无失败/skip。覆盖粗体、标题、列表、行内/围栏代码、HTTPS 链接、恶意 HTML、`javascript:` URL、文本型元数据/引用，以及摘要/全文/历史三种记录。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `node --check frontend/literature-maps.js` | 0 | 通过 |
+| `node --check frontend/app.js` | 0 | 通过 |
+| `.venv/bin/python scripts/check_test_naming.py` | 0 | `test naming check passed: no spec/task numbers under tests` |
+| `.venv/bin/python scripts/check_test_layout.py` | 0 | `test layout: ok` |
+| 受影响地图前端 pytest 集合 | 0 | `46 passed in 43.93s` |
+| 同集合 `pytest --collect-only -q` | 0 | `46 tests collected`，无 collecting error |
+| `git diff --check -- frontend tests/frontend` | 0 | 通过 |
+
+未运行 backend pytest、全量回归、真实 API/生产写入、模型调用、下载、服务或部署；root 负责当前候选的真实双 GAT 节点截图复核。

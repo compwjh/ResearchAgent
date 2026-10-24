@@ -25,10 +25,14 @@ def test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes() -> N
     assert "conversationDraft" in MODULE
     assert "研究问题、方法、主要结论和局限" in MODULE
     assert "openConversationFromWorkspace(conversationId, options)" in MODULE
+    assert "renderAnalysisMarkdown" in MODULE
+    assert "renderMarkdown" in MODULE
+    assert "marked" not in MODULE
+    assert "DOMPurify" not in MODULE
     assert ".literature-map-analysis" in STYLES
     assert ".literature-map-analysis-history-item" in STYLES
-    assert "/assets/literature-maps.js?v=19" in INDEX
-    assert "/assets/literature-maps.css?v=12" in INDEX
+    assert "/assets/literature-maps.js?v=20" in INDEX
+    assert "/assets/literature-maps.css?v=13" in INDEX
     assert "/assets/app.js?v=60" in INDEX
 
 
@@ -59,7 +63,7 @@ def test_component_fixture_supports_analysis_history_failure_and_conversation_br
         page.wait_for_selector(".literature-map-analysis-result")
         assert "仅基于摘要" in panel.inner_text()
         assert "摘要级分析结果" in panel.inner_text()
-        assert "<img src=x onerror=alert(1)>" in panel.inner_text()
+        assert "<img src=x onerror=alert(1)>" not in panel.inner_text()
         assert page.locator("img[onerror]").count() == 0
         page.locator(".literature-map-analysis-history-button").filter(has_text="v0").click()
         assert "旧版本摘要结果" in panel.inner_text()

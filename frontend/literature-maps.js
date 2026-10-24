@@ -142,6 +142,24 @@
     return node;
   }
 
+  function renderAnalysisMarkdown(source) {
+    const text = String(source || '');
+    const content = createElement('div', 'literature-map-analysis-summary md-body');
+    if (typeof window.renderMarkdown !== 'function') {
+      content.textContent = text;
+      return content;
+    }
+    try {
+      const rendered = window.renderMarkdown(text);
+      if (typeof rendered !== 'string') throw new Error('Markdown renderer returned a non-string result');
+      const parsed = new DOMParser().parseFromString(rendered, 'text/html');
+      while (parsed.body.firstChild) content.append(parsed.body.firstChild);
+    } catch (_) {
+      content.textContent = text;
+    }
+    return content;
+  }
+
   function createSvgElement(tag) {
     return document.createElementNS(SVG_NS, tag);
   }
@@ -3280,7 +3298,7 @@
     const section = createElement('section', 'literature-map-analysis-result');
     const heading = createElement('h4', '', record.evidence_level === 'abstract' ? '摘要级分析结果（仅基于摘要）' : '全文分析结果（全文索引片段依据）');
     const meta = createElement('p', 'literature-map-analysis-result-meta', `依据：${analysisEvidenceLabel(record.evidence_level)} · 版本：${metadataText(record.source_version, '未提供')}`);
-    const summary = createElement('p', 'literature-map-analysis-summary', String(result.summary));
+    const summary = renderAnalysisMarkdown(result.summary);
     section.append(heading, meta, summary);
     const citations = Array.isArray(result.citations) ? result.citations : [];
     const refs = Array.isArray(result.source_refs) ? result.source_refs : [];

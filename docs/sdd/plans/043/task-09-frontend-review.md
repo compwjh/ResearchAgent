@@ -318,6 +318,40 @@ applySavedView 的 tiny/default 判定、一次性异步触发和 usable saved v
 - 预期：首次 fit 的实际节点圆、marker 与所有当前可见文本均位于 SVG visible bounds 内并保留指定 padding；不能用“圆占比”替代文本可见性。
 - 修复建议：把当前 label 文本框/节点半径纳入 bounds（最好用渲染后的真实屏幕 getBoundingClientRect()/getBBox()），再以 CSS px padding 拟合；补充 long-label、tiny 两节点及真实 20 节点 desktop/narrow bounds 断言。
 
+## 第七阶段 ANALYSIS-MARKDOWN 窄复审（2026-10-25）
+
+本节只复核相对基线 `61096ed6d3f34ffc319850c970202d47750cb573` 的分析正文 Markdown 展示增量；不改写前述历史结论，不评审后端、模型调用、下载链或部署。实际 diff 涉及 `frontend/literature-maps.js`、`frontend/literature-maps.css`、`frontend/index.html` 及受影响前端夹具/测试。
+
+### 窄范围结论
+
+**GO（仅限 ANALYSIS-MARKDOWN 与 JSv20/CSSv13 版本范围；P0=0，P1=0，P2=0）**。
+
+### 安全正文渲染
+
+- `renderAnalysisMarkdown()`（`frontend/literature-maps.js:145-161`）只调用既有全局 `window.renderMarkdown`，不新增 Markdown parser、依赖、下载或模型请求；其返回 HTML 先经过生产 `app.js:5734` 的 `marked.parse` + `DOMPurify.sanitize`，本模块再用 `DOMParser` 在 inert 文档中取节点，未向结果节点写入未净化字符串，也未新增 `innerHTML`。
+- 既有净化链的 `FORBID_TAGS` 会阻断 `script`、`img`、`iframe` 等危险内容；DOMPurify 的默认 URL 校验会移除 `javascript:` href。新夹具覆盖安全 HTTPS 链接、恶意 URL/HTML 和图片缺失，结果区域没有脚本、图片或 `javascript:` 链接。
+- 渲染器不存在、返回非字符串或抛错时均回退到 `textContent`，因此组件独立运行不会因 app helper 缺失而裸插 HTML；回退测试确认 Markdown 字符串保持文本，不产生标题、列表、代码、链接、脚本或图片节点。
+
+### 数据投影与状态一致性
+
+- `analysisResultNode()` 对当前摘要结果、全文结果及可点击历史版本统一调用 `renderAnalysisMarkdown(result.summary)`；摘要/全文页签仍由原有 `activeLevel` 与 `analysisRecords()` 隔离，历史选择路径不旁路该 renderer。
+- 标题、依据/版本元数据、受控来源引用和 `source_refs` 仍由 `createElement(..., text)` / `textContent` 写入，夹具中的 `<b>`、`<em>`、`<img>` 等元数据/引用内容保持字面文本，不会被当作 HTML 执行。
+
+### CSS、版本与边界
+
+- `literature-maps.css:118` 只把分析摘要从 `pre-wrap` 调整为 Markdown 所需的 `white-space: normal`，选择器仍限定在 `#literature-maps-view .literature-map-analysis-summary`；已有共享 `.md-body` 样式为代码块提供 `overflow-x: auto`，结果面板的 `overflow-wrap:anywhere` 与详情滚动容器共同覆盖窄面板长内容。
+- `frontend/index.html` 与组件夹具同步升级 `literature-maps.js` `v19→v20`、`literature-maps.css` `v12→v13`；版本合同的遗漏断言已修正为 v20/v13。
+
+### 本轮验证
+
+1. 静态/语法：`node --check frontend/literature-maps.js`、`node --check frontend/app.js` 通过；受影响版本、DOM/XSS、样式和模块合同 8 项通过。
+2. 测试布局与空白：`scripts/check_test_naming.py`、`scripts/check_test_layout.py`、`git diff --check -- frontend tests/frontend` 均通过；新增测试文件按能力命名，未含 spec/task 编号。
+3. 作者交接记录中的受控 Chromium 定向回归为 `46 passed / 46 collected`，含新增正文 Markdown/安全/缺 helper 回退 2 项；本轮未运行后端 pytest。普通沙箱直接启动 Chromium 会被本机 `MachPortRendezvousServer` 权限拦截，属于环境限制，不作为实现缺陷。
+
+### 交接
+
+本窄复审可将当前前端增量交给 root 进行最终真实页面/部署验收；本节 GO 不扩展为 Task09 或 Spec043 的全局收口签字。评审过程日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-030642.md`。
+
 ### 已通过的窄检查
 
 - applySavedView：scale=.35 或 default (0,0,1) 才设置 initialFitPending；usable (-24,-32,1.25) 不 fit。loadMapGraph 只在首次 graph 到达且有节点时调用 fitView(false)，不 PATCH 保存；当前 tiny/usable 用例均通过。

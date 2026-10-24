@@ -5,7 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=60">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=12">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=13">
+  <script src="../../../frontend/vendor/purify.min.js"></script>
+  <script src="../../../frontend/vendor/marked.min.js"></script>
+  <script>
+    // Production app.js exposes this helper. The component fixture wires the
+    // real vendor bundles without loading the full app shell, whose controls
+    // are intentionally absent here.
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('analysis-markdown-no-renderer')) {
+        window.__markdownRendererReady = false;
+        return;
+      }
+      const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[char]));
+      window.renderMarkdown = (source) => {
+        const text = String(source || '');
+        if (!window.marked || !window.DOMPurify) return escapeHtml(text).replace(/\n/g, '<br>');
+        const html = window.marked.parse(text, { gfm: true, breaks: true });
+        return window.DOMPurify.sanitize(html, {
+          FORBID_TAGS: ['script', 'style', 'iframe', 'img', 'form', 'input', 'object', 'embed'],
+          FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover'],
+        });
+      };
+      if (window.DOMPurify) {
+        window.DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+          if (node.tagName === 'A' && node.getAttribute('href')) {
+            node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer nofollow');
+          }
+        });
+      }
+      window.__markdownRendererReady = Boolean(window.marked && window.DOMPurify && typeof window.renderMarkdown === 'function');
+    })();
+  </script>
   <style>
     :root { --ink: #25272b; --muted: #8b8e96; --muted-strong: #5a5d66; --accent: #6d5dfc; --accent-soft: #eeecff; }
     body { margin: 0; font-family: Arial, sans-serif; }
@@ -139,7 +174,8 @@
     const queueMode = query.has('queue') || query.has('queue-race');
     const fullReady = query.has('full-ready');
     const analysisFirstRegeneration = query.has('analysis-first-regeneration');
-    const analysisMode = query.has('analysis') || query.has('analysis-fail') || query.has('analysis-race') || query.has('analysis-poll-limit') || query.has('analysis-manual-delay') || analysisFirstRegeneration || fullReady;
+    const analysisMarkdown = query.has('analysis-markdown') || query.has('analysis-markdown-no-renderer');
+    const analysisMode = query.has('analysis') || query.has('analysis-fail') || query.has('analysis-race') || query.has('analysis-poll-limit') || query.has('analysis-manual-delay') || analysisFirstRegeneration || fullReady || analysisMarkdown;
     const analysisFail = query.has('analysis-fail');
     const analysisRace = query.has('analysis-race');
     const analysisPollLimit = query.has('analysis-poll-limit');
@@ -276,20 +312,38 @@
       const fixtureSetTimeout = window.setTimeout.bind(window);
       window.setTimeout = (callback, delay, ...args) => fixtureSetTimeout(callback, Math.min(Number(delay) || 0, 1), ...args);
     }
+    const markdownAnalysisResult = [
+      '# 自动主题分析',
+      '',
+      '**关键结论**：模型内容来自受控分析结果；[安全链接](https://example.org/citation)。',
+      '',
+      '- 证据一',
+      '- 证据二',
+      '',
+      '`inline-code`',
+      '',
+      '```python',
+      'print("ok")',
+      '```',
+      '',
+      '\u003Cscript>alert(1)\u003C/script>',
+      '<img src=x onerror=alert(1)>',
+      '[恶意链接](javascript:alert(1))',
+    ].join('\n');
     const analysisResult = {
-      summary: '摘要级分析结果：<img src=x onerror=alert(1)>',
-      citations: [{ source: 'fixture', locator: '摘要' }],
+      summary: analysisMarkdown ? markdownAnalysisResult : '摘要级分析结果：<img src=x onerror=alert(1)>',
+      citations: [{ source: analysisMarkdown ? '<img src=x onerror=alert(1)>' : 'fixture', locator: analysisMarkdown ? null : '摘要' }],
       source_refs: [{ source_version: 'source-abstract-v1', evidence_level: 'abstract' }],
     };
     const oldAnalysisRecord = {
       analysis_id: 'analysis-fixture-old', map_id: mockMap.map_id, node_id: 'node-a', version: 0,
-      status: 'completed', evidence_level: 'abstract', source_version: 'source-abstract-old', model_id: 'fixture-model',
-      job_id: 'job-analysis-fixture-old', result: { summary: '旧版本摘要结果', citations: [], source_refs: [] }, error: null,
+      status: 'completed', evidence_level: 'abstract', source_version: analysisMarkdown ? 'source-<em>abstract-old</em>' : 'source-abstract-old', model_id: 'fixture-model',
+      job_id: 'job-analysis-fixture-old', result: { summary: analysisMarkdown ? '## 历史摘要\n\n**旧版本**\n\n- 旧证据' : '旧版本摘要结果', citations: [], source_refs: [] }, error: null,
       created_at: '2026-10-19T00:00:00Z',
     };
     const analysisRecord = {
       analysis_id: 'analysis-fixture', map_id: mockMap.map_id, node_id: 'node-a', version: 1,
-      status: analysisFail ? 'failed' : 'completed', evidence_level: 'abstract', source_version: 'source-abstract-v1',
+      status: analysisFail ? 'failed' : 'completed', evidence_level: 'abstract', source_version: analysisMarkdown ? 'source-<b>abstract</b>-v1' : 'source-abstract-v1',
       model_id: 'fixture-model', job_id: 'job-analysis-fixture', result: analysisFail ? null : analysisResult,
       error: analysisFail ? { code: 'MAP_MODEL_UNAVAILABLE', message: '模型暂时不可用', retryable: true } : null,
       created_at: '2026-10-20T00:00:00Z',
@@ -308,13 +362,13 @@
       created_at: '2026-10-23T00:00:00Z',
     };
     const fullAnalysisResult = {
-      summary: '全文索引片段分析结果',
+      summary: analysisMarkdown ? '### 全文分析\n\n**全文结论**\n\n- 全文证据\n\n`full-code`' : '全文索引片段分析结果',
       citations: [{ source: 'fixture-full', locator: '全文片段' }],
       source_refs: [{ source_version: 'source-full-v1', evidence_level: 'full' }],
     };
     const fullAnalysisRecord = {
       analysis_id: 'analysis-full-fixture', map_id: mockMap.map_id, node_id: 'node-a', version: 2,
-      status: 'completed', evidence_level: 'full', source_version: 'source-full-v1', model_id: 'fixture-model',
+      status: 'completed', evidence_level: 'full', source_version: analysisMarkdown ? 'source-<strong>full</strong>-v1' : 'source-full-v1', model_id: 'fixture-model',
       job_id: 'job-analysis-full-fixture', result: fullAnalysisResult, error: null,
       created_at: '2026-10-21T00:00:00Z',
     };
@@ -574,7 +628,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=19"></script>
+  <script src="../../../frontend/literature-maps.js?v=20"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

@@ -115,7 +115,7 @@
 #literature-maps-view .literature-map-analysis-result { display: grid; gap: 5px; padding: 9px; border: 1px solid #e2dcff; border-radius: 8px; background: #faf9ff; }
 #literature-maps-view .literature-map-analysis-result h4 { margin: 0; font-size: 11px; }
 #literature-maps-view .literature-map-analysis-result-meta, #literature-maps-view .literature-map-analysis-evidence { margin: 0; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
-#literature-maps-view .literature-map-analysis-summary { margin: 0; color: var(--muted-strong); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+#literature-maps-view .literature-map-analysis-summary { margin: 0; color: var(--muted-strong); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; white-space: normal; }
 #literature-maps-view .literature-map-analysis-citations { display: grid; gap: 3px; margin: 0; padding-left: 17px; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
 #literature-maps-view .literature-map-analysis-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
 #literature-maps-view .literature-map-analysis-tab { padding: 5px 8px; font-size: 9px; }
