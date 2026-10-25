@@ -72,6 +72,24 @@ def test_legacy_import_failure_shows_unknown_reason_without_pdf_guess() -> None:
         browser.close()
 
 
+def test_blocked_import_stays_disabled_with_visible_next_step() -> None:
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        _open_node(page, "import-blocked")
+        diagnostics = page.locator(".literature-map-import-diagnostics")
+        detail_text = page.locator("#literature-map-detail").inner_text()
+        assert "下载被来源策略阻止" in detail_text
+        assert "当前未标记为可重试" in diagnostics.inner_text()
+        assert "人工处理入口" in diagnostics.inner_text()
+        blocked = page.get_by_role("button", name="人工重新提交入库")
+        assert blocked.is_disabled()
+        assert blocked.get_attribute("aria-describedby") == "literature-map-import-diagnostics"
+        assert page.evaluate("window.__importCount") == 0
+        page.close()
+        browser.close()
+
+
 def test_successful_import_clears_diagnostics_and_exposes_document_entry() -> None:
     with sync_playwright() as playwright:
         browser = _launch(playwright)

@@ -413,3 +413,86 @@ applySavedView 的 tiny/default 判定、一次性异步触发和 usable saved v
 ### 交接
 
 本窄复审可将当前 composer 增量交给 root 做最终真实页面/部署验收；本节 GO 不扩展为 Task-09 或 Spec043 的全局收口签字，且未运行后端 pytest。评审过程日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-031929.md`。
+
+## 第九阶段 UNAVAILABLE-ACTION 窄复审（2026-10-25）
+
+本节只复核相对基线 `d71cc3c8a605b789b9ae3be8e5266697b3ffd62e` 的不可用操作反馈增量：分析/提问条件缺失时的可点击原因与下一步、全文页签恢复、忙碌态、非可重试入库说明、导航/请求边界及 JS 版本；不评审后端、ACL、下载器或全应用交互框架。
+
+### 窄范围结论
+
+**BLOCK（P0=0，P1=2）**。
+
+### 已通过的行为与安全边界
+
+- `renderAnalysisPanel()` 现在让缺失全文/摘要/证据时的分析与提问按钮保持可达，由 guarded click 写入相邻 `role="status"` 的原因/下一步，并通过 `aria-describedby` 关联；没有证据时的分析/会话浏览器合同确认不发 POST。全文页签的获取/索引恢复入口仍复用既有导入/知识库动作，不新增下载或 API。
+- 全文恢复桥接已补上 disabled import guard：源动作发现详情入库按钮不存在或被非可重试诊断阻断时，只更新 action feedback，不调用 import POST；`import-diagnostics` 具备稳定 id，blocked import 的 `aria-describedby`/title 可读。新增 blocked full recovery 与 import diagnostic 场景通过。
+- 分析忙碌态显示“进行中/等待中”标签和等待说明；`startAnalysis()` 额外拒绝 queued/running，分析重复 dispatch 的定向合同通过。新动作集合 `5 passed`；`node --check frontend/literature-maps.js` 与目标 `git diff --check` 通过。未改 CSS，反馈复用现有 `#literature-maps-view` 作用域样式。
+- 生产页与组件夹具的地图脚本已从 v20 同步升级为 v21，地图 CSS 保持 v13；未引入网络、模型、下载或后端改动。
+
+### 必须修复的问题
+
+#### P1-07：v21 资源升级遗漏两处既有版本合同
+
+- `tests/frontend/test_frontend_map_groups_exports.py:45` 与 `tests/frontend/test_frontend_map_mobile_contract.py:79` 仍断言 `re.findall(...)[-1] == "20"`，但 `frontend/index.html` 和 fixture 已为 `literature-maps.js?v=21`。
+- 独立定向集合结果为 `40 passed, 2 failed`，两项失败均为上述 stale v20 断言。必须同步为 v21 后再复跑，不应把版本门禁失败记录为通过。
+
+#### P1-08：提问会话忙碌态缺少函数级重复请求锁与即时忙碌标签
+
+- `createNodeConversation()`（当前约 `frontend/literature-maps.js:3855`）只检查地图/节点/证据可用性，没有检查 `state.conversationRequest > 0`；按钮虽在第一次点击后被 disabled，但同步 dispatch 两次仍会进入两个 POST。独立浏览器探针复现 `window.__conversationBodies.length === 2`（期望 1）。
+- 同一函数在等待请求期间只设置 `button.disabled`，`conversationButton` 的“打开中…”文案仅在后续 `renderAnalysisPanel()` 重新渲染时才会出现；正常等待窗口没有即时可见忙碌标签。应在函数入口增加 fail-closed request-lock，并在首击时更新可见 busy 文案/反馈，保持失败恢复语义。
+
+### 交接与边界
+
+当前 BLOCK 不是由 unavailable 原因文案、全文恢复入口、非可重试 import guard 或分析忙碌态造成；修复 P1-07/P1-08 后需重跑上述前端集合并复审。未运行 backend pytest、真实 API、部署或模型/下载链。评审过程日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-032945.md`。
+
+## 第十阶段 UNAVAILABLE-ACTION P1 修复复审（2026-10-26）
+
+本节复核第九阶段两个 P1 修复及默认摘要页的全文不可用反馈可达性；基线仍为 `d71cc3c8a605b789b9ae3be8e5266697b3ffd62e`，不扩展到后端、真实 API 或部署。
+
+### 窄范围结论
+
+**BLOCK（P0=0，P1=1）**。
+
+### 已修复并通过的 P1
+
+- P1-07 已修复：生产页、组件 fixture、groups/mobile 版本断言均统一为地图 JS v21、CSS v13；最终前端定向集合记录为 `51 passed, 0 failed, 0 skipped`。
+- P1-08 已修复：`createNodeConversation()` 入口检查 `state.conversationRequest > 0`，首次调用立即设置 disabled、`关于本篇提问（打开中…）` 和 title；同步双 dispatch 只产生一个 conversation POST，专项用例通过。失败路径会清理 request lock 并恢复文案。
+- blocked import 仍保持原生 disabled，诊断通过相邻 `#literature-map-import-diagnostics` 和 `aria-describedby`/title 暴露；full 页签的“获取并加入知识库”恢复动作在 disabled 时仅显示诊断、`window.__importCount` 保持 0。这里的证据是点击恢复动作后的 guarded feedback，不是点击 disabled 原生按钮。
+
+### 当前阻断
+
+#### P1-09：摘要页点击全文分析给出的下一步不在当前 DOM 可达
+
+- 独立实际 UI 探针从默认 active abstract 页签点击“基于全文分析”得到：`全文索引尚未就绪 下一步：点击“获取并加入知识库”，完成全文索引后再试。`。
+- 此时当前 panel 中“获取并加入知识库”按钮数量为 `0`，因为该入口只在 `activeLevel === 'full'` 时渲染。用户必须自行发现并切换“全文”页签，反馈却没有说明这一步；因此原因存在，但下一步不是当前操作位置可达的恢复动作。
+- 修复方向限定为最小 UI 反馈：在 active abstract 时明确“先切换到‘全文’页签，再点击……”（indexed 分支同样指向全文页签），或在当前 tab 提供等价可达入口；不自动下载、不新增接口。
+
+### 交接
+
+P1-07/P1-08 复审通过，但 P1-09 仍阻断整体 GO；修复提示后只需复跑 unavailable-action 专项与 51 项受影响前端集合。未修改产品代码、测试或后端；未运行 backend pytest、真实 API、部署或模型/下载链。评审过程日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-032945.md`。
+
+## 第十一阶段 UNAVAILABLE-ACTION 最终修复复审（2026-10-26）
+
+本节复核第十阶段 P1-09 以及第九阶段遗留的全部 P1；基线仍为 `d71cc3c8a605b789b9ae3be8e5266697b3ffd62e`。只评审前端实际 diff、受控浏览器合同和静态检查，不扩展到后端、真实 API 或部署。
+
+### 窄范围结论
+
+**GO（P0=0，P1=0，P2=0）**。
+
+### 修复复核
+
+- P1-09 已修复：默认摘要页点击“基于全文分析”时，`analysisUnavailableActionMessage('full', 'analysis')` 现在明确提示“请先切换到‘全文’页签，再点击‘获取并加入知识库’”（已有全文索引时对应“等待索引后重试”）。恢复按钮仍只在全文页签渲染，因此文案给出了真实可执行的切换路径，没有冒充摘要页当前 DOM 中存在恢复按钮；默认摘要 UI 合同同时确认反馈可见且分析 POST 数为 0。
+- P1-07 已修复：生产页、组件 fixture 及 groups/mobile 版本合同均统一到 `literature-maps.js?v=21`，地图 CSS 仍为 `v13`。
+- P1-08 已修复并保持：`createNodeConversation()` 在函数入口以 `state.conversationRequest` fail-closed，首击立即显示“打开中…”并禁用按钮；同步双 dispatch 只产生一个会话 POST，失败路径清理锁并恢复文案。
+- 非可重试入库边界保持正确：原生入库按钮仍 disabled，邻接诊断经 `aria-describedby`/title 暴露；全文页签的独立恢复动作只展示诊断，不触发 import POST。这里的证据仍是点击恢复动作后的 guarded feedback，不把点击 disabled 原生按钮作为恢复行为。
+- 现有 busy/ready/unavailable、历史结果、导入诊断与作用域约束未见回归；未改 CSS、API、下载/模型调用或后端文件。
+
+### 本轮验证
+
+1. 受影响前端集合：`.venv/bin/python -m pytest --confcutdir=tests/frontend -q tests/frontend/test_frontend_map_analysis_actions.py tests/frontend/test_frontend_map_analysis_contract.py tests/frontend/test_frontend_map_analysis_markdown.py tests/frontend/test_frontend_map_analysis_queue.py tests/frontend/test_frontend_map_import_diagnostics.py tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_literature_map_expansion.py tests/frontend/test_frontend_map_groups_exports.py tests/frontend/test_frontend_map_mobile_contract.py`；退出码 0，`51 passed in 46.35s`。
+2. P1-09 专项 `test_frontend_map_analysis_actions.py`；退出码 0，`7 passed in 3.76s`，覆盖默认摘要页全文不可用提示、零分析 POST、全文页恢复诊断零 import POST，以及会话同步双击只发一个 POST。
+3. `node --check frontend/literature-maps.js`、`.venv/bin/python scripts/check_test_layout.py` 和 `git diff --check -- frontend tests/frontend` 均退出码 0。
+
+### 交接
+
+本窄复审可将 UNAVAILABLE-ACTION 增量交给 root 做最后真实页面验证；本节 GO 不扩展为 Task09 或 Spec043 的全局收口签字。未运行 backend pytest、真实 API、部署或模型/下载链。评审过程日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-reviewer/20261025-032945.md`。

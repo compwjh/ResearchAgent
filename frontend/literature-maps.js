@@ -3268,8 +3268,37 @@
   }
 
   function analysisUnavailableMessage(level) {
-    if (level === 'abstract') return '缺少摘要，不能生成摘要级分析；请先获取摘要。';
-    return safeAnalysisReason(state.analysisSourceStatus?.unavailable_reason, '全文索引尚未就绪；请先主动入库并等待索引完成。');
+    const sourceStatus = state.analysisSourceStatus || {};
+    if (level === 'abstract') {
+      const explicitlyUnavailable = sourceStatus.abstract_available === false
+        || (Array.isArray(sourceStatus.available_evidence_levels) && !sourceStatus.available_evidence_levels.includes('abstract'));
+      if (explicitlyUnavailable && sourceStatus.unavailable_reason) {
+        return safeAnalysisReason(sourceStatus.unavailable_reason, '缺少摘要，不能生成摘要级分析；请先获取摘要。');
+      }
+      return '缺少摘要，不能生成摘要级分析；请先获取摘要。';
+    }
+    return safeAnalysisReason(sourceStatus.unavailable_reason, '全文索引尚未就绪；请先主动入库并等待索引完成。');
+  }
+
+  function analysisUnavailableActionMessage(level, action) {
+    const reason = analysisUnavailableMessage(level);
+    if (action === 'conversation') return `${reason} 下一步：先准备摘要或全文索引依据，再点击“关于本篇提问”。`;
+    if (level === 'full') {
+      const node = state.selectedNode || {};
+      const indexed = String(node.download_status || '').toLowerCase() === 'indexed' || Boolean(node.document_id);
+      const nextStep = indexed ? '等待索引后重试' : '获取并加入知识库';
+      if (action === 'analysis' && state.analysisTab !== 'full') {
+        return `${reason} 下一步：请先切换到“全文”页签，再点击“${nextStep}”；完成全文索引后再试。`;
+      }
+      return `${reason} 下一步：点击“${nextStep}”，完成全文索引后再试。`;
+    }
+    return `${reason} 下一步：先刷新论文详情或获取摘要，摘要可用后再试。`;
+  }
+
+  function analysisBusyMessage() {
+    const level = state.analysis?.evidence_level === 'full' ? 'full' : 'abstract';
+    const status = state.analysis?.status || (state.analysisSubmitInFlight ? 'queued' : 'running');
+    return `${analysisEvidenceLabel(level)}分析${analysisStatusLabel(status)}；请等待当前请求完成后再操作。`;
   }
 
   function analysisErrorMessage(error) {
@@ -3360,14 +3389,47 @@
     panel.append(tabs);
 
     const actions = createElement('div', 'literature-map-analysis-actions');
-    const abstractButton = createElement('button', 'send-button', '基于摘要分析');
+    const actionFeedback = createElement('p', 'literature-map-analysis-unavailable');
+    actionFeedback.id = 'literature-map-analysis-action-feedback';
+    actionFeedback.dataset.analysisActionFeedback = 'true';
+    actionFeedback.setAttribute('role', 'status');
+    actionFeedback.hidden = true;
+    const showActionFeedback = (message) => {
+      actionFeedback.textContent = message;
+      actionFeedback.hidden = false;
+    };
+    const analysisBusy = state.analysisSubmitInFlight || ['queued', 'running'].includes(state.analysis?.status);
+    const busyLevel = state.analysis?.evidence_level === 'full' ? 'full' : 'abstract';
+    if (analysisBusy) showActionFeedback(analysisBusyMessage());
+
+    const abstractLabel = analysisBusy
+      ? (busyLevel === 'abstract' ? '摘要分析进行中…' : '摘要分析等待中…')
+      : '基于摘要分析';
+    const abstractButton = createElement('button', 'send-button', abstractLabel);
     abstractButton.type = 'button';
-    abstractButton.disabled = !analysisAvailable('abstract') || state.analysisSubmitInFlight || state.analysis?.status === 'queued' || state.analysis?.status === 'running';
-    abstractButton.addEventListener('click', () => startAnalysis('abstract'));
-    const fullButton = createElement('button', 'secondary-button', '基于全文分析');
+    abstractButton.disabled = analysisBusy;
+    abstractButton.setAttribute('aria-describedby', actionFeedback.id);
+    abstractButton.addEventListener('click', () => {
+      if (!analysisAvailable('abstract')) {
+        showActionFeedback(analysisUnavailableActionMessage('abstract', 'analysis'));
+        return;
+      }
+      startAnalysis('abstract');
+    });
+    const fullLabel = analysisBusy
+      ? (busyLevel === 'full' ? '全文分析进行中…' : '全文分析等待中…')
+      : '基于全文分析';
+    const fullButton = createElement('button', 'secondary-button', fullLabel);
     fullButton.type = 'button';
-    fullButton.disabled = !analysisAvailable('full') || state.analysisSubmitInFlight || state.analysis?.status === 'queued' || state.analysis?.status === 'running';
-    fullButton.addEventListener('click', () => startAnalysis('full'));
+    fullButton.disabled = analysisBusy;
+    fullButton.setAttribute('aria-describedby', actionFeedback.id);
+    fullButton.addEventListener('click', () => {
+      if (!analysisAvailable('full')) {
+        showActionFeedback(analysisUnavailableActionMessage('full', 'analysis'));
+        return;
+      }
+      startAnalysis('full');
+    });
     actions.append(abstractButton, fullButton);
 
     const records = analysisRecords();
@@ -3377,21 +3439,36 @@
       : state.analysis?.evidence_level || records.find((record) => record?.status === 'completed')?.evidence_level || (analysisAvailable('abstract') ? 'abstract' : 'full');
     const completedActive = activeRecords.some((record) => record?.status === 'completed');
     if (completedActive && analysisAvailable(activeLevel)) {
-      const manual = createElement('button', 'secondary-button', `重新生成${activeLevel === 'full' ? '全文' : '摘要'}（会调用模型）`);
+      const manualLabel = `重新生成${activeLevel === 'full' ? '全文' : '摘要'}（会调用模型）`;
+      const manual = createElement('button', 'secondary-button', analysisBusy ? `${manualLabel}（分析进行中…）` : manualLabel);
       manual.type = 'button';
-      manual.disabled = state.analysisSubmitInFlight;
+      manual.disabled = analysisBusy;
+      manual.setAttribute('aria-describedby', actionFeedback.id);
+      if (analysisBusy) manual.title = '当前分析仍在进行；请等待完成后再重新生成。';
       manual.addEventListener('click', () => {
+        if (analysisBusy) {
+          showActionFeedback(analysisBusyMessage());
+          return;
+        }
         setStatus(`将调用模型重新生成${activeLevel === 'full' ? '全文' : '摘要'}；旧结果仍保留。`, 'waiting');
         startAnalysis(activeLevel, { manual: true });
       });
       actions.append(manual);
     }
-    const conversationButton = createElement('button', 'secondary-button', '关于本篇提问');
+    const conversationBusy = state.conversationRequest > 0;
+    const conversationButton = createElement('button', 'secondary-button', conversationBusy ? '关于本篇提问（打开中…）' : '关于本篇提问');
     conversationButton.type = 'button';
-    conversationButton.disabled = !analysisAvailable(preferredLevel) || state.conversationRequest > 0;
-    conversationButton.addEventListener('click', () => createNodeConversation(preferredLevel, conversationButton));
+    conversationButton.disabled = conversationBusy;
+    conversationButton.setAttribute('aria-describedby', actionFeedback.id);
+    conversationButton.addEventListener('click', () => {
+      if (!analysisAvailable(preferredLevel)) {
+        showActionFeedback(analysisUnavailableActionMessage(preferredLevel, 'conversation'));
+        return;
+      }
+      createNodeConversation(preferredLevel, conversationButton);
+    });
     actions.append(conversationButton);
-    panel.append(actions);
+    panel.append(actions, actionFeedback);
 
     if (activeLevel === 'full' && !analysisAvailable('full')) {
       const sourceActions = createElement('div', 'literature-map-analysis-source-actions');
@@ -3400,7 +3477,21 @@
       if (!indexed) {
         const importButton = createElement('button', 'secondary-button', '获取并加入知识库');
         importButton.type = 'button';
-        importButton.addEventListener('click', () => refs.detail?.querySelector('#literature-map-import-button')?.click());
+        importButton.addEventListener('click', () => {
+          const detailImportButton = refs.detail?.querySelector('#literature-map-import-button');
+          if (!detailImportButton) {
+            showActionFeedback('当前无法提交入库。请先打开论文详情，查看入库状态后再试。');
+            return;
+          }
+          if (detailImportButton.disabled) {
+            const diagnostics = refs.detail?.querySelector('#literature-map-import-diagnostics')?.textContent?.trim();
+            showActionFeedback(diagnostics
+              ? `当前无法自动重试入库。${diagnostics}`
+              : '入库当前处理中或暂不可用；请查看论文详情中的入库状态后再试。');
+            return;
+          }
+          detailImportButton.click();
+        });
         sourceActions.append(importButton);
       } else {
         const refresh = createElement('button', 'secondary-button', '等待索引后重试');
@@ -3581,7 +3672,10 @@
     const provenance = createElement('p', 'literature-map-provenance', `来源依据：${metadataText(node.provenance?.source || node.provenance)}`);
     refs.detail.append(provenance);
     const importDiagnostics = renderImportDiagnostics(node);
-    if (importDiagnostics) refs.detail.append(importDiagnostics);
+    if (importDiagnostics) {
+      importDiagnostics.id = 'literature-map-import-diagnostics';
+      refs.detail.append(importDiagnostics);
+    }
     const actions = createElement('div', 'literature-map-detail-actions');
     const url = safeHttpUrl(node.source_url);
     if (url) {
@@ -3616,6 +3710,10 @@
       importButton.type = 'button';
       importButton.id = 'literature-map-import-button';
       importButton.disabled = !state.map?.map_id || !node.node_id || importPending || blockedRetry;
+      if (blockedRetry) {
+        importButton.setAttribute('aria-describedby', 'literature-map-import-diagnostics');
+        importButton.title = '当前失败未标记为可重试；请使用入库诊断中的人工处理入口。';
+      }
       importButton.addEventListener('click', () => importNode(node, importButton));
       actions.append(importButton);
       const removeButton = createElement('button', 'secondary-button', '移出地图');
@@ -3694,7 +3792,7 @@
   }
 
   async function startAnalysis(evidenceLevel, options = {}) {
-    if (!state.map?.map_id || !state.selectedNodeId || !analysisAvailable(evidenceLevel) || state.analysisSubmitInFlight) return;
+    if (!state.map?.map_id || !state.selectedNodeId || !analysisAvailable(evidenceLevel) || state.analysisSubmitInFlight || ['queued', 'running'].includes(state.analysis?.status)) return;
     const mapId = state.map.map_id;
     const nodeId = state.selectedNodeId;
     state.analysisSubmitInFlight = true;
@@ -3768,10 +3866,22 @@
 
   async function createNodeConversation(evidenceLevel, button) {
     if (!state.map?.map_id || !state.selectedNodeId || !analysisAvailable(evidenceLevel)) return;
+    if (state.conversationRequest > 0) {
+      if (button) {
+        button.disabled = true;
+        button.textContent = '关于本篇提问（打开中…）';
+        button.title = '正在打开论文会话；请等待当前请求完成。';
+      }
+      return;
+    }
     const mapId = state.map.map_id;
     const nodeId = state.selectedNodeId;
     const requestId = ++state.conversationRequest;
-    if (button) button.disabled = true;
+    if (button) {
+      button.disabled = true;
+      button.textContent = '关于本篇提问（打开中…）';
+      button.title = '正在打开论文会话；请等待当前请求完成。';
+    }
     try {
       const payload = await request(`/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(nodeId)}/conversation`, {
         method: 'POST',
@@ -3782,6 +3892,11 @@
     } catch (error) {
       if (requestId !== state.conversationRequest || mapId !== state.selectedMapId || state.selectedNodeId !== nodeId || state.map?.map_id !== mapId || !state.active) return;
       if (button) button.disabled = false;
+      state.conversationRequest = 0;
+      if (button) {
+        button.textContent = '关于本篇提问';
+        button.removeAttribute('title');
+      }
       setStatus(`打开论文会话失败：${analysisErrorMessage(error)}`, 'error');
     }
   }

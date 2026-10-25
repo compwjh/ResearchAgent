@@ -377,3 +377,49 @@ Version **PASS**：生产页/fixture 的 `styles.css?v=61` 已同步，地图 `l
 只读授权 Chromium 几何探针进一步确认 1440/639/375/320 宽度下 textarea 均为 composer 宽度的 100%，footer `y` 严格大于 textarea 底部，且 `document.documentElement.scrollWidth` 分别为 1440/639/375/320，无横向溢出。实际 textarea/footer 宽度分别为 `978/978`、`577/577`、`313/313`、`258/258` CSS px。
 
 本轮最终前端定向回归结论：**PASS（47/47）**。author 预检 `7 + 47 passed`、reviewer 窄检 `6 + 24 passed` 均由本轮独立集合复核；日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261025-032231.md`。
+
+## 2026-10-26 UNAVAILABLE-ACTION P1-09 稳定后的完整前端回归
+
+本节追加记录 author 完成 P1-07/P1-08/P1-09 后重新执行的完整 9 文件 affected 集合，独立于此前 initial-fit `40 passed`、Markdown `50 passed`、composer `47 passed` 与 P1-09 focused `15 passed` 记录；此前 P1-09 修复前的 `51 passed` 仅作为历史基线，不覆盖或合并本轮计数。本轮只验证地图前端契约，未运行 backend pytest、全量回归、服务/部署、真实 API、模型、下载或远程调用。
+
+### 精确集合与授权 Chromium 结果
+
+实际运行命令：
+
+```text
+env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
+  .venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_map_analysis_actions.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_analysis_markdown.py \
+  tests/frontend/test_frontend_map_analysis_queue.py \
+  tests/frontend/test_frontend_map_import_diagnostics.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_groups_exports.py \
+  tests/frontend/test_frontend_map_mobile_contract.py
+```
+
+直接使用授权 Chromium 执行：退出码 `0`，`51 passed in 45.64s`，`0 failed`，`0 skipped`；同一集合 `--collect-only` 为 `51 tests collected`，无 collecting error。本轮未发生受限 Chromium 权限失败，且没有以 skip 代替浏览器验证。
+
+### 关键动作与边界证据
+
+- 全文/摘要/提问不可用点击均显示可见原因和下一步，保持 `window.__analysisBodies == []` / `window.__conversationBodies == []`；默认摘要页签的全文动作明确提示“请先切换到‘全文’页签”，并给出“获取并加入知识库”。
+- 提问同步双 dispatch 仅产生 `1` 个 conversation POST，首击立即显示“打开中…”并锁定按钮；分析 pending 忙碌态保持重复点击保护；ready full 仍保留既有 `evidence_level=full` POST。
+- blocked full recovery 仅暴露来源策略诊断，`window.__importCount == 0`；既有非重试 import disabled/`aria-describedby` 诊断契约继续通过。
+- 真实 fixture vendor/helper Markdown 的 abstract/full/history 富文本、XSS 净化和 renderer 缺失/异常纯文本 fallback 继续通过；队列、导入诊断、地图扩展、分组导出、移动端契约均通过。
+- 额外授权 Chromium node-switch probe：node-a 上显示 unavailable feedback 后切换 node-b，feedback 变为 `hidden=true` 且文本为空，conversation POST 仍为 `0`；选择节点时的 reset hint 不残留。
+- 资源合同核对通过：生产页与 fixture 的 `literature-maps.js?v=21`、`literature-maps.css?v=13`、`app.js?v=60` 同步。
+
+### 静态与收集门禁
+
+| 命令 | 退出码 | 实际结果 |
+|---|---:|---|
+| `node --check frontend/literature-maps.js` | `0` | 通过 |
+| `node --check frontend/app.js` | `0` | 通过 |
+| `.venv/bin/python scripts/check_test_layout.py` | `0` | `test layout: ok` |
+| `.venv/bin/python scripts/check_test_naming.py` | `0` | 无 spec/task 数字违规 |
+| 同一 9 文件集合 `pytest --collect-only -q` | `0` | `51 tests collected`，无 collecting error |
+| `git diff --check -- frontend tests/frontend` | `0` | 差异格式通过 |
+
+本轮完整 affected 前端结论：**PASS（51/51，0 skip）**。本轮最新日志：`.codebuddy/agent-logs/spec-043/task-09/frontend-tester/20261026-011347.md`。

@@ -167,3 +167,15 @@ tester 在架构师签字前报告准备度为 **9/10+**；本次 architect 签�
 - **增量结论：GO / READY_FOR_USER（仅限 COMPOSER-LAYOUT 展示修复，无阻塞项）**。此前 INITIAL-FIT `40 passed`、ANALYSIS-MARKDOWN `50 passed` 与历史 `3384 passed / 0 failed / 2 合法 skip` 均为独立记录；本轮不聚合计数、不重跑后端或全量回归，也不以历史数字冒充本轮验证。
 
 **Architect：独立增量签字通过（2026-10-25）。** 本签字不改变前两项前端增量结论或已完成 Spec043 的历史证据分类，仅确认该 composer 布局修复可交给用户验收。
+
+## 2026-10-26 不可用动作反馈增量架构签字
+
+范围仅为 UNAVAILABLE-ACTION 前端反馈与动作边界：额度中断后的最终修复复核、默认摘要页全文不可用下一步、全文页恢复诊断，以及会话重复提交与资源版本合同；不扩展到后端或其它跨功能问题。
+
+- 最新前端评审为 **GO（P0=0，P1=0，P2=0）**；9 文件受影响前端回归为 **51 passed / 0 failed / 0 skipped，exit 0，45.64s**。地图 JS v21、CSS v13、styles v61 版本合同和静态门禁通过。
+- 真实后台浏览器在 DualGATs 默认摘要页点击“基于全文分析”后，反馈明确要求“先切换到全文页签，再点击获取并加入知识库”；切换后恢复按钮可见，点击只显示当前 `DOWNLOAD_BLOCKED` 诊断，不伪造下载、分析或启动动作。截图见 `../plans/043/task-09-runs/20261026-unavailable-actions/feedback.png`。
+- 前端合同继续保持：忙碌会话同步触发只产生 1 个 POST；不可用分析保持 0 个 analysis POST；非可重试原生入库按钮保持 disabled，并通过诊断/`aria-describedby` 解释原因；节点切换清除旧反馈。真实页面保留既有会话和草稿，未触发模型调用。
+- **增量结论：GO / READY_FOR_USER（仅限 UNAVAILABLE-ACTION 前端反馈修复，无阻塞项）**。此前 INITIAL-FIT `40 passed`、ANALYSIS-MARKDOWN `50 passed`、COMPOSER-LAYOUT `47 passed` 与历史 Spec043 全量 `3384 passed / 0 failed / 2 合法 skip` 均为独立记录；本轮不聚合计数、不重跑后端或全量回归。
+- 限定边界：`task-09-cross-feature-diagnosis.md` 所列新 KB/memory/login 问题以及 ACL 来源缺口仅完成只读诊断，本次未修复、未签收，也不因本签字关闭；true busy/native import disabled 及其原因保持既有策略。
+
+**Architect：独立增量签字通过（2026-10-26）。** 本签字仅确认不可用动作反馈前端增量可交给用户验收，不改变此前各项前端结论、未修复跨功能问题或已完成 Spec043 的历史证据分类。

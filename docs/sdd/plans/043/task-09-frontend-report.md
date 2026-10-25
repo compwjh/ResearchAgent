@@ -359,3 +359,61 @@ env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
 | `git diff --check -- frontend tests/frontend` | 0 | 通过 |
 
 本轮未运行 backend pytest、全量回归、真实 API/生产写入、模型调用、下载、服务或部署；默认 pytest 的仓库根 fixture 仍受环境缺失 `langchain_ollama` 影响，前端定向测试使用 `.venv` 与 `--confcutdir=tests/frontend` 隔离该无关依赖。
+
+## 分析动作不可用反馈与 busy lock 修复追记（2026-10-25）
+
+本轮承接“全文分析 disabled 点击无反馈、关于本篇提问无依据时静默、非重试入库失败入口不应误触发”的地图 UI 修复，范围仅为 `frontend/literature-maps.js`、地图生产页/组件夹具版本标记与 `tests/frontend/**`；未修改后端、API、模型调用、下载策略或全局 composer。
+
+### 实现与边界
+
+- 摘要分析、全文分析和“关于本篇提问”在证据不可用时保持可操作，点击由相邻 `role=status` 显示可读原因和下一步；现有 availability 守卫仍在，点击不可用状态不会产生 analysis/conversation POST。
+- 分析请求忙碌时保留 disabled 与既有防重复语义，摘要/全文/重新生成显示进行中提示；会话动作在函数级增加 busy lock，首击立即显示“打开中…”，同步重复 dispatch 也只保留一个请求，失败时恢复重试。
+- 全文恢复入口继续复用既有“获取并加入知识库”/“等待索引后重试”路径。`DOWNLOAD_BLOCKED` 等非重试入库诊断保持按钮 disabled，并通过 `aria-describedby`、可见诊断和人工处理下一步解释；点击全文恢复入口只显示诊断，不调用 import POST 或绕过来源策略。
+- 地图 JS 资源由 v20 升为 v21；本轮未改 CSS，保持 v13。审计结论：其余地图内 disabled 控件均为提交、导出、分组、队列、预览等正常请求期间的临时锁，未 blanket remove；未发现需要新增业务能力的持久 unavailable button。
+
+### TDD 与定向验证
+
+新增组件夹具的 `analysis-no-evidence`、`analysis-pending`、`import-blocked` 场景与按能力命名的浏览器契约，先以退出码 1 暴露不可用动作静默/忙碌文案缺失；实现后最终地图精确集合通过：
+
+```text
+env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
+  .venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_map_analysis_actions.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_analysis_markdown.py \
+  tests/frontend/test_frontend_map_analysis_queue.py \
+  tests/frontend/test_frontend_map_import_diagnostics.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_groups_exports.py \
+  tests/frontend/test_frontend_map_mobile_contract.py
+```
+
+退出码 `0`：`51 passed in 46.16s`，`0 failed`，`0 skipped`，`51 tests collected`。覆盖不可用全文/摘要/提问点击、分析忙碌去重、会话 busy lock、ready 全文既有 POST、非重试导入诊断与 no-POST、恢复入口、Markdown 安全渲染及 v21/v13 资源契约。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `node --check frontend/literature-maps.js` | 0 | 通过 |
+| `node --check frontend/app.js` | 0 | 通过；app.js 未改动 |
+| `.venv/bin/python scripts/check_test_naming.py` | 0 | `test naming check passed: no spec/task numbers under tests` |
+| `.venv/bin/python scripts/check_test_layout.py` | 0 | `test layout: ok` |
+| 精确集合 `pytest --collect-only -q` | 0 | `51 tests collected` |
+| `git diff --check -- frontend tests/frontend` | 0 | 通过 |
+
+本轮未运行 backend pytest、全量回归、真实 API/生产写入、模型调用、下载、服务或部署；root 负责当前 live DualGATs 节点的全文不可用点击、阻止导入点击 no-POST 与现有 ready 流程验收。
+
+## P1-09 默认摘要页签的全文恢复提示修复（2026-10-26）
+
+复审发现：默认停留在“摘要”页签时点击“基于全文分析”，反馈下一步虽提到“获取并加入知识库”，但该恢复按钮只在“全文”页签渲染，用户无法在当前视图找到入口。修复保持最小范围：当当前页签不是“全文”时，局部 `role=status` 明确提示“请先切换到‘全文’页签，再点击‘获取并加入知识库’”；已在“全文”页签时仍沿用现有恢复入口文案。未改 API、状态机、版本号或其他地图动作。
+
+### 回归验证
+
+```text
+env PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false \
+  .venv/bin/python -m pytest --confcutdir=tests/frontend -q \
+  tests/frontend/test_frontend_map_analysis_actions.py \
+  tests/frontend/test_frontend_map_analysis_queue.py \
+  tests/frontend/test_frontend_map_analysis_contract.py
+```
+
+退出码 `0`：`15 passed in 8.21s`，`0 failed`，`0 skipped`；`--collect-only` 为 `15 tests collected`。新增/强化的默认摘要页签回归确认提示包含“请先切换到‘全文’页签”和实际下一步“获取并加入知识库”，同时保持 `window.__analysisBodies == []`。`node --check frontend/literature-maps.js`、测试命名/布局检查和 `git diff --check -- frontend tests/frontend` 均退出码 `0`。

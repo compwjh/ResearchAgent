@@ -174,13 +174,16 @@
     const queueMode = query.has('queue') || query.has('queue-race');
     const fullReady = query.has('full-ready');
     const analysisFirstRegeneration = query.has('analysis-first-regeneration');
+    const analysisNoEvidence = query.has('analysis-no-evidence');
+    const analysisPending = query.has('analysis-pending');
     const analysisMarkdown = query.has('analysis-markdown') || query.has('analysis-markdown-no-renderer');
-    const analysisMode = query.has('analysis') || query.has('analysis-fail') || query.has('analysis-race') || query.has('analysis-poll-limit') || query.has('analysis-manual-delay') || analysisFirstRegeneration || fullReady || analysisMarkdown;
+    const analysisMode = query.has('analysis') || query.has('analysis-fail') || query.has('analysis-race') || query.has('analysis-poll-limit') || query.has('analysis-manual-delay') || analysisFirstRegeneration || fullReady || analysisMarkdown || analysisNoEvidence || analysisPending;
     const analysisFail = query.has('analysis-fail');
     const analysisRace = query.has('analysis-race');
     const analysisPollLimit = query.has('analysis-poll-limit');
     const analysisManualDelay = query.has('analysis-manual-delay');
     const importFailure = query.has('import-failure');
+    const importBlocked = query.has('import-blocked');
     const importPostFailure = query.has('import-post-failure');
     const importLegacyFailure = query.has('import-legacy-failure');
     const importSuccess = query.has('import-success');
@@ -242,7 +245,18 @@
       mockNodes[0].document_id = null;
       mockNodes[0].provenance = { ...mockNodes[0].provenance, import_diagnostics: { ...importDiagnosticFixture } };
     };
-    if (importFailure || importSuccess) markImportFailure();
+    if (importFailure || importSuccess || importBlocked) markImportFailure();
+    if (importBlocked) {
+      mockNodes[0].provenance = {
+        ...mockNodes[0].provenance,
+        import_diagnostics: {
+          error_code: 'DOWNLOAD_BLOCKED',
+          resolver_code: 'DOWNLOAD_BLOCKED',
+          resolver_codes: ['DOWNLOAD_BLOCKED'],
+          retryable: false,
+        },
+      };
+    }
     if (importLegacyFailure) {
       mockNodes[0].download_status = 'failed';
       mockNodes[0].document_id = null;
@@ -469,18 +483,18 @@
         if (analysisRace) await new Promise((resolve) => window.setTimeout(resolve, 180));
         payload = {
           schema_version: 'literature-map-v1',
-          analyses: analysisFirstRegeneration ? [] : (fullReady ? [fullAnalysisRecord, analysisRecord, oldAnalysisRecord] : [analysisRecord, oldAnalysisRecord]),
+          analyses: analysisFirstRegeneration || analysisNoEvidence ? [] : (fullReady ? [fullAnalysisRecord, analysisRecord, oldAnalysisRecord] : [analysisRecord, oldAnalysisRecord]),
           source_status: {
-            abstract_available: true,
-            fulltext_ready: fullReady,
-            available_evidence_levels: fullReady ? ['abstract', 'full'] : ['abstract'],
-            source_versions: fullReady ? { abstract: 'source-abstract-v1', full: 'source-full-v1' } : { abstract: 'source-abstract-v1' },
-            unavailable_reason: fullReady ? null : '全文索引尚未就绪',
+            abstract_available: !analysisNoEvidence,
+            fulltext_ready: fullReady && !analysisNoEvidence,
+            available_evidence_levels: analysisNoEvidence ? [] : (fullReady ? ['abstract', 'full'] : ['abstract']),
+            source_versions: analysisNoEvidence ? {} : (fullReady ? { abstract: 'source-abstract-v1', full: 'source-full-v1' } : { abstract: 'source-abstract-v1' }),
+            unavailable_reason: analysisNoEvidence ? 'MAP_EVIDENCE_UNAVAILABLE' : (fullReady ? null : '全文索引尚未就绪'),
           },
         };
       } else if (analysisMode && path.endsWith('/analyses') && method === 'POST') {
         window.__analysisBodies.push(body);
-        if (analysisManualDelay) await new Promise((resolve) => window.setTimeout(resolve, 120));
+        if (analysisManualDelay || analysisPending) await new Promise((resolve) => window.setTimeout(resolve, analysisPending ? 600 : 120));
         const requestedRecord = analysisFirstRegeneration && body.evidence_level === 'abstract'
           ? (window.__analysisBodies.length === 1 ? firstRegenerationRecord : regeneratedRecord)
           : (body.evidence_level === 'full' ? fullAnalysisRecord : analysisRecord);
@@ -628,7 +642,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=20"></script>
+  <script src="../../../frontend/literature-maps.js?v=21"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>
