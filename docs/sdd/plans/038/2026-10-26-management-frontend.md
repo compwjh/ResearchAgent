@@ -94,3 +94,11 @@
 ## 窄范围收口
 
 F01–F02 的最终资源为 app/styles 65、地图 21/13；前端完整回归为 `317 passed, 0 failed, 0 skipped, 59.01s`，Node 合同 `33/33`。本报告的前端实施范围完成；跨端真实 API/UI 与签字见 [`2026-10-26-management-runtime.md`](./2026-10-26-management-runtime.md) 和 [`../../reviews/038-acceptance-review.md`](../../reviews/038-acceptance-review.md)。
+
+## 再次复开：P2 hidden 冲突区显示修复（2026-10-26）
+
+- **复开原因**：后续真实 CUA 页面复现发现 `#memory-document-conflict` 在 `hidden: true` 时 computed `display` 仍为 `grid`；此前保存成功截图因此仍显示红色冲突框。根因是 `#memory-view #memory-document-conflict { display: grid; }` 的规则优先于原生 hidden 行为。复现证据保留于 `docs/sdd/plans/038/artifacts/20261026-file-management/hidden-before-fix.json`；不覆盖此前已通过的历史验收记录。
+- **最小修复**：在记忆视图作用域增加 `#memory-view [hidden] { display: none !important; }`，确保冲突区与本轮新增的 hidden 面板都遵守 DOM hidden 契约，不影响其他视图；实际资源版本从 app/styles 65 升至 66，地图 21/13 保持。
+- **前端回归**：新增 `tests/frontend/test_memory_document_visibility.py`，使用真实 Chromium 加载仓库 `frontend/styles.css` 与生产 hidden/clear/render 逻辑，覆盖初始 hidden 冲突区域不可见、模拟 409 后可见、clear 后不可见、模拟成功保存后不可见，以及 hidden 空文档面板不可见。
+
+本次复开实际验证：`node --check frontend/app.js`（退出码 0）；`python scripts/check_test_layout.py`、`python scripts/check_test_naming.py`、`git diff --check`（均退出码 0）；前端精确集合 `pytest -q tests/frontend/test_frontend_management_contract.py tests/frontend/test_memory_document_visibility.py`（`11 passed`，Chromium 受控权限运行）。本次未改 `backend/**`、未部署、未启动服务、未访问用户记忆数据；root 后续独立进行前端 reviewer/完整回归、CUA 刷新重拍与验收追加。

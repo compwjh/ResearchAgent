@@ -462,6 +462,7 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #memory-view .memory-document-help { margin: 0; color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
 #memory-view .memory-document-count[data-over-limit="true"] { color: #b13a3a; }
 #memory-view .memory-document-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#memory-view [hidden] { display: none !important; }
 #memory-view .memory-document-empty { margin: 0; color: var(--muted); font: 10px/1.45 'DM Mono', monospace; }
 #memory-view .memory-document-empty[hidden] { display: none; }
 #memory-view #memory-document-conflict { display: grid; gap: 7px; padding: 12px; border-left: 3px solid #b13a3a; background: #fff7f7; color: #7b2626; font-size: 11px; line-height: 1.5; }
