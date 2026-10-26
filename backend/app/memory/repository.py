@@ -1612,7 +1612,7 @@ class MemoryRepository:
         with self.transaction() as db:
             result = db.execute("""UPDATE memory_analysis_items SET decision_status=?, memory_id=?, decided_at=?
                 WHERE item_id=? AND analysis_id IN (SELECT analysis_id FROM memory_analysis_jobs WHERE owner_id=?)
-                AND decision_status='pending_confirmation'""", (decision_status, memory_id, _now(), item_id, owner_id))
+                AND decision_status IN ('pending_confirmation', 'failed')""", (decision_status, memory_id, _now(), item_id, owner_id))
             if not result.rowcount:
                 row = db.execute("""SELECT i.* FROM memory_analysis_items i JOIN memory_analysis_jobs j ON j.analysis_id=i.analysis_id
                     WHERE i.item_id=? AND j.owner_id=?""", (item_id, owner_id)).fetchone()

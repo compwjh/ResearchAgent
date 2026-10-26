@@ -2,7 +2,7 @@
 
 > 关联：[Spec032](../../specs/032-research-source-expansion.md) §接口、边界与产品步骤 6–7；Task11 登录/恢复范围。
 >
-> **状态：提议中（未实施）**。本文件只记录只读诊断和最小实施方案；本轮未修改业务代码、未执行产品 POST、未打开浏览器、未初始化或迁移状态库、未执行 Git 操作。
+> **状态：本次登录/继续窄修已完成（2026-10-26；tester READY_FOR_USER、architect GO；整体 Spec032 仍暂停）**。本文件保留原始诊断与最小实施方案，并追加当前人工验收步骤；不代表 Spec032 整体收口。历史执行记录保留 Luna max；本次追加临时 Luna xhigh，不修改角色配置。
 
 ## 结论
 
@@ -64,9 +64,35 @@
 
 实现后先跑上述后端定向测试和静态检查，再用实际已有 batch 做只读 GET 状态确认；真实登录/继续 smoke 需在实现、评审和部署门禁之后执行。成功标准是“过期搜索仍可从完整服务端快照打开受控登录页并继续”，而不是延长 live-search TTL、重跑目录检索或宣称 publisher 授权永不过期。
 
-## Backend-dev 交接（未启动）
+## 产品使用步骤：随时打开登录并恢复
 
-仅在根会话关闭 KB 分支并创建 `codex/fix-paper-login-recovery` 后启动；当前工作树的 KB/frontend 改动不得作为本 Task 的实现基线。角色配置要求依次读取 `progress-logging`、`strategic-compact`、`backend-patterns`、`regression-guard`、`tdd-workflow`、`python-testing`；本 Task 只允许改 `backend/**` 与后端测试。
+以下步骤用于已有 `waiting_login` 导入条目。它允许用户在搜索会话过期、服务重启或稍后方便时重新打开登录；不要求重新检索，也不把“打开登录窗口”当作下载或认证完成。
+
+1. **打开待处理入口**：打开当前部署的服务首页，点击左侧“论文检索”，在“导入进度”/“需要登录后继续”区域找到目标 ACM 条目；本次真实样本的 `item_id` 为 `9eed783f-ff98-4021-99dd-1ab2787688cb`，所属批次为 `1a76e369-c638-4f2c-a430-42552a1e7012`。页面应显示“等待登录”或“需要登录后继续”，而不是要求重新搜索。
+2. **随时打开受控登录**：在该条目或“待处理论文”卡片点击“打开登录”。等待页面提示“已打开既有浏览器登录，请完成登录后点击‘登录后继续’”，并等待本机既有 ACM 浏览器窗口打开。页面只使用服务端已核验的持久快照 URL；用户不在聊天框、页面表单之外或任何日志中提交密码/Cookie。
+3. **在本机完成登录**：切换到刚打开的受控 ACM 浏览器窗口，按发布方页面完成登录/授权；等待页面加载出论文访问页或授权完成提示。若暂时不方便登录，可直接关闭窗口并稍后重新执行第 2 步，批次/item 仍保持 `waiting_login`，不会因搜索 TTL 过期而丢失快照。
+4. **提交继续**：回到“论文检索”页面，点击同一条目的“登录后继续”。等待按钮短暂进入处理中状态，并看到“已提交登录完成，正在同步当前研究任务状态”；随后点击页面的刷新/重新打开任务详情，等待该条目显示下载、校验、入库或新的失败状态。不要把“已打开登录”或 HTTP 200 `opened` 当作 PDF 已下载、已认证或已入库。
+5. **查看后续结果**：只有页面明确显示论文已完成/已入库，并且 root 保存了对应真实请求、响应、item/document ID、最终状态和产物路径，才可记录为下载完成。若仍为“等待登录”，可再次点击“打开登录”；若变为“失败”，使用“重试”，或在页面提供时选择“上传 PDF”并完成身份确认。`waiting_login` 不走仅支持 `failed` 的重试语义。
+
+### 提示、等待与恢复
+
+- **已打开登录**：当前真实证据只证明 `POST /api/papers/import-items/9eed783f-ff98-4021-99dd-1ab2787688cb/login` 返回 HTTP 200、`status=opened`、`site=acm`；它不证明登录凭据已通过、PDF 已下载或论文已认证。
+- **搜索已过期但快照可用**：继续使用“打开登录”即可；不点击“重新检索”、不要求用户重建研究任务。服务重启后仍先从持久快照恢复，临时浏览器 session 过期也只需重新打开登录。
+- **窗口/会话不可用**：页面提示 browser/session 过期或 424 时，先重新点击“打开登录”；若仍失败，保留 `waiting_login` 和页面错误，稍后在服务所在电脑重试，不把它改写为下载失败。
+- **快照损坏或身份不一致**：若出现 `SNAPSHOT_REBUILD_REQUIRED`、`INVALID_SEARCH_SNAPSHOT` 或受控来源错误，停止点击并记录页面提示；不要使用客户端 URL、任意链接或过期搜索结果绕过门禁，交由 root 处理修复。
+- **继续后进入失败**：点击“重试”只针对 `failed`；若下载仍不可得，按页面选择“上传 PDF”并勾选身份确认。确认前不写入知识库，错误论文不得绑定候选。
+
+## 当前真实产物与签收边界
+
+- 真实登录请求说明：`docs/sdd/plans/032/artifacts/20261026-login-recovery/request.md`。
+- 真实响应：`docs/sdd/plans/032/artifacts/20261026-login-recovery/login-response.json`。
+- 前端 issue/login/recovery 交接与标签契约：`artifacts/task-12/frontend-report.md`。
+- 实现、独立复审与后端定向回归：`2026-10-26-login-recovery-implementation.md`、`2026-10-26-login-recovery-review.md`、`2026-10-26-login-recovery-test.md`。
+- 2026-10-26 同步边界：本次窄修已完成“过期 search + 完整 durable snapshot → 受控 ACM login 打开”路径，HTTP 200、`status=opened`、`site=acm` 仍不代表下载完成、publisher 已认证或后续入库。认证后 resume、PDF 下载/校验、KB 入库和其它 Spec032 范围没有在本次验证，Spec032 整体继续保持暂停，不能标为整体完成。
+
+## Backend-dev 交接（历史启动条件；当前窄修已由实现报告承接）
+
+以下启动条件保留为历史交接记录：仅在根会话关闭 KB 分支并创建 `codex/fix-paper-login-recovery` 后启动；当前工作树的 KB/frontend 改动不得作为本 Task 的实现基线。当前窄修的实际代码范围、评审和回归以本计划上方链接的实现/复审/测试报告为准。角色配置要求依次读取 `progress-logging`、`strategic-compact`、`backend-patterns`、`regression-guard`、`tdd-workflow`、`python-testing`；本 Task 只允许改 `backend/**` 与后端测试。
 
 ### TDD 最小顺序
 
@@ -92,5 +118,12 @@ GREEN/定向回归：
 .venv/bin/python scripts/check_test_layout.py
 ```
 
-依赖阻塞：当前 Spec032 总体仍暂停，但本次仅授权上述 login/resume 恢复窄范围；不得顺手处理整批 retry、搜索刷新、浏览器 TTL 或 Spec032 收口。真实部署、POST、headed browser smoke 留待实现评审和验收门禁之后。
+依赖边界：当前 Spec032 总体仍暂停，本次仅完成上述 login/resume 恢复窄范围；未顺手处理整批 retry、搜索刷新、浏览器 TTL 或 Spec032 收口。真实窄修 login API 已有独立产物，认证后 resume/download/import 仍是后续边界。
+
+## 2026-10-26 窄修收口（当前状态）
+
+- 范围：已有 `waiting_login` item 使用 hash/身份核验的 durable snapshot 绕过过期 search TTL 的错误阻断；保留受控 ACM/IEEE origin、SSRF、CAS、浏览器 session TTL 与 fail-closed 语义。
+- 证据：集成定向回归 `64 passed, 0 failed, 0 skipped`；真实旧批次 login 返回 HTTP `200`、`status=opened`、`site=acm`；验收报告窄修矩阵 `10/10 PASS`。
+- 签字：[`docs/sdd/reviews/032-acceptance-review.md`](../../reviews/032-acceptance-review.md) 后续范围澄清栏为 tester `READY_FOR_USER`、architect `GO`。
+- 明确未验证：认证后 resume、PDF 下载/校验、KB 入库、来源年度覆盖及其余暂停范围；不要把 `opened` 响应写成下载或入库成功。
 

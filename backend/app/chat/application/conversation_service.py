@@ -274,6 +274,7 @@ def write_memory_candidate(
     project_id: Optional[str],
     repository: Optional[MemoryRepository] = None,
     owner_id: str = OWNER_ID,
+    pending_item_id: Optional[str] = None,
 ) -> str:
     """按置信度分级把一条候选记忆落进 L1（MD 真相源），返回最终 decision。
 
@@ -281,15 +282,17 @@ def write_memory_candidate(
     与 ``MemoryEvolutionWorker`` 共用（复用优先，禁止第二套落盘实现）：
 
     - ``decide_memory_write`` 判定为 ``auto_saved`` → ``append_memory``；
-    - 否则 → ``add_pending``（PENDING.md，不默认塞进项目记忆）；
-    - MD 写入抛异常时退化为待确认（fail-open），绝不向上冒泡。
+    - 否则 → ``add_pending``（PENDING.md，不默认塞进项目记忆）；显式 ``pending_item_id``
+      用于分析审计项与 PENDING.md 的稳定身份复用；
+    - 正式 MD 写入抛异常时退化为待确认（fail-open）；若 PENDING.md 也写失败，返回
+      ``failed``，避免审计层宣称存在不可见的待确认条目。
 
     spec-038 审查 S7：给出 ``repository`` 时先校验 ``project_id`` 仍**存在且活跃**，
     校验失败即降级为全局 —— 否则会写进「快照里的旧项目」，或凭空创建不存在的项目文件。
 
     :param repository: 可选仓储，用于校验项目存在性（两个 worker 都持有它）。
     :param owner_id: 项目归属校验用的 owner（必须传实际持有者，见 ``_project_is_usable``）。
-    :returns: 实际生效的 ``decision``（``auto_saved`` 或 ``pending_confirmation``）。
+    :returns: 实际生效的 ``decision``（``auto_saved``、``pending_confirmation`` 或 ``failed``）。
     """
     project_exists = _project_is_usable(repository, project_id, owner_id)
     decision, scope, write_project = decide_memory_write(
@@ -304,9 +307,14 @@ def write_memory_candidate(
             return "auto_saved"
         except Exception:
             decision = "pending_confirmation"
-    with contextlib.suppress(Exception):
-        store.add_pending(content=statement, project_id=write_project)
-    return decision
+    try:
+        store.add_pending(content=statement, project_id=write_project, item_id=pending_item_id)
+    except Exception:
+        # A pending audit item without a visible PENDING.md entry is not a
+        # valid confirmation state. The worker projects this result to
+        # decision_status=failed while retaining the stable item_id for retry.
+        return "failed"
+    return "pending_confirmation"
 
 
 def extract_memory_candidates(texts, *, project_id: Optional[str], classify=None) -> list[tuple[MemoryIntent, str]]:
@@ -932,6 +940,7 @@ class MemoryAnalysisWorker:
             for offset in range(0, len(candidates), self.batch_size):
                 batch = candidates[offset: offset + self.batch_size]
                 for candidate in batch:
+                    audit_item = None
                     try:
                         event_kind = "explicit_memory" if candidate.intent == "explicit" else ("user_correction" if self._is_correction(message.content) else None)
                         if event_kind:
@@ -948,31 +957,62 @@ class MemoryAnalysisWorker:
                         # 置信度分级（用户要求）：高置信度 → 直写 MD；不确定 → 仅提议待确认。
                         # 唯一写入出口 write_memory_candidate（与 evolution worker 共用）。
                         suggested_scope = self._suggested_scope(job, candidate, message.content)
+                        statement = candidate.statement or message.content
+                        # Reserve the audit identity before any MD action. The
+                        # same item_id is then embedded in PENDING.md, so a
+                        # retry can resolve exactly one item without guessing
+                        # by text, order, or project.
+                        audit_item = self.repository.create_memory_analysis_item(
+                            analysis_id, self.owner_id, statement,
+                            suggested_scope,
+                            candidate.confidence,
+                            candidate.rationale_summary or ("明确表达" if candidate.intent == "explicit" else "需要用户确认"),
+                            decision_status="pending_confirmation",
+                            memory_id=None,
+                            lease_token=lease_token, lease_version=lease_version,
+                        )
                         decision = write_memory_candidate(
                             self.memory_store, candidate,
                             source_text=message.content, project_id=job.project_id_snapshot,
                             repository=self.repository, owner_id=self.owner_id,
+                            pending_item_id=audit_item.item_id,
                         )
                         if decision == "auto_saved":
                             saved += 1
+                            self.repository.update_memory_analysis_item(
+                                audit_item.item_id, self.owner_id, decision_status="auto_saved"
+                            )
+                        elif decision == "failed":
+                            failed += 1
+                            self.repository.update_memory_analysis_item(
+                                audit_item.item_id, self.owner_id, decision_status="failed"
+                            )
                         else:
                             pending += 1
-                        self.repository.create_memory_analysis_item(
-                            analysis_id, self.owner_id, candidate.statement or message.content,
-                            suggested_scope,
-                            candidate.confidence, candidate.rationale_summary or ("明确表达" if candidate.intent == "explicit" else "需要用户确认"),
-                            decision_status=decision, memory_id=None,
-                            lease_token=lease_token, lease_version=lease_version,
-                        )
+                            # A retry may be reusing an item that was marked
+                            # failed because its first PENDING.md write was
+                            # unavailable. Once the stable pending entry is
+                            # visible again, project the audit back to the
+                            # actionable confirmation state.
+                            if audit_item.decision_status == "failed":
+                                self.repository.update_memory_analysis_item(
+                                    audit_item.item_id, self.owner_id,
+                                    decision_status="pending_confirmation",
+                                )
                     except Exception:
                         failed += 1
                         with contextlib.suppress(Exception):
-                            self.repository.create_memory_analysis_item(
-                                analysis_id, self.owner_id, candidate.statement or message.content,
-                                "global" if has_explicit_global_intent(message.content) else ("project" if job.project_id_snapshot else "project"),
-                                candidate.confidence, "分析结果未能保存", decision_status="failed",
-                                lease_token=lease_token, lease_version=lease_version,
-                            )
+                            if audit_item is not None:
+                                self.repository.update_memory_analysis_item(
+                                    audit_item.item_id, self.owner_id, decision_status="failed"
+                                )
+                            else:
+                                self.repository.create_memory_analysis_item(
+                                    analysis_id, self.owner_id, candidate.statement or message.content,
+                                    "global" if has_explicit_global_intent(message.content) else ("project" if job.project_id_snapshot else "project"),
+                                    candidate.confidence, "分析结果未能保存", decision_status="failed",
+                                    lease_token=lease_token, lease_version=lease_version,
+                                )
                 self.repository.save_memory_analysis_progress(
                     analysis_id, self.owner_id, lease_token=lease_token, lease_version=lease_version,
                     cursor=str(offset + len(batch)), batch_no=(offset // self.batch_size) + 1,

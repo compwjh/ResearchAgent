@@ -3,6 +3,8 @@
 > 关联：[Spec 018](../../specs/018-knowledge-document-chunk-inspector.md)
 > 当前状态：`已完成`（2026-10-06 当前版本补验 PASS）。历史验收和首次失败证据保留；当前 PDF/Markdown API E2E、全量回归、独立签字及部署验证见 task-07 产物。万切片测试为合成规模验证，不推断旧库全部迁移成功。
 
+> 2026-10-26 追加收口：本次 canonical `document_id` 衔接与单文档发布一致性窄修已完成；架构师/验收签字与真实 202→终态、manifest/Qdrant 一致性证据见 [`reindex-entry`](./2026-10-26-reindex-entry.md) 与 [`018-acceptance-review`](../../reviews/018-acceptance-review.md)。本追加不改写历史失败，也不扩大为 Spec018 其它潜在范围。
+
 ## 任务索引
 
 | Task | 目标 | 依赖 | 状态 |
@@ -17,6 +19,12 @@
 | [06E](./task-06e-sparse-source-anchor-correction.md) | 修复模糊全连接 anchor，恢复真实双向定位 | 04、05、06 当前 manifest | 已完成 |
 | [06F](./task-06f-pdf-upload-repair.md) | 修复 PDF 上传失败与错误可见性 | 04、06E 当前服务 | 已完成 |
 | [07](./task-07-review-acceptance-deploy-retro.md) | 独立验收、部署和复盘 | 06 | 已完成（2026-10-06 当前版本补验 PASS） |
+
+### 2026-10-26 canonical ID / 发布一致性窄修
+
+- 计划与当前状态：[`2026-10-26-reindex-entry.md`](./2026-10-26-reindex-entry.md)
+- 验收评审与架构师 GO：[`../../reviews/018-acceptance-review.md`](../../reviews/018-acceptance-review.md)
+- 真实复验产物：[`2026-10-26-reindex-entry/artifacts/20261026-publication-recheck`](./artifacts/20261026-publication-recheck/)
 
 ## 当前路线
 

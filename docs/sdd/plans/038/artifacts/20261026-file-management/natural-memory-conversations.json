@@ -1,0 +1,18 @@
+{
+  "conversations": [
+    {
+      "conversation_id": "6a59bd0707d54761a6cd3a5a68e88ecf",
+      "owner_id": "local-user",
+      "project_id": "a4a1745f801441188dc1f75b0534be11",
+      "title": "请仅在本项目记住：本项目的验收代号是蓝色松果。请只回复已收到。",
+      "status": "active",
+      "memory_history_policy": "from_binding",
+      "reasoning_effort": "off",
+      "memory_binding_at": null,
+      "memory_binding_message_id": null,
+      "created_at": "2026-10-26T02:12:55.037537+00:00",
+      "updated_at": "2026-10-26T02:12:55.037537+00:00"
+    }
+  ],
+  "next_cursor": null
+}

@@ -59,6 +59,9 @@ def test_inventory_hashes_are_stable_and_write_entrypoints_are_registered():
         # Pure index-state helpers: field normalization/checking only; no IO,
         # metadata writes, manifest writes, or generation-marker publication.
         "_normalize_index_error", "_canonical_index_record",
+        # Read-only point snapshot verification; it queries the target but
+        # never mutates Qdrant, metadata, manifests, or generation markers.
+        "_verify_index_snapshot",
         "create_paper_import_port", "create_source_reader", "read_document_source", "create_manifest_store",
         "record_id", "default_chunkers", "default_chunker_state", "ensure_dirs", "load_papers", "load_papers_strict",
         "get_paper", "resolve_paper_path", "copy_source_exclusive", "new_record", "ensure_chunkers", "get_chunker_state",

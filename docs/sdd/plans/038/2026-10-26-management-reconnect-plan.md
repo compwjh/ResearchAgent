@@ -1,6 +1,11 @@
 # Spec 038 补充计划：记忆治理与 Markdown 真相源复接
 
-**状态：待确认（仅架构方案；本次未修改业务代码、未新增 API、未调用 API 写入、未执行 Git 操作）**
+**状态：管理复接补充已完成（2026-10-26；需求/技术评审、跨端验收与架构师 GO 已落盘；本次仅更新文档，不修改业务代码、不执行 Git 操作）。** 原 Spec038 历史 P1/P2/P3 结论及 pending-confirm 人工边界保留。
+
+> 2026-10-26 用户已明确确认按文件记忆方案实施；独立评审结论见
+> [`038-requirement-review.md`](../../reviews/038-requirement-review.md) 与
+> [`038-tech-review.md`](../../reviews/038-tech-review.md)，冻结合同见
+> [`2026-10-26-management-contract.md`](./2026-10-26-management-contract.md)。
 
 ## 1. 当前根因
 
@@ -93,3 +98,12 @@
 - 本计划不恢复 `/api/memories` 旧 CRUD，不建立 `MemoryRecord`/`memory_evidence` 的 Markdown 映射，不伪造 `memory_id`、status、来源、版本或撤销能力。
 - 本计划不把 `/api/memories` 404 隐藏成 200 空列表，不新增任意路径/文件下载 API，不直接暴露 `MEMORY_DIR`。
 - 本计划不修改业务代码、前端、schemas、数据库、真实记忆文件或 API 状态；必须先由 Spec 038 补充完成需求/技术评审并获确认，再分派实现与验收。
+
+## 7. 2026-10-26 当前进度与人工验收交接
+
+管理复接补充已完成，真实人工案例只使用隔离的 active 项目 `a4a1745f801441188dc1f75b0534be11`（名称“文件记忆验收 20261026”），禁止把全局 `MEMORY.md` 或用户已有项目记忆作为测试目标。验收报告为 `READY_FOR_USER`、架构师为 `GO`；这只关闭本次管理复接补充。
+
+- 真实项目 API E2E 已落盘：`200 GET` 空文档 → `200 PUT` 初次保存 → `200 GET` 重读 → stale revision `409 MEMORY_DOCUMENT_CONFLICT`（草稿未被覆盖）→ `200 GET` 读取当前副本。`api-e2e.json` 的原始 trace 不包含后续合并 PUT；真正的合并 PUT 成功由最终 runtime、恢复截图和第二真实页面的冲突恢复写入证据共同证明。请求/响应、revision、project ID 及证据边界见 [`2026-10-26-management-runtime.md`](./2026-10-26-management-runtime.md)、`artifacts/20261026-file-management/api-e2e.json`、`artifacts/20261026-file-management/final-runtime.json` 与 `artifacts/20261026-file-management/browser-conflict-recovery-server-write.json`。
+- 浏览器 runtime 已核对：在两个真实页面同时打开 `http://127.0.0.1:8000` 的“记忆治理”，选择同一 active 专用项目；页面 B 先保存并发版本，页面 A 用旧 revision 保存触发 409；页面 A 点击“读取最新版本并保留草稿”，人工合并后再次保存成功。最终截图与页面资源/状态见 [`recovery-saved.png`](artifacts/20261026-file-management/recovery-saved.png) 和 `final-runtime.json`。
+- 当前门禁进度：后端全量最终为 `3121 passed, 0 failed, 3 skipped, 67 subtests passed`；前端最终完整集合为 `317 passed, 0 failed, 0 skipped, 59.01s`，Node 合同测试 `33/33`。此前 `315/1` 的 synthetic 地图性能失败已在测量窗修复后通过最终完整复跑。自然语言项目记忆已完成：conversation `6a59bd0707d54761a6cd3a5a68e88ecf`、analysis `a3d8ad2a46a1406cb020db450954834e`，`saved_count=1`、`pending_count=0`，独立 GET 文件确认含“蓝色松果”；SSE capture 的 `events` 为空，仅记录为解析未命中，不冒充原始事件。
+- 逐步点击、等待提示、409 恢复、最终产物路径及证据边界统一记录在 [`2026-10-26-management-runtime.md`](./2026-10-26-management-runtime.md)；最终后台托管与健康复核见 runtime 末尾。pending-confirm 人工保存/忽略流程未冒充已执行，原 Spec038 其它潜在工作不因本补充改变。

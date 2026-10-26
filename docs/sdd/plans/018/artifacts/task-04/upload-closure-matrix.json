@@ -1,7 +1,7 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "8b0cde1",
-  "inventory_digest": "38af1e9c3ea0eebd2315485e6ccfc2141ef8ea0c09f386b125d8f7bb1cb378e0",
+  "inventory_digest": "643b081a9fe5493e2da9baaaa5d5f31a6fe9ad1f7586d9bae54da17c3ce90187",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {
@@ -14,7 +14,7 @@
     },
     {
       "path": "backend/app/api/routes_paper.py",
-      "sha256": "44f344f8ced34f0dbfd310ffd9189ddc0ee3a4c8c8fcdb3d1ccb4bb0607508af"
+      "sha256": "1525df74f0da9de1f9cb71e5304cad3414a4b52701da0b0e20c837ca99f4333f"
     },
     {
       "path": "backend/app/knowledge_base/application.py",
@@ -26,7 +26,7 @@
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/index.py",
-      "sha256": "066dcbc027aa04f7d3a192d2a07f0d7466108d0e867d0987e3903e2faa1db952"
+      "sha256": "536ef36bd0493e52b37c842331379f75a59765e3a7a3e4859bab0bff7b0919e1"
     },
     {
       "path": "backend/app/knowledge_base/infrastructure/tasks.py",

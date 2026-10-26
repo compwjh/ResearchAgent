@@ -157,12 +157,61 @@ def test_analysis_decision_api_supports_single_and_batch(tmp_path: Path):
         project = repo.create_project("local-user", "API project")
         conversation, user, job = _job(repo, project.project_id, "ambiguous", owner="local-user")
         first = repo.create_memory_analysis_item(job.analysis_id, "local-user", "待确认规则", "project", .5, "需要确认")
-        repo.create_memory_analysis_item(job.analysis_id, "local-user", "另一条规则", "project", .5, "需要确认")
+        store = MarkdownMemoryStore(tmp_path / "memory")
+        store.add_pending(content=first.statement, project_id=project.project_id, item_id=first.item_id)
         response = client.post(f"/api/memory-analysis/items/{first.item_id}/decision", json={"decision": "save_project"})
         assert response.status_code == 200 and response.json()["item"]["decision_status"] == "auto_saved"
-        response = client.post(f"/api/messages/{user.message_id}/memory-analysis/decisions", json={"decision": "ignore_all"})
+        assert first.statement in store.read_project(project.project_id)
+
+        # Audit-only legacy rows have no reliable pending identity and must not
+        # be guessed into a Markdown file or marked successful.
+        orphan = repo.create_memory_analysis_item(job.analysis_id, "local-user", "孤立规则", "project", .5, "需要确认")
+        response = client.post(f"/api/memory-analysis/items/{orphan.item_id}/decision", json={"decision": "save_project"})
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "PENDING_UNLINKED"
+        assert repo.get_memory_analysis_item(orphan.item_id, "local-user").decision_status == "pending_confirmation"
+
+        second = repo.create_memory_analysis_item(job.analysis_id, "local-user", "另一条规则", "project", .5, "需要确认")
+        store.add_pending(content=second.statement, project_id=project.project_id, item_id=second.item_id)
+        response = client.post(
+            f"/api/messages/{user.message_id}/memory-analysis/decisions",
+            json={"decision": "ignore_all", "item_ids": [second.item_id]},
+        )
         assert response.status_code == 200
         assert response.json()["items"][0]["decision_status"] == "ignored"
+        assert all(item.item_id != second.item_id for item in store.list_pending())
+
+
+def test_analysis_save_failure_keeps_pending_audit_and_corrupt_target(tmp_path: Path):
+    path = tmp_path / "memory.sqlite3"
+    memory_dir = tmp_path / "memory"
+    with patch("backend.app.memory.repository.default_database_path", return_value=path), patch(
+        "backend.app.memory.markdown_store.MEMORY_DIR", memory_dir
+    ):
+        client = TestClient(app)
+        repo = MemoryRepository(path)
+        project = repo.create_project("local-user", "API project")
+        _, _user, job = _job(repo, project.project_id, "ambiguous", owner="local-user")
+        item = repo.create_memory_analysis_item(
+            job.analysis_id, "local-user", "不得覆盖损坏文件", "project", .5, "需要确认"
+        )
+        store = MarkdownMemoryStore(memory_dir)
+        store.projects_dir.mkdir(parents=True)
+        original = b"\xff"
+        project_path = store.projects_dir / f"{project.project_id}.md"
+        project_path.write_bytes(original)
+        store.add_pending(content=item.statement, project_id=project.project_id, item_id=item.item_id)
+
+        response = client.post(
+            f"/api/memory-analysis/items/{item.item_id}/decision",
+            json={"decision": "save_project"},
+        )
+
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "MEMORY_PENDING_RESOLUTION_UNAVAILABLE"
+        assert project_path.read_bytes() == original
+        assert [pending.item_id for pending in store.list_pending()] == [item.item_id]
+        assert repo.get_memory_analysis_item(item.item_id, "local-user").decision_status == "pending_confirmation"
 
 
 def test_analysis_lease_token_and_version_reject_stale_finisher(tmp_path: Path):

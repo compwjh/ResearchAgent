@@ -65,7 +65,7 @@ def test_composer_styles_keep_input_on_full_row_and_footer_on_wrapping_row() -> 
     assert "min-width: 0" in textarea_rule
     assert "width: 100%" in footer_rule
     assert "min-width: 0" in footer_rule
-    assert 'href="/assets/styles.css?v=61"' in INDEX
+    assert 'href="/assets/styles.css?v=62"' in INDEX
 
 
 def test_map_question_prefill_stays_editable_without_length_or_autosend_contract_changes() -> None:

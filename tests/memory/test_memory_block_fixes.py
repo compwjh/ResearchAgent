@@ -288,11 +288,11 @@ def test_concurrent_resolve_preserves_unrelated_pending(tmp_path):
 
     original_append = store.append_memory
 
-    def _append_with_race(*, scope, project_id, content):
+    def _append_with_race(*, scope, project_id, content, strict_read=False):
         # 在 resolve 读取快照与写回 pending 之间插入一条新增：
         # 旧实现在这里必丢（写回旧快照）。
         store.add_pending(content="恰好在窗口内新增")
-        return original_append(scope=scope, project_id=project_id, content=content)
+        return original_append(scope=scope, project_id=project_id, content=content, strict_read=strict_read)
 
     store.append_memory = _append_with_race  # type: ignore[assignment]
     store.resolve_pending(target_id, scope="global", project_id=None)

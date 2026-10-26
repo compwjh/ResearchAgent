@@ -42,12 +42,17 @@ const memoryView = document.querySelector('#memory-view');
 const memoryScopeSelect = document.querySelector('#memory-scope-select');
 const memoryProjectSelect = document.querySelector('#memory-project-select');
 const memoryProjectLabel = document.querySelector('#memory-project-label');
-const memoryStatusSelect = document.querySelector('#memory-status-select');
-const memoryCreateButton = document.querySelector('#memory-create-button');
 const memoryRefreshButton = document.querySelector('#memory-refresh-button');
-const memoryList = document.querySelector('#memory-list');
-const memoryEmpty = document.querySelector('#memory-empty');
 const memoryStatus = document.querySelector('#memory-status');
+const memoryDocumentEditor = document.querySelector('#memory-document-editor');
+const memoryDocumentSaveButton = document.querySelector('#memory-document-save-button');
+const memoryDocumentRevision = document.querySelector('#memory-document-revision');
+const memoryDocumentLabel = document.querySelector('#memory-document-label');
+const memoryDocumentConflict = document.querySelector('#memory-document-conflict');
+const memoryDocumentConflictCopy = document.querySelector('#memory-document-conflict-copy');
+const memoryDocumentConflictRefreshButton = document.querySelector('#memory-document-conflict-refresh-button');
+const memoryDocumentCount = document.querySelector('#memory-document-count');
+const memoryDocumentEmpty = document.querySelector('#memory-document-empty');
 const systemRuleCard = document.querySelector('#system-rule-card');
 const systemRuleContent = document.querySelector('#system-rule-content');
 const systemRuleUpdated = document.querySelector('#system-rule-updated');
@@ -100,9 +105,20 @@ try {
   const savedProjectSort = localStorage.getItem(PROJECT_SORT_KEY);
   if (savedProjectSort === 'name' || savedProjectSort === 'recent') projectState.sort = savedProjectSort;
 } catch (_) { /* localStorage may be unavailable in privacy mode. */ }
-const memoryState = { items: [], evidence: new Map(), loading: false };
+const memoryState = {
+  scope: 'global',
+  projectId: null,
+  content: '',
+  revision: '',
+  dirty: false,
+  loaded: false,
+  loading: false,
+  saving: false,
+  requestGeneration: 0,
+  requestKey: '',
+};
 const systemRuleState = { content: '', enabled: false, updatedAt: null, loaded: false, loading: false };
-const memoryNavigationSnapshot = { scope: null, status: null, projectId: null, scrollTop: 0, projectCollapsed: false, expandedProjectId: null };
+const memoryNavigationSnapshot = { scope: null, projectId: null, scrollTop: 0, projectCollapsed: false, expandedProjectId: null };
 const conversationState = {
   projectId: null,
   draftProjectId: null,
@@ -746,6 +762,7 @@ async function conversationFetch(url, options = {}) {
     error.code = data?.detail?.code || data?.error?.code || data?.code;
     error.status = response.status;
     error.retryable = data?.detail?.retryable ?? data?.error?.retryable ?? data?.retryable;
+    error.data = data;
     throw error;
   }
   return data;
@@ -3115,9 +3132,6 @@ async function submitConfirmDialog(event) {
   } catch (error) { setConversationStatus(`操作失败：${error.message}`, 'error'); }
 }
 
-const MEMORY_STATUS_LABELS = { candidate: '待确认', active: '有效', superseded: '旧版本', disabled: '已停用', deleted: '已删除' };
-const MEMORY_SCOPE_LABELS = { global: '全局', project: '项目' };
-
 function setMemoryStatus(text, state = '') {
   if (!memoryStatus) return;
   memoryStatus.textContent = text || '';
@@ -3233,7 +3247,6 @@ async function clearSystemRule(event) {
 function captureMemoryViewState() {
   if (!memoryView || memoryView.hidden) return;
   memoryNavigationSnapshot.scope = memoryScopeSelect?.value || 'global';
-  memoryNavigationSnapshot.status = memoryStatusSelect?.value || 'active';
   memoryNavigationSnapshot.projectId = memoryProjectSelect?.value || null;
   memoryNavigationSnapshot.scrollTop = Number(window.scrollY || document.documentElement?.scrollTop || 0);
   memoryNavigationSnapshot.projectCollapsed = projectState.collapsed;
@@ -3243,7 +3256,6 @@ function captureMemoryViewState() {
 function restoreMemoryViewState() {
   if (!memoryView || memoryNavigationSnapshot.scope === null) return;
   if (memoryScopeSelect) memoryScopeSelect.value = memoryNavigationSnapshot.scope;
-  if (memoryStatusSelect) memoryStatusSelect.value = memoryNavigationSnapshot.status || 'active';
   if (memoryProjectSelect && memoryNavigationSnapshot.projectId) memoryProjectSelect.value = memoryNavigationSnapshot.projectId;
   const isProject = memoryScopeSelect?.value === 'project';
   if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
@@ -3252,7 +3264,6 @@ function restoreMemoryViewState() {
   projectTreeToggle?.setAttribute('aria-expanded', projectState.collapsed ? 'false' : 'true');
   renderProjectList(projectState.items);
   window.requestAnimationFrame(() => window.scrollTo(0, memoryNavigationSnapshot.scrollTop || 0));
-  loadMemories();
 }
 
 function systemRuleSuggestionFromText(text) {
@@ -3324,107 +3335,309 @@ function openConversationFromWorkspace(conversationId, options = {}) {
 function renderMemoryProjectOptions(projects) {
   if (!memoryProjectSelect) return;
   memoryProjectSelect.replaceChildren();
-  for (const project of projects || []) {
+  const emptyOption = document.createElement('option');
+  emptyOption.value = '';
+  emptyOption.textContent = '请选择项目';
+  emptyOption.disabled = true;
+  memoryProjectSelect.appendChild(emptyOption);
+  const activeProjects = (projects || []).filter((project) => project?.status === 'active');
+  for (const project of activeProjects) {
     const option = document.createElement('option'); option.value = project.project_id; option.textContent = project.name || '未命名项目'; memoryProjectSelect.appendChild(option);
   }
-  if (conversationState.projectId) memoryProjectSelect.value = conversationState.projectId;
-}
-
-function renderMemoryEvidence(memoryId, evidence, container) {
-  if (!container) return;
-  container.replaceChildren();
-  const heading = document.createElement('strong'); heading.textContent = '来源记录'; container.appendChild(heading);
-  if (!evidence?.length) { const empty = document.createElement('span'); empty.textContent = '暂无可见来源'; container.appendChild(empty); return; }
-  for (const item of evidence) {
-    const row = document.createElement('div');
-    const details = document.createElement('span');
-    details.textContent = [item.evidence_type || '来源', item.excerpt || ''].filter(Boolean).join(' · ');
-    row.appendChild(details);
-    if (item.conversation_id) {
-      const open = document.createElement('button'); open.type = 'button'; open.className = 'secondary-button memory-open-conversation'; open.dataset.openConversation = item.conversation_id; open.textContent = '打开来源会话';
-      row.appendChild(open);
+  if (memoryState.scope === 'project') {
+    if (memoryState.projectId && activeProjects.some((project) => project.project_id === memoryState.projectId)) {
+      memoryProjectSelect.value = memoryState.projectId;
+      return;
     }
-    container.appendChild(row);
+    if (memoryState.projectId) {
+      memoryState.requestGeneration += 1;
+      memoryState.requestKey = '';
+      memoryState.projectId = null;
+      memoryState.loaded = false;
+      memoryState.loading = false;
+      memoryState.saving = false;
+      memoryState.revision = '';
+      memoryProjectSelect.value = '';
+      clearMemoryDocumentConflict();
+      renderMemoryDocument();
+      setMemoryStatus('当前项目已失效，请重新选择 active 项目。', 'error');
+    }
+    memoryProjectSelect.value = '';
+    return;
   }
-  memoryState.evidence.set(memoryId, evidence);
-}
-
-function renderMemoryList(items) {
-  if (!memoryList) return;
-  memoryList.replaceChildren();
-  for (const item of items || []) {
-    const card = document.createElement('article'); card.className = 'memory-item'; card.dataset.memoryId = item.memory_id; card.setAttribute('role', 'listitem');
-    const head = document.createElement('div'); head.className = 'memory-item-head';
-    const scope = document.createElement('span'); scope.className = 'memory-scope'; scope.textContent = MEMORY_SCOPE_LABELS[item.scope] || item.scope || '未知作用域';
-    const state = document.createElement('span'); state.className = 'memory-status-badge'; state.dataset.status = item.status || ''; state.textContent = MEMORY_STATUS_LABELS[item.status] || item.status || '未知状态';
-    head.append(scope, state);
-    const statement = document.createElement('p'); statement.className = 'memory-statement'; statement.textContent = item.statement || '';
-    const meta = document.createElement('span'); meta.className = 'memory-meta'; meta.textContent = `${item.category || '未分类'} · 来源 ${item.source_kind || 'unknown'} · 置信度 ${Math.round(Number(item.confidence || 0) * 100)}%`;
-    const actions = document.createElement('div'); actions.className = 'memory-item-actions';
-    const addAction = (label, action, className = 'secondary-button') => { const button = document.createElement('button'); button.type = 'button'; button.className = className; button.dataset.memoryAction = action; button.dataset.memoryId = item.memory_id; button.textContent = label; actions.appendChild(button); };
-    addAction('查看来源', 'source');
-    if (item.status === 'candidate') addAction('确认候选', 'confirm', 'send-button');
-    if (item.status === 'deleted') addAction('撤销', 'undo');
-    else if (item.status !== 'superseded') { addAction('编辑为新版本', 'edit'); addAction('停用', 'disable'); addAction('删除', 'delete', 'secondary-button danger-button'); }
-    const evidence = document.createElement('div'); evidence.className = 'memory-evidence'; evidence.hidden = true; evidence.dataset.memoryEvidence = item.memory_id;
-    const sourceConversationId = item.conversation_id || item.source_conversation_id || item.evidence?.conversation_id;
-    if (sourceConversationId) {
-      const openSource = document.createElement('button'); openSource.type = 'button'; openSource.className = 'secondary-button memory-open-conversation'; openSource.dataset.openConversation = sourceConversationId; openSource.textContent = '打开来源会话'; actions.appendChild(openSource);
-    }
-    card.append(head, statement, meta, actions, evidence); memoryList.appendChild(card);
+  if (conversationState.projectId && activeProjects.some((project) => project.project_id === conversationState.projectId)) {
+    memoryProjectSelect.value = conversationState.projectId;
+  } else {
+    memoryProjectSelect.value = '';
   }
-  if (memoryEmpty) memoryEmpty.hidden = Boolean(items?.length);
 }
 
-async function loadMemories() {
-  if (!memoryList || memoryState.loading) return;
-  memoryState.loading = true; setMemoryStatus('正在加载记忆…');
-  const scope = memoryScopeSelect?.value || 'global'; const status = memoryStatusSelect?.value || 'active';
-  const params = new URLSearchParams({ scope, status });
-  if (scope === 'project' && memoryProjectSelect?.value) params.set('project_id', memoryProjectSelect.value);
-  try {
-    const data = await conversationFetch(`/api/memories?${params}`); memoryState.items = data.memories || []; renderMemoryList(memoryState.items); setMemoryStatus(`已加载 ${memoryState.items.length} 条${MEMORY_SCOPE_LABELS[scope] || ''}记忆`);
-  } catch (error) { renderMemoryList([]); setMemoryStatus(`记忆加载失败：${error.message}`, 'error'); }
-  finally { memoryState.loading = false; }
+const MEMORY_DOCUMENT_LIMIT = 65536;
+
+function memoryDocumentKey(scope = memoryScopeSelect?.value || 'global', projectId = memoryProjectSelect?.value || null) {
+  return `${scope}:${scope === 'project' ? projectId || '' : ''}`;
 }
 
-async function createManualMemory() {
-  const statement = window.prompt('输入要长期保留的记忆陈述')?.trim();
-  if (!statement) return;
-  const scope = memoryScopeSelect?.value || 'global'; const projectId = scope === 'project' ? memoryProjectSelect?.value || null : null;
-  if (scope === 'project' && !projectId) { setMemoryStatus('请先选择项目', 'error'); return; }
-  try {
-    await conversationFetch('/api/memories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, project_id: projectId, statement, source_kind: 'manual', category: scope === 'project' ? 'project_rule' : 'user_preference', status: 'active' }) });
-    await loadMemories(); setMemoryStatus('记忆已创建');
-  } catch (error) { setMemoryStatus(`记忆创建失败：${error.message}`, 'error'); }
+function memoryDocumentLabelFor(scope, projectId) {
+  if (scope === 'project') return projectId ? `projects/${projectId}.md` : '请选择 active 项目';
+  return 'MEMORY.md';
 }
 
-async function handleMemoryAction(action, memoryId, card) {
-  const memory = memoryState.items.find((item) => item.memory_id === memoryId);
-  if (!memory) return;
+function memoryDocumentDraft() {
+  return String(memoryDocumentEditor?.value || '');
+}
+
+function memoryDocumentCode(error) {
+  return String(error?.code || error?.data?.detail?.code || '').trim();
+}
+
+function memoryDocumentErrorMessage(error, action = '读取') {
+  const code = memoryDocumentCode(error);
+  if (code === 'PROJECT_NOT_FOUND') return '当前项目不存在或无权访问，请选择其他 active 项目。';
+  if (code === 'PROJECT_NOT_ACTIVE') return '当前项目不是 active，无法编辑，请选择其他 active 项目。';
+  if (code === 'PROJECT_ID_REQUIRED') return '请先选择一个 active 项目。';
+  if (code === 'PROJECT_ID_NOT_ALLOWED') return '全局文档不能携带项目选择。';
+  if (code === 'MEMORY_DOCUMENT_PATH_INVALID') return '当前项目文档路径无效，未读取或写入任何文件。';
+  if (code === 'MEMORY_DOCUMENT_TOO_LARGE') return '文档超过 65,536 个 Unicode 字符，请缩短后再保存。';
+  if (code === 'INVALID_MEMORY_DOCUMENT_SCOPE' || code === 'INVALID_PROJECT_ID') return '文档作用域或项目选择无效。';
+  if (Number(error?.status) === 503 || error?.network || (!error?.status && !error?.code)) return `${action}失败：记忆文档暂时不可用，请稍后重试。`;
+  return `${action}失败：${String(error?.message || '请求失败')}`;
+}
+
+function setMemoryDocumentRevision(revision) {
+  const value = String(revision || '');
+  if (!memoryDocumentRevision) return;
+  memoryDocumentRevision.dataset.revision = value;
+  memoryDocumentRevision.title = value || '';
+  memoryDocumentRevision.textContent = value ? `revision ${value.slice(0, 12)}…` : '尚未读取';
+}
+
+function updateMemoryDocumentCount() {
+  if (!memoryDocumentCount) return;
+  const count = Array.from(memoryDocumentDraft()).length;
+  memoryDocumentCount.textContent = `${count} / ${MEMORY_DOCUMENT_LIMIT}`;
+  memoryDocumentCount.dataset.overLimit = count > MEMORY_DOCUMENT_LIMIT ? 'true' : 'false';
+}
+
+function clearMemoryDocumentConflict() {
+  if (!memoryDocumentConflict) return;
+  memoryDocumentConflict.hidden = true;
+  if (memoryDocumentConflictCopy) memoryDocumentConflictCopy.textContent = '';
+}
+
+function showMemoryDocumentConflict(error) {
+  if (!memoryDocumentConflict) return;
+  const detail = error?.data?.detail || {};
+  const currentContent = typeof detail.current_content === 'string' ? detail.current_content : '';
+  showMemoryDocumentServerCopy(currentContent || '服务器已有新版本，但暂时无法显示副本；请读取最新版本后人工合并。');
+}
+
+function showMemoryDocumentServerCopy(content) {
+  if (!memoryDocumentConflict) return;
+  memoryDocumentConflict.hidden = false;
+  if (memoryDocumentConflictCopy) memoryDocumentConflictCopy.textContent = content;
+}
+
+async function refreshMemoryDocumentKeepingDraft() {
+  if (!memoryDocumentEditor || memoryState.loading || memoryState.saving) return;
+  const scope = memoryState.scope;
+  const projectId = scope === 'project' ? memoryState.projectId : null;
+  const stateKey = memoryDocumentKey(scope, projectId);
+  const selectedScope = memoryScopeSelect?.value || 'global';
+  const selectedProjectId = selectedScope === 'project' ? memoryProjectSelect?.value || null : null;
+  if (memoryDocumentKey(selectedScope, selectedProjectId) !== stateKey) {
+    setMemoryStatus('项目选择已变化，请等待文档重新读取后再保存。', 'error');
+    return;
+  }
+  const draft = memoryDocumentDraft();
+  const requestGeneration = ++memoryState.requestGeneration;
+  const requestKey = stateKey;
+  memoryState.requestKey = requestKey;
+  memoryState.loading = true;
+  renderMemoryDocument();
+  setMemoryStatus('正在读取最新版本（草稿保留）…');
   try {
-    if (action === 'source') {
-      const evidence = card.querySelector(`[data-memory-evidence="${CSS.escape(memoryId)}"]`);
-      if (!evidence.hidden) { evidence.hidden = true; return; }
-      const data = await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/evidence`); renderMemoryEvidence(memoryId, data.evidence || [], evidence); evidence.hidden = false; return;
+    const params = memoryDocumentQuery(scope, projectId);
+    const data = await conversationFetch(`/api/memory-documents?${params}`);
+    if (!memoryDocumentRequestMatches(requestGeneration, requestKey)) return;
+    const latestContent = typeof data?.content === 'string' ? data.content : '';
+    memoryState.content = latestContent;
+    memoryState.revision = typeof data?.revision === 'string' ? data.revision : memoryState.revision;
+    memoryState.loaded = true;
+    memoryState.dirty = true;
+    memoryDocumentEditor.value = draft;
+    showMemoryDocumentServerCopy(latestContent || '服务器最新版本为空，请对照草稿确认后保存。');
+    setMemoryStatus('已读取最新版本；草稿仍保留，请对照合并后再保存。');
+  } catch (error) {
+    if (!memoryDocumentRequestMatches(requestGeneration, requestKey)) return;
+    setMemoryStatus(memoryDocumentErrorMessage(error, '读取最新版本'), 'error');
+  } finally {
+    if (memoryDocumentRequestMatches(requestGeneration, requestKey)) {
+      memoryState.loading = false;
+      renderMemoryDocument();
     }
-    if (action === 'confirm') await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/confirm`, { method: 'POST' });
-    if (action === 'edit') {
-      const statement = window.prompt('编辑为新版本（旧版本和来源会保留）', memory.statement)?.trim();
-      if (!statement || statement === memory.statement) return;
-      await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ statement }) });
+  }
+}
+
+function renderMemoryDocument() {
+  const count = Array.from(memoryDocumentDraft()).length;
+  if (memoryDocumentLabel) memoryDocumentLabel.textContent = memoryDocumentLabelFor(memoryState.scope, memoryState.projectId);
+  setMemoryDocumentRevision(memoryState.revision);
+  updateMemoryDocumentCount();
+  if (memoryDocumentEmpty) memoryDocumentEmpty.hidden = !memoryState.loaded || count > 0 || memoryState.loading;
+  if (memoryDocumentEditor) {
+    memoryDocumentEditor.disabled = memoryState.loading || memoryState.saving;
+    memoryDocumentEditor.setAttribute('aria-busy', memoryState.loading ? 'true' : 'false');
+  }
+  if (memoryDocumentSaveButton) {
+    memoryDocumentSaveButton.disabled = memoryState.loading || memoryState.saving || !memoryState.loaded || count > MEMORY_DOCUMENT_LIMIT;
+    memoryDocumentSaveButton.textContent = memoryState.saving ? '保存中…' : '保存文档';
+  }
+  if (memoryScopeSelect) memoryScopeSelect.disabled = memoryState.loading || memoryState.saving;
+  if (memoryProjectSelect) memoryProjectSelect.disabled = memoryState.loading || memoryState.saving;
+}
+
+function memoryDocumentQuery(scope, projectId) {
+  const params = new URLSearchParams({ scope });
+  if (scope === 'project' && projectId) params.set('project_id', projectId);
+  return params;
+}
+
+function memoryDocumentRequestMatches(generation, key) {
+  return generation === memoryState.requestGeneration
+    && key === memoryDocumentKey(memoryState.scope, memoryState.projectId);
+}
+
+async function loadMemoryDocument({ scope = memoryScopeSelect?.value || 'global', projectId = memoryProjectSelect?.value || null } = {}) {
+  if (!memoryDocumentEditor || memoryState.loading) return;
+  const resolvedProjectId = scope === 'project' ? projectId || null : null;
+  if (scope === 'project' && !resolvedProjectId) {
+    memoryState.requestGeneration += 1;
+    memoryState.requestKey = '';
+    memoryState.scope = scope;
+    memoryState.projectId = null;
+    memoryState.loaded = false;
+    memoryState.loading = false;
+    memoryState.revision = '';
+    renderMemoryDocument();
+    setMemoryStatus('请先选择一个 active 项目。', 'error');
+    return;
+  }
+  memoryState.scope = scope;
+  memoryState.projectId = resolvedProjectId;
+  const requestGeneration = ++memoryState.requestGeneration;
+  const requestKey = memoryDocumentKey(scope, resolvedProjectId);
+  memoryState.requestKey = requestKey;
+  memoryState.loading = true;
+  memoryState.loaded = false;
+  clearMemoryDocumentConflict();
+  renderMemoryDocument();
+  setMemoryStatus('正在读取记忆文档…');
+  try {
+    const params = memoryDocumentQuery(scope, resolvedProjectId);
+    const data = await conversationFetch(`/api/memory-documents?${params}`);
+    if (!memoryDocumentRequestMatches(requestGeneration, requestKey)) return;
+    const content = typeof data?.content === 'string' ? data.content : '';
+    memoryState.content = content;
+    memoryState.revision = typeof data?.revision === 'string' ? data.revision : '';
+    memoryState.loaded = true;
+    memoryState.dirty = false;
+    memoryDocumentEditor.value = content;
+    setMemoryStatus(content ? `已加载 ${memoryDocumentLabelFor(scope, resolvedProjectId)}` : '文档为空，可开始编辑。');
+  } catch (error) {
+    if (!memoryDocumentRequestMatches(requestGeneration, requestKey)) return;
+    setMemoryStatus(memoryDocumentErrorMessage(error, '读取'), 'error');
+  } finally {
+    if (memoryDocumentRequestMatches(requestGeneration, requestKey)) {
+      memoryState.loading = false;
+      renderMemoryDocument();
     }
-    if (action === 'disable') {
-      if (!window.confirm('停用这条记忆？它将不再参与召回，但仍保留审计记录。')) return;
-      await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/disable`, { method: 'POST' });
+  }
+}
+
+async function saveMemoryDocument() {
+  if (!memoryDocumentEditor || memoryState.saving) return;
+  const content = memoryDocumentDraft();
+  const count = Array.from(content).length;
+  if (!memoryState.loaded || !memoryState.revision) {
+    setMemoryStatus('请先读取当前记忆文档。', 'error');
+    return;
+  }
+  if (memoryState.scope === 'project' && !memoryState.projectId) {
+    setMemoryStatus('请先选择一个 active 项目。', 'error');
+    return;
+  }
+  if (count > MEMORY_DOCUMENT_LIMIT) {
+    setMemoryStatus('文档超过 65,536 个 Unicode 字符，请缩短后再保存。', 'error');
+    return;
+  }
+  const selectedScope = memoryScopeSelect?.value || 'global';
+  const selectedProjectId = selectedScope === 'project' ? memoryProjectSelect?.value || null : null;
+  const stateKey = memoryDocumentKey(memoryState.scope, memoryState.projectId);
+  if (memoryDocumentKey(selectedScope, selectedProjectId) !== stateKey) {
+    setMemoryStatus('项目选择已变化，请等待文档重新读取后再保存。', 'error');
+    return;
+  }
+  const requestGeneration = ++memoryState.requestGeneration;
+  const requestKey = stateKey;
+  memoryState.requestKey = requestKey;
+  memoryState.saving = true;
+  renderMemoryDocument();
+  setMemoryStatus('正在保存记忆文档…');
+  try {
+    const params = memoryDocumentQuery(memoryState.scope, memoryState.projectId);
+    const data = await conversationFetch(`/api/memory-documents?${params}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, revision: memoryState.revision }),
+    });
+    if (!memoryDocumentRequestMatches(requestGeneration, requestKey)) return;
+    memoryState.content = typeof data?.content === 'string' ? data.content : content;
+    memoryState.revision = typeof data?.revision === 'string' ? data.revision : memoryState.revision;
+    memoryState.dirty = false;
+    memoryState.loaded = true;
+    memoryDocumentEditor.value = memoryState.content;
+    clearMemoryDocumentConflict();
+    setMemoryStatus(`文档已保存（revision ${memoryState.revision.slice(0, 12)}…）`);
+  } catch (error) {
+    if (!memoryDocumentRequestMatches(requestGeneration, requestKey)) return;
+    if (memoryDocumentCode(error) === 'MEMORY_DOCUMENT_CONFLICT') {
+      showMemoryDocumentConflict(error);
+      setMemoryStatus('服务器已有新版本，请查看冲突副本并人工合并后重试。', 'error');
+    } else {
+      setMemoryStatus(memoryDocumentErrorMessage(error, '保存'), 'error');
     }
-    if (action === 'delete') {
-      if (!window.confirm('删除这条记忆？系统会保留可撤销的治理记录。')) return;
-      await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' });
+  } finally {
+    if (memoryDocumentRequestMatches(requestGeneration, requestKey)) {
+      memoryState.saving = false;
+      renderMemoryDocument();
     }
-    if (action === 'undo') await conversationFetch(`/api/memories/${encodeURIComponent(memoryId)}/undo`, { method: 'POST' });
-    await loadMemories(); setMemoryStatus('记忆治理操作已完成');
-  } catch (error) { setMemoryStatus(`记忆操作失败：${error.message}`, 'error'); }
+  }
+}
+
+function memoryDocumentCanDiscardDraft() {
+  if (!memoryState.dirty) return true;
+  return window.confirm('当前文档有未保存修改，继续操作会丢弃草稿。是否继续？');
+}
+
+async function switchMemoryDocument(scope, projectId) {
+  if (!memoryDocumentCanDiscardDraft()) {
+    if (memoryScopeSelect) memoryScopeSelect.value = memoryState.scope;
+    if (memoryProjectSelect && memoryState.projectId) memoryProjectSelect.value = memoryState.projectId;
+    if (memoryProjectLabel) memoryProjectLabel.hidden = memoryState.scope !== 'project';
+    return;
+  }
+  memoryState.dirty = false;
+  await loadMemoryDocument({ scope, projectId });
+}
+
+function handleMemoryDocumentInput() {
+  memoryState.dirty = memoryDocumentDraft() !== memoryState.content;
+  clearMemoryDocumentConflict();
+  updateMemoryDocumentCount();
+  if (Array.from(memoryDocumentDraft()).length > MEMORY_DOCUMENT_LIMIT) setMemoryStatus('文档超过 65,536 个 Unicode 字符，请缩短后再保存。', 'error');
+  else if (memoryState.dirty) setMemoryStatus('有未保存修改。');
+  renderMemoryDocument();
 }
 
 function appendConversationEvent(assistantMessage, processing, eventData) {
@@ -3718,12 +3931,17 @@ document.addEventListener('keydown', (event) => {
 if (memoryScopeSelect) memoryScopeSelect.addEventListener('change', () => {
   const isProject = memoryScopeSelect.value === 'project';
   if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
-  loadMemories();
+  switchMemoryDocument(memoryScopeSelect.value, isProject ? memoryProjectSelect?.value || null : null);
 });
-if (memoryProjectSelect) memoryProjectSelect.addEventListener('change', loadMemories);
-if (memoryStatusSelect) memoryStatusSelect.addEventListener('change', loadMemories);
-if (memoryRefreshButton) memoryRefreshButton.addEventListener('click', loadMemories);
-if (memoryCreateButton) memoryCreateButton.addEventListener('click', createManualMemory);
+if (memoryProjectSelect) memoryProjectSelect.addEventListener('change', () => switchMemoryDocument('project', memoryProjectSelect.value || null));
+if (memoryRefreshButton) memoryRefreshButton.addEventListener('click', () => {
+  if (!memoryDocumentCanDiscardDraft()) return;
+  memoryState.dirty = false;
+  loadMemoryDocument({ scope: memoryScopeSelect?.value || 'global', projectId: memoryProjectSelect?.value || null });
+});
+if (memoryDocumentEditor) memoryDocumentEditor.addEventListener('input', handleMemoryDocumentInput);
+if (memoryDocumentSaveButton) memoryDocumentSaveButton.addEventListener('click', saveMemoryDocument);
+if (memoryDocumentConflictRefreshButton) memoryDocumentConflictRefreshButton.addEventListener('click', refreshMemoryDocumentKeepingDraft);
 if (systemRuleEditButton) systemRuleEditButton.addEventListener('click', () => openSystemRuleEditor());
 if (systemRuleToggleButton) systemRuleToggleButton.addEventListener('click', toggleSystemRule);
 if (systemRuleClearButton) systemRuleClearButton.addEventListener('click', openSystemRuleClearDialog);
@@ -3732,14 +3950,6 @@ if (systemRuleClearForm) systemRuleClearForm.addEventListener('submit', clearSys
 if (systemRuleInput) systemRuleInput.addEventListener('input', updateSystemRuleCount);
 for (const dialogForm of [systemRuleForm, systemRuleClearForm]) dialogForm?.addEventListener('click', (event) => {
   if (event.target?.closest?.('button[value="cancel"]')) { event.preventDefault(); dialogForm.closest('dialog')?.close('cancel'); }
-});
-if (memoryList) memoryList.addEventListener('click', (event) => {
-  const openButton = event.target.closest('[data-open-conversation]');
-  if (openButton) { openConversationFromWorkspace(openButton.dataset.openConversation); return; }
-  const button = event.target.closest('[data-memory-action]');
-  if (!button) return;
-  const card = button.closest('.memory-item');
-  handleMemoryAction(button.dataset.memoryAction, button.dataset.memoryId, card);
 });
 if (loadOlderMessagesButton) loadOlderMessagesButton.addEventListener('click', loadOlderConversationMessages);
 if (conversationList) conversationList.addEventListener('scroll', () => {
@@ -5067,7 +5277,11 @@ function showView(view) {
     if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
     restoreMemoryViewState();
     loadSystemRule();
-    if (memoryNavigationSnapshot.scope === null) loadMemories();
+    const scope = memoryScopeSelect?.value || 'global';
+    const projectId = scope === 'project' ? memoryProjectSelect?.value || null : null;
+    if (!memoryState.loaded || memoryDocumentKey(scope, projectId) !== memoryDocumentKey(memoryState.scope, memoryState.projectId)) {
+      loadMemoryDocument({ scope, projectId });
+    }
   }
   if (nextView === 'papers' && paperState.enabled) {
     loadPaperImportBatches();
@@ -5928,21 +6142,92 @@ function chunkerBadgeText(name, state) {
   return `${name} ${label}`;
 }
 
+const kbReindexInFlight = new Set();
+
+function kbDocumentId(paper) {
+  if (!paper || typeof paper !== 'object') return '';
+  for (const value of [paper.document_id, paper.paper_id]) {
+    if (typeof value !== 'string' && typeof value !== 'number') continue;
+    const normalized = String(value).trim();
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+function kbReindexError(response, data) {
+  const body = data && typeof data === 'object' ? data : {};
+  const nested = body.error && typeof body.error === 'object' ? body.error : {};
+  const detail = body.detail && typeof body.detail === 'object' ? body.detail : {};
+  const codeValue = body.error_code || body.code || nested.error_code || nested.code || detail.error_code || detail.code;
+  const messageValue = body.message || nested.message || detail.message || (typeof body.detail === 'string' ? body.detail : '');
+  const error = new Error(typeof messageValue === 'string' && messageValue.trim() ? messageValue.trim() : '重建失败');
+  error.code = typeof codeValue === 'string' ? codeValue.trim() : '';
+  error.status = Number(response?.status) || 0;
+  error.operationStatus = String(body.status || nested.status || detail.status || '').trim();
+  return error;
+}
+
+function kbReindexFailureText(error) {
+  const code = String(error?.code || '').trim();
+  if (Number(error?.status) === 409 && (code === 'INDEX_ALREADY_RUNNING' || error?.operationStatus === 'running')) {
+    return '重建进行中：已有索引任务正在运行，请稍后查看进度';
+  }
+  const message = String(error?.message || '').trim() || '服务暂时无法启动，请稍后重试';
+  return `重建失败：${message}`;
+}
+
 async function rebuildKbPaper(paper, button) {
-  if (button) button.disabled = true;
+  const documentId = kbDocumentId(paper);
+  if (!documentId) {
+    if (kbStatus) kbStatus.textContent = '重建失败：文档缺少稳定 ID，未提交请求';
+    return false;
+  }
+  if (kbReindexInFlight.has(documentId)) {
+    if (button) button.disabled = true;
+    if (kbStatus) kbStatus.textContent = '重建进行中：已有索引任务正在运行，请稍后查看进度';
+    return false;
+  }
+  kbReindexInFlight.add(documentId);
+  if (button) {
+    button.disabled = true;
+  }
   try {
-    const response = await fetch(`/api/kb/papers/${encodeURIComponent(paper.paper_id)}/reindex`, {
+    const response = await fetch(`/api/kb/documents/${encodeURIComponent(documentId)}/reindex`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chunker: 'all' }),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || '重建失败');
-    if (kbStatus) kbStatus.textContent = `已提交重建：${paper.file_name || '未命名论文'}（v1 + v2）`;
+    let data = {};
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) throw kbReindexError(response, data);
+    if (response.status !== 202) {
+      const error = kbReindexError(response, data);
+      error.code = error.code || 'REINDEX_NOT_QUEUED';
+      error.message = '重建响应未确认任务已排队';
+      throw error;
+    }
+    const taskId = typeof data?.task_id === 'string' ? data.task_id.trim() : '';
+    if (!taskId) {
+      const error = new Error('重建响应缺少有效任务 ID');
+      error.code = 'INVALID_REINDEX_RESPONSE';
+      error.status = response.status;
+      throw error;
+    }
+    if (kbStatus) kbStatus.textContent = `已提交重建：${paper.file_name || '未命名论文'}（v1 + v2，任务 ${taskId} 已排队）`;
+    return true;
   } catch (error) {
-    if (kbStatus) kbStatus.textContent = `重建失败：${error.message}`;
+    if (kbStatus) kbStatus.textContent = kbReindexFailureText(error);
+    return false;
+  } finally {
+    if (button) {
+      button.disabled = false;
+    }
+    try {
+      await loadKbPapers();
+    } finally {
+      kbReindexInFlight.delete(documentId);
+    }
   }
-  await loadKbPapers();
 }
 
 // 知识库列表未就绪时渲染 3 条骨架行，高度/圆角与真实行一致避免抖动。
@@ -5976,17 +6261,22 @@ function renderKbPapers(papers) {
 
   let hasRunning = false;
   for (const paper of papers) {
+    const documentId = kbDocumentId(paper);
     if (paper.status === 'processing' || paper.status === 'indexing') hasRunning = true;
     // 失败态判定：文档级 failed，或任一版本 chunker 处于 failed。
     // 这些是环境故障期（Qdrant 本地锁冲突 / 代际门禁未 finalize）遗留的陈旧失败态，实测可重试成功，并非切分/索引逻辑 bug。
+    const chunkers = paper.chunkers || {};
+    const partialChunker = Object.values(chunkers).find((c) => c && c.status === 'indexed_partial');
+    const isPartial = paper.status === 'indexed_partial' || Boolean(partialChunker);
     const isFailed = paper.status === 'failed'
-      || Object.values(paper.chunkers || {}).some((c) => c && c.status === 'failed');
+      || Object.values(chunkers).some((c) => c && c.status === 'failed');
     const item = document.createElement('li');
-    item.className = `kb-item status-${paper.status || 'unknown'}${isFailed ? ' status-failed' : ''}`;
+    item.className = `kb-item status-${paper.status || 'unknown'}${isPartial ? ' status-indexed_partial' : ''}${isFailed ? ' status-failed' : ''}`;
+    if (documentId) item.dataset.documentId = documentId;
     if (paper.paper_id) item.dataset.paperId = paper.paper_id;
     item.tabIndex = -1;
     // 原始后端错误码只保留在 title（悬停调试），绝不作为主文案呈现给用户。
-    if (paper.error) item.title = paper.error;
+    if (paper.error || partialChunker?.error) item.title = paper.error || partialChunker.error;
 
     const head = document.createElement('div');
     head.className = 'kb-item-head';
@@ -6003,7 +6293,6 @@ function renderKbPapers(papers) {
     // 双版本状态与百分比进度（spec-012）
     const versions = document.createElement('div');
     versions.className = 'kb-item-versions';
-    const chunkers = paper.chunkers || {};
     const bars = [];
     for (const key of ['v1', 'v2']) {
       const state = chunkers[key] || { status: 'pending', progress: 0, chunk_count: 0 };
@@ -6062,6 +6351,14 @@ function renderKbPapers(papers) {
     actions.append(rebuild, remove);
     versions.appendChild(actions);
     item.append(head, meta, versions, ...bars);
+    // 合法的 indexed_partial 不是失败：保留版本级状态与错误原因，并提示用户可检查可用切片。
+    if (isPartial) {
+      const warning = document.createElement('p');
+      warning.className = 'kb-item-warning';
+      warning.textContent = '部分切片无法精确定位原文，已保留可用索引；可进入切片检查';
+      if (partialChunker?.error || paper.error) warning.title = partialChunker?.error || paper.error;
+      item.appendChild(warning);
+    }
     // 失败态主文案：中文可读、可行动，绝不直接暴露后端原始错误码（原始码保留在 item.title 供调试）。
     if (isFailed) {
       const failure = document.createElement('p');

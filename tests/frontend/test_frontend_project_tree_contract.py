@@ -84,7 +84,7 @@ def test_move_and_delete_clear_context_and_project_rows_have_independent_archive
     assert "projectState.expandedProjectId = updated.project_id" in move_body
     assert "entry.items = (entry.items || []).filter" in move_body
     delete_start = APP.index("async function submitConfirmDialog")
-    delete_end = APP.index("const MEMORY_STATUS_LABELS", delete_start)
+    delete_end = APP.index("function setMemoryStatus", delete_start)
     delete_body = APP[delete_start:delete_end]
     assert "conversationState.draftProjectId = null" in delete_body
     assert "projectState.conversations.delete(target.project_id)" in delete_body

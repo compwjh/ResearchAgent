@@ -72,4 +72,4 @@ def test_asset_versions_and_safe_dynamic_content() -> None:
     assert "/assets/app.js?v=31" in INDEX
     assert "/assets/styles.css?v=31" in INDEX
     assert "textContent" in APP
-    assert "memory-open-conversation" in APP
+    assert "memoryDocumentConflictCopy.textContent" in APP

@@ -1,0 +1,41 @@
+{
+  "authors": null,
+  "chunk_count": 107,
+  "chunkers": {
+    "v1": {
+      "status": "indexed",
+      "chunk_count": 107,
+      "progress": 100,
+      "error": null
+    },
+    "v2": {
+      "status": "indexed_partial",
+      "chunk_count": 308,
+      "progress": 100,
+      "error": "SOURCE_RANGE_UNRESOLVED"
+    }
+  },
+  "conference_id": null,
+  "conference_name": null,
+  "created_at": "2026-09-01T21:55:55+00:00",
+  "dblp_key": null,
+  "document_id": "d4dfd2a620384ad5bece27320661f8f0",
+  "doi": null,
+  "error": null,
+  "file_name": "How to Peel a Million- Validating and Expanding Bitcoin Clusters.pdf",
+  "import_source": null,
+  "indexed_source_sha256": "71f8829f2e1d36ab2695ebcf1c1697e301e429eb1aea5225981f526be98a14a1",
+  "media_type": "application/pdf",
+  "migration_version": "018-document-v1",
+  "page_count": 18,
+  "schema_version": "knowledge-document-v1",
+  "source_hash_state": "verified",
+  "source_immutable": true,
+  "source_sha256": "71f8829f2e1d36ab2695ebcf1c1697e301e429eb1aea5225981f526be98a14a1",
+  "source_url": null,
+  "status": "indexed",
+  "stored_name": "d4dfd2a620384ad5bece27320661f8f0.pdf",
+  "title": null,
+  "year": null,
+  "project_id": null
+}

@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
-    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=61">
+    <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 /assets/styles.css?v=62 -->
+    <link rel="stylesheet" href="/assets/styles.css?v=65">
   <link rel="stylesheet" href="/assets/literature-maps.css?v=13">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
@@ -399,17 +399,7 @@
             <label for="memory-project-select" id="memory-project-label" hidden>项目
               <select id="memory-project-select"></select>
             </label>
-            <label for="memory-status-select">状态
-              <select id="memory-status-select">
-                <option value="active">有效</option>
-                <option value="candidate">待确认</option>
-                <option value="disabled">已停用</option>
-                <option value="deleted">已删除</option>
-                <option value="superseded">旧版本</option>
-              </select>
-            </label>
-            <button class="secondary-button" id="memory-create-button" type="button">新建记忆</button>
-            <button class="send-button" id="memory-refresh-button" type="button">刷新</button>
+            <button class="send-button" id="memory-refresh-button" type="button">重新读取</button>
           </div>
         </header>
         <section class="system-rule-card" id="system-rule-card" aria-labelledby="system-rule-title">
@@ -431,8 +421,32 @@
           </div>
         </section>
         <p class="conversation-status" id="memory-status" role="status" aria-live="polite"></p>
-        <div class="memory-list" id="memory-list" role="list" aria-label="记忆列表"></div>
-        <p class="memory-empty" id="memory-empty" hidden>此作用域没有符合条件的记忆。</p>
+        <section class="memory-document-panel" aria-label="记忆文档编辑器">
+          <header class="memory-document-header">
+            <div>
+              <p class="eyebrow">MARKDOWN DOCUMENT</p>
+              <h2 id="memory-document-label">MEMORY.md</h2>
+            </div>
+            <div class="memory-document-meta">
+              <code id="memory-document-revision" data-revision="">尚未读取</code>
+              <span id="memory-document-count">0 / 65536</span>
+            </div>
+          </header>
+          <label class="memory-document-field" for="memory-document-editor">文档内容
+            <textarea id="memory-document-editor" rows="18" spellcheck="false" aria-describedby="memory-document-count memory-document-help"></textarea>
+          </label>
+          <p class="memory-document-help" id="memory-document-help">保存原始 Markdown 文本；不会渲染为 HTML，也不会自动修剪换行。</p>
+          <div class="memory-document-actions">
+            <p class="memory-document-empty" id="memory-document-empty" hidden>文档为空，可开始编辑。</p>
+            <button class="send-button" id="memory-document-save-button" type="button" disabled>保存文档</button>
+          </div>
+          <section class="memory-document-conflict" id="memory-document-conflict" role="alert" hidden>
+            <strong>服务器已有新版本</strong>
+            <p>当前编辑草稿已保留。先读取最新版本并保留草稿，再对照合并后保存。</p>
+            <pre id="memory-document-conflict-copy"></pre>
+            <button class="secondary-button" id="memory-document-conflict-refresh-button" type="button">读取最新版本并保留草稿</button>
+          </section>
+        </section>
   </section>
 </section>
 
@@ -782,8 +796,8 @@
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 /assets/research-tasks.js?v=10 -->
   <script src="/assets/research-tasks.js?v=16"></script>
     <script src="/assets/literature-maps.js?v=21"></script>
-  <!-- Legacy asset-version markers: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/app.js?v=53 /assets/app.js?v=55 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 /assets/styles.css?v=55 href="/assets/styles.css?v=53" src="/assets/app.js?v=53" -->
-  <script src="/assets/app.js?v=60"></script>
+  <!-- Legacy asset-version markers: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/app.js?v=53 /assets/app.js?v=55 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 /assets/styles.css?v=55 href="/assets/styles.css?v=53" href="/assets/styles.css?v=62" src="/assets/app.js?v=53" src="/assets/app.js?v=62" -->
+  <script src="/assets/app.js?v=65"></script>
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 -->
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 href="/assets/styles.css?v=53" -->
   <!-- Spec037 compatibility markers: /assets/research-tasks.js?v=11 /assets/app.js?v=54 href="/assets/styles.css?v=53" src="/assets/app.js?v=54" -->

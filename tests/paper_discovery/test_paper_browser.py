@@ -108,7 +108,11 @@ class _BatchServiceSpy:
         self.item = _Item()
         self.store = _NoWriteStore(self.item)
         self.discovery_store = _DiscoverySnapshot(candidate)
+        self.durable_snapshots = [candidate or _Candidate()]
         self.resume_calls: list[dict] = []
+
+    def get_item_snapshot_candidates(self, item_id):
+        return list(self.durable_snapshots)
 
     def resume_item(self, item_id, **kwargs):
         self.resume_calls.append({"item_id": item_id, **kwargs})
@@ -156,6 +160,116 @@ def test_login_uses_server_snapshot_allowlist_and_performs_zero_kb_writes(monkey
     assert browser.opened == [("acm", "https://dl.acm.org/doi/10.1000/example")]
     assert sessions["item-1"] is browser.sessions[0]
     assert service.store.writes == []
+
+
+def test_login_opens_from_durable_snapshot_after_search_expiry(monkeypatch):
+    service = _BatchServiceSpy()
+    service.discovery_store.session = SearchSession("search-1", "security", "2000-01-01T00:00:00Z")
+    candidate = _Candidate()
+    service.get_item_snapshot_candidates = lambda item_id: [candidate]
+    browser = _BrowserSpy()
+    sessions = _patch_boundary(monkeypatch, service, browser)
+
+    response = routes_paper.login_paper_import_item("item-1")
+
+    assert response == {"status": "opened", "item_id": "item-1", "site": "acm"}
+    assert browser.opened == [("acm", candidate.article_url)]
+    assert sessions["item-1"] is browser.sessions[0]
+    assert service.store.writes == []
+
+
+def test_login_legacy_missing_snapshot_keeps_live_search_fallback(monkeypatch):
+    service = _BatchServiceSpy()
+    service.get_item_snapshot_candidates = lambda item_id: None
+    browser = _BrowserSpy()
+    _patch_boundary(monkeypatch, service, browser)
+
+    response = routes_paper.login_paper_import_item("item-1")
+
+    assert response == {"status": "opened", "item_id": "item-1", "site": "acm"}
+    assert browser.opened == [("acm", service.discovery_store.candidate.article_url)]
+
+
+def test_login_corrupt_snapshot_fails_closed_without_live_fallback(monkeypatch):
+    from backend.app.paper_discovery.application.paper_import_batch_service import (
+        PaperImportBatchServiceError,
+    )
+
+    service = _BatchServiceSpy()
+
+    def raise_corrupt(_item_id):
+        raise PaperImportBatchServiceError("SNAPSHOT_REBUILD_REQUIRED", "snapshot corrupted")
+
+    service.get_item_snapshot_candidates = raise_corrupt
+    browser = _BrowserSpy()
+    _patch_boundary(monkeypatch, service, browser)
+
+    response = routes_paper.login_paper_import_item("item-1")
+
+    assert response.status_code == 503
+    assert response.body and b"SNAPSHOT_REBUILD_REQUIRED" in response.body
+    assert browser.opened == []
+
+
+def test_login_and_resume_sqlite_corrupt_snapshot_map_to_rebuild_required(monkeypatch, tmp_path):
+    """SQLite snapshot corruption reaches the stable route error, never browser open."""
+    import sqlite3
+
+    from backend.app.paper_discovery.application.paper_import_batch_service import (
+        PaperImportBatchService,
+    )
+    from backend.app.paper_discovery.domain.paper_discovery import PaperCandidate
+    from backend.app.paper_discovery.infrastructure.paper_import_batch_store import (
+        PaperImportBatchStore,
+    )
+
+    candidate = PaperCandidate(
+        "candidate-1",
+        "search-1",
+        "Corrupt snapshot paper",
+        "ccs",
+        "CCS",
+        article_url="https://dl.acm.org/doi/10.1000/example",
+    )
+    service = PaperImportBatchService(PaperImportBatchStore(tmp_path / "batch.sqlite3"))
+    batch = service.create_batch(
+        "search-1",
+        [candidate.candidate_id],
+        search_session=SearchSession("search-1", "security", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+        auto_run=False,
+    )
+    item = service.store.get_items(batch.batch_id)[0]
+    with sqlite3.connect(service.store.database_path) as connection:
+        connection.execute(
+            "UPDATE paper_import_items SET snapshot_json=? WHERE item_id=?",
+            ('{"candidate_id":"candidate-1","search_id":"search-1"}', item.item_id),
+        )
+
+    browser = _BrowserSpy()
+    _patch_boundary(monkeypatch, service, browser)
+
+    for route in (routes_paper.login_paper_import_item, routes_paper.resume_paper_import_item):
+        response = route(item.item_id)
+        assert response.status_code == 503
+        assert response.body and b"SNAPSHOT_REBUILD_REQUIRED" in response.body
+    assert browser.opened == []
+
+
+def test_resume_uses_durable_snapshot_after_search_expiry(monkeypatch):
+    service = _BatchServiceSpy()
+    service.discovery_store.session = SearchSession("search-1", "security", "2000-01-01T00:00:00Z")
+    browser = _BrowserSpy()
+    sessions = _patch_boundary(monkeypatch, service, browser)
+    session = _BrowserSession()
+    sessions["item-1"] = session
+
+    response = routes_paper.resume_paper_import_item("item-1")
+
+    assert response["status"] == "completed"
+    assert service.resume_calls and service.resume_calls[0]["item_id"] == "item-1"
+    assert session.closed is True
+    assert "item-1" not in sessions
 
 
 def test_login_rejects_unallowlisted_source_before_opening_session(monkeypatch):

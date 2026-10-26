@@ -98,7 +98,10 @@
       longTaskSupported: false,
       labelsRendered: 0,
       selectedNodeId: null,
-      resetInteractionDurations() { this.interactionDurations = []; },
+      resetInteractionDurations() {
+        this.interactionDurations = [];
+        this.longTaskDurations = [];
+      },
       snapshot() {
         const durations = this.interactionDurations;
         return {

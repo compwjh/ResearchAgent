@@ -1,5 +1,7 @@
 # Spec018 最终验收评审
 
+> 当前补充收口：2026-10-26 canonical ID/单文档发布一致性窄修追加栏已由 tester 标记 `READY_FOR_USER`、architect 签字 `GO`；历史正式 Spec018 验收与遗留边界保留。
+
 ## 结论
 
 **PASS（允许 Spec018 标记为已完成）**。
@@ -157,3 +159,77 @@
 **架构师（独立整合复审）：`/root/branch_inventory`；同意当前候选进入最终收口。**
 
 签字时间：2026-10-06 22:11 +0800
+
+---
+
+## 2026-10-26 重建入口 canonical ID / 发布一致性窄修验收（tester）
+
+本节是对当前主目录候选中 Spec018 2026-10-26 窄范围增量的追加验收，保留上方历史验收及其结论，不改写历史证据。验收角色为 `tester`，临时档位 `Luna xhigh`；工作目录为 `/Users/wjh/ResearchAgent`。本次只验收指定文档的 canonical ID 重建入口、发布前点集一致性和 partial 展示，不扩大到其他知识库功能、全库重建或其他未实现范围。
+
+### 范围、限制与候选证据
+
+- 入口范围由 `docs/sdd/plans/018/2026-10-26-reindex-entry.md:5-15` 冻结：列表 DTO 使用 `document_id`，一次重建请求，202/结构化错误、前端 partial 展示和指定文档的真实复验；不含上传、删除、全库索引、记忆页或登录恢复。
+- 目标实体为 `d4dfd2a620384ad5bece27320661f8f0`（`How to Peel a Million- Validating and Expanding Bitcoin Clusters.pdf`）。人工步骤、旧失败证据与最终产物边界见 `docs/sdd/plans/018/2026-10-26-reindex-entry.md:17-35`。
+- 运行时 Artifact 记录主目录候选 `127.0.0.1:8000`，只对 v2 发出一次受控请求：`docs/sdd/plans/018/artifacts/20261026-publication-recheck/request.md:1-11`；真实响应为 HTTP 202、`task_id=f69932bca4e34352ac4ebf7d45722af5`，见 `reindex-response.json:1`。本 tester 未再次 POST、未重启/部署、未写生产数据库或 Qdrant、未运行单端测试和 Git 操作。
+- 服务可访问证据为 `health.json:1`（`status=ok`）。最终文档状态显示 v1 `indexed`/107/100，v2 `indexed_partial`/308/100，错误为 `SOURCE_RANGE_UNRESOLVED`，见 `document-status.json:1-17`；文档身份与 source hash 见同文件 `:22-40`。
+- v2 inspection manifest 明确 `status=partial`、`mapped_count=292`、`unmapped_count=16`、`unmapped_reasons.SOURCE_RANGE_UNRESOLVED=16`、`mapping_algorithm_version=source-anchor-v2`，见 `inspection-v2.json:1`。这 16 项是合法 partial，不得表述为 308 项全部映射成功。
+- 点集一致性复核为 `manifest_count=308`、`qdrant_v2_count=308`、`qdrant_v1_count=107`，`extra_point_indices=[]`、`missing_point_indices=[]`、`payload_mismatch_indices=[]`，见 `point-manifest-comparison.json:1-12`。
+- 用户可见截图 `knowledge-base.png` 显示目标条目的 v1 已索引 107 片段、v2 部分索引 308 片段，并显示“部分切片无法精确定位原文，已保留可用索引；可进入切片检查”的原因提示；这与 API 的 partial/16 unmapped 事实一致。
+- 前端窄修最终回归为 Node 18/18、合跑 26/26、Python 23/23、0 skip，且真实 markup smoke 的 canonical URL/body 与 task 文案通过，见 `docs/sdd/plans/018/2026-10-26-reindex-entry-test.md:67-108`。后端窄修独立评审为 GO，且 5/50/99 个目标集合均通过，见 `docs/sdd/plans/018/2026-10-26-reindex-entry-backend-review.md:7-20`、`2026-10-26-reindex-entry-backend-test.md:5-13`。
+
+### 真实 API E2E 与结果判定
+
+| 检查 | 结果 | 可复核证据 |
+|---|---|---|
+| canonical 文档身份 | PASS | `2026-10-26-reindex-entry.md:5-7,21-22`；响应 `reindex-response.json:1` 的 `document_id` 与目标一致 |
+| 只提交一次 v2 重建 | PASS | `artifacts/20261026-publication-recheck/request.md:5-9`；HTTP 202、task `f69932bca4e34352ac4ebf7d45722af5` |
+| v1 最终状态 | PASS | `document-status.json:5-10`：107/107，progress 100，error null |
+| v2 最终状态 | PASS（partial） | `document-status.json:11-16`、`inspection-v2.json:1`：308 总片段、292 mapped、16 unresolved；不是全量映射成功 |
+| 发布点集一致性 | PASS | `point-manifest-comparison.json:1-12`：三类 mismatch 均为空 |
+| partial 原因可见 | PASS | `knowledge-base.png`；与 `inspection-v2.json:1` 的 `SOURCE_RANGE_UNRESOLVED` 一致 |
+| 失败/忙碌恢复边界 | PASS | `2026-10-26-reindex-entry.md:22-27`；前端 202/409/503 合同见 `2026-10-26-reindex-entry-test.md:85-104` |
+
+### 可独立复现的人工验收案例（仅限本窄修）
+
+入口：`http://127.0.0.1:8000/`；前置条件：服务 health 可访问、目标文档已存在；若 generation/检查器未 ready，应按页面提示等待而不是触发全库重建。使用目标 canonical ID `d4dfd2a620384ad5bece27320661f8f0`。以下步骤与真实产物 task `f69932bca4e34352ac4ebf7d45722af5` 对照。
+
+1. **打开目标文档**：点击左侧“知识库”，在论文 RAG 列表点击 `How to Peel a Million- Validating and Expanding Bitcoin Clusters.pdf` 所在卡片。点击后提示目标条目显示 v1/v2 状态和“重建索引”；等待文档列表加载完成且身份为 canonical `document_id`；下一步点击该卡片的“重建索引”。若条目身份缺失，停止并保留页面状态，不提交请求。
+2. **提交一次重建**：点击“重建索引”一次。点击后应看到“已提交重建：…（v1 + v2，任务 <task_id> 已排队）”；等待 HTTP 202 且响应含非空 `task_id`；下一步返回列表或刷新状态。若出现 409/“已有索引任务正在运行”，停止重复点击并等待已有任务；若出现 503 或失败文案，保留错误和时间，按同一行“重试”且只提交一次。
+3. **检查 v1**：点击“切片检查”，选择目标文档并选择 v1。点击后等待“正在加载检查清单…”结束并显示 v1 `ready/indexed`、107 片段；下一步选择 v2。若出现 `INDEX_FINALIZE_REQUIRED` 或检查器只读提示，等待切换完成后重试，不删除文件或手动改 Qdrant。
+4. **检查 v2 partial**：选择 v2。点击后等待 manifest 加载到终态；应显示 308 片段、partial/部分索引以及“部分切片无法精确定位原文，已保留可用索引”的告警，16 项 `SOURCE_RANGE_UNRESOLVED` 不能被隐藏或改写为全量成功；下一步可进入切片检查查看可定位部分。若状态为 building/202，按 `Location`/页面提示等待；若出现点集不一致或 finalize 错误，停止点击并交由实现方处理。
+5. **验证恢复**：对可用 v2 切片继续查看；点击失败态同一行的“重试”只能在失败终态使用，等待新的 task ID 和最终状态。不得把顶层 `indexed` 作为 v2 全量 ready，也不得触发全库重建。
+
+成功判据：目标 canonical ID 正确、重建任务真实 202 且有 task ID、v1=107、v2=308 且 partial 的 292/16 统计与 API/页面一致、点集三类差异为空。失败判据：缺 ID 仍 POST、错误目标、非 202 被当作成功、v2 告警缺失、或任何 mismatch 被隐瞒。
+
+### Readiness Matrix（仅本次窄修）
+
+| # | 准备度项 | 结果 | 证据 |
+|---:|---|---|---|
+| 1 | 服务已启动并可访问 | PASS | `artifacts/20261026-publication-recheck/health.json:1`；目标运行记录 `request.md:3` |
+| 2 | 真实 API 创建入口成功 | PASS | `request.md:5-9`、`reindex-response.json:1`，HTTP 202/task `f69932...` |
+| 3 | 主路径参数正确解析 | PASS | canonical `document_id`、`chunker=v2` 与响应一致；`request.md:5-9` |
+| 4 | 实体状态从初始态推进 | PASS | v1/v2 progress=100、最终状态见 `document-status.json:5-16` |
+| 5 | 前端显示处理中/结果提示 | PASS | 202/失败态合同与最终 markup smoke：`2026-10-26-reindex-entry-test.md:85-104` |
+| 6 | 用户知道何时等待或点击 | PASS | 人工步骤 `2026-10-26-reindex-entry.md:21-27`；本节步骤 1–5 |
+| 7 | 核心产物真实生成 | PASS | `inspection-v2.json:1`、`point-manifest-comparison.json:1-12` |
+| 8 | 失败状态有可操作恢复 | PASS | 409/503/失败重试边界：`2026-10-26-reindex-entry.md:22-27` |
+| 9 | 页面状态与 API 状态一致 | PASS | `knowledge-base.png` 与 `document-status.json:11-16`、`inspection-v2.json:1` |
+| 10 | 步骤文档可由无上下文用户复现 | PASS | `2026-10-26-reindex-entry.md:17-27`；本节人工案例 |
+
+计分：`10/10 PASS`；P0=0、P1=0。共享整合候选的权威最终回归未在本次重跑：后端 `3121 passed / 3 skipped / 0 failed`，见 `docs/sdd/plans/038/2026-10-26-management-backend-test.md:129-142`；前端 `317 passed / 0 failed / 0 skipped`，见 `docs/sdd/plans/038/2026-10-26-management-frontend-test.md:164-176`。3 个后端 skip 的原因已明确：2 个 `tests/e2e/test_research_lifecycle_e2e.py` 需要显式 `RUN_E2E=1`、浏览器和已启动服务；1 个 `tests/research/test_ollama_direct.py` 因 Ollama 不可达或无可用模型而受门控跳过。它们不是本窄修失败，也没有在本次重新执行。
+
+### 最终决定（范围限定）
+
+**READY_FOR_USER（仅限 Spec018 2026-10-26 canonical ID 衔接与单文档发布一致性窄修）。** 真实 API 202→终态、关键 inspection/point 产物和 UI partial 原因均存在，准备度 10/10，无 P0/P1。v2 的 16 个 `SOURCE_RANGE_UNRESOLVED` 保持为合法 partial，不能写成“全部映射成功”。本结论不改变 Spec018 当前 `实施中` 状态，不替代架构师签字、部署验证或 Spec018 其他历史/全量范围收口。
+
+### 签字
+
+**tester：READY_FOR_USER（仅限上述窄修范围）。**
+
+**架构师签字：GO（仅限上述 2026-10-26 canonical ID 衔接与单文档发布一致性窄修）。**
+
+核对结论：真实 API `202 → 终态`、v1/v2 状态、partial 原因和 manifest/Qdrant 点集一致性证据齐全，准备度 `10/10`、P0/P1 均为 0；v2 的 16 个 `SOURCE_RANGE_UNRESOLVED` 是已披露且允许的合法 partial，不得表述为全量映射成功。
+
+本签字只允许本次窄修收口，不代表 Spec018 其他历史阶段或全量能力整体完成；历史验收与遗留事实保留不变。
+
+签字时间：2026-10-26（Asia/Shanghai）

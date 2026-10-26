@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 from backend.app.platform.config import MODEL_NAME
 
@@ -78,6 +78,20 @@ class MemoryAnalysisBatchDecisionRequest(BaseModel):
     decision: Literal["save_suggested", "save_all", "ignore_all", "ignore", "save_project", "save_global"] = "save_suggested"
     item_ids: Optional[List[str]] = Field(default=None, max_length=1000)
     project_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class MemoryDocumentPutRequest(BaseModel):
+    """Compare-and-swap body for one fixed Markdown memory document.
+
+    The route validates this model manually so malformed JSON and extra fields
+    map to the public 400 ``INVALID_MEMORY_DOCUMENT_REQUEST`` contract instead
+    of FastAPI's default 422 response.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: StrictStr
+    revision: StrictStr
 
 
 class SystemRulePutRequest(BaseModel):

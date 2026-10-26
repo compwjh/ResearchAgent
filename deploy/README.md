@@ -35,3 +35,22 @@ PORT=8300 ./deploy/start.sh -d   # 换端口启动（默认 8000）
 ## 部署后确认
 
 合并远程分支、重建内存数据库或更换端口后，必须按 [`VERIFICATION.md`](./VERIFICATION.md) 完成 Git 分支、SQLite schema、Ollama、静态资源版本、会话接口和上下文压缩的逐项确认。只检查 `/api/health` 不足以证明会话和压缩功能可用。
+
+## 当前登录会话中的临时后台托管
+
+2026-10-26 本机修复验收发现，工具会话结束后，普通 `nohup` 子进程可能被宿主执行环境清理。当前 8000 服务由 macOS 当前登录会话托管，执行的仍是既有启动脚本；未安装开机启动 plist，仍只监听本机回环地址。
+
+```bash
+launchctl submit -l com.researchagent.recovery8000 \
+  -o /Users/wjh/ResearchAgent/deploy/run.log \
+  -e /Users/wjh/ResearchAgent/deploy/run.log \
+  -- /bin/zsh -c 'cd /Users/wjh/ResearchAgent && exec env HOST=127.0.0.1 PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh'
+```
+
+同一标签不可重复提交；需要停止这次托管时执行：
+
+```bash
+launchctl remove com.researchagent.recovery8000
+```
+
+停启后仍须核对端口、健康接口、知识库依赖及真实项目产物，不能以启动命令退出码 0 代替验证。当前修复的重启后证据见 `docs/sdd/plans/038/artifacts/20261026-file-management/final-background-*.json`。这不是系统开机自启方案；重新登录后按需要再启动。

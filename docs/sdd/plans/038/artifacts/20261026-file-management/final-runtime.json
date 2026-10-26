@@ -1,0 +1,22 @@
+{
+  "assets": [
+    "/assets/styles.css?v=65",
+    "/assets/literature-maps.css?v=13",
+    "/assets/vendor/purify.min.js?v=13",
+    "/assets/vendor/marked.min.js?v=13",
+    "/assets/kb-inspection.js?v=23",
+    "/assets/research-session-ui.js?v=2",
+    "/assets/conversation-research.js?v=1",
+    "/assets/processing-tree.js?v=1",
+    "/assets/research-tasks.js?v=16",
+    "/assets/literature-maps.js?v=21",
+    "/assets/app.js?v=65"
+  ],
+  "project_id": "a4a1745f801441188dc1f75b0534be11",
+  "document": "projects/a4a1745f801441188dc1f75b0534be11.md",
+  "revision": "155111e4027d363c482419e5ecca9a261d4d01f20dc85a5d4d7b105a28cde19a",
+  "content": "# 验收记录\n\n仅用于文件记忆验收的独立项目。\n保留换行与 Emoji 😊。\n浏览器保存验证。\n服务器并发版本。\n冲突恢复新版本。\n已合并浏览器草稿。\n",
+  "browser_status": "文档已保存",
+  "result": "success",
+  "existing_user_memory_modified": false
+}

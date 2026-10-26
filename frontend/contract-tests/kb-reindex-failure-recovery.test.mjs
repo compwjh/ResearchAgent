@@ -13,6 +13,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const FRONTEND = path.resolve(import.meta.dirname, '..');
+const INDEX = fs.readFileSync(path.join(FRONTEND, 'index.html'), 'utf8');
 
 // ---- 轻量假 DOM（与 context-meter-and-kb-count.test.mjs 同源，自包含）----
 class FakeEl {
@@ -130,7 +131,7 @@ const REGISTRY_IDS = [
   'kb-list', 'kb-status', 'kb-empty', 'kb-count', 'kb-nav-count',
 ];
 
-function loadApp() {
+function loadApp(extra = {}) {
   const code = fs.readFileSync(path.join(FRONTEND, 'app.js'), 'utf8');
   const els = {};
   for (const id of REGISTRY_IDS) els[id] = new FakeEl('span');
@@ -148,7 +149,7 @@ function loadApp() {
     body: makeUniversal(),
     documentElement: makeUniversal(),
   };
-  const context = baseGlobals({ document: appDocument });
+  const context = baseGlobals({ document: appDocument, ...extra });
   vm.createContext(context);
   vm.runInContext(code, context, { filename: 'app.js', timeout: 4000 });
   return { context, els };
@@ -182,6 +183,46 @@ function findButton(node, text = null, acc = null) {
     if (r) return r;
   }
   return acc;
+}
+
+function response(status, payload, { jsonError = false } = {}) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    async json() {
+      if (jsonError) throw new Error('malformed JSON');
+      return payload;
+    },
+  };
+}
+
+function canonicalPaper(overrides = {}) {
+  return {
+    document_id: 'd4dfd2a620384ad5bece27320661f8f0',
+    file_name: 'How to Peel a Million- Validating and Expanding Bitcoin Clusters.pdf',
+    page_count: 12,
+    status: 'indexed',
+    chunkers: {
+      v1: { status: 'indexed', progress: 100, chunk_count: 107 },
+      v2: { status: 'indexed', progress: 100, chunk_count: 308 },
+    },
+    ...overrides,
+  };
+}
+
+function partialPaper(overrides = {}) {
+  return canonicalPaper({
+    chunkers: {
+      v1: { status: 'indexed', progress: 100, chunk_count: 107 },
+      v2: {
+        status: 'indexed_partial',
+        progress: 100,
+        chunk_count: 297,
+        error: '部分切片无法精确定位原文：SOURCE_RANGE_UNRESOLVED',
+      },
+    },
+    ...overrides,
+  });
 }
 
 // 故障期遗留的失败文档：paper.error 与 chunker.error 都带原始后端码。
@@ -261,5 +302,266 @@ describe('spec-036 task-06 KB 失败态：中文文案 + 重试入口', () => {
     assert.ok((item.className || '').includes('status-failed'), '任一 chunker failed 仍应带 status-failed');
     assert.ok(findButton(item, '重试'), '任一 chunker failed 仍应提供「重试」入口');
     assert.ok(findByClass(item, 'kb-item-error'), '任一 chunker failed 仍应渲染失败说明');
+  });
+});
+
+describe('KB canonical 重建入口', () => {
+  test('production KB markup loads the current app bundle and exposes the status/list targets', () => {
+    assert.match(INDEX, /id="kb-status"/);
+    assert.match(INDEX, /id="kb-list"/);
+    assert.match(INDEX, /src="\/assets\/app\.js\?v=62"/);
+  });
+
+  test('canonical-only DTO submits one all-chunker request to the document endpoint', async () => {
+    const requests = [];
+    const paper = canonicalPaper();
+    const { context, els } = loadApp({
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        if (options.method === 'POST') {
+          return response(202, { task_id: 'task-kb-1', document_id: paper.document_id, chunker: 'all', status: 'queued', progress: 0 });
+        }
+        return response(200, { papers: [paper] });
+      },
+    });
+    context.renderKbPapers([paper]);
+    const button = findButton(els['kb-list'].children[0], '重建索引');
+    await button.handlers.click[0]();
+
+    const submitted = requests.filter(({ options }) => options.method === 'POST');
+    assert.equal(submitted.length, 1);
+    assert.equal(submitted[0].url, `/api/kb/documents/${paper.document_id}/reindex`);
+    assert.deepEqual(JSON.parse(submitted[0].options.body), { chunker: 'all' });
+    assert.ok(els['kb-status'].textContent.includes('已提交重建'), '202 应显示排队成功提示');
+  });
+
+  test('only 202 with a non-empty task_id is a successful queued response', async () => {
+    const scenarios = [
+      ['202 missing task_id', response(202, { document_id: 'd4dfd2a620384ad5bece27320661f8f0', chunker: 'all', status: 'queued' })],
+      ['200 with task_id', response(200, { task_id: 'task-wrong-status', document_id: 'd4dfd2a620384ad5bece27320661f8f0', chunker: 'all', status: 'queued' })],
+      ['204 empty body', response(204, null)],
+      ['202 malformed JSON', response(202, null, { jsonError: true })],
+    ];
+    for (const [label, postResponse] of scenarios) {
+      const paper = canonicalPaper();
+      const { context, els } = loadApp({
+        queueMicrotask: () => {},
+        fetch: async (_url, options = {}) => options.method === 'POST'
+          ? postResponse
+          : response(200, { papers: [paper] }),
+      });
+      context.renderKbPapers([paper]);
+      await findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+
+      assert.ok(!els['kb-status'].textContent.includes('已提交重建'), `${label} 不得显示成功排队`);
+      assert.ok(els['kb-status'].textContent.startsWith('重建失败：'), `${label} 应显示失败提示`);
+    }
+  });
+
+  test('legacy paper_id DTO falls back to the canonical document endpoint', async () => {
+    const requests = [];
+    const paper = canonicalPaper({ document_id: undefined, paper_id: 'legacy-document-id' });
+    const { context, els } = loadApp({
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        return options.method === 'POST'
+          ? response(202, { task_id: 'task-legacy', document_id: paper.paper_id, chunker: 'all', status: 'queued' })
+          : response(200, { papers: [paper] });
+      },
+    });
+    context.renderKbPapers([paper]);
+    await findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+
+    const submitted = requests.filter(({ options }) => options.method === 'POST');
+    assert.equal(submitted.length, 1);
+    assert.equal(submitted[0].url, '/api/kb/documents/legacy-document-id/reindex');
+  });
+
+  test('missing document identity does not submit a request', async () => {
+    const requests = [];
+    const paper = canonicalPaper({ document_id: '', paper_id: '' });
+    const { context, els } = loadApp({
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        return response(200, { papers: [paper] });
+      },
+    });
+    context.renderKbPapers([paper]);
+    await findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 0, '缺少稳定 ID 时不得发出 POST');
+    assert.ok(els['kb-status'].textContent.includes('未提交请求'));
+  });
+
+  test('structured already-running 409 is shown as actionable busy state, not success', async () => {
+    const requests = [];
+    const paper = canonicalPaper();
+    const { context, els } = loadApp({
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        return options.method === 'POST'
+          ? response(409, { error_code: 'INDEX_ALREADY_RUNNING', message: '文档已有索引任务运行中', status: 'running', progress: 0 })
+          : response(200, { papers: [paper] });
+      },
+    });
+    context.renderKbPapers([paper]);
+    await findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+
+    assert.equal(els['kb-status'].textContent, '重建进行中：已有索引任务正在运行，请稍后查看进度');
+    assert.ok(!els['kb-status'].textContent.includes('已提交重建'));
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 1);
+  });
+
+  test('structured service error uses canonical message and never renders undefined', async () => {
+    const paper = canonicalPaper();
+    const { context, els } = loadApp({
+      fetch: async (_url, options = {}) => options.method === 'POST'
+        ? response(503, { error_code: 'QDRANT_UNAVAILABLE', message: '索引任务暂时无法启动', retryable: true })
+        : response(200, { papers: [paper] }),
+    });
+    context.renderKbPapers([paper]);
+    await findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+
+    assert.equal(els['kb-status'].textContent, '重建失败：索引任务暂时无法启动');
+    assert.ok(!els['kb-status'].textContent.includes('undefined'));
+    assert.ok(!els['kb-status'].textContent.includes('已提交重建'));
+  });
+
+  test('concurrent clicks on one rebuild button produce one POST', async () => {
+    const requests = [];
+    const paper = canonicalPaper();
+    let releasePost;
+    const postResponse = new Promise((resolve) => { releasePost = resolve; });
+    const { context, els } = loadApp({
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        return options.method === 'POST' ? postResponse : response(200, { papers: [paper] });
+      },
+    });
+    context.renderKbPapers([paper]);
+    const handler = findButton(els['kb-list'].children[0], '重建索引').handlers.click[0];
+    const first = handler();
+    const second = handler();
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 1);
+    releasePost(response(202, { task_id: 'task-concurrent', document_id: paper.document_id, chunker: 'all', status: 'queued' }));
+    await Promise.all([first, second]);
+  });
+
+  test('document lock survives list re-render and blocks a new button for the same ID', async () => {
+    const requests = [];
+    const paper = canonicalPaper();
+    let releasePost;
+    const postResponse = new Promise((resolve) => { releasePost = resolve; });
+    const { context, els } = loadApp({
+      queueMicrotask: () => {},
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        return options.method === 'POST' ? postResponse : response(200, { papers: [paper] });
+      },
+    });
+    context.renderKbPapers([paper]);
+    const firstButton = findButton(els['kb-list'].children[0], '重建索引');
+    const first = firstButton.handlers.click[0]();
+    context.renderKbPapers([paper]);
+    const replacementButton = findButton(els['kb-list'].children[0], '重建索引');
+    const second = replacementButton.handlers.click[0]();
+
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 1, '重绘后的新按钮仍应被同文档锁阻止');
+    releasePost(response(202, { task_id: 'task-rerender', document_id: paper.document_id, chunker: 'all', status: 'queued' }));
+    await Promise.all([first, second]);
+  });
+
+  test('document lock releases after failure so a later retry can submit', async () => {
+    const requests = [];
+    const paper = canonicalPaper();
+    let releaseFirst;
+    const firstResponse = new Promise((resolve) => { releaseFirst = resolve; });
+    let postCount = 0;
+    const { context, els } = loadApp({
+      queueMicrotask: () => {},
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        if (options.method !== 'POST') return response(200, { papers: [paper] });
+        postCount += 1;
+        return postCount === 1
+          ? firstResponse
+          : response(202, { task_id: 'task-retry', document_id: paper.document_id, chunker: 'all', status: 'queued' });
+      },
+    });
+    context.renderKbPapers([paper]);
+    const first = findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+    context.renderKbPapers([paper]);
+    const blocked = findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 1);
+
+    releaseFirst(response(503, { error_code: 'QDRANT_UNAVAILABLE', message: '索引任务暂时无法启动', retryable: true }));
+    await Promise.all([first, blocked]);
+    const retry = findButton(els['kb-list'].children[0], '重建索引');
+    await retry.handlers.click[0]();
+
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 2, '失败释放锁后，后续重试应可提交');
+    assert.ok(els['kb-status'].textContent.includes('已提交重建'));
+  });
+
+  test('different document IDs do not share the in-flight lock', async () => {
+    const requests = [];
+    const firstPaper = canonicalPaper();
+    const secondPaper = canonicalPaper({ document_id: 'other-document-id', file_name: 'other.pdf' });
+    let releaseFirst;
+    let releaseSecond;
+    const firstResponse = new Promise((resolve) => { releaseFirst = resolve; });
+    const secondResponse = new Promise((resolve) => { releaseSecond = resolve; });
+    let postCount = 0;
+    const { context, els } = loadApp({
+      queueMicrotask: () => {},
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        if (options.method !== 'POST') return response(200, { papers: [firstPaper, secondPaper] });
+        postCount += 1;
+        return postCount === 1 ? firstResponse : secondResponse;
+      },
+    });
+    context.renderKbPapers([firstPaper, secondPaper]);
+    const first = findButton(els['kb-list'].children[0], '重建索引').handlers.click[0]();
+    const second = findButton(els['kb-list'].children[1], '重建索引').handlers.click[0]();
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 2);
+    releaseFirst(response(202, { task_id: 'task-first', document_id: firstPaper.document_id, chunker: 'all', status: 'queued' }));
+    releaseSecond(response(202, { task_id: 'task-second', document_id: secondPaper.document_id, chunker: 'all', status: 'queued' }));
+    await Promise.all([first, second]);
+  });
+});
+
+describe('KB indexed_partial reindex feedback', () => {
+  test('real partial DTO keeps v1 ready, v2 partial reason, and does not look failed or fully successful', () => {
+    const requests = [];
+    const paper = partialPaper();
+    const { context, els } = loadApp({
+      fetch: async (url, options = {}) => {
+        requests.push({ url, options });
+        return response(200, { papers: [paper] });
+      },
+    });
+
+    context.renderKbPapers([paper]);
+
+    const item = els['kb-list'].children[0];
+    assert.ok(item, '应渲染出部分索引文档卡片');
+    assert.ok((item.className || '').includes('status-indexed_partial'), '部分索引卡片应带 scoped partial 警示类');
+    assert.ok(!(item.className || '').includes('status-failed'), '合法 partial 不得被误判为失败');
+    assert.equal(findByClass(item, 'kb-item-meta').textContent, '已索引 · 12 页', '顶层 indexed metadata 不得被版本 partial 覆盖');
+    const texts = collectText(item);
+    const joined = texts.join(' ');
+    assert.ok(joined.includes('v1 已索引 · 107 片段'), `v1 ready 状态必须保留，实际：${joined}`);
+    assert.ok(joined.includes('v2 部分索引 · 297 片段'), `v2 partial 状态必须保留，实际：${joined}`);
+    const warning = findByClass(item, 'kb-item-warning');
+    assert.ok(warning, 'partial 文档应有可见中文说明');
+    assert.ok(warning.textContent.includes('部分切片无法精确定位原文'), `应解释合法 partial 原因，实际：${warning.textContent}`);
+    assert.ok(warning.textContent.includes('已保留可用索引'), `应说明可用索引已保留，实际：${warning.textContent}`);
+    assert.ok(warning.textContent.includes('可进入切片检查'), `应提供切片检查入口提示，实际：${warning.textContent}`);
+    assert.ok(!warning.textContent.includes('索引失败'), 'partial 说明不得称为失败');
+    assert.ok(!warning.textContent.includes('全部成功'), 'partial 说明不得宣称全量成功');
+    assert.ok(!joined.includes('SOURCE_RANGE_UNRESOLVED'), 'partial 原始原因码不得作为主文案呈现');
+    assert.equal(item.title, paper.chunkers.v2.error, 'partial 原因应保留在卡片 title 供诊断');
+    assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 0, '仅渲染真实 DTO 不得额外发起 reindex POST');
   });
 });

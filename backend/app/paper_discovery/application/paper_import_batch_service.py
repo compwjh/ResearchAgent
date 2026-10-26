@@ -501,6 +501,68 @@ class PaperImportBatchService:
             snapshots[item.candidate_id] = value
         return snapshots
 
+    def get_item_snapshot_candidates(self, item_id: str) -> Optional[list[Any]]:
+        """Resolve an item's durable candidates before any live-search TTL gate.
+
+        ``None`` means the batch is a legacy/incomplete record with at least one
+        missing durable snapshot; callers may retain the existing live-search
+        fallback for that case.  A malformed or hash-invalid snapshot raises
+        ``SNAPSHOT_REBUILD_REQUIRED`` from ``store.get_snapshot`` and must not
+        be hidden by that fallback.  Complete snapshots are re-resolved through
+        ``_snapshots_for`` so the normal durable hash and restart semantics stay
+        in one place.
+        """
+        item = self.store.get_item(item_id)
+        if item is None:
+            raise PaperImportBatchServiceError("ITEM_NOT_FOUND", "导入条目不存在")
+        batch = self.store.get_batch(item.batch_id)
+        if batch is None:
+            raise PaperImportBatchServiceError(BATCH_NOT_FOUND_ERROR, "导入批次不存在")
+
+        missing_snapshot = False
+        for stored_item in self.store.get_items(batch.batch_id):
+            try:
+                snapshot = self.store.get_snapshot(stored_item.item_id)
+            except PaperImportBatchStoreError as error:
+                if error.code == SNAPSHOT_REBUILD_REQUIRED:
+                    raise PaperImportBatchServiceError(
+                        SNAPSHOT_REBUILD_REQUIRED,
+                        str(error),
+                    ) from error
+                raise
+            if snapshot is None:
+                if stored_item.snapshot_json or stored_item.snapshot_hash:
+                    raise PaperImportBatchServiceError(
+                        SNAPSHOT_REBUILD_REQUIRED,
+                        "批次候选快照需要重建",
+                    )
+                missing_snapshot = True
+                continue
+            if (
+                str(_value(snapshot, "candidate_id")) != str(stored_item.candidate_id)
+                or str(_value(snapshot, "search_id")) != str(batch.search_id)
+            ):
+                raise PaperImportBatchServiceError(
+                    INVALID_SEARCH_SNAPSHOT,
+                    "候选快照身份与导入批次不匹配",
+                )
+        if missing_snapshot:
+            return None
+
+        snapshots = self._snapshots_for(batch.batch_id, None)
+        candidate = snapshots.get(item.candidate_id)
+        if candidate is None:
+            raise PaperImportBatchServiceError(CANDIDATE_NOT_FOUND, "候选论文不存在")
+        if (
+            str(_value(candidate, "candidate_id")) != str(item.candidate_id)
+            or str(_value(candidate, "search_id")) != str(batch.search_id)
+        ):
+            raise PaperImportBatchServiceError(
+                INVALID_SEARCH_SNAPSHOT,
+                "候选快照身份与导入批次不匹配",
+            )
+        return list(snapshots.values())
+
     def _import_one(
         self,
         item: PaperImportItem,

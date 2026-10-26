@@ -33,7 +33,7 @@ def test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes() -> N
     assert ".literature-map-analysis-history-item" in STYLES
     assert "/assets/literature-maps.js?v=21" in INDEX
     assert "/assets/literature-maps.css?v=13" in INDEX
-    assert "/assets/app.js?v=60" in INDEX
+    assert "/assets/app.js?v=62" in INDEX
 
 
 def test_component_fixture_supports_analysis_history_failure_and_conversation_bridge() -> None:

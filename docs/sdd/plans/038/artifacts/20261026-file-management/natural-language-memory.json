@@ -1,0 +1,10 @@
+{
+  "request": {
+    "project_id": "a4a1745f801441188dc1f75b0534be11",
+    "content": "请仅在本项目记住：本项目的验收代号是蓝色松果。请只回复已收到。",
+    "model": "qwen3.5:9b",
+    "reasoning_effort": "off"
+  },
+  "http_status": 200,
+  "events": []
+}

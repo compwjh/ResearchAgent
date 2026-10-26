@@ -1,0 +1,46 @@
+[
+  {
+    "elapsed_seconds": 0,
+    "state": {
+      "document_id": "d4dfd2a620384ad5bece27320661f8f0",
+      "status": "indexed",
+      "chunkers": {
+        "v1": {
+          "status": "indexed",
+          "chunk_count": 107,
+          "progress": 100,
+          "error": null
+        },
+        "v2": {
+          "status": "indexing",
+          "chunk_count": 308,
+          "progress": 0,
+          "error": null
+        }
+      },
+      "error": null
+    }
+  },
+  {
+    "elapsed_seconds": 90,
+    "state": {
+      "document_id": "d4dfd2a620384ad5bece27320661f8f0",
+      "status": "indexed",
+      "chunkers": {
+        "v1": {
+          "status": "indexed",
+          "chunk_count": 107,
+          "progress": 100,
+          "error": null
+        },
+        "v2": {
+          "status": "indexed_partial",
+          "chunk_count": 297,
+          "progress": 100,
+          "error": "SOURCE_RANGE_UNRESOLVED"
+        }
+      },
+      "error": null
+    }
+  }
+]

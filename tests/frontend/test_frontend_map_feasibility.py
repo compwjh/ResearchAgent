@@ -159,9 +159,30 @@ def _exercise_interactions(page, profile: str) -> dict:
         "document.querySelector('[data-node-id=\"node-17\"]').getAttribute('data-selected') === 'true'"
     )
 
+    # Prove the measurement reset removes prior-window observations. The busy
+    # loop is deliberately outside the measured gesture so this is a real
+    # PerformanceObserver entry, not a synthetic array write.
+    before_reset = page.evaluate("window.__mapMetrics.snapshot()")
+    assert before_reset["interactionCount"] > 0, before_reset
+    page.evaluate(
+        """() => new Promise((resolve) => {
+            setTimeout(() => {
+                const deadline = performance.now() + 60;
+                while (performance.now() < deadline) {}
+                resolve();
+            }, 0);
+        })"""
+    )
+    page.wait_for_timeout(100)
+    before_reset = page.evaluate("window.__mapMetrics.snapshot()")
+    assert before_reset["longTaskCount"] >= 1, before_reset
+    page.evaluate("window.__mapMetrics.resetInteractionDurations()")
+    after_reset = page.evaluate("window.__mapMetrics.snapshot()")
+    assert after_reset["interactionCount"] == 0, after_reset
+    assert after_reset["longTaskCount"] == 0, after_reset
+
     # Exercise a burst of view updates and keep event, frame, and gesture wall
     # time as separate observations.
-    page.evaluate("window.__mapMetrics.resetInteractionDurations()")
     page.mouse.move(box["x"] + 210, box["y"] + 140)
     page.mouse.down()
     for offset in range(12, 92, 8):
@@ -179,8 +200,16 @@ def _exercise_interactions(page, profile: str) -> dict:
     assert final["maxGestureWallMs"] < 1000, final
     assert final["maxRenderWallMs"] < 250, final
     assert final["longTaskCount"] == 0
+    assert final["interactionCount"] > 0
     assert final["renderRafCount"] > initial_view["renderRafCount"]
-    return {"initial": initial, "after_zoom": after_zoom, "after_pan": after_pan, "final": final}
+    return {
+        "initial": initial,
+        "after_zoom": after_zoom,
+        "after_pan": after_pan,
+        "before_reset": before_reset,
+        "after_reset": after_reset,
+        "final": final,
+    }
 
 
 def test_synthetic_svg_supports_sparse_graph_interactions(tmp_path: Path) -> None:

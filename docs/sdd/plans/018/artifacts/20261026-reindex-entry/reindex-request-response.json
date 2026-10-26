@@ -1,0 +1,19 @@
+{
+  "time": "2026-10-25T17:35:00.930349+00:00",
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:8000/api/kb/documents/d4dfd2a620384ad5bece27320661f8f0/reindex",
+    "json": {
+      "chunker": "all"
+    }
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "Content-Type": "application/json",
+      "Location": "/api/kb/documents/d4dfd2a620384ad5bece27320661f8f0/inspection",
+      "Retry-After": "2"
+    },
+    "body": "{\"task_id\":\"c4ab10b585f24a0689be67bdce0b4d6c\",\"document_id\":\"d4dfd2a620384ad5bece27320661f8f0\",\"chunker\":\"all\",\"status\":\"queued\",\"progress\":0}"
+  }
+}

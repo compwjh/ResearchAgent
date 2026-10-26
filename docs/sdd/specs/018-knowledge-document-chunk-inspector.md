@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：`已完成（2026-10-22 同范围PDF安全分类与发布状态修复已验收）`；2026-10-06已完成的历史验收保留，不覆盖。**
+**当前状态：原 Spec018 历史范围保持既有记录；`2026-10-26` canonical ID 衔接与单文档发布一致性窄修已完成（架构师/验收 GO）。此前 PDF 安全/发布状态与历史失败证据保留，不作为本次窄修的替代证据。**
 
 > 2026-09-08 首轮 Task02 的 `NO-GO` 与固定证据永久保留；Task02A-A～C 已完成并分别通过独立后端评审。2026-09-09 用户明确旧 Qdrant 索引可以全部抛弃，只要求新索引生效，因此撤销此前“逐 point/vector 快照、原地恢复、首次打开自动升级”的未完成设计，改为一次性全库候选 Collection 重建与维护窗口切换。全库替换修订随后完成需求、技术、实现和验收门禁；最终全量回归与运行时 smoke 均通过。未提交的旧快照实现不属于交付物；一个历史文档 v2 后台任务仍为 `indexing`，按验收报告作为非阻塞遗留记录。
 
@@ -11,6 +11,14 @@
 在个人知识库中新增“切片检查”Tab，让用户选择一份已入库的 PDF 或 Markdown 文档，在原文视图与切片视图之间进行文本块级双向点击、滚动和高亮，并看到真正写入索引的 v1/v2 切片结果。
 
 ## 背景与问题
+
+### 2026-10-26 重建入口窄修（已完成，范围限定）
+
+真实单文档API已暴露同一重建链的发布一致性缺陷：新v2 manifest为297片段，但Qdrant仍有308个点，多出11个旧尾部点。诊断见[来源区间与快照核对](../plans/018/2026-10-26-reindex-entry-range-diagnosis.md)。本范围追加必要后端接缝修复：删除旧版本失败不能吞掉；发布前核对当前文档+chunker点集与待发布manifest一致，不一致fail-closed，不触碰其他文档或全库。20个图表片段无法唯一定位属于合法partial，继续如实保留，不放宽精确来源校验；前端须中文展示partial原因，不以顶层indexed冒充两版完整。后端由backend-dev单独分派、独立复审后重启服务，再只对该文档做一次有界v2修复验证；原首次API证据保留，不虚构其全部成功。
+
+实际列表返回canonical `document_id`，旧前端重建按钮仍读取`paper_id`并只解析旧`detail`错误，造成错误目标及“重建失败：重建失败”。本次已完成前端身份衔接、结构化错误展示、后端发布前点集一致性与指定文档真实复验；优先canonical ID并保留必要旧记录兼容，缺ID不提交，不能把失败当成功。复用既有canonical reindex接口及generation/PDF安全门禁，不改公开接口、不做全库重建、不删除原件。真实复验得到 v1=107、v2=308，v2 为合法 partial（292 mapped、16 `SOURCE_RANGE_UNRESOLVED`），manifest/Qdrant 点集无差异。相关执行记录：[入口修复](../plans/018/2026-10-26-reindex-entry.md) 与 [窄修验收](../reviews/018-acceptance-review.md)。
+
+本次窄修不改变 Spec018 其他历史/全量范围；原 297 manifest、20 unresolved 与 11 个旧尾点的失败诊断仍保留在历史报告中，不能被本次 308/16 结果改写。
 
 ### 2026-10-21 PDF安全分类与发布状态修复（用户已授权）
 
@@ -506,6 +514,7 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 - 需求评审：`docs/sdd/reviews/018-requirement-review.md`（修订轮通过；历史 NO-GO 证据保留）
 - 技术评审：`docs/sdd/reviews/018-tech-review.md`（最终复审通过；历史生产切换债务作为审计记录保留）
 - 验收评审：`docs/sdd/reviews/018-acceptance-review.md`（PASS；tester 独立验收 + 架构师签字）
+- 2026-10-26 窄修验收：`docs/sdd/reviews/018-acceptance-review.md` 追加 canonical ID/发布一致性范围的 `READY_FOR_USER` 与架构师 `GO`；不代表原 Spec018 全部潜在范围重新收口。
 
 ## 变更日志
 
@@ -537,3 +546,4 @@ Task02A–05 的每个子任务必须先读取上游命名产物。只有使用�
 | 2026-09-10 | 架构师（自身） | 用户反馈索引完成后切片检查无内容；确认 direct reindex 未发布 InspectionManifest，且缺失清单分支只有 claim 没有 worker。已复用现有 provenance/chunker/reindex 能力，让同一批 chunks 同时写入 Qdrant 与 manifest；重复检查请求保持 202 可轮询，真实 PDF v1/v2 均验证返回非空切片。 |
 | 2026-09-10 | 用户 / 架构师（自身） | 用户验证 Spec018 功能无问题并同意收口；最终验收通过（全量 956 passed、1 skipped、38 subtests，HTTP/切片检查通过），Spec018 标记为 `已完成`。同时固化长期规则：Task 开发只跑相关定向测试，Spec 收口前统一跑一次全量回归；MAD-HTLC v2 后台 indexing 与 reranker disabled 作为非阻塞遗留记录。 |
 | 2026-10-06 | 架构师（自身）/独立 tester/reviewer | 完成整合版本补验；修复恢复 marker/schema 冲突及测试契约漂移，真实新 PDF/Markdown API E2E、2893 passed 全量和独立验收签字通过，恢复已完成状态。人工步骤与复盘落盘，旧库未验证边界、Langfuse collector 和清单全量预取债务保留；依用户明确授权合回 main 并推送。 |
+| 2026-10-26 | 架构师 / tester | canonical ID 衔接与单文档发布一致性窄修完成：真实 202→终态、manifest/Qdrant 点集一致、v2 合法 partial 与 UI 原因可见，`10/10` 准备度；历史失败与未映射边界保留，不扩展为全 Spec 新范围。 |

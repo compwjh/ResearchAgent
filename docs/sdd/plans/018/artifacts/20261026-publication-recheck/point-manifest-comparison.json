@@ -1,0 +1,13 @@
+{
+  "document_id": "d4dfd2a620384ad5bece27320661f8f0",
+  "manifest_count": 308,
+  "qdrant_v2_count": 308,
+  "qdrant_v1_count": 107,
+  "extra_point_indices": [],
+  "missing_point_indices": [],
+  "payload_mismatch_indices": [],
+  "manifest_status": "partial",
+  "mapped_count": 292,
+  "unmapped_count": 16,
+  "source_sha256": "71f8829f2e1d36ab2695ebcf1c1697e301e429eb1aea5225981f526be98a14a1"
+}

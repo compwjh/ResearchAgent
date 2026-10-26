@@ -6,8 +6,9 @@ import time
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 from backend.app.api import routes_skills as _skill_routes
 from backend.app.api import routes_tools as _tool_routes
@@ -17,6 +18,7 @@ from backend.app.api.schemas import (
     ConversationReasoningRequest,
     MemoryAnalysisBatchDecisionRequest,
     MemoryAnalysisDecisionRequest,
+    MemoryDocumentPutRequest,
     ProjectCreateRequest,
     ProjectPatchRequest,
     SystemRulePatchRequest,
@@ -46,12 +48,20 @@ from backend.app.knowledge_base.application import (
     hybrid_search,
     list_documents_for_project,
 )
+from backend.app.literature_maps.application.analysis import MapAnalysisError
 from backend.app.literature_maps.application.runtime import (
     get_literature_map_service,
     read_map_conversation_binding,
 )
-from backend.app.literature_maps.application.analysis import MapAnalysisError
-from backend.app.memory.markdown_store import read_user_memory_or_empty
+from backend.app.memory.markdown_store import (
+    MarkdownMemoryStore,
+    MemoryDocumentConflictError,
+    MemoryDocumentPathError,
+    MemoryDocumentTooLargeError,
+    MemoryDocumentUnavailableError,
+    PendingChangedError,
+    read_user_memory_or_empty,
+)
 from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
 from backend.app.memory.session_search import search_sessions
 from backend.app.platform.bootstrap import get_provider, register_provider
@@ -533,6 +543,240 @@ def delete_system_rule():
         _repo().clear_system_rule(OWNER_ID)
     except SystemRuleUnavailableError as error:
         raise HTTPException(status_code=503, detail={"code": "SYSTEM_RULE_UNAVAILABLE", "message": "系统规则暂时不可用", "retryable": True}) from error
+
+
+_MEMORY_DOCUMENT_REVISION = re.compile(r"^[0-9a-f]{64}$")
+_MEMORY_DOCUMENT_MAX_CODEPOINTS = 65_536
+def _memory_document_context(scope: str | None, project_id: str | None):
+    """Validate the fixed document selector and return its store seam.
+
+    The path is resolved before the project lookup so invalid/symlinked IDs
+    cannot create a directory or leak a filesystem target. Project ownership
+    is always checked against the server-side ``OWNER_ID``.
+    """
+    if scope not in {"global", "project"}:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_MEMORY_DOCUMENT_SCOPE",
+                "message": "scope 必须是 global 或 project",
+                "retryable": False,
+            },
+        )
+    if scope == "global" and project_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "PROJECT_ID_NOT_ALLOWED",
+                "message": "global scope 不接受 project_id",
+                "retryable": False,
+            },
+        )
+    if scope == "project" and not project_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "PROJECT_ID_REQUIRED",
+                "message": "project scope 需要 project_id",
+                "retryable": False,
+            },
+        )
+
+    try:
+        repo = _repo()
+        store = MarkdownMemoryStore(repository=repo)
+        store.document_path(scope=scope, project_id=project_id)
+    except MemoryDocumentPathError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "MEMORY_DOCUMENT_PATH_INVALID",
+                "message": "记忆文档路径无效",
+                "retryable": False,
+            },
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_PROJECT_ID",
+                "message": "project_id 格式无效",
+                "retryable": False,
+            },
+        ) from error
+    except Exception as error:
+        logger.exception("memory document store unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "MEMORY_DOCUMENT_UNAVAILABLE",
+                "message": "记忆文档暂时不可用",
+                "retryable": True,
+            },
+        ) from error
+
+    if scope == "project":
+        try:
+            project = repo.get_project(str(project_id), OWNER_ID)
+        except Exception as error:
+            logger.exception("memory document project lookup failed")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "MEMORY_DOCUMENT_UNAVAILABLE",
+                    "message": "记忆文档暂时不可用",
+                    "retryable": True,
+                },
+            ) from error
+        if project is None or project.status == "deleted":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "PROJECT_NOT_FOUND",
+                    "message": "项目不存在",
+                    "retryable": False,
+                },
+            )
+        if project.status != "active":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PROJECT_NOT_ACTIVE",
+                    "message": "项目不是 active 状态",
+                    "retryable": False,
+                },
+            )
+    return repo, store
+
+
+def _memory_document_unavailable(error: BaseException) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "MEMORY_DOCUMENT_UNAVAILABLE",
+            "message": "记忆文档暂时不可用",
+            "retryable": True,
+        },
+    )
+
+
+@router.get("/memory-documents")
+def get_memory_document(scope: str | None = None, project_id: str | None = None):
+    _, store = _memory_document_context(scope, project_id)
+    try:
+        return store.read_document(scope=scope, project_id=project_id)
+    except MemoryDocumentUnavailableError as error:
+        raise _memory_document_unavailable(error) from error
+    except (MemoryDocumentPathError, ValueError) as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "MEMORY_DOCUMENT_PATH_INVALID",
+                "message": "记忆文档路径无效",
+                "retryable": False,
+            },
+        ) from error
+    except Exception as error:
+        logger.exception("memory document read failed")
+        raise _memory_document_unavailable(error) from error
+
+
+@router.put("/memory-documents")
+async def put_memory_document(
+    request: Request,
+    scope: str | None = None,
+    project_id: str | None = None,
+):
+    try:
+        payload = await request.json()
+    except (UnicodeDecodeError, ValueError) as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_MEMORY_DOCUMENT_REQUEST",
+                "message": "请求必须包含合法 JSON，且包含字符串 content 和 revision",
+                "retryable": False,
+            },
+        ) from error
+    try:
+        request = MemoryDocumentPutRequest.model_validate(payload)
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_MEMORY_DOCUMENT_REQUEST",
+                "message": "请求必须包含字符串 content 和 revision，且不能包含其他字段",
+                "retryable": False,
+            },
+        ) from error
+    if len(request.content) > _MEMORY_DOCUMENT_MAX_CODEPOINTS:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "MEMORY_DOCUMENT_TOO_LARGE",
+                "message": "记忆文档超过 65,536 个 Unicode 字符",
+                "retryable": False,
+            },
+        )
+    if not _MEMORY_DOCUMENT_REVISION.fullmatch(request.revision):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_MEMORY_DOCUMENT_REVISION",
+                "message": "revision 必须是 64 位小写 SHA-256",
+                "retryable": False,
+            },
+        )
+
+    _, store = _memory_document_context(scope, project_id)
+    try:
+        return store.write_document(
+            scope=scope,
+            project_id=project_id,
+            content=request.content,
+            revision=request.revision,
+        )
+    except MemoryDocumentConflictError as error:
+        try:
+            current = store.read_document(scope=scope, project_id=project_id)
+        except MemoryDocumentUnavailableError as read_error:
+            raise _memory_document_unavailable(read_error) from read_error
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "MEMORY_DOCUMENT_CONFLICT",
+                "message": "文档已被其他写者修改，请合并后重试",
+                "retryable": False,
+                "scope": current["scope"],
+                "project_id": current["project_id"],
+                "document": current["document"],
+                "current_content": error.current_content,
+                "current_revision": error.current_revision,
+            },
+        ) from error
+    except MemoryDocumentTooLargeError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "MEMORY_DOCUMENT_TOO_LARGE",
+                "message": "记忆文档超过 65,536 个 Unicode 字符",
+                "retryable": False,
+            },
+        ) from error
+    except MemoryDocumentUnavailableError as error:
+        raise _memory_document_unavailable(error) from error
+    except (MemoryDocumentPathError, ValueError) as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "MEMORY_DOCUMENT_PATH_INVALID",
+                "message": "记忆文档路径无效",
+                "retryable": False,
+            },
+        ) from error
+    except Exception as error:
+        logger.exception("memory document write failed")
+        raise _memory_document_unavailable(error) from error
 
 
 @router.post("/projects", status_code=201)
@@ -2116,31 +2360,70 @@ def _analysis_item_decision(item_id: str, payload: MemoryAnalysisDecisionRequest
     if not item:
         raise HTTPException(status_code=404, detail={"code": "MEMORY_ANALYSIS_ITEM_NOT_FOUND", "message": "分析结果不存在", "retryable": False})
     if item.decision_status != "pending_confirmation":
-        return item
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PENDING_ALREADY_CONSUMED" if item.decision_status in {"auto_saved", "ignored"} else "PENDING_UNLINKED",
+                "message": "该待确认项已被消费" if item.decision_status in {"auto_saved", "ignored"} else "该分析项没有可处理的待确认文件关联",
+                "retryable": False,
+            },
+        )
     job = repo.get_memory_analysis_job_by_id(item.analysis_id, OWNER_ID)
     if not job:
         raise HTTPException(status_code=404, detail={"code": "MEMORY_ANALYSIS_NOT_FOUND", "message": "分析任务不存在", "retryable": False})
-    if payload.decision == "ignore":
-        return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="ignored")
     source_message = repo.get_message(job.user_message_id, OWNER_ID)
     source_text = source_message.content if source_message else ""
-    if is_system_rule_intent(source_text):
+    if payload.decision == "ignore":
+        # A project-scoped pending entry carries the send-time snapshot in
+        # its suffix. Legacy/unlinked global entries remain consumable by the
+        # explicit item_id only; resolve_pending performs the final check.
+        scope = "project" if item.suggested_scope == "project" and job.project_id_snapshot else "global"
+        project_id = job.project_id_snapshot if scope == "project" else None
+    elif is_system_rule_intent(source_text):
         raise HTTPException(status_code=409, detail={"code": "SYSTEM_RULE_REQUIRES_EXPLICIT_SAVE", "message": "系统规则建议必须在系统规则编辑器中显式保存", "retryable": False})
-    scope = "global" if payload.decision == "save_global" else "project"
-    if scope == "global" and not has_explicit_global_intent(source_text):
-        raise HTTPException(status_code=409, detail={"code": "GLOBAL_SCOPE_REQUIRES_EXPLICIT_INTENT", "message": "原始消息未明确要求全局范围", "retryable": False})
-    if scope == "project" and job.project_id_snapshot and payload.project_id and payload.project_id != job.project_id_snapshot:
-        raise HTTPException(status_code=409, detail={"code": "PROJECT_SCOPE_SNAPSHOT_MISMATCH", "message": "绑定项目记忆只能写入发送时项目", "retryable": False})
-    project_id = None if scope == "global" else (payload.project_id or job.project_id_snapshot)
-    if scope == "project":
-        if not project_id:
+    else:
+        scope = "global" if payload.decision == "save_global" else "project"
+        if scope == "global" and not has_explicit_global_intent(source_text):
+            raise HTTPException(status_code=409, detail={"code": "GLOBAL_SCOPE_REQUIRES_EXPLICIT_INTENT", "message": "原始消息未明确要求全局范围", "retryable": False})
+        if scope == "project" and job.project_id_snapshot and payload.project_id and payload.project_id != job.project_id_snapshot:
+            raise HTTPException(status_code=409, detail={"code": "PROJECT_SCOPE_SNAPSHOT_MISMATCH", "message": "绑定项目记忆只能写入发送时项目", "retryable": False})
+        project_id = None if scope == "global" else (payload.project_id or job.project_id_snapshot)
+        if scope == "project" and not project_id:
             raise HTTPException(status_code=400, detail={"code": "PROJECT_REQUIRED", "message": "保存到项目需要 project_id", "retryable": False})
-        project = repo.get_project(project_id, OWNER_ID)
-        if not project or project.status != "active":
-            raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在或不可用", "retryable": False})
-    # spec-038：``memories`` 表已停用，决策不再直接落库，只更新审计流水中的分析项
-    # 状态（``auto_saved``）。记忆内容本身改由 MD 承载，落盘在 P2/P3 接入。
-    return repo.update_memory_analysis_item(item_id, OWNER_ID, decision_status="auto_saved")
+        if scope == "project":
+            try:
+                project = repo.get_project(project_id, OWNER_ID)
+            except Exception as error:
+                logger.exception("memory pending project lookup failed")
+                raise HTTPException(status_code=503, detail={"code": "MEMORY_PENDING_RESOLUTION_UNAVAILABLE", "message": "待确认记忆暂时不可处理", "retryable": True}) from error
+            if not project or project.status != "active":
+                raise HTTPException(status_code=404, detail={"code": "PROJECT_NOT_FOUND", "message": "项目不存在或不可用", "retryable": False})
+
+    store = MarkdownMemoryStore(repository=repo)
+    try:
+        store.resolve_pending(item_id, scope=scope, project_id=project_id, decision="ignore" if payload.decision == "ignore" else "save")
+    except KeyError as error:
+        raise HTTPException(status_code=409, detail={"code": "PENDING_UNLINKED", "message": "分析项没有同 ID 的待确认文件，无法自动处理", "retryable": False}) from error
+    except PendingChangedError as error:
+        raise HTTPException(status_code=409, detail={"code": "PENDING_CHANGED", "message": "待确认文件已被修改，请重新读取后处理", "retryable": False}) from error
+    except (MemoryDocumentUnavailableError, OSError, ValueError) as error:
+        raise HTTPException(status_code=503, detail={"code": "MEMORY_PENDING_RESOLUTION_UNAVAILABLE", "message": "待确认记忆暂时不可处理", "retryable": True}) from error
+    except Exception as error:
+        logger.exception("memory pending resolution failed")
+        raise HTTPException(status_code=503, detail={"code": "MEMORY_PENDING_RESOLUTION_UNAVAILABLE", "message": "待确认记忆暂时不可处理", "retryable": True}) from error
+
+    try:
+        return repo.update_memory_analysis_item(
+            item_id,
+            OWNER_ID,
+            decision_status="ignored" if payload.decision == "ignore" else "auto_saved",
+        )
+    except Exception as error:
+        # The MD action has already succeeded; do not claim an audit success if
+        # its SQLite projection cannot be updated. The stable 503 tells the
+        # operator that the cross-system action needs recovery.
+        logger.exception("memory pending audit projection failed")
+        raise HTTPException(status_code=503, detail={"code": "MEMORY_PENDING_RESOLUTION_UNAVAILABLE", "message": "待确认记忆暂时不可处理", "retryable": True}) from error
 
 
 @router.post("/memory-analysis/items/{item_id}/decision")

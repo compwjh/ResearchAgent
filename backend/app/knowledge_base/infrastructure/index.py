@@ -26,11 +26,11 @@ from backend.app.knowledge_base.infrastructure.manifest_store import (
     ManifestStoreError,
     publication_mutation_lock,
 )
+from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.migration import (
     KnowledgeDocumentMigrationError,
     publish_index_state,
 )
-from backend.app.knowledge_base.infrastructure.markdown import extract_markdown_provenance
 from backend.app.knowledge_base.infrastructure.normalize import detect_citation, locate_reference_start
 from backend.app.knowledge_base.infrastructure.parse import (
     Chunk,
@@ -432,12 +432,13 @@ def _publish_inspection_manifest(
     chunks: List[Chunk],
     *,
     meta_path: Optional[Path],
+    indexed_payloads: Optional[List[Mapping[str, Any]]] = None,
 ) -> Any:
     """Publish the manifest from the exact payloads sent to Qdrant."""
     document = record.to_dict() if hasattr(record, "to_dict") else dict(record)
     document_id = str(document.get("document_id") or record_id(document))
     document["document_id"] = document_id
-    payloads = [
+    payloads = indexed_payloads or [
         {
             "document_id": document_id,
             "source_sha256": bundle.source_sha256,
@@ -453,6 +454,138 @@ def _publish_inspection_manifest(
     manifest = build_inspection_manifest(document, bundle, payloads)
     root = Path(meta_path or KB_META_PATH).resolve().parent
     return InspectionManifestStore(root).write(manifest)
+
+
+_MANIFEST_PAYLOAD_FIELDS = (
+    "document_id",
+    "source_sha256",
+    "chunker",
+    "chunk_index",
+    "text",
+    "page",
+    "page_end",
+    "section",
+)
+
+
+def _expected_manifest_payload(
+    document_id: str,
+    source_sha256: str,
+    chunker: str,
+    chunk: Chunk,
+) -> dict[str, Any]:
+    return {
+        "document_id": document_id,
+        "source_sha256": source_sha256,
+        "chunker": chunker,
+        "chunk_index": int(chunk.chunk_index),
+        "text": chunk.text,
+        "page": chunk.page,
+        "page_end": chunk.page_end,
+        "section": chunk.section,
+    }
+
+
+def _read_document_chunker_points(
+    target: QdrantClient,
+    collection: str,
+    paper_id: str,
+    chunker: str,
+) -> List[Any]:
+    """Read one document/chunker point set without widening the query scope."""
+    try:
+        if not target.collection_exists(collection):
+            raise ManifestStoreError("QDRANT_UNAVAILABLE", status=503)
+        point_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="paper_id", match=models.MatchValue(value=paper_id)
+                ),
+                models.FieldCondition(
+                    key="chunker", match=models.MatchValue(value=chunker)
+                ),
+            ]
+        )
+        points: List[Any] = []
+        offset = None
+        while True:
+            batch, offset = target.scroll(
+                collection_name=collection,
+                scroll_filter=point_filter,
+                limit=256,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            points.extend(batch or [])
+            if offset is None:
+                return points
+    except ManifestStoreError:
+        raise
+    except Exception as error:
+        raise ManifestStoreError("QDRANT_UNAVAILABLE", status=503) from error
+
+
+def _verify_index_snapshot(
+    *,
+    client: Optional[QdrantClient],
+    destination: str,
+    paper_id: str,
+    document_id: str,
+    source_sha256: str,
+    chunker: str,
+    chunks: List[Chunk],
+    count: int,
+) -> Optional[List[Mapping[str, Any]]]:
+    """Fail closed unless Qdrant exactly matches the pending manifest payloads."""
+    target = client or get_client()
+    # A few legacy compatibility callers inject a write-only test double.  The
+    # real Qdrant client always exposes ``scroll``; retain that old seam until
+    # those callers provide the read side needed for an exact publication
+    # check.  Production clients therefore never bypass this guard.
+    if not callable(getattr(target, "scroll", None)):
+        return None
+    if count != len(chunks):
+        raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+    with _write_lock:
+        points = _read_document_chunker_points(target, destination, paper_id, chunker)
+    expected = {
+        int(chunk.chunk_index): _expected_manifest_payload(
+            document_id, source_sha256, chunker, chunk
+        )
+        for chunk in chunks
+    }
+    if len(expected) != len(chunks) or set(expected) != set(range(len(chunks))):
+        raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+    actual: dict[int, Mapping[str, Any]] = {}
+    for point in points:
+        payload = getattr(point, "payload", None)
+        if not isinstance(payload, Mapping):
+            raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+        chunk_index = payload.get("chunk_index")
+        if (
+            isinstance(chunk_index, bool)
+            or not isinstance(chunk_index, int)
+            or chunk_index in actual
+            or str(getattr(point, "id", ""))
+            != point_id(paper_id, chunk_index, chunker)
+            or payload.get("paper_id") != paper_id
+            or payload.get("document_id") != document_id
+            or payload.get("source_sha256") != source_sha256
+            or payload.get("chunker") != chunker
+            or not isinstance(payload.get("is_citation"), bool)
+        ):
+            raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+        projected = {name: payload.get(name) for name in _MANIFEST_PAYLOAD_FIELDS}
+        if projected != expected.get(chunk_index):
+            raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+        actual[chunk_index] = {
+            **projected,
+            "is_citation": payload["is_citation"],
+        }
+    if set(actual) != set(expected) or len(points) != len(expected):
+        raise ManifestStoreError("INDEX_FINALIZE_REQUIRED", status=503)
+    return [actual[index] for index in range(len(expected))]
 
 
 def _canonical_index_record(record: Any) -> bool:
@@ -523,6 +656,7 @@ def _publish_manifest_and_state(
     file_path: Any,
     count: int,
     meta_path: Optional[Path],
+    indexed_payloads: Optional[List[Mapping[str, Any]]] = None,
 ) -> Mapping[str, Any]:
     """Publish manifest, strict metadata, and live generation marker in order."""
     source_sha256 = str(bundle.source_sha256)
@@ -530,7 +664,13 @@ def _publish_manifest_and_state(
     finalizer = FinalizeBundleStore(meta.resolve().parent.parents[1])
     with publication_mutation_lock():
         try:
-            manifest = _publish_inspection_manifest(record, bundle, chunks, meta_path=meta)
+            manifest = _publish_inspection_manifest(
+                record,
+                bundle,
+                chunks,
+                meta_path=meta,
+                indexed_payloads=indexed_payloads,
+            )
         except (InspectionError, ManifestStoreError, OSError, ValueError) as error:
             _mark_index_failed(
                 record,
@@ -686,13 +826,11 @@ def index_paper_chunker(
     ref_start = locate_reference_start(pages) if pages and pages[0][0] is not None else None
     document_id = str(_record_value(record, "document_id") or "") or None
     source_sha256 = _record_value(record, "source_sha256")
+    indexed_payloads: Optional[List[Mapping[str, Any]]] = None
     try:
         # T3：先按 paper_id + chunker 删除该版本旧点，避免残留污染检索。
-        try:
-            delete_kwargs = {"client": client, "destination_collection": destination}
-            delete_paper_chunker(paper_id, chunker, **delete_kwargs)
-        except Exception:
-            pass  # 首次索引时 collection 可能不存在，忽略即可
+        delete_kwargs = {"client": client, "destination_collection": destination}
+        delete_paper_chunker(paper_id, chunker, **delete_kwargs)
         count = upsert_chunks(
             paper_id,
             getattr(record, "file_name", "") or record.get("file_name", ""),
@@ -705,10 +843,14 @@ def index_paper_chunker(
             document_id=document_id,
             source_sha256=source_sha256 if isinstance(source_sha256, str) else None,
         )
+    except ManifestStoreError as error:
+        return _fail(error.code)
     except (EmbeddingError, ValueError, OSError) as error:
         return _fail(f"索引失败：{error}")
-    except Exception as error:
-        return _fail(f"索引失败：{error}")
+    except Exception:
+        # Deletion is a prerequisite, not a best-effort cleanup.  Keep the
+        # public failure stable and never leak a Qdrant exception into metadata.
+        return _fail("QDRANT_UNAVAILABLE")
 
     # The parser verifies the immutable hash before chunking.  Re-check after
     # the vector write as well: a source mutation during embedding must never
@@ -717,6 +859,19 @@ def index_paper_chunker(
         expected_source_sha256 = str(bundle.source_sha256)
         if _source_digest(file_path) != expected_source_sha256:
             return _fail("SOURCE_HASH_MISMATCH")
+        try:
+            indexed_payloads = _verify_index_snapshot(
+                client=client,
+                destination=destination,
+                paper_id=paper_id,
+                document_id=str(document_id or ""),
+                source_sha256=expected_source_sha256,
+                chunker=chunker,
+                chunks=chunks,
+                count=count,
+            )
+        except ManifestStoreError as error:
+            return _fail(error.code)
 
     _report(progress, 95)
     if bundle is not None:
@@ -730,8 +885,9 @@ def index_paper_chunker(
                 file_path=file_path,
                 count=count,
                 meta_path=meta_path,
+                indexed_payloads=indexed_payloads,
             )
-        except ManifestStoreError as error:
+        except ManifestStoreError:
             _report(progress, 100)
             return get_paper(paper_id, meta_path) or (
                 record.to_dict() if hasattr(record, "to_dict") else dict(record)

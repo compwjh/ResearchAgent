@@ -792,6 +792,121 @@ def test_expired_session_with_durable_snapshots_skips_gate(tmp_path):
     assert item.status == ITEM_COMPLETED
 
 
+def test_item_snapshot_candidates_reuse_durable_snapshot_after_search_expiry(tmp_path):
+    """Item recovery should expose the persisted snapshot after search TTL expiry."""
+    service = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        _ExpiredDiscoveryStore(),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("durable-item")
+    batch = service.create_batch(
+        "search-1", [candidate.candidate_id],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+        auto_run=False,
+    )
+    item = service.store.get_items(batch.batch_id)[0]
+
+    restarted = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        _ExpiredDiscoveryStore(),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    snapshots = restarted.get_item_snapshot_candidates(item.item_id)
+
+    assert len(snapshots) == 1
+    assert snapshots[0]["candidate_id"] == candidate.candidate_id
+    assert snapshots[0]["search_id"] == batch.search_id
+
+
+def test_item_snapshot_candidates_return_none_for_legacy_missing_snapshot(tmp_path):
+    """A legacy item without a durable snapshot keeps the live-search fallback."""
+    discovery = _ExpiredDiscoveryStore(expires_at="2099-01-01T00:00:00Z")
+    service = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        discovery,
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("legacy-item")
+    batch = service.create_batch(
+        "search-1", [candidate.candidate_id],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+        auto_run=False,
+    )
+    item = service.store.get_items(batch.batch_id)[0]
+    with sqlite3.connect(service.store.database_path) as connection:
+        connection.execute(
+            "UPDATE paper_import_items SET snapshot_json=NULL,snapshot_hash=NULL WHERE item_id=?",
+            (item.item_id,),
+        )
+
+    assert service.get_item_snapshot_candidates(item.item_id) is None
+
+
+def test_item_snapshot_candidates_fail_closed_on_identity_mismatch(tmp_path):
+    """A hash-valid but cross-item snapshot cannot reach browser recovery."""
+    import hashlib
+    import json
+
+    service = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        _ExpiredDiscoveryStore(),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("identity-item")
+    batch = service.create_batch(
+        "search-1", [candidate.candidate_id],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+        auto_run=False,
+    )
+    item = service.store.get_items(batch.batch_id)[0]
+    stored = service.store.get_snapshot(item.item_id)
+    assert stored is not None
+    stored["candidate_id"] = "forged-candidate"
+    encoded = json.dumps(stored, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    with sqlite3.connect(service.store.database_path) as connection:
+        connection.execute(
+            "UPDATE paper_import_items SET snapshot_json=?,snapshot_hash=? WHERE item_id=?",
+            (encoded, digest, item.item_id),
+        )
+
+    with pytest.raises(PaperImportBatchServiceError) as error:
+        service.get_item_snapshot_candidates(item.item_id)
+
+    assert error.value.code == INVALID_SEARCH_SNAPSHOT
+
+
+def test_item_snapshot_candidates_fail_closed_on_partial_snapshot_metadata(tmp_path):
+    """A partially persisted snapshot is corruption, not a legacy fallback."""
+    service = PaperImportBatchService(
+        PaperImportBatchStore(tmp_path / "state.sqlite3"),
+        _ExpiredDiscoveryStore(expires_at="2099-01-01T00:00:00Z"),
+        importer=lambda *_args: PaperImportResult("paper-1", None, "indexed"),
+    )
+    candidate = _candidate("partial-snapshot")
+    batch = service.create_batch(
+        "search-1", [candidate.candidate_id],
+        search_session=SearchSession("search-1", "q", "2099-01-01T00:00:00Z"),
+        candidates=[candidate],
+        auto_run=False,
+    )
+    item = service.store.get_items(batch.batch_id)[0]
+    with sqlite3.connect(service.store.database_path) as connection:
+        connection.execute(
+            "UPDATE paper_import_items SET snapshot_hash=NULL WHERE item_id=?",
+            (item.item_id,),
+        )
+
+    with pytest.raises(PaperImportBatchServiceError) as error:
+        service.get_item_snapshot_candidates(item.item_id)
+
+    assert error.value.code == SNAPSHOT_REBUILD_REQUIRED
+
+
 def test_missing_search_expires_with_durable_snapshots_succeeds(tmp_path):
     """spec-035 Bug1: legacy batches without search_expires_at are still retryable."""
     service = PaperImportBatchService(

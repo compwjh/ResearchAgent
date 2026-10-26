@@ -897,6 +897,9 @@ def _paper_snapshot_for_item(service: PaperImportBatchService, item_id: str) -> 
     batch = service.store.get_batch(item.batch_id)
     if batch is None:
         raise PaperImportBatchServiceError("BATCH_NOT_FOUND", "导入批次不存在")
+    durable = service.get_item_snapshot_candidates(item_id)
+    if durable is not None:
+        return durable
     discovery = getattr(service, "discovery_store", None) or _paper_store()
     session = discovery.get_search_session(batch.search_id)
     if session is None:
