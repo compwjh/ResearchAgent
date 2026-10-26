@@ -101,3 +101,55 @@ Task02/Task03 必须继续遵守下列事实性门槛：
 - 评审人：architect（独立增量需求评审）
 - 日期：2026-10-24
 - 结论：**通过（GO）**；当前无需求 P1，按本轮接口合同直接实现。
+
+---
+
+## 本轮 Task10 独立增量需求评审（2026-10-27）
+
+### 评审元数据
+
+- 评审对象：`docs/sdd/specs/043-literature-map-topic-exploration.md` 的“2026-10-27 地图易用性修订（待确认）”增量、`docs/sdd/plans/043/task-10-map-usability.md` 及其 Grilling/前后端事实交接。
+- 评审者：`/root/map_usability_plan_review`；角色：`architect`。
+- 临时模型：Luna xhigh（本轮用户临时指派）；原生分派：由主会话 `/root` 原生分派本评审任务。
+- 评审时间：2026-10-27（Asia/Shanghai）。
+- 实现事实：本轮只读 Spec、Task10、Grilling、前后端 findings 与必要源码；未修改业务代码/测试/Spec 状态，未运行测试、生产请求、模型/下载、服务、部署或 Git 操作。
+- 评审边界：Q1–Q10 均采用推荐，但用户尚未完成最终共同理解确认；本结论不把“采用推荐”当作实现授权，Spec 仍保持“待确认”。
+
+### 结论
+
+**通过（GO；无需求 P1 阻塞，待用户共同理解确认后方可进入 Gate 3/实现）。**
+
+Task10 的目标、用户行为、明确不做和真实验收路径已闭合；没有发现需要退回 Spec 才能消除的实质 P1 范围缺失。以下意见是已写入 Spec/Task10 的强制实施边界，不是验收通过或运行时成功证明。
+
+### 增量需求核对
+
+| 检查项 | 判定 | 代码事实与可测边界 |
+|---|---|---|
+| 变半径与旧图布局 | 通过（硬门槛） | 当前半径为 `min(28,8+2*ln(1+n))`，未知取最小半径（`frontend/literature-maps.js:384-388`）；旧初始环布局不读半径且不做碰撞检查（`:2284-2291`），有限微扰也不保证间距（`:2293-2316`）。Spec/Task10 已明确“净空至少为较大圆直径两倍”、新图自动、旧图显式预览确认、拖动/筛选不重排，并允许扩大 world 画布而不是压回小画布（Spec:232-233；Task10:21-26）。 |
+| 小画布可读性与详情空白 | 通过（需真实证据） | 现有 fit 会按实际 SVG 尺寸和节点/边 bounds 迭代（`frontend/literature-maps.js:2588-2665`），标签有 CSS 最小屏幕字号保护（`:432-435`）；但详情点选只打开面板/重绘并未改 view 或 fit（`:2877-2912`）。前端 findings 明确 1440/1280/900 合成路径未复现空白，且未监听容器尺寸只是疑点（findings:58-68）。Spec/Task10 禁止伪写根因，并要求跨 1440/1280/1180/900/390 的真实浏览器证据；这满足可测边界，不把未复现问题扩成未经证实的需求。 |
+| 单组归属与节点多选 | 通过 | 后端 `MapPaper` 只有单个可空 `group_id`（`backend/app/literature_maps/domain/models.py:93-113`；store 表 `:141-163`），现有 PUT 也只替换一个 group（`routes_literature_maps.py:123-127,311-322`）。Grilling/Task10 已明确“多选是前端 Set，不等于节点多组”，不新增连接表、框选或多组归属（Task10:30-31；Spec:217,240）。 |
+| 颜色继承、重置与批量行为 | 通过（硬门槛） | 当前前端只把分组色写入 inline fill（`frontend/literature-maps.js:2354-2371`），现有选中态和分组色已有优先级接缝。Spec/Task10 已冻结 `color_override > group > default`、恢复跟随分组写 `null`、不改 group_id、点色先预览/应用才保存；批量全成/全不改、失败保留选择和色稿、成功才写最近色（Spec:217,226-228,234；Task10:30-33）。 |
+| 地图级填充/描边、最近色与导出 | 通过 | 后端现有 view 请求只允许 positions/viewport/filters/layers/label_mode，额外字段会被拒绝（`routes_literature_maps.py:60-68`）；导出只白名单这些 view 字段（`service.py:1621-1643`），JSON 版本仍为 `literature-map-export-v1`（`:336-366`），PNG 使用固定 CSS（`frontend/literature-maps.js:2760-2792`）。Spec/Task10 已明确地图级默认填充 0.3、outline 内部透明、PNG/JSON 一致，导出 v2 不含最近色/临时预览；最近 8 色按 owner 分隔的浏览器 localStorage，不入库、不跨设备（Spec:218-221,235,228；Task10:34-35）。 |
+| 中文入库状态与 full-ready | 通过（硬门槛） | 服务端 `source_status.fulltext_ready` 由 canonical document、hash、v1 chunker/manifest/generation 等门禁共同决定（`backend/app/literature_maps/application/analysis.py:147-251`），不能由 `document_id` 或 `download_status=indexed` 单独代替。前端当前 `mapStatusLabel` 没有 `indexed/not_imported` 映射（`frontend/literature-maps.js:342-353,3655-3659`），正是本 Task10 的中文反馈缺口；Spec/Task10 要求导入/索引/full-ready 分开且所有用户态中文，不新增 PDF 阅读器或自动全文分析（Spec:236,240；Task10:37-43）。 |
+| GET 只读与下载范围 | 通过 | 图、节点、分析读取路由只读取 owner-scoped 持久状态（`routes_literature_maps.py:253-258,338-362`；`service.py:278-286`）；主动入库是独立 POST（`routes_literature_maps.py:591-597`）。Spec/Task10 已明确 GET 不写、不补队列、不触发下载，全文未 ready 只给现有恢复入口，不扩下载器/登录/上传链（Spec:228,240；Task10:39-43）。 |
+| 验收与证据 | 通过（尚未执行） | Task10 已列旧图整理预览/确认、新图间距、单/多选/分组色、地图样式与 PNG/JSON、全文 ready/未 ready、版本冲突和真实 API/浏览器证据（Task10:45-55；Spec:242-244）。这些是待实现/待验收项目，本评审不冒充已通过。 |
+
+### 需求评审强制交接
+
+1. “两倍较大直径”必须按统一 world-space 边缘净空计算，固定半径公式和未知引用数回退；有限迭代未满足时用确定性兜底，不能以“基本满足”或缩小节点代替。
+2. 旧保存位置、人工拖动和筛选不得静默被布局覆盖；整理必须先是无写预览，确认才带最新 revision 保存，取消恢复全部位置/视图。详情空白必须先保存跨断点 DOM/尺寸/transform/pageerror 证据，不能把无 `ResizeObserver` 写成根因。
+3. 节点仍是单 `group_id`；多选仅为前端临时选择。有效色顺序、`null` 重置、批量原子、owner/revision、错误不部分写和网络不确定时 GET 核验必须保持一致。
+4. 地图 style、节点 override、JSON export-v2 和 PNG 样式是正式契约；最近色/临时选择/预览不是持久化或导出数据。
+5. `indexed`、`document_id`、入库成功和 `fulltext_ready` 不得互相冒充；GET 读路径不得隐式下载、导入、排队或生成分析。
+
+无须修订需求范围；但在用户完成共同理解确认前不得将本 GO 解读为实现授权。
+
+### 评审边界与证据诚实声明
+
+本轮没有执行验收、真实 API、浏览器运行或部署；结论只证明需求边界可评审、可测和与当前代码接缝一致。既有 findings 的测试摘要不作为本轮 Task10 成功证据。
+
+### 需求评审签字
+
+- 评审者：`/root/map_usability_plan_review`（architect，独立增量需求评审）
+- 日期：2026-10-27
+- 结论：**通过（GO；待用户共同理解确认）**

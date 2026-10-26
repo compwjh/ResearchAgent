@@ -136,3 +136,56 @@ Spec 的数据模型、端点边界和任务拆分能够支撑独立的 `literat
 - 评审人：architect（独立增量技术评审）
 - 日期：2026-10-24
 - 结论：**通过（GO）**；无设计 P1 阻塞；现有 running-claim 竞态为必须在实现/验收前关闭的 P1 实现门槛。
+
+---
+
+## 本轮 Task10 独立增量技术评审（2026-10-27）
+
+### 评审元数据
+
+- 评审对象：`docs/sdd/specs/043-literature-map-topic-exploration.md` 的2026-10-27待确认增量、`docs/sdd/plans/043/task-10-map-usability.md`、Grilling及前后端事实交接。
+- 评审者：`/root/map_usability_plan_review`；角色：`architect`。
+- 临时模型：Luna xhigh（本轮用户临时指派）；原生分派：由主会话 `/root` 原生分派本评审任务。
+- 评审时间：2026-10-27（Asia/Shanghai）。
+- 实现事实：只读取必要的后端/前端源码与规划文档；未修改业务代码/测试，未运行测试、生产请求、模型/下载、服务、部署或 Git 操作。
+- 评审依据：当前数据库迁移/事务、地图路由与 store、MapPaper/MapGroup 模型、视图/导出实现、SVG 布局/详情/状态实现，以及 Task10 明确的 schema/API/边界。
+
+### 结论
+
+**通过（GO；无设计 P1 阻塞；下列实现/验收门槛必须全部封住）。**
+
+Task10 可以复用现有 `literature_maps` 领域、owner/revision、SQLite 事务、SVG 坐标系和全文 source gate；不需要第二套图谱、样式存储、布局库或下载器。当前存在若干明确的实现缺口，但都已被 Spec/Task10 定义为本 Task 的增量契约，而不是需求范围外阻塞。若开发遗漏任一原子性、迁移、只读或 evidence gate，验收应判 P1，不能用前端状态或合成夹具替代。
+
+### 技术核对矩阵
+
+| 技术点 | 判定 | 代码事实与实施边界 |
+|---|---|---|
+| schema 6→7 无损迁移 | 通过（P1 实现门槛） | 当前物理 schema 为整数 6（`backend/app/literature_maps/infrastructure/store.py:40`）；nodes 表没有 `color_override`（`:141-163`），初始化的增量 DDL/repair/version marker 在一个显式事务内执行（`:339-379`），事务异常回滚（`:87-97`）。必须以幂等、单调的 v7 增量增加 nullable override，旧行保持 `NULL`、稳定 ID/位置/分组/导出字段不丢；不能只改常量、重建/清空表或复用已占版本。API `literature-map-v1`（`domain/models.py:15`）保持不变，export 单独升级为 `literature-map-export-v2`。 |
+| view/style 请求合同 | 通过（P1 实现门槛） | 当前 `MapViewRequest` 为 extra-forbid，仅有 positions/viewport/filters/layers/label_mode（`routes_literature_maps.py:60-68`）；store 合并 view JSON 并按 revision 更新位置（`store.py:598-626`），导出白名单也只含现有键（`service.py:1621-1643`）。应显式增加严格 `node_style={fill_mode: filled|outline, fill_opacity: finite 0..1}` 合同，禁止把 style/nodegap 塞进 filters；旧图读取默认 filled/0.3，未知字段/NaN/Infinity 拒绝，JSON v2 白名单明确增加 style/override。 |
+| 节点 override、单组与批量原子 | 通过（P1 实现门槛） | `MapPaper`/SQLite 只有单 `group_id`（`domain/models.py:93-113`; `store.py:141-163`），现有 group 与 node-group 写操作都在 owner + expected_revision 事务中（`store.py:694-837`；`routes_literature_maps.py:101-127,311-322`）。新增 `PATCH /{map_id}/node-styles` 可复用该接缝，但必须先验证 map owner、revision、唯一 1–200 node IDs、未移除节点和 HEX/null，再在同一事务内全成或全不改；不得改 group_id、未选节点或返回部分成功。有效色必须在服务/投影与 SVG 两端一致为 `override → group → default`，null 才表示恢复跟随分组。 |
+| 冲突与网络不确定性 | 通过（P1 实现门槛） | 现有 view 写入在 owner/revision 校验后更新，异常由事务 rollback（`store.py:601-626,87-97`）；前端 view 请求以 `state.map.revision` 写入并在异常时保留 dirty（`frontend/literature-maps.js:2683-2726`）。颜色批量请求必须保留 409/400/404 的现有错误合同；网络中断不能被客户端声称为回滚或“全部未改”，应显示结果待核对、GET 重读 revision/目标色后由用户显式重试，最近色仅在确认成功后写入。 |
+| 半径感知布局与小画布 | 通过（P1 实现门槛） | 当前 `citationRadius` 已固定公式且上限 28（`frontend/literature-maps.js:384-388`），但 `initialPosition` 不读取半径（`:2284-2291`），`scheduleLayout` 只有有限微扰并最终自动 `scheduleViewSave`（`:2293-2316`）。实现必须在缺失位置/显式整理路径使用半径感知、有限、确定性布局；满足边缘净空≥2×较大直径，200 节点允许扩大 world bounds、缩放/平移浏览，不强塞小画布。整理预览必须暂停旧自动保存路径；确认才走现有 revision 保存，拖动/筛选不触发布局。 |
+| 旧布局、详情视口与未复现空白 | 通过（P1 证据门槛） | 读取图时会保留保存位置，只有 `initialFitPending` 才 fit（`frontend/literature-maps.js:1726-1752`）；点选详情只改 selected/detail 并请求详情，不改 view/fit（`:2877-2912`）；resize 监听目前只处理移动断点开关（`:1041-1048,1173`）。应保留缩放/布局，仅在选中点不可见时做最小平移；必须先按真实宽度/详情开关采集 rect/transform/node bounds/pageerror。不得把缺少 ResizeObserver 或源码猜疑写成已经证实的根因，也不得因诊断而静默重排旧图。 |
+| 地图样式与导出一致性 | 通过（P1 实现门槛） | 当前 SVG 分组颜色写在 inline fill，选中由描边表达（`frontend/literature-maps.js:2354-2371`），PNG 是克隆 SVG 后注入固定 fill/edge CSS（`:2760-2792`），JSON 服务端为 export-v1（`service.py:336-366`）。必须让当前有效颜色、filled/outline、0.3/default 或显式强度同时进入屏幕、PNG 和 export-v2；outline 内部透明、描边 100% 不透明、选中不把颜色改成实心高亮。最近色、临时选择、未确认预览不得进入任何地图数据或导出。 |
+| 中文导入状态与 full-ready | 通过（P1 证据门槛） | 导入桥只规范化有限状态集（`backend/app/literature_maps/application/import_bridge.py:140-145,186-223`）；full ready 还要求 owner/project canonical 记录、source/indexed hash、v1 chunker、manifest/generation 等条件（`analysis.py:175-251`）。前端状态 label 未覆盖 `indexed/not_imported`（`literature-maps.js:342-353`），详情 badge 会直接显示原值（`:3655-3659`），而 `document_id/indexed` 另有“已加入知识库”分支（`:3688-3697`）。必须分开中文显示入库/索引/全文 ready；full 未 ready 不能发分析请求，ready 场景不能显示未就绪。 |
+| GET 只读与下载边界 | 通过（P1 证据门槛） | `GET /graph` 只组装 map/nodes/edges/job（`service.py:278-286`），`GET /nodes/{node_id}/analyses` 读取 source status/list（`routes_literature_maps.py:354-362`），导入动作明确是独立 POST（`:591-597`）。新增样式/状态读取不能触发迁移写入、自动排队、下载、导入、索引或全文分析；恢复入口继续复用既有安全导入链，不扩大下载范围。 |
+
+### 直接交开发与验收的技术门槛
+
+1. v7 migration 需有旧数据库/旧图读取默认值、重复启动幂等和失败回滚证据；API `literature-map-v1` 与 export-v2 的边界不得混用。
+2. `PATCH node-styles` 的请求字段、`null` 语义、唯一节点上限、owner/revision/removed 检查和全成/全不改必须在服务端完成；客户端不能把网络未知当成回滚。
+3. view style 只存在正式 `node_style`，不得暗塞 filters；节点颜色覆盖和地图级填充样式必须在 graph/node/read、重开、PNG、JSON 中形成同一有效样式。
+4. 自动布局必须有明确有限迭代/兜底和 200 节点混合半径的真实浏览器证据；旧图整理预览不能发写请求，确认才提交，详情开关不得自动 fit。
+5. 全文分析继续消费服务端 `source_status.fulltext_ready`；`indexed`/`document_id` 只可作为入库进度事实，不能升级为全文 ready。GET 必须保持无副作用。
+
+这些是 Task10 已冻结范围内的实现/验收门槛；未运行的测试、API E2E 或部署不能在本评审中宣称通过。
+
+### 评审边界与证据诚实声明
+
+本轮技术评审只证明设计能复用当前接缝且缺口已可定位；未执行迁移、真实批量保存、冲突、导出、浏览器间距/空白或 full-ready 成功案例。若任一实现门槛未满足，应在验收阶段判 P1 并退回实现，不得用旧 Task09 报告替代。
+
+### 技术评审签字
+
+- 评审者：`/root/map_usability_plan_review`（architect，独立增量技术评审）
+- 日期：2026-10-27
+- 结论：**通过（GO；无设计 P1 阻塞，含实现/验收硬门槛）**
