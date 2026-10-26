@@ -571,3 +571,7 @@
 - **018 知识文档与切片检查：重建入口 canonical ID/发布一致性窄修** ｜ 实施中 → **本次窄修已完成** ｜ **2026-10-26 22:14（北京时间）**：tester `READY_FOR_USER`、architect `GO`；指定文档真实 202→终态，v1=107、v2=308 且合法 partial（292 mapped/16 `SOURCE_RANGE_UNRESOLVED`），manifest/Qdrant 点集一致。原 Spec018 其它历史/全量范围不因本条改变。
 - **032 数据源扩展：已有批次登录恢复窄修** ｜ 本窄修实施中 → **本窄修已完成（整体仍暂停）** ｜ **2026-10-26 22:15（北京时间）**：durable snapshot 优先路径、`64/64` 定向回归与真实 login `200/opened/acm` 通过，tester `READY_FOR_USER`、architect `GO`；认证后 resume、PDF 下载/校验、KB 入库未验证，Spec032 整体继续“暂停，待下次继续”。
 - **038 记忆层改造：管理页面复接补充** ｜ 实施中（真实 API/UI 案例已落盘，待最终验收） → **管理复接补充已完成（历史 P1/P2/P3 保持）** ｜ **2026-10-26 22:16（北京时间）**：tester `READY_FOR_USER`、architect `GO`；后端 `3121 passed, 0 failed, 3 skipped, 67 subtests passed`，前端 `317 passed, 0 failed, 0 skipped, 59.01s`，Node `33/33`，真实 API/UI 与自然语言项目文件证据齐全；pending-confirm 人工保存/忽略未冒充已执行。
+
+- **038 记忆层改造：管理页面复接补充** ｜ 管理复接补充已完成 → 实施中（同范围 P2 复开）｜ 2026-10-26：本地提交后检查真实截图，发现冲突框 hidden 被 display 样式覆盖，保存成功后仍显示红框。文件写入/OCC已成功，仅修可见性并补真实 DOM/CSS 回归，修复后重做前端验收及截图，不扩大接口或重跑后端。
+
+- **038 记忆层改造：管理页面复接补充** ｜ 实施中（同范围 P2 复开） → 管理复接补充已完成 ｜ 2026-10-26 23:27（北京时间）：scoped hidden 样式修复已独立复审，完整前端318 passed/0 failed/0 skipped；真实 CUA 验证初始隐藏、409可见、成功后隐藏，草稿恢复及文件落盘仍成功。tester READY_FOR_USER/architect GO补签齐全，后端未改、沿用3121 passed/3 skipped。

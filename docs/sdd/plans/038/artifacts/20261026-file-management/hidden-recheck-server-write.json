@@ -1,0 +1,14 @@
+{
+  "request": {
+    "content": "# 验收记录\n\n仅用于文件记忆验收的独立项目。\n保留换行与 Emoji 😊。\n浏览器保存验证。\n服务器并发版本。\n冲突恢复新版本。\n已合并浏览器草稿。\n- 本项目的验收代号是蓝色松果。\n\n可见性复验的服务器版本。\n",
+    "revision": "832107c176561b0c268890cf7db7bf76849e6ebf4cd91ac7e4a0e36a4e001329"
+  },
+  "http_status": 200,
+  "response": {
+    "scope": "project",
+    "project_id": "a4a1745f801441188dc1f75b0534be11",
+    "document": "projects/a4a1745f801441188dc1f75b0534be11.md",
+    "content": "# 验收记录\n\n仅用于文件记忆验收的独立项目。\n保留换行与 Emoji 😊。\n浏览器保存验证。\n服务器并发版本。\n冲突恢复新版本。\n已合并浏览器草稿。\n- 本项目的验收代号是蓝色松果。\n\n可见性复验的服务器版本。\n",
+    "revision": "62d0cc4e29e8b4d16e7b1574b2666dc063d88b89ab2450a53213dbf3931ad38c"
+  }
+}

@@ -13,7 +13,7 @@
 
 **READY_FOR_USER**。
 
-最终运行 Artifact 已证明真实 API、真实浏览器冲突恢复和自然语言主路径均成功；后端全量回归 `3121 passed, 3 skipped, 0 failed, 67 subtests`，前端完整回归 `317 passed, 0 failed, 0 skipped`，Node 合同测试 `33/33`。前后端最终复审均为 GO，未发现未解决的 P0/P1。十项准备度为 **10/10 PASS**。
+最终运行 Artifact 已证明真实 API、真实浏览器冲突恢复和自然语言主路径均成功；后端全量回归 `3121 passed, 3 skipped, 0 failed, 67 subtests`，前端 P2 修复后的最新完整回归 `318 passed, 0 failed, 0 skipped`，Node 合同测试 `33/33`。前后端最终复审均为 GO，未发现未解决的 P0/P1/P2。十项准备度为 **10/10 PASS**。
 
 本报告不把 SSE `events: []` 当作成功事件证据；自然语言成功以独立会话、分析终态和项目文件 GET 确认记录为准。待确认（`pending_confirmation`）的“指定 item_id 决策保存”只采用隔离 API/后端测试证据，未声称已完成人工 pending-confirm 流程；真实自然语言案例验证的是高置信度 `auto_saved` 主路径。
 
@@ -22,7 +22,7 @@
 ### 1.1 运行环境与隔离
 
 - Artifact 运行标识：目录 `20261026-file-management`（失败记录未被覆盖）。
-- 服务与版本：运行交接记录为 `http://127.0.0.1:8000`，`app.js?v=65`、`styles.css?v=65`、`literature-maps.js?v=21`、`literature-maps.css?v=13`（[`2026-10-26-management-runtime.md:7-11`](../plans/038/2026-10-26-management-runtime.md#L7)）。健康 Artifact 返回 `{"status":"ok"}`，模型/依赖字段见 [`health.json`](../plans/038/artifacts/20261026-file-management/health.json)。
+- 服务与版本：运行交接记录为 `http://127.0.0.1:8000`；P2 hidden 修复后的当前候选为 `app.js?v=66`、`styles.css?v=66`，地图资源仍为 `literature-maps.js?v=21`、`literature-maps.css?v=13`（历史 v65 记录保留于前述阶段）。健康 Artifact 返回 `{"status":"ok"}`，模型/依赖字段见 [`health.json`](../plans/038/artifacts/20261026-file-management/health.json)。
 - 本次目标仅为新建隔离项目 `a4a1745f801441188dc1f75b0534be11`；最终运行标记 `existing_user_memory_modified=false`（[`final-runtime.json:15-21`](../plans/038/artifacts/20261026-file-management/final-runtime.json#L15)）。未使用全局 `MEMORY.md`、`USER.md` 或其他项目作为写入目标。
 - 本验收子代理未启动/停止服务、未执行 PUT、未新建项目、未登录、未运行单端测试。尝试只读 `GET /api/health` 与首页时，当前子代理 shell 看不到父会话的监听进程并得到连接拒绝；该环境边界不改写已落盘的最终运行记录，用户人工验收前仍须确保上述地址处于运行状态。
 
@@ -67,7 +67,7 @@
 
 ### 前置条件
 
-1. 服务地址为 `http://127.0.0.1:8000`，版本资源为 app/styles `v=65`、地图资源 `v=21/13`。
+1. 服务地址为 `http://127.0.0.1:8000`，当前候选版本资源为 app/styles `v=66`、地图资源 `v=21/13`。
 2. 只使用项目“文件记忆验收 20261026”（`a4a1745f801441188dc1f75b0534be11`，`active`）；不要选择全局记忆或其他项目，不要编辑“系统规则”。
 3. 本案例使用新的项目文件，不依赖用户已有记忆。自然语言步骤只验证项目范围。
 
@@ -131,9 +131,9 @@
 | 后端定向验收 | PASS；最终冻结候选 `104/104` | [`2026-10-26-management-backend-test.md:73-97`](../plans/038/2026-10-26-management-backend-test.md#L73) |
 | 后端全量回归（排除前端） | PASS；`3121 passed, 3 skipped, 0 failed, 67 subtests`；2 个浏览器门控 skip、1 个 Ollama 门控 skip | [`2026-10-26-management-backend-test.md:129-142`](../plans/038/2026-10-26-management-backend-test.md#L129) |
 | 后端复审 | GO；此前 P1/P2 已通过严格读取、symlink 边界和非法 JSON 回归关闭 | [`2026-10-26-management-backend-review.md:67-84`](../plans/038/2026-10-26-management-backend-review.md#L67) |
-| 前端完整回归 | PASS；`317 passed, 0 failed, 0 skipped`；Chromium 隔离 fixture 已执行 | [`2026-10-26-management-frontend-test.md:164-176`](../plans/038/2026-10-26-management-frontend-test.md#L164) |
+| 前端完整回归 | PASS；当前候选 `318 passed, 0 failed, 0 skipped`；Chromium 隔离 fixture 已执行（此前 `317` 历史记录保留） | [`2026-10-26-management-frontend-test.md:180-190`](../plans/038/2026-10-26-management-frontend-test.md#L180) |
 | Node 合同测试 | PASS；`33/33`，另有前端静态/契约集合通过 | [`2026-10-26-management-frontend-test.md:64-72`](../plans/038/2026-10-26-management-frontend-test.md#L64) |
-| 前端复审 | GO；最终冲突恢复窄复审 P0/P1/P2 均为 0 | [`2026-10-26-management-frontend-review.md:137-164`](../plans/038/2026-10-26-management-frontend-review.md#L137) |
+| 前端复审 | GO；P2 hidden 可见性复审 P0/P1/P2/P3 均为 0 | [`2026-10-26-management-frontend-review.md:168-205`](../plans/038/2026-10-26-management-frontend-review.md#L168) |
 
 历史前端 `315 passed / 1 failed` 与 runtime 文档中“复跑中/自然语言未返回”的段落均已被后续最终结果 supersede；本报告只采用上述最终章节和最终 Artifact。
 
@@ -187,3 +187,44 @@
 - 最终后台复核已由当前登录会话托管，`/api/health` 成功、Qdrant 与 embedding 为 true，专用项目文件重启后仍可读；未安装 plist、未开机自启、未改变 `127.0.0.1:8000` 或 Ollama 部署。
 
 收口边界：本签字不恢复旧 `/api/memories*` CRUD，不把 `memory_id`/status/evidence/undo 伪装成文件能力，不把 pending-confirm 人工保存/忽略流程写成已执行；后端隔离测试已覆盖该闭环及失败保留语义。Spec038 的历史 P1/P2/P3 阶段保持既有记录，Spec018/Spec032 的相邻窄修分别按各自报告处理。
+
+## 7. P2 hidden 可见性复开后的最终复验（2026-10-26）
+
+本节是对已签字候选的最小增量复验：此前最终截图发现冲突区在 `hidden=true` 时 computed `display:grid`，导致保存成功后红色冲突区域仍可见。该 P2 已由候选 `87b0a88b` 修复，采用 scoped `#memory-view [hidden] { display: none !important; }`，并将 app/styles 资源版本从 65 升至 66；地图资源保持 21/13。旧阶段的 `317 passed`、v65 和此前签字均保留为历史记录，不覆盖或改写。
+
+### 7.1 新增真实三态证据
+
+- 修复前 [`hidden-before-fix.json`](../plans/038/artifacts/20261026-file-management/hidden-before-fix.json) 记录 `hidden=true` 但 `display=grid`，即 P2 的真实复现。
+- 修复后 [`hidden-recheck.json`](../plans/038/artifacts/20261026-file-management/hidden-recheck.json) 记录：初始 `hidden=true/display=grid` 的旧候选状态、正常 409 冲突态 `hidden=false/display=grid`，以及保存成功后 `hidden=true/display=none`，状态为“文档已保存（revision e96ff2a825ed…）”。
+- 最终文件 GET [`hidden-recheck-final-document.json`](../plans/038/artifacts/20261026-file-management/hidden-recheck-final-document.json) 返回同一隔离项目 `a4a1745f801441188dc1f75b0534be11`，内容仍包含“本项目的验收代号是蓝色松果。”、服务器并发版本和本地草稿，revision 为 `e96ff2a825ed22acda7cd18eb35560bb575bd3c101c87866edf456d36f71cf51`。
+- 最终截图：[`recovery-saved-hidden-fixed.png`](../plans/038/artifacts/20261026-file-management/recovery-saved-hidden-fixed.png)。外部服务器写入记录：[`hidden-recheck-server-write.json`](../plans/038/artifacts/20261026-file-management/hidden-recheck-server-write.json)。
+
+### 7.2 最终门禁与当前 readiness
+
+- 前端最新完整回归：`pytest -q tests/frontend`，退出码 0，**318 passed / 0 failed / 0 skipped / 58.17s**；新增 `test_memory_document_visibility.py` 已计入（[`2026-10-26-management-frontend-test.md:180-190`](../plans/038/2026-10-26-management-frontend-test.md#L180)）。
+- 前端独立 P2 复审：**GO / Approve，P0=0、P1=0、P2=0、P3=0**；CSS 作用域、原生 hidden 三态、正常 409 可见态、XSS 和 v66 资源均通过真实 Chromium computed-style 证据（[`2026-10-26-management-frontend-review.md:168-205`](../plans/038/2026-10-26-management-frontend-review.md#L168)）。
+- 后端未变更、按要求不重跑；最终后端全量仍为 `3121 passed, 3 skipped, 0 failed, 67 subtests`。自然语言项目文件的“蓝色松果”内容在 P2 复验后仍存在，未发生全局/其他项目污染。
+
+本次复验后的十项准备度仍为 **10/10 PASS**：
+
+| # | 准备度项目 | 当前结果 | P2 复验说明 |
+|---:|---|---|---|
+| 1 | 服务已启动并可访问 | PASS | 后台当前 8000 运行证据与健康记录保持有效 |
+| 2 | 真实 API 创建/读取入口成功 | PASS | 项目文档 API 顺序与最终 GET 未变 |
+| 3 | 主路径参数正确解析 | PASS | 自然语言项目记忆最终文件仍含蓝色松果 |
+| 4 | 任务/实体状态从初始态推进 | PASS | 409 → 恢复 → 保存 → 重读状态链完整 |
+| 5 | 前端显示处理中提示 | PASS | v66 未改变加载/保存/冲突提示；成功后 hidden 为 `display:none` |
+| 6 | 用户知道何时点击或等待 | PASS | 冲突态仍为 `display:grid`，成功态不再残留冲突面板 |
+| 7 | 核心业务产物真实生成 | PASS | 最终文档 GET、revision 和截图均存在 |
+| 8 | 失败状态有可操作恢复 | PASS | 草稿保留与“读取最新版本并保留草稿”路径仍通过 |
+| 9 | 页面状态与 API 状态一致 | PASS | `hidden=true/display=none` 与“文档已保存”及最终 GET 一致 |
+| 10 | 步骤文档可由无上下文用户复现 | PASS | 原案例步骤有效，新增 P2 三态证据和版本说明已补齐 |
+
+**当前最终结论仍为 `READY_FOR_USER`；P0=0、P1=0、P2=0；不需要回退或重新请求 Spec 确认。**
+
+### 7.3 本轮补签
+
+| 角色 | 签署 | 时间 |
+|---|---|---|
+| 验收总控（tester） | **READY_FOR_USER** —— P2 hidden 可见性已由真实三态证据和最终完整前端回归关闭；当前准备度 10/10 | 2026-10-26 |
+| 开发主管（architect） | **GO（仅限本次 P2 hidden 可见性复验）** —— 同意管理复接补充保持收口结论；P2 已关闭 | 2026-10-26 |

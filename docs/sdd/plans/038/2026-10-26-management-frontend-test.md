@@ -176,3 +176,15 @@ root 已完成并经独立 review GO 的 Spec043 synthetic 性能 fixture 测量
 结果：退出码 **0**，`317 passed in 59.01s`，`0 failed`，`0 skipped`。受信任测试 Chromium 实际启动并执行隔离 fixtures；未访问生产 URL、未写生产数据、未运行后端 pytest。
 
 历史修复前结果 `315 passed / 1 failed / 0 skipped`（唯一失败为 synthetic 地图 `longTaskCount=3`）仍保留在上文，不能覆盖或改写；本次 `317 passed` 是测量窗修复后的最终候选完整前端回归结果。
+
+## P2 hidden 修复后的最终完整前端回归（2026-10-26）
+
+针对记忆治理冲突区 `[hidden]` CSS 作用域修复（资源版本 app/styles 66）再次按原样执行完整前端回归；新增 `tests/frontend/test_memory_document_visibility.py` 已计入，不排除 Chromium 测试文件。
+
+```text
+.venv/bin/python -m pytest -q tests/frontend
+```
+
+结果：退出码 **0**，`318 passed in 58.17s`，`0 failed`，`0 skipped`。受信任测试 Chromium 正常启动并执行全部隔离 fixtures；未访问生产浏览器或私有记忆，未运行后端 pytest，未修改业务代码、测试断言或 Git。
+
+本次 `318 passed / 0 failed / 0 skipped` 为当前 P2 hidden 修复候选的最终完整前端回归结果；此前 `317 passed` 与历史 `315 passed / 1 failed` 记录均保留，不覆盖或改写。

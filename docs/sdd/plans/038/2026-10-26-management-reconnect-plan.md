@@ -107,3 +107,14 @@
 - 浏览器 runtime 已核对：在两个真实页面同时打开 `http://127.0.0.1:8000` 的“记忆治理”，选择同一 active 专用项目；页面 B 先保存并发版本，页面 A 用旧 revision 保存触发 409；页面 A 点击“读取最新版本并保留草稿”，人工合并后再次保存成功。最终截图与页面资源/状态见 [`recovery-saved.png`](artifacts/20261026-file-management/recovery-saved.png) 和 `final-runtime.json`。
 - 当前门禁进度：后端全量最终为 `3121 passed, 0 failed, 3 skipped, 67 subtests passed`；前端最终完整集合为 `317 passed, 0 failed, 0 skipped, 59.01s`，Node 合同测试 `33/33`。此前 `315/1` 的 synthetic 地图性能失败已在测量窗修复后通过最终完整复跑。自然语言项目记忆已完成：conversation `6a59bd0707d54761a6cd3a5a68e88ecf`、analysis `a3d8ad2a46a1406cb020db450954834e`，`saved_count=1`、`pending_count=0`，独立 GET 文件确认含“蓝色松果”；SSE capture 的 `events` 为空，仅记录为解析未命中，不冒充原始事件。
 - 逐步点击、等待提示、409 恢复、最终产物路径及证据边界统一记录在 [`2026-10-26-management-runtime.md`](./2026-10-26-management-runtime.md)；最终后台托管与健康复核见 runtime 末尾。pending-confirm 人工保存/忽略流程未冒充已执行，原 Spec038 其它潜在工作不因本补充改变。
+
+### 同范围 P2 复开最终页面复核（2026-10-26；等待 QA 最终验收）
+
+- `#memory-view` 的 scoped `[hidden]` 修复已由独立 review 判定 `GO`；作者候选 commit `87b0a88b` 未对外推送。页面资源更新为 `app.js?v=66`、`styles.css?v=66`、地图 21/13；旧版 65/21/13 与旧错误截图保留。
+- 最终前端完整回归为 `318 passed, 0 failed, 0 skipped, 58.17s`；后端未变，仍为 `3121 passed, 0 failed, 3 skipped, 67 subtests passed`。root 真实 CUA 状态为初始 `none` → 409 `grid` → 保存后 `none`；最终 revision 为 `e96ff2a825ed22acda7cd18eb35560bb575bd3c101c87866edf456d36f71cf51`，蓝色松果与此前 demo 内容均保留。
+- 新证据：[`hidden-before-fix.json`](artifacts/20261026-file-management/hidden-before-fix.json)、[`hidden-recheck.json`](artifacts/20261026-file-management/hidden-recheck.json)、[`hidden-recheck-final-document.json`](artifacts/20261026-file-management/hidden-recheck-final-document.json)、[`recovery-saved-hidden-fixed.png`](artifacts/20261026-file-management/recovery-saved-hidden-fixed.png)。后者实际无红框；此前错误截图 [`recovery-saved.png`](artifacts/20261026-file-management/recovery-saved.png) 仅作为历史证据保留。
+- 本轮只更新运行时/证据索引；QA 最终验收尚在补齐，不新增或改写 Spec/状态台账的完成记录，等待 root 收到本轮 architect 结论后统一处理。
+
+## 最终 P2 收口绑定（2026-10-26 23:27，北京时间）
+
+可见性修复候选为 `87b0a88b`，当前 app/styles 为 66，地图为 21/13；完整前端回归 318 passed、0 failed、0 skipped。`038-acceptance-review.md` §7 的 tester 与 architect 补签均已通过，本次管理复接补充已完成。此前“待补签”仅为历史阶段记录；旧错误截图保留，当前正确截图为 `artifacts/20261026-file-management/recovery-saved-hidden-fixed.png`。后台服务仍由当前登录会话的 `com.researchagent.recovery8000` 托管，原用户记忆未用于测试写入。

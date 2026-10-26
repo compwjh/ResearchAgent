@@ -164,3 +164,42 @@ Verdict: **NO-GO**。请先修复 P1-01 并补充项目刷新/异步响应竞态
 此前已通过的精确集合（91 个 Python 前端合同、33 个 Node 合同）保持有效；资源为 `app.js?v=65`、`styles.css?v=65`，地图仍为 21/13。未运行后端 pytest、未启动服务或浏览器、未修改代码或 Git。
 
 最终 Reviewer Verdict：**GO（冲突恢复窄增量无遗留问题）**。真实 409→GET→合并→PUT 浏览器/API smoke 仍由验收角色执行。
+
+## P2 hidden 可见性修复独立复审（候选 `87b0a88b`，2026-10-26）
+
+本节仅复核本轮 P2 最终可见性修复，不重开前述已关闭问题，不创建新的轮次报告。
+
+### 复核结论
+
+**GO / Approve（P0=0，P1=0，P2=0，P3=0）**。未发现阻断项或非阻断缺陷。`#memory-view [hidden] { display: none !important; }` 精确修复了冲突面板被 `display:grid` 覆盖的问题；作用域不越界，原生 `hidden` 三状态和正常 409 可见态均有真实 Chromium computed-style 证据。
+
+### 逐项核对
+
+- **CSS 作用域：PASS** — `frontend/styles.css:465` 的选择器以 `#memory-view` 为根，只匹配记忆视图后代；冲突态原有 `frontend/styles.css:468` 的 `display: grid` 保留，`!important` 仅在元素带 `hidden` 时覆盖它。未新增裸全局选择器。
+- **原生 `hidden` 契约：PASS** — `frontend/index.html:440` 的空文档提示和 `:443` 的冲突区均使用原生 `hidden`；生产逻辑 `frontend/app.js:3422-3425`/`:3435-3438` 仍只通过 `.hidden` 切换，未引入第二套可见性状态。
+- **三状态真实回归：PASS** — `tests/frontend/test_memory_document_visibility.py:98-141` 使用仓库真实 `styles.css`（`:9-10`）和生产渲染函数抽取（`:26-63`），在 Chromium computed style 中断言：初始 hidden 冲突区/空文档均为 `hidden=true, display=none`（`:104-111`）；模拟冲突后为 `hidden=false, display=grid` 且副本文本正确（`:113-124`）；clear 后及成功保存后再次为 `hidden=true, display=none`（`:126-141`）。这不是 mock CSS/仅源码字符串测试。
+- **其他 view / 正常 409：PASS** — 独立 Chromium 隔离探针确认 memory hidden 节点为 `none`、其他 view hidden 节点仍为 `none`、memory 与其他 view 的正常节点均为 `block`；因此规则未污染其他 view。生产 409 分支在 `frontend/app.js:3604-3606` 调用 `showMemoryDocumentConflict()`，随后 `showMemoryDocumentServerCopy()` 将 `.hidden=false`（`:3435-3438`），回归实测显示 `grid`，没有把可见冲突提示误隐藏。
+- **DOM/XSS、资源版本：PASS** — 冲突副本继续用 `textContent`（`frontend/app.js:3438`），未新增 `innerHTML`；`frontend/index.html:8` 与 `:800` 的实际资源引用均从 65 同步升至 66，地图资源仍为 `21/13`。
+
+### 独立验证记录
+
+| 检查 | 结果 |
+|---|---|
+| `pytest -q tests/frontend/test_frontend_management_contract.py tests/frontend/test_memory_document_visibility.py`（候选 `87b0a88b` 临时快照、受控 Chromium） | 退出码 0，**11 passed**（0 failed） |
+| `node --check frontend/app.js` | 退出码 0 |
+| `python scripts/check_test_layout.py` | 退出码 0，`test layout: ok` |
+| `python scripts/check_test_naming.py` | 退出码 0，无 spec/task 数字测试文件 |
+| `git diff --check 87b0a88b^ 87b0a88b` | 退出码 0 |
+| 修复前证据 `docs/sdd/plans/038/artifacts/20261026-file-management/hidden-before-fix.json` | 记录 `hidden: true` 但 `display: grid` |
+| 修复前截图 `docs/sdd/plans/038/artifacts/20261026-file-management/recovery-saved.png` | 可见错误常驻红色冲突框，与复现 JSON 一致 |
+
+### Review Summary
+
+| Severity | Count | Status |
+|---|---:|---|
+| P0 / CRITICAL | 0 | pass |
+| P1 / HIGH | 0 | pass |
+| P2 / MEDIUM | 0 | pass |
+| P3 / LOW | 0 | pass |
+
+**Final Reviewer Verdict: GO / Approve。** 本轮仅追加评审记录和日志，未修改业务代码、未修改测试、未启动服务、未写入真实记忆文件、未执行任何 Git 提交/分支操作。日志：`.codebuddy/agent-logs/spec-038/task-00/frontend-reviewer/20261026-224402.md`。

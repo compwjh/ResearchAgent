@@ -1,0 +1,15 @@
+{
+  "beforeFix": {
+    "hidden": true,
+    "display": "grid"
+  },
+  "conflictShown": {
+    "display": "grid",
+    "hidden": false
+  },
+  "afterSaved": {
+    "display": "none",
+    "hidden": true
+  },
+  "savedStatus": "文档已保存（revision e96ff2a825ed…）"
+}

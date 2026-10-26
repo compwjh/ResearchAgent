@@ -24,3 +24,7 @@
 - 后台托管复核：`com.researchagent.recovery8000`，[`final-background-health.json`](artifacts/20261026-file-management/final-background-health.json)、[`final-background-kb-health.json`](artifacts/20261026-file-management/final-background-kb-health.json)、[`final-background-project.json`](artifacts/20261026-file-management/final-background-project.json)。
 
 旧 `/api/memories*` CRUD 未恢复；pending-confirm 人工保存/忽略未冒充真实执行；部署启动/停止命令统一见 [`deploy/README.md`](../../../deploy/README.md)。
+
+## 最终 P2 收口绑定（2026-10-26 23:27，北京时间）
+
+可见性修复候选为 `87b0a88b`，当前 app/styles 为 66，地图为 21/13；完整前端回归 318 passed、0 failed、0 skipped。`038-acceptance-review.md` §7 的 tester 与 architect 补签均已通过，本次管理复接补充已完成。此前“待补签”仅为历史阶段记录；旧错误截图保留，当前正确截图为 `artifacts/20261026-file-management/recovery-saved-hidden-fixed.png`。后台服务仍由当前登录会话的 `com.researchagent.recovery8000` 托管，原用户记忆未用于测试写入。

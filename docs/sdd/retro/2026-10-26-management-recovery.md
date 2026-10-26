@@ -59,3 +59,10 @@
 - 管理复接运行版本为 `app.js?v=65`、`styles.css?v=65`、`literature-maps.js?v=21`、`literature-maps.css?v=13`；后台由当前 macOS 登录会话的 `launchctl submit` 标签 `com.researchagent.recovery8000` 托管，地址 `http://127.0.0.1:8000`。`/api/health`、`/api/kb/health` 与专用项目文件 GET 均有独立 JSON 证据，见 `final-background-health.json`、`final-background-kb-health.json`、`final-background-project.json`。
 - 先前普通 `start.sh -d` 返回 PID 但进程随后被执行环境清理，属于重复 PID/假启动现象，不算部署成功；旧失败与后续 launchctl 托管成功证据同时保留。未安装 plist、未形成开机自启，也未改变 Ollama 部署。启动/停止命令已由 root 统一记录在 [`deploy/README.md`](../../deploy/README.md)，本复盘不重复建立独立部署规则。
 - 该托管复核只证明当前登录会话下的运行时可访问与依赖健康，不改变 Spec032 整体暂停、不把认证后 resume/download/import 写成已验证，也不扩大 Spec038 管理复接补充的完成范围。
+
+## 8. 同范围 P2 复开：落盘截图必须实际目视核验
+
+- `#memory-view` scoped `[hidden]` 修复后，独立 review 为 `GO`，最终前端完整回归为 `318 passed, 0 failed, 0 skipped, 58.17s`；后端保持 `3121 passed, 0 failed, 3 skipped, 67 subtests passed`。页面资源为 `app.js?v=66`、`styles.css?v=66`、地图 21/13，旧版 65/21/13 及旧错误截图均保留。
+- root 的真实 CUA 复核明确记录初始隐藏状态为 `none`、409 冲突区域为 `grid`、保存后恢复为 `none`；最终 revision 为 `e96ff2a825ed22acda7cd18eb35560bb575bd3c101c87866edf456d36f71cf51`，文件仍保留“蓝色松果”和此前 demo 内容。证据为 [`hidden-before-fix.json`](../plans/038/artifacts/20261026-file-management/hidden-before-fix.json)、[`hidden-recheck.json`](../plans/038/artifacts/20261026-file-management/hidden-recheck.json)、[`hidden-recheck-final-document.json`](../plans/038/artifacts/20261026-file-management/hidden-recheck-final-document.json) 与 [`recovery-saved-hidden-fixed.png`](../plans/038/artifacts/20261026-file-management/recovery-saved-hidden-fixed.png)。
+- 这次复开再次说明：JSON、DOM 状态或最终 revision 只能证明结构化状态，不能证明用户实际看到的 CSS 展开/隐藏结果；落盘截图可能保留旧红框、遮罩或 stale UI 状态，必须实际打开并目视检查，才能确认截图与当前页面结果一致。旧的错误截图 [`recovery-saved.png`](../plans/038/artifacts/20261026-file-management/recovery-saved.png) 因此保留为历史基线，不能拿它替代无红框的新截图。
+- QA 正在补本轮最终验收；本节只记录同范围复开证据，不把本轮再次写成新的 Spec/状态台账完成变更。
