@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=62">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=16">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=18">
   <script src="../../../frontend/vendor/purify.min.js"></script>
   <script src="../../../frontend/vendor/marked.min.js"></script>
   <script>
@@ -159,7 +159,7 @@
   </script>
   <script>
     const replayGraph = window.__literatureMapReplay && typeof window.__literatureMapReplay === 'object' ? window.__literatureMapReplay : null;
-    const mockMap = replayGraph?.map || { map_id: 'map-fixture', name: '边缘学习地图', topic: '联邦学习', status: 'ready', revision: 3, requested_count: 20, view_settings: { viewport: { x: 0, y: 0, scale: 1 }, layers: { citation: true, similarity: true } } };
+    const mockMap = replayGraph?.map || { map_id: 'map-fixture', owner_id: 'owner-fixture', name: '边缘学习地图', topic: '联邦学习', status: 'ready', revision: 3, requested_count: 20, view_settings: { viewport: { x: 0, y: 0, scale: 1 }, layers: { citation: true, similarity: true }, node_style: { fill_mode: 'filled', fill_opacity: 0.3 } } };
     const mockGroups = replayGraph?.groups || [{ group_id: 'group-fixture', name: '人工分组', color: '#3366cc' }];
     const mockNodes = replayGraph?.nodes || [
       { node_id: 'node-a', title: 'Federated learning paper', authors: ['Author A'], year: 2024, venue: 'Fixture Venue', abstract: 'Fixture abstract', keywords: ['federated'], citation_count: 12, source_url: 'https://example.org/paper', provenance: { source: 'fixture', basis: 'metadata' }, download_status: 'not_imported', group_id: null, position: { x: 390, y: 300 } },
@@ -177,6 +177,12 @@
       if (mockGraph.latest_job) mockGraph.latest_job.map_id = mockMap.map_id;
     }
     const query = new URLSearchParams(window.location.search);
+    if (query.has('palette')) {
+      mockMap.owner_id = 'owner-fixture';
+      mockMap.view_settings = { ...mockMap.view_settings, node_style: { fill_mode: 'filled', fill_opacity: 0.3 } };
+      if (mockNodes[0]) mockNodes[0].group_id = 'group-fixture';
+    }
+    if (query.has('palette-group-members') && mockNodes[1]) mockNodes[1].group_id = 'group-fixture';
     if (query.has('tiny-saved-view')) mockMap.view_settings.viewport = { x: 218.19159296052774, y: 185.0037455589592, scale: 0.35 };
     if (query.has('usable-saved-view')) mockMap.view_settings.viewport = { x: -24, y: -32, scale: 1.25 };
     const graphics = query.has('graphics');
@@ -202,6 +208,9 @@
     const importTransportFailure = query.has('import-transport-failure');
     const viewConflict = query.has('view-conflict');
     let viewConflictCalls = 0;
+    let paletteConflictCalls = 0;
+    let paletteTimeoutCalls = 0;
+    let paletteGroupTimeoutCalls = 0;
     const recovery = query.has('recovery');
     const running = query.has('running');
     const indexedTombstone = query.has('indexed-tombstone');
@@ -328,7 +337,7 @@
       { candidate_id: 'candidate-new', title: 'New candidate', authors: ['New Author'], year: 2025, already_present: false, removed: false },
     ], diff: refreshEmpty ? [] : (refreshDiff ? realDiffShape : []) };
     if (serverPreview) Object.assign(previewState, { preview_id: pagedPreview ? 'preview-server-paged' : 'preview-server', kind: 'refresh', status: 'completed', diff: realDiffShape });
-    const secondMap = { ...mockMap, map_id: 'map-fixture-b', name: '第二张地图', topic: '第二主题' };
+    const secondMap = { ...mockMap, map_id: 'map-fixture-b', owner_id: 'owner-fixture-b', name: '第二张地图', topic: '第二主题' };
     const queueState = {
       map_id: mockMap.map_id,
       queue_job_id: queueMode ? 'queue-fixture' : null,
@@ -343,7 +352,16 @@
     window.__lastImportBody = null;
     window.__importCount = 0;
     window.__viewBodies = [];
+    window.__nodeStyleBodies = [];
     window.__groupBodies = [];
+    window.__mockNodes = mockNodes;
+    window.__mockGroups = mockGroups;
+    const serializeSvg = XMLSerializer.prototype.serializeToString;
+    XMLSerializer.prototype.serializeToString = function (node) {
+      const serialized = serializeSvg.call(this, node);
+      if (node?.id === 'literature-map-svg') window.__serializedExportSvg = serialized;
+      return serialized;
+    };
     window.__nodeGroupBodies = [];
     window.__createBody = null;
     window.__applyBody = null;
@@ -448,7 +466,7 @@
       else if (path === '/api/literature-maps' && method === 'POST') {
         window.__createBody = body;
         payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, job_id: mockGraph.latest_job.job_id, status: 'generating', map: { ...mockMap, status: 'generating' }, job: { ...mockGraph.latest_job, status: 'running', step: 'discover' } };
-      } else if (path === '/api/literature-maps') payload.maps = (serverPreviewRace || analysisRace) ? [mockMap, secondMap] : [mockMap];
+      } else if (path === '/api/literature-maps') payload.maps = (serverPreviewRace || analysisRace || query.has('palette-owners')) ? [mockMap, secondMap] : [mockMap];
       else if (path === '/api/literature-maps/map-fixture') payload = { schema_version: 'literature-map-v1', map: mockMap, latest_job: mockGraph.latest_job };
       else if (path === '/api/literature-maps/map-fixture-b') payload = { schema_version: 'literature-map-v1', map: secondMap, latest_job: { ...mockGraph.latest_job, map_id: secondMap.map_id, job_id: 'job-fixture-b' } };
       else if (path === '/api/literature-maps/map-fixture/analysis-queue' && method === 'GET') {
@@ -479,7 +497,30 @@
         queueState.failed_items = [];
         payload = queueEnvelope();
       }
-      else if (path === '/api/literature-maps/map-fixture/graph') payload = mockGraph;
+      else if (path === '/api/literature-maps/map-fixture/graph') {
+        if (query.has('palette-delay-verification') && paletteTimeoutCalls > 0) await new Promise((resolve) => window.setTimeout(resolve, 300));
+        payload = mockGraph;
+      }
+      else if (path === '/api/literature-maps/map-fixture/node-styles' && method === 'PATCH') {
+        window.__nodeStyleBodies.push(body);
+        if (query.has('palette-conflict') && paletteConflictCalls === 0) {
+          paletteConflictCalls += 1;
+          mockMap.revision += 1;
+          return new Response(JSON.stringify({ detail: { code: 'MAP_CONFLICT', message: '地图版本已变化' } }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+        }
+        const nodes = body.node_ids.map((nodeId) => {
+          const node = mockNodes.find((item) => item.node_id === nodeId);
+          if (node) node.color_override = body.color_override;
+          return node ? { node_id: node.node_id, group_id: node.group_id || null, color_override: node.color_override ?? null } : null;
+        }).filter(Boolean);
+        mockMap.revision += 1;
+        payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, node_ids: [...body.node_ids], color_override: body.color_override, nodes };
+        if (query.has('palette-delay-color-save')) await new Promise((resolve) => window.setTimeout(resolve, 300));
+        if (query.has('palette-timeout-after-save') && paletteTimeoutCalls === 0) {
+          paletteTimeoutCalls += 1;
+          throw new TypeError('simulated lost response after atomic save');
+        }
+      }
       else if (path === '/api/literature-maps/map-fixture/groups' && method === 'GET') payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, groups: mockGroups.map((group) => ({ ...group })) };
       else if (path === '/api/literature-maps/map-fixture/groups' && method === 'POST') {
         window.__groupBodies.push(body);
@@ -491,10 +532,19 @@
       else if (path.match(/\/api\/literature-maps\/map-fixture\/groups\/[^/]+$/) && method === 'PATCH') {
         window.__groupBodies.push(body);
         const groupId = path.split('/').pop();
+        if (query.has('palette-group-timeout-before-save') && paletteGroupTimeoutCalls === 0) {
+          paletteGroupTimeoutCalls += 1;
+          throw new TypeError('simulated lost response before group color save');
+        }
         const group = mockGroups.find((item) => item.group_id === groupId);
         if (group) Object.assign(group, { name: body.name || group.name, color: body.color || group.color });
         mockMap.revision += 1;
         payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, groups: mockGroups.map((item) => ({ ...item })) };
+        if (query.has('palette-group-timeout-after-save') && paletteGroupTimeoutCalls === 0) {
+          paletteGroupTimeoutCalls += 1;
+          throw new TypeError('simulated lost response after group color save');
+        }
+        if (query.has('palette-delay-group-save')) await new Promise((resolve) => window.setTimeout(resolve, 300));
       }
       else if (path.match(/\/api\/literature-maps\/map-fixture\/groups\/[^/]+$/) && method === 'DELETE') {
         window.__groupBodies.push(body);
@@ -514,7 +564,7 @@
         payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision, node: node ? { ...node } : null };
       }
       else if (path === '/api/literature-maps/map-fixture/export?format=json' && method === 'GET') {
-        payload = { schema_version: 'literature-map-export-v1', exported_at: '2026-10-21T00:00:00Z', map: { ...mockMap }, groups: mockGroups.map((item) => ({ ...item })), nodes: mockNodes.map((item) => ({ ...item })), edges: mockGraph.edges.map((item) => ({ ...item })) };
+        payload = { schema_version: 'literature-map-export-v2', exported_at: '2026-10-21T00:00:00Z', map: { ...mockMap, recent_colors: ['#f6bd60'] }, groups: mockGroups.map((item) => ({ ...item })), nodes: mockNodes.map((item) => ({ ...item, color_override: item.color_override ?? null, color_preview: '#ff6b6b' })), edges: mockGraph.edges.map((item) => ({ ...item })), preview: { color: '#ff6b6b' } };
         return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="map-fixture.json"' } });
       }
       else if (path === '/api/literature-maps/map-fixture-b/graph') payload = { ...mockGraph, map: secondMap, latest_job: { ...mockGraph.latest_job, map_id: secondMap.map_id, job_id: 'job-fixture-b' } };
@@ -659,7 +709,9 @@
         }
         window.__viewBodies.push(body);
         mockMap.revision += 1;
-        mockMap.view_settings = body;
+        mockMap.view_settings = body.node_style
+          ? { ...(mockMap.view_settings || {}), node_style: { ...body.node_style } }
+          : body;
         (body.positions || []).forEach((position) => {
           const node = mockNodes.find((item) => item.node_id === position.node_id);
           if (node) node.position = { x: position.x, y: position.y };
@@ -689,7 +741,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=25"></script>
+  <script src="../../../frontend/literature-maps.js?v=28"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

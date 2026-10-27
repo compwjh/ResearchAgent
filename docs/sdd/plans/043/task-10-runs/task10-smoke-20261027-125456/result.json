@@ -1,0 +1,8 @@
+{
+  "result": "blocked",
+  "reason": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+  "map_id": "3853926bb0cc4a71ba49c50afdf04522",
+  "retry_count": 1,
+  "nodes": 0,
+  "note": "保留首次和一次补缺重试失败证据；不得视为真实API成功，不无限重试。配色界面尚在开发，最终收口未开始。"
+}

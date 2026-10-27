@@ -1,0 +1,93 @@
+{
+  "status": 200,
+  "response": {
+    "schema_version": "literature-map-v1",
+    "map": {
+      "map_id": "4ef8c03bffe24797acb090f4095a3a28",
+      "name": "地图易用性官方目录验证 task10-official-20261027-130257",
+      "topic": "fuzzing vulnerability discovery",
+      "owner_id": "local-user",
+      "project_id": null,
+      "filters": {
+        "conference_ids": [
+          "usenix-security"
+        ],
+        "source_ids": [
+          "usenix"
+        ],
+        "year_end": 2024,
+        "year_start": 2024
+      },
+      "requested_count": 20,
+      "revision": 0,
+      "status": "partial",
+      "view_settings": {
+        "label_mode": "all",
+        "layers": {
+          "citation": true,
+          "similarity": true
+        },
+        "node_style": {
+          "fill_mode": "filled",
+          "fill_opacity": 0.3
+        },
+        "viewport": {
+          "scale": 1,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "created_at": "2026-10-27T05:02:57.624251+00:00",
+      "updated_at": "2026-10-27T05:03:03.355769+00:00"
+    },
+    "nodes": [],
+    "edges": [],
+    "layers": {
+      "citation": {
+        "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "status": "partial"
+      },
+      "similarity": {
+        "error_code": null,
+        "status": "waiting"
+      }
+    },
+    "latest_job": {
+      "job_id": "f2de52d6821543a68f7d91568b384af0",
+      "map_id": "4ef8c03bffe24797acb090f4095a3a28",
+      "operation": "create",
+      "status": "partial",
+      "step": "finished",
+      "cursor": {
+        "layers": {
+          "citation": {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "status": "partial"
+          },
+          "similarity": {
+            "error_code": null,
+            "status": "waiting"
+          }
+        },
+        "resume_step": "finished"
+      },
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 1,
+        "similarity_edge_count": 0
+      },
+      "failed_units": [
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "discover"
+        }
+      ],
+      "created_at": "2026-10-27T05:02:57.624251+00:00",
+      "updated_at": "2026-10-27T05:03:03.355769+00:00"
+    }
+  }
+}

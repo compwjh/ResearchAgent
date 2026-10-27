@@ -83,3 +83,19 @@ API E2E须从已部署服务真实创建/读取地图开始，经批量改色→
 - 后端两项初审缺陷已修复并独立通过；布局原三项P1及移除节点误告警P2已修复并独立通过。详见各原报告末尾复审节。
 - 当前布局源码JS25/CSS16；作者布局专项14项、独立补验hidden-active/removed两项、版本契约6项通过。以上是隔离回放/定向证据，不是当前8000服务的真实验收。
 - 仅保存本地检查点，不push、不合main、不宣告Task10完成。后续调色板和全文提示继续实施；部署与真实API E2E仍待完成。
+
+### Deployed checkpoint evidence
+
+- Local commit 5d42211a deployed on codex/fix-kb-reindex-contract, without main/remote changes. Existing launchctl label com.researchagent.recovery8000, loopback 127.0.0.1:8000. Ollama LAN configuration unchanged.
+- Map DB backup: data/literature_maps/backups/task10-before-v7-20261027-125322.sqlite3. Runtime schema7; original map retains21nodes. health/home/conversations/models/graph HTTP200. Assets JS25/CSS16.
+- Real browser circle click opens long detail: SVG height460px before/after, unchanged transform, selected circle hit-test passes. Spacing preview21nodes has minimum clearance surplus7.646 world units after subtracting required clearance; preview cancelled. Evidence: task-10-runs/20261027-deployed-layout.
+- New20paper topic case blocked by S2 429; one bounded retry still0nodes. Official-catalog scoped case also0nodes and same error. Both runs BLOCKED; preserved in task10-smoke/task10-official directories. Not final API E2E success and not ready for user acceptance.
+- Palette and fulltext feedback remain in implementation; no unreviewed code deployed.
+
+### 配色阶段独立通过
+
+配色及节点样式已完成独立复审，原两项P1及两项P2全部关闭，最终P0/P1/P2=0；独立测试28passed/0skip，独立复审20项浏览器+5项静态通过。当前资源JS28/CSS18。详情见原palette开发/评审/测试报告末尾。
+
+当前固定后端部署的真实样式HTTP链11次请求成功：读取已有验收图→批量颜色→node_style→重读→409冲突→export-v2→公开接口恢复原外观，保留21节点，见task-10-runs/task10-styles-live-20261027-134340。此链从现有图读取入口开始；新建论文图的429失败记录仍保留，不混淆为成功。
+
+全文状态提示尚未实施，当前仍为实施中；全量回归与Spec最终签字/收口未开始。

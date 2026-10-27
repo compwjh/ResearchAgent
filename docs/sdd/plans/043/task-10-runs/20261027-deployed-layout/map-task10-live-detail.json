@@ -1,0 +1,31 @@
+{
+  "before": {
+    "circles": 21,
+    "height": 460,
+    "transform": "translate(-394.5353875595408 -397.5301338991417) scale(2.1036814425244175)",
+    "versions": [
+      "/assets/literature-maps.css?v=16",
+      "/assets/literature-maps.js?v=25"
+    ]
+  },
+  "after": {
+    "height": 460,
+    "hit": "circle",
+    "selectedRect": {
+      "bottom": 381.0741882324219,
+      "height": 42.168609619140625,
+      "left": 925.1533203125,
+      "right": 967.3219604492188,
+      "top": 338.90557861328125,
+      "width": 42.16864013671875,
+      "x": 925.1533203125,
+      "y": 338.90557861328125
+    },
+    "title": "End-to-End Spectro-Temporal Graph Attention Networks for Speaker Verification Anti-Spoofing and Speech Deepfake Detection",
+    "transform": "translate(-394.5353875595408 -397.5301338991417) scale(2.1036814425244175)",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  }
+}

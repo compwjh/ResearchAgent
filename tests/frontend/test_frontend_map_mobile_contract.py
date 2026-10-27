@@ -34,6 +34,11 @@ def _touch(cdp, event_type: str, points: Iterable[tuple[int, float, float]]) -> 
     )
 
 
+def _touch_on_frame(page: Page, cdp, event_type: str, points: Iterable[tuple[int, float, float]]) -> None:
+    _touch(cdp, event_type, points)
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => resolve()))")
+
+
 def _transform(page: Page) -> tuple[float, float, float]:
     value = page.locator("#literature-map-viewport").get_attribute("transform") or ""
     match = re.search(r"translate\(([-+0-9.e]+)\s+([-+0-9.e]+)\)\s+scale\(([-+0-9.e]+)\)", value)
@@ -49,13 +54,48 @@ def _select_map(page: Page) -> None:
     page.evaluate("window.__viewBodies = []")
 
 
+def _wait_for_panel_transition(page: Page, selector: str, open_state: bool) -> None:
+    page.wait_for_function(
+        """({ selector, openState }) => {
+          const panel = document.querySelector(selector);
+          if (!panel) return false;
+          const style = getComputedStyle(panel);
+          if (!openState) return !panel.classList.contains('is-open') && style.visibility === 'hidden';
+          if (!panel.classList.contains('is-open') || style.visibility !== 'visible') return false;
+          const transform = new DOMMatrixReadOnly(style.transform);
+          return Math.abs(transform.m41) < 0.5 && Math.abs(transform.m42) < 0.5;
+        }""",
+        arg={"selector": selector, "openState": open_state},
+        timeout=3000,
+    )
+
+
+def _wait_for_scroll_settle(page: Page, selector: str) -> float:
+    return page.locator(selector).evaluate(
+        """element => new Promise(resolve => {
+          let previous = element.scrollTop;
+          let stableFrames = 0;
+          let frames = 0;
+          const check = () => {
+            const current = element.scrollTop;
+            stableFrames = Math.abs(current - previous) < 0.5 ? stableFrames + 1 : 0;
+            previous = current;
+            frames += 1;
+            if (stableFrames >= 4 || frames >= 120) resolve(current);
+            else requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        })"""
+    )
+
+
 def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "/assets/styles.css?v=62" in INDEX
-    assert "/assets/literature-maps.js?v=25" in INDEX
-    assert "/assets/literature-maps.css?v=16" in INDEX
+    assert "/assets/literature-maps.js?v=28" in INDEX
+    assert "/assets/literature-maps.css?v=18" in INDEX
     assert "/styles.css?v=62" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.js?v=25" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=16" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.js?v=28" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.css?v=18" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
         "literature-map-mobile-list-open",
         "literature-map-mobile-backdrop",
@@ -76,7 +116,7 @@ def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "innerHTML" not in MODULE
     assert "touch-action: none" in STYLES
     assert "touch-action: pan-y" in STYLES
-    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "25"
+    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "28"
 
 
 @pytest.mark.parametrize("width", [375, 390])
@@ -100,7 +140,14 @@ def test_mobile_map_drawers_single_pan_and_desktop_boundary(width: int) -> None:
         page.locator('[data-map-id="map-fixture"]').click()
         page.wait_for_selector('[data-node-id="node-a"]')
         page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        _wait_for_panel_transition(page, ".literature-map-list-panel", False)
         assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        style_disclosure = page.locator('.literature-map-node-style-disclosure')
+        assert style_disclosure.get_attribute('open') is None
+        style_disclosure.locator('summary').click()
+        assert page.locator('#literature-map-node-style').is_visible()
+        style_disclosure.locator('summary').click()
+        assert style_disclosure.get_attribute('open') is None
 
         svg = page.locator("#literature-map-svg")
         svg_box = svg.bounding_box()
@@ -238,42 +285,53 @@ def test_mobile_drawer_and_detail_scroll_use_real_touch_gestures() -> None:
         page.locator("#literature-map-mobile-list-open").evaluate("el => el.click()")
         groups = page.locator("#literature-map-groups")
         page.wait_for_function("!document.querySelector('#literature-map-groups')?.hidden")
-        page.wait_for_timeout(240)
+        _wait_for_panel_transition(page, ".literature-map-list-panel", True)
         assert groups.evaluate("el => el.scrollHeight > el.clientHeight")
+        page.evaluate("""() => {
+          window.__touchScrollEvents = [];
+          for (const id of ['literature-map-groups', 'literature-map-detail']) {
+            document.getElementById(id)?.addEventListener('scroll', event => {
+              window.__touchScrollEvents.push({ id, scrollTop: event.currentTarget.scrollTop });
+            });
+          }
+        }""")
         group_box = groups.bounding_box()
         assert group_box is not None
         cdp = page.context.new_cdp_session(page)
         scroll_before = groups.evaluate("el => el.scrollTop")
         x = group_box["x"] + group_box["width"] / 2
-        _touch(cdp, "touchStart", [(10, x, group_box["y"] + group_box["height"] - 20)])
-        _touch(cdp, "touchMove", [(10, x, group_box["y"] + group_box["height"] - 110)])
-        _touch(cdp, "touchMove", [(10, x, group_box["y"] + group_box["height"] - 200)])
-        _touch(cdp, "touchEnd", [])
+        _touch_on_frame(page, cdp, "touchStart", [(10, x, group_box["y"] + group_box["height"] - 20)])
+        _touch_on_frame(page, cdp, "touchMove", [(10, x, group_box["y"] + group_box["height"] - 110)])
+        _touch_on_frame(page, cdp, "touchMove", [(10, x, group_box["y"] + group_box["height"] - 200)])
+        _touch_on_frame(page, cdp, "touchEnd", [])
         page.wait_for_function("document.querySelector('#literature-map-groups')?.scrollTop > 0", timeout=3000)
-        assert groups.evaluate("el => el.scrollTop") > scroll_before
-        page.wait_for_timeout(240)
+        assert _wait_for_scroll_settle(page, "#literature-map-groups") > scroll_before
+        assert page.evaluate("window.__touchScrollEvents.some(event => event.id === 'literature-map-groups')")
 
         page.locator("#literature-map-list-close").click()
         page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        _wait_for_panel_transition(page, ".literature-map-list-panel", False)
         node = page.locator('[data-node-id="node-a"] circle')
         node_box = node.bounding_box()
         assert node_box is not None
         page.touchscreen.tap(node_box["x"] + node_box["width"] / 2, node_box["y"] + node_box["height"] / 2)
         page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.classList.contains('is-open')")
-        page.wait_for_timeout(240)
+        _wait_for_panel_transition(page, ".literature-map-detail-panel", True)
         detail = page.locator("#literature-map-detail")
         assert detail.evaluate("el => el.scrollHeight > el.clientHeight")
         detail_box = detail.bounding_box()
         assert detail_box is not None
         detail_before = detail.evaluate("el => el.scrollTop")
         x = detail_box["x"] + detail_box["width"] / 2
-        _touch(cdp, "touchStart", [(11, x, detail_box["y"] + detail_box["height"] - 20)])
-        _touch(cdp, "touchMove", [(11, x, detail_box["y"] + detail_box["height"] - 130)])
+        _touch_on_frame(page, cdp, "touchStart", [(11, x, detail_box["y"] + detail_box["height"] - 20)])
+        _touch_on_frame(page, cdp, "touchMove", [(11, x, detail_box["y"] + detail_box["height"] - 130)])
         page.wait_for_function("document.querySelector('#literature-map-detail')?.scrollTop > 0", timeout=3000)
         detail_mid_scroll = detail.evaluate("el => el.scrollTop")
-        _touch(cdp, "touchMove", [(11, x, detail_box["y"] + detail_box["height"] - 220)])
-        _touch(cdp, "touchEnd", [])
+        _touch_on_frame(page, cdp, "touchMove", [(11, x, detail_box["y"] + detail_box["height"] - 220)])
+        _touch_on_frame(page, cdp, "touchEnd", [])
+        _wait_for_scroll_settle(page, "#literature-map-detail")
         assert detail_mid_scroll > detail_before
+        assert page.evaluate("window.__touchScrollEvents.some(event => event.id === 'literature-map-detail')")
         browser.close()
 
 

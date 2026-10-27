@@ -33,7 +33,12 @@
   const MAX_GROUPS = 200;
   const GROUP_NAME_MAX_LENGTH = 80;
   const GROUP_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-  const EXPORT_SCHEMA_VERSION = 'literature-map-export-v1';
+  const COLOR_PRESETS = ['#ff6b6b', '#f06595', '#cc5de8', '#845ef7', '#5c7cfa', '#339af0', '#22b8cf', '#20c997', '#00c2a8', '#51cf66', '#a9e34b', '#ffd43b'];
+  const RECENT_COLOR_LIMIT = 8;
+  const COLOR_SAVE_TIMEOUT_MS = 15000;
+  const DEFAULT_NODE_COLOR = '#8d80e6';
+  const DEFAULT_NODE_STYLE = { fill_mode: 'filled', fill_opacity: 0.3 };
+  const EXPORT_SCHEMA_VERSION = 'literature-map-export-v2';
   const TERMINAL_JOB_STATES = new Set(['completed', 'partial', 'failed', 'stopped']);
   const LAYER_NAMES = ['citation', 'similarity'];
   const LABEL_MODES = ['all', 'neighbors', 'hidden'];
@@ -56,6 +61,14 @@
     mounted: false,
     maps: [],
     groups: [],
+    multiSelectActive: false,
+    multiSelectedNodeIds: new Set(),
+    colorDraft: null,
+    colorSaveInFlight: false,
+    recentColorBuckets: new Map(),
+    nodeStyle: { ...DEFAULT_NODE_STYLE },
+    nodeStyleDraft: { ...DEFAULT_NODE_STYLE },
+    nodeStyleSaveInFlight: false,
     selectedMapId: null,
     map: null,
     graph: null,
@@ -336,6 +349,15 @@
     return map && typeof map === 'object' ? map : null;
   }
 
+  function normalizeNodeStyle(nodeStyle) {
+    const fillMode = nodeStyle?.fill_mode === 'outline' ? 'outline' : 'filled';
+    const candidate = nodeStyle?.fill_opacity;
+    const opacity = typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 0 && candidate <= 1
+      ? candidate
+      : DEFAULT_NODE_STYLE.fill_opacity;
+    return { fill_mode: fillMode, fill_opacity: opacity };
+  }
+
   function normalizeNodes(graph) {
     return Array.isArray(graph?.nodes) ? graph.nodes.filter((node) => node && node.node_id) : [];
   }
@@ -480,6 +502,225 @@
 
   function groupById(groupId) {
     return state.groups.find((group) => group.group_id === groupId) || null;
+  }
+
+  function normalizeHexColor(value) {
+    const color = String(value || '').trim();
+    return GROUP_COLOR_PATTERN.test(color) ? color.toLowerCase() : null;
+  }
+
+  function mapOwnerId() {
+    return String(state.map?.owner_id || state.graph?.map?.owner_id || '').trim();
+  }
+
+  function recentColorScope() {
+    const ownerId = mapOwnerId();
+    if (ownerId) return { scope: `owner:${ownerId}`, ownerId };
+    const mapId = String(state.map?.map_id || state.selectedMapId || '').trim();
+    return mapId ? { scope: `map:${mapId}`, ownerId: '' } : { scope: '', ownerId: '' };
+  }
+
+  function getRecentColors() {
+    const { scope, ownerId } = recentColorScope();
+    if (!scope) return [];
+    if (state.recentColorBuckets.has(scope)) return [...state.recentColorBuckets.get(scope)];
+    let colors = [];
+    if (ownerId) {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(`literature-map-recent-colors:${ownerId}`) || '[]');
+        if (Array.isArray(saved)) colors = saved.map(normalizeHexColor).filter(Boolean).slice(0, RECENT_COLOR_LIMIT);
+      } catch (_) {
+        colors = [];
+      }
+    }
+    state.recentColorBuckets.set(scope, colors);
+    return [...colors];
+  }
+
+  function rememberRecentColor(colorValue, scopeOverride = null) {
+    const color = normalizeHexColor(colorValue);
+    const current = recentColorScope();
+    const ownerId = String(scopeOverride?.ownerId ?? current.ownerId).trim();
+    const mapId = String(scopeOverride?.mapId ?? state.map?.map_id ?? state.selectedMapId ?? '').trim();
+    const scope = ownerId ? `owner:${ownerId}` : (mapId ? `map:${mapId}` : '');
+    if (!color || !scope) return;
+    let previous = state.recentColorBuckets.get(scope);
+    if (!Array.isArray(previous)) {
+      previous = [];
+      if (ownerId) {
+        try {
+          const saved = JSON.parse(window.localStorage.getItem(`literature-map-recent-colors:${ownerId}`) || '[]');
+          if (Array.isArray(saved)) previous = saved.map(normalizeHexColor).filter(Boolean).slice(0, RECENT_COLOR_LIMIT);
+        } catch (_) {
+          previous = [];
+        }
+      }
+    }
+    const colors = [color, ...previous.filter((recent) => recent !== color)].slice(0, RECENT_COLOR_LIMIT);
+    state.recentColorBuckets.set(scope, colors);
+    if (!ownerId) return;
+    try {
+      window.localStorage.setItem(`literature-map-recent-colors:${ownerId}`, JSON.stringify(colors));
+    } catch (_) {
+      // An unavailable browser store only removes cross-session persistence.
+    }
+  }
+
+  function currentGroupColor(groupId) {
+    const group = groupById(groupId);
+    if (state.colorDraft?.target === 'group'
+      && state.colorDraft.groupId === groupId
+      && normalizeHexColor(state.colorDraft.colorOverride)) {
+      return state.colorDraft.colorOverride;
+    }
+    return group?.color || DEFAULT_NODE_COLOR;
+  }
+
+  function nodeDisplayColor(node) {
+    const draft = state.colorDraft;
+    if (draft?.mapId === state.map?.map_id && ['node', 'selection'].includes(draft.target)
+      && draft.nodeIds.includes(node?.node_id)) {
+      if (draft.colorOverride === null) return currentGroupColor(node.group_id);
+      const draftColor = normalizeHexColor(draft.colorOverride);
+      if (draftColor) return draftColor;
+    }
+    const override = normalizeHexColor(node?.color_override);
+    if (override) return override;
+    return currentGroupColor(node?.group_id);
+  }
+
+  function colorDraftMatches(target, groupId = null) {
+    if (!state.colorDraft || state.colorDraft.mapId !== state.map?.map_id || state.colorDraft.target !== target) return false;
+    if (target === 'group') return state.colorDraft.groupId === groupId;
+    const currentIds = target === 'selection' ? [...state.multiSelectedNodeIds] : [state.selectedNodeId].filter(Boolean);
+    return state.colorDraft.nodeIds.length === currentIds.length
+      && state.colorDraft.nodeIds.every((nodeId) => currentIds.includes(nodeId));
+  }
+
+  function initialPaletteColor(target, groupId = null) {
+    if (colorDraftMatches(target, groupId)) {
+      const draft = state.colorDraft.colorOverride;
+      if (normalizeHexColor(draft)) return draft;
+    }
+    if (target === 'group') return currentGroupColor(groupId);
+    const ids = target === 'selection'
+      ? [...state.multiSelectedNodeIds]
+      : [state.selectedNodeId].filter(Boolean);
+    const node = normalizeNodes(state.graph).find((item) => item.node_id === ids[0]);
+    return node ? nodeDisplayColor(node) : DEFAULT_NODE_COLOR;
+  }
+
+  function colorTargetNodeIds(target) {
+    const ids = target === 'selection' ? [...state.multiSelectedNodeIds] : [state.selectedNodeId].filter(Boolean);
+    return [...new Set(ids)].filter((nodeId) => activeNodes().some((node) => node.node_id === nodeId)).slice(0, MAX_MAP_NODES);
+  }
+
+  function setColorDraft(target, colorOverride, groupId = null) {
+    if (!state.map?.map_id) return;
+    const nodeIds = target === 'group' ? [] : colorTargetNodeIds(target);
+    if (target !== 'group' && !nodeIds.length) return;
+    state.colorDraft = { mapId: state.map.map_id, target, groupId, nodeIds, colorOverride };
+    renderGraph();
+  }
+
+  function cancelColorDraft(target, groupId = null) {
+    if (state.colorDraft && state.colorDraft.target === target
+      && (target !== 'group' || state.colorDraft.groupId === groupId)) state.colorDraft = null;
+    renderGraph();
+    if (target === 'group') renderGroups();
+    else if (target === 'node' && state.selectedNode) renderNodeDetail(state.selectedNode);
+  }
+
+  function createColorPalette(target, groupId = null) {
+    const palette = createElement('section', `literature-map-color-palette literature-map-color-palette-${target}`);
+    palette.dataset.target = target;
+    if (groupId) palette.dataset.groupId = groupId;
+    const colors = createElement('div', 'literature-map-color-swatches');
+    COLOR_PRESETS.forEach((color) => {
+      const swatch = createElement('button', 'literature-map-color-swatch');
+      swatch.type = 'button';
+      swatch.dataset.color = color;
+      swatch.style.backgroundColor = color;
+      swatch.setAttribute('aria-label', `选择颜色 ${color}`);
+      swatch.title = color;
+      swatch.addEventListener('click', () => {
+        setColorDraft(target, color, groupId);
+        hexInput.value = color;
+        error.textContent = '';
+        hexInput.removeAttribute('aria-invalid');
+        applyButton.disabled = false;
+      });
+      colors.append(swatch);
+    });
+    const recentColors = createElement('div', 'literature-map-color-recents');
+    recentColors.setAttribute('aria-label', '最近使用的颜色');
+    getRecentColors().forEach((color) => {
+      const swatch = createElement('button', 'literature-map-color-swatch literature-map-color-recent');
+      swatch.type = 'button';
+      swatch.dataset.color = color;
+      swatch.style.backgroundColor = color;
+      swatch.setAttribute('aria-label', `最近使用的颜色 ${color}`);
+      swatch.title = color;
+      swatch.addEventListener('click', () => {
+        setColorDraft(target, color, groupId);
+        hexInput.value = color;
+        error.textContent = '';
+        hexInput.removeAttribute('aria-invalid');
+        applyButton.disabled = false;
+      });
+      recentColors.append(swatch);
+    });
+    const hexLabel = createElement('label', 'literature-map-color-hex-label', '自定义 HEX');
+    const hexInput = createElement('input', 'literature-map-color-hex');
+    hexInput.type = 'text';
+    hexInput.inputMode = 'text';
+    hexInput.autocomplete = 'off';
+    hexInput.maxLength = '7';
+    hexInput.value = initialPaletteColor(target, groupId);
+    hexInput.setAttribute('aria-label', '自定义 HEX 颜色');
+    const error = createElement('span', 'literature-map-color-error');
+    error.setAttribute('role', 'alert');
+    hexLabel.append(hexInput);
+    const actions = createElement('div', 'literature-map-color-actions');
+    const applyButton = createElement('button', 'send-button literature-map-color-apply', target === 'group' ? '应用分组颜色' : '应用到 1 篇');
+    applyButton.type = 'button';
+    applyButton.disabled = !state.map?.map_id || (target === 'selection' && !state.multiSelectedNodeIds.size);
+    applyButton.addEventListener('click', () => {
+      if (target === 'group') applyGroupColor(groupId, applyButton);
+      else applyNodeColor(target, applyButton);
+    });
+    const cancelButton = createElement('button', 'secondary-button literature-map-color-cancel', '取消预览');
+    cancelButton.type = 'button';
+    cancelButton.addEventListener('click', () => cancelColorDraft(target, groupId));
+    actions.append(applyButton, cancelButton);
+    palette.append(colors, recentColors, hexLabel, error, actions);
+    if (target === 'node') {
+      const followGroup = createElement('button', 'secondary-button literature-map-node-color-follow-group', '恢复跟随分组');
+      followGroup.type = 'button';
+      followGroup.addEventListener('click', () => {
+        setColorDraft(target, null);
+        hexInput.value = initialPaletteColor(target);
+        error.textContent = '';
+        hexInput.removeAttribute('aria-invalid');
+        applyButton.disabled = false;
+      });
+      palette.append(followGroup);
+    }
+    hexInput.addEventListener('input', () => {
+      const normalized = normalizeHexColor(hexInput.value);
+      if (!normalized) {
+        error.textContent = '颜色格式应为 #RRGGBB。';
+        hexInput.setAttribute('aria-invalid', 'true');
+        applyButton.disabled = true;
+        return;
+      }
+      hexInput.value = normalized;
+      error.textContent = '';
+      hexInput.removeAttribute('aria-invalid');
+      applyButton.disabled = false;
+      setColorDraft(target, normalized, groupId);
+    });
+    return palette;
   }
 
   function validateGroupForm(name, color) {
@@ -728,7 +969,7 @@
     groupsPanel.id = 'literature-map-groups';
     groupsPanel.hidden = true;
     const groupsHeading = createElement('div', 'literature-map-groups-heading');
-    groupsHeading.append(createElement('h3', '', '人工分组'), createElement('span', 'literature-map-groups-note', '颜色仅表示你的整理'));
+    groupsHeading.append(createElement('h3', '', '人工分组'));
     const groupForm = createElement('form', 'literature-map-group-form');
     groupForm.id = 'literature-map-group-form';
     const groupNameInput = createElement('input');
@@ -894,7 +1135,61 @@
     labelModeSelect.value = state.labelMode;
     labelModeLabel.append(labelModeSelect);
     layerTools.append(labelModeLabel);
+    const multiSelectToggle = createElement('button', 'secondary-button literature-map-multi-select-toggle', '多选模式');
+    multiSelectToggle.type = 'button';
+    multiSelectToggle.id = 'literature-map-multi-select-toggle';
+    multiSelectToggle.disabled = true;
+    multiSelectToggle.addEventListener('click', () => toggleMultiSelectMode());
+    layerTools.append(multiSelectToggle);
+    const nodeStyle = createElement('fieldset', 'literature-map-node-style');
+    nodeStyle.id = 'literature-map-node-style';
+    nodeStyle.append(createElement('legend', '', '节点填充'));
+    [['filled', '填充'], ['outline', '仅描边']].forEach(([value, labelText]) => {
+      const label = createElement('label', 'literature-map-node-style-mode');
+      const input = createElement('input');
+      input.type = 'radio';
+      input.name = 'fill_mode';
+      input.value = value;
+      input.checked = state.nodeStyleDraft.fill_mode === value;
+      input.addEventListener('change', () => updateNodeStyleDraft());
+      label.append(input, createElement('span', '', labelText));
+      nodeStyle.append(label);
+    });
+    const opacityLabel = createElement('label', 'literature-map-node-style-opacity-label', '填充透明度');
+    const opacityInput = createElement('input');
+    opacityInput.type = 'range';
+    opacityInput.name = 'fill_opacity';
+    opacityInput.min = '0';
+    opacityInput.max = '1';
+    opacityInput.step = '0.05';
+    opacityInput.value = String(state.nodeStyleDraft.fill_opacity);
+    opacityInput.addEventListener('input', () => updateNodeStyleDraft());
+    const opacityValue = createElement('output', 'literature-map-node-style-opacity-value', `${Math.round(state.nodeStyleDraft.fill_opacity * 100)}%`);
+    nodeStyle.append(opacityLabel, opacityInput, opacityValue);
+    const applyNodeStyleButton = createElement('button', 'send-button literature-map-node-style-apply', '应用外观');
+    applyNodeStyleButton.type = 'button';
+    applyNodeStyleButton.disabled = true;
+    applyNodeStyleButton.addEventListener('click', () => saveNodeStyle(applyNodeStyleButton));
+    const cancelNodeStyleButton = createElement('button', 'secondary-button literature-map-node-style-cancel', '取消预览');
+    cancelNodeStyleButton.type = 'button';
+    cancelNodeStyleButton.disabled = true;
+    cancelNodeStyleButton.addEventListener('click', () => cancelNodeStyleDraft());
+    nodeStyle.append(applyNodeStyleButton, cancelNodeStyleButton);
+    const nodeStyleDisclosure = createElement('details', 'literature-map-node-style-disclosure');
+    nodeStyleDisclosure.open = !isMobileViewport();
+    nodeStyleDisclosure.append(createElement('summary', '', '节点样式'), nodeStyle);
+    layerTools.append(nodeStyleDisclosure);
     canvasPanel.append(layerTools);
+    const selectionToolbar = createElement('section', 'literature-map-selection-toolbar');
+    selectionToolbar.id = 'literature-map-node-selection-toolbar';
+    selectionToolbar.hidden = true;
+    const selectionCount = createElement('strong', 'literature-map-selected-count', '已选 0 篇');
+    selectionCount.id = 'literature-map-selected-count';
+    selectionToolbar.append(selectionCount);
+    const selectionPalette = createColorPalette('selection');
+    selectionPalette.hidden = true;
+    selectionToolbar.append(selectionPalette);
+    canvasPanel.append(selectionToolbar);
     const canvas = createElement('div', 'literature-map-canvas');
     const svg = createSvgElement('svg');
     setAttributes(svg, { id: 'literature-map-svg', viewBox: `0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`, role: 'img', tabindex: '0', 'aria-label': '文献关系图谱' });
@@ -968,7 +1263,7 @@
     root.append(mobileBackdrop);
     mount.append(root);
 
-    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
+    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, multiSelectToggle, selectionToolbar, selectionCount: selectionToolbar.querySelector('.literature-map-selected-count'), selectionPalette, nodeStyleDisclosure, nodeStyle, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
     if (isMobileViewport()) {
       refs.listPanel.setAttribute('aria-hidden', 'true');
       refs.detailPanel.setAttribute('aria-hidden', 'true');
@@ -1068,6 +1363,7 @@
     const previousMobileViewport = state.mobileViewport;
     state.mobileViewport = currentMobileViewport;
     if (previousMobileViewport === currentMobileViewport) return;
+    if (refs.nodeStyleDisclosure) refs.nodeStyleDisclosure.open = !currentMobileViewport;
     const preserveDesktopDetail = state.active && previousMobileViewport === true && !currentMobileViewport;
     closeAllMobilePanels(false, preserveDesktopDetail);
     scheduleViewportStabilization();
@@ -1152,7 +1448,8 @@
       const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
       if (nodeGroup && nodeGroup.dataset.nodeId && !state.pointer?.dragged) {
         try { nodeGroup.focus({ preventScroll: true }); } catch (_) { nodeGroup.focus(); }
-        selectNode(nodeGroup.dataset.nodeId, nodeGroup);
+        if (state.multiSelectActive) toggleMultiSelectNode(nodeGroup.dataset.nodeId);
+        else selectNode(nodeGroup.dataset.nodeId, nodeGroup);
       }
     });
     refs.svg.addEventListener('keydown', (event) => {
@@ -1160,7 +1457,8 @@
       const nodeGroup = event.target.closest ? event.target.closest('[data-node-id]') : null;
       if (!nodeGroup?.dataset.nodeId) return;
       event.preventDefault();
-      selectNode(nodeGroup.dataset.nodeId, nodeGroup);
+      if (state.multiSelectActive) toggleMultiSelectNode(nodeGroup.dataset.nodeId);
+      else selectNode(nodeGroup.dataset.nodeId, nodeGroup);
     });
     refs.root.querySelector('#literature-map-zoom-in').addEventListener('click', () => changeScale(1.2));
     refs.root.querySelector('#literature-map-zoom-out').addEventListener('click', () => changeScale(1 / 1.2));
@@ -1436,6 +1734,66 @@
     });
   }
 
+  function renderMultiSelectControls() {
+    if (!refs.multiSelectToggle || !refs.selectionToolbar) return;
+    refs.multiSelectToggle.disabled = !state.map?.map_id;
+    refs.multiSelectToggle.textContent = state.multiSelectActive ? '退出多选模式' : '多选模式';
+    refs.multiSelectToggle.setAttribute('aria-pressed', String(state.multiSelectActive));
+    refs.selectionToolbar.hidden = !state.multiSelectActive;
+    const count = state.multiSelectedNodeIds.size;
+    if (refs.selectionCount) refs.selectionCount.textContent = `已选 ${count} 篇`;
+    if (refs.selectionPalette) {
+      refs.selectionPalette.hidden = !state.multiSelectActive || count === 0;
+      const apply = refs.selectionPalette.querySelector('.literature-map-color-apply');
+      if (apply) {
+        apply.textContent = `应用到 ${count} 篇`;
+        apply.disabled = !state.map?.map_id || count === 0 || Boolean(state.colorSaveInFlight);
+      }
+    }
+  }
+
+  function toggleMultiSelectMode() {
+    if (!state.map?.map_id) return;
+    if (!state.multiSelectActive) {
+      state.multiSelectActive = true;
+      state.multiSelectedNodeIds.clear();
+      state.selectedNodeId = null;
+      state.selectedNode = null;
+      state.nodeRequest += 1;
+      state.analysisRequest += 1;
+      renderNodeDetail(null);
+      setStatus('多选模式已开启；点击可见节点添加或移除选择。', 'waiting');
+      renderGraph();
+      return;
+    }
+    const selectedNodeId = [...state.multiSelectedNodeIds].find((nodeId) => activeNodes().some((node) => node.node_id === nodeId)) || null;
+    state.multiSelectActive = false;
+    state.multiSelectedNodeIds.clear();
+    state.colorDraft = null;
+    renderGraph();
+    if (selectedNodeId) selectNode(selectedNodeId);
+    else {
+      state.selectedNodeId = null;
+      state.selectedNode = null;
+      renderNodeDetail(null);
+      setStatus('已退出多选模式。');
+    }
+  }
+
+  function toggleMultiSelectNode(nodeId) {
+    if (!state.multiSelectActive || !activeNodes().some((node) => node.node_id === nodeId)) return;
+    if (state.multiSelectedNodeIds.has(nodeId)) {
+      state.multiSelectedNodeIds.delete(nodeId);
+    } else if (state.multiSelectedNodeIds.size >= MAX_MAP_NODES) {
+      setStatus(`一次最多可选择 ${MAX_MAP_NODES} 篇论文。`, 'error');
+      return;
+    } else {
+      state.multiSelectedNodeIds.add(nodeId);
+    }
+    if (state.colorDraft?.target === 'selection') state.colorDraft.nodeIds = [...state.multiSelectedNodeIds];
+    renderGraph();
+  }
+
   function renderGroupLegend() {
     if (!refs.groupLegend) return;
     refs.groupLegend.replaceChildren();
@@ -1447,7 +1805,7 @@
     state.groups.forEach((group) => {
       const item = createElement('span', 'literature-map-group-legend-item');
       const swatch = createElement('span', 'literature-map-group-swatch');
-      swatch.style.backgroundColor = group.color;
+      swatch.style.backgroundColor = currentGroupColor(group.group_id);
       swatch.setAttribute('aria-hidden', 'true');
       item.append(swatch, createElement('span', '', group.name));
       refs.groupLegend.append(item);
@@ -1467,26 +1825,30 @@
     state.groups.forEach((group) => {
       const row = createElement('div', 'literature-map-group-row');
       row.dataset.groupId = group.group_id;
-      const swatch = createElement('span', 'literature-map-group-swatch');
-      swatch.style.backgroundColor = group.color;
-      swatch.setAttribute('aria-label', `分组颜色 ${group.color}`);
+      const swatch = createElement('button', 'literature-map-group-swatch literature-map-group-color-trigger');
+      swatch.type = 'button';
+      swatch.style.backgroundColor = currentGroupColor(group.group_id);
+      swatch.setAttribute('aria-label', `修改分组颜色：${group.name}`);
+      swatch.addEventListener('click', () => {
+        const palette = row.querySelector('.literature-map-color-palette[data-target="group"]');
+        const opening = palette?.hidden !== false;
+        if (state.colorDraft && (state.colorDraft.target !== 'group' || state.colorDraft.groupId !== group.group_id)) state.colorDraft = null;
+        if (palette) palette.hidden = !opening;
+        renderGraph();
+      });
       const name = createElement('span', 'literature-map-group-name', group.name);
       name.title = group.name;
       const rename = createElement('button', 'secondary-button literature-map-group-rename', '重命名');
       rename.type = 'button';
       rename.dataset.groupId = group.group_id;
       rename.addEventListener('click', () => renameGroup(group, rename));
-      const color = createElement('input', 'literature-map-group-color-input');
-      color.type = 'color';
-      color.value = group.color;
-      color.dataset.groupId = group.group_id;
-      color.setAttribute('aria-label', `修改分组颜色：${group.name}`);
-      color.addEventListener('change', () => updateGroup(group, { color: color.value }, color));
+      const palette = createColorPalette('group', group.group_id);
+      palette.hidden = !colorDraftMatches('group', group.group_id);
       const remove = createElement('button', 'secondary-button literature-map-group-delete', '删除');
       remove.type = 'button';
       remove.dataset.groupId = group.group_id;
       remove.addEventListener('click', () => deleteGroup(group, remove));
-      row.append(swatch, name, rename, color, remove);
+      row.append(swatch, name, rename, remove, palette);
       refs.groupList.append(row);
     });
     renderGroupLegend();
@@ -1518,25 +1880,54 @@
     }
   }
 
-  async function runGroupMutation(path, method, body, button, onSuccess) {
+  async function runGroupMutation(path, method, body, button, onSuccess, onConfirmed, verification = null) {
     if (!state.map?.map_id || !state.active) return;
     const mapId = state.map.map_id;
     const requestId = ++state.groupRequest;
+    const isCurrentMap = () => mapId === state.selectedMapId && state.map?.map_id === mapId && state.active;
+    const isCurrentRequest = () => isCurrentMap() && requestId === state.groupRequest;
     if (button) button.disabled = true;
     try {
       const payload = await request(`/${encodeURIComponent(mapId)}${path}`, { method, body: JSON.stringify({ expected_revision: state.map.revision, ...body }) });
-      if (requestId !== state.groupRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      if (typeof onConfirmed === 'function') onConfirmed(payload);
+      if (!isCurrentRequest()) return;
       updateGroupState(payload);
       if (typeof onSuccess === 'function') onSuccess(payload);
-      setStatus('分组已保存；颜色仅表示人工整理，不表示学术立场。', 'waiting');
+      setStatus('分组已保存。', 'waiting');
     } catch (error) {
-      if (requestId !== state.groupRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
-      if (button) button.disabled = false;
       if (error.status === 409 || String(error.code || '').toUpperCase() === 'MAP_REVISION_CONFLICT' || String(error.code || '').toLowerCase().includes('revision')) {
+        if (!isCurrentRequest()) return;
+        if (button) button.disabled = false;
         setStatus('地图版本已变化，正在重新读取；未覆盖其他操作。', 'error');
         await selectMap(mapId);
         return;
       }
+      const outcomeUnknown = error.name === 'AbortError' || !error.status || error.retryable || Number(error.status) >= 500;
+      if (verification && outcomeUnknown) {
+        let payload;
+        try {
+          payload = await request(`/${encodeURIComponent(mapId)}${verification.path}`);
+        } catch (_) {
+          if (!isCurrentRequest()) return;
+          if (button) button.disabled = false;
+          setStatus(verification.readFailedMessage, 'error');
+          return;
+        }
+        const confirmed = verification.matches(payload);
+        if (confirmed && isCurrentMap() && typeof onConfirmed === 'function') onConfirmed(payload);
+        if (!isCurrentRequest()) return;
+        updateGroupState(payload);
+        if (confirmed) {
+          if (typeof onSuccess === 'function') onSuccess(payload);
+          setStatus(verification.successMessage, 'waiting');
+        } else {
+          if (button) button.disabled = false;
+          setStatus(verification.uncertainMessage, 'error');
+        }
+        return;
+      }
+      if (!isCurrentRequest()) return;
+      if (button) button.disabled = false;
       setStatus(`分组保存失败：${errorAction(error, '请检查分组名称和颜色后重试。')}`, 'error');
     }
   }
@@ -1579,6 +1970,173 @@
   function deleteGroup(group, button) {
     if (!group) return;
     runGroupMutation(`/groups/${encodeURIComponent(group.group_id)}`, 'DELETE', {}, button);
+  }
+
+  function updateGraphColorOverrides(nodeIds, colorOverride, returnedNodes = []) {
+    const returned = new Map(returnedNodes.map((node) => [node.node_id, node]));
+    normalizeNodes(state.graph).forEach((node) => {
+      if (!nodeIds.includes(node.node_id)) return;
+      const saved = returned.get(node.node_id);
+      node.color_override = saved && Object.prototype.hasOwnProperty.call(saved, 'color_override')
+        ? normalizeHexColor(saved.color_override)
+        : colorOverride;
+      if (saved && Object.prototype.hasOwnProperty.call(saved, 'group_id')) node.group_id = saved.group_id || null;
+    });
+    if (state.selectedNode && nodeIds.includes(state.selectedNode.node_id)) {
+      state.selectedNode.color_override = colorOverride;
+    }
+  }
+
+  function nodeColorWriteMatches(graph, nodeIds, colorOverride) {
+    const byId = new Map(normalizeNodes(graph).map((node) => [node.node_id, node]));
+    return nodeIds.every((nodeId) => {
+      const node = byId.get(nodeId);
+      if (!node) return false;
+      return (normalizeHexColor(node.color_override) || null) === colorOverride;
+    });
+  }
+
+  async function verifyNodeColorWrite(mapId, nodeIds, colorOverride) {
+    const payload = await request(`/${encodeURIComponent(mapId)}/graph`);
+    if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return { confirmed: false, payload, stale: true };
+    state.graph = payload;
+    state.map = normalizeMap(payload.map) || state.map;
+    const confirmed = nodeColorWriteMatches(payload, nodeIds, colorOverride);
+    renderGraph();
+    if (state.selectedNode && nodeIds.includes(state.selectedNode.node_id)) {
+      const updated = normalizeNodes(payload).find((node) => node.node_id === state.selectedNode.node_id);
+      if (updated) state.selectedNode = { ...state.selectedNode, ...updated };
+      renderNodeDetail(state.selectedNode);
+    }
+    return { confirmed, payload };
+  }
+
+  async function reloadAfterColorConflict(mapId, nodeIds, target) {
+    const preservedDraft = state.colorDraft ? { ...state.colorDraft, nodeIds: [...state.colorDraft.nodeIds] } : null;
+    const wasMultiSelect = state.multiSelectActive;
+    const selectedNodeId = state.selectedNodeId;
+    await selectMap(mapId);
+    if (mapId !== state.selectedMapId || !state.active) return;
+    state.colorDraft = preservedDraft;
+    if (wasMultiSelect) {
+      state.multiSelectActive = true;
+      state.multiSelectedNodeIds = new Set(nodeIds.filter((nodeId) => activeNodes().some((node) => node.node_id === nodeId)));
+      renderGraph();
+    } else if (target === 'node' && selectedNodeId && activeNodes().some((node) => node.node_id === selectedNodeId)) {
+      await selectNode(selectedNodeId);
+    } else {
+      renderGraph();
+    }
+    if (state.colorDraft) state.colorDraft.nodeIds = target === 'selection' ? [...state.multiSelectedNodeIds] : [state.selectedNodeId].filter(Boolean);
+    renderNodeDetail(state.selectedNode);
+    setStatus('地图版本已变化，已重新读取。颜色草稿仍保留；核对后请再次点击“应用到 N 篇”。', 'error');
+  }
+
+  async function applyNodeColor(target, button) {
+    if (!state.map?.map_id || !state.active || state.colorSaveInFlight) return;
+    const draft = colorDraftMatches(target) ? state.colorDraft : null;
+    if (!draft || (draft.colorOverride !== null && !normalizeHexColor(draft.colorOverride))) {
+      setStatus('请先选择有效的颜色。', 'error');
+      return;
+    }
+    const nodeIds = colorTargetNodeIds(target);
+    if (!nodeIds.length || nodeIds.length > MAX_MAP_NODES) {
+      setStatus(`请选择 1 到 ${MAX_MAP_NODES} 篇可见论文后再应用颜色。`, 'error');
+      return;
+    }
+    const mapId = state.map.map_id;
+    const ownerId = mapOwnerId();
+    const expectedRevision = Number(state.map.revision);
+    const colorOverride = draft.colorOverride === null ? null : normalizeHexColor(draft.colorOverride);
+    state.colorSaveInFlight = true;
+    refs.root.querySelectorAll('.literature-map-color-apply').forEach((item) => { item.disabled = true; });
+    if (button) button.disabled = true;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), COLOR_SAVE_TIMEOUT_MS);
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/node-styles`, {
+        method: 'PATCH',
+        body: JSON.stringify({ expected_revision: expectedRevision, node_ids: nodeIds, color_override: colorOverride }),
+        signal: controller.signal,
+      });
+      if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) {
+        if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
+        return;
+      }
+      const revision = Number(payload?.revision);
+      if (Number.isInteger(revision)) state.map = { ...state.map, revision };
+      updateGraphColorOverrides(nodeIds, colorOverride, Array.isArray(payload.nodes) ? payload.nodes : []);
+      if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
+      state.colorDraft = null;
+      renderGraph();
+      renderGroups();
+      if (!state.multiSelectActive && state.selectedNode) renderNodeDetail(state.selectedNode);
+      setStatus('颜色已保存。', 'waiting');
+    } catch (error) {
+      if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      if (error.status === 409) {
+        await reloadAfterColorConflict(mapId, nodeIds, target);
+        return;
+      }
+      if (error.name === 'AbortError' || !error.status || error.retryable) {
+        try {
+          const verification = await verifyNodeColorWrite(mapId, nodeIds, colorOverride);
+          if (verification.stale || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+          if (verification.confirmed) {
+            const revision = Number(verification.payload?.map?.revision);
+            if (Number.isInteger(revision)) state.map = { ...state.map, revision };
+            if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
+            state.colorDraft = null;
+            renderGraph();
+            if (!state.multiSelectActive && state.selectedNode) renderNodeDetail(state.selectedNode);
+            setStatus('颜色已保存（已重新读取核实）。', 'waiting');
+            return;
+          }
+          setStatus('保存结果未能确认；已重新读取地图，颜色草稿仍保留。请核对后重试。', 'error');
+        } catch (_) {
+          if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+          setStatus('保存结果暂无法确认；颜色草稿仍保留，请稍后核对地图后重试。', 'error');
+        }
+        return;
+      }
+      setStatus(`颜色保存失败：${errorAction(error, '颜色草稿仍保留，可修正后重试。')}`, 'error');
+    } finally {
+      window.clearTimeout(timeoutId);
+      state.colorSaveInFlight = false;
+      if (button?.isConnected) button.disabled = false;
+      renderMultiSelectControls();
+      refs.root.querySelectorAll('.literature-map-color-apply').forEach((item) => { item.disabled = item.closest('.literature-map-color-palette[data-target="selection"]') ? !state.multiSelectedNodeIds.size : false; });
+    }
+  }
+
+  function applyGroupColor(groupId, button) {
+    const group = groupById(groupId);
+    if (!group || !state.map?.map_id || !state.active || state.colorSaveInFlight) return;
+    const draft = colorDraftMatches('group', groupId) ? state.colorDraft : null;
+    const color = normalizeHexColor(draft?.colorOverride);
+    if (!color) {
+      setStatus('请先选择有效的分组颜色。', 'error');
+      return;
+    }
+    const mapId = state.map.map_id;
+    const ownerId = mapOwnerId();
+    state.colorSaveInFlight = true;
+    if (button) button.disabled = true;
+    runGroupMutation(`/groups/${encodeURIComponent(groupId)}`, 'PATCH', { color }, button, () => {
+      state.colorDraft = null;
+      renderGroups();
+      renderGraph();
+    }, () => {
+      rememberRecentColor(color, { ownerId, mapId });
+    }, {
+      path: '/groups',
+      matches: (payload) => normalizeGroups(payload).some((item) => item.group_id === groupId && item.color === color),
+      successMessage: '分组颜色已保存（已重新读取核实）。',
+      uncertainMessage: '分组颜色保存结果未能确认；已重新读取分组，颜色草稿仍保留，请核对后重试。',
+      readFailedMessage: '分组颜色保存结果暂无法确认；颜色草稿仍保留，请稍后核对分组并重试。',
+    }).finally(() => {
+      state.colorSaveInFlight = false;
+    });
   }
 
   async function loadMaps() {
@@ -1680,6 +2238,11 @@
   async function selectMap(mapId) {
     if (!mapId) return;
     const previousMapId = state.selectedMapId;
+    if (previousMapId !== mapId) {
+      state.multiSelectActive = false;
+      state.multiSelectedNodeIds.clear();
+      state.colorDraft = null;
+    }
     const requestId = ++state.mapRequest;
     state.selectedMapId = mapId;
     state.selectedNodeId = null;
@@ -1792,8 +2355,11 @@
     const layers = settings.layers || {};
     state.layers = { citation: layers.citation !== false, similarity: layers.similarity !== false };
     state.labelMode = normalizeLabelMode(settings.label_mode);
+    state.nodeStyle = normalizeNodeStyle(settings.node_style);
+    state.nodeStyleDraft = { ...state.nodeStyle };
     refs.root?.querySelectorAll('input[data-layer]').forEach((input) => { input.checked = state.layers[input.dataset.layer]; });
     if (refs.labelModeSelect) refs.labelModeSelect.value = state.labelMode;
+    renderNodeStyleControls();
   }
 
   async function loadMapGraph(mapId) {
@@ -2589,6 +3155,7 @@
 
   function renderGraph() {
     if (!refs.svg) return;
+    renderMultiSelectControls();
     const nodes = normalizeNodes(state.graph);
     const edges = normalizeEdges(state.graph);
     refs.viewport.setAttribute('transform', `translate(${state.view.x} ${state.view.y}) scale(${state.view.scale})`);
@@ -2621,7 +3188,7 @@
     nodes.forEach((node, index) => {
       const point = positions[node.node_id];
       const group = createSvgElement('g');
-      const selected = node.node_id === state.selectedNodeId;
+      const selected = node.node_id === state.selectedNodeId || state.multiSelectedNodeIds.has(node.node_id);
       const mapGroup = groupById(node.group_id);
       const provenance = typeof node.provenance === 'string' ? node.provenance : node.provenance?.basis || '';
       const fullTitle = String(node.title || node.node_id || '未命名论文');
@@ -2631,11 +3198,13 @@
       group.append(svgTitle);
       const circle = createSvgElement('circle');
       const radius = citationRadius(node);
-      setAttributes(circle, { cx: point.x, cy: point.y, r: radius, 'data-citation-count': citationCountLabel(node), 'data-group-color': mapGroup?.color || '' });
-      if (mapGroup) {
-        circle.setAttribute('fill', mapGroup.color);
-        circle.setAttribute('style', `fill:${mapGroup.color};`);
-      }
+      const color = nodeDisplayColor(node);
+      const outlineOnly = state.nodeStyleDraft.fill_mode === 'outline';
+      setAttributes(circle, { cx: point.x, cy: point.y, r: radius, fill: outlineOnly ? 'none' : color, 'fill-opacity': outlineOnly ? 0 : state.nodeStyleDraft.fill_opacity, stroke: color, 'stroke-opacity': 1, 'stroke-width': selected ? 3 : (mapGroup ? 2.5 : 2), 'data-node-color': color, 'data-color-override': node.color_override || '', 'data-citation-count': citationCountLabel(node), 'data-group-color': mapGroup?.color || '' });
+      circle.style.fill = outlineOnly ? 'none' : color;
+      circle.style.fillOpacity = String(outlineOnly ? 0 : state.nodeStyleDraft.fill_opacity);
+      circle.style.stroke = color;
+      circle.style.strokeOpacity = '1';
       group.append(circle);
       if (labelIds.has(node.node_id)) {
         const label = createSvgElement('text');
@@ -2883,7 +3452,10 @@
       state.suppressTap = true;
       scheduleViewSave();
     }
-    if (!dragged && nodeId && event.pointerType !== 'touch') {
+    if (!dragged && nodeId && state.multiSelectActive) {
+      toggleMultiSelectNode(nodeId);
+      state.suppressTap = true;
+    } else if (!dragged && nodeId && event.pointerType !== 'touch') {
       const nodeGroup = refs.nodesGroup.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`);
       try { nodeGroup?.focus({ preventScroll: true }); } catch (_) { nodeGroup?.focus(); }
       selectNode(nodeId, nodeGroup);
@@ -3079,20 +3651,204 @@
     }
   }
 
+  function nodeStyleIsDirty() {
+    return state.nodeStyleDraft.fill_mode !== state.nodeStyle.fill_mode
+      || state.nodeStyleDraft.fill_opacity !== state.nodeStyle.fill_opacity;
+  }
+
+  function renderNodeStyleControls() {
+    if (!refs.nodeStyle) return;
+    refs.nodeStyle.querySelectorAll('input[name="fill_mode"]').forEach((input) => {
+      input.checked = input.value === state.nodeStyleDraft.fill_mode;
+    });
+    const opacity = refs.nodeStyle.querySelector('input[name="fill_opacity"]');
+    if (opacity) opacity.value = String(state.nodeStyleDraft.fill_opacity);
+    const output = refs.nodeStyle.querySelector('.literature-map-node-style-opacity-value');
+    if (output) output.textContent = `${Math.round(state.nodeStyleDraft.fill_opacity * 100)}%`;
+    const dirty = nodeStyleIsDirty();
+    const apply = refs.nodeStyle.querySelector('.literature-map-node-style-apply');
+    const cancel = refs.nodeStyle.querySelector('.literature-map-node-style-cancel');
+    if (apply) apply.disabled = !state.map?.map_id || !dirty || state.nodeStyleSaveInFlight;
+    if (cancel) cancel.disabled = !dirty || state.nodeStyleSaveInFlight;
+  }
+
+  function updateNodeStyleDraft() {
+    if (!refs.nodeStyle) return;
+    const fillMode = refs.nodeStyle.querySelector('input[name="fill_mode"]:checked')?.value;
+    const opacity = Number(refs.nodeStyle.querySelector('input[name="fill_opacity"]')?.value);
+    state.nodeStyleDraft = normalizeNodeStyle({ fill_mode: fillMode, fill_opacity: opacity });
+    renderNodeStyleControls();
+    renderGraph();
+  }
+
+  function cancelNodeStyleDraft() {
+    state.nodeStyleDraft = { ...state.nodeStyle };
+    renderNodeStyleControls();
+    renderGraph();
+  }
+
+  function updateSavedNodeStyle(mapId, nodeStyle, revision) {
+    if (mapId !== state.selectedMapId || !state.map || state.map.map_id !== mapId) return;
+    const nextStyle = normalizeNodeStyle(nodeStyle);
+    const nextRevision = Number(revision);
+    state.map = {
+      ...state.map,
+      ...(Number.isInteger(nextRevision) ? { revision: nextRevision } : {}),
+      view_settings: { ...(state.map.view_settings || {}), node_style: nextStyle },
+    };
+    state.nodeStyle = nextStyle;
+    state.nodeStyleDraft = { ...nextStyle };
+    renderNodeStyleControls();
+    renderGraph();
+  }
+
+  async function rereadNodeStyleAfterConflict(mapId, draft) {
+    const payload = await request(`/${encodeURIComponent(mapId)}`);
+    if (mapId !== state.selectedMapId || !state.active) return false;
+    state.map = normalizeMap(payload.map) || state.map;
+    state.nodeStyle = normalizeNodeStyle(state.map?.view_settings?.node_style);
+    state.nodeStyleDraft = { ...draft };
+    renderNodeStyleControls();
+    renderGraph();
+    setStatus('地图版本已变化，已重新读取。外观草稿仍保留；核对后请再次点击“应用外观”。', 'error');
+    return true;
+  }
+
+  async function saveNodeStyle(button) {
+    if (!state.map?.map_id || !state.active || state.nodeStyleSaveInFlight || !nodeStyleIsDirty()) return;
+    const mapId = state.map.map_id;
+    const draft = { ...state.nodeStyleDraft };
+    const expectedRevision = Number(state.map.revision);
+    state.nodeStyleSaveInFlight = true;
+    renderNodeStyleControls();
+    if (button) button.disabled = true;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/view`, {
+        method: 'PATCH',
+        body: JSON.stringify({ expected_revision: expectedRevision, node_style: draft }),
+      });
+      if (mapId !== state.selectedMapId || !state.active) return;
+      updateSavedNodeStyle(mapId, payload.map?.view_settings?.node_style || draft, payload.map?.revision);
+      setStatus('节点外观已保存。', 'waiting');
+    } catch (error) {
+      if (mapId !== state.selectedMapId || !state.active) return;
+      if (error.status === 409) {
+        try { await rereadNodeStyleAfterConflict(mapId, draft); } catch (_) {
+          setStatus('地图版本已变化，外观草稿仍保留；当前无法重新读取，请稍后重试。', 'error');
+        }
+        return;
+      }
+      if (!error.status || error.retryable || error.name === 'AbortError') {
+        try {
+          const payload = await request(`/${encodeURIComponent(mapId)}`);
+          if (mapId !== state.selectedMapId || !state.active) return;
+          const saved = normalizeNodeStyle(payload.map?.view_settings?.node_style);
+          state.map = normalizeMap(payload.map) || state.map;
+          if (saved.fill_mode === draft.fill_mode && saved.fill_opacity === draft.fill_opacity) {
+            updateSavedNodeStyle(mapId, saved, payload.map?.revision);
+            setStatus('节点外观已保存（已重新读取核实）。', 'waiting');
+          } else {
+            state.nodeStyle = saved;
+            state.nodeStyleDraft = draft;
+            renderNodeStyleControls();
+            renderGraph();
+            setStatus('外观保存结果未能确认；已重新读取地图，外观草稿仍保留。', 'error');
+          }
+        } catch (_) {
+          setStatus('外观保存结果暂无法确认；草稿仍保留，请稍后核对地图后重试。', 'error');
+        }
+        return;
+      }
+      setStatus(`外观保存失败：${errorAction(error, '外观草稿仍保留，可重试应用。')}`, 'error');
+    } finally {
+      state.nodeStyleSaveInFlight = false;
+      if (button?.isConnected) button.disabled = false;
+      renderNodeStyleControls();
+    }
+  }
+
   function exportFileStem() {
     const raw = mapTitle(state.map).replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 60);
     return raw || 'literature-map';
   }
 
+  function cleanExportValue(value) {
+    if (Array.isArray(value)) return value.map(cleanExportValue);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value)
+      .filter(([key]) => !/^owner_id$/i.test(key) && !/recent.?colors|preview/i.test(key))
+      .map(([key, nested]) => [key, cleanExportValue(nested)]));
+  }
+
+  function exportFields(source, fields) {
+    const result = {};
+    fields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(source || {}, field)) result[field] = cleanExportValue(source[field]);
+    });
+    return result;
+  }
+
+  async function sanitizeJsonExportBlob(blob) {
+    let payload;
+    try { payload = JSON.parse(await blob.text()); } catch (_) {
+      throw new LiteratureMapError('JSON 导出内容无法解析，未下载文件。');
+    }
+    if (payload?.schema_version !== EXPORT_SCHEMA_VERSION || !payload.map || !Array.isArray(payload.groups)
+      || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+      throw new LiteratureMapError('JSON 导出版本或数据结构不符合当前地图契约。');
+    }
+    const viewSettings = payload.map.view_settings || {};
+    const nodeStyle = viewSettings.node_style;
+    if (!nodeStyle || !['filled', 'outline'].includes(nodeStyle.fill_mode)
+      || typeof nodeStyle.fill_opacity !== 'number' || !Number.isFinite(nodeStyle.fill_opacity)
+      || nodeStyle.fill_opacity < 0 || nodeStyle.fill_opacity > 1) {
+      throw new LiteratureMapError('JSON 导出的节点外观缺失或无效，未下载文件。');
+    }
+    const nodes = payload.nodes.map((node) => {
+      if (!Object.prototype.hasOwnProperty.call(node || {}, 'color_override')
+        || (node.color_override !== null && !normalizeHexColor(node.color_override))) {
+        throw new LiteratureMapError('JSON 导出包含无效的节点颜色，未下载文件。');
+      }
+      const safeNode = exportFields(node, ['node_id', 'identity_key', 'external_ids', 'title', 'authors', 'year', 'venue', 'abstract', 'keywords', 'citation_count', 'source_url', 'provenance', 'catalog_paper_id', 'document_id', 'download_status', 'position', 'group_id', 'color_override']);
+      safeNode.color_override = node.color_override === null ? null : normalizeHexColor(node.color_override);
+      return safeNode;
+    });
+    const map = exportFields(payload.map, ['map_id', 'name', 'topic', 'project_id', 'filters', 'requested_count', 'revision']);
+    map.view_settings = exportFields(viewSettings, ['filters', 'viewport', 'layers', 'label_mode']);
+    map.view_settings.node_style = { fill_mode: nodeStyle.fill_mode, fill_opacity: nodeStyle.fill_opacity };
+    const safePayload = {
+      schema_version: EXPORT_SCHEMA_VERSION,
+      exported_at: cleanExportValue(payload.exported_at),
+      map,
+      groups: payload.groups.map((group) => exportFields(group, ['group_id', 'name', 'color'])),
+      nodes,
+      edges: payload.edges.map((edge) => exportFields(edge, ['edge_id', 'kind', 'source_id', 'target_id', 'provenance', 'score', 'basis', 'model_version', 'content_hash'])),
+    };
+    return new Blob([JSON.stringify(safePayload, null, 2)], { type: 'application/json' });
+  }
+
+  function hasUnappliedVisualDraft() {
+    return Boolean(state.colorDraft || nodeStyleIsDirty());
+  }
+
+  function blockExportWithUnappliedDraft(formatLabel) {
+    if (!hasUnappliedVisualDraft()) return false;
+    setStatus(`存在未应用的颜色或外观预览；请先应用或取消预览，再导出${formatLabel}。`, 'waiting');
+    return true;
+  }
+
   async function exportJson() {
     if (!state.map?.map_id || !state.active) return;
+    if (blockExportWithUnappliedDraft(' JSON')) return;
     const requestId = ++state.exportRequest;
     refs.exportJsonButton.disabled = true;
     setStatus('正在准备 JSON 导出…', 'waiting');
     try {
       const result = await requestExport(`/${encodeURIComponent(state.map.map_id)}/export?format=json`);
       if (requestId !== state.exportRequest || !state.active) return;
-      safeDownload(result.blob, exportFilenameFromDisposition(result.disposition, `${exportFileStem()}.json`));
+      const safeBlob = await sanitizeJsonExportBlob(result.blob);
+      if (requestId !== state.exportRequest || !state.active) return;
+      safeDownload(safeBlob, exportFilenameFromDisposition(result.disposition, `${exportFileStem()}.json`));
       setStatus('JSON 已下载；导出只包含服务端授权的公开地图字段。');
     } catch (error) {
       if (requestId !== state.exportRequest || !state.active) return;
@@ -3148,7 +3904,7 @@
     const currentTransform = viewport?.getAttribute('transform') || 'translate(0 0) scale(1)';
     if (viewport) viewport.setAttribute('transform', `translate(0 36) ${currentTransform}`);
     addExportSvgText(svg, mapTitle(state.map), 16, 23, { class: 'literature-map-export-title' });
-    addExportSvgText(svg, `${normalizeNodes(state.graph).length} 个节点 · ${normalizeEdges(state.graph).length} 条关系 · 颜色仅表示人工分组`, 16, 38, { class: 'literature-map-export-meta' });
+    addExportSvgText(svg, `${normalizeNodes(state.graph).length} 个节点 · ${normalizeEdges(state.graph).length} 条关系`, 16, 38, { class: 'literature-map-export-meta' });
     addExportSvgText(svg, '实线箭头：引用者 → 被引用者    虚线：主题相似（无向）', 16, MAP_HEIGHT + 57, { class: 'literature-map-export-legend' });
     let legendX = 16;
     state.groups.forEach((group) => {
@@ -3210,6 +3966,7 @@
 
   async function exportPng() {
     if (!state.map?.map_id || !state.active) return;
+    if (blockExportWithUnappliedDraft(' PNG')) return;
     const requestId = ++state.exportRequest;
     refs.exportPngButton.disabled = true;
     setStatus('正在准备 PNG 图谱快照…', 'waiting');
@@ -3947,7 +4704,14 @@
     select.value = node.group_id || '';
     select.addEventListener('change', () => assignNodeGroup(node, select.value || null, select));
     label.append(select);
-    section.append(label, createElement('p', 'literature-map-group-helper', '颜色只表示人工整理，不表示学术立场。'));
+    section.append(label);
+    return section;
+  }
+
+  function renderNodeColorControls() {
+    const section = createElement('section', 'literature-map-node-color-section');
+    section.append(createElement('h4', '', '节点外观'));
+    section.append(createColorPalette('node'));
     return section;
   }
 
@@ -3976,7 +4740,7 @@
       if (graphNode) graphNode.group_id = groupId;
       renderGraph();
       renderNodeDetail(state.selectedNode);
-      setStatus('论文分组已保存；颜色仅表示人工整理，不表示学术立场。', 'waiting');
+      setStatus('论文分组已保存。', 'waiting');
     } catch (error) {
       if (requestId !== state.groupRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || state.selectedNodeId !== node.node_id || !state.active) return;
       if (select) select.disabled = false;
@@ -4024,6 +4788,7 @@
     abstract.append(createElement('h4', '', '摘要'));
     abstract.append(createElement('p', '', metadataText(node.abstract)));
     refs.detail.append(abstract);
+    refs.detail.append(renderNodeColorControls());
     refs.detail.append(renderNodeGroupSelector(node));
     const provenance = createElement('p', 'literature-map-provenance', `来源依据：${metadataText(node.provenance?.source || node.provenance)}`);
     refs.detail.append(provenance);

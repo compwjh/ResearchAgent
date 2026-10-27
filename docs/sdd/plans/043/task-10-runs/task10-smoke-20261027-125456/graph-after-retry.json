@@ -1,0 +1,94 @@
+{
+  "status": 200,
+  "response": {
+    "schema_version": "literature-map-v1",
+    "map": {
+      "map_id": "3853926bb0cc4a71ba49c50afdf04522",
+      "name": "地图易用性 API 验证 task10-smoke-20261027-125456",
+      "topic": "graph attention networks",
+      "owner_id": "local-user",
+      "project_id": null,
+      "filters": {
+        "conference_ids": [],
+        "source_ids": [],
+        "year_end": null,
+        "year_start": null
+      },
+      "requested_count": 20,
+      "revision": 0,
+      "status": "partial",
+      "view_settings": {
+        "label_mode": "all",
+        "layers": {
+          "citation": true,
+          "similarity": true
+        },
+        "node_style": {
+          "fill_mode": "filled",
+          "fill_opacity": 0.3
+        },
+        "viewport": {
+          "scale": 1,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "created_at": "2026-10-27T04:54:56.603943+00:00",
+      "updated_at": "2026-10-27T04:57:59.185457+00:00"
+    },
+    "nodes": [],
+    "edges": [],
+    "layers": {
+      "citation": {
+        "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+        "status": "partial"
+      },
+      "similarity": {
+        "error_code": null,
+        "status": "waiting"
+      }
+    },
+    "latest_job": {
+      "job_id": "c2d3c9532e8f476390db80030d5dabfa",
+      "map_id": "3853926bb0cc4a71ba49c50afdf04522",
+      "operation": "create",
+      "status": "partial",
+      "step": "finished",
+      "cursor": {
+        "layers": {
+          "citation": {
+            "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+            "status": "partial"
+          },
+          "similarity": {
+            "error_code": null,
+            "status": "waiting"
+          }
+        },
+        "resume_step": "finished"
+      },
+      "counts": {
+        "accepted_count": 0,
+        "citation_edge_count": 0,
+        "node_count": 0,
+        "provider_count": 0,
+        "provider_request_count": 2,
+        "similarity_edge_count": 0
+      },
+      "failed_units": [
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "discover"
+        },
+        {
+          "error_code": "SEMANTIC_SCHOLAR_RATE_LIMITED",
+          "retryable": true,
+          "unit": "discover"
+        }
+      ],
+      "created_at": "2026-10-27T04:54:56.603943+00:00",
+      "updated_at": "2026-10-27T04:57:59.185457+00:00"
+    }
+  }
+}

@@ -15,8 +15,8 @@ FIXTURE = ROOT / "tests/frontend/fixtures/literature_map_component.html"
 
 
 def test_groups_and_export_contract_is_wired_without_html_injection() -> None:
-    assert "/assets/literature-maps.js?v=25" in INDEX
-    assert "/assets/literature-maps.css?v=16" in INDEX
+    assert "/assets/literature-maps.js?v=28" in INDEX
+    assert "/assets/literature-maps.css?v=18" in INDEX
     for endpoint in ("/groups", "/nodes/", "/group", "/export?format=json"):
         assert endpoint in MODULE
     for marker in (
@@ -27,7 +27,7 @@ def test_groups_and_export_contract_is_wired_without_html_injection() -> None:
         "literature-map-node-group",
         "literature-map-export-json",
         "literature-map-export-png",
-        "literature-map-export-v1",
+        "literature-map-export-v2",
         "XMLSerializer",
         "createObjectURL",
         "MAP_REVISION_CONFLICT",
@@ -40,9 +40,9 @@ def test_groups_and_export_contract_is_wired_without_html_injection() -> None:
 
 def test_export_asset_versions_are_synchronised() -> None:
     fixture = FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=16" in fixture
-    assert "/literature-maps.js?v=25" in fixture
-    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "25"
+    assert "/literature-maps.css?v=18" in fixture
+    assert "/literature-maps.js?v=28" in fixture
+    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "28"
 
 
 def _open_browser_or_skip(playwright):

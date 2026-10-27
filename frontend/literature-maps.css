@@ -224,3 +224,41 @@
   #literature-maps-view .literature-map-node circle { transition: none; }
   #literature-maps-view .literature-map-list-panel, #literature-maps-view .literature-map-detail-panel { transition: none; }
 }
+
+#literature-maps-view .literature-map-node-style { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; min-width: 0; margin: 0; padding: 5px 7px; border: 1px solid #e4e0f5; border-radius: 7px; background: #fff; }
+#literature-maps-view .literature-map-node-style-disclosure { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 100%; }
+#literature-maps-view .literature-map-node-style-disclosure > summary { min-height: 24px; padding: 3px 7px; border: 1px solid #e4e0f5; border-radius: 6px; background: #fff; color: var(--muted-strong); cursor: pointer; font-size: 9px; font-weight: 700; list-style: none; }
+#literature-maps-view .literature-map-node-style-disclosure > summary::-webkit-details-marker { display: none; }
+#literature-maps-view .literature-map-node-style-disclosure[open] > summary { border-color: #d8d2ff; background: #f7f5ff; }
+#literature-maps-view .literature-map-node-style legend { padding: 0 4px; color: var(--muted-strong); font-size: 9px; font-weight: 700; }
+#literature-maps-view .literature-map-node-style-mode, #literature-maps-view .literature-map-node-style-opacity-label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted-strong); font-size: 9px; }
+#literature-maps-view .literature-map-node-style-mode input { accent-color: var(--accent); }
+#literature-maps-view .literature-map-node-style input[name="fill_opacity"] { width: 74px; accent-color: var(--accent); }
+#literature-maps-view .literature-map-node-style-opacity-value { min-width: 28px; color: var(--muted); font: 9px 'DM Mono', monospace; }
+#literature-maps-view .literature-map-node-style button { padding: 5px 7px; font-size: 9px; }
+#literature-maps-view .literature-map-multi-select-toggle { padding: 6px 8px; font-size: 9px; }
+#literature-maps-view .literature-map-selection-toolbar { display: grid; gap: 7px; margin: 8px 12px 0; padding: 9px 10px; border: 1px solid #d8d2ff; border-radius: 9px; background: #f7f5ff; }
+#literature-maps-view .literature-map-selection-toolbar[hidden] { display: none !important; }
+#literature-maps-view .literature-map-selected-count { color: var(--ink); font: 10px 'DM Mono', monospace; }
+#literature-maps-view .literature-map-color-palette { display: grid; gap: 7px; min-width: 0; padding: 8px; border: 1px solid #e2dcff; border-radius: 8px; background: #faf9ff; }
+#literature-maps-view .literature-map-color-palette[hidden] { display: none !important; }
+#literature-maps-view .literature-map-color-swatches, #literature-maps-view .literature-map-color-recents { display: flex; flex-wrap: wrap; gap: 5px; }
+#literature-maps-view .literature-map-color-swatch { width: 22px; height: 22px; padding: 0; border: 1px solid #ffffff; border-radius: 50%; box-shadow: 0 0 0 1px #cfc8e0; cursor: pointer; }
+#literature-maps-view .literature-map-color-swatch:hover, #literature-maps-view .literature-map-color-swatch:focus-visible { box-shadow: 0 0 0 2px var(--accent); outline: 0; }
+#literature-maps-view .literature-map-color-hex-label { display: grid; gap: 4px; color: var(--muted-strong); font: 9px 'DM Mono', monospace; }
+#literature-maps-view .literature-map-color-hex { width: 100%; box-sizing: border-box; border: 1px solid #dfdced; border-radius: 6px; padding: 6px 7px; background: #fff; color: var(--ink); font: 10px 'DM Mono', monospace; }
+#literature-maps-view .literature-map-color-hex[aria-invalid="true"] { border-color: #b54141; }
+#literature-maps-view .literature-map-color-error { min-height: 12px; color: #a33232; font: 9px/1.4 'DM Mono', monospace; }
+#literature-maps-view .literature-map-color-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+#literature-maps-view .literature-map-color-actions button, #literature-maps-view .literature-map-node-color-follow-group { padding: 6px 8px; font-size: 9px; }
+#literature-maps-view .literature-map-node-color-section, #literature-maps-view .literature-map-node-group-section { display: grid; gap: 6px; padding-top: 11px; border-top: 1px solid #ece9f7; }
+#literature-maps-view .literature-map-node-color-section h4, #literature-maps-view .literature-map-node-group-section h4 { margin: 0; font-size: 11px; }
+#literature-maps-view .literature-map-node-color-section .literature-map-color-palette { grid-template-columns: minmax(0, 1fr); }
+#literature-maps-view .literature-map-group-row { grid-template-columns: 25px minmax(0, 1fr) auto auto; }
+#literature-maps-view .literature-map-group-color-trigger { display: inline-block; width: 23px; height: 23px; padding: 0 !important; border: 1px solid #dfdced; border-radius: 6px; cursor: pointer; }
+#literature-maps-view .literature-map-group-row > .literature-map-color-palette { grid-column: 1 / -1; }
+#literature-maps-view .literature-map-node.is-selected circle { stroke-width: 3; }
+@media (max-width: 760px) {
+  #literature-maps-view .literature-map-selection-toolbar { margin: 8px 8px 0; }
+  #literature-maps-view .literature-map-detail .literature-map-color-swatch { width: 25px; height: 25px; }
+}

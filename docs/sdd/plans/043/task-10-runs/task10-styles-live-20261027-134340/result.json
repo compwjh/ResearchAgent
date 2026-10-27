@@ -1,0 +1,15 @@
+{
+  "result": "success",
+  "commit": "5d42211a",
+  "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+  "node_ids": [
+    "21041260a5394f42891b020128fa60fa",
+    "28d6f9065abd47f9975875ef88634afa"
+  ],
+  "entry": "read existing real API acceptance map",
+  "restored": true,
+  "original_node_count": 21,
+  "final_node_count": 21,
+  "conflict_status": 409,
+  "export_schema": "literature-map-export-v2"
+}
