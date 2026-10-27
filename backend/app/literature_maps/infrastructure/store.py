@@ -1206,6 +1206,7 @@ class LiteratureMapStore:
                     (queue_state, _dump(cursor), _dump(counts), now, row["job_id"], map_id, _ANALYSIS_QUEUE_OPERATION),
                 )
                 self._remember_queue_command(db, map_id, owner_id, "analysis_queue:retry", idempotency_key, params_hash, {"queue_job_id": row["job_id"]})
+            self._refresh_expansion_batch_projections_tx(db, map_id, owner_id)
         return self.get_analysis_queue(map_id, owner_id)
 
     def pause_analysis_queue_for_failure(self, map_id: str, owner_id: str, *, pause_reason: str) -> dict[str, Any]:
@@ -1559,6 +1560,7 @@ class LiteratureMapStore:
                 if fresh is not None:
                     self._append_event(db, _job(fresh), event_type="paused" if state == "paused" else "resumed")
                 self._remember_queue_command(db, map_id, owner_id, f"analysis_queue:{state}", idempotency_key, params_hash, {"queue_job_id": row["job_id"]})
+            self._refresh_expansion_batch_projections_tx(db, map_id, owner_id)
         return self.get_analysis_queue(map_id, owner_id)
 
     def _update_queue_items_tx(self, db: sqlite3.Connection, queue_row: sqlite3.Row, owner_id: str, candidates: list[dict[str, Any]]) -> None:
@@ -1646,6 +1648,204 @@ class LiteratureMapStore:
             else:
                 counts["queued"] += 1
         return counts
+
+    def _expansion_batch_projection_tx(
+        self,
+        db: sqlite3.Connection,
+        map_id: str,
+        cursor: Mapping[str, Any],
+        *,
+        prior_counts: Mapping[str, Any] | None = None,
+        queue_paused: bool,
+    ) -> tuple[str, str, dict[str, int], list[dict[str, Any]], dict[str, Any]]:
+        projected_cursor = dict(cursor) if isinstance(cursor, Mapping) else {}
+        raw_items = projected_cursor.get("items")
+        if not isinstance(raw_items, Mapping):
+            raw_items = {}
+        items = {str(key): dict(value) for key, value in raw_items.items() if isinstance(value, Mapping)}
+        projected_cursor["items"] = items
+        previous = prior_counts if isinstance(prior_counts, Mapping) else {}
+        counts = {
+            "added_count": max(0, int(previous.get("added_count") or len(projected_cursor.get("new_node_ids") or ()))),
+            "existing_count": max(0, int(previous.get("existing_count") or 0)),
+            "total": max(0, int(previous.get("total") or len(items))),
+            "metadata_pending": 0,
+            "metadata_failed": 0,
+            "identity_unresolved": 0,
+            "skipped_no_abstract": 0,
+            "skipped_removed": 0,
+            "analysis_queued": 0,
+            "completed": 0,
+            "failed": 0,
+        }
+        failed_units: list[dict[str, Any]] = []
+        active_analysis = 0
+        for node_id, item in items.items():
+            status = str(item.get("status") or "")
+            analysis_id = str(item.get("analysis_id") or "")
+            if analysis_id:
+                analysis_row = db.execute(
+                    "SELECT a.status,a.error_json,n.removed_at FROM literature_map_analyses a "
+                    "LEFT JOIN literature_map_nodes n ON n.map_id=a.map_id AND n.node_id=a.node_id "
+                    "WHERE a.analysis_id=? AND a.map_id=?",
+                    (analysis_id, map_id),
+                ).fetchone()
+                if analysis_row is None:
+                    status = "analysis_failed"
+                    item["error_code"] = "MAP_ANALYSIS_STATE_INVALID"
+                    item["retryable"] = False
+                elif analysis_row["removed_at"] is not None:
+                    status = "skipped_removed"
+                    item.pop("error_code", None)
+                    item["retryable"] = False
+                else:
+                    analysis_status = str(analysis_row["status"])
+                    if analysis_status == "completed":
+                        status = "completed"
+                        item.pop("error_code", None)
+                        item["retryable"] = False
+                    elif analysis_status == "failed":
+                        status = "analysis_failed"
+                        error = _load(analysis_row["error_json"], {})
+                        error = error if isinstance(error, Mapping) else {}
+                        item["error_code"] = _safe_error_code(error.get("code")) or "MAP_ANALYSIS_FAILED"
+                        item["retryable"] = bool(error.get("retryable"))
+                    elif analysis_status == "running":
+                        status = "analysis_running"
+                    else:
+                        status = "analysis_queued"
+                item["status"] = status
+
+            if status in {"metadata_pending", "metadata_retry"}:
+                counts["metadata_pending"] += 1
+            elif status == "metadata_failed":
+                counts["metadata_failed"] += 1
+                counts["failed"] += 1
+                failed_units.append(
+                    {
+                        "unit": node_id,
+                        "error_code": _safe_error_code(item.get("error_code")) or "SEMANTIC_SCHOLAR_UNAVAILABLE",
+                        "retryable": bool(item.get("retryable")),
+                    }
+                )
+            elif status == "identity_unresolved":
+                counts["identity_unresolved"] += 1
+                counts["failed"] += 1
+                failed_units.append(
+                    {
+                        "unit": node_id,
+                        "error_code": "MAP_METADATA_IDENTITY_UNRESOLVED",
+                        "retryable": False,
+                    }
+                )
+            elif status == "analysis_failed":
+                counts["failed"] += 1
+                failed_units.append(
+                    {
+                        "unit": node_id,
+                        "error_code": _safe_error_code(item.get("error_code")) or "MAP_ANALYSIS_FAILED",
+                        "retryable": bool(item.get("retryable")),
+                    }
+                )
+            elif status == "skipped_no_abstract":
+                counts["skipped_no_abstract"] += 1
+            elif status == "skipped_removed":
+                counts["skipped_removed"] += 1
+            elif status == "completed":
+                counts["completed"] += 1
+            elif status in {"analysis_running", "analysis_queued"}:
+                counts["analysis_queued"] += 1
+                active_analysis += 1
+
+        if counts["metadata_pending"]:
+            status, step = ("paused", "metadata") if queue_paused else ("queued", "metadata")
+        elif active_analysis:
+            status, step = ("paused", "analysis_wait") if queue_paused else ("analysis_wait", "analysis_wait")
+        elif counts["failed"]:
+            status, step = "partial", "finished"
+        else:
+            status, step = "completed", "finished"
+        return status, step, counts, failed_units, projected_cursor
+
+    def _refresh_expansion_batch_projections_tx(self, db: sqlite3.Connection, map_id: str, owner_id: str) -> int:
+        queue_row = self._queue_row(db, map_id, owner_id)
+        queue_paused = queue_row is not None and str(queue_row["status"]) == "paused"
+        rows = db.execute(
+            "SELECT * FROM literature_map_jobs WHERE map_id=? AND operation='expand_batch'",
+            (map_id,),
+        ).fetchall()
+        changed_count = 0
+        now = iso_now()
+        for row in rows:
+            current = _job(row)
+            if current.status == "failed" and any(
+                isinstance(unit, Mapping) and unit.get("error_code") == "MAP_JOB_LEASE_EXHAUSTED"
+                for unit in current.failed_units
+            ):
+                continue
+            status, step, counts, failed_units, cursor = self._expansion_batch_projection_tx(
+                db,
+                map_id,
+                current.cursor,
+                prior_counts=current.counts,
+                queue_paused=queue_paused,
+            )
+            release_expired_lease = (
+                current.status == "running"
+                and not _lease_is_active(current.lease_expires_at, now)
+                and counts["metadata_pending"] == 0
+            )
+            if current.status == "running" and not release_expired_lease:
+                status, step = current.status, current.step
+            if (
+                status == current.status
+                and step == current.step
+                and cursor == current.cursor
+                and counts == current.counts
+                and failed_units == current.failed_units
+                and not release_expired_lease
+            ):
+                continue
+            changed = db.execute(
+                "UPDATE literature_map_jobs SET status=?,step=?,cursor_json=?,counts_json=?,failed_units_json=?,"
+                "worker_token=CASE WHEN ? THEN NULL ELSE worker_token END,"
+                "lease_expires_at=CASE WHEN ? THEN NULL ELSE lease_expires_at END,updated_at=? "
+                "WHERE job_id=? AND map_id=? AND operation='expand_batch'",
+                (
+                    status,
+                    step,
+                    _dump(cursor),
+                    _dump(counts),
+                    _dump(_safe_failed_units(failed_units)),
+                    int(release_expired_lease),
+                    int(release_expired_lease),
+                    now,
+                    current.job_id,
+                    map_id,
+                ),
+            )
+            if changed.rowcount:
+                fresh = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (current.job_id,)).fetchone()
+                if fresh is not None:
+                    event_type = (
+                        "paused"
+                        if status == "paused"
+                        else "resumed"
+                        if current.status == "paused" and status != "paused"
+                        else "failed"
+                        if status == "partial"
+                        else "completed"
+                        if status == "completed"
+                        else "progress"
+                    )
+                    self._append_event(
+                        db,
+                        _job(fresh),
+                        event_type=event_type,
+                        error_code=(failed_units[0].get("error_code") if status == "partial" and failed_units else None),
+                    )
+                changed_count += 1
+        return changed_count
 
     def _queue_projection_tx(self, db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         cursor = _load(row["cursor_json"], {})
@@ -1846,6 +2046,7 @@ class LiteratureMapStore:
                         fresh_queue = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (queue_id,)).fetchone()
                         if fresh_queue is not None and str(queue_row["status"]) != "paused":
                             self._append_event(db, _job(fresh_queue), event_type="paused", error_code=str(queue_pause_reason))
+            self._refresh_expansion_batch_projections_tx(db, map_id, owner_id)
             fresh = db.execute("SELECT * FROM literature_map_analyses WHERE job_id=?", (job_id,)).fetchone()
         return _analysis(fresh) if fresh else None
 
@@ -2923,8 +3124,12 @@ class LiteratureMapStore:
                 raise ValueError("MAP_ANALYSIS_STATE_INVALID")
             existing = merged_items.get(node_id)
             if isinstance(existing, Mapping):
-                new_items[node_id] = dict(existing)
-                continue
+                if not (
+                    existing.get("status") == "skipped"
+                    and existing.get("skip_reason") == "MAP_ABSTRACT_UNAVAILABLE"
+                ):
+                    new_items[node_id] = dict(existing)
+                    continue
             source_version = str(candidate.get("source_version") or "")
             model_id = str(candidate.get("model_id") or "")
             stable_key = str(candidate.get("idempotency_key") or f"auto:{node_id}:{source_version}:{model_id}")
@@ -3480,6 +3685,244 @@ class LiteratureMapStore:
             elif row["status"] not in {"queued", "active", "analysis_wait", "paused", "completed", "partial", "failed"} or row["worker_token"] is not None or row["lease_expires_at"] is not None:
                 raise ValueError("auxiliary job lease invalid")
 
+    def finish_expansion_batch_metadata(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        worker_token: str,
+        results: Mapping[str, Mapping[str, Any]],
+        model_id: str,
+    ) -> MapJob | None:
+        """Commit one metadata round, queue children, and release the lease atomically."""
+
+        if not str(model_id or "").strip():
+            raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+        with self.auxiliary_job_transaction(
+            job_id,
+            map_id,
+            owner_id,
+            operation="expand_batch",
+            worker_token=worker_token,
+        ) as db:
+            row = db.execute(
+                "SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='expand_batch'",
+                (job_id, map_id),
+            ).fetchone()
+            if row is None:
+                return None
+            cursor = _load(row["cursor_json"], {})
+            items = cursor.get("items") if isinstance(cursor, Mapping) else None
+            if not isinstance(items, dict):
+                raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+            queue_row = self._queue_row(db, map_id, owner_id)
+            queue_paused = queue_row is not None and str(queue_row["status"]) == "paused"
+            seed_id = str(cursor.get("seed_node_id") or "")
+            seed_row = db.execute(
+                "SELECT removed_at FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                (map_id, seed_id),
+            ).fetchone() if seed_id else None
+            seed_available = seed_row is not None and seed_row["removed_at"] is None
+            queue_candidates: list[dict[str, Any]] = []
+            ready_node_ids: list[str] = []
+
+            for raw_node_id, result in results.items():
+                node_id = str(raw_node_id)
+                item = items.get(node_id)
+                if not isinstance(item, dict) or not (
+                    item.get("status") in {"metadata_pending", "metadata_retry"}
+                    or item.get("metadata_status") in {"pending", "metadata_pending", "metadata_retry"}
+                ):
+                    continue
+                item["attempts"] = max(0, int(item.get("attempts") or 0)) + 1
+                if not seed_available:
+                    _set_expansion_metadata_item(
+                        item,
+                        status="skipped_removed",
+                        metadata_status="skipped_removed",
+                        error_code=None,
+                        retryable=False,
+                    )
+                    item.pop("metadata_refresh", None)
+                    continue
+                node_row = db.execute(
+                    "SELECT * FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                    (map_id, node_id),
+                ).fetchone()
+                if node_row is None or node_row["removed_at"] is not None:
+                    _set_expansion_metadata_item(
+                        item,
+                        status="skipped_removed",
+                        metadata_status="skipped_removed",
+                        error_code=None,
+                        retryable=False,
+                    )
+                    item.pop("metadata_refresh", None)
+                    continue
+
+                node = _node(node_row)
+                abstract = str(node.abstract or "").strip()
+                result_status = str(result.get("status") or "")
+                proof = result.get("source_proof")
+                if not abstract and result_status == "metadata_ready":
+                    supplied_identity = str(result.get("identity_key") or "")
+                    supplied_abstract = str(result.get("abstract") or "").strip()
+                    if supplied_identity != str(node.identity_key or "") or not supplied_abstract:
+                        result_status = "identity_unresolved"
+                    else:
+                        provenance = dict(node.provenance or {})
+                        if isinstance(proof, Mapping):
+                            provenance["expansion_abstract_source"] = {
+                                "provider": "semantic_scholar",
+                                "paper_id": str(proof.get("paper_id") or "")[:200],
+                                "identity_key": supplied_identity,
+                            }
+                        db.execute(
+                            "UPDATE literature_map_nodes SET abstract=?,provenance_json=? "
+                            "WHERE map_id=? AND node_id=? AND removed_at IS NULL AND (abstract IS NULL OR trim(abstract)='')",
+                            (supplied_abstract, _dump(provenance), map_id, node_id),
+                        )
+                        refreshed = db.execute(
+                            "SELECT * FROM literature_map_nodes WHERE map_id=? AND node_id=? AND removed_at IS NULL",
+                            (map_id, node_id),
+                        ).fetchone()
+                        if refreshed is None:
+                            result_status = "skipped_removed"
+                        else:
+                            node = _node(refreshed)
+                            abstract = str(node.abstract or "").strip()
+
+                if abstract:
+                    source_version = hashlib.sha256(
+                        _dump(
+                            {
+                                "title": node.title,
+                                "abstract": node.abstract or "",
+                                "external_ids": node.external_ids,
+                            }
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    params_hash = hashlib.sha256(
+                        _dump(
+                            {
+                                "evidence_level": "abstract",
+                                "model": str(model_id),
+                                "source_version": source_version,
+                            }
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    queue_candidates.append(
+                        {
+                            "node_id": node_id,
+                            "abstract_available": True,
+                            "source_version": source_version,
+                            "model_id": str(model_id),
+                            "idempotency_key": f"auto:{node_id}:{source_version}:{model_id}",
+                            "params_hash": params_hash,
+                        }
+                    )
+                    ready_node_ids.append(node_id)
+                    item["metadata_status"] = "complete"
+                    item["metadata_refresh"] = False
+                    item.pop("error_code", None)
+                    item.pop("retryable", None)
+                    continue
+
+                if result_status == "skipped_no_abstract":
+                    _set_expansion_metadata_item(
+                        item,
+                        status="skipped_no_abstract",
+                        metadata_status="skipped_no_abstract",
+                        error_code=None,
+                        retryable=False,
+                    )
+                    item.pop("metadata_refresh", None)
+                elif result_status == "identity_unresolved":
+                    _set_expansion_metadata_item(
+                        item,
+                        status="identity_unresolved",
+                        metadata_status="identity_unresolved",
+                        error_code="MAP_METADATA_IDENTITY_UNRESOLVED",
+                        retryable=False,
+                    )
+                    item.pop("metadata_refresh", None)
+                elif result_status == "metadata_failed":
+                    _set_expansion_metadata_item(
+                        item,
+                        status="metadata_failed",
+                        metadata_status="failed",
+                        error_code=_safe_error_code(result.get("error_code")) or "SEMANTIC_SCHOLAR_UNAVAILABLE",
+                        retryable=bool(result.get("retryable")),
+                    )
+                elif result_status == "skipped_removed":
+                    _set_expansion_metadata_item(
+                        item,
+                        status="skipped_removed",
+                        metadata_status="skipped_removed",
+                        error_code=None,
+                        retryable=False,
+                    )
+                    item.pop("metadata_refresh", None)
+                elif result_status == "metadata_ready":
+                    _set_expansion_metadata_item(
+                        item,
+                        status="skipped_no_abstract",
+                        metadata_status="skipped_no_abstract",
+                        error_code=None,
+                        retryable=False,
+                    )
+                    item.pop("metadata_refresh", None)
+                else:
+                    raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+
+            queue_items: dict[str, dict[str, Any]] = {}
+            if queue_candidates:
+                queue_id, queue_items = self._merge_analysis_queue_items_tx(
+                    db, map_id, owner_id, queue_candidates
+                )
+                for node_id in ready_node_ids:
+                    item = items[node_id]
+                    queue_item = queue_items.get(node_id) or {}
+                    if not queue_item.get("analysis_id"):
+                        raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+                    item.update(
+                        {
+                            "status": "analysis_queued",
+                            "metadata_status": "complete",
+                            "analysis_id": queue_item.get("analysis_id"),
+                            "source_version": queue_item.get("source_version"),
+                            "error_code": None,
+                            "retryable": False,
+                        }
+                    )
+                queue_row = self._queue_row(db, map_id, owner_id)
+                queue_paused = queue_row is not None and str(queue_row["status"]) == "paused"
+                cursor["queue_job_id"] = queue_id
+
+            status, step, counts, failed_units, projected_cursor = self._expansion_batch_projection_tx(
+                db,
+                map_id,
+                cursor,
+                prior_counts=_load(row["counts_json"], {}),
+                queue_paused=queue_paused,
+            )
+            finished = self.finish_auxiliary_job_tx(
+                db,
+                job_id,
+                map_id,
+                owner_id,
+                operation="expand_batch",
+                worker_token=worker_token,
+                status=status,
+                step=step,
+                cursor=projected_cursor,
+                counts=counts,
+                failed_units=failed_units,
+                event_type="metadata_finished",
+            )
+            return finished
+
     def finish_auxiliary_job(
         self,
         job_id: str,
@@ -3900,6 +4343,25 @@ class LiteratureMapStore:
         recovered: list[MapJob] = []
         with self.transaction() as db:
             now = iso_now()
+            batch_clause = "j.operation='expand_batch' AND m.deleted_at IS NULL"
+            batch_params: list[Any] = []
+            if owner_id is not None:
+                batch_clause += " AND m.owner_id=?"
+                batch_params.append(owner_id)
+            if map_id is not None:
+                batch_clause += " AND j.map_id=?"
+                batch_params.append(map_id)
+            batch_maps = db.execute(
+                "SELECT DISTINCT j.map_id,m.owner_id FROM literature_map_jobs j "
+                "JOIN literature_maps m ON m.map_id=j.map_id WHERE " + batch_clause,
+                tuple(batch_params),
+            ).fetchall()
+            for batch_map in batch_maps:
+                self._refresh_expansion_batch_projections_tx(
+                    db,
+                    str(batch_map["map_id"]),
+                    str(batch_map["owner_id"]),
+                )
             clause = "j.operation IN ('preview_page','expand_batch') AND j.status IN ('queued','running','paused') AND m.deleted_at IS NULL AND m.status!='stopped'"
             params: list[Any] = []
             if owner_id is not None:
@@ -4036,6 +4498,115 @@ class LiteratureMapStore:
                 params = (owner_id,)
             rows = db.execute("SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id" + clause, params).fetchall()
         return [_job(row) for row in rows]
+
+    def retry_expansion_batch_metadata(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        node_ids: Iterable[str],
+        steps: Iterable[str],
+        idempotency_key: str,
+        params_hash: str,
+    ) -> MapJob | None:
+        selected = sorted({str(value).strip() for value in node_ids if str(value).strip()})
+        selected_steps = list(steps)
+        if not selected or len(selected) > 20 or selected_steps != ["metadata"]:
+            raise ValueError("MAP_BATCH_METADATA_RETRY_INVALID")
+        if not str(idempotency_key or "").strip() or len(idempotency_key) > 200:
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        operation = "expand_batch:retry_metadata"
+        with self.transaction() as db:
+            self._assert_map_exists(db, map_id, owner_id)
+            try:
+                replay = self._queue_command_replay(
+                    db, map_id, owner_id, operation, idempotency_key, params_hash
+                )
+            except ValueError as error:
+                if str(error) == "idempotency conflict":
+                    raise ValueError("MAP_IDEMPOTENCY_CONFLICT") from error
+                raise
+            if replay is not None:
+                fresh = db.execute(
+                    "SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='expand_batch'",
+                    (job_id, map_id),
+                ).fetchone()
+                return _job(fresh) if fresh is not None else None
+            row = db.execute(
+                "SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='expand_batch'",
+                (job_id, map_id),
+            ).fetchone()
+            if row is None:
+                return None
+            current = _job(row)
+            if current.status not in {"completed", "partial", "failed"}:
+                raise ValueError("MAP_BATCH_METADATA_RETRY_INVALID")
+            cursor = _load(row["cursor_json"], {})
+            items = cursor.get("items") if isinstance(cursor, Mapping) else None
+            if not isinstance(items, dict):
+                raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+            for node_id in selected:
+                item = items.get(node_id)
+                if not isinstance(item, dict) or item.get("status") not in {
+                    "metadata_failed",
+                    "skipped_no_abstract",
+                }:
+                    raise ValueError("MAP_BATCH_METADATA_RETRY_INVALID")
+            generation = max(0, int(cursor.get("metadata_retry_generation") or 0)) + 1
+            cursor["metadata_retry_generation"] = generation
+            for node_id in selected:
+                item = items[node_id]
+                item.update(
+                    {
+                        "status": "metadata_pending",
+                        "metadata_status": "pending",
+                        "metadata_refresh": True,
+                        "retry_generation": generation,
+                    }
+                )
+                item.pop("error_code", None)
+                item.pop("retryable", None)
+            queue_row = self._queue_row(db, map_id, owner_id)
+            queue_paused = queue_row is not None and str(queue_row["status"]) == "paused"
+            status, step, counts, failed_units, projected_cursor = self._expansion_batch_projection_tx(
+                db,
+                map_id,
+                cursor,
+                prior_counts=current.counts,
+                queue_paused=queue_paused,
+            )
+            now = iso_now()
+            changed = db.execute(
+                "UPDATE literature_map_jobs SET status=?,step=?,cursor_json=?,counts_json=?,failed_units_json=?,"
+                "worker_token=NULL,lease_expires_at=NULL,attempts=0,next_retry_at=NULL,updated_at=? "
+                "WHERE job_id=? AND map_id=? AND operation='expand_batch' AND status IN ('completed','partial','failed') "
+                "RETURNING *",
+                (
+                    status,
+                    step,
+                    _dump(projected_cursor),
+                    _dump(counts),
+                    _dump(_safe_failed_units(failed_units)),
+                    now,
+                    job_id,
+                    map_id,
+                ),
+            ).fetchone()
+            if changed is None:
+                raise ValueError("MAP_BATCH_METADATA_RETRY_INVALID")
+            updated = _job(changed)
+            self._append_event(db, updated, event_type="metadata_retry")
+            self._remember_queue_command(
+                db,
+                map_id,
+                owner_id,
+                operation,
+                idempotency_key,
+                params_hash,
+                {"batch_job_id": job_id, "node_ids": selected, "generation": generation},
+            )
+            return updated
 
     def _assert_writable(self, db: sqlite3.Connection, map_id: str, owner_id: str, *, job_id: str | None = None) -> None:
         if job_id is not None:
@@ -4364,11 +4935,32 @@ def _auxiliary_batch_has_pending_metadata(cursor: Any) -> bool:
     items = cursor.get("items")
     if not isinstance(items, Mapping):
         return False
-    pending = {"metadata_pending", "metadata_retry"}
+    pending = {"pending", "metadata_pending", "metadata_retry"}
     return any(
         isinstance(item, Mapping)
-        and str(item.get("metadata_status") or item.get("status") or "") in pending
+        and (
+            str(item.get("metadata_status") or "") in pending
+            or str(item.get("status") or "") in pending
+        )
         for item in items.values()
+    )
+
+
+def _set_expansion_metadata_item(
+    item: dict[str, Any],
+    *,
+    status: str,
+    metadata_status: str,
+    error_code: str | None,
+    retryable: bool,
+) -> None:
+    item.update(
+        {
+            "status": status,
+            "metadata_status": metadata_status,
+            "error_code": _safe_error_code(error_code),
+            "retryable": bool(retryable),
+        }
     )
 
 

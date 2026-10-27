@@ -558,9 +558,212 @@ class LiteratureMapService:
         return result[1] if result else self.store.get_job(job.job_id, job.map_id, owner_id)
 
     def run_expansion_batch(self, job_id: str, owner_id: str | None = None) -> MapJob | None:
-        """Fail closed until the metadata batch handler is implemented."""
+        """Fetch metadata for one bounded batch and register abstract analyses."""
 
-        return self._fail_unimplemented_auxiliary(job_id, owner_id, "expand_batch")
+        job = self._find_job(job_id, owner_id)
+        if job is None or job.operation != "expand_batch":
+            return None
+        owner = owner_id or self._owner_for_job(job)
+        claim = self.store.claim_auxiliary_job(job.job_id, job.map_id, owner, operation="expand_batch")
+        if claim is None:
+            return self.store.get_job(job.job_id, job.map_id, owner)
+        claimed, worker_token = claim
+        if not self.store.auxiliary_job_can_write(
+            claimed.job_id,
+            claimed.map_id,
+            owner,
+            operation="expand_batch",
+            worker_token=worker_token,
+        ):
+            return self.store.get_job(claimed.job_id, claimed.map_id, owner)
+
+        queue = self.store.get_analysis_queue(claimed.map_id, owner)
+        if queue.get("state") == "paused":
+            return self.store.finish_auxiliary_job(
+                claimed.job_id,
+                claimed.map_id,
+                owner,
+                operation="expand_batch",
+                worker_token=worker_token,
+                status="paused",
+                step="metadata",
+                event_type="paused",
+            )
+
+        raw_items = claimed.cursor.get("items", {})
+        pending = {
+            str(node_id): item
+            for node_id, item in raw_items.items()
+            if isinstance(item, Mapping)
+            and (
+                item.get("status") in {"metadata_pending", "metadata_retry"}
+                or item.get("metadata_status") in {"pending", "metadata_pending", "metadata_retry"}
+            )
+        } if isinstance(raw_items, Mapping) else {}
+        if not pending:
+            return self.store.get_job(claimed.job_id, claimed.map_id, owner)
+
+        metadata_results: dict[str, dict[str, Any]] = {}
+        seed_id = str(claimed.cursor.get("seed_node_id") or "")
+        seed = self.store.get_node(claimed.map_id, seed_id, owner) if seed_id else None
+        if seed is None or seed.removed:
+            metadata_results = {node_id: {"status": "skipped_removed"} for node_id in pending}
+        uncached: dict[str, tuple[Any, str, Any]] = {}
+        for node_id, item in pending.items() if seed is not None and not seed.removed else ():
+            node = self.store.get_node(claimed.map_id, node_id, owner)
+            if node is None or node.removed:
+                metadata_results[node_id] = {"status": "skipped_removed"}
+                continue
+            identity_key = str(node.identity_key or "")
+            request_identifier = _expansion_metadata_identifier(node.external_ids)
+            if not identity_key or not request_identifier:
+                metadata_results[node_id] = {"status": "identity_unresolved"}
+                continue
+            cache_key = self._request_cache_key(
+                provider="semantic_scholar",
+                operation="metadata",
+                identifier=identity_key,
+                filters={"external_ids": dict(sorted(node.external_ids.items()))},
+                fields=SEMANTIC_SCHOLAR_METADATA_FIELDS,
+                version="literature-map-expansion-metadata-v1",
+            )
+            cached = None if item.get("metadata_refresh") else self._get_request_cache(cache_key)
+            if isinstance(cached, Mapping) and cached.get("status") in {"matched", "unresolved"}:
+                metadata = _metadata_from_expansion_cache(cached)
+                if cached.get("status") == "unresolved" or metadata is None or not _expansion_metadata_identity_matches(node, metadata):
+                    metadata_results[node_id] = {"status": "identity_unresolved"}
+                else:
+                    metadata_results[node_id] = _expansion_metadata_result(node, metadata)
+                continue
+            uncached[node_id] = (node, request_identifier, cache_key)
+
+        if uncached:
+            if not self.store.auxiliary_job_can_write(
+                claimed.job_id,
+                claimed.map_id,
+                owner,
+                operation="expand_batch",
+                worker_token=worker_token,
+            ):
+                return self.store.get_job(claimed.job_id, claimed.map_id, owner)
+            queue = self.store.get_analysis_queue(claimed.map_id, owner)
+            if queue.get("state") == "paused":
+                return self.store.finish_auxiliary_job(
+                    claimed.job_id,
+                    claimed.map_id,
+                    owner,
+                    operation="expand_batch",
+                    worker_token=worker_token,
+                    status="paused",
+                    step="metadata",
+                    event_type="paused",
+                )
+            identifiers = list(dict.fromkeys(value[1] for value in uncached.values()))
+            try:
+                response = self.client.batch(
+                    identifiers,
+                    fields=SEMANTIC_SCHOLAR_METADATA_FIELDS,
+                )
+                error_code = getattr(response, "code", None)
+                response_retryable = bool(getattr(response, "retryable", False))
+                payload = getattr(response, "payload", response)
+            except Exception:
+                logger.exception("expansion metadata request failed")
+                response = None
+                error_code = "SEMANTIC_SCHOLAR_UNAVAILABLE"
+                response_retryable = True
+                payload = None
+
+            if error_code:
+                safe_code = str(error_code)
+                if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,63}", safe_code):
+                    safe_code = "SEMANTIC_SCHOLAR_UNAVAILABLE"
+                for node_id in uncached:
+                    metadata_results[node_id] = {
+                        "status": "metadata_failed",
+                        "error_code": safe_code,
+                        "retryable": response_retryable,
+                    }
+            else:
+                try:
+                    records = self._parse_search_payload(payload)
+                except (TypeError, ValueError):
+                    records = []
+                    payload_invalid = True
+                else:
+                    payload_invalid = not (
+                        isinstance(payload, list)
+                        or isinstance(payload, Mapping) and isinstance(payload.get("data"), list)
+                    )
+                for node_id, (node, _identifier, cache_key) in uncached.items():
+                    matched = next(
+                        (
+                            record
+                            for record in records
+                            if _expansion_metadata_identity_matches(node, record)
+                        ),
+                        None,
+                    )
+                    if matched is None:
+                        cached_value = {"status": "unresolved", "metadata": None}
+                        metadata_results[node_id] = {
+                            "status": "metadata_failed",
+                            "error_code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE",
+                            "retryable": True,
+                        } if payload_invalid else {"status": "identity_unresolved"}
+                    else:
+                        cached_value = {
+                            "status": "matched",
+                            "metadata": _expansion_metadata_to_cache(matched),
+                        }
+                        metadata_results[node_id] = _expansion_metadata_result(node, matched)
+                    self._put_request_cache(
+                        cache_key,
+                        cached_value,
+                        provider="semantic_scholar",
+                        operation="metadata",
+                        identifier=str(node.identity_key or ""),
+                        filters={"external_ids": dict(sorted(node.external_ids.items()))},
+                        fields=SEMANTIC_SCHOLAR_METADATA_FIELDS,
+                        version="literature-map-expansion-metadata-v1",
+                    )
+
+        if not self.store.auxiliary_job_can_write(
+            claimed.job_id,
+            claimed.map_id,
+            owner,
+            operation="expand_batch",
+            worker_token=worker_token,
+        ):
+            return self.store.get_job(claimed.job_id, claimed.map_id, owner)
+
+        from backend.app.platform.config import MODEL_NAME
+
+        selected_model = str(MODEL_NAME or "").strip() or MODEL_NAME
+        try:
+            finished = self.store.finish_expansion_batch_metadata(
+                claimed.job_id,
+                claimed.map_id,
+                owner,
+                worker_token=worker_token,
+                results=metadata_results,
+                model_id=str(selected_model),
+            )
+        except ValueError as error:
+            if str(error) == "auxiliary job lease invalid":
+                return self.store.get_job(claimed.job_id, claimed.map_id, owner)
+            raise
+        if finished is None:
+            return self.store.get_job(claimed.job_id, claimed.map_id, owner)
+
+        queue_job_id = str(finished.cursor.get("queue_job_id") or "")
+        analysis = getattr(self, "analysis_service", None)
+        schedule = getattr(analysis, "_schedule_analysis_queue", None)
+        if queue_job_id and callable(schedule):
+            queue = self.store.get_analysis_queue(claimed.map_id, owner)
+            if queue.get("queue_job_id") == queue_job_id and queue.get("state") == "active":
+                schedule(claimed.map_id, owner, queue)
+        return finished
 
     def _fail_unimplemented_auxiliary(self, job_id: str, owner_id: str | None, operation: str) -> MapJob | None:
         resolved = self.store.get_job_with_owner(job_id) if owner_id is None else None
@@ -746,10 +949,52 @@ class LiteratureMapService:
             raise LookupError("job not found")
         return updated
 
-    def retry_job(self, map_id: str, job_id: str, owner_id: str) -> MapJob:
+    def retry_job(
+        self,
+        map_id: str,
+        job_id: str,
+        owner_id: str,
+        *,
+        node_ids: Iterable[str] | None = None,
+        steps: Iterable[str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> MapJob:
         job = self.store.get_job(job_id, map_id, owner_id)
         if job is None:
             raise LookupError("job not found")
+        if job.operation == "expand_batch":
+            if node_ids is None or steps is None or idempotency_key is None:
+                raise ValueError("MAP_BATCH_METADATA_RETRY_REQUIRED")
+            selected = [str(value).strip() for value in node_ids]
+            if (
+                not selected
+                or len(selected) > 20
+                or any(not value for value in selected)
+                or len(set(selected)) != len(selected)
+                or list(steps) != ["metadata"]
+            ):
+                raise ValueError("MAP_BATCH_METADATA_RETRY_INVALID")
+            normalized = sorted(selected)
+            params_hash = _params_hash({"node_ids": normalized, "steps": ["metadata"]})
+            retry = getattr(self.store, "retry_expansion_batch_metadata", None)
+            if not callable(retry):
+                raise ValueError("MAP_BATCH_METADATA_RETRY_REQUIRED")
+            updated = retry(
+                job_id,
+                map_id,
+                owner_id,
+                node_ids=normalized,
+                steps=["metadata"],
+                idempotency_key=idempotency_key,
+                params_hash=params_hash,
+            )
+            if updated is None:
+                raise ValueError("job is not retryable")
+            if updated.status == "queued":
+                self._dispatch_auxiliary_jobs([updated], owner_id)
+            return updated
+        if node_ids is not None or steps is not None or idempotency_key is not None:
+            raise ValueError("MAP_JOB_RETRY_FIELDS_INVALID")
         if job.operation == "preview_page":
             raise ValueError("MAP_PREVIEW_RETRY_REQUIRED")
         if job.status not in {"failed", "partial", "stopped"}:
@@ -1665,7 +1910,7 @@ class LiteratureMapService:
             self._put_request_cache(cache_key, payload)
         return rows, None, 1, len(rows)
 
-    def _request_cache_key(self, *, provider: str, operation: str, query: str = "", identifier: str = "", filters: Mapping[str, Any] | None = None, page: int = 0) -> Any:
+    def _request_cache_key(self, *, provider: str, operation: str, query: str = "", identifier: str = "", filters: Mapping[str, Any] | None = None, page: int = 0, fields: Iterable[str] | str | None = None, version: str | None = None) -> Any:
         builder = getattr(self.store, "request_cache_key", None)
         if not callable(builder):
             return None
@@ -1676,8 +1921,8 @@ class LiteratureMapService:
             identifier=identifier,
             filters=dict(filters or {}),
             page=page,
-            fields=SEMANTIC_SCHOLAR_METADATA_FIELDS,
-            version=REQUEST_CACHE_VERSION,
+            fields=SEMANTIC_SCHOLAR_METADATA_FIELDS if fields is None else fields,
+            version=REQUEST_CACHE_VERSION if version is None else version,
         )
 
     def _get_request_cache(self, key: Any) -> Any:
@@ -1689,12 +1934,43 @@ class LiteratureMapService:
         except (TypeError, ValueError):
             return None
 
-    def _put_request_cache(self, key: Any, payload: Any) -> None:
+    def _put_request_cache(
+        self,
+        key: Any,
+        payload: Any,
+        *,
+        provider: str | None = None,
+        operation: str | None = None,
+        identifier: str | None = None,
+        filters: Mapping[str, Any] | None = None,
+        page: int = 0,
+        fields: Iterable[str] | str | None = None,
+        version: str | None = None,
+    ) -> None:
         writer = getattr(self.store, "put_request_cache", None)
         if key is None or not callable(writer):
             return
+        cache_metadata = {
+            name: value
+            for name, value in {
+                "provider": provider,
+                "operation": operation,
+                "identifier": identifier,
+                "filters": filters,
+                "page": page,
+                "fields": fields,
+                "version": version,
+            }.items()
+            if value is not None
+        }
         try:
-            writer(key, payload, ttl_seconds=REQUEST_CACHE_TTL_SECONDS, status="success")
+            writer(
+                key,
+                payload,
+                ttl_seconds=REQUEST_CACHE_TTL_SECONDS,
+                status="success",
+                **cache_metadata,
+            )
         except (TypeError, ValueError):
             return
 
@@ -2316,6 +2592,69 @@ def _export_external_ids(external_ids: Mapping[str, Any] | None) -> dict[str, st
         for key, value in external_ids.items()
         if key in _EXPORT_EXTERNAL_ID_KEYS and isinstance(value, (str, int)) and str(value).strip()
     }
+
+
+def _expansion_metadata_identifier(external_ids: Mapping[str, Any]) -> str:
+    semantic_scholar_id = str(external_ids.get("semantic_scholar") or "").strip()
+    if semantic_scholar_id:
+        return semantic_scholar_id
+    doi = str(external_ids.get("doi") or "").strip()
+    if doi:
+        return f"DOI:{doi}"
+    arxiv_id = str(external_ids.get("arxiv") or "").strip()
+    if arxiv_id:
+        return f"ARXIV:{arxiv_id}"
+    return ""
+
+
+def _expansion_metadata_identity_matches(node: MapPaper, metadata: SemanticScholarMetadata) -> bool:
+    expected = str(node.identity_key or "")
+    actual = deterministic_identity_key(
+        {
+            "semantic_scholar": metadata.paper_id,
+            "doi": metadata.doi,
+            "arxiv": metadata.arxiv_id,
+        }
+    )
+    return bool(expected and actual and expected == actual)
+
+
+def _expansion_metadata_to_cache(metadata: SemanticScholarMetadata) -> dict[str, Any]:
+    return {
+        "paperId": metadata.paper_id,
+        "title": metadata.title,
+        "authors": list(metadata.authors),
+        "year": metadata.year,
+        "abstract": metadata.abstract,
+        "externalIds": {
+            key: value
+            for key, value in (("DOI", metadata.doi), ("ArXiv", metadata.arxiv_id))
+            if value
+        },
+        "url": metadata.source_url,
+    }
+
+
+def _expansion_metadata_result(node: MapPaper, metadata: SemanticScholarMetadata) -> dict[str, Any]:
+    abstract = str(metadata.abstract or "").strip()
+    if not abstract:
+        return {"status": "skipped_no_abstract"}
+    return {
+        "status": "metadata_ready",
+        "identity_key": str(node.identity_key or ""),
+        "abstract": abstract,
+        "source_proof": {
+            "paper_id": str(metadata.paper_id or ""),
+        },
+    }
+
+
+def _metadata_from_expansion_cache(value: Mapping[str, Any]) -> SemanticScholarMetadata | None:
+    raw = value.get("metadata")
+    if not isinstance(raw, Mapping):
+        return None
+    records = LiteratureMapService._parse_search_payload([raw])
+    return records[0] if records else None
 
 
 def _safe_export_url(value: Any) -> str | None:

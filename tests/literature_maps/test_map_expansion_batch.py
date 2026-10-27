@@ -75,6 +75,20 @@ class RecordingExecutor:
         self.submissions.append((function, args, kwargs))
 
 
+class ExpansionMetadataClient:
+    def __init__(self, result, *, before_return=None):
+        self.result = result
+        self.before_return = before_return
+        self.calls = []
+
+    def batch(self, identifiers, *, fields=None):
+        request = (list(identifiers), fields)
+        self.calls.append(request)
+        if self.before_return is not None:
+            self.before_return(request)
+        return self.result
+
+
 def _paper(identifier: str, *, abstract: str | None = "A useful abstract"):
     return SemanticScholarMetadata(identifier, f"Paper {identifier}", abstract=abstract)
 
@@ -125,6 +139,20 @@ def _selection(preview, *candidate_ids):
         "expected_preview_revision": preview.preview_revision,
         "selected_candidate_ids": list(candidate_ids),
     }
+
+
+def _pending_expansion_batch(tmp_path, paper_id="s2-metadata-pending"):
+    paper = SemanticScholarMetadata(paper_id, f"Paper {paper_id}", abstract=None)
+    store, service, map_item, _seed, previews = _setup(tmp_path, [paper], None)
+    preview = previews["references"]
+    applied = service.batch_apply_previews(
+        map_item.map_id,
+        "owner-a",
+        expected_revision=map_item.revision,
+        idempotency_key=f"apply-{paper_id}",
+        selections=[_selection(preview, preview.candidates[0]["candidate_id"])],
+    )
+    return store, service, map_item, applied, applied["node_ids"][0]
 
 
 def test_batch_apply_deduplicates_across_directions_and_writes_both_edges_atomically(tmp_path):
@@ -749,6 +777,381 @@ def test_expansion_command_payloads_reject_unknown_fields_boolean_revisions_and_
         "selections": [valid_selection],
     }
     assert client.post(f"{base}/revalidate", json=revalidate_payload).status_code == 422
+
+
+def test_expansion_batch_metadata_worker_updates_only_abstract_proof_and_schedules_after_commit(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-exact-worker")
+    with store.transaction() as db:
+        db.execute(
+            "UPDATE literature_map_nodes SET title=?,authors_json=?,year=?,venue=?,keywords_json=?,citation_count=?,"
+            "source_url=?,provenance_json=?,document_id=?,download_status=?,position_json=?,color_override=? WHERE node_id=?",
+            (
+                "User title",
+                json.dumps(["User Author"]),
+                2020,
+                "User Venue",
+                json.dumps(["manual-keyword"]),
+                7,
+                "https://example.test/user-source",
+                json.dumps({"manual_note": "keep"}),
+                "document-keep",
+                "downloaded",
+                json.dumps({"x": 2.0, "y": 3.0}),
+                "#123456",
+                node_id,
+            ),
+        )
+    before = store.get_node(map_item.map_id, node_id, "owner-a")
+    client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(
+            payload=[SemanticScholarMetadata("s2-exact-worker", "Provider title may differ", abstract="Retrieved abstract")]
+        )
+    )
+    service.client = client
+    executor = RecordingExecutor(store)
+    analysis = MapAnalysisService(store=store, queue_executor=executor)
+    service.analysis_service = analysis
+
+    finished = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    after = store.get_node(map_item.map_id, node_id, "owner-a")
+    assert finished is not None and finished.status == "analysis_wait"
+    assert before is not None and after is not None
+    assert after.abstract == "Retrieved abstract"
+    assert after.provenance["manual_note"] == "keep"
+    assert after.provenance["expansion_abstract_source"] == {
+        "provider": "semantic_scholar",
+        "paper_id": "s2-exact-worker",
+        "identity_key": "semantic_scholar:s2-exact-worker",
+    }
+    assert after.title == before.title
+    assert after.authors == before.authors
+    assert after.year == before.year
+    assert after.venue == before.venue
+    assert after.keywords == before.keywords
+    assert after.citation_count == before.citation_count
+    assert after.source_url == before.source_url
+    assert after.external_ids == before.external_ids
+    assert after.document_id == before.document_id
+    assert after.download_status == before.download_status
+    assert after.position == before.position
+    assert after.color_override == before.color_override
+    assert len(client.calls) == 1
+    assert client.calls[0][0] == ["s2-exact-worker"]
+    assert len(executor.submissions) == 1
+    persisted = store.get_job(applied["batch_job_id"], map_item.map_id, "owner-a")
+    assert persisted.cursor["items"][node_id]["status"] == "analysis_queued"
+    assert persisted.cursor["items"][node_id]["analysis_id"]
+
+
+def test_expansion_metadata_no_abstract_retry_bypasses_persisted_cache_once(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-empty-then-filled")
+    client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-empty-then-filled", "Paper", abstract=None)])
+    )
+    service.client = client
+
+    first = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+    assert first is not None and first.status == "completed"
+    assert first.cursor["items"][node_id]["status"] == "skipped_no_abstract"
+    assert store.get_node(map_item.map_id, node_id, "owner-a").abstract is None
+    assert len(client.calls) == 1
+    with store.connection() as db:
+        cached_request = db.execute(
+            "SELECT operation,identifier,fields_json,schema_version FROM literature_map_request_cache "
+            "WHERE operation='metadata'"
+        ).fetchone()
+    assert cached_request is not None
+    assert cached_request["operation"] == "metadata"
+    assert cached_request["identifier"] == "semantic_scholar:s2-empty-then-filled"
+    cached_fields = json.loads(cached_request["fields_json"])
+    assert len(cached_fields) == 1
+    assert "abstract" in cached_fields[0].split(",")
+    assert cached_request["schema_version"] == "literature-map-expansion-metadata-v1"
+
+    retry_request = {
+        "node_ids": [node_id],
+        "steps": ["metadata"],
+        "idempotency_key": "retry-empty-metadata",
+    }
+    queued = service.retry_job(map_item.map_id, applied["batch_job_id"], "owner-a", **retry_request)
+    assert queued.status == "queued"
+    generation = queued.cursor["items"][node_id]["retry_generation"]
+    with store.connection() as db:
+        attempts_after_retry = db.execute(
+            "SELECT attempts FROM literature_map_jobs WHERE job_id=?",
+            (applied["batch_job_id"],),
+        ).fetchone()[0]
+    replay = service.retry_job(map_item.map_id, applied["batch_job_id"], "owner-a", **retry_request)
+    assert replay.cursor["items"][node_id]["retry_generation"] == generation
+    with store.connection() as db:
+        attempts_after_replay = db.execute(
+            "SELECT attempts FROM literature_map_jobs WHERE job_id=?",
+            (applied["batch_job_id"],),
+        ).fetchone()[0]
+    assert attempts_after_replay == attempts_after_retry
+    with pytest.raises(ValueError, match="MAP_IDEMPOTENCY_CONFLICT"):
+        service.retry_job(
+            map_item.map_id,
+            applied["batch_job_id"],
+            "owner-a",
+            node_ids=[node_id, "different-node"],
+            steps=["metadata"],
+            idempotency_key="retry-empty-metadata",
+        )
+    client.result = SemanticScholarRequestResult(
+        payload=[SemanticScholarMetadata("s2-empty-then-filled", "Paper", abstract="Now present")]
+    )
+
+    finished = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert finished is not None and finished.status == "analysis_wait"
+    assert len(client.calls) == 2
+    assert store.get_node(map_item.map_id, node_id, "owner-a").abstract == "Now present"
+    assert finished.cursor["items"][node_id]["status"] == "analysis_queued"
+    assert finished.cursor["items"][node_id]["retry_generation"] == generation
+    assert len(store.list_analyses(map_item.map_id, node_id, "owner-a")) == 1
+
+
+def test_expansion_metadata_rate_limit_stays_terminal_until_explicit_retry(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-rate-limited")
+    client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(code="SEMANTIC_SCHOLAR_RATE_LIMITED", retryable=True)
+    )
+    service.client = client
+
+    failed = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert failed is not None and failed.status == "partial"
+    assert failed.cursor["items"][node_id]["status"] == "metadata_failed"
+    assert failed.cursor["items"][node_id]["error_code"] == "SEMANTIC_SCHOLAR_RATE_LIMITED"
+    assert failed.cursor["items"][node_id]["retryable"] is True
+    assert store.recover_auxiliary_jobs("owner-a", map_id=map_item.map_id) == []
+    assert len(client.calls) == 1
+    retry_request = {"node_ids": [node_id], "steps": ["metadata"], "idempotency_key": "retry-rate-limit"}
+    service.retry_job(map_item.map_id, applied["batch_job_id"], "owner-a", **retry_request)
+    client.result = SemanticScholarRequestResult(
+        payload=[SemanticScholarMetadata("s2-rate-limited", "Paper", abstract="Recovered")]
+    )
+
+    finished = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert finished is not None and finished.status == "analysis_wait"
+    assert len(client.calls) == 2
+    assert finished.cursor["items"][node_id]["status"] == "analysis_queued"
+    assert all(unit.get("error_code") != "SEMANTIC_SCHOLAR_RATE_LIMITED" for unit in finished.failed_units)
+
+
+def test_expansion_metadata_requires_exact_identity_and_skips_removed_nodes(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-identity-required")
+    client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-other", "Paper s2-identity-required", abstract="Wrong identity")])
+    )
+    service.client = client
+
+    unresolved = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert unresolved is not None and unresolved.status == "partial"
+    assert unresolved.cursor["items"][node_id]["status"] == "identity_unresolved"
+    assert store.get_node(map_item.map_id, node_id, "owner-a").abstract is None
+    assert store.list_analyses(map_item.map_id, node_id, "owner-a") == []
+
+
+def test_expansion_metadata_cache_is_persistent_between_service_instances(tmp_path):
+    store, service, _map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-persistent-metadata-cache")
+    first_client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-persistent-metadata-cache", "Paper", abstract=None)])
+    )
+    service.client = first_client
+    first = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+    assert first is not None and first.status == "completed"
+
+    second_store, second_service, second_map, second_applied, second_node = _pending_expansion_batch(
+        tmp_path,
+        "s2-persistent-metadata-cache",
+    )
+    second_client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(
+            payload=[SemanticScholarMetadata("s2-persistent-metadata-cache", "Paper", abstract="Must not be requested yet")]
+        )
+    )
+    second_service.client = second_client
+
+    second = second_service.run_expansion_batch(second_applied["batch_job_id"], "owner-a")
+
+    assert second is not None and second.status == "completed"
+    assert second.cursor["items"][second_node]["status"] == "skipped_no_abstract"
+    assert second_client.calls == []
+    assert second_store.get_node(second_map.map_id, second_node, "owner-a").abstract is None
+
+
+def test_removed_node_during_metadata_request_is_skipped_without_resurrection(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-removed-in-flight")
+
+    def remove_during_request(_request):
+        current_map = store.get_map(map_item.map_id, "owner-a")
+        store.remove_node(
+            map_item.map_id,
+            node_id,
+            "owner-a",
+            expected_revision=current_map.revision,
+        )
+
+    service.client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(
+            payload=[SemanticScholarMetadata("s2-removed-in-flight", "Paper", abstract="Do not restore")]
+        ),
+        before_return=remove_during_request,
+    )
+
+    finished = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert finished is not None and finished.status == "completed"
+    assert finished.cursor["items"][node_id]["status"] == "skipped_removed"
+    removed = store.get_node(map_item.map_id, node_id, "owner-a")
+    assert removed is not None and removed.removed and removed.abstract is None
+    assert store.list_analyses(map_item.map_id, node_id, "owner-a") == []
+
+
+def test_expansion_metadata_late_token_cannot_write_after_lease_expiry(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-expired-worker")
+
+    def expire_lease(_request):
+        with store.transaction() as db:
+            db.execute(
+                "UPDATE literature_map_jobs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE job_id=?",
+                (applied["batch_job_id"],),
+            )
+
+    service.client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-expired-worker", "Paper", abstract="Late result")]),
+        before_return=expire_lease,
+    )
+
+    result = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert result is not None and result.status == "running"
+    assert store.get_node(map_item.map_id, node_id, "owner-a").abstract is None
+    assert store.list_analyses(map_item.map_id, node_id, "owner-a") == []
+    assert store.get_analysis_queue(map_item.map_id, "owner-a")["counts"]["total"] == 0
+
+
+def test_expansion_metadata_finishes_during_pause_and_resume_reconciles_projection(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-pause-in-flight")
+    old = MapPaper.new(map_item.map_id, semantic_scholar_id="s2-existing-abstract", title="Existing", abstract="Existing abstract")
+    store.add_nodes(map_item.map_id, "owner-a", [old])
+    executor = RecordingExecutor(store)
+    analysis = MapAnalysisService(store=store, queue_executor=executor)
+    analysis.ensure_analysis_queue(map_item.map_id, "owner-a", idempotency_key="init-before-pause")
+    initial_submissions = len(executor.submissions)
+
+    def pause_during_request(_request):
+        analysis.pause_analysis_queue(map_item.map_id, "owner-a", idempotency_key="pause-during-metadata")
+
+    service.analysis_service = analysis
+    service.client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-pause-in-flight", "Paper", abstract="Fetched while pausing")]),
+        before_return=pause_during_request,
+    )
+
+    paused = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert paused is not None and paused.status == "paused"
+    assert store.get_node(map_item.map_id, node_id, "owner-a").abstract == "Fetched while pausing"
+    assert store.get_analysis_queue(map_item.map_id, "owner-a")["state"] == "paused"
+    assert len(executor.submissions) == initial_submissions
+    analysis.auxiliary_recovery = service.recover_auxiliary_for_map
+
+    analysis.resume_analysis_queue(map_item.map_id, "owner-a", idempotency_key="resume-after-metadata")
+
+    resumed = store.get_job(applied["batch_job_id"], map_item.map_id, "owner-a")
+    assert resumed.status == "analysis_wait"
+    assert store.get_analysis_queue(map_item.map_id, "owner-a")["state"] == "active"
+    assert len(executor.submissions) == 1
+
+
+def test_expansion_batch_analysis_finish_and_restart_reconcile_without_repeating_work(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-analysis-projection")
+    client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-analysis-projection", "Paper", abstract="Queue me")])
+    )
+    service.client = client
+    service.analysis_service = MapAnalysisService(store=store, queue_executor=None)
+
+    waiting = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert waiting is not None and waiting.status == "analysis_wait"
+    item = waiting.cursor["items"][node_id]
+    child = store.get_analysis_job(item["analysis_id"], map_item.map_id, "owner-a")
+    claim = store.claim_analysis_job(child.job_id, map_item.map_id, "owner-a")
+    assert claim is not None
+    store.finish_analysis(
+        child.job_id,
+        map_item.map_id,
+        "owner-a",
+        status="completed",
+        result={"summary": "done"},
+        worker_token=claim.worker_token,
+    )
+
+    completed = store.get_job(applied["batch_job_id"], map_item.map_id, "owner-a")
+    assert completed.status == "completed"
+    assert completed.counts["completed"] == 1
+    assert completed.cursor["items"][node_id]["status"] == "completed"
+    with store.transaction() as db:
+        db.execute(
+            "UPDATE literature_map_jobs SET status='queued',step='metadata',counts_json=? WHERE job_id=?",
+            (json.dumps({"added_count": 1, "total": 1, "metadata_pending": 0, "completed": 0, "failed": 0}), applied["batch_job_id"]),
+        )
+
+    assert service.recover("owner-a") >= 0
+
+    recovered = store.get_job(applied["batch_job_id"], map_item.map_id, "owner-a")
+    assert recovered.status == "completed"
+    assert recovered.counts["completed"] == 1
+    assert len(client.calls) == 1
+    assert len(store.list_analyses(map_item.map_id, node_id, "owner-a")) == 1
+
+
+def test_expansion_metadata_merge_preserves_existing_analysis_queue_items(tmp_path):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-queue-merge-target")
+    old = MapPaper.new(map_item.map_id, semantic_scholar_id="s2-queue-merge-old", title="Old", abstract="Existing abstract")
+    store.add_nodes(map_item.map_id, "owner-a", [old])
+    analysis = MapAnalysisService(store=store, queue_executor=None)
+    analysis.ensure_analysis_queue(map_item.map_id, "owner-a", idempotency_key="queue-old-node")
+    service.analysis_service = analysis
+    service.client = ExpansionMetadataClient(
+        SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-queue-merge-target", "Paper", abstract="New abstract")])
+    )
+
+    finished = service.run_expansion_batch(applied["batch_job_id"], "owner-a")
+
+    assert finished is not None and finished.status == "analysis_wait"
+    queue = store.get_analysis_queue(map_item.map_id, "owner-a")
+    queue_job = store.get_job(queue["queue_job_id"], map_item.map_id, "owner-a")
+    queue_items = queue_job.cursor["items"]
+    assert old.node_id in queue_items
+    assert node_id in queue_items
+    assert queue_items[old.node_id]["status"] == "queued"
+    assert queue_items[node_id]["status"] == "queued"
+    assert len(store.list_analyses(map_item.map_id, node_id, "owner-a")) == 1
+
+
+def test_batch_retry_payload_is_strict_and_uses_existing_job_route(tmp_path, monkeypatch):
+    store, service, map_item, applied, node_id = _pending_expansion_batch(tmp_path, "s2-retry-route")
+    service.client = ExpansionMetadataClient(SemanticScholarRequestResult(payload=[SemanticScholarMetadata("s2-retry-route", "Paper", abstract=None)]))
+    assert service.run_expansion_batch(applied["batch_job_id"], "owner-a").status == "completed"
+    monkeypatch.setattr(routes_literature_maps, "OWNER_ID", "owner-a")
+    monkeypatch.setattr(routes_literature_maps, "get_literature_map_service", lambda: service)
+    client = TestClient(app)
+    url = f"/api/literature-maps/{map_item.map_id}/jobs/{applied['batch_job_id']}/retry"
+    assert client.post(url, json={"node_ids": [node_id], "steps": ["metadata"], "idempotency_key": "http-retry"}).status_code == 200
+    assert client.post(url, json={"node_ids": [node_id], "steps": ["metadata"], "idempotency_key": "http-retry", "extra": 1}).status_code == 422
+    assert client.post(url, json={"node_ids": [node_id], "steps": ["references"], "idempotency_key": "bad-step"}).status_code == 422
+    assert client.post(url, json={"node_ids": [node_id], "steps": ["metadata"]}).status_code == 422
+    omitted = client.post(url)
+    assert omitted.status_code == 409
+    assert omitted.json()["detail"]["code"] == "MAP_BATCH_METADATA_RETRY_REQUIRED"
 
 
 def test_public_revalidate_and_batch_apply_routes_return_frozen_envelope(tmp_path, monkeypatch):

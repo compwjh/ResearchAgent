@@ -225,6 +225,31 @@ class AnalysisQueueRetryRequest(AnalysisQueueCommandRequest):
     analysis_ids: list[str] | None = Field(default=None, max_length=200)
 
 
+class MapJobRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    node_ids: list[StrictStr] | None = Field(default=None, min_length=1, max_length=20)
+    steps: list[Literal["metadata"]] | None = Field(default=None, min_length=1, max_length=1)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_metadata_retry(self):
+        supplied = (
+            self.node_ids is not None
+            or self.steps is not None
+            or self.idempotency_key is not None
+        )
+        if not supplied:
+            return self
+        if self.node_ids is None or self.steps != ["metadata"] or self.idempotency_key is None:
+            raise ValueError("metadata retry requires node_ids, steps=['metadata'], and idempotency_key")
+        if any(not value.strip() or len(value) > 200 for value in self.node_ids):
+            raise ValueError("node ids must be non-empty and at most 200 characters")
+        if len(set(self.node_ids)) != len(self.node_ids):
+            raise ValueError("node ids must be unique")
+        return self
+
+
 class MapConversationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -248,7 +273,23 @@ def _error(error: Exception) -> HTTPException:
         status, error_code, message = 503, "MAP_STORAGE_UNAVAILABLE", "文献地图暂时不可用，请稍后重试"
     elif code == "MAP_NO_RETRYABLE_UNITS":
         status, error_code, message = 409, code, "当前作业没有可重试的失败单元"
-    elif code in {"revision conflict", "idempotency conflict", "job is not retryable", "map stopped", "MAP_JOB_INVALID_INPUT", "MAP_IDEMPOTENCY_STATE_INVALID"} or code.startswith("MAP_CONFLICT"):
+    elif code in {
+        "MAP_BATCH_METADATA_RETRY_REQUIRED",
+        "MAP_BATCH_METADATA_RETRY_INVALID",
+        "MAP_JOB_RETRY_FIELDS_INVALID",
+        "MAP_IDEMPOTENCY_CONFLICT",
+    }:
+        status, error_code = 409, code
+        message = {
+            "MAP_BATCH_METADATA_RETRY_REQUIRED": "批次元数据步骤需要显式指定可重试节点与幂等键",
+            "MAP_BATCH_METADATA_RETRY_INVALID": "所选节点当前不支持元数据重试，请重新读取批次进度",
+            "MAP_JOB_RETRY_FIELDS_INVALID": "此作业不接受批次元数据重试字段",
+            "MAP_IDEMPOTENCY_CONFLICT": "相同幂等键已用于不同参数，请换用新的幂等键",
+        }[code]
+    elif code in {
+        "revision conflict", "idempotency conflict", "job is not retryable", "map stopped",
+        "MAP_JOB_INVALID_INPUT", "MAP_IDEMPOTENCY_STATE_INVALID",
+    } or code.startswith("MAP_CONFLICT"):
         status, error_code, message = 409, "MAP_CONFLICT", "地图版本或作业状态已变化，请重新读取后重试"
         if code == "idempotency conflict":
             error_code, message = "IDEMPOTENCY_CONFLICT", "相同幂等键不能用于不同参数"
@@ -741,9 +782,20 @@ def stop_literature_map_job(map_id: str, job_id: str):
 
 
 @router.post("/{map_id}/jobs/{job_id}/retry")
-def retry_literature_map_job(map_id: str, job_id: str):
+def retry_literature_map_job(map_id: str, job_id: str, payload: MapJobRetryRequest | None = None):
     try:
-        job = get_literature_map_service().retry_job(map_id, job_id, OWNER_ID)
+        service = get_literature_map_service()
+        if payload is not None and payload.node_ids is not None:
+            job = service.retry_job(
+                map_id,
+                job_id,
+                OWNER_ID,
+                node_ids=payload.node_ids,
+                steps=payload.steps,
+                idempotency_key=payload.idempotency_key,
+            )
+        else:
+            job = service.retry_job(map_id, job_id, OWNER_ID)
     except Exception as error:
         raise _error(error) from error
     return _envelope(job=job.to_dict())

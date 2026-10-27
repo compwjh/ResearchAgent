@@ -4,7 +4,9 @@ import json
 
 from backend.app.literature_maps.application.analysis import MapAnalysisService
 from backend.app.literature_maps.application.service import LiteratureMapService
+from backend.app.literature_maps.domain.models import MapPaper
 from backend.app.literature_maps.infrastructure.store import LiteratureMapStore
+from backend.app.paper_discovery.infrastructure.semantic_scholar_metadata import SemanticScholarRequestResult
 
 
 class RecordingExecutor:
@@ -23,6 +25,35 @@ def _queued_auxiliary_job(store, operation="preview_page", *, cursor=None):
         with store.transaction() as db:
             db.execute("UPDATE literature_map_jobs SET cursor_json=? WHERE job_id=?", (json.dumps(cursor), job.job_id))
     return created, job
+
+
+def _queued_batch_job(store, *, map_item=None, label="batch-node"):
+    created = map_item or store.create_map("owner-a", topic="fuzzing")
+    seed = MapPaper.new(created.map_id, semantic_scholar_id=f"seed-{label}", title="Seed")
+    node = MapPaper.new(created.map_id, semantic_scholar_id=f"paper-{label}", title="Candidate")
+    store.add_nodes(created.map_id, "owner-a", [seed, node])
+    job = store.create_job(created.map_id, "owner-a", operation="expand_batch")
+    cursor = {
+        "version": 1,
+        "seed_node_id": seed.node_id,
+        "preview_ids": [],
+        "new_node_ids": [node.node_id],
+        "items": {
+            node.node_id: {
+                "node_id": node.node_id,
+                "status": "metadata_pending",
+                "metadata_status": "pending",
+                "attempts": 0,
+                "error_code": None,
+            }
+        },
+    }
+    with store.transaction() as db:
+        db.execute(
+            "UPDATE literature_map_jobs SET step='metadata',cursor_json=?,counts_json=? WHERE job_id=?",
+            (json.dumps(cursor), json.dumps({"added_count": 1, "existing_count": 0, "total": 1, "metadata_pending": 1, "analysis_queued": 0, "completed": 0, "failed": 0}), job.job_id),
+        )
+    return created, job, seed, node
 
 
 def test_auxiliary_claim_is_single_owner_scoped_cas_with_private_token_and_lease(tmp_path):
@@ -170,12 +201,7 @@ def test_paused_queue_does_not_suppress_auxiliary_lease_exhaustion(tmp_path):
     store = LiteratureMapStore(tmp_path / "maps.sqlite3")
     created = store.create_map("owner-a", topic="fuzzing")
     store.ensure_analysis_queue(created.map_id, "owner-a", idempotency_key="queue")
-    job = store.create_job(created.map_id, "owner-a", operation="expand_batch")
-    with store.transaction() as db:
-        db.execute(
-            "UPDATE literature_map_jobs SET cursor_json=? WHERE job_id=?",
-            (json.dumps({"version": 1, "items": {"node-a": {"metadata_status": "metadata_pending"}}}), job.job_id),
-        )
+    created, job, _seed, _node = _queued_batch_job(store, map_item=created, label="lease-exhaustion")
 
     for attempt in range(4):
         claim = store.claim_auxiliary_job(job.job_id, created.map_id, "owner-a", operation="expand_batch")
@@ -203,11 +229,7 @@ def test_paused_queue_does_not_suppress_auxiliary_lease_exhaustion(tmp_path):
 def test_recovery_routes_auxiliary_operations_to_typed_handlers_and_fails_unknown(tmp_path):
     store = LiteratureMapStore(tmp_path / "maps.sqlite3")
     created, page_job = _queued_auxiliary_job(store, "preview_page")
-    _, batch_job = _queued_auxiliary_job(
-        store,
-        "expand_batch",
-        cursor={"version": 1, "items": {"node-a": {"metadata_status": "metadata_pending"}}},
-    )
+    _, batch_job, _seed, _node = _queued_batch_job(store, map_item=created, label="typed-recovery")
     unknown = store.create_job(created.map_id, "owner-a", operation="future_operation")
     executor = RecordingExecutor()
     service = LiteratureMapService(store=store, executor=executor)
@@ -222,23 +244,25 @@ def test_recovery_routes_auxiliary_operations_to_typed_handlers_and_fails_unknow
     assert store.get_job(unknown.job_id, created.map_id, "owner-a").failed_units[-1]["error_code"] == "MAP_JOB_OPERATION_UNSUPPORTED"
 
 
-def test_invalid_page_payload_and_unimplemented_batch_fail_safely(tmp_path):
+def test_invalid_page_payload_and_metadata_batch_provider_failure_are_typed(tmp_path):
     store = LiteratureMapStore(tmp_path / "maps.sqlite3")
     created, page_job = _queued_auxiliary_job(store, "preview_page")
-    _, batch_job = _queued_auxiliary_job(
-        store,
-        "expand_batch",
-        cursor={"version": 1, "items": {"node-a": {"metadata_status": "metadata_pending"}}},
-    )
+    _, batch_job, _seed, node = _queued_batch_job(store, map_item=created, label="provider-failure")
     service = LiteratureMapService(store=store, executor=None)
+    class RateLimitedClient:
+        def batch(self, identifiers, *, fields=None):
+            return SemanticScholarRequestResult(code="SEMANTIC_SCHOLAR_RATE_LIMITED", retryable=True)
+
+    service.client = RateLimitedClient()
 
     page_result = service.run_preview_page(page_job.job_id, "owner-a")
     batch_result = service.run_expansion_batch(batch_job.job_id, "owner-a")
 
     assert page_result.status == "failed"
-    assert batch_result.status == "failed"
+    assert batch_result.status == "partial"
     assert page_result.failed_units[-1]["error_code"] == "MAP_PREVIEW_PAGINATION_INVALID"
-    assert batch_result.failed_units[-1]["error_code"] == "MAP_AUXILIARY_HANDLER_UNAVAILABLE"
+    assert batch_result.failed_units[-1]["error_code"] == "SEMANTIC_SCHOLAR_RATE_LIMITED"
+    assert batch_result.cursor["items"][node.node_id]["status"] == "metadata_failed"
     assert store.get_map(created.map_id, "owner-a").status == "generating"
 
 
@@ -247,12 +271,7 @@ def test_existing_analysis_queue_resume_releases_paused_batch_to_typed_recovery(
     created = store.create_map("owner-a", topic="fuzzing")
     store.ensure_analysis_queue(created.map_id, "owner-a", idempotency_key="queue")
     store.pause_analysis_queue(created.map_id, "owner-a", idempotency_key="pause")
-    batch = store.create_job(created.map_id, "owner-a", operation="expand_batch")
-    with store.transaction() as db:
-        db.execute(
-            "UPDATE literature_map_jobs SET cursor_json=? WHERE job_id=?",
-            (json.dumps({"version": 1, "items": {"node-a": {"metadata_status": "metadata_pending"}}}), batch.job_id),
-        )
+    _created, batch, _seed, _node = _queued_batch_job(store, map_item=created, label="resume-recovery")
     executor = RecordingExecutor()
     service = LiteratureMapService(store=store, executor=executor)
     analysis = MapAnalysisService(
