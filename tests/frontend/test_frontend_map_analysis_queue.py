@@ -73,7 +73,7 @@ def test_full_unavailable_tab_exposes_existing_recovery_entry_without_machine_co
         _open_node(page, "analysis")
         panel = page.locator(".literature-map-analysis")
         panel.get_by_role("tab", name="全文").click()
-        assert "全文索引尚未就绪" in panel.inner_text()
+        assert "未入库" in panel.locator(".literature-map-fulltext-feedback").inner_text()
         assert panel.get_by_role("button", name="获取并加入知识库").is_visible()
         assert "MAP_FULLTEXT_UNAVAILABLE" not in panel.inner_text()
         browser.close()

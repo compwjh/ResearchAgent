@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=62">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=18">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=19">
   <script src="../../../frontend/vendor/purify.min.js"></script>
   <script src="../../../frontend/vendor/marked.min.js"></script>
   <script>
@@ -190,14 +190,23 @@
     const largeGraph = query.has('large-graph');
     const mixedLayout = query.has('mixed-layout');
     const queueMode = query.has('queue') || query.has('queue-race');
-    const fullReady = query.has('full-ready');
+    const fullReadyNoResult = query.has('full-ready-no-result');
+    const fullAvailabilityMismatch = query.has('full-availability-mismatch');
+    const fullReadyListMismatch = query.has('full-ready-list-mismatch');
+    const fullReady = query.has('full-ready') || fullReadyNoResult || query.has('analysis-race-full-ready') || fullReadyListMismatch;
+    const fullLoginRequired = query.has('full-login-required');
+    const fullImporting = query.has('full-importing');
+    const fullIndexedUnknown = query.has('full-indexed-unknown');
+    const fullPermissionDenied = query.has('full-permission-denied');
+    const fullSourceMismatch = query.has('full-source-mismatch');
+    const fullUnknownImportStatus = query.has('full-unknown-import-status');
     const analysisFirstRegeneration = query.has('analysis-first-regeneration');
     const analysisNoEvidence = query.has('analysis-no-evidence');
     const analysisPending = query.has('analysis-pending');
     const analysisMarkdown = query.has('analysis-markdown') || query.has('analysis-markdown-no-renderer');
-    const analysisMode = query.has('analysis') || query.has('analysis-fail') || query.has('analysis-race') || query.has('analysis-poll-limit') || query.has('analysis-manual-delay') || analysisFirstRegeneration || fullReady || analysisMarkdown || analysisNoEvidence || analysisPending;
+    const analysisMode = query.has('analysis') || query.has('analysis-fail') || query.has('analysis-race') || query.has('analysis-race-full-ready') || query.has('analysis-poll-limit') || query.has('analysis-manual-delay') || analysisFirstRegeneration || fullReady || fullAvailabilityMismatch || analysisMarkdown || analysisNoEvidence || analysisPending;
     const analysisFail = query.has('analysis-fail');
-    const analysisRace = query.has('analysis-race');
+    const analysisRace = query.has('analysis-race') || query.has('analysis-race-full-ready');
     const analysisPollLimit = query.has('analysis-poll-limit');
     const analysisManualDelay = query.has('analysis-manual-delay');
     const importFailure = query.has('import-failure');
@@ -311,6 +320,23 @@
       const { import_diagnostics: _discarded, ...provenanceWithoutDiagnostics } = mockNodes[0].provenance;
       mockNodes[0].provenance = provenanceWithoutDiagnostics;
     }
+    if (fullLoginRequired) {
+      mockNodes[0].download_status = 'waiting_login';
+      mockNodes[0].document_id = null;
+      mockNodes[0].provenance = { ...mockNodes[0].provenance, import_diagnostics: { error_code: 'LOGIN_REQUIRED', retryable: true } };
+    }
+    if (fullImporting) {
+      mockNodes[0].download_status = 'indexing';
+      mockNodes[0].document_id = 'document-importing';
+    }
+    if (fullIndexedUnknown || fullPermissionDenied || fullSourceMismatch) {
+      mockNodes[0].download_status = 'indexed';
+      mockNodes[0].document_id = fullIndexedUnknown ? 'document-indexed-unknown' : (fullPermissionDenied ? 'document-permission-denied' : 'document-source-mismatch');
+    }
+    if (fullUnknownImportStatus) {
+      mockNodes[0].download_status = 'RARE_IMPORT_STATE';
+      mockNodes[0].document_id = null;
+    }
     const serverPreviewRace = query.has('server-preview-race') || query.has('paged-preview-race');
     if (indexedTombstone) mockNodes[1].removed = true;
     if (recovery) {
@@ -370,15 +396,18 @@
     window.__analysisBodies = [];
     window.__conversationBodies = [];
     window.__analysisDetailCalls = 0;
+    window.__analysisNodeResponses = 0;
     window.__queueBodies = [];
     window.__queueEnsureCount = 0;
     window.__queueGetCount = 0;
     window.__queueMutationBodies = [];
     window.__openedConversation = null;
+    window.__knowledgeBaseIds = [];
     window.__jobActionBodies = [];
     window.__nodeActionBodies = [];
     window.__requestLog = [];
     window.openConversationFromWorkspace = (conversationId, options) => { window.__openedConversation = conversationId; window.__openedConversationOptions = options || null; };
+    window.jumpToKnowledgeBase = (documentId) => { window.__knowledgeBaseIds.push(String(documentId)); };
     if (analysisPollLimit) {
       const fixtureSetTimeout = window.setTimeout.bind(window);
       window.setTimeout = (callback, delay, ...args) => fixtureSetTimeout(callback, Math.min(Number(delay) || 0, 1), ...args);
@@ -568,17 +597,23 @@
         return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="map-fixture.json"' } });
       }
       else if (path === '/api/literature-maps/map-fixture-b/graph') payload = { ...mockGraph, map: secondMap, latest_job: { ...mockGraph.latest_job, map_id: secondMap.map_id, job_id: 'job-fixture-b' } };
-      else if (analysisMode && path === '/api/literature-maps/map-fixture/nodes/node-a/analyses' && method === 'GET') {
-        if (analysisRace) await new Promise((resolve) => window.setTimeout(resolve, 180));
+      else if (analysisMode && parsed.pathname.match(/^\/api\/literature-maps\/map-fixture\/nodes\/[^/]+\/analyses$/) && method === 'GET') {
+        const requestedNodeId = parsed.pathname.match(/\/nodes\/([^/]+)\/analyses$/)?.[1];
+        if (analysisRace && requestedNodeId === 'node-a') await new Promise((resolve) => window.setTimeout(resolve, 180));
+        window.__analysisNodeResponses += 1;
+        const nodeFullReady = requestedNodeId === 'node-a' && fullReady && !fullAvailabilityMismatch && !analysisNoEvidence;
+        const unavailableReason = fullPermissionDenied
+          ? 'KB_PERMISSION_DENIED'
+          : (fullSourceMismatch ? 'SOURCE_VERSION_MISMATCH' : (analysisNoEvidence ? 'MAP_EVIDENCE_UNAVAILABLE' : (nodeFullReady ? null : 'MAP_FULLTEXT_UNAVAILABLE')));
         payload = {
           schema_version: 'literature-map-v1',
-          analyses: analysisFirstRegeneration || analysisNoEvidence ? [] : (fullReady ? [fullAnalysisRecord, analysisRecord, oldAnalysisRecord] : [analysisRecord, oldAnalysisRecord]),
+          analyses: analysisFirstRegeneration || analysisNoEvidence || fullReadyNoResult || requestedNodeId !== 'node-a' ? [] : (nodeFullReady ? [fullAnalysisRecord, analysisRecord, oldAnalysisRecord] : [analysisRecord, oldAnalysisRecord]),
           source_status: {
-            abstract_available: !analysisNoEvidence,
-            fulltext_ready: fullReady && !analysisNoEvidence,
-            available_evidence_levels: analysisNoEvidence ? [] : (fullReady ? ['abstract', 'full'] : ['abstract']),
-            source_versions: analysisNoEvidence ? {} : (fullReady ? { abstract: 'source-abstract-v1', full: 'source-full-v1' } : { abstract: 'source-abstract-v1' }),
-            unavailable_reason: analysisNoEvidence ? 'MAP_EVIDENCE_UNAVAILABLE' : (fullReady ? null : '全文索引尚未就绪'),
+            abstract_available: fullReadyListMismatch ? false : requestedNodeId === 'node-a' && !analysisNoEvidence,
+            fulltext_ready: nodeFullReady,
+            available_evidence_levels: fullAvailabilityMismatch ? ['abstract', 'full'] : (fullReadyListMismatch ? ['abstract'] : (analysisNoEvidence || requestedNodeId !== 'node-a' ? [] : (nodeFullReady ? ['abstract', 'full'] : ['abstract']))),
+            source_versions: analysisNoEvidence || requestedNodeId !== 'node-a' ? {} : (nodeFullReady ? { abstract: 'source-abstract-v1', full: 'source-full-v1' } : { abstract: 'source-abstract-v1' }),
+            unavailable_reason: unavailableReason,
           },
         };
       } else if (analysisMode && path.endsWith('/analyses') && method === 'POST') {
@@ -741,7 +776,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=28"></script>
+  <script src="../../../frontend/literature-maps.js?v=30"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

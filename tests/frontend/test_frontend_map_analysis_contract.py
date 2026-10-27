@@ -31,8 +31,8 @@ def test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes() -> N
     assert "DOMPurify" not in MODULE
     assert ".literature-map-analysis" in STYLES
     assert ".literature-map-analysis-history-item" in STYLES
-    assert "/assets/literature-maps.js?v=28" in INDEX
-    assert "/assets/literature-maps.css?v=18" in INDEX
+    assert "/assets/literature-maps.js?v=30" in INDEX
+    assert "/assets/literature-maps.css?v=19" in INDEX
     assert "/assets/app.js?v=62" in INDEX
 
 
@@ -52,7 +52,11 @@ def test_component_fixture_supports_analysis_history_failure_and_conversation_br
         assert "source-abstract-v1" in panel.inner_text()
         assert panel.get_by_role("button", name="基于摘要分析").is_enabled()
         assert panel.get_by_role("button", name="基于全文分析").is_enabled()
-        assert "全文索引尚未就绪" in panel.inner_text()
+        assert panel.locator(".literature-map-fulltext-feedback").count() == 0
+        panel.get_by_role("tab", name="全文分析").click()
+        assert panel.locator(".literature-map-fulltext-feedback").is_visible()
+        assert "未入库" in panel.locator(".literature-map-fulltext-feedback").inner_text()
+        panel.get_by_role("tab", name="摘要分析").click()
 
         panel.get_by_role("button", name="基于摘要分析").click()
         page.wait_for_function("window.__analysisBodies?.length === 1")

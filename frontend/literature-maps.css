@@ -121,6 +121,17 @@
 #literature-maps-view .literature-map-analysis-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
 #literature-maps-view .literature-map-analysis-tab { padding: 5px 8px; font-size: 9px; }
 #literature-maps-view .literature-map-analysis-tab[aria-selected="true"] { border-color: #cfc8ff; background: var(--accent-soft); color: var(--ink); }
+#literature-maps-view .literature-map-fulltext-feedback { display: grid; gap: 7px; min-width: 0; padding: 11px 12px; border: 1px solid #d8d2ff; border-radius: 9px; background: linear-gradient(135deg, #faf9ff, #f4f1ff); box-shadow: 0 4px 14px #6659a314; }
+#literature-maps-view .literature-map-fulltext-feedback[hidden] { display: none !important; }
+#literature-maps-view .literature-map-fulltext-feedback[data-state="ready"], #literature-maps-view .literature-map-fulltext-feedback[data-state="completed"] { border-color: #cfe8d4; background: linear-gradient(135deg, #f7fcf8, #edf8f0); }
+#literature-maps-view .literature-map-fulltext-feedback[data-state="failed"], #literature-maps-view .literature-map-fulltext-feedback[data-state="index-failed"] { border-color: #efcccc; background: #fff8f8; }
+#literature-maps-view .literature-map-fulltext-feedback[data-state="unknown"], #literature-maps-view .literature-map-fulltext-feedback[data-state="permission"], #literature-maps-view .literature-map-fulltext-feedback[data-state="source-mismatch"], #literature-maps-view .literature-map-fulltext-feedback[data-state="login"], #literature-maps-view .literature-map-fulltext-feedback[data-state="processing"] { border-color: #ecd8ae; background: #fffaf0; }
+#literature-maps-view .literature-map-fulltext-title { margin: 0; color: var(--ink); font-size: 12px; }
+#literature-maps-view .literature-map-fulltext-badge { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; border-radius: 999px; padding: 4px 8px; background: #eeeaff; color: #5c4ad8; font-size: 10px; font-weight: 800; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-fulltext-feedback[data-state="ready"] .literature-map-fulltext-badge, #literature-maps-view .literature-map-fulltext-feedback[data-state="completed"] .literature-map-fulltext-badge { background: #e4f4e8; color: #287c43; }
+#literature-maps-view .literature-map-fulltext-feedback[data-state="failed"] .literature-map-fulltext-badge, #literature-maps-view .literature-map-fulltext-feedback[data-state="index-failed"] .literature-map-fulltext-badge { background: #ffe9e9; color: #a33232; }
+#literature-maps-view .literature-map-fulltext-message { margin: 0; color: var(--muted-strong); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-analysis-action-feedback[hidden] { display: none !important; }
 #literature-maps-view .literature-map-analysis-source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 #literature-maps-view .literature-map-analysis-source-actions button { padding: 7px 8px; font-size: 10px; }
 #literature-maps-view .literature-map-analysis-queue { display: grid; gap: 6px; min-width: 0; margin: 10px 12px 0; padding: 10px 12px; border: 1px solid #e2dcff; border-radius: 9px; background: rgba(250,249,255,.92); }

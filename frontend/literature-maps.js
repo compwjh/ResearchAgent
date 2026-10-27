@@ -389,8 +389,18 @@
       queued: '排队中',
       running: '运行中',
       completed: '已完成',
+      not_imported: '未入库',
+      submitted: '已提交',
+      importing: '入库处理中',
+      downloading: '下载中',
+      validating: '文件校验中',
+      indexing: '索引中',
+      waiting_login: '等待登录',
+      pending: '处理中',
+      processing: '处理中',
+      indexed: '已入库',
     };
-    return labels[status] || status || '未知状态';
+    return labels[String(status || '').toLowerCase()] || '状态待确认';
   }
 
   function nodeLabel(node) {
@@ -795,7 +805,7 @@
     DUPLICATE_IMPORT: '知识库中已有相同导入',
     PAPER_ALREADY_EXISTS: '知识库中已有该论文',
   });
-  const IMPORT_PENDING_STATES = new Set(['queued', 'running', 'pending', 'processing', 'waiting_login']);
+  const IMPORT_PENDING_STATES = new Set(['queued', 'running', 'pending', 'submitted', 'processing', 'importing', 'downloading', 'validating', 'indexing', 'waiting_login']);
 
   function normalizeImportDiagnostics(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -853,15 +863,25 @@
 
   function importStatusMessage(node) {
     const status = String(node?.download_status || '').toLowerCase();
-    if (!status || status === 'not_imported') return '';
+    if (status === 'waiting_login') return '入库状态：等待登录处理。请在论文检索的既有导入处理区完成现有等待登录项，再返回刷新全文状态；不会自动重试。';
+    if (status === 'not_imported') return '入库状态：未入库。';
+    if (!status) return '入库状态：状态待确认。';
+    if (status === 'indexed' || node?.document_id) return '入库状态：已加入知识库；全文依据是否可用以服务器状态为准。';
     return `入库状态：${mapStatusLabel(status)}。`;
   }
 
   function renderImportDiagnostics(node) {
-    if (String(node?.download_status || '').toLowerCase() !== 'failed') return null;
+    const status = String(node?.download_status || '').toLowerCase();
+    if (!['failed', 'waiting_login'].includes(status)) return null;
     const section = createElement('section', 'literature-map-detail-section literature-map-import-diagnostics');
     section.append(createElement('h4', '', '入库诊断'));
     const diagnostics = nodeImportDiagnostics(node);
+    if (status === 'waiting_login') {
+      section.append(createElement('p', '', diagnostics?.reasons?.length
+        ? `当前状态：等待登录处理。${diagnostics.reasons.join('；')}。请到既有导入处理区完成登录；不会自动重试或新建批次。`
+        : '当前状态：等待登录处理。此地图没有登录会话资料，请到既有导入处理区完成现有任务；不会自动重试或新建批次。'));
+      return section;
+    }
     if (!diagnostics || !diagnostics.reasons.length) {
       section.append(createElement('p', '', '失败原因未记录。可人工重新提交以获取新的诊断；不会自动重试。'));
       return section;
@@ -4341,11 +4361,13 @@
 
   function analysisStatusLabel(status) {
     const labels = { queued: '排队中', running: '生成中', completed: '已完成', failed: '失败', stopped: '已停止' };
-    return labels[status] || status || '未生成';
+    return labels[String(status || '').toLowerCase()] || '状态待确认';
   }
 
   function analysisEvidenceLabel(level) {
-    return level === 'full' ? '全文索引片段依据' : '摘要级';
+    if (level === 'full') return '全文索引片段依据';
+    if (level === 'abstract') return '摘要级';
+    return '状态待确认';
   }
 
   function analysisSourceVersion(status, level) {
@@ -4355,8 +4377,77 @@
 
   function analysisAvailable(level) {
     const status = state.analysisSourceStatus || {};
-    if (Array.isArray(status.available_evidence_levels)) return status.available_evidence_levels.includes(level);
-    return level === 'full' ? Boolean(status.fulltext_ready) : Boolean(status.abstract_available);
+    if (level === 'full') return status.fulltext_ready === true;
+    if (level === 'abstract') return status.abstract_available === true;
+    return false;
+  }
+
+  function availableAnalysisEvidenceLevels(status) {
+    const sourceStatus = status && typeof status === 'object' ? status : {};
+    const available = [];
+    if (sourceStatus.abstract_available === true) available.push('abstract');
+    if (sourceStatus.fulltext_ready === true) available.push('full');
+    return available;
+  }
+
+  function fulltextUnavailableInfo() {
+    const status = state.analysisSourceStatus;
+    const node = state.selectedNode || {};
+    const downloadStatus = String(node.download_status || '').trim().toLowerCase();
+    const documentId = String(node.document_id || '').trim();
+    const reason = String(status?.unavailable_reason || '').trim();
+    const normalizedReason = reason.toUpperCase();
+    const diagnostics = nodeImportDiagnostics(node);
+    const diagnosticCode = String(diagnostics?.error_code || '').toUpperCase();
+    const diagnosticText = diagnostics?.reasons?.join('；') || '';
+    const machineCode = /^[A-Z][A-Z0-9_:-]{2,}$/.test(reason);
+    const pendingStatuses = new Set(['queued', 'running', 'pending', 'submitted', 'processing', 'importing', 'downloading', 'validating', 'indexing']);
+    const loginCodes = new Set(['LOGIN_REQUIRED', 'KB_AUTH_REQUIRED', 'AUTH_REQUIRED', 'BROWSER_SESSION_REQUIRED', 'BROWSER_SESSION_EXPIRED']);
+    const permissionCodes = new Set(['KB_PERMISSION_DENIED', 'PERMISSION_DENIED', 'SOURCE_PERMISSION_DENIED', 'FULLTEXT_PERMISSION_DENIED']);
+    const mismatchCodes = new Set(['SOURCE_VERSION_MISMATCH', 'KB_SOURCE_VERSION_MISMATCH', 'FULLTEXT_SOURCE_VERSION_MISMATCH', 'SOURCE_MISMATCH', 'KB_SOURCE_MISMATCH']);
+    const indexFailureCodes = new Set(['KB_INDEX_FAILED', 'INDEX_FAILED', 'FULLTEXT_INDEX_FAILED', 'MAP_INDEX_FAILED']);
+    const indexPendingCodes = new Set(['KB_INDEX_PENDING', 'INDEX_PENDING', 'FULLTEXT_INDEX_PENDING']);
+
+    if (status?.fulltext_ready === true) return { kind: 'ready', label: '全文依据已就绪', message: '全文索引片段可用于 AI 分析。这里展示分析结果，不是 PDF 阅读器；原文请使用“打开原文”。' };
+    if (loginCodes.has(normalizedReason) || loginCodes.has(diagnosticCode) || downloadStatus === 'waiting_login') {
+      return {
+        kind: 'login',
+        label: '需要登录处理',
+        message: '当前来源需要登录或受控浏览器处理。请在“论文检索”的既有导入处理区完成现有等待登录批次中的登录；完成后返回地图刷新全文状态。不会自动登录、重新检索或创建新导入批次。',
+      };
+    }
+    if (indexFailureCodes.has(normalizedReason) || indexFailureCodes.has(diagnosticCode)) {
+      return { kind: 'index-failed', label: '索引失败', message: `${diagnosticText || '服务器报告全文索引失败。'}请前往知识库检查并修复索引后，再刷新全文状态。` };
+    }
+    if (permissionCodes.has(normalizedReason)) {
+      return { kind: 'permission', label: '权限不足', message: '服务器报告当前账号没有读取这份全文的权限。请前往知识库检查文档权限；权限恢复后再刷新状态。' };
+    }
+    if (mismatchCodes.has(normalizedReason)) {
+      return { kind: 'source-mismatch', label: '来源版本不匹配', message: '服务器报告知识库来源版本与当前地图记录不一致。请前往知识库核对来源并修复索引；不会自动重新下载或分析。' };
+    }
+    if (indexPendingCodes.has(normalizedReason)) {
+      return { kind: 'processing', label: '全文索引处理中', message: '服务器报告全文索引仍在处理中。可稍后刷新全文状态；不会自动重复入库或生成分析。' };
+    }
+    if (pendingStatuses.has(downloadStatus)) {
+      return { kind: 'processing', label: '入库或索引处理中', message: `全文正在入库或建立索引（当前入库状态：${mapStatusLabel(downloadStatus)}）。请等待现有任务完成后刷新全文状态。` };
+    }
+    if (downloadStatus === 'failed') {
+      const reasonText = diagnosticText || '入库失败原因未记录。';
+      return { kind: 'failed', label: '入库失败', message: `${reasonText} 请使用下方现有人工重试入口；若未标记可重试，请按诊断前往知识库处理。` };
+    }
+    if (downloadStatus === 'not_imported') {
+      return { kind: 'not-imported', label: '未入库', message: '这篇论文尚未加入知识库。点击下方按钮可按现有流程提交入库；全文分析不会自动触发。' };
+    }
+    if (reason && !machineCode && normalizedReason !== 'MAP_FULLTEXT_UNAVAILABLE' && normalizedReason !== 'MAP_EVIDENCE_UNAVAILABLE') {
+      return { kind: 'unknown', label: '原因待核实', message: `服务器返回原因：${safeAnalysisReason(reason, '状态待确认').slice(0, 300)}。请前往知识库核实全文状态后刷新。` };
+    }
+    if (downloadStatus === 'indexed' || documentId) {
+      return { kind: 'unknown', label: '原因未确定', message: '全文依据暂不可用：论文已加入知识库，但服务器未确认全文索引可用，具体原因未确定。请前往知识库检查文档并修复索引，再刷新全文状态；不会把“已入库”当作“全文已就绪”。' };
+    }
+    if (!status) {
+      return { kind: 'loading', label: '状态待确认', message: '正在读取全文来源状态；如果状态仍未更新，可刷新后重试。' };
+    }
+    return { kind: 'unknown', label: '状态待确认', message: '全文依据暂不可用，具体原因未确定。请查看现有导入处理记录或在知识库核实来源与索引状态。' };
   }
 
   function safeAnalysisReason(value, fallback) {
@@ -4365,7 +4456,7 @@
     const normalized = text.toUpperCase();
     const messages = {
       MAP_ABSTRACT_UNAVAILABLE: '缺少摘要，不能生成摘要级分析；请先获取摘要。',
-      MAP_FULLTEXT_UNAVAILABLE: '全文索引尚未就绪；请先主动入库并等待索引完成。',
+      MAP_FULLTEXT_UNAVAILABLE: '全文依据暂不可用，具体原因未确定。',
       MAP_EVIDENCE_UNAVAILABLE: '没有可引用的有效证据片段，暂不生成分析。',
       KB_IMPORT_REQUIRED: '全文尚未加入知识库；可先获取并加入知识库。',
       KB_AUTH_REQUIRED: '需要登录或授权后才能读取全文；请先完成授权。',
@@ -4374,7 +4465,6 @@
     if (messages[normalized]) return messages[normalized];
     if (/^[A-Z][A-Z0-9_:-]{2,}$/.test(text)) {
       if (normalized.includes('AUTH') || normalized.includes('LOGIN')) return '需要登录或授权后才能读取全文；请先完成授权。';
-      if (normalized.includes('INDEX') || normalized.includes('PENDING')) return '全文正在等待索引；完成后可重新读取状态。';
       return fallback;
     }
     return text;
@@ -4382,28 +4472,32 @@
 
   function analysisUnavailableMessage(level) {
     const sourceStatus = state.analysisSourceStatus || {};
+    if (String(sourceStatus.unavailable_reason || '').toUpperCase() === 'MAP_EVIDENCE_UNAVAILABLE') {
+      return '没有可引用的有效证据片段，暂不生成分析。';
+    }
     if (level === 'abstract') {
-      const explicitlyUnavailable = sourceStatus.abstract_available === false
-        || (Array.isArray(sourceStatus.available_evidence_levels) && !sourceStatus.available_evidence_levels.includes('abstract'));
+      const explicitlyUnavailable = sourceStatus.abstract_available === false;
       if (explicitlyUnavailable && sourceStatus.unavailable_reason) {
         return safeAnalysisReason(sourceStatus.unavailable_reason, '缺少摘要，不能生成摘要级分析；请先获取摘要。');
       }
       return '缺少摘要，不能生成摘要级分析；请先获取摘要。';
     }
-    return safeAnalysisReason(sourceStatus.unavailable_reason, '全文索引尚未就绪；请先主动入库并等待索引完成。');
+    return fulltextUnavailableInfo().message;
   }
 
   function analysisUnavailableActionMessage(level, action) {
     const reason = analysisUnavailableMessage(level);
     if (action === 'conversation') return `${reason} 下一步：先准备摘要或全文索引依据，再点击“关于本篇提问”。`;
     if (level === 'full') {
-      const node = state.selectedNode || {};
-      const indexed = String(node.download_status || '').toLowerCase() === 'indexed' || Boolean(node.document_id);
-      const nextStep = indexed ? '等待索引后重试' : '获取并加入知识库';
-      if (action === 'analysis' && state.analysisTab !== 'full') {
-        return `${reason} 下一步：请先切换到“全文”页签，再点击“${nextStep}”；完成全文索引后再试。`;
-      }
-      return `${reason} 下一步：点击“${nextStep}”，完成全文索引后再试。`;
+      const nextStep = fulltextUnavailableInfo().kind === 'not-imported'
+        ? '切换到“全文分析”页签并使用“获取并加入知识库”'
+        : fulltextUnavailableInfo().kind === 'login'
+          ? '查看“导入处理/登录处理”并完成现有等待登录项'
+          : fulltextUnavailableInfo().kind === 'processing'
+            ? '等待现有入库或索引任务后刷新全文状态'
+            : '前往知识库检查或修复索引';
+      if (action === 'analysis' && state.analysisTab !== 'full') return `${reason} 下一步：请先切换到“全文分析”页签查看状态与操作卡，再${nextStep}。`;
+      return `${reason} 下一步：${nextStep}。`;
     }
     return `${reason} 下一步：先刷新论文详情或获取摘要，摘要可用后再试。`;
   }
@@ -4467,26 +4561,90 @@
     return state.analysis?.status === 'completed' ? state.analysis : records.find((record) => record?.status === 'completed');
   }
 
+  function fulltextRecoveryActions(info, showActionFeedback) {
+    const actions = createElement('div', 'literature-map-analysis-source-actions');
+    const addButton = (label, handler) => {
+      const button = createElement('button', 'secondary-button', label);
+      button.type = 'button';
+      button.addEventListener('click', handler);
+      actions.append(button);
+      return button;
+    };
+    const detailImportButton = refs.detail?.querySelector('#literature-map-import-button');
+    const node = state.selectedNode || {};
+    const documentId = String(node.document_id || '').trim();
+    const openKnowledgeLabel = info.kind === 'permission' ? '检查知识库权限'
+      : info.kind === 'index-failed' ? '前往知识库修复索引'
+        : '前往知识库检查或修复索引';
+    const openKnowledge = () => openKnowledgeBaseDocument(documentId);
+    const refresh = () => {
+      const mapId = state.selectedMapId;
+      const nodeId = state.selectedNodeId;
+      if (mapId && nodeId) loadNodeAnalyses(mapId, nodeId, state.nodeRequest);
+    };
+
+    if (info.kind === 'not-imported') {
+      addButton('获取并加入知识库', () => {
+        if (!detailImportButton) {
+          showActionFeedback('当前无法提交入库。请重新打开论文详情后查看入库状态。');
+        } else if (detailImportButton.disabled) {
+          showActionFeedback('现有入库操作暂不可用；请查看论文详情中的中文诊断与下一步。');
+        } else {
+          detailImportButton.click();
+        }
+      });
+    } else if (info.kind === 'login') {
+      addButton('查看导入处理/登录处理', () => {
+        openExistingImportRecovery();
+        showActionFeedback('已打开论文检索的既有导入处理区。请完成现有等待登录项；若没有该项，请勿重新检索或新建批次。完成后返回地图刷新全文状态。');
+      });
+    } else if (info.kind === 'processing' || info.kind === 'loading') {
+      addButton('刷新全文状态', refresh);
+    } else if (info.kind === 'failed') {
+      if (detailImportButton && !detailImportButton.disabled) {
+        addButton(detailImportButton.textContent.trim() || '人工重试入库', () => detailImportButton.click());
+      } else {
+        addButton('查看入库诊断', () => {
+          revealImportDiagnostics();
+          showActionFeedback('请按入库诊断中的人工处理说明继续；当前没有可安全执行的自动重试。');
+        });
+        addButton('前往知识库处理', openKnowledge);
+      }
+    } else if (info.kind === 'permission' || info.kind === 'index-failed' || info.kind === 'source-mismatch') {
+      addButton(openKnowledgeLabel, openKnowledge);
+      addButton('刷新全文状态', refresh);
+    } else if (info.kind === 'unknown') {
+      if (String(node.download_status || '').toLowerCase() === 'indexed' || documentId) {
+        addButton(openKnowledgeLabel, openKnowledge);
+      } else {
+        addButton('查看导入处理/登录处理', () => {
+          openExistingImportRecovery();
+          showActionFeedback('请查看既有导入处理记录；若没有等待登录任务，请勿重新检索。核实后返回地图刷新状态。');
+        });
+      }
+      addButton('刷新全文状态', refresh);
+    }
+    return actions.childNodes.length ? actions : null;
+  }
+
   function renderAnalysisPanel() {
     const panel = createElement('section', 'literature-map-analysis');
     panel.setAttribute('aria-live', 'polite');
     panel.append(createElement('h4', 'literature-map-analysis-title', 'AI 分析与会话'));
     const sourceStatus = state.analysisSourceStatus || {};
-    const available = Array.isArray(sourceStatus.available_evidence_levels) ? sourceStatus.available_evidence_levels : [];
+    const available = availableAnalysisEvidenceLevels(sourceStatus);
     const sourceText = available.length ? `可用依据：${available.map(analysisEvidenceLabel).join('、')}` : '当前没有可用分析依据。';
     panel.append(createElement('p', 'literature-map-analysis-source', sourceText));
     const activeLevel = ['abstract', 'full'].includes(state.analysisTab) ? state.analysisTab : 'abstract';
-    if (!analysisAvailable('full')) {
-      panel.append(createElement('p', 'literature-map-analysis-unavailable', analysisUnavailableMessage('full')));
-    }
     const versions = sourceStatus.source_versions && typeof sourceStatus.source_versions === 'object' ? sourceStatus.source_versions : {};
     Object.entries(versions).forEach(([level, version]) => {
+      if (!['abstract', 'full'].includes(level)) return;
       panel.append(createElement('p', 'literature-map-analysis-version', `${analysisEvidenceLabel(level)}来源版本：${metadataText(version, '未提供')}`));
     });
 
     const tabs = createElement('div', 'literature-map-analysis-tabs');
     tabs.setAttribute('role', 'tablist');
-    [['abstract', '摘要'], ['full', '全文']].forEach(([level, label]) => {
+    [['abstract', '摘要分析'], ['full', '全文分析']].forEach(([level, label]) => {
       const tab = createElement('button', 'secondary-button literature-map-analysis-tab', label);
       tab.type = 'button';
       tab.dataset.evidenceLevel = level;
@@ -4503,6 +4661,7 @@
 
     const actions = createElement('div', 'literature-map-analysis-actions');
     const actionFeedback = createElement('p', 'literature-map-analysis-unavailable');
+    actionFeedback.classList.add('literature-map-analysis-action-feedback');
     actionFeedback.id = 'literature-map-analysis-action-feedback';
     actionFeedback.dataset.analysisActionFeedback = 'true';
     actionFeedback.setAttribute('role', 'status');
@@ -4514,6 +4673,13 @@
     const analysisBusy = state.analysisSubmitInFlight || ['queued', 'running'].includes(state.analysis?.status);
     const busyLevel = state.analysis?.evidence_level === 'full' ? 'full' : 'abstract';
     if (analysisBusy) showActionFeedback(analysisBusyMessage());
+
+    const records = analysisRecords();
+    const activeRecords = records.filter((record) => record?.evidence_level === activeLevel);
+    const preferredLevel = activeLevel && analysisAvailable(activeLevel)
+      ? activeLevel
+      : state.analysis?.evidence_level || records.find((record) => record?.status === 'completed')?.evidence_level || (analysisAvailable('abstract') ? 'abstract' : 'full');
+    const completedActive = activeRecords.some((record) => record?.status === 'completed');
 
     const abstractLabel = analysisBusy
       ? (busyLevel === 'abstract' ? '摘要分析进行中…' : '摘要分析等待中…')
@@ -4534,7 +4700,7 @@
       : '基于全文分析';
     const fullButton = createElement('button', 'secondary-button', fullLabel);
     fullButton.type = 'button';
-    fullButton.disabled = analysisBusy;
+    fullButton.disabled = analysisBusy && analysisAvailable('full');
     fullButton.setAttribute('aria-describedby', actionFeedback.id);
     fullButton.addEventListener('click', () => {
       if (!analysisAvailable('full')) {
@@ -4543,14 +4709,8 @@
       }
       startAnalysis('full');
     });
-    actions.append(abstractButton, fullButton);
-
-    const records = analysisRecords();
-    const activeRecords = records.filter((record) => record?.evidence_level === activeLevel);
-    const preferredLevel = activeLevel && analysisAvailable(activeLevel)
-      ? activeLevel
-      : state.analysis?.evidence_level || records.find((record) => record?.status === 'completed')?.evidence_level || (analysisAvailable('abstract') ? 'abstract' : 'full');
-    const completedActive = activeRecords.some((record) => record?.status === 'completed');
+    actions.append(abstractButton);
+    if (activeLevel !== 'full') actions.append(fullButton);
     if (completedActive && analysisAvailable(activeLevel)) {
       const manualLabel = `重新生成${activeLevel === 'full' ? '全文' : '摘要'}（会调用模型）`;
       const manual = createElement('button', 'secondary-button', analysisBusy ? `${manualLabel}（分析进行中…）` : manualLabel);
@@ -4581,45 +4741,42 @@
       createNodeConversation(preferredLevel, conversationButton);
     });
     actions.append(conversationButton);
-    panel.append(actions, actionFeedback);
 
-    if (activeLevel === 'full' && !analysisAvailable('full')) {
-      const sourceActions = createElement('div', 'literature-map-analysis-source-actions');
-      const node = state.selectedNode || {};
-      const indexed = String(node.download_status || '').toLowerCase() === 'indexed' || Boolean(node.document_id);
-      if (!indexed) {
-        const importButton = createElement('button', 'secondary-button', '获取并加入知识库');
-        importButton.type = 'button';
-        importButton.addEventListener('click', () => {
-          const detailImportButton = refs.detail?.querySelector('#literature-map-import-button');
-          if (!detailImportButton) {
-            showActionFeedback('当前无法提交入库。请先打开论文详情，查看入库状态后再试。');
-            return;
-          }
-          if (detailImportButton.disabled) {
-            const diagnostics = refs.detail?.querySelector('#literature-map-import-diagnostics')?.textContent?.trim();
-            showActionFeedback(diagnostics
-              ? `当前无法自动重试入库。${diagnostics}`
-              : '入库当前处理中或暂不可用；请查看论文详情中的入库状态后再试。');
-            return;
-          }
-          detailImportButton.click();
-        });
-        sourceActions.append(importButton);
+    if (activeLevel === 'full') {
+      const rawFulltextInfo = fulltextUnavailableInfo();
+      const fullAnalysisBusy = analysisBusy && busyLevel === 'full';
+      const fullFailure = state.analysis?.evidence_level === 'full' && state.analysis.status === 'failed';
+      const fullCardInfo = rawFulltextInfo.kind !== 'ready'
+        ? rawFulltextInfo
+        : fullAnalysisBusy
+          ? { kind: 'running', label: state.analysisSubmitInFlight ? '全文分析正在提交' : (state.analysis?.status === 'queued' ? '全文分析正在排队' : '全文分析正在生成'), message: '全文索引片段可用；正在按你的请求生成 AI 分析，结果会通过现有进度查询更新。' }
+          : completedActive
+            ? { kind: 'completed', label: '全文分析已完成', message: '当前展示基于全文索引片段生成的 AI 分析结果；可在下方查看结果与历史版本。' }
+            : fullFailure
+              ? { kind: 'failed', label: '全文分析失败', message: '全文依据仍可用。请查看下方失败原因，之后可由你主动重试或重新生成。' }
+              : { kind: 'ready', label: '全文依据已就绪', message: '尚无全文分析结果。点击下方“基于全文分析”后才会开始生成；这里展示 AI 结果，不是 PDF 阅读器。原文请使用“打开原文”。' };
+      const card = createElement('section', 'literature-map-fulltext-feedback');
+      card.dataset.state = fullCardInfo.kind;
+      card.setAttribute('aria-live', 'polite');
+      card.append(createElement('h4', 'literature-map-fulltext-title', '全文依据与分析状态'));
+      card.append(createElement('span', 'literature-map-fulltext-badge', fullCardInfo.label));
+      card.append(createElement('p', 'literature-map-fulltext-message', fullCardInfo.message));
+      const recoveryActions = fulltextRecoveryActions(rawFulltextInfo, showActionFeedback);
+      if (recoveryActions) card.append(recoveryActions);
+      if (rawFulltextInfo.kind !== 'ready') {
+        card.append(fullButton);
+      } else if (fullAnalysisBusy) {
+        fullButton.disabled = true;
+        card.append(fullButton);
       } else {
-        const refresh = createElement('button', 'secondary-button', '等待索引后重试');
-        refresh.type = 'button';
-        refresh.addEventListener('click', () => loadNodeAnalyses(state.map?.map_id, state.selectedNodeId, state.nodeRequest));
-        sourceActions.append(refresh);
-        if (node.document_id) {
-          const openKnowledge = createElement('button', 'secondary-button', '打开知识库处理全文');
-          openKnowledge.type = 'button';
-          openKnowledge.addEventListener('click', () => openKnowledgeBaseDocument(String(node.document_id)));
-          sourceActions.append(openKnowledge);
-        }
+        fullButton.disabled = false;
+        card.append(fullButton);
       }
-      if (sourceActions.childNodes.length) panel.append(sourceActions);
+      card.append(actionFeedback);
+      panel.append(card);
     }
+    panel.append(actions);
+    if (activeLevel !== 'full') panel.append(actionFeedback);
 
     if (activeRecords.length) {
       const history = createElement('ul', 'literature-map-analysis-history');
@@ -4825,9 +4982,14 @@
     } else if (!indexed) {
       const downloadStatus = String(node.download_status || '').toLowerCase();
       const diagnostics = nodeImportDiagnostics(node);
-      const importPending = IMPORT_PENDING_STATES.has(downloadStatus);
+      const loginRecovery = downloadStatus === 'waiting_login';
+      const knownImportStatuses = new Set(['not_imported', 'failed', ...IMPORT_PENDING_STATES]);
+      const unknownImportRecovery = Boolean(downloadStatus) && !knownImportStatuses.has(downloadStatus) && !node.document_id;
+      const importPending = IMPORT_PENDING_STATES.has(downloadStatus) && !loginRecovery;
       const blockedRetry = downloadStatus === 'failed' && diagnostics && !diagnostics.retryable;
-      const importButton = createElement('button', 'send-button', importPending ? '入库处理中' : (downloadStatus === 'failed' ? (diagnostics?.retryable ? '人工重试入库' : '人工重新提交入库') : '加入知识库'));
+      const importButton = createElement('button', 'send-button', loginRecovery || unknownImportRecovery
+        ? '查看导入处理/登录处理'
+        : (importPending ? '入库处理中' : (downloadStatus === 'failed' ? (diagnostics?.retryable ? '人工重试入库' : '人工重新提交入库') : '获取并加入知识库')));
       importButton.type = 'button';
       importButton.id = 'literature-map-import-button';
       importButton.disabled = !state.map?.map_id || !node.node_id || importPending || blockedRetry;
@@ -4835,7 +4997,10 @@
         importButton.setAttribute('aria-describedby', 'literature-map-import-diagnostics');
         importButton.title = '当前失败未标记为可重试；请使用入库诊断中的人工处理入口。';
       }
-      importButton.addEventListener('click', () => importNode(node, importButton));
+      importButton.addEventListener('click', () => {
+        if (loginRecovery || unknownImportRecovery) openExistingImportRecovery();
+        else importNode(node, importButton);
+      });
       actions.append(importButton);
       const removeButton = createElement('button', 'secondary-button', '移出地图');
       removeButton.type = 'button';
@@ -5029,6 +5194,25 @@
     }
     const nav = document.querySelector('[data-view="kb"]');
     if (nav) nav.click();
+  }
+
+  function openExistingImportRecovery() {
+    const nav = document.querySelector('[data-view="papers"]');
+    if (nav) nav.click();
+    window.requestAnimationFrame(() => {
+      const progress = document.querySelector('#paper-import-panel');
+      if (!progress || progress.hidden) return;
+      progress.scrollIntoView({ block: 'center' });
+      progress.querySelector('button:not([disabled])')?.focus();
+    });
+  }
+
+  function revealImportDiagnostics() {
+    const diagnostics = refs.detail?.querySelector('#literature-map-import-diagnostics');
+    if (!diagnostics) return;
+    diagnostics.scrollIntoView({ block: 'center' });
+    diagnostics.setAttribute('tabindex', '-1');
+    diagnostics.focus();
   }
 
   async function runNodeAction(action, nodeId, button) {
