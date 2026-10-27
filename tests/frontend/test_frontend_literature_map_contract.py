@@ -25,7 +25,7 @@ def test_navigation_view_and_version_contract_are_wired() -> None:
     assert 'data-view="literature-maps"' in INDEX
     assert 'id="literature-maps-view"' in INDEX
     assert 'id="literature-maps-mount"' in INDEX
-    assert '/assets/literature-maps.js?v=30' in INDEX
+    assert '/assets/literature-maps.js?v=31' in INDEX
     assert '/assets/literature-maps.css?v=19' in INDEX
     app_versions = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     style_versions = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)

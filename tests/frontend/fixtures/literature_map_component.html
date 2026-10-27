@@ -200,6 +200,11 @@
     const fullPermissionDenied = query.has('full-permission-denied');
     const fullSourceMismatch = query.has('full-source-mismatch');
     const fullUnknownImportStatus = query.has('full-unknown-import-status');
+    const fullNullImportStatus = query.has('full-null-import-status');
+    const fullEmptyImportStatus = query.has('full-empty-import-status');
+    const fullMissingImportStatus = query.has('full-missing-import-status');
+    const fullNullStatusWithDocument = query.has('full-null-status-with-document');
+    const fullNoImportState = fullNullImportStatus || fullEmptyImportStatus || fullMissingImportStatus;
     const analysisFirstRegeneration = query.has('analysis-first-regeneration');
     const analysisNoEvidence = query.has('analysis-no-evidence');
     const analysisPending = query.has('analysis-pending');
@@ -336,6 +341,18 @@
     if (fullUnknownImportStatus) {
       mockNodes[0].download_status = 'RARE_IMPORT_STATE';
       mockNodes[0].document_id = null;
+    }
+    if (fullNullImportStatus || fullEmptyImportStatus) {
+      mockNodes[0].download_status = fullNullImportStatus ? null : '';
+      mockNodes[0].document_id = null;
+    }
+    if (fullMissingImportStatus) {
+      delete mockNodes[0].download_status;
+      mockNodes[0].document_id = null;
+    }
+    if (fullNullStatusWithDocument) {
+      mockNodes[0].download_status = null;
+      mockNodes[0].document_id = 'document-null-import-status';
     }
     const serverPreviewRace = query.has('server-preview-race') || query.has('paged-preview-race');
     if (indexedTombstone) mockNodes[1].removed = true;
@@ -602,9 +619,9 @@
         if (analysisRace && requestedNodeId === 'node-a') await new Promise((resolve) => window.setTimeout(resolve, 180));
         window.__analysisNodeResponses += 1;
         const nodeFullReady = requestedNodeId === 'node-a' && fullReady && !fullAvailabilityMismatch && !analysisNoEvidence;
-        const unavailableReason = fullPermissionDenied
+        const unavailableReason = fullNoImportState || fullNullStatusWithDocument ? null : (fullPermissionDenied
           ? 'KB_PERMISSION_DENIED'
-          : (fullSourceMismatch ? 'SOURCE_VERSION_MISMATCH' : (analysisNoEvidence ? 'MAP_EVIDENCE_UNAVAILABLE' : (nodeFullReady ? null : 'MAP_FULLTEXT_UNAVAILABLE')));
+          : (fullSourceMismatch ? 'SOURCE_VERSION_MISMATCH' : (analysisNoEvidence ? 'MAP_EVIDENCE_UNAVAILABLE' : (nodeFullReady ? null : 'MAP_FULLTEXT_UNAVAILABLE'))));
         payload = {
           schema_version: 'literature-map-v1',
           analyses: analysisFirstRegeneration || analysisNoEvidence || fullReadyNoResult || requestedNodeId !== 'node-a' ? [] : (nodeFullReady ? [fullAnalysisRecord, analysisRecord, oldAnalysisRecord] : [analysisRecord, oldAnalysisRecord]),
@@ -776,7 +793,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=30"></script>
+  <script src="../../../frontend/literature-maps.js?v=31"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

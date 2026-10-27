@@ -863,10 +863,11 @@
 
   function importStatusMessage(node) {
     const status = String(node?.download_status || '').toLowerCase();
+    const documentId = String(node?.document_id ?? '').trim();
     if (status === 'waiting_login') return '入库状态：等待登录处理。请在论文检索的既有导入处理区完成现有等待登录项，再返回刷新全文状态；不会自动重试。';
-    if (status === 'not_imported') return '入库状态：未入库。';
-    if (!status) return '入库状态：状态待确认。';
-    if (status === 'indexed' || node?.document_id) return '入库状态：已加入知识库；全文依据是否可用以服务器状态为准。';
+    if (status === 'not_imported') return documentId ? '入库状态：已加入知识库；全文依据是否可用以服务器状态为准。' : '入库状态：未入库。';
+    if (!status) return documentId ? '入库状态：已加入知识库；全文依据是否可用以服务器状态为准。' : '入库状态：未入库。';
+    if (status === 'indexed' || documentId) return '入库状态：已加入知识库；全文依据是否可用以服务器状态为准。';
     return `入库状态：${mapStatusLabel(status)}。`;
   }
 
@@ -4435,7 +4436,11 @@
       const reasonText = diagnosticText || '入库失败原因未记录。';
       return { kind: 'failed', label: '入库失败', message: `${reasonText} 请使用下方现有人工重试入口；若未标记可重试，请按诊断前往知识库处理。` };
     }
-    if (downloadStatus === 'not_imported') {
+    if (downloadStatus === 'not_imported' && !documentId) {
+      return { kind: 'not-imported', label: '未入库', message: '这篇论文尚未加入知识库。点击下方按钮可按现有流程提交入库；全文分析不会自动触发。' };
+    }
+    if (!downloadStatus && !documentId) {
+      if (!status) return { kind: 'loading', label: '状态待确认', message: '正在读取全文来源状态；如果状态仍未更新，可刷新后重试。' };
       return { kind: 'not-imported', label: '未入库', message: '这篇论文尚未加入知识库。点击下方按钮可按现有流程提交入库；全文分析不会自动触发。' };
     }
     if (reason && !machineCode && normalizedReason !== 'MAP_FULLTEXT_UNAVAILABLE' && normalizedReason !== 'MAP_EVIDENCE_UNAVAILABLE') {
@@ -4932,7 +4937,12 @@
     const title = createElement('h3', 'literature-map-detail-title', metadataText(node.title, '标题未提供'));
     refs.detail.append(title);
     const status = createElement('div', 'literature-map-detail-status');
-    status.append(renderStatusBadge(node.download_status || 'not_imported'));
+    const detailDownloadStatus = String(node.download_status || '').trim();
+    const detailDocumentId = String(node.document_id ?? '').trim();
+    const badgeStatus = detailDocumentId && (!detailDownloadStatus || detailDownloadStatus.toLowerCase() === 'not_imported')
+      ? 'indexed'
+      : (detailDownloadStatus || 'not_imported');
+    status.append(renderStatusBadge(badgeStatus));
     refs.detail.append(status);
     const fields = createElement('dl', 'literature-map-detail-fields');
     [['作者', node.authors], ['年份', node.year], ['来源', node.venue], ['关键词', node.keywords], ['引用数', citationCountLabel(node)], ['依据', node.provenance?.basis || node.provenance]].forEach(([label, value]) => {
@@ -4963,8 +4973,8 @@
       link.rel = 'noopener noreferrer';
       actions.append(link);
     }
-    const documentId = node.document_id === null || node.document_id === undefined ? '' : String(node.document_id).trim();
-    const indexed = String(node.download_status || '').toLowerCase() === 'indexed' || Boolean(node.document_id);
+    const documentId = String(node.document_id ?? '').trim();
+    const indexed = String(node.download_status || '').toLowerCase() === 'indexed' || Boolean(documentId);
     const removed = Boolean(node.removed || node.tombstone);
     if (indexed) {
       const linked = createElement('p', 'literature-map-document-link', documentId ? `已加入知识库 · 文档 ID：${documentId}` : '已加入知识库');

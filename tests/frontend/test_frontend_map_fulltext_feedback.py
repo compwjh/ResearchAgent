@@ -104,6 +104,47 @@ def test_indexed_but_not_ready_is_unknown_and_links_to_kb_check():
         browser.close()
 
 
+@pytest.mark.parametrize("state", ["full-null-import-status", "full-empty-import-status", "full-missing-import-status"])
+def test_missing_import_status_without_document_shows_manual_import_action(state: str):
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        _panel, card = _open_full_tab(page, state)
+
+        detail = page.locator("#literature-map-detail")
+        assert "未入库" in page.locator(".literature-map-detail-status").inner_text()
+        assert "入库状态：未入库。" in detail.inner_text()
+        assert "未入库" in card.inner_text()
+        assert "状态待确认" not in card.inner_text()
+        assert card.get_by_role("button", name="获取并加入知识库").is_enabled()
+        assert page.evaluate("window.__requestLog.filter(item => item.method === 'POST' && item.path.endsWith('/imports')).length") == 0
+        assert page.evaluate("window.__analysisBodies") == []
+
+        card.get_by_role("button", name="获取并加入知识库").click()
+        page.wait_for_function("window.__importCount === 1")
+        assert page.evaluate("window.__analysisBodies") == []
+        browser.close()
+
+
+def test_null_import_status_with_document_is_not_misclassified_as_missing_or_ready():
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        _panel, card = _open_full_tab(page, "full-null-status-with-document")
+
+        detail = page.locator("#literature-map-detail")
+        assert "已入库" in page.locator(".literature-map-detail-status").inner_text()
+        assert "已加入知识库" in detail.inner_text()
+        assert "全文依据暂不可用" in card.inner_text()
+        assert "未入库" not in card.inner_text()
+        assert "全文依据已就绪" not in card.inner_text()
+        assert card.get_by_role("button", name="前往知识库检查或修复索引").is_enabled()
+        assert detail.locator("#literature-map-import-button").count() == 0
+        assert page.evaluate("window.__requestLog.filter(item => item.method === 'POST' && item.path.endsWith('/imports')).length") == 0
+        assert page.evaluate("window.__analysisBodies") == []
+        browser.close()
+
+
 def test_permission_and_source_mismatch_reasons_are_chinese_and_actionable():
     with sync_playwright() as playwright:
         browser = _launch(playwright)

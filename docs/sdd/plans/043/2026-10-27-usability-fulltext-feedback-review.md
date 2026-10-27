@@ -68,3 +68,25 @@ Verdict: **Approve** — 无 P0/P1；建议修正 1 项 P2 后进入后续验收
 - `frontend/index.html` 与 Chromium fixture 均同步引用 `literature-maps.js?v=30`、`literature-maps.css?v=19`。
 
 本次仅复核 P2、未就绪 POST 门禁和资源版本；未重复原有 92 项回归，未改代码、未执行 Git 或部署操作。此前发现现已由上述独立证据关闭，Task10 其他验收门禁仍由主会话继续。
+
+## NULL 导入状态修复独立窄复审（2026-10-27）
+
+**结论：Approve；本次指定范围无新发现。** 只复核未提交的 `frontend/literature-maps.js`、`frontend/index.html` 与相关状态/版本测试。
+
+- 详情和全文卡对 `download_status` 为 null、空串或缺失且无 `document_id` 的已返回节点显示“未入库”，提供既有“获取并加入知识库”按钮。按钮只在用户点击时转发到既有导入 handler；未就绪全文按钮不会提交分析 POST。
+- `analysisSourceStatus` 尚未返回时，当前代码保留“正在读取全文来源状态”；不会因节点状态尚缺而抢先标成未入库。一次性 Chromium 延迟 1.2 秒状态 GET 的检查验证了响应前显示读取中、响应后才显示未入库，且前后都没有分析 POST。
+- 只有 `document_id` 而无导入状态时，详情显示已入库，全文卡仍显示全文依据未确认并提供知识库检查；ready 和全文 POST 仍只由 `fulltext_ready === true` 决定。
+- 显式未知非空状态仍映射为“状态待确认”，没有改成未入库；未知状态用例通过。
+- 入口与 Chromium fixture 均同步为 `literature-maps.js?v=31`、`literature-maps.css?v=19`。
+
+精确验证证据：
+
+| 命令 | 结果 |
+|---|---|
+| `TMPDIR=/private/tmp PYTHONDONTWRITEBYTECODE=1 /Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q -p no:cacheprovider tests/frontend/test_frontend_map_fulltext_feedback.py::test_missing_import_status_without_document_shows_manual_import_action tests/frontend/test_frontend_map_fulltext_feedback.py::test_null_import_status_with_document_is_not_misclassified_as_missing_or_ready tests/frontend/test_frontend_map_fulltext_feedback.py::test_unknown_import_status_is_not_exposed_as_machine_code`（按授权启动 Chromium） | 5 passed，0 failed，0 skipped，退出码 0；涵盖 null/空/缺失三种状态、仅有文档 ID、显式未知状态，以及未点击前无导入/分析 POST、手动 CTA 只触发导入 |
+| `TMPDIR=/private/tmp PYTHONDONTWRITEBYTECODE=1 /Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q -p no:cacheprovider tests/frontend/test_frontend_literature_map_contract.py::test_navigation_view_and_version_contract_are_wired tests/frontend/test_frontend_map_groups_exports.py::test_export_asset_versions_are_synchronised` | 2 passed，退出码 0 |
+| `node --check frontend/literature-maps.js` | 退出码 0 |
+
+另以一次性内存 Chromium 检查延迟 `GET /nodes/node-a/analyses` 1.2 秒，观察加载态和响应后的状态转移，断言全程 `window.__analysisBodies` 为空；结果 **PASS**。
+
+本次未运行全套测试、未改业务代码、未执行 Git 或部署操作，也未覆盖 Task11。该关闭结论仅适用于 NULL 导入状态修复及其资源版本合同。
