@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=62">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=19">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=20">
   <script src="../../../frontend/vendor/purify.min.js"></script>
   <script src="../../../frontend/vendor/marked.min.js"></script>
   <script>
@@ -231,6 +231,12 @@
     const refreshDiff = query.has('refresh-diff');
     const refreshEmpty = query.has('refresh-empty');
     const previewConflict = query.has('preview-conflict');
+    const expansionMode = query.has('expansion') || query.has('expansion-failed-page') || query.has('expansion-create-citation-fail') || query.has('expansion-capped') || query.has('expansion-stuck-loading');
+    const expansionFailedPage = query.has('expansion-failed-page');
+    const expansionCreateCitationFail = query.has('expansion-create-citation-fail');
+    const expansionCapped = query.has('expansion-capped');
+    const expansionStuckLoading = query.has('expansion-stuck-loading');
+    let expansionCitationCreateFailures = 0;
     const pagedPreview = query.has('paged-preview') || query.has('paged-preview-delay') || query.has('paged-preview-race') || query.has('paged-preview-stall');
     const previewCursorStall = query.has('paged-preview-stall');
     const serverPreview = query.has('server-preview') || query.has('server-preview-delay') || query.has('server-preview-race') || pagedPreview;
@@ -381,6 +387,31 @@
     ], diff: refreshEmpty ? [] : (refreshDiff ? realDiffShape : []) };
     if (serverPreview) Object.assign(previewState, { preview_id: pagedPreview ? 'preview-server-paged' : 'preview-server', kind: 'refresh', status: 'completed', diff: realDiffShape });
     const secondMap = { ...mockMap, map_id: 'map-fixture-b', owner_id: 'owner-fixture-b', name: '第二张地图', topic: '第二主题' };
+    const expansionPreviews = new Map();
+    const expansionCandidatePage = (kind, offset) => Array.from({ length: 50 }, (_, index) => {
+      const candidateIndex = offset + index;
+      const candidate = {
+        candidate_id: `${kind}-candidate-${candidateIndex}`,
+        identity_key: candidateIndex === 0 ? 'identity-shared-across-directions' : `${kind}-identity-${candidateIndex}`,
+        title: `${kind === 'references' ? '参考文献' : '引用本文'}候选 ${candidateIndex + 1}`,
+        authors: [`作者 ${candidateIndex + 1}`],
+        year: 2025 - (candidateIndex % 10),
+        already_present: candidateIndex === 3,
+        removed: candidateIndex === 4,
+      };
+      if (candidateIndex === 4) candidate.node_id = 'node-a';
+      return candidate;
+    });
+    const expansionPreviewEnvelope = (preview) => ({
+      schema_version: 'literature-map-v1',
+      preview: {
+        ...preview,
+        pagination: { ...preview.pagination },
+        candidates: preview.candidates.map((candidate) => ({ ...candidate })),
+      },
+      job: { ...preview.job },
+    });
+    window.__mockMap = mockMap;
     const queueState = {
       map_id: mockMap.map_id,
       queue_job_id: queueMode ? 'queue-fixture' : null,
@@ -410,6 +441,9 @@
     window.__applyBody = null;
     window.__applyCount = 0;
     window.__previewBodies = [];
+    window.__expansionPreviewBodies = [];
+    window.__expansionPreviewGetCounts = { references: 0, citations: 0 };
+    window.__loadMoreBodies = [];
     window.__analysisBodies = [];
     window.__conversationBodies = [];
     window.__analysisDetailCalls = 0;
@@ -425,7 +459,7 @@
     window.__requestLog = [];
     window.openConversationFromWorkspace = (conversationId, options) => { window.__openedConversation = conversationId; window.__openedConversationOptions = options || null; };
     window.jumpToKnowledgeBase = (documentId) => { window.__knowledgeBaseIds.push(String(documentId)); };
-    if (analysisPollLimit) {
+    if (analysisPollLimit || expansionStuckLoading) {
       const fixtureSetTimeout = window.setTimeout.bind(window);
       window.setTimeout = (callback, delay, ...args) => fixtureSetTimeout(callback, Math.min(Number(delay) || 0, 1), ...args);
     }
@@ -512,7 +546,7 @@
       else if (path === '/api/literature-maps' && method === 'POST') {
         window.__createBody = body;
         payload = { schema_version: 'literature-map-v1', map_id: mockMap.map_id, job_id: mockGraph.latest_job.job_id, status: 'generating', map: { ...mockMap, status: 'generating' }, job: { ...mockGraph.latest_job, status: 'running', step: 'discover' } };
-      } else if (path === '/api/literature-maps') payload.maps = (serverPreviewRace || analysisRace || query.has('palette-owners')) ? [mockMap, secondMap] : [mockMap];
+      } else if (path === '/api/literature-maps') payload.maps = (serverPreviewRace || analysisRace || query.has('palette-owners') || expansionMode) ? [mockMap, secondMap] : [mockMap];
       else if (path === '/api/literature-maps/map-fixture') payload = { schema_version: 'literature-map-v1', map: mockMap, latest_job: mockGraph.latest_job };
       else if (path === '/api/literature-maps/map-fixture-b') payload = { schema_version: 'literature-map-v1', map: secondMap, latest_job: { ...mockGraph.latest_job, map_id: secondMap.map_id, job_id: 'job-fixture-b' } };
       else if (path === '/api/literature-maps/map-fixture/analysis-queue' && method === 'GET') {
@@ -701,7 +735,7 @@
         const isPreviewJob = jobId === 'job-server-preview' || jobId === 'job-server-preview-paged';
         payload = { job: { job_id: jobId, map_id: mapId, operation: isPreviewJob ? 'preview' : 'restore', status: 'completed', step: isPreviewJob ? 'finished' : 'restore', cursor: isPreviewJob ? { preview_id: jobId === 'job-server-preview-paged' ? 'preview-server-paged' : 'preview-server' } : {}, counts: {} } };
       }
-      else if (path.startsWith('/api/literature-maps/map-fixture/nodes/') && method === 'GET') {
+      else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/nodes\/[^/]+$/) && method === 'GET') {
         const requestedNodeId = decodeURIComponent(path.split('/').pop() || '');
         payload.node = mockNodes.find((node) => node.node_id === requestedNodeId) || null;
       }
@@ -714,6 +748,89 @@
       else if (path === '/api/literature-maps/map-fixture/nodes/node-h') payload.node = mockNodes.find((node) => node.node_id === 'node-h');
       else if (path === '/api/literature-maps/map-fixture/nodes/node-long') payload.node = mockNodes.find((node) => node.node_id === 'node-long');
       else if (path === '/api/literature-maps/map-fixture/nodes/node-new') payload.node = mockNodes.find((node) => node.node_id === 'node-new');
+      else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/previews\/[^/]+\/load-more$/) && method === 'POST') {
+        const match = parsed.pathname.match(/^\/api\/literature-maps\/([^/]+)\/previews\/([^/]+)\/load-more$/);
+        const mapId = match?.[1] || '';
+        const previewId = match?.[2] || '';
+        const preview = expansionPreviews.get(previewId);
+        if (!preview || preview.map_id !== mapId) return new Response(JSON.stringify({ detail: { code: 'MAP_PREVIEW_NOT_FOUND', message: '该预览已失效，请重新获取此方向。' } }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+        window.__loadMoreBodies.push({ kind: preview.kind, preview_id: previewId, body });
+        if (expansionFailedPage && preview.kind === 'citations' && body.retry_failed !== true) {
+          preview.preview_revision += 1;
+          preview.pagination = {
+            ...preview.pagination,
+            state: 'failed',
+            failed_cursor: 'fixture-failed-page',
+            last_error: 'SEMANTIC_SCHOLAR_RATE_LIMITED',
+            page_job_id: `job-${preview.kind}-page-failed`,
+          };
+          preview.job = { job_id: preview.pagination.page_job_id, map_id: mapId, operation: 'preview_page', status: 'completed', step: 'failed', error_code: 'SEMANTIC_SCHOLAR_RATE_LIMITED' };
+        } else {
+          const offset = preview.pagination.loaded_count;
+          preview.candidates.push(...expansionCandidatePage(preview.kind, offset));
+          preview.pagination.loaded_count = Math.min(500, offset + 50);
+          preview.pagination.state = preview.pagination.loaded_count >= 500 ? 'capped' : 'ready';
+          preview.pagination.limit_reached = preview.pagination.loaded_count >= 500;
+          preview.pagination.has_more = preview.pagination.limit_reached ? false : null;
+          preview.pagination.next_cursor = preview.pagination.limit_reached ? null : 'fixture-server-cursor-next';
+          preview.pagination.failed_cursor = null;
+          preview.pagination.last_error = null;
+          preview.preview_revision += 1;
+          preview.job = { job_id: `job-${preview.kind}-page-${preview.pagination.loaded_count}`, map_id: mapId, operation: 'preview_page', status: 'completed', step: 'finished' };
+        }
+        payload = { schema_version: 'literature-map-v1', preview_id: previewId, job_id: preview.job.job_id, preview_revision: preview.preview_revision, pagination: { ...preview.pagination }, job: { ...preview.job } };
+      } else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/previews\/[^/]+$/) && method === 'GET' && expansionPreviews.has(parsed.pathname.split('/').pop())) {
+        const preview = expansionPreviews.get(parsed.pathname.split('/').pop());
+        payload = expansionPreviewEnvelope(preview);
+        window.__expansionPreviewGetCounts[preview.kind] += 1;
+        if (expansionStuckLoading) {
+          payload.preview.pagination.state = 'loading';
+          payload.preview.pagination.loaded_count = 0;
+          payload.preview.candidates = [];
+          payload.preview.job.status = 'running';
+          payload.job.status = 'running';
+        }
+      } else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/previews$/) && method === 'POST' && body.pagination) {
+        window.__expansionPreviewBodies.push(body);
+        if (expansionCreateCitationFail && body.kind === 'citations' && expansionCitationCreateFailures === 0) {
+          expansionCitationCreateFailures += 1;
+          return new Response(JSON.stringify({ detail: { code: 'SEMANTIC_SCHOLAR_UNAVAILABLE', message: '引用本文来源暂时不可用；参考文献一侧仍可继续。' } }), { status: 503, headers: { 'Content-Type': 'application/json' } });
+        }
+        const mapId = parsed.pathname.split('/')[3];
+        const map = mapId === secondMap.map_id ? secondMap : mockMap;
+        const previewId = `preview-expansion-${mapId}-${body.kind}-${window.__expansionPreviewBodies.length}`;
+        const jobId = `job-expansion-${mapId}-${body.kind}-${window.__expansionPreviewBodies.length}`;
+        const capped = expansionCapped;
+        const pagination = {
+          version: 1,
+          page_size: 50,
+          max_candidates: 500,
+          next_cursor: capped || expansionStuckLoading ? null : 'fixture-server-cursor',
+          loaded_count: capped ? 500 : (expansionStuckLoading ? 0 : 50),
+          total: null,
+          has_more: capped ? false : null,
+          limit_reached: capped,
+          state: capped ? 'capped' : (expansionStuckLoading ? 'loading' : 'ready'),
+          failed_cursor: null,
+          last_error: null,
+          page_job_id: jobId,
+          seed_identity_key: 'fixture-seed-identity',
+        };
+        const preview = {
+          preview_id: previewId,
+          map_id: mapId,
+          kind: body.kind,
+          node_id: body.node_id,
+          status: 'completed',
+          base_revision: map.revision,
+          preview_revision: 1,
+          pagination,
+          candidates: capped ? Array.from({ length: 10 }, (_, index) => expansionCandidatePage(body.kind, index * 50)).flat() : (expansionStuckLoading ? [] : expansionCandidatePage(body.kind, 0)),
+          job: { job_id: jobId, map_id: mapId, operation: 'preview_page', status: expansionStuckLoading ? 'running' : 'completed', step: 'finished', cursor: { preview_id: previewId } },
+        };
+        expansionPreviews.set(previewId, preview);
+        payload = { schema_version: 'literature-map-v1', preview_id: previewId, map_id: mapId, job_id: jobId, status: expansionStuckLoading ? 'queued' : 'completed', base_revision: map.revision, preview_revision: 1, pagination: { ...pagination }, job: { ...preview.job } };
+      }
       else if (path.endsWith('/previews') && method === 'POST') {
         window.__previewBodies.push(body);
         previewState.preview_id = `preview-fixture-${window.__previewBodies.length}`;
@@ -793,7 +910,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=31"></script>
+  <script src="../../../frontend/literature-maps.js?v=33"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

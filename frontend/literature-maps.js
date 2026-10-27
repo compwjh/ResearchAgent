@@ -26,6 +26,10 @@
   const MAX_PREVIEW_DISCOVERY_PAGES = 50;
   const MAX_MAP_NODES = 200;
   const MAX_PREVIEW_SELECTION = 20;
+  const EXPANSION_PAGE_SIZE = 50;
+  const EXPANSION_MAX_CANDIDATES = 500;
+  const MAX_EXPANSION_POLL_ATTEMPTS = 80;
+  const EXPANSION_KINDS = ['references', 'citations'];
   const MAX_ANALYSIS_POLL_ATTEMPTS = 120;
   const MAX_QUEUE_POLL_ATTEMPTS = 120;
   const QUEUE_POLL_DELAY = 1600;
@@ -101,6 +105,8 @@
     previewPollGeneration: 0,
     previewSelection: new Set(),
     previewConflict: false,
+    expansion: null,
+    expansionGeneration: 0,
     positions: Object.create(null),
     positionsDirty: false,
     spacingViolationCount: 0,
@@ -2259,6 +2265,7 @@
   async function selectMap(mapId) {
     if (!mapId) return;
     const previousMapId = state.selectedMapId;
+    closeExpansionPanel();
     if (previousMapId !== mapId) {
       state.multiSelectActive = false;
       state.multiSelectedNodeIds.clear();
@@ -2537,6 +2544,10 @@
 
   function renderPreviewPanel() {
     if (!refs.previewPanel) return;
+    if (state.expansion) {
+      renderExpansionPanel();
+      return;
+    }
     if (!state.preview) {
       refs.previewPanel.hidden = true;
       refs.previewPanel.replaceChildren();
@@ -2653,6 +2664,497 @@
     stopPreviewPolling();
     renderPreviewPanel();
     renderJobActions();
+  }
+
+  function expansionStorageKey(ownerId, mapId, seedNodeId) {
+    return `literature-map-expansion:${encodeURIComponent(ownerId)}:${encodeURIComponent(mapId)}:${encodeURIComponent(seedNodeId)}`;
+  }
+
+  function expansionScopeIsCurrent(expansion, generation = state.expansionGeneration) {
+    return Boolean(expansion && state.expansion === expansion && generation === state.expansionGeneration
+      && state.active && state.selectedMapId === expansion.mapId && state.map?.map_id === expansion.mapId
+      && mapOwnerId() === expansion.ownerId);
+  }
+
+  function stopExpansionPolling(expansion = state.expansion) {
+    if (!expansion) return;
+    Object.values(expansion.sides || {}).forEach((side) => {
+      if (side.pollTimer) window.clearTimeout(side.pollTimer);
+      side.pollTimer = null;
+    });
+  }
+
+  function persistExpansionDraft(expansion = state.expansion) {
+    if (!expansion) return;
+    const key = expansionStorageKey(expansion.ownerId, expansion.mapId, expansion.seedNodeId);
+    const draft = {
+      owner_id: expansion.ownerId,
+      map_id: expansion.mapId,
+      seed_node_id: expansion.seedNodeId,
+      active_tab: expansion.activeTab,
+      sides: Object.fromEntries(EXPANSION_KINDS.map((kind) => [kind, {
+        preview_id: expansion.sides[kind].previewId || null,
+        selected_candidate_ids: Array.from(expansion.sides[kind].selectedCandidateIds),
+        poll_attempts: expansion.sides[kind].pollAttempts,
+      }])),
+    };
+    try { window.sessionStorage.setItem(key, JSON.stringify(draft)); } catch (_) {
+      // The server previews remain available even when this-tab recovery is unavailable.
+    }
+  }
+
+  function readExpansionDraft(ownerId, mapId, seedNodeId) {
+    try {
+      const raw = window.sessionStorage.getItem(expansionStorageKey(ownerId, mapId, seedNodeId));
+      if (!raw) return null;
+      const draft = JSON.parse(raw);
+      if (draft?.owner_id !== ownerId || draft?.map_id !== mapId || draft?.seed_node_id !== seedNodeId) return null;
+      return draft;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function expansionSide(kind, saved = null) {
+    const selected = Array.isArray(saved?.selected_candidate_ids) ? saved.selected_candidate_ids : [];
+    return {
+      kind,
+      previewId: typeof saved?.preview_id === 'string' ? saved.preview_id : null,
+      preview: null,
+      job: null,
+      selectedCandidateIds: new Set(selected.filter((id) => typeof id === 'string')),
+      error: '',
+      errorAction: '',
+      creating: false,
+      loading: false,
+      pollTimer: null,
+      pollAttempts: Math.max(0, Math.min(MAX_EXPANSION_POLL_ATTEMPTS, Number(saved?.poll_attempts) || 0)),
+    };
+  }
+
+  function expansionKindLabel(kind) {
+    return kind === 'citations' ? '引用本文' : '参考文献';
+  }
+
+  function expansionErrorMessage(error, kind) {
+    const label = expansionKindLabel(kind);
+    const code = String(error?.code || '').toUpperCase();
+    if (error?.status === 429 || code.includes('RATE_LIMIT')) return `${label}来源暂时限流；已保留另一侧和已加载候选，可稍后重试此方向。`;
+    if (error?.status === 409 || code.includes('VERSION_CONFLICT') || code.includes('REVISION_CONFLICT')) return `${label}预览版本已变化；请重新读取此方向后继续。`;
+    if (error?.status === 404 || code.includes('PREVIEW_EXPIRED')) return `${label}预览已失效；请显式重新获取此方向。`;
+    if (code.includes('UNAVAILABLE')) return `${label}来源暂时不可用；已保留另一侧和已加载候选。`;
+    const detail = String(error?.message || '').trim();
+    if (detail && detail !== '地图请求失败。') return `${label}读取失败：${detail}`;
+    return `${label}暂时无法读取；已保留另一侧和已加载候选，请检查服务后重试。`;
+  }
+
+  function expansionPreviewPath(expansion, previewId) {
+    return `/${encodeURIComponent(expansion.mapId)}/previews/${encodeURIComponent(previewId)}`;
+  }
+
+  async function createExpansionPreview(kind, expansion = state.expansion, generation = state.expansionGeneration) {
+    const side = expansion?.sides?.[kind];
+    if (!side || side.creating || side.previewId || !expansionScopeIsCurrent(expansion, generation)) return;
+    side.creating = true;
+    side.error = '';
+    side.errorAction = '';
+    side.pollAttempts = 0;
+    persistExpansionDraft(expansion);
+    renderPreviewPanel();
+    const body = {
+      kind,
+      node_id: expansion.seedNodeId,
+      pagination: { version: 1, page_size: EXPANSION_PAGE_SIZE, max_candidates: EXPANSION_MAX_CANDIDATES },
+      idempotency_key: makeIdempotencyKey(),
+    };
+    try {
+      const response = await request(`/${encodeURIComponent(expansion.mapId)}/previews`, { method: 'POST', body: JSON.stringify(body) });
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      const previewId = response.preview_id || response.preview?.preview_id;
+      if (!previewId) throw new LiteratureMapError('服务没有返回预览编号，请稍后重试。');
+      side.previewId = String(previewId);
+      side.job = response.job || null;
+      persistExpansionDraft(expansion);
+      await loadExpansionPreview(kind, expansion, generation);
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      side.error = expansionErrorMessage(error, kind);
+      side.errorAction = 'create';
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation)) {
+        side.creating = false;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  function scheduleExpansionPoll(kind, expansion, generation) {
+    const side = expansion?.sides?.[kind];
+    if (!side || side.pollTimer || side.pollAttempts >= MAX_EXPANSION_POLL_ATTEMPTS || !expansionScopeIsCurrent(expansion, generation)) return;
+    side.pollTimer = window.setTimeout(() => {
+      side.pollTimer = null;
+      side.pollAttempts += 1;
+      persistExpansionDraft(expansion);
+      loadExpansionPreview(kind, expansion, generation);
+    }, Math.min(1200 + Math.floor(side.pollAttempts / 10) * 400, 4000));
+  }
+
+  function expansionPreviewIsLoading(side) {
+    const stateName = String(side?.preview?.pagination?.state || '').toLowerCase();
+    const jobStatus = String(side?.job?.status || '').toLowerCase();
+    return stateName === 'loading' || (!side?.preview && ['queued', 'running'].includes(jobStatus));
+  }
+
+  async function loadExpansionPreview(kind, expansion = state.expansion, generation = state.expansionGeneration) {
+    const side = expansion?.sides?.[kind];
+    if (!side?.previewId || side.loading || !expansionScopeIsCurrent(expansion, generation)) return;
+    side.loading = true;
+    side.error = '';
+    side.errorAction = '';
+    renderPreviewPanel();
+    try {
+      const payload = await request(expansionPreviewPath(expansion, side.previewId));
+      if (!expansionScopeIsCurrent(expansion, generation) || side.previewId !== payload.preview?.preview_id && payload.preview?.preview_id) return;
+      if (!payload.preview) throw new LiteratureMapError('服务没有返回预览内容，请重新读取此方向。');
+      side.preview = payload.preview;
+      side.job = payload.job || side.job;
+      if (expansionPreviewIsLoading(side)) {
+        persistExpansionDraft(expansion);
+        if (side.pollAttempts < MAX_EXPANSION_POLL_ATTEMPTS) scheduleExpansionPoll(kind, expansion, generation);
+      } else {
+        side.pollAttempts = 0;
+        persistExpansionDraft(expansion);
+      }
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      side.error = expansionErrorMessage(error, kind);
+      side.errorAction = 'read';
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation)) {
+        side.loading = false;
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  async function loadMoreExpansion(kind, retryFailed = false) {
+    const expansion = state.expansion;
+    const side = expansion?.sides?.[kind];
+    const preview = side?.preview;
+    const pagination = preview?.pagination;
+    if (!side?.previewId || !pagination || side.loading || side.creating) return;
+    const generation = state.expansionGeneration;
+    const path = `${expansionPreviewPath(expansion, side.previewId)}/load-more`;
+    side.loading = true;
+    side.error = '';
+    side.errorAction = '';
+    renderPreviewPanel();
+    try {
+      const response = await request(path, { method: 'POST', body: JSON.stringify({
+        expected_preview_revision: Number(preview.preview_revision) || 1,
+        retry_failed: Boolean(retryFailed),
+        idempotency_key: makeIdempotencyKey(),
+      }) });
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      if (Number.isInteger(response.preview_revision)) side.preview = { ...side.preview, preview_revision: response.preview_revision };
+      if (response.pagination) side.preview = { ...side.preview, pagination: response.pagination };
+      side.job = response.job || side.job;
+      side.pollAttempts = 0;
+      persistExpansionDraft(expansion);
+      side.loading = false;
+      await loadExpansionPreview(kind, expansion, generation);
+      if (expansionPreviewIsLoading(side)) scheduleExpansionPoll(kind, expansion, generation);
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      side.error = expansionErrorMessage(error, kind);
+      side.errorAction = 'read';
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation)) {
+        side.loading = false;
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  function refreshExpansionStatus(kind) {
+    const expansion = state.expansion;
+    const side = expansion?.sides?.[kind];
+    if (!side?.previewId || side.loading) return;
+    side.pollAttempts = 0;
+    side.error = '';
+    side.errorAction = '';
+    persistExpansionDraft(expansion);
+    void loadExpansionPreview(kind, expansion, state.expansionGeneration);
+  }
+
+  function expansionSelectedIdentities(expansion = state.expansion) {
+    const identities = new Set();
+    EXPANSION_KINDS.forEach((kind) => {
+      const side = expansion?.sides?.[kind];
+      const candidates = Array.isArray(side?.preview?.candidates) ? side.preview.candidates : [];
+      candidates.forEach((candidate) => {
+        if (!side.selectedCandidateIds.has(String(candidate.candidate_id || ''))) return;
+        if (candidate.already_present || candidate.existing || candidate.removed) return;
+        const identity = String(candidate.identity_key || '').trim();
+        if (identity) identities.add(identity);
+      });
+    });
+    return identities;
+  }
+
+  function updateExpansionSelection(kind, candidateId, checked) {
+    const expansion = state.expansion;
+    const side = expansion?.sides?.[kind];
+    const candidate = side?.preview?.candidates?.find((item) => String(item?.candidate_id || '') === candidateId);
+    if (!candidate || candidate.already_present || candidate.existing || candidate.removed || !String(candidate.identity_key || '').trim()) return;
+    if (checked) {
+      const existingIdentities = expansionSelectedIdentities(expansion);
+      const identity = String(candidate.identity_key).trim();
+      const available = Math.max(0, MAX_MAP_NODES - normalizeNodes(state.graph).length);
+      const limit = Math.min(MAX_PREVIEW_SELECTION, available);
+      if (!existingIdentities.has(identity) && existingIdentities.size >= limit) {
+        setStatus(`本次最多选择 ${limit} 个不同论文身份；请先取消其他选择。`, 'waiting');
+        renderPreviewPanel();
+        return;
+      }
+      side.selectedCandidateIds.add(candidateId);
+    } else {
+      side.selectedCandidateIds.delete(candidateId);
+    }
+    persistExpansionDraft(expansion);
+    renderPreviewPanel();
+  }
+
+  function renderExpansionPanel() {
+    const expansion = state.expansion;
+    if (!refs.previewPanel || !expansion) return;
+    refs.previewPanel.hidden = false;
+    refs.previewPanel.replaceChildren();
+    refs.previewPanel.setAttribute('aria-label', '扩展关联论文');
+    refs.previewPanel.append(createElement('h3', '', '扩展关联论文'));
+    const tabs = createElement('div', 'literature-map-expansion-tabs');
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', '关联论文方向');
+    EXPANSION_KINDS.forEach((kind) => {
+      const side = expansion.sides[kind];
+      const tab = createElement('button', 'literature-map-expansion-tab', expansionKindLabel(kind));
+      tab.type = 'button';
+      tab.id = `literature-map-expansion-tab-${kind}`;
+      tab.setAttribute('role', 'tab');
+      tab.dataset.expansionKind = kind;
+      tab.setAttribute('aria-selected', String(expansion.activeTab === kind));
+      tab.setAttribute('aria-controls', `literature-map-expansion-panel-${kind}`);
+      const loaded = Number(side.preview?.pagination?.loaded_count);
+      if (Number.isFinite(loaded) && loaded > 0) tab.append(createElement('span', 'literature-map-expansion-tab-count', ` ${loaded}`));
+      tab.addEventListener('click', () => {
+        expansion.activeTab = kind;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+        refs.previewPanel.querySelector('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
+      });
+      tabs.append(tab);
+    });
+    refs.previewPanel.append(tabs);
+
+    const identities = expansionSelectedIdentities(expansion);
+    const nodeCount = normalizeNodes(state.graph).length;
+    const available = Math.max(0, MAX_MAP_NODES - nodeCount);
+    refs.previewPanel.append(createElement('p', 'literature-map-expansion-capacity', `已选 ${identities.size}/20 个新身份 · 地图容量 ${nodeCount}/200（还可加入 ${available}）`));
+
+    if (!EXPANSION_KINDS.includes(expansion.activeTab)) expansion.activeTab = 'references';
+    const side = expansion.sides[expansion.activeTab];
+    const tabpanel = createElement('section', 'literature-map-expansion-panel');
+    tabpanel.id = `literature-map-expansion-panel-${expansion.activeTab}`;
+    tabpanel.setAttribute('role', 'tabpanel');
+    tabpanel.setAttribute('aria-labelledby', `literature-map-expansion-tab-${expansion.activeTab}`);
+    if (side.creating || side.loading) tabpanel.append(createElement('p', 'literature-map-expansion-state', side.creating ? `正在创建${expansionKindLabel(side.kind)}预览…` : `正在读取${expansionKindLabel(side.kind)}候选与进度…`));
+    if (side.error) {
+      const error = createElement('p', 'literature-map-expansion-error', side.error);
+      error.setAttribute('role', 'alert');
+      tabpanel.append(error);
+      if (side.errorAction === 'create' && !side.previewId) {
+        const retry = createElement('button', 'secondary-button', '重新获取此方向');
+        retry.type = 'button';
+        retry.id = 'literature-map-expansion-retry-create';
+        retry.disabled = side.creating;
+        retry.addEventListener('click', () => createExpansionPreview(side.kind));
+        tabpanel.append(retry);
+      } else if (side.errorAction === 'read') {
+        const retry = createElement('button', 'secondary-button', '重新读取此方向');
+        retry.type = 'button';
+        retry.id = 'literature-map-expansion-retry-read';
+        retry.disabled = side.loading;
+        retry.addEventListener('click', () => refreshExpansionStatus(side.kind));
+        tabpanel.append(retry);
+      }
+    }
+
+    const preview = side.preview;
+    if (!preview && !side.creating && !side.loading && !side.error) {
+      tabpanel.append(createElement('p', 'literature-map-expansion-state', '此方向预览尚未创建。'));
+      const create = createElement('button', 'secondary-button', '获取此方向');
+      create.type = 'button';
+      create.id = `literature-map-expansion-create-${side.kind}`;
+      create.addEventListener('click', () => createExpansionPreview(side.kind));
+      tabpanel.append(create);
+    }
+    if (preview) {
+      const pagination = preview.pagination && typeof preview.pagination === 'object' ? preview.pagination : {};
+      const stateName = String(pagination.state || '').toLowerCase();
+      const loadedCount = Number.isFinite(Number(pagination.loaded_count)) ? Number(pagination.loaded_count) : (Array.isArray(preview.candidates) ? preview.candidates.length : 0);
+      const total = pagination.total !== null && pagination.total !== undefined && Number.isFinite(Number(pagination.total)) ? Number(pagination.total) : null;
+      let paginationText = `已加载 ${loadedCount} 篇 · ${total === null ? '总量未知' : `总量 ${total}`}`;
+      if (pagination.state === 'capped' || pagination.limit_reached || loadedCount >= EXPANSION_MAX_CANDIDATES) paginationText += ' · 已达500篇上限，来源可能未穷尽';
+      else if (pagination.state === 'exhausted' || pagination.has_more === false) paginationText += ' · 已到来源末尾';
+      else if (pagination.state === 'failed') paginationText += ' · 此页读取失败，可手动重试';
+      else if (pagination.state === 'loading') paginationText += ' · 正在读取下一页';
+      tabpanel.append(createElement('p', 'literature-map-expansion-pagination', paginationText));
+      if (stateName === 'loading' && side.pollAttempts >= MAX_EXPANSION_POLL_ATTEMPTS && !side.loading) {
+        const stopped = createElement('p', 'literature-map-expansion-state', '后台仍在处理，自动读取已暂停；可手动刷新状态。');
+        stopped.setAttribute('role', 'status');
+        tabpanel.append(stopped);
+        const refresh = createElement('button', 'secondary-button', '手动刷新状态');
+        refresh.type = 'button';
+        refresh.id = 'literature-map-expansion-refresh-status';
+        refresh.addEventListener('click', () => refreshExpansionStatus(side.kind));
+        tabpanel.append(refresh);
+      }
+
+      const list = createElement('div', 'literature-map-expansion-candidates');
+      const candidates = Array.isArray(preview.candidates) ? preview.candidates.filter((candidate) => candidate && candidate.candidate_id) : [];
+      candidates.forEach((candidate) => {
+        const candidateId = String(candidate.candidate_id);
+        const identityKey = String(candidate.identity_key || '').trim();
+        const row = createElement('article', 'literature-map-expansion-candidate');
+        row.dataset.candidateId = candidateId;
+        const title = createElement('strong', 'literature-map-expansion-candidate-title', metadataText(candidate.title, '标题未提供'));
+        const meta = createElement('span', 'literature-map-expansion-candidate-meta', `${metadataText(candidate.authors)} · ${metadataText(candidate.year)}`);
+        row.append(title, meta);
+        const checkbox = createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = candidateId;
+        checkbox.checked = side.selectedCandidateIds.has(candidateId);
+        const alreadyPresent = Boolean(candidate.already_present || candidate.existing);
+        const removed = Boolean(candidate.removed);
+        checkbox.disabled = alreadyPresent || removed || !identityKey;
+        checkbox.addEventListener('change', () => updateExpansionSelection(side.kind, candidateId, checkbox.checked));
+        const select = createElement('label', 'literature-map-expansion-candidate-select');
+        const selectionText = createElement('span', '', alreadyPresent ? '已在当前地图' : removed ? '已移除墓碑' : !identityKey ? '身份未确认，暂不能选择' : '加入待确认集合');
+        select.append(checkbox, selectionText);
+        row.append(select);
+        if (removed) {
+          const restoreId = candidate.node_id || candidate.existing_node_id;
+          if (restoreId) {
+            const restore = createElement('button', 'secondary-button', '显式恢复');
+            restore.type = 'button';
+            restore.addEventListener('click', () => restoreNode(restoreId, restore));
+            row.append(restore);
+          }
+        }
+        list.append(row);
+      });
+      if (!candidates.length && pagination.state !== 'loading') list.append(createElement('p', 'literature-map-expansion-state', '当前方向尚无候选；正在等待来源结果或已无可加入论文。'));
+      tabpanel.append(list);
+
+      const paginationActions = createElement('div', 'literature-map-expansion-pagination-actions');
+      if (stateName === 'failed') {
+        const failed = createElement('p', 'literature-map-expansion-error', '此页读取失败；已加载候选和另一侧预览仍保留，请手动重试此页。');
+        failed.setAttribute('role', 'alert');
+        tabpanel.append(failed);
+      }
+      if (stateName === 'failed' && loadedCount < EXPANSION_MAX_CANDIDATES && !side.loading) {
+        const retry = createElement('button', 'secondary-button', '重试此失败页');
+        retry.type = 'button';
+        retry.id = 'literature-map-expansion-retry-page';
+        retry.addEventListener('click', () => loadMoreExpansion(side.kind, true));
+        paginationActions.append(retry);
+      } else if (!['loading', 'exhausted', 'capped'].includes(stateName) && !pagination.limit_reached && loadedCount < EXPANSION_MAX_CANDIDATES && (pagination.has_more !== false || pagination.next_cursor)) {
+        const more = createElement('button', 'secondary-button', `加载更多 ${EXPANSION_PAGE_SIZE} 篇`);
+        more.type = 'button';
+        more.id = 'literature-map-expansion-load-more';
+        more.disabled = side.loading;
+        more.addEventListener('click', () => loadMoreExpansion(side.kind, false));
+        paginationActions.append(more);
+      }
+      tabpanel.append(paginationActions);
+    }
+    refs.previewPanel.append(tabpanel);
+
+    const actions = createElement('div', 'literature-map-expansion-actions');
+    const apply = createElement('button', 'send-button', '批量确认待接入');
+    apply.type = 'button';
+    apply.id = 'literature-map-expansion-apply';
+    apply.disabled = true;
+    apply.title = '批量重核与原子提交将在后续阶段接入。';
+    actions.append(apply);
+    const close = createElement('button', 'secondary-button', '关闭扩展预览');
+    close.type = 'button';
+    close.id = 'literature-map-expansion-close';
+    close.addEventListener('click', () => closeExpansionPanel());
+    actions.append(close);
+    refs.previewPanel.append(actions);
+    renderJobActions();
+  }
+
+  function openExpansion(nodeId = state.selectedNodeId) {
+    if (!state.map?.map_id || !state.active) return;
+    if (!nodeId) {
+      setStatus('请先选择论文，再扩展关联论文。', 'waiting');
+      return;
+    }
+    const ownerId = mapOwnerId();
+    const mapId = String(state.map.map_id);
+    const seedNodeId = String(nodeId);
+    if (!ownerId) {
+      setStatus('当前地图缺少所属用户信息，无法安全保存此方向草稿。', 'error');
+      return;
+    }
+    closeExpansionPanel();
+    closePreviewPanel();
+    state.preview = null;
+    state.previewJob = null;
+    state.previewId = null;
+    state.previewKind = null;
+    state.previewNodeId = null;
+    const draft = readExpansionDraft(ownerId, mapId, seedNodeId);
+    const expansion = {
+      ownerId,
+      mapId,
+      seedNodeId,
+      activeTab: EXPANSION_KINDS.includes(draft?.active_tab) ? draft.active_tab : 'references',
+      sides: Object.fromEntries(EXPANSION_KINDS.map((kind) => [kind, expansionSide(kind, draft?.sides?.[kind])])),
+    };
+    state.expansion = expansion;
+    const generation = ++state.expansionGeneration;
+    persistExpansionDraft(expansion);
+    renderPreviewPanel();
+    if (isMobileViewport()) {
+      closeMobilePanel('detail', false);
+      window.setTimeout(() => refs.previewPanel?.querySelector('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true }), 0);
+    }
+    if (draft) {
+      EXPANSION_KINDS.forEach((kind) => {
+        const side = expansion.sides[kind];
+        if (side.previewId) void loadExpansionPreview(kind, expansion, generation);
+        else {
+          side.error = '此方向尚未创建预览；需要时请点击“获取此方向”，不会自动重新发起来源请求。';
+          side.errorAction = 'create';
+        }
+      });
+      renderPreviewPanel();
+      return;
+    }
+    EXPANSION_KINDS.forEach((kind) => { void createExpansionPreview(kind, expansion, generation); });
+  }
+
+  function closeExpansionPanel() {
+    if (!state.expansion) return;
+    persistExpansionDraft(state.expansion);
+    stopExpansionPolling(state.expansion);
+    state.expansion = null;
+    state.expansionGeneration += 1;
+    renderPreviewPanel();
   }
 
   function updatePreviewSelection(candidateId, checked) {
@@ -5018,13 +5520,10 @@
       actions.append(removeButton);
     }
     if (!removed) {
-      const referencesButton = createElement('button', 'secondary-button', '参考文献');
-      referencesButton.type = 'button';
-      referencesButton.addEventListener('click', () => openPreview('references', node.node_id));
-      const citationsButton = createElement('button', 'secondary-button', '引用它的论文');
-      citationsButton.type = 'button';
-      citationsButton.addEventListener('click', () => openPreview('citations', node.node_id));
-      actions.append(referencesButton, citationsButton);
+      const expansionButton = createElement('button', 'secondary-button', '扩展关联论文');
+      expansionButton.type = 'button';
+      expansionButton.addEventListener('click', () => openExpansion(node.node_id));
+      actions.append(expansionButton);
     }
     refs.detail.append(actions);
     const importStatus = createElement('p', 'literature-map-import-status');
@@ -5387,6 +5886,7 @@
         renderJobActions();
       });
     } else {
+      closeExpansionPanel();
       closeAllMobilePanels(false);
       closeCreatePanel();
       stopPolling();

@@ -25,15 +25,28 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=31" in INDEX
-    assert "/assets/literature-maps.css?v=19" in INDEX
+    assert "/assets/literature-maps.js?v=33" in INDEX
+    assert "/assets/literature-maps.css?v=20" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",
+        "/load-more",
+        "pagination",
+        "page_size",
+        "max_candidates",
+        "preview_revision",
+        "identity_key",
+        "MAX_EXPANSION_POLL_ATTEMPTS",
+        "poll_attempts",
         "selected_candidate_ids",
         "expected_revision",
         "MAP_PREVIEW_EXPIRED",
         "重新读取并预览",
+        "扩展关联论文",
+        "自动读取已暂停",
+        "手动刷新状态",
+        "引用本文",
+        "批量确认待接入",
         "继续搜索",
         "刷新预览",
         "打开上次预览",
@@ -59,6 +72,9 @@ def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
         assert marker in MODULE
     for selector in (
         ".literature-map-preview-panel",
+        ".literature-map-expansion-tabs",
+        ".literature-map-expansion-tab",
+        ".literature-map-expansion-candidate",
         ".literature-map-preview-candidate",
         ".literature-map-preview-capacity",
         ".literature-map-job-actions",
@@ -67,40 +83,322 @@ def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
         assert selector in STYLES
 
 
-def test_component_fixture_supports_preview_apply_cas_and_persistent_reopen() -> None:
+def _open_expansion(page) -> None:
+    page.locator('[data-map-id="map-fixture"]').click()
+    page.locator('[data-node-id="node-a"] circle').click()
+    page.get_by_role("button", name="扩展关联论文").click()
+    page.wait_for_selector("#literature-map-preview-panel")
+
+
+def test_component_fixture_shows_one_two_direction_expansion_panel_and_keeps_grouping() -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
         browser = _open_browser_or_skip(playwright)
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
-        page.goto(FIXTURE.as_uri(), wait_until="load")
-        page.locator('[data-map-id="map-fixture"]').click()
-        page.locator('[data-node-id="node-a"] circle').click()
-        page.get_by_role("button", name="参考文献").click()
-        page.wait_for_selector("#literature-map-preview-panel")
-        preview_body = page.evaluate("window.__previewBodies?.[0]")
-        assert preview_body["kind"] == "references"
-        assert preview_body["node_id"] == "node-a"
-        assert preview_body["idempotency_key"]
-        assert page.locator('[data-candidate-id="candidate-existing"] input').is_disabled()
-        assert page.locator('[data-candidate-id="candidate-removed"] input').is_disabled()
-        assert "已选择 0/20" in page.locator(".literature-map-preview-capacity").inner_text()
-        page.locator('[data-candidate-id="candidate-new"] input').check()
-        assert "已选择 1/20" in page.locator(".literature-map-preview-capacity").inner_text()
-        page.get_by_role("button", name="确认加入").click()
-        page.wait_for_function("window.__applyBody?.selected_candidate_ids?.includes('candidate-new')")
-        apply_body = page.evaluate("window.__applyBody")
-        assert apply_body["expected_revision"] == 3
-        assert apply_body["idempotency_key"]
-        assert page.locator('[data-node-id="node-new"]').count() == 1
+        page.goto(f"{FIXTURE.as_uri()}?expansion&palette", wait_until="load")
+        _open_expansion(page)
 
-        # A persisted preview is reloaded after the public lifecycle toggle.
-        page.evaluate("window.LiteratureMaps.setActive(false)")
-        page.wait_for_timeout(20)
-        page.evaluate("window.LiteratureMaps.setActive(true)")
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        bodies = page.evaluate("window.__expansionPreviewBodies")
+        assert {body["kind"] for body in bodies} == {"references", "citations"}
+        assert {body["node_id"] for body in bodies} == {"node-a"}
+        assert all(body["idempotency_key"] for body in bodies)
+        assert all(body["pagination"] == {"version": 1, "page_size": 50, "max_candidates": 500} for body in bodies)
+        assert len({body["idempotency_key"] for body in bodies}) == 2
+
+        node = page.locator('[data-node-id="node-a"]')
+        assert node.get_attribute("data-group-id") == "group-fixture"
+        assert page.locator('#literature-map-groups .literature-map-group-row[data-group-id="group-fixture"]').is_visible()
+
+        refs_tab = page.locator('[role="tab"][data-expansion-kind="references"]')
+        citations_tab = page.locator('[role="tab"][data-expansion-kind="citations"]')
+        assert refs_tab.get_attribute("aria-selected") == "true"
+        assert citations_tab.get_attribute("aria-selected") == "false"
+        page.locator('[data-candidate-id="references-candidate-0"] input').check()
+        citations_tab.click()
+        page.locator('[data-candidate-id="citations-candidate-0"] input').check()
+        assert "已选 1/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        page.locator('[data-candidate-id="citations-candidate-1"] input').click()
+        refs_tab.click()
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        assert page.locator('[data-candidate-id="references-candidate-0"] input').is_checked()
+        assert "已选 3/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        assert page.locator('[data-candidate-id="references-candidate-3"] input').is_disabled()
+        removed = page.locator('[data-candidate-id="references-candidate-4"]')
+        assert removed.locator("input").is_disabled()
+        assert removed.get_by_role("button", name="显式恢复").count() == 1
+
+        confirm = page.locator("#literature-map-expansion-apply")
+        assert confirm.is_disabled()
+        assert "批量确认待接入" in confirm.inner_text()
+        assert page.evaluate("window.__applyBody") is None
+        assert page.locator('[data-node-id="node-a"]').get_attribute("data-group-id") == "group-fixture"
+        page.close()
+        browser.close()
+
+
+def test_combined_expansion_limits_twenty_unique_identities_across_tabs() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+
+        for index in [1, 2, *range(5, 22)]:
+            page.locator(f'[data-candidate-id="references-candidate-{index}"] input').check()
+        page.locator('[data-candidate-id="references-candidate-0"] input').check()
+        assert "已选 20/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+
+        page.locator('[role="tab"][data-expansion-kind="citations"]').click()
+        page.locator('[data-candidate-id="citations-candidate-0"] input').check()
+        assert "已选 20/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        page.locator('[data-candidate-id="citations-candidate-1"] input').click()
+        assert not page.locator('[data-candidate-id="citations-candidate-1"] input').is_checked()
+        assert "已选 20/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        page.close()
+        browser.close()
+
+
+def test_expansion_paginates_only_on_click_and_retries_failed_page_explicitly() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-failed-page", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        assert page.locator(".literature-map-expansion-pagination").inner_text().count("总量未知") >= 1
+        assert "已加载 50 篇" in page.locator(".literature-map-expansion-pagination").inner_text()
+        assert page.evaluate("window.__loadMoreBodies") == []
+
+        page.locator("#literature-map-expansion-load-more").click()
+        page.wait_for_function("window.__loadMoreBodies?.length === 1")
+        first_body = page.evaluate("window.__loadMoreBodies[0]")
+        assert first_body["kind"] == "references"
+        assert first_body["body"]["expected_preview_revision"] == 1
+        assert first_body["body"]["retry_failed"] is False
+        assert first_body["body"]["idempotency_key"]
+        page.wait_for_function("document.querySelector('.literature-map-expansion-pagination')?.textContent.includes('已加载 100 篇')")
+
+        page.locator('[role="tab"][data-expansion-kind="citations"]').click()
+        page.locator("#literature-map-expansion-load-more").click()
+        page.wait_for_function("window.__loadMoreBodies?.length === 2")
+        assert page.locator(".literature-map-expansion-error").inner_text().strip()
+        assert page.locator("#literature-map-expansion-retry-page").is_visible()
+        page.wait_for_timeout(250)
+        assert len(page.evaluate("window.__loadMoreBodies")) == 2
+
+        page.locator("#literature-map-expansion-retry-page").click()
+        page.wait_for_function("window.__loadMoreBodies?.length === 3")
+        retry_body = page.evaluate("window.__loadMoreBodies[2]")
+        assert retry_body["kind"] == "citations"
+        assert retry_body["body"]["retry_failed"] is True
+        assert retry_body["body"]["idempotency_key"]
+        page.wait_for_function("document.querySelector('.literature-map-expansion-pagination')?.textContent.includes('已加载 100 篇')")
+        page.close()
+        browser.close()
+
+
+def test_expansion_keeps_one_side_available_after_failure_and_stops_at_cap() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-create-citation-fail", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        assert page.locator('[role="tab"][data-expansion-kind="references"]').is_visible()
+        assert page.locator('[data-candidate-id="references-candidate-1"] input').is_enabled()
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator('[role="tab"][data-expansion-kind="citations"]').click()
+        assert page.locator(".literature-map-expansion-error").is_visible()
+        assert "暂时不可用" in page.locator(".literature-map-expansion-error").inner_text()
+        page.locator("#literature-map-expansion-retry-create").click()
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 3")
+        page.locator('[role="tab"][data-expansion-kind="references"]').click()
+        assert page.locator('[data-candidate-id="references-candidate-1"] input').is_checked()
+        page.close()
+
+        capped = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        capped.goto(f"{FIXTURE.as_uri()}?expansion-capped", wait_until="load")
+        _open_expansion(capped)
+        capped.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        assert "500" in capped.locator(".literature-map-expansion-pagination").inner_text()
+        assert "未穷尽" in capped.locator(".literature-map-expansion-pagination").inner_text()
+        assert capped.locator("#literature-map-expansion-load-more").count() == 0
+        assert capped.evaluate("window.__loadMoreBodies") == []
+        capped.close()
+        browser.close()
+
+
+def test_expansion_stops_stuck_polling_and_restores_the_poll_budget() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-stuck-loading", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.wait_for_function("window.__expansionPreviewGetCounts.references >= 81 && window.__expansionPreviewGetCounts.citations >= 81", timeout=20000)
+
+        assert page.locator("#literature-map-expansion-refresh-status").inner_text() == "手动刷新状态"
+        saved = page.evaluate("""() => JSON.parse(sessionStorage.getItem(
+          'literature-map-expansion:owner-fixture:map-fixture:node-a'
+        ))""")
+        assert saved["sides"]["references"]["poll_attempts"] == 80
+        assert saved["sides"]["citations"]["poll_attempts"] == 80
+        stopped_counts = page.evaluate("window.__expansionPreviewGetCounts")
+        page.wait_for_timeout(30)
+        assert page.evaluate("window.__expansionPreviewGetCounts") == stopped_counts
+
+        page.locator("#literature-map-expansion-close").click()
+        page.evaluate("window.__requestLog = []")
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function(
+            "counts => window.__expansionPreviewGetCounts.references === counts.references + 1 && window.__expansionPreviewGetCounts.citations === counts.citations + 1",
+            arg=stopped_counts,
+        )
+        reopened_counts = page.evaluate("window.__expansionPreviewGetCounts")
+        assert page.locator("#literature-map-expansion-refresh-status").is_visible()
+        page.wait_for_timeout(30)
+        assert page.evaluate("window.__expansionPreviewGetCounts") == reopened_counts
+
+        page.evaluate("window.__requestLog = []")
+        page.locator("#literature-map-expansion-refresh-status").click()
+        page.wait_for_function("window.__requestLog.some(entry => entry.method === 'GET' && entry.path.includes('/previews/'))")
+        assert len(page.evaluate("window.__expansionPreviewBodies")) == 2
+        assert not [entry for entry in page.evaluate("window.__requestLog") if entry["method"] == "POST"]
+        page.close()
+        browser.close()
+
+
+def test_expansion_stops_old_polling_when_seed_or_map_changes() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-stuck-loading", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewGetCounts.references >= 4 && window.__expansionPreviewGetCounts.citations >= 4")
+
+        get_ids = """() => window.__requestLog
+          .filter(entry => entry.method === 'GET' && /\\/previews\\/[^/]+$/.test(entry.path))
+          .map(entry => entry.path.split('/').pop())"""
+        seed_a_ids = set(page.evaluate(get_ids))
+        assert len(seed_a_ids) == 2
+        page.locator('[data-node-id="node-b"] circle').click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 4")
+        page.wait_for_function("window.__expansionPreviewGetCounts.references >= 5 && window.__expansionPreviewGetCounts.citations >= 5")
+        seed_b_ids = set(page.evaluate(get_ids)) - seed_a_ids
+        assert len(seed_b_ids) == 2
+        before_seed_switch = page.evaluate("window.__requestLog")
+        old_seed_counts = {preview_id: sum(preview_id in entry["path"] for entry in before_seed_switch) for preview_id in seed_a_ids}
+        page.wait_for_timeout(30)
+        after_seed_switch = page.evaluate("window.__requestLog")
+        assert old_seed_counts == {preview_id: sum(preview_id in entry["path"] for entry in after_seed_switch) for preview_id in seed_a_ids}
+
+        page.locator('[data-map-id="map-fixture-b"]').click()
+        page.wait_for_function("window.__requestLog.some(entry => entry.path === '/api/literature-maps/map-fixture-b/graph')")
+        before_map_switch = page.evaluate("window.__requestLog")
+        old_map_counts = {preview_id: sum(preview_id in entry["path"] for entry in before_map_switch) for preview_id in seed_b_ids}
+        page.wait_for_timeout(30)
+        after_map_switch = page.evaluate("window.__requestLog")
+        assert old_map_counts == {preview_id: sum(preview_id in entry["path"] for entry in after_map_switch) for preview_id in seed_b_ids}
+        page.close()
+        browser.close()
+
+
+def test_expansion_draft_reopens_by_owner_map_seed_with_get_only() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator('[role="tab"][data-expansion-kind="citations"]').click()
+        page.locator("#literature-map-expansion-close").click()
+
+        stored = page.evaluate("""() => Object.fromEntries(
+          Object.keys(sessionStorage).filter(key => key.startsWith('literature-map-expansion:'))
+            .map(key => [key, JSON.parse(sessionStorage.getItem(key))])
+        )""")
+        assert len(stored) == 1
+        saved_key, saved_draft = next(iter(stored.items()))
+        assert all(scope in saved_key for scope in ("owner-fixture", "map-fixture", "node-a"))
+        assert saved_draft["owner_id"] == "owner-fixture"
+        assert saved_draft["map_id"] == "map-fixture"
+        assert saved_draft["seed_node_id"] == "node-a"
+
+        page.evaluate("window.__requestLog = []")
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function("document.querySelector('[role=tab][data-expansion-kind=\"citations\"]')?.getAttribute('aria-selected') === 'true'")
+        page.locator('[role="tab"][data-expansion-kind="references"]').click()
+        assert page.locator('[data-candidate-id="references-candidate-1"] input').is_checked()
+        assert len(page.evaluate("window.__expansionPreviewBodies")) == 2
+        request_log = page.evaluate("window.__requestLog")
+        assert not [entry for entry in request_log if entry["method"] == "POST" and "/previews" in entry["path"]]
+        assert len([entry for entry in request_log if entry["method"] == "GET" and "/previews/" in entry["path"]]) >= 2
+        assert page.evaluate("window.__loadMoreBodies") == []
+
+        page.locator("#literature-map-expansion-close").click()
+        page.locator('[data-node-id="node-b"] circle').click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 4")
+        assert "已选 0/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        page.locator("#literature-map-expansion-close").click()
+
+        page.locator('[data-map-id="map-fixture-b"]').click()
+        page.wait_for_selector('[data-node-id="node-a"]')
+        page.locator('[data-node-id="node-a"] circle').click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 6")
+        assert "已选 0/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        stored = page.evaluate("""() => Object.fromEntries(
+          Object.keys(sessionStorage).filter(key => key.startsWith('literature-map-expansion:'))
+            .map(key => [key, JSON.parse(sessionStorage.getItem(key))])
+        )""")
+        assert len(stored) == 3
+        assert any("owner-fixture-b" in key and "map-fixture-b" in key and draft["seed_node_id"] == "node-a" for key, draft in stored.items())
+        page.close()
+        browser.close()
+
+
+def test_mobile_expansion_moves_from_detail_sheet_to_nested_map_panel() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 390, "height": 820}, has_touch=True, is_mobile=True)
+        page.goto(f"{FIXTURE.as_uri()}?expansion", wait_until="load")
+        page.locator("#literature-map-mobile-list-open").click()
         page.locator('[data-map-id="map-fixture"]').click()
+        node = page.locator('[data-node-id="node-a"] circle')
+        box = node.bounding_box()
+        assert box is not None
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.classList.contains('is-open')")
+        page.get_by_role("button", name="扩展关联论文").click()
         page.wait_for_selector("#literature-map-preview-panel")
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+
         assert page.locator("#literature-map-preview-panel").is_visible()
+        assert page.locator(".literature-map-detail-panel").is_hidden()
+        assert page.locator("#literature-map-mobile-backdrop").is_hidden()
+        assert page.locator("#literature-map-preview-panel").evaluate("panel => Boolean(panel.closest('.literature-map-canvas-panel') && panel.closest('#literature-maps-view'))")
+        assert page.locator("#literature-map-preview-panel [role=tabpanel]").get_attribute("aria-labelledby")
+        assert page.locator("#literature-map-preview-panel [role=tab]").count() == 2
         page.close()
         browser.close()
 
@@ -370,11 +668,11 @@ def test_component_fixture_handles_tombstone_restore_and_indexed_document_link()
         page.locator('[data-node-id="node-a"] circle').click()
         page.get_by_role("button", name="移出地图").click()
         page.wait_for_function("window.__nodeActionBodies?.some((body) => body.action === 'remove')")
-        assert page.get_by_role("button", name="参考文献").count() == 0
+        assert page.get_by_role("button", name="扩展关联论文").count() == 0
         page.get_by_role("button", name="显式恢复").click()
         page.wait_for_function("window.__nodeActionBodies?.some((body) => body.action === 'restore')")
-        page.get_by_role("button", name="参考文献").click()
-        page.wait_for_selector('[data-candidate-id="candidate-removed"]')
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_selector('[data-candidate-id="references-candidate-4"]')
 
         page.locator('[data-node-id="node-b"] circle').click()
         page.wait_for_selector(".literature-map-document-link")
@@ -398,7 +696,7 @@ def test_component_fixture_handles_tombstone_restore_and_indexed_document_link()
         assert indexed_tombstone.evaluate("window.__lastImportBody") is None
         indexed_tombstone.get_by_role("button", name="显式恢复").click()
         indexed_tombstone.wait_for_function("window.__nodeActionBodies?.some((body) => body.action === 'restore')")
-        indexed_tombstone.get_by_role("button", name="参考文献").click()
+        indexed_tombstone.get_by_role("button", name="扩展关联论文").click()
         indexed_tombstone.wait_for_selector("#literature-map-preview-panel")
         indexed_tombstone.close()
         browser.close()
