@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, field_validator, model_validator
 
 from backend.app.literature_maps.application.analysis import MapAnalysisError
 from backend.app.literature_maps.application.runtime import get_literature_map_service
@@ -121,6 +121,46 @@ class PreviewApplyRequest(BaseModel):
     expected_revision: StrictInt = Field(ge=0)
     selected_candidate_ids: list[str] = Field(default_factory=list, max_length=200)
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class PreviewSelectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preview_id: StrictStr = Field(min_length=1, max_length=100)
+    expected_preview_revision: StrictInt = Field(ge=1)
+    selected_candidate_ids: list[StrictStr] = Field(min_length=1, max_length=20)
+
+    @field_validator("preview_id")
+    @classmethod
+    def normalize_preview_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("preview_id is required")
+        return value
+
+    @field_validator("selected_candidate_ids")
+    @classmethod
+    def validate_candidate_ids(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() or len(item) > 200 for item in value) or len(value) != len(set(value)):
+            raise ValueError("candidate IDs must be non-empty and unique")
+        return value
+
+
+class PreviewRevalidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: StrictInt = Field(ge=0)
+    idempotency_key: StrictStr = Field(min_length=1, max_length=200)
+    selections: list[PreviewSelectionRequest] = Field(min_length=1, max_length=2)
+
+    @model_validator(mode="after")
+    def validate_preview_ids(self):
+        if len({item.preview_id for item in self.selections}) != len(self.selections):
+            raise ValueError("preview IDs must be unique")
+        return self
+
+
+class PreviewBatchApplyRequest(PreviewRevalidateRequest):
+    pass
 
 
 class NodeMutationRequest(BaseModel):
@@ -239,7 +279,7 @@ def _error(error: Exception) -> HTTPException:
             "UNSUPPORTED_SOURCE": "source_id 不是服务端支持的来源",
             "UNSUPPORTED_CONFERENCE": "conference_id 不是服务端支持的会议",
         }[code]
-    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_LABEL_MODE", "INVALID_NODE_STYLE", "INVALID_NODE_IDS", "INVALID_COLOR_OVERRIDE", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED", "PREVIEW_PAGINATION_KIND_REQUIRED", "INVALID_PREVIEW_PAGINATION", "PREVIEW_IDEMPOTENCY_KEY_REQUIRED"}:
+    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_LABEL_MODE", "INVALID_NODE_STYLE", "INVALID_NODE_IDS", "INVALID_COLOR_OVERRIDE", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "PREVIEW_SELECTIONS_INVALID", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED", "PREVIEW_PAGINATION_KIND_REQUIRED", "INVALID_PREVIEW_PAGINATION", "PREVIEW_IDEMPOTENCY_KEY_REQUIRED"}:
         status, error_code, message = 400, code, "地图创建参数不合法"
     elif code == "PROJECT_NOT_FOUND":
         status, error_code, message = 404, code, "项目不存在或不可访问"
@@ -587,6 +627,36 @@ def get_literature_map_preview(map_id: str, preview_id: str):
     except Exception as error:
         raise _error(error) from error
     return _envelope(preview=preview.to_dict(), job=job.to_dict())
+
+
+@router.post("/{map_id}/previews/revalidate")
+def revalidate_literature_map_previews(map_id: str, payload: PreviewRevalidateRequest):
+    try:
+        result = get_literature_map_service().revalidate_previews(
+            map_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+            idempotency_key=payload.idempotency_key,
+            selections=[item.model_dump() for item in payload.selections],
+        )
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
+
+
+@router.post("/{map_id}/previews/batch-apply", status_code=202)
+def batch_apply_literature_map_previews(map_id: str, payload: PreviewBatchApplyRequest):
+    try:
+        result = get_literature_map_service().batch_apply_previews(
+            map_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+            idempotency_key=payload.idempotency_key,
+            selections=[item.model_dump() for item in payload.selections],
+        )
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
 
 
 @router.post("/{map_id}/previews/{preview_id}/apply", status_code=202)

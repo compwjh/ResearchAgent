@@ -1264,6 +1264,137 @@ class LiteratureMapService:
             self._enqueue_abstract_summaries(map_id, owner_id)
         return result
 
+    def revalidate_previews(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        idempotency_key: str,
+        selections: list[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 0:
+            raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 200:
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        normalized = _normalize_preview_selections(selections)
+        params_hash = _params_hash(
+            {
+                "expected_revision": expected_revision,
+                "selections": normalized,
+            }
+        )
+        return self.store.revalidate_previews(
+            map_id,
+            owner_id,
+            expected_revision=expected_revision,
+            selections=normalized,
+            idempotency_key=idempotency_key,
+            params_hash=params_hash,
+        )
+
+    def batch_apply_previews(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        idempotency_key: str,
+        selections: list[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 0:
+            raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 200:
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        normalized = _normalize_preview_selections(selections)
+        params_hash = _params_hash(
+            {
+                "expected_revision": expected_revision,
+                "selections": normalized,
+            }
+        )
+        candidate_nodes: dict[tuple[str, str], MapPaper] = {}
+        chosen_by_identity: dict[str, MapPaper] = {}
+        candidate_identity: dict[tuple[str, str], str] = {}
+        for selection in normalized:
+            preview_id = str(selection["preview_id"])
+            preview_result = self.store.get_preview(map_id, preview_id, owner_id)
+            if preview_result is None:
+                raise LookupError("preview not found")
+            preview, _job = preview_result
+            candidates_by_id = {
+                str(candidate.get("candidate_id")): candidate
+                for candidate in preview.candidates
+                if isinstance(candidate, Mapping) and candidate.get("candidate_id")
+            }
+            for candidate_id in selection["selected_candidate_ids"]:
+                candidate = candidates_by_id.get(str(candidate_id))
+                if candidate is None:
+                    raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                try:
+                    node = self._candidate_node(map_id, candidate)
+                except (TypeError, ValueError) as error:
+                    raise ValueError("INVALID_PREVIEW_CANDIDATE") from error
+                identity = str(candidate.get("identity_key") or "")
+                if not identity or node.identity_key != identity:
+                    raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                selector = (preview_id, str(candidate_id))
+                candidate_nodes[selector] = node
+                candidate_identity[selector] = identity
+                prior = chosen_by_identity.get(identity)
+                if prior is None or (not str(prior.abstract or "").strip() and str(node.abstract or "").strip()):
+                    chosen_by_identity[identity] = node
+
+        for selector, identity in candidate_identity.items():
+            candidate_nodes[selector] = chosen_by_identity[identity]
+
+        from backend.app.literature_maps.application.analysis import _hash_source
+        from backend.app.platform.config import MODEL_NAME
+
+        selected_model = str(MODEL_NAME or "").strip() or MODEL_NAME
+        analysis_specs: dict[str, dict[str, str]] = {}
+        for identity, node in chosen_by_identity.items():
+            abstract = str(node.abstract or "").strip()
+            if not abstract:
+                continue
+            source_version = _hash_source(
+                {"title": node.title, "abstract": node.abstract or "", "external_ids": node.external_ids}
+            )
+            analysis_specs[identity] = {
+                "source_version": source_version,
+                "model_id": str(selected_model),
+                "params_hash": _params_hash(
+                    {"evidence_level": "abstract", "model": selected_model, "source_version": source_version}
+                ),
+            }
+        result = self.store.batch_apply_previews(
+            map_id,
+            owner_id,
+            expected_revision=expected_revision,
+            selections=normalized,
+            idempotency_key=idempotency_key,
+            params_hash=params_hash,
+            candidate_nodes=candidate_nodes,
+            analysis_specs=analysis_specs,
+        )
+        batch_job = self.store.get_job(str(result.get("batch_job_id") or ""), map_id, owner_id)
+        batch_items = batch_job.cursor.get("items", {}) if batch_job is not None else {}
+        has_queued_abstracts = isinstance(batch_items, Mapping) and any(
+            isinstance(item, Mapping)
+            and item.get("status") == "analysis_queued"
+            and item.get("analysis_id")
+            for item in batch_items.values()
+        )
+        analysis = getattr(self, "analysis_service", None)
+        get_queue = getattr(analysis, "get_analysis_queue", None)
+        schedule = getattr(analysis, "_schedule_analysis_queue", None)
+        queue_job_id = result.get("queue_job_id")
+        if has_queued_abstracts and queue_job_id and callable(get_queue) and callable(schedule):
+            queue = get_queue(map_id, owner_id)
+            if queue.get("queue_job_id") == queue_job_id:
+                schedule(map_id, owner_id, queue)
+        return result
+
     def remove_node(self, map_id: str, node_id: str, owner_id: str, *, expected_revision: int, idempotency_key: str | None = None) -> dict[str, Any]:
         return self.store.remove_node(map_id, node_id, owner_id, expected_revision=expected_revision, idempotency_key=idempotency_key, params_hash=_params_hash({"node_id": node_id, "expected_revision": expected_revision}))
 
@@ -2026,6 +2157,40 @@ class LiteratureMapService:
 
 def _params_hash(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _normalize_preview_selections(selections: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    if not isinstance(selections, list) or not 1 <= len(selections) <= 2:
+        raise ValueError("PREVIEW_SELECTIONS_INVALID")
+    normalized: list[dict[str, Any]] = []
+    seen_previews: set[str] = set()
+    for selection in selections:
+        if not isinstance(selection, Mapping):
+            raise ValueError("PREVIEW_SELECTIONS_INVALID")
+        preview_id = selection.get("preview_id")
+        expected = selection.get("expected_preview_revision")
+        candidate_ids = selection.get("selected_candidate_ids")
+        if not isinstance(preview_id, str) or not preview_id.strip() or len(preview_id) > 100:
+            raise ValueError("PREVIEW_SELECTIONS_INVALID")
+        if preview_id in seen_previews:
+            raise ValueError("PREVIEW_SELECTIONS_INVALID")
+        seen_previews.add(preview_id)
+        if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
+            raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+        if not isinstance(candidate_ids, list) or not 1 <= len(candidate_ids) <= 20:
+            raise ValueError("PREVIEW_BATCH_LIMIT")
+        if any(not isinstance(item, str) or not item.strip() or len(item) > 200 for item in candidate_ids):
+            raise ValueError("INVALID_PREVIEW_CANDIDATE")
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("INVALID_PREVIEW_CANDIDATE")
+        normalized.append(
+            {
+                "preview_id": preview_id,
+                "expected_preview_revision": expected,
+                "selected_candidate_ids": list(candidate_ids),
+            }
+        )
+    return normalized
 
 
 def _groups_envelope(item: LiteratureMap, groups: Iterable[Any]) -> dict[str, Any]:

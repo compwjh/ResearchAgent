@@ -24,6 +24,7 @@ from typing import Any
 
 from backend.app.literature_maps.domain.analysis import MapAnalysis, MapConversationBinding
 from backend.app.literature_maps.domain.errors import LiteratureMapStoreError
+from backend.app.literature_maps.domain.identity import deterministic_identity_key
 from backend.app.literature_maps.domain.import_diagnostics import normalize_import_diagnostics
 from backend.app.literature_maps.domain.models import (
     LiteratureMap,
@@ -2339,6 +2340,632 @@ class LiteratureMapStore:
             job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (preview_row["job_id"],)).fetchone() if preview_row else None
         return (_preview(preview_row), _job(job_row)) if preview_row and job_row else None
 
+    def revalidate_previews(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        selections: list[dict[str, Any]],
+        idempotency_key: str,
+        params_hash: str,
+    ) -> dict[str, Any]:
+        """Refresh selected preview snapshots against the current local graph."""
+        if not idempotency_key:
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        with self.transaction() as db:
+            self._assert_writable(db, map_id, owner_id)
+            map_row = db.execute(
+                "SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            try:
+                replay = self._queue_command_replay(
+                    db, map_id, owner_id, "preview_revalidate", idempotency_key, params_hash
+                )
+            except ValueError as error:
+                if str(error) == "idempotency conflict":
+                    raise ValueError("MAP_IDEMPOTENCY_CONFLICT") from error
+                raise
+            if replay is not None:
+                return replay
+            if int(map_row["revision"]) != expected_revision:
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            records, seed_id, seed_identity = self._expansion_selection_rows_tx(
+                db,
+                map_id,
+                owner_id,
+                expected_revision=expected_revision,
+                selections=selections,
+                require_current_base=False,
+            )
+            active_count = int(
+                db.execute(
+                    "SELECT COUNT(*) FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL",
+                    (map_id,),
+                ).fetchone()[0]
+            )
+            selected_identities: list[tuple[dict[str, Any], str, bool]] = []
+            candidate_updates: dict[str, list[dict[str, Any]]] = {}
+            changes_by_preview: dict[str, dict[str, int]] = {}
+            invalid: list[dict[str, str]] = []
+            selected_set = {
+                (str(selection["preview_id"]), str(candidate_id))
+                for selection in selections
+                for candidate_id in selection["selected_candidate_ids"]
+            }
+            for preview_row, _job_row, candidates, _pagination in records:
+                preview_id = str(preview_row["preview_id"])
+                changes = {"already_present": 0, "removed": 0}
+                refreshed: list[dict[str, Any]] = []
+                for raw_candidate in candidates:
+                    candidate = dict(raw_candidate)
+                    candidate_id = str(candidate.get("candidate_id") or "")
+                    identity = _verified_preview_identity(candidate)
+                    row = (
+                        db.execute(
+                            "SELECT node_id,removed_at FROM literature_map_nodes WHERE map_id=? AND identity_key=?",
+                            (map_id, identity),
+                        ).fetchone()
+                        if identity
+                        else None
+                    )
+                    present = bool(row and row["removed_at"] is None)
+                    removed = bool(row and row["removed_at"] is not None)
+                    if bool(candidate.get("already_present")) != present:
+                        changes["already_present"] += 1
+                    if bool(candidate.get("removed")) != removed:
+                        changes["removed"] += 1
+                    candidate["already_present"] = present
+                    candidate["removed"] = removed
+                    if (preview_id, candidate_id) in selected_set:
+                        reason = None
+                        if not identity:
+                            reason = "INVALID_PREVIEW_CANDIDATE"
+                        elif identity == seed_identity:
+                            reason = "INVALID_PREVIEW_CANDIDATE"
+                        elif removed:
+                            reason = "MAP_NODE_REMOVED"
+                        if reason:
+                            invalid.append({"preview_id": preview_id, "candidate_id": candidate_id, "reason": reason})
+                        else:
+                            selected_identities.append((candidate, identity, present))
+                    refreshed.append(candidate)
+                candidate_updates[preview_id] = refreshed
+                changes_by_preview[preview_id] = changes
+
+            new_identities: list[str] = []
+            seen = set()
+            for _candidate, identity, present in selected_identities:
+                if not present and identity not in seen:
+                    seen.add(identity)
+                    new_identities.append(identity)
+            capacity = max(0, 200 - active_count)
+            overflow = set(new_identities[capacity:])
+            if overflow:
+                known_invalid = {(item["preview_id"], item["candidate_id"]) for item in invalid}
+                for selection in selections:
+                    preview_id = str(selection["preview_id"])
+                    candidates = candidate_updates.get(preview_id, [])
+                    by_id = {str(item.get("candidate_id")): item for item in candidates}
+                    for candidate_id in selection["selected_candidate_ids"]:
+                        candidate = by_id.get(str(candidate_id))
+                        if candidate and candidate.get("identity_key") in overflow and (preview_id, str(candidate_id)) not in known_invalid:
+                            invalid.append({"preview_id": preview_id, "candidate_id": str(candidate_id), "reason": "MAP_NODE_LIMIT"})
+
+            now = iso_now()
+            preview_results: list[dict[str, Any]] = []
+            for preview_row, job_row, _candidates, _pagination in records:
+                preview_id = str(preview_row["preview_id"])
+                next_revision = int(preview_row["preview_revision"]) + 1
+                changed = db.execute(
+                    "UPDATE literature_map_previews SET candidates_json=?,base_revision=?,preview_revision=?,updated_at=? "
+                    "WHERE map_id=? AND preview_id=? AND preview_revision=?",
+                    (
+                        _dump(candidate_updates[preview_id]),
+                        expected_revision,
+                        next_revision,
+                        now,
+                        map_id,
+                        preview_id,
+                        int(preview_row["preview_revision"]),
+                    ),
+                )
+                if changed.rowcount != 1:
+                    raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+                preview_results.append(
+                    {
+                        "preview_id": preview_id,
+                        "preview_revision": next_revision,
+                        "base_revision": expected_revision,
+                    }
+                )
+                self._append_event(db, _job(job_row), event_type="preview_revalidated")
+            valid_selections: list[dict[str, Any]] = []
+            invalid_keys = {(item["preview_id"], item["candidate_id"]) for item in invalid}
+            for selection in selections:
+                preview_id = str(selection["preview_id"])
+                valid_selections.append(
+                    {
+                        "preview_id": preview_id,
+                        "candidate_ids": [
+                            str(candidate_id)
+                            for candidate_id in selection["selected_candidate_ids"]
+                            if (preview_id, str(candidate_id)) not in invalid_keys
+                        ],
+                    }
+                )
+            result = {
+                "map_id": map_id,
+                "revision": expected_revision,
+                "previews": preview_results,
+                "valid_selections": valid_selections,
+                "invalid_selections": invalid,
+                "changes": changes_by_preview,
+            }
+            self._remember_queue_command(
+                db, map_id, owner_id, "preview_revalidate", idempotency_key, params_hash, result
+            )
+            return result
+
+    def batch_apply_previews(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        selections: list[dict[str, Any]],
+        idempotency_key: str,
+        params_hash: str,
+        candidate_nodes: Mapping[tuple[str, str], MapPaper],
+        analysis_specs: Mapping[str, Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """Apply cross-direction preview selections, outbox and queue in one transaction."""
+        if not idempotency_key:
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED")
+        with self.transaction() as db:
+            self._assert_writable(db, map_id, owner_id)
+            map_row = db.execute(
+                "SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            try:
+                replay = self._queue_command_replay(
+                    db, map_id, owner_id, "preview_batch_apply", idempotency_key, params_hash
+                )
+            except ValueError as error:
+                if str(error) == "idempotency conflict":
+                    raise ValueError("MAP_IDEMPOTENCY_CONFLICT") from error
+                raise
+            if replay is not None:
+                return replay
+            if int(map_row["revision"]) != expected_revision:
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            records, seed_id, seed_identity = self._expansion_selection_rows_tx(
+                db,
+                map_id,
+                owner_id,
+                expected_revision=expected_revision,
+                selections=selections,
+                require_current_base=True,
+            )
+            active_count = int(
+                db.execute(
+                    "SELECT COUNT(*) FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL",
+                    (map_id,),
+                ).fetchone()[0]
+            )
+            record_by_id = {str(row["preview_id"]): (row, job, candidates, pagination) for row, job, candidates, pagination in records}
+            new_by_identity: dict[str, MapPaper] = {}
+            active_by_identity: dict[str, str] = {
+                str(row["identity_key"]): str(row["node_id"])
+                for row in db.execute(
+                    "SELECT identity_key,node_id FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL",
+                    (map_id,),
+                ).fetchall()
+            }
+            selected_by_identity: dict[str, list[tuple[str, str, str]]] = {}
+            existing_identities: set[str] = set()
+            for selection in selections:
+                preview_id = str(selection["preview_id"])
+                preview_row, _job_row, candidates, _pagination = record_by_id[preview_id]
+                candidate_by_id = {str(item.get("candidate_id")): item for item in candidates if isinstance(item, Mapping)}
+                kind = str(preview_row["kind"])
+                for candidate_id in selection["selected_candidate_ids"]:
+                    candidate_id = str(candidate_id)
+                    candidate = candidate_by_id.get(candidate_id)
+                    if candidate is None:
+                        raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                    identity = _verified_preview_identity(candidate)
+                    if not identity or identity == seed_identity:
+                        raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                    candidate_node = candidate_nodes.get((preview_id, candidate_id))
+                    if candidate_node is None or candidate_node.map_id != map_id or candidate_node.identity_key != identity:
+                        raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                    if deterministic_identity_key(candidate_node.external_ids) != identity:
+                        raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                    current_row = db.execute(
+                        "SELECT node_id,removed_at FROM literature_map_nodes WHERE map_id=? AND identity_key=?",
+                        (map_id, identity),
+                    ).fetchone()
+                    if current_row is not None and current_row["removed_at"] is not None:
+                        raise ValueError("MAP_NODE_REMOVED")
+                    if current_row is None:
+                        if bool(candidate.get("already_present")) or bool(candidate.get("removed")):
+                            raise ValueError("MAP_PREVIEW_REVALIDATION_REQUIRED")
+                        new_by_identity.setdefault(identity, candidate_node)
+                    else:
+                        if bool(candidate.get("removed")) or not bool(candidate.get("already_present")):
+                            raise ValueError("MAP_PREVIEW_REVALIDATION_REQUIRED")
+                        existing_identities.add(identity)
+                    selected_by_identity.setdefault(identity, []).append((preview_id, candidate_id, kind))
+            if len(new_by_identity) > 20:
+                raise ValueError("PREVIEW_BATCH_LIMIT")
+            if active_count + len(new_by_identity) > _MAX_MAP_NODES:
+                raise ValueError("MAP_NODE_LIMIT")
+
+            now = iso_now()
+            for identity, node in new_by_identity.items():
+                self._insert_node(db, node)
+                active_by_identity[identity] = node.node_id
+
+            inserted_edges = 0
+            seed_node_id = str(seed_id)
+            for identity, sources in selected_by_identity.items():
+                target_node_id = active_by_identity.get(identity)
+                if not target_node_id or target_node_id == seed_node_id:
+                    raise ValueError("INVALID_PREVIEW_CANDIDATE")
+                for preview_id, _candidate_id, kind in sources:
+                    source_id, target_id = (
+                        (seed_node_id, target_node_id)
+                        if kind == "references"
+                        else (target_node_id, seed_node_id)
+                    )
+                    edge = MapEdge.new(
+                        map_id,
+                        "citation",
+                        source_id,
+                        target_id,
+                        provenance={"source": "preview", "preview_id": preview_id},
+                    )
+                    changed = db.execute(
+                        "INSERT OR IGNORE INTO literature_map_edges(edge_id,map_id,kind,source_id,target_id,provenance_json,score,basis,model_version,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (edge.edge_id, map_id, edge.kind, edge.source_id, edge.target_id, _dump(edge.provenance), edge.score, edge.basis, edge.model_version, edge.content_hash),
+                    )
+                    inserted_edges += max(0, changed.rowcount)
+            graph_changed = bool(new_by_identity or inserted_edges)
+            if graph_changed:
+                db.execute(
+                    "UPDATE literature_maps SET revision=revision+1,updated_at=? WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                    (now, map_id, owner_id),
+                )
+            final_revision = expected_revision + (1 if graph_changed else 0)
+
+            abstract_nodes = [node for node in new_by_identity.values() if str(node.abstract or "").strip()]
+            queue_items: dict[str, dict[str, Any]] = {}
+            queue_row = self._queue_row(db, map_id, owner_id)
+            queue_job_id: str | None = str(queue_row["job_id"]) if queue_row is not None else None
+            if abstract_nodes:
+                candidates_for_queue: list[dict[str, Any]] = []
+                for node in abstract_nodes:
+                    spec = analysis_specs.get(str(node.identity_key or ""))
+                    if not isinstance(spec, Mapping):
+                        raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+                    source_version = str(spec.get("source_version") or "")
+                    model_id = str(spec.get("model_id") or "")
+                    if not source_version or not model_id:
+                        raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+                    candidates_for_queue.append(
+                        {
+                            "node_id": node.node_id,
+                            "abstract_available": True,
+                            "source_version": source_version,
+                            "model_id": model_id,
+                            "idempotency_key": f"auto:{node.node_id}:{source_version}:{model_id}",
+                            "params_hash": str(spec.get("params_hash") or ""),
+                        }
+                    )
+                queue_job_id, queue_items = self._merge_analysis_queue_items_tx(
+                    db, map_id, owner_id, candidates_for_queue
+                )
+
+            outbox_items: dict[str, dict[str, Any]] = {}
+            metadata_pending = 0
+            analysis_queued = 0
+            for node in new_by_identity.values():
+                if str(node.abstract or "").strip():
+                    item = dict(queue_items.get(node.node_id) or {})
+                    outbox_items[node.node_id] = {
+                        "node_id": node.node_id,
+                        "status": "analysis_queued",
+                        "metadata_status": "complete",
+                        "analysis_id": item.get("analysis_id"),
+                        "source_version": item.get("source_version"),
+                        "attempts": 0,
+                        "error_code": None,
+                    }
+                    analysis_queued += 1
+                else:
+                    outbox_items[node.node_id] = {
+                        "node_id": node.node_id,
+                        "status": "metadata_pending",
+                        "metadata_status": "pending",
+                        "attempts": 0,
+                        "error_code": None,
+                    }
+                    metadata_pending += 1
+
+            batch_job_id = uuid.uuid4().hex
+            if metadata_pending:
+                batch_status, batch_step = "queued", "metadata"
+            elif analysis_queued:
+                batch_status, batch_step = "analysis_wait", "analysis_wait"
+            else:
+                batch_status, batch_step = "completed", "finished"
+            counts = {
+                "added_count": len(new_by_identity),
+                "existing_count": len(existing_identities),
+                "total": len(new_by_identity),
+                "metadata_pending": metadata_pending,
+                "analysis_queued": analysis_queued,
+                "completed": 0,
+                "failed": 0,
+            }
+            cursor = {
+                "version": 1,
+                "seed_node_id": seed_node_id,
+                "preview_ids": [str(row["preview_id"]) for row, _job, _candidates, _pagination in records],
+                "new_node_ids": [node.node_id for node in new_by_identity.values()],
+                "items": outbox_items,
+            }
+            batch_job = MapJob(
+                batch_job_id,
+                map_id,
+                "expand_batch",
+                batch_status,
+                batch_step,
+                cursor,
+                counts,
+                [],
+                f"expand-batch:{idempotency_key}",
+                now,
+                now,
+            )
+            db.execute(
+                "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (batch_job.job_id, map_id, batch_job.operation, batch_job.status, batch_job.step, _dump(batch_job.cursor), _dump(batch_job.counts), _dump(batch_job.failed_units), batch_job.idempotency_key, params_hash, now, now),
+            )
+
+            preview_results: list[dict[str, Any]] = []
+            for preview_row, _job_row, candidates, _pagination in records:
+                preview_id = str(preview_row["preview_id"])
+                selected_ids = {
+                    str(candidate_id)
+                    for selection in selections
+                    if str(selection["preview_id"]) == preview_id
+                    for candidate_id in selection["selected_candidate_ids"]
+                }
+                refreshed: list[dict[str, Any]] = []
+                for raw_candidate in candidates:
+                    candidate = dict(raw_candidate)
+                    identity = _verified_preview_identity(candidate)
+                    current = db.execute(
+                        "SELECT removed_at FROM literature_map_nodes WHERE map_id=? AND identity_key=?",
+                        (map_id, identity),
+                    ).fetchone() if identity else None
+                    candidate["already_present"] = bool(current and current["removed_at"] is None)
+                    candidate["removed"] = bool(current and current["removed_at"] is not None)
+                    if str(candidate.get("candidate_id") or "") in selected_ids:
+                        candidate["added"] = True
+                    refreshed.append(candidate)
+                next_preview_revision = int(preview_row["preview_revision"]) + 1
+                changed = db.execute(
+                    "UPDATE literature_map_previews SET candidates_json=?,base_revision=?,preview_revision=?,updated_at=? "
+                    "WHERE map_id=? AND preview_id=? AND preview_revision=?",
+                    (_dump(refreshed), final_revision, next_preview_revision, now, map_id, preview_id, int(preview_row["preview_revision"])),
+                )
+                if changed.rowcount != 1:
+                    raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+                preview_results.append(
+                    {"preview_id": preview_id, "preview_revision": next_preview_revision, "base_revision": final_revision}
+                )
+
+            added_node_ids = [node.node_id for node in new_by_identity.values()]
+            result = {
+                "map_id": map_id,
+                "revision": final_revision,
+                "added_count": len(added_node_ids),
+                "existing_count": len(existing_identities),
+                "node_ids": added_node_ids,
+                "batch_job_id": batch_job_id,
+                "queue_job_id": queue_job_id,
+                "previews": preview_results,
+            }
+            self._remember_queue_command(
+                db, map_id, owner_id, "preview_batch_apply", idempotency_key, params_hash, result
+            )
+            self._append_event(db, batch_job, event_type="expansion_batch_queued")
+            return result
+
+    def _expansion_selection_rows_tx(
+        self,
+        db: sqlite3.Connection,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        selections: list[dict[str, Any]],
+        require_current_base: bool,
+    ) -> tuple[list[tuple[sqlite3.Row, sqlite3.Row, list[Any], dict[str, Any]]], str, str]:
+        if not 1 <= len(selections) <= 2:
+            raise ValueError("PREVIEW_SELECTIONS_INVALID")
+        preview_ids: set[str] = set()
+        kinds: set[str] = set()
+        records: list[tuple[sqlite3.Row, sqlite3.Row, list[Any], dict[str, Any]]] = []
+        seed_id: str | None = None
+        seed_identity: str | None = None
+        for selection in selections:
+            preview_id = str(selection.get("preview_id") or "")
+            candidate_ids = selection.get("selected_candidate_ids")
+            if not preview_id or preview_id in preview_ids:
+                raise ValueError("PREVIEW_SELECTIONS_INVALID")
+            preview_ids.add(preview_id)
+            if not isinstance(candidate_ids, list) or not 1 <= len(candidate_ids) <= 20:
+                raise ValueError("PREVIEW_BATCH_LIMIT")
+            candidate_ids = [str(item) for item in candidate_ids]
+            if len(candidate_ids) != len(set(candidate_ids)):
+                raise ValueError("INVALID_PREVIEW_CANDIDATE")
+            preview_row = db.execute(
+                "SELECT * FROM literature_map_previews WHERE map_id=? AND preview_id=?",
+                (map_id, preview_id),
+            ).fetchone()
+            if preview_row is None:
+                raise LookupError("preview not found")
+            kind = str(preview_row["kind"])
+            if kind not in {"references", "citations"} or kind in kinds:
+                raise ValueError("PREVIEW_SELECTIONS_INVALID")
+            kinds.add(kind)
+            job_row = db.execute(
+                "SELECT * FROM literature_map_jobs WHERE job_id=? AND map_id=?",
+                (preview_row["job_id"], map_id),
+            ).fetchone()
+            pagination = _load(preview_row["pagination_json"], None)
+            if not isinstance(pagination, Mapping) or pagination.get("version") != 1:
+                raise ValueError("MAP_PREVIEW_REVALIDATION_REQUIRED")
+            if pagination.get("state") == "loading" or preview_row["status"] in {"queued", "running"}:
+                raise ValueError("MAP_PREVIEW_BUSY")
+            if pagination.get("state") not in {"ready", "exhausted", "capped", "failed"} or preview_row["status"] not in {"completed", "failed"}:
+                raise ValueError("MAP_PREVIEW_REVALIDATION_REQUIRED")
+            if job_row is None or job_row["status"] in {"queued", "running"}:
+                raise ValueError("MAP_PREVIEW_BUSY")
+            if int(preview_row["preview_revision"]) != int(selection.get("expected_preview_revision", -1)):
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            if require_current_base and int(preview_row["base_revision"]) != expected_revision:
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            current_seed_id = str(preview_row["node_id"] or "")
+            seed_row = db.execute(
+                "SELECT node_id,identity_key,removed_at FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                (map_id, current_seed_id),
+            ).fetchone()
+            if (
+                seed_row is None
+                or seed_row["removed_at"] is not None
+                or not str(seed_row["identity_key"] or "")
+                or str(seed_row["identity_key"]) != str(pagination.get("seed_identity_key") or "")
+            ):
+                raise ValueError("MAP_SEED_UNAVAILABLE")
+            if seed_id is None:
+                seed_id = current_seed_id
+                seed_identity = str(seed_row["identity_key"])
+            elif seed_id != current_seed_id or seed_identity != str(seed_row["identity_key"]):
+                raise ValueError("MAP_SEED_UNAVAILABLE")
+            candidates = _load(preview_row["candidates_json"], [])
+            if not isinstance(candidates, list):
+                raise ValueError("MAP_PREVIEW_REVALIDATION_REQUIRED")
+            candidate_map = {
+                str(item.get("candidate_id")): item
+                for item in candidates
+                if isinstance(item, Mapping) and item.get("candidate_id")
+            }
+            if any(candidate_id not in candidate_map for candidate_id in candidate_ids):
+                raise ValueError("INVALID_PREVIEW_CANDIDATE")
+            records.append((preview_row, job_row, candidates, dict(pagination)))
+        assert seed_id is not None and seed_identity is not None
+        return records, seed_id, seed_identity
+
+    def _merge_analysis_queue_items_tx(
+        self,
+        db: sqlite3.Connection,
+        map_id: str,
+        owner_id: str,
+        candidates: list[dict[str, Any]],
+    ) -> tuple[str, dict[str, dict[str, Any]]]:
+        """Append just the supplied new nodes while retaining every old queue item."""
+        queue_row = self._queue_row(db, map_id, owner_id)
+        now = iso_now()
+        if queue_row is None:
+            queue_id = uuid.uuid4().hex
+            queue_job = MapJob(
+                queue_id,
+                map_id,
+                _ANALYSIS_QUEUE_OPERATION,
+                "active",
+                "analysis_queue",
+                {"queue_version": 1, "pause_reason": None, "items": {}},
+                {"total": 0, "completed": 0, "queued": 0, "running": 0, "failed": 0, "skipped": 0},
+                [],
+                _ANALYSIS_QUEUE_IDEMPOTENCY,
+                now,
+                now,
+            )
+            db.execute(
+                "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (queue_job.job_id, map_id, queue_job.operation, queue_job.status, queue_job.step, _dump(queue_job.cursor), _dump(queue_job.counts), _dump(queue_job.failed_units), queue_job.idempotency_key, None, now, now),
+            )
+            self._append_event(db, queue_job, event_type="queued")
+            queue_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (queue_id,)).fetchone()
+        queue_id = str(queue_row["job_id"])
+        cursor = _load(queue_row["cursor_json"], {})
+        if not isinstance(cursor, dict):
+            cursor = {}
+        old_items = cursor.get("items", {})
+        if not isinstance(old_items, Mapping):
+            old_items = {}
+        merged_items = dict(old_items)
+        new_items: dict[str, dict[str, Any]] = {}
+        for candidate in candidates:
+            node_id = str(candidate.get("node_id") or "")
+            if not node_id:
+                raise ValueError("MAP_ANALYSIS_STATE_INVALID")
+            existing = merged_items.get(node_id)
+            if isinstance(existing, Mapping):
+                new_items[node_id] = dict(existing)
+                continue
+            source_version = str(candidate.get("source_version") or "")
+            model_id = str(candidate.get("model_id") or "")
+            stable_key = str(candidate.get("idempotency_key") or f"auto:{node_id}:{source_version}:{model_id}")
+            analysis, child, _created = self._create_analysis_tx(
+                db,
+                map_id,
+                node_id,
+                owner_id,
+                evidence_level="abstract",
+                source_version=source_version,
+                model_id=model_id,
+                idempotency_key=stable_key,
+                params_hash=str(candidate.get("params_hash") or ""),
+                queue_job_id=queue_id,
+            )
+            error = analysis.error or {}
+            item = {
+                "node_id": node_id,
+                "analysis_id": analysis.analysis_id,
+                "job_id": child.job_id,
+                "source_version": source_version,
+                "model_id": model_id,
+                "status": _queue_item_status(analysis.status),
+                "retryable": bool(error.get("retryable", False)),
+                "error_code": error.get("code"),
+                "next_retry_at": _job_retry_at(db, child.job_id),
+            }
+            merged_items[node_id] = item
+            new_items[node_id] = item
+        cursor["items"] = merged_items
+        cursor.setdefault("pause_reason", None)
+        counts = self._queue_counts_tx(db, map_id, cursor)
+        current_state = str(queue_row["status"])
+        if current_state != "paused":
+            current_state = "active" if counts["queued"] or counts["running"] else ("partial" if counts["failed"] else "completed")
+        db.execute(
+            "UPDATE literature_map_jobs SET status=?,cursor_json=?,counts_json=?,updated_at=? WHERE job_id=? AND map_id=? AND operation=?",
+            (current_state, _dump(cursor), _dump(counts), now, queue_id, map_id, _ANALYSIS_QUEUE_OPERATION),
+        )
+        return queue_id, new_items
+
     def apply_preview(
         self,
         map_id: str,
@@ -3743,6 +4370,19 @@ def _auxiliary_batch_has_pending_metadata(cursor: Any) -> bool:
         and str(item.get("metadata_status") or item.get("status") or "") in pending
         for item in items.values()
     )
+
+
+def _verified_preview_identity(candidate: Mapping[str, Any]) -> str:
+    external_ids = candidate.get("external_ids")
+    if not isinstance(external_ids, Mapping):
+        return ""
+    try:
+        identity = deterministic_identity_key(external_ids)
+    except (TypeError, ValueError):
+        return ""
+    if not identity or str(candidate.get("identity_key") or "") != identity:
+        return ""
+    return identity
 
 
 __all__ = ["LiteratureMapStore", "LiteratureMapStoreError", "default_database_path"]
