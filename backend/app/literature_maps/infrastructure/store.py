@@ -1957,6 +1957,8 @@ class LiteratureMapStore:
         idempotency_key: str | None = None,
         params_hash: str | None = None,
         provider_request_count: int = 0,
+        pagination: Mapping[str, Any] | None = None,
+        seed_identity_key: str | None = None,
     ) -> tuple[MapPreview, MapJob, bool]:
         """Persist a preview and its completed calculation atomically.
 
@@ -1968,6 +1970,20 @@ class LiteratureMapStore:
             raise ValueError("INVALID_PREVIEW_KIND")
         if status not in {"queued", "completed"}:
             raise ValueError("invalid preview status")
+        paginated = pagination is not None
+        if paginated:
+            if kind not in {"references", "citations"}:
+                raise ValueError("PREVIEW_PAGINATION_KIND_REQUIRED")
+            frozen_pagination = {"version": 1, "page_size": 50, "max_candidates": 500}
+            supplied_pagination = dict(pagination) if isinstance(pagination, Mapping) else {}
+            if (
+                supplied_pagination != frozen_pagination
+                or any(type(value) is not int for value in supplied_pagination.values())
+                or set(supplied_pagination) != set(frozen_pagination)
+            ):
+                raise ValueError("INVALID_PREVIEW_PAGINATION")
+            if status != "queued" or not node_id or not seed_identity_key or not idempotency_key:
+                raise ValueError("INVALID_PREVIEW_PAGINATION")
         now = iso_now()
         with self.transaction() as db:
             self._assert_writable(db, map_id, owner_id)
@@ -1983,12 +1999,14 @@ class LiteratureMapStore:
                     if job_row is None:
                         raise LiteratureMapStoreError("preview state invalid")
                     return _preview(prior), _job(job_row), False
+            job_operation = "preview_page" if paginated else f"preview:{kind}"
+            job_step = "preview_page" if paginated else "preview"
             job = MapJob(
                 uuid.uuid4().hex,
                 map_id,
-                f"preview:{kind}",
+                job_operation,
                 status,
-                "preview",
+                job_step,
                 {"preview_id": ""},
                 {"candidate_count": len(candidates), "provider_request_count": max(0, int(provider_request_count))},
                 [],
@@ -1998,6 +2016,8 @@ class LiteratureMapStore:
             )
             preview_id = uuid.uuid4().hex
             job.cursor = {"preview_id": preview_id}
+            if paginated:
+                job.cursor.update({"target_cursor": 0, "cursor_history": [], "preview_revision": 1})
             db.execute(
                 "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), None, params_hash, now, now),
@@ -2015,13 +2035,259 @@ class LiteratureMapStore:
                 idempotency_key,
                 now,
                 now,
+                1,
+                ({
+                    "version": 1,
+                    "page_size": 50,
+                    "max_candidates": 500,
+                    "next_cursor": 0,
+                    "loaded_count": 0,
+                    "total": None,
+                    "has_more": None,
+                    "limit_reached": False,
+                    "state": "loading",
+                    "failed_cursor": None,
+                    "last_error": None,
+                    "page_job_id": job.job_id,
+                    "seed_identity_key": seed_identity_key,
+                } if paginated else None),
             )
             db.execute(
-                "INSERT INTO literature_map_previews(preview_id,map_id,job_id,kind,status,base_revision,candidates_json,diff_json,warnings_json,node_id,query_text,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (preview.preview_id, map_id, job.job_id, kind, preview.status, preview.base_revision, _dump(preview.candidates), _dump(preview.diff), _dump(preview.warnings), node_id, query, idempotency_key, params_hash, now, now),
+                "INSERT INTO literature_map_previews(preview_id,map_id,job_id,kind,status,base_revision,candidates_json,diff_json,warnings_json,node_id,query_text,idempotency_key,params_hash,created_at,updated_at,preview_revision,pagination_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (preview.preview_id, map_id, job.job_id, kind, preview.status, preview.base_revision, _dump(preview.candidates), _dump(preview.diff), _dump(preview.warnings), node_id, query, idempotency_key, params_hash, now, now, preview.preview_revision, _dump(preview.pagination) if preview.pagination is not None else None),
             )
-            self._append_event(db, job, event_type="preview_completed" if preview.status == "completed" else "preview_queued")
+            self._append_event(db, job, event_type="preview_page_queued" if paginated else "preview_completed" if preview.status == "completed" else "preview_queued")
             return preview, job, True
+
+    def queue_preview_page(
+        self,
+        map_id: str,
+        preview_id: str,
+        owner_id: str,
+        *,
+        expected_preview_revision: int,
+        retry_failed: bool,
+        idempotency_key: str,
+        params_hash: str,
+        failed_page_cache_key: str | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        """Queue one page under owner, preview revision and command-idempotency CAS."""
+
+        if not str(idempotency_key or "").strip():
+            raise ValueError("PREVIEW_IDEMPOTENCY_KEY_REQUIRED")
+        with self.transaction() as db:
+            self._assert_writable(db, map_id, owner_id)
+            preview_row = db.execute(
+                "SELECT * FROM literature_map_previews WHERE map_id=? AND preview_id=?",
+                (map_id, preview_id),
+            ).fetchone()
+            if preview_row is None:
+                raise LookupError("preview not found")
+            pagination = _load(preview_row["pagination_json"], None)
+            if not isinstance(pagination, Mapping) or type(pagination.get("version")) is not int or pagination.get("version") != 1:
+                raise ValueError("MAP_PREVIEW_REVALIDATION_REQUIRED")
+            seed_row = db.execute(
+                "SELECT identity_key,removed_at FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                (map_id, preview_row["node_id"]),
+            ).fetchone()
+            if (
+                seed_row is None
+                or seed_row["removed_at"] is not None
+                or not seed_row["identity_key"]
+                or seed_row["identity_key"] != pagination.get("seed_identity_key")
+            ):
+                raise ValueError("MAP_SEED_UNAVAILABLE")
+
+            # A command replay is returned before checking the preview revision.
+            replay = self._queue_command_replay(
+                db, map_id, owner_id, "preview_load_more", idempotency_key, params_hash
+            )
+            if replay is not None:
+                return replay, False
+            if str(pagination.get("state")) == "loading":
+                raise ValueError("MAP_PREVIEW_BUSY")
+            if int(preview_row["preview_revision"]) != int(expected_preview_revision):
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            if bool(pagination.get("limit_reached")) or str(pagination.get("state")) == "capped":
+                raise ValueError("MAP_PREVIEW_LIMIT_REACHED")
+            if retry_failed:
+                if str(pagination.get("state")) != "failed" or pagination.get("failed_cursor") is None:
+                    raise ValueError("MAP_PREVIEW_RETRY_REQUIRED")
+                target_cursor = pagination.get("failed_cursor")
+            else:
+                if str(pagination.get("state")) == "failed":
+                    raise ValueError("MAP_PREVIEW_RETRY_REQUIRED")
+                if str(pagination.get("state")) == "exhausted" or pagination.get("next_cursor") is None:
+                    raise ValueError("MAP_PREVIEW_EXHAUSTED")
+                if str(pagination.get("state")) != "ready":
+                    raise ValueError("MAP_PREVIEW_EXHAUSTED")
+                target_cursor = pagination.get("next_cursor")
+            if isinstance(target_cursor, bool) or not isinstance(target_cursor, int) or target_cursor < 0:
+                raise ValueError("MAP_PREVIEW_PAGINATION_INVALID")
+            if retry_failed and failed_page_cache_key:
+                # Re-fetch exactly the explicitly failed source page. Keep all
+                # other successful page and map caches intact.
+                db.execute(
+                    "DELETE FROM literature_map_request_cache WHERE cache_key=?",
+                    (failed_page_cache_key,),
+                )
+
+            prior_job_row = db.execute(
+                "SELECT cursor_json FROM literature_map_jobs WHERE job_id=? AND map_id=? AND operation='preview_page'",
+                (preview_row["job_id"], map_id),
+            ).fetchone()
+            previous_cursor = _load(prior_job_row["cursor_json"], {}) if prior_job_row else {}
+            history = list(previous_cursor.get("cursor_history", [])) if isinstance(previous_cursor, Mapping) else []
+            now = iso_now()
+            new_revision = int(preview_row["preview_revision"]) + 1
+            job_id = uuid.uuid4().hex
+            job = MapJob(
+                job_id,
+                map_id,
+                "preview_page",
+                "queued",
+                "preview_page",
+                {
+                    "preview_id": preview_id,
+                    "target_cursor": target_cursor,
+                    "cursor_history": history,
+                    "preview_revision": new_revision,
+                },
+                {"candidate_count": len(_load(preview_row["candidates_json"], [])), "provider_request_count": 0},
+                [],
+                f"preview-page:{preview_id}:{new_revision}",
+                now,
+                now,
+            )
+            db.execute(
+                "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), job.idempotency_key, params_hash, now, now),
+            )
+            updated_pagination = dict(pagination)
+            updated_pagination.update({"state": "loading", "page_job_id": job_id})
+            changed = db.execute(
+                "UPDATE literature_map_previews SET job_id=?,status='queued',preview_revision=?,pagination_json=?,updated_at=? "
+                "WHERE map_id=? AND preview_id=? AND preview_revision=? AND pagination_json IS NOT NULL",
+                (job_id, new_revision, _dump(updated_pagination), now, map_id, preview_id, expected_preview_revision),
+            )
+            if changed.rowcount != 1:
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            self._append_event(db, job, event_type="preview_page_queued")
+            result = {
+                "preview_id": preview_id,
+                "map_id": map_id,
+                "job_id": job_id,
+                "preview_revision": new_revision,
+                "status": "loading",
+            }
+            self._remember_queue_command(
+                db, map_id, owner_id, "preview_load_more", idempotency_key, params_hash, result
+            )
+            return result, True
+
+    def finish_preview_page(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        worker_token: str,
+        preview_id: str,
+        expected_preview_revision: int,
+        target_cursor: int,
+        candidates: list[dict[str, Any]],
+        pagination: Mapping[str, Any],
+        status: str,
+        cursor: Mapping[str, Any],
+        provider_request_count: int = 1,
+        error_code: str | None = None,
+    ) -> tuple[MapPreview, MapJob] | None:
+        """Commit one page snapshot and release its lease in the same transaction."""
+
+        if status not in {"completed", "failed"}:
+            raise ValueError("invalid preview page status")
+        with self.auxiliary_job_transaction(
+            job_id,
+            map_id,
+            owner_id,
+            operation="preview_page",
+            worker_token=worker_token,
+        ) as db:
+            row = db.execute(
+                "SELECT p.* FROM literature_map_previews p JOIN literature_map_jobs j ON j.job_id=p.job_id "
+                "JOIN literature_maps m ON m.map_id=p.map_id WHERE p.preview_id=? AND p.map_id=? "
+                "AND p.job_id=? AND p.preview_revision=? AND j.cursor_json IS NOT NULL "
+                "AND m.owner_id=? AND m.deleted_at IS NULL AND m.status!='stopped'",
+                (preview_id, map_id, job_id, expected_preview_revision, owner_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            stored_pagination = _load(row["pagination_json"], None)
+            if (
+                not isinstance(stored_pagination, Mapping)
+                or stored_pagination.get("state") != "loading"
+                or stored_pagination.get("page_job_id") != job_id
+            ):
+                raise ValueError("MAP_PREVIEW_BUSY")
+            if status == "completed":
+                seed_row = db.execute(
+                    "SELECT identity_key,removed_at FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                    (map_id, row["node_id"]),
+                ).fetchone()
+                if (
+                    seed_row is None
+                    or seed_row["removed_at"] is not None
+                    or seed_row["identity_key"] != stored_pagination.get("seed_identity_key")
+                ):
+                    raise ValueError("MAP_SEED_UNAVAILABLE")
+            current_job = db.execute("SELECT cursor_json FROM literature_map_jobs WHERE job_id=?", (job_id,)).fetchone()
+            current_cursor = _load(current_job["cursor_json"], {}) if current_job else {}
+            if status == "completed" and (
+                not isinstance(current_cursor, Mapping) or current_cursor.get("target_cursor") != target_cursor
+            ):
+                raise ValueError("MAP_PREVIEW_PAGINATION_INVALID")
+            now = iso_now()
+            new_revision = int(row["preview_revision"]) + 1
+            changed = db.execute(
+                "UPDATE literature_map_previews SET status=?,candidates_json=?,pagination_json=?,preview_revision=?,updated_at=? "
+                "WHERE map_id=? AND preview_id=? AND job_id=? AND preview_revision=?",
+                (
+                    "completed" if status == "completed" else "failed",
+                    _dump(candidates),
+                    _dump(dict(pagination)),
+                    new_revision,
+                    now,
+                    map_id,
+                    preview_id,
+                    job_id,
+                    expected_preview_revision,
+                ),
+            )
+            if changed.rowcount != 1:
+                raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+            counts = {"candidate_count": len(candidates), "provider_request_count": max(0, int(provider_request_count))}
+            failed_units = []
+            if status == "failed":
+                failed_units = [{"unit": f"preview_page:{target_cursor}", "error_code": error_code or "SEMANTIC_SCHOLAR_UNAVAILABLE", "retryable": True}]
+            finished = self.finish_auxiliary_job_tx(
+                db,
+                job_id,
+                map_id,
+                owner_id,
+                operation="preview_page",
+                worker_token=worker_token,
+                status="completed" if status == "completed" else "failed",
+                step="finished",
+                cursor=dict(cursor),
+                counts=counts,
+                failed_units=failed_units,
+                error_code=error_code,
+                event_type="preview_page_completed" if status == "completed" else "preview_page_failed",
+            )
+            if finished is None:
+                raise ValueError("auxiliary job lease invalid")
+            fresh_preview = db.execute("SELECT * FROM literature_map_previews WHERE preview_id=?", (preview_id,)).fetchone()
+            return _preview(fresh_preview), finished
 
     def complete_preview(
         self,
@@ -2045,7 +2311,7 @@ class LiteratureMapStore:
             if row is None or row["status"] not in {"queued", "running"}:
                 return None
             now = iso_now()
-            db.execute("UPDATE literature_map_previews SET status=?,candidates_json=?,diff_json=?,warnings_json=?,updated_at=? WHERE map_id=? AND preview_id=?", (status, _dump(candidates), _dump(diff or []), _dump(warnings or []), now, map_id, preview_id))
+            db.execute("UPDATE literature_map_previews SET status=?,candidates_json=?,diff_json=?,warnings_json=?,preview_revision=preview_revision+1,updated_at=? WHERE map_id=? AND preview_id=?", (status, _dump(candidates), _dump(diff or []), _dump(warnings or []), now, map_id, preview_id))
             db.execute("UPDATE literature_map_jobs SET status=?,step='preview',counts_json=?,updated_at=? WHERE job_id=? AND map_id=?", ("completed" if status == "completed" else "failed", _dump({"candidate_count": len(candidates), "provider_request_count": max(0, int(provider_request_count))}), now, row["job_id"], map_id))
             fresh_job_row = db.execute("SELECT * FROM literature_map_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
             fresh_preview_row = db.execute("SELECT * FROM literature_map_previews WHERE preview_id=?", (preview_id,)).fetchone()
@@ -2103,6 +2369,8 @@ class LiteratureMapStore:
             map_row = db.execute("SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (map_id, owner_id)).fetchone()
             if preview_row is None or map_row is None:
                 raise LookupError("preview not found")
+            if preview_row["pagination_json"] is not None:
+                raise ValueError("MAP_PREVIEW_REVALIDATION_REQUIRED")
             if preview_row["status"] not in {"completed", "applied"}:
                 raise ValueError("PREVIEW_NOT_READY")
             if int(map_row["revision"]) != int(expected_revision) or int(preview_row["base_revision"]) != int(expected_revision):
@@ -2166,7 +2434,7 @@ class LiteratureMapStore:
                 "INSERT INTO literature_map_jobs(job_id,map_id,operation,status,step,cursor_json,counts_json,failed_units_json,idempotency_key,params_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (job.job_id, map_id, job.operation, job.status, job.step, _dump(job.cursor), _dump(job.counts), _dump(job.failed_units), None, params_hash, now, now),
             )
-            db.execute("UPDATE literature_map_previews SET status='applied',updated_at=? WHERE preview_id=? AND map_id=?", (now, preview_id, map_id))
+            db.execute("UPDATE literature_map_previews SET status='applied',preview_revision=preview_revision+1,updated_at=? WHERE preview_id=? AND map_id=?", (now, preview_id, map_id))
             added_node_ids = [node.node_id for node in nodes]
             result = {"map": _map(fresh_map).to_dict(), "job": job.to_dict(), "preview_id": preview_id, "added_node_ids": added_node_ids}
             if idempotency_key:
@@ -3067,6 +3335,27 @@ class LiteratureMapStore:
                     if changed is None:
                         continue
                     terminal = _job(changed)
+                    if operation == "preview_page" and error_code == "MAP_JOB_LEASE_EXHAUSTED":
+                        preview_id = str(batch_cursor.get("preview_id") or "") if isinstance(batch_cursor, Mapping) else ""
+                        target_cursor = batch_cursor.get("target_cursor") if isinstance(batch_cursor, Mapping) else None
+                        preview_row = db.execute(
+                            "SELECT * FROM literature_map_previews WHERE preview_id=? AND map_id=? AND job_id=?",
+                            (preview_id, job_map_id, job_id),
+                        ).fetchone() if preview_id else None
+                        if preview_row is not None:
+                            pagination = _load(preview_row["pagination_json"], None)
+                            if isinstance(pagination, Mapping) and pagination.get("state") == "loading" and pagination.get("page_job_id") == job_id:
+                                failed_pagination = dict(pagination)
+                                failed_pagination.update({
+                                    "state": "failed",
+                                    "failed_cursor": target_cursor if isinstance(target_cursor, int) and not isinstance(target_cursor, bool) else None,
+                                    "last_error": "MAP_JOB_LEASE_EXHAUSTED",
+                                })
+                                db.execute(
+                                    "UPDATE literature_map_previews SET status='failed',pagination_json=?,preview_revision=preview_revision+1,updated_at=? "
+                                    "WHERE preview_id=? AND map_id=? AND job_id=? AND preview_revision=?",
+                                    (_dump(failed_pagination), now, preview_id, job_map_id, job_id, preview_row["preview_revision"]),
+                                )
                     self._append_event(
                         db,
                         terminal,
@@ -3291,7 +3580,24 @@ def _job(row: sqlite3.Row) -> MapJob:
 
 
 def _preview(row: sqlite3.Row) -> MapPreview:
-    return MapPreview(row["preview_id"], row["map_id"], row["job_id"], row["kind"], row["status"], int(row["base_revision"]), _load(row["candidates_json"], []), _load(row["diff_json"], []), _load(row["warnings_json"], []), row["idempotency_key"], row["created_at"], row["updated_at"])
+    columns = set(row.keys())
+    pagination = _load(row["pagination_json"], None) if "pagination_json" in columns else None
+    return MapPreview(
+        row["preview_id"],
+        row["map_id"],
+        row["job_id"],
+        row["kind"],
+        row["status"],
+        int(row["base_revision"]),
+        _load(row["candidates_json"], []),
+        _load(row["diff_json"], []),
+        _load(row["warnings_json"], []),
+        row["idempotency_key"],
+        row["created_at"],
+        row["updated_at"],
+        int(row["preview_revision"]) if "preview_revision" in columns else 1,
+        pagination if isinstance(pagination, dict) else None,
+    )
 
 
 def _event(row: sqlite3.Row) -> MapEvent:

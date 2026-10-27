@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator
 
 from backend.app.literature_maps.application.analysis import MapAnalysisError
 from backend.app.literature_maps.application.runtime import get_literature_map_service
@@ -89,6 +89,14 @@ class ImportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PreviewPaginationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: StrictInt = Field(ge=1, le=1)
+    page_size: StrictInt = Field(ge=50, le=50)
+    max_candidates: StrictInt = Field(ge=500, le=500)
+
+
 class PreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +104,15 @@ class PreviewRequest(BaseModel):
     node_id: str | None = Field(default=None, min_length=1, max_length=100)
     query: str | None = Field(default=None, max_length=500)
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+    pagination: PreviewPaginationRequest | None = None
+
+
+class PreviewLoadMoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_preview_revision: StrictInt = Field(ge=1)
+    retry_failed: StrictBool = False
+    idempotency_key: str = Field(min_length=1, max_length=200)
 
 
 class PreviewApplyRequest(BaseModel):
@@ -195,6 +212,23 @@ def _error(error: Exception) -> HTTPException:
         status, error_code, message = 409, "MAP_CONFLICT", "地图版本或作业状态已变化，请重新读取后重试"
         if code == "idempotency conflict":
             error_code, message = "IDEMPOTENCY_CONFLICT", "相同幂等键不能用于不同参数"
+    elif code in {
+        "MAP_PREVIEW_VERSION_CONFLICT", "MAP_PREVIEW_BUSY", "MAP_PREVIEW_REVALIDATION_REQUIRED",
+        "MAP_SEED_UNAVAILABLE", "MAP_IDEMPOTENCY_CONFLICT", "MAP_PREVIEW_LIMIT_REACHED",
+        "MAP_PREVIEW_EXHAUSTED",
+    }:
+        status, error_code = 409, code
+        message = {
+            "MAP_PREVIEW_VERSION_CONFLICT": "预览版本已更新，请重新读取后使用最新版本重试",
+            "MAP_PREVIEW_BUSY": "此预览正在加载一页，请等待当前作业完成",
+            "MAP_PREVIEW_REVALIDATION_REQUIRED": "旧版预览不能续页或确认，请重新创建分页预览",
+            "MAP_SEED_UNAVAILABLE": "预览的种子论文已移除或失效，请重新选择活动论文",
+            "MAP_IDEMPOTENCY_CONFLICT": "相同幂等键已用于不同参数，请换用新的幂等键",
+            "MAP_PREVIEW_LIMIT_REACHED": "此预览已达到 500 篇候选上限",
+            "MAP_PREVIEW_EXHAUSTED": "来源没有更多页面",
+        }[code]
+    elif code in {"MAP_PREVIEW_RETRY_REQUIRED", "MAP_PREVIEW_PAGINATION_INVALID"}:
+        status, error_code, message = 409, "MAP_CONFLICT", "失败页只能通过 retry_failed=true 显式重试，请重新读取预览状态"
     elif code == "IMPORT_URL_UNSAFE":
         status, error_code, message = 400, code, "导入链接必须是安全的 http/https 地址"
     elif code == "INVALID_MAP_SCOPE":
@@ -205,7 +239,7 @@ def _error(error: Exception) -> HTTPException:
             "UNSUPPORTED_SOURCE": "source_id 不是服务端支持的来源",
             "UNSUPPORTED_CONFERENCE": "conference_id 不是服务端支持的会议",
         }[code]
-    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_LABEL_MODE", "INVALID_NODE_STYLE", "INVALID_NODE_IDS", "INVALID_COLOR_OVERRIDE", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED"}:
+    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_LABEL_MODE", "INVALID_NODE_STYLE", "INVALID_NODE_IDS", "INVALID_COLOR_OVERRIDE", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED", "PREVIEW_PAGINATION_KIND_REQUIRED", "INVALID_PREVIEW_PAGINATION", "PREVIEW_IDEMPOTENCY_KEY_REQUIRED"}:
         status, error_code, message = 400, code, "地图创建参数不合法"
     elif code == "PROJECT_NOT_FOUND":
         status, error_code, message = 404, code, "项目不存在或不可访问"
@@ -514,18 +548,36 @@ def create_literature_map_conversation_plural(map_id: str, node_id: str, payload
 @router.post("/{map_id}/previews", status_code=202)
 def create_literature_map_preview(map_id: str, payload: PreviewRequest):
     try:
-        preview = get_literature_map_service().create_preview(
+        service = get_literature_map_service()
+        preview = service.create_preview(
             map_id,
             OWNER_ID,
             kind=payload.kind,
             node_id=payload.node_id,
             query=payload.query,
             idempotency_key=payload.idempotency_key,
+            pagination=payload.pagination.model_dump() if payload.pagination is not None else None,
         )
-        _, job = get_literature_map_service().get_preview(map_id, preview.preview_id, OWNER_ID)
+        preview, job = service.get_preview(map_id, preview.preview_id, OWNER_ID)
     except Exception as error:
         raise _error(error) from error
     return _envelope(preview_id=preview.preview_id, map_id=map_id, job_id=preview.job_id, status=preview.status, base_revision=preview.base_revision, preview=preview.to_dict(), job=job.to_dict())
+
+
+@router.post("/{map_id}/previews/{preview_id}/load-more", status_code=202)
+def load_more_literature_map_preview(map_id: str, preview_id: str, payload: PreviewLoadMoreRequest):
+    try:
+        result = get_literature_map_service().load_more_preview(
+            map_id,
+            preview_id,
+            OWNER_ID,
+            expected_preview_revision=payload.expected_preview_revision,
+            retry_failed=payload.retry_failed,
+            idempotency_key=payload.idempotency_key,
+        )
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(**result)
 
 
 @router.get("/{map_id}/previews/{preview_id}")

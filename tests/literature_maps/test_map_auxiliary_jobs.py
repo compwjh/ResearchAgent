@@ -222,7 +222,7 @@ def test_recovery_routes_auxiliary_operations_to_typed_handlers_and_fails_unknow
     assert store.get_job(unknown.job_id, created.map_id, "owner-a").failed_units[-1]["error_code"] == "MAP_JOB_OPERATION_UNSUPPORTED"
 
 
-def test_unimplemented_auxiliary_handlers_fail_with_safe_terminal_state(tmp_path):
+def test_invalid_page_payload_and_unimplemented_batch_fail_safely(tmp_path):
     store = LiteratureMapStore(tmp_path / "maps.sqlite3")
     created, page_job = _queued_auxiliary_job(store, "preview_page")
     _, batch_job = _queued_auxiliary_job(
@@ -237,7 +237,7 @@ def test_unimplemented_auxiliary_handlers_fail_with_safe_terminal_state(tmp_path
 
     assert page_result.status == "failed"
     assert batch_result.status == "failed"
-    assert page_result.failed_units[-1]["error_code"] == "MAP_AUXILIARY_HANDLER_UNAVAILABLE"
+    assert page_result.failed_units[-1]["error_code"] == "MAP_PREVIEW_PAGINATION_INVALID"
     assert batch_result.failed_units[-1]["error_code"] == "MAP_AUXILIARY_HANDLER_UNAVAILABLE"
     assert store.get_map(created.map_id, "owner-a").status == "generating"
 

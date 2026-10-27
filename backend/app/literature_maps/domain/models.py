@@ -254,6 +254,8 @@ class MapPreview:
     idempotency_key: str | None = None
     created_at: str = field(default_factory=iso_now)
     updated_at: str = field(default_factory=iso_now)
+    preview_revision: int = 1
+    pagination: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -265,6 +267,8 @@ class MapPreview:
             "candidates": self.candidates,
             "diff": self.diff,
             "warnings": self.warnings,
+            "preview_revision": self.preview_revision,
+            "pagination": self.pagination,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

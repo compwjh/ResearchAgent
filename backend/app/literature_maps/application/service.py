@@ -318,9 +318,244 @@ class LiteratureMapService:
         return len(jobs)
 
     def run_preview_page(self, job_id: str, owner_id: str | None = None) -> MapJob | None:
-        """Fail closed until the bounded page-fetch handler is implemented."""
+        """Fetch and atomically append exactly one server-cursored graph page."""
 
-        return self._fail_unimplemented_auxiliary(job_id, owner_id, "preview_page")
+        job = self._find_job(job_id, owner_id)
+        if job is None or job.operation != "preview_page":
+            return None
+        owner = owner_id or self._owner_for_job(job)
+        preview_id = str(job.cursor.get("preview_id") or "")
+        preview_state = self.store.get_preview(job.map_id, preview_id, owner) if preview_id else None
+        if preview_state is None:
+            return self._fail_invalid_preview_page_job(job, owner)
+        preview, _ = preview_state
+        pagination = preview.pagination
+        if not isinstance(pagination, Mapping) or pagination.get("state") != "loading" or pagination.get("page_job_id") != job_id:
+            return self.store.get_job(job.job_id, job.map_id, owner)
+        claim = self.store.claim_auxiliary_job(job.job_id, job.map_id, owner, operation="preview_page")
+        if claim is None:
+            return self.store.get_job(job.job_id, job.map_id, owner)
+        claimed, worker_token = claim
+        target_cursor = claimed.cursor.get("target_cursor")
+        expected_revision = claimed.cursor.get("preview_revision")
+        history = list(claimed.cursor.get("cursor_history", []))
+        if isinstance(target_cursor, bool) or not isinstance(target_cursor, int) or target_cursor < 0:
+            fallback_cursor = preview.pagination.get("failed_cursor") if isinstance(preview.pagination, Mapping) else None
+            if isinstance(fallback_cursor, bool) or not isinstance(fallback_cursor, int) or fallback_cursor < 0:
+                fallback_cursor = preview.pagination.get("next_cursor") if isinstance(preview.pagination, Mapping) else 0
+            if isinstance(fallback_cursor, bool) or not isinstance(fallback_cursor, int) or fallback_cursor < 0:
+                fallback_cursor = 0
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, fallback_cursor, preview.preview_revision, history,
+                "MAP_PREVIEW_PAGINATION_INVALID",
+            )
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int):
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, target_cursor, preview.preview_revision, history,
+                "MAP_PREVIEW_PAGINATION_INVALID",
+            )
+        if not self.store.auxiliary_job_can_write(job.job_id, job.map_id, owner, operation="preview_page", worker_token=worker_token):
+            return self.store.get_job(job.job_id, job.map_id, owner)
+        current = self.store.get_preview(job.map_id, preview_id, owner)
+        if current is None:
+            return self.store.get_job(job.job_id, job.map_id, owner)
+        preview, _ = current
+        preview_request = self.store.get_preview_request(job.map_id, preview_id, owner)
+        seed = self.store.get_node(job.map_id, str(preview_request[0] or ""), owner) if preview_request else None
+        if (
+            seed is None
+            or seed.removed
+            or not preview.pagination
+            or seed.identity_key != preview.pagination.get("seed_identity_key")
+        ):
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, target_cursor, expected_revision, history,
+                "MAP_SEED_UNAVAILABLE",
+            )
+        relation = preview.kind
+        provider_id = seed.external_ids.get("semantic_scholar")
+        if not provider_id:
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, target_cursor, expected_revision, history,
+                "SEMANTIC_SCHOLAR_NO_ID",
+            )
+        try:
+            page_result = self._cached_graph_request(
+                provider_id,
+                target_cursor,
+                relation=relation,
+                limit=50,
+                defer_cache_write=True,
+            )
+        except (AttributeError, TypeError, ValueError, OSError):
+            page_result = {"code": "SEMANTIC_SCHOLAR_UNAVAILABLE", "retryable": True, "cache_hit": False}
+        provider_request_count = 0 if page_result.get("cache_hit") else 1
+        if not self.store.auxiliary_job_can_write(job.job_id, job.map_id, owner, operation="preview_page", worker_token=worker_token):
+            return self.store.get_job(job.job_id, job.map_id, owner)
+        if page_result.get("code"):
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, target_cursor, expected_revision, history,
+                str(page_result["code"]), provider_request_count=provider_request_count,
+            )
+        page = page_result.get("graph_page")
+        if (
+            not isinstance(page, SemanticScholarGraphPage)
+            or page.relation != relation
+            or page.source_paper_id != provider_id
+            or page.offset != target_cursor
+            or len(page.items) > 50
+        ):
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, target_cursor, expected_revision, history,
+                "SEMANTIC_SCHOLAR_INVALID_RESPONSE", provider_request_count=provider_request_count,
+            )
+        next_cursor = page.next_offset
+        if next_cursor is not None and (
+            isinstance(next_cursor, bool)
+            or not isinstance(next_cursor, int)
+            or next_cursor <= target_cursor
+            or next_cursor in history
+        ):
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, target_cursor, expected_revision, history,
+                "SEMANTIC_SCHOLAR_CURSOR_CYCLE", provider_request_count=provider_request_count,
+            )
+        if page.total is not None and (isinstance(page.total, bool) or not isinstance(page.total, int) or page.total < 0):
+            return self._finish_preview_page_failure(
+                job, owner, worker_token, preview, target_cursor, expected_revision, history,
+                "SEMANTIC_SCHOLAR_INVALID_RESPONSE", provider_request_count=provider_request_count,
+            )
+
+        # A page only enters the shared cache after source cursor validation.
+        # In particular, a cached self-loop must not become a 24-hour retry trap.
+        cache_key = page_result.get("cache_key")
+        if not page_result.get("cache_hit") and cache_key is not None:
+            self._put_request_cache(cache_key, self._graph_page_payload(page))
+
+        existing_nodes = self.store.list_nodes(job.map_id, owner)
+        by_identity = {node.identity_key: node for node in existing_nodes if node.identity_key}
+        candidates = list(preview.candidates)
+        candidate_identities = {
+            str(item.get("identity_key"))
+            for item in candidates
+            if isinstance(item, Mapping) and item.get("identity_key")
+        }
+        maximum = int(preview.pagination.get("max_candidates", 500))
+        for row in page.items:
+            if len(candidates) >= maximum:
+                break
+            try:
+                candidate = self._preview_candidate(self._to_node(job.map_id, row), by_identity)
+            except (TypeError, ValueError):
+                continue
+            identity = str(candidate.get("identity_key") or "")
+            if not identity or identity in candidate_identities:
+                continue
+            candidate["relation"] = "citation"
+            candidate["relation_source_node_id"] = seed.node_id
+            candidates.append(candidate)
+            candidate_identities.add(identity)
+
+        loaded_count = len(candidates)
+        limit_reached = loaded_count >= maximum
+        updated_pagination = dict(preview.pagination)
+        updated_pagination.update({
+            "next_cursor": next_cursor,
+            "loaded_count": loaded_count,
+            "total": page.total if page.total is not None else preview.pagination.get("total"),
+            "has_more": next_cursor is not None,
+            "limit_reached": limit_reached,
+            "state": "capped" if limit_reached else "exhausted" if next_cursor is None else "ready",
+            "failed_cursor": None,
+            "last_error": None,
+        })
+        next_job_cursor = dict(claimed.cursor)
+        next_job_cursor["cursor_history"] = history + [target_cursor]
+        next_job_cursor["last_completed_cursor"] = target_cursor
+        try:
+            result = self.store.finish_preview_page(
+                job.job_id,
+                job.map_id,
+                owner,
+                worker_token=worker_token,
+                preview_id=preview_id,
+                expected_preview_revision=expected_revision,
+                target_cursor=target_cursor,
+                candidates=candidates,
+                pagination=updated_pagination,
+                status="completed",
+                cursor=next_job_cursor,
+                provider_request_count=provider_request_count,
+            )
+        except ValueError as error:
+            if str(error) == "auxiliary job lease invalid":
+                return self.store.get_job(job.job_id, job.map_id, owner)
+            if str(error) == "MAP_SEED_UNAVAILABLE":
+                return self._finish_preview_page_failure(
+                    job, owner, worker_token, preview, target_cursor, expected_revision, history,
+                    "MAP_SEED_UNAVAILABLE", provider_request_count=provider_request_count,
+                )
+            raise
+        return result[1] if result else self.store.get_job(job.job_id, job.map_id, owner)
+
+    def _fail_invalid_preview_page_job(self, job: MapJob, owner_id: str) -> MapJob | None:
+        claim = self.store.claim_auxiliary_job(job.job_id, job.map_id, owner_id, operation="preview_page")
+        if claim is None:
+            return self.store.get_job(job.job_id, job.map_id, owner_id)
+        _claimed, worker_token = claim
+        return self.store.finish_auxiliary_job(
+            job.job_id,
+            job.map_id,
+            owner_id,
+            operation="preview_page",
+            worker_token=worker_token,
+            status="failed",
+            step="finished",
+            failed_units=[{"unit": "preview_page", "error_code": "MAP_PREVIEW_PAGINATION_INVALID", "retryable": False}],
+            error_code="MAP_PREVIEW_PAGINATION_INVALID",
+            event_type="failed",
+        )
+
+    def _finish_preview_page_failure(
+        self,
+        job: MapJob,
+        owner_id: str,
+        worker_token: str,
+        preview: MapPreview,
+        target_cursor: int,
+        expected_revision: int,
+        history: list[Any],
+        error_code: str,
+        *,
+        provider_request_count: int = 0,
+    ) -> MapJob | None:
+        pagination = dict(preview.pagination or {})
+        pagination.update({
+            "state": "failed",
+            "failed_cursor": target_cursor,
+            "last_error": error_code[:100],
+        })
+        try:
+            result = self.store.finish_preview_page(
+                job.job_id,
+                job.map_id,
+                owner_id,
+                worker_token=worker_token,
+                preview_id=preview.preview_id,
+                expected_preview_revision=expected_revision,
+                target_cursor=target_cursor,
+                candidates=list(preview.candidates),
+                pagination=pagination,
+                status="failed",
+                cursor=dict(job.cursor),
+                provider_request_count=provider_request_count,
+                error_code=error_code,
+            )
+        except ValueError as error:
+            if str(error) == "auxiliary job lease invalid":
+                return self.store.get_job(job.job_id, job.map_id, owner_id)
+            raise
+        return result[1] if result else self.store.get_job(job.job_id, job.map_id, owner_id)
 
     def run_expansion_batch(self, job_id: str, owner_id: str | None = None) -> MapJob | None:
         """Fail closed until the metadata batch handler is implemented."""
@@ -515,6 +750,8 @@ class LiteratureMapService:
         job = self.store.get_job(job_id, map_id, owner_id)
         if job is None:
             raise LookupError("job not found")
+        if job.operation == "preview_page":
+            raise ValueError("MAP_PREVIEW_RETRY_REQUIRED")
         if job.status not in {"failed", "partial", "stopped"}:
             raise ValueError("job is not retryable")
         if job.operation == "analysis":
@@ -591,6 +828,7 @@ class LiteratureMapService:
         node_id: str | None = None,
         query: str | None = None,
         idempotency_key: str | None = None,
+        pagination: Mapping[str, Any] | None = None,
     ) -> MapPreview:
         """Calculate and persist a bounded candidate preview.
 
@@ -600,6 +838,20 @@ class LiteratureMapService:
         """
         if kind not in {"topic", "references", "citations", "refresh"}:
             raise ValueError("INVALID_PREVIEW_KIND")
+        paginated = pagination is not None
+        if paginated:
+            if kind not in {"references", "citations"}:
+                raise ValueError("PREVIEW_PAGINATION_KIND_REQUIRED")
+            frozen_pagination = {"version": 1, "page_size": 50, "max_candidates": 500}
+            supplied_pagination = dict(pagination) if isinstance(pagination, Mapping) else {}
+            if (
+                supplied_pagination != frozen_pagination
+                or any(type(value) is not int for value in supplied_pagination.values())
+                or set(supplied_pagination) != set(frozen_pagination)
+            ):
+                raise ValueError("INVALID_PREVIEW_PAGINATION")
+            if not idempotency_key:
+                raise ValueError("PREVIEW_IDEMPOTENCY_KEY_REQUIRED")
         map_item = self.store.get_map(map_id, owner_id)
         if map_item is None:
             raise LookupError("map not found")
@@ -610,6 +862,44 @@ class LiteratureMapService:
             source_node = self.store.get_node(map_id, node_id, owner_id)
             if source_node is None or source_node.removed:
                 raise LookupError("node not found")
+        if paginated:
+            params_hash = _params_hash({
+                "owner_id": owner_id,
+                "map_id": map_id,
+                "seed_identity_key": source_node.identity_key if source_node else None,
+                "kind": kind,
+                "pagination": dict(pagination or {}),
+                "query": query or map_item.topic,
+            })
+            try:
+                preview, job, created = self.store.create_preview(
+                    map_id,
+                    owner_id,
+                    kind=kind,
+                    base_revision=map_item.revision,
+                    candidates=[],
+                    diff=[],
+                    warnings=[],
+                    node_id=node_id,
+                    query=query,
+                    status="queued",
+                    idempotency_key=idempotency_key,
+                    params_hash=params_hash,
+                    pagination=dict(pagination or {}),
+                    seed_identity_key=source_node.identity_key if source_node else None,
+                )
+            except ValueError as error:
+                if str(error) == "idempotency conflict":
+                    raise ValueError("MAP_IDEMPOTENCY_CONFLICT") from error
+                raise
+            if created and self.executor is not None:
+                try:
+                    self.executor.submit(self.run_preview_page, job.job_id, owner_id)
+                except RuntimeError:
+                    # The durable queued page will be submitted by recovery.
+                    pass
+            return preview
+
         params_hash = _params_hash({"kind": kind, "node_id": node_id, "query": query or map_item.topic, "base_revision": map_item.revision})
         if self.executor is not None:
             preview, _, created = self.store.create_preview(
@@ -645,6 +935,75 @@ class LiteratureMapService:
             provider_request_count=provider_request_count,
         )
         return preview
+
+    def load_more_preview(
+        self,
+        map_id: str,
+        preview_id: str,
+        owner_id: str,
+        *,
+        expected_preview_revision: int,
+        retry_failed: bool,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        if isinstance(expected_preview_revision, bool) or not isinstance(expected_preview_revision, int) or expected_preview_revision < 1:
+            raise ValueError("MAP_PREVIEW_VERSION_CONFLICT")
+        if not isinstance(retry_failed, bool):
+            raise ValueError("MAP_PREVIEW_RETRY_REQUIRED")
+        if not str(idempotency_key or "").strip():
+            raise ValueError("PREVIEW_IDEMPOTENCY_KEY_REQUIRED")
+        params_hash = _params_hash({
+            "owner_id": owner_id,
+            "map_id": map_id,
+            "preview_id": preview_id,
+            "expected_preview_revision": expected_preview_revision,
+            "retry_failed": retry_failed,
+        })
+        failed_page_cache_key = None
+        if retry_failed:
+            preview, _job = self.get_preview(map_id, preview_id, owner_id)
+            pagination = preview.pagination or {}
+            failed_cursor = pagination.get("failed_cursor") if isinstance(pagination, Mapping) else None
+            request = self.store.get_preview_request(map_id, preview_id, owner_id)
+            seed = self.store.get_node(map_id, str(request[0] or ""), owner_id) if request else None
+            if (
+                isinstance(failed_cursor, int)
+                and not isinstance(failed_cursor, bool)
+                and failed_cursor >= 0
+                and seed is not None
+                and not seed.removed
+                and seed.identity_key == pagination.get("seed_identity_key")
+                and seed.external_ids.get("semantic_scholar")
+            ):
+                failed_page_cache_key = self._request_cache_key(
+                    provider="semantic_scholar",
+                    operation=preview.kind,
+                    identifier=seed.external_ids["semantic_scholar"],
+                    filters={"limit": 50},
+                    page=failed_cursor,
+                )
+        try:
+            result, created = self.store.queue_preview_page(
+                map_id,
+                preview_id,
+                owner_id,
+                expected_preview_revision=expected_preview_revision,
+                retry_failed=retry_failed,
+                idempotency_key=idempotency_key,
+                params_hash=params_hash,
+                failed_page_cache_key=failed_page_cache_key,
+            )
+        except ValueError as error:
+            if str(error) == "idempotency conflict":
+                raise ValueError("MAP_IDEMPOTENCY_CONFLICT") from error
+            raise
+        if created and self.executor is not None:
+            try:
+                self.executor.submit(self.run_preview_page, result["job_id"], owner_id)
+            except RuntimeError:
+                # Durable queue recovery owns retrying a temporarily closed executor.
+                pass
+        return result
 
     def _run_preview(self, map_id: str, owner_id: str, preview_id: str, kind: str, node_id: str | None, query: str | None) -> None:
         try:
@@ -1208,12 +1567,20 @@ class LiteratureMapService:
         except (TypeError, ValueError):
             return
 
-    def _cached_graph_request(self, provider_id: str, offset: int, relation: str = "references") -> dict[str, Any]:
+    def _cached_graph_request(
+        self,
+        provider_id: str,
+        offset: int,
+        relation: str = "references",
+        *,
+        limit: int = REFERENCES_PER_NODE,
+        defer_cache_write: bool = False,
+    ) -> dict[str, Any]:
         key = self._request_cache_key(
             provider="semantic_scholar",
             operation=relation,
             identifier=provider_id,
-            filters={"limit": REFERENCES_PER_NODE},
+            filters={"limit": limit},
             page=offset,
         )
         cached = self._get_request_cache(key)
@@ -1224,11 +1591,11 @@ class LiteratureMapService:
             return {"code": None, "graph_page": page, "cache_hit": True}
         try:
             try:
-                result = self.client.graph_edges(provider_id, relation, limit=REFERENCES_PER_NODE, offset=offset, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
+                result = self.client.graph_edges(provider_id, relation, limit=limit, offset=offset, fields=SEMANTIC_SCHOLAR_METADATA_FIELDS)
             except TypeError as error:
                 if "fields" not in str(error):
                     raise
-                result = self.client.graph_edges(provider_id, relation, limit=REFERENCES_PER_NODE, offset=offset)
+                result = self.client.graph_edges(provider_id, relation, limit=limit, offset=offset)
         except (TypeError, ValueError):
             return {"code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "retryable": False, "cache_hit": False}
         code = getattr(result, "code", None)
@@ -1239,8 +1606,9 @@ class LiteratureMapService:
             page = self.client.parse_graph_page(getattr(result, "payload", None), relation, provider_id, offset=offset) if hasattr(self.client, "parse_graph_page") else None
         if not isinstance(page, SemanticScholarGraphPage):
             return {"code": "SEMANTIC_SCHOLAR_INVALID_RESPONSE", "retryable": False, "cache_hit": False}
-        self._put_request_cache(key, self._graph_page_payload(page))
-        return {"code": None, "graph_page": page, "cache_hit": False}
+        if not defer_cache_write:
+            self._put_request_cache(key, self._graph_page_payload(page))
+        return {"code": None, "graph_page": page, "cache_hit": False, "cache_key": key}
 
     @staticmethod
     def _graph_page_payload(page: SemanticScholarGraphPage) -> dict[str, Any]:
