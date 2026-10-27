@@ -66,6 +66,7 @@ class MapAnalysisService:
         model_runner: Callable[..., Any] | None = None,
         source_checker: Callable[..., dict[str, Any]] | None = None,
         searcher: Callable[..., list[Any]] | None = None,
+        auxiliary_recovery: Callable[[str, str], int] | None = None,
     ) -> None:
         self.store = store
         self.executor = executor
@@ -74,6 +75,7 @@ class MapAnalysisService:
         self.model_runner = model_runner
         self.source_checker = source_checker
         self.searcher = searcher or hybrid_search
+        self.auxiliary_recovery = auxiliary_recovery
         self._queue_dispatch_lock = threading.Lock()
         self._queue_dispatching: set[tuple[str, str]] = set()
         self._queue_retry_wakeups: dict[tuple[str, str], threading.Timer] = {}
@@ -593,6 +595,8 @@ class MapAnalysisService:
     def resume_analysis_queue(self, map_id: str, owner_id: str, *, idempotency_key: str) -> dict[str, Any]:
         queue = self.store.resume_analysis_queue(map_id, owner_id, idempotency_key=idempotency_key)
         self._schedule_analysis_queue(map_id, owner_id, queue)
+        if self.auxiliary_recovery is not None:
+            self.auxiliary_recovery(map_id, owner_id)
         return queue
 
     def retry_analysis_queue(self, map_id: str, owner_id: str, *, idempotency_key: str, analysis_ids: list[str] | None = None) -> dict[str, Any]:

@@ -68,7 +68,7 @@ def test_schema_upgrade_is_idempotent_and_preserves_existing_node_fields(tmp_pat
 
     reopened = LiteratureMapStore(database_path)
     reopened.initialize()
-    assert reopened.schema_version == 7
+    assert reopened.schema_version == 8
     preserved = reopened.get_node(item.map_id, node.node_id, "owner-a")
     assert preserved is not None
     assert preserved.title == "Legacy title"

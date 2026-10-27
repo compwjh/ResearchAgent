@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -37,7 +38,7 @@ from backend.app.literature_maps.domain.models import (
 )
 from backend.app.platform.config import BASE_DIR
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 _WRITE_LOCK = threading.RLock()
 _UNSET = object()
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
@@ -48,6 +49,9 @@ _ANALYSIS_QUEUE_OPERATION = "analysis_queue"
 _ANALYSIS_QUEUE_IDEMPOTENCY = "__analysis_queue__"
 _ANALYSIS_LEASE_SECONDS = 300
 _ANALYSIS_MAX_ATTEMPTS = 3
+_AUXILIARY_OPERATIONS = {"preview_page", "expand_batch"}
+_AUXILIARY_LEASE_SECONDS = 300
+_AUXILIARY_MAX_CLAIMS = 4
 
 
 def default_database_path() -> Path:
@@ -99,7 +103,7 @@ class LiteratureMapStore:
     def initialize(self) -> None:
         # ``executescript`` commits any active sqlite transaction before it
         # runs.  It is used only for the idempotent base bootstrap below;
-        # every schema-6 incremental DDL, repair, index, and version marker is
+        # every incremental DDL, repair, index, and version marker is
         # applied by the explicit transaction that follows. Runtime writes
         # also use BEGIN IMMEDIATE.
         with _WRITE_LOCK, self.connection() as db:
@@ -276,6 +280,8 @@ class LiteratureMapStore:
                     candidates_json TEXT NOT NULL,
                     diff_json TEXT NOT NULL,
                     warnings_json TEXT NOT NULL,
+                    preview_revision INTEGER NOT NULL DEFAULT 1,
+                    pagination_json TEXT,
                     node_id TEXT,
                     query_text TEXT,
                     idempotency_key TEXT,
@@ -358,6 +364,14 @@ class LiteratureMapStore:
                     ")"
                 )
                 preview_columns = {str(row[1]) for row in db.execute("PRAGMA table_info(literature_map_previews)").fetchall()}
+                if "preview_revision" not in preview_columns:
+                    # v7 -> v8 is additive: existing preview rows keep their
+                    # candidates and receive the frozen revision default.
+                    db.execute("ALTER TABLE literature_map_previews ADD COLUMN preview_revision INTEGER NOT NULL DEFAULT 1")
+                    preview_columns.add("preview_revision")
+                if "pagination_json" not in preview_columns:
+                    db.execute("ALTER TABLE literature_map_previews ADD COLUMN pagination_json TEXT")
+                    preview_columns.add("pagination_json")
                 if "node_id" not in preview_columns:
                     db.execute("ALTER TABLE literature_map_previews ADD COLUMN node_id TEXT")
                 if "query_text" not in preview_columns:
@@ -2423,6 +2437,282 @@ class LiteratureMapStore:
             self._append_event(db, job, event_type="started")
             return job
 
+    @staticmethod
+    def _auxiliary_job_qualified_tx(
+        db: sqlite3.Connection,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        operation: str,
+        worker_token: str,
+        now: str,
+    ) -> bool:
+        row = db.execute(
+            "SELECT j.status,j.worker_token,j.lease_expires_at,m.status AS map_status "
+            "FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id "
+            "WHERE j.job_id=? AND j.map_id=? AND j.operation=? AND m.owner_id=? AND m.deleted_at IS NULL",
+            (job_id, map_id, operation, owner_id),
+        ).fetchone()
+        return bool(
+            row
+            and row["status"] == "running"
+            and row["worker_token"] == worker_token
+            and row["map_status"] != "stopped"
+            and _lease_is_active(row["lease_expires_at"], now)
+        )
+
+    def claim_auxiliary_job(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        operation: str,
+    ) -> tuple[MapJob, str] | None:
+        """Claim a preview-page or expansion batch with a private lease token."""
+
+        if operation not in _AUXILIARY_OPERATIONS:
+            raise ValueError("MAP_AUXILIARY_OPERATION_REQUIRED")
+        token = secrets.token_urlsafe(32)
+        now = iso_now()
+        lease_expires_at = _iso_after_seconds(_AUXILIARY_LEASE_SECONDS)
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT j.cursor_json FROM literature_map_jobs j "
+                "JOIN literature_maps m ON m.map_id=j.map_id "
+                "WHERE j.job_id=? AND j.map_id=? AND j.operation=? AND j.status='queued' "
+                "AND m.owner_id=? AND m.deleted_at IS NULL AND m.status!='stopped'",
+                (job_id, map_id, operation, owner_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if operation == "expand_batch":
+                cursor = _load(row["cursor_json"], {})
+                if not _auxiliary_batch_has_pending_metadata(cursor):
+                    return None
+                queue = self._queue_row(db, map_id, owner_id)
+                if queue is not None and str(queue["status"]) == "paused":
+                    return None
+            claimed = db.execute(
+                "UPDATE literature_map_jobs SET status='running',worker_token=?,lease_expires_at=?,"
+                "attempts=attempts+1,next_retry_at=NULL,updated_at=? "
+                "WHERE job_id=? AND map_id=? AND operation=? AND status='queued' AND attempts<? "
+                "AND EXISTS (SELECT 1 FROM literature_maps m WHERE m.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL AND m.status!='stopped') "
+                "RETURNING *",
+                (
+                    token,
+                    lease_expires_at,
+                    now,
+                    job_id,
+                    map_id,
+                    operation,
+                    _AUXILIARY_MAX_CLAIMS,
+                    map_id,
+                    owner_id,
+                ),
+            ).fetchone()
+            if claimed is None:
+                return None
+            job = _job(claimed)
+            self._append_event(db, job, event_type="started")
+            return job, token
+
+    def auxiliary_job_can_write(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        operation: str,
+        worker_token: str,
+    ) -> bool:
+        """Check private auxiliary worker qualification without changing state."""
+
+        if operation not in _AUXILIARY_OPERATIONS or not worker_token:
+            return False
+        with self.connection() as db:
+            return self._auxiliary_job_qualified_tx(
+                db,
+                job_id,
+                map_id,
+                owner_id,
+                operation=operation,
+                worker_token=worker_token,
+                now=iso_now(),
+            )
+
+    @contextlib.contextmanager
+    def auxiliary_job_transaction(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        operation: str,
+        worker_token: str,
+    ) -> Iterator[sqlite3.Connection]:
+        """Yield a write transaction only while an auxiliary lease is valid.
+
+        Rechecking before commit ensures a short lease that expires during a
+        domain write rolls the entire transaction back.
+        """
+
+        if operation not in _AUXILIARY_OPERATIONS or not worker_token:
+            raise ValueError("auxiliary job lease invalid")
+        with self.transaction() as db:
+            if not self._auxiliary_job_qualified_tx(
+                db,
+                job_id,
+                map_id,
+                owner_id,
+                operation=operation,
+                worker_token=worker_token,
+                now=iso_now(),
+            ):
+                raise ValueError("auxiliary job lease invalid")
+            yield db
+            row = db.execute(
+                "SELECT status,worker_token,lease_expires_at FROM literature_map_jobs "
+                "WHERE job_id=? AND map_id=? AND operation=?",
+                (job_id, map_id, operation),
+            ).fetchone()
+            if row is None:
+                raise ValueError("auxiliary job lease invalid")
+            if row["status"] == "running" and row["worker_token"] == worker_token:
+                if not _lease_is_active(row["lease_expires_at"], iso_now()):
+                    raise ValueError("auxiliary job lease invalid")
+            elif row["status"] not in {"queued", "active", "analysis_wait", "paused", "completed", "partial", "failed"} or row["worker_token"] is not None or row["lease_expires_at"] is not None:
+                raise ValueError("auxiliary job lease invalid")
+
+    def finish_auxiliary_job(
+        self,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        operation: str,
+        worker_token: str,
+        status: str,
+        step: str | None = None,
+        cursor: dict[str, Any] | None = None,
+        counts: dict[str, Any] | None = None,
+        failed_units: list[dict[str, Any]] | None = None,
+        error_code: str | None = None,
+        event_type: str | None = None,
+    ) -> MapJob | None:
+        """Release a valid auxiliary lease with a token and deadline CAS."""
+
+        if operation not in _AUXILIARY_OPERATIONS or not worker_token:
+            return None
+        if status not in {"queued", "active", "analysis_wait", "paused", "completed", "partial", "failed"}:
+            raise ValueError("invalid auxiliary job status")
+        with self.transaction() as db:
+            return self.finish_auxiliary_job_tx(
+                db,
+                job_id,
+                map_id,
+                owner_id,
+                operation=operation,
+                worker_token=worker_token,
+                status=status,
+                step=step,
+                cursor=cursor,
+                counts=counts,
+                failed_units=failed_units,
+                error_code=error_code,
+                event_type=event_type,
+            )
+
+    def finish_auxiliary_job_tx(
+        self,
+        db: sqlite3.Connection,
+        job_id: str,
+        map_id: str,
+        owner_id: str,
+        *,
+        operation: str,
+        worker_token: str,
+        status: str,
+        step: str | None = None,
+        cursor: dict[str, Any] | None = None,
+        counts: dict[str, Any] | None = None,
+        failed_units: list[dict[str, Any]] | None = None,
+        error_code: str | None = None,
+        event_type: str | None = None,
+    ) -> MapJob | None:
+        """Finish an auxiliary worker inside its domain-write transaction."""
+
+        if operation not in _AUXILIARY_OPERATIONS or not worker_token:
+            return None
+        if status not in {"queued", "active", "analysis_wait", "paused", "completed", "partial", "failed"}:
+            raise ValueError("invalid auxiliary job status")
+        now = iso_now()
+        row = db.execute(
+            "SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id "
+            "WHERE j.job_id=? AND j.map_id=? AND j.operation=? AND j.status='running' "
+            "AND j.worker_token=? AND j.lease_expires_at>? AND m.owner_id=? "
+            "AND m.deleted_at IS NULL AND m.status!='stopped'",
+            (job_id, map_id, operation, worker_token, now, owner_id),
+        ).fetchone()
+        if row is None:
+            return None
+        current = _job(row)
+        safe_failed = _safe_failed_units(failed_units if failed_units is not None else current.failed_units)
+        updated = db.execute(
+            "UPDATE literature_map_jobs SET status=?,step=?,cursor_json=?,counts_json=?,failed_units_json=?,"
+            "worker_token=NULL,lease_expires_at=NULL,updated_at=? WHERE job_id=? AND map_id=? "
+            "AND operation=? AND status='running' AND worker_token=? AND lease_expires_at>? "
+            "AND EXISTS (SELECT 1 FROM literature_maps m WHERE m.map_id=? AND m.owner_id=? "
+            "AND m.deleted_at IS NULL AND m.status!='stopped') RETURNING *",
+            (
+                status,
+                step if step is not None else current.step,
+                _dump(cursor if cursor is not None else current.cursor),
+                _dump(counts if counts is not None else current.counts),
+                _dump(safe_failed),
+                now,
+                job_id,
+                map_id,
+                operation,
+                worker_token,
+                now,
+                map_id,
+                owner_id,
+            ),
+        ).fetchone()
+        if updated is None:
+            return None
+        finished = _job(updated)
+        self._append_event(
+            db,
+            finished,
+            event_type=event_type or ("failed" if status == "failed" else "completed" if status == "completed" else "progress"),
+            error_code=error_code,
+        )
+        return finished
+
+    def fail_unsupported_job(self, job_id: str, map_id: str, owner_id: str, *, operation: str) -> MapJob | None:
+        """Fail closed for an operation with no registered recovery handler."""
+
+        if operation in _AUXILIARY_OPERATIONS or operation == "analysis_queue" or operation == "analysis" or operation.startswith("preview:") or operation == "create":
+            return None
+        now = iso_now()
+        failed_units = [{"unit": operation[:80], "error_code": "MAP_JOB_OPERATION_UNSUPPORTED", "retryable": False}]
+        with self.transaction() as db:
+            updated = db.execute(
+                "UPDATE literature_map_jobs SET status='failed',step='finished',worker_token=NULL,"
+                "lease_expires_at=NULL,failed_units_json=?,updated_at=? WHERE job_id=? AND map_id=? "
+                "AND operation=? AND status IN ('queued','running') AND EXISTS ("
+                "SELECT 1 FROM literature_maps m WHERE m.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL) RETURNING *",
+                (_dump(failed_units), now, job_id, map_id, operation, map_id, owner_id),
+            ).fetchone()
+            if updated is None:
+                return None
+            job = _job(updated)
+            self._append_event(db, job, event_type="failed", error_code="MAP_JOB_OPERATION_UNSUPPORTED")
+            return job
+
     claim_queued_job = claim_job
 
     def retry_job(self, job_id: str, map_id: str, owner_id: str) -> MapJob | None:
@@ -2708,6 +2998,118 @@ class LiteratureMapStore:
         with self.connection() as db:
             row = db.execute("SELECT j.job_id,j.status FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id WHERE j.job_id=? AND j.map_id=? AND m.owner_id=? AND m.deleted_at IS NULL", (job_id, map_id, owner_id)).fetchone()
         return bool(row and row["status"] == "running")
+
+    def recover_auxiliary_jobs(self, owner_id: str | None = None, *, map_id: str | None = None) -> list[MapJob]:
+        """Reap expired auxiliary leases and return only typed queued work."""
+
+        recovered: list[MapJob] = []
+        with self.transaction() as db:
+            now = iso_now()
+            clause = "j.operation IN ('preview_page','expand_batch') AND j.status IN ('queued','running','paused') AND m.deleted_at IS NULL AND m.status!='stopped'"
+            params: list[Any] = []
+            if owner_id is not None:
+                clause += " AND m.owner_id=?"
+                params.append(owner_id)
+            if map_id is not None:
+                clause += " AND j.map_id=?"
+                params.append(map_id)
+            rows = db.execute(
+                "SELECT j.*,m.owner_id FROM literature_map_jobs j "
+                "JOIN literature_maps m ON m.map_id=j.map_id WHERE " + clause + " ORDER BY j.created_at,j.job_id",
+                tuple(params),
+            ).fetchall()
+            for row in rows:
+                operation = str(row["operation"])
+                job_id = str(row["job_id"])
+                job_map_id = str(row["map_id"])
+                resolved_owner = str(row["owner_id"])
+                batch_cursor = _load(row["cursor_json"], {})
+                if operation == "expand_batch" and not _auxiliary_batch_has_pending_metadata(batch_cursor):
+                    continue
+                queue = self._queue_row(db, job_map_id, resolved_owner) if operation == "expand_batch" else None
+                paused = queue is not None and str(queue["status"]) == "paused"
+                status = str(row["status"])
+                if status == "running":
+                    if _lease_is_active(row["lease_expires_at"], now):
+                        continue
+                    if int(row["attempts"] or 0) >= _AUXILIARY_MAX_CLAIMS:
+                        next_status = "failed"
+                        error_code = "MAP_JOB_LEASE_EXHAUSTED"
+                    elif paused:
+                        next_status = "paused"
+                        error_code = None
+                    else:
+                        next_status = "queued"
+                        error_code = None
+                    current = _job(row)
+                    failed_units = list(current.failed_units)
+                    if error_code:
+                        failed_units.append({
+                            "unit": operation,
+                            "error_code": error_code,
+                            "retryable": False,
+                        })
+                    changed = db.execute(
+                        "UPDATE literature_map_jobs SET status=?,worker_token=NULL,lease_expires_at=NULL,"
+                        "next_retry_at=NULL,step=?,failed_units_json=?,updated_at=? WHERE job_id=? AND map_id=? "
+                        "AND operation=? AND status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?) RETURNING *",
+                        (
+                            next_status,
+                            "finished" if error_code else current.step,
+                            _dump(_safe_failed_units(failed_units)),
+                            now,
+                            job_id,
+                            job_map_id,
+                            operation,
+                            now,
+                        ),
+                    ).fetchone()
+                    if changed is None:
+                        continue
+                    terminal = _job(changed)
+                    self._append_event(
+                        db,
+                        terminal,
+                        event_type="failed" if error_code else "paused" if paused else "recovered",
+                        error_code=error_code,
+                    )
+                elif status == "queued" and paused:
+                    changed = db.execute(
+                        "UPDATE literature_map_jobs SET status='paused',worker_token=NULL,lease_expires_at=NULL,updated_at=? "
+                        "WHERE job_id=? AND map_id=? AND operation='expand_batch' AND status='queued' RETURNING *",
+                        (now, job_id, job_map_id),
+                    ).fetchone()
+                    if changed is not None:
+                        self._append_event(db, _job(changed), event_type="paused")
+                elif status == "paused" and not paused:
+                    changed = db.execute(
+                        "UPDATE literature_map_jobs SET status='queued',worker_token=NULL,lease_expires_at=NULL,updated_at=? "
+                        "WHERE job_id=? AND map_id=? AND operation='expand_batch' AND status='paused' RETURNING *",
+                        (now, job_id, job_map_id),
+                    ).fetchone()
+                    if changed is not None:
+                        self._append_event(db, _job(changed), event_type="resumed")
+
+            queued_clause = "j.operation IN ('preview_page','expand_batch') AND j.status='queued' AND m.deleted_at IS NULL AND m.status!='stopped'"
+            queued_params: list[Any] = []
+            if owner_id is not None:
+                queued_clause += " AND m.owner_id=?"
+                queued_params.append(owner_id)
+            if map_id is not None:
+                queued_clause += " AND j.map_id=?"
+                queued_params.append(map_id)
+            queued_rows = db.execute(
+                "SELECT j.* FROM literature_map_jobs j JOIN literature_maps m ON m.map_id=j.map_id WHERE "
+                + queued_clause + " ORDER BY j.created_at,j.job_id",
+                tuple(queued_params),
+            ).fetchall()
+            recovered = [
+                _job(row)
+                for row in queued_rows
+                if row["operation"] == "preview_page"
+                or _auxiliary_batch_has_pending_metadata(_load(row["cursor_json"], {}))
+            ]
+        return recovered
 
     def recover_jobs(self, owner_id: str | None = None) -> list[MapJob]:
         with self.connection() as db:
@@ -3021,6 +3423,20 @@ def _lease_is_active(value: Any, now: str) -> bool:
         return datetime.fromisoformat(str(value)) > datetime.fromisoformat(str(now))
     except (TypeError, ValueError):
         return False
+
+
+def _auxiliary_batch_has_pending_metadata(cursor: Any) -> bool:
+    if not isinstance(cursor, Mapping) or cursor.get("version") != 1:
+        return False
+    items = cursor.get("items")
+    if not isinstance(items, Mapping):
+        return False
+    pending = {"metadata_pending", "metadata_retry"}
+    return any(
+        isinstance(item, Mapping)
+        and str(item.get("metadata_status") or item.get("status") or "") in pending
+        for item in items.values()
+    )
 
 
 __all__ = ["LiteratureMapStore", "LiteratureMapStoreError", "default_database_path"]

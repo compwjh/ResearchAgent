@@ -26,6 +26,7 @@
 | [08](./task-08-acceptance-deploy-retro.md) | 最终验收与收口 | 02–07全部完成 | 已完成（a328932 runtime/browser/full regression/deployment PASS；tester 与 architect 双签） |
 | [09](./task-09-map-interaction-analysis.md) | 图谱交互与自动摘要修订 | 03、05、07旧版资产 | 已完成：不可用操作反馈；最新51项前端测试、独立签字及真实页面通过 |
 | [10](./task-10-map-usability.md) | 地图间距、配色与详情反馈 | 03、05、06、07、09历史资产；本轮确认与门禁 | 已完成（498b6ded，双签READY_FOR_USER） |
+| [11](./task-11-paper-expansion.md) | 单篇双向关联扩展与后台摘要 | 04、09、10；接口合同已确认 | 实施中（持久化和作业基础） |
 
 ## 执行约定
 

@@ -215,6 +215,7 @@ def get_literature_map_service() -> LiteratureMapService:
             executor=_executor,
             queue_executor=_analysis_executor,
             memory_repository=MemoryRepository(),
+            auxiliary_recovery=_service.recover_auxiliary_for_map,
         )
     return _service
 

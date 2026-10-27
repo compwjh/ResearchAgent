@@ -718,6 +718,9 @@ def test_schema_upgrade_rolls_back_all_incremental_changes_and_can_retry(tmp_pat
         db.execute("DROP INDEX IF EXISTS idx_literature_map_jobs_analysis_claim")
         for column in ("worker_token", "lease_expires_at", "attempts", "next_retry_at"):
             db.execute(f"ALTER TABLE literature_map_jobs DROP COLUMN {column}")
+        for column in ("preview_revision", "pagination_json"):
+            db.execute(f"ALTER TABLE literature_map_previews DROP COLUMN {column}")
+        db.execute("DELETE FROM literature_map_schema WHERE version=?", (8,))
         db.execute("DELETE FROM literature_map_schema WHERE version=?", (6,))
         db.execute(
             "INSERT OR IGNORE INTO literature_map_schema(version,applied_at) VALUES(?,?)",
@@ -734,13 +737,16 @@ def test_schema_upgrade_rolls_back_all_incremental_changes_and_can_retry(tmp_pat
     with sqlite3.connect(database) as db:
         columns = {row[1] for row in db.execute("PRAGMA table_info(literature_map_jobs)")}
         assert not {"worker_token", "lease_expires_at", "attempts", "next_retry_at"} & columns
+        preview_columns = {row[1] for row in db.execute("PRAGMA table_info(literature_map_previews)")}
+        assert not {"preview_revision", "pagination_json"} & preview_columns
         indexes = {row[1] for row in db.execute("PRAGMA index_list(literature_map_jobs)")}
         assert "idx_literature_map_jobs_analysis_claim" not in indexes
         assert db.execute("SELECT 1 FROM literature_map_schema WHERE version=6").fetchone() is None
+        assert db.execute("SELECT 1 FROM literature_map_schema WHERE version=8").fetchone() is None
 
     monkeypatch.undo()
     upgraded = LiteratureMapStore(database)
-    assert upgraded.schema_version == 7
+    assert upgraded.schema_version == 8
     LiteratureMapStore(database)
 
 

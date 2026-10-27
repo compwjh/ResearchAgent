@@ -129,10 +129,18 @@ class LiteratureMapService:
             job = self._find_job(job_id, owner_id)
         if job is None:
             return None
+        owner = owner_id or self._owner_for_job(job)
+        if job.operation == "preview_page":
+            return self.run_preview_page(job.job_id, owner)
+        if job.operation == "expand_batch":
+            return self.run_expansion_batch(job.job_id, owner)
+        if job.operation in {"analysis", "analysis_queue"}:
+            return job
+        if job.operation != "create" and not job.operation.startswith("preview:"):
+            return self.store.fail_unsupported_job(job.job_id, job.map_id, owner, operation=job.operation)
         map_item = self.store.get_map(job.map_id, owner_id or self._owner_for_job(job))
         if map_item is None:
             return None
-        owner = owner_id or self._owner_for_job(job)
         claim = getattr(self.store, "claim_job", None)
         if callable(claim):
             claimed = claim(job.job_id, job.map_id, owner)
@@ -252,7 +260,12 @@ class LiteratureMapService:
             return self._finish(job, owner, counts, failed, layers, status="failed", step="finished")
 
     def recover(self, owner_id: str | None = None) -> int:
-        jobs = [job for job in self.store.recover_jobs(owner_id) if job.operation != "analysis_queue"]
+        auxiliary_jobs = self.store.recover_auxiliary_jobs(owner_id)
+        self._dispatch_auxiliary_jobs(auxiliary_jobs, owner_id)
+        jobs = [
+            job for job in self.store.recover_jobs(owner_id)
+            if job.operation not in {"analysis_queue", "preview_page", "expand_batch"}
+        ]
         for job in jobs:
             owner = owner_id or self._owner_for_job(job)
             if job.operation.startswith("preview:"):
@@ -272,9 +285,87 @@ class LiteratureMapService:
                 # serial child scheduler; graph recovery must not execute it
                 # as a discovery job.
                 continue
-            if self.executor is not None:
+            if job.operation == "create" and self.executor is not None:
                 self.executor.submit(self.run_job, job.job_id, owner)
+            elif job.operation != "create":
+                self.store.fail_unsupported_job(job.job_id, job.map_id, owner, operation=job.operation)
+        return len(jobs) + len(auxiliary_jobs)
+
+    def recover_auxiliary_for_map(self, map_id: str, owner_id: str) -> int:
+        """Resume only this map's auxiliary jobs from the existing queue path."""
+
+        jobs = self.store.recover_auxiliary_jobs(owner_id, map_id=map_id)
+        return self._dispatch_auxiliary_jobs(jobs, owner_id)
+
+    def _dispatch_auxiliary_jobs(self, jobs: list[MapJob], owner_id: str | None) -> int:
+        for job in jobs:
+            owner = owner_id or self._owner_for_job(job)
+            if self.executor is None:
+                continue
+            if job.operation == "preview_page":
+                handler = self.run_preview_page
+            elif job.operation == "expand_batch":
+                handler = self.run_expansion_batch
+            else:
+                self.store.fail_unsupported_job(job.job_id, job.map_id, owner, operation=job.operation)
+                continue
+            try:
+                self.executor.submit(handler, job.job_id, owner)
+            except RuntimeError:
+                # Runtime reset can close the shared pool after reaping; the
+                # typed queued job remains durable for the next recovery.
+                continue
         return len(jobs)
+
+    def run_preview_page(self, job_id: str, owner_id: str | None = None) -> MapJob | None:
+        """Fail closed until the bounded page-fetch handler is implemented."""
+
+        return self._fail_unimplemented_auxiliary(job_id, owner_id, "preview_page")
+
+    def run_expansion_batch(self, job_id: str, owner_id: str | None = None) -> MapJob | None:
+        """Fail closed until the metadata batch handler is implemented."""
+
+        return self._fail_unimplemented_auxiliary(job_id, owner_id, "expand_batch")
+
+    def _fail_unimplemented_auxiliary(self, job_id: str, owner_id: str | None, operation: str) -> MapJob | None:
+        resolved = self.store.get_job_with_owner(job_id) if owner_id is None else None
+        if resolved is not None:
+            job, owner = resolved
+        else:
+            owner = owner_id
+            if owner is None:
+                return None
+            job = next(
+                (candidate for candidate in self.store.recover_jobs(owner) if candidate.job_id == job_id),
+                None,
+            )
+            if job is None:
+                for map_item in self.store.list_maps(owner):
+                    job = self.store.get_job(job_id, map_item.map_id, owner)
+                    if job is not None:
+                        break
+        if job is None or job.operation != operation:
+            return None
+        claim = self.store.claim_auxiliary_job(job.job_id, job.map_id, owner, operation=operation)
+        if claim is None:
+            return self.store.get_job(job.job_id, job.map_id, owner)
+        _claimed, token = claim
+        return self.store.finish_auxiliary_job(
+            job.job_id,
+            job.map_id,
+            owner,
+            operation=operation,
+            worker_token=token,
+            status="failed",
+            step="finished",
+            failed_units=[{
+                "unit": operation,
+                "error_code": "MAP_AUXILIARY_HANDLER_UNAVAILABLE",
+                "retryable": False,
+            }],
+            error_code="MAP_AUXILIARY_HANDLER_UNAVAILABLE",
+            event_type="failed",
+        )
 
     def graph(self, map_id: str, owner_id: str) -> dict[str, Any]:
         item = self.store.get_map(map_id, owner_id)
