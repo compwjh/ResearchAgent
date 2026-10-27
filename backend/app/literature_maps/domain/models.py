@@ -111,6 +111,7 @@ class MapPaper:
     group_id: str | None = None
     identity_key: str | None = None
     removed: bool = False
+    color_override: str | None = None
 
     @classmethod
     def new(cls, map_id: str, *, semantic_scholar_id: str | None = None, external_ids: Mapping[str, Any] | None = None, title: str, **kwargs: Any) -> "MapPaper":
@@ -143,6 +144,7 @@ class MapPaper:
             "position": self.position,
             "group_id": self.group_id,
             "removed": self.removed,
+            "color_override": self.color_override,
         }
 
 

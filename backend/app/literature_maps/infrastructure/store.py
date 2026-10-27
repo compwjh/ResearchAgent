@@ -37,7 +37,7 @@ from backend.app.literature_maps.domain.models import (
 )
 from backend.app.platform.config import BASE_DIR
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 _WRITE_LOCK = threading.RLock()
 _UNSET = object()
 _ERROR_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
@@ -343,6 +343,11 @@ class LiteratureMapStore:
                     db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_at TEXT")
                 if "removed_edges_json" not in node_columns:
                     db.execute("ALTER TABLE literature_map_nodes ADD COLUMN removed_edges_json TEXT")
+                if "color_override" not in node_columns:
+                    # v6 -> v7 is deliberately additive.  ALTER TABLE is
+                    # transactional under the explicit BEGIN IMMEDIATE above,
+                    # so a later repair/index/version failure rolls it back.
+                    db.execute("ALTER TABLE literature_map_nodes ADD COLUMN color_override TEXT")
                 # Normalize legacy references that cannot resolve to a group in
                 # the same map. The paper rows themselves remain intact.
                 db.execute(
@@ -426,7 +431,7 @@ class LiteratureMapStore:
 
     def create_map(self, owner_id: str, *, topic: str, name: str | None = None, project_id: str | None = None, filters: dict[str, Any] | None = None, requested_count: int = 30, idempotency_key: str | None = None, params_hash: str | None = None) -> LiteratureMap:
         now = iso_now()
-        item = LiteratureMap(uuid.uuid4().hex, owner_id, (name or topic).strip()[:200], topic.strip(), project_id, filters or {}, int(requested_count), 0, "generating", {"viewport": {"x": 0, "y": 0, "scale": 1}, "layers": {"citation": True, "similarity": True}, "label_mode": "all"}, now, now)
+        item = LiteratureMap(uuid.uuid4().hex, owner_id, (name or topic).strip()[:200], topic.strip(), project_id, filters or {}, int(requested_count), 0, "generating", {"viewport": {"x": 0, "y": 0, "scale": 1}, "layers": {"citation": True, "similarity": True}, "label_mode": "all", "node_style": {"fill_mode": "filled", "fill_opacity": 0.3}}, now, now)
         with self.transaction() as db:
             db.execute(
                 "INSERT INTO literature_maps(map_id,owner_id,name,topic,project_id,filters_json,requested_count,revision,status,view_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -495,7 +500,12 @@ class LiteratureMapStore:
                 int(requested_count),
                 0,
                 "generating",
-                {"viewport": {"x": 0, "y": 0, "scale": 1}, "layers": {"citation": True, "similarity": True}, "label_mode": "all"},
+                {
+                    "viewport": {"x": 0, "y": 0, "scale": 1},
+                    "layers": {"citation": True, "similarity": True},
+                    "label_mode": "all",
+                    "node_style": {"fill_mode": "filled", "fill_opacity": 0.3},
+                },
                 now,
                 now,
             )
@@ -595,9 +605,12 @@ class LiteratureMapStore:
             raise LookupError("map not found")
         return result
 
-    def update_view(self, map_id: str, owner_id: str, *, expected_revision: int, positions: list[dict[str, Any]], viewport: dict[str, Any] | None, filters: dict[str, Any] | None, layers: dict[str, Any] | None, label_mode: str | None = None) -> LiteratureMap:
+    def update_view(self, map_id: str, owner_id: str, *, expected_revision: int, positions: list[dict[str, Any]], viewport: dict[str, Any] | None, filters: dict[str, Any] | None, layers: dict[str, Any] | None, label_mode: str | None = None, node_style: Mapping[str, Any] | None = None) -> LiteratureMap:
         if label_mode is not None and label_mode not in {"all", "neighbors", "hidden"}:
             raise ValueError("INVALID_LABEL_MODE")
+        if isinstance(filters, Mapping) and "node_style" in filters:
+            raise ValueError("INVALID_NODE_STYLE")
+        validated_node_style = _validate_node_style(node_style) if node_style is not None else None
         with self.transaction() as db:
             row = db.execute("SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL", (map_id, owner_id)).fetchone()
             if not row:
@@ -616,6 +629,8 @@ class LiteratureMapStore:
                 view["layers"] = layers
             if label_mode is not None:
                 view["label_mode"] = label_mode
+            if validated_node_style is not None:
+                view["node_style"] = validated_node_style
             for position in positions:
                 db.execute("UPDATE literature_map_nodes SET position_json=? WHERE map_id=? AND node_id=?", (_dump({"x": float(position["x"]), "y": float(position["y"])}), map_id, position["node_id"]))
             now = iso_now()
@@ -657,9 +672,10 @@ class LiteratureMapStore:
             self._assert_writable(db, map_id, owner_id, job_id=job_id)
             for node in values:
                 self._assert_group_reference(db, map_id, node.group_id)
+                normalized_color = _validate_color_override(node.color_override)
                 db.execute(
-                    "INSERT INTO literature_map_nodes(node_id,map_id,identity_key,external_ids_json,title,authors_json,year,venue,abstract,keywords_json,citation_count,source_url,provenance_json,catalog_paper_id,document_id,download_status,position_json,group_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(map_id,identity_key) DO UPDATE SET title=excluded.title,authors_json=excluded.authors_json,year=excluded.year,venue=excluded.venue,abstract=excluded.abstract,keywords_json=excluded.keywords_json,citation_count=excluded.citation_count,source_url=excluded.source_url,provenance_json=excluded.provenance_json,catalog_paper_id=excluded.catalog_paper_id,document_id=excluded.document_id,download_status=excluded.download_status",
-                    (node.node_id, map_id, node.identity_key or uuid.uuid4().hex, _dump(node.external_ids), node.title, _dump(list(node.authors)), node.year, node.venue, node.abstract, _dump(list(node.keywords)), node.citation_count, node.source_url, _dump(node.provenance), node.catalog_paper_id, node.document_id, node.download_status, _dump(node.position) if node.position else None, node.group_id),
+                    "INSERT INTO literature_map_nodes(node_id,map_id,identity_key,external_ids_json,title,authors_json,year,venue,abstract,keywords_json,citation_count,source_url,provenance_json,catalog_paper_id,document_id,download_status,position_json,group_id,color_override) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(map_id,identity_key) DO UPDATE SET title=excluded.title,authors_json=excluded.authors_json,year=excluded.year,venue=excluded.venue,abstract=excluded.abstract,keywords_json=excluded.keywords_json,citation_count=excluded.citation_count,source_url=excluded.source_url,provenance_json=excluded.provenance_json,catalog_paper_id=excluded.catalog_paper_id,document_id=excluded.document_id,download_status=excluded.download_status",
+                    (node.node_id, map_id, node.identity_key or uuid.uuid4().hex, _dump(node.external_ids), node.title, _dump(list(node.authors)), node.year, node.venue, node.abstract, _dump(list(node.keywords)), node.citation_count, node.source_url, _dump(node.provenance), node.catalog_paper_id, node.document_id, node.download_status, _dump(node.position) if node.position else None, node.group_id, normalized_color),
                 )
             self._touch(db, map_id, owner_id)
         return self.list_nodes(map_id, owner_id)
@@ -673,6 +689,58 @@ class LiteratureMapStore:
         with self.connection() as db:
             row = db.execute("SELECT n.* FROM literature_map_nodes n JOIN literature_maps m ON m.map_id=n.map_id WHERE n.map_id=? AND n.node_id=? AND m.owner_id=? AND m.deleted_at IS NULL", (map_id, node_id, owner_id)).fetchone()
         return _node(row) if row else None
+
+    def update_node_styles(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        node_ids: Iterable[str],
+        color_override: str | None,
+    ) -> list[MapPaper]:
+        """Atomically assign one optional color override to selected nodes.
+
+        All validation happens before the first UPDATE.  The surrounding
+        transaction therefore guarantees that an unknown or removed node can
+        never leave a partial batch behind.
+        """
+
+        selected = [str(node_id) for node_id in node_ids]
+        if not selected or len(selected) > _MAX_MAP_NODES or len(set(selected)) != len(selected):
+            raise ValueError("INVALID_NODE_IDS")
+        normalized_color = _validate_color_override(color_override)
+        with self.transaction() as db:
+            map_row = db.execute(
+                "SELECT * FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            _assert_revision(map_row, expected_revision)
+            placeholders = ",".join("?" for _ in selected)
+            rows = db.execute(
+                f"SELECT * FROM literature_map_nodes WHERE map_id=? AND node_id IN ({placeholders})",
+                (map_id, *selected),
+            ).fetchall()
+            by_id = {str(row["node_id"]): row for row in rows}
+            if len(by_id) != len(selected):
+                raise LookupError("node not found")
+            if any(row["removed_at"] is not None for row in rows):
+                raise ValueError("MAP_NODE_REMOVED")
+            now = iso_now()
+            for node_id in selected:
+                db.execute(
+                    "UPDATE literature_map_nodes SET color_override=? WHERE map_id=? AND node_id=? AND removed_at IS NULL",
+                    (normalized_color, map_id, node_id),
+                )
+            _increment_map_revision(db, map_id, owner_id, now)
+            fresh_rows = db.execute(
+                f"SELECT * FROM literature_map_nodes WHERE map_id=? AND node_id IN ({placeholders})",
+                (map_id, *selected),
+            ).fetchall()
+        fresh_by_id = {str(row["node_id"]): _node(row) for row in fresh_rows}
+        return [fresh_by_id[node_id] for node_id in selected]
 
     # ------------------------------------------------------------------
     # Map groups and node presentation membership
@@ -1295,7 +1363,6 @@ class LiteratureMapStore:
                 tuple(params),
             ).fetchall()
             for row in rows:
-                queue_id = _load(row["cursor_json"], {}).get("queue_job_id")
                 # Owner is already constrained by the join; a narrow owner
                 # lookup keeps recovery fail-closed without exposing it in the
                 # child job projection.
@@ -2673,9 +2740,10 @@ class LiteratureMapStore:
     @staticmethod
     def _insert_node(db: sqlite3.Connection, node: MapPaper) -> None:
         LiteratureMapStore._assert_group_reference(db, node.map_id, node.group_id)
+        normalized_color = _validate_color_override(node.color_override)
         db.execute(
-            "INSERT INTO literature_map_nodes(node_id,map_id,identity_key,external_ids_json,title,authors_json,year,venue,abstract,keywords_json,citation_count,source_url,provenance_json,catalog_paper_id,document_id,download_status,position_json,group_id,removed_at,removed_edges_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (node.node_id, node.map_id, node.identity_key or uuid.uuid4().hex, _dump(node.external_ids), node.title, _dump(list(node.authors)), node.year, node.venue, node.abstract, _dump(list(node.keywords)), node.citation_count, node.source_url, _dump(node.provenance), node.catalog_paper_id, node.document_id, node.download_status, _dump(node.position) if node.position else None, node.group_id, None, None),
+            "INSERT INTO literature_map_nodes(node_id,map_id,identity_key,external_ids_json,title,authors_json,year,venue,abstract,keywords_json,citation_count,source_url,provenance_json,catalog_paper_id,document_id,download_status,position_json,group_id,removed_at,removed_edges_json,color_override) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (node.node_id, node.map_id, node.identity_key or uuid.uuid4().hex, _dump(node.external_ids), node.title, _dump(list(node.authors)), node.year, node.venue, node.abstract, _dump(list(node.keywords)), node.citation_count, node.source_url, _dump(node.provenance), node.catalog_paper_id, node.document_id, node.download_status, _dump(node.position) if node.position else None, node.group_id, None, None, normalized_color),
         )
 
     @staticmethod
@@ -2715,6 +2783,35 @@ def _validate_group_color(value: object) -> str:
     return color.upper()
 
 
+def _validate_color_override(value: object) -> str | None:
+    if value is None:
+        return None
+    color = str(value).strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        raise ValueError("INVALID_COLOR_OVERRIDE")
+    return color.upper()
+
+
+def _validate_node_style(value: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("INVALID_NODE_STYLE")
+    if set(value) != {"fill_mode", "fill_opacity"}:
+        raise ValueError("INVALID_NODE_STYLE")
+    fill_mode = value.get("fill_mode")
+    opacity = value.get("fill_opacity")
+    if fill_mode not in {"filled", "outline"}:
+        raise ValueError("INVALID_NODE_STYLE")
+    if isinstance(opacity, bool):
+        raise ValueError("INVALID_NODE_STYLE")
+    try:
+        normalized_opacity = float(opacity)
+    except (TypeError, ValueError):
+        raise ValueError("INVALID_NODE_STYLE") from None
+    if not math.isfinite(normalized_opacity) or not 0 <= normalized_opacity <= 1:
+        raise ValueError("INVALID_NODE_STYLE")
+    return {"fill_mode": fill_mode, "fill_opacity": normalized_opacity}
+
+
 def _validate_group_id(value: object) -> str:
     group_id = str(value or "").strip()
     if not group_id or len(group_id) > 100:
@@ -2750,11 +2847,17 @@ def _map(row: sqlite3.Row) -> LiteratureMap:
     if not isinstance(view, dict):
         view = {}
     view.setdefault("label_mode", "all")
+    node_style = view.get("node_style")
+    try:
+        view["node_style"] = _validate_node_style(node_style) if node_style is not None else {"fill_mode": "filled", "fill_opacity": 0.3}
+    except ValueError:
+        view["node_style"] = {"fill_mode": "filled", "fill_opacity": 0.3}
     return LiteratureMap(row["map_id"], row["owner_id"], row["name"], row["topic"], row["project_id"], _load(row["filters_json"], {}), int(row["requested_count"]), int(row["revision"]), row["status"], view, row["created_at"], row["updated_at"])
 
 
 def _node(row: sqlite3.Row) -> MapPaper:
-    return MapPaper(row["node_id"], row["map_id"], _load(row["external_ids_json"], {}), row["title"], tuple(_load(row["authors_json"], [])), row["year"], row["venue"], row["abstract"], tuple(_load(row["keywords_json"], [])), row["citation_count"], row["source_url"], _load(row["provenance_json"], {}), row["catalog_paper_id"], row["document_id"], row["download_status"], _load(row["position_json"], None), row["group_id"], row["identity_key"], bool(row["removed_at"]))
+    color_override = row["color_override"]
+    return MapPaper(row["node_id"], row["map_id"], _load(row["external_ids_json"], {}), row["title"], tuple(_load(row["authors_json"], [])), row["year"], row["venue"], row["abstract"], tuple(_load(row["keywords_json"], [])), row["citation_count"], row["source_url"], _load(row["provenance_json"], {}), row["catalog_paper_id"], row["document_id"], row["download_status"], _load(row["position_json"], None), row["group_id"], row["identity_key"], bool(row["removed_at"]), color_override)
 
 
 def _group(row: sqlite3.Row) -> MapGroup:
@@ -2766,8 +2869,8 @@ def _edge(row: sqlite3.Row) -> MapEdge:
 
 
 def _job(row: sqlite3.Row) -> MapJob:
-    worker_token = row["worker_token"] if "worker_token" in row.keys() else None
-    lease_expires_at = row["lease_expires_at"] if "lease_expires_at" in row.keys() else None
+    worker_token = row["worker_token"]
+    lease_expires_at = row["lease_expires_at"]
     return MapJob(
         row["job_id"],
         row["map_id"],

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from concurrent.futures import Executor
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -333,6 +334,34 @@ class LiteratureMapService:
             raise LookupError("map not found")
         return {"schema_version": "literature-map-v1", "map_id": map_id, "revision": item.revision, "node": node.to_dict()}
 
+    def update_node_styles(
+        self,
+        map_id: str,
+        owner_id: str,
+        *,
+        expected_revision: int,
+        node_ids: Iterable[str],
+        color_override: str | None,
+    ) -> dict[str, Any]:
+        nodes = self.store.update_node_styles(
+            map_id,
+            owner_id,
+            expected_revision=expected_revision,
+            node_ids=node_ids,
+            color_override=color_override,
+        )
+        item = self.store.get_map(map_id, owner_id)
+        if item is None:
+            raise LookupError("map not found")
+        return {
+            "schema_version": "literature-map-v1",
+            "map_id": map_id,
+            "revision": item.revision,
+            "node_ids": [node.node_id for node in nodes],
+            "color_override": nodes[0].color_override if nodes else color_override,
+            "nodes": [node.to_dict() for node in nodes],
+        }
+
     def export_map(self, map_id: str, owner_id: str) -> dict[str, Any]:
         """Return a portable, read-only export assembled from active map rows.
 
@@ -349,7 +378,7 @@ class LiteratureMapService:
         active_ids = {node.node_id for node in active_nodes}
         edges = [edge for edge in self.store.list_edges(map_id, owner_id) if edge.source_id in active_ids and edge.target_id in active_ids]
         return {
-            "schema_version": "literature-map-export-v1",
+            "schema_version": "literature-map-export-v2",
             "exported_at": iso_now(),
             "map": {
                 "map_id": item.map_id,
@@ -1640,6 +1669,18 @@ def _export_view_settings(settings: Mapping[str, Any] | None) -> dict[str, Any]:
     label_mode = settings.get("label_mode")
     if label_mode in {"all", "neighbors", "hidden"}:
         exported["label_mode"] = label_mode
+    style = settings.get("node_style")
+    if isinstance(style, Mapping):
+        mode = style.get("fill_mode")
+        opacity = style.get("fill_opacity")
+        try:
+            opacity_value = float(opacity)
+        except (TypeError, ValueError):
+            opacity_value = float("nan")
+        if mode in {"filled", "outline"} and math.isfinite(opacity_value) and 0 <= opacity_value <= 1:
+            exported["node_style"] = {"fill_mode": mode, "fill_opacity": opacity_value}
+    if "node_style" not in exported:
+        exported["node_style"] = {"fill_mode": "filled", "fill_opacity": 0.3}
     return exported
 
 
@@ -1757,7 +1798,14 @@ def _export_node(node: MapPaper) -> dict[str, Any]:
         "download_status": node.download_status,
         "position": _export_position(node.position),
         "group_id": node.group_id,
+        "color_override": _export_color_override(node.color_override),
     }
+
+
+def _export_color_override(value: Any) -> str | None:
+    if not isinstance(value, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
+        return None
+    return value.upper()
 
 
 def _export_edge(edge: MapEdge) -> dict[str, Any]:

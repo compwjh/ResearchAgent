@@ -2,14 +2,14 @@ import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
 
 from backend.app.chat.application.chat_runner import ChatRun
-from backend.app.literature_maps.application.analysis import MapAnalysisError, MapAnalysisService
 from backend.app.literature_maps.application import runtime as runtime_module
+from backend.app.literature_maps.application.analysis import MapAnalysisError, MapAnalysisService
 from backend.app.literature_maps.application.runtime import reset_literature_map_runtime
 from backend.app.literature_maps.application.service import LiteratureMapService
 from backend.app.literature_maps.domain.models import MapPaper
@@ -740,7 +740,7 @@ def test_schema_upgrade_rolls_back_all_incremental_changes_and_can_retry(tmp_pat
 
     monkeypatch.undo()
     upgraded = LiteratureMapStore(database)
-    assert upgraded.schema_version == 6
+    assert upgraded.schema_version == 7
     LiteratureMapStore(database)
 
 

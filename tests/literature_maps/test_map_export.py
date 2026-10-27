@@ -65,7 +65,7 @@ def test_json_export_is_whitelisted_owner_scoped_and_directional(tmp_path):
         assert ".json" in exported.headers["content-disposition"]
         body = exported.json()
         assert set(body) == {"schema_version", "exported_at", "map", "groups", "nodes", "edges"}
-        assert body["schema_version"] == "literature-map-export-v1"
+        assert body["schema_version"] == "literature-map-export-v2"
         assert "owner_id" not in body["map"]
         assert body["map"]["map_id"] == map_id
         assert len(body["nodes"]) == 2

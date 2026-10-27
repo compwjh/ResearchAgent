@@ -15,6 +15,13 @@
   const INITIAL_FIT_SCALE_EPSILON = 0.01;
   const FIT_PADDING_CSS_PX = 48;
   const MAX_LAYOUT_FRAMES = 8;
+  // A spacing preview treats a node's edge clearance as two copies of the
+  // larger node's diameter, plus a small world-unit allowance for SVG strokes.
+  // The placement algorithm is deliberately bounded and deterministic so a
+  // dense map expands outward instead of spinning a force simulation forever.
+  const LAYOUT_CLEARANCE_MULTIPLIER = 4;
+  const LAYOUT_STROKE_CLEARANCE = 4;
+  const MAX_LAYOUT_PLACEMENT_ATTEMPTS = 10000;
   const MAX_POLL_ATTEMPTS = 120;
   const MAX_PREVIEW_DISCOVERY_PAGES = 50;
   const MAX_MAP_NODES = 200;
@@ -83,6 +90,11 @@
     previewConflict: false,
     positions: Object.create(null),
     positionsDirty: false,
+    spacingViolationCount: 0,
+    viewDirty: false,
+    layoutPendingIds: new Set(),
+    layoutPreview: null,
+    layoutPreviewActive: false,
     layoutFrames: 0,
     layoutScheduled: false,
     view: { x: 0, y: 0, scale: 1 },
@@ -131,6 +143,8 @@
     suppressTap: false,
     mobile: { listOpen: false, detailOpen: false, listRestoreFocus: null, detailRestoreFocus: null },
     mobileViewport: null,
+    resizeObserver: null,
+    resizeRaf: null,
   };
 
   const refs = {};
@@ -324,6 +338,10 @@
 
   function normalizeNodes(graph) {
     return Array.isArray(graph?.nodes) ? graph.nodes.filter((node) => node && node.node_id) : [];
+  }
+
+  function activeNodes(graph = state.graph) {
+    return normalizeNodes(graph).filter((node) => !node.removed && !node.tombstone);
   }
 
   function normalizeEdges(graph) {
@@ -832,7 +850,7 @@
     mobileListButton.title = '打开地图列表和筛选';
     mobileListButton.setAttribute('aria-label', '打开地图列表和筛选');
     tools.append(mobileListButton);
-    [['literature-map-zoom-out', '−', '缩小'], ['literature-map-zoom-in', '+', '放大'], ['literature-map-fit', '适应', '适应画布'], ['literature-map-locate', '定位', '定位所选论文'], ['literature-map-reset', '重置', '重置视图']].forEach(([id, label, title]) => {
+    [['literature-map-zoom-out', '−', '缩小'], ['literature-map-zoom-in', '+', '放大'], ['literature-map-fit', '适应', '适应画布'], ['literature-map-locate', '定位', '定位所选论文'], ['literature-map-reset', '重置', '重置视图'], ['literature-map-spacing', '整理间距', '预览整理间距']].forEach(([id, label, title]) => {
       const button = createElement('button', 'icon-button literature-map-tool', label);
       button.type = 'button';
       button.id = id;
@@ -918,6 +936,11 @@
     previewPanel.hidden = true;
     previewPanel.setAttribute('aria-live', 'polite');
     canvasPanel.append(previewPanel);
+    const spacingPreviewPanel = createElement('section', 'literature-map-spacing-preview-panel');
+    spacingPreviewPanel.id = 'literature-map-spacing-preview-panel';
+    spacingPreviewPanel.hidden = true;
+    spacingPreviewPanel.setAttribute('aria-live', 'polite');
+    canvasPanel.append(spacingPreviewPanel);
 
     const detailPanel = createElement('aside', 'literature-map-panel literature-map-detail-panel');
     const detailHead = createElement('header', 'literature-map-panel-head');
@@ -945,7 +968,7 @@
     root.append(mobileBackdrop);
     mount.append(root);
 
-    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel });
+    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
     if (isMobileViewport()) {
       refs.listPanel.setAttribute('aria-hidden', 'true');
       refs.detailPanel.setAttribute('aria-hidden', 'true');
@@ -1020,7 +1043,9 @@
     if (!isList && state.mobile.listOpen) closeMobilePanel(other, false);
     target.classList.add('is-open');
     target.setAttribute('aria-hidden', 'false');
-    setHidden(refs.mobileBackdrop, false);
+    // The list drawer is modal, but the detail sheet leaves the map usable so
+    // users can keep inspecting nearby nodes without closing their selection.
+    setHidden(refs.mobileBackdrop, !isList);
     setMobileDrawerBodyState(true);
     if (isList) {
       state.mobile.listOpen = true;
@@ -1045,6 +1070,25 @@
     if (previousMobileViewport === currentMobileViewport) return;
     const preserveDesktopDetail = state.active && previousMobileViewport === true && !currentMobileViewport;
     closeAllMobilePanels(false, preserveDesktopDetail);
+    scheduleViewportStabilization();
+  }
+
+  function scheduleViewportStabilization() {
+    if (state.resizeRaf) return;
+    state.resizeRaf = window.requestAnimationFrame(() => {
+      state.resizeRaf = null;
+      if (!state.active || !refs.svg) return;
+      const viewport = mapViewportWorldSize();
+      if (!viewport.valid) return;
+      if (state.initialFitPending && state.graph && fitView(false)) {
+        state.initialFitPending = false;
+      } else if (state.viewDirty || state.positionsDirty) {
+        // A zero-sized/collapsed map must never write a bogus viewport. Once
+        // the browser reports a real size, retry the already-dirty state.
+        scheduleViewSave();
+      }
+      if (state.selectedNodeId && refs.detailPanel?.classList.contains('is-open')) ensureSelectedNodeVisible();
+    });
   }
 
   function restoreDesktopPanelAccessibility() {
@@ -1122,14 +1166,17 @@
     refs.root.querySelector('#literature-map-zoom-out').addEventListener('click', () => changeScale(1 / 1.2));
     refs.root.querySelector('#literature-map-fit').addEventListener('click', () => fitView(true));
     refs.root.querySelector('#literature-map-locate').addEventListener('click', locateSelectedNode);
+    refs.root.querySelector('#literature-map-spacing').addEventListener('click', beginSpacingPreview);
     refs.root.querySelector('#literature-map-reset').addEventListener('click', () => {
       state.view = { x: 0, y: 0, scale: 1 };
+      state.viewDirty = true;
       renderGraph();
       scheduleViewSave();
     });
     refs.root.querySelectorAll('input[data-layer]').forEach((input) => {
       input.addEventListener('change', () => {
         state.layers[input.dataset.layer] = input.checked;
+        state.viewDirty = true;
         renderGraph();
         scheduleViewSave();
       });
@@ -1137,6 +1184,7 @@
     refs.labelModeSelect.addEventListener('change', () => {
       state.labelMode = normalizeLabelMode(refs.labelModeSelect.value);
       refs.labelModeSelect.value = state.labelMode;
+      state.viewDirty = true;
       renderGraph();
       scheduleViewSave();
     });
@@ -1161,6 +1209,11 @@
       renderGraph();
       renderNodeDetail(null);
     });
+    refs.detailPanel.addEventListener('transitionend', (event) => {
+      if (event.target !== refs.detailPanel || event.propertyName !== 'transform') return;
+      if (!isMobileViewport() || !state.selectedNodeId || !refs.detailPanel.classList.contains('is-open')) return;
+      ensureSelectedNodeVisible();
+    });
     refs.listClose.addEventListener('click', () => closeMobilePanel('list'));
     refs.mobileListButton.addEventListener('click', () => {
       if (state.mobile.listOpen) closeMobilePanel('list');
@@ -1171,6 +1224,11 @@
     window.addEventListener('pointercancel', handleCanvasPointerCancel);
     window.addEventListener('blur', () => resetCanvasGesture(true));
     window.addEventListener('resize', handleMobileViewportResize);
+    if (typeof ResizeObserver === 'function' && refs.svg) {
+      state.resizeObserver?.disconnect();
+      state.resizeObserver = new ResizeObserver(() => scheduleViewportStabilization());
+      state.resizeObserver.observe(refs.svg);
+    }
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') resetCanvasGesture(true);
     });
@@ -1455,6 +1513,7 @@
       if (groupRequestId !== state.groupRequest || requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
       state.groups = [];
       renderGroups();
+      renderSpacingPreviewPanel();
       setStatus(`分组读取失败：${errorAction(error, '请重新打开地图后重试。')}`, 'error');
     }
   }
@@ -1597,6 +1656,10 @@
       state.selectedNode = null;
       state.positions = Object.create(null);
       state.positionsDirty = false;
+      state.viewDirty = false;
+      state.layoutPendingIds.clear();
+      state.layoutPreview = null;
+      state.layoutPreviewActive = false;
       closeCreatePanel();
       await loadMaps();
       if (requestId !== state.mapRequest || !state.active) return;
@@ -1628,6 +1691,11 @@
     state.eventCursor = 0;
     state.positions = Object.create(null);
     state.positionsDirty = false;
+    state.spacingViolationCount = 0;
+    state.viewDirty = false;
+    state.layoutPendingIds.clear();
+    state.layoutPreview = null;
+    state.layoutPreviewActive = false;
     state.nodeRequest += 1;
     state.analysisRequest += 1;
     state.analysisNodeId = null;
@@ -1672,6 +1740,7 @@
     renderGroups();
     renderNodeDetail(null);
     renderGraph();
+    renderSpacingPreviewPanel();
     renderAnalysisQueue();
     setStatus('正在读取已保存地图…');
     try {
@@ -1690,7 +1759,11 @@
       renderMapList();
       if (state.job && !TERMINAL_JOB_STATES.has(state.job.status)) startPolling();
       const mapStatus = state.map?.status === 'partial' ? '地图部分完成；已保留可用节点并标注失败阶段。' : '地图已打开，图谱数据来自本地保存结果。';
-      setStatus(state.previewDiscoveryNotice || mapStatus, state.previewDiscoveryNotice ? 'waiting' : (state.map?.status === 'partial' ? 'partial' : ''));
+      const spacingNotice = state.spacingViolationCount
+        ? `检测到${state.spacingViolationCount}对节点间距不足，原有位置未修改；可点击“整理间距”预览。`
+        : '';
+      setStatus([state.previewDiscoveryNotice, mapStatus, spacingNotice].filter(Boolean).join(' '),
+        state.previewDiscoveryNotice ? 'waiting' : (state.map?.status === 'partial' ? 'partial' : ''));
       renderJobActions();
     } catch (error) {
       if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
@@ -1735,20 +1808,30 @@
       LAYER_NAMES.forEach((kind) => {
         state.layerStatus[kind] = payload.layers?.[kind]?.status || 'waiting';
       });
-      const nodes = normalizeNodes(payload);
+      const nodes = activeNodes(payload);
+      state.layoutPendingIds.clear();
       nodes.forEach((node, index) => {
         if (node.position && Number.isFinite(Number(node.position.x)) && Number.isFinite(Number(node.position.y))) {
           state.positions[node.node_id] = { x: Number(node.position.x), y: Number(node.position.y) };
-        } else if (!state.positions[node.node_id]) {
-          state.positions[node.node_id] = initialPosition(index, nodes.length);
+        } else {
+          state.layoutPendingIds.add(node.node_id);
+          if (!state.positions[node.node_id]) state.positions[node.node_id] = initialPosition(index, nodes.length);
         }
       });
+      if (state.layoutPendingIds.size) {
+        const pending = nodes.filter((node) => state.layoutPendingIds.has(node.node_id) && !node.removed && !node.tombstone);
+        const generated = layoutPendingNodes(pending, state.positions, nodes.filter((node) => !state.layoutPendingIds.has(node.node_id) && !node.removed && !node.tombstone));
+        Object.assign(state.positions, generated);
+        state.layoutPendingIds.clear();
+        state.positionsDirty = true;
+      }
+      state.spacingViolationCount = countSpacingViolations(nodes);
       if (state.initialFitPending && fitView(false)) state.initialFitPending = false;
       refs.currentTitle.textContent = state.map ? mapTitle(state.map) : '文献地图';
       renderCurrentMeta();
       renderGraph();
       renderJobActions();
-      if (nodes.length && nodes.some((node) => !node.position)) scheduleLayout();
+      if (state.positionsDirty) scheduleViewSave();
       if (state.selectedNodeId) selectNode(state.selectedNodeId);
     } catch (error) {
       if (requestId !== state.graphRequest || mapId !== state.selectedMapId || !state.active) return;
@@ -2290,20 +2373,110 @@
     return { x: MAP_WIDTH / 2 + Math.cos(angle) * radius, y: MAP_HEIGHT / 2 + Math.sin(angle) * radius * 0.78 };
   }
 
+  function nodeRadiusForLayout(node) {
+    const radius = citationRadius(node);
+    return Number.isFinite(radius) ? radius : MIN_NODE_RADIUS;
+  }
+
+  function requiredCenterDistance(first, second) {
+    const firstRadius = nodeRadiusForLayout(first);
+    const secondRadius = nodeRadiusForLayout(second);
+    return firstRadius + secondRadius
+      + LAYOUT_CLEARANCE_MULTIPLIER * Math.max(firstRadius, secondRadius)
+      + LAYOUT_STROKE_CLEARANCE;
+  }
+
+  function countSpacingViolations(nodes = activeNodes()) {
+    const positioned = nodes
+      .map((node, index) => ({ node, point: positionFor(node, index, nodes.length) }))
+      .filter(({ point }) => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+    let violations = 0;
+    for (let firstIndex = 0; firstIndex < positioned.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < positioned.length; secondIndex += 1) {
+        const first = positioned[firstIndex];
+        const second = positioned[secondIndex];
+        const distance = Math.hypot(first.point.x - second.point.x, first.point.y - second.point.y);
+        if (distance < requiredCenterDistance(first.node, second.node) - 0.001) violations += 1;
+      }
+    }
+    return violations;
+  }
+
+  function layoutCandidate(index, columns, step, origin) {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    return {
+      x: origin.x + (column - (columns - 1) / 2) * step,
+      y: origin.y + (row - (Math.ceil(columns / 2) - 1) / 2) * step,
+    };
+  }
+
+  function layoutPendingNodes(pendingNodes, existingPositions = {}, existingNodes = []) {
+    const ordered = [...pendingNodes].sort((first, second) => String(first.node_id).localeCompare(String(second.node_id)));
+    const placed = existingNodes
+      .map((node) => ({ node, point: existingPositions[node.node_id] }))
+      .filter((entry) => entry.point && Number.isFinite(entry.point.x) && Number.isFinite(entry.point.y));
+    const result = Object.create(null);
+    if (!ordered.length) return result;
+    const largestRadius = Math.max(...ordered.map(nodeRadiusForLayout), ...placed.map((entry) => nodeRadiusForLayout(entry.node)), MAX_NODE_RADIUS);
+    const step = 2 * largestRadius + LAYOUT_CLEARANCE_MULTIPLIER * largestRadius + LAYOUT_STROKE_CLEARANCE;
+    const origin = placed.length
+      ? {
+        x: placed.reduce((sum, entry) => sum + entry.point.x, 0) / placed.length,
+        y: placed.reduce((sum, entry) => sum + entry.point.y, 0) / placed.length,
+      }
+      : { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+    const columns = Math.max(1, Math.ceil(Math.sqrt(ordered.length)));
+    const occupied = [...placed];
+    ordered.forEach((node, nodeIndex) => {
+      let point = null;
+      for (let attempt = 0; attempt < MAX_LAYOUT_PLACEMENT_ATTEMPTS; attempt += 1) {
+        // Expanding square rings keep the search finite and deterministic while
+        // still placing new nodes near the existing map when possible.
+        const ring = Math.floor(Math.sqrt(attempt));
+        const offset = attempt - ring * ring;
+        const side = Math.max(1, ring * 2 + 1);
+        const sideIndex = offset % Math.max(1, side * 4);
+        let dx = 0;
+        let dy = 0;
+        if (ring > 0) {
+          if (sideIndex < side) { dx = sideIndex - ring; dy = -ring; }
+          else if (sideIndex < side * 2) { dx = ring; dy = sideIndex - ring - side; }
+          else if (sideIndex < side * 3) { dx = ring - (sideIndex - side * 2); dy = ring; }
+          else { dx = -ring; dy = ring - (sideIndex - side * 3); }
+        }
+        const candidate = {
+          x: origin.x + dx * step + (nodeIndex % 2 ? step * 0.25 : 0),
+          y: origin.y + dy * step + (nodeIndex % 3 ? step * 0.12 : 0),
+        };
+        const clear = occupied.every((entry) => {
+          const other = entry.node;
+          const required = requiredCenterDistance(node, other);
+          return Math.hypot(candidate.x - entry.point.x, candidate.y - entry.point.y) + 1e-6 >= required;
+        });
+        if (clear) { point = candidate; break; }
+      }
+      // The deterministic grid is an explicit finite fallback. It is far
+      // outside the initial canvas when necessary, so dense maps remain
+      // navigable through the existing pan/zoom controls.
+      if (!point) point = layoutCandidate(nodeIndex + occupied.length, columns, step, origin);
+      result[node.node_id] = point;
+      occupied.push({ node, point });
+    });
+    return result;
+  }
+
   function scheduleLayout() {
-    if (state.layoutScheduled || !state.graph || !normalizeNodes(state.graph).length) return;
+    if (state.layoutScheduled || !state.graph || !normalizeNodes(state.graph).length || !state.layoutPendingIds.size) return;
     state.layoutScheduled = true;
     state.layoutFrames = 0;
     const frame = () => {
       state.layoutFrames += 1;
       const nodes = normalizeNodes(state.graph);
-      nodes.forEach((node, index) => {
-        if (node.position) return;
-        const current = state.positions[node.node_id] || initialPosition(index, nodes.length);
-        // A bounded, deterministic nudge keeps the first paint stable and avoids an unbounded force loop.
-        const nudge = Math.min(12, state.layoutFrames * 1.5);
-        state.positions[node.node_id] = { x: current.x + Math.cos(index) * nudge * 0.06, y: current.y + Math.sin(index) * nudge * 0.06 };
-      });
+      const pending = nodes.filter((node) => state.layoutPendingIds.has(node.node_id) && !node.removed && !node.tombstone);
+      const generated = layoutPendingNodes(pending, state.positions, nodes.filter((node) => !state.layoutPendingIds.has(node.node_id) && !node.removed && !node.tombstone));
+      Object.assign(state.positions, generated);
+      state.layoutPendingIds.clear();
       renderGraph();
       if (state.active && state.layoutFrames < MAX_LAYOUT_FRAMES) {
         window.requestAnimationFrame(frame);
@@ -2314,6 +2487,100 @@
       }
     };
     window.requestAnimationFrame(frame);
+  }
+
+  function clonePositions(positions) {
+    return Object.fromEntries(Object.entries(positions || {}).map(([nodeId, point]) => [nodeId, { x: Number(point.x), y: Number(point.y) }]));
+  }
+
+  function renderSpacingPreviewPanel(message = '') {
+    if (!refs.spacingPreviewPanel) return;
+    refs.spacingPreviewPanel.replaceChildren();
+    refs.spacingPreviewPanel.hidden = !state.layoutPreviewActive;
+    if (!state.layoutPreviewActive) return;
+    refs.spacingPreviewPanel.append(createElement('h3', '', '整理间距预览'));
+    const stateText = createElement('p', 'literature-map-spacing-preview-state', message || '仅在本地预览，尚未保存地图。筛选隐藏的论文也会保留位置。');
+    stateText.id = 'literature-map-spacing-preview-state';
+    refs.spacingPreviewPanel.append(stateText);
+    const actions = createElement('div', 'literature-map-spacing-preview-actions');
+    const confirm = createElement('button', 'send-button', '确认保存');
+    confirm.type = 'button';
+    confirm.id = 'literature-map-spacing-preview-confirm';
+    confirm.addEventListener('click', () => confirmSpacingPreview(confirm));
+    const cancel = createElement('button', 'secondary-button', '取消');
+    cancel.type = 'button';
+    cancel.id = 'literature-map-spacing-preview-cancel';
+    cancel.addEventListener('click', cancelSpacingPreview);
+    actions.append(confirm, cancel);
+    refs.spacingPreviewPanel.append(actions);
+  }
+
+  function beginSpacingPreview() {
+    if (!state.graph || !state.map?.map_id || state.layoutPreviewActive) return;
+    const nodes = activeNodes();
+    if (!nodes.length) {
+      setStatus('当前地图没有可整理的活动节点。', 'waiting');
+      return;
+    }
+    window.clearTimeout(state.saveTimer);
+    state.saveTimer = null;
+    state.layoutPreview = {
+      positions: clonePositions(state.positions),
+      view: { ...state.view },
+      positionsDirty: state.positionsDirty,
+      viewDirty: state.viewDirty,
+    };
+    state.positions = Object.assign(Object.create(null), state.positions, layoutPendingNodes(nodes, state.positions, []));
+    state.positionsDirty = false;
+    state.viewDirty = false;
+    state.layoutPreviewActive = true;
+    renderGraph();
+    renderSpacingPreviewPanel();
+    setStatus('已生成整理间距预览；确认前不会写入地图。', 'waiting');
+  }
+
+  function cancelSpacingPreview() {
+    if (!state.layoutPreviewActive || !state.layoutPreview) return;
+    window.clearTimeout(state.saveTimer);
+    state.saveTimer = null;
+    const snapshot = state.layoutPreview;
+    state.positions = Object.assign(Object.create(null), snapshot.positions);
+    state.view = { ...snapshot.view };
+    state.positionsDirty = snapshot.positionsDirty;
+    state.viewDirty = snapshot.viewDirty;
+    state.layoutPreview = null;
+    state.layoutPreviewActive = false;
+    renderSpacingPreviewPanel();
+    renderGraph();
+    setStatus('已取消整理间距，位置和视图已还原。');
+  }
+
+  async function confirmSpacingPreview(button) {
+    if (!state.layoutPreviewActive || !state.layoutPreview || button?.disabled) return;
+    const mapId = state.map?.map_id;
+    const snapshot = state.layoutPreview;
+    if (!mapId || !state.active) return;
+    if (button) button.disabled = true;
+    state.layoutPreviewActive = false;
+    state.positionsDirty = true;
+    state.viewDirty = false;
+    const saved = await saveView({ allowLayoutPreview: true });
+    if (saved) {
+      state.layoutPreview = null;
+      renderSpacingPreviewPanel();
+      setStatus('整理间距已保存。');
+      return;
+    }
+    if (mapId !== state.selectedMapId || !state.active) return;
+    // Preserve the uncommitted preview after a transport or 409 failure. The
+    // retry remains explicit; no autosave may turn a failed confirmation into
+    // an unreported write.
+    state.layoutPreview = snapshot;
+    state.layoutPreviewActive = true;
+    state.positionsDirty = false;
+    state.viewDirty = false;
+    renderSpacingPreviewPanel('保存失败；预览仍保留，可重试确认或取消还原。');
+    if (button) button.disabled = false;
   }
 
   function positionFor(node, index, total) {
@@ -2383,6 +2650,72 @@
       refs.nodesGroup.append(group);
     });
     renderCurrentMeta();
+  }
+
+  function ensureSelectedNodeVisible() {
+    if (!state.selectedNodeId || !refs.svg || !refs.detailPanel?.classList.contains('is-open')) return false;
+    const svgRect = refs.svg.getBoundingClientRect();
+    if (!svgRect.width || !svgRect.height) return false;
+    const selected = refs.nodesGroup.querySelector(`[data-node-id="${CSS.escape(state.selectedNodeId)}"] circle`);
+    if (!selected) return false;
+    const nodeRect = selected.getBoundingClientRect();
+    const canvasRect = refs.svg.closest('.literature-map-canvas')?.getBoundingClientRect() || svgRect;
+    const visible = {
+      left: Math.max(svgRect.left, canvasRect.left, 0),
+      right: Math.min(svgRect.right, canvasRect.right, window.innerWidth),
+      top: Math.max(svgRect.top, canvasRect.top, 0),
+      bottom: Math.min(svgRect.bottom, canvasRect.bottom, window.innerHeight),
+    };
+    const detailRect = refs.detailPanel.getBoundingClientRect();
+    const detailOverlaysCanvas = isMobileViewport()
+      && window.getComputedStyle(refs.detailPanel).position === 'fixed'
+      && detailRect.width > 0
+      && detailRect.height > 0
+      && detailRect.left < visible.right
+      && detailRect.right > visible.left
+      && detailRect.top < visible.bottom
+      && detailRect.bottom > visible.top;
+    if (detailOverlaysCanvas) {
+      const candidates = [
+        { left: visible.left, right: visible.right, top: visible.top, bottom: Math.min(visible.bottom, detailRect.top) },
+        { left: visible.left, right: visible.right, top: Math.max(visible.top, detailRect.bottom), bottom: visible.bottom },
+        { left: visible.left, right: Math.min(visible.right, detailRect.left), top: visible.top, bottom: visible.bottom },
+        { left: Math.max(visible.left, detailRect.right), right: visible.right, top: visible.top, bottom: visible.bottom },
+      ].filter((area) => area.right > area.left && area.bottom > area.top);
+      const largest = candidates.sort((first, second) =>
+        ((second.right - second.left) * (second.bottom - second.top))
+          - ((first.right - first.left) * (first.bottom - first.top)))[0];
+      if (!largest) return false;
+      Object.assign(visible, largest);
+    }
+    const availableWidth = visible.right - visible.left;
+    const availableHeight = visible.bottom - visible.top;
+    if (availableWidth <= 0 || availableHeight <= 0) return false;
+    const horizontalInset = Math.min(16, Math.max(0, (availableWidth - nodeRect.width) / 2));
+    const verticalInset = Math.min(16, Math.max(0, (availableHeight - nodeRect.height) / 2));
+    visible.left += horizontalInset;
+    visible.right -= horizontalInset;
+    visible.top += verticalInset;
+    visible.bottom -= verticalInset;
+    const minimumPan = (start, end, targetStart, targetEnd) => {
+      const range = end - start;
+      const targetSize = targetEnd - targetStart;
+      if (targetSize > range) return ((start + end) - (targetStart + targetEnd)) / 2;
+      if (targetStart < start) return start - targetStart;
+      if (targetEnd > end) return end - targetEnd;
+      return 0;
+    };
+    const dx = minimumPan(visible.left, visible.right, nodeRect.left, nodeRect.right);
+    const dy = minimumPan(visible.top, visible.bottom, nodeRect.top, nodeRect.bottom);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!dx && !dy)) return false;
+    const viewport = mapViewportWorldSize();
+    if (!viewport.valid) return false;
+    state.view.x += dx / viewport.cssScale;
+    state.view.y += dy / viewport.cssScale;
+    state.viewDirty = true;
+    renderGraph();
+    scheduleViewSave();
+    return true;
   }
 
   function eventPoint(event) {
@@ -2467,6 +2800,7 @@
     state.view.scale = scale;
     state.view.x = center.x - pinch.worldCenter.x * scale;
     state.view.y = center.y - pinch.worldCenter.y * scale;
+    state.viewDirty = true;
     renderGraph();
   }
 
@@ -2519,6 +2853,7 @@
     } else {
       state.view.x += dx;
       state.view.y += dy;
+      state.viewDirty = true;
     }
     renderGraph();
   }
@@ -2581,6 +2916,7 @@
     state.view.scale = nextScale;
     state.view.x = anchorSvg.x - world.x * nextScale;
     state.view.y = anchorSvg.y - world.y * nextScale;
+    state.viewDirty = true;
     renderGraph();
     scheduleViewSave();
   }
@@ -2593,13 +2929,13 @@
     const viewBoxWidth = Number(viewBox?.width) || MAP_WIDTH;
     const viewBoxHeight = Number(viewBox?.height) || MAP_HEIGHT;
     if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) {
-      return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale: 1 };
+      return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale: 1, valid: false };
     }
     const cssScale = Math.min(rect.width / viewBoxWidth, rect.height / viewBoxHeight);
     if (!Number.isFinite(cssScale) || cssScale <= 0) {
-      return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale: 1 };
+      return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale: 1, valid: false };
     }
-    return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale };
+    return { x: viewBoxX, y: viewBoxY, width: viewBoxWidth, height: viewBoxHeight, cssScale, valid: true };
   }
 
   function elementBounds(element) {
@@ -2637,6 +2973,7 @@
     const minY = Math.min(...points.map((point) => point.y));
     const maxY = Math.max(...points.map((point) => point.y));
     const viewport = mapViewportWorldSize();
+    if (!viewport.valid) return false;
     const padding = FIT_PADDING_CSS_PX / viewport.cssScale;
     const availableWidth = Math.max(1, viewport.width - padding * 2);
     const availableHeight = Math.max(1, viewport.height - padding * 2);
@@ -2661,7 +2998,10 @@
       scale = nextScale;
     }
     applyTransform();
-    if (save) scheduleViewSave();
+    if (save) {
+      state.viewDirty = true;
+      scheduleViewSave();
+    }
     return true;
   }
 
@@ -2676,22 +3016,32 @@
     const point = positionFor(nodes[index], index, nodes.length);
     state.view.x = MAP_WIDTH / 2 - point.x * state.view.scale;
     state.view.y = MAP_HEIGHT / 2 - point.y * state.view.scale;
+    state.viewDirty = true;
     renderGraph();
     scheduleViewSave();
   }
 
   function scheduleViewSave() {
-    if (!state.map?.map_id || !state.active) return;
+    if (!state.map?.map_id || !state.active || state.layoutPreviewActive || (!state.positionsDirty && !state.viewDirty)) return;
+    const viewport = mapViewportWorldSize();
+    if (!viewport.valid) return;
     window.clearTimeout(state.saveTimer);
     state.saveTimer = window.setTimeout(saveView, 500);
   }
 
-  async function saveView() {
-    if (!state.map?.map_id || !state.active || (!state.positionsDirty && !state.graph)) return;
+  async function saveView(options = {}) {
+    if (!state.map?.map_id || !state.active || (!state.positionsDirty && !state.viewDirty)) return false;
+    if (state.layoutPreviewActive && !options.allowLayoutPreview) return false;
+    const viewport = mapViewportWorldSize();
+    if (!viewport.valid) return false;
     const requestId = ++state.viewRequest;
     const mapId = state.map.map_id;
     const expectedRevision = state.map.revision;
-    const positions = Object.entries(state.positions).map(([node_id, position]) => ({ node_id, x: Number(position.x), y: Number(position.y) })).filter((position) => Number.isFinite(position.x) && Number.isFinite(position.y));
+    const activeIds = new Set(activeNodes().map((node) => node.node_id));
+    const positions = Object.entries(state.positions)
+      .filter(([node_id]) => activeIds.has(node_id))
+      .map(([node_id, position]) => ({ node_id, x: Number(position.x), y: Number(position.y) }))
+      .filter((position) => Number.isFinite(position.x) && Number.isFinite(position.y));
     try {
       const payload = await request(`/${encodeURIComponent(mapId)}/view`, {
         method: 'PATCH',
@@ -2716,13 +3066,16 @@
       if (requestId !== state.viewRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
       state.map = normalizeMap(payload.map) || state.map;
       state.positionsDirty = false;
+      state.viewDirty = false;
       setStatus('视图已保存。');
       renderMapList();
       renderCurrentMeta();
+      return true;
     } catch (error) {
       if (requestId !== state.viewRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
       state.positionsDirty = true;
       setStatus(`视图保存失败：${errorAction(error, '请重新打开地图后再保存。')}`, 'error');
+      return false;
     }
   }
 
@@ -2898,6 +3251,9 @@
     refs.detailPanel.hidden = false;
     refs.detailPanel.classList.add('is-open');
     renderGraph();
+    window.requestAnimationFrame(() => {
+      if (requestId === state.nodeRequest && state.selectedNodeId === nodeId) ensureSelectedNodeVisible();
+    });
     renderNodeDetail({ loading: true });
     const requestId = ++state.nodeRequest;
     try {

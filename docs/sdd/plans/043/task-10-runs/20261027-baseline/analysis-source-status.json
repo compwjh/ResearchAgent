@@ -1,0 +1,42 @@
+[
+  {
+    "node_id": "21041260a5394f42891b020128fa60fa",
+    "title": "Graph Attention Networks",
+    "download_status": "indexed",
+    "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+    "source_status": {
+      "abstract_available": true,
+      "fulltext_ready": true,
+      "available_evidence_levels": [
+        "abstract",
+        "full"
+      ],
+      "source_versions": {
+        "abstract": "c518a10f28b2656ae30f53790a67ef835c8ebe219168460969b763f481d1e42c",
+        "full": "a253fa60f4d0444592fd52f89e23016e8d437f01335f300b176d610eeefa644c"
+      },
+      "unavailable_reason": null
+    },
+    "available_evidence_levels": null
+  },
+  {
+    "node_id": "24e44e61d9d44d1b85918fa8f7362ff0",
+    "title": "Predicting multicellular function through multi-layer tissue networks",
+    "download_status": "indexed",
+    "document_id": "46b3c182d14e46cabe6e23eb0b67793f",
+    "source_status": {
+      "abstract_available": true,
+      "fulltext_ready": true,
+      "available_evidence_levels": [
+        "abstract",
+        "full"
+      ],
+      "source_versions": {
+        "abstract": "21ede38f4008b7044ca5d359b4558baf8d3d698effe9390f9216b27b0b7d175c",
+        "full": "211e3897ac8051c9deb9a30402e3381661c4947a3ab1eac9615022dfcf2f0734"
+      },
+      "unavailable_reason": null
+    },
+    "available_evidence_levels": null
+  }
+]

@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from backend.app.literature_maps.application.analysis import MapAnalysisError
 from backend.app.literature_maps.application.runtime import get_literature_map_service
@@ -57,6 +57,20 @@ class ViewportRequest(BaseModel):
     scale: float
 
 
+class NodeStyleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fill_mode: Literal["filled", "outline"]
+    fill_opacity: float = Field(ge=0, le=1)
+
+    @field_validator("fill_opacity", mode="before")
+    @classmethod
+    def reject_boolean_fill_opacity(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            raise ValueError("fill_opacity must be a number")
+        return value
+
+
 class MapViewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -66,6 +80,7 @@ class MapViewRequest(BaseModel):
     filters: dict[str, Any] | None = None
     layers: dict[Literal["citation", "similarity"], bool] | None = None
     label_mode: Literal["all", "neighbors", "hidden"] | None = None
+    node_style: NodeStyleRequest | None = None
 
 
 class ImportRequest(BaseModel):
@@ -127,6 +142,14 @@ class NodeGroupRequest(BaseModel):
     group_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+class NodeStylesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: StrictInt = Field(ge=0)
+    node_ids: list[str] = Field(min_length=1, max_length=200)
+    color_override: str | None = Field(..., pattern=r"^#[0-9a-fA-F]{6}$")
+
+
 class MapAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -182,7 +205,7 @@ def _error(error: Exception) -> HTTPException:
             "UNSUPPORTED_SOURCE": "source_id 不是服务端支持的来源",
             "UNSUPPORTED_CONFERENCE": "conference_id 不是服务端支持的会议",
         }[code]
-    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_LABEL_MODE", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED"}:
+    elif code in {"TOPIC_REQUIRED", "INVALID_LIMIT", "INVALID_YEARS", "invalid viewport", "invalid position", "invalid node", "INVALID_LABEL_MODE", "INVALID_NODE_STYLE", "INVALID_NODE_IDS", "INVALID_COLOR_OVERRIDE", "INVALID_PREVIEW_KIND", "PREVIEW_NODE_REQUIRED", "PREVIEW_NOT_READY", "INVALID_PREVIEW_CANDIDATE", "PREVIEW_BATCH_LIMIT", "MAP_NODE_LIMIT", "NODE_NOT_REMOVED", "NODE_ALREADY_REMOVED", "INVALID_GROUP_NAME", "INVALID_GROUP_COLOR", "INVALID_GROUP_ID", "GROUP_LIMIT", "MAP_NODE_REMOVED"}:
         status, error_code, message = 400, code, "地图创建参数不合法"
     elif code == "PROJECT_NOT_FOUND":
         status, error_code, message = 404, code, "项目不存在或不可访问"
@@ -317,6 +340,22 @@ def put_literature_map_node_group(map_id: str, node_id: str, payload: NodeGroupR
             OWNER_ID,
             expected_revision=payload.expected_revision,
             group_id=payload.group_id,
+        )
+    except Exception as error:
+        raise _error(error) from error
+
+
+@router.patch("/{map_id}/node-styles")
+def patch_literature_map_node_styles(map_id: str, payload: NodeStylesRequest):
+    if len(set(payload.node_ids)) != len(payload.node_ids):
+        raise _error(ValueError("INVALID_NODE_IDS"))
+    try:
+        return get_literature_map_service().update_node_styles(
+            map_id,
+            OWNER_ID,
+            expected_revision=payload.expected_revision,
+            node_ids=payload.node_ids,
+            color_override=payload.color_override,
         )
     except Exception as error:
         raise _error(error) from error
@@ -540,7 +579,7 @@ def patch_literature_map_view(map_id: str, payload: MapViewRequest):
         raise _error(ValueError("invalid position"))
     try:
         service = get_literature_map_service()
-        item = service.store.update_view(map_id, OWNER_ID, expected_revision=payload.expected_revision, positions=[position.model_dump() for position in payload.positions], viewport=payload.viewport.model_dump() if payload.viewport else None, filters=payload.filters, layers=payload.layers, label_mode=payload.label_mode)
+        item = service.store.update_view(map_id, OWNER_ID, expected_revision=payload.expected_revision, positions=[position.model_dump() for position in payload.positions], viewport=payload.viewport.model_dump() if payload.viewport else None, filters=payload.filters, layers=payload.layers, label_mode=payload.label_mode, node_style=payload.node_style.model_dump() if payload.node_style else None)
     except Exception as error:
         raise _error(error) from error
     return _envelope(map=item.to_dict())
