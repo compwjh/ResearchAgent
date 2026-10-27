@@ -189,3 +189,132 @@ Task10 可以复用现有 `literature_maps` 领域、owner/revision、SQLite 事
 - 评审者：`/root/map_usability_plan_review`（architect，独立增量技术评审）
 - 日期：2026-10-27
 - 结论：**通过（GO；无设计 P1 阻塞，含实现/验收硬门槛）**
+
+---
+
+## 本轮 Task11 独立增量技术评审（2026-10-27）
+
+### 评审元数据
+
+- 评审对象：`docs/sdd/plans/043/task-11-paper-expansion.md`、对应 Spec043 Task11 增量与 Grilling Q1–Q15 决策。
+- 评审者：`/root/paper_expansion_plan_review`；角色：`architect`，由主会话分派独立评审。
+- 评审时间：2026-10-27（Asia/Shanghai）。
+- 评审依据：Task11方案、Grilling记录和`2026-10-27-paper-expansion-findings.md`只读事实报告；未另行调用来源或运行代码。
+- 技术范围：MapPreview分页、两preview原子确认、revision冲突恢复、持久后台补全/幂等、限流与429重试、身份/权限/下载门禁及迁移边界。
+
+### 结论
+
+**打回（BLOCK；当前接口/持久化包形不足以冻结，不能给技术GO）。**
+
+复用方向成立：事实报告确认现有持久预览、身份去重、引用边方向、revision/单preview apply、局部布局和摘要队列可供复用。但它也确认当前无候选分页、关系请求只取首100条，单preview apply不能拼成跨preview原子写入，预览429耗尽后只有警告。Task11提出了正确的增量方向，却把关键请求/响应、版本重确认、分页失败恢复及批次级队列契约留给“技术门禁冻结”（Task11:36–44,49）。尤其 `POST /previews` 仍写为“分页选项或版本化扩展”二选一，batch-apply输入示例没有每个preview的预期候选版本，不能据此验证重读后的显式再确认是否仍绑定同一owner/map/seed/方向和候选快照。此时判GO会把决定性架构工作推迟给实现阶段。
+
+本BLOCK只要求冻结已选产品行为的最小技术合同；不要求新增产品能力，也不影响Task10原状态。完成下列门槛并再次独立评审前，不应分派Task11代码实现。
+
+### 现状证据与阻塞项
+
+| 技术点 | 现状 / 阻塞 | 必须冻结的最小合同 |
+|---|---|---|
+| 复用与候选分页 | 事实报告确认`GET preview`返回完整候选数组，当前候选无分页；references/citations当前取`offset=0, limit=100`且未沿`next_offset`续页（事实报告:14–16）。Task11:40–41只给端点方向和202作业概念。 | 选定唯一的创建preview请求版本；定义每方向的50页、500上限、原始来源游标（只在服务端持久保存）、唯一身份计数、total未知与`has_more`/上限截断的关系、预览候选版本递增时点，以及加载失败时不推进cursor、不丢已成功页。还须明确50表示一个来源页还是50个新增唯一候选；建议一用户动作只取一个limit=50来源页，再按稳定身份去重并显示实际新增数，避免隐藏额外请求。 |
+| Load-more并发与幂等 | Task11:41提到preview版本、幂等键、重复请求不重复推进，但没有给出key作用域/载荷绑定、进行中重复请求、失败页再次尝试的语义。 | 冻结请求/响应schema及幂等规则：键至少绑定preview、当前候选版本/服务端cursor和操作；同键同参数返回同一作业/结果，同键异参结构化409；成功提交候选页和下一cursor须一起持久化，失败保留当前cursor，手动重试仅重取该页。客户端不能提交来源URL或cursor。 |
+| 跨preview批量原子与并发 | 当前apply只接单preview（事实报告:9,34）；Task11:42提出`batch-apply`，但仅列map `expected_revision`与`{preview_id, selected_candidate_ids}`，缺少所选候选对应的preview版本和持久批次结果形态。 | 请求须包含每组`expected_preview_version`；服务端从认证主体取owner，并校验两个preview均属同一owner/map/seed、方向各异、仍有效、候选ID属于对应快照、种子仍活动。一个DB事务内重检revision与20/200容量，按稳定身份去重，写节点/全部实际方向边、revision、幂等结果、批次关联及可恢复工作记录；任何一项失败全回滚。相同幂等键同载荷返回原结果，异载荷409。网络请求/模型执行不得放进事务；事务提交后才唤醒现有worker，重启由持久工作记录恢复，避免提交节点后丢后台任务。 |
+| 409后的显式重确认 | Task11:19、32要求无半写、重读revision与preview版本后显式确认，但没有界定重新确认请求如何防止只替换expected_revision继续用旧/错属preview。 | 规定UI在409后读取当前graph及原preview快照，保留选择并展示变更；用户再次点击确认后以新读到的map revision和原候选版本提交。服务端重新执行owner/map/seed/kind/状态/候选版本/种子活动状态/预算检查；只换revision、拼接他图preview、失效preview、已移除种子均拒绝，不能把旧preview重新绑定到新seed。 |
+| 新增节点的补全与分析队列 | Task11:21–23、33要求只为批次新增节点补元数据/摘要，持久记录每步并复用MapJob/MapAnalysis；事实报告:20–22说明现有分析队列持久、但ensure路径会面向当前活动节点，且无摘要不会自动补元数据。 | 冻结batch-scoped node ID集合和每节点步骤状态/唯一幂等键；保证只提交本批真正新增的唯一节点，不触发全图ensure补入旧节点。队列记录与批次在同次DB事务可恢复，重试只补失败/缺失步骤，同一摘要source_version已完成不重跑；迟到worker、重开与重复确认不得重复分析。 |
+| 元数据更新边界 | 方案说“一轮有界补全”和字段缺值显式（Task11:22,30），没有具体字段白名单、缓存复用身份、更新优先级和source_version改变条件。 | 指定复用的现有元数据客户端/字段请求与缓存入口；只填定义为缺失的允许字段，不覆盖已有/人工信息；只有摘要内容实际变化才使摘要source_version变化并触发相应一次分析。区分来源请求失败（保留失败态，可有限重试）与成功但无摘要（跳过；按Q6只在用户显式发起时允许稍后再查），不得以标题分析。只读GET不发外部请求。若现有代码没有可复用缓存，应如实限定为持久preview快照去重，不假称已有缓存，也不建立第二缓存/来源栈。 |
+| 429、缓存与续页失败 | 事实报告:28–30确认共享Semantic Scholar进程内1秒限流和既有最多一次、Retry-After/指数且30秒封顶的client重试；候选预览耗尽后仅有warnings，尚无失败页补齐。Task11:24,41,44,61承诺有限重试、保留成功页和失败页重试。 | 继续用同一client/limiter及既有有界重试；把最终429按方向和cursor持久标为失败，保留成功候选和cursor，只有显式重试可重取该页，另一个方向可继续。未知总量不能显示为0；来源失败不得返回“成功空结果”。载入的preview快照供重开读取，不因GET重新抓取已加载页。 |
+| 来源安全与全文门禁 | Task11:17,22,38–44,67明确关系候选可范围外，但不放宽下载门禁、不下载PDF/全文；不允许客户端任意URL/cursor（:29）。 | 新增请求仍经既有固定来源客户端；关联发现只读论文元数据，不凭候选身份自动入库/下载/全文分析。新增字段填充不得复用或扩大下载/导入来源白名单；认证owner从服务端取。 |
+| 持久化/迁移 | Task11:29–34列出了新增分页状态和批次记录，但仅说“需要新列/索引时迁移”，没有精确持久模型与无损升级/回滚对象。 | 接口合同中列出现有MapPreview/MapJob需新增的版本化字段或关联，以及幂等/唯一约束和初始化迁移策略；增量、幂等、失败回滚，旧preview/图/ID/布局/分组/颜色/KB关联保持原样。不得重置数据库。 |
+
+### 重新送审所需的最小材料
+
+在Task11范围内补一份与现有MapPreview/MapJob/MapAnalysis兼容的接口合同，至少包含：
+
+1. `POST /previews`、`POST /previews/{id}/load-more`、`POST /previews/batch-apply` 的请求/响应示例、状态码与稳定错误体，包含双方向候选版本和幂等冲突。
+2. 分页持久状态、版本递增、限流失败保留cursor/手动补页、500截断和total未知的状态转换。
+3. batch-apply单事务写入清单、并发revision冲突后重读/再次确认流程、owner/map/seed/kind/candidate状态校验，以及提交后后台批次恢复/去重语义。
+4. 只针对新增节点的持久补元数据→摘要分析步骤、source_version/幂等规则、字段合并白名单、缺摘要显式重试和现有client/cache/limiter复用边界。
+5. 兼容旧preview的增量迁移说明和针对上述边界的合同验收清单；无需在本评审阶段运行测试或真实来源请求。
+
+以上仅把已批准的50/500/20/200、双方向、原子确认、后台恢复和不扩下载门禁翻译成可实现的技术合同，不增加产品行为。技术合同补齐后再复核；届时仍须等用户完成共同理解确认才可进入实现。
+
+### 评审边界与签字
+
+本轮读取方案、事实报告和必要既有评审文本；未改业务代码/测试，未运行测试、真实API、模型、下载、服务、迁移、部署或Git操作。事实报告中的旧测试摘要不是Task11证据；Task10既有评审不替代本轮技术门禁。
+
+- 评审者：`/root/paper_expansion_plan_review`（architect，独立增量技术评审）
+- 日期：2026-10-27
+- 结论：**打回（BLOCK；接口/持久化合同未冻结）**
+
+---
+
+## Task11 技术复审：接口与持久化合同（2026-10-27）
+
+### 评审元数据
+
+- 评审对象：`docs/sdd/plans/043/task-11-interface-contract.md`及其在Task11/Spec043中的链接；仅复核首轮技术BLOCK和必要代码接缝。
+- 评审者：`/root/paper_expansion_plan_review`；角色：`architect`。
+- 模型：GPT-6（Codex运行环境；本次分派未显示额外型号覆写）。分派方式：主会话原生分派的子代理复审。
+- 评审时间：2026-10-27（Asia/Shanghai）。
+
+### 结论
+
+**仍打回（BLOCK；以下MapJob worker lifecycle接缝未冻结）。**
+
+新合同已真实关闭首轮的大部分阻塞：v7→v8无损分页迁移、服务端cursor及预览版本/幂等、失败页原cursor重试、同seed跨preview revalidate、批量原子事务与outbox、仅本批新增节点的队列、摘要写入白名单、持久metadata缓存、既有限流/429语义、Q6显式重查和不放宽PDF/全文门禁均已写明（合同:8–14,38–42,52,62–85,89–93；Task11:73–75）。
+
+但合同将`preview_page`与`expand_batch`称为复用现有MapJob lease/worker_token并可恢复的操作（合同:12,40,64,85），当前代码并没有供这些普通MapJob直接复用的lease流程：`LiteratureMapStore.claim_job`仅将queued状态CAS为running，没有写入或检查`worker_token`/`lease_expires_at`（`backend/app/literature_maps/infrastructure/store.py:2408-2424`）；带token和lease的`claim_analysis_job`只接受`operation='analysis'`（同文件:1717-1755）。此外`LiteratureMapService.recover`只特判`preview:*`、`analysis`和`analysis_queue`，其他job会提交给通用`run_job`（`backend/app/literature_maps/application/service.py:254-276`）。因此新操作重启后会走建图job路径；合同要求的token校验、过期lease恢复和迟到worker拒写当前没有可直接复用的operation路径。
+
+不能把这一缺口作为普通实现细节略过：它决定并发分页是否重复推进、崩溃后批次是否能续跑，以及旧worker能否在新worker接管后提交过期结果。技术GO前应把新操作的claim/finish/recovery规则精确落到接口合同中。
+
+### 唯一剩余技术阻塞与最小补充
+
+1. 为`preview_page`和`expand_batch`定义受operation白名单保护的持久CAS claim/finish：对queued或可恢复的过期running步骤原子写入worker token、lease/尝试代数；每次进度和终态提交都校验token，旧token不得写入。不可直接复用仅限`analysis`的`claim_analysis_job`，也不能把job送进无操作类型分派的`run_job`。
+2. 明确`recover()`按operation将`preview_page`恢复到页处理器、`expand_batch`恢复到outbox批次处理器；cursor须足以幂等恢复当前页/步骤。只接管过期lease，遵守地图暂停状态，不触碰已完成步骤；尚未过期的running worker不重复执行。
+3. 在接口合同的既有“提交后崩溃/迟到worker”验收项中，分别验证页cursor只提交一次、批次成功步骤不清空、过期token结果被拒绝。此项是复用MapJob所必需的技术补充，不改变用户产品行为。
+
+其他首轮技术阻塞均已关闭；若上列规则被补入合同，需复核该差异后才可给最终技术GO。用户共同理解确认仍是独立前置门槛。
+
+### 评审边界与签字
+
+只复核新增合同、Task11/Spec链接、Q6增量，以及claim/recovery/cache/queue的必要代码接缝；未改业务代码/测试/Task11合同，未运行测试、来源请求、迁移、部署或Git操作。
+
+- 评审者：`/root/paper_expansion_plan_review`（architect）
+- 日期：2026-10-27
+- 结论：**打回（BLOCK；仅剩MapJob lease/finish/recovery接缝）**
+
+---
+
+## Task11 技术复审最终结论：worker生命周期补齐（2026-10-27）
+
+### 评审元数据
+
+- 评审对象：`docs/sdd/plans/043/task-11-interface-contract.md` 第5节“新操作的worker生命周期”，以及其与第1–4节分页、batch outbox、队列、暂停和错误状态的衔接。
+- 评审者：`/root/paper_expansion_plan_review`；角色：`architect`。
+- 模型：GPT-6（Codex运行环境；本次分派未显示额外型号覆写）。分派方式：主会话原生分派的子代理复审。
+- 评审时间：2026-10-27（Asia/Shanghai）。
+
+### 结论
+
+**通过（GO；技术设计门禁通过，仍待用户共同理解确认）。**
+
+第5节正面说明普通`claim_job`不具备analysis专用token/lease语义，并要求新增仅允许`preview_page`/`expand_batch`的事务级claim和token校验提交helper；它复用MapJob存储字段和租约模式，而没有把通用claim误称为已安全。它也为新operation补上了处理器路由、启动/过期lease恢复、迟到worker拒写、analysis_wait无长租约、暂停边界、失败页不被lease reaper自动重播，以及外部请求不保证exactly-once等语义（接口合同:95–122）。上一轮唯一技术阻塞已经关闭。
+
+### 与既有接缝的一致性
+
+| 核对项 | 判定 | 依据 |
+|---|---|---|
+| 普通MapJob与分析worker分界 | 通过 | 合同明确新增辅助操作事务helper，不复用`claim_analysis_job(operation='analysis')`；此点与普通`claim_job`和analysis专用claim的现状一致（`backend/app/literature_maps/infrastructure/store.py:2408-2424,1717-1755`）。 |
+| 启动和租约恢复 | 通过 | 合同把两个新operation加入显式handler/reaper，并禁止回落到通用`run_job`；应用已有启动恢复入口（`backend/app/literature_maps/application/runtime.py:241-247`）及分析租约到期唤醒模式（`backend/app/literature_maps/application/analysis.py:747-790`），新操作明确需要沿该模式增加自身状态扫描。 |
+| 事务与迟到结果 | 通过 | page/metadata/batch领域提交在同一事务内先校验job、owner、operation、token和lease；失败整段回滚。调用来源在事务外，缓存不等于领域步骤已提交。未知在途外部请求可重取，但最终候选/cursor/分析登记依靠领域CAS防止重复效果。 |
+| analysis_wait与分析队列 | 通过 | 元数据结束后释放辅助lease，等待状态只对齐已登记analysis_id，由既有分析worker执行模型；重启不重做metadata或重新调用模型。完成/失败更新批次投影。 |
+| 暂停、重试和429终态 | 通过 | preview分页不受“暂停分析”影响；expand_batch在各调度边界尊重地图暂停，resume恢复未完成步骤。来源429在client有限重试后以失败页终态保存，lease reaper不代替用户反复联网；缺摘要重查仍须显式选择。 |
+| Lease限制与外部副作用 | 通过 | 300秒租约、命令代数内最多3次自动接管及超限后的显式重试均已写明；合同不承诺HTTP exactly-once，同时要求成功领域写入不重复提交。 |
+
+以上属于Task11合同本身的实现边界；当前没有实现、测试、迁移或运行时成功声明。落实时应原样遵守，不得退回普通`claim_job`或analysis handler处理新operation。
+
+### 评审边界与签字
+
+只复核第5节及其与此前合同和现有runtime/lease接缝的必要关系；未重扫无关历史，未改业务代码/测试/合同，未运行测试、外部请求、迁移、部署或Git操作。Task10历史及需求复审结论不变。
+
+- 评审者：`/root/paper_expansion_plan_review`（architect）
+- 日期：2026-10-27
+- 结论：**通过（GO；唯一剩余技术阻塞已关闭；待用户共同理解确认）**
